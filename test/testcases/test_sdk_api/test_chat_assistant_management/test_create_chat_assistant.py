@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -14,184 +14,233 @@
 #  limitations under the License.
 #
 
+import base64
+from uuid import uuid4
+
 import pytest
-from common import valid_chat_llm_id
-from configs import CHAT_ASSISTANT_NAME_LIMIT
-from utils import encode_avatar
-from utils.file_utils import create_image_file
+from PIL import Image
+
+pytestmark = pytest.mark.integration
 
 
-@pytest.mark.usefixtures("clear_chat_assistants")
-class TestChatAssistantCreate:
-    @pytest.mark.p3
-    @pytest.mark.usefixtures("add_chunks")
-    @pytest.mark.parametrize(
-        "name, expected_message",
-        [
-            ("valid_name", ""),
-            pytest.param("a" * (CHAT_ASSISTANT_NAME_LIMIT + 1), "", marks=pytest.mark.skip(reason="issues/")),
-            pytest.param(1, "", marks=pytest.mark.skip(reason="issues/")),
-            ("", "`name` is required"),
-            ("duplicated_name", "duplicated chat name in creating chat"),
-            ("case insensitive", "duplicated chat name in creating chat"),
-        ],
-    )
-    def test_name(self, client, name, expected_message):
-        if name == "duplicated_name":
-            client.create_chat(name=name)
-        elif name == "case insensitive":
-            client.create_chat(name=name.upper())
-
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                client.create_chat(name=name)
-            assert expected_message in str(exception_info.value)
-        else:
-            chat_assistant = client.create_chat(name=name)
-            assert chat_assistant.name == name
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "dataset_ids, expected_message",
-        [
-            ([], ""),
-            (lambda r: [r], ""),
-            (["invalid_dataset_id"], "You don't own the dataset invalid_dataset_id"),
-            ("invalid_dataset_id", "violates type hint list[str] | None"),
-        ],
-    )
-    def test_dataset_ids(self, client, add_chunks, dataset_ids, expected_message):
-        dataset, _, _ = add_chunks
-        if callable(dataset_ids):
-            dataset_ids = dataset_ids(dataset.id)
-
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                client.create_chat(name="ragflow test", dataset_ids=dataset_ids)
-            assert expected_message in str(exception_info.value)
-        else:
-            chat_assistant = client.create_chat(name="ragflow test", dataset_ids=dataset_ids)
-            assert chat_assistant.name == "ragflow test"
-
-    @pytest.mark.p3
-    def test_icon(self, client, tmp_path):
-        fn = create_image_file(tmp_path / "ragflow_test.png")
-        chat_assistant = client.create_chat(name="icon_test", icon=encode_avatar(fn), dataset_ids=[])
-        assert chat_assistant.name == "icon_test"
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "llm_setting, expected_message",
-        [
-            ({}, ""),
-            ({"temperature": 0}, ""),
-            ({"temperature": 1}, ""),
-            pytest.param({"temperature": -1}, "", marks=pytest.mark.skip),
-            pytest.param({"temperature": 10}, "", marks=pytest.mark.skip),
-            pytest.param({"temperature": "a"}, "", marks=pytest.mark.skip),
-            ({"top_p": 0}, ""),
-            ({"top_p": 1}, ""),
-            pytest.param({"top_p": -1}, "", marks=pytest.mark.skip),
-            pytest.param({"top_p": 10}, "", marks=pytest.mark.skip),
-            pytest.param({"top_p": "a"}, "", marks=pytest.mark.skip),
-            ({"presence_penalty": 0}, ""),
-            ({"presence_penalty": 1}, ""),
-            pytest.param({"presence_penalty": -1}, "", marks=pytest.mark.skip),
-            pytest.param({"presence_penalty": 10}, "", marks=pytest.mark.skip),
-            pytest.param({"presence_penalty": "a"}, "", marks=pytest.mark.skip),
-            ({"frequency_penalty": 0}, ""),
-            ({"frequency_penalty": 1}, ""),
-            pytest.param({"frequency_penalty": -1}, "", marks=pytest.mark.skip),
-            pytest.param({"frequency_penalty": 10}, "", marks=pytest.mark.skip),
-            pytest.param({"frequency_penalty": "a"}, "", marks=pytest.mark.skip),
-            ({"max_token": 0}, ""),
-            ({"max_token": 1024}, ""),
-            pytest.param({"max_token": -1}, "", marks=pytest.mark.skip),
-            pytest.param({"max_token": 10}, "", marks=pytest.mark.skip),
-            pytest.param({"max_token": "a"}, "", marks=pytest.mark.skip),
-            pytest.param({"unknown": "unknown"}, "", marks=pytest.mark.skip),
-        ],
-    )
-    def test_llm_setting(self, client, add_chunks, llm_setting, expected_message):
-        dataset, _, _ = add_chunks
-
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                client.create_chat(name="llm_test", dataset_ids=[dataset.id], llm_setting=llm_setting or None)
-            assert expected_message in str(exception_info.value)
-        else:
-            chat_assistant = client.create_chat(name="llm_test", dataset_ids=[dataset.id], llm_setting=llm_setting or None)
-            for k, v in llm_setting.items():
-                assert getattr(chat_assistant.llm_setting, k) == v
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "llm_id, expected_message",
-        [
-            (valid_chat_llm_id, ""),
-            ("unknown", "`llm_id` unknown doesn't exist"),
-        ],
-    )
-    def test_llm_id(self, client, add_chunks, llm_id, expected_message):
-        dataset, _, _ = add_chunks
-        if callable(llm_id):
-            llm_id = llm_id(client)
-
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                client.create_chat(name="llm_test", dataset_ids=[dataset.id], llm_id=llm_id)
-            assert expected_message in str(exception_info.value)
-        else:
-            chat_assistant = client.create_chat(name="llm_test", dataset_ids=[dataset.id], llm_id=llm_id)
-            assert chat_assistant.llm_id == llm_id
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "prompt_config, expected_message",
-        [
-            ({"empty_response": "Hello World"}, ""),
-            ({"empty_response": ""}, ""),
-            ({"empty_response": "!@#$%^&*()"}, ""),
-            ({"empty_response": "中文测试"}, ""),
-            pytest.param({"empty_response": 123}, "", marks=pytest.mark.skip),
-            pytest.param({"empty_response": True}, "", marks=pytest.mark.skip),
-            pytest.param({"empty_response": " "}, "", marks=pytest.mark.skip),
-            ({"prologue": "Hello World"}, ""),
-            ({"prologue": ""}, ""),
-            ({"prologue": "!@#$%^&*()"}, ""),
-            ({"prologue": "中文测试"}, ""),
-            pytest.param({"prologue": 123}, "", marks=pytest.mark.skip),
-            pytest.param({"prologue": True}, "", marks=pytest.mark.skip),
-            pytest.param({"prologue": " "}, "", marks=pytest.mark.skip),
-            ({"quote": True}, ""),
-            ({"quote": False}, ""),
-            ({"system": "Hello World {knowledge}"}, ""),
-            ({"system": "{knowledge}"}, ""),
-            ({"system": "!@#$%^&*() {knowledge}"}, ""),
-            ({"system": "中文测试 {knowledge}"}, ""),
-            ({"system": "Hello World"}, ""),
-            ({"system": "Hello World", "parameters": []}, ""),
-            pytest.param({"system": 123}, "", marks=pytest.mark.skip),
-            pytest.param({"unknown": "unknown"}, "", marks=pytest.mark.skip),
-        ],
-    )
-    def test_prompt_config(self, client, add_chunks, prompt_config, expected_message):
-        dataset, _, _ = add_chunks
-
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                client.create_chat(name="prompt_test", dataset_ids=[dataset.id], prompt_config=prompt_config)
-            assert expected_message in str(exception_info.value)
-        else:
-            chat_assistant = client.create_chat(name="prompt_test", dataset_ids=[dataset.id], prompt_config=prompt_config)
-            for k, v in prompt_config.items():
-                assert getattr(chat_assistant.prompt_config, k) == v
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "name, expected",
+    [
+        ("valid_name", None),
+        ("a" * 255, None),
+        ("a" * 256, "larger than 255"),
+        ("", "`name` is required"),
+        ("   ", "`name` is required"),
+    ],
+)
+def test_name(chat_factory, name, expected):
+    if expected:
+        with pytest.raises(Exception, match=expected):
+            chat_factory(name=name)
+    else:
+        chat = chat_factory(name=name)
+        assert chat.id and chat.name == name
 
 
-class TestChatAssistantCreate2:
-    @pytest.mark.p3
-    def test_unparsed_document(self, client, add_document):
-        dataset, _ = add_document
-        with pytest.raises(Exception) as exception_info:
-            client.create_chat(name="prompt_test", dataset_ids=[dataset.id])
-        assert "doesn't own parsed file" in str(exception_info.value)
+@pytest.mark.p3
+@pytest.mark.parametrize("case_variant", [False, True], ids=["same-case", "case-insensitive"])
+def test_duplicate_name(chat_factory, case_variant):
+    name = f"sdk-chat-duplicate-{uuid4().hex}"
+    first = chat_factory(name=name)
+    second = chat_factory(name=name.upper() if case_variant else name)
+    assert first.id != second.id
+    assert second.name == f"{name.upper() if case_variant else name}(1)"
+
+
+@pytest.mark.p3
+@pytest.mark.parametrize("dataset_ids", [[], ["invalid_dataset_id"]])
+def test_dataset_ids(chat_factory, dataset_ids):
+    if dataset_ids == []:
+        chat = chat_factory(dataset_ids=dataset_ids)
+        assert chat.dataset_ids == []
+    else:
+        with pytest.raises(Exception, match="Resource not found"):
+            chat_factory(dataset_ids=dataset_ids)
+
+
+@pytest.mark.p3
+def test_dataset_association(chat_factory, dataset_factory):
+    dataset = dataset_factory()
+    # A manually added chunk satisfies the Go chat endpoint without starting a parser.
+    document = dataset.upload_documents([{"display_name": "chat-association.txt", "blob": b"chat association"}])[0]
+    document.add_chunk(content="chat association")
+
+    chat = chat_factory(dataset_ids=[dataset.id])
+    assert chat.dataset_ids == [dataset.id]
+
+
+@pytest.mark.p3
+def test_icon(chat_factory, client, tmp_path):
+    image = tmp_path / "chat-icon.png"
+    Image.new("RGB", (1, 1), color="blue").save(image)
+    icon = base64.b64encode(image.read_bytes()).decode("ascii")
+    chat = chat_factory(icon=icon)
+    assert chat.icon == icon
+    assert client.get_chat(chat.id).icon == icon
+
+
+@pytest.mark.p3
+def test_default_settings(chat_factory, client):
+    chat = chat_factory()
+    persisted = client.get_chat(chat.id)
+    assert persisted.dataset_ids == []
+    assert persisted.llm_id == chat.llm_id
+    assert persisted.prompt_config.system == ""
+    assert persisted.prompt_config.quote is True
+    assert persisted.prompt_config.parameters == [{"key": "knowledge", "optional": False}]
+
+
+@pytest.mark.p3
+def test_optional_fields(chat_factory, client):
+    chat = chat_factory(description="SDK chat", top_n=8, similarity_threshold=0.4)
+    persisted = client.get_chat(chat.id)
+    assert persisted.description == "SDK chat"
+    assert persisted.top_n == 8
+    assert persisted.similarity_threshold == 0.4
+
+
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "llm_setting",
+    [
+        {},
+        {"temperature": 0},
+        {"temperature": 1},
+        {"top_p": 0},
+        {"top_p": 1},
+        {"presence_penalty": 0},
+        {"presence_penalty": 1},
+        {"frequency_penalty": 0},
+        {"frequency_penalty": 1},
+        {"max_tokens": 1024},
+    ],
+)
+def test_llm_setting(chat_factory, client, llm_setting):
+    chat = chat_factory(llm_setting=llm_setting)
+    persisted = client.get_chat(chat.id)
+    assert chat.llm_setting.to_json() == llm_setting
+    assert persisted.llm_setting.to_json() == llm_setting
+
+
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "llm_setting",
+    [
+        {"temperature": "invalid"},
+        {"top_p": "invalid"},
+        {"presence_penalty": "invalid"},
+        {"frequency_penalty": "invalid"},
+        {"max_tokens": "invalid"},
+    ],
+)
+@pytest.mark.skip(reason="Go ChatService.Create accepts invalid generation parameter types without validation")
+def test_invalid_llm_setting(chat_factory, llm_setting):
+    with pytest.raises(Exception, match="llm_setting"):
+        chat_factory(llm_setting=llm_setting)
+
+
+@pytest.mark.p3
+@pytest.mark.skip(reason="Go ChatService.Create discards non-object llm_setting rather than rejecting it")
+def test_create_rejects_invalid_llm_setting_object(client):
+    response = client.post("/chats", {"name": f"sdk-chat-{uuid4().hex}", "llm_setting": "invalid"}).json()
+    try:
+        assert response["code"] != 0
+        assert "`llm_setting` should be an object" in response["message"]
+    finally:
+        if (response.get("data") or {}).get("id"):
+            client.delete_chats(ids=[response["data"]["id"]])
+
+
+@pytest.mark.p3
+@pytest.mark.parametrize("valid", [True, False], ids=["configured", "unknown"])
+def test_llm_id(chat_factory, client, valid):
+    llm_id = chat_factory().llm_id if valid else "sdk-no-such-model"
+    if valid:
+        assert llm_id, "Explicit llm_id test requires a configured default chat model"
+        chat = chat_factory(llm_id=llm_id)
+        assert chat.llm_id == llm_id
+        assert client.get_chat(chat.id).llm_id == llm_id
+    else:
+        with pytest.raises(Exception, match="`llm_id` .* doesn't exist"):
+            chat_factory(llm_id=llm_id)
+
+
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "prompt_config",
+    [
+        {"empty_response": "Hello World"},
+        {"empty_response": ""},
+        {"empty_response": "!@#$%^&*()"},
+        {"empty_response": "中文测试"},
+        {"empty_response": " "},
+        {"prologue": "Hello World"},
+        {"prologue": ""},
+        {"prologue": "!@#$%^&*()"},
+        {"prologue": "中文测试"},
+        {"prologue": " "},
+        {"quote": True},
+        {"quote": False},
+        {"system": "Hello World {knowledge}"},
+        {"system": "{knowledge}"},
+        {"system": "!@#$%^&*() {knowledge}"},
+        {"system": "中文测试 {knowledge}"},
+        {"system": "Hello World"},
+        {"system": "Hello World", "parameters": []},
+    ],
+)
+def test_prompt_config(chat_factory, client, prompt_config):
+    chat = chat_factory(prompt_config=prompt_config)
+    persisted = client.get_chat(chat.id)
+    for key, value in prompt_config.items():
+        assert getattr(chat.prompt_config, key) == value
+        assert getattr(persisted.prompt_config, key) == value
+
+
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "prompt_config",
+    [
+        {"empty_response": 123},
+        {"empty_response": True},
+        {"prologue": 123},
+        {"prologue": True},
+        {"system": 123},
+        {"parameters": "invalid"},
+        {"quote": "invalid"},
+    ],
+)
+@pytest.mark.skip(reason="Go validatePromptConfigParameters only checks duplicate keys; Create persists invalid prompt field types")
+def test_invalid_prompt_fields(chat_factory, prompt_config):
+    with pytest.raises(Exception, match="prompt_config"):
+        chat_factory(prompt_config=prompt_config)
+
+
+@pytest.mark.p3
+def test_create_rejects_invalid_prompt_config_object(client):
+    response = client.post("/chats", {"name": f"sdk-chat-{uuid4().hex}", "prompt_config": "invalid"}).json()
+    try:
+        assert response["code"] != 0
+        assert "`prompt_config` should be an object" in response["message"]
+    finally:
+        if (response.get("data") or {}).get("id"):
+            client.delete_chats(ids=[response["data"]["id"]])
+
+
+@pytest.mark.p3
+def test_duplicate_prompt_parameters(chat_factory):
+    with pytest.raises(Exception, match="`parameters` contains duplicate key: knowledge"):
+        chat_factory(prompt_config={"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]})
+
+
+@pytest.mark.p3
+def test_unparsed_dataset(chat_factory, dataset_factory):
+    dataset = dataset_factory()
+    with pytest.raises(Exception, match="doesn't own parsed file"):
+        chat_factory(dataset_ids=[dataset.id])
