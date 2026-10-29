@@ -239,6 +239,7 @@ const VisualSwitchSuffixes = new Set([
   'jpeg',
   'png',
   'tif',
+  'tiff',
   'gif',
   'bmp',
   'pcx',
