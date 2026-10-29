@@ -55,30 +55,28 @@ export interface IAvailableProvider {
 }
 
 export interface IProviderInstance {
-  /**
-   * Usually a plain key string, but the showProviderInstance endpoint
-   * may return an object `{ api_key, ...nested }` for providers that
-   * bundle extra credentials (see the nested fields below).
-   */
-  api_key: string | Record<string, any>;
   id: string;
   instance_name: string;
   provider_id: string;
   region: string;
   status: string;
+  /** Whether the current user owns this model instance. */
+  is_owner?: boolean;
+  /** Whether the server has a credential configured for this instance. */
+  api_key_configured?: boolean;
+  /** Safe provider configuration values; secret values are never returned. */
+  api_key_config?: Record<string, any>;
+  /** Names of configured credential fields, without their values. */
+  credential_status?: Record<string, boolean>;
+  /** Masked credential previews; actual credential values are never returned. */
+  credential_masks?: Record<string, string>;
   /**
    * Optional: only returned by the showProviderInstance endpoint. Used
    * to pre-fill the base_url form field when opening a saved
    * instance.
    */
   base_url?: string;
-  /**
-   * Provider-specific credentials that may be returned either at the top
-   * level or nested inside `api_key`:
-   *   - group_id       → MiniMax
-   *   - api_version    → Azure OpenAI
-   *   - provider_order → OpenRouter
-   */
+  /** Safe provider-specific settings returned separately from secrets. */
   group_id?: string;
   api_version?: string;
   provider_order?: string;

@@ -442,10 +442,10 @@ func (p *analyzerPool) Close() {
 	// the lock; stopCh is already closed, so it returns promptly.
 	p.wg.Wait()
 
-	// A copied analyzer references the base analyzer's loaded dictionaries
+	// A copied analyzer references the base analyzer's loaded tokenizer dictionaries
 	// (RAGAnalyzer_Copy shares trie_/pos_table_/wordnet_lemma_ and does not own
-	// them), so the base must outlive every checked-out instance. Wait for the
-	// borrowers to return before destroying it.
+	// them), but owns its OpenCC converter. Keep the base alive until every checked-out
+	// instance has been returned.
 	p.borrowers.Wait()
 
 	// Phase 2: close the channel and release the analyzers. The read lock keeps

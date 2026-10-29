@@ -82,6 +82,14 @@ func NewMemoryHandler(memoryService *service.MemoryService) *MemoryHandler {
 //  3. Call service layer to create memory
 //  4. Return creation result
 func (h *MemoryHandler) CreateMemory(c *gin.Context) {
+	quotaUser, ok := billingQuotaUser(c)
+	if !ok {
+		return
+	}
+	if !billingEnforceApps(c, quotaUser.ID) {
+		return
+	}
+
 	// Check if API timing is enabled
 	// If RAGFLOW_API_TIMING environment variable is set, request processing time will be logged
 	timingEnabled := common.GetEnv(common.EnvRAGFlowAPITiming)

@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -14,225 +14,134 @@
 #  limitations under the License.
 #
 import pytest
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from configs import HOST_ADDRESS
+from concurrent.futures import ThreadPoolExecutor
 from ragflow_sdk import RAGFlow
 from ragflow_sdk.modules.session import Message, Session
 
 
-@pytest.fixture(scope="session")
-def auth():
-    return "unit-auth"
-
-
-@pytest.fixture(scope="session", autouse=True)
-def set_tenant_info():
-    return None
-
-
+@pytest.mark.integration
 class TestSessionsWithChatAssistantList:
-    @pytest.mark.p3
-    def test_list_sessions_raises_on_nonzero_response(self, add_sessions_with_chat_assistant, monkeypatch):
-        chat_assistant, _ = add_sessions_with_chat_assistant
+    @pytest.mark.parametrize("page, offset", [(None, 0), (0, 0), (2, 2), (3, 4), ("3", 4), (-1, 0), ("a", 0)])
+    def test_page(self, add_sessions_with_chat_assistant, page, offset):
+        chat, sessions = add_sessions_with_chat_assistant
+        ordered = sorted(sessions, key=lambda item: item.name)
+        result = chat.list_sessions(page=page, page_size=2, orderby="name", desc=False)
+        assert [item.id for item in result] == [item.id for item in ordered[offset : offset + 2]]
 
-        class _DummyResponse:
-            def json(self):
-                return {"code": 1, "message": "boom"}
+    @pytest.mark.parametrize("page_size, count", [(None, 5), (0, 0), (1, 1), (6, 5), ("1", 1), (-1, 5), ("a", 5)])
+    def test_page_size(self, add_sessions_with_chat_assistant, page_size, count):
+        chat, sessions = add_sessions_with_chat_assistant
+        result = chat.list_sessions(page_size=page_size, orderby="name", desc=False)
+        assert [item.id for item in result] == [item.id for item in sessions[:count]]
 
-        monkeypatch.setattr(chat_assistant, "get", lambda *_args, **_kwargs: _DummyResponse())
+    @pytest.mark.parametrize("orderby, desc", [(None, True), ("create_time", True), ("update_time", True), ("name", "False"), ("unknown", True)])
+    def test_orderby(self, add_sessions_with_chat_assistant, orderby, desc):
+        chat, sessions = add_sessions_with_chat_assistant
+        if orderby == "unknown":
+            with pytest.raises(Exception, match="invalid orderby field: unknown"):
+                chat.list_sessions(orderby=orderby)
+            return
+        result = chat.list_sessions(orderby=orderby, desc=desc)
+        assert {item.id for item in result} == {item.id for item in sessions}
+        key = orderby or "create_time"
+        values = [getattr(item, key) for item in result]
+        assert values == sorted(values, reverse=desc != "False")
 
-        with pytest.raises(Exception) as exception_info:
-            chat_assistant.list_sessions()
-        assert "boom" in str(exception_info.value)
-
-    @pytest.mark.p1
     @pytest.mark.parametrize(
-        "params, expected_page_size, expected_message",
+        "desc, descending, orderby",
         [
-            ({"page": None, "page_size": 2}, 0, "not instance of"),
-            pytest.param({"page": 0, "page_size": 2}, 0, "ValueError('Search does not support negative slicing.')", marks=pytest.mark.skip),
-            ({"page": 2, "page_size": 2}, 2, ""),
-            ({"page": 3, "page_size": 2}, 1, ""),
-            ({"page": "3", "page_size": 2}, 0, "not instance of"),
-            pytest.param({"page": -1, "page_size": 2}, 0, "ValueError('Search does not support negative slicing.')", marks=pytest.mark.skip),
-            pytest.param({"page": "a", "page_size": 2}, 0, """ValueError("invalid literal for int() with base 10: \'a\'")""", marks=pytest.mark.skip),
+            (None, True, "name"),
+            ("true", True, "name"),
+            ("True", True, "name"),
+            (True, True, "name"),
+            ("false", False, "name"),
+            ("False", False, "name"),
+            (False, False, "name"),
+            ("False", False, "update_time"),
+            ("unknown", True, "name"),
         ],
     )
-    def test_page(self, add_sessions_with_chat_assistant, params, expected_page_size, expected_message):
-        chat_assistant, _ = add_sessions_with_chat_assistant
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chat_assistant.list_sessions(**params)
-            assert expected_message in str(exception_info.value)
-        else:
-            sessions = chat_assistant.list_sessions(**params)
-            assert len(sessions) == expected_page_size
+    def test_desc(self, add_sessions_with_chat_assistant, desc, descending, orderby):
+        chat, sessions = add_sessions_with_chat_assistant
+        result = chat.list_sessions(orderby=orderby, desc=desc)
+        assert {item.id for item in result} == {item.id for item in sessions}
+        values = [getattr(item, orderby) for item in result]
+        assert values == sorted(values, reverse=descending)
 
-    @pytest.mark.p1
-    @pytest.mark.parametrize(
-        "params, expected_page_size, expected_message",
-        [
-            ({"page_size": None}, 0, "not instance of"),
-            ({"page_size": 0}, 5, ""),
-            ({"page_size": 1}, 1, ""),
-            ({"page_size": 6}, 5, ""),
-            ({"page_size": "1"}, 0, "not instance of"),
-            pytest.param({"page_size": -1}, 5, "", marks=pytest.mark.skip),
-            pytest.param({"page_size": "a"}, 0, """ValueError("invalid literal for int() with base 10: \'a\'")""", marks=pytest.mark.skip),
-        ],
-    )
-    def test_page_size(self, add_sessions_with_chat_assistant, params, expected_page_size, expected_message):
-        chat_assistant, _ = add_sessions_with_chat_assistant
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chat_assistant.list_sessions(**params)
-            assert expected_message in str(exception_info.value)
-        else:
-            sessions = chat_assistant.list_sessions(**params)
-            assert len(sessions) == expected_page_size
+    @pytest.mark.parametrize("name", [None, "", "session_with_chat_assistant_1", "unknown"])
+    def test_name(self, add_sessions_with_chat_assistant, name):
+        chat, sessions = add_sessions_with_chat_assistant
+        result = chat.list_sessions(name=name)
+        expected = [item for item in sessions if not name or item.name == name]
+        assert {item.id for item in result} == {item.id for item in expected}
+        assert all(not name or item.name == name for item in result)
 
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "params, expected_message",
-        [
-            ({"orderby": None}, "not instance of"),
-            ({"orderby": "create_time"}, ""),
-            ({"orderby": "update_time"}, ""),
-            ({"orderby": "name", "desc": "False"}, "not instance of"),
-            pytest.param({"orderby": "unknown"}, "orderby should be create_time or update_time", marks=pytest.mark.skip(reason="issues/")),
-        ],
-    )
-    def test_orderby(self, add_sessions_with_chat_assistant, params, expected_message):
-        chat_assistant, _ = add_sessions_with_chat_assistant
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chat_assistant.list_sessions(**params)
-            assert expected_message in str(exception_info.value)
-        else:
-            chat_assistant.list_sessions(**params)
+    @pytest.mark.parametrize("session_id", [None, "", "existing", "unknown"])
+    def test_id(self, add_sessions_with_chat_assistant, session_id):
+        chat, sessions = add_sessions_with_chat_assistant
+        if session_id == "existing":
+            session_id = sessions[0].id
+        result = chat.list_sessions(id=session_id)
+        assert {item.id for item in result} == {item.id for item in sessions if not session_id or item.id == session_id}
 
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "params, expected_message",
-        [
-            ({"desc": None}, "not instance of"),
-            ({"desc": "true"}, "not instance of"),
-            ({"desc": "True"}, "not instance of"),
-            ({"desc": True}, ""),
-            ({"desc": "false"}, "not instance of"),
-            ({"desc": "False"}, "not instance of"),
-            ({"desc": False}, ""),
-            ({"desc": "False", "orderby": "update_time"}, "not instance of"),
-            pytest.param({"desc": "unknown"}, "desc should be true or false", marks=pytest.mark.skip(reason="issues/")),
-        ],
-    )
-    def test_desc(self, add_sessions_with_chat_assistant, params, expected_message):
-        chat_assistant, _ = add_sessions_with_chat_assistant
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chat_assistant.list_sessions(**params)
-            assert expected_message in str(exception_info.value)
-        else:
-            chat_assistant.list_sessions(**params)
+    @pytest.mark.parametrize("existing_id, name", [(True, "session_with_chat_assistant_0"), (True, "session_with_chat_assistant_100"), (True, "unknown"), (False, "session_with_chat_assistant_0")])
+    def test_name_and_id(self, add_sessions_with_chat_assistant, existing_id, name):
+        chat, sessions = add_sessions_with_chat_assistant
+        session_id = sessions[0].id if existing_id else "unknown"
+        result = chat.list_sessions(id=session_id, name=name)
+        assert {item.id for item in result} == {item.id for item in sessions if item.id == session_id and item.name == name}
 
-    @pytest.mark.p1
-    @pytest.mark.parametrize(
-        "params, expected_num, expected_message",
-        [
-            ({"name": None}, 0, "not instance of"),
-            ({"name": ""}, 5, ""),
-            ({"name": "session_with_chat_assistant_1"}, 1, ""),
-            ({"name": "unknown"}, 0, ""),
-        ],
-    )
-    def test_name(self, add_sessions_with_chat_assistant, params, expected_num, expected_message):
-        chat_assistant, _ = add_sessions_with_chat_assistant
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chat_assistant.list_sessions(**params)
-            assert expected_message in str(exception_info.value)
-        else:
-            sessions = chat_assistant.list_sessions(**params)
-            if params["name"] == "session_with_chat_assistant_1":
-                assert sessions[0].name == params["name"]
-            else:
-                assert len(sessions) == expected_num
-
-    @pytest.mark.p1
-    @pytest.mark.parametrize(
-        "session_id, expected_num, expected_message",
-        [
-            (None, 0, "not instance of"),
-            ("", 5, ""),
-            (lambda r: r[0], 1, ""),
-            ("unknown", 0, ""),
-        ],
-    )
-    def test_id(self, add_sessions_with_chat_assistant, session_id, expected_num, expected_message):
-        chat_assistant, sessions = add_sessions_with_chat_assistant
-        if callable(session_id):
-            params = {"id": session_id([s.id for s in sessions])}
-        else:
-            params = {"id": session_id}
-
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chat_assistant.list_sessions(**params)
-            assert expected_message in str(exception_info.value)
-        else:
-            list_sessions = chat_assistant.list_sessions(**params)
-            if "id" in params and params["id"] == sessions[0].id:
-                assert list_sessions[0].id == params["id"]
-            else:
-                assert len(list_sessions) == expected_num
-
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "session_id, name, expected_num, expected_message",
-        [
-            (lambda r: r[0], "session_with_chat_assistant_0", 1, ""),
-            (lambda r: r[0], "session_with_chat_assistant_100", 0, ""),
-            (lambda r: r[0], "unknown", 0, ""),
-            ("id", "session_with_chat_assistant_0", 0, ""),
-        ],
-    )
-    def test_name_and_id(self, add_sessions_with_chat_assistant, session_id, name, expected_num, expected_message):
-        chat_assistant, sessions = add_sessions_with_chat_assistant
-        if callable(session_id):
-            params = {"id": session_id([s.id for s in sessions]), "name": name}
-        else:
-            params = {"id": session_id, "name": name}
-
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chat_assistant.list_sessions(**params)
-            assert expected_message in str(exception_info.value)
-        else:
-            list_sessions = chat_assistant.list_sessions(**params)
-            assert len(list_sessions) == expected_num
-
-    @pytest.mark.p3
     def test_concurrent_list(self, add_sessions_with_chat_assistant):
-        count = 100
-        chat_assistant, _ = add_sessions_with_chat_assistant
+        chat, sessions = add_sessions_with_chat_assistant
+        expected = {item.id for item in sessions}
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(chat_assistant.list_sessions) for _ in range(count)]
-        responses = list(as_completed(futures))
-        assert len(responses) == count, responses
+            futures = [executor.submit(chat.list_sessions) for _ in range(100)]
+            for future in futures:
+                assert {item.id for item in future.result()} == expected
 
-    @pytest.mark.p3
     def test_list_chats_after_deleting_associated_chat_assistant(self, client, add_sessions_with_chat_assistant):
-        chat_assistant, _ = add_sessions_with_chat_assistant
-        client.delete_chats(ids=[chat_assistant.id])
+        chat, _ = add_sessions_with_chat_assistant
+        client.delete_chats(ids=[chat.id])
+        with pytest.raises(Exception, match="^Resource not found$"):
+            chat.list_sessions()
 
-        with pytest.raises(Exception) as exception_info:
-            chat_assistant.list_sessions()
-        assert "no authorization" in str(exception_info.value)
+    @pytest.mark.skip(reason="Go ListChatSessions never reads user_id or filters by it (internal/handler/chat_session.go); remove when documented user_id filtering is implemented")
+    @pytest.mark.parametrize("combined", [False, True])
+    def test_user_id(self, add_sessions_with_chat_assistant, combined):
+        chat, sessions = add_sessions_with_chat_assistant
+        filters = {"id": sessions[0].id, "name": sessions[0].name} if combined else {}
+        assert chat.list_sessions(user_id="nonexistent-session-user", **filters) == []
+
+    @pytest.mark.skip(
+        reason="Go list serializes entity.ChatSession as dialog_id/message, but SDK Session requires chat_id/messages (internal/handler/chat_session.go and sdk/python/ragflow_sdk/modules/session.py); remove when list returns SDK session schema"
+    )
+    def test_list_response_session_contract(self, chat):
+        created = chat.create_session()
+        listed = chat.list_sessions(id=created.id)
+        assert len(listed) == 1
+        assert listed[0].chat_id == chat.id
+        assert listed[0].messages == created.messages
+        listed[0].update({"name": "updated from listed session"})
+        assert chat.list_sessions(id=created.id)[0].name == "updated from listed session"
+
+
+def test_list_sessions_raises_on_nonzero_response(monkeypatch):
+    from ragflow_sdk import Chat
+
+    chat = Chat(None, {"id": "chat-1"})
+
+    class Response:
+        def json(self):
+            return {"code": 1, "message": "boom"}
+
+    monkeypatch.setattr(chat, "get", lambda *_args, **_kwargs: Response())
+    with pytest.raises(Exception, match="boom"):
+        chat.list_sessions()
 
 
 @pytest.mark.p2
 def test_session_module_error_paths_unit(monkeypatch):
-    client = RAGFlow("token", HOST_ADDRESS)
+    client = RAGFlow("token", "http://unit.invalid")
 
     unknown_session = Session(client, {"id": "session-unknown", "chat_id": "chat-1"})
     unknown_session._Session__session_type = "unknown"  # noqa: SLF001
@@ -279,3 +188,72 @@ def test_session_module_error_paths_unit(monkeypatch):
     assert message.role == "assistant"
     assert message.prompt is None
     assert message.id is None
+
+
+@pytest.mark.parametrize("operation", ["create", "list", "update", "delete"])
+def test_sdk_crud_http_contract(monkeypatch, operation):
+    import requests
+    from ragflow_sdk import Chat
+
+    client = RAGFlow("unit-token", "http://unit.invalid")
+    chat = Chat(client, {"id": "chat-1"})
+    row = {"id": "session-1", "chat_id": "chat-1", "name": "session name", "messages": []}
+    calls = []
+
+    def request(_session, method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        response = requests.Response()
+        response.status_code = 200
+        import json
+
+        response._content = json.dumps({"code": 0, "data": [row] if operation == "list" else row}).encode()
+        return response
+
+    monkeypatch.setattr(requests.sessions.Session, "request", request)
+    if operation == "create":
+        result = chat.create_session()
+        method, path, payload_key, payload = "post", "/chats/chat-1/sessions", "json", {"name": "New session"}
+        assert isinstance(result, Session)
+        assert result.chat_id == chat.id
+    elif operation == "list":
+        result = chat.list_sessions(page=2, page_size=7, orderby="name", desc=False, id="session-1", name="session name", user_id="external-user")
+        method, path, payload_key = "get", "/chats/chat-1/sessions", "params"
+        payload = {"page": 2, "page_size": 7, "orderby": "name", "desc": False, "id": "session-1", "name": "session name", "user_id": "external-user"}
+        assert len(result) == 1
+        assert result[0].id == row["id"]
+        assert result[0].messages == []
+    elif operation == "update":
+        session = Session(client, row)
+        assert session.update({"name": "updated"}) is None
+        method, path, payload_key, payload = "patch", "/chats/chat-1/sessions/session-1", "json", {"name": "updated"}
+    else:
+        assert chat.delete_sessions(ids=["session-1"]) is None
+        method, path, payload_key, payload = "delete", "/chats/chat-1/sessions", "json", {"ids": ["session-1"], "delete_all": False}
+    assert len(calls) == 1
+    actual_method, url, kwargs = calls[0]
+    assert actual_method.lower() == method
+    assert url == "http://unit.invalid/api/v1" + path
+    assert kwargs[payload_key] == payload
+    assert kwargs["headers"] == {"Authorization": "Bearer unit-token"}
+
+
+@pytest.mark.parametrize("operation", ["create", "update", "delete"])
+def test_sdk_crud_api_errors(monkeypatch, operation):
+    from ragflow_sdk import Chat
+
+    class Response:
+        def json(self):
+            return {"code": 102, "message": "session contract error"}
+
+    chat = Chat(None, {"id": "chat-1"})
+    session = Session(None, {"id": "session-1", "chat_id": "chat-1"})
+    monkeypatch.setattr(chat, "post", lambda *_args, **_kwargs: Response())
+    monkeypatch.setattr(chat, "rm", lambda *_args, **_kwargs: Response())
+    monkeypatch.setattr(session, "patch", lambda *_args, **_kwargs: Response())
+    with pytest.raises(Exception, match="session contract error"):
+        if operation == "create":
+            chat.create_session()
+        elif operation == "update":
+            session.update({"name": "new"})
+        else:
+            chat.delete_sessions(ids=[session.id])

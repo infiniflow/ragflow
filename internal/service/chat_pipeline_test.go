@@ -106,6 +106,34 @@ func TestAsyncChat_EmptyMessages(t *testing.T) {
 	}
 }
 
+func TestAsyncChatRejectsNonStringUserContent(t *testing.T) {
+	s := &ChatPipelineService{}
+	messages := []map[string]interface{}{{"role": "user", "content": map[string]interface{}{"text": "question"}}}
+	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), messages, false, nil)
+	if err == nil || !strings.Contains(err.Error(), "messages[0].content is invalid") {
+		t.Fatalf("AsyncChat error = %v, want indexed invalid user content error", err)
+	}
+}
+
+func TestValidateUserMessageContentPreservesTextParts(t *testing.T) {
+	messages := []map[string]interface{}{{
+		"role": "user",
+		"content": []interface{}{
+			map[string]interface{}{"type": "text", "text": "question"},
+		},
+	}}
+	if err := validateUserMessageContent(messages); err != nil {
+		t.Fatalf("valid text content parts rejected: %v", err)
+	}
+}
+
+func TestValidateUserMessageContentRejectsNil(t *testing.T) {
+	messages := []map[string]interface{}{{"role": "user", "content": nil}}
+	if err := validateUserMessageContent(messages); err == nil || !strings.Contains(err.Error(), "messages[0].content") {
+		t.Fatalf("validation error = %v, want indexed missing-content error", err)
+	}
+}
+
 func TestAsyncChatRejectsUnauthorizedDatasetsBeforeStartingPipeline(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	insertForeignPrivateDatasetForChatTest(t, db)

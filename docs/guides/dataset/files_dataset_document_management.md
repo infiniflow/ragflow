@@ -11,21 +11,23 @@ sidebar_custom_props:
 
 ## Document Management Overview
 
-Document management is used to upload, add, parse, search, filter, enable, disable, delete, and maintain documents in a dataset. Documents become retrievable content only after parsing generates chunks. On the document management page, you can complete the complete process from importing files to parsing, checking results, maintaining metadata, and maintaining chunks.
+Document management is used to upload, parse, and manage documents in a dataset.
 
 ## Document List
 
-The document list is used to view the basic status of each document in the current dataset. The main fields in the list include **Name**, **Size**, **Source**, **Enabled**, **Chunks**, **Metadata**, **Parse**, **Status**, and **Action**.
+The document list shows each document's information and parsing progress.
 
-- **Name**: The document name.
-- **Size**: The document file size.
-- **Source**: The document source, such as local upload, associated data source, or file management.
-- **Enabled**: Whether the document participates in dataset retrieval. After a document is disabled, it remains in the dataset but is not used as a retrieval source.
-- **Chunks**: The number of chunks generated for the document. A value of `0` usually means the document has not been parsed, parsing failed, or no usable content was produced after parsing.
-- **Metadata**: The number of document-level metadata fields. Click this field to view or edit document metadata.
-- **Parse**: Displays the current parsing method or provides entries related to adjusting the parsing method and starting parsing.
-- **Status**: Displays the document parsing task status, used to determine whether the document is waiting for parsing, being parsed, parsed successfully, or failed.
-- **Action**: Provides operations such as renaming the document, viewing information, downloading, and deleting.
+- **Name**: The document name. Click it to view parsing results.
+- **Upload date**: When the document was uploaded.
+- **Enabled**: Whether the document is included in retrieval. Disabling it keeps the document in the dataset.
+- **Chunks**: The number of chunks generated from the document.
+- **Metadata**: The number of document metadata fields. Click it to view or edit them.
+- **Parse**: The parsing method used for the document.
+- **Action**: Available document operations, such as renaming, downloading, and deleting.
+
+Parsing status, progress indicators, and log controls appear in a separate, unlabeled column beside **Parse**.
+
+![Document list](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/document_list.jpg)
 
 ## Add Documents
 
@@ -38,6 +40,8 @@ Click **Add file** and select **Upload file** to upload documents from the local
 3. Select the local documents to add to the dataset.
 4. Choose whether to enable **Parse on creation** as needed.
 5. After confirming the upload, view the document status in the document list.
+
+![Upload documents and choose whether to parse on creation](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_local_document.jpg)
 
 ### Add Documents from an Associated Data Source
 
@@ -75,6 +79,10 @@ You can view the current parsing status of each document in the document list an
 
 If parsing fails, view the related information in **Logs**, troubleshoot the problem, and run parsing again.
 
+![View document parsing status](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_parsing_status.jpg)
+
+![View parsing task details and logs](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/start_parsing.jpg)
+
 ### Parse Again
 
 If parsing configuration changes or parsing results need to be updated, you can parse a document again. Common scenarios that require parsing again include:
@@ -93,6 +101,8 @@ Parsing again may regenerate chunks and metadata. Before operating, confirm whet
 The parsing method in dataset configuration is the default parsing configuration for documents. If a document needs a different parsing method, you can change it separately in the document list or document detail page.
 
 This adjustment only applies to the current document and does not affect the default parsing configuration of the dataset.
+
+![Configure the parsing method of a document](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/reparse_document.jpg)
 
 ## Search and Filter Documents
 
@@ -117,7 +127,12 @@ After selecting the checkboxes on the left side of the document list, a batch op
 - **Metadata**: Maintain metadata for selected documents in bulk.
 - **Delete**: Delete selected documents.
 
+![Batch operations for selected documents](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_local_document_2.jpg)
+
 ## Single-Document Operations
+
+
+![Single-document operation buttons](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/batch_operations.jpg)
 
 ### View and Manage Documents
 

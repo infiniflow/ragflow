@@ -35,6 +35,7 @@ import (
 	"golang.org/x/text/transform"
 
 	"ragflow/internal/common"
+	charsetlib "ragflow/internal/parser/charset"
 	"ragflow/internal/utility"
 )
 
@@ -174,7 +175,7 @@ func targetFieldsSet(fields []string) map[string]bool {
 // the non-UTF-8 charsets via charsetEncoding.
 var rfc2047Decoder = &mime.WordDecoder{
 	CharsetReader: func(charset string, input io.Reader) (io.Reader, error) {
-		if enc, ok := charsetEncoding(charset); ok {
+		if enc, ok := charsetlib.CharsetEncoding(charset); ok {
 			return transform.NewReader(input, enc.NewDecoder()), nil
 		}
 		return nil, fmt.Errorf("email: unsupported header charset %q", charset)
@@ -409,7 +410,7 @@ func decodeMailPayload(payload []byte, charset string) string {
 	if len(payload) == 0 {
 		return ""
 	}
-	decoded, _ := DecodeToUTF8(payload, charset)
+	decoded, _ := charsetlib.DecodeToUTF8(payload, charset)
 	return string(decoded)
 }
 
@@ -681,6 +682,9 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			np, err := GetParser(ft)
 			if err != nil {
 				continue
+			}
+			if ft == utility.FileTypeHTML {
+				np = NewHTMLTextParser()
 			}
 			res, panicked = recoverParse(func() ParseResult {
 				return np.ParseWithResult(ctx, fn, []byte(payload))

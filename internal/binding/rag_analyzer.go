@@ -264,9 +264,9 @@ func (a *Analyzer) GetTermTag(term string) string {
 	return C.GoString(cResult)
 }
 
-// Copy creates a new independent analyzer instance from the current one
-// The new instance shares the loaded dictionaries but has independent internal state
-// This is useful for creating per-request analyzer instances in concurrent environments
+// Copy creates a new independent analyzer instance from the current one.
+// The instance shares the tokenizer dictionaries and owns an independent OpenCC converter.
+// This is useful for creating per-request analyzer instances in concurrent environments.
 func (a *Analyzer) Copy() *Analyzer {
 	if a.handle == nil {
 		return nil

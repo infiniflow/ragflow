@@ -355,6 +355,8 @@ describe('builtinParserSwitchTarget', () => {
     // bucket and switched to picture as well, but parsing stays blocked
     // because no parser implements video analysis.
     expect(switchTarget('photo.JPG')).toBe('picture');
+    expect(switchTarget('scan.tif')).toBe('picture');
+    expect(switchTarget('scan.tiff')).toBe('picture');
     expect(switchTarget('movie.mp4')).toBe('picture');
     expect(switchTarget('clip.mov')).toBe('picture');
     expect(switchTarget('clip.webm')).toBe('picture');

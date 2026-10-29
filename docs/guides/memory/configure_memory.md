@@ -22,6 +22,8 @@ The embedding model and large language model are the basic configuration for mem
 
 Once a memory contains messages, you cannot change its embedding model, the associated embedding model instance, or its memory types. Saving a change to any of these settings is rejected. Choose these settings before writing messages; create a new memory if you need a different configuration while retaining the existing memory's messages. The large language model can still be changed, but changing it does not automatically re-extract existing messages.
 
+![Memory basic information and model configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/basic_information.jpg)
+
 ### Memory Type
 
 Multiple memory types can be selected, but **Raw (`raw`)** is required and cannot be removed. When multiple types are selected, the system saves or extracts memories at different levels according to the selected types.

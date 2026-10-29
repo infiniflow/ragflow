@@ -215,6 +215,7 @@ user_default_llm:
 #    http_secret_key:
 #  site:
 #    switch: false
+#  disable_password_login: false
 # permission:
 #   switch: false
 #   component: false

@@ -19,8 +19,7 @@ import {
   useMemo,
 } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { z } from 'zod';
-import { formSchema } from './form-schema';
+import { DatasetSettingFormValues } from './form-schema';
 
 export function useHasParsedDocument(isEdit?: boolean) {
   const { data: knowledgeDetails } = useFetchDatasetPipelineConfiguration({
@@ -30,7 +29,7 @@ export function useHasParsedDocument(isEdit?: boolean) {
 }
 
 export const useFetchDatasetSettingOnMount = (
-  form: UseFormReturn<z.infer<typeof formSchema>>,
+  form: UseFormReturn<DatasetSettingFormValues>,
 ) => {
   const { data: knowledgeDetails, loading } =
     useFetchDatasetPipelineConfiguration();
@@ -74,7 +73,7 @@ export const useFetchDatasetSettingOnMount = (
       // renders as the empty (track latest) form value.
       pipeline_version_id: knowledgeDetails.pipeline_version_id ?? '',
       parser_config: formParserConfig,
-    } as z.infer<typeof formSchema>;
+    } as DatasetSettingFormValues;
     form.reset(formValues);
   }, [form, knowledgeDetails, sourceData]);
 
@@ -85,7 +84,7 @@ export const useSaveDatasetSetting = () => {
   const { saveKnowledgeConfiguration, loading } = useUpdateKnowledge();
 
   const handleSave = useCallback(
-    async (values: z.infer<typeof formSchema>) => {
+    async (values: DatasetSettingFormValues) => {
       const payload = { ...values };
 
       // Apply forward transforms to parser_config if in pipeline mode. Each node

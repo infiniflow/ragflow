@@ -17,7 +17,7 @@ After creating a Chat, configure its datasets, model, system prompt, and retriev
 
 ## Create a Chat
 
-1. Select **Chat** in the left navigation bar.
+1. Select **Chat** in the top navigation bar.
 2. Click **Create chat**.
 3. Enter a name for the Chat.
 4. Confirm the creation.
@@ -26,9 +26,9 @@ After creating a Chat, configure its datasets, model, system prompt, and retriev
 
 ![Open Chat from the navigation bar](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_1.jpg)
 
-![Create a Chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_2.jpg)
+![Enter a name for the Chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_2.jpg)
 
-![Enter a name for the Chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_3.jpg)
+![Open the newly created Chat conversation page](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_3.jpg)
 
 ![Configure the newly created Chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_4.jpg)
 

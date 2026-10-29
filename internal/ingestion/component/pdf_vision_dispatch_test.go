@@ -21,12 +21,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -684,5 +686,141 @@ func TestFinishMinerURemoteResultPrefersStructuredZip(t *testing.T) {
 	got := text.String()
 	if !strings.Contains(got, "章节") || strings.Contains(got, "HEADER") || strings.Contains(got, "markdown only") {
 		t.Fatalf("text = %q, want structured title without the header or markdown fallback", got)
+	}
+}
+
+// A cancelled ingestion run must abort the MinerU 3.x /file_parse upload
+// instead of holding the worker and the remote server for the whole stream
+// budget.
+func TestDispatchPDFMinerUStreamHonoursCancellation(t *testing.T) {
+	withSSRFBypass(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
+			return
+		}
+		close(started)
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer func() {
+		close(release)
+		server.Close()
+	}()
+
+	apiKey := "mineru-secret"
+	baseURL := server.URL
+	original := resolveMinerUModelForDispatch
+	t.Cleanup(func() { resolveMinerUModelForDispatch = original })
+	resolveMinerUModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		return &mineruTestDriver{}, "vlm", &modelModule.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		_, err := dispatchMinerUPDF(ctx, nil, "scan.pdf", []byte("%PDF-1.4"), "tenant", nil, "")
+		done <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("MinerU /file_parse was never reached")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("dispatch error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("dispatch kept the /file_parse request open after cancellation")
+	}
+}
+
+// readSignalBody closes signal once the client has read body bytes, which
+// tells the test the response header was consumed and ReadAll is in progress.
+type readSignalBody struct {
+	io.ReadCloser
+	once   sync.Once
+	signal chan struct{}
+}
+
+func (b *readSignalBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		b.once.Do(func() { close(b.signal) })
+	}
+	return n, err
+}
+
+type readSignalTransport struct {
+	base   http.RoundTripper
+	signal chan struct{}
+}
+
+func (t readSignalTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = &readSignalBody{ReadCloser: resp.Body, signal: t.signal}
+	return resp, nil
+}
+
+// A run cancelled while a non-200 error body is still streaming must still
+// report context.Canceled; reporting the bare HTTP status hides the reason the
+// request ended.
+func TestMineruStreamKeepsCancellationWhileReadingErrorResponse(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"detail":"upstream`))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer func() {
+		close(release)
+		server.Close()
+	}()
+
+	bodyRead := make(chan struct{})
+	originalClient := http.DefaultClient
+	http.DefaultClient = &http.Client{Transport: readSignalTransport{base: http.DefaultTransport, signal: bodyRead}}
+	t.Cleanup(func() { http.DefaultClient = originalClient })
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		_, err := mineruStreamParse(ctx, server.URL+"/file_parse", "mineru-secret", []byte("%PDF-1.4"), "auto", "en", "", "", mineruExtractionOptions{})
+		done <- err
+	}()
+
+	select {
+	case <-bodyRead:
+	case <-time.After(5 * time.Second):
+		t.Fatal("MinerU never started reading the error response body")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !strings.Contains(err.Error(), "HTTP 502") {
+			t.Fatalf("stream error = %v, want the HTTP 502 error response path", err)
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("stream error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream kept reading the error response after cancellation")
 	}
 }

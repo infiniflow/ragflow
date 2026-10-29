@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -14,196 +14,289 @@
 #  limitations under the License.
 #
 
+import base64
+from uuid import uuid4
+
 import pytest
-from common import valid_chat_llm_id
-from configs import CHAT_ASSISTANT_NAME_LIMIT
-from utils import encode_avatar
-from utils.file_utils import create_image_file
+from PIL import Image
+
+pytestmark = pytest.mark.integration
+CHAT_NAME_MAX_BYTES = 255
 
 
-class TestChatAssistantUpdate:
-    @pytest.mark.p3
-    def test_update_rejects_non_dict(self, add_chat_assistants_func):
-        _, _, chat_assistants = add_chat_assistants_func
-        chat_assistant = chat_assistants[0]
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "name_case, expected_message",
+    [
+        ("unique", None),
+        ("max_length", None),
+        ("too_long", "larger than 255"),
+        ("non_string", "chat name must be a string"),
+        ("empty", "`name` cannot be empty"),
+        ("duplicate", "duplicated chat name"),
+        ("duplicate_case_insensitive", "duplicated chat name"),
+    ],
+)
+def test_name(client, chat_factory, name_case, expected_message):
+    chat = chat_factory()
+    original_name = chat.name
+    name = {
+        "unique": f"renamed-{uuid4().hex}",
+        "max_length": "a" * CHAT_NAME_MAX_BYTES,
+        "too_long": "a" * (CHAT_NAME_MAX_BYTES + 1),
+        "non_string": 1,
+        "empty": "",
+    }.get(name_case)
+    if name_case.startswith("duplicate"):
+        other = chat_factory()
+        name = other.name.upper() if name_case.endswith("insensitive") else other.name
 
-        with pytest.raises(Exception) as exception_info:
-            chat_assistant.update.__wrapped__(chat_assistant, "bad")
-        assert "`update_message` must be a dict" in str(exception_info.value)
+    if expected_message:
+        with pytest.raises(Exception, match=expected_message):
+            chat.update({"name": name})
+        assert client.get_chat(chat.id).name == original_name
+    else:
+        chat.update({"name": name})
+        assert client.get_chat(chat.id).name == name
 
-    @pytest.mark.p3
-    def test_update_raises_on_nonzero_response(self, add_chat_assistants_func, monkeypatch):
-        _, _, chat_assistants = add_chat_assistants_func
-        chat_assistant = chat_assistants[0]
 
-        class _DummyResponse:
-            def json(self):
-                return {"code": 1, "message": "boom"}
+@pytest.mark.p3
+def test_partial_patch_preserves_unmentioned_fields(client, chat_factory):
+    chat = chat_factory()
+    before = client.get_chat(chat.id)
+    chat.update({"top_n": before.top_n + 1})
+    after = client.get_chat(chat.id)
+    assert after.top_n == before.top_n + 1
+    assert after.name == before.name
+    assert after.icon == before.icon
+    assert after.dataset_ids == before.dataset_ids
+    assert after.llm_id == before.llm_id
+    assert after.llm_setting.to_json() == before.llm_setting.to_json()
+    assert after.prompt_config.to_json() == before.prompt_config.to_json()
 
-        monkeypatch.setattr(chat_assistant, "patch", lambda *_args, **_kwargs: _DummyResponse())
 
-        with pytest.raises(Exception) as exception_info:
-            chat_assistant.update({"name": "error-case"})
-        assert "boom" in str(exception_info.value)
+@pytest.mark.p3
+def test_empty_patch_preserves_settings(client, chat_factory):
+    chat = chat_factory()
+    before = client.get_chat(chat.id)
+    chat.update({})
+    after = client.get_chat(chat.id)
+    assert after.name == before.name
+    assert after.dataset_ids == before.dataset_ids
+    assert after.llm_setting.to_json() == before.llm_setting.to_json()
+    assert after.prompt_config.to_json() == before.prompt_config.to_json()
 
-    @pytest.mark.p3
-    def test_update_uses_patch_for_partial_payload(self, add_chat_assistants_func, monkeypatch):
-        _, _, chat_assistants = add_chat_assistants_func
-        chat_assistant = chat_assistants[0]
-        captured = {}
 
-        class _DummyResponse:
-            def json(self):
-                return {"code": 0, "message": "ok"}
+@pytest.mark.p3
+def test_icon(client, chat_factory, tmp_path):
+    chat = chat_factory()
+    image = tmp_path / "ragflow_test.png"
+    Image.new("RGB", (1, 1), color="blue").save(image)
+    icon = base64.b64encode(image.read_bytes()).decode("ascii")
 
-        def _patch(path, payload):
-            captured["path"] = path
-            captured["payload"] = payload
-            return _DummyResponse()
+    chat.update({"icon": icon})
 
-        monkeypatch.setattr(chat_assistant, "patch", _patch)
-        monkeypatch.setattr(chat_assistant, "put", lambda *_args, **_kwargs: pytest.fail("update() should not use PUT"))
+    updated = client.get_chat(chat.id)
+    assert updated.icon == icon
+    assert updated.name == chat.name
 
-        chat_assistant.update({"name": "renamed"})
 
-        assert captured["path"] == f"/chats/{chat_assistant.id}"
-        assert captured["payload"] == {"name": "renamed"}
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "valid, expected_message",
+    [
+        (True, None),
+        (False, "`llm_id` unknown doesn't exist"),
+    ],
+)
+def test_llm_id(client, chat_factory, valid, expected_message):
+    configured_model = chat_factory().llm_id
+    chat = chat_factory(llm_id="")
+    llm_id = configured_model if valid else "unknown"
+    if expected_message:
+        with pytest.raises(Exception, match=expected_message):
+            chat.update({"llm_id": llm_id})
+        assert client.get_chat(chat.id).llm_id == chat.llm_id
+    else:
+        assert llm_id, "Explicit llm_id test requires a configured default chat model"
+        assert client.get_chat(chat.id).llm_id != llm_id
+        chat.update({"llm_id": llm_id})
+        assert client.get_chat(chat.id).llm_id == llm_id
 
-    @pytest.mark.parametrize(
-        "payload, expected_message",
-        [
-            pytest.param({"name": "valid_name"}, "", marks=pytest.mark.p3),
-            pytest.param({"name": "a" * (CHAT_ASSISTANT_NAME_LIMIT + 1)}, "", marks=pytest.mark.skip(reason="issues/")),
-            pytest.param({"name": 1}, "", marks=pytest.mark.skip(reason="issues/")),
-            pytest.param({"name": ""}, "`name` cannot be empty", marks=pytest.mark.p3),
-            pytest.param({"name": "test_chat_assistant_1"}, "duplicated chat name", marks=pytest.mark.p3),
-            pytest.param({"name": "TEST_CHAT_ASSISTANT_1"}, "duplicated chat name", marks=pytest.mark.p3),
-        ],
-    )
-    def test_name(self, client, add_chat_assistants_func, payload, expected_message):
-        _, _, chat_assistants = add_chat_assistants_func
-        chat_assistant = chat_assistants[0]
 
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chat_assistant.update(payload)
-            assert expected_message in str(exception_info.value)
-        else:
-            chat_assistant.update(payload)
-            updated_chat = client.get_chat(chat_assistant.id)
-            assert updated_chat.name == payload["name"], str(updated_chat)
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "setting",
+    [
+        {"temperature": 0},
+        {"temperature": 1},
+        {"top_p": 0},
+        {"top_p": 1},
+        {"presence_penalty": 0},
+        {"presence_penalty": 1},
+        {"frequency_penalty": 0},
+        {"frequency_penalty": 1},
+        {"max_tokens": 0},
+        {"max_tokens": 10},
+        {"max_tokens": 1024},
+    ],
+)
+def test_llm_setting(client, chat_factory, setting):
+    chat = chat_factory()
+    before = client.get_chat(chat.id).llm_setting.to_json()
 
-    @pytest.mark.p3
-    def test_icon(self, client, add_chat_assistants_func, tmp_path):
-        dataset, _, chat_assistants = add_chat_assistants_func
-        chat_assistant = chat_assistants[0]
+    chat.update({"llm_setting": setting})
 
-        fn = create_image_file(tmp_path / "ragflow_test.png")
-        payload = {"name": "icon_test", "icon": encode_avatar(fn), "dataset_ids": [dataset.id]}
+    assert client.get_chat(chat.id).llm_setting.to_json() == {**before, **setting}
 
-        chat_assistant.update(payload)
-        updated_chat = client.get_chat(chat_assistant.id)
-        assert updated_chat.name == payload["name"], str(updated_chat)
-        assert updated_chat.icon is not None, str(updated_chat)
 
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "llm_setting, expected_message",
-        [
-            ({"model_name": valid_chat_llm_id}, ""),
-            ({"model_name": "unknown"}, "`llm_id` unknown doesn't exist"),
-            ({"temperature": 0}, ""),
-            ({"temperature": 1}, ""),
-            pytest.param({"temperature": -1}, "", marks=pytest.mark.skip),
-            pytest.param({"temperature": 10}, "", marks=pytest.mark.skip),
-            pytest.param({"temperature": "a"}, "", marks=pytest.mark.skip),
-            ({"top_p": 0}, ""),
-            ({"top_p": 1}, ""),
-            pytest.param({"top_p": -1}, "", marks=pytest.mark.skip),
-            pytest.param({"top_p": 10}, "", marks=pytest.mark.skip),
-            pytest.param({"top_p": "a"}, "", marks=pytest.mark.skip),
-            ({"presence_penalty": 0}, ""),
-            ({"presence_penalty": 1}, ""),
-            pytest.param({"presence_penalty": -1}, "", marks=pytest.mark.skip),
-            pytest.param({"presence_penalty": 10}, "", marks=pytest.mark.skip),
-            pytest.param({"presence_penalty": "a"}, "", marks=pytest.mark.skip),
-            ({"frequency_penalty": 0}, ""),
-            ({"frequency_penalty": 1}, ""),
-            pytest.param({"frequency_penalty": -1}, "", marks=pytest.mark.skip),
-            pytest.param({"frequency_penalty": 10}, "", marks=pytest.mark.skip),
-            pytest.param({"frequency_penalty": "a"}, "", marks=pytest.mark.skip),
-            ({"max_token": 0}, ""),
-            ({"max_token": 1024}, ""),
-            pytest.param({"max_token": -1}, "", marks=pytest.mark.skip),
-            pytest.param({"max_token": 10}, "", marks=pytest.mark.skip),
-            pytest.param({"max_token": "a"}, "", marks=pytest.mark.skip),
-            pytest.param({"unknown": "unknown"}, "", marks=pytest.mark.skip),
-        ],
-    )
-    def test_llm_setting(self, client, add_chat_assistants_func, llm_setting, expected_message):
-        dataset, _, chat_assistants = add_chat_assistants_func
-        chat_assistant = chat_assistants[0]
-        llm_setting = dict(llm_setting)
-        llm_id = llm_setting.pop("model_name", None)
-        if callable(llm_id):
-            llm_id = llm_id(client)
-        payload = {"name": "llm_test", "dataset_ids": [dataset.id], "llm_setting": llm_setting}
-        if llm_id is not None:
-            payload["llm_id"] = llm_id
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "field",
+    [
+        pytest.param(
+            field,
+            marks=pytest.mark.skip(reason="Go PATCH persists string-valued numeric llm_setting fields (internal/service/chat.go:updateChatREST)"),
+        )
+        for field in (
+            "temperature",
+            "top_p",
+            "presence_penalty",
+            "frequency_penalty",
+            "max_tokens",
+        )
+    ],
+)
+def test_llm_setting_rejects_non_numeric(client, chat_factory, field):
+    chat = chat_factory()
+    before = client.get_chat(chat.id).llm_setting.to_json()
+    with pytest.raises(Exception, match=field):
+        chat.update({"llm_setting": {field: "invalid"}})
+    assert client.get_chat(chat.id).llm_setting.to_json() == before
 
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chat_assistant.update(payload)
-            assert expected_message in str(exception_info.value)
-        else:
-            chat_assistant.update(payload)
-            updated_chat = client.get_chat(chat_assistant.id)
-            if llm_id:
-                assert updated_chat.llm_id == llm_id, str(updated_chat)
-            for k, v in llm_setting.items():
-                assert getattr(updated_chat.llm_setting, k) == v, str(updated_chat)
 
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "prompt_config, expected_message",
-        [
-            ({"empty_response": "Hello World"}, ""),
-            ({"empty_response": ""}, ""),
-            ({"empty_response": "!@#$%^&*()"}, ""),
-            ({"empty_response": "中文测试"}, ""),
-            pytest.param({"empty_response": 123}, "", marks=pytest.mark.skip),
-            pytest.param({"empty_response": True}, "", marks=pytest.mark.skip),
-            pytest.param({"empty_response": " "}, "", marks=pytest.mark.skip),
-            ({"prologue": "Hello World"}, ""),
-            ({"prologue": ""}, ""),
-            ({"prologue": "!@#$%^&*()"}, ""),
-            ({"prologue": "中文测试"}, ""),
-            pytest.param({"prologue": 123}, "", marks=pytest.mark.skip),
-            pytest.param({"prologue": True}, "", marks=pytest.mark.skip),
-            pytest.param({"prologue": " "}, "", marks=pytest.mark.skip),
-            ({"quote": True}, ""),
-            ({"quote": False}, ""),
-            ({"system": "Hello World {knowledge}"}, ""),
-            ({"system": "{knowledge}"}, ""),
-            ({"system": "!@#$%^&*() {knowledge}"}, ""),
-            ({"system": "中文测试 {knowledge}"}, ""),
-            ({"system": "Hello World"}, ""),
-            ({"system": "Hello World", "parameters": []}, ""),
-            pytest.param({"system": 123}, "", marks=pytest.mark.skip),
-            pytest.param({"unknown": "unknown"}, "", marks=pytest.mark.skip),
-        ],
-    )
-    def test_prompt_config(self, client, add_chat_assistants_func, prompt_config, expected_message):
-        dataset, _, chat_assistants = add_chat_assistants_func
-        chat_assistant = chat_assistants[0]
-        payload = {"name": "prompt_test", "prompt_config": prompt_config, "dataset_ids": [dataset.id]}
+@pytest.mark.p3
+def test_dataset_association_updates(client, chat_factory, dataset_factory):
+    chat = chat_factory()
+    first, second = dataset_factory(), dataset_factory()
+    for dataset in (first, second):
+        document = dataset.upload_documents([{"display_name": "chat-association.txt", "blob": b"chat association"}])[0]
+        document.add_chunk(content="chat association")
 
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                chat_assistant.update(payload)
-            assert expected_message in str(exception_info.value)
-        else:
-            chat_assistant.update(payload)
-            updated_chat = client.get_chat(chat_assistant.id)
-            for k, v in prompt_config.items():
-                assert getattr(updated_chat.prompt_config, k) == v, str(updated_chat)
+    chat.update({"dataset_ids": [first.id]})
+    assert client.get_chat(chat.id).dataset_ids == [first.id]
+
+    chat.update({"dataset_ids": [second.id]})
+    assert client.get_chat(chat.id).dataset_ids == [second.id]
+
+    chat.update({"dataset_ids": []})
+    assert client.get_chat(chat.id).dataset_ids == []
+
+
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "field, value, expected_message",
+    [
+        ("llm_setting", "invalid", "`llm_setting` should be an object"),
+        ("prompt_config", "invalid", "`prompt_config` should be an object"),
+        ("dataset_ids", "invalid", "`dataset_ids` should be a list"),
+    ],
+)
+def test_rejects_non_object_settings_and_dataset_ids(client, chat_factory, field, value, expected_message):
+    chat = chat_factory()
+    original = client.get_chat(chat.id)
+    before = original.dataset_ids if field == "dataset_ids" else getattr(original, field).to_json()
+    with pytest.raises(Exception, match=expected_message):
+        chat.update({field: value})
+    persisted = client.get_chat(chat.id)
+    after = persisted.dataset_ids if field == "dataset_ids" else getattr(persisted, field).to_json()
+    assert after == before
+
+
+@pytest.mark.p3
+def test_rejects_unparsed_dataset(client, chat_factory, dataset_factory):
+    chat = chat_factory()
+    dataset = dataset_factory()
+    with pytest.raises(Exception, match="doesn't own parsed file"):
+        chat.update({"dataset_ids": [dataset.id]})
+    assert client.get_chat(chat.id).dataset_ids == []
+
+
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "prompt_config",
+    [
+        {"empty_response": "Hello World"},
+        {"empty_response": ""},
+        {"empty_response": "!@#$%^&*()"},
+        {"empty_response": "中文测试"},
+        {"empty_response": " "},
+        {"prologue": "Hello World"},
+        {"prologue": ""},
+        {"prologue": "!@#$%^&*()"},
+        {"prologue": "中文测试"},
+        {"prologue": " "},
+        {"quote": True},
+        {"quote": False},
+        {"system": "Hello World {knowledge}"},
+        {"system": "{knowledge}"},
+        {"system": "!@#$%^&*() {knowledge}"},
+        {"system": "中文测试 {knowledge}"},
+        {"system": "Hello World"},
+        {"system": "Hello World", "parameters": []},
+    ],
+)
+def test_prompt_config(client, chat_factory, prompt_config):
+    chat = chat_factory()
+    before = client.get_chat(chat.id).prompt_config.to_json()
+
+    chat.update({"prompt_config": prompt_config})
+
+    assert client.get_chat(chat.id).prompt_config.to_json() == {**before, **prompt_config}
+
+
+@pytest.mark.p3
+@pytest.mark.parametrize(
+    "field, value",
+    [
+        pytest.param(
+            field,
+            value,
+            id=f"{field}-{value}",
+            marks=pytest.mark.skip(reason="Go PATCH merges prompt_config without validating documented string fields (internal/service/chat.go:updateChatREST)"),
+        )
+        for field, values in (
+            ("empty_response", (123, True)),
+            ("prologue", (123, True)),
+            ("system", (123,)),
+        )
+        for value in values
+    ],
+)
+def test_prompt_config_rejects_invalid_text(client, chat_factory, field, value):
+    chat = chat_factory()
+    before = client.get_chat(chat.id).prompt_config.to_json()
+    with pytest.raises(Exception, match=field):
+        chat.update({"prompt_config": {field: value}})
+    assert client.get_chat(chat.id).prompt_config.to_json() == before
+
+
+@pytest.mark.p3
+@pytest.mark.skip(reason="Go PATCH replaces nested prompt_config.reference_metadata instead of deep-merging it (internal/service/chat.go:mergeJSONMap)")
+def test_prompt_config_preserves_nested_reference_metadata(client, chat_factory):
+    chat = chat_factory(prompt_config={"reference_metadata": {"include": False, "fields": ["source"]}})
+    before = client.get_chat(chat.id).prompt_config.reference_metadata.to_json()
+    assert before == {"include": False, "fields": ["source"]}
+
+    chat.update({"prompt_config": {"reference_metadata": {"include": True}}})
+    after = client.get_chat(chat.id).prompt_config.reference_metadata.to_json()
+    assert after == {"include": True, "fields": ["source"]}
+
+
+@pytest.mark.p3
+def test_prompt_config_rejects_duplicate_parameter_keys(client, chat_factory):
+    chat = chat_factory()
+    before = client.get_chat(chat.id).prompt_config.to_json()
+    with pytest.raises(Exception, match="`parameters` contains duplicate key: knowledge"):
+        chat.update({"prompt_config": {"parameters": [{"key": "knowledge"}, {"key": "knowledge"}]}})
+    assert client.get_chat(chat.id).prompt_config.to_json() == before

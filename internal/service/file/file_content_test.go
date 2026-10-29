@@ -143,3 +143,26 @@ func TestParseFileContent_MarkdownOutputFormat(t *testing.T) {
 		t.Skip("markdown parser returned empty (integration-only)")
 	}
 }
+
+func TestHTMLContentExtractionWithoutMediaCache(t *testing.T) {
+	input := []byte(`<p>before</p><img alt="figure" src="data:image/png;base64,aGVsbG8="><p>after</p>`)
+	for name, parse := range map[string]func() (string, error){
+		"file":  func() (string, error) { return parseFileContent(t.Context(), "sample.html", input), nil },
+		"agent": func() (string, error) { return parseAgentUploadContent(t.Context(), "sample.html", input, "") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := parse()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{"before", "figure", "after"} {
+				if !strings.Contains(got, want) {
+					t.Errorf("missing %q: %q", want, got)
+				}
+			}
+			if strings.Contains(got, "base64,") || strings.Contains(got, "<img") {
+				t.Fatalf("raw HTML leaked: %q", got)
+			}
+		})
+	}
+}

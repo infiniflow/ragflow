@@ -88,7 +88,7 @@ func TestTableRegressionSoMarkTableImageIDs(t *testing.T) {
 	markup := "<table><tr><td>Logo</td><td><img src=\"data:image/png;base64,aGVsbG8=\"></td></tr></table>"
 	items, _, _ := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{map[string]any{"blocks": []any{
 		map[string]any{"type": "table", "content": markup}, map[string]any{"type": "table", "content": markup},
-	}}}}}}, false)
+	}}}}}}, false, nil)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -110,7 +110,7 @@ func TestTableRegressionSoMarkDocumentImageBudget(t *testing.T) {
 	for i := range blocks {
 		blocks[i] = map[string]any{"type": "table", "content": markup}
 	}
-	items, _, warnings := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{map[string]any{"blocks": blocks}}}}}, false)
+	items, _, warnings := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{map[string]any{"blocks": blocks}}}}}, false, nil)
 	images := 0
 	for _, item := range items {
 		if item["doc_type_kwd"] == "image" && item["image"] != nil {
@@ -338,7 +338,7 @@ func TestSoMarkPreservesImageResolutionWarnings(t *testing.T) {
 	items, _, warnings := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{map[string]any{"blocks": []any{
 		map[string]any{"type": "table", "content": source},
 		map[string]any{"type": "table", "content": "| A | B |\n|---|---|\n| x | y |"},
-	}}}}}}, false)
+	}}}}}}, false, nil)
 	if len(items) != 2 {
 		t.Fatalf("items=%#v", items)
 	}

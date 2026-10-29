@@ -162,6 +162,8 @@ const GenericProviderInstanceCard = forwardRef<
     formRef,
     providerConfig.verifyTransform,
     modelInfoRef,
+    isDraft ? undefined : instance.id,
+    isDraft ? undefined : { ...instance, ...(instanceDetails ?? {}) },
   );
   const handleDelete = useDeleteInstance(
     providerName,
@@ -181,6 +183,7 @@ const GenericProviderInstanceCard = forwardRef<
     draftName,
     instanceDetails,
     initialValues,
+    baselineValues: formDefaultValues,
     modelInfoRef,
     submitTransform: providerConfig.submitTransform,
   });
@@ -259,7 +262,7 @@ const GenericProviderInstanceCard = forwardRef<
           instanceName={instance.instance_name}
           editedInstanceName={editedInstanceName}
           onRename={setEditedInstanceName}
-          instance={instance}
+          instance={{ ...instance, ...(instanceDetails ?? {}) }}
           instanceDetailsLoaded={Boolean(instanceDetails)}
           modelInfoRef={modelInfoRef}
           onInstanceModelsStatusChange={(ready) => {

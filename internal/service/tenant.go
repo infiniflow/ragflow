@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service/billing"
 	"strings"
 
 	"gorm.io/gorm"
@@ -854,6 +855,16 @@ func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, 
 	if req == nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("request is required")
 	}
+	// Seat quota: inviting one member consumes one seat.
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		if quotaErr := billingService.CheckResources(ctx, tenantID, billing.ResourceDelta{Members: 1}); quotaErr != nil {
+			var insufficient *billing.InsufficientResourceError
+			if errors.As(quotaErr, &insufficient) {
+				return nil, common.CodeBillingSeatsInsufficient, quotaErr
+			}
+			return nil, common.CodeServerError, quotaErr
+		}
+	}
 	if strings.TrimSpace(req.Email) == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("email is required")
 	}
@@ -983,6 +994,17 @@ func (s *TenantService) RemoveMember(ctx context.Context, userID, tenantID, targ
 
 // AcceptInvite assigns the Tenant default role when a pending invitation is accepted.
 func (s *TenantService) AcceptInvite(ctx context.Context, userID, tenantID string) (common.ErrorCode, error) {
+	// Seat quota is enforced again at acceptance time: several pending
+	// invitations can each fit the remaining seat but not all of them.
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		if quotaErr := billingService.CheckResources(ctx, tenantID, billing.ResourceDelta{Members: 1}); quotaErr != nil {
+			if _, ok := quotaErr.(*billing.InsufficientResourceError); ok {
+				return common.CodeBillingSeatsInsufficient, quotaErr
+			}
+			return common.CodeServerError, quotaErr
+		}
+	}
+
 	if s.userTenantDAO == nil {
 		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
 	}
