@@ -54,6 +54,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { nodeTypes } from '../canvas';
+import { useIsPipeline } from '../hooks/use-is-pipeline';
 import { AliasFormDialog } from '../components/alias-form-dialog';
 import { downloadDsl } from '../utils/download-dsl';
 
@@ -69,6 +70,7 @@ export function VersionDialog({
 }: IModalProps<any> & { initialName?: string; title?: ReactNode }) {
   const { t } = useTranslation();
   const { id: canvasId } = useParams();
+  const isPipeline = useIsPipeline();
   const { data, loading } = useFetchVersionList();
   const [selectedId, setSelectedId] = useState<string>('');
   const {
@@ -306,7 +308,11 @@ export function VersionDialog({
                         asChild
                         tooltip={t('flow.version.download')}
                       >
-                        <Button variant={'ghost'} onClick={downloadFile}>
+                        <Button
+                          variant={'ghost'}
+                          onClick={downloadFile}
+                          disabled={!selectedId}
+                        >
                           <ArrowDownToLine />
                         </Button>
                       </RAGFlowTooltip>
@@ -382,7 +388,17 @@ export function VersionDialog({
         onOpenChange={handlePendingOpenChange}
         onOk={runPending}
         title={t('flow.version.deleteConfirmTitle')}
-        content={{ node: t('flow.version.deleteConfirmContent') }}
+        // Pipeline versions can be pinned by datasets/files, so deleting one
+        // breaks parsing; agent (workflow) versions are only historical DSL
+        // snapshots, where the real risk is rolling back what embedded sites
+        // and external callers are serving.
+        content={{
+          node: t(
+            isPipeline
+              ? 'flow.version.deleteConfirmContent'
+              : 'flow.version.deleteAgentConfirmContent',
+          ),
+        }}
       />
 
       <AlertDialog

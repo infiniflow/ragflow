@@ -2485,6 +2485,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         deleteConfirmTitle: '删除该版本？',
         deleteConfirmContent:
           '若数据集或文件正绑定此版本，删除后将导致对应文件无法解析。此操作不可撤销。',
+        deleteAgentConfirmContent:
+          '若该智能体已嵌入网站或对外提供服务，删除最新发布版本将导致线上服务回退到更早的版本或中断。删除不影响当前画布内容，但操作不可撤销。',
         restore: '恢复为当前版本',
         restoreConfirmTitle: '恢复此版本为当前智能体？',
         restoreConfirmContent:
@@ -3106,7 +3108,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       confirmPublish: '确认发布',
       publishIngestionPipeline: '您即将发布此 Ingestion pipeline。',
       publishAgent: '您即将发布此智能体',
-      linkedDataset: '已关联的知识库：',
       lastPublished: '上次发布时间',
       createFromBlank: '从空白创建',
       createFromTemplate: '从模板创建',

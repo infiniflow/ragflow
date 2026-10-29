@@ -74,13 +74,26 @@ export function ParserTreeSelect({
   );
 
   // Reuse the leaf's rich label (title + secondary alias / builtin tag) for
-  // the closed-select display. While the option list is still loading the
-  // node is undefined — fall back to the placeholder instead of a blank.
+  // the closed-select display, except for aliased versions: there the trigger
+  // caps the alias at 30% of its width with an ellipsis (the dropdown row
+  // keeps the full alias). While the option list is still loading the node is
+  // undefined — fall back to the placeholder instead of a blank.
   const renderSelected = useCallback(
-    (node: TreeSelectNode | undefined) =>
-      node
-        ? (node.label ?? node.title)
-        : (placeholder ?? t('common.pleaseSelect')),
+    (node: TreeSelectNode | undefined) => {
+      if (!node) return placeholder ?? t('common.pleaseSelect');
+      const alias = node.data?.alias;
+      if (alias) {
+        return (
+          <span className="flex w-full min-w-0 items-center gap-1.5">
+            <span className="truncate">{node.data?.title}</span>
+            <span className="max-w-[30%] shrink-0 truncate text-text-secondary">
+              {alias}
+            </span>
+          </span>
+        );
+      }
+      return node.label ?? node.title;
+    },
     [placeholder, t],
   );
 

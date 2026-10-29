@@ -34,7 +34,6 @@ import { AgentCategory } from '@/constants/agent';
 import { Edge, Node } from '@xyflow/react';
 import { IReference, Message } from './chat';
 import { ICompilationTemplateGroup } from './compilation-template';
-import { IDataset } from './dataset';
 
 export type DSLComponents = Record<string, IOperator>;
 
@@ -83,7 +82,6 @@ export declare interface IFlow {
   release?: boolean;
   release_time?: number;
   last_publish_time?: number;
-  datasets?: Pick<IDataset, 'id' | 'name' | 'avatar'>[];
   tags?: string;
 }
 

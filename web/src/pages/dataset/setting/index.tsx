@@ -143,14 +143,23 @@ export default function DatasetSetting() {
   // options have loaded, revalidate explicitly — the saved parser or pinned
   // version may have been deleted, and the error should be visible before
   // submit. Re-running on selection changes clears the error as soon as a
-  // valid option is picked. (Same pattern as ModelTreeSelectFormField.)
+  // valid option is picked. parserOptionMissing is a dep too: the verdict can
+  // flip without a loading/selection transition (e.g. version data arriving
+  // for an already-idle tree), and the RHF error is sticky until revalidated.
+  // (Same pattern as ModelTreeSelectFormField.)
   const trigger = form.trigger;
   const parserFieldName =
     parseType === ParseType.Pipeline ? 'pipeline_id' : 'parser_id';
   useEffect(() => {
     if (parserOptionsLoading || !parserSelectValue) return;
     trigger(parserFieldName);
-  }, [trigger, parserOptionsLoading, parserSelectValue, parserFieldName]);
+  }, [
+    trigger,
+    parserOptionsLoading,
+    parserSelectValue,
+    parserFieldName,
+    parserOptionMissing,
+  ]);
 
   const pipelineParserConfig = knowledgeDetails?.parser_config as
     | Record<string, any>
