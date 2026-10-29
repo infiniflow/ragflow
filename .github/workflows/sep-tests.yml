@@ -690,6 +690,14 @@ jobs:
           fi
           ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/infinity_go_api_test.log"
 
+      - name: Run Python SDK integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          uv pip install sdk/python
+          uv run --no-sync python -m pytest -s --tb=short --level=p2 test/testcases/test_sdk_api 2>&1 | tee "${ARTIFACTS_DIR}/infinity_sdk_test.log"
+
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
         if: ${{ !cancelled() }}
@@ -1250,6 +1258,14 @@ jobs:
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
           ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/es_go_api_test.log"
+
+      - name: Run Python SDK integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          uv pip install sdk/python
+          uv run --no-sync python -m pytest -s --tb=short --level=p2 test/testcases/test_sdk_api 2>&1 | tee "${ARTIFACTS_DIR}/es_sdk_test.log"
 
       - name: Collect ragflow log Elasticsearch
         if: ${{ !cancelled() }}
