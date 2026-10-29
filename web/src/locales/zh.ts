@@ -627,6 +627,8 @@ export default {
       builtInPipelines: '内置解析流程',
       parserSelectPlaceholder: '选择解析方式',
       parserOptionUnavailable: '不可用',
+      parserOptionUnavailableMessage:
+        '所选的解析方式或流水线版本已不可用，请重新选择。',
       randomSeedTip:
         '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
       datasetDescription: '你的知识库描述。',
@@ -2198,6 +2200,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       modified: '更新成功',
       created: '创建成功',
       deleted: '删除成功',
+      deleteIncomplete: '无法确认删除已全部完成。请检查剩余文档后重试。',
       noLangfuseConfigToDelete: '没有可删除的 Langfuse 配置',
       renamed: '重命名成功',
       operated: '操作成功',
@@ -2469,8 +2472,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         version: '版本',
         label: '流水线版本',
         latest: '最新版本',
+        noPublished: '暂无已发布版本',
         filterByAlias: '按别名筛选',
         alias: '别名',
+        addAlias: '添加别名',
+        editAlias: '编辑别名',
+        editAliasDescription:
+          '为该版本设置一个便于识别的别名，方便后续快速查找。',
         pinnedTooltip:
           '该数据集已固定到特定版本。智能体新发布的版本不会影响它。',
         outdated: '固定的版本不是最新版本。点击了解详情；我们不会自动升级它。',
@@ -2482,8 +2490,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         restoreConfirmTitle: '恢复此版本为当前智能体？',
         restoreConfirmContent:
           '当前智能体 DSL 将被此版本替换。再次保存会创建新版本。',
-        missingContent:
-          '所固定的流水线版本已不存在，该文件无法解析。请重新选择版本（或选择最新版本）后继续。',
       },
       cite: '显示引文',
       citeTip: '引用',
@@ -3097,8 +3103,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '在此处编写您的 SQL 查询。您可以使用变量、原始 SQL，或使用变量语法混合使用两者。',
       frameworkPrompts: '框架',
       release: '发布',
-      production: '正式版',
-      productionTooltip: '此版本已发布到生产环境。可通过 API 或嵌入页面访问。',
       confirmPublish: '确认发布',
       publishIngestionPipeline: '您即将发布此 Ingestion pipeline。',
       publishAgent: '您即将发布此智能体',
@@ -3119,7 +3123,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       },
       parser: '解析器',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
-      tokenizer: '索引器',
+      tokenizer: 'Indexer',
       tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '配置有误，请先修正',
       apiKeyRequired: '请输入 API Key',
@@ -3152,7 +3156,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       generalChunkerDescription:
         '通用文本分块方式，适用于大多数文档类型，可灵活控制块大小、重叠和上下文范围。',
-      tokenChunker: '按 Token 分块',
+      tokenChunker: 'Token Chunker',
       tokenChunkerDescription:
         '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
       titleChunkerDescription:
@@ -3167,7 +3171,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       extractor: '提取器',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
-      compiler: '编译器',
+      compiler: 'Compiler',
       compilerDescription: '使用知识编译模板将文档块编译为知识工件。',
       outputFormat: '输出格式',
       fileFormatOptions: {

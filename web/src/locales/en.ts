@@ -690,6 +690,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       builtInPipelines: 'Built-in pipelines',
       parserSelectPlaceholder: 'Select a parser',
       parserOptionUnavailable: 'unavailable',
+      parserOptionUnavailableMessage:
+        'The selected parser or pipeline version is no longer available. Please select again.',
       randomSeedTip:
         'Seed is the starting point for a pseudo-random algorithm that ensures reproducibility of the same output across different runs.',
       datasetDescription: 'Describe your dataset',
@@ -2622,6 +2624,8 @@ Example: Virtual Hosted Style`,
       modified: 'Modified',
       created: 'Created',
       deleted: 'Deleted',
+      deleteIncomplete:
+        'Could not confirm complete deletion. Check the remaining documents before retrying.',
       noLangfuseConfigToDelete: 'No Langfuse configuration to delete',
       renamed: 'Renamed',
       operated: 'Operated',
@@ -3434,8 +3438,13 @@ This delimiter is used to split the input text into several text pieces echo of 
         select: 'No version selected',
         label: 'Pipeline version',
         latest: 'Latest version',
+        noPublished: 'No published versions',
         filterByAlias: 'Filter by alias',
         alias: 'Alias',
+        addAlias: 'Add alias',
+        editAlias: 'Edit alias',
+        editAliasDescription:
+          'Give this version a memorable alias so you can find it quickly later.',
         pinnedTooltip:
           'This dataset is pinned to a specific version. New versions published on the agent will not affect it.',
         outdated:
@@ -3448,8 +3457,6 @@ This delimiter is used to split the input text into several text pieces echo of 
         restoreConfirmTitle: 'Restore this version as the current agent?',
         restoreConfirmContent:
           'The current agent DSL will be replaced by this version. Save again to create a new version.',
-        missingContent:
-          'The pinned pipeline version no longer exists, so this file cannot be parsed. Please choose a version (or the latest) to continue.',
       },
       setting: 'Settings',
       settings: {
@@ -3579,9 +3586,6 @@ This process aggregates variables from multiple branches into a single variable 
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
       frameworkPrompts: 'Framework',
       release: 'Publish',
-      production: 'Production',
-      productionTooltip:
-        'This version is published to production. Access it via the API or the embedded page.',
       confirmPublish: 'Confirm publish',
       publishIngestionPipeline:
         'You are about to publish this Ingestion pipeline.',

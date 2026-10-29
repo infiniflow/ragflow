@@ -240,8 +240,8 @@ func (s *ChatPipelineService) AsyncChat(
 	if role, _ := lastMsg["role"].(string); role != "user" {
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
 	}
-	if err := validateUserMessageContent(messages); err != nil {
-		return nil, err
+	if _, err := NormalizeOpenAIMessageContent(lastMsg["content"]); err != nil {
+		return nil, common.NewCodedError(common.CodeArgumentError, err.Error())
 	}
 	if err := validateChatDatasetAccess(ctx, userID, chat.KBIDs); err != nil {
 		return nil, err
@@ -380,11 +380,11 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// === Phase 5: Extract Questions, doc_ids, Attachments ===
 		common.Info("Phase 5: Extract questions, doc_ids, attachments")
-		// Retrieve the last 3 user questions.
+		// Entry validation guarantees the final user content normalizes to a question.
 		var questions []string
 		for _, m := range messages {
 			if role, _ := m["role"].(string); role == "user" {
-				if content, ok := m["content"].(string); ok {
+				if content, err := NormalizeOpenAIMessageContent(m["content"]); err == nil {
 					questions = append(questions, content)
 				}
 			}
