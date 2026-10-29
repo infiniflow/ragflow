@@ -258,6 +258,15 @@ func TestDeleteSpaceRestartsCleanupLeftInTheDeletingState(t *testing.T) {
 	}
 	pushServiceDB(t, db)
 
+	// The cleanup goroutine and the poll below hit the database at the same
+	// time, and an in-memory SQLite database only carries its schema on the
+	// connection that created it.
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("unwrap test database: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+
 	valid := string(entity.StatusValid)
 	if err := db.Create(&entity.UserTenant{
 		ID:       "owner-membership",
