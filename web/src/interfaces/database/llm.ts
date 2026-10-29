@@ -66,6 +66,8 @@ export interface IProviderInstance {
   api_key_config?: Record<string, any>;
   /** Names of configured credential fields, without their values. */
   credential_status?: Record<string, boolean>;
+  /** Masked credential previews; actual credential values are never returned. */
+  credential_masks?: Record<string, string>;
   /**
    * Optional: only returned by the showProviderInstance endpoint. Used
    * to pre-fill the base_url form field when opening a saved

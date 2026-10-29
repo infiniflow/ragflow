@@ -707,7 +707,7 @@ func TestProviderModelListingUsesOwnedTenant(t *testing.T) {
 	if _, err = service.ListInstanceModels(serviceTestContext(t, "user-1", "user-1"), "provider-2", "default", "user-1"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("ListInstanceModels() for another tenant's provider error = %v, want record not found", err)
 	}
-	if _, err = service.ListSupportedModels(serviceTestContext(t, "user-1", "user-1"), "provider-2", "default", "user-1"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err = service.ListSupportedModels(serviceTestContext(t, "user-1", "user-1"), "provider-2", "default", "user-1", ListSupportedModelsOptions{}); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("ListSupportedModels() for another tenant's provider error = %v, want record not found", err)
 	}
 }
@@ -755,7 +755,7 @@ func TestShowProviderInstanceUsesOwnedTenantProvider(t *testing.T) {
 
 func TestProviderInstanceCredentialMetadataDoesNotExposeSecrets(t *testing.T) {
 	apiKey := `{"api_key":"sk-secret","group_id":"group-1","auth_mode":"bedrock_api_key","bedrock_api_key":"br-secret","bedrock_region":"us-east-1","google_service_account_key":"google-secret","unknown_secret":"hidden"}`
-	configured, config, status := providerInstanceCredentialMetadata(apiKey)
+	configured, config, status, _ := providerInstanceCredentialMetadata(apiKey)
 	if !configured {
 		t.Fatal("providerInstanceCredentialMetadata() configured = false, want true")
 	}

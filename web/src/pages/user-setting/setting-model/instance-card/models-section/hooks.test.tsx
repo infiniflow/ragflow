@@ -182,7 +182,7 @@ describe('Bedrock model credentials', () => {
     };
 
     const { result } = renderHook(() => {
-      const { resolveCreds } = useResolveCreds(instance, () => ({
+      const { resolveCreds } = useResolveCreds('Bedrock', instance, () => ({
         api_key: apiKey,
       }));
       const verify = useModelVerify({
@@ -243,7 +243,11 @@ describe('Bedrock model credentials', () => {
     };
 
     const { result } = renderHook(() => {
-      const { resolveCreds } = useResolveCreds(instance, () => formValues);
+      const { resolveCreds } = useResolveCreds(
+        'Bedrock',
+        instance,
+        () => formValues,
+      );
       const verify = useModelVerify({
         providerName: 'Bedrock',
         resolveCreds,
@@ -270,10 +274,12 @@ describe('Bedrock model credentials', () => {
     await act(async () => result.current.verify.handleVerify(model));
     expect(mockVerifyProviderConnection).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        api_key: '',
         instance_id: 'instance-id',
         use_saved_credentials: true,
       }),
+    );
+    expect(mockVerifyProviderConnection.mock.lastCall?.[0]).not.toHaveProperty(
+      'api_key',
     );
 
     formValues.bedrock_api_key = '';
@@ -395,8 +401,9 @@ describe('API-key-gated model listing (SystemOne / RAGcon)', () => {
     await waitFor(() =>
       expect(mockListProviderModels).toHaveBeenCalledWith({
         provider_name: 'RAGcon',
-        api_key: '',
-        base_url: '',
+        base_url: 'https://api.ragcon.ai/v1',
+        region: undefined,
+        use_saved_credentials: true,
         instance_name: 'ragcon-instance',
       }),
     );

@@ -178,10 +178,47 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		return
 	}
 
-	apiKey := strings.TrimSpace(c.Query("api_key"))
+	apiKey, apiKeyProvided := c.GetQuery("api_key")
+	apiKey = strings.TrimSpace(apiKey)
 	baseURL := strings.TrimSpace(c.Query("base_url"))
-	if instanceName := strings.TrimSpace(c.Query("instance_name")); instanceName != "" && apiKey == "" && baseURL == "" {
-		instanceModels, err := h.modelProviderService.ListSupportedModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"))
+	region := strings.TrimSpace(c.Query("region"))
+	instanceName := strings.TrimSpace(c.Query("instance_name"))
+	if strings.EqualFold(c.Query("use_saved_credentials"), "true") {
+		if instanceName == "" {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Saved credentials require an instance name")
+			return
+		}
+		var baseURLOverride, regionOverride *string
+		if value, ok := c.GetQuery("base_url"); ok {
+			baseURLOverride = &value
+		}
+		if value, ok := c.GetQuery("region"); ok {
+			regionOverride = &value
+		}
+		apiKeyConfig := json.RawMessage(c.Query("api_key_config"))
+		instanceModels, err := h.modelProviderService.ListSupportedModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"), service.ListSupportedModelsOptions{
+			APIKeyConfig: apiKeyConfig,
+			BaseURL:      baseURLOverride,
+			Region:       regionOverride,
+		})
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeDataError, err.Error())
+			return
+		}
+		for _, model := range instanceModels {
+			if _, ok := model["max_tokens"]; !ok {
+				if contextLength, ok := model["context_length"]; ok && contextLength != nil {
+					model["max_tokens"] = contextLength
+				}
+			}
+		}
+		common.SuccessWithData(c, instanceModels, "success")
+		return
+	}
+	_, baseURLProvided := c.GetQuery("base_url")
+	_, regionProvided := c.GetQuery("region")
+	if instanceName != "" && !apiKeyProvided && !baseURLProvided && !regionProvided {
+		instanceModels, err := h.modelProviderService.ListSupportedModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"), service.ListSupportedModelsOptions{})
 		if err == nil {
 			for _, model := range instanceModels {
 				if _, ok := model["max_tokens"]; !ok {
@@ -193,7 +230,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 			common.SuccessWithData(c, instanceModels, "success")
 			return
 		}
-		if apiKey == "" && baseURL == "" {
+		if apiKey == "" && baseURL == "" && region == "" {
 			common.ErrorWithCode(c, common.CodeDataError, err.Error())
 			return
 		}
@@ -770,7 +807,7 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 	if keywords == "true" {
 		// list supported models
 
-		modelList, err := h.modelProviderService.ListSupportedModels(ctx, providerName, instanceName, c.GetString("user_id"))
+		modelList, err := h.modelProviderService.ListSupportedModels(ctx, providerName, instanceName, c.GetString("user_id"), service.ListSupportedModelsOptions{})
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return

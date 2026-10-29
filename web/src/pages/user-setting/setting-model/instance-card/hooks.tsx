@@ -29,14 +29,18 @@ import { hasProviderCredentialInput } from '../provider-schema/field-config/util
 import { getProviderConfig } from '../provider-schema/field-config';
 import { useProviderFields } from '../provider-schema/hooks';
 import { SelectOption } from '../provider-schema/types';
+import type { ControllerRenderProps } from 'react-hook-form';
 import {
   API_KEY_NESTED_FIELDS,
   ApiKeyNestedField,
   InstanceSavePayload,
 } from './interface';
+import {
+  SAVED_CREDENTIAL_MASK,
+  SavedCredentialInput,
+} from './saved-credential-input';
 
-/** A non-secret sentinel rendered as a password mask for saved credentials. */
-export const SAVED_CREDENTIAL_MASK = '********';
+export { SAVED_CREDENTIAL_MASK } from './saved-credential-input';
 
 // ---------------------------------------------------------------------------
 // Pure helpers - api_key shape normalization
@@ -298,6 +302,7 @@ export function useProviderInitialValues(
       api_key_configured: merged.api_key_configured ?? false,
       api_key_config: merged.api_key_config ?? {},
       credential_status: merged.credential_status ?? {},
+      credential_masks: merged.credential_masks ?? {},
     };
     const safeConfig = merged.api_key_config ?? {};
     const { nested } = unwrapApiKey(safeConfig);
@@ -506,7 +511,7 @@ export function useVerifyProvider(
         provider_name: providerName,
         ...(instanceId ? { instance_id: instanceId } : {}),
         ...(useSavedCredentials
-          ? { api_key: '', use_saved_credentials: true }
+          ? { use_saved_credentials: true }
           : (verifyArgs as any)),
       });
       if (ret.code === 0) {
@@ -930,19 +935,34 @@ export function useFormFields(
 
   const formFields = useMemo(() => {
     const credentialStatus = initialValues.credential_status ?? {};
+    const credentialMasks = initialValues.credential_masks ?? {};
     return fields
       .filter((field) => field.name !== 'instance_name')
       .map((field) => {
         if (isDraft || credentialStatus[field.name] !== true) return field;
         return {
           ...field,
-          type: FormFieldType.Password,
+          type: FormFieldType.Custom,
           required: false,
           placeholder: tSetting('credentialClearToRemove'),
           autoComplete: 'new-password',
+          render: (fieldProps: ControllerRenderProps) => (
+            <SavedCredentialInput
+              {...fieldProps}
+              maskedValue={credentialMasks[field.name]}
+              placeholder={tSetting('credentialClearToRemove')}
+              autoComplete="new-password"
+            />
+          ),
         };
       });
-  }, [fields, initialValues.credential_status, isDraft, tSetting]);
+  }, [
+    fields,
+    initialValues.credential_masks,
+    initialValues.credential_status,
+    isDraft,
+    tSetting,
+  ]);
 
   const defaultValuesKey = JSON.stringify(defaultValues);
   const formDefaultValues = useMemo(() => {

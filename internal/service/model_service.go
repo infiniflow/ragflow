@@ -287,7 +287,15 @@ func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, userID, 
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ListSupportedModels(ctx context.Context, providerName, instanceName, userID string) ([]map[string]interface{}, error) {
+// ListSupportedModelsOptions applies current form values while the instance's
+// stored credentials remain server-side.
+type ListSupportedModelsOptions struct {
+	APIKeyConfig json.RawMessage
+	BaseURL      *string
+	Region       *string
+}
+
+func (m *ModelProviderService) ListSupportedModels(ctx context.Context, providerName, instanceName, userID string, options ListSupportedModelsOptions) ([]map[string]interface{}, error) {
 	providerName = strings.TrimSpace(providerName)
 
 	ownedTenantID, err := requireCurrentTenantID(ctx, userID)
@@ -328,19 +336,37 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 		return nil, err
 	}
 
-	apiConfig := &modelModule.APIConfig{
-		ApiKey: nil,
-		Region: nil,
+	apiKey := instance.APIKey
+	if len(bytes.TrimSpace(options.APIKeyConfig)) > 0 && !bytes.Equal(bytes.TrimSpace(options.APIKeyConfig), []byte("null")) {
+		apiKey, err = mergeSavedProviderAPIKeyConfig(instance.APIKey, options.APIKeyConfig)
+		if err != nil {
+			return nil, err
+		}
+	}
+	region := extra["region"]
+	if options.Region != nil {
+		region = strings.TrimSpace(*options.Region)
+		if region == "" {
+			region = "default"
+		}
+	}
+	baseURL := extra["base_url"]
+	if options.BaseURL != nil {
+		baseURL = strings.TrimSpace(*options.BaseURL)
 	}
 
-	region := extra["region"]
-	apiConfig.Region = &region
-	apiConfig.ApiKey = &instance.APIKey
+	apiConfig := &modelModule.APIConfig{
+		ApiKey: &apiKey,
+		Region: &region,
+	}
+	if options.BaseURL != nil {
+		apiConfig.BaseURL = &baseURL
+	}
 
 	driver := providerInfo.ModelDriver
 
 	// For local deployed models
-	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+	if baseURL != "" {
 		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
 		if err != nil {
 			return nil, err
@@ -456,18 +482,21 @@ var safeProviderAPIKeyConfigFields = map[string]struct{}{
 	"provider_order":           {},
 }
 
-func providerInstanceCredentialMetadata(apiKey string) (bool, map[string]interface{}, map[string]bool) {
+func providerInstanceCredentialMetadata(apiKey string) (bool, map[string]interface{}, map[string]bool, map[string]string) {
+	originalAPIKey := apiKey
 	apiKey = strings.TrimSpace(apiKey)
 	config := make(map[string]interface{})
 	status := make(map[string]bool)
+	masks := make(map[string]string)
 	if apiKey == "" {
-		return false, config, status
+		return false, config, status, masks
 	}
 
 	var values map[string]interface{}
 	if err := json.Unmarshal([]byte(apiKey), &values); err != nil || values == nil {
 		status["api_key"] = true
-		return true, config, status
+		masks["api_key"] = maskProviderCredentialValue(originalAPIKey)
+		return true, config, status, masks
 	}
 
 	configured := false
@@ -477,6 +506,7 @@ func providerInstanceCredentialMetadata(apiKey string) (bool, map[string]interfa
 		}
 		if isProviderCredentialField(key) && hasProviderCredentialValue(value) {
 			status[key] = true
+			masks[key] = maskProviderCredentialValue(value)
 			configured = true
 		}
 		if key == "auth_mode" && value == "assume_role" {
@@ -486,8 +516,21 @@ func providerInstanceCredentialMetadata(apiKey string) (bool, map[string]interfa
 	if roleARN, ok := values["aws_role_arn"].(string); ok && strings.TrimSpace(roleARN) != "" {
 		configured = true
 		status["aws_role_arn"] = true
+		masks["aws_role_arn"] = maskProviderCredentialValue(roleARN)
 	}
-	return configured, config, status
+	return configured, config, status, masks
+}
+
+func maskProviderCredentialValue(value interface{}) string {
+	secret, ok := value.(string)
+	if !ok {
+		return "********"
+	}
+	characters := []rune(secret)
+	if len(characters) <= 8 {
+		return strings.Repeat("*", len(characters))
+	}
+	return string(characters[:4]) + strings.Repeat("*", len(characters)-8) + string(characters[len(characters)-4:])
 }
 
 func isProviderCredentialField(name string) bool {
@@ -576,6 +619,50 @@ func mergeProviderAPIKey(existing string, submitted json.RawMessage, clear bool)
 	encoded, err := json.Marshal(merged)
 	if err != nil {
 		return "", fmt.Errorf("marshal api_key configuration: %w", err)
+	}
+	return string(encoded), nil
+}
+
+func mergeSavedProviderAPIKeyConfig(existing string, submitted json.RawMessage) (string, error) {
+	var submittedConfig map[string]json.RawMessage
+	if err := json.Unmarshal(submitted, &submittedConfig); err != nil || submittedConfig == nil {
+		return "", errors.New("saved credential requests must include a provider configuration object")
+	}
+
+	var merged map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(existing), &merged); err != nil || merged == nil {
+		merged = make(map[string]json.RawMessage)
+		if strings.TrimSpace(existing) != "" {
+			plainKey, _ := json.Marshal(existing)
+			merged["api_key"] = plainKey
+		}
+	}
+	updated := false
+	for key, value := range submittedConfig {
+		if _, safe := safeProviderAPIKeyConfigFields[key]; safe {
+			updated = true
+			trimmed := bytes.TrimSpace(value)
+			if bytes.Equal(trimmed, []byte("null")) {
+				delete(merged, key)
+				continue
+			}
+			var textValue string
+			if err := json.Unmarshal(trimmed, &textValue); err == nil && strings.TrimSpace(textValue) == "" {
+				delete(merged, key)
+				continue
+			}
+			merged[key] = value
+		}
+	}
+	if !updated {
+		return existing, nil
+	}
+	if len(merged) == 0 {
+		return "", nil
+	}
+	encoded, err := json.Marshal(merged)
+	if err != nil {
+		return "", fmt.Errorf("marshal provider configuration: %w", err)
 	}
 	return string(encoded), nil
 }
@@ -1003,10 +1090,11 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 		"status":        instance.Status,
 	}
 	if access.Source == permission.AccessSourceOwner || access.Allows(permission.OperationUpdate) {
-		configured, config, credentialStatus := providerInstanceCredentialMetadata(instance.APIKey)
+		configured, config, credentialStatus, credentialMasks := providerInstanceCredentialMetadata(instance.APIKey)
 		result["api_key_configured"] = configured
 		result["api_key_config"] = config
 		result["credential_status"] = credentialStatus
+		result["credential_masks"] = credentialMasks
 	}
 
 	return result, common.CodeSuccess, nil

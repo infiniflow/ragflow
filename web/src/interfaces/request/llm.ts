@@ -149,9 +149,11 @@ export interface IListProviderModelsRequestBody {
   base_url?: string;
   region?: string;
   model_info?: IModelInfo[];
+  use_saved_credentials?: boolean;
+  api_key_config?: Record<string, unknown>;
   /**
-   * An already-saved instance: the server then lists with the stored credential
-   * and base URL, so the picker works without the browser ever holding the key.
+   * Identifies the saved instance whose credentials should be used while the
+   * server applies the current form's non-secret configuration and endpoint.
    */
   instance_name?: string;
 }

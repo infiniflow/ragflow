@@ -65,6 +65,7 @@ import {
   SAVED_CREDENTIAL_MASK,
   unwrapApiKey,
 } from './hooks';
+import { SavedCredentialInput } from './saved-credential-input';
 import { ModelsSection } from './models-section';
 import VerifyButton from './verify-button';
 
@@ -448,7 +449,7 @@ export const BedrockInstanceCard = forwardRef<
       ...(!isDraft ? { instance_id: instance.id } : {}),
       ...(payload.clear_api_key ? { clear_api_key: true } : {}),
       ...(useSavedCredentials
-        ? { api_key: '', use_saved_credentials: true }
+        ? { use_saved_credentials: true }
         : {
             api_key: JSON.stringify(payload.api_key),
             base_url: payload.base_url,
@@ -700,30 +701,36 @@ export const BedrockInstanceCard = forwardRef<
               label={tSetting('awsAccessKeyId')}
               required={!canKeepStoredBedrockAccessKeys}
             >
-              <Input
-                type="password"
-                placeholder={tSetting(
-                  storedCredentialStatus.bedrock_ak === true
-                    ? 'credentialClearToRemove'
-                    : 'bedrockAKMessage',
-                )}
-                autoComplete="new-password"
-              />
+              {(field) => (
+                <SavedCredentialInput
+                  {...field}
+                  maskedValue={instanceDetails?.credential_masks?.bedrock_ak}
+                  placeholder={tSetting(
+                    storedCredentialStatus.bedrock_ak === true
+                      ? 'credentialClearToRemove'
+                      : 'bedrockAKMessage',
+                  )}
+                  autoComplete="new-password"
+                />
+              )}
             </RAGFlowFormItem>
             <RAGFlowFormItem
               name="bedrock_sk"
               label={tSetting('awsSecretAccessKey')}
               required={!canKeepStoredBedrockAccessKeys}
             >
-              <Input
-                type="password"
-                placeholder={tSetting(
-                  storedCredentialStatus.bedrock_sk === true
-                    ? 'credentialClearToRemove'
-                    : 'bedrockSKMessage',
-                )}
-                autoComplete="new-password"
-              />
+              {(field) => (
+                <SavedCredentialInput
+                  {...field}
+                  maskedValue={instanceDetails?.credential_masks?.bedrock_sk}
+                  placeholder={tSetting(
+                    storedCredentialStatus.bedrock_sk === true
+                      ? 'credentialClearToRemove'
+                      : 'bedrockSKMessage',
+                  )}
+                  autoComplete="new-password"
+                />
+              )}
             </RAGFlowFormItem>
           </>
         )}
@@ -737,15 +744,18 @@ export const BedrockInstanceCard = forwardRef<
               storedCredentialStatus.aws_role_arn !== true
             }
           >
-            <Input
-              type="password"
-              autoComplete="new-password"
-              placeholder={tSetting(
-                storedCredentialStatus.aws_role_arn === true
-                  ? 'credentialClearToRemove'
-                  : 'awsRoleArnMessage',
-              )}
-            />
+            {(field) => (
+              <SavedCredentialInput
+                {...field}
+                maskedValue={instanceDetails?.credential_masks?.aws_role_arn}
+                autoComplete="new-password"
+                placeholder={tSetting(
+                  storedCredentialStatus.aws_role_arn === true
+                    ? 'credentialClearToRemove'
+                    : 'awsRoleArnMessage',
+                )}
+              />
+            )}
           </RAGFlowFormItem>
         )}
 
@@ -756,15 +766,20 @@ export const BedrockInstanceCard = forwardRef<
               label={tSetting('apiKey')}
               required={!canKeepStoredBedrockAPIKey}
             >
-              <Input
-                type="password"
-                placeholder={tSetting(
-                  storedCredentialStatus.bedrock_api_key === true
-                    ? 'credentialClearToRemove'
-                    : 'apiKeyMessage',
-                )}
-                autoComplete="new-password"
-              />
+              {(field) => (
+                <SavedCredentialInput
+                  {...field}
+                  maskedValue={
+                    instanceDetails?.credential_masks?.bedrock_api_key
+                  }
+                  placeholder={tSetting(
+                    storedCredentialStatus.bedrock_api_key === true
+                      ? 'credentialClearToRemove'
+                      : 'apiKeyMessage',
+                  )}
+                  autoComplete="new-password"
+                />
+              )}
             </RAGFlowFormItem>
           </>
         )}
