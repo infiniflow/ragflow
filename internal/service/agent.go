@@ -1276,9 +1276,8 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
 	}
 
-	// Build the version options up front (it only reads the user nickname)
-	// so the canvas row update and the version save can share one
-	// transaction below.
+	// Build the version options up front so the canvas row update and the
+	// version save can share one transaction below.
 	var versionOpts *dao.SaveOrReplaceLatestVersionOptions
 	if dslValue, ok := updates["dsl"]; ok {
 		dsl, ok := dslValue.(entity.JSONMap)
@@ -1291,7 +1290,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		} else if canvasInstance.Title != nil {
 			title = *canvasInstance.Title
 		}
-		opts := s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, title, nil, aliasPtr, release)
+		opts := s.saveOrReplaceVersionOptions(canvasID, dsl, title, nil, aliasPtr, release)
 		// Manual Save (autosave != true) always mints a new version row, even
 		// when the DSL is identical to the previous one (design §5.1). Auto-save
 		// never mints a version, and neither does an ApplyVersion restore; both
@@ -1436,7 +1435,7 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 	if title != nil {
 		titleStr = *title
 	}
-	opts := s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, titleStr, description, alias, true)
+	opts := s.saveOrReplaceVersionOptions(canvasID, dsl, titleStr, description, alias, true)
 	var row *entity.UserCanvasVersion
 	if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err = s.canvasDAO.UpdateTx(ctx, tx, canvasInstance); err != nil {
@@ -1454,12 +1453,8 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 	return row, nil
 }
 
-func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, canvasID string, dsl entity.JSONMap, title string, description *string, alias *string, release bool) dao.SaveOrReplaceLatestVersionOptions {
-	nickname, err := s.userDAO.GetNicknameByID(ctx, dao.DB, userID)
-	if err != nil || strings.TrimSpace(nickname) == "" {
-		nickname = userID
-	}
-	versionTitle := buildVersionTitle(nickname, title, time.Now())
+func (s *AgentService) saveOrReplaceVersionOptions(canvasID string, dsl entity.JSONMap, title string, description *string, alias *string, release bool) dao.SaveOrReplaceLatestVersionOptions {
+	versionTitle := buildVersionTitle(title, time.Now())
 	return dao.SaveOrReplaceLatestVersionOptions{
 		NewID:        common.GenerateUUID(),
 		UserCanvasID: canvasID,
@@ -1477,16 +1472,12 @@ func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, 
 	}
 }
 
-func buildVersionTitle(userNickname, agentTitle string, ts time.Time) string {
-	tenant := strings.TrimSpace(userNickname)
-	if tenant == "" {
-		tenant = "tenant"
-	}
+func buildVersionTitle(agentTitle string, ts time.Time) string {
 	title := strings.TrimSpace(agentTitle)
 	if title == "" {
 		title = "agent"
 	}
-	return fmt.Sprintf("%s_%s_%s", tenant, title, ts.Format("2006-01-02 15:04:05"))
+	return fmt.Sprintf("%s_%s", title, ts.Format("2006-01-02 15:04:05"))
 }
 
 // ListVersions returns every version for a canvas the user can see,
