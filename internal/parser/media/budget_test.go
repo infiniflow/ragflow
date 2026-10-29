@@ -19,12 +19,21 @@ import (
 	"testing"
 )
 
-func testBudget(maxSources, maxImageBytes, maxTotalBytes int) *Budget {
+func testBudget(maxSources, maxImageBytes int, maxTotalBytes int64) *Budget {
 	return &Budget{
 		maxSources:    maxSources,
 		maxImageBytes: maxImageBytes,
 		maxTotalBytes: maxTotalBytes,
 		sources:       make(map[string]*budgetSource),
+	}
+}
+
+func TestNewBudgetUsesRunCaps(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "7")
+	t.Setenv("RAGFLOW_MEDIA_MAX_BYTES_PER_RUN", "1234")
+	budget := NewBudget()
+	if budget.maxSources != 7 || budget.maxTotalBytes != 1234 {
+		t.Fatalf("budget limits = %d sources / %d bytes, want 7 / 1234", budget.maxSources, budget.maxTotalBytes)
 	}
 }
 
@@ -60,7 +69,7 @@ func TestBudgetSourceLimitExhaustion(t *testing.T) {
 	if !budget.Reserve("a.png") {
 		t.Fatal("Reserve rejected an already admitted source after exhaustion")
 	}
-	if !strings.Contains(strings.Join(budget.Warnings(), "\n"), "2-item document limit") {
+	if !strings.Contains(strings.Join(budget.Warnings(), "\n"), "2-item run limit") {
 		t.Fatalf("warnings = %v, want the source-count warning", budget.Warnings())
 	}
 }
@@ -103,7 +112,48 @@ func TestBudgetTotalByteLimitDoesNotRecount(t *testing.T) {
 	if budget.totalOverflows != 1 || budget.totalBytes != 3 {
 		t.Fatalf("overflows=%d bytes=%d, want one overflow and 3 bytes", budget.totalOverflows, budget.totalBytes)
 	}
-	if !strings.Contains(strings.Join(budget.Warnings(), "\n"), "5-byte document image budget") {
+	if !strings.Contains(strings.Join(budget.Warnings(), "\n"), "5-byte run image budget") {
+		t.Fatalf("warnings = %v", budget.Warnings())
+	}
+}
+
+func TestBudgetReserveBytesChecksWithoutCharging(t *testing.T) {
+	budget := testBudget(4, 8, 5)
+	if !budget.Reserve("a.png") {
+		t.Fatal("Reserve rejected the source")
+	}
+	if !budget.ReserveBytes("a.png", 5) {
+		t.Fatal("ReserveBytes rejected a payload at the total limit")
+	}
+	if budget.totalBytes != 0 {
+		t.Fatalf("ReserveBytes charged %d bytes before Include", budget.totalBytes)
+	}
+	if !budget.Include("a.png", 5) {
+		t.Fatal("Include rejected the reserved payload")
+	}
+	if !budget.Include("a.png", 5) {
+		t.Fatal("Include rejected an already included source")
+	}
+	if budget.totalBytes != 5 {
+		t.Fatalf("total bytes = %d, want 5", budget.totalBytes)
+	}
+}
+
+func TestBudgetReserveBytesRejectsBeforeRead(t *testing.T) {
+	budget := testBudget(4, 8, 5)
+	if !budget.Reserve("big.png") {
+		t.Fatal("Reserve rejected the source")
+	}
+	if budget.ReserveBytes("big.png", 6) {
+		t.Fatal("ReserveBytes admitted an entry past the total limit")
+	}
+	if budget.ReserveBytes("big.png", 6) {
+		t.Fatal("ReserveBytes recounted a rejected entry")
+	}
+	if budget.totalOverflows != 1 || budget.totalBytes != 0 {
+		t.Fatalf("overflows=%d bytes=%d, want one overflow and no bytes", budget.totalOverflows, budget.totalBytes)
+	}
+	if !strings.Contains(strings.Join(budget.Warnings(), "\n"), "5-byte run image budget") {
 		t.Fatalf("warnings = %v", budget.Warnings())
 	}
 }

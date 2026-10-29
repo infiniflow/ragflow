@@ -16,11 +16,6 @@ package media
 
 import "fmt"
 
-const (
-	defaultBudgetSources    = 256
-	defaultBudgetTotalBytes = 64 << 20
-)
-
 // Budget admits source-identified images into one parser run. Unlike a plain
 // item counter it dedupes by source: a document that repeats one icon a
 // thousand times stays bounded without charging the document for a thousand
@@ -29,14 +24,17 @@ const (
 // Callers Reserve immediately before reading a source and Include after a
 // successful read. A source that fails to read keeps its reserved item until
 // the run ends, because the read attempt already cost the work the cap bounds.
+// The count and byte limits are the same run-level limits enforced by the
+// media cache; the parser applies them early so it does not decode or read
+// payloads the cache would reject.
 type Budget struct {
 	maxSources    int
 	maxImageBytes int
-	maxTotalBytes int
+	maxTotalBytes int64
 
 	sources         map[string]*budgetSource
 	sourcesUsed     int
-	totalBytes      int
+	totalBytes      int64
 	oversizedImages int
 	totalOverflows  int
 	countExhausted  bool
@@ -51,13 +49,13 @@ type budgetSource struct {
 	charged  bool
 }
 
-// NewBudget returns a run budget bounded by 256 distinct sources, 64 MiB of
-// decoded bytes, and the shared per-image limit.
+// NewBudget returns a run budget bounded by the same run-level count and byte
+// limits as the media cache, plus the shared per-image limit.
 func NewBudget() *Budget {
 	return &Budget{
-		maxSources:    defaultBudgetSources,
+		maxSources:    MediaMaxImagesPerRun(),
 		maxImageBytes: ImageMaxBytes(),
-		maxTotalBytes: defaultBudgetTotalBytes,
+		maxTotalBytes: MediaMaxBytesPerRun(),
 		sources:       make(map[string]*budgetSource),
 	}
 }
@@ -113,13 +111,51 @@ func (b *Budget) Include(source string, size int) bool {
 		b.oversizedImages++
 		return false
 	}
-	if size > b.maxTotalBytes-b.totalBytes {
+	if int64(size) > b.maxTotalBytes-b.totalBytes {
 		entry.charged = true
 		b.totalOverflows++
 		return false
 	}
 	entry.included = true
-	b.totalBytes += size
+	b.totalBytes += int64(size)
+	return true
+}
+
+// ReserveBytes checks a declared size before the caller reads or decodes the
+// source. It uses the same per-image and total-byte limits as Include, but
+// charges nothing on success: Include still owns the actual bytes. A source
+// rejected here is marked charged so repeated references do not read it again
+// or inflate the warning counters. ZIP callers use this with the declared
+// uncompressed size to avoid reading a large entry that the total budget will
+// reject.
+func (b *Budget) ReserveBytes(source string, size int) bool {
+	if b == nil {
+		return true
+	}
+	entry, ok := b.sources[source]
+	if !ok {
+		entry = &budgetSource{}
+		if b.sources == nil {
+			b.sources = make(map[string]*budgetSource)
+		}
+		b.sources[source] = entry
+	}
+	if entry.included {
+		return true
+	}
+	if entry.charged {
+		return false
+	}
+	if size > b.maxImageBytes {
+		entry.charged = true
+		b.oversizedImages++
+		return false
+	}
+	if int64(size) > b.maxTotalBytes-b.totalBytes {
+		entry.charged = true
+		b.totalOverflows++
+		return false
+	}
 	return true
 }
 
@@ -149,14 +185,14 @@ func (b *Budget) Warnings() []string {
 	}
 	if b.totalOverflows > 0 {
 		warnings = append(warnings, fmt.Sprintf(
-			"omitted %d embedded image payload(s) after reaching the %d-byte document image budget",
+			"omitted %d embedded image payload(s) after reaching the %d-byte run image budget",
 			b.totalOverflows,
 			b.maxTotalBytes,
 		))
 	}
 	if b.countExhausted {
 		warnings = append(warnings, fmt.Sprintf(
-			"stopped extracting embedded images after the %d-item document limit",
+			"stopped extracting embedded images after the %d-item run limit",
 			b.maxSources,
 		))
 	}
