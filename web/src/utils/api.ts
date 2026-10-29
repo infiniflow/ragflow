@@ -19,7 +19,10 @@ const restAPIv1 = `/api/v1`;
 
 export { restAPIv1, webAPI };
 
-export default {
+import merge from 'lodash/merge';
+import apiPrivate from '@/ee/utils/api-private';
+
+const apiEndpoints = {
   // user
   login: `${restAPIv1}/auth/login`,
   logout: `${restAPIv1}/auth/logout`,
@@ -541,3 +544,10 @@ export default {
   skillIndex: `${restAPIv1}/skills/index`,
   skillReindex: `${restAPIv1}/skills/reindex`,
 };
+
+// Enterprise customization overlays: the enterprise repository carries a real
+// implementation of the same-path file `web/src/ee/utils/api-private.ts`;
+// upstream ships it as an empty object so this import resolves in both trees.
+// Enterprise endpoints must live only in the ee/ file, never here. Keys in
+// the overlay override or extend `apiEndpoints`.
+export default merge(apiEndpoints, apiPrivate);
