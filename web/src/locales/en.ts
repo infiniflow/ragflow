@@ -3455,7 +3455,7 @@ This delimiter is used to split the input text into several text pieces echo of 
           'Deleting a version that a dataset or file is bound to will make that file unparseable. This cannot be undone.',
         deleteAgentConfirmContent:
           'If this agent is embedded in a website or serving external traffic, deleting its latest published version will roll back or interrupt the live service. Your current canvas is not affected. This cannot be undone.',
-        restore: 'Restore as current',
+        restore: 'Restore as current draft',
         restoreConfirmTitle: 'Restore this version as the current agent?',
         restoreConfirmContent:
           'The current agent DSL will be replaced by this version. Save again to create a new version.',
