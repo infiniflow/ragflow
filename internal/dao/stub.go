@@ -26,6 +26,9 @@ import (
 	"gorm.io/gorm"
 )
 
+// tenantDAOTestExtraModels adds no tables beyond the community schema.
+func tenantDAOTestExtraModels() []interface{} { return nil }
+
 // permissionDataModelsEE returns no additional entities in the community
 // edition.
 func permissionDataModelsEE() []interface{} { return nil }
