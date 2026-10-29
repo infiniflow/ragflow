@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/server"
@@ -215,7 +214,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid RAGFlow type")
 		return
 	}
-	if errors.Is(err, dao.ErrInvalidUserListQuery) {
+	if errors.Is(err, errInvalidUserListQuery) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}

@@ -17,7 +17,6 @@
 package dao
 
 import (
-	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -64,6 +63,7 @@ func userListTestString(value string) *string { return &value }
 
 func TestUserListFiltersAndPagination(t *testing.T) {
 	db := setupUserListDB(t)
+	active, inactive := true, false
 	for i, id := range []string{"a", "b", "c"} {
 		lastLogin := time.Date(2026, 10, 1, i, 0, 0, 0, time.UTC)
 		if err := db.Model(&entity.User{}).Where("id = ?", id).Update("last_login_time", lastLogin).Error; err != nil {
@@ -71,26 +71,26 @@ func TestUserListFiltersAndPagination(t *testing.T) {
 		}
 	}
 	for _, tt := range []struct {
-		name, keyword, status, direction, order string
-		offset, limit                           int
-		ids                                     []string
-		total                                   int64
+		name  string
+		opts  UserListOptions
+		ids   []string
+		total int64
 	}{
-		{name: "default order excludes deleted", ids: []string{"a", "b", "c"}, total: 3},
-		{name: "email or nickname case insensitive", keyword: " ALiCe ", ids: []string{"a", "b"}, total: 2},
-		{name: "combined", keyword: "alice", status: "active", ids: []string{"a"}, total: 1},
-		{name: "disabled account", status: "inactive", ids: []string{"b"}, total: 1},
-		{name: "literal wildcard", keyword: "%_", ids: []string{"c"}, total: 1},
-		{name: "escape character", keyword: "!", ids: []string{"c"}, total: 1},
-		{name: "bound keyword", keyword: "' OR 1=1 --", ids: []string{}, total: 0},
-		{name: "descending last login", order: "last_login_time", direction: "desc", ids: []string{"c", "b", "a"}, total: 3},
-		{name: "ascending last login", order: "last_login_time", direction: "asc", ids: []string{"a", "b", "c"}, total: 3},
-		{name: "creation date tie breaker", order: "create_date", direction: "asc", ids: []string{"a", "b", "c"}, total: 3},
-		{name: "filtered page", keyword: "alice", offset: 1, limit: 1, ids: []string{"b"}, total: 2},
-		{name: "past last page", offset: 10, limit: 2, ids: []string{}, total: 3},
+		{name: "excludes deleted", ids: []string{"a", "b", "c"}, total: 3},
+		{name: "email or nickname case insensitive", opts: UserListOptions{Keyword: "ALiCe"}, ids: []string{"a", "b"}, total: 2},
+		{name: "combined", opts: UserListOptions{Keyword: "alice", Active: &active}, ids: []string{"a"}, total: 1},
+		{name: "disabled account", opts: UserListOptions{Active: &inactive}, ids: []string{"b"}, total: 1},
+		{name: "literal wildcard", opts: UserListOptions{Keyword: "%_"}, ids: []string{"c"}, total: 1},
+		{name: "escape character", opts: UserListOptions{Keyword: "!"}, ids: []string{"c"}, total: 1},
+		{name: "bound keyword", opts: UserListOptions{Keyword: "' OR 1=1 --"}, ids: []string{}, total: 0},
+		{name: "descending last login", opts: UserListOptions{OrderBy: UserListByLastLoginTime, Desc: true}, ids: []string{"c", "b", "a"}, total: 3},
+		{name: "ascending last login", opts: UserListOptions{OrderBy: UserListByLastLoginTime}, ids: []string{"a", "b", "c"}, total: 3},
+		{name: "creation date tie breaker", opts: UserListOptions{OrderBy: UserListByCreateDate}, ids: []string{"a", "b", "c"}, total: 3},
+		{name: "filtered page", opts: UserListOptions{Keyword: "alice", Offset: 1, Limit: 1}, ids: []string{"b"}, total: 2},
+		{name: "past last page", opts: UserListOptions{Offset: 10, Limit: 2}, ids: []string{}, total: 3},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			users, total, err := NewUserDAO().List(t.Context(), db, tt.offset, tt.limit, tt.keyword, tt.status, tt.direction, tt.order)
+			users, total, err := NewUserDAO().List(t.Context(), db, tt.opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -108,37 +108,22 @@ func TestUserListFiltersAndPagination(t *testing.T) {
 func TestUserListCountsCallerConditionsBeforePagination(t *testing.T) {
 	db := setupUserListDB(t)
 	query := db.Where("user.role_id = ?", 7)
-	users, total, err := NewUserDAO().List(t.Context(), query, 1, 1, "", "active", "asc", "create_date")
+	active := true
+	users, total, err := NewUserDAO().List(t.Context(), query, UserListOptions{Active: &active, Offset: 1, Limit: 1})
 	if err != nil || total != 2 || len(users) != 1 || users[0].ID != "c" {
 		t.Fatalf("List() = (%v, %d, %v)", users, total, err)
 	}
 	// Reusing the caller's query must not inherit LIMIT/OFFSET or COUNT selection.
-	users, total, err = NewUserDAO().List(t.Context(), query, 0, 10, "alice", "", "", "")
+	users, total, err = NewUserDAO().List(t.Context(), query, UserListOptions{Keyword: "alice", Limit: 10, Desc: true})
 	if err != nil || total != 1 || len(users) != 1 || users[0].ID != "a" {
 		t.Fatalf("reused List() = (%v, %d, %v)", users, total, err)
 	}
 }
 
-func TestUserListRejectsInvalidQuery(t *testing.T) {
-	db := setupUserListDB(t)
-	for _, tt := range []struct{ status, direction, field string }{
-		{status: "unknown"}, {direction: "desc; DROP TABLE user"}, {field: "email DESC; DROP TABLE user"},
-		{field: "email"}, {field: "nickname"}, {field: "is_active"}, {field: "is_superuser"},
-		{field: "id"}, {field: "create_time"}, {field: "role"}, {field: "plan"},
-	} {
-		_, _, err := NewUserDAO().List(t.Context(), db, 0, 10, "", tt.status, tt.direction, tt.field)
-		if !errors.Is(err, ErrInvalidUserListQuery) {
-			t.Fatalf("List(%+v) error = %v", tt, err)
-		}
-	}
-}
-
 func TestUserListQueryDryRun(t *testing.T) {
 	db := setupUserListDB(t)
-	query, err := userListQuery(t.Context(), db.Session(&gorm.Session{DryRun: true}).Where("user.role_id = ?", 7), "a%_", "inactive")
-	if err != nil {
-		t.Fatal(err)
-	}
+	inactive := false
+	query := userListQuery(t.Context(), db.Session(&gorm.Session{DryRun: true}).Where("user.role_id = ?", 7), "a%_", &inactive)
 	result := query.Find(&[]entity.User{})
 	sql := result.Statement.SQL.String()
 	if !strings.Contains(sql, "LOWER(`user`.`email`) LIKE ? ESCAPE '!' OR LOWER(`user`.`nickname`) LIKE ? ESCAPE '!'") ||

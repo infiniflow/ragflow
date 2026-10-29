@@ -145,26 +145,6 @@ func generateRandomHex(n int) string {
 	return hex.EncodeToString(bytes)
 }
 
-// ListUsers returns a page of users and the total number of users.
-func (s *Service) ListUsers(ctx context.Context, pageIndex, pageSize int, name, status, sort, orderBy string) ([]map[string]interface{}, int64, error) {
-	users, total, err := s.userDAO.List(ctx, dao.DB, (pageIndex-1)*pageSize, pageSize, name, status, sort, orderBy)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	result := make([]map[string]interface{}, 0, len(users))
-	for _, user := range users {
-		result = append(result, map[string]interface{}{
-			"email":        user.Email,
-			"nickname":     user.Nickname,
-			"create_date":  user.CreateTime,
-			"is_active":    user.IsActive,
-			"is_superuser": user.IsSuperuser,
-		})
-	}
-	return result, total, nil
-}
-
 // CreateUser create a new user
 // Parameters:
 //   - username: email address of the user
