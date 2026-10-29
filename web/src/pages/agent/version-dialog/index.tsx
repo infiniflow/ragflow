@@ -59,6 +59,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { nodeTypes } from '../canvas';
 import { AliasFormDialog } from '../components/alias-form-dialog';
+import { CanvasSnapshot, CanvasSnapshotContext } from '../context';
 import { downloadDsl } from '../utils/download-dsl';
 
 type PendingAction =
@@ -109,6 +110,22 @@ export function VersionDialog({
     () => released.find((x) => x.id === selectedId)?.alias,
     [released, selectedId],
   );
+
+  // Snapshot handed to the preview so variable labels inside node components
+  // resolve against the version's own graph instead of the live canvas store
+  // (which holds the current draft).
+  const previewSnapshot = useMemo<CanvasSnapshot | null>(() => {
+    const dsl = agent?.dsl;
+    if (!dsl?.graph?.nodes) {
+      return null;
+    }
+    return {
+      nodes: dsl.graph.nodes,
+      edges: dsl.graph.edges ?? [],
+      globals: dsl.globals ?? {},
+      variables: dsl.variables ?? {},
+    };
+  }, [agent?.dsl]);
 
   // Filtering shrinks the list, so jump back to page 1; otherwise a stale
   // page 2+ selection would render an empty list with matches out of view.
@@ -325,30 +342,36 @@ export function VersionDialog({
                   </section>
                   <section className="relative flex-1">
                     <ReactFlowProvider key={'flow-' + selectedId}>
-                      <ReactFlow
-                        connectionMode={ConnectionMode.Loose}
-                        nodes={agent?.dsl?.graph?.nodes || []}
-                        edges={
-                          agent?.dsl?.graph?.edges?.flatMap((x) => ({
-                            ...x,
-                            type: 'default',
-                          })) || []
-                        }
-                        fitView
-                        nodeTypes={nodeTypes}
-                        edgeTypes={{}}
-                        zoomOnScroll={true}
-                        panOnDrag={true}
-                        zoomOnDoubleClick={false}
-                        preventScrolling={true}
-                        minZoom={0.1}
-                        nodesDraggable={false}
-                        nodesConnectable={false}
-                        elementsSelectable={false}
-                      >
-                        <AgentBackground></AgentBackground>
-                        <Spotlight className="z-0" opcity={0.7} coverage={70} />
-                      </ReactFlow>
+                      <CanvasSnapshotContext.Provider value={previewSnapshot}>
+                        <ReactFlow
+                          connectionMode={ConnectionMode.Loose}
+                          nodes={agent?.dsl?.graph?.nodes || []}
+                          edges={
+                            agent?.dsl?.graph?.edges?.flatMap((x) => ({
+                              ...x,
+                              type: 'default',
+                            })) || []
+                          }
+                          fitView
+                          nodeTypes={nodeTypes}
+                          edgeTypes={{}}
+                          zoomOnScroll={true}
+                          panOnDrag={true}
+                          zoomOnDoubleClick={false}
+                          preventScrolling={true}
+                          minZoom={0.1}
+                          nodesDraggable={false}
+                          nodesConnectable={false}
+                          elementsSelectable={false}
+                        >
+                          <AgentBackground></AgentBackground>
+                          <Spotlight
+                            className="z-0"
+                            opcity={0.7}
+                            coverage={70}
+                          />
+                        </ReactFlow>
+                      </CanvasSnapshotContext.Provider>
                     </ReactFlowProvider>
                   </section>
                 </CardContent>
