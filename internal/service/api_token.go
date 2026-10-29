@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/service/billing"
 	"time"
 )
 
@@ -108,6 +109,9 @@ func (s *SystemService) CreateAPIKey(ctx context.Context, userID, tenantID strin
 	if err := APITokenDAO.Create(ctx, dao.DB, APIKeyData); err != nil {
 		return nil, err
 	}
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		billingService.SyncAPITokenAccess(ctx, tenantID, APIToken, betaAPIKey)
+	}
 
 	return &APIKeyResponse{
 		UserID:     userID,
@@ -133,5 +137,10 @@ func apiTokenUserID(value *string) string {
 func (s *SystemService) DeleteAPIKey(ctx context.Context, tenantID, key string) error {
 	APITokenDAO := dao.NewAPITokenDAO()
 	_, err := APITokenDAO.DeleteByTenantIDAndToken(ctx, dao.DB, tenantID, key)
+	if err == nil {
+		if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+			billingService.DeleteRateLimitKeys(ctx, key)
+		}
+	}
 	return err
 }

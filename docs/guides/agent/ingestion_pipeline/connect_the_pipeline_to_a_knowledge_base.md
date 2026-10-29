@@ -11,9 +11,13 @@ sidebar_custom_props: {
 # Connect the Pipeline to a Knowledge Base
 
 1. When creating or editing a knowledge base, find the parsing method section.
-2. Click **Select pipeline** and choose the pipeline you saved.
-3. Any file uploaded to this knowledge base will be processed by your custom Pipeline.
+2. Open **Parse mode** and select your pipeline.
 
-![Select Pipeline while creating a knowledge base](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/connect_the_pipeline_to_a_knowledge_base_1.jpg)
+   ![Parse mode dropdown showing available pipelines](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/connect_the_pipeline_to_a_knowledge_base.jpg)
 
-![Select a saved Pipeline](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/connect_the_pipeline_to_a_knowledge_base_2.jpg)
+   The screenshot shows pipeline selection in **Parse mode**. The **Version** selector appears after choosing a pipeline.
+
+3. In the dataset configuration, select a pipeline **Version**, then click **Save**.
+4. Files uploaded to this knowledge base use the selected pipeline version.
+
+The dataset keeps its selected pipeline version. To use a different version, select the target version in **Configuration** and save.

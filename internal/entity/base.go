@@ -122,7 +122,7 @@ func (m *BaseModel) BeforeUpdate(tx *gorm.DB) error {
 func (m *BaseModel) UpdateCreateDateAndTime() error {
 	timestamp, dateTime := autoModelTime()
 	m.CreateTime = &timestamp
-	m.UpdateDate = &dateTime
+	m.CreateDate = &dateTime
 	return nil
 }
 
@@ -183,4 +183,9 @@ func (j *JSONSlice) Scan(value interface{}) error {
 		return json.Unmarshal([]byte(value.(string)), j)
 	}
 	return json.Unmarshal(b, j)
+}
+
+// GormDataType tells GORM how to create a JSONSlice column.
+func (j *JSONSlice) GormDataType() string {
+	return "longtext"
 }

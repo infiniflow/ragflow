@@ -56,6 +56,7 @@ func TestBuildByName_CanvasComponentNames(t *testing.T) {
 		{name: "TavilyExtract", wantToolName: "tavily_extract"},
 		{name: "TavilySearch", wantToolName: "tavily_search"},
 		{name: "YahooFinance", wantToolName: "yahoo_finance"},
+		{name: "YouComSearch", wantToolName: "youcom_search"},
 	}
 
 	for _, tc := range tests {
@@ -159,6 +160,36 @@ func TestBuildByName_QueritContentsAliases(t *testing.T) {
 	}
 }
 
+func TestBuildByName_YouComReadsCanvasParams(t *testing.T) {
+	// The canvas stores tool params under the lower-cased component name, and
+	// the node form also carries query/outputs keys the tool must ignore.
+	tools, err := BuildAll([]string{"YouComSearch"}, map[string]map[string]any{
+		"youcomsearch": {
+			"api_key":   "stored-key",
+			"freshness": "week",
+			"top_n":     float64(4),
+			"outputs":   map[string]any{"json": map[string]any{}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildAll: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("len(tools) = %d, want 1", len(tools))
+	}
+	youcomTool, ok := tools[0].(*YouComTool)
+	if !ok {
+		t.Fatalf("tools[0] = %T, want *YouComTool", tools[0])
+	}
+	if youcomTool.apiKey != "stored-key" || youcomTool.defaults.Freshness != "week" || youcomTool.defaults.TopN != 4 {
+		t.Fatalf("defaults = %#v, apiKey = %q", youcomTool.defaults, youcomTool.apiKey)
+	}
+	info, infoErr := youcomTool.Info(t.Context())
+	if infoErr != nil || info.Name != "youcom_search" {
+		t.Fatalf("Info() = %#v, %v", info, infoErr)
+	}
+}
+
 func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	// Every key in registry.
 	names := []string{
@@ -168,7 +199,7 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 		"querit", "querit_contents", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
-		"yahoo_finance",
+		"yahoo_finance", "youcom",
 	}
 	params := map[string]map[string]any{
 		"execute_sql": {
@@ -202,6 +233,35 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	}
 }
 
+// TestBuildTushareTool_NodeParams pins the node-level credential channel:
+// the token comes from tool_params, an empty set still builds (Invoke reports
+// the missing configuration), and a non-string token is rejected.
+func TestBuildTushareTool_NodeParams(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("tushare", map[string]any{"token": "T-node"})
+	if err != nil {
+		t.Fatalf("BuildByName(tushare) with token: %v", err)
+	}
+	tool, ok := built.(*TushareTool)
+	if !ok {
+		t.Fatalf("tool type = %T, want *TushareTool", built)
+	}
+	if tool.defaults.Token != "T-node" {
+		t.Fatalf("defaults.Token = %q, want T-node", tool.defaults.Token)
+	}
+
+	if _, err = BuildByName("tushare", map[string]any{}); err != nil {
+		t.Fatalf("BuildByName(tushare) without params: %v", err)
+	}
+
+	if _, err = BuildByName("tushare", map[string]any{"token": 1}); err == nil {
+		t.Fatal("expected a type error for a non-string token")
+	} else if !strings.Contains(err.Error(), "string node-level param token") {
+		t.Fatalf("err = %q, want the node-level token type error", err.Error())
+	}
+}
+
 func TestBuildAll_ExeSQLRequiresNodeParams(t *testing.T) {
 	_, err := BuildAll([]string{"execute_sql"}, nil)
 	if err == nil {
@@ -232,7 +292,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"querit", "querit_contents", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
-		"yahoo_finance",
+		"yahoo_finance", "youcom",
 	}
 	params := map[string]map[string]any{
 		"execute_sql": {

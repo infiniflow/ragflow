@@ -98,7 +98,7 @@ char* RAGAnalyzer_GetTermTag(RAGAnalyzerHandle handle, const char* term);
 
 // Copy an existing RAGAnalyzer instance to create a new independent instance
 // This is useful for creating per-request analyzer instances in multi-threaded environments
-// The new instance shares the loaded dictionaries with the original but has independent internal state
+// The new instance shares the tokenizer dictionaries and owns its OpenCC converter state.
 // Returns: handle to the new analyzer instance, or NULL on failure
 RAGAnalyzerHandle RAGAnalyzer_Copy(RAGAnalyzerHandle handle);
 

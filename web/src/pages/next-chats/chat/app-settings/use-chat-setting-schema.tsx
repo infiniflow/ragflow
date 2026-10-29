@@ -44,6 +44,7 @@ export function buildChatSettingFormSchema(t: (key: string) => string) {
     parallel_api_key: z.string().optional(),
     querit_api_key: z.string().optional(),
     search1api_api_key: z.string().optional(),
+    searchapi_api_key: z.string().optional(),
     serply_api_key: z.string().optional(),
     tavily_api_key: z.string().optional(),
     youcom_api_key: z.string().optional(),
@@ -56,6 +57,7 @@ export function buildChatSettingFormSchema(t: (key: string) => string) {
         WebSearchProvider.Parallel,
         WebSearchProvider.Querit,
         WebSearchProvider.Search1API,
+        WebSearchProvider.SearchApi,
         WebSearchProvider.Serply,
         WebSearchProvider.Tavily,
         WebSearchProvider.YouCom,
@@ -93,8 +95,11 @@ export function buildChatSettingFormSchema(t: (key: string) => string) {
       ...LlmSettingEnabledSchema,
       llm_id: z.string().optional(),
       // Empty means "inherit the tenant default": most chats never override
-      // the decision model, and clearing the field must be expressible.
-      decision_id: z.string().optional(),
+      // the decision model, so the backend returns null for them and clearing
+      // must be expressible. optional() alone only permits undefined, so a
+      // loaded null would fail validation and block every save — nullable()
+      // is required to represent the inherited state.
+      decision_id: z.string().nullable().optional(),
       ...keywordsSimilarityWeightSchema,
       ...similarityThresholdSchema,
       ...topnSchema,

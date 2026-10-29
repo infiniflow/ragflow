@@ -19,7 +19,10 @@ const restAPIv1 = `/api/v1`;
 
 export { restAPIv1, webAPI };
 
-export default {
+import merge from 'lodash/merge';
+import apiPrivate from '@/ee/utils/api-private';
+
+const apiEndpoints = {
   // user
   login: `${restAPIv1}/auth/login`,
   logout: `${restAPIv1}/auth/logout`,
@@ -27,8 +30,6 @@ export default {
   setting: `${restAPIv1}/users/me`,
   userInfo: `${restAPIv1}/users/me`,
   tenantInfo: `${restAPIv1}/users/me/models`,
-  loginChannels: `${restAPIv1}/auth/login/channels`,
-  loginChannel: (channel: string) => `${restAPIv1}/auth/login/${channel}`,
 
   // team
   addTenantUser: (tenantId: string) => `${restAPIv1}/tenants/${tenantId}/users`,
@@ -366,6 +367,12 @@ export default {
   fetchVersionList: (id: string) => `${restAPIv1}/agents/${id}/versions`,
   fetchVersion: (agentId: string, versionId: string) =>
     `${restAPIv1}/agents/${agentId}/versions/${versionId}`,
+  deleteVersion: (agentId: string, versionId: string) =>
+    `${restAPIv1}/agents/${agentId}/versions/${versionId}`,
+  updateVersion: (agentId: string, versionId: string) =>
+    `${restAPIv1}/agents/${agentId}/versions/${versionId}`,
+  applyVersion: (agentId: string, versionId: string) =>
+    `${restAPIv1}/agents/${agentId}/versions/${versionId}/apply`,
   getAgent: (id: string) => `${restAPIv1}/agents/${id}`,
   uploadAgentFile: (id?: string) => `${restAPIv1}/agents/${id}/upload`,
   createAgentSession: (agentId: string) =>
@@ -401,6 +408,10 @@ export default {
   },
   downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
+  issueAgentWebhookCredential: (id: string) =>
+    `${restAPIv1}/agents/${id}/webhook/credentials`,
+  revokeAgentWebhookCredential: (id: string) =>
+    `${restAPIv1}/agents/${id}/webhook/credentials`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,
 
   // explore
@@ -533,3 +544,10 @@ export default {
   skillIndex: `${restAPIv1}/skills/index`,
   skillReindex: `${restAPIv1}/skills/reindex`,
 };
+
+// Enterprise customization overlays: the enterprise repository carries a real
+// implementation of the same-path file `web/src/ee/utils/api-private.ts`;
+// upstream ships it as an empty object so this import resolves in both trees.
+// Enterprise endpoints must live only in the ee/ file, never here. Keys in
+// the overlay override or extend `apiEndpoints`.
+export default merge(apiEndpoints, apiPrivate);

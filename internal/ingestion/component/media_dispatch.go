@@ -37,6 +37,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
@@ -108,7 +109,7 @@ func maybeDispatchImage(
 		return parser.ParseResult{}, true, err
 	}
 	defer release()
-	if len(binary) == 0 || len(binary) > parser.MaxImagePayloadBytes {
+	if len(binary) == 0 || len(binary) > media.MaxImagePayloadBytes {
 		return parser.ParseResult{}, true, fmt.Errorf("parser: image payload exceeds size limits")
 	}
 	// SVG carries its text in the document, so it is read rather than
@@ -146,7 +147,6 @@ func maybeDispatchImage(
 	if len(parsed.JSON) == 0 {
 		return parsed, true, fmt.Errorf("parser: image parser returned no image item")
 	}
-	parsed.OutputFormat = "json"
 	imageData, _ := parsed.JSON[0].ToMap()["image"].(string)
 	m := parsed.JSON[0].ToMap()
 	m["text"] = text
@@ -390,8 +390,7 @@ func maybeDispatchAudio(
 	}
 
 	return parser.ParseResult{
-		OutputFormat: "json",
-		JSON:         []parser.DocItem{parser.NewTextJSONItem(transcription)},
+		JSON: []parser.DocItem{parser.NewTextJSONItem(transcription)},
 	}, true, nil
 }
 

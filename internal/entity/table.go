@@ -60,16 +60,19 @@ type TableCell struct {
 	// empty; readers must skip it (the real content is at the origin slot).
 	Covered bool `json:"covered,omitempty"`
 	// OriginRow / OriginCol name the slot whose span produced this Covered
-	// marker. They are diagnostic only and are not serialized.
-	OriginRow int `json:"-"`
-	OriginCol int `json:"-"`
+	// marker. They are serialized because the table splitter clamps a header
+	// span after the parser payload has round-tripped through JSON; zero is a
+	// valid origin, so omitempty is safe (it decodes back to zero).
+	OriginRow int `json:"origin_row,omitempty"`
+	OriginCol int `json:"origin_col,omitempty"`
 }
 
-// CellTexts returns the row-major cell texts, skipping Covered positions
+// CellTexts returns the raw row-major cell texts, skipping Covered positions
 // (their content lives at the origin). For a grid with no merges this is
-// exactly the legacy Rows: same strings, same row lengths. Consumers that only
-// care about the textual content use this view; consumers that need merge
-// geometry read Grid directly.
+// exactly the legacy Rows: same strings, same row lengths. Consumers that need
+// merged values projected into the covered slots (the table chunker's
+// column-aligned view, or QA's all-rows-are-data view) should call
+// tableutil.ResolveRows with the appropriate mode instead.
 func (td *TableData) CellTexts() [][]string {
 	if td == nil {
 		return nil

@@ -255,6 +255,13 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	}
 	operationLog.UserID = user.ID
 
+	if user.IsSuperuser != nil && *user.IsSuperuser {
+		common.ResponseWithCodeData(c, common.CodeForbidden, false, "super admin should not login to this page.")
+		operationLog.ErrorCode = uint16(common.CodeForbidden)
+		operationLog.Message = "super admin should not login to this page."
+		return
+	}
+
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		errorMessage := fmt.Sprintf("Failed to get secret key: %s", err.Error())
@@ -471,22 +478,6 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, true, "password changed successfully")
-}
-
-// GetLoginChannels get all supported authentication channels
-// @Summary Get Login Channels
-// @Description Get all supported OAuth authentication channels
-// @Tags users
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/user/login/channels [get]
-func (h *UserHandler) GetLoginChannelsDeprecated(c *gin.Context) {
-	channels, code, err := h.userService.GetLoginChannels()
-	if err != nil {
-		common.ResponseWithCodeData(c, code, []interface{}{}, "Load channels failure, error: "+err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, channels, "success")
 }
 
 // SetTenantInfo update tenant information

@@ -245,16 +245,17 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 			parserID, pipelineID := parserSelectionColumns(selection)
 			suffix := strings.TrimPrefix(filepath.Ext(docName), ".")
 			doc := &entity.Document{
-				ID:           common.GenerateUUID(),
-				KbID:         kb.ID,
-				ParserID:     parserID,
-				PipelineID:   pipelineID,
-				ParserConfig: parserConfig,
-				CreatedBy:    userID,
-				Type:         file.Type,
-				Name:         &docName,
-				Suffix:       suffix,
-				Size:         file.Size,
+				ID:                common.GenerateUUID(),
+				KbID:              kb.ID,
+				ParserID:          parserID,
+				PipelineID:        pipelineID,
+				PipelineVersionID: kb.PipelineVersionID,
+				ParserConfig:      parserConfig,
+				CreatedBy:         userID,
+				Type:              file.Type,
+				Name:              &docName,
+				Suffix:            suffix,
+				Size:              file.Size,
 			}
 			if file.Location != nil {
 				doc.Location = file.Location
@@ -262,7 +263,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 
 			// InsertDocument creates the row and increments KB doc_num in one
 			// transaction, so a failed insert never leaves a stale counter.
-			if err = s.documentSvc.InsertDocument(doc); err != nil {
+			if err = s.documentSvc.InsertDocument(ctx, doc); err != nil {
 				common.Warn("convertFiles: InsertDocument failed",
 					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))
 				continue

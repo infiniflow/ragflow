@@ -10,43 +10,29 @@ sidebar_custom_props: {
 
 # Configure the Transformer Component
 
-The **Transformer** component is designed to bridge the "semantic gap". In general, it uses AI models to add semantic metadata, making your content easier to discover during retrieval.
+**Transformer** uses a chat model to generate summaries, keywords, questions, tags, or metadata for document chunks. These additions provide more ways to find relevant content during retrieval.
 
-It has four generation types:
+Enable one or more of the following options:
 
 - **Summary**: Creates a concise overview.
-- **Keywords**: Extracts key terms.
-- **Questions**: Generates questions that each text chunk can answer.
+- **Auto keywords**: Extracts key terms.
+- **Auto-question**: Generates questions that each text chunk can answer.
+- **Tags**: Assigns relevant tags from the selected **Tag file**. Set the maximum number of tags to extract.
 - **Metadata**: Custom metadata extraction.
 
 ![Select Transformer generation type](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/transformer2.png)
 
-If you have multiple **Transformer** components, make sure to separate the **Transformer** component for each function, for example, one for summaries and another for keywords.
+A single **Transformer** can enable multiple options; a separate component is not required for each function.
 
 Key configurations:
 
-Model mode (select one):
-
-- **Improvise**: More creative, suitable for question generation.
-- **Precise**: Strictly faithful to the text, suitable for summary and keyword extraction.
-- **Balanced**: A middle ground suitable for most scenarios.
-
-![Configure Transformer model mode](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/transformer1.png)
+**Model**: Select a configured chat model.
 
 Prompt engineering:
 
-- The system prompt for each generation type is open and customizable.
+- Customize **System prompt** where the selected option provides it.
 
-Connection:
+Connection and input:
 
-- The **Transformer** can be connected after the **Parser** to process the entire document, or after the **Chunker** to process each chunk.
-
-Variable reference:
-
-- Nodes do not automatically obtain content. In the user prompt, manually reference upstream variables by typing `/` and selecting a specific output, such as `/{Parser.output}` or `/{Chunker.output}`.
-
-Chained connection:
-
-- When chaining **Transformer** components, if variables are referenced correctly, the second **Transformer** component processes the output of the first one, for example, generating keywords from a summary.
-
-![Chain Transformer components](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/transformer3.png)
+- Connect **Transformer** to an upstream node that provides document chunks. It enriches those chunks with the enabled extraction results.
+- After **Transformer**, add **Indexer** for indexing or **Compiler** for knowledge compilation. Generated summaries are stored alongside the original chunk text.

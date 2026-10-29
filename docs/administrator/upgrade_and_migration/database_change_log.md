@@ -10,34 +10,54 @@ sidebar_custom_props: {
 
 # Database Change Log
 
-A version-by-version record of the schema and data changes the Go backend applies to a RAGFlow database, and of the version marker that decides which of them still have to run.
+A record of the schema and data changes the Go backend applies to a RAGFlow database, and of the version or schema checks that decide which of them still have to run.
 
 ## How the database version is recorded
 
 - The marker is a row in `system_settings` with the key `mysql_migration.database.version`.
-- The marker prevents a migration step from running again after that step has completed successfully.
-- Go defines the versions as constants: `modelMigrationBaseVersion` and `modelMigrationTargetVersion` in [migration_version.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration_version.go), `conversationHistoryTargetVersion` in [conversation_history_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/conversation_history_migration.go), `knowledgebaseParserConfigTargetVersion` in [migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration.go), and `ingestionParserConfigTargetVersion` in [ingestion_parser_config_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/ingestion_parser_config_migration.go). The two parser-config constants share `v1.0.0-rc2`.
-- A step runs when the stored version is lower than the step's version. Versions are compared with Python PEP 440 semantics, where a `dev` prerelease sorts *before* the release it precedes (`v1.0.0-rc1.dev1` < `v1.0.0-rc1`). A missing or unparsable marker never skips a step.
+- For version-gated steps, the marker prevents a migration step from running again after that step has completed successfully.
+- Go defines the versions as constants: `modelMigrationBaseVersion` and `modelMigrationTargetVersion` in [migration_version.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration_version.go), `conversationHistoryTargetVersion` in [conversation_history_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/conversation_history_migration.go), `knowledgebaseParserConfigTargetVersion` in [migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration.go), and `ingestionParserConfigTargetVersion` in [ingestion_parser_config_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/ingestion_parser_config_migration.go). The two parser-config constants share `v1.0.0-rc2`. The DSL multi-version backfill is gated by `dslVersionTargetVersion` (`v1.0.0-rc3.dev6`) in [dsl_version_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/dsl_version_migration.go).
+- The current permission migration targets `permissionMigrationTargetVersion` (`v1.0.0-rc3.dev4`) in [permission_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/permission_migration.go). Tenant default-model migration targets `tenantDefaultModelsTargetVersion` (`v1.0.0-rc3.dev5`) in [tenant_default_models_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/tenant_default_models_migration.go).
+- The compilation queue split records `knowledgeCompileQueueTargetVersion` (`v1.0.0-rc3.dev5`), defined in [knowledge_compile_queue_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/knowledge_compile_queue_migration.go), after both queues finish. Source-column presence controls the queue copy even when the marker already contains this or a newer version.
+- A version-gated step runs when the stored version is lower than the step's version. Versions are compared with Python PEP 440 semantics, where a `dev` prerelease sorts *before* the release it precedes (`v1.0.0-rc1.dev1` < `v1.0.0-rc1`). A missing or unparsable marker never skips a step.
 - `checkDatabaseVersion` in [cmd/ragflow_server.go](https://github.com/infiniflow/ragflow/blob/main/cmd/ragflow_server.go) refuses to start when the code version is older than the stored database version, so a database migrated by a newer release cannot be opened by an older one.
 
-Startup order in `InitDB` ([database.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/database.go)):
+Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/database.go)):
 
 1. `RunMigrations` — manual, idempotent steps plus the two versioned tenant model steps. Runs *before* `AutoMigrate` because it has to observe the legacy schema.
 2. `migrateIngestionLogRunIdentity` — ingestion log columns and indexes.
-3. `AutoMigrate` — converges every ORM model.
-4. `migrateConversationHistory` — runs *after* `AutoMigrate`, which creates the child tables it backfills.
-5. `migrateIngestionParserConfigs` — converts ingestion settings on datasets and documents, then invokes the existing `migrateKnowledgebaseParserConfig` cleanup. Both run after the conversation split so the shared marker cannot skip that split.
+3. `migrateUserTenantDuplicates` — deduplicates memberships before `AutoMigrate` creates their unique index.
+4. `AutoMigrate` — converges every ORM model, including the compilation queue tables.
+5. `migrateConversationHistory` — runs *after* `AutoMigrate`, which creates the child tables it backfills.
+6. `migrateIngestionParserConfigs` — converts ingestion settings on datasets and documents, then invokes the existing `migrateKnowledgebaseParserConfig` cleanup. Both run after the conversation split so the shared marker cannot skip that split.
+7. `migrateTenantModelMaxTokens` — backfills model context windows before advancing the marker to its target.
+8. `migratePermissions` — applies the cumulative permission migration through `v1.0.0-rc3.dev4`. The enterprise hook runs before the shared version check.
+9. `migrateTenantDefaultModels` — moves tenant-wide model selections to owner memberships, drops the tenant columns, and records `v1.0.0-rc3.dev5`.
+10. `migrateTenantModelProviderUserUniqueIndex` — reconciles provider ownership indexes.
+11. `migrateKnowledgeCompileQueues` — copies the existing compilation queues and drops their source columns, then records `v1.0.0-rc3.dev5` if the marker is older. It runs after tenant default-model migration so the queue split cannot make that step skip its data changes. Queue copying remains gated on source-column presence even when the preceding step has already recorded `dev5`.
+12. `MigrateDSLVersionColumns` and `BackfillDSLVersionBindings` — add pipeline version columns and bind existing dataflow canvases, then record `v1.0.0-rc3.dev6`.
+13. `migrateConversationReferences` — move answer references into message rows and record `v1.0.0-rc3.dev7`.
 
 ## Version overview
 
-| Database version  | Scope                                                                                                        | Gate constant                      |
+| Database version  | Scope                                                                                                        | Gate                               |
 |-------------------|--------------------------------------------------------------------------------------------------------------|------------------------------------|
 | `v0.26.0`         | Rebuild the tenant model tables from `tenant_llm` and normalize stored model ids                             | `modelMigrationBaseVersion`        |
 | `v1.0.0-rc1`      | Seed factory-declared models, merge `model_type` into an integer bitmask, populate the `tenant_*_id` columns | `modelMigrationTargetVersion`      |
 | `v1.0.0-rc1`      | Split conversation message and reference payloads into child tables                                          | `conversationHistoryTargetVersion` |
 | `v1.0.0-rc2`      | Convert Python ingestion settings in dataset/document `parser_config` onto pipeline components, then remove retired dataset `raptor` / `graphrag` sections | `ingestionParserConfigTargetVersion` / `knowledgebaseParserConfigTargetVersion` |
+| `v1.0.0-rc3.dev1` | Permission ownership columns, nullable inviters, and unique tenant memberships | Historical permission target; included in the current cumulative permission migration |
+| `v1.0.0-rc3.dev2` | No standalone community migration is defined in the checked-in code or its history | No separate community gate |
+| `v1.0.0-rc3.dev3` | Tenant role support, user-scoped model providers, and enterprise migration-marker separation | Historical permission target; provider index reconciliation uses schema checks |
+| `v1.0.0-rc3.dev4` | Normalize legacy tenant invitation roles and statuses | `permissionMigrationTargetVersion` |
+| `v1.0.0-rc3.dev5` | Move tenant default-model selections to owner memberships and drop the tenant columns | `tenantDefaultModelsTargetVersion` |
+| `v1.0.0-rc3.dev5` | Split compilation queues into `knowledge_compile_docs_backlog` and `knowledge_compile_docs_inflight`, then drop their source columns | `knowledgeCompileQueueTargetVersion`; source-column presence controls copying |
+| `v1.0.0-rc3.dev6` | Lock existing dataflow-canvas dataset/document bindings to the canvas latest version (the `pipeline_version_id` columns are added by the version-less step below) | `dslVersionTargetVersion` |
+| `v1.0.0-rc3.dev7` | Store conversation references in each assistant message | `conversationReferenceTargetVersion` |
 
 The two tenant model steps are cumulative: a database at `v0.26.0` still runs the `v1.0.0-rc1` step, and a database at or above `v1.0.0-rc1` runs neither.
+
+The `dev1`–`dev4` permission entries below describe the development history. They are consolidated into the current `migratePermissions` body targeting `dev4`; they are not four independent migration functions. The two `dev5` changes run in the order listed above and share the database version marker. A `dev5` marker alone does not prove that the compilation queue columns have been removed.
 
 ---
 
@@ -149,9 +169,160 @@ On success the migration records `v1.0.0-rc2`. Databases already marked `v1.0.0-
 
 ---
 
+## v1.0.0-rc3.dev1
+
+### Permission schema and ownership
+
+The initial permission migration introduced these changes, now retained in the cumulative `migratePermissions` implementation:
+
+| Table | Schema and data change |
+|-------|------------------------|
+| `user_tenant` | Makes `invited_by` nullable, widens `status` to `varchar(16)`, and adds unique index `idx_user_tenant_user_tenant (user_id, tenant_id)`. |
+| `tenant_model_provider` | Adds `user_id varchar(32)` and fills missing or empty owners from `tenant_id`. |
+| `api_token` | Adds nullable `user_id varchar(32)` and fills missing or empty owners from `tenant_id`. |
+| `user_canvas` | Adds nullable `tenant_id varchar(32)` and fills missing or empty tenant IDs from `user_id`. |
+| `tenant` | Adds `invite_enabled` with default `false` and nullable `role_id`. |
+
+Before `AutoMigrate` creates the membership unique index, `migrateUserTenantDuplicates` merges duplicate `(user_id, tenant_id)` memberships. It retains the preferred joined membership using role and timestamp ordering, remaps references in existing `group_info`, `group_member`, `department_member`, and `permission` tables, and deletes the duplicates. This schema-checked preparation runs independently of the version marker.
+
+The ownership backfills preserve non-empty values. They run after schema creation through `migratePermissions`, which currently records `dev4` after its cumulative work succeeds.
+
+---
+
+## v1.0.0-rc3.dev2
+
+No standalone community schema or data migration for `dev2` is defined in this checkout. The community permission target moved directly from `dev1` to `dev3`; `dev2` is exercised as an existing database version in the permission migration tests. Upgrading from a `dev2` marker runs the cumulative permission migration targeting `dev4`.
+
+Enterprise permission work is supplied through `permissionDataModelsEE` and `migratePermissionDataEE`. This community checkout provides empty/no-op implementations, so it does not define enterprise-only `dev2` changes.
+
+---
+
+## v1.0.0-rc3.dev3
+
+### Tenant roles and provider ownership
+
+| Table or migration | Change |
+|--------------------|--------|
+| `user` | Adds nullable, indexed `role_id` for user role assignment. |
+| `tenant_model_provider` | Replaces uniqueness on `(provider_name, tenant_id)` with `idx_tenant_provider_user_unique (provider_name, tenant_id, user_id)`, allowing different users in one tenant to own providers with the same name. |
+| `migratePermissions` | Invokes the enterprise permission hook before checking the shared version marker, so a completed community migration cannot suppress enterprise data work. Enterprise implementations can use their own marker through the marker-specific read/write helpers. |
+
+Provider index reconciliation is implemented in [tenant_model_provider_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/tenant_model_provider_migration.go). It checks existing indexes by column set, creates the replacement before dropping old two-column unique indexes, and runs independently of the permission version gate. Enterprise system-setting initialization also runs after the migration/server schema setup; it is a no-op in this community checkout.
+
+---
+
+## v1.0.0-rc3.dev4
+
+### Legacy tenant invitations
+
+`migrateLegacyTenantInvitationStatuses`, called by `migratePermissions`, rewrites `user_tenant` rows whose role is `invite` and whose status is joined (`'1'`) or SQL `NULL`. The resulting role is an empty string and status is invited (`'2'`). Other memberships remain unchanged.
+
+This step adds no separate schema object. `permissionMigrationTargetVersion` is now `v1.0.0-rc3.dev4`; success records that value after the invitation repair and earlier permission backfills finish. A database already at `dev4` or later skips the shared permission body, while the enterprise hook still runs before that check.
+
+---
+
+## v1.0.0-rc3.dev5
+
+### Tenant default models
+
+Implemented by [tenant_default_models_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/tenant_default_models_migration.go), with target `tenantDefaultModelsTargetVersion` (`v1.0.0-rc3.dev5`).
+
+| Table | Schema and data change |
+|-------|------------------------|
+| `user_tenant` | Receives the model-selection columns through `AutoMigrate`. Missing or empty selections are filled from the matching `tenant` row only for memberships with role `owner` or `user_id = tenant_id`. Existing selections and other members' settings are preserved. |
+| `tenant` | **Destructive:** drops the old model-selection columns after the transactional copy succeeds. |
+
+The columns are `llm_id`, `embd_id`, `asr_id`, `img2txt_id`, `rerank_id`, `tts_id`, `ocr_id`, and `decision_id`, together with their corresponding `tenant_*_id` columns. Copying all columns is transactional; column drops follow and check whether each column still exists, allowing an interrupted run to resume before the marker is advanced.
+
+This version-gated step skips databases already marked `dev5` or later. When either required table is absent, there is no copy or drop, but the step still records its target version. It runs before the queue split, which also targets `dev5`.
+
+### Knowledge compilation queues
+
+Introduced in `v1.0.0-rc3.dev5` and implemented by `migrateKnowledgeCompileQueues` in [knowledge_compile_queue_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/knowledge_compile_queue_migration.go). Each queue is migrated when its source column exists, regardless of `mysql_migration.database.version`. After both queues finish, the step records `knowledgeCompileQueueTargetVersion` (`v1.0.0-rc3.dev5`) in that marker if its current value is older. A newer version is preserved.
+
+| Table | Schema and data change |
+|-------|------------------------|
+| `knowledge_compile_docs_backlog` | Created by `AutoMigrate`. Each event in `knowledge_compile_docs.backlog_doc_ids` becomes a row with `dataset_id`, `doc_id`, `queue_position`, `event_type`, `variants`, and `task_types`. |
+| `knowledge_compile_docs_inflight` | Created by `AutoMigrate` with the same columns; populated from `knowledge_compile_docs.inflight_doc_ids`. |
+| `knowledge_compile_docs` | **Destructive:** drops `backlog_doc_ids` and `inflight_doc_ids`, each after its queue has been copied successfully. Dataset scheduling state, leases, progress, and diagnostics remain in this table. |
+
+Both new tables have no `id`, primary key, or unique constraint. A non-unique index on `(dataset_id, queue_position)` supports ordered reads. Migration preserves duplicate events, array order, and routing metadata; `variants` and `task_types` remain JSON arrays stored in longtext columns.
+
+Datasets are read in batches of 100, with each dataset copied in its own transaction. Info-level progress logs identify the queue and batch range, report committed dataset and entry counts and remaining datasets, and record each source-column drop. Entry counts include duplicate events and reset for each queue and migration run. Failed dataset copies roll back and log the dataset and committed progress. Rerunning while services remain stopped replaces copied rows for any source column that still exists, so retries do not duplicate events.
+
+The queue step advances the version marker only after both queue copies and source-column drops succeed. If either queue fails, it leaves the marker at its value on entry; the preceding tenant default-model step may already have recorded `dev5`. The source-column checks and server startup guard therefore remain authoritative for queue migration completion. Databases whose queues were already split also advance to `v1.0.0-rc3.dev5` without copying entries again when their marker is older. The completion log includes the database version and target version.
+
+This migration requires a coordinated service stop:
+
+1. Stop all services that publish or consume compilation events.
+2. Run `ragflow_server --migrate --log-level info` to see progress and wait for successful completion of both queues.
+3. Restart the services.
+
+Starting a server while either source column remains fails with `knowledge compilation queues need migration`. A database version marker at or above the current release does not bypass this requirement. If migration fails, keep services stopped, resolve the reported error, and rerun `ragflow_server --migrate`.
+
+## v1.0.0-rc3.dev6
+
+Locks every pre-existing dataflow-canvas binding to the latest version of that canvas, so already-configured datasets and documents keep parsing against the version that was current when the upgrade ran (design section 5/B4 sticky snapshot). The `pipeline_version_id` columns it writes are added by the version-less step below; this step only backfills their values and is gated by the `dslVersionTargetVersion` marker.
+
+### Data migration
+
+| Table | Change |
+|-------|--------|
+| `knowledgebase`, `document` | Rows whose `pipeline_id` points at a `dataflow_canvas` are bound to that canvas latest version (`user_canvas_version` ordered by `create_time DESC`). Bindings to a built-in parser id (no backing `user_canvas`), to a non-dataflow canvas, or to a canvas with no versions are left unbound; a dangling version id is never written. |
+
+Execution details:
+
+- Rows are read in id-ordered batches of 256, each batch in its own transaction, so an interrupted run resumes cleanly.
+- The marker advances to `v1.0.0-rc3.dev6` only after both tables are processed. Databases already marked `v1.0.0-rc3.dev6` or later skip the backfill.
+
+On success the step writes `v1.0.0-rc3.dev6` into the version marker.
+
+---
+
+## v1.0.0-rc3.dev7
+
+Adds a nullable `reference` LONGTEXT column to `conversation_message` and
+`api_4_conversation_message`. New chat, agent, and channel answers store their
+reference object directly on their message row.
+
+Run `ragflow_server --migrate` with writers stopped before starting the new
+services. The migration copies `conversation_reference` and
+`api_4_conversation_reference` into the corresponding assistant messages. It
+uses `message_position` when present; older array entries follow assistant
+order after the first user message, excluding the prologue. Rows are read in
+batches of 100 and written in transactions. Reruns preserve reference objects
+already stored on messages. References duplicated in message metadata are moved
+into the column and removed from metadata, so generation reads avoid that data.
+
+After both message tables are copied successfully, the migration drops
+`conversation_reference` and `api_4_conversation_reference`. Automatic schema
+creation no longer recreates these tables. Source-table presence triggers copying
+and cleanup even if the marker already contains `v1.0.0-rc3.dev7` or a newer version;
+a newer marker is preserved.
+
+References without a surviving assistant message are skipped and counted in a
+warning. These include references left behind by deleted messages, empty histories,
+and unsuccessful turns. They are removed with the source tables and are never
+attached to another answer. Invalid JSON or a copy error stops the migration before
+either source table is dropped. Resolve the reported issue and rerun it. Completed
+batches are safe to retry. The marker advances to `v1.0.0-rc3.dev7` only after both
+copies and table drops finish. A failed table drop can be retried even if the
+other source table has already been dropped.
+
+Session responses return `reference` within each answer, with no session-level
+reference array when `include_reference=true`. Clients must read
+`messages[i].reference` (or `message[i].reference` for agent sessions).
+`include_reference` and `include_prompt` both default to `false`; omitted fields
+are excluded from SQL as well as the response. The UI requests the fields it
+displays. Generation history SQL omits
+`reference`, `prompt`, `usage`, and `elapsed_ms`; session detail reads request
+the fields they display.
+
+---
+
 ## Version-less steps
 
-These steps are not gated by the version marker. They are idempotent and run on every startup, either through `RunMigrations` or through the ingestion helpers in `InitDB`.
+These steps are not gated by the version marker. They use schema or data checks to make repeated execution safe. Steps in `RunMigrations` run during `ragflow_server --migrate`; ingestion helpers also run during server startup.
 
 ### Schema changes
 
@@ -168,6 +339,9 @@ These steps are not gated by the version marker. They are idempotent and run on 
 | `ingestion_task_log`                                                                       | Adds `pipeline_log_id varchar(32) NULL`, `event_type tinyint NOT NULL DEFAULT 4`, and the index `idx_ingestion_task_log_pipeline_id`.                                                                                                                                                                                                         |
 | `dialog`, `tenant_llm`, `api_token`, `canvas_template`, `system_settings`, `knowledgebase` | Column types converged to the Peewee models, for example `dialog.top_k int NOT NULL DEFAULT 1024`, `tenant_llm.api_key text`, `api_token.dialog_id varchar(32)`, `canvas_template.title` / `description` nullable longtext, `system_settings.value text NOT NULL`, `knowledgebase.raptor_task_finish_at` / `mindmap_task_finish_at` datetime. |
 | `conversation`, `api_4_conversation`                                                       | Index `idx_<table>_dialog_updated (dialog_id, update_time, id)` for conversation list queries.                                                                                                                                                                                                                                                |
+| `knowledgebase` | Adds `pipeline_version_id varchar(32) NULL` (dataflow canvas version binding; design section 5/B4). |
+| `document` | Adds `pipeline_version_id varchar(32) NULL` (inherits the dataset pinned version at upload; design section 5). |
+| `user_canvas_version` | Adds `alias varchar(255) NULL` (free-text version alias for the version list filter; design A2/F1). |
 
 ### Data changes
 

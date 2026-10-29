@@ -1,5 +1,4 @@
 import { render, waitFor } from '@testing-library/react';
-import React from 'react';
 
 import { MessageType } from '@/constants/chat';
 import { SingleChatBox } from './single-chat-box';
@@ -76,7 +75,6 @@ function buildConversation(id: string) {
     update_date: '',
     update_time: 0,
     is_new: true as const,
-    reference: [],
     messages: [
       {
         id: 'old-message',

@@ -11,6 +11,7 @@ jest.mock('./reparse-dialog', () => ({
 
 const mockRunDocumentByIds = jest.fn();
 const mockShowReparseDialog = jest.fn();
+const mockUseDocumentPipelineVersion = jest.fn();
 
 jest.mock('./use-run-document', () => ({
   useHandleRunDocumentByIds: () => ({
@@ -21,8 +22,14 @@ jest.mock('./use-run-document', () => ({
   }),
 }));
 
+jest.mock('./use-document-pipeline-version', () => ({
+  useDocumentPipelineVersion: (record: unknown) =>
+    mockUseDocumentPipelineVersion(record),
+}));
+
 import { IngestionTaskStatus } from './constant';
-import { ParsingStatusCell } from './parsing-status-cell';
+import { ParseDropdownButton, ParsingStatusCell } from './parsing-status-cell';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const baseRecord = {
   id: 'doc-1',
@@ -83,6 +90,8 @@ describe('ParsingStatusCell', () => {
   beforeEach(() => {
     mockRunDocumentByIds.mockClear();
     mockShowReparseDialog.mockClear();
+    mockUseDocumentPipelineVersion.mockReset();
+    mockUseDocumentPipelineVersion.mockReturnValue(undefined);
   });
 
   it('shows the queued chip for CREATED tasks', () => {
@@ -181,7 +190,7 @@ describe('ParsingStatusCell', () => {
     renderCell({
       ingestion_status: IngestionTaskStatus.COMPLETED,
       chunk_count: 0,
-      parser_config: {},
+      parser_config: { enable_metadata: true },
     });
 
     fireEvent.click(screen.getByTestId('document-parse-toggle'));
@@ -190,31 +199,76 @@ describe('ParsingStatusCell', () => {
     expect(mockShowReparseDialog).not.toHaveBeenCalled();
   });
 
-  it('asks for confirmation on a chunkless document when auto-metadata can be applied', () => {
-    renderCell({
-      ingestion_status: IngestionTaskStatus.COMPLETED,
-      chunk_count: 0,
-      parser_config: { enable_metadata: true },
+  // The outdated bang (design D1/D2/D3) lives in the parser dropdown button,
+  // so it is covered here against ParseDropdownButton.
+  function renderDropdown(overrides: Record<string, any> = {}) {
+    const record = { ...baseRecord, ...overrides } as any;
+    return render(
+      React.createElement(
+        TooltipProvider,
+        null,
+        React.createElement(ParseDropdownButton, {
+          record,
+          showChangeParserModal: jest.fn(),
+        }),
+      ),
+      { wrapper: StrictMode },
+    );
+  }
+
+  it('labels a pipeline document by its version title and alias', () => {
+    mockUseDocumentPipelineVersion.mockReturnValue({
+      id: 'v1',
+      title: 'geek pipeline 2026-10-29 11:47:29',
+      alias: '111',
+    });
+    renderDropdown({
+      pipeline_id: 'canvas-1',
+      pipeline_name: 'My pipeline',
+      pipeline_version_id: 'v1',
     });
 
-    fireEvent.click(screen.getByTestId('document-parse-toggle'));
-
-    expect(mockShowReparseDialog).toHaveBeenCalledTimes(1);
-    expect(mockRunDocumentByIds).not.toHaveBeenCalled();
+    expect(
+      screen.getByText('geek pipeline 2026-10-29 11:47:29'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('111')).toBeInTheDocument();
+    expect(screen.queryByText('My pipeline')).not.toBeInTheDocument();
   });
 
-  it('detects auto-metadata in the pipeline parser config shape', () => {
-    renderCell({
-      ingestion_status: IngestionTaskStatus.COMPLETED,
-      chunk_count: 0,
-      parser_config: {
-        'Extractor:AutoExtractDefault': { metadata: { enabled: true } },
-      },
+  it('falls back to the pipeline name while the version is unresolved', () => {
+    renderDropdown({
+      pipeline_id: 'canvas-1',
+      pipeline_name: 'My pipeline',
+      pipeline_version_id: 'v1',
     });
 
-    fireEvent.click(screen.getByTestId('document-parse-toggle'));
+    expect(screen.getByText('My pipeline')).toBeInTheDocument();
+  });
 
-    expect(mockShowReparseDialog).toHaveBeenCalledTimes(1);
-    expect(mockRunDocumentByIds).not.toHaveBeenCalled();
+  it('keeps the plain parser label for built-in parsers', () => {
+    renderDropdown({ pipeline_id: '', chunk_method: 'naive' });
+
+    expect(screen.getByText('General')).toBeInTheDocument();
+  });
+
+  it('shows the outdated bang when the pinned pipeline version is not the latest', () => {
+    renderDropdown({
+      pipeline_id: 'canvas-1',
+      pipeline_version_outdated: true,
+    });
+    const bang = screen.getByText('!');
+    expect(bang).toBeInTheDocument();
+    expect(bang).toHaveClass('text-destructive');
+  });
+
+  it('hides the outdated bang for up-to-date or unpinned documents', () => {
+    renderDropdown({
+      pipeline_id: 'canvas-1',
+      pipeline_version_outdated: false,
+    });
+    expect(screen.queryByText('!')).not.toBeInTheDocument();
+
+    renderDropdown({ pipeline_id: '', pipeline_version_outdated: false });
+    expect(screen.queryByText('!')).not.toBeInTheDocument();
   });
 });

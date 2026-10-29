@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -27,10 +28,23 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
+)
+
+const (
+	testResourcePermissionRead  int32 = 1
+	testResourcePermissionWrite int32 = 2
+	testRoleActionEnable        int32 = 1
+	testRoleActionRead          int32 = 2
 )
 
 // sptr returns a pointer to the given string.
 func sptr(s string) *string { return &s }
+
+func isAccessDeniedOrHidden(err error) bool {
+	return errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrResourceNotFound)
+}
 
 // setupServiceTestDB initializes an in-memory SQLite database for service tests.
 func setupServiceTestDB(t *testing.T) *gorm.DB {
@@ -51,6 +65,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.IngestionTaskLog{},
 		&entity.PipelineOperationLog{},
 		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
 		&entity.File2Document{},
 		&entity.File{},
 		&entity.User{},
@@ -77,6 +92,44 @@ func pushServiceDB(t *testing.T, testDB *gorm.DB) {
 	t.Cleanup(func() {
 		dao.DB = orig
 	})
+}
+
+func serviceTestContext(t *testing.T, userID, tenantID string, additionalMemberIDs ...string) context.Context {
+	t.Helper()
+	if dao.DB != nil {
+		sqlDB, err := dao.DB.DB()
+		if err == nil && sqlDB.Ping() == nil {
+			memberIDs := append([]string{userID}, additionalMemberIDs...)
+			if dao.DB.Migrator().HasTable(&entity.UserTenant{}) {
+				for _, memberID := range memberIDs {
+					if memberID == "" {
+						continue
+					}
+					var count int64
+					if err := dao.DB.Model(&entity.UserTenant{}).Where("user_id = ? AND tenant_id = ?", memberID, tenantID).Count(&count).Error; err != nil {
+						t.Fatalf("check test tenant membership: %v", err)
+					}
+					if count != 0 {
+						continue
+					}
+					role := string(permission.RoleNormal)
+					if memberID == tenantID {
+						role = string(permission.RoleOwner)
+					}
+					status := entity.TenantMembershipStatusJoined
+					if err := dao.DB.Create(&entity.UserTenant{
+						ID: common.GenerateToken(), UserID: memberID, TenantID: tenantID, Role: role, Status: &status,
+					}).Error; err != nil {
+						t.Fatalf("create test tenant membership: %v", err)
+					}
+				}
+			}
+			if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, memberIDs...); err != nil {
+				t.Fatalf("prepare enterprise permission fixture: %v", err)
+			}
+		}
+	}
+	return permission.WithSubject(t.Context(), permission.Subject{UserID: userID, TenantID: tenantID})
 }
 
 func getAPIConversationForTest(t *testing.T, db *gorm.DB, id string) *entity.API4Conversation {
@@ -221,6 +274,15 @@ func insertTestDoc(t *testing.T, id, kbID string, tokenNum, chunkNum int64) {
 func insertTestIngestionTask(t *testing.T, id, userID, docID, datasetID string) {
 	insertTestIngestionTaskWithStatus(t, id, userID, docID, datasetID, common.CREATED)
 }
+
+// grantServiceTestResource grants nothing: the community edition has no
+// per-resource permission table to seed.
+func grantServiceTestResource(_ *testing.T, _ string, _ string, _ string, _ string, _ int32) {
+}
+
+// permissionChangeLogTestModels adds no tables: the community edition has no
+// permission audit log.
+func permissionChangeLogTestModels() []interface{} { return nil }
 
 // insertTestIngestionTaskWithStatus inserts a test IngestionTask with a specific status.
 func insertTestIngestionTaskWithStatus(t *testing.T, id, userID, docID, datasetID, status string) {

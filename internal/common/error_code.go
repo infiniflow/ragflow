@@ -52,40 +52,57 @@ const (
 	CodeConflict                ErrorCode = 409
 	CodeServerError             ErrorCode = 500
 	CodeNotImplemented          ErrorCode = 501
+
+	// Billing error codes match the Python RetCode values the web client
+	// already handles in showPriceModal.
+	CodeBillingResourceInsufficient ErrorCode = 2000
+	CodeBillingAppsInsufficient     ErrorCode = 2001
+	CodeBillingSeatsInsufficient    ErrorCode = 2002
+	CodeBillingStorageInsufficient  ErrorCode = 2003
+	CodeBillingPointsInsufficient   ErrorCode = 2004
+	CodeBillingSubscriptionInvalid  ErrorCode = 2005
+	CodeBillingPaymentFailed        ErrorCode = 2006
 )
 
 var errorMessages = map[ErrorCode]string{
-	CodeSuccess:                 "Success",
-	CodeLackResources:           "Lack resources",
-	CodeNotEffective:            "Not effective",
-	CodeExceptionError:          "System exception",
-	CodeArgumentError:           "Invalid argument",
-	CodeDataError:               "Data error",
-	CodeOperatingError:          "Operation error",
-	CodeTimeoutError:            "Timeout",
-	CodeConnectionError:         "Connection error",
-	CodeRunning:                 "System running",
-	CodeResourceExhausted:       "Resource exhausted",
-	CodePermissionError:         "Permission denied",
-	CodeAuthenticationError:     "Authentication failed",
-	CodeParamError:              "Invalid parameters",
-	CodeConnectionPoolExhausted: "Connection pool exhausted",
-	CodeLicenseValid:            "License valid",
-	CodeLicenseInactiveError:    "License inactive",
-	CodeLicenseExpiredError:     "License expired",
-	CodeLicenseDigestError:      "License digest error",
-	CodeLicenseTimeRollback:     "License time rollback detected",
-	CodeLicenseNotFound:         "License not found",
-	CodeLicenseUnexpectedError:  "Unexpected license error",
-	CodeLicenseNotValidYet:      "License not valid yet",
-	CodeErrorServerStatus:       "Error server status",
-	CodeBadRequest:              "Bad request",
-	CodeUnauthorized:            "Unauthorized",
-	CodeForbidden:               "Forbidden",
-	CodeNotFound:                "Resource not found",
-	CodeConflict:                "Resource conflict",
-	CodeServerError:             "Internal server error",
-	CodeNotImplemented:          "Not implemented",
+	CodeSuccess:                     "Success",
+	CodeLackResources:               "Lack resources",
+	CodeNotEffective:                "Not effective",
+	CodeExceptionError:              "System exception",
+	CodeArgumentError:               "Invalid argument",
+	CodeDataError:                   "Data error",
+	CodeOperatingError:              "Operation error",
+	CodeTimeoutError:                "Timeout",
+	CodeConnectionError:             "Connection error",
+	CodeRunning:                     "System running",
+	CodeResourceExhausted:           "Resource exhausted",
+	CodePermissionError:             "Permission denied",
+	CodeAuthenticationError:         "Authentication failed",
+	CodeParamError:                  "Invalid parameters",
+	CodeConnectionPoolExhausted:     "Connection pool exhausted",
+	CodeLicenseValid:                "License valid",
+	CodeLicenseInactiveError:        "License inactive",
+	CodeLicenseExpiredError:         "License expired",
+	CodeLicenseDigestError:          "License digest error",
+	CodeLicenseTimeRollback:         "License time rollback detected",
+	CodeLicenseNotFound:             "License not found",
+	CodeLicenseUnexpectedError:      "Unexpected license error",
+	CodeLicenseNotValidYet:          "License not valid yet",
+	CodeErrorServerStatus:           "Error server status",
+	CodeBadRequest:                  "Bad request",
+	CodeUnauthorized:                "Unauthorized",
+	CodeForbidden:                   "Forbidden",
+	CodeNotFound:                    "Resource not found",
+	CodeConflict:                    "Resource conflict",
+	CodeServerError:                 "Internal server error",
+	CodeNotImplemented:              "Not implemented",
+	CodeBillingResourceInsufficient: "Billing resource insufficient",
+	CodeBillingAppsInsufficient:     "Billing apps insufficient",
+	CodeBillingSeatsInsufficient:    "Billing seats insufficient",
+	CodeBillingStorageInsufficient:  "Billing storage insufficient",
+	CodeBillingPointsInsufficient:   "Billing points insufficient",
+	CodeBillingSubscriptionInvalid:  "Billing subscription invalid",
+	CodeBillingPaymentFailed:        "Billing payment failed",
 }
 
 func (e ErrorCode) Message() string {

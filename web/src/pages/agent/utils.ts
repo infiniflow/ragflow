@@ -7,6 +7,7 @@ import {
   ICategorizeForm,
   ICategorizeItem,
   ICategorizeItemResult,
+  ISwitchForm,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
 import { buildSelectOptions } from '@/utils/component-util';
@@ -33,6 +34,7 @@ import {
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
+  SwitchElseTo,
   TitleChunkerMethod,
   TypesWithArray,
   WebhookSecurityAuthType,
@@ -134,6 +136,10 @@ function buildAgentTools(edges: Edge[], nodes: Node[], nodeId: string) {
     id: string;
   };
 }
+
+export const generateSwitchHandleText = (idx: number) => {
+  return `Case ${idx + 1}`;
+};
 
 function filterTargetsBySourceHandleId(edges: Edge[], handleId: string) {
   return edges.filter((x) => x.sourceHandle === handleId).map((x) => x.target);
@@ -390,13 +396,17 @@ export function transformTokenChunkerParams(
     // while merging everything into a single chunk, but zeroing them here
     // wiped the user's settings on every save (they reloaded as 0 / ["\n"]).
     overlapped_percent: Number(rest.overlapped_percent) / 100,
-    delimiters: transformObjectArrayToPureArray(rest.delimiters, 'value'),
+    delimiters: rest.delimiters.map(
+      ({ value }: { value?: string }) => value ?? '',
+    ),
     table_context_size: imageTableContextWindow,
     image_context_size: imageTableContextWindow,
 
     // Unset children delimiters if this option is not enabled
     children_delimiters: rest.enable_children
-      ? transformObjectArrayToPureArray(rest.children_delimiters, 'value')
+      ? rest.children_delimiters.map(
+          ({ value }: { value?: string }) => value ?? '',
+        )
       : [],
   };
 }
@@ -732,6 +742,28 @@ export const buildDslComponentsByGraph = (
           params = buildCategorize(edges, nodes, id);
           break;
 
+        case Operator.Switch: {
+          const switchParams = params as ISwitchForm;
+          const branchEdges = edges.filter((edge) => edge.source === id);
+          params = {
+            ...switchParams,
+            conditions: (switchParams.conditions ?? []).map(
+              (condition, index) => ({
+                ...condition,
+                to: filterTargetsBySourceHandleId(
+                  branchEdges,
+                  generateSwitchHandleText(index),
+                ),
+              }),
+            ),
+            [SwitchElseTo]: filterTargetsBySourceHandleId(
+              branchEdges,
+              SwitchElseTo,
+            ),
+          };
+          break;
+        }
+
         case Operator.Parser:
           params = transformParserParams(params);
           break;
@@ -768,6 +800,20 @@ export const buildDslComponentsByGraph = (
           break;
         case Operator.Begin:
           params = transformBeginParams(params);
+          break;
+        case Operator.UserFillUp:
+          if (Array.isArray(params.inputs)) {
+            params = {
+              ...params,
+              inputs: params.inputs.reduce(
+                (inputs, { key, ...value }) => {
+                  inputs[key] = value;
+                  return inputs;
+                },
+                {} as Record<string, Omit<BeginQuery, 'key'>>,
+              ),
+            };
+          }
           break;
         default:
           break;
@@ -890,10 +936,6 @@ export const isKeysEqual = (currentKeys: string[], previousKeys: string[]) => {
 
 export const getOperatorIndex = (handleTitle: string) => {
   return handleTitle.split(' ').at(-1);
-};
-
-export const generateSwitchHandleText = (idx: number) => {
-  return `Case ${idx + 1}`;
 };
 
 export const getNodeDragHandle = (nodeType?: string) => {
@@ -1058,12 +1100,13 @@ export function convertToObjectArray<T extends string | number | boolean>(
 }
 
 /**
- * Message (回复消息) components keep their texts in form.content (string[]).
- * The backend rejects the component at canvas run time unless at least one
- * entry is a non-blank string, so missing/non-array/blank-only content all
- * count as empty here as well.
+ * Message accepts text/content strings or content arrays; every entry must
+ * be a non-blank string to match backend execution validation.
  */
 export function isEmptyMessageContent(content?: unknown): boolean {
+  if (typeof content === 'string') {
+    return content.trim() === '';
+  }
   return (
     !Array.isArray(content) ||
     content.length === 0 ||

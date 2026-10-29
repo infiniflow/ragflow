@@ -495,3 +495,140 @@ func TestDifyRetrieval_RetrievalNotFound(t *testing.T) {
 		t.Errorf("expected 404 for not_found, got %d", w.Code)
 	}
 }
+
+func TestDifyRetrieval_RerankWindowCoversTopK(t *testing.T) {
+	cases := []struct {
+		name, method, url, body  string
+		wantPageSize, wantWindow int
+	}{
+		{"default top_k", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test"}`, 1024, 1024},
+		{"top_k above 64", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test", "retrieval_setting": {"top_k": 100}}`, 100, 100},
+		{"GET top_k", "GET", "/api/v1/dify/retrieval?knowledge_id=kb1&query=test&top_k=200", "", 200, 200},
+		{"top_k below 64 keeps the default window", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test", "retrieval_setting": {"top_k": 10}}`, 10, 64},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, r := setupDifyTest("user1")
+			var got *nlp.RetrievalRequest
+			h.retrievalSvc = &mockRetrievalService{
+				retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
+					got = req
+					return &nlp.RetrievalResult{}, nil
+				},
+			}
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(tc.method, tc.url, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+			}
+			if got.PageSize != tc.wantPageSize {
+				t.Errorf("PageSize = %d, want %d", got.PageSize, tc.wantPageSize)
+			}
+			if got.RerankCandidatesCount == nil {
+				t.Fatal("RerankCandidatesCount is nil")
+			}
+			if *got.RerankCandidatesCount != tc.wantWindow {
+				t.Errorf("RerankCandidatesCount = %d, want %d", *got.RerankCandidatesCount, tc.wantWindow)
+			}
+		})
+	}
+}
+
+func TestDifyRetrieval_TopKOutOfRange(t *testing.T) {
+	for _, topK := range []string{"0", "-1", "1025"} {
+		t.Run(topK, func(t *testing.T) {
+			h, r := setupDifyTest("user1")
+			h.retrievalSvc = &mockRetrievalService{
+				retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
+					t.Fatal("retrieval must not run for an out-of-range top_k")
+					return nil, nil
+				},
+			}
+			w := httptest.NewRecorder()
+			body := `{"knowledge_id": "kb1", "query": "test", "retrieval_setting": {"top_k": ` + topK + `}}`
+			req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// captureRetrievalRequest installs a retrieval service that records the request
+// it was handed, so a test can assert on the nlp-layer parameters.
+func captureRetrievalRequest(h *DifyRetrievalHandler) **nlp.RetrievalRequest {
+	captured := new(*nlp.RetrievalRequest)
+	h.retrievalSvc = &mockRetrievalService{
+		retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
+			*captured = req
+			return &nlp.RetrievalResult{
+				Chunks: []map[string]interface{}{
+					{"doc_id": "doc1", "docnm_kwd": "Test Doc", "content_with_weight": "test content", "similarity": 0.85},
+				},
+			}, nil
+		},
+	}
+	return captured
+}
+
+// LabelQuestion returning nil (no tag source on the dataset) must still reach the
+// retrieval layer as a non-nil pointer to an empty map; a nil pointer makes the
+// nlp layer substitute its {pagerank_fea: 10} default.
+func TestDifyRetrieval_NoTagSourceSendsEmptyRankFeature(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	h.metadataSvc = &mockMetadataService{
+		labelQuestionFn: func(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64 {
+			return nil
+		},
+	}
+	captured := captureRetrievalRequest(h)
+
+	body := `{"knowledge_id": "kb1", "query": "test question"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if *captured == nil {
+		t.Fatal("retrieval service was not called")
+	}
+	if (*captured).RankFeature == nil {
+		t.Fatal("RankFeature = nil, want a pointer to an empty map; nil lets the nlp layer substitute the pagerank_fea default")
+	}
+	if got := len(*(*captured).RankFeature); got != 0 {
+		t.Fatalf("RankFeature has %d entries (%v), want empty", got, *(*captured).RankFeature)
+	}
+}
+
+func TestDifyRetrieval_TagSourceForwardsRankFeatures(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	h.metadataSvc = &mockMetadataService{
+		labelQuestionFn: func(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64 {
+			return map[string]float64{"tag_1": 0.8}
+		},
+	}
+	captured := captureRetrievalRequest(h)
+
+	body := `{"knowledge_id": "kb1", "query": "test question"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if *captured == nil || (*captured).RankFeature == nil {
+		t.Fatal("RankFeature was not forwarded to the retrieval layer")
+	}
+	if got := (*(*captured).RankFeature)["tag_1"]; got != 0.8 {
+		t.Fatalf("RankFeature[tag_1] = %v, want 0.8", got)
+	}
+}

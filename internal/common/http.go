@@ -38,10 +38,64 @@ import (
 const (
 	redactedLogValue      = "[REDACTED]"
 	maxLoggedVectorFloats = 3
+
+	// DefaultMaxJSONRequestBodyBytes is the default limit for non-multipart requests.
+	DefaultMaxJSONRequestBodyBytes int64 = 1 << 20
+	// DefaultMaxMultipartRequestBodyBytes is the default total limit for multipart uploads.
+	DefaultMaxMultipartRequestBodyBytes int64 = 1 << 30
+	// DefaultMaxDocumentUploadBytes is the default per-file limit for dataset document uploads.
+	DefaultMaxDocumentUploadBytes int64 = 128 << 20
+	// MaxWebhookRequestBodyBytes is the default and maximum request body size for agent webhooks.
+	MaxWebhookRequestBodyBytes int64 = 10 * 1_000_000
+
+	ssrfResponseHeaderTimeoutDefault       = 20 * time.Minute
+	schemeSafeResponseHeaderTimeoutDefault = 20 * time.Minute
 )
+
+// GetMaxJSONRequestBodyBytes returns the configured non-multipart request-body
+// limit in bytes, defaulting to 1 MiB.
+func GetMaxJSONRequestBodyBytes() int64 {
+	return getMaxConfiguredBytes(EnvMaxJSONContentLength, "", DefaultMaxJSONRequestBodyBytes)
+}
+
+// GetMaxMultipartRequestBodyBytes returns the configured multipart upload
+// request-body limit in bytes, defaulting to 1 GiB. MAX_CONTENT_LENGTH remains
+// a fallback for existing deployments when the new variable is unset.
+func GetMaxMultipartRequestBodyBytes() int64 {
+	return getMaxConfiguredBytes(EnvMaxMultipartContentLength, EnvMaxContentLength, DefaultMaxMultipartRequestBodyBytes)
+}
+
+// GetMaxDocumentUploadBytes returns the configured per-file limit for dataset document uploads,
+// defaulting to 128 MiB.
+func GetMaxDocumentUploadBytes() int64 {
+	return getMaxConfiguredBytes(EnvMaxDocumentUploadSize, "", DefaultMaxDocumentUploadBytes)
+}
+
+func getMaxConfiguredBytes(envName, fallbackEnvName string, defaultBytes int64) int64 {
+	raw := strings.TrimSpace(GetEnv(envName))
+	if raw == "" && fallbackEnvName != "" {
+		raw = strings.TrimSpace(GetEnv(fallbackEnvName))
+	}
+	if raw == "" {
+		return defaultBytes
+	}
+
+	limit, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || limit <= 0 {
+		return defaultBytes
+	}
+	return limit
+}
 
 var ssrfHttpClient *http.Client
 var schemeSafeHttpClient *http.Client
+
+// llmHTTPResponseHeaderTimeout lets a deployment shorten the wait for response
+// headers, which is what a hung provider endpoint spends on every retry. Each
+// client keeps its own default while the override is unset.
+func llmHTTPResponseHeaderTimeout(def time.Duration) time.Duration {
+	return getEnvDuration(EnvLLMHTTPResponseHeaderTimeout, def)
+}
 
 func GetSSRFHTTPClient() *http.Client {
 	if ssrfHttpClient == nil {
@@ -55,12 +109,12 @@ func GetSSRFHTTPClient() *http.Client {
 		t.MaxIdleConnsPerHost = 10
 		t.IdleConnTimeout = 90 * time.Second
 		t.DisableCompression = false
-		t.ResponseHeaderTimeout = 20 * time.Minute
+		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(ssrfResponseHeaderTimeoutDefault)
 		t.TLSHandshakeTimeout = 30 * time.Second
 
 		var rt http.RoundTripper = t
 		rt = &strictSSRFTransport{base: rt}
-		rt = newProviderLoggingTransport(rt)
+		rt = NewProviderLoggingTransport(rt)
 		ssrfHttpClient = &http.Client{Transport: rt}
 	}
 	return ssrfHttpClient
@@ -78,12 +132,12 @@ func GetSchemeSafeHTTPClient() *http.Client {
 		t.MaxIdleConnsPerHost = 500
 		t.IdleConnTimeout = 90 * time.Second
 		t.DisableCompression = false
-		t.ResponseHeaderTimeout = 60 * time.Second
+		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault)
 		t.TLSHandshakeTimeout = 30 * time.Second
 
 		var rt http.RoundTripper = t
 		rt = &schemeSafeTransport{base: rt}
-		rt = newProviderLoggingTransport(rt)
+		rt = NewProviderLoggingTransport(rt)
 		schemeSafeHttpClient = &http.Client{Transport: rt}
 	}
 	return schemeSafeHttpClient
@@ -97,7 +151,9 @@ const (
 	providerCallLogThreshold   = 30 * time.Second
 )
 
-func newProviderLoggingTransport(base http.RoundTripper) http.RoundTripper {
+// NewProviderLoggingTransport wraps base with provider timing and LLM_DEBUG payload logging.
+// A nil base uses http.DefaultTransport.
+func NewProviderLoggingTransport(base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
@@ -421,17 +477,9 @@ var LookupHost = net.LookupHost
 // talk to a local httptest server flip it on and reset it in
 // t.Cleanup.
 //
-// The previous form (env-var ALLOW_ANY_HOST) was a live runtime
-// toggle that any operator could flip to disable the SSRF guard
-// globally — including the DNS pinning that the Invoke component
-// relies on. PR review round 6, Major #3: this variable lives in
-// process memory only, so it cannot be enabled by an env var or
-// a deployment mistake. The explicit "_ForTest" suffix is the
-// signal that production code must never touch it.
-//
-// Host-based database and connector dials are a separate opt-in.
-// AllowConfiguredPrivateHost reads ALLOW_ANY_HOST for those dials
-// only. This function stays limited to the in-memory test hook.
+// Host-based database and connector dials, configured MCP servers, and Invoke
+// URLs have a separate ALLOW_ANY_HOST opt-in via AllowConfiguredPrivateHost.
+// AssertURLSafe and AssertHostSafe stay limited to the in-memory test hook.
 var AllowAnyHostForTest = false
 
 // allowAnyHost reads the test-only override. Kept as a private
@@ -444,8 +492,8 @@ func allowAnyHost() bool {
 // AssertURLSchemeSafe is a lenient SSRF guard for drivers that may legitimately
 // target private networks or loopback addresses (e.g. self-hosted Ollama, vLLM,
 // Xinference). It only rejects dangerous schemes and empty hosts; it does not
-// resolve DNS and does not require public routability. Use this ONLY for
-// local-inference model drivers — cloud-hosted drivers must use AssertURLSafe.
+// resolve DNS and does not require public routability. Use this only where
+// private hosts are explicitly permitted; cloud-hosted drivers must use AssertURLSafe.
 var AssertURLSchemeSafe = func(rawURL string) error {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
@@ -767,4 +815,15 @@ func ParseRequestIntPositive(c *gin.Context, parameter, parameterName string, de
 		return defaultValue, fmt.Errorf("%w: %s must be a positive integer or zero", err, parameterName)
 	}
 	return parameterInt, nil
+}
+
+// ResponseWithDetail returns an error envelope with a structured detail
+// payload. Billing resource failures expose detail.current / detail.limit so
+// the web upgrade modal can render the shortage.
+func ResponseWithDetail(c *gin.Context, code ErrorCode, message string, detail interface{}) {
+	c.JSON(http.StatusOK, struct {
+		Code    ErrorCode   `json:"code"`
+		Message interface{} `json:"message"`
+		Detail  interface{} `json:"detail,omitempty"`
+	}{Code: code, Message: message, Detail: detail})
 }

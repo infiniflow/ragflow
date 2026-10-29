@@ -3,6 +3,7 @@ package table
 import (
 	"math"
 	"sort"
+	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -40,14 +41,15 @@ func createTableBoxFromItem(tbl *pdf.TableItem, html string) pdf.TextBox {
 		x0, x1, top, bottom = p.Left, p.Right, p.Top, p.Bottom
 	}
 	return pdf.TextBox{
-		X0:         x0,
-		X1:         x1,
-		Top:        top,
-		Bottom:     bottom,
-		Text:       html,
-		PageNumber: pg,
-		Pages:      mergedTablePages(tbl),
-		LayoutType: pdf.LayoutTypeTable,
+		X0:            x0,
+		X1:            x1,
+		Top:           top,
+		Bottom:        bottom,
+		Text:          html,
+		PageNumber:    pg,
+		HasPageNumber: len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0,
+		Pages:         mergedTablePages(tbl),
+		LayoutType:    pdf.LayoutTypeTable,
 	}
 }
 
@@ -589,7 +591,15 @@ func mergeFigureGroups(boxes []pdf.TextBox, groups map[figKey][]int, removeSet m
 		anchor := indices[0]
 		for _, idx := range indices[1:] {
 			b := boxes[idx]
-			boxes[anchor].Text += "\n" + b.Text
+			if b.Text != "" {
+				if boxes[anchor].Text != "" {
+					boxes[anchor].Text += "\n"
+				}
+				boxes[anchor].Text += b.Text
+			}
+			if boxes[anchor].FigureBounds == nil {
+				boxes[anchor].FigureBounds = b.FigureBounds
+			}
 			boxes[anchor].X0 = math.Min(boxes[anchor].X0, b.X0)
 			boxes[anchor].X1 = math.Max(boxes[anchor].X1, b.X1)
 			boxes[anchor].Top = math.Min(boxes[anchor].Top, b.Top)
@@ -600,14 +610,14 @@ func mergeFigureGroups(boxes []pdf.TextBox, groups map[figKey][]int, removeSet m
 }
 
 // ConsolidateFigures merges figure boxes that share the same LayoutNo
-// (i.e., belong to the same DLA figure region) into a single pdf.TextBox.
-// Matches Python's _extract_table_figure + insert_table_figures which pops
-// individual figure boxes and re-inserts one consolidated figure block
-// per DLA region with combined text.
+// into one block, using the matched DLA region for the complete image bounds.
 //
 // Figure boxes whose text matches the data-source discard pattern
-// (r"(数据|资料|图表)*来源[:： ]") are removed entirely — matching Python's
-// _extract_table_figure discard behavior (pdf_parser.py:1050-1052).
+// (r"(数据|资料|图表)*来源[:： ]") have that text removed, matching Python's
+// _extract_table_figure discard behavior (pdf_parser.py:1050-1052). The
+// region's geometry box survives, so the figure image is preserved even when
+// the attribution line was its only text — a deliberate divergence from
+// Python, which drops the whole region once the box is popped.
 func ConsolidateFigures(boxes []pdf.TextBox) []pdf.TextBox {
 	removeSet := markDataSourceBoxesForRemoval(boxes)
 	groups := groupFigureBoxes(boxes, removeSet)
@@ -616,7 +626,53 @@ func ConsolidateFigures(boxes []pdf.TextBox) []pdf.TextBox {
 		mergeFigureGroups(boxes, groups, removeSet)
 	}
 
+	applyFigureBounds(boxes)
+	markDuplicateTableFigures(boxes, removeSet)
 	return FilterBoxesByRemoveSet(boxes, removeSet)
+}
+
+// Remove only empty figure regions duplicating a successfully extracted table.
+// Nested regions and captioned figures retain their independent content.
+func markDuplicateTableFigures(boxes []pdf.TextBox, removeSet map[int]bool) {
+	tables := make(map[int][]pdf.TextBox)
+	for i, b := range boxes {
+		if removeSet[i] || b.LayoutType != pdf.LayoutTypeTable || !b.HasPageNumber || len(b.Pages) > 1 ||
+			!strings.HasPrefix(strings.TrimSpace(b.Text), "<table>") || b.X1 <= b.X0 || b.Bottom <= b.Top {
+			continue
+		}
+		tables[b.PageNumber] = append(tables[b.PageNumber], b)
+	}
+	const tolerance = 1e-6 // PDF-point rounding noise, not a geometric overlap threshold.
+	for i, b := range boxes {
+		if removeSet[i] || b.LayoutType != pdf.LayoutTypeFigure || !b.HasPageNumber || len(b.Pages) > 1 || strings.TrimSpace(b.Text) != "" {
+			continue
+		}
+		for _, table := range tables[b.PageNumber] {
+			if math.Abs(b.X0-table.X0) <= tolerance && math.Abs(b.X1-table.X1) <= tolerance &&
+				math.Abs(b.Top-table.Top) <= tolerance && math.Abs(b.Bottom-table.Bottom) <= tolerance {
+				removeSet[i] = true
+				break
+			}
+		}
+	}
+}
+
+// applyFigureBounds pins every figure box to its matched DLA region.
+//
+// The DLA region is the crop contract: a figure section's geometry must be
+// the region the layout model detected, not the union of the text boxes inside
+// it. Merging unions the member boxes, and NaiveVerticalMerge's empty-box
+// branch can stretch a standalone geometry box (prev.Bottom = curr.Bottom), so
+// the region is re-applied after merging and for single-member groups too.
+func applyFigureBounds(boxes []pdf.TextBox) {
+	for i := range boxes {
+		region := boxes[i].FigureBounds
+		if region == nil {
+			continue
+		}
+		boxes[i].X0, boxes[i].X1 = region.Left, region.Right
+		boxes[i].Top, boxes[i].Bottom = region.Top, region.Bottom
+	}
 }
 
 // boxOverlapsPositionPage reports whether a pdf.TextBox overlaps a

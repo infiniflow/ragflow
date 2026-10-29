@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/kvrocks"
-	"ragflow/internal/entity"
 	"time"
 
 	"ragflow/internal/dao"
@@ -33,14 +32,11 @@ import (
 
 // SystemService system service
 type SystemService struct {
-	systemSettingsDAO *dao.SystemSettingsDAO
 }
 
 // NewSystemService create system service
 func NewSystemService() *SystemService {
-	return &SystemService{
-		systemSettingsDAO: dao.NewSystemSettingsDAO(),
-	}
+	return &SystemService{}
 }
 
 // ConfigResponse system configuration response
@@ -396,68 +392,6 @@ func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
 // Healthz runs lightweight dependency checks for /api/v1/system/healthz.
 func (s *SystemService) Healthz(ctx context.Context) (*HealthzResponse, bool) {
 	return GetComponentsHealthz(ctx)
-}
-
-// ListAllVariables list all variables
-// Returns all system settings from database
-func (s *SystemService) ListAllVariables(ctx context.Context) ([]map[string]interface{}, error) {
-	settings, err := s.systemSettingsDAO.GetAll(ctx, dao.DB)
-	if err != nil {
-		return nil, err
-	}
-
-	return entity.FormatSystemSettings(settings), nil
-}
-
-func (s *SystemService) ShowVariable(ctx context.Context, varName string) ([]map[string]interface{}, error) {
-	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(settings) == 0 {
-		settings, err = s.systemSettingsDAO.GetByNamePrefix(ctx, dao.DB, varName)
-		if err != nil {
-			return nil, err
-		}
-		if len(settings) == 0 {
-			return nil, fmt.Errorf("can't get setting: %s", varName)
-		}
-	}
-	return entity.FormatSystemSettings(settings), nil
-}
-
-// SetVariable set variable
-// Creates or updates a system setting
-// If the setting exists, updates it; otherwise creates a new one
-func (s *SystemService) SetVariable(ctx context.Context, varName, varValue string) error {
-	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
-	if err != nil {
-		return err
-	}
-
-	if len(settings) == 1 {
-		setting := &settings[0]
-		if err = entity.ValidateSystemSettingValue(*setting, varValue); err != nil {
-			return err
-		}
-		setting.Value = varValue
-		return s.systemSettingsDAO.UpdateByName(ctx, dao.DB, varName, setting)
-	} else if len(settings) > 1 {
-		return fmt.Errorf("can't update more than 1 setting: %s", varName)
-	}
-
-	dataType := entity.InferSystemSettingDataType(varName)
-	newSetting := &entity.SystemSettings{
-		Name:     varName,
-		Value:    varValue,
-		Source:   "admin",
-		DataType: dataType,
-	}
-	if err = entity.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
-		return err
-	}
-	return s.systemSettingsDAO.Create(ctx, dao.DB, newSetting)
 }
 
 // Environment methods

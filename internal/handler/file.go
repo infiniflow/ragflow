@@ -260,9 +260,22 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "No file part!")
 			return
 		}
+		var totalSize int64
+		for _, headers := range form.File {
+			for _, header := range headers {
+				totalSize += header.Size
+			}
+		}
+		if !billingEnforceStorage(c, userID, totalSize) {
+			return
+		}
 		parentID := c.PostForm("parent_id")
 		if parentID == "" {
-			rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
+			tenantID := strings.TrimSpace(c.GetString("tenant_id"))
+			if tenantID == "" {
+				tenantID = userID
+			}
+			rootFolder, err := h.fileService.GetRootFolder(ctx, tenantID)
 			if err != nil {
 				respondFileServiceError(c, err)
 				return
@@ -306,7 +319,11 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 		parentID := req.ParentID
 		if parentID == "" {
-			rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
+			tenantID := strings.TrimSpace(c.GetString("tenant_id"))
+			if tenantID == "" {
+				tenantID = userID
+			}
+			rootFolder, err := h.fileService.GetRootFolder(ctx, tenantID)
 			if err != nil {
 				respondFileServiceError(c, err)
 				return

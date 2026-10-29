@@ -120,7 +120,7 @@ func NewPDFParser() *PDFParser {
 		ParseMethod:                    "deepdoc",
 		MinerUBackend:                  "",
 		MinerUPollTimeout:              minerUPollTimeout,
-		OpenDataLoaderTimeout:          600,
+		OpenDataLoaderTimeout:          openDataLoaderTimeoutSeconds,
 		SoMarkBaseURL:                  "https://somark.cn/api/v1",
 		SoMarkImageFormat:              "url",
 		SoMarkFormulaFormat:            "latex",
@@ -299,9 +299,26 @@ var pdfParseMethodSpellings = map[string]string{
 // IsPDFParseMethod reports whether raw names a PDF parse method rather than
 // a VLM model selector. "@"-suffixed spellings such as "foo@mineru" are
 // layout_recognizer selectors resolved separately, so they report false.
+//
+// A method backed by a registered external analyzer factory (see
+// RegisterAnalyzerFactory — e.g. "deepdoc_ee" in the EE build) is a real PDF
+// parse method even though it is absent from the built-in whitelist: it is
+// routed to the DeepDoc dispatch path. Recognizing it here keeps
+// IsPDFParseMethod consistent with validateParseMethod and stops the routing
+// code (pdf_vision_dispatch.go and the ingestion config migration) from
+// misclassifying a registered method as a VLM model selector.
 func IsPDFParseMethod(raw string) bool {
-	_, ok := pdfParseMethodSpellings[strings.ToLower(strings.TrimSpace(raw))]
-	return ok
+	key := strings.ToLower(strings.TrimSpace(raw))
+	if _, ok := pdfParseMethodSpellings[key]; ok {
+		return true
+	}
+	// Registered external methods are keyed by their normalized token (see
+	// RegisterAnalyzerFactory / resolveDocAnalyzerForMethod), so look them up
+	// via normalizePDFParseMethod rather than the raw key.
+	if _, ok := analyzerFactories[normalizePDFParseMethod(raw)]; ok {
+		return true
+	}
+	return false
 }
 
 func normalizePDFParseMethod(raw string) string {
@@ -346,8 +363,8 @@ func (p *PDFParser) validateParseMethod() error {
 // ErrPDFEngineUnavailable while plain_text falls back to the pure-Go engine.
 func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	result := p.parseWithResult(ctx, filename, data)
-	if result.Err == nil && result.OutputFormat == "json" {
-		return p.NormalizeResult(ctx, filename, result)
+	if result.Err == nil {
+		return AttachPDFOutlines(p.NormalizeResult(ctx, filename, result), data)
 	}
 	return result
 }
@@ -374,7 +391,7 @@ func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data [
 	case "opendataloader":
 		return parsePDFWithOpenDataLoader(ctx, filename, data, p)
 	case "somark":
-		return parsePDFWithSoMark(filename, data, p)
+		return parsePDFWithSoMark(ctx, filename, data, p)
 	case "tcadp":
 		return parsePDFWithTCADP(ctx, filename, data, p)
 	}
@@ -401,7 +418,6 @@ func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data [
 
 func emptyPDFResult(filename string) ParseResult {
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":       filename,
 			"page_count": 0,
@@ -567,7 +583,6 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 		}
 	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":       filename,
 			"page_count": len(processed.PageHeight),

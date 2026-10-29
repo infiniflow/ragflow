@@ -204,7 +204,6 @@ const chunkService = {
       meta_data_filter: rest.meta_data_filter,
       chat_id: rest.chat_id,
       use_kg: rest.use_kg,
-      toc_enhance: rest.toc_enhance,
       include_knowledge_compilation: rest.include_knowledge_compilation,
     };
     const response = await request.post(api.retrievalTest, {
@@ -391,6 +390,20 @@ const compilationStatusProxy = registerNextServer({
 export const getDatasetCompilationStatus = (datasetId: string, kind: string) =>
   compilationStatusProxy.getDatasetCompilationStatus(
     { datasetId, params: { kind } },
+    true,
+  );
+
+const datasetParserConfigProxy = registerNextServer({
+  applyDatasetParserConfig: {
+    url: ({ datasetId }: { datasetId: string }) =>
+      `/api/v1/datasets/${datasetId}/documents/apply-parser-config`,
+    method: 'post',
+  },
+});
+
+export const applyDatasetParserConfig = (datasetId: string) =>
+  datasetParserConfigProxy.applyDatasetParserConfig(
+    { datasetId, skipGlobalErrorNotification: true },
     true,
   );
 

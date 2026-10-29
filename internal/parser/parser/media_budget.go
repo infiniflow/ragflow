@@ -18,10 +18,12 @@ package parser
 
 import (
 	"fmt"
+
+	"ragflow/internal/parser/media"
 )
 
 const (
-	maxEmbeddedImageBytes         = MaxImagePayloadBytes
+	maxEmbeddedImageBytes         = media.MaxImagePayloadBytes
 	maxEmbeddedDocumentImageBytes = 64 << 20
 	maxEmbeddedMediaItems         = 256
 )
@@ -57,7 +59,8 @@ func (b *embeddedMediaBudget) include(data []byte) (bool, bool) {
 	return b.includeReservedSize(len(data)), true
 }
 
-// reserveItem lets a parser cap image source attempts before fetching bytes.
+// reserveItem caps the image fetch attempts for one document. Callers reserve
+// immediately before the I/O; skips that read no bytes are not charged.
 func (b *embeddedMediaBudget) reserveItem() bool {
 	if b.countExhausted {
 		return false
@@ -70,8 +73,8 @@ func (b *embeddedMediaBudget) reserveItem() bool {
 	return true
 }
 
-// includeReservedSize charges a previously reserved image without retaining
-// or decoding its payload just to measure its size.
+// includeReservedSize charges a payload against the per-image and document
+// byte limits without retaining or decoding it just to measure its size.
 func (b *embeddedMediaBudget) includeReservedSize(size int) bool {
 	if size > b.maxImageBytes {
 		b.oversizedImages++

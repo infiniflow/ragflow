@@ -121,6 +121,11 @@ export function CanvasChecklist({ issues }: { issues: CanvasIssue[] }) {
     [requestNodeFocus],
   );
 
+  // No issues, no checklist — the button only exists to surface problems.
+  if (issues.length === 0) {
+    return null;
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -141,31 +146,25 @@ export function CanvasChecklist({ issues }: { issues: CanvasIssue[] }) {
             {t('flow.checklistTitle')}
           </p>
         </div>
-        {issues.length === 0 ? (
-          <div className="px-4 py-6 text-center text-sm text-text-secondary">
-            {t('flow.checklistEmpty')}
-          </div>
-        ) : (
-          <div className="max-h-80 space-y-2 overflow-y-auto p-2">
-            {groups.map((group) => (
-              <section key={group.key} className="rounded-lg bg-bg-card p-1.5">
-                <header className="flex items-center gap-2 px-1.5 py-1 text-sm font-medium text-text-primary">
-                  <OperatorIcon name={group.operatorLabel as Operator} />
-                  <span className="truncate">{group.nodeName}</span>
-                </header>
-                <ul>
-                  {group.items.map((issue, index) => (
-                    <ChecklistIssueItem
-                      key={`${issue.messageKey}-${issue.messageParams?.variable ?? index}`}
-                      issue={issue}
-                      onLocate={handleLocate}
-                    />
-                  ))}
-                </ul>
-              </section>
-            ))}
-          </div>
-        )}
+        <div className="max-h-80 space-y-2 overflow-y-auto p-2">
+          {groups.map((group) => (
+            <section key={group.key} className="rounded-lg bg-bg-card p-1.5">
+              <header className="flex items-center gap-2 px-1.5 py-1 text-sm font-medium text-text-primary">
+                <OperatorIcon name={group.operatorLabel as Operator} />
+                <span className="truncate">{group.nodeName}</span>
+              </header>
+              <ul>
+                {group.items.map((issue, index) => (
+                  <ChecklistIssueItem
+                    key={`${issue.messageKey}-${issue.messageParams?.variable ?? index}`}
+                    issue={issue}
+                    onLocate={handleLocate}
+                  />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
       </PopoverContent>
     </Popover>
   );

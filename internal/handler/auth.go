@@ -22,11 +22,25 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
+	"ragflow/internal/service/billing"
 
 	"github.com/gin-gonic/gin"
 )
+
+// billingAllowsAPIToken applies the paid-plan gate for API key holders across
+// every authentication path. The plan belongs to the token's tenant, not to
+// the user record it resolves to.
+func billingAllowsAPIToken(ctx context.Context, tenantID string) bool {
+	service := billing.Get()
+	if service == nil || !service.Enabled() {
+		return true
+	}
+	allowed, err := service.APIAuthAllowed(ctx, tenantID)
+	return err == nil && allowed
+}
 
 // AuthHandler auth handler
 type AuthHandler struct {
@@ -43,9 +57,15 @@ func (h *AuthHandler) ResolveMCPUser(ctx context.Context, authorization string) 
 		return identity.User, nil
 	}
 	if identity, code, err := h.userService.ResolveAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
+		if !billingAllowsAPIToken(ctx, identity.TenantID) {
+			return nil, fmt.Errorf("API key requires a Starter or Pro plan")
+		}
 		return identity.User, nil
 	}
 	if identity, code, err := h.userService.ResolveBetaAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
+		if !billingAllowsAPIToken(ctx, identity.TenantID) {
+			return nil, fmt.Errorf("API key requires a Starter or Pro plan")
+		}
 		return identity.User, nil
 	}
 	return nil, fmt.Errorf("invalid authorization")
@@ -104,6 +124,11 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		}
 		// Then try a regular API token (non-beta public bot flow).
 		if identity, code, err := h.userService.ResolveAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
+			if !billingAllowsAPIToken(ctx, identity.TenantID) {
+				common.ResponseWithCodeData(c, common.CodePermissionError, nil, "API key requires a Starter or Pro plan")
+				c.Abort()
+				return
+			}
 			setAuthIdentity(c, identity)
 			c.Set("auth_via_api_token", true)
 			c.Next()
@@ -111,6 +136,11 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		}
 		// Fall back to beta API token (public bot access).
 		if identity, code, err := h.userService.ResolveBetaAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
+			if !billingAllowsAPIToken(ctx, identity.TenantID) {
+				common.ResponseWithCodeData(c, common.CodePermissionError, nil, "API key requires a Starter or Pro plan")
+				c.Abort()
+				return
+			}
 			setAuthIdentity(c, identity)
 			c.Set("auth_via_beta_token", true)
 			if identity.APIToken != nil && identity.APIToken.DialogID != nil {
@@ -150,6 +180,23 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			authViaAPIToken = true
 		}
 
+		// API keys are a paid capability: Trial tenants must upgrade first.
+		if authViaAPIToken {
+			if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+				allowed, gateErr := billingService.APIAuthAllowed(ctx, identity.TenantID)
+				if gateErr != nil {
+					common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, gateErr.Error())
+					c.Abort()
+					return
+				}
+				if !allowed {
+					common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "API key requires a Starter or Pro plan")
+					c.Abort()
+					return
+				}
+			}
+		}
+
 		if identity.User.IsSuperuser != nil && *identity.User.IsSuperuser {
 			common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "Super user shouldn't access the URL")
 			c.Abort()
@@ -176,4 +223,8 @@ func setAuthIdentity(c *gin.Context, identity *service.AuthIdentity) {
 	c.Set("user", identity.User)
 	c.Set("user_id", identity.User.ID)
 	c.Set("tenant_id", identity.TenantID)
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
+		UserID:   identity.User.ID,
+		TenantID: identity.TenantID,
+	}))
 }

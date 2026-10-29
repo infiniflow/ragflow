@@ -177,6 +177,52 @@ func HandleCommonDataResponse(response *Response, command string) (ResponseIf, e
 	return &result, nil
 }
 
+func printListResponse(data map[string]interface{}, totalKey, listKey string, format OutputFormat) {
+	total, ok := data[totalKey].(float64)
+	if !ok {
+		printListResponseError(totalKey, "a number")
+		return
+	}
+	rows, ok := responseRows(data, listKey)
+	if !ok {
+		return
+	}
+
+	fmt.Printf("Total: %0.0f\n", total)
+	PrintTableSimpleByFormat(rows, format)
+}
+
+func printResponseTable(data map[string]interface{}, listKey string, format OutputFormat) {
+	rows, ok := responseRows(data, listKey)
+	if !ok {
+		return
+	}
+	PrintTableSimpleByFormat(rows, format)
+}
+
+func responseRows(data map[string]interface{}, listKey string) ([]map[string]interface{}, bool) {
+	items, ok := data[listKey].([]interface{})
+	if !ok {
+		printListResponseError(listKey, "an array")
+		return nil, false
+	}
+	rows := make([]map[string]interface{}, 0, len(items))
+	for i, item := range items {
+		row, ok := item.(map[string]interface{})
+		if !ok {
+			printListResponseError(fmt.Sprintf("%s[%d]", listKey, i), "an object")
+			return nil, false
+		}
+		rows = append(rows, row)
+	}
+	return rows, true
+}
+
+func printListResponseError(field, expected string) {
+	fmt.Println("ERROR")
+	fmt.Printf("invalid response: %s must be %s\n", field, expected)
+}
+
 type ListDocumentsResponse struct {
 	Code         int                    `json:"code"`
 	Data         map[string]interface{} `json:"data"`
@@ -199,14 +245,7 @@ func (r *ListDocumentsResponse) SetOutputFormat(format OutputFormat) {
 
 func (r *ListDocumentsResponse) PrintOut() {
 	if r.Code == 0 {
-		total := r.Data["total"].(float64)
-		fmt.Printf("Total: %0.0f\n", total)
-		docs := r.Data["docs"].([]interface{})
-		table := make([]map[string]interface{}, 0)
-		for _, doc := range docs {
-			table = append(table, doc.(map[string]interface{}))
-		}
-		PrintTableSimpleByFormat(table, r.OutputFormat)
+		printListResponse(r.Data, "total", "docs", r.OutputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -235,14 +274,7 @@ func (r *ListSyncLogsResponse) SetOutputFormat(format OutputFormat) {
 
 func (r *ListSyncLogsResponse) PrintOut() {
 	if r.Code == 0 {
-		total := r.Data["total"].(float64)
-		fmt.Printf("Total: %0.0f\n", total)
-		logs := r.Data["logs"].([]interface{})
-		table := make([]map[string]interface{}, 0)
-		for _, log := range logs {
-			table = append(table, log.(map[string]interface{}))
-		}
-		PrintTableSimpleByFormat(table, r.OutputFormat)
+		printListResponse(r.Data, "total", "logs", r.OutputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -271,14 +303,7 @@ func (r *ListAgentsResponse) SetOutputFormat(format OutputFormat) {
 
 func (r *ListAgentsResponse) PrintOut() {
 	if r.Code == 0 {
-		total := r.Data["total"].(float64)
-		fmt.Printf("Total: %0.0f\n", total)
-		docs := r.Data["canvas"].([]interface{})
-		table := make([]map[string]interface{}, 0)
-		for _, doc := range docs {
-			table = append(table, doc.(map[string]interface{}))
-		}
-		PrintTableSimpleByFormat(table, r.OutputFormat)
+		printListResponse(r.Data, "total", "canvas", r.OutputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -307,14 +332,7 @@ func (r *ListChatsResponse) SetOutputFormat(format OutputFormat) {
 
 func (r *ListChatsResponse) PrintOut() {
 	if r.Code == 0 {
-		total := r.Data["total"].(float64)
-		fmt.Printf("Total: %0.0f\n", total)
-		docs := r.Data["chats"].([]interface{})
-		table := make([]map[string]interface{}, 0)
-		for _, doc := range docs {
-			table = append(table, doc.(map[string]interface{}))
-		}
-		PrintTableSimpleByFormat(table, r.OutputFormat)
+		printListResponse(r.Data, "total", "chats", r.OutputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -343,14 +361,7 @@ func (r *ListSearchesResponse) SetOutputFormat(format OutputFormat) {
 
 func (r *ListSearchesResponse) PrintOut() {
 	if r.Code == 0 {
-		total := r.Data["total"].(float64)
-		fmt.Printf("Total: %0.0f\n", total)
-		docs := r.Data["search_apps"].([]interface{})
-		table := make([]map[string]interface{}, 0)
-		for _, doc := range docs {
-			table = append(table, doc.(map[string]interface{}))
-		}
-		PrintTableSimpleByFormat(table, r.OutputFormat)
+		printListResponse(r.Data, "total", "search_apps", r.OutputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -379,14 +390,7 @@ func (r *ListMemoriesResponse) SetOutputFormat(format OutputFormat) {
 
 func (r *ListMemoriesResponse) PrintOut() {
 	if r.Code == 0 {
-		total := r.Data["total_count"].(float64)
-		fmt.Printf("Total: %0.0f\n", total)
-		docs := r.Data["memory_list"].([]interface{})
-		table := make([]map[string]interface{}, 0)
-		for _, doc := range docs {
-			table = append(table, doc.(map[string]interface{}))
-		}
-		PrintTableSimpleByFormat(table, r.OutputFormat)
+		printListResponse(r.Data, "total_count", "memory_list", r.OutputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)
@@ -802,12 +806,7 @@ func (r *TaskResponse) SetOutputFormat(format OutputFormat) {
 
 func (r *TaskResponse) PrintOut() {
 	if r.Code == 0 {
-		segmentsRaw := r.Data["segments"].([]interface{})
-		segments := make([]map[string]interface{}, len(segmentsRaw))
-		for i, v := range segmentsRaw {
-			segments[i] = v.(map[string]interface{})
-		}
-		PrintTableSimpleByFormat(segments, r.OutputFormat)
+		printResponseTable(r.Data, "segments", r.OutputFormat)
 	} else {
 		fmt.Println("ERROR")
 		fmt.Printf("%d, %s\n", r.Code, r.Message)

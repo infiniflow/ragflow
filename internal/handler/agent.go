@@ -74,10 +74,11 @@ type chatAgentService interface {
 
 // AgentHandler agent handler
 type AgentHandler struct {
-	agentService *service.AgentService
-	chatRunner   chatAgentService
-	fileService  agentFileService
-	loader       canvasLoader
+	agentService       *service.AgentService
+	chatRunner         chatAgentService
+	fileService        agentFileService
+	loader             canvasLoader
+	webhookCredentials agentWebhookCredentialManager
 	// redisGet fetches a raw string from Redis. Defaults to the global
 	// client (kvrocks.Get) so production behaviour is unchanged; tests inject
 	// a miniredis-backed getter to exercise Agent log endpoints without a
@@ -175,7 +176,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	// GET /api/v1/agents?type=filter and expects
 	// {filter: {owner, canvas_category}, total} instead of a canvas list.
 	if c.Query("type") == "filter" {
-		filters, code, err := h.agentService.ListAgentFilters(c.Request.Context(), user.ID)
+		filters, code, err := h.agentService.ListAgentFilters(c.Request.Context(), user.ID, strings.TrimSpace(c.Query("canvas_category")))
 		if err != nil {
 			common.ResponseWithCodeData(c, code, false, err.Error())
 			return
@@ -291,6 +292,14 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 // @Success 200 {object} entity.UserCanvas
 // @Router /api/v1/agents [post]
 func (h *AgentHandler) CreateAgent(c *gin.Context) {
+	quotaUser, ok := billingQuotaUser(c)
+	if !ok {
+		return
+	}
+	if !billingEnforceApps(c, quotaUser.ID) {
+		return
+	}
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
@@ -346,7 +355,7 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 	}
 	tenantID := ""
 	if row != nil {
-		tenantID = row.UserID
+		tenantID = row.EffectiveTenantID()
 	}
 	common.SuccessWithData(c, &agentDetailResponse{
 		UserCanvas:      row,
@@ -355,9 +364,7 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 	}, "success")
 }
 
-// agentDetailResponse adds the canvas owner's tenant scope and publish time.
-// user_canvas stores the owner identity in user_id, so that value is exposed
-// as tenant_id for resource-scoped selectors.
+// agentDetailResponse adds the canvas tenant scope and publish time.
 type agentDetailResponse struct {
 	*entity.UserCanvas
 	TenantID        string `json:"tenant_id"`
@@ -698,6 +705,7 @@ func (h *AgentHandler) CancelSessionRun(c *gin.Context) {
 type publishAgentRequest struct {
 	Title       *string        `json:"title,omitempty"`
 	Description *string        `json:"description,omitempty"`
+	Alias       *string        `json:"alias,omitempty"`
 	DSL         entity.JSONMap `json:"dsl,omitempty"`
 }
 
@@ -725,6 +733,7 @@ func (h *AgentHandler) PublishAgent(c *gin.Context) {
 	row, err := h.agentService.PublishAgent(c.Request.Context(), user.ID, canvasID, &service.PublishAgentRequest{
 		Title:       req.Title,
 		Description: req.Description,
+		Alias:       req.Alias,
 		DSL:         req.DSL,
 	})
 	if err != nil {
@@ -815,6 +824,44 @@ func (h *AgentHandler) DeleteVersion(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	versionID := c.Param("version_id")
 	if err := h.agentService.DeleteVersion(c.Request.Context(), user.ID, canvasID, versionID); err != nil {
+		ec, em := mapAgentError(err)
+		common.ResponseWithCodeData(c, ec, nil, em)
+		return
+	}
+	common.SuccessWithData(c, true, "success")
+}
+
+// PatchVersion patches mutable metadata (alias/title/description) of a single
+// version. It does not change the DSL and does not create a new version
+// (design G2/§4.4).
+// @Summary Patch Agent Version
+// @Tags agents
+// @Accept json
+// @Produce json
+// @Param canvas_id path string true "canvas id"
+// @Param version_id path string true "version id"
+// @Param body body object false "patch fields: alias/title/description"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/agents/{canvas_id}/versions/{version_id} [patch]
+func (h *AgentHandler) PatchVersion(c *gin.Context) {
+	user, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		common.ResponseWithCodeData(c, code, nil, msg)
+		return
+	}
+	canvasID := c.Param("canvas_id")
+	versionID := c.Param("version_id")
+	var req struct {
+		Alias       *string `json:"alias"`
+		Title       *string `json:"title"`
+		Description *string `json:"description"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+	patch := dao.UserCanvasVersionPatch{Alias: req.Alias, Title: req.Title, Description: req.Description}
+	if err := h.agentService.UpdateVersion(c.Request.Context(), user.ID, canvasID, versionID, patch); err != nil {
 		ec, em := mapAgentError(err)
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
@@ -928,8 +975,8 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		return
 	}
 	canvasID := c.Param("canvas_id")
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "0"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "30"))
 	keywords := c.Query("keywords")
 	fromDate := c.Query("from_date")
 	toDate := c.Query("to_date")
@@ -942,19 +989,26 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	dslParam := c.Query("dsl")
 	includeDSL := dslParam != "false" && dslParam != "False"
 	ctx := c.Request.Context()
+	options, err := sessionHistoryQuery(c)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		return
+	}
 	resp, code, err := h.agentService.ListAgentSessions(ctx, user.ID, user.ID, canvasID, service.ListAgentSessionsRequest{
-		Page:       page,
-		PageSize:   pageSize,
-		Keywords:   keywords,
-		FromDate:   fromDate,
-		ToDate:     toDate,
-		OrderBy:    orderby,
-		Desc:       desc,
-		SessionID:  sessionID,
-		UserID:     queryUserID,
-		ExpUserID:  expUserID,
-		IncludeDSL: includeDSL,
-		NoHistory:  c.Query("include_history") == "false" || c.Query("include_history") == "False",
+		Page:             page,
+		PageSize:         pageSize,
+		Keywords:         keywords,
+		FromDate:         fromDate,
+		ToDate:           toDate,
+		OrderBy:          orderby,
+		Desc:             desc,
+		SessionID:        sessionID,
+		UserID:           queryUserID,
+		ExpUserID:        expUserID,
+		IncludeDSL:       includeDSL,
+		IncludeReference: options.IncludeReference,
+		IncludePrompt:    options.IncludePrompt,
+		NoHistory:        c.Query("include_history") == "false" || c.Query("include_history") == "False",
 	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
@@ -1005,7 +1059,12 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
 	ctx := c.Request.Context()
-	row, code, err := h.agentService.GetAgentSession(ctx, user.ID, canvasID, sessionID)
+	options, err := sessionHistoryQuery(c)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	row, code, err := h.agentService.GetAgentSession(ctx, user.ID, canvasID, sessionID, options)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -1302,6 +1361,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		emitted := false
 		doneSent := false
 		for ev := range events {
+			h.persistAgentToolInvocations(c.Request.Context(), req.AgentID, ev)
 			if ev.Type == "error" {
 				ev = convertAgentRunErrorToMessage(ev)
 			}
@@ -1365,6 +1425,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	var finalAns *canvas.RunEvent
 	hasEvents := false
 	for ev := range events {
+		h.persistAgentToolInvocations(c.Request.Context(), req.AgentID, ev)
 		hasEvents = true
 		if ev.Type == "error" {
 			ev = convertAgentRunErrorToMessage(ev)
@@ -1509,6 +1570,66 @@ func parseAgentLogs(payload string) interface{} {
 		return map[string]interface{}{}
 	}
 	return data
+}
+
+func (h *AgentHandler) persistAgentToolInvocations(ctx context.Context, canvasID string, ev canvas.RunEvent) {
+	if h.redisStore == nil || ev.Type != "node_finished" || ev.MessageID == "" {
+		return
+	}
+	var event struct {
+		ComponentID   string `json:"component_id"`
+		ComponentName string `json:"component_name"`
+		Outputs       struct {
+			Invocations []map[string]any `json:"tool_invocations"`
+		} `json:"outputs"`
+	}
+	if json.Unmarshal([]byte(ev.Data), &event) != nil || len(event.Outputs.Invocations) == 0 {
+		return
+	}
+	key := fmt.Sprintf("%s-%s-logs", canvasID, ev.MessageID)
+	var entries []map[string]any
+	if h.redisGet != nil {
+		if payload, err := h.redisGet(key); err == nil {
+			_ = json.Unmarshal([]byte(payload), &entries)
+		}
+	}
+	if entries == nil {
+		entries = make([]map[string]any, 0, 1)
+	}
+	var traces []any
+	for _, invocation := range event.Outputs.Invocations {
+		trace := map[string]any{
+			"path":         event.ComponentName,
+			"tool_name":    invocation["tool_name"],
+			"arguments":    invocation["arguments"],
+			"result":       invocation["result"],
+			"elapsed_time": invocation["elapsed_time"],
+			"timestamp":    invocation["started_at"],
+			"status":       invocation["status"],
+		}
+		if invocation["error"] != nil {
+			trace["error"] = invocation["error"]
+		}
+		traces = append(traces, trace)
+	}
+	for _, entry := range entries {
+		if entry["component_id"] == event.ComponentID {
+			if old, ok := entry["trace"].([]any); ok {
+				entry["trace"] = append(old, traces...)
+			} else {
+				entry["trace"] = traces
+			}
+			payload, err := json.Marshal(entries)
+			if err == nil {
+				h.redisStore.Set(ctx, key, string(payload), task.DebugLogTTL)
+			}
+			return
+		}
+	}
+	entries = append(entries, map[string]any{"component_id": event.ComponentID, "trace": traces})
+	if payload, err := json.Marshal(entries); err == nil {
+		h.redisStore.Set(ctx, key, string(payload), task.DebugLogTTL)
+	}
 }
 
 // GetAgentLogs GET /api/v1/agents/:canvas_id/logs/:message_id

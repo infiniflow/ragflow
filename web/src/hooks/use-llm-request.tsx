@@ -127,6 +127,7 @@ export const useFetchAllAddedModels = (
   const {
     data,
     isFetching: loading,
+    refetch,
     isFetched,
     isError,
   } = useQuery<IAddedModel[]>({
@@ -150,7 +151,7 @@ export const useFetchAllAddedModels = (
   // `data` is seeded with `initialData: []`, so it can't tell a real empty
   // result apart from "fetch hasn't completed yet" — `isFetched` stays false
   // until a genuine response (or error) arrives.
-  return { data, loading, isFetched, isError };
+  return { data, loading, isFetched, isError, refetch };
 };
 
 /**
@@ -164,14 +165,22 @@ export const useModelValidIds = (
   modelTypes: string[],
   ownerTenantId?: string,
 ) => {
-  const { data, isFetched } = useFetchAllAddedModels(undefined, ownerTenantId);
-
+  const { data, isFetched, refetch } = useFetchAllAddedModels(
+    undefined,
+    ownerTenantId,
+  );
   const validIds = useMemo(
     () => buildValidModelIds(data, modelTypes),
     [data, modelTypes],
   );
 
-  return { validIds, isFetched };
+  const resolveValidIds = async () => {
+    const result = await refetch();
+    if (result.isError) throw result.error;
+    return buildValidModelIds(result.data ?? [], modelTypes);
+  };
+
+  return { validIds, isFetched, resolveValidIds };
 };
 
 export function useFindLlmByUuid() {
@@ -349,7 +358,10 @@ export const useVerifyProviderConnection = () => {
     mutationKey: [LLMApiAction.VerifyProviderConnection],
     mutationFn: async (params: {
       provider_name: string;
-      api_key: string;
+      api_key?: string | Record<string, any>;
+      clear_api_key?: boolean;
+      use_saved_credentials?: boolean;
+      api_key_config?: Record<string, unknown>;
       base_url?: string;
       region?: string;
       model_info?: IModelInfo[];
@@ -367,22 +379,38 @@ export const useListProviderModels = () => {
   const { isPending: loading, mutateAsync } = useMutation({
     mutationKey: [LLMApiAction.ListProviderModels],
     mutationFn: async (params: IListProviderModelsRequestBody) => {
-      const { provider_name, api_key, base_url, instance_name } = params;
+      const {
+        provider_name,
+        api_key,
+        base_url,
+        region,
+        use_saved_credentials,
+        api_key_config,
+        instance_name,
+      } = params;
       // GET /api/v1/providers/<provider_name>/models
       // The API accepts api_key and base_url as optional query parameters.
       // api_key is expected as a string; values in {} object form must be
       // JSON-stringified before being sent.
       const queryParams: Record<string, string> = {};
-      if (api_key) {
+      if (!use_saved_credentials && api_key !== undefined) {
         queryParams.api_key =
           typeof api_key === 'string' ? api_key : JSON.stringify(api_key);
       }
-      if (base_url) {
+      if (base_url !== undefined) {
         queryParams.base_url = base_url;
       }
-      // Sent for an already-saved instance: the API then uses the stored
-      // credential and base URL, which is the only way a provider with no
-      // bundled catalog can be listed after saving.
+      if (region !== undefined) {
+        queryParams.region = region;
+      }
+      if (use_saved_credentials) {
+        queryParams.use_saved_credentials = 'true';
+        if (api_key_config !== undefined) {
+          queryParams.api_key_config = JSON.stringify(api_key_config);
+        }
+      }
+      // Identifies the saved instance used for credentials and fallback
+      // configuration when the form does not supply a value.
       if (instance_name) {
         queryParams.instance_name = instance_name;
       }

@@ -49,16 +49,20 @@ func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 		wantDocType string
 	}{
 		{"opendataloader html", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "html": tableHTML})
+			items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "html": tableHTML}, nil)
+			return items
 		}, "table"},
 		{"opendataloader content only", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "content": pipeText})
+			items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "content": pipeText}, nil)
+			return items
 		}, "text"},
 		{"opendataloader cells only", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "cells": cells})
+			items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "cells": cells}, nil)
+			return items
 		}, "table"},
 		{"opendataloader blank cells keep content", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "content": pipeText, "cells": blankCells})
+			items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "content": pipeText, "cells": blankCells}, nil)
+			return items
 		}, "text"},
 		{"tcadp html content", func() []map[string]any {
 			return tcadpAnyToItems(map[string]any{"type": "table", "content": tableHTML})
@@ -73,11 +77,13 @@ func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 			return tcadpAnyToItems(map[string]any{"type": "table", "content": pipeText, "table_data": blankRows})
 		}, "text"},
 		{"somark html", func() []map[string]any {
-			return []map[string]any{soMarkBlockToItem(map[string]any{"type": "table", "content": tableHTML}, false)}
+			items, _ := soMarkBlockToItems(t.Context(), map[string]any{"type": "table", "content": tableHTML}, false, &htmlWalkState{})
+			return items
 		}, "table"},
 		{"somark markdown", func() []map[string]any {
-			return []map[string]any{soMarkBlockToItem(map[string]any{"type": "table", "content": markdownTable}, false)}
-		}, "text"},
+			items, _ := soMarkBlockToItems(t.Context(), map[string]any{"type": "table", "content": markdownTable}, false, &htmlWalkState{})
+			return items
+		}, "table"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

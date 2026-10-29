@@ -125,6 +125,14 @@ Interface types are split between two folders:
 
 Model-related endpoints (LLM provider / factory / my LLM, etc.) are consolidated in `src/services/llm-service.ts` rather than scattered across hooks. For GET endpoints, register with `method: 'get'` in the service, and on the call site pass `true` as the second argument to use the native axios config (e.g., `service.listProviders({ params: { available: true } }, true)`).
 
+### Module Dependency Direction
+
+`src/components/`, `src/hooks/`, `src/services/`, and `src/utils/` are shared layers: **they must not import from `src/pages/`**. A page may import from shared layers, never the reverse. (Legacy exceptions exist, e.g. `src/components/pipeline-operator-tabs/`; do not add new ones, and prefer lifting when you touch such code.)
+
+When page code gains a second consumer (e.g. a page form reused inside a dialog), lift the **whole self-contained subtree** — its `components/`, `hooks/`, `schema.ts`, `constant.ts`, `utils.ts` — into a feature folder under `src/components/` (precedent: `compilation-template-group/`, `pipeline-operator-tabs/`) using `git mv` to preserve history. Keep the subtree's internal structure and relative imports unchanged, and slim the route page down to a thin wrapper (route params, navigation, header). Never lift a single file out of a subtree — that multiplies cross-layer imports instead of removing them. Page-only logic (route params, return-navigation helpers) stays in the page directory.
+
+`src/utils/` is for pure functions only — shared React components and hooks live in `src/components/` and `src/hooks/`, never in `src/utils/`.
+
 ### Shared UI Component Lock
 
 The folder `src/components/ui/` is the project's **shared UI library** — it contains both official shadcn/ui primitives and project-authored common components built on top of shadcn. Both kinds are intended to be reused across the app and **must not be modified casually**.
@@ -133,6 +141,17 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
 - If a component does not meet requirements, **wrap or compose it** in a new component **outside** `src/components/ui/` (e.g., under `src/components/` or a feature folder), and customize via `className`, `props`, or composition.
 - Exceptions require **explicit user approval** in the same conversation. When in doubt, ask first and propose a wrapper-based alternative.
 - Adding a new shared component to `src/components/ui/`, or upgrading a shadcn primitive via the official `shadcn` CLI, is allowed only when the user explicitly requests it.
+
+### Prefer Shared Building Blocks
+
+**Do not hand-roll ad-hoc elements when a shared component, hook, util, or constant already covers the need.** Before writing a raw styled element or a local helper, check the shared layers first:
+
+- Interactive elements (buttons, inputs, tooltips, dialogs, pagination, …) → compose `src/components/ui/` primitives via `variant`/`size`/`className` (e.g. an icon-only action is `<Button variant="ghost" size="icon">` or `variant="static" size="auto"`, not a raw `<button className="...">`).
+- Reusable logic → existing hooks in `src/hooks/` (or `ahooks`).
+- Pure helpers → existing utils in `src/utils/` (or `lodash`/`dayjs`).
+- Domain constant lists → the page's `constant/` directory.
+
+Writing your own one-off version of something the shared layer already provides is a defect, not a style choice. Beyond the `ui/` primitives, `src/components/` already covers most recurring needs — empty states, truncation tooltips, confirm/rename dialogs, list-page scaffolding (filter bar, pagination, skeletons), icons, avatars, and layout wrappers — so skim `src/components/`, `src/hooks/`, and `src/utils/` before writing anything new.
 
 ### React Patterns and Conventions
 

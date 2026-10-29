@@ -147,8 +147,8 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	}
 	insert("INSERT INTO user (id, email, nickname, is_active, is_authenticated, is_anonymous) VALUES (?, ?, ?, ?, ?, ?)", "user-1", "user@example.com", "User", "0", "1", "0")
 	insert("INSERT INTO user (id, email, nickname, is_active, is_authenticated, is_anonymous) VALUES (?, ?, ?, ?, ?, ?)", "user-2", "other@example.com", "Other", "1", "1", "0")
-	insert("INSERT INTO tenant (id, llm_id, embd_id, asr_id, img2txt_id, rerank_id, parser_ids) VALUES (?, ?, ?, ?, ?, ?, ?)", "user-1", "llm", "embd", "asr", "img", "rerank", "general")
-	insert("INSERT INTO user_tenant (id, user_id, tenant_id, role, invited_by) VALUES (?, ?, ?, ?, ?)", "owner", "user-1", "user-1", "owner", "user-1")
+	insert("INSERT INTO tenant (id, parser_ids) VALUES (?, ?)", "user-1", "general")
+	insert("INSERT INTO user_tenant (id, user_id, tenant_id, role, invited_by, llm_id, embd_id, asr_id, img2txt_id, rerank_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "owner", "user-1", "user-1", "owner", "user-1", "llm", "embd", "asr", "img", "rerank")
 	insert("INSERT INTO user_tenant (id, user_id, tenant_id, role, invited_by) VALUES (?, ?, ?, ?, ?)", "joined", "user-1", "team", "normal", "user-2")
 	insert("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id, doc_num, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "own-kb", "user-1", "Own", "embd", "me", "user-1", "general", 1, 2, 3)
 	insert("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id, doc_num, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "team-kb", "team", "Team", "embd", "team", "user-2", "general", 2, 5, 7)

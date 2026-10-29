@@ -41,6 +41,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/service/billing"
 
 	"ragflow/internal/utility"
 )
@@ -202,13 +203,6 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     llmID,
-		EmbdID:    embdID,
-		ASRID:     asrID,
-		Img2TxtID: img2txtID,
-		RerankID:  rerankID,
-		TTSID:     &ttsID,
-		OCRID:     &ocrID,
 		ParserIDs: "naive:General,qa:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
@@ -220,6 +214,13 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		Role:      "owner",
 		InvitedBy: userID,
 		Status:    &status,
+		LLMID:     llmID,
+		EmbdID:    embdID,
+		ASRID:     asrID,
+		Img2TxtID: img2txtID,
+		RerankID:  rerankID,
+		TTSID:     &ttsID,
+		OCRID:     &ocrID,
 	}
 	fileID := common.GenerateToken()
 	file__ := ""
@@ -293,6 +294,9 @@ func (s *UserService) Login(ctx context.Context, req *LoginRequest) (*entity.Use
 	if err := s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		billingService.SyncLoginTokenRateLimit(ctx, user.ID, token)
+	}
 
 	return user, common.CodeSuccess, nil
 }
@@ -330,6 +334,9 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 
 	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
+	}
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		billingService.SyncLoginTokenRateLimit(ctx, user.ID, token)
 	}
 
 	return user, common.CodeSuccess, nil
@@ -750,31 +757,66 @@ type SetTenantInfoRequest struct {
 	Raw       map[string]interface{} `json:"-"`
 }
 
-// SetTenantInfo updates tenant model configuration
+// SetTenantInfo updates default models on the caller's current Tenant membership.
 func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *SetTenantInfoRequest) (common.ErrorCode, error) {
-	_ = userID
-	tenantDAO := dao.NewTenantDAO()
-	updates := make(map[string]interface{})
-
-	for key, value := range req.Raw {
-		if key == "tenant_id" {
-			continue
-		}
-		updates[key] = value
+	if req == nil {
+		return common.CodeArgumentError, fmt.Errorf("model settings are required")
 	}
-
-	tenantID := ""
-	if req.TenantID != nil {
-		tenantID = *req.TenantID
+	updates, err := tenantModelSettingUpdates(req.Raw)
+	if err != nil {
+		return common.CodeArgumentError, err
 	}
-
+	tenantID, err := requireCurrentTenantID(ctx, userID)
+	if err != nil {
+		return common.CodeForbidden, err
+	}
+	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != "" && strings.TrimSpace(*req.TenantID) != tenantID {
+		return common.CodeForbidden, fmt.Errorf("tenant_id must match the active Tenant context")
+	}
+	userTenantDAO := dao.NewUserTenantDAO()
+	membership, err := userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
+	if err != nil {
+		return common.CodeForbidden, err
+	}
 	if len(updates) > 0 {
-		if err := tenantDAO.Update(ctx, dao.DB, tenantID, updates); err != nil {
+		if err := dao.DB.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", membership.ID).Updates(updates).Error; err != nil {
 			return common.CodeExceptionError, err
 		}
 	}
-
 	return common.CodeSuccess, nil
+}
+
+func tenantModelSettingUpdates(raw map[string]interface{}) (map[string]interface{}, error) {
+	updates := make(map[string]interface{}, len(raw))
+	for key, value := range raw {
+		if key == "tenant_id" {
+			if _, ok := value.(string); !ok {
+				return nil, fmt.Errorf("tenant_id must be a string")
+			}
+			continue
+		}
+		nullable := false
+		switch key {
+		case "llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id":
+		case "tenant_llm_id", "tenant_embd_id", "tenant_asr_id", "tenant_img2txt_id", "tenant_rerank_id",
+			"tts_id", "tenant_tts_id", "ocr_id", "tenant_ocr_id", "decision_id", "tenant_decision_id":
+			nullable = true
+		default:
+			return nil, fmt.Errorf("unsupported model setting %q", key)
+		}
+		if value == nil {
+			if !nullable {
+				return nil, fmt.Errorf("%s cannot be null", key)
+			}
+			updates[key] = nil
+			continue
+		}
+		if _, ok := value.(string); !ok {
+			return nil, fmt.Errorf("%s must be a string", key)
+		}
+		updates[key] = value
+	}
+	return updates, nil
 }
 
 // UserTenantService user tenant service
