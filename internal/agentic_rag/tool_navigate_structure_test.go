@@ -362,13 +362,55 @@ func TestClaimOutlineLineCarriesHandle(t *testing.T) {
 
 // --- Query-only route (the tool must be usable in one call) ---
 
-func installFakeStructureRoute(t *testing.T, docs [][2]string) {
+func installFakeStructureRoute(t *testing.T, docs [][2]string) *[]string {
 	t.Helper()
+	var gotScope []string
 	prev := navStructureRoute
-	navStructureRoute = func(context.Context, string, string, string, int) ([][2]string, error) {
+	navStructureRoute = func(_ context.Context, _, _, _ string, docScope []string, _ int) ([][2]string, error) {
+		gotScope = docScope
 		return docs, nil
 	}
 	t.Cleanup(func() { navStructureRoute = prev })
+	return &gotScope
+}
+
+// TestNavigateStructureQueryOnlyAppliesBoundDocumentScope: a query-only call must
+// rank inside the turn's documents, so the router has to receive the scope. An
+// in-memory intersect after the route cannot recover a slot spent on an
+// out-of-scope document.
+func TestNavigateStructureQueryOnlyAppliesBoundDocumentScope(t *testing.T) {
+	scope := installFakeStructureRoute(t, [][2]string{{"d1", ""}})
+	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]structureRow{"d1": {graphRow()}}})
+
+	tool := NewNavigateStructureTool("tenant-1", []string{"kb1"})
+	ctx := withDocumentScope(context.Background(), []string{"d1"})
+	if _, err := tool.InvokableRun(ctx, `{"query":"q"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if len(*scope) != 1 || (*scope)[0] != "d1" {
+		t.Errorf("route doc scope = %v, want [d1]", *scope)
+	}
+}
+
+// TestNavigateStructureQueryOnlyWithEmptyDocumentScopeSkipsTheRoute: an empty
+// scope allows no documents, so the call must answer before touching the router
+// (the router reads an empty scope as "the whole dataset").
+func TestNavigateStructureQueryOnlyWithEmptyDocumentScopeSkipsTheRoute(t *testing.T) {
+	scope := installFakeStructureRoute(t, [][2]string{{"d1", ""}})
+	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]structureRow{"d1": {graphRow()}}})
+
+	tool := NewNavigateStructureTool("tenant-1", []string{"kb1"})
+	ctx := WithConversationKey(withDocumentScope(context.Background(), []string{}), "test-nav-structure-empty-doc-scope")
+	out, err := tool.InvokableRun(ctx, `{"query":"q"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if *scope != nil {
+		t.Error("an empty document scope must not reach the router")
+	}
+	if !strings.Contains(out, `count="0"`) || !strings.Contains(out, "no documents in the conversation scope") {
+		t.Errorf("empty document scope must report the scope, got:\n%s", out)
+	}
 }
 
 // TestNavigateStructureQueryOnlyNoRouteKeepsTheOldHint: when routing finds nothing
