@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
+
+	"ragflow/internal/common"
 )
 
 const conversationReferenceTargetVersion = "v1.0.0-rc3.dev7"
@@ -124,7 +127,9 @@ func migrateMessageReferences(ctx context.Context, db *gorm.DB, messageTable, re
 		lastConversation, lastPosition = last.ConversationID, last.Position
 	}
 	if unmatched > 0 {
-		return fmt.Errorf("%d references in %s have no assistant message; source tables were not dropped", unmatched, referenceTable)
+		// References can outlive deleted messages or unsuccessful turns. They
+		// cannot be attached to another answer without changing its citations.
+		common.Warn("Skipped references without assistant messages during migration", zap.String("table", referenceTable), zap.Int("references", unmatched))
 	}
 	return nil
 }

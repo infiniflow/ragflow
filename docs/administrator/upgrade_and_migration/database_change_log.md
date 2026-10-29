@@ -300,7 +300,10 @@ creation no longer recreates these tables. Source-table presence triggers copyin
 and cleanup even if the marker already contains `v1.0.0-rc3.dev7` or a newer version;
 a newer marker is preserved.
 
-Unmatched references, invalid JSON, or a copy error stop the migration before
+References without a surviving assistant message are skipped and counted in a
+warning. These include references left behind by deleted messages, empty histories,
+and unsuccessful turns. They are removed with the source tables and are never
+attached to another answer. Invalid JSON or a copy error stops the migration before
 either source table is dropped. Resolve the reported issue and rerun it. Completed
 batches are safe to retry. The marker advances to `v1.0.0-rc3.dev7` only after both
 copies and table drops finish. A failed table drop can be retried even if the

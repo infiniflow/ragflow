@@ -141,25 +141,52 @@ func TestConversationReferenceCleanupForMigratedDatabase(t *testing.T) {
 	}
 }
 
-func TestConversationReferenceCleanupRetainsTablesOnUnmatchedReference(t *testing.T) {
+func TestConversationReferenceCleanupSkipsUnmatchedReferences(t *testing.T) {
 	db := setupConversationHistoryMigrationDB(t, false)
 	insertConversation(t, db, "api_4_conversation", "unmatched")
-	if err := db.Table(apiConversationReferenceTable).Create(map[string]interface{}{
-		"conversation_id": "unmatched", "position": 0, "reference": `{"chunks":[{"id":"source"}]}`,
-	}).Error; err != nil {
+	insertConversation(t, db, "conversation", "surviving")
+	if err := createHistory(t.Context(), db, conversationMessageTable, "message", "surviving", json.RawMessage(`[{"role":"user"},{"role":"assistant"}]`)); err != nil {
 		t.Fatal(err)
 	}
-	writeDatabaseVersion(t, db, dslVersionTargetVersion)
-	if err := migrateConversationReferences(t.Context(), db); err == nil {
-		t.Fatal("unmatched reference allowed source deletion")
-	}
-	for _, table := range []string{conversationReferenceTable, apiConversationReferenceTable} {
-		if !db.Migrator().HasTable(table) {
-			t.Fatalf("source table dropped before both copies succeeded: %s", table)
+	missingPosition := 9
+	for _, row := range []struct {
+		table, conversationID string
+		position              int
+		messagePosition       *int
+		reference             string
+	}{
+		{apiConversationReferenceTable, "unmatched", 0, nil, `{"chunks":[{"id":"empty-history"}]}`},
+		{conversationReferenceTable, "surviving", 0, nil, `{"chunks":[{"id":"surviving"}]}`},
+		{conversationReferenceTable, "surviving", 1, nil, `{"chunks":[{"id":"surplus"}]}`},
+		{conversationReferenceTable, "surviving", 9, &missingPosition, `{"chunks":[{"id":"missing-position"}]}`},
+	} {
+		if err := db.Table(row.table).Create(map[string]interface{}{
+			"conversation_id": row.conversationID, "position": row.position, "message_position": row.messagePosition, "reference": row.reference,
+		}).Error; err != nil {
+			t.Fatal(err)
 		}
 	}
-	if got := databaseVersion(t, db); got != dslVersionTargetVersion {
-		t.Fatalf("advanced migration version after failure: %s", got)
+	writeDatabaseVersion(t, db, dslVersionTargetVersion)
+	if err := migrateConversationReferences(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{conversationReferenceTable, apiConversationReferenceTable} {
+		if db.Migrator().HasTable(table) {
+			t.Fatalf("stale references prevented source cleanup: %s", table)
+		}
+	}
+	if got := databaseVersion(t, db); got != conversationReferenceTargetVersion {
+		t.Fatalf("migration version = %s", got)
+	}
+	var messages []entity.ConversationMessage
+	if err := db.Order("position").Find(&messages).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != 2 || string(messages[1].Reference) != `{"chunks":[{"id":"surviving"}]}` {
+		t.Fatalf("stale references changed the surviving history: %+v", messages)
+	}
+	if err := migrateConversationReferences(t.Context(), db); err != nil {
+		t.Fatal(err)
 	}
 }
 
