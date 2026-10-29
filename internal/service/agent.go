@@ -1852,7 +1852,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 			dsl = dslpkg.NormalizeForRun(existingSession.DSL)
 		}
 	}
-	if err := validateAgentChatModels(ctx, canvasTenantID, dsl); err != nil {
+	if err := validateAgentChatModels(ctx, userID, agentTenantID, dsl); err != nil {
 		return nil, err
 	}
 	if err := component.ValidateDynamicEntries(dsl); err != nil {
