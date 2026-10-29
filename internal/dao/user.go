@@ -18,10 +18,17 @@ package dao
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"ragflow/internal/entity"
+	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// ErrInvalidUserListQuery identifies unsupported user-list filters or sorting.
+var ErrInvalidUserListQuery = errors.New("invalid user list query")
 
 // UserDAO user data access object
 type UserDAO struct{}
@@ -132,25 +139,74 @@ func (dao *UserDAO) UpdateAccessToken(ctx context.Context, db *gorm.DB, user *en
 	return db.WithContext(ctx).Model(user).Update("access_token", token).Error
 }
 
-// List users (only active users with status != "0")
+// List returns non-deleted users and their filtered total. Conditions on db are
+// applied before counting and pagination, so callers can add further filters.
 func (dao *UserDAO) List(ctx context.Context, db *gorm.DB, offset, limit int, name, status, sort, orderBy string) ([]*entity.User, int64, error) {
-	var users []*entity.User
+	query, err := userListQuery(ctx, db, name, status)
+	if err != nil {
+		return nil, 0, err
+	}
+	order, err := userListOrder(sort, orderBy)
+	if err != nil {
+		return nil, 0, err
+	}
 	var total int64
-
-	// Only count users with status != "0" (not deleted)
-	if err := db.WithContext(ctx).Model(&entity.User{}).Count(&total).Error; err != nil {
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	query := db.WithContext(ctx).Model(&entity.User{})
+	query = query.Order(order).
+		Order(clause.OrderByColumn{Column: clause.Column{Table: "user", Name: "id"}})
 	if offset > 0 {
 		query = query.Offset(offset)
 	}
 	if limit > 0 {
 		query = query.Limit(limit)
 	}
-	err := query.Find(&users).Error
+	users := make([]*entity.User, 0)
+	err = query.Select("user.*").Find(&users).Error
 	return users, total, err
+}
+
+func userListQuery(ctx context.Context, db *gorm.DB, keyword, status string) (*gorm.DB, error) {
+	query := db.WithContext(ctx).Model(&entity.User{}).
+		Where(clause.Neq{Column: clause.Column{Table: "user", Name: "status"}, Value: "0"})
+	if keyword = strings.TrimSpace(keyword); keyword != "" {
+		pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(keyword)) + "%"
+		query = query.Where("(LOWER(?) LIKE ? ESCAPE '!' OR LOWER(?) LIKE ? ESCAPE '!')",
+			clause.Column{Table: "user", Name: "email"}, pattern,
+			clause.Column{Table: "user", Name: "nickname"}, pattern)
+	}
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "":
+	case "active":
+		query = query.Where(clause.Eq{Column: clause.Column{Table: "user", Name: "is_active"}, Value: "1"})
+	case "inactive":
+		query = query.Where(clause.Eq{Column: clause.Column{Table: "user", Name: "is_active"}, Value: "0"})
+	default:
+		return nil, fmt.Errorf("%w: status must be active or inactive", ErrInvalidUserListQuery)
+	}
+	return query, nil
+}
+
+func userListOrder(direction, field string) (clause.OrderByColumn, error) {
+	field = strings.ToLower(strings.TrimSpace(field))
+	if field == "" {
+		field = "create_date"
+	}
+	switch field {
+	case "create_date", "last_login_time":
+	default:
+		return clause.OrderByColumn{}, fmt.Errorf("%w: unsupported order field %q", ErrInvalidUserListQuery, field)
+	}
+	direction = strings.ToLower(strings.TrimSpace(direction))
+	if direction == "" {
+		direction = "desc"
+	}
+	if direction != "asc" && direction != "desc" {
+		return clause.OrderByColumn{}, fmt.Errorf("%w: sort must be asc or desc", ErrInvalidUserListQuery)
+	}
+	return clause.OrderByColumn{Column: clause.Column{Table: "user", Name: field}, Desc: direction == "desc"}, nil
 }
 
 // Delete delete user

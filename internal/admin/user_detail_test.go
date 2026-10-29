@@ -38,6 +38,8 @@ type adminTestResponse struct {
 	Total *int64          `json:"total"`
 }
 
+var adminUserDetailTestModels = []any{&entity.User{}}
+
 func TestListUsersReturnsTotalForEachPage(t *testing.T) {
 	handler := setupAdminUserDetailTest(t)
 	for i := 0; i < 11; i++ {
@@ -88,11 +90,98 @@ func TestListUsersReturnsTotalForEachPage(t *testing.T) {
 	}
 }
 
+func TestListUsersQueryParameters(t *testing.T) {
+	handler := setupAdminUserDetailTest(t)
+	type queryTest struct {
+		query string
+		code  common.ErrorCode
+		total int64
+	}
+	tests := []queryTest{
+		{"?keyword=USER&status=active&order=create_date&sort=asc", common.CodeSuccess, 1},
+		{"?keyword=missing", common.CodeSuccess, 0},
+		{"?status=unknown", common.CodeBadRequest, 0},
+		{"?order=password", common.CodeBadRequest, 0},
+		{"?order=email", common.CodeBadRequest, 0},
+		{"?order=nickname", common.CodeBadRequest, 0},
+		{"?order=is_active", common.CodeBadRequest, 0},
+		{"?order=is_superuser", common.CodeBadRequest, 0},
+		{"?order=id", common.CodeBadRequest, 0},
+		{"?order=create_time", common.CodeBadRequest, 0},
+		{"?sort=unknown", common.CodeBadRequest, 0},
+		{"?top=5&page=1", common.CodeBadRequest, 0},
+		{"?top=5&page_size=10", common.CodeBadRequest, 0},
+		{"?top=5&page=", common.CodeBadRequest, 0},
+		{"?top=0", common.CodeBadRequest, 0},
+		{"?page=0", common.CodeBadRequest, 0},
+		{"?page_size=0", common.CodeBadRequest, 0},
+	}
+	if common.GetRAGFlowType() == common.OpenSourceVersion {
+		tests = append(tests, queryTest{"?status=inactive", common.CodeSuccess, 0})
+	}
+	for _, tt := range tests {
+		t.Run(tt.query, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/users"+tt.query, nil)
+			handler.ListUsers(ctx)
+			var response adminTestResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != int(tt.code) || (tt.code == common.CodeSuccess && (response.Total == nil || *response.Total != tt.total)) {
+				t.Fatalf("unexpected response: %s", recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestListUsersAcceptsSharedClientParameters(t *testing.T) {
+	if common.GetRAGFlowType() != common.OpenSourceVersion {
+		t.Skip("enterprise filters are exercised by enterprise user-list tests")
+	}
+	handler := setupAdminUserDetailTest(t)
+	for _, user := range []entity.User{
+		{ID: "shared-active", Email: "second@example.com", Nickname: "User Two", IsActive: "1"},
+		{ID: "shared-inactive", Email: "other@example.com", Nickname: "Other", IsActive: "0"},
+	} {
+		if err := dao.DB.Create(&user).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tt := range []struct {
+		query string
+		total int64
+		count int
+	}{
+		{"?keyword=User&status=active&role=Reader&plan=Pro&quota=0&days=30&order=create_date&sort=asc&page=1&page_size=1", 2, 1},
+		{"?keyword=User&status=active&role=Reader&plan=Pro&quota=80&days=30&order=create_date&sort=asc", 2, 2},
+		{"?keyword=missing&role=Reader&plan=Pro&quota=0", 0, 0},
+		{"?status=inactive&plan=Pro&days=30", 1, 1},
+	} {
+		t.Run(tt.query, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/users"+tt.query, nil)
+			handler.ListUsers(ctx)
+			var response adminTestResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			var users []map[string]interface{}
+			if err := json.Unmarshal(response.Data, &users); err != nil {
+				t.Fatalf("invalid user data: %s, error: %v", recorder.Body.String(), err)
+			}
+			if response.Code != int(common.CodeSuccess) || response.Total == nil || *response.Total != tt.total || len(users) != tt.count {
+				t.Fatalf("unexpected response: %s", recorder.Body.String())
+			}
+		})
+	}
+}
+
 func setupAdminUserDetailTest(t *testing.T) *Handler {
 	t.Helper()
-	db := testutil.SetupTestDB(t,
-		&entity.User{},
-	)
+	db := testutil.SetupTestDB(t, adminUserDetailTestModels...)
 	t.Cleanup(testutil.ReplaceDBForTest(t, db))
 
 	now := time.Date(2026, time.September, 16, 12, 0, 0, 0, time.UTC)
