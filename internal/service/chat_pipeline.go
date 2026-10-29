@@ -236,12 +236,12 @@ func (s *ChatPipelineService) AsyncChat(
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("AsyncChat: messages is empty")
 	}
+	if err := validateUserMessageContent(messages); err != nil {
+		return nil, common.NewCodedError(common.CodeArgumentError, err.Error())
+	}
 	lastMsg := messages[len(messages)-1]
 	if role, _ := lastMsg["role"].(string); role != "user" {
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
-	}
-	if _, err := NormalizeOpenAIMessageContent(lastMsg["content"]); err != nil {
-		return nil, common.NewCodedError(common.CodeArgumentError, err.Error())
 	}
 	if err := validateChatDatasetAccess(ctx, userID, chat.KBIDs); err != nil {
 		return nil, err
@@ -1285,6 +1285,7 @@ func (s *ChatPipelineService) AsyncChat(
 				})
 				return
 			}
+			timer.Exit(common.PhaseGenerateAnswer)
 
 			// Flush remaining state matching Python's final flush order
 			// (dialog_service.py:1601-1612): think_buffer → marker → answer_buffer → pending_after_close
@@ -1333,7 +1334,6 @@ func (s *ChatPipelineService) AsyncChat(
 			final := s.decorateAnswer(ctx, visibleAnswer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, nil, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
 			final.Final = true
 			final.AudioBinary = nil
-			timer.Exit(common.PhaseGenerateAnswer)
 			send(final)
 		} else {
 			// Non-streaming: get the answer synchronously.
@@ -1350,6 +1350,7 @@ func (s *ChatPipelineService) AsyncChat(
 					answer = *resp.Answer
 				}
 			}
+			timer.Exit(common.PhaseGenerateAnswer)
 
 			if err != nil {
 				out <- AsyncChatResult{
@@ -1371,13 +1372,29 @@ func (s *ChatPipelineService) AsyncChat(
 			// Synthesize TTS for the full answer (non-stream, one-shot).
 			final := s.decorateAnswer(ctx, answer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, ttsModel, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
 			final.Final = true
-			timer.Exit(common.PhaseGenerateAnswer)
 			out <- final
 		}
 		common.Info("AsyncChat completed", zap.String("chat_id", chat.ID))
 	}()
 
 	return out, nil
+}
+
+func validateUserMessageContent(messages []map[string]interface{}) error {
+	for i, message := range messages {
+		role, _ := message["role"].(string)
+		if role != "user" {
+			continue
+		}
+		content, ok := message["content"]
+		if !ok || content == nil {
+			return fmt.Errorf("messages[%d].content is required for user messages", i)
+		}
+		if _, err := NormalizeOpenAIMessageContent(content); err != nil {
+			return fmt.Errorf("messages[%d].content is invalid: %w", i, err)
+		}
+	}
+	return nil
 }
 
 // deepResearchProgressCallback builds the progress callback handed to
@@ -3054,7 +3071,7 @@ func (s *ChatPipelineService) decorateAnswer(
 	finishChatTs := time.Now()
 
 	// Build timing stats.
-	// P1: emit Timer.Markdown() (6 phase lines + Total) and then the
+	// P1: emit Timer.Markdown() (phase lines, Other, and Total) and then the
 	// token-count / token-speed lines that the existing OpenAI endpoint
 	// already exposes. Total wall-clock is rounded to ms.
 	totalMs := timer.Total().Seconds() * 1000

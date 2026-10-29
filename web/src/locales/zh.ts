@@ -1760,6 +1760,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       apiKey: 'API Key',
       apiKeyMessage: '请输入API Key',
       apiKeyPlaceholder: '请输入API Key',
+      credentialClearToRemove: '清空此字段并保存即可移除已保存的凭据',
       apiKeyTip: 'API Key可以通过注册相应的LLM供应商来获取。',
       aimlapiGetKey: '获取 API Key',
       aimlapiCheckStatus: '检查状态',
@@ -2485,7 +2486,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         deleteConfirmTitle: '删除该版本？',
         deleteConfirmContent:
           '若数据集或文件正绑定此版本，删除后将导致对应文件无法解析。此操作不可撤销。',
-        restore: '恢复为当前版本',
+        deleteAgentConfirmContent:
+          '若该智能体已嵌入网站或对外提供服务，删除最新发布版本将导致线上服务回退到更早的版本或中断。删除不影响当前画布内容，但操作不可撤销。',
+        restore: '恢复为当前草稿',
         restoreConfirmTitle: '恢复此版本为当前智能体？',
         restoreConfirmContent:
           '当前智能体 DSL 将被此版本替换。再次保存会创建新版本。',
@@ -2519,6 +2522,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       operation: '操作',
       run: '运行',
       save: '保存',
+      saveDraft: '保存草稿',
       title: 'ID：',
       beginDescription: '这是流程开始的地方',
       answerDescription: `该组件用作机器人与人类之间的接口。它接收用户的输入并显示机器人的计算结果。`,
@@ -3105,7 +3109,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       confirmPublish: '确认发布',
       publishIngestionPipeline: '您即将发布此 Ingestion pipeline。',
       publishAgent: '您即将发布此智能体',
-      linkedDataset: '已关联的知识库：',
       lastPublished: '上次发布时间',
       createFromBlank: '从空白创建',
       createFromTemplate: '从模板创建',
@@ -3120,7 +3123,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         compilationOperator: '编译算子',
         workflow: '工作流',
       },
-      parser: '解析器',
+      parser: 'Parser',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
       tokenizer: 'Indexer',
       tokenizerRequired: '请先添加索引器节点',
@@ -3160,14 +3163,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
       titleChunkerDescription:
         '按标题层级拆分文档。通过正则表达式定义各级标题，再选择层级或分组模式控制切片方式。',
-      titleChunker: '按标题分块',
+      titleChunker: 'Title Chunker',
       manualChunkerDescription:
         '手册类文档分块方式，适用于产品手册、用户指南等，可根据文档结构进行分块并保留必要的上下文。',
       oneChunkerDescription: '此 Chunker 无需额外配置。',
       qAChunkerDescription: '此 Chunker 无需额外配置。',
       tableChunkerDescription: '此 Chunker 无需额外配置。',
       pageChunkerDescription: '此 Chunker 无需额外配置。',
-      extractor: '提取器',
+      extractor: 'Transformer',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
       compiler: 'Compiler',

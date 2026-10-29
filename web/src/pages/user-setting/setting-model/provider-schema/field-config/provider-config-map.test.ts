@@ -51,3 +51,40 @@ describe('Azure OpenAI provider configuration', () => {
     });
   });
 });
+
+describe('provider instance submit transforms', () => {
+  it.each([
+    [
+      LLMFactory.GoogleCloud,
+      {
+        google_project_id: 'project-1',
+        google_region: 'us-central1',
+        google_service_account_key: '{"type":"service_account"}',
+      },
+    ],
+    [
+      LLMFactory.TencentCloud,
+      {
+        TencentCloud_sid: 'sid-1',
+        TencentCloud_sk: 'secret-1',
+      },
+    ],
+    [
+      LLMFactory.FishAudio,
+      {
+        fish_audio_ak: 'key-1',
+        fish_audio_refid: 'voice-1',
+      },
+    ],
+  ])('%s places provider settings in api_key', (provider, settings) => {
+    const payload = ProviderConfigMap[provider].submitTransform?.({
+      instance_name: 'test-instance',
+      ...settings,
+    });
+
+    expect(payload?.api_key).toEqual(settings);
+    for (const field of Object.keys(settings)) {
+      expect(payload).not.toHaveProperty(field);
+    }
+  });
+});

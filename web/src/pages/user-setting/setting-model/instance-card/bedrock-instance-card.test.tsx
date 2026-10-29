@@ -14,10 +14,33 @@
  *  limitations under the License.
  */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { createRef } from 'react';
 
 import { BedrockInstanceCard } from './bedrock-instance-card';
+import {
+  applySavedCredentialEdits,
+  buildApiKeyValue,
+  SAVED_CREDENTIAL_MASK,
+} from './hooks';
+
+const originalResizeObserver = global.ResizeObserver;
+beforeAll(() => {
+  global.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+});
+afterAll(() => {
+  global.ResizeObserver = originalResizeObserver;
+});
 
 type TestCardRef = {
   validate: () => Promise<boolean>;
@@ -46,11 +69,13 @@ const savedInstanceDetails = {
   provider_id: 'provider-id',
   region: 'us-east-1',
   status: 'active',
-  api_key: JSON.stringify({
+  is_owner: true,
+  api_key_configured: true,
+  api_key_config: {
     auth_mode: 'bedrock_api_key',
-    bedrock_api_key: 'old-key',
     bedrock_region: 'us-east-1',
-  }),
+  },
+  credential_status: { bedrock_api_key: true },
 };
 
 jest.mock('react-i18next', () => ({
@@ -156,6 +181,44 @@ describe('BedrockInstanceCard', () => {
     ];
   });
 
+  it('drops unchanged saved masks when another Bedrock credential changes', () => {
+    expect(
+      applySavedCredentialEdits(
+        {
+          auth_mode: 'iam_role',
+          aws_role_arn: SAVED_CREDENTIAL_MASK,
+          bedrock_ak: SAVED_CREDENTIAL_MASK,
+          bedrock_sk: SAVED_CREDENTIAL_MASK,
+        },
+        {
+          aws_role_arn: 'arn:aws:iam::123456789012:role/model',
+          bedrock_ak: SAVED_CREDENTIAL_MASK,
+          bedrock_sk: SAVED_CREDENTIAL_MASK,
+        },
+        { aws_role_arn: true, bedrock_ak: true, bedrock_sk: true },
+      ),
+    ).toEqual({
+      auth_mode: 'iam_role',
+      aws_role_arn: 'arn:aws:iam::123456789012:role/model',
+    });
+  });
+
+  it('omits unchanged masks and sends null when a saved credential is cleared', () => {
+    expect(
+      buildApiKeyValue({ api_key: SAVED_CREDENTIAL_MASK }, { api_key: true }),
+    ).toBeUndefined();
+    expect(buildApiKeyValue({ api_key: '' }, { api_key: true })).toEqual({
+      api_key: null,
+    });
+    expect(
+      applySavedCredentialEdits(
+        { auth_mode: 'bedrock_api_key', bedrock_api_key: '' },
+        { bedrock_api_key: '' },
+        { bedrock_api_key: true },
+      ),
+    ).toEqual({ auth_mode: 'bedrock_api_key', bedrock_api_key: null });
+  });
+
   it('creates an API key instance without manual model fields', async () => {
     const ref = createRef<TestCardRef>();
     render(
@@ -169,7 +232,6 @@ describe('BedrockInstanceCard', () => {
           provider_id: 'provider-id',
           region: 'us-east-1',
           status: 'active',
-          api_key: '',
         }}
       />,
     );
@@ -226,7 +288,6 @@ describe('BedrockInstanceCard', () => {
           provider_id: 'provider-id',
           region: 'us-east-1',
           status: 'active',
-          api_key: '',
         }}
       />,
     );
@@ -257,17 +318,24 @@ describe('BedrockInstanceCard', () => {
           provider_id: 'provider-id',
           region: 'us-east-1',
           status: 'active',
-          api_key: '',
         }}
       />,
     );
 
-    await screen.findByPlaceholderText('apiKeyMessage');
+    const credentialInput = await waitFor(() => {
+      const input = document.querySelector<HTMLInputElement>(
+        'input[name="bedrock_api_key"]',
+      );
+      expect(input).not.toBeNull();
+      return input!;
+    });
+    expect(credentialInput.value).toBe(SAVED_CREDENTIAL_MASK);
     await waitFor(() => expect(ref.current?.getSavePayload()).toBeNull());
-    fireEvent.click(screen.getByRole('button', { name: 'accessKey' }));
-    fireEvent.click(screen.getByRole('button', { name: 'apiKey' }));
-    const input = await screen.findByPlaceholderText('apiKeyMessage');
-    fireEvent.change(input, { target: { value: 'new-key' } });
+    const input = document.querySelector<HTMLInputElement>(
+      'input[name="bedrock_api_key"]',
+    );
+    expect(input?.value).toBe(SAVED_CREDENTIAL_MASK);
+    fireEvent.change(input!, { target: { value: 'new-key' } });
 
     await waitFor(() => {
       const result = ref.current?.getSavePayload();
@@ -291,6 +359,52 @@ describe('BedrockInstanceCard', () => {
     });
   });
 
+  it('clearing a masked field removes the saved credential on save', async () => {
+    const ref = createRef<TestCardRef>();
+    render(
+      <BedrockInstanceCard
+        ref={ref}
+        providerName="Bedrock"
+        defaultOpen
+        instance={{
+          id: 'instance-id',
+          instance_name: 'saved-instance',
+          provider_id: 'provider-id',
+          region: 'us-east-1',
+          status: 'active',
+        }}
+      />,
+    );
+
+    const input = await waitFor(() => {
+      const field = document.querySelector<HTMLInputElement>(
+        'input[name="bedrock_api_key"]',
+      );
+      expect(field).not.toBeNull();
+      return field!;
+    });
+    expect(input.value).toBe(SAVED_CREDENTIAL_MASK);
+    fireEvent.change(input, { target: { value: '' } });
+
+    await waitFor(() => {
+      const payload = ref.current?.getSavePayload()?.payload;
+      expect(payload?.clear_api_key).toBeUndefined();
+      expect(payload?.api_key).toMatchObject({ bedrock_api_key: null });
+    });
+    expect(
+      screen.queryByRole('button', { name: /removeSavedCredentials/i }),
+    ).toBeNull();
+    let isValid = false;
+    await act(async () => {
+      isValid = (await ref.current?.validate()) ?? false;
+    });
+    expect(isValid).toBe(true);
+    act(() => ref.current?.markSaved());
+    await waitFor(() => {
+      expect(ref.current?.getSavePayload()).toBeNull();
+    });
+  });
+
   it('stops saving when the model snapshot becomes stale', async () => {
     const ref = createRef<TestCardRef>();
     const card = (
@@ -304,7 +418,6 @@ describe('BedrockInstanceCard', () => {
           provider_id: 'provider-id',
           region: 'us-east-1',
           status: 'active',
-          api_key: '',
         }}
       />
     );
@@ -320,7 +433,7 @@ describe('BedrockInstanceCard', () => {
     );
   });
 
-  it('restores saved credentials before model discovery starts', async () => {
+  it('restores safe auth metadata without exposing credentials before model discovery starts', async () => {
     mockFetchProviderInstance.mockReturnValue({
       data: undefined,
       refetch: mockRefetchProviderInstance,
@@ -335,7 +448,6 @@ describe('BedrockInstanceCard', () => {
           provider_id: 'provider-id',
           region: 'us-east-1',
           status: 'active',
-          api_key: '',
         }}
       />,
     );
@@ -356,7 +468,6 @@ describe('BedrockInstanceCard', () => {
           provider_id: 'provider-id',
           region: 'us-east-1',
           status: 'active',
-          api_key: '',
         }}
       />,
     );
@@ -365,7 +476,6 @@ describe('BedrockInstanceCard', () => {
       expect(mockCatalogCredentials).toHaveBeenCalledWith({
         apiKey: {
           auth_mode: 'bedrock_api_key',
-          bedrock_api_key: 'old-key',
           bedrock_region: 'us-east-1',
         },
         baseUrl: undefined,

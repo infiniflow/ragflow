@@ -158,9 +158,17 @@ PDF_OXIDE_ASSETS = {
 }
 
 
+GH_PROXY_URL = "https://gh-proxy.com/"
+
+
 def gh_proxy() -> str:
-    """GitHub release proxy prefix (gh-proxy.com behind the GFW), else empty."""
-    return os.environ.get("GH_PROXY") or ""
+    """Return the supported GitHub proxy prefix, rejecting arbitrary hosts."""
+    proxy = (os.environ.get("GH_PROXY") or "").strip()
+    if not proxy:
+        return ""
+    if proxy.rstrip("/") != GH_PROXY_URL.rstrip("/"):
+        raise RuntimeError(f"GH_PROXY must be empty or {GH_PROXY_URL!r}")
+    return GH_PROXY_URL
 
 
 def go_module_version(module: str, repo_root: str) -> str:

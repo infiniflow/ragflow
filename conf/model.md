@@ -189,6 +189,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **LongCat** | Meituan's model platform |
 | **N1N** | Multi-provider aggregator |
 | **Novita** | Open-source model hosting |
+| **Obscurify.ai** | Privacy-focused OpenAI-compatible API, 200+ models |
 | **OpenRouter** | Multi-provider router |
 | **OrcaRouter** | Auto-routing layer |
 | **PPIO** | Edge AI platform |

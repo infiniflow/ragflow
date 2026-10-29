@@ -1,4 +1,5 @@
 import { IconFontFill } from '@/components/icon-font';
+import { PipelineVersionLabel } from '@/components/pipeline-version-label';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -23,6 +24,7 @@ import { DocumentType, RunningStatus } from './constant';
 import { ParsingCard } from './parsing-card';
 import { ReparseDialog } from './reparse-dialog';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
+import { useDocumentPipelineVersion } from './use-document-pipeline-version';
 import { useHandleRunDocumentByIds } from './use-run-document';
 import {
   getDocumentParserLabel,
@@ -74,10 +76,19 @@ export function ParseDropdownButton({
 } & UseChangeDocumentParserShowType) {
   const { t } = useTranslation();
   const parserLabel = getDocumentParserLabel(record);
+  const version = useDocumentPipelineVersion(record);
+  const isPipeline = !!record.pipeline_id;
 
   const handleShowChangeParserModal = useCallback(() => {
     showChangeParserModal(record);
   }, [record, showChangeParserModal]);
+
+  // Pipeline documents are labeled by the version they parse with — the
+  // version title plus its alias as secondary text, the same display the
+  // parser tree select uses. While the version list is still loading, or when
+  // the pinned version is gone, fall back to the pipeline name. Built-in
+  // parsers keep the plain parser label.
+  const versionTitle = version?.title ?? parserLabel;
 
   return (
     <DropdownMenu>
@@ -86,11 +97,26 @@ export function ParseDropdownButton({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="static" size="auto">
-                {parserLabel}
+                {isPipeline ? (
+                  <PipelineVersionLabel
+                    title={versionTitle}
+                    alias={version?.alias}
+                    className="max-w-72"
+                  />
+                ) : (
+                  parserLabel
+                )}
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>{parserLabel}</p>
+              {isPipeline ? (
+                <div>
+                  <p>{versionTitle}</p>
+                  {version?.alias ? <p>{version.alias}</p> : null}
+                </div>
+              ) : (
+                <p>{parserLabel}</p>
+              )}
             </TooltipContent>
           </Tooltip>
           {record.pipeline_version_outdated ? (
