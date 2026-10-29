@@ -1281,6 +1281,10 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	)
 
 	if req.OpenAICompat {
+		// A long agentic run streams for minutes; clear http.Server.WriteTimeout
+		// right before the stream starts, the way the other long-running
+		// handlers do (streaming.go).
+		clearResponseWriteDeadline(c)
 		h.handleOpenAICompat(c, user, &req)
 		return
 	}
@@ -1302,6 +1306,10 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 				common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataflow debug requires an uploaded file")
 				return
 			}
+			// Only the debug pipeline may outlive the server deadline; the canvas
+			// lookup and file extraction above keep it, so a slow loader is still
+			// cut off instead of hanging.
+			clearResponseWriteDeadline(c)
 			result, derr := h.runCanvasPipelineDebug(c.Request.Context(), user, req.AgentID, fileName, fileData)
 			respondWithDebugResult(c, result, derr)
 			return
@@ -1334,6 +1342,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// req.Files is already normalized to the 1D file list by the
 	// agentFiles unmarshaler. A nil/empty list reaches RunAgent as-is so
 	// its `len(files) > 0` guard sees a file-less run.
+	// Same for the run itself: the validation above keeps the server deadline,
+	// while the canvas run can take minutes.
+	clearResponseWriteDeadline(c)
 	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, req.Files)
 	if err != nil {
 		common.Warn("agent chat completions: RunAgent failed",
