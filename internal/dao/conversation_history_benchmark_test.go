@@ -68,19 +68,13 @@ func BenchmarkConversationHistoryOperations(b *testing.B) {
 					{ConversationID: conversation.ID, Position: 0, ConversationMessageFields: entity.ConversationMessageFields{Role: &assistantRole, Content: &prologue, ContentType: "text", Metadata: "{}"}},
 					{ConversationID: conversation.ID, Position: 2, ConversationMessageFields: entity.ConversationMessageFields{Role: &userRole, MessageID: &pendingID, Content: &content, ContentType: "text", Metadata: "{}"}},
 				}
-				var references []entity.API4ConversationReference
 				for i := 0; i < (size-2)/2; i++ {
 					id, position := fmt.Sprintf("turn-%d", i), 4+i*4
 					messages = append(messages,
 						entity.API4ConversationMessage{ConversationID: conversation.ID, Position: position, ConversationMessageFields: entity.ConversationMessageFields{Role: &userRole, MessageID: &id, Content: &content, ContentType: "text", Metadata: "{}"}},
-						entity.API4ConversationMessage{ConversationID: conversation.ID, Position: position + 1, ConversationMessageFields: entity.ConversationMessageFields{Role: &assistantRole, MessageID: &id, Content: &content, ContentType: "text", Metadata: "{}"}})
-					answerPosition := position + 1
-					references = append(references, entity.API4ConversationReference{ConversationID: conversation.ID, Position: answerPosition, MessagePos: &answerPosition, Reference: []byte(`{"chunks":[]}`)})
+						entity.API4ConversationMessage{ConversationID: conversation.ID, Position: position + 1, ConversationMessageFields: entity.ConversationMessageFields{Role: &assistantRole, MessageID: &id, Content: &content, ContentType: "text", Metadata: "{}", Reference: []byte(`{"chunks":[]}`)}})
 				}
 				if err := db.CreateInBatches(messages, 100).Error; err != nil {
-					b.Fatal(err)
-				}
-				if err := db.CreateInBatches(references, 100).Error; err != nil {
 					b.Fatal(err)
 				}
 				if operation == "search_miss" {
@@ -100,16 +94,13 @@ func BenchmarkConversationHistoryOperations(b *testing.B) {
 				store := NewAPI4ConversationDAO()
 				update := ConversationHistoryUpdate{Message: map[string]interface{}{"role": "user", "id": "new-question", "content": content, "created_at": 1.0}}
 				if answer {
-					update = ConversationHistoryUpdate{Message: map[string]interface{}{"role": "assistant", "id": pendingID, "content": content, "created_at": 2.0}, QuestionID: pendingID, Reference: map[string]interface{}{"chunks": []interface{}{}}, AppendReference: true}
+					update = ConversationHistoryUpdate{Message: map[string]interface{}{"role": "assistant", "id": pendingID, "content": content, "created_at": 2.0, "reference": map[string]interface{}{"chunks": []interface{}{}}}, QuestionID: pendingID}
 				}
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
 					if answer && i > 0 {
 						b.StopTimer()
 						stats.enabled = false
-						if err := db.Where("conversation_id = ? AND position = ?", conversation.ID, 3).Delete(&entity.API4ConversationReference{}).Error; err != nil {
-							b.Fatal(err)
-						}
 						if err := db.Where("conversation_id = ? AND position = ?", conversation.ID, 3).Delete(&entity.API4ConversationMessage{}).Error; err != nil {
 							b.Fatal(err)
 						}
@@ -146,7 +137,7 @@ func BenchmarkConversationHistoryOperations(b *testing.B) {
 					if err := db.Model(&entity.API4ConversationMessage{}).Where("conversation_id = ?", conversation.ID).Count(&messageCount).Error; err != nil {
 						b.Fatal(err)
 					}
-					if err := db.Model(&entity.API4ConversationReference{}).Where("conversation_id = ?", conversation.ID).Count(&referenceCount).Error; err != nil {
+					if err := db.Model(&entity.API4ConversationMessage{}).Where("conversation_id = ? AND reference IS NOT NULL", conversation.ID).Count(&referenceCount).Error; err != nil {
 						b.Fatal(err)
 					}
 					if messageCount != int64(remaining) || referenceCount != int64((size-2)/2) {
