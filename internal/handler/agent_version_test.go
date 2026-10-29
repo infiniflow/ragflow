@@ -130,7 +130,9 @@ func TestAgentVersionActions(t *testing.T) {
 				wantDSL, wantRelease, wantCount := current.DSL, current.Release, initialCount
 				if wantCode == common.CodeSuccess {
 					if action.name == "apply" {
-						wantDSL, wantRelease, wantCount = version.DSL, false, initialCount+1
+						// Restoring overwrites only the live draft; it never
+						// creates a user_canvas_version row.
+						wantDSL, wantRelease = version.DSL, false
 					} else {
 						wantCount--
 					}

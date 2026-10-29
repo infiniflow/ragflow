@@ -690,6 +690,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       builtInPipelines: 'Built-in pipelines',
       parserSelectPlaceholder: 'Select a parser',
       parserOptionUnavailable: 'unavailable',
+      parserOptionUnavailableMessage:
+        'The selected parser or pipeline version is no longer available. Please select again.',
       randomSeedTip:
         'Seed is the starting point for a pseudo-random algorithm that ensures reproducibility of the same output across different runs.',
       datasetDescription: 'Describe your dataset',
@@ -3436,6 +3438,7 @@ This delimiter is used to split the input text into several text pieces echo of 
         select: 'No version selected',
         label: 'Pipeline version',
         latest: 'Latest version',
+        noPublished: 'No published versions',
         filterByAlias: 'Filter by alias',
         alias: 'Alias',
         addAlias: 'Add alias',
@@ -3454,8 +3457,6 @@ This delimiter is used to split the input text into several text pieces echo of 
         restoreConfirmTitle: 'Restore this version as the current agent?',
         restoreConfirmContent:
           'The current agent DSL will be replaced by this version. Save again to create a new version.',
-        missingContent:
-          'The pinned pipeline version no longer exists, so this file cannot be parsed. Please choose a version (or the latest) to continue.',
       },
       setting: 'Settings',
       settings: {
