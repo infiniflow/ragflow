@@ -552,7 +552,6 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.UserCanvas{},
 		&entity.API4Conversation{},
 	}
-	models = append(models, documentTestExtraModels()...)
 	if err = db.AutoMigrate(models...); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -583,7 +582,6 @@ func seedDocumentPreviewMemberAccess(t *testing.T, db *gorm.DB) {
 	}).Error; err != nil {
 		t.Fatalf("insert Tenant member: %v", err)
 	}
-	seedDocumentPreviewMemberAccessEE(t, db)
 }
 
 func testDocumentService(t *testing.T) *DocumentService {
@@ -1277,7 +1275,6 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	if doc["content_hash"] != "06b05ab6733a618578af5f94892f3950" {
 		t.Fatalf("content_hash=%v", doc["content_hash"])
 	}
-	assertUploadedDocumentOwnerGrant(t, ctx, doc["id"].(string))
 	cfg := doc["parser_config"].(map[string]interface{})
 	if cfg["existing"] != "value" || cfg["table_column_mode"] != "assist" {
 		t.Fatalf("parser_config=%v", cfg)

@@ -41,6 +41,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/service/billing"
 
 	"ragflow/internal/utility"
 )
@@ -293,6 +294,9 @@ func (s *UserService) Login(ctx context.Context, req *LoginRequest) (*entity.Use
 	if err := s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		billingService.SyncLoginTokenRateLimit(ctx, user.ID, token)
+	}
 
 	return user, common.CodeSuccess, nil
 }
@@ -330,6 +334,9 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 
 	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
+	}
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		billingService.SyncLoginTokenRateLimit(ctx, user.ID, token)
 	}
 
 	return user, common.CodeSuccess, nil

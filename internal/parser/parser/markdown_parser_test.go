@@ -223,6 +223,9 @@ func TestMarkdownParser_ParseWithResult_ImageDataURI(t *testing.T) {
 	// Find the image item
 	found := false
 	for _, item := range ItemsToMaps(res.JSON) {
+		if text, _ := item["text"].(string); strings.Contains(text, pixelB64) {
+			t.Errorf("data URI payload leaked into text: %q", text)
+		}
 		if kd, _ := item["doc_type_kwd"].(string); kd == "image" {
 			found = true
 			if img, ok := item["image"].(string); !ok || img != pixelB64 {
@@ -233,6 +236,101 @@ func TestMarkdownParser_ParseWithResult_ImageDataURI(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("no item with doc_type_kwd == 'image' found")
+	}
+}
+
+func TestMarkdownParser_PreservesUnresolvedImageReferences(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := "Before\n\n![figure](images/fig-1.png)\n\n![](images/bare.png)\n\n" +
+		"| A | B |\n|---|---|\n| x | ![table](images/table.png) |\n"
+	res := p.ParseWithResult(t.Context(), "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	var textItems []string
+	var table *entity.TableData
+	for _, item := range ItemsToMaps(res.JSON) {
+		if td, ok := item["table"].(*entity.TableData); ok {
+			table = td
+			continue
+		}
+		if text, _ := item["text"].(string); text != "" {
+			textItems = append(textItems, text)
+		}
+	}
+	texts := strings.Join(textItems, "\n")
+	if !strings.Contains(texts, "![figure](images/fig-1.png)") {
+		t.Errorf("image path missing from text items: %q", texts)
+	}
+	if !strings.Contains(texts, "![](images/bare.png)") {
+		t.Errorf("alt-less image reference missing from text items: %q", texts)
+	}
+	if table == nil {
+		t.Fatal("table item missing")
+	}
+	if got := table.Grid[1][1].Text; got != "![table](images/table.png)" {
+		t.Errorf("table image cell = %q, want the Markdown reference", got)
+	}
+}
+
+func TestMarkdownParser_TableDataURIWithLeadingSpace(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := "| A | B |\n|---|---|\n| x | <img src=\" data:image/png;base64,aGVsbG8=\" alt=\"blob\"> |\n"
+	res := p.ParseWithResult(t.Context(), "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		if table, ok := item["table"].(*entity.TableData); ok {
+			if got := table.Grid[1][1].Text; got != "blob" {
+				t.Errorf("table data URI cell = %q, want alt text only", got)
+			}
+			if strings.Contains(table.Grid[1][1].Text, "aGVsbG8=") {
+				t.Errorf("encoded data URI payload leaked into table text: %q", table.Grid[1][1].Text)
+			}
+			return
+		}
+	}
+	t.Fatal("table item missing")
+}
+
+func TestMarkdownParser_ResolvedRemoteImageKeepsAltOnly(t *testing.T) {
+	previous := ssrfAllowLoopback
+	ssrfAllowLoopback = true
+	t.Cleanup(func() { ssrfAllowLoopback = previous })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("fake-png-data"))
+	}))
+	defer server.Close()
+
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := p.ParseWithResult(t.Context(), "test.md", []byte("![remote]("+server.URL+"/image.png)\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	foundImage := false
+	for _, item := range ItemsToMaps(res.JSON) {
+		if text, _ := item["text"].(string); strings.Contains(text, server.URL) {
+			t.Errorf("resolved remote URL leaked into text: %q", text)
+		}
+		if kd, _ := item["doc_type_kwd"].(string); kd == "image" {
+			foundImage = true
+		}
+	}
+	if !foundImage {
+		t.Fatal("resolved remote image item missing")
 	}
 }
 
