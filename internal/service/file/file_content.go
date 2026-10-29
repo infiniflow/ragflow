@@ -224,6 +224,9 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 		if fileType == utility.FileTypeHTML {
 			fp = parser.NewHTMLTextParser()
 		}
+		if fileType == utility.FileTypeEPUB {
+			fp = parser.NewEPUBTextParser()
+		}
 		if configurable, ok := fp.(interface{ ConfigureFromSetup(map[string]any) }); ok {
 			configurable.ConfigureFromSetup(map[string]any{"layout_recognize": layoutRecognize})
 		}
@@ -278,6 +281,9 @@ func parseFileContent(ctx context.Context, filename string, data []byte) string 
 	}
 	if fileType == utility.FileTypeHTML {
 		fp = parser.NewHTMLTextParser()
+	}
+	if fileType == utility.FileTypeEPUB {
+		fp = parser.NewEPUBTextParser()
 	}
 	res := fp.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {

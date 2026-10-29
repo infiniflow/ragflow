@@ -45,8 +45,8 @@ func WithCache(ctx context.Context, cache Cache) context.Context {
 }
 
 // CacheFromContext returns the run-scoped media cache, or nil when the caller
-// did not attach one. HTML images must fail rather than silently drop when it
-// is absent.
+// did not attach one. Parser paths that emit references must fail rather than
+// silently drop images when it is absent.
 func CacheFromContext(ctx context.Context) Cache {
 	cache, _ := ctx.Value(cacheContextKey{}).(Cache)
 	return cache
