@@ -18,7 +18,11 @@
 
 package config
 
-import "github.com/spf13/viper"
+import (
+	"ragflow/internal/common"
+
+	"github.com/spf13/viper"
+)
 
 // ModelConfig is one model chosen as a deployment default.
 type ModelConfig struct {
@@ -92,3 +96,13 @@ type OAuthChannel struct{}
 // ParseOAuthConfig ignores OAuth configuration: the OSS build has no OAuth
 // login.
 func (c *Config) ParseOAuthConfig(v *viper.Viper) error { return nil }
+
+func (c *Config) ParseAuditConfig(v *viper.Viper) error { return nil }
+
+func (c *Config) GetAuditConfig() AuditConfig {
+	return c.audit
+}
+
+func (c *AuditConfig) GetFileOutput() common.FileOutput {
+	return common.FileOutput{}
+}

@@ -224,6 +224,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 			common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
 			return
 		}
+		common.Audit(operationLog)
 	}()
 
 	var req service.EmailLoginRequest

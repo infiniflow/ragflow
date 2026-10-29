@@ -460,6 +460,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	auditConfig := globalConfig.GetAuditConfig()
+	err = common.InitAudit(auditConfig.GetFileOutput(), serverName)
+	if err != nil {
+		common.Error("Failed to initialize audit logger", err)
+		os.Exit(1)
+	}
+
 	// set server name and log file path
 	server.SetServerName(serverName)
 

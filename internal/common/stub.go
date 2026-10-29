@@ -18,6 +18,12 @@
 
 package common
 
+import (
+	"fmt"
+
+	"go.uber.org/zap"
+)
+
 var (
 	OpenSourceVersion = "open source"
 	EnterpriseEdition = "enterprise edition"
@@ -26,4 +32,12 @@ var (
 // GetRAGFlowType reports the edition this binary was built for.
 func GetRAGFlowType() string {
 	return OpenSourceVersion
+}
+
+func InitAudit(file FileOutput, serviceName string) error {
+	return nil
+}
+
+func Audit(operationLog *OperationLog, fields ...zap.Field) {
+	fmt.Println(operationLog, fields)
 }

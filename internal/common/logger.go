@@ -75,11 +75,11 @@ const (
 	ansiReset      = "\x1b[0m"
 	// DefaultLogMaxSizeMB is the default rotation threshold (lumberjack
 	// MaxSize is in MB, not bytes).
-	DefaultLogMaxSizeMB = 100
+	DefaultLogMaxSizeMB = 1000
 	// DefaultLogMaxBackups is the default number of rotated files retained.
-	DefaultLogMaxBackups = 10
+	DefaultLogMaxBackups = 20
 	// DefaultLogMaxAgeDays is the default retention window for rotated files.
-	DefaultLogMaxAgeDays = 30
+	DefaultLogMaxAgeDays = 60
 	// DefaultLogCompress is the project default for gzipping rotated files.
 	DefaultLogCompress = true
 )
