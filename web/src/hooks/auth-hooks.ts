@@ -14,19 +14,61 @@
  *  limitations under the License.
  */
 
+import message from '@/components/ui/message';
 import authorizationUtil, {
   type CredentialStorage,
 } from '@/utils/authorization-util';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
+
+export const useOAuthCallback = () => {
+  const [currentQueryParameters, setSearchParams] = useSearchParams();
+  const error = currentQueryParameters.get('error');
+  const newQueryParameters: URLSearchParams = useMemo(
+    () => new URLSearchParams(currentQueryParameters.toString()),
+    [currentQueryParameters],
+  );
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (error) {
+      message.error(error);
+      setTimeout(() => {
+        navigate('/login');
+        newQueryParameters.delete('error');
+        setSearchParams(newQueryParameters);
+      }, 1000);
+      return;
+    }
+
+    const auth = currentQueryParameters.get('auth');
+    if (auth) {
+      authorizationUtil.setAuthorization(auth);
+      newQueryParameters.delete('auth');
+      setSearchParams(newQueryParameters);
+      navigate('/');
+    }
+  }, [
+    error,
+    currentQueryParameters,
+    newQueryParameters,
+    navigate,
+    setSearchParams,
+  ]);
+
+  console.debug(currentQueryParameters.get('auth'));
+  return currentQueryParameters.get('auth');
+};
 
 export const useAuth = (
   credentialStorage: CredentialStorage = authorizationUtil,
 ) => {
+  const auth = useOAuthCallback();
   const [isLogin, setIsLogin] = useState<Nullable<boolean>>(null);
 
   useEffect(() => {
-    setIsLogin(!!credentialStorage.getAuthorization());
-  }, [credentialStorage]);
+    setIsLogin(!!credentialStorage.getAuthorization() || !!auth);
+  }, [auth, credentialStorage]);
 
   return { isLogin };
 };

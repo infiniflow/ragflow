@@ -94,6 +94,10 @@ const methods = {
 
 const userService = registerServer<keyof typeof methods>(methods, request);
 
+export const getLoginChannels = () => request.get(api.loginChannels);
+export const loginWithChannel = (channel: string) =>
+  (window.location.href = api.loginChannel(channel));
+
 export const listTenantUser = (tenantId: string) =>
   request.get(api.listTenantUser(tenantId));
 
