@@ -1222,6 +1222,7 @@ export default {
       chat: 'bate-papo',
     },
     language: {
+      portuguese: 'Português',
       english: 'Inglês',
       chinese: 'Chinês',
       russian: 'Russo',

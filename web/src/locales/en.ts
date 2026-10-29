@@ -3971,6 +3971,7 @@ Important structured information may include: names, dates, locations, events, k
       selectLocalePlaceholder: 'Select a locale',
     },
     language: {
+      portuguese: 'Portuguese',
       english: 'English',
       chinese: 'Chinese',
       spanish: 'Spanish',
