@@ -188,11 +188,11 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 		return "", nil, false
 	}
 	if s.refOnly {
-		if media.HTMLImageExceedsLimit(src) {
-			return "", nil, false
-		}
-		mime, data, ok := media.DecodeHTMLImageSource(src)
-		if !ok {
+		// Validate and size the payload without allocating so budget admission
+		// happens before the decode. Malformed sources are never charged
+		// against the item budget.
+		size, ok := media.HTMLImageDecodedSize(src)
+		if !ok || size > media.HTMLImageMaxBytes() {
 			return "", nil, false
 		}
 		if s.mediaCache == nil {
@@ -203,9 +203,13 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 			if !s.mediaBudget.reserveItem() {
 				return "", nil, false
 			}
-			if !s.mediaBudget.includeReservedSize(len(data)) {
+			if !s.mediaBudget.includeReservedSize(size) {
 				return "", nil, false
 			}
+		}
+		mime, data, ok := media.DecodeHTMLImageSource(src)
+		if !ok {
+			return "", nil, false
 		}
 		ref, err := s.mediaCache.Put(s.ctx, s.cacheFormat(), mime, data)
 		if err != nil {

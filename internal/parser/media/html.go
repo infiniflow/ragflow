@@ -16,7 +16,6 @@ package media
 
 import (
 	"crypto/sha256"
-	"encoding/base64"
 	"os"
 	"strconv"
 	"strings"
@@ -46,32 +45,21 @@ func HTMLImageMaxBytes() int {
 	return defaultLimit
 }
 
-// HTMLImageExceedsLimit identifies oversized, syntactically valid data URIs.
-func HTMLImageExceedsLimit(src string) bool {
+// HTMLImageDecodedSize validates an image data URI and returns the decoded
+// payload size without allocating the decoded bytes. Malformed payloads are
+// rejected; a syntactically valid payload above HTMLImageMaxBytes is still
+// reported by its size so callers can apply their own limit.
+func HTMLImageDecodedSize(src string) (int, bool) {
 	_, payload, ok := splitHTMLImageSource(src)
 	if !ok {
-		return false
+		return 0, false
 	}
-	payload = strings.ReplaceAll(strings.ReplaceAll(payload, "\r", ""), "\n", "")
-	n := len(payload)
-	if n == 0 {
-		return false
+	encoded, padding, ok := scanBase64ImagePayload(payload, len(payload))
+	if !ok {
+		return 0, false
 	}
-	padding := 0
-	for padding < n && payload[n-1-padding] == '=' {
-		padding++
-	}
-	if padding > 2 {
-		return false
-	}
-	if n%4 == 1 {
-		return false
-	}
-	decoded := base64.StdEncoding.DecodedLen((n+3)/4*4) - padding
-	if n%4 != 0 {
-		decoded -= 4 - n%4
-	}
-	return decoded > HTMLImageMaxBytes()
+	padded := (encoded + 3) / 4 * 4
+	return padded/4*3 - (padded - encoded) - padding, true
 }
 
 // splitHTMLImageSource validates the data-URI header and returns the normalized

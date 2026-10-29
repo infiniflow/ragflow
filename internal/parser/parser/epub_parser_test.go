@@ -620,6 +620,83 @@ func TestEPUBParserSkipsUnreadableImageEntries(t *testing.T) {
 	}
 }
 
+// A manifest image missing from the ZIP is skipped without reading bytes, so
+// it must not consume an image attempt and hide a later readable image.
+func TestEPUBParserMissingZipEntryDoesNotConsumeImageBudget(t *testing.T) {
+	ctx, cache := recordingMediaContext()
+	content := epubTestHTML(strings.Repeat(`<img src="Images/gone.png">`, maxEmbeddedMediaItems) +
+		`<img src="Images/keep.png" alt="keep">`)
+	res := parseTestEPUBContext(t, ctx, []epubTestChapter{{
+		name:    "ch1.xhtml",
+		content: content,
+	}}, []epubTestImage{
+		{name: "Images/gone.png", missing: true},
+		{name: "Images/keep.png", content: "keep-bytes"},
+	})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if cache.putCalls != 1 || len(cache.puts) != 1 || string(cache.puts[0].data) != "keep-bytes" {
+		t.Fatalf("cache puts = %+v, want only the readable image", cache.puts)
+	}
+	images := epubTestImageItems(t, res)
+	if len(images) != 1 || images[0]["text"] != "keep" {
+		t.Fatalf("image items = %#v, want the readable image", images)
+	}
+	if !strings.Contains(epubTestWarningText(res), "unresolved image reference") {
+		t.Fatalf("missing unresolved-image warning: %v", res.Warnings)
+	}
+}
+
+// An image above the per-image limit is reported through the budget warning
+// without reading bytes, so it must not consume an image attempt either.
+func TestEPUBParserOversizedZipImageDoesNotConsumeImageBudget(t *testing.T) {
+	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "8")
+	ctx, cache := recordingMediaContext()
+	content := epubTestHTML(strings.Repeat(`<img src="Images/huge.png">`, maxEmbeddedMediaItems) +
+		`<img src="Images/ok.png" alt="ok">`)
+	res := parseTestEPUBContext(t, ctx, []epubTestChapter{{
+		name:    "ch1.xhtml",
+		content: content,
+	}}, []epubTestImage{
+		{name: "Images/huge.png", content: strings.Repeat("x", 9)},
+		{name: "Images/ok.png", content: "y"},
+	})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if cache.putCalls != 1 || len(cache.puts) != 1 || string(cache.puts[0].data) != "y" {
+		t.Fatalf("cache puts = %+v, want only the small image", cache.puts)
+	}
+	if !strings.Contains(epubTestWarningText(res), "larger than the 8-byte per-image limit") {
+		t.Fatalf("missing oversized-image warning: %v", res.Warnings)
+	}
+}
+
+// A read failure is still a fetch attempt, so the item budget keeps bounding
+// the reads a document full of unreadable entries can force.
+func TestEPUBParserUnreadableImageAttemptsCountAgainstBudget(t *testing.T) {
+	ctx, cache := recordingMediaContext()
+	content := epubTestHTML(strings.Repeat(`<img src="Images/bad.png">`, maxEmbeddedMediaItems) +
+		`<img src="Images/keep.png" alt="keep">`)
+	res := parseTestEPUBContext(t, ctx, []epubTestChapter{{
+		name:    "ch1.xhtml",
+		content: content,
+	}}, []epubTestImage{
+		{name: "Images/bad.png", damaged: true},
+		{name: "Images/keep.png", content: "keep-bytes"},
+	})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if cache.putCalls != 0 {
+		t.Fatalf("cache puts = %+v, want the readable image dropped after the attempt cap", cache.puts)
+	}
+	if !strings.Contains(epubTestWarningText(res), "256-item document limit") {
+		t.Fatalf("missing document image limit warning: %v", res.Warnings)
+	}
+}
+
 func TestEPUBParserMediaCacheWriteFailureFailsTask(t *testing.T) {
 	writeErr := errors.New("kvrocks unavailable")
 	cache := &recordingMediaCache{putErr: writeErr}

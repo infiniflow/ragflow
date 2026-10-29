@@ -382,9 +382,6 @@ func epubMediaResolver(entries map[string]*zip.File, state *htmlWalkState, chapt
 			state.unresolvedImages++
 			return nil, false
 		}
-		if !state.mediaBudget.reserveItem() {
-			return nil, false
-		}
 		entry, ok := entries[name]
 		if !ok {
 			state.unresolvedImages++
@@ -395,6 +392,11 @@ func epubMediaResolver(entries map[string]*zip.File, state *htmlWalkState, chapt
 			// Charge the per-image limit so the skip is reported through the
 			// shared budget warning instead of being silent.
 			state.mediaBudget.includeReservedSize(maxBytes + 1)
+			return nil, false
+		}
+		// Reserve only for an actual ZIP read: entries skipped above need no
+		// bytes and must not exhaust the attempt budget.
+		if !state.mediaBudget.reserveItem() {
 			return nil, false
 		}
 		f, err := entry.Open()
