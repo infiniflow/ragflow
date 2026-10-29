@@ -1268,6 +1268,15 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		zap.Int("messages_count", len(req.Messages)),
 	)
 
+	// A canvas run streams for minutes on multi-hop agentic turns, and the
+	// non-streaming shape can compute for just as long before its single write.
+	// Clear http.Server.WriteTimeout for both shapes here, the way every other
+	// long-running handler already does through clearResponseWriteDeadline
+	// (streaming.go); this endpoint was the remaining gap. Early rejections
+	// above have already returned, so an invalid request never widens its own
+	// deadline.
+	clearResponseWriteDeadline(c)
+
 	if req.OpenAICompat {
 		h.handleOpenAICompat(c, user, &req)
 		return
