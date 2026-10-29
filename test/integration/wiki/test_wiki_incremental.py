@@ -28,7 +28,7 @@ Run:
       test/integration/wiki/test_wiki_incremental.py -s -v
 
 Env:
-  RAGFLOW_API_KEY   default ragflow-Unleq1d1mMvztQH2QswdjfWZvP9Xkh-TAMhf_XrM7gc
+  RAGFLOW_API_KEY   required API token
   RAGFLOW_HOST      default http://localhost:9380
   WIKI_PIPELINE_ID  default 977f06ac8ccf11f192396b1c282a3cb7 (wikipipeline)
 """
@@ -39,12 +39,12 @@ import time
 import pytest
 import requests
 
-API_KEY = os.getenv(
-    "RAGFLOW_API_KEY",
-    "ragflow-Unleq1d1mMvztQH2QswdjfWZvP9Xkh-TAMhf_XrM7gc",
-)
+API_KEY = os.getenv("RAGFLOW_API_KEY")
 HOST = os.getenv("RAGFLOW_HOST", "http://localhost:9380")
 PIPELINE_ID = os.getenv("WIKI_PIPELINE_ID", "977f06ac8ccf11f192396b1c282a3cb7")
+if not API_KEY:
+    pytest.skip("RAGFLOW_API_KEY is required", allow_module_level=True)
+
 API = f"{HOST}/api/v1"
 HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 

@@ -236,12 +236,12 @@ func (s *ChatPipelineService) AsyncChat(
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("AsyncChat: messages is empty")
 	}
+	if err := validateUserMessageContent(messages); err != nil {
+		return nil, common.NewCodedError(common.CodeArgumentError, err.Error())
+	}
 	lastMsg := messages[len(messages)-1]
 	if role, _ := lastMsg["role"].(string); role != "user" {
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
-	}
-	if _, err := NormalizeOpenAIMessageContent(lastMsg["content"]); err != nil {
-		return nil, common.NewCodedError(common.CodeArgumentError, err.Error())
 	}
 	if err := validateChatDatasetAccess(ctx, userID, chat.KBIDs); err != nil {
 		return nil, err
@@ -1378,6 +1378,23 @@ func (s *ChatPipelineService) AsyncChat(
 	}()
 
 	return out, nil
+}
+
+func validateUserMessageContent(messages []map[string]interface{}) error {
+	for i, message := range messages {
+		role, _ := message["role"].(string)
+		if role != "user" {
+			continue
+		}
+		content, ok := message["content"]
+		if !ok || content == nil {
+			return fmt.Errorf("messages[%d].content is required for user messages", i)
+		}
+		if _, err := NormalizeOpenAIMessageContent(content); err != nil {
+			return fmt.Errorf("messages[%d].content is invalid: %w", i, err)
+		}
+	}
+	return nil
 }
 
 // deepResearchProgressCallback builds the progress callback handed to
