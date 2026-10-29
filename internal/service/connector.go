@@ -394,6 +394,14 @@ func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userI
 			if config == nil {
 				return ErrConnectorNotFound
 			}
+			// A caller may test settings for an unsaved connector by supplying a
+			// request config, but must not use that path to test an existing
+			// connector they cannot access.
+			if _, lookupErr := s.connectorDAO.GetByID(ctx, dao.DB, connectorID); lookupErr == nil {
+				return ErrConnectorNotFound
+			} else if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+				return lookupErr
+			}
 		} else {
 			loadedConnector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 			if err != nil {

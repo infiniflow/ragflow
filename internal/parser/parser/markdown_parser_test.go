@@ -370,8 +370,7 @@ func TestMarkdownParser_ParseWithResult_InlineRawHTMLSurvives(t *testing.T) {
 	}
 	var sb strings.Builder
 	for _, item := range ItemsToMaps(res.JSON) {
-		text, _ := item["text"].(string)
-		sb.WriteString(text)
+		sb.WriteString(renderedText(item))
 		sb.WriteString("\n")
 	}
 	got := sb.String()
@@ -383,8 +382,7 @@ func TestMarkdownParser_ParseWithResult_InlineRawHTMLSurvives(t *testing.T) {
 			t.Errorf("parsed text lost %q\n--- got ---\n%s", want, got)
 		}
 	}
-	// The inline HTML payload must not vanish either: the walker emits the raw
-	// markup, exactly as it stands in the source.
+	// The table content must survive in the structured item.
 	if !strings.Contains(got, "binoculars") {
 		t.Errorf("inline raw HTML payload was dropped: %q", got)
 	}
@@ -456,21 +454,22 @@ func TestMarkdownParser_FlattenMediaToText(t *testing.T) {
 
 func TestResolveImageURL_DataURI(t *testing.T) {
 	b64 := base64.StdEncoding.EncodeToString([]byte("fakeimage"))
-	result, raw, size, found := resolveImageURL(context.Background(), "data:image/png;base64,"+b64)
+	budget := newEmbeddedMediaBudget()
+	result, raw, omitted, found := resolveImageURL(context.Background(), "data:image/png;base64,"+b64, budget)
 	if !found {
 		t.Fatal("expected image found for data URI")
 	}
 	if result != b64 || raw != nil {
 		t.Fatalf("got %q, want %q", result, b64)
 	}
-	if size != len("fakeimage") {
-		t.Errorf("size = %d, want %d", size, len("fakeimage"))
+	if omitted || budget.totalBytes != len("fakeimage") {
+		t.Errorf("charged bytes = %d, want %d", budget.totalBytes, len("fakeimage"))
 	}
 }
 
 func TestResolveImageURL_LocalPathNotFetched(t *testing.T) {
 	// Local / relative paths are not fetched (security); resolution fails.
-	if _, _, _, found := resolveImageURL(context.Background(), "./local/image.png"); found {
+	if _, _, _, found := resolveImageURL(context.Background(), "./local/image.png", newEmbeddedMediaBudget()); found {
 		t.Fatal("expected no image resolved for a local path")
 	}
 }
@@ -489,15 +488,16 @@ func TestResolveImageURL_HTTPImage(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	encoded, result, size, found := resolveImageURL(context.Background(), ts.URL+"/image.png")
+	budget := newEmbeddedMediaBudget()
+	encoded, result, omitted, found := resolveImageURL(context.Background(), ts.URL+"/image.png", budget)
 	if !found {
 		t.Fatal("expected image found for HTTP URL")
 	}
 	if encoded != "" || string(result) != "fake-png-bytes" {
 		t.Fatalf("got encoded=%q raw=%q, want raw image bytes", encoded, result)
 	}
-	if size != len("fake-png-bytes") {
-		t.Errorf("size = %d, want %d", size, len("fake-png-bytes"))
+	if omitted || budget.totalBytes != len("fake-png-bytes") {
+		t.Errorf("charged bytes = %d, want %d", budget.totalBytes, len("fake-png-bytes"))
 	}
 }
 
@@ -520,7 +520,7 @@ func TestMarkdownImageBudgetSkipsFetchAfterCountLimit(t *testing.T) {
 	doc := markdownNew().Parse([]byte(markdown))
 	budget := &embeddedMediaBudget{maxImageBytes: 4, maxTotalBytes: 4, maxItems: 2}
 	var items []map[string]any
-	if unresolved := walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, budget); unresolved != 0 {
+	if unresolved := walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, &htmlWalkState{mediaBudget: budget}); unresolved != 0 {
 		t.Fatalf("unresolved images = %d, want 0", unresolved)
 	}
 	if got := fetches.Load(); got != 2 {
@@ -756,8 +756,8 @@ func TestMarkdownParser_NonTableHTMLBlockNotTable(t *testing.T) {
 
 // TestMarkdownParser_TableInCodeFenceNotRendered guards against a regression
 // where pipe rows INSIDE a fenced code block would be mis-identified as a GFM
-// table and rewritten into <table> HTML, corrupting the code. renderMarkdownTablesInline
-// tracks fence state (inFence) so the table detector must skip lines inside a fence.
+// table, corrupting the code. The block parser consumes fences before
+// processing their contents as table candidates.
 func TestMarkdownParser_TableInCodeFenceNotRendered(t *testing.T) {
 	ctx := t.Context()
 	p, _ := NewMarkdownParser(GoMarkdown)
@@ -790,7 +790,7 @@ func TestMarkdownParser_TableInCodeFenceNotRendered(t *testing.T) {
 }
 
 // TestMarkdownParser_RawHTMLTableHandled covers a user-written raw <table> HTML
-// block (not a GFM pipe table). renderMarkdownTablesInline only rewrites GFM
+// block (not a GFM pipe table). The table hook only pads GFM
 // pipe tables, so the raw <table> passes through and is caught by isTableHTML
 // as an HTMLBlock, producing a single doc_type_kwd:"table" item in document
 // order. There must be NO redundant inlined doc_type_kwd:"text" copy.

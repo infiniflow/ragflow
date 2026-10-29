@@ -195,6 +195,10 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	if _, err := s.tenantDAO.GetByID(ctx, dao.DB, tenantID); err != nil {
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
+	membership, err := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
+	if err != nil {
+		return nil, common.CodeForbidden, err
+	}
 
 	if tenantValue, ok := req["tenant_id"]; ok && isTruthy(tenantValue) {
 		return nil, common.CodeDataError, errors.New("`tenant_id` must not be provided")
@@ -209,7 +213,11 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		return nil, common.CodeDataError, err
 	}
 
-	if datasetIDsValue, ok := req["dataset_ids"]; ok {
+	datasetIDsValue, hasDatasetIDs := req["dataset_ids"]
+	if !hasDatasetIDs {
+		datasetIDsValue, hasDatasetIDs = req["kb_ids"]
+	}
+	if hasDatasetIDs {
 		kbIDs, err := s.validateCreateDatasetIDs(ctx, datasetIDsValue, userID)
 		if err != nil {
 			return nil, common.CodeDataError, err
@@ -261,10 +269,6 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		req["kb_ids"] = []string{}
 	}
 	if _, ok := req["llm_id"]; !ok || req["llm_id"] == nil {
-		membership, membershipErr := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
-		if membershipErr != nil {
-			return nil, common.CodeForbidden, membershipErr
-		}
 		modelName, modelID := defaultModelRefs(membership, entity.ModelTypeChat)
 		req["llm_id"] = modelName
 		if modelID != "" {
@@ -405,6 +409,20 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 		return nil, err
 	}
 	return normalizedIDs, nil
+}
+
+func validateChatDatasetAccess(ctx context.Context, userID string, kbIDs entity.JSONSlice) error {
+	for _, rawID := range kbIDs {
+		datasetID, ok := rawID.(string)
+		if !ok || strings.TrimSpace(datasetID) == "" {
+			continue
+		}
+		if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return permissionErr
+		}
+	}
+	return nil
 }
 
 func resolveCreateLLMID(ctx context.Context, llmID, tenantID string, llmSetting map[string]interface{}) (string, error) {
@@ -862,7 +880,11 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		}
 	}
 
-	if value, ok := req["dataset_ids"]; ok {
+	value, hasDatasetIDs := req["dataset_ids"]
+	if !hasDatasetIDs {
+		value, hasDatasetIDs = req["kb_ids"]
+	}
+	if hasDatasetIDs {
 		kbIDs, err := s.validateRESTDatasetIDs(ctx, value, userID)
 		if err != nil {
 			return nil, err
@@ -894,7 +916,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 	}
 
 	if value, ok := req["decision_id"]; ok {
-		decisionID := fmt.Sprint(value)
+		decisionID := stringFromValue(value)
 		if decisionID == "" {
 			// Clearing the override is meaningful: it falls back to the tenant
 			// default rather than disabling the gate for this chat.
@@ -1046,7 +1068,7 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 	if value == nil {
 		return entity.JSONSlice{}, nil
 	}
-	items, ok := value.([]interface{})
+	items, ok := listFromValue(value)
 	if !ok {
 		return nil, errors.New("`dataset_ids` should be a list")
 	}

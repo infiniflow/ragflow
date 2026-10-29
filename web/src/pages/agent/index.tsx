@@ -21,10 +21,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import message from '@/components/ui/message';
+import { AgentCategory } from '@/constants/agent';
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useSetAgent } from '@/hooks/use-agent-request';
+import { useSaveAgent } from '@/hooks/use-agent-request';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -115,9 +116,24 @@ export default function Agent() {
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
+  // Manual Save is a draft save, same as auto-save: it refreshes the live
+  // canvas without minting a user_canvas_version row. Publishing does that.
   const handleSave = useCallback(() => {
-    saveGraph();
+    saveGraph(undefined, undefined, undefined, true);
   }, [saveGraph]);
+  const handlePublish = useCallback(
+    (alias?: string) => {
+      saveGraph(undefined, undefined, true, undefined, alias);
+    },
+    [saveGraph],
+  );
+  // Back-link lands on the agents list tab matching this canvas: ingestion
+  // pipeline canvases return to the pipeline tab, agent canvases to workflow.
+  const handleBackToAgents = useCallback(() => {
+    navigateToAgents(
+      isPipeline ? AgentCategory.DataflowCanvas : AgentCategory.AgentCanvas,
+    );
+  }, [isPipeline, navigateToAgents]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
   // The checklist displays all issues; Run separately checks blocking rules.
   const { issues } = useCanvasChecklist({
@@ -125,7 +141,7 @@ export default function Agent() {
     canvasID: id,
   });
   const { buildDslData } = useBuildDslData();
-  const { setAgent, loading: savingWidgetSettings } = useSetAgent(false);
+  const { saveAgent, loading: savingWidgetSettings } = useSaveAgent(false);
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
   const {
     visible: versionDialogVisible,
@@ -273,7 +289,7 @@ export default function Agent() {
     async (widgetSettings: WidgetSettings) => {
       const dsl = buildDslData();
 
-      return setAgent({
+      return saveAgent({
         id: id!,
         title: agentDetail.title,
         dsl: {
@@ -285,7 +301,7 @@ export default function Agent() {
         },
       });
     },
-    [agentDetail.title, buildDslData, id, setAgent],
+    [agentDetail.title, buildDslData, id, saveAgent],
   );
 
   return (
@@ -295,7 +311,7 @@ export default function Agent() {
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink onClick={navigateToAgents}>
+                <BreadcrumbLink onClick={handleBackToAgents}>
                   {t('header.flow')}
                 </BreadcrumbLink>
               </BreadcrumbItem>
@@ -332,7 +348,7 @@ export default function Agent() {
           <PublishConfirmDialog
             agentDetail={agentDetail}
             loading={loading}
-            onPublish={() => saveGraph(undefined, undefined, true)}
+            onPublish={handlePublish}
           />
           <CanvasChecklist issues={issues} />
           <DropdownMenu>

@@ -20,7 +20,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -212,11 +214,28 @@ func gatewayReachable(ctx context.Context) bool {
 	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, gatewayHealthURL(), nil)
+	healthURL := gatewayHealthURL()
+	if healthURL == "" {
+		return false
+	}
+	parsedURL, err := url.Parse(healthURL)
 	if err != nil {
 		return false
 	}
-	resp, err := http.DefaultClient.Do(req)
+	baseURL := *parsedURL
+	baseURL.Path = ""
+	baseURL.RawPath = ""
+	baseURL.RawQuery = ""
+	baseURL.Fragment = ""
+	client := newSafeChannelHTTPClient(2*time.Second, channelURLPolicy{
+		localBaseURL:    baseURL.String(),
+		localPathPrefix: "/health",
+	})
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, healthURL, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return false
 	}
@@ -248,9 +267,27 @@ func gatewayHealthURL() string {
 	if host == "" {
 		host = "127.0.0.1"
 	}
+	host = strings.Trim(host, "[]")
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsUnspecified() {
+			if ip.To4() != nil {
+				host = "127.0.0.1"
+			} else {
+				host = "::1"
+			}
+		} else if !ip.IsLoopback() {
+			return ""
+		}
+	} else if !strings.EqualFold(host, "localhost") {
+		return ""
+	}
 	port := strings.TrimSpace(os.Getenv("WHATSAPP_GATEWAY_PORT"))
 	if port == "" {
 		port = "3005"
 	}
-	return fmt.Sprintf("http://%s:%s/health", host, port)
+	portNumber, err := strconv.Atoi(port)
+	if err != nil || portNumber < 1 || portNumber > 65535 {
+		return ""
+	}
+	return "http://" + net.JoinHostPort(host, strconv.Itoa(portNumber)) + "/health"
 }

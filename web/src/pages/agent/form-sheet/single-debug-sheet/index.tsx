@@ -12,13 +12,13 @@ import JsonView from 'react18-json-view';
 import 'react18-json-view/src/style.css';
 import DebugContent from '../../debug-content';
 import { transferInputsArrayToObject } from '../../form/begin-form/use-watch-change';
-import { buildBeginInputListFromObject } from '../../form/begin-form/utils';
 import {
   deserializeCodeOutputContract,
   getBusinessOutputs,
 } from '../../form/code-form/utils';
 import useGraphStore from '../../store';
 import {
+  buildDebugInputList,
   groupCodeExecDebugOutput,
   shouldUseCodeExecDebugLayout,
 } from './utils';
@@ -97,8 +97,12 @@ const SingleDebugSheet = ({
   );
 
   const list = useMemo(() => {
-    return buildBeginInputListFromObject(inputForm);
-  }, [inputForm]);
+    return buildDebugInputList(inputForm, node?.data.form);
+  }, [inputForm, node?.data.form]);
+  const initialValues = useMemo(
+    () => Object.fromEntries(list.map((input, index) => [index, input.value])),
+    [list],
+  );
 
   const onOk = useCallback(
     (nextValues: any[]) => {
@@ -162,7 +166,9 @@ const SingleDebugSheet = ({
         </SheetHeader>
         <section className="overflow-y-auto px-5 pt-4">
           <DebugContent
+            key={componentId}
             parameters={list}
+            initialValues={initialValues}
             ok={onOk}
             isNext={false}
             loading={loading}

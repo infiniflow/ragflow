@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"context"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -89,7 +90,7 @@ func TestPDFParser_ParseWithResult_SoMarkRequiresBaseURL(t *testing.T) {
 }
 
 func TestSoMarkBlockToItem_DropsHeaderByDefault(t *testing.T) {
-	if item := soMarkBlockToItem(map[string]any{"type": "header", "content": "x"}, false); item != nil {
+	if item, _ := soMarkBlockToItems(t.Context(), map[string]any{"type": "header", "content": "x"}, false, &htmlWalkState{}); item != nil {
 		t.Fatalf("item = %#v, want nil", item)
 	}
 }
@@ -103,7 +104,7 @@ func TestSoMarkSubmitMultipartShape(t *testing.T) {
 		_, _ = w.Write([]byte(`{"code":0,"data":{"task_id":"task-3"}}`))
 	}))
 	defer server.Close()
-	taskID, err := soMarkSubmit(server.URL, "sample.pdf", []byte("%PDF"), NewPDFParser(), "key")
+	taskID, err := soMarkSubmit(context.Background(), server.URL, "sample.pdf", []byte("%PDF"), NewPDFParser(), "key")
 	if err != nil {
 		t.Fatalf("soMarkSubmit: %v", err)
 	}

@@ -50,7 +50,6 @@ type Router struct {
 	difyRetrievalHandler *handler.DifyRetrievalHandler
 	pluginHandler        *handler.PluginHandler
 	modelHandler         *handler.ModelHandler
-	modelGroupHandler    *handler.ModelGroupHandler
 	fileCommitHandler    *handler.FileCommitHandler
 	botHandler           *handler.BotHandler
 	componentsHandler    *handler.ComponentsHandler
@@ -88,7 +87,6 @@ func NewRouter(
 	difyRetrievalHandler *handler.DifyRetrievalHandler,
 	pluginHandler *handler.PluginHandler,
 	modelHandler *handler.ModelHandler,
-	modelGroupHandler *handler.ModelGroupHandler,
 	fileCommitHandler *handler.FileCommitHandler,
 	openaiChatHandler *handler.OpenAIChatHandler,
 	botHandler *handler.BotHandler,
@@ -125,7 +123,6 @@ func NewRouter(
 		difyRetrievalHandler: difyRetrievalHandler,
 		pluginHandler:        pluginHandler,
 		modelHandler:         modelHandler,
-		modelGroupHandler:    modelGroupHandler,
 		fileCommitHandler:    fileCommitHandler,
 		botHandler:           botHandler,
 		componentsHandler:    componentsHandler,
@@ -139,6 +136,7 @@ func NewRouter(
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	engine.Use(requestBodyLimitMiddleware())
 	SetupEERouter(engine)
 
 	// Mark all responses from Go with a header for debugging.
@@ -193,6 +191,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 
 		apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
+
+		RegisterPublicAgentWebhookRoutes(apiNoAuth.Group("/agents"), r.agentHandler)
 
 		RegisterEENoAuthRouter(apiNoAuth, r)
 	}
@@ -344,6 +344,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
+				datasets.POST("/:dataset_id/documents/apply-parser-config", r.documentHandler.ApplyDatasetParserConfig)
 				// Scheduler compile-status contract; replaces the retired
 				// RunIndex/TraceIndex/DeleteIndex /index routes.
 				datasets.GET("/:dataset_id/compilation/status", r.datasetsHandler.GetCompilationStatus)
@@ -575,11 +576,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				model.GET("/default", r.tenantHandler.GetDefaultModels)
 				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
 
-				model.POST("/groups", r.modelGroupHandler.CreateModelGroup)
-				model.DELETE("/groups/:group_name", r.modelGroupHandler.DeleteModelGroup)
-				model.GET("/groups", r.modelGroupHandler.ShowModelGroup)                            // LIST and SHOW MODEL GROUP
-				model.POST("/groups/:group_name/model", r.modelGroupHandler.AddModelToGroup)        // ADD MODEL TO GROUP
-				model.DELETE("/groups/:group_name/model", r.modelGroupHandler.RemoveModelFromGroup) // REMOVE MODEL FROM GROUP
+				model.POST("/groups", r.providerHandler.CreateModelGroup)
+				model.DELETE("/groups/:group_name", r.providerHandler.DeleteModelGroup)
+				model.GET("/groups", r.providerHandler.ShowModelGroup)                            // LIST and SHOW MODEL GROUP
+				model.POST("/groups/:group_name/model", r.providerHandler.AddModelToGroup)        // ADD MODEL TO GROUP
+				model.DELETE("/groups/:group_name/model", r.providerHandler.RemoveModelFromGroup) // REMOVE MODEL FROM GROUP
 			}
 
 			allModels := v1.Group("/all-models", ToggleModel())

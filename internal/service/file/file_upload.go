@@ -13,23 +13,14 @@ import (
 	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
-	"strconv"
 	"strings"
 	"time"
 )
 
-const defaultDeploymentUploadMaxBytes int64 = 1 << 30
+const defaultDeploymentUploadMaxBytes int64 = common.DefaultMaxMultipartRequestBodyBytes
 
 func DeploymentUploadMaxBytes() int64 {
-	raw := common.GetEnv(common.EnvMaxContentLength)
-	if raw == "" {
-		return defaultDeploymentUploadMaxBytes
-	}
-	n, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || n <= 0 {
-		return defaultDeploymentUploadMaxBytes
-	}
-	return n
+	return common.GetMaxMultipartRequestBodyBytes()
 }
 
 // UploadFile uploads files to a folder

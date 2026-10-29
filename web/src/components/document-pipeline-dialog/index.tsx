@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-import { ParserSelect } from '@/components/parser-select';
+import { ParserTreeSelect } from '@/components/parser-tree-select';
 import PipelineOperatorTabs from '@/components/pipeline-operator-tabs';
 import { ButtonLoading } from '@/components/ui/button';
 import {
@@ -31,7 +31,6 @@ import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import { useCallback } from 'react';
 import { FieldErrors, useFormState, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { buildParserSelectValue } from '@/hooks/use-parser-options';
 import { useParserSelectHandler } from '@/hooks/use-parser-select-handler';
 import {
   IDocumentPipelineDialogProps,
@@ -50,6 +49,7 @@ export function DocumentPipelineDialog({
   onOk,
   parserId,
   pipelineId,
+  pipelineVersionId,
   parserConfig,
   loading,
 }: IProps) {
@@ -58,6 +58,7 @@ export function DocumentPipelineDialog({
   const {
     form,
     parseType,
+    parserSelectValue,
     operatorNodes,
     operatorNodesLoading,
     activeTab,
@@ -66,32 +67,43 @@ export function DocumentPipelineDialog({
     operatorValues,
     showOperatorTabs,
     buildSubmitData,
-  } = useDocumentPipelineForm({ parserId, pipelineId, parserConfig });
+    latestVersionId,
+    parserOptionMissing,
+  } = useDocumentPipelineForm({
+    parserId,
+    pipelineId,
+    pipelineVersionId,
+    parserConfig,
+  });
 
   const handleParserSelect = useParserSelectHandler(form);
 
-  const selectedParserId = useWatch({
+  const selectedVersionId = useWatch({
     control: form.control,
-    name: 'parser_id',
+    name: 'pipeline_version_id',
   });
-  const selectedPipelineId = useWatch({
-    control: form.control,
-    name: 'pipeline_id',
-  });
+
+  // Outdated = pinned to a non-latest version. A pinned version that was
+  // deleted entirely is covered by the select's missing display plus the
+  // parserOptionMissing guard below, so no separate Missing banner lives here.
+  const versionOutdated =
+    !!selectedVersionId && selectedVersionId !== latestVersionId;
 
   const onSubmit = useCallback(
     async (data: Parameters<typeof buildSubmitData>[0]) => {
+      // A deleted pinned version/parser never reaches the backend; the
+      // missing message beside the select is already visible.
+      if (parserOptionMissing) return;
       const ret = await onOk?.(buildSubmitData(data));
       if (ret) {
         hideModal?.();
       }
     },
-    [buildSubmitData, hideModal, onOk],
+    [buildSubmitData, hideModal, onOk, parserOptionMissing],
   );
 
   const onInvalid = useCallback(
     (errors: FieldErrors) => {
-      // Surface the first failing operator tab so its field errors are visible.
       const firstOperatorId = Object.keys(errors?.parser_config ?? {})[0];
       if (firstOperatorId) {
         setActiveTab(firstOperatorId);
@@ -123,17 +135,22 @@ export function DocumentPipelineDialog({
               name={
                 parseType === ParseType.BuiltIn ? 'parser_id' : 'pipeline_id'
               }
-              render={() => (
+              render={({ fieldState }) => (
                 <FormItem>
-                  <ParserSelect
-                    value={buildParserSelectValue({
-                      parseType,
-                      parserId: selectedParserId,
-                      pipelineId: selectedPipelineId,
-                    })}
+                  <ParserTreeSelect
+                    value={parserSelectValue}
                     onChange={handleParserSelect}
+                    outdated={versionOutdated}
+                    invalid={fieldState.invalid || parserOptionMissing}
                   />
                   <FormMessage />
+                  {parserOptionMissing && (
+                    <p className="text-sm font-medium text-state-error">
+                      {t(
+                        'knowledgeConfiguration.parserOptionUnavailableMessage',
+                      )}
+                    </p>
+                  )}
                 </FormItem>
               )}
             />

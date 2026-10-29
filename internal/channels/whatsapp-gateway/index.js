@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { mkdir } from 'node:fs/promises';
+import { decodeSessionKey, resolveSessionDir } from './session-path.js';
 
 import makeWASocket, {
   Browsers,
@@ -108,7 +109,7 @@ function isAuthorized(req) {
 class WhatsAppSession {
   constructor(sessionKey) {
     this.sessionKey = sessionKey;
-    this.sessionDir = path.join(DATA_DIR, sessionKey);
+    this.sessionDir = resolveSessionDir(DATA_DIR, sessionKey);
     this.status = 'stopped';
     this.lastError = '';
     this.qrDataUrl = '';
@@ -434,7 +435,10 @@ const server = http.createServer(async (req, res) => {
       return sendError(res, 401, 'unauthorized');
     }
 
-    const sessionKey = decodeURIComponent(parts[1]);
+    const sessionKey = decodeSessionKey(parts[1]);
+    if (sessionKey === null) {
+      return sendError(res, 400, 'invalid session key');
+    }
 
     if (req.method === 'POST' && parts.length === 3 && parts[2] === 'start') {
       const session = getSession(sessionKey);
@@ -492,7 +496,11 @@ server.on('upgrade', (req, socket) => {
       socket.destroy();
       return;
     }
-    const sessionKey = decodeURIComponent(parts[1]);
+    const sessionKey = decodeSessionKey(parts[1]);
+    if (sessionKey === null) {
+      socket.destroy();
+      return;
+    }
     const key = req.headers['sec-websocket-key'];
     if (!key) {
       socket.destroy();

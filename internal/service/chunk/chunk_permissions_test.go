@@ -8,6 +8,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 )
 
@@ -19,8 +20,9 @@ func TestRetrievalTestChecksDatasetUsePermission(t *testing.T) {
 		Update("permission", string(entity.TenantPermissionMe)).Error; err != nil {
 		t.Fatalf("set dataset private: %v", err)
 	}
+	ctx := chunkTestContext(t, "outsider", "owner", "owner")
 
-	_, err := (&ChunkService{kbDAO: dao.NewKnowledgebaseDAO()}).RetrievalTest(t.Context(), &service.RetrievalTestRequest{
+	_, err := (&ChunkService{kbDAO: dao.NewKnowledgebaseDAO()}).RetrievalTest(ctx, &service.RetrievalTestRequest{
 		Question: "query",
 		Datasets: []string{"kb-1"},
 	}, "outsider")
@@ -52,7 +54,10 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 				t.Fatalf("set KB permission: %v", err)
 			}
 
-			ctx := t.Context()
+			if err := testsupport.PrepareEnterprisePermissionFixture(db, "owner", "owner", "member"); err != nil {
+				t.Fatalf("prepare permission fixture: %v", err)
+			}
+			ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: tt.userID, TenantID: "owner"})
 			for _, op := range []struct {
 				name string
 				run  func(*ChunkService) error

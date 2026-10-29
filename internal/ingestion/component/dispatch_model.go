@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 
 	"ragflow/internal/dao"
@@ -177,10 +178,7 @@ func ocrProviderAliases(providerName string) []string {
 func resolveDefaultModelMembership(ctx context.Context, db *gorm.DB, tenantID string) (*entity.UserTenant, error) {
 	membershipDAO := dao.NewUserTenantDAO()
 	if subject, ok := permission.SubjectFromContext(ctx); ok && subject.UserID != "" && (subject.TenantID == "" || subject.TenantID == tenantID) {
-		membership, err := membershipDAO.FilterByUserIDAndTenantID(ctx, db, subject.UserID, tenantID)
-		if err == nil {
-			return membership, nil
-		}
+		return membershipDAO.FilterByUserIDAndTenantID(ctx, db, subject.UserID, tenantID)
 	}
 	return membershipDAO.GetOwnerByTenantID(ctx, db, tenantID)
 }
@@ -319,7 +317,7 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 }
 
 func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	pureModelName, instanceName, providerName, err := parseCompositeModelName(modelName)
+	pureModelName, instanceName, providerName, err := common.ParseCompositeModelName(modelName)
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
@@ -416,20 +414,6 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 		contextLength = *llmInfo.MaxTokens
 	}
 	return driver, llmInfo.Name, apiConfig, contextLength, nil
-}
-
-func parseCompositeModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
-	parts := strings.Split(compositeName, "@")
-	switch len(parts) {
-	case 3:
-		return parts[0], parts[1], parts[2], nil
-	case 2:
-		return parts[0], "default", parts[1], nil
-	case 1:
-		return parts[0], "", "", fmt.Errorf("provider name missing in model name: %s", compositeName)
-	}
-	n := len(parts)
-	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
 }
 
 func newModelDriverForBaseURLLocal(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {

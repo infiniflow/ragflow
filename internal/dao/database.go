@@ -177,6 +177,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.InvitationCode{},
 		&entity.Document{},
 		&entity.UserCanvas{},
+		&entity.AgentWebhookCredential{},
 		&entity.CanvasTemplate{},
 		&entity.UserCanvasVersion{},
 		&entity.LLMFactories{},
@@ -266,6 +267,17 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		}
 		if err = migrateKnowledgeCompileQueues(ctx, DB); err != nil {
 			return fmt.Errorf("failed to split knowledge compilation queues: %w", err)
+		}
+
+		// Add pipeline_version_id columns and lock existing dataflow bindings to a
+		// version. Runs LAST so the shared migration marker only advances to
+		// v1.0.0-rc3.dev6 after every lower-target migration (notably the
+		// v1.0.0-rc3.dev5 tenant default-model column drop) has already run.
+		if err = MigrateDSLVersionColumns(ctx, DB); err != nil {
+			return fmt.Errorf("failed to add DSL version columns: %w", err)
+		}
+		if err = BackfillDSLVersionBindings(ctx, DB); err != nil {
+			return fmt.Errorf("failed to backfill DSL version bindings: %w", err)
 		}
 		common.Info("Database schema migrated successfully")
 	} else {

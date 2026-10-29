@@ -14,12 +14,10 @@
 //  limitations under the License.
 //
 
-// Chunk image upload: at the moment a chunk's raw image is produced, upload it
+// Chunk image upload: materialize deferred media from the run cache, upload it
 // to object storage, record the img_id reference, and drop the in-memory bytes.
-// This bounds peak memory to a single chunk's image lifetime instead
-// of carrying every image across the component boundary, matching the
-// pdfcrop_cgo sliding-window philosophy. Mirrors Python image2id +
-// upload_to_minio (rag/utils/base64_image.py, rag/svr/task_executor.py).
+// This bounds peak memory to a single chunk's image lifetime instead of
+// carrying every image across component boundaries.
 package chunker
 
 import (
@@ -53,25 +51,66 @@ func imageUploadConcurrency() int {
 	return 10
 }
 
-// uploadChunkImages is the caller-side image-upload pass for a chunker's
-// output. For each chunk it mirrors Python's upload_to_minio + image2id,
-// running at the chunker stage (not in the Tokenizer) so the bytes are
-// dropped as soon as they are produced:
-//   - img_id already set  → keep it, skip upload (Python bypass).
-//   - no image            → img_id="", nothing to upload.
-//   - otherwise           → decode the image, upload the bytes via
+// uploadChunkMedia is the caller-side image pass for a chunker's output. It
+// runs at the chunker stage (not in the Tokenizer) so bytes are dropped as soon
+// as they are uploaded:
+//   - img_id already set → keep it, skip upload (Python bypass).
+//   - no image or ref    → img_id="", nothing to upload.
+//   - media_ref only     → materialize one image from the run media cache.
+//   - otherwise          → decode the image, upload the bytes via
 //     uploadOneImage at key=ck["id"], set img_id="<kb_id>-<chunk_id>", and
 //     delete the raw image field (用完即弃).
 //
+// Materializing inside the loop keeps peak memory at one image instead of the
+// whole document. Every cache, integrity, scope, or transport failure aborts
+// the invocation; an image is never silently dropped.
+//
+// A chunk that already carries img_id skips resolution entirely: the image is
+// already stored, so a reconstructed copy would only leak into the index.
+//
 // The caller (imageUploadDecorator) must write ck["id"] before calling this
-// function. uploadChunkImage errors when a chunk arrives without id.
-func uploadChunkImages(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID string) error {
+// function.
+func uploadChunkMedia(ctx context.Context, chunks []map[string]any, up component.ImageUploader, kbID, docID string) ([]map[string]any, error) {
 	for _, ck := range chunks {
-		if err := uploadChunkImage(ctx, ck, up, kbID); err != nil {
-			return err
+		imgID, _ := ck["img_id"].(string)
+		if imgID != "" {
+			// The image was already uploaded. A materialized copy would not
+			// be uploaded again, so it must not survive into the index.
+			delete(ck, "image")
+			delete(ck, "media_ref")
+			continue
 		}
+
+		image, _ := ck["image"].(string)
+		if image == "" {
+			data, ref, err := component.ResolveMediaRef(ctx, ck)
+			if err != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return nil, ctxErr
+				}
+				return nil, fmt.Errorf("materialize media for document %s: %w", docID, err)
+			}
+			if ref != nil {
+				chunkID, _ := ck["id"].(string)
+				if chunkID == "" {
+					return nil, fmt.Errorf("uploadChunkMedia: chunk missing id")
+				}
+				imgID, err := uploadOneImage(ctx, up, kbID, chunkID, data)
+				if err != nil {
+					return nil, err
+				}
+				ck["img_id"] = imgID
+				delete(ck, "image")
+				delete(ck, "media_ref")
+				continue
+			}
+		}
+		if err := uploadChunkImage(ctx, ck, up, kbID); err != nil {
+			return nil, err
+		}
+		delete(ck, "media_ref")
 	}
-	return nil
+	return chunks, nil
 }
 
 // uploadChunkImage handles a single chunk map: reads ck["id"] (required),

@@ -105,12 +105,13 @@ void WordNetLemmatizer::LoadExceptions() {
         const std::string &pos_name = pair.second;
         fs::path exc_path(root / (pos_name + ".exc"));
 
+        // Exception files are optional. Keep an empty map for each POS so
+        // Morphy can still apply substitutions when a file is absent.
+        exceptions_[pos_abbrev] = {};
         std::ifstream file(exc_path.string());
         if (!file.is_open()) {
             continue;
         }
-
-        exceptions_[pos_abbrev] = {};
 
         std::string line;
         while (std::getline(file, line)) {
@@ -131,7 +132,11 @@ void WordNetLemmatizer::LoadExceptions() {
 }
 
 std::vector<std::string> WordNetLemmatizer::CollectSubstitutions(const std::vector<std::string> &forms, const std::string &pos) {
-    const auto &substitutions = MORPHOLOGICAL_SUBSTITUTIONS.at(pos);
+    const auto substitutionsIt = MORPHOLOGICAL_SUBSTITUTIONS.find(pos);
+    if (substitutionsIt == MORPHOLOGICAL_SUBSTITUTIONS.end()) {
+        return {};
+    }
+    const auto &substitutions = substitutionsIt->second;
     std::vector<std::string> results;
 
     for (const auto &form : forms) {
@@ -145,7 +150,11 @@ std::vector<std::string> WordNetLemmatizer::CollectSubstitutions(const std::vect
 }
 
 std::vector<std::string> WordNetLemmatizer::CollectSubstitutions(const std::string &form, const std::string &pos) {
-    const auto &substitutions = MORPHOLOGICAL_SUBSTITUTIONS.at(pos);
+    const auto substitutionsIt = MORPHOLOGICAL_SUBSTITUTIONS.find(pos);
+    if (substitutionsIt == MORPHOLOGICAL_SUBSTITUTIONS.end()) {
+        return {};
+    }
+    const auto &substitutions = substitutionsIt->second;
     std::vector<std::string> results;
 
     for (const auto &[old_suffix, new_suffix] : substitutions) {
@@ -174,7 +183,11 @@ std::vector<std::string> WordNetLemmatizer::FilterForms(const std::vector<std::s
 }
 
 std::vector<std::string> WordNetLemmatizer::Morphy(const std::string &form, const std::string &pos, bool check_exceptions) {
-    const auto &pos_exceptions = exceptions_.at(pos);
+    const auto exceptionsIt = exceptions_.find(pos);
+    if (exceptionsIt == exceptions_.end()) {
+        return {};
+    }
+    const auto &pos_exceptions = exceptionsIt->second;
 
     // Check exceptions first
     if (check_exceptions && pos_exceptions.find(form) != pos_exceptions.end()) {

@@ -803,7 +803,7 @@ func (s *Service) ShowUsersActivity(ctx context.Context, days, windows *int) (ma
 	return result, nil
 }
 
-func (s *Service) ListUsersEE(ctx context.Context, pageIndex, pageSize int, name string, status, role, sort, orderBy, plan string, top, days int, quota *int) ([]map[string]interface{}, error) {
+func (s *Service) ListUsersEE(ctx context.Context, pageIndex, pageSize int, name string, status, role, sort, orderBy, plan string, top, days int, quota *int) ([]map[string]interface{}, int64, error) {
 	item := map[string]interface{}{}
 	item["pageIndex"] = pageIndex
 	item["pageSize"] = pageSize
@@ -823,7 +823,7 @@ func (s *Service) ListUsersEE(ctx context.Context, pageIndex, pageSize int, name
 
 	var result []map[string]interface{}
 	result = append(result, item)
-	return result, nil
+	return result, 0, nil
 }
 
 // ListUsersReports list users reports for enterprise edition

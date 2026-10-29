@@ -10,6 +10,7 @@ import {
   useSetDocumentStatus,
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
+import { omit } from 'lodash';
 import {
   LucideCircleX,
   LucideCylinder,
@@ -161,8 +162,19 @@ export function useBulkOperateDataset({
     onChangeStatus(false);
   }, [onChangeStatus]);
 
-  const handleDelete = useCallback(() => {
-    const deletedKeys = selectedRowKeys.filter(
+  const handleDelete = useCallback(async () => {
+    const currentKeys = selectedRowKeys.filter((id) =>
+      documents.some((doc) => doc.id === id),
+    );
+    setRowSelection((prev) =>
+      omit(
+        prev,
+        selectedRowKeys.filter((id) => !currentKeys.includes(id)),
+      ),
+    );
+    if (currentKeys.length === 0) return;
+
+    const deletedKeys = currentKeys.filter(
       (x) => !documents.filter(isDocumentProcessing).some((y) => y.id === x),
     );
     if (deletedKeys.length === 0) {
@@ -172,8 +184,17 @@ export function useBulkOperateDataset({
       return;
     }
 
-    return removeDocument(deletedKeys);
-  }, [selectedRowKeys, removeDocument, documents, t]);
+    if (deletedKeys.length < currentKeys.length) {
+      toast.warning(
+        t('knowledgeConfiguration.theDocumentBeingParsedCannotBeDeleted'),
+      );
+    }
+
+    const code = await removeDocument(deletedKeys);
+    if (code === 0) {
+      setRowSelection((prev) => omit(prev, deletedKeys));
+    }
+  }, [selectedRowKeys, removeDocument, documents, t, setRowSelection]);
 
   const list = [
     {
@@ -210,12 +231,7 @@ export function useBulkOperateDataset({
       id: 'delete',
       label: t('common.delete'),
       icon: <LucideTrash2 />,
-      onClick: async () => {
-        const code = await handleDelete();
-        if (code === 0) {
-          setRowSelection({});
-        }
-      },
+      onClick: handleDelete,
     },
   ];
 

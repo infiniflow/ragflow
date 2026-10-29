@@ -49,6 +49,7 @@ func dialForTest(llmid string) *entity.Chat {
 			"refine_multiturn": false,
 			"keyword":          false,
 			"use_kg":           false,
+			"toc_enhance":      false,
 		},
 		KBIDs:                  []interface{}{},
 		VectorSimilarityWeight: 0.3,
@@ -102,6 +103,30 @@ func TestAsyncChat_EmptyMessages(t *testing.T) {
 	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for empty messages, got nil")
+	}
+}
+
+func TestAsyncChatRejectsUnauthorizedDatasetsBeforeStartingPipeline(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	insertForeignPrivateDatasetForChatTest(t, db)
+
+	chat := dialForTest("")
+	chat.KBIDs = []interface{}{"kb-private"}
+	results, err := (&ChatPipelineService{}).AsyncChat(
+		serviceTestContext(t, "user-1", "user-1"),
+		"user-1",
+		chat,
+		[]map[string]interface{}{{"role": "user", "content": "show me the private dataset"}},
+		false,
+		nil,
+	)
+	if err == nil {
+		for range results {
+		}
+		t.Fatal("AsyncChat accepted another user's private dataset")
+	}
+	if !isAccessDeniedOrHidden(err) {
+		t.Fatalf("AsyncChat error = %v, want access denied or hidden resource", err)
 	}
 }
 
@@ -1685,7 +1710,7 @@ func TestAsyncChatEmptyResponseQuoteDisabled(t *testing.T) {
 	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "Knowledge"}).Error; err != nil {
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", CreatedBy: "user-1", Name: "Knowledge"}).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -1693,7 +1718,8 @@ func TestAsyncChatEmptyResponseQuoteDisabled(t *testing.T) {
 	chat.KBIDs = entity.JSONSlice{"kb-1"}
 	chat.PromptConfig["system"] = "Answer using {knowledge}"
 	chat.PromptConfig["empty_response"] = "Nothing found."
-	results, err := NewChatPipelineService().AsyncChat(t.Context(), "user-1", chat,
+	ctx := serviceTestContext(t, "user-1", "tenant-1")
+	results, err := NewChatPipelineService().AsyncChat(ctx, "user-1", chat,
 		[]map[string]interface{}{{"role": "user", "content": "Question"}}, true,
 		map[string]interface{}{"quote": false})
 	if err != nil {
@@ -1825,7 +1851,7 @@ func setupChatPipelineToolSupportTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// seedChatPipelineToolSupportTenant sets the tenant's default chat model, which
+// seedChatPipelineToolSupportTenant sets the owner membership's default chat model, which
 // the no-explicit-LLM branch of the probe resolves.
 func seedChatPipelineToolSupportTenant(t *testing.T, db *gorm.DB, defaultLLMID string) {
 	t.Helper()
