@@ -117,3 +117,44 @@ In an **Agent** component, add the imported tools from `parallel-search` and ena
 Check that discovery returns both tool names. Then inspect an agent run's tool calls to confirm it selected one. If connection fails, check the transport, outbound access to `search.parallel.ai`, and configured headers. Queries, requested URLs, and request context sent through these tools reach Parallel; review its [privacy policy](https://parallel.ai/privacy-policy) before sending sensitive content.
 
 For other MCP servers, use their documented URL, transport, and authentication. Imported `headers` must be an object with string names and string values. Keep real credentials out of committed configuration files.
+
+## Example: connect Baizhi Cloud Browser
+
+[Baizhi Cloud Browser](https://baizhibrowser.cloud/) (also known as CapyBrowser) hosts browser runs and persistent browser profiles. Its MCP endpoint checks credentials and prices, and manages runs, profiles, and control handover. It does not provide page navigation or clicking through MCP alone; page operations also require a compatible CDP client. Use this connection when a RAGFlow workflow needs to manage cloud-browser runs or profiles. The first check below does not create a run.
+
+Use a key authorized for Baizhi Cloud Browser from the [service console](https://capybrowser.app.baizhi.cloud/). A RAGFlow API key is not a substitute. In the manual form, enter:
+
+| Field               | Value                                          |
+| ------------------- | ---------------------------------------------- |
+| Name                | `baizhi-cloud-browser`                         |
+| URL                 | `https://capybrowser.app.baizhi.cloud/mcp`     |
+| Server type         | `streamable-http`                              |
+| Authorization Token | Your raw API key, without the `Bearer ` prefix |
+
+Refresh **Tools available**, check the advertised tools, then save. Alternatively, save the repository's [example configuration](https://github.com/infiniflow/ragflow/blob/main/example/mcp/baizhi_cloud_browser.json), or copy the JSON below to a local file. Replace `REPLACE_WITH_YOUR_CAPY_API_KEY` with your key and import it under **User settings → MCP**. Here the header value includes exactly one `Bearer ` prefix:
+
+```json
+{
+  "mcpServers": {
+    "baizhi-cloud-browser": {
+      "type": "streamable-http",
+      "url": "https://capybrowser.app.baizhi.cloud/mcp",
+      "headers": {
+        "Authorization": "Bearer REPLACE_WITH_YOUR_CAPY_API_KEY"
+      }
+    }
+  }
+}
+```
+
+The placeholder is literal text, not an environment-variable lookup. RAGFlow stores the connection on its backend. Ordinary responses mask credential fields, but configuration downloads include them. Keep filled files private, and grant access to the saved MCP resource only to people permitted to use the connected Baizhi account and its resources.
+
+For a first check, add only the discovered `browser_auth_check` tool to an **Agent** component and ask:
+
+> Call `browser_auth_check` once. Report whether authentication succeeded. Do not create a browser run or profile, request control, or print credentials or account identifiers.
+
+Inspect the actual tool call and result. Successful discovery alone does not prove a tool was called; inspect the returned authentication result and any error. Authentication checks do not create a browser run or incur browser runtime charges. The key's account/team metadata may be absent on some deployments, so missing fields do not prove account ownership. If authentication fails, verify the endpoint and token; do not put the key in the URL or paste it into chat.
+
+Before using other tools, review the service's [current connection and lifecycle guide](https://capybrowser.app.baizhi.cloud/docs/installation.md) and pricing. Browser runs can incur charges. Disconnecting MCP, removing the tool from an agent, or deleting this connection does not stop an existing run: explicitly stop the original run and inspect its terminal and billing state. A released run and settled billing are separate results.
+
+To remove the integration, first finish any existing runs, remove its tools from agents, and delete its MCP entry in **User settings → MCP**. Revoke the service key separately if it is no longer needed. Calls and supplied task context are sent to Baizhi Cloud Browser. Public integration references are in the [Chaitin integration repository](https://github.com/chaitin/baizhi-cloud-browser). `ctcbyzx` maintains this connection example and has contributed to that repository; the [personal integration repository](https://github.com/ctcbyzx/baizhi-cloud-browser) and its [Issues](https://github.com/ctcbyzx/baizhi-cloud-browser/issues) provide maintenance and support for this connection.
