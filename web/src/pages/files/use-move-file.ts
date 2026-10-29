@@ -14,16 +14,19 @@ export const useHandleMoveFile = ({
   const { moveFile, loading } = useMoveFile();
   const [sourceFileIds, setSourceFileIds] = useState<string[]>([]);
   const isBulkRef = useRef(false);
+  const dialogGenerationRef = useRef(0);
 
   const onMoveFileOk = useCallback(
     async (targetFolderId: string) => {
+      const generation = dialogGenerationRef.current;
+      const bulk = isBulkRef.current;
       const ret = await moveFile({
         src_file_ids: sourceFileIds,
         dest_file_id: targetFolderId,
       });
 
-      if (ret === 0) {
-        if (isBulkRef.current) {
+      if (ret === 0 && dialogGenerationRef.current === generation) {
+        if (bulk) {
           clearRowSelection();
         }
         hideMoveFileModal();
@@ -43,6 +46,7 @@ export const useHandleMoveFile = ({
   );
 
   const dismissMoveFile = useCallback(() => {
+    dialogGenerationRef.current += 1;
     setSourceFileIds([]);
     isBulkRef.current = false;
     hideMoveFileModal();

@@ -77,4 +77,81 @@ describe('file dialogs on folder change', () => {
       expect.objectContaining({ fileIds: [] }),
     );
   });
+
+  it('ignores a move that finishes after the dialog is dismissed and reopened', async () => {
+    let finishMove: (result: number) => void = () => {};
+    mockMoveFile.mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          finishMove = resolve;
+        }),
+    );
+    const clearRowSelection = jest.fn();
+    const { result } = renderHook(() =>
+      useHandleMoveFile({ clearRowSelection }),
+    );
+
+    act(() => {
+      result.current.showMoveFileModal(['file-a'], true);
+    });
+
+    let pending: Promise<number> = Promise.resolve(0);
+    act(() => {
+      pending = result.current.onMoveFileOk('dest-folder');
+    });
+
+    act(() => {
+      result.current.dismissMoveFile();
+      result.current.showMoveFileModal(['file-c'], true);
+    });
+
+    await act(async () => {
+      finishMove(0);
+      await pending;
+    });
+
+    expect(result.current.moveFileVisible).toBe(true);
+    expect(clearRowSelection).not.toHaveBeenCalled();
+    expect(mockMoveFile).toHaveBeenCalledWith({
+      src_file_ids: ['file-a'],
+      dest_file_id: 'dest-folder',
+    });
+  });
+
+  it('ignores a link that finishes after the dialog is dismissed and reopened', async () => {
+    let finishLink: (result: number) => void = () => {};
+    mockConnectFileToKnowledge.mockImplementation(
+      () =>
+        new Promise<number>((resolve) => {
+          finishLink = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useHandleConnectToKnowledge());
+
+    act(() => {
+      result.current.showConnectToKnowledgeModal(['file-a']);
+    });
+
+    let pending: Promise<number> = Promise.resolve(0);
+    act(() => {
+      pending = result.current.onConnectToKnowledgeOk([
+        { kb_id: 'kb-1', kb_name: 'kb' },
+      ]);
+    });
+
+    act(() => {
+      result.current.dismissConnectToKnowledge();
+      result.current.showConnectToKnowledgeModal(['file-c']);
+    });
+
+    await act(async () => {
+      finishLink(0);
+      await pending;
+    });
+
+    expect(result.current.connectToKnowledgeVisible).toBe(true);
+    expect(mockConnectFileToKnowledge).toHaveBeenCalledWith(
+      expect.objectContaining({ fileIds: ['file-a'] }),
+    );
+  });
 });
