@@ -789,6 +789,34 @@ func insertTestIngestionTaskWithStatus(t *testing.T, id, userID, docID, datasetI
 	}
 }
 
+// insertTestIngestionTaskAt inserts a historical task with an explicit
+// create_time so newest-first ordering is deterministic.
+func insertTestIngestionTaskAt(t *testing.T, id, userID, docID, datasetID, status string, createTime int64) {
+	t.Helper()
+	task := &entity.IngestionTask{
+		ID:         id,
+		UserID:     userID,
+		DocumentID: docID,
+		DatasetID:  datasetID,
+		Schema:     entity.JSONMap{},
+		Status:     status,
+		BaseModel:  entity.BaseModel{CreateTime: &createTime},
+	}
+	if err := dao.DB.Create(task).Error; err != nil {
+		t.Fatalf("insert test ingestion task: %v", err)
+	}
+}
+
+// allowHistoricalIngestionTasks drops the production unique index so a test
+// can model a database that predates it and still holds duplicate historical
+// tasks for one document.
+func allowHistoricalIngestionTasks(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Exec("DROP INDEX IF EXISTS idx_ingestion_task_document_id").Error; err != nil {
+		t.Fatalf("drop ingestion task unique index: %v", err)
+	}
+}
+
 func insertTestFile2Document(t *testing.T, id, fileID, docID string) {
 	t.Helper()
 	f2d := &entity.File2Document{
@@ -926,6 +954,156 @@ func TestRemoveDocumentKeepFilePurgesTaskStateBeforeDeletingDocument(t *testing.
 	}
 	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
 		t.Fatalf("document was deleted despite resumable state cleanup failure: %v", err)
+	}
+}
+
+func TestDeleteDocumentFullPurgesEveryTaskManifest(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	allowHistoricalIngestionTasks(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskAt(t, "task-old", "user-1", "doc-1", "kb-1", common.COMPLETED, 100)
+	insertTestIngestionTaskAt(t, "task-new", "user-1", "doc-1", "kb-1", common.FAILED, 200)
+
+	svc := testDocumentService(t)
+	purged := map[string]bool{}
+	svc.purgeTaskState = func(_ context.Context, taskID string) error {
+		purged[taskID] = true
+		return nil
+	}
+
+	if err := svc.deleteDocumentFull(t.Context(), "doc-1"); err != nil {
+		t.Fatalf("deleteDocumentFull: %v", err)
+	}
+	if !purged["task-old"] || !purged["task-new"] {
+		t.Fatalf("purged tasks = %v, want both historical tasks", purged)
+	}
+	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err == nil {
+		t.Fatal("document still exists after deletion")
+	}
+}
+
+func TestRemoveDocumentKeepFilePurgesEveryTaskManifest(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	allowHistoricalIngestionTasks(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskAt(t, "task-old", "user-1", "doc-1", "kb-1", common.COMPLETED, 100)
+	insertTestIngestionTaskAt(t, "task-new", "user-1", "doc-1", "kb-1", common.FAILED, 200)
+
+	svc := testDocumentService(t)
+	purged := map[string]bool{}
+	svc.purgeTaskState = func(_ context.Context, taskID string) error {
+		purged[taskID] = true
+		return nil
+	}
+
+	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); err != nil {
+		t.Fatalf("RemoveDocumentKeepFile: %v", err)
+	}
+	if !purged["task-old"] || !purged["task-new"] {
+		t.Fatalf("purged tasks = %v, want both historical tasks", purged)
+	}
+	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err == nil {
+		t.Fatal("document still exists after removal")
+	}
+}
+
+func TestClearDocumentParseResultsPurgesEveryTerminalTaskManifest(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	allowHistoricalIngestionTasks(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTaskAt(t, "task-old", "user-1", "doc-1", "kb-1", common.COMPLETED, 100)
+	insertTestIngestionTaskAt(t, "task-new", "user-1", "doc-1", "kb-1", common.FAILED, 200)
+
+	svc := testDocumentService(t)
+	purged := map[string]bool{}
+	svc.purgeTaskState = func(_ context.Context, taskID string) error {
+		purged[taskID] = true
+		return nil
+	}
+	doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); err != nil {
+		t.Fatalf("clearDocumentParseResults: %v", err)
+	}
+	if !purged["task-old"] || !purged["task-new"] {
+		t.Fatalf("purged tasks = %v, want both terminal tasks", purged)
+	}
+	if remaining, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("reload tasks: %v", err)
+	} else if remaining != nil {
+		t.Fatalf("terminal task survived cleanup: %+v", remaining)
+	}
+}
+
+func TestClearDocumentParseResultsSkipsRunningTaskManifest(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	allowHistoricalIngestionTasks(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTaskAt(t, "task-running", "user-1", "doc-1", "kb-1", common.RUNNING, 100)
+	insertTestIngestionTaskAt(t, "task-done", "user-1", "doc-1", "kb-1", common.COMPLETED, 200)
+
+	svc := testDocumentService(t)
+	purged := map[string]bool{}
+	svc.purgeTaskState = func(_ context.Context, taskID string) error {
+		purged[taskID] = true
+		return nil
+	}
+	doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); err != nil {
+		t.Fatalf("clearDocumentParseResults: %v", err)
+	}
+	if purged["task-running"] {
+		t.Fatal("a RUNNING task's manifest must not be purged")
+	}
+	if !purged["task-done"] {
+		t.Fatal("the terminal task's manifest was not purged")
+	}
+	if _, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, "task-running"); err != nil {
+		t.Fatalf("RUNNING task was removed: %v", err)
+	}
+}
+
+func TestDeleteDocumentFullDoesNotDeleteWhenAnyTaskPurgeFails(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	allowHistoricalIngestionTasks(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskAt(t, "task-old", "user-1", "doc-1", "kb-1", common.COMPLETED, 100)
+	insertTestIngestionTaskAt(t, "task-new", "user-1", "doc-1", "kb-1", common.FAILED, 200)
+
+	purgeErr := errors.New("redis unavailable")
+	svc := testDocumentService(t)
+	svc.purgeTaskState = func(_ context.Context, taskID string) error {
+		if taskID == "task-old" {
+			return purgeErr
+		}
+		return nil
+	}
+
+	if err := svc.deleteDocumentFull(t.Context(), "doc-1"); !errors.Is(err, purgeErr) {
+		t.Fatalf("deleteDocumentFull error = %v, want the joined purge error", err)
+	}
+	for _, taskID := range []string{"task-old", "task-new"} {
+		if _, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, taskID); err != nil {
+			t.Fatalf("task %s was deleted despite the purge failure: %v", taskID, err)
+		}
+	}
+	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document was deleted despite the purge failure: %v", err)
 	}
 }
 

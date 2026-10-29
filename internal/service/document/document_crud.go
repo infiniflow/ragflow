@@ -288,6 +288,13 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 		}
 	}
 
+	// Purge every task's run manifest before any task or document row is
+	// deleted. A purge failure must leave the document and its tasks in place
+	// so a retry can still find the state it needs.
+	if err := s.purgeDocumentTaskStateForCleanup(ctx, docID); err != nil {
+		return err
+	}
+
 	// Delete tasks from DB
 	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
 	if err != nil {
@@ -295,9 +302,6 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 		return err
 	}
 	if ingestionTask != nil {
-		if err := s.purgeTaskStateForCleanup(ctx, ingestionTask.ID); err != nil {
-			return err
-		}
 		if _, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, &ingestionTask.UserID); err != nil {
 			return err
 		}
@@ -332,14 +336,15 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	if typeErr != nil {
 		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
 	}
+	// Purge every task's run manifest before removing any task or the document.
+	if err := s.purgeDocumentTaskStateForCleanup(ctx, docID); err != nil {
+		return err
+	}
 	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
 	if err != nil {
 		return fmt.Errorf("failed to get ingestion task for %s: %w", docID, err)
 	}
 	if ingestionTask != nil {
-		if err := s.purgeTaskStateForCleanup(ctx, ingestionTask.ID); err != nil {
-			return err
-		}
 		if _, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, nil); err != nil {
 			return fmt.Errorf("remove ingestion task for document %s: %w", docID, err)
 		}

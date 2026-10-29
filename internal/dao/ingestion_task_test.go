@@ -562,6 +562,72 @@ func TestIngestionTaskDAOGetByDocumentIDUsesIDAsTieBreaker(t *testing.T) {
 	}
 }
 
+func TestIngestionTaskDAOListByDocumentIDReturnsEveryTaskNewestFirst(t *testing.T) {
+	db := setupTaskTestDB(t)
+	if err := db.Exec("DROP INDEX idx_ingestion_task_document_id").Error; err != nil {
+		t.Fatalf("drop ingestion task unique index: %v", err)
+	}
+
+	oldTaskTime := int64(100)
+	newTaskTime := int64(200)
+	sameTime := int64(300)
+	for _, task := range []*entity.IngestionTask{
+		{
+			ID:         "task-old",
+			UserID:     "user-1",
+			DocumentID: "doc-retried",
+			DatasetID:  "kb-1",
+			Status:     common.COMPLETED,
+			BaseModel:  entity.BaseModel{CreateTime: &oldTaskTime},
+		},
+		{
+			ID:         "task-new-a",
+			UserID:     "user-1",
+			DocumentID: "doc-retried",
+			DatasetID:  "kb-1",
+			Status:     common.FAILED,
+			BaseModel:  entity.BaseModel{CreateTime: &newTaskTime},
+		},
+		{
+			ID:         "task-new-z",
+			UserID:     "user-1",
+			DocumentID: "doc-retried",
+			DatasetID:  "kb-1",
+			Status:     common.STOPPED,
+			BaseModel:  entity.BaseModel{CreateTime: &sameTime},
+		},
+		{
+			ID:         "task-other",
+			UserID:     "user-1",
+			DocumentID: "doc-other",
+			DatasetID:  "kb-1",
+			Status:     common.COMPLETED,
+		},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+
+	tasks, err := NewIngestionTaskDAO().ListByDocumentID(t.Context(), db, "doc-retried")
+	if err != nil {
+		t.Fatalf("ListByDocumentID: %v", err)
+	}
+	var ids []string
+	for _, task := range tasks {
+		ids = append(ids, task.ID)
+	}
+	want := []string{"task-new-z", "task-new-a", "task-old"}
+	if len(ids) != len(want) {
+		t.Fatalf("tasks = %v, want %v", ids, want)
+	}
+	for i := range want {
+		if ids[i] != want[i] {
+			t.Fatalf("tasks = %v, want %v", ids, want)
+		}
+	}
+}
+
 func TestIngestionTaskDAOHasDatasetStatusIndex(t *testing.T) {
 	db := setupTaskTestDB(t)
 	if !db.Migrator().HasIndex(&entity.IngestionTask{}, "idx_ingestion_task_dataset_status") {

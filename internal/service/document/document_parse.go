@@ -59,18 +59,34 @@ func lockDocumentParse(docID string) func() {
 	}
 }
 
-// purgeTaskStateForCleanup removes the per-chunk cache state for a task before
-// its row is deleted. The bounded context makes Redis outages and hung clients
-// observable to the caller instead of allowing a destructive task/document
-// delete to proceed with stale cache state.
-func (s *DocumentService) purgeTaskStateForCleanup(ctx context.Context, taskID string) error {
+// purgeDocumentTaskStateForCleanup removes the run-scoped cache state for
+// every ingestion task of a document before its rows are deleted. The single
+// bounded context makes Redis outages and hung clients observable to the
+// caller instead of allowing a destructive task/document delete to proceed
+// with stale cache state. RUNNING and STOPPING tasks are skipped: an in-flight
+// worker still owns its cache, and DeleteIfTerminal leaves those rows in
+// place.
+func (s *DocumentService) purgeDocumentTaskStateForCleanup(ctx context.Context, docID string) error {
+	tasks, err := s.ingestionTaskDAO.ListByDocumentID(ctx, dao.DB, docID)
+	if err != nil {
+		return fmt.Errorf("list ingestion tasks for document %s: %w", docID, err)
+	}
 	purgeTaskState := s.purgeTaskState
 	if purgeTaskState == nil {
 		purgeTaskState = ingestionpipeline.PurgeTaskState
 	}
 	batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
 	defer cancel()
-	return purgeTaskState(batchCtx, taskID)
+	var errs []error
+	for _, task := range tasks {
+		if common.IsRunningOrStopping(task.Status) {
+			continue
+		}
+		if err := purgeTaskState(batchCtx, task.ID); err != nil {
+			errs = append(errs, fmt.Errorf("purge task state for document %s task %s: %w", docID, task.ID, err))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // StartParseDocuments starts parsing a document via the DSL ingestion
@@ -323,8 +339,8 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 		taskExisted = true
 	}
 	if task != nil {
-		if err := s.purgeTaskStateForCleanup(ctx, task.ID); err != nil {
-			return fmt.Errorf("purge task state for document %s: %w", doc.ID, err)
+		if err := s.purgeDocumentTaskStateForCleanup(ctx, doc.ID); err != nil {
+			return err
 		}
 	}
 

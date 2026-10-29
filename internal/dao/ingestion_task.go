@@ -246,6 +246,19 @@ func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, d
 	return tasks[0], nil
 }
 
+// ListByDocumentID returns every ingestion task for a document, newest first,
+// using the same ordering as GetByDocumentID. Cleanup paths use it to purge
+// all run manifests before deleting the document or its tasks.
+func (dao *IngestionTaskDAO) ListByDocumentID(ctx context.Context, db *gorm.DB, documentID string) ([]*entity.IngestionTask, error) {
+	var tasks []*entity.IngestionTask
+	err := db.WithContext(ctx).
+		Where("document_id = ?", documentID).
+		Order("COALESCE(create_time, 0) DESC").
+		Order("id DESC").
+		Find(&tasks).Error
+	return tasks, err
+}
+
 // GetLatestByDocumentIDs returns a map of documentID -> latest IngestionTask.
 func (dao *IngestionTaskDAO) GetLatestByDocumentIDs(ctx context.Context, db *gorm.DB, documentIDs []string) (map[string]*entity.IngestionTask, error) {
 	if len(documentIDs) == 0 {
