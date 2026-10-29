@@ -155,6 +155,30 @@ describe('ParserTreeSelect', () => {
     expect([...mockTreeProps.loadingIds]).toContain('pipeline:pipe-2');
   });
 
+  it("keeps a collapsed branch's versions instead of reverting to the loading placeholder", () => {
+    mockVersionQueries = [
+      { isSuccess: true, data: VersionList },
+      { isSuccess: true, data: [{ id: 'v2', title: 'v2 title' }] },
+    ];
+    render(
+      <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,
+    );
+    act(() => {
+      mockTreeProps.onExpandedChange(
+        new Set(['pipeline:pipe-1', 'pipeline:pipe-2']),
+      );
+    });
+    // Collapse pipe-2: its versions must stay in the tree. Reverting to the
+    // empty-titled loading placeholder would make the search filter drop the
+    // whole branch while a search term is active.
+    act(() => {
+      mockTreeProps.onExpandedChange(new Set(['pipeline:pipe-1']));
+    });
+
+    const collapsed = mockTreeProps.data[1];
+    expect(collapsed.children[0].id).toBe('pipeline:pipe-2:v2');
+  });
+
   it('shows a disabled empty row for a branch with no published versions', () => {
     mockVersionQueries = [
       { isSuccess: true, data: VersionList },
