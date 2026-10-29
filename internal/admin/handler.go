@@ -176,7 +176,10 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	pageSizeInt, err := common.ParseRequestIntPositive(c, c.Query("page_size"), "page_size", 10)
+	// The admin UI and existing admin clients request the user list without
+	// pagination and slice it client-side, so an omitted page_size must keep
+	// returning every user. An explicit page_size still pages the result.
+	pageSizeInt, err := common.ParseRequestIntPositive(c, c.Query("page_size"), "page_size", 0)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
