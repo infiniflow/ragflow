@@ -278,6 +278,22 @@ export interface ITraceData {
   trace: Array<Record<string, any>>;
 }
 
+export interface IModelInputSnapshot {
+  calls: Array<{
+    sequence: number;
+    model: string;
+    status: 'captured' | 'omitted';
+    messages?: Record<string, unknown>[];
+    reason?: 'unsupported_content' | 'size_limit' | 'serialization_error';
+  }>;
+  omitted_count: number;
+}
+
+export interface ISingleDebugCaptureData {
+  outputs: Record<string, unknown> | null;
+  model_inputs: IModelInputSnapshot;
+}
+
 export interface IAgentLogResponse {
   id: string;
   message: IAgentLogMessage[];
