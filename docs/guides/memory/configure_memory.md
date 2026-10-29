@@ -18,11 +18,15 @@ On the memory page, click the target memory **> Configurations** to view and upd
 
 The name, avatar, and description are mainly used to distinguish memories. Fill them in according to the page prompts. The avatar image must not exceed 4 MB.
 
-The embedding model and large language model are the basic configuration for memory extraction and retrieval. The embedding model is used to convert memory content into vectors and supports subsequent similarity retrieval. The large language model is used to analyze conversation content and extract structured memories. After messages have already been written to a memory, frequent model changes are not recommended.
+The embedding model and large language model are the basic configuration for memory extraction and retrieval. The embedding model is used to convert memory content into vectors and supports subsequent similarity retrieval. The large language model is used to analyze conversation content and extract structured memories.
+
+Once a memory contains messages, you cannot change its embedding model, the associated embedding model instance, or its memory types. Saving a change to any of these settings is rejected. Choose these settings before writing messages; create a new memory if you need a different configuration while retaining the existing memory's messages. The large language model can still be changed, but changing it does not automatically re-extract existing messages.
 
 ### Memory Type
 
 Multiple memory types can be selected, but **Raw (`raw`)** is required and cannot be removed. When multiple types are selected, the system saves or extracts memories at different levels according to the selected types.
+
+Memory types can be changed only while the memory is empty.
 
 - **Raw (`raw`)**: Saves the original conversation content between the user and the Agent. It is suitable for scenarios where the complete context needs to be traced, and it is also the basis for extracting other types of memory.
 - **Semantic (`semantic`)**: Extracts relatively stable facts, preferences, attributes, or background information, such as user preferences, customer profiles, and common requirements. It is suitable for long-term reuse.

@@ -91,7 +91,7 @@ func TestUpdateDatasetDocument_PersistsPinnedPipelineVersion(t *testing.T) {
 	seedDocVersion(t, db, canvasID, "v-new", 200)
 	bindDocCanvas(t, db, "kb-1", "doc-1", canvasID, "v-old")
 
-	_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{PipelineVersionID: sptr("v-new")},
 		map[string]bool{"pipeline_version_id": true})
 	if err != nil || code != common.CodeSuccess {
@@ -117,7 +117,7 @@ func TestUpdateDatasetDocument_RejectsForeignPipelineVersion(t *testing.T) {
 	seedDocVersion(t, db, canvasB, "v-foreign", 100)
 	bindDocCanvas(t, db, "kb-1", "doc-1", canvasA, "v-a")
 
-	_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{PipelineVersionID: sptr("v-foreign")},
 		map[string]bool{"pipeline_version_id": true})
 	if err == nil {
@@ -145,7 +145,7 @@ func TestUpdateDatasetDocument_RejectsMissingPipelineVersion(t *testing.T) {
 	seedDocVersion(t, db, canvasID, "v-a", 100)
 	bindDocCanvas(t, db, "kb-1", "doc-1", canvasID, "v-a")
 
-	_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{PipelineVersionID: sptr("does-not-exist")},
 		map[string]bool{"pipeline_version_id": true})
 	if err == nil || code != common.CodeDataError {
@@ -167,7 +167,7 @@ func TestUpdateDatasetDocument_PreservesPipelineVersionWhenAbsent(t *testing.T) 
 	seedDocVersion(t, db, canvasID, "v-old", 100)
 	bindDocCanvas(t, db, "kb-1", "doc-1", canvasID, "v-old")
 
-	_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{}, map[string]bool{})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
@@ -191,7 +191,7 @@ func TestUpdateDatasetDocument_EmptyPipelineVersionTracksLatest(t *testing.T) {
 	// C5/G3: an explicit EMPTY version in Pipeline mode is REJECTED (design
 	// section 3: empty version is no longer auto-backfilled to latest). The pin
 	// must be preserved and the save must fail with ErrPipelineVersionEmpty.
-	_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{PipelineVersionID: sptr("")},
 		map[string]bool{"pipeline_version_id": true})
 	if err == nil || code == common.CodeSuccess {
@@ -211,7 +211,7 @@ func TestUpdateDatasetDocument_BuiltinIgnoresPipelineVersion(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
 
-	_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{PipelineVersionID: sptr("v-whatever")},
 		map[string]bool{"pipeline_version_id": true})
 	if err != nil || code != common.CodeSuccess {
@@ -234,7 +234,7 @@ func TestUpdateDatasetDocument_CleansParserConfigWithNewVersion(t *testing.T) {
 	seedDocVersion(t, db, canvasID, "v-new", 200)
 	bindDocCanvas(t, db, "kb-1", "doc-1", canvasID, "v-old")
 
-	_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{
 			PipelineVersionID: sptr("v-new"),
 			ParserConfig:      map[string]any{"Parser:Shared": map[string]any{"k": "override"}},
@@ -278,7 +278,7 @@ func TestUpdateDatasetDocument_VersionSwitchResetsParserConfigToNewDefault(t *te
 		t.Fatalf("seed parser_config: %v", err)
 	}
 
-	_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{PipelineVersionID: sptr("v-new")},
 		map[string]bool{"pipeline_version_id": true})
 	if err != nil || code != common.CodeSuccess {
@@ -320,7 +320,7 @@ func TestUpdateDatasetDocument_SameVersionKeepsParserConfig(t *testing.T) {
 		t.Fatalf("seed parser_config: %v", err)
 	}
 
-	_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{PipelineVersionID: sptr("v-old")},
 		map[string]bool{"pipeline_version_id": true})
 	if err != nil || code != common.CodeSuccess {

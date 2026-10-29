@@ -176,6 +176,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **AstraFlow** | Multi-provider aggregator |
 | **Avian** | Multi-provider aggregator |
 | **Baidu (Qianwen)** | Ernie + third-party models |
+| **CloudGPU** | GPU cloud with an OpenAI-compatible inference API for open models |
 | **CometAPI** | Multi-provider aggregator |
 | **DeepInfra** | Open-source model hosting |
 | **Demon Route** | OpenAI-compatible router |
@@ -198,6 +199,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **TogetherAI** | Open-source model hosting |
 | **TokenHub** | Multi-provider aggregator |
 | **TrustedRouter** | OpenAI-compatible router |
+| **WorldRouter** | Multi-provider gateway with an OpenAI-compatible inference API |
 | **AI Stupid Level** | Benchmark-based router (routes each request to the best-scoring model, with your own provider keys) |
 | **TokenPony** | Multi-provider aggregator |
 | **Volcengine (Doubao)** | ByteDance's cloud (hosts Doubao + third-party) |

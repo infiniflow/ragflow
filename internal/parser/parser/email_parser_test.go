@@ -450,6 +450,43 @@ func TestEmailParser_Base64Attachment(t *testing.T) {
 	}
 }
 
+func TestEmailParser_HTMLAttachmentDoesNotCacheMedia(t *testing.T) {
+	const boundary = "html-media-boundary"
+	attachment := `<html><body><p>Embedded figure</p><img alt="attachment image" src="` +
+		htmlMediaDataURI + `"></body></html>`
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: receiver@test.com",
+		"Subject: HTML attachment",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Outer body.",
+		"--" + boundary,
+		"Content-Type: text/html; charset=utf-8; name=\"embedded.html\"",
+		"Content-Disposition: attachment; filename=\"embedded.html\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		base64.StdEncoding.EncodeToString([]byte(attachment)),
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"fields": []string{"from", "body", "attachments"},
+	})
+	ctx, cache := recordingMediaContext()
+	result := p.ParseWithResult(ctx, "message.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	if cache.putCalls != 0 {
+		t.Fatalf("unexpected media cache writes = %d", cache.putCalls)
+	}
+}
+
 func TestEmailParser_Base64AttachmentInMixedMultipart(t *testing.T) {
 	ctx := t.Context()
 	// Simulates the original test email structure:
@@ -1395,5 +1432,34 @@ func TestEmailParserTextOutputRemoved(t *testing.T) {
 		if a["doc_type_kwd"] != b["doc_type_kwd"] {
 			t.Errorf("email item %d doc_type_kwd differs under produced=text: %v vs %v", i, a["doc_type_kwd"], b["doc_type_kwd"])
 		}
+	}
+}
+
+func TestEmailParser_HTMLAttachmentTextWithoutMediaCache(t *testing.T) {
+	const boundary = "embedded-html"
+	attachment := `<p>before figure</p><img src="data:image/png;base64,aGVsbG8="><p>after figure</p>`
+	raw := strings.Join([]string{
+		"From: sender@test.com", "To: receiver@test.com", "Subject: HTML attachment",
+		"Content-Type: multipart/mixed; boundary=" + boundary, "",
+		"--" + boundary, "Content-Type: text/plain; charset=utf-8", "", "Outer body.",
+		"--" + boundary, "Content-Type: text/html; charset=utf-8; name=\"embedded.html\"",
+		"Content-Disposition: attachment; filename=\"embedded.html\"", "Content-Transfer-Encoding: base64", "",
+		base64.StdEncoding.EncodeToString([]byte(attachment)), "--" + boundary + "--",
+	}, "\r\n")
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{"fields": []string{"from", "body", "attachments"}})
+	result := p.ParseWithResult(t.Context(), "message.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	var texts []string
+	for _, item := range result.JSON {
+		if text, ok := item.ToMap()["text"].(string); ok {
+			texts = append(texts, text)
+		}
+	}
+	joined := strings.Join(texts, "\n")
+	if !strings.Contains(joined, "before figure") || !strings.Contains(joined, "after figure") {
+		t.Fatalf("attachment text missing: %q", joined)
 	}
 }

@@ -474,6 +474,11 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 		if targetNodeID == "" && strings.Contains(ref, "@") {
 			targetNodeID, _, _ = strings.Cut(ref, "@")
 		}
+		if targetNodeID != "" && result != nil {
+			for key, output := range result {
+				state.SetVar(targetNodeID, key, output)
+			}
+		}
 		if err != nil {
 			if targetNodeID != "" {
 				runtime.CompleteDeferredNode(ctx, targetNodeID, err)
@@ -498,11 +503,6 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 			}
 		}
 		if targetNodeID != "" {
-			if result != nil {
-				for key, output := range result {
-					state.SetVar(targetNodeID, key, output)
-				}
-			}
 			runtime.CompleteDeferredNode(ctx, targetNodeID, nil)
 		}
 		resolved := runtime.ResolveTemplateForDisplay(text[start:end], state)
@@ -586,7 +586,7 @@ func stringFromStateSys(state *runtime.CanvasState, key string) string {
 	if state == nil {
 		return ""
 	}
-	if v, ok := state.Sys[key]; ok {
+	if v, ok := state.GetSys(key); ok {
 		if s, ok := v.(string); ok {
 			return s
 		}

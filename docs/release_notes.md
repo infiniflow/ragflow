@@ -346,7 +346,6 @@ Released on May 26, 2026.
 
 ### New features
 
-- Agent: Adds a **Browser** component that enables AI to autonomously navigate and interact with web pages. [#14888](https://github.com/infiniflow/ragflow/pull/14888)
 
 ### Improvements
 

@@ -27,8 +27,6 @@ export default {
   setting: `${restAPIv1}/users/me`,
   userInfo: `${restAPIv1}/users/me`,
   tenantInfo: `${restAPIv1}/users/me/models`,
-  loginChannels: `${restAPIv1}/auth/login/channels`,
-  loginChannel: (channel: string) => `${restAPIv1}/auth/login/${channel}`,
 
   // team
   addTenantUser: (tenantId: string) => `${restAPIv1}/tenants/${tenantId}/users`,
@@ -370,6 +368,8 @@ export default {
     `${restAPIv1}/agents/${agentId}/versions/${versionId}`,
   updateVersion: (agentId: string, versionId: string) =>
     `${restAPIv1}/agents/${agentId}/versions/${versionId}`,
+  applyVersion: (agentId: string, versionId: string) =>
+    `${restAPIv1}/agents/${agentId}/versions/${versionId}/apply`,
   getAgent: (id: string) => `${restAPIv1}/agents/${id}`,
   uploadAgentFile: (id?: string) => `${restAPIv1}/agents/${id}/upload`,
   createAgentSession: (agentId: string) =>

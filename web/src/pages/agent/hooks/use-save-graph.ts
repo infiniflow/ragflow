@@ -5,7 +5,7 @@ import { Operator } from '../constant';
 import {
   useFetchAgent,
   useResetAgent,
-  useSetAgent,
+  useSaveAgent,
 } from '@/hooks/use-agent-request';
 import {
   GlobalVariableType,
@@ -22,10 +22,10 @@ import { useBuildDslData } from './use-build-dsl';
 
 export const useSaveGraph = (
   showMessage: boolean = true,
-  skipInvalidation: boolean = false,
+  skipDetailRefresh: boolean = false,
 ) => {
   const { data } = useFetchAgent();
-  const { setAgent, loading } = useSetAgent(showMessage, skipInvalidation);
+  const { saveAgent, loading } = useSaveAgent(showMessage, skipDetailRefresh);
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
 
@@ -38,6 +38,7 @@ export const useSaveGraph = (
       },
       release?: boolean,
       autosave?: boolean,
+      alias?: string,
     ) => {
       if (!id) {
         return;
@@ -52,16 +53,20 @@ export const useSaveGraph = (
       if (release) {
         params.release = 'true';
       }
-      // Design §5.1: the debounced auto-save path passes autosave:true so the
-      // backend refreshes only the live draft and never mints a new version.
-      // An explicit (manual) Save omits this flag.
+      // Both the debounced auto-save and the explicit Save button pass
+      // autosave:true so the backend refreshes only the live draft and never
+      // mints a new version. Only publishing (release) writes a version row,
+      // optionally carrying an alias into user_canvas_version.
       if (autosave) {
         params.autosave = true;
       }
+      if (alias) {
+        params.alias = alias;
+      }
 
-      return setAgent(params);
+      return saveAgent(params);
     },
-    [id, data.title, buildDslData, setAgent],
+    [id, data.title, buildDslData, saveAgent],
   );
 
   return { saveGraph, loading };
@@ -105,7 +110,7 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
         );
         return;
       }
-      const saveRet = await saveGraph(nextNodes);
+      const saveRet = await saveGraph(nextNodes, undefined, undefined, true);
       if (saveRet?.code === 0) {
         // Call the reset api before opening the run drawer each time
         const resetRet = await resetAgent();

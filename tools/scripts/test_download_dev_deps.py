@@ -311,8 +311,7 @@ def test_native_archive_rejects_unsafe_members(tmp_path, kind):
 
 # ── Local-dev one-stop: the dev downloader must also fetch the runtime
 # resources (cl100k / DeepDoc .ort / tokenizer assets) so a developer runs THIS
-# script ONCE and the Go server is ready to build, run, parse and count — but it
-# must NOT fetch stagehand (that is the image script's job). ──────────────────
+# script ONCE and the Go server is ready to build, run, parse and count. ─────
 
 
 @pytest.fixture
@@ -466,14 +465,6 @@ def test_load_tokenizer_assets_rejects_empty():
 def test_load_tokenizer_assets_rejects_malformed_repo():
     with pytest.raises(RuntimeError, match="malformed"):
         native.load_tokenizer_assets([("nobadrepo", "f.bin", "runtime")])
-
-
-def test_native_script_does_not_fetch_stagehand():
-    # Partition contract: the local-dev one-stop must not pull the Browser
-    # component's stagehand binary — that is download_deps.py's job for images.
-    assert not hasattr(native, "stagehand_url")
-    assert not hasattr(native, "_install_stagehand")
-    assert "stagehand" not in native.main.__doc__.lower()
 
 
 # ── Image script (download_deps.py) must stay runtime-resources only: it must

@@ -1,4 +1,5 @@
 import { AgentBackground } from '@/components/canvas/background';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,7 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/ui/input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,71 +22,51 @@ import {
 } from '@/components/ui/alert-dialog';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { Spin } from '@/components/ui/spin';
-import { AntToolTip, RAGFlowTooltip } from '@/components/ui/tooltip';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useClientPagination } from '@/hooks/logic-hooks/use-pagination';
 import {
+  useApplyVersion,
   useDeleteVersion,
   useFetchVersion,
   useFetchVersionList,
-  useSetAgent,
   useUpdateVersion,
 } from '@/hooks/use-agent-request';
 import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/utils/date';
 import { ConnectionMode, ReactFlow, ReactFlowProvider } from '@xyflow/react';
-import { ArrowDownToLine, RotateCcw, Trash2 } from 'lucide-react';
-import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ArrowDownToLine,
+  Pencil,
+  RotateCcw,
+  SavePlus,
+  Trash2,
+} from 'lucide-react';
+import {
+  ChangeEvent,
+  MouseEvent,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { nodeTypes } from '../canvas';
+import { AliasFormDialog } from '../components/alias-form-dialog';
 import { downloadDsl } from '../utils/download-dsl';
-
-function Dot() {
-  return (
-    <span className="w-2 h-2 inline-block rounded-full bg-accent-primary flex-shrink-0" />
-  );
-}
 
 type PendingAction =
   | { kind: 'delete'; versionId: string; title: string }
   | { kind: 'restore'; versionId: string; title: string }
   | null;
 
-// AliasInput is a controlled input for a single canvas version's free-text alias
-// (design G2/section 4.4). It keeps the value in local state and is keyed by
-// version id, so parent re-renders (including version-list refetches triggered by
-// focus changes or row selection) never unmount the field and wipe in-progress
-// keystrokes the way an uncontrolled defaultValue input with a volatile key could.
-const AliasInput = ({
-  placeholder,
-  versionId,
-  canvasId,
-  initialAlias,
-  onCommit,
-}: {
-  placeholder: string;
-  versionId: string;
-  canvasId: string;
-  initialAlias: string;
-  onCommit: (alias: string) => void;
-}) => {
-  const [val, setVal] = useState(initialAlias);
-  return (
-    <Input
-      className="h-7 text-xs"
-      placeholder={placeholder}
-      value={val}
-      onChange={(e) => setVal(e.target.value)}
-      onClick={(e) => e.stopPropagation()}
-      onBlur={() => {
-        const v = val.trim();
-        if (v === initialAlias) return;
-        onCommit(v);
-      }}
-    />
-  );
-};
+type EditingAlias = { versionId: string; alias: string } | null;
 
 export function VersionDialog({
   hideModal,
@@ -101,31 +82,80 @@ export function VersionDialog({
   } = useFetchVersion(selectedId);
   const [aliasFilter, setAliasFilter] = useState('');
   const [pending, setPending] = useState<PendingAction>(null);
+  const [editingAlias, setEditingAlias] = useState<EditingAlias>(null);
 
   const { deleteVersion, loading: deleting } = useDeleteVersion();
-  const { setAgent, loading: restoring } = useSetAgent(false);
+  const { applyVersion, loading: applyRestoring } = useApplyVersion();
   const { updateVersion } = useUpdateVersion();
 
-  // Backend returns the list newest-first (design section 7/E1); the first
-  // entry is therefore the latest version and every other entry is an older
-  // snapshot. Non-latest versions get a D1/D2/D3 `!` marker.
-  const latestId = data[0]?.id;
+  // Only published versions are listed: draft saves (manual Save and
+  // auto-save) no longer write user_canvas_version rows, so this dialog shows
+  // what was published. Rows predating that change are filtered out here.
+  const released = useMemo(() => data.filter((x) => x.release), [data]);
 
   // A2/F1: alias filtering is a pure front-end filter over the returned set.
   const filtered = useMemo(() => {
     const q = aliasFilter.trim().toLowerCase();
-    if (!q) return data;
-    return data.filter((x) => (x.alias ?? '').toLowerCase().includes(q));
-  }, [data, aliasFilter]);
+    if (!q) return released;
+    return released.filter((x) => (x.alias ?? '').toLowerCase().includes(q));
+  }, [released, aliasFilter]);
 
-  const { page, pageSize, onPaginationChange, pagedList } =
+  const { page, pageSize, setPage, onPaginationChange, pagedList } =
     useClientPagination(filtered);
+
+  // The version detail (IFlow) has no alias field, so the preview header
+  // reads the alias from the list row for the selected version.
+  const selectedAlias = useMemo(
+    () => released.find((x) => x.id === selectedId)?.alias,
+    [released, selectedId],
+  );
+
+  // Filtering shrinks the list, so jump back to page 1; otherwise a stale
+  // page 2+ selection would render an empty list with matches out of view.
+  const handleAliasFilterChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      setAliasFilter(e.target.value);
+      setPage(1);
+    },
+    [setPage],
+  );
 
   const handleClick = useCallback(
     (id: string) => () => {
       setSelectedId(id);
     },
     [],
+  );
+
+  const handleEditAlias = useCallback(
+    (versionId: string, alias: string) => (e: MouseEvent) => {
+      // Keep the icon click from also selecting the row.
+      e.stopPropagation();
+      setEditingAlias({ versionId, alias });
+    },
+    [],
+  );
+
+  const handleAliasDialogOpenChange = useCallback((open: boolean) => {
+    if (!open) setEditingAlias(null);
+  }, []);
+
+  const handlePendingOpenChange = useCallback((open: boolean) => {
+    if (!open) setPending(null);
+  }, []);
+
+  const handleSubmitAlias = useCallback(
+    (alias?: string) => {
+      if (!editingAlias || !canvasId) return;
+      // An empty alias clears it (design G2/§4.4); the hook invalidates the
+      // version-list cache so the row and preview header refresh in place.
+      updateVersion({
+        canvasId,
+        versionId: editingAlias.versionId,
+        alias: alias ?? '',
+      });
+    },
+    [editingAlias, canvasId, updateVersion],
   );
 
   const downloadFile = useCallback(() => {
@@ -146,30 +176,22 @@ export function VersionDialog({
       });
       if (ok && selectedId === pending.versionId) setSelectedId('');
     } else if (pending.kind === 'restore') {
-      await setAgent({
-        id: canvasId,
-        dsl: agent?.dsl,
-        title: agent?.title,
+      const ok = await applyVersion({
+        canvasId,
+        versionId: pending.versionId,
       });
+      if (ok) hideModal?.();
     }
     setPending(null);
-  }, [
-    pending,
-    canvasId,
-    deleteVersion,
-    selectedId,
-    setAgent,
-    agent?.dsl,
-    agent?.title,
-  ]);
+  }, [pending, canvasId, deleteVersion, selectedId, applyVersion, hideModal]);
 
   // Keep the current selection across list refreshes; only fall back to the
   // newest version when the selected one was pruned server-side.
   useEffect(() => {
-    if (data.length > 0 && !data.some((x) => x.id === selectedId)) {
-      setSelectedId(data[0].id);
+    if (released.length > 0 && !released.some((x) => x.id === selectedId)) {
+      setSelectedId(released[0].id);
     }
-  }, [data, selectedId]);
+  }, [released, selectedId]);
 
   return (
     <Dialog open onOpenChange={hideModal}>
@@ -181,58 +203,55 @@ export function VersionDialog({
         </DialogHeader>
         <section className="flex gap-8 relative min-w-0">
           <div className="w-72 shrink-0 max-h-[60vh] overflow-auto min-h-[40vh]">
-            <Input
-              className="mb-3"
+            <SearchInput
+              rootClassName="m-0.5 mb-3"
               placeholder={t('flow.version.filterByAlias')}
               value={aliasFilter}
-              onChange={(e) => setAliasFilter(e.target.value)}
+              onChange={handleAliasFilterChange}
             />
             {loading ? (
               <Spin className="top-1/2"></Spin>
             ) : (
               <ul className="space-y-4 text-sm">
                 {pagedList.map((x) => {
-                  const isLatest = x.id === latestId;
                   return (
                     <li
                       key={x.id}
-                      className={cn('cursor-pointer p-2', {
-                        'bg-card rounded-md ': x.id === selectedId,
+                      className={cn('group cursor-pointer p-2', {
+                        'bg-bg-card rounded-md ': x.id === selectedId,
                       })}
                       onClick={handleClick(x.id)}
                     >
                       <div className="flex items-center gap-2">
                         <span className="truncate min-w-0">{x.title}</span>
-                        {x.release && <Dot></Dot>}
-                        {!isLatest && (
-                          <AntToolTip
-                            title={t('flow.version.outdated')}
-                            trigger="click"
-                          >
-                            <span className="text-destructive font-bold">
-                              !
-                            </span>
-                          </AntToolTip>
+                        {x.alias && (
+                          <span className="shrink-0 max-w-[20%] truncate text-accent-primary text-xs">
+                            {x.alias}
+                          </span>
                         )}
-                      </div>
-                      <div className="mt-1">
-                        {/* Editable alias (design G2, section 4.4): PATCHes the
-  version metadata without creating a new version or touching the DSL.
-  Clicking the input must not also select the row. Controlled via AliasInput
-  so re-renders never wipe in-progress keystrokes. */}
-                        <AliasInput
-                          placeholder={t('flow.version.alias')}
-                          versionId={x.id}
-                          canvasId={canvasId ?? ''}
-                          initialAlias={x.alias ?? ''}
-                          onCommit={(alias) =>
-                            updateVersion({
-                              canvasId: canvasId ?? '',
-                              versionId: x.id,
-                              alias,
-                            })
-                          }
-                        />
+                        {/* Alias edit entry (design G2, section 4.4): PATCHes
+  the version metadata without creating a new version or touching the DSL.
+  Pencil edits an existing alias, SavePlus adds one. */}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              className="ml-auto shrink-0 text-text-secondary opacity-0 group-hover:opacity-100 hover:text-text-primary"
+                              onClick={handleEditAlias(x.id, x.alias ?? '')}
+                            >
+                              {x.alias ? (
+                                <Pencil className="size-3.5" />
+                              ) : (
+                                <SavePlus className="size-4" />
+                              )}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {x.alias
+                              ? t('flow.version.editAlias')
+                              : t('flow.version.addAlias')}
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     </li>
                   );
@@ -254,25 +273,10 @@ export function VersionDialog({
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center">
                         <span className="pb-1 truncate">{agent?.title}</span>
-                        {agent?.release && (
-                          <RAGFlowTooltip tooltip={t('flow.productionTooltip')}>
-                            <Button className="bg-accent-primary-5 ml-3">
-                              <Dot></Dot>
-                              <span className="text-accent-primary pl-2 rounded">
-                                {t('flow.production')}
-                              </span>
-                            </Button>
-                          </RAGFlowTooltip>
-                        )}
-                        {selectedId !== latestId && (
-                          <AntToolTip
-                            title={t('flow.version.outdated')}
-                            trigger="click"
-                          >
-                            <span className="ml-2 text-destructive font-bold cursor-help">
-                              !
-                            </span>
-                          </AntToolTip>
+                        {selectedAlias && (
+                          <span className="ml-2 shrink-0 text-accent-primary text-sm">
+                            {selectedAlias}
+                          </span>
                         )}
                       </div>
                       <p className="text-text-secondary text-xs">
@@ -299,15 +303,12 @@ export function VersionDialog({
                           })
                         }
                         title={t('flow.version.restore')}
-                        disabled={
-                          selectedId === latestId || !selectedId || restoring
-                        }
+                        disabled={!selectedId || applyRestoring}
                       >
                         <RotateCcw />
                       </Button>
                       <Button
                         variant={'ghost'}
-                        className="text-destructive"
                         onClick={() =>
                           setPending({
                             kind: 'delete',
@@ -363,42 +364,48 @@ export function VersionDialog({
         ></RAGFlowPagination>
       </DialogContent>
 
+      <ConfirmDeleteDialog
+        open={pending?.kind === 'delete'}
+        onOpenChange={handlePendingOpenChange}
+        onOk={runPending}
+        title={t('flow.version.deleteConfirmTitle')}
+        content={{ node: t('flow.version.deleteConfirmContent') }}
+      />
+
       <AlertDialog
-        open={!!pending}
-        onOpenChange={(open) => {
-          if (!open) setPending(null);
-        }}
+        open={pending?.kind === 'restore'}
+        onOpenChange={handlePendingOpenChange}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {pending?.kind === 'delete'
-                ? t('flow.version.deleteConfirmTitle')
-                : t('flow.version.restoreConfirmTitle')}
+              {t('flow.version.restoreConfirmTitle')}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {pending?.kind === 'delete'
-                ? t('flow.version.deleteConfirmContent')
-                : t('flow.version.restoreConfirmContent')}
+              {t('flow.version.restoreConfirmContent')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={runPending}
-              className={
-                pending?.kind === 'delete'
-                  ? 'bg-destructive hover:bg-destructive'
-                  : ''
-              }
-            >
-              {pending?.kind === 'delete'
-                ? t('flow.version.delete')
-                : t('flow.version.restore')}
+            <AlertDialogAction onClick={runPending}>
+              {t('flow.version.restore')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {editingAlias && (
+        <AliasFormDialog
+          // Remount per target version so defaultValues picks up its alias.
+          key={editingAlias.versionId}
+          open
+          onOpenChange={handleAliasDialogOpenChange}
+          title={t('flow.version.editAlias')}
+          description={t('flow.version.editAliasDescription')}
+          initialAlias={editingAlias.alias}
+          onSubmit={handleSubmitAlias}
+        />
+      )}
     </Dialog>
   );
 }

@@ -18,10 +18,12 @@ package parser
 
 import (
 	"fmt"
+
+	"ragflow/internal/parser/media"
 )
 
 const (
-	maxEmbeddedImageBytes         = MaxImagePayloadBytes
+	maxEmbeddedImageBytes         = media.MaxImagePayloadBytes
 	maxEmbeddedDocumentImageBytes = 64 << 20
 	maxEmbeddedMediaItems         = 256
 )

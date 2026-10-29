@@ -628,6 +628,23 @@ func makeTestFileHeader(t *testing.T, field, filename string, content []byte) *m
 	return fhs[0]
 }
 
+func TestReadFileHeaderBytesUsesConfiguredMax(t *testing.T) {
+	t.Setenv(common.EnvMaxDocumentUploadSize, "4")
+
+	blob, err := readFileHeaderBytes(makeTestFileHeader(t, "file", "small.txt", []byte("1234")))
+	if err != nil {
+		t.Fatalf("readFileHeaderBytes() error = %v, want success at configured limit", err)
+	}
+	if string(blob) != "1234" {
+		t.Fatalf("readFileHeaderBytes() = %q, want %q", blob, "1234")
+	}
+
+	_, err = readFileHeaderBytes(makeTestFileHeader(t, "file", "large.txt", []byte("12345")))
+	if err == nil || !strings.Contains(err.Error(), "4 bytes") {
+		t.Fatalf("readFileHeaderBytes() error = %v, want configured 4-byte limit", err)
+	}
+}
+
 // sptr returns a pointer to the given string.
 func sptr(s string) *string { return &s }
 
