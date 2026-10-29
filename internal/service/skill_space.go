@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -442,9 +443,12 @@ func (s *SkillSpaceService) DeleteSpace(ctx context.Context, userID, spaceID str
 		return code, normalized
 	}
 
-	// If already deleting, return success (idempotent)
+	// A space still at "2" was left behind by an earlier cleanup that could not
+	// finish, so a repeat delete is how it gets retried: re-drive the cleanup
+	// instead of answering with a no-op success that would strand it for good.
 	if space.Status == entity.SpaceStatusDeleting {
-		common.Info("Space is already being deleted", zap.String("spaceID", spaceID))
+		common.Info("Space is already deleting, restarting the cleanup", zap.String("spaceID", spaceID))
+		go s.asyncDeleteSpace(ctx, spaceID, space.FolderID, tenantID, docEngine)
 		return common.CodeSuccess, nil
 	}
 
@@ -504,33 +508,37 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 
 	// Step 2: Delete folder and storage via Go FileService
 	common.Info("Async deleting space folder via Go FileService", zap.String("folderID", folderID), zap.String("spaceID", spaceID))
-	// DeleteFiles authorizes the folder tree against the creator's grant, and a
-	// tenant member can create the space while only the tenant owner may delete
-	// it, so tenantID is not the principal that owns the folder.
-	actingUserID := tenantID
-	// The detached context carries no deadline, so the lookup needs its own; a
-	// stalled read would otherwise block the cleanup before the bounded delete.
-	lookupCtx, cancelLookup := context.WithTimeout(ctx, 30*time.Second)
-	folder, lookupErr := s.fileDAO.GetByID(lookupCtx, dao.DB, folderID)
-	cancelLookup()
-	if lookupErr == nil && folder != nil && folder.CreatedBy != "" {
-		actingUserID = folder.CreatedBy
-	}
-	ctxFS, cancelFS := context.WithTimeout(ctx, 60*time.Second)
-	defer cancelFS()
-	err := s.fileService.DeleteFiles(ctxFS, actingUserID, []string{folderID})
-	if err != nil {
-		common.Error(fmt.Sprintf("Failed to delete space folder via Go FileService during async delete, spaceID=%s, error=%v", spaceID, err), nil)
-		// Retry once with a delay (same ctxFS, still valid)
-		time.Sleep(5 * time.Second)
-		if retryErr := s.fileService.DeleteFiles(ctxFS, actingUserID, []string{folderID}); retryErr != nil {
-			common.Error(fmt.Sprintf("Retry failed to delete space folder, marking space as deleted anyway, spaceID=%s, error=%v", spaceID, retryErr), nil)
-			// Mark as deleted even if folder deletion fails - orphaned folders can be cleaned up later
+	// DeleteFiles authorizes the whole tree against the folder creator's grant,
+	// and a tenant member can create the space while only the tenant owner may
+	// delete it, so tenantID is not the principal that owns the folder.
+	actingUserID, folderGone, ownerErr := s.resolveSpaceFolderOwner(ctx, folderID)
+	switch {
+	case folderGone:
+		common.Info("Space folder is already gone, skipping the folder cleanup", zap.String("folderID", folderID))
+	case actingUserID == "":
+		// Any attempt now would be authorized against a principal that does not
+		// own the folder, so DeleteFiles would refuse it and the space would be
+		// reported deleted while its folder rows and objects survive. Keep the
+		// space at "2"; a repeat delete request re-drives this cleanup.
+		common.Error(fmt.Sprintf("Failed to resolve the space folder creator, keeping the space in the deleting state, spaceID=%s, folderID=%s, error=%v", spaceID, folderID, ownerErr), nil)
+		return
+	default:
+		ctxFS, cancelFS := context.WithTimeout(ctx, 60*time.Second)
+		defer cancelFS()
+		err := s.fileService.DeleteFiles(ctxFS, actingUserID, []string{folderID})
+		if err != nil {
+			common.Error(fmt.Sprintf("Failed to delete space folder via Go FileService during async delete, spaceID=%s, error=%v", spaceID, err), nil)
+			// Retry once with a delay (same ctxFS, still valid)
+			time.Sleep(5 * time.Second)
+			if retryErr := s.fileService.DeleteFiles(ctxFS, actingUserID, []string{folderID}); retryErr != nil {
+				common.Error(fmt.Sprintf("Retry failed to delete space folder, marking space as deleted anyway, spaceID=%s, error=%v", spaceID, retryErr), nil)
+				// Mark as deleted even if folder deletion fails - orphaned folders can be cleaned up later
+			} else {
+				common.Info("Successfully deleted space folder on retry via Go FileService", zap.String("folderID", folderID))
+			}
 		} else {
-			common.Info("Successfully deleted space folder on retry via Go FileService", zap.String("folderID", folderID))
+			common.Info("Successfully deleted space folder via Go FileService", zap.String("folderID", folderID))
 		}
-	} else {
-		common.Info("Successfully deleted space folder via Go FileService", zap.String("folderID", folderID))
 	}
 
 	// Step 3: Soft delete the space record (status "2" → "0")
@@ -556,6 +564,33 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 	}
 
 	common.Info("Successfully completed async space deletion", zap.String("spaceID", spaceID))
+}
+
+// resolveSpaceFolderOwner returns the user whose grant authorizes deleting the
+// space folder. folderGone reports a row that no longer exists, which is not a
+// failure. An empty user without an error means the row carries no creator, so
+// the principal cannot be derived from it.
+//
+// The detached cleanup context has no deadline, so every attempt bounds its own
+// read; a stalled lookup would otherwise block the cleanup before the bounded
+// delete. Transient lookup errors are retried because guessing the principal
+// makes the guarded delete fail every attempt.
+func (s *SkillSpaceService) resolveSpaceFolderOwner(ctx context.Context, folderID string) (string, bool, error) {
+	const attempts = 2
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		lookupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		folder, err := s.fileDAO.GetByID(lookupCtx, dao.DB, folderID)
+		cancel()
+		if err == nil {
+			return folder.CreatedBy, false, nil
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", true, nil
+		}
+		lastErr = err
+	}
+	return "", false, lastErr
 }
 
 // deleteFolderRecursive recursively deletes a folder and all its contents
