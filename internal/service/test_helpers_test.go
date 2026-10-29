@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -40,6 +41,10 @@ const (
 
 // sptr returns a pointer to the given string.
 func sptr(s string) *string { return &s }
+
+func isAccessDeniedOrHidden(err error) bool {
+	return errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrResourceNotFound)
+}
 
 // setupServiceTestDB initializes an in-memory SQLite database for service tests.
 func setupServiceTestDB(t *testing.T) *gorm.DB {
@@ -270,6 +275,15 @@ func insertTestDoc(t *testing.T, id, kbID string, tokenNum, chunkNum int64) {
 func insertTestIngestionTask(t *testing.T, id, userID, docID, datasetID string) {
 	insertTestIngestionTaskWithStatus(t, id, userID, docID, datasetID, common.CREATED)
 }
+
+// grantServiceTestResource grants nothing: the community edition has no
+// per-resource permission table to seed.
+func grantServiceTestResource(_ *testing.T, _ string, _ string, _ string, _ string, _ int32) {
+}
+
+// permissionChangeLogTestModels adds no tables: the community edition has no
+// permission audit log.
+func permissionChangeLogTestModels() []interface{} { return nil }
 
 // insertTestIngestionTaskWithStatus inserts a test IngestionTask with a specific status.
 func insertTestIngestionTaskWithStatus(t *testing.T, id, userID, docID, datasetID, status string) {

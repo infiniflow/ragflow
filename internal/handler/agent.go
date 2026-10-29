@@ -292,6 +292,14 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 // @Success 200 {object} entity.UserCanvas
 // @Router /api/v1/agents [post]
 func (h *AgentHandler) CreateAgent(c *gin.Context) {
+	quotaUser, ok := billingQuotaUser(c)
+	if !ok {
+		return
+	}
+	if !billingEnforceApps(c, quotaUser.ID) {
+		return
+	}
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
@@ -967,8 +975,8 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		return
 	}
 	canvasID := c.Param("canvas_id")
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "0"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "0"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "30"))
 	keywords := c.Query("keywords")
 	fromDate := c.Query("from_date")
 	toDate := c.Query("to_date")
@@ -981,19 +989,26 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	dslParam := c.Query("dsl")
 	includeDSL := dslParam != "false" && dslParam != "False"
 	ctx := c.Request.Context()
+	options, err := sessionHistoryQuery(c)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		return
+	}
 	resp, code, err := h.agentService.ListAgentSessions(ctx, user.ID, user.ID, canvasID, service.ListAgentSessionsRequest{
-		Page:       page,
-		PageSize:   pageSize,
-		Keywords:   keywords,
-		FromDate:   fromDate,
-		ToDate:     toDate,
-		OrderBy:    orderby,
-		Desc:       desc,
-		SessionID:  sessionID,
-		UserID:     queryUserID,
-		ExpUserID:  expUserID,
-		IncludeDSL: includeDSL,
-		NoHistory:  c.Query("include_history") == "false" || c.Query("include_history") == "False",
+		Page:             page,
+		PageSize:         pageSize,
+		Keywords:         keywords,
+		FromDate:         fromDate,
+		ToDate:           toDate,
+		OrderBy:          orderby,
+		Desc:             desc,
+		SessionID:        sessionID,
+		UserID:           queryUserID,
+		ExpUserID:        expUserID,
+		IncludeDSL:       includeDSL,
+		IncludeReference: options.IncludeReference,
+		IncludePrompt:    options.IncludePrompt,
+		NoHistory:        c.Query("include_history") == "false" || c.Query("include_history") == "False",
 	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
@@ -1044,7 +1059,12 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
 	ctx := c.Request.Context()
-	row, code, err := h.agentService.GetAgentSession(ctx, user.ID, canvasID, sessionID)
+	options, err := sessionHistoryQuery(c)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	row, code, err := h.agentService.GetAgentSession(ctx, user.ID, canvasID, sessionID, options)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

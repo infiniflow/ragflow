@@ -29,12 +29,14 @@ import {
 } from '@/utils/pipeline-operator';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEqual } from 'lodash';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import { buildParserSelectValue } from '@/hooks/use-parser-options';
+import { useParserTreeData } from '../parser-tree-select/use-parser-tree-data';
+import { usePrefillLatestPipelineVersion } from '../parser-tree-select/use-prefill-latest-pipeline-version';
 import { addParserConfigIssues } from '../pipeline-operator-tabs/parser-config-validation';
-
 export interface IDocumentPipelineDialogProps {
   parserId: string;
   pipelineId?: string;
@@ -114,21 +116,39 @@ export function useDocumentPipelineForm({
     control: form.control,
     name: 'parser_id',
   });
+  const selectedVersionId = useWatch({
+    control: form.control,
+    name: 'pipeline_version_id',
+  });
+
+  const parserSelectValue = buildParserSelectValue({
+    parseType,
+    parserId: selectedBuiltinId,
+    pipelineId: selectedDataFlowId,
+    pipelineVersionId: selectedVersionId,
+  });
+
+  // The merged parser tree owns the option data; reusing its existence
+  // verdict (same React Query cache, no extra fetches) flags a saved parser
+  // or pinned pipeline version that has since been deleted. The verdict
+  // drives the dialog display and submit guard directly — it never enters
+  // RHF's error lifecycle, so it can never go stale after the user picks a
+  // valid option (programmatic setValue does not revalidate).
+  const { selectedLeafExists, loading: parserOptionsLoading } =
+    useParserTreeData({ value: parserSelectValue });
+  const parserOptionMissing =
+    !!parserSelectValue && !parserOptionsLoading && !selectedLeafExists;
 
   const isPipelineMode = parseType === ParseType.Pipeline;
   const selectedPipelineId = isPipelineMode
     ? selectedDataFlowId
     : selectedBuiltinId;
-  // The canvas version list drives the selector, the D1/D2/D3 non-latest `!`
-  // indicator and the T29 Missing (unparseable) detection. We fetch it inside
-  // the hook so the latest id is a *reactive* value: it resolves after mount
-  // and the adoption effect below re-fires when it does. (Reading it from a
-  // static prop captured before the fetch would freeze it at undefined.)
-  const {
-    data: versions = [],
-    loading: versionListLoading,
-    isError: versionListError,
-  } = useFetchCanvasVersionList(
+  // The canvas version list drives the latest-version prefill and the D1/D2/D3
+  // non-latest indicator. We fetch it inside the hook so the latest id is a
+  // *reactive* value: it resolves after mount and the adoption effect below
+  // re-fires when it does. (Reading it from a static prop captured before the
+  // fetch would freeze it at undefined.) versions is newest-first.
+  const { data: versions = [] } = useFetchCanvasVersionList(
     isPipelineMode ? selectedDataFlowId : undefined,
   );
   const latestVersionId = versions[0]?.id;
@@ -142,58 +162,43 @@ export function useDocumentPipelineForm({
         ? pipelineId
         : parserId
       : undefined;
+  const savedVersionId = isPipelineMode ? (pipelineVersionId ?? '') : '';
+
+  // The saved parser_config overrides the DSL defaults only while the
+  // selection matches the saved pipeline+version binding; a different version
+  // renders that version's own DSL defaults. (The form's parser_config stays
+  // the display source of truth via operatorValues either way.)
+  const isSavedBindingSelected =
+    !!selectedPipelineId &&
+    selectedPipelineId === savedPipelineId &&
+    (selectedVersionId ?? '') === savedVersionId;
 
   const { operatorNodes, loading: operatorNodesLoading } =
-    usePipelineOperatorNodes(
-      selectedPipelineId,
-      selectedPipelineId && selectedPipelineId === savedPipelineId
-        ? parserConfig
-        : undefined,
-      !isPipelineMode,
-    );
+    usePipelineOperatorNodes({
+      pipelineId: selectedPipelineId,
+      versionId: isPipelineMode ? selectedVersionId : undefined,
+      savedParserConfig: isSavedBindingSelected ? parserConfig : undefined,
+      isBuiltin: !isPipelineMode,
+    });
 
-  useResetParserConfigOnPipelineChange(
+  useResetParserConfigOnPipelineChange({
     form,
-    selectedPipelineId,
+    pipelineId: selectedPipelineId,
+    versionId: isPipelineMode ? selectedVersionId : undefined,
     savedPipelineId,
+    savedVersionId: isPipelineMode ? savedVersionId : undefined,
     operatorNodes,
-  );
+  });
 
-  // A pinned version belongs to the canvas it was pinned on (design section 5/B4
-  // sticky snapshot). Switching the dataflow canvas invalidates any previously
-  // pinned version, so clear it; otherwise a version id from the old canvas
-  // would be submitted against the new pipeline. The initial load keeps the
-  // saved version (selected equals saved).
-  useEffect(() => {
-    if (selectedPipelineId !== savedPipelineId) {
-      form.setValue('pipeline_version_id', '');
-    }
-  }, [selectedPipelineId, savedPipelineId, form]);
-
-  // Design section 8 (T37): an unpinned document must never show the "Latest
-  // version" pseudo-value, so adopt the latest concrete version id once the
-  // version list resolves (it loads asynchronously, hence the effect rather
-  // than the form default). `latestVersionId` is reactive (derived from the
-  // fetch above), so this re-fires when the list arrives. We only adopt while
-  // the field is still empty, so a user's manual selection of an older version
-  // is preserved and a stable latest id will not re-fire this effect.
-  useEffect(() => {
-    if (
-      !pipelineVersionId &&
-      latestVersionId &&
-      !form.getValues('pipeline_version_id')
-    ) {
-      form.setValue('pipeline_version_id', latestVersionId);
-    }
-  }, [pipelineVersionId, latestVersionId, form]);
+  // Design section 8 (T37): an unpinned document still pre-selects the latest
+  // concrete version once the version list resolves. The "switch pipeline
+  // clears the pinned version" sync (design 5/B4) needs no effect here: the
+  // merged parser tree select writes pipeline_id and pipeline_version_id
+  // atomically on every selection, so a stale version from another canvas
+  // cannot survive a switch.
+  usePrefillLatestPipelineVersion(form, pipelineVersionId, latestVersionId);
 
   const { activeTab, setActiveTab } = useActiveTab(operatorNodes);
-
-  useEffect(() => {
-    if (parseType === ParseType.BuiltIn) {
-      form.setValue('pipeline_id', '');
-    }
-  }, [parseType, form]);
 
   const handleOperatorValuesChange = useCallback(
     (operatorId: string, values: any) => {
@@ -249,6 +254,7 @@ export function useDocumentPipelineForm({
   return {
     form,
     parseType,
+    parserSelectValue,
     operatorNodes,
     operatorNodesLoading,
     activeTab,
@@ -257,9 +263,7 @@ export function useDocumentPipelineForm({
     operatorValues,
     showOperatorTabs,
     buildSubmitData,
-    versions,
     latestVersionId,
-    versionListLoading,
-    versionListError,
+    parserOptionMissing,
   };
 }

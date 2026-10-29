@@ -3027,6 +3027,12 @@ func (c *CLI) APIParseLocalFileCommand(commandCount int, cmd *Command) (Response
 	if err != nil {
 		return nil, err
 	}
+	if fileType == utility.FileTypeHTML {
+		fileParser = parser.NewHTMLTextParser()
+	}
+	if fileType == utility.FileTypeEPUB {
+		fileParser = parser.NewEPUBTextParser()
+	}
 
 	fileContent, err := os.ReadFile(filename)
 	if err != nil {

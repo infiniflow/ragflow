@@ -119,3 +119,26 @@ func TestChatSessionHandlerChatCompletionsRejectsNonPositiveMaxTokens(t *testing
 		t.Fatalf("message=%v", got)
 	}
 }
+
+func TestChatSessionHandlerChatCompletionsRejectsNonStringUserContent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/chat/completions", strings.NewReader(`{"stream":false,"store_history_messages":false,"messages":[{"role":"user","content":{"type":"text","text":"probe"}}]}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("user", &entity.User{ID: "user-1"})
+
+	handler := NewChatSessionHandler(service.NewChatSessionService(), nil)
+	handler.ChatCompletions(ctx)
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	if got := body["code"]; got != float64(common.CodeArgumentError) {
+		t.Fatalf("code=%v, want %d", got, common.CodeArgumentError)
+	}
+	if got, _ := body["message"].(string); got != "messages[].content must be a string or an array of content parts." {
+		t.Fatalf("message=%q, want non-string content validation error", got)
+	}
+}

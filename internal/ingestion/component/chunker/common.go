@@ -19,12 +19,14 @@ package chunker
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
 	"ragflow/internal/parser/tableutil"
@@ -219,8 +221,25 @@ func itemDocType(it schema.ChunkDoc) string {
 // isMediaChunk reports whether a chunk is an image or table region. The
 // content type lives on doc_type_kwd; layout never describes media.
 func isMediaChunk(ck schema.ChunkDoc) bool {
-	typ := itemDocType(ck)
-	return typ == "image" || typ == "table"
+	return isMediaDocType(ck.DocType)
+}
+
+// isMediaDocType reports whether a doc_type_kwd value denotes a media region.
+func isMediaDocType(docType string) bool {
+	switch strings.ToLower(strings.TrimSpace(docType)) {
+	case "image", "table":
+		return true
+	}
+	return false
+}
+
+// hasMediaPayload reports whether a chunk still carries retrievable media:
+// inline bytes, an uploaded reference, or a deferred media_ref that the
+// upload pass will materialize. A present but unusable reference counts:
+// dropping the item here would silently lose the image instead of letting
+// the materializer reject it.
+func hasMediaPayload(ck schema.ChunkDoc) bool {
+	return ck.Image != "" || ck.ImgID != "" || ck.MediaRef != nil
 }
 
 // itemTextOrFallback returns the item's preferred text, or "".
@@ -359,23 +378,66 @@ func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
 // the text alone would give every such chunk in a document the same id
 // (ChunkID(docID, "")), silently overwriting images in MinIO and merging
 // index entries, so a stable per-image identity is folded in instead.
-// Non-empty text hashes unchanged.
+// Non-empty media text also folds its region in: two figures can share a
+// caption ("Figure", "图"), and their previews must not collapse onto one id.
+// Text chunks hash their text unchanged.
 func chunkIDSource(ck schema.ChunkDoc) string {
-	if text := canonicalChunkText(ck); text != "" {
+	text := canonicalChunkText(ck)
+	if text == "" {
+		return mediaChunkIdentity(ck.Image, ck.ImgID, ck.MediaRef)
+	}
+	return mediaTextIdentity(text, isMediaChunk(ck), mergePositionMatrix(ck.PDFPositions, ck.Positions))
+}
+
+// mediaTextIdentity appends a region digest to a media chunk's text identity.
+// Non-media chunks and media without a region keep their text-only id.
+func mediaTextIdentity(text string, isMedia bool, matrix [][]any) string {
+	if !isMedia || len(matrix) == 0 {
 		return text
 	}
-	return mediaChunkIdentity(ck.Image, ck.ImgID)
+	sum := sha256.Sum256(positionMatrixBytes(matrix))
+	return text + mediaChunkIDPrefix + "region:" + hex.EncodeToString(sum[:16])
+}
+
+// positionMatrixBytes renders a position matrix deterministically for hashing.
+// mergePositionMatrix already sorts the rows, so equal regions always encode
+// identically.
+func positionMatrixBytes(matrix [][]any) []byte {
+	raw, err := json.Marshal(matrix)
+	if err != nil {
+		return nil
+	}
+	return raw
+}
+
+// chunkPositionMatrix decodes the position rows of a chunk map for identity
+// computation, using the same decoder as the crop path.
+func chunkPositionMatrix(ck map[string]any) [][]any {
+	var sources []json.RawMessage
+	for _, key := range []string{"_pdf_positions", "positions"} {
+		value, ok := ck[key]
+		if !ok || value == nil {
+			continue
+		}
+		if raw, err := json.Marshal(value); err == nil {
+			sources = append(sources, raw)
+		}
+	}
+	return mergePositionMatrix(sources...)
 }
 
 // mediaChunkIdentity returns the stable identity of a text-less media chunk:
 // a digest of the image payload when present (identical images collapse onto
-// one id, which is harmless — they carry identical bytes), else the image
-// reference. Empty when the chunk has neither, leaving the id the plain
-// empty-text hash.
-func mediaChunkIdentity(image, imgID string) string {
+// one id, which is harmless — they carry identical bytes), else the
+// content-addressed media reference, else the uploaded image id. Empty when
+// the chunk has none of them, leaving the id the plain empty-text hash.
+func mediaChunkIdentity(image, imgID string, ref *entity.MediaRef) string {
 	if image != "" {
 		sum := sha256.Sum256([]byte(image))
 		return mediaChunkIDPrefix + hex.EncodeToString(sum[:])
+	}
+	if ref.Valid() {
+		return mediaChunkIDPrefix + "sha256:" + ref.SHA256
 	}
 	if imgID != "" {
 		return mediaChunkIDPrefix + imgID

@@ -200,8 +200,10 @@ func extractCheckpointTenant(ctx context.Context) string {
 		return tid
 	}
 	if rc := getRunCtx(ctx); rc != nil && rc.Session != nil {
-		if tid, ok := rc.Session.Values[DefaultCheckpointTenantKey].(string); ok {
-			return tid
+		if value, ok := rc.Session.getValue(DefaultCheckpointTenantKey); ok {
+			if tid, ok := value.(string); ok {
+				return tid
+			}
 		}
 	}
 	return ""

@@ -603,7 +603,13 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		for i, id := range searchResult.IDs {
 			sim[i] = scores[id]
 		}
-		return sim, make([]float64, len(sim)), sim, nil
+		// A dense-only request has no scored bool query, so the engine never
+		// applies its rank_feature clauses; the rank features have to be added
+		// here to reach the similarity at all.
+		// The boost mutates sim, so vector_similarity is sampled first.
+		rawSim := slices.Clone(sim)
+		sim = applyRankFeatureScoresForIDs(searchResult.IDs, searchResult.Field, sim, *req.RankFeature)
+		return sim, make([]float64, len(sim)), rawSim, nil
 	}
 
 	knnResult, err := s.docEngine.KNNScores(ctx, searchResult.Chunks, searchResult.QueryVector, len(searchResult.IDs))
@@ -778,6 +784,14 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		// child fragments to their parent, row_id() the table row identity.
 		"content_with_weight", "doc_type_kwd", "mom_id", "row_id()",
 		"compile_kwd", "scope_kwd",
+		// Generated questions: question_tks feeds the reranker's term input (×6),
+		// question_kwd is what the dataset search API reports as "questions".
+		"question_tks", "question_kwd",
+		// Rank-feature inputs. The reranker reads them off searchResult.Field,
+		// which is the engine's projection of exactly this list, so leaving them
+		// out scored every chunk at pagerank 0 and dropped the tag-feature
+		// weight entirely. Python's default src carries both.
+		common.PAGERANK_FLD, common.TAG_FLD,
 		"_score",
 	}
 	// Caller-requested columns ride along with the defaults; see
@@ -859,7 +873,8 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			// Build source with vector column for ES
 			searchSrc := make([]string, len(searchRequest.SelectFields))
 			copy(searchSrc, searchRequest.SelectFields)
-			if s.docEngine.GetType() == string(engine.EngineElasticsearch) || engine.IsOceanBaseFamily(s.docEngine.GetType()) || engine.IsVastbase(s.docEngine.GetType()) {
+			driverType := s.docEngine.GetType()
+			if driverType == string(engine.EngineElasticsearch) || engine.IsOceanBaseFamily(driverType) || engine.IsVastbase(driverType) {
 				searchSrc = append(searchSrc, matchDense.VectorColumnName)
 			}
 

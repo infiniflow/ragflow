@@ -34,6 +34,9 @@ import (
 	mdhtml "github.com/gomarkdown/markdown/html"
 	mdparser "github.com/gomarkdown/markdown/parser"
 	"golang.org/x/net/html"
+
+	"ragflow/internal/parser/charset"
+	"ragflow/internal/parser/media"
 )
 
 // dataURIPrefix is the MIME prefix for data URI images.
@@ -102,7 +105,7 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 // parseWithState keeps media identity and budget across fragments of one document.
 // Its warnings describe this fragment; the caller adds state.warnings once.
 func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, data []byte, state *htmlWalkState) ParseResult {
-	decoded, _ := DecodeToUTF8(data, "text/markdown")
+	decoded, _ := charset.DecodeToUTF8(data, "text/markdown")
 	// The final blank line also terminates a raw HTML block at EOF.
 	rawText := string(decoded) + "\n\n"
 	blockParser := markdownNew()
@@ -643,7 +646,7 @@ func resolveImageURL(ctx context.Context, imageURL string, budget *embeddedMedia
 			return "", nil, false, false
 		}
 		var decodedSize int64
-		encoded, decodedSize, resolved = normalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
+		encoded, decodedSize, _, resolved = media.NormalizeBase64ImagePayload(imageURL[idx+len("base64,"):], media.MaxImagePayloadBytes)
 		if !resolved {
 			return "", nil, false, false
 		}
@@ -743,12 +746,12 @@ func fetchImage(ctx context.Context, rawURL string) ([]byte, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("markdown: fetch image %s: HTTP %d", rawURL, resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxImagePayloadBytes+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, media.MaxImagePayloadBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("markdown: read image %s: %w", rawURL, err)
 	}
-	if len(body) > MaxImagePayloadBytes {
-		return nil, fmt.Errorf("markdown: image %s exceeds %d-byte limit", rawURL, MaxImagePayloadBytes)
+	if len(body) > media.MaxImagePayloadBytes {
+		return nil, fmt.Errorf("markdown: image %s exceeds %d-byte limit", rawURL, media.MaxImagePayloadBytes)
 	}
 	if len(body) == 0 {
 		return nil, fmt.Errorf("markdown: image %s is empty", rawURL)
@@ -877,10 +880,37 @@ func writeListItems(list *ast.List, buf *bytes.Buffer) {
 	}
 }
 
+// shouldPreserveImageReference reports whether an image source should be kept
+// as a Markdown reference in text. Resolved remote images already carry an
+// image payload / img_id, and data URIs must stay out of text.
+func shouldPreserveImageReference(s string) bool {
+	s = strings.TrimSpace(s)
+	lower := strings.ToLower(s)
+	return !strings.HasPrefix(lower, "data:") &&
+		!strings.HasPrefix(lower, "http://") &&
+		!strings.HasPrefix(lower, "https://")
+}
+
 func walkLeaf(n ast.Node, buf *bytes.Buffer) {
 	switch t := n.(type) {
 	case *ast.Text:
 		buf.Write(t.Literal)
+	case *ast.Image:
+		// Preserve the source reference so an unresolved local path survives
+		// text extraction. Data URIs stay out of text to avoid indexing base64.
+		if !shouldPreserveImageReference(string(t.Destination)) {
+			for _, c := range t.GetChildren() {
+				walkLeaf(c, buf)
+			}
+			return
+		}
+		buf.WriteString("![")
+		for _, c := range t.GetChildren() {
+			walkLeaf(c, buf)
+		}
+		buf.WriteString("](")
+		buf.Write(t.Destination)
+		buf.WriteByte(')')
 	case *ast.Code:
 		buf.Write(t.Literal)
 	case *ast.CodeBlock:

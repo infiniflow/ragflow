@@ -393,6 +393,20 @@ export const getDatasetCompilationStatus = (datasetId: string, kind: string) =>
     true,
   );
 
+const datasetParserConfigProxy = registerNextServer({
+  applyDatasetParserConfig: {
+    url: ({ datasetId }: { datasetId: string }) =>
+      `/api/v1/datasets/${datasetId}/documents/apply-parser-config`,
+    method: 'post',
+  },
+});
+
+export const applyDatasetParserConfig = (datasetId: string) =>
+  datasetParserConfigProxy.applyDatasetParserConfig(
+    { datasetId, skipGlobalErrorNotification: true },
+    true,
+  );
+
 // Using RESTful API: GET /api/v1/datasets/{dataset_id}/documents
 export const listDocument = (
   params?: IFetchKnowledgeListRequestParams,

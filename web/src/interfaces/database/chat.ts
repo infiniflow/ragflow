@@ -70,6 +70,7 @@ export interface PromptConfig {
   parallel_api_key?: string;
   querit_api_key?: string;
   search1api_api_key?: string;
+  searchapi_api_key?: string;
   serply_api_key?: string;
   tavily_api_key?: string;
   youcom_api_key?: string;
@@ -150,7 +151,6 @@ export interface IConversation {
   id: string;
   avatar: string;
   messages: Message[];
-  reference: IReference[];
   name: string;
   update_date: string;
   update_time: number;
@@ -162,6 +162,7 @@ export interface Message {
   role: MessageType;
   doc_ids?: string[];
   prompt?: string;
+  reference?: IReference;
   id?: string;
   audio_binary?: string;
   data?: any;
@@ -174,6 +175,7 @@ export interface Message {
 }
 
 export interface IReferenceChunk {
+  citation_id?: string;
   id: string;
   content: null;
   document_id: string;
@@ -203,7 +205,7 @@ export interface IReferenceObject {
   doc_aggs: Record<string, Docagg>;
 }
 
-/** One turn's token cost, as reported by the final SSE chunk. */
+/** One turn's token cost, reported by a final response or a history message. */
 export interface ITurnUsage {
   prompt_tokens: number;
   completion_tokens: number;
@@ -221,7 +223,7 @@ export interface IAnswer {
   audio_binary?: string;
   data?: any;
   chatBoxId?: string;
-  /** Present on the final chunk only; absent for answers restored from history. */
+  /** Present when the final response reports token usage. */
   usage?: ITurnUsage;
   elapsed_ms?: number;
 }
@@ -278,7 +280,6 @@ export interface IExternalChatInfo {
 export interface IMessage extends Message {
   id: string;
   awaitingServerId?: boolean;
-  reference?: IReference; // the latest news has reference
   conversationId?: string; // To distinguish which conversation the message belongs to
 }
 

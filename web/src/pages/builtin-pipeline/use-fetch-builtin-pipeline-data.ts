@@ -11,7 +11,7 @@ import { dslToGraph } from '../agent/utils/dsl-bridge';
 // the DSL from the built-in pipeline endpoint instead of a user agent.
 export const useFetchBuiltinPipelineDataOnMount = () => {
   const { id } = useParams();
-  const { dsl, loading } = useFetchPipelineDslByPipelineId(id, true);
+  const { dsl, loading } = useFetchPipelineDslByPipelineId(id, undefined, true);
   const setGraphInfo = useSetGraphInfo();
   const setClickedNodeId = useGraphStore((state) => state.setClickedNodeId);
 

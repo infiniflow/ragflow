@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/ingestion/task/indexdoc"
+	parserlib "ragflow/internal/parser/parser"
 	"ragflow/internal/parser/tableutil"
 )
 
@@ -1540,5 +1541,47 @@ func TestGeneralContextSourceTextProjectsMergedRows(t *testing.T) {
 				t.Fatalf("context = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestGeneralChunkerMarkdownPreservesUnresolvedImageReferences(t *testing.T) {
+	markdown, err := parserlib.NewMarkdownParser(parserlib.GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "# Title\n\n![figure](images/fig-1.png)\n\n![](images/bare.png)\n\n" +
+		"| A | B |\n|---|---|\n| x | ![table](images/table.png) |\n"
+	parsed := markdown.ParseWithResult(t.Context(), "doc.md", []byte(source))
+	if parsed.Err != nil {
+		t.Fatalf("ParseWithResult: %v", parsed.Err)
+	}
+	comp, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
+		"name": "doc.md", "file_type": "md", "output_format": "json", "json": parsed.JSON,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) == 0 {
+		t.Fatal("chunks are empty")
+	}
+	var text strings.Builder
+	for _, chunk := range chunks {
+		body, _ := chunk["text"].(string)
+		text.WriteString(body)
+		text.WriteByte('\n')
+	}
+	for _, want := range []string{
+		"![figure](images/fig-1.png)",
+		"![](images/bare.png)",
+		"![table](images/table.png)",
+	} {
+		if !strings.Contains(text.String(), want) {
+			t.Errorf("chunk text = %q, want it to contain %q", text.String(), want)
+		}
 	}
 }

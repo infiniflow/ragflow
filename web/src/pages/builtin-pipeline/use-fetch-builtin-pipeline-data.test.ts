@@ -34,7 +34,11 @@ jest.mock('react-router', () => ({
 }));
 
 jest.mock('@/hooks/use-agent-request', () => ({
-  useFetchPipelineDslByPipelineId: (_id: string, isBuiltin: boolean) => ({
+  useFetchPipelineDslByPipelineId: (
+    _id: string,
+    _versionId: string | undefined,
+    isBuiltin: boolean,
+  ) => ({
     dsl: isBuiltin ? mockBuiltinDsl : {},
     loading: false,
   }),

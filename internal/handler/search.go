@@ -159,6 +159,14 @@ type CreateSearchRequest struct {
 }
 
 func (h *SearchHandler) CreateSearch(c *gin.Context) {
+	quotaUser, ok := billingQuotaUser(c)
+	if !ok {
+		return
+	}
+	if !billingEnforceApps(c, quotaUser.ID) {
+		return
+	}
+
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {

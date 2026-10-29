@@ -31,19 +31,21 @@ import (
 )
 
 const (
-	conversationMessageTable       = "conversation_message"
-	conversationReferenceTable     = "conversation_reference"
-	apiConversationMessageTable    = "api_4_conversation_message"
-	apiConversationReferenceTable  = "api_4_conversation_reference"
-	conversationHistoryIDColumn    = "conversation_id"
-	conversationHistoryOrderColumn = "position"
+	conversationMessageTable      = "conversation_message"
+	conversationReferenceTable    = "conversation_reference"
+	apiConversationMessageTable   = "api_4_conversation_message"
+	apiConversationReferenceTable = "api_4_conversation_reference"
+	conversationHistoryIDColumn   = "conversation_id"
 )
 
-type conversationHistoryRow struct {
-	ConversationID string `gorm:"column:conversation_id"`
-	Position       int    `gorm:"column:position"`
-	Payload        string `gorm:"column:payload"`
-	MessagePos     *int   `gorm:"column:message_position"`
+// ConversationHistoryOptions selects message payloads needed by the caller.
+// The zero value loads history without answer details.
+type ConversationHistoryOptions struct {
+	NoHistory        bool
+	IncludeReference bool
+	IncludePrompt    bool
+	IncludeUsage     bool
+	IncludeElapsedMs bool
 }
 
 // ConversationHistoryUpdate changes only the addressed turn, never synchronizing
@@ -51,39 +53,12 @@ type conversationHistoryRow struct {
 type ConversationHistoryUpdate struct {
 	Message           map[string]interface{}
 	QuestionID        string
-	Reference         map[string]interface{}
-	AppendReference   bool
 	DeleteMessageID   string
 	FeedbackMessageID string
 	Feedback          map[string]interface{}
 }
 
-func historyReferenceQuery(ctx context.Context, db *gorm.DB, messageTable, referenceTable, conversationID string, messagePosition int) (*gorm.DB, error) {
-	query := db.WithContext(ctx).Table(referenceTable).Where("conversation_id = ?", conversationID)
-	var row conversationHistoryRow
-	err := query.Session(&gorm.Session{}).Select("position").Where("position = ? AND message_position = ?", messagePosition, messagePosition).Take(&row).Error
-	if err == nil {
-		return query.Where("position = ?", row.Position), nil
-	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
-	// Histories explicitly supplied as arrays have no position association.
-	// Resolve their remaining references by assistant order, not array pairs.
-	var ordinal int64
-	err = db.WithContext(ctx).Table(messageTable).
-		Where("conversation_id = ? AND role = ? AND position < ? AND position >= (SELECT MIN(position) FROM "+messageTable+" WHERE conversation_id = ? AND role = ?)", conversationID, "assistant", messagePosition, conversationID, "user").Count(&ordinal).Error
-	if err != nil {
-		return nil, err
-	}
-	err = query.Session(&gorm.Session{}).Select("position").Where("message_position IS NULL").Order("position").Offset(int(ordinal)).Take(&row).Error
-	if err != nil {
-		return nil, err
-	}
-	return query.Where("position = ?", row.Position), nil
-}
-
-func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, referenceTable, conversationID string, update ConversationHistoryUpdate) error {
+func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, conversationID string, update ConversationHistoryUpdate) error {
 	if update.DeleteMessageID != "" {
 		var question entity.ConversationMessage
 		query := db.WithContext(ctx).Table(messageTable).Where("conversation_id = ? AND message_id = ?", conversationID, update.DeleteMessageID)
@@ -98,15 +73,6 @@ func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, r
 		}
 		if err == nil {
 			positions = append(positions, answer.Position)
-			refQuery, err := historyReferenceQuery(ctx, db, messageTable, referenceTable, conversationID, answer.Position)
-			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
-			}
-			if err == nil {
-				if err := refQuery.Delete(map[string]interface{}{}).Error; err != nil {
-					return err
-				}
-			}
 		}
 		return query.Where("position IN ?", positions).Delete(map[string]interface{}{}).Error
 	}
@@ -147,7 +113,7 @@ func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, r
 		update.Feedback["metadata"] = string(raw)
 		return query.Where("position = ?", message.Position).Updates(update.Feedback).Error
 	}
-	if update.Message == nil && !update.AppendReference {
+	if update.Message == nil {
 		return nil
 	}
 	var fields entity.ConversationMessageFields
@@ -169,14 +135,11 @@ func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, r
 		}
 		position = question.Position + 1
 	} else {
-		var lastMessage, lastReference int
+		var lastMessage int
 		if err := db.WithContext(ctx).Table(messageTable).Select("COALESCE(MAX(position), -2)").Where("conversation_id = ?", conversationID).Scan(&lastMessage).Error; err != nil {
 			return err
 		}
-		if err := db.WithContext(ctx).Table(referenceTable).Select("COALESCE(MAX(position), -2)").Where("conversation_id = ?", conversationID).Scan(&lastReference).Error; err != nil {
-			return err
-		}
-		position = max(lastMessage, lastReference) + 2
+		position = lastMessage + 2
 	}
 	if update.Message != nil {
 		values := messageValues(fields)
@@ -185,17 +148,6 @@ func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, r
 		if err := db.WithContext(ctx).Table(messageTable).Create(values).Error; err != nil {
 			return err
 		}
-	}
-	if update.AppendReference {
-		raw, err := json.Marshal(update.Reference)
-		if err != nil {
-			return err
-		}
-		row := map[string]interface{}{"conversation_id": conversationID, "position": position, "reference": string(raw)}
-		if update.Message != nil {
-			row["message_position"] = position
-		}
-		return db.WithContext(ctx).Table(referenceTable).Create(row).Error
 	}
 	return nil
 }
@@ -266,6 +218,7 @@ func flattenMessage(item json.RawMessage) (entity.ConversationMessageFields, err
 	for key, target := range map[string]interface{}{
 		"id": &fields.MessageID, "role": &fields.Role, "status": &fields.Status,
 		"thumbup": &fields.ThumbUp, "feedback": &fields.Feedback, "created_at": &fields.CreatedAt,
+		"prompt": &fields.Prompt, "usage": &fields.Usage, "elapsed_ms": &fields.ElapsedMs, "reference": &fields.Reference,
 	} {
 		if value, ok := metadata[key]; ok && !bytes.Equal(bytes.TrimSpace(value), []byte("null")) {
 			if err := json.Unmarshal(value, target); err == nil {
@@ -293,7 +246,7 @@ func flattenMessage(item json.RawMessage) (entity.ConversationMessageFields, err
 	return fields, err
 }
 
-func marshalMessage(fields entity.ConversationMessageFields) (json.RawMessage, error) {
+func marshalMessage(fields entity.ConversationMessageFields, options ConversationHistoryOptions) (json.RawMessage, error) {
 	metadata := make(map[string]json.RawMessage)
 	if len(fields.Metadata) > 0 {
 		if err := json.Unmarshal([]byte(fields.Metadata), &metadata); err != nil {
@@ -317,13 +270,26 @@ func marshalMessage(fields entity.ConversationMessageFields) (json.RawMessage, e
 	if fields.Content != nil && fields.ContentType == "json" {
 		metadata["content"] = json.RawMessage(*fields.Content)
 	}
+	for key, include := range map[string]bool{
+		"reference": options.IncludeReference, "prompt": options.IncludePrompt,
+		"usage": options.IncludeUsage, "elapsed_ms": options.IncludeElapsedMs,
+	} {
+		if !include {
+			delete(metadata, key)
+		}
+	}
 	return json.Marshal(metadata)
 }
 
 func messageValues(fields entity.ConversationMessageFields) map[string]interface{} {
+	var reference interface{}
+	if len(fields.Reference) > 0 {
+		reference = string(fields.Reference)
+	}
 	return map[string]interface{}{
 		"message_id": fields.MessageID, "role": fields.Role, "content": fields.Content, "content_type": fields.ContentType,
 		"status": fields.Status, "thumb_up": fields.ThumbUp, "feedback": fields.Feedback, "created_at": fields.CreatedAt, "metadata": fields.Metadata,
+		"prompt": fields.Prompt, "usage": fields.Usage, "elapsed_ms": fields.ElapsedMs, "reference": reference,
 	}
 }
 
@@ -361,84 +327,78 @@ func historyRows(kind, conversationID string, raw json.RawMessage) ([]map[string
 	return rows, nil
 }
 
-func loadHistory(ctx context.Context, db *gorm.DB, table, payloadColumn string, conversationIDs []string) (map[string]json.RawMessage, error) {
+// loadHistory excludes answer details unless the caller needs them for display.
+func loadHistory(ctx context.Context, db *gorm.DB, table string, conversationIDs []string, options ConversationHistoryOptions) (map[string]json.RawMessage, error) {
 	result := make(map[string]json.RawMessage, len(conversationIDs))
 	if len(conversationIDs) == 0 {
 		return result, nil
 	}
-	itemsByConversation := make(map[string][]json.RawMessage, len(conversationIDs))
-	query := db.WithContext(ctx).Table(table).Where(conversationHistoryIDColumn+" IN ?", conversationIDs).Order(conversationHistoryIDColumn + ", " + conversationHistoryOrderColumn)
-	if payloadColumn == "message" {
-		var rows []entity.ConversationMessage
-		if err := query.Find(&rows).Error; err != nil {
-			return nil, err
-		}
-		for _, row := range rows {
-			raw, err := marshalMessage(row.ConversationMessageFields)
-			if err != nil {
-				return nil, fmt.Errorf("marshal message for conversation %s: %w", row.ConversationID, err)
-			}
-			itemsByConversation[row.ConversationID] = append(itemsByConversation[row.ConversationID], raw)
-		}
-	} else {
-		var rows []conversationHistoryRow
-		if err := query.Select(conversationHistoryIDColumn + ", " + conversationHistoryOrderColumn + ", " + payloadColumn + " AS payload").Find(&rows).Error; err != nil {
-			return nil, err
-		}
-		for _, row := range rows {
-			itemsByConversation[row.ConversationID] = append(itemsByConversation[row.ConversationID], json.RawMessage(row.Payload))
+	query := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Table(table).Where("conversation_id IN ?", conversationIDs).Order("conversation_id, position")
+	var omitted []string
+	for column, include := range map[string]bool{
+		"reference": options.IncludeReference, "prompt": options.IncludePrompt,
+		"usage": options.IncludeUsage, "elapsed_ms": options.IncludeElapsedMs,
+	} {
+		if !include {
+			omitted = append(omitted, column)
 		}
 	}
-	for _, conversationID := range conversationIDs {
-		items := itemsByConversation[conversationID]
+	if len(omitted) > 0 {
+		query = query.Omit(omitted...)
+	}
+	var rows []entity.ConversationMessage
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	itemsByConversation := make(map[string][]json.RawMessage, len(conversationIDs))
+	for _, row := range rows {
+		fields := row.ConversationMessageFields
+		raw, err := marshalMessage(fields, options)
+		if err != nil {
+			return nil, fmt.Errorf("marshal message for conversation %s: %w", row.ConversationID, err)
+		}
+		itemsByConversation[row.ConversationID] = append(itemsByConversation[row.ConversationID], raw)
+	}
+	for _, id := range conversationIDs {
+		items := itemsByConversation[id]
 		if items == nil {
 			items = []json.RawMessage{}
 		}
 		raw, err := json.Marshal(items)
 		if err != nil {
-			return nil, fmt.Errorf("marshal history for conversation %s: %w", conversationID, err)
+			return nil, fmt.Errorf("marshal history for conversation %s: %w", id, err)
 		}
-		result[conversationID] = raw
+		result[id] = raw
 	}
 	return result, nil
 }
 
-func hydrateChatSessions(ctx context.Context, db *gorm.DB, sessions []*entity.ChatSession) error {
+func hydrateChatSessions(ctx context.Context, db *gorm.DB, sessions []*entity.ChatSession, options ConversationHistoryOptions) error {
 	ids := make([]string, 0, len(sessions))
 	for _, session := range sessions {
 		ids = append(ids, session.ID)
 	}
-	messages, err := loadHistory(ctx, db, conversationMessageTable, "message", ids)
-	if err != nil {
-		return err
-	}
-	references, err := loadHistory(ctx, db, conversationReferenceTable, "reference", ids)
+	messages, err := loadHistory(ctx, db, conversationMessageTable, ids, options)
 	if err != nil {
 		return err
 	}
 	for _, session := range sessions {
 		session.Message = messages[session.ID]
-		session.Reference = references[session.ID]
 	}
 	return nil
 }
 
-func hydrateAPIConversations(ctx context.Context, db *gorm.DB, sessions []*entity.API4Conversation) error {
+func hydrateAPIConversations(ctx context.Context, db *gorm.DB, sessions []*entity.API4Conversation, options ConversationHistoryOptions) error {
 	ids := make([]string, 0, len(sessions))
 	for _, session := range sessions {
 		ids = append(ids, session.ID)
 	}
-	messages, err := loadHistory(ctx, db, apiConversationMessageTable, "message", ids)
-	if err != nil {
-		return err
-	}
-	references, err := loadHistory(ctx, db, apiConversationReferenceTable, "reference", ids)
+	messages, err := loadHistory(ctx, db, apiConversationMessageTable, ids, options)
 	if err != nil {
 		return err
 	}
 	for _, session := range sessions {
 		session.Message = messages[session.ID]
-		session.Reference = references[session.ID]
 	}
 	return nil
 }

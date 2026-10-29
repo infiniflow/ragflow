@@ -1318,7 +1318,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			"k":              k,
 			"num_candidates": numCandidates,
 			"similarity":     similarity,
-			"filter":         boolQuery,
+			"filter":         cloneFilterSnapshot(boolQuery),
 		}
 
 		queryBody["knn"] = knnQuery
@@ -1345,17 +1345,13 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		if rankFeatureQuery != nil {
 			if boolQuery, ok := queryBody["query"].(map[string]interface{}); ok {
 				if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
-					if should, ok := boolMap["should"].([]interface{}); ok {
-						for _, q := range rankFeatureQuery {
-							boolMap["should"] = append(should, q)
-						}
-					} else {
-						interfaceSlice := make([]interface{}, len(rankFeatureQuery))
-						for i, q := range rankFeatureQuery {
-							interfaceSlice[i] = q
-						}
-						boolMap["should"] = interfaceSlice
+					// Accumulate into a local slice first: re-appending to the
+					// pre-loop header keeps only the last rank_feature clause.
+					should, _ := boolMap["should"].([]interface{})
+					for _, q := range rankFeatureQuery {
+						should = append(should, q)
 					}
+					boolMap["should"] = should
 				}
 			}
 		}
@@ -1497,15 +1493,10 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		// back empty here, which flattened every hybrid chunk's score to 0.
 		scoreColumn := "_score"
 
-		pagerankField := common.PAGERANK_FLD
-		if isSkillIndex {
-			pagerankField = ""
-		}
-		if isMemoryIndex {
-			pagerankField = ""
-		}
-
-		allResults = calculateScores(allResults, scoreColumn, pagerankField)
+		// pagerank reaches the ES hit score only through the rank_feature query
+		// built above, and reaches the final similarity in the reranker. Adding
+		// it to _score here as well would count it twice.
+		allResults = calculateScores(allResults, scoreColumn, "")
 		allResults = sortByScore(allResults, limit)
 	}
 
@@ -2145,6 +2136,35 @@ func memoryMessageStatusBool(value interface{}) bool {
 	}
 }
 
+// cloneFilterSnapshot freezes the bool query's shape at the point the kNN clause
+// is built. The reference does the same by passing bool_query.to_dict() as the
+// kNN filter; the rank_feature clauses are appended to the same bool afterwards
+// and belong to the scored query only.
+func cloneFilterSnapshot(q map[string]interface{}) map[string]interface{} {
+	if q == nil {
+		return nil
+	}
+	clone := make(map[string]interface{}, len(q))
+	for k, v := range q {
+		clone[k] = v
+	}
+	inner, ok := q["bool"].(map[string]interface{})
+	if !ok {
+		return clone
+	}
+	innerClone := make(map[string]interface{}, len(inner))
+	for k, v := range inner {
+		innerClone[k] = v
+	}
+	for _, key := range []string{"must", "should", "filter", "must_not"} {
+		if clauses, ok := inner[key].([]interface{}); ok {
+			innerClone[key] = slices.Clone(clauses)
+		}
+	}
+	clone["bool"] = innerClone
+	return clone
+}
+
 // buildBoolQueryFromCondition builds an ES bool query from condition map.
 // Skill indexes use status, regular chunk indexes use kb_id, and memory
 // message indexes use memory_id plus message-specific storage fields.
@@ -2156,7 +2176,6 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 	var mustClauses []interface{}
 	var mustNotClauses []interface{}
 	var filterClauses []interface{}
-	var shouldClauses []interface{}
 
 	// Memory message indexes use memory_id, regular chunk indexes use kb_id.
 	if kbIDs != nil && len(kbIDs) > 0 {
@@ -2279,36 +2298,26 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 			continue
 		}
 		if k == "id" {
-			if v == nil || v == "" {
-				continue
-			}
-			if listVal, ok := v.([]interface{}); ok && len(listVal) > 0 {
-				shouldClauses = append(shouldClauses,
-					map[string]interface{}{"terms": map[string]interface{}{"id": listVal}},
-					map[string]interface{}{"terms": map[string]interface{}{"_id": listVal}},
-				)
-			} else if strListVal, ok := v.([]string); ok && len(strListVal) > 0 {
-				// A typed []string MUST be handled here: the generic loop
-				// below skips the "id" key, so without this branch a caller
-				// passing map[string]interface{}{"id": []string{...}} builds a
-				// query with NO id filter and the scoped read silently
-				// degenerates into "fetch up to Limit chunks of the document"
-				// (observed via list_chunks: an 11-chunk window returned 3.8MB
-				// because the whole 4171-chunk document was fetched instead).
-				shouldClauses = append(shouldClauses,
-					map[string]interface{}{"terms": map[string]interface{}{"id": strListVal}},
-					map[string]interface{}{"terms": map[string]interface{}{"_id": strListVal}},
-				)
-			} else if strVal, ok := v.(string); ok && strVal != "" {
-				shouldClauses = append(shouldClauses,
-					map[string]interface{}{"term": map[string]interface{}{"id": strVal}},
-					map[string]interface{}{"term": map[string]interface{}{"_id": strVal}},
-				)
-			} else if intVal, ok := v.(int); ok && intVal != 0 {
-				shouldClauses = append(shouldClauses,
-					map[string]interface{}{"term": map[string]interface{}{"id": intVal}},
-					map[string]interface{}{"term": map[string]interface{}{"_id": intVal}},
-				)
+			// id is a scope restriction, never a scoring hint. It has to be a
+			// mandatory clause: encoding it in bool.should relied on
+			// minimum_should_match to make it binding, and Search() appends
+			// rank_feature clauses to that same top-level should list — every
+			// document carrying the rank feature then satisfied the id scope,
+			// so a chunk-id-scoped read silently returned unrelated chunks.
+			//
+			// The generic loop below skips the "id" key, so a value shape this
+			// helper does not understand leaves the query without any id
+			// filter: list_chunks then degenerates into "fetch up to Limit
+			// chunks of the document" (an 11-chunk window returned 3.8MB
+			// instead of ~17KB). idTermClauses therefore accepts every list
+			// flavour, not only []interface{}.
+			if idClauses := idTermClauses(v); len(idClauses) > 0 {
+				filterClauses = append(filterClauses, map[string]interface{}{
+					"bool": map[string]interface{}{
+						"should":               idClauses,
+						"minimum_should_match": 1,
+					},
+				})
 			}
 			continue
 		}
@@ -2361,16 +2370,49 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 	if len(filterClauses) > 0 {
 		boolQuery["filter"] = filterClauses
 	}
-	if len(shouldClauses) > 0 {
-		boolQuery["should"] = shouldClauses
-		boolQuery["minimum_should_match"] = 1
-	}
 
 	if len(boolQuery) == 0 {
 		return nil
 	}
 
 	return map[string]interface{}{"bool": boolQuery}
+}
+
+// idTermClauses renders one id condition as id/_id alternatives, so a caller
+// matches whichever field it addressed: the stored id field or the
+// Elasticsearch _id. The caller makes the result mandatory.
+//
+// The query shapes mirror the Python reference (rag/utils/es_conn.py): a
+// scalar id is a term, a list of ids is a terms query.
+func idTermClauses(value interface{}) []interface{} {
+	switch val := value.(type) {
+	case nil:
+		return nil
+	case string:
+		if val == "" {
+			return nil
+		}
+		return []interface{}{
+			map[string]interface{}{"term": map[string]interface{}{"id": val}},
+			map[string]interface{}{"term": map[string]interface{}{"_id": val}},
+		}
+	case int:
+		if val == 0 {
+			return nil
+		}
+		return []interface{}{
+			map[string]interface{}{"term": map[string]interface{}{"id": val}},
+			map[string]interface{}{"term": map[string]interface{}{"_id": val}},
+		}
+	}
+	items, ok := conditionTermsList(value)
+	if !ok || len(items) == 0 {
+		return nil
+	}
+	return []interface{}{
+		map[string]interface{}{"terms": map[string]interface{}{"id": items}},
+		map[string]interface{}{"terms": map[string]interface{}{"_id": items}},
+	}
 }
 
 // buildQueryStringQuery builds a query_string query from MatchTextExpr
@@ -2470,14 +2512,16 @@ func buildRankFeatureQuery(rankFeature map[string]float64) []map[string]interfac
 
 	var queries []map[string]interface{}
 	for _, fld := range keys {
-		if fld == common.PAGERANK_FLD {
-			continue
-		}
 		sc := rankFeature[fld]
-		tagField := fmt.Sprintf("%s.%s", common.TAG_FLD, fld)
+		field := fmt.Sprintf("%s.%s", common.TAG_FLD, fld)
+		if fld == common.PAGERANK_FLD {
+			// pagerank_fea is a top-level rank_feature field (the "*_fea" dynamic
+			// template), not one key inside the tag_feas map.
+			field = common.PAGERANK_FLD
+		}
 		queries = append(queries, map[string]interface{}{
 			"rank_feature": map[string]interface{}{
-				"field":  tagField,
+				"field":  field,
 				"linear": map[string]interface{}{},
 				"boost":  sc,
 			},
@@ -2640,6 +2684,17 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 
 			if val == nil {
 				continue
+			}
+
+			if mapVal, ok := val.(map[string]interface{}); ok {
+				// Nested objects (tag_feas is a "rank_features" object) cannot
+				// take the string conversion below: "%v" renders map[k:v], which
+				// no rank-feature parser accepts. JSON is the string form the
+				// reranker parses.
+				if raw, err := json.Marshal(mapVal); err == nil {
+					m[field] = string(raw)
+					continue
+				}
 			}
 
 			if listVal, ok := val.([]interface{}); ok {

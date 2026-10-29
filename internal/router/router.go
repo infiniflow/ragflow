@@ -200,7 +200,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		RegisterPublicAgentWebhookRoutes(apiNoAuth.Group("/agents"), r.agentHandler)
 
-		RegisterEENoAuthRouter(apiNoAuth, r)
+		RegisterEENoAuthRouter(engine, apiNoAuth, r)
 	}
 
 	// Beta-token routes. Mirrors python's
@@ -247,6 +247,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	authorized := engine.Group("")
 	authorized.Use(r.authHandler.AuthMiddleware())
 	RegisterEEProtectedRouter(authorized, r)
+	RegisterEEAuthRouter(authorized, r)
 	{
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
@@ -353,6 +354,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
+				datasets.POST("/:dataset_id/documents/apply-parser-config", r.documentHandler.ApplyDatasetParserConfig)
 				// Scheduler compile-status contract; replaces the retired
 				// RunIndex/TraceIndex/DeleteIndex /index routes.
 				datasets.GET("/:dataset_id/compilation/status", r.datasetsHandler.GetCompilationStatus)
