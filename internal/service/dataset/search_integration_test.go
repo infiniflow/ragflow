@@ -31,6 +31,8 @@ import (
 // Requires ES_HOST (optional ES_USERNAME/ES_PASSWORD), TEI_BASE_URL serving
 // BAAI/bge-small-en-v1.5, and the production tokenizer resources. No parallel
 // tests: SQLite temporarily replaces the process-wide dao.DB.
+// Missing ES_HOST or TEI_BASE_URL skips these tests; configured service failures
+// and retrieval assertion failures remain fatal.
 const searchIntegrationQuestion = "rocket propulsion engines exhaust thrust"
 
 type searchIntegrationFixture struct {
@@ -126,11 +128,11 @@ func TestSearchDatasetsEmbeddingConsistencyIntegration(t *testing.T) {
 
 func newSearchIntegrationFixture(t *testing.T) *searchIntegrationFixture {
 	t.Helper()
+	if os.Getenv("ES_HOST") == "" || os.Getenv("TEI_BASE_URL") == "" {
+		t.Skip("set ES_HOST and TEI_BASE_URL to run real SearchDatasets integration tests")
+	}
 	if err := common.InitLogger("error", common.FileOutput{}, ""); err != nil {
 		t.Fatal(err)
-	}
-	if os.Getenv("ES_HOST") == "" || os.Getenv("TEI_BASE_URL") == "" {
-		t.Fatal("ES_HOST and TEI_BASE_URL are required for real SearchDatasets integration")
 	}
 	if !tokenizer.IsInitialized() {
 		if err := tokenizer.Init(&tokenizer.PoolConfig{MinSize: 1, MaxSize: 2}); err != nil {

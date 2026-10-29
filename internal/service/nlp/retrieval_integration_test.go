@@ -33,7 +33,9 @@ import (
 
 // Requires ES_HOST (and optional ES_USERNAME/ES_PASSWORD), RAGFLOW_INFINITY_URI,
 // TEI_BASE_URL serving BAAI/bge-small-en-v1.5, and the usual tokenizer resources.
-// All three tests run both backends; missing dependencies fail rather than skip.
+// Missing service configuration skips the affected backend; configured service
+// failures and retrieval assertion failures remain fatal.
+// All three tests cover both backends when their configuration is supplied.
 const retrievalIntegrationQuestion = "rocket propulsion engines exhaust thrust"
 
 type retrievalIntegrationFixture struct {
@@ -154,6 +156,21 @@ func TestRetrievalPaginationAndAggregationsIntegration(t *testing.T) {
 
 func newRetrievalIntegrationFixture(t *testing.T, backend string, lexicalBoost ...bool) *retrievalIntegrationFixture {
 	t.Helper()
+	if os.Getenv("TEI_BASE_URL") == "" {
+		t.Skip("set TEI_BASE_URL to run real retrieval integration tests with BAAI/bge-small-en-v1.5")
+	}
+	switch backend {
+	case "elasticsearch":
+		if os.Getenv("ES_HOST") == "" {
+			t.Skip("set ES_HOST to run Elasticsearch retrieval integration tests")
+		}
+	case "infinity":
+		if os.Getenv("RAGFLOW_INFINITY_URI") == "" {
+			t.Skip("set RAGFLOW_INFINITY_URI to run Infinity retrieval integration tests")
+		}
+	default:
+		t.Fatalf("unknown backend %q", backend)
+	}
 	// Weight competition needs a strong lexical candidate. Infinity threshold
 	// and pagination fixtures opt out so unrelated content is not boosted by
 	// important_kwd^30/important_tks^20. Existing ES and reranker fixtures retain it.
@@ -218,17 +235,9 @@ func newRetrievalIntegrationFixture(t *testing.T, backend string, lexicalBoost .
 	var de engine.DocEngine
 	switch backend {
 	case "elasticsearch":
-		if os.Getenv("ES_HOST") == "" {
-			t.Fatal("ES_HOST is required")
-		}
 		de, err = elasticsearch.NewEngine(ctx, config.ElasticsearchConfig{Hosts: os.Getenv("ES_HOST"), Username: os.Getenv("ES_USERNAME"), Password: os.Getenv("ES_PASSWORD")})
 	case "infinity":
-		if os.Getenv("RAGFLOW_INFINITY_URI") == "" {
-			t.Fatal("RAGFLOW_INFINITY_URI is required")
-		}
 		de, err = infinity.NewEngine(ctx, config.InfinityConfig{URI: os.Getenv("RAGFLOW_INFINITY_URI"), DBName: "ragflow_retrieval_test", PostgresPort: 5432})
-	default:
-		t.Fatalf("unknown backend %q", backend)
 	}
 	if err != nil {
 		t.Fatalf("connect to %s: %v", backend, err)

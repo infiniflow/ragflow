@@ -16,6 +16,8 @@ import (
 // Uses the Elasticsearch/TEI fixture in retrieval_integration_test.go plus
 // SILICONFLOW_API_KEY for the fixed BAAI/bge-reranker-v2-m3 model.
 // SILICONFLOW_BASE_URL may select another deployment of the same provider.
+// Missing required configuration skips these tests; configured service failures,
+// including authentication failures, remain fatal.
 // No tests run in parallel: the fixture temporarily installs dao.DB.
 const retrievalIntegrationReranker = "BAAI/bge-reranker-v2-m3"
 
@@ -126,7 +128,7 @@ func newRerankIntegrationFixture(t *testing.T) (*retrievalIntegrationFixture, *m
 	t.Helper()
 	key := os.Getenv("SILICONFLOW_API_KEY")
 	if key == "" {
-		t.Fatal("SILICONFLOW_API_KEY is required for real reranker integration")
+		t.Skip("set SILICONFLOW_API_KEY to run real reranker integration tests")
 	}
 	baseURL := os.Getenv("SILICONFLOW_BASE_URL")
 	if baseURL == "" {
