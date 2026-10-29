@@ -138,7 +138,7 @@ func TestChatSessionHandlerChatCompletionsRejectsNonStringUserContent(t *testing
 	if got := body["code"]; got != float64(common.CodeArgumentError) {
 		t.Fatalf("code=%v, want %d", got, common.CodeArgumentError)
 	}
-	if got, _ := body["message"].(string); !strings.Contains(got, "messages[0].content must be a string") {
-		t.Fatalf("message=%q, want non-string user content validation error", got)
+	if got, _ := body["message"].(string); got != "messages[].content must be a string or an array of content parts." {
+		t.Fatalf("message=%q, want non-string content validation error", got)
 	}
 }
