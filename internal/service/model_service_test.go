@@ -1495,7 +1495,8 @@ func TestAlterProviderInstanceUsesActiveTenantProvider(t *testing.T) {
 		"DeepSeek",
 		"instance-2",
 		"ds",
-		"sk-tenant-2-updated",
+		json.RawMessage(`"sk-tenant-2-updated"`),
+		false,
 		"https://api.deepseek.com",
 		"default",
 		[]CreateInstanceModelInfo{{ModelName: "deepseek-v4-pro", ModelTypes: []string{"chat"}, MaxTokens: 8192}},
@@ -1561,7 +1562,8 @@ func TestAlterProviderInstanceReportsInstanceProviderMismatch(t *testing.T) {
 		"OpenAI",
 		"instance-deepseek",
 		"ds",
-		"sk-should-not-be-written",
+		json.RawMessage(`"sk-should-not-be-written"`),
+		false,
 		"",
 		"",
 		[]CreateInstanceModelInfo{{ModelName: "gpt-test", ModelTypes: []string{"chat"}, MaxTokens: 8192}},
@@ -1599,14 +1601,14 @@ func TestAlterProviderInstanceScopesToActiveTenant(t *testing.T) {
 	service := NewModelProviderService()
 	if code, err := service.AlterProviderInstance(
 		serviceTestContext(t, "user-1", "tenant-2"),
-		"user-1", "DeepSeek", "instance-2", "ds", "sk-from-tenant-2", "", "",
+		"user-1", "DeepSeek", "instance-2", "ds", json.RawMessage(`"sk-from-tenant-2"`), false, "", "",
 		[]CreateInstanceModelInfo{{ModelName: "model-2", ModelTypes: []string{"chat"}, MaxTokens: 8192}},
 	); err != nil || code != common.CodeSuccess {
 		t.Fatalf("AlterProviderInstance(tenant-2) = (%v, %v), want success", code, err)
 	}
 	if code, err := service.AlterProviderInstance(
 		serviceTestContext(t, "user-1", "tenant-1"),
-		"user-1", "DeepSeek", "instance-1", "ds", "sk-from-tenant-1", "", "",
+		"user-1", "DeepSeek", "instance-1", "ds", json.RawMessage(`"sk-from-tenant-1"`), false, "", "",
 		[]CreateInstanceModelInfo{{ModelName: "model-1", ModelTypes: []string{"chat"}, MaxTokens: 8192}},
 	); err != nil || code != common.CodeSuccess {
 		t.Fatalf("AlterProviderInstance(tenant-1) = (%v, %v), want success", code, err)
