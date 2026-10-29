@@ -1025,9 +1025,9 @@ func TestDatabaseCheckerAuthorizesConnectorsAndSyncTasks(t *testing.T) {
 	valid := string(entity.StatusValid)
 	invited := entity.TenantMembershipStatusInvited
 	connectors := []entity.Connector{
-		{ID: "personal-connector", TenantID: "team-member", Name: "Personal", Source: "rest", InputType: "poll", Config: entity.JSONMap{}, Status: "5"},
-		{ID: "team-connector", TenantID: "team-tenant", Name: "Team", Source: "rest", InputType: "poll", Config: entity.JSONMap{}, Status: "5"},
-		{ID: "other-connector", TenantID: "other-tenant", Name: "Other", Source: "rest", InputType: "poll", Config: entity.JSONMap{}, Status: "5"},
+		{ID: "personal-connector", TenantID: "team-member", Name: "Personal", Source: "rest", InputType: "poll", Config: entity.ConnectorConfig{}, Status: "5"},
+		{ID: "team-connector", TenantID: "team-tenant", Name: "Team", Source: "rest", InputType: "poll", Config: entity.ConnectorConfig{}, Status: "5"},
+		{ID: "other-connector", TenantID: "other-tenant", Name: "Other", Source: "rest", InputType: "poll", Config: entity.ConnectorConfig{}, Status: "5"},
 	}
 	for i := range connectors {
 		if err := db.Create(&connectors[i]).Error; err != nil {
