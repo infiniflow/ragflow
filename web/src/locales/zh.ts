@@ -3120,7 +3120,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         compilationOperator: '编译算子',
         workflow: '工作流',
       },
-      parser: '解析器',
+      parser: 'Parser',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
       tokenizer: 'Indexer',
       tokenizerRequired: '请先添加索引器节点',
