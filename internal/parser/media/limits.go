@@ -17,6 +17,8 @@ package media
 import (
 	"os"
 	"strconv"
+
+	"ragflow/internal/common"
 )
 
 const (
@@ -30,7 +32,7 @@ const (
 // the run media cache. Set RAGFLOW_MEDIA_IMAGE_MAX_BYTES to a positive byte
 // count to change it.
 func ImageMaxBytes() int {
-	if n, err := strconv.Atoi(os.Getenv("RAGFLOW_MEDIA_IMAGE_MAX_BYTES")); err == nil && n > 0 && n <= int(^uint(0)>>1)/4*3 {
+	if n, err := strconv.Atoi(os.Getenv(common.EnvMediaImageMaxBytes)); err == nil && n > 0 && n <= int(^uint(0)>>1)/4*3 {
 		return n
 	}
 	return defaultImageMaxBytes
@@ -40,7 +42,7 @@ func ImageMaxBytes() int {
 // in the media cache. Set RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN to a positive count
 // to change it.
 func MediaMaxImagesPerRun() int {
-	if n, err := strconv.Atoi(os.Getenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN")); err == nil && n > 0 {
+	if n, err := strconv.Atoi(os.Getenv(common.EnvMediaMaxImagesPerRun)); err == nil && n > 0 {
 		return n
 	}
 	return defaultMediaMaxImagesPerRun
@@ -50,7 +52,7 @@ func MediaMaxImagesPerRun() int {
 // the media cache. Set RAGFLOW_MEDIA_MAX_BYTES_PER_RUN to a positive byte count
 // to change it.
 func MediaMaxBytesPerRun() int64 {
-	if n, err := strconv.ParseInt(os.Getenv("RAGFLOW_MEDIA_MAX_BYTES_PER_RUN"), 10, 64); err == nil && n > 0 {
+	if n, err := strconv.ParseInt(os.Getenv(common.EnvMediaMaxBytesPerRun), 10, 64); err == nil && n > 0 {
 		return n
 	}
 	return defaultMediaMaxBytesPerRun
