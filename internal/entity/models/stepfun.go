@@ -281,10 +281,12 @@ func (s *StepFunModel) AudioSpeechWithSender(ctx context.Context, modelName *str
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// The transport only interrupts a response-body read when the request
-	// context ends, so a non-200 page that stalls mid-body would otherwise pin
-	// this call until the caller cancels. FishAudio's streaming TTS already
-	// carries the same deadline.
+	// The shared client sets no overall Timeout and the transport only
+	// interrupts a response-body read when the request ends, so a body that
+	// stalls mid-read would otherwise pin this call until the caller cancels.
+	// streamCallTimeout is the streaming ceiling, not a tight error-page bound:
+	// it ends the unbounded case, and the caller's context still ends it
+	// earlier. FishAudio's streaming TTS carries the same deadline.
 	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
