@@ -692,6 +692,8 @@ jobs:
 
       - name: Run Python SDK integration tests
         if: ${{ env.HAS_GO == 'true' }}
+        env:
+          RAGFLOW_SDK_CI: "1"
         run: |
           set -euo pipefail
           export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
@@ -1261,6 +1263,8 @@ jobs:
 
       - name: Run Python SDK integration tests
         if: ${{ env.HAS_GO == 'true' }}
+        env:
+          RAGFLOW_SDK_CI: "1"
         run: |
           set -euo pipefail
           export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""

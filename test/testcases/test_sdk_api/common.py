@@ -17,7 +17,7 @@
 from pathlib import Path
 
 from ragflow_sdk import Chat, Chunk, DataSet, Document, RAGFlow, Session
-from utils.file_utils import create_txt_file
+from test.testcases.utils.file_utils import create_txt_file
 
 
 REST_API_MAX_PAGE_SIZE = 100
