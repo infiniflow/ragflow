@@ -7,11 +7,11 @@ import (
 )
 
 // TestIsPDFParseMethod_RecognizesRegisteredExternalAnalyzer covers the gap that
-// the EE build surfaced: a parse method backed by a registered external
+// a regression surfaced: a parse method backed by a registered external
 // analyzer factory (RegisterAnalyzerFactory) must be reported as a PDF parse
 // method, consistent with validateParseMethod. Without this, routing code such
 // as pdf_vision_dispatch.go and the ingestion config migration would
-// misclassify a registered method (e.g. "deepdoc_ee") as a VLM model selector.
+// misclassify a registered method (e.g. "ext_analyzer") as a VLM model selector.
 func TestIsPDFParseMethod_RecognizesRegisteredExternalAnalyzer(t *testing.T) {
 	const method = "ext_is_pdf_parse_method_fix"
 	factory := func(u string) (deepdoctype.DocAnalyzer, error) {
