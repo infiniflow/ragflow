@@ -102,6 +102,7 @@ export function ParseDropdownButton({
                     title={versionTitle}
                     alias={version?.alias}
                     className="max-w-72"
+                    aliasClassName="max-w-[50%]"
                   />
                 ) : (
                   parserLabel

@@ -93,7 +93,7 @@ describe('ParserTreeSelect', () => {
     expect(container.textContent).toContain('jin');
   });
 
-  it('caps the alias at 30% only in the trigger display, not in the row', () => {
+  it('caps the alias in both the trigger display and the row', () => {
     render(
       <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,
     );
@@ -113,7 +113,7 @@ describe('ParserTreeSelect', () => {
     expect(findAliasSpan(trigger)?.className).toContain('max-w-[30%]');
 
     const { container: row } = render(<>{leaf.label}</>);
-    expect(findAliasSpan(row)?.className).not.toContain('max-w-');
+    expect(findAliasSpan(row)?.className).toContain('max-w-60');
   });
 
   it('auto-expands the branch holding the selection', () => {
