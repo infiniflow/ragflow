@@ -27,8 +27,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 
-	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const tenantModelMaxTokensTargetVersion = "v1.0.0-rc2"
@@ -64,28 +64,7 @@ type tenantModelMaxTokensUpdate struct {
 // It runs after the rc1 migrations because all database migrations share one
 // monotonically increasing version marker.
 func migrateTenantModelMaxTokens(ctx context.Context, db *gorm.DB) error {
-	currentVersion, err := GetDatabaseMigrationVersion(ctx, db)
-	if err != nil {
-		return fmt.Errorf("read database migration version: %w", err)
-	}
-	if shouldSkipMigration(currentVersion, tenantModelMaxTokensTargetVersion) {
-		common.Info("Tenant model max_tokens already migrated, skipping",
-			zap.String("current_version", currentVersion),
-			zap.String("target_version", tenantModelMaxTokensTargetVersion))
-		return nil
-	}
-
-	updated, err := backfillTenantModelMaxTokens(ctx, db)
-	if err != nil {
-		return err
-	}
-	if err := setDatabaseMigrationVersion(ctx, db, tenantModelMaxTokensTargetVersion); err != nil {
-		return fmt.Errorf("mark database migration version %s: %w", tenantModelMaxTokensTargetVersion, err)
-	}
-	common.Info("Tenant model max_tokens migration completed",
-		zap.String("version", tenantModelMaxTokensTargetVersion),
-		zap.Int("models_updated", updated))
-	return nil
+	return migrateRC2Data(ctx, db)
 }
 
 func backfillTenantModelMaxTokens(ctx context.Context, db *gorm.DB) (int, error) {
@@ -123,9 +102,9 @@ func backfillTenantModelMaxTokens(ctx context.Context, db *gorm.DB) (int, error)
 	}
 
 	var targets []tenantModelMaxTokensTarget
-	if err := scoped.Raw(`
-		SELECT id, provider_id, instance_id, model_name, model_type, extra
-		FROM tenant_model`).Scan(&targets).Error; err != nil {
+	if err := scoped.Model(&entity.TenantModel{}).
+		Select("id", "provider_id", "instance_id", "model_name", "model_type", "extra").
+		Clauses(clause.Locking{Strength: "UPDATE"}).Scan(&targets).Error; err != nil {
 		return 0, fmt.Errorf("read tenant model limits: %w", err)
 	}
 	targetsByKey := make(map[string][]tenantModelMaxTokensTarget, len(targets))

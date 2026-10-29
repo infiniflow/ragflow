@@ -250,15 +250,13 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateConversationHistory(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate conversation history: %w", err)
 		}
-		// Run ingestion conversion after the conversation split. It invokes the
-		// dataset cleanup last because both use the same version marker.
-		if err = migrateIngestionParserConfigs(ctx, DB); err != nil {
-			return fmt.Errorf("failed to migrate ingestion parser configs: %w", err)
+		// Run rc2 data migrations (parser config conversion, knowledgebase cleanup,
+		// and tenant model max_tokens backfill). They run under a single transaction
+		// and version marker so partial progress is never marked complete.
+		if err = migrateRC2Data(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate rc2 data: %w", err)
 		}
 
-		if err = migrateTenantModelMaxTokens(ctx, DB); err != nil {
-			return fmt.Errorf("failed to backfill tenant model max_tokens: %w", err)
-		}
 		if err = migratePermissions(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate permissions: %w", err)
 		}
