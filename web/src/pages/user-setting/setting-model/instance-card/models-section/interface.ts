@@ -31,7 +31,7 @@ export interface ModelsSectionProps {
    */
   hideActions?: boolean;
   /**
-   * True once the lazy-loaded instance details (which carry `api_key` /
+   * True once the lazy-loaded instance details (safe credential status and
    * `base_url` - the list endpoint omits them) have resolved. Providers
    * whose upstream model-list endpoint requires an api_key (e.g.
    * VolcEngine) use this to defer the auto-fetch until the credential

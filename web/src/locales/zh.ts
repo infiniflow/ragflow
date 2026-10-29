@@ -1760,6 +1760,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       apiKey: 'API Key',
       apiKeyMessage: '请输入API Key',
       apiKeyPlaceholder: '请输入API Key',
+      credentialClearToRemove: '清空此字段并保存即可移除已保存的凭据',
       apiKeyTip: 'API Key可以通过注册相应的LLM供应商来获取。',
       aimlapiGetKey: '获取 API Key',
       aimlapiCheckStatus: '检查状态',

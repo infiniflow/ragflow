@@ -192,9 +192,11 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
     submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.GoogleCloud,
-      google_project_id: values.google_project_id,
-      google_region: values.google_region,
-      google_service_account_key: values.google_service_account_key,
+      api_key: {
+        google_project_id: values.google_project_id,
+        google_region: values.google_region,
+        google_service_account_key: values.google_service_account_key,
+      },
       model_info: [],
     }),
     echoTransform: (instance) => ({
@@ -249,8 +251,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
     submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.TencentCloud,
-      TencentCloud_sid: values.TencentCloud_sid,
-      TencentCloud_sk: values.TencentCloud_sk,
+      api_key: {
+        TencentCloud_sid: values.TencentCloud_sid,
+        TencentCloud_sk: values.TencentCloud_sk,
+      },
       model_info: [],
     }),
     echoTransform: (instance) => ({
@@ -422,8 +426,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
     submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.FishAudio,
-      fish_audio_ak: values.fish_audio_ak,
-      fish_audio_refid: values.fish_audio_refid,
+      api_key: {
+        fish_audio_ak: values.fish_audio_ak,
+        fish_audio_refid: values.fish_audio_refid,
+      },
       model_info: [],
     }),
     echoTransform: (instance) => ({
@@ -493,7 +499,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       };
     },
     echoTransform: (instance) => {
-      const obj = parseApiKeyAsObject(instance.api_key) ?? {};
+      const obj = parseApiKeyAsObject(instance.api_key_config) ?? {};
       return {
         opendataloader_apiserver: obj.opendataloader_apiserver ?? '',
         opendataloader_api_key: obj.opendataloader_api_key ?? '',
@@ -581,7 +587,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       };
     },
     echoTransform: (instance) => {
-      const obj = parseApiKeyAsObject(instance.api_key) ?? {};
+      const obj = parseApiKeyAsObject(instance.api_key_config) ?? {};
       return {
         paddleocr_api_url: obj.paddleocr_api_url ?? '',
         paddleocr_access_token: obj.paddleocr_access_token ?? '',
@@ -637,7 +643,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
     }),
     echoTransform: (instance) => ({
       paddleocr_api_url: instance.base_url ?? '',
-      paddleocr_access_token: instance.api_key ?? '',
+      paddleocr_access_token: '',
     }),
   },
 
@@ -728,7 +734,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       model_info: [],
     }),
     echoTransform: (instance) => {
-      const obj = parseApiKeyAsObject(instance.api_key) ?? {};
+      const obj = parseApiKeyAsObject(instance.api_key_config) ?? {};
       const rawDelete = obj.mineru_delete_output;
       return {
         mineru_apiserver:
