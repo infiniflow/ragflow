@@ -25,6 +25,29 @@ RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 # Strip symbols from Go binaries (set via --strip / -s)
 STRIP_SYMBOLS=""
 
+# Extra Go build tags appended to every build (comma separated). This tree has
+# no enterprise edition, so 'ee' is rejected below rather than forwarded.
+EXTRA_GO_TAGS="${RAGFLOW_GO_TAGS:-}"
+GO_BUILD_TAGS="cgo,static,sonic"
+[ -n "$EXTRA_GO_TAGS" ] && GO_BUILD_TAGS="$GO_BUILD_TAGS,$EXTRA_GO_TAGS"
+# The go test calls below predate `go build`, so they spell tags both
+# comma-separated ("cgo,static") and space-separated ("cgo static
+# integration"). Both forms accept the extra tags, so keep one variant each.
+EXTRA_TAGS_COMMA=""
+EXTRA_TAGS_SPACE=""
+if [ -n "$EXTRA_GO_TAGS" ]; then
+    EXTRA_TAGS_COMMA=",$EXTRA_GO_TAGS"
+    EXTRA_TAGS_SPACE=" $EXTRA_GO_TAGS"
+fi
+# This tree ships no enterprise sources, so the ee tag selects nothing: fail
+# loudly instead of building a binary without them.
+case ",$EXTRA_GO_TAGS," in
+    *",ee,"*)
+        echo "error: RAGFLOW_GO_TAGS contains 'ee', but this tree has no enterprise sources" >&2
+        exit 1
+        ;;
+esac
+
 # Native static library settings. These are the user-cache paths (~/ragflow-native-libs/).
 # If /opt/ragflow-native-libs/ exists (pre-seeded in CI runner image), it takes priority
 # and skips the network (download_dev_deps.py) fallback.
@@ -797,12 +820,12 @@ build_go() {
     echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY, $RAGFLOW_SERVER_BINARY"
     set -x
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
-        go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
+        go build -tags "$GO_BUILD_TAGS" "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
-        cmd/ragflow_server.go cmd/deepdoc_server_ee.go
+        go build -tags "$GO_BUILD_TAGS" "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
+        cmd/ragflow_server.go cmd/stub.go
     set +x
 
 
@@ -1024,7 +1047,7 @@ run_go_tests() {
     fi
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go test -tags cgo,static -count=1 "$@"
+        go test -tags "cgo,static${EXTRA_TAGS_COMMA}" -count=1 "$@"
 
     run_native_tests
 }
@@ -1042,7 +1065,7 @@ run_native_tests() {
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags cgo,static -count=1 ./internal/deepdoc/native/... )
+      go test -tags "cgo,static${EXTRA_TAGS_COMMA}" -count=1 ./internal/deepdoc/native/... )
 }
 
 # Run the model-backed integration tests of the native package and the
@@ -1081,20 +1104,20 @@ run_native_integration_tests() {
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo static integration fetch_testdata" -count=1 "${native_run_filter[@]}" ./internal/deepdoc/native/... )
+      go test -tags "cgo static integration fetch_testdata${EXTRA_TAGS_SPACE}" -count=1 "${native_run_filter[@]}" ./internal/deepdoc/native/... )
 
     print_section "Running native integration concurrency tests (race detector on)"
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo static integration fetch_testdata" -race -count=1 \
+      go test -tags "cgo static integration fetch_testdata${EXTRA_TAGS_SPACE}" -race -count=1 \
       -run 'TestInferenceConcurrency' ./internal/deepdoc/native/... )
 
     print_section "Running native_analyzer race tests (race detector on)"
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo static integration fetch_testdata" -race -count=1 \
+      go test -tags "cgo static integration fetch_testdata${EXTRA_TAGS_SPACE}" -race -count=1 \
       ./internal/deepdoc/parser/pdf/inference/native_analyzer/... )
 
     # EE build extensions hook (build_ee.sh, sourced near the top of this
@@ -1125,7 +1148,7 @@ run_go_tests_tagged() {
     fi
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go test -tags "${tags} static" -count=1 "$@"
+        go test -tags "${tags} static${EXTRA_TAGS_SPACE}" -count=1 "$@"
 }
 
 # Clean build artifacts

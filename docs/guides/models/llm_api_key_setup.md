@@ -105,7 +105,7 @@ At minimum, set the following defaults:
 1. Default LLM.
 2. Default embedding model.
 
-If you have configured a rerank model, it is also recommended to set a default rerank model. Configure VLM, ASR, TTS, and OCR defaults as required by your business.
+If you have configured a rerank model, it is also recommended to set a default rerank model. Configure VLM, ASR, and TTS defaults as required by your business.
 
 ![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpeg)
 

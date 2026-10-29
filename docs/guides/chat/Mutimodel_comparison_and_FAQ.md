@@ -26,6 +26,6 @@ Use representative questions from actual business scenarios instead of selecting
 
 Yes, we support enhancing user queries based on existing context of an ongoing conversation:
 
-1. On the **Chat** page, hover over the desired assistant and select **Edit**.
-2. In the **Chat Configuration** popup, click the **Prompt engine** tab.
-3. Switch on **Multi-turn optimization** to enable this feature.
+1. Open the desired Chat and click the settings icon in the upper-right corner.
+2. Expand **Advanced settings** in **Chat setting**.
+3. Enable **Multi-turn optimization** and click **Save**.

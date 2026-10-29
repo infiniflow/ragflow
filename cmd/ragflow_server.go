@@ -45,6 +45,7 @@ import (
 	deepdocpkg "ragflow/internal/server/deepdoc"
 	ingestorpkg "ragflow/internal/server/ingestor"
 	syncerpkg "ragflow/internal/server/syncer"
+	billing "ragflow/internal/service/billing"
 	"ragflow/internal/storage"
 )
 
@@ -539,6 +540,18 @@ func main() {
 	err = server.InitVariables(kvrocks.Get())
 	if err != nil {
 		common.Warn("Failed to initialize server variables from Redis, using defaults", zap.String("error", err.Error()))
+	}
+
+	// Billing owns the plan catalogue and the points/quota state machine.
+	// It needs the database, cache and MQ to be ready, and only the API server
+	// serves billing routes.
+	if arguments.Mode != nil && *arguments.Mode == "api" {
+		if err = billing.Init(ctx, server.GetConfig().GetBillingConfig()); err != nil {
+			common.Fatal("Failed to initialize billing", zap.Error(err))
+		}
+		if err = billing.Start(ctx); err != nil {
+			common.Fatal("Failed to start billing", zap.Error(err))
+		}
 	}
 
 	err = server.StartServer(ctx, cancel, serverName, serverType)

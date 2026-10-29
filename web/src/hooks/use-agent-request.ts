@@ -830,7 +830,11 @@ const canvasVersionListQuery = (canvasId: string) => ({
 // useFetchCanvasVersionList lists the published versions of an arbitrary canvas
 // (dataflow or agent) by id. Unlike useFetchVersionList it takes the canvas id
 // explicitly (not from route params) so the document pipeline dialog can load
-// versions for the currently selected dataflow canvas.
+// versions for the currently selected dataflow canvas. It must not set
+// initialData: the key is shared with useFetchCanvasVersions, whose consumers
+// rely on isSuccess to tell "loaded and empty" from "still loading" — an
+// initialData [] would report success while the real fetch is in flight and a
+// pinned version would briefly look deleted.
 export const useFetchCanvasVersionList = (canvasId?: string) => {
   const {
     data,
@@ -838,7 +842,6 @@ export const useFetchCanvasVersionList = (canvasId?: string) => {
     isError,
   } = useQuery({
     queryKey: ['canvasVersionList', canvasId],
-    initialData: [],
     gcTime: 0,
     enabled: !!canvasId,
     queryFn: async (): Promise<ICanvasVersionRow[]> => {
@@ -853,9 +856,10 @@ export const useFetchCanvasVersionList = (canvasId?: string) => {
 
 // useFetchCanvasVersions lazily loads the published versions of several
 // canvases at once (the parser tree select fetches a canvas's versions only
-// when the user expands it). Unlike useFetchCanvasVersionList it sets no
-// initialData, so `isSuccess` distinguishes "loaded and empty" from "still
-// loading". The returned array aligns index-by-index with `canvasIds`.
+// when the user expands it). `isSuccess` distinguishes "loaded and empty" from
+// "still loading" — kept truthful by neither version-list hook setting
+// initialData (see useFetchCanvasVersionList). The returned array aligns
+// index-by-index with `canvasIds`.
 export const useFetchCanvasVersions = (canvasIds: string[]) => {
   return useQueries({
     queries: canvasIds.map((canvasId) => ({
