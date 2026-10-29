@@ -133,6 +133,10 @@ func (g *NavigateTreeTool) invokableRun(ctx context.Context, argumentsInJSON str
 	if query == "" {
 		return "", fmt.Errorf("navigate_tree: query is required and must be a non-empty string")
 	}
+	// Entry trace: logged BEFORE the enablement check and the backend call, so
+	// the tool-usage gate can tell "never called" from "called and bailed out".
+	common.InfoCtx(ctx, "agentic_rag: navigate_tree called",
+		zap.String("query", query), zap.Int("doc_scope", len(args.DocScope)))
 	datasetIDs, err := resolveDatasetScope(g.datasetIDs, args.DatasetIDs)
 	if err != nil {
 		return "", fmt.Errorf("navigate_tree: %w", err)
@@ -208,6 +212,18 @@ func (g *NavigateTreeTool) invokableRun(ctx context.Context, argumentsInJSON str
 	if len(ordered) > navTreeMaxDocs {
 		ordered = ordered[:navTreeMaxDocs]
 	}
+	// Per-call INFO: the tool-usage gate (kg_tool_calls) is read off the server
+	// log, so a graph tool that routed documents without leaving a line here
+	// cannot be told from one that was never called.
+	names := make([]string, 0, len(ordered))
+	for _, pair := range ordered {
+		names = append(names, pair[0])
+	}
+	common.InfoCtx(ctx, "agentic_rag: navigate_tree",
+		zap.String("query", query),
+		zap.Int("datasets", len(datasetIDs)),
+		zap.Int("docs", len(ordered)),
+		zap.Strings("names", names))
 	parts := []string{fmt.Sprintf(`<tree_navigation count="%d" query="%s">`, len(ordered), xmlEscape(query))}
 	for i, pair := range ordered {
 		if pair[1] != "" {

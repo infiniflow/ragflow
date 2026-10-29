@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"ragflow/internal/entity"
@@ -53,11 +54,6 @@ func (dao *UserTenantDAO) Update(ctx context.Context, db *gorm.DB, userTenant *e
 	return db.WithContext(ctx).Save(userTenant).Error
 }
 
-// Delete delete user tenant relationship (soft delete by setting status to "0")
-func (dao *UserTenantDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", id).Update("status", "0").Error
-}
-
 // GetByUserID gets active user tenant relationships by user ID with context.
 func (dao *UserTenantDAO) GetByUserID(ctx context.Context, db *gorm.DB, userID string) ([]*entity.UserTenant, error) {
 	var relations []*entity.UserTenant
@@ -91,6 +87,51 @@ func (dao *UserTenantDAO) FilterByUserIDAndTenantID(ctx context.Context, db *gor
 		return nil, err
 	}
 	return &userTenant, nil
+}
+
+// GetOwnerByUserID returns the user's owner membership, falling back to the
+// personal tenant row identified by user_id == tenant_id.
+func (dao *UserTenantDAO) GetOwnerByUserID(ctx context.Context, db *gorm.DB, userID string) (*entity.UserTenant, error) {
+	var membership entity.UserTenant
+	err := db.WithContext(ctx).
+		Where("user_id = ? AND role = ? AND status = ?", userID, "owner", entity.TenantMembershipStatusJoined).
+		Take(&membership).Error
+	if err == nil {
+		return &membership, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	err = db.WithContext(ctx).
+		Where("user_id = ? AND tenant_id = ? AND status = ?", userID, userID, entity.TenantMembershipStatusJoined).
+		Take(&membership).Error
+	if err != nil {
+		return nil, err
+	}
+	return &membership, nil
+}
+
+// GetOwnerByTenantID returns the joined owner membership for tenantID, falling
+// back to the personal tenant row identified by user_id == tenant_id.
+func (dao *UserTenantDAO) GetOwnerByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (*entity.UserTenant, error) {
+	var membership entity.UserTenant
+	err := db.WithContext(ctx).
+		Where("tenant_id = ? AND role = ? AND status = ?", tenantID, "owner", entity.TenantMembershipStatusJoined).
+		Take(&membership).Error
+	if err == nil {
+		return &membership, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	err = db.WithContext(ctx).
+		Where("tenant_id = ? AND user_id = ? AND status = ?", tenantID, tenantID, entity.TenantMembershipStatusJoined).
+		Take(&membership).Error
+	if err != nil {
+		return nil, err
+	}
+	return &membership, nil
 }
 
 // GetByUserIDAndRole get user tenant relationships by user ID and role
@@ -145,8 +186,12 @@ func (dao *UserTenantDAO) GetMembersByTenantID(ctx context.Context, db *gorm.DB,
 			"user.status AS is_active, user.is_anonymous, user.is_superuser, "+
 			"DATE_FORMAT(user.update_date, '%Y-%m-%dT%H:%i:%s') AS update_date").
 		Joins("JOIN user ON user_tenant.user_id = user.id").
-		Where("user_tenant.tenant_id = ? AND user_tenant.status = ? AND user_tenant.role != ?",
-			tenantID, "1", "owner").
+		Where("user_tenant.tenant_id = ? AND user_tenant.status IN ? AND user_tenant.role != ?",
+			tenantID, []string{
+				entity.TenantMembershipStatusJoined,
+				entity.TenantMembershipStatusInvited,
+				entity.TenantMembershipStatusRequested,
+			}, "owner").
 		Scan(&results).Error
 	return results, err
 }
@@ -165,12 +210,6 @@ func (dao *UserTenantDAO) GetTenantsByUserID(ctx context.Context, db *gorm.DB, u
 // DeleteByUserID delete user tenant relationships by user ID (hard delete)
 func (dao *UserTenantDAO) DeleteByUserID(ctx context.Context, db *gorm.DB, userID string) (int64, error) {
 	result := db.WithContext(ctx).Unscoped().Where("user_id = ?", userID).Delete(&entity.UserTenant{})
-	return result.RowsAffected, result.Error
-}
-
-// DeleteByTenantID delete user tenant relationships by tenant ID (hard delete)
-func (dao *UserTenantDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.UserTenant{})
 	return result.RowsAffected, result.Error
 }
 

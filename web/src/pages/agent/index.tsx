@@ -21,10 +21,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import message from '@/components/ui/message';
+import { AgentCategory } from '@/constants/agent';
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useSetAgent } from '@/hooks/use-agent-request';
+import { useSaveAgent } from '@/hooks/use-agent-request';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -115,25 +116,32 @@ export default function Agent() {
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
-  // Saving is always allowed — the canvas checklist flags issues and gates
-  // only the publish/run/embed/explore entry points.
+  // Manual Save is a draft save, same as auto-save: it refreshes the live
+  // canvas without minting a user_canvas_version row. Publishing does that.
   const handleSave = useCallback(() => {
-    saveGraph();
+    saveGraph(undefined, undefined, undefined, true);
   }, [saveGraph]);
+  const handlePublish = useCallback(
+    (alias?: string) => {
+      saveGraph(undefined, undefined, true, undefined, alias);
+    },
+    [saveGraph],
+  );
+  // Back-link lands on the agents list tab matching this canvas: ingestion
+  // pipeline canvases return to the pipeline tab, agent canvases to workflow.
+  const handleBackToAgents = useCallback(() => {
+    navigateToAgents(
+      isPipeline ? AgentCategory.DataflowCanvas : AgentCategory.AgentCanvas,
+    );
+  }, [isPipeline, navigateToAgents]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
-  const { issues, getLatestIssues } = useCanvasChecklist({
+  // The checklist displays all issues; Run separately checks blocking rules.
+  const { issues } = useCanvasChecklist({
     ownerTenantId: agentDetail?.tenant_id,
     canvasID: id,
   });
-  const hasBlockingIssues = useCallback(() => {
-    if (getLatestIssues().length > 0) {
-      message.warning(t('flow.checklistResolveBefore'));
-      return true;
-    }
-    return false;
-  }, [getLatestIssues, t]);
   const { buildDslData } = useBuildDslData();
-  const { setAgent, loading: savingWidgetSettings } = useSetAgent(false);
+  const { saveAgent, loading: savingWidgetSettings } = useSaveAgent(false);
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
   const {
     visible: versionDialogVisible,
@@ -222,9 +230,6 @@ export default function Agent() {
   });
 
   const handleButtonRunClick = useCallback(async () => {
-    if (hasBlockingIssues()) {
-      return;
-    }
     if (isWebhookMode) {
       if ((await saveGraph())?.code === 0) showWebhookTestSheet();
     } else if (isPipeline) {
@@ -233,7 +238,6 @@ export default function Agent() {
       handleRun();
     }
   }, [
-    hasBlockingIssues,
     handleRun,
     handleRunPipeline,
     isPipeline,
@@ -243,18 +247,12 @@ export default function Agent() {
   ]);
 
   const handleExploreClick = useCallback(() => {
-    if (hasBlockingIssues()) {
-      return;
-    }
     navigateToAgentExplore(id as string)();
-  }, [hasBlockingIssues, id, navigateToAgentExplore]);
+  }, [id, navigateToAgentExplore]);
 
   const handleEmbedClick = useCallback(() => {
-    if (hasBlockingIssues()) {
-      return;
-    }
     showEmbedModal();
-  }, [hasBlockingIssues, showEmbedModal]);
+  }, [showEmbedModal]);
 
   // Single source for the Run button so the tooltip gating in the JSX below
   // doesn't duplicate it.
@@ -291,7 +289,7 @@ export default function Agent() {
     async (widgetSettings: WidgetSettings) => {
       const dsl = buildDslData();
 
-      return setAgent({
+      return saveAgent({
         id: id!,
         title: agentDetail.title,
         dsl: {
@@ -303,7 +301,7 @@ export default function Agent() {
         },
       });
     },
-    [agentDetail.title, buildDslData, id, setAgent],
+    [agentDetail.title, buildDslData, id, saveAgent],
   );
 
   return (
@@ -313,7 +311,7 @@ export default function Agent() {
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink onClick={navigateToAgents}>
+                <BreadcrumbLink onClick={handleBackToAgents}>
                   {t('header.flow')}
                 </BreadcrumbLink>
               </BreadcrumbItem>
@@ -350,8 +348,7 @@ export default function Agent() {
           <PublishConfirmDialog
             agentDetail={agentDetail}
             loading={loading}
-            onPublish={() => saveGraph(undefined, undefined, true)}
-            onBeforeOpen={hasBlockingIssues}
+            onPublish={handlePublish}
           />
           <CanvasChecklist issues={issues} />
           <DropdownMenu>

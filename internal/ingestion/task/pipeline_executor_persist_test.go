@@ -46,7 +46,7 @@ func TestExecute_DebugSkipsPipelineLog(t *testing.T) {
 		Tenant: entity.Tenant{ID: "tenant-1"},
 	}
 
-	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 10)
+	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 10, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestExecute_DebugReturnsChunks(t *testing.T) {
 		Tenant: entity.Tenant{ID: "tenant-1"},
 	}
 
-	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 10)
+	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 10, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}

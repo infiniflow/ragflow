@@ -13,7 +13,7 @@ type ValidationError struct{ Message string }
 func (e *ValidationError) Error() string { return e.Message }
 
 var providerOrder = []string{
-	"local", "self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox",
+	"self_managed", "ssh", "aliyun_codeinterpreter", "e2b", "tenki", "ucloud_agent_sandbox", "local",
 }
 
 var providerMetadata = map[string]map[string]any{

@@ -20,8 +20,7 @@
 //  1. Opens the EPUB as a ZIP archive.
 //  2. Reads META-INF/container.xml to locate the OPF manifest.
 //  3. Walks the OPF spine to collect content documents in order.
-//  4. Strips HTML tags from each content document to produce plain
-//     text items, emitting one JSON item per spine entry.
+//  4. Emits text, tables and inline images from each chapter in document order.
 //
 // The output format is "json", matching the epub default in
 // ParserParam.Defaults().
@@ -39,6 +38,10 @@ import (
 	"path"
 	"regexp"
 	"strings"
+
+	"golang.org/x/net/html"
+
+	"ragflow/internal/parser/charset"
 )
 
 // EPUBParser extracts text from EPUB archives.
@@ -53,18 +56,16 @@ func (p *EPUBParser) String() string {
 }
 
 // ParseWithResult implements ParseResultProducer. It extracts XHTML
-// content from the EPUB spine and emits one JSON item per spine entry
-// with {text, doc_type_kwd:"text"}.
+// content from the EPUB spine using the shared HTML structure walker.
 func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	if len(data) == 0 {
 		return ParseResult{
-			OutputFormat: "json",
 			File: map[string]any{
 				"name":     filename,
 				"size":     0,
 				"encoding": "utf-8",
 			},
-			JSON: []map[string]any{{"text": "", "doc_type_kwd": "text"}},
+			JSON: []DocItem{NewTextJSONItem("")},
 		}
 	}
 
@@ -83,7 +84,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("epub: opf: %w", err)}
 	}
 
-	items, detectedEnc, err := extractEPUBTextItems(reader, opfPath, spineItems)
+	items, detectedEnc, warnings, err := extractEPUBTextItems(reader, opfPath, spineItems)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("epub: %w", err)}
 	}
@@ -91,13 +92,13 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),
 			"encoding": detectedEnc,
 		},
-		JSON: items,
+		JSON:     MapsToItems(items),
+		Warnings: warnings,
 	}
 }
 
@@ -190,23 +191,28 @@ func readOPFSpine(r *zip.Reader, opfPath string) ([]string, error) {
 
 // --- text extraction ---
 
-var (
-	epubScriptRe = regexp.MustCompile(`(?is)<script[^>]*>.*?</script>`)
-	epubStyleRe  = regexp.MustCompile(`(?is)<style[^>]*>.*?</style>`)
-	epubTagRe    = regexp.MustCompile(`<[^>]+>`)
-	epubEntityRe = regexp.MustCompile(`&[a-zA-Z]+;`)
-	epubWSRe     = regexp.MustCompile(`\s+`)
-)
+var epubSpaceEntity = regexp.MustCompile(`&(?:nbsp|#0*160|#[xX]0*[aA]0);`)
 
-// extractEPUBTextItems reads every spine item and returns one text item per
-// item that has text. An item that cannot be read is skipped; when items were
+// epubSelfClosingRawText matches a self-closing non-void XHTML element whose
+// content HTML parsers treat as raw text. HTML5 parsing turns <script src="x"/>
+// into an unclosed start tag, so the rest of the chapter becomes script text
+// and the walker drops it. Restoring the end tag keeps the chapter body.
+var epubSelfClosingRawText = regexp.MustCompile(`(?is)<(script|style|title|textarea)(\s[^<>]*?)?\s*/>`)
+
+func normalizeEPUBSelfClosing(source string) string {
+	return epubSelfClosingRawText.ReplaceAllString(source, "<$1$2></$1>")
+}
+
+// extractEPUBTextItems reads chapters in spine order and preserves their blocks.
+// An item that cannot be read is skipped; when items were
 // skipped and no other item could be read, it returns an error instead of an
 // empty result. An item that holds no text (an image-only chapter) still counts
 // as read, and an empty item counts as neither.
-func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]map[string]any, string, error) {
+func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]map[string]any, string, []string, error) {
 	var items []map[string]any
 	var failures []string
 	read := 0
+	state := &htmlWalkState{}
 	detectedEncoding := "utf-8"
 	for _, href := range spineHrefs {
 		raw, err := readEPUBContentFile(r, opfDir, href)
@@ -218,23 +224,56 @@ func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]
 			continue
 		}
 		read++
-		decoded, enc := DecodeToUTF8(raw, "application/xhtml+xml")
+		decoded, enc := charset.DecodeToUTF8(raw, "application/xhtml+xml")
 		if detectedEncoding == "utf-8" && enc != "" && enc != "utf-8" {
 			detectedEncoding = enc
 		}
-		text := stripHTMLTags(string(decoded))
-		if strings.TrimSpace(text) == "" {
+		// Retain chapter text normalization for named quotes and spaces.
+		source := epubSpaceEntity.ReplaceAllString(string(decoded), " ")
+		source = strings.NewReplacer("&lsquo;", "'", "&rsquo;", "'", "&ldquo;", "\"", "&rdquo;", "\"").Replace(source)
+		source = normalizeEPUBSelfClosing(source)
+		doc, err := html.Parse(strings.NewReader(source))
+		if err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", href, err))
 			continue
 		}
-		items = append(items, map[string]any{
-			"text":         text,
-			"doc_type_kwd": "text",
-		})
+		items = appendEPUBChapter(items, doc, state)
 	}
 	if len(failures) > 0 && read == 0 {
-		return nil, detectedEncoding, fmt.Errorf("no readable content: %d of %d content items could not be read (%s)", len(failures), len(spineHrefs), failures[0])
+		return nil, detectedEncoding, state.warnings(), fmt.Errorf("no readable content: %d of %d content items could not be read (%s)", len(failures), len(spineHrefs), failures[0])
 	}
-	return items, detectedEncoding, nil
+	return items, detectedEncoding, state.warnings(), nil
+}
+
+// appendEPUBChapter keeps continuous chapter prose together, splitting only
+// at tables and images. The shared leaf walker preserves their source order.
+func appendEPUBChapter(items []map[string]any, doc *html.Node, state *htmlWalkState) []map[string]any {
+	var chapter []map[string]any
+	for root := doc.FirstChild; root != nil; root = root.NextSibling {
+		if root.Type != html.ElementNode {
+			continue
+		}
+		for part := root.FirstChild; part != nil; part = part.NextSibling {
+			htmlLeafTextWithState(part, &chapter, "text", true, state)
+		}
+	}
+	start := len(items)
+	for _, item := range chapter {
+		if item["doc_type_kwd"] != "text" {
+			items = append(items, item)
+			continue
+		}
+		text := strings.Join(strings.FieldsFunc(stringValue(item["text"]), isCollapsibleWS), " ")
+		if text == "" {
+			continue
+		}
+		if len(items) > start && items[len(items)-1]["doc_type_kwd"] == "text" {
+			items[len(items)-1]["text"] = stringValue(items[len(items)-1]["text"]) + " " + text
+		} else {
+			items = append(items, map[string]any{"text": text, "doc_type_kwd": "text"})
+		}
+	}
+	return items
 }
 
 // readEPUBContentFile resolves a spine href (relative to the OPF
@@ -269,74 +308,4 @@ func readEPUBContentFile(r *zip.Reader, opfDir, href string) ([]byte, error) {
 	}
 	defer f.Close()
 	return io.ReadAll(f)
-}
-
-// stripHTMLTags removes HTML markup and returns normalized plain text.
-func stripHTMLTags(s string) string {
-	// Remove script/style blocks first (including their content).
-	s = epubScriptRe.ReplaceAllString(s, "")
-	s = epubStyleRe.ReplaceAllString(s, "")
-	// Replace <br>, <p>, </p>, </div>, </tr>, </li> etc. with newlines.
-	s = epubTagRe.ReplaceAllStringFunc(s, func(tag string) string {
-		lower := strings.ToLower(tag)
-		switch {
-		case strings.HasPrefix(lower, "<br"),
-			strings.HasPrefix(lower, "</p"),
-			strings.HasPrefix(lower, "</div"),
-			strings.HasPrefix(lower, "</h1"),
-			strings.HasPrefix(lower, "</h2"),
-			strings.HasPrefix(lower, "</h3"),
-			strings.HasPrefix(lower, "</h4"),
-			strings.HasPrefix(lower, "</h5"),
-			strings.HasPrefix(lower, "</h6"),
-			strings.HasPrefix(lower, "</tr"),
-			strings.HasPrefix(lower, "</li"),
-			strings.HasPrefix(lower, "</blockquote"):
-			return "\n"
-		case strings.HasPrefix(lower, "</td"),
-			strings.HasPrefix(lower, "</th"):
-			return " "
-		}
-		return ""
-	})
-	// Decode common XML entities.
-	s = epubEntityRe.ReplaceAllStringFunc(s, xmlEntityValue)
-	// Normalize whitespace.
-	s = epubWSRe.ReplaceAllString(s, " ")
-	return strings.TrimSpace(s)
-}
-
-// xmlEntityValue decodes a few common XML named entities. A full
-// entity table isn't needed for the typical EPUB vocabulary.
-func xmlEntityValue(entity string) string {
-	switch entity {
-	case "&amp;":
-		return "&"
-	case "&lt;":
-		return "<"
-	case "&gt;":
-		return ">"
-	case "&quot;":
-		return "\""
-	case "&apos;":
-		return "'"
-	case "&nbsp;":
-		return " "
-	case "&ndash;":
-		return "–"
-	case "&mdash;":
-		return "—"
-	case "&lsquo;":
-		return "'"
-	case "&rsquo;":
-		return "'"
-	case "&ldquo;":
-		return "\""
-	case "&rdquo;":
-		return "\""
-	case "&hellip;":
-		return "…"
-	default:
-		return entity
-	}
 }

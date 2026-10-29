@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -26,6 +27,9 @@ import (
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"strings"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // TenantService tenant service
@@ -38,6 +42,66 @@ type TenantService struct {
 	modelDAO         *dao.TenantModelDAO
 	kbDAO            *dao.KnowledgebaseDAO
 	docEngine        engine.DocEngine
+}
+
+type tenantInviteRole struct {
+	value    string
+	roleID   *int32
+	roleName string
+}
+
+// tenantMemberPermission keeps community membership policy in shared code and
+// lets Enterprise apply its Tenant permission grants through the EE hook.
+func tenantMemberPermission(ctx context.Context, db *gorm.DB, userID, tenantID string, required int32) (*entity.UserTenant, int32, error) {
+	membership, mask, handled, err := tenantMemberPermissionEE(ctx, db, userID, tenantID, required)
+	if err != nil || handled {
+		return membership, mask, err
+	}
+
+	requirement := permission.TenantMember
+	if required != 0 {
+		requirement = permission.TenantOwner
+	}
+	checker := permission.NewDatabaseChecker(db)
+	if err := checker.CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, requirement); err != nil {
+		return nil, 0, err
+	}
+	var communityMembership entity.UserTenant
+	if err := db.WithContext(ctx).
+		Where("user_id = ? AND tenant_id = ? AND status = ?", userID, tenantID, string(entity.StatusValid)).
+		Take(&communityMembership).Error; err != nil {
+		return nil, 0, err
+	}
+	return &communityMembership, 0, nil
+}
+
+func tenantRoleErrorCode(err error) common.ErrorCode {
+	var coded *common.CodedError
+	if errors.As(err, &coded) {
+		return coded.Code
+	}
+	code, _ := permissionresponse.Normalize(err)
+	return code
+}
+
+func recordTenantPermissionChange(tx *gorm.DB, tenantID, actorUserID, eventType, targetType, targetID, resourceType, resourceID, actionType string, beforePermission, afterPermission int32, beforeData, afterData interface{}) error {
+	return recordTenantPermissionChangeEE(tx, tenantID, actorUserID, eventType, targetType, targetID, resourceType, resourceID, actionType, beforePermission, afterPermission, beforeData, afterData)
+}
+
+func resolveTenantInviteRole(tx *gorm.DB, tenantID string) (tenantInviteRole, error) {
+	role, handled, err := resolveTenantInviteRoleEE(tx, tenantID)
+	if err != nil || handled {
+		return role, err
+	}
+	return tenantInviteRole{value: TenantRoleNormal}, nil
+}
+
+func (s *TenantService) checkTenantInviteEnabled(ctx context.Context, tenantID string) (common.ErrorCode, error) {
+	code, handled, err := s.checkTenantInviteEnabledEE(ctx, tenantID)
+	if err != nil || handled {
+		return code, err
+	}
+	return common.CodeSuccess, nil
 }
 
 // NewTenantService create tenant service
@@ -68,28 +132,27 @@ type TenantInfoResponse struct {
 	Role      string  `json:"role"`
 }
 
-// GetTenantInfo get tenant information for the current user (owner tenant)
+// GetTenantInfo returns the user's own tenant and its owner membership settings.
 func (s *TenantService) GetTenantInfo(ctx context.Context, userID string) (*TenantInfoResponse, error) {
-	tenantInfos, err := s.tenantDAO.GetInfoByUserID(ctx, dao.DB, userID)
+	membership, tenantID, err := s.currentUserTenant(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	if len(tenantInfos) == 0 {
-		return nil, nil // No tenant found (should not happen for valid user)
+	tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, tenantID)
+	if err != nil {
+		return nil, err
 	}
-	// Return the first tenant (should be only one owner tenant per user)
-	ti := tenantInfos[0]
 	return &TenantInfoResponse{
-		TenantID:  ti.TenantID,
-		Name:      ti.Name,
-		LLMID:     ti.LLMID,
-		EmbDID:    ti.EmbDID,
-		RerankID:  ti.RerankID,
-		ASRID:     ti.ASRID,
-		Img2TxtID: ti.Img2TxtID,
-		TTSID:     ti.TTSID,
-		ParserIDs: ti.ParserIDs,
-		Role:      ti.Role,
+		TenantID:  tenant.ID,
+		Name:      tenant.Name,
+		LLMID:     membership.LLMID,
+		EmbDID:    membership.EmbdID,
+		RerankID:  membership.RerankID,
+		ASRID:     membership.ASRID,
+		Img2TxtID: membership.Img2TxtID,
+		TTSID:     ptrStringValue(membership.TTSID),
+		ParserIDs: tenant.ParserIDs,
+		Role:      membership.Role,
 	}, nil
 }
 
@@ -322,6 +385,11 @@ func tenantDefaultModelFields(modelType string) (string, string, entity.ModelTyp
 		return "tts_id", "tenant_tts_id", entity.ModelTypeTTS, nil
 	case "ocr":
 		return "ocr_id", "tenant_ocr_id", entity.ModelTypeOCR, nil
+	case "decision":
+		// The decision model is its own type rather than a chat model: it is
+		// spoken to in the System One protocol (one request, several questions)
+		// and is chosen independently of the answering model.
+		return "decision_id", "tenant_decision_id", entity.ModelTypeDecision, nil
 	default:
 		return "", "", 0, fmt.Errorf("model type %s is invalid", modelType)
 	}
@@ -334,36 +402,98 @@ func ptrStringValue(s *string) string {
 	return *s
 }
 
-// GetDefaultModelName returns the full default model ID for a tenant and model type
-// Format: modelName@instanceName@providerName or modelName@providerName
-// Returns empty string if no default model is set
+// GetDefaultModelName returns the selected model reference for a tenant. Request
+// contexts use that user's membership; trusted background work uses the owner.
 func (s *TenantService) GetDefaultModelName(ctx context.Context, tenantID string, modelType entity.ModelType) (string, error) {
-	tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, tenantID)
+	return s.GetDefaultModelNameForTenant(ctx, tenantID, modelType)
+}
+
+// GetDefaultModelNameForUser returns the user's setting in the current Tenant.
+func (s *TenantService) GetDefaultModelNameForUser(ctx context.Context, userID string, modelType entity.ModelType) (string, error) {
+	membership, _, err := s.currentUserTenant(ctx, userID)
 	if err != nil {
 		return "", err
 	}
-
-	var modelID string
-	switch modelType {
-	case entity.ModelTypeChat:
-		modelID = tenant.LLMID
-	case entity.ModelTypeEmbedding:
-		modelID = tenant.EmbdID
-	case entity.ModelTypeRerank:
-		modelID = tenant.RerankID
-	case entity.ModelTypeSpeech2Text:
-		modelID = tenant.ASRID
-	case entity.ModelTypeImage2Text:
-		modelID = tenant.Img2TxtID
-	case entity.ModelTypeTTS:
-		modelID = *tenant.TTSID
-	case entity.ModelTypeOCR:
-		modelID = *tenant.OCRID
-	default:
+	if !isDefaultModelType(modelType) {
 		return "", fmt.Errorf("invalid model type: %s", modelType)
 	}
+	modelName, _ := defaultModelRefs(membership, modelType)
+	return modelName, nil
+}
 
-	return modelID, nil
+// GetDefaultModelNameForTenant resolves the request user's membership setting
+// when present and falls back to the tenant owner for background work.
+func (s *TenantService) GetDefaultModelNameForTenant(ctx context.Context, tenantID string, modelType entity.ModelType) (string, error) {
+	if !isDefaultModelType(modelType) {
+		return "", fmt.Errorf("invalid model type: %s", modelType)
+	}
+	membership, err := s.defaultModelMembershipForTenant(ctx, tenantID)
+	if err != nil {
+		return "", err
+	}
+	modelName, _ := defaultModelRefs(membership, modelType)
+	return modelName, nil
+}
+
+// GetDefaultModelRefsForUser returns the model reference and resolved tenant
+// model ID configured by userID in tenantID.
+func (s *TenantService) GetDefaultModelRefsForUser(ctx context.Context, userID, tenantID string, modelType entity.ModelType) (string, string, error) {
+	if !isDefaultModelType(modelType) {
+		return "", "", fmt.Errorf("invalid model type: %s", modelType)
+	}
+	membership, err := s.defaultModelMembership(ctx, userID, tenantID)
+	if err != nil {
+		return "", "", err
+	}
+	modelName, modelID := defaultModelRefs(membership, modelType)
+	return modelName, modelID, nil
+}
+
+// GetDefaultModelRefsForTenant resolves model settings for the request user or,
+// without a request identity, the tenant owner.
+func (s *TenantService) GetDefaultModelRefsForTenant(ctx context.Context, tenantID string, modelType entity.ModelType) (string, string, error) {
+	if !isDefaultModelType(modelType) {
+		return "", "", fmt.Errorf("invalid model type: %s", modelType)
+	}
+	membership, err := s.defaultModelMembershipForTenant(ctx, tenantID)
+	if err != nil {
+		return "", "", err
+	}
+	modelName, modelID := defaultModelRefs(membership, modelType)
+	return modelName, modelID, nil
+}
+
+func isDefaultModelType(modelType entity.ModelType) bool {
+	switch modelType {
+	case entity.ModelTypeChat, entity.ModelTypeEmbedding, entity.ModelTypeRerank,
+		entity.ModelTypeSpeech2Text, entity.ModelTypeImage2Text, entity.ModelTypeTTS,
+		entity.ModelTypeOCR, entity.ModelTypeDecision:
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *TenantService) defaultModelMembership(ctx context.Context, userID, tenantID string) (*entity.UserTenant, error) {
+	if strings.TrimSpace(userID) == "" {
+		return s.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
+	}
+	membership, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
+	if err == nil {
+		return membership, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) || userID != tenantID {
+		return nil, err
+	}
+	return s.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
+}
+
+func (s *TenantService) defaultModelMembershipForTenant(ctx context.Context, tenantID string) (*entity.UserTenant, error) {
+	if subject, ok := permission.SubjectFromContext(ctx); ok && strings.TrimSpace(subject.UserID) != "" &&
+		(strings.TrimSpace(subject.TenantID) == "" || strings.TrimSpace(subject.TenantID) == tenantID) {
+		return s.defaultModelMembership(ctx, subject.UserID, tenantID)
+	}
+	return s.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
 }
 
 func (s *TenantService) GetModelInfo(ctx context.Context, tenantID string, defaultModel string, modelType string) (*string, *string, *string, bool, error) {
@@ -459,108 +589,48 @@ func rsplitN(s, sep string, n int) []string {
 }
 
 func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID string) ([]ModelItem, error) {
-
-	tenantInfos, err := s.tenantDAO.GetInfoByUserID(ctx, dao.DB, userID)
+	membership, tenantID, err := s.currentUserTenant(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	if len(tenantInfos) == 0 {
-		return nil, nil // No tenant found (should not happen for valid user)
+	return listDefaultModels(ctx, s, membership, tenantID), nil
+}
+
+func listDefaultModels(ctx context.Context, s *TenantService, membership *entity.UserTenant, tenantID string) []ModelItem {
+	type defaultModel struct {
+		modelType string
+		modelID   string
+		rowID     *string
 	}
-
-	ownedTenant := tenantInfos[0]
-
-	var result []ModelItem
-
-	defaultChatModelProvider, defaultChatModelInstance, defaultChatModelName, defaultChatModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.LLMID, "chat")
-	if err == nil {
-		result = append(result, ModelItem{
-			ModelProvider: defaultChatModelProvider,
-			ModelInstance: defaultChatModelInstance,
-			ModelName:     defaultChatModelName,
-			ModelID:       ptrStringValue(ownedTenant.TenantLLMID),
-			ModelType:     "chat",
-			Enable:        defaultChatModelEnable,
-		})
+	models := []defaultModel{
+		{modelType: "chat", modelID: membership.LLMID, rowID: membership.TenantLLMID},
+		{modelType: "embedding", modelID: membership.EmbdID, rowID: membership.TenantEmbdID},
+		{modelType: "rerank", modelID: membership.RerankID, rowID: membership.TenantRerankID},
+		{modelType: "asr", modelID: membership.ASRID, rowID: membership.TenantASRID},
+		{modelType: "vision", modelID: membership.Img2TxtID, rowID: membership.TenantImg2TxtID},
+		{modelType: "ocr", modelID: ptrStringValue(membership.OCRID), rowID: membership.TenantOCRID},
+		{modelType: "tts", modelID: ptrStringValue(membership.TTSID), rowID: membership.TenantTTSID},
+		{modelType: "decision", modelID: ptrStringValue(membership.DecisionID), rowID: membership.TenantDecisionID},
 	}
-
-	defaultEmbeddingModelProvider, defaultEmbeddingModelInstance, defaultEmbeddingModelName, defaultEmbeddingModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.EmbDID, "embedding")
-	if err == nil {
-		result = append(result, ModelItem{
-			ModelProvider: defaultEmbeddingModelProvider,
-			ModelInstance: defaultEmbeddingModelInstance,
-			ModelName:     defaultEmbeddingModelName,
-			ModelID:       ptrStringValue(ownedTenant.TenantEmbdID),
-			ModelType:     "embedding",
-			Enable:        defaultEmbeddingModelEnable,
-		})
-	}
-
-	defaultRerankModelProvider, defaultRerankModelInstance, defaultRerankModelName, defaultRerankModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.RerankID, "rerank")
-	if err == nil {
-		result = append(result, ModelItem{
-			ModelProvider: defaultRerankModelProvider,
-			ModelInstance: defaultRerankModelInstance,
-			ModelName:     defaultRerankModelName,
-			ModelID:       ptrStringValue(ownedTenant.TenantRerankID),
-			ModelType:     "rerank",
-			Enable:        defaultRerankModelEnable,
-		})
-	}
-
-	defaultASRModelProvider, defaultASRModelInstance, defaultASRModelName, defaultASREnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.ASRID, "asr")
-	if err == nil {
-		result = append(result, ModelItem{
-			ModelProvider: defaultASRModelProvider,
-			ModelInstance: defaultASRModelInstance,
-			ModelName:     defaultASRModelName,
-			ModelID:       ptrStringValue(ownedTenant.TenantASRID),
-			ModelType:     "asr",
-			Enable:        defaultASREnable,
-		})
-	}
-
-	defaultImage2TextModelProvider, defaultImage2TextModelInstance, defaultImage2TextModelName, defaultImage2TextModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.Img2TxtID, "vision")
-	if err == nil {
-		result = append(result, ModelItem{
-			ModelProvider: defaultImage2TextModelProvider,
-			ModelInstance: defaultImage2TextModelInstance,
-			ModelName:     defaultImage2TextModelName,
-			ModelID:       ptrStringValue(ownedTenant.TenantImg2TxtID),
-			ModelType:     "vision",
-			Enable:        defaultImage2TextModelEnable,
-		})
-	}
-
-	if ownedTenant.OCRID != "" {
-		defaultOCRModelProvider, defaultOCRModelInstance, defaultOCRModelName, defaultOCRModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.OCRID, "ocr")
-		if err == nil {
-			result = append(result, ModelItem{
-				ModelProvider: defaultOCRModelProvider,
-				ModelInstance: defaultOCRModelInstance,
-				ModelName:     defaultOCRModelName,
-				ModelID:       ptrStringValue(ownedTenant.TenantOCRID),
-				ModelType:     "ocr",
-				Enable:        defaultOCRModelEnable,
-			})
+	result := make([]ModelItem, 0, len(models))
+	for _, model := range models {
+		if strings.TrimSpace(model.modelID) == "" {
+			continue
 		}
-	}
-
-	if ownedTenant.TTSID != "" {
-		defaultTTSModelProvider, defaultTTSModelInstance, defaultTTSModelName, defaultTTSModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.TTSID, "tts")
-		if err == nil {
-			result = append(result, ModelItem{
-				ModelProvider: defaultTTSModelProvider,
-				ModelInstance: defaultTTSModelInstance,
-				ModelName:     defaultTTSModelName,
-				ModelID:       ptrStringValue(ownedTenant.TenantTTSID),
-				ModelType:     "tts",
-				Enable:        defaultTTSModelEnable,
-			})
+		provider, instance, name, enabled, err := s.GetModelInfo(ctx, tenantID, model.modelID, model.modelType)
+		if err != nil {
+			continue
 		}
+		result = append(result, ModelItem{
+			ModelProvider: provider,
+			ModelInstance: instance,
+			ModelName:     name,
+			ModelID:       ptrStringValue(model.rowID),
+			ModelType:     model.modelType,
+			Enable:        enabled,
+		})
 	}
-
-	return result, nil
+	return result
 }
 
 func (s *TenantService) checkModelAvailable(ctx context.Context, tenantID, providerName, instanceName, modelName, modelType string) error {
@@ -617,16 +687,10 @@ func (s *TenantService) checkModelAvailable(ctx context.Context, tenantID, provi
 }
 
 func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, modelProvider, modelInstance, modelName, modelType, modelID string) error {
-
-	tenantInfos, err := s.tenantDAO.GetInfoByUserID(ctx, dao.DB, userID)
+	membership, tenantID, err := s.currentUserTenant(ctx, userID)
 	if err != nil {
 		return err
 	}
-	if len(tenantInfos) == 0 {
-		return nil // No tenant found (should not happen for valid user)
-	}
-
-	ownedTenant := tenantInfos[0]
 	var defaultModel string
 	modelTypeID, tenantModelTypeID, modelTypeBit, err := tenantDefaultModelFields(modelType)
 	if err != nil {
@@ -647,8 +711,7 @@ func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, mode
 		if err != nil {
 			return fmt.Errorf("provider for model %s not found: %w", modelID, err)
 		}
-
-		if providerEntity.TenantID != ownedTenant.TenantID {
+		if providerEntity.TenantID != tenantID {
 			return fmt.Errorf("model %s does not belong to your tenant", modelID)
 		}
 		if modelEntity.Status != "active" {
@@ -657,7 +720,6 @@ func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, mode
 		if !entity.ModelType(modelEntity.ModelType).Has(modelTypeBit) {
 			return fmt.Errorf("model %s isn't a %s model", modelEntity.ModelName, modelType)
 		}
-
 		modelProvider = providerEntity.ProviderName
 		modelInstance = instanceEntity.InstanceName
 		modelName = modelEntity.ModelName
@@ -668,29 +730,26 @@ func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, mode
 		defaultModel = ""
 		tenantModelID = nil
 	} else if modelProvider != "" && modelInstance != "" && modelName != "" {
-		err = s.checkModelAvailable(ctx, ownedTenant.TenantID, modelProvider, modelInstance, modelName, modelType)
-		if err != nil {
+		if err := s.checkModelAvailable(ctx, tenantID, modelProvider, modelInstance, modelName, modelType); err != nil {
 			return err
 		}
 		if modelID == "" {
-			// Builtin provider doesn't use tenant_model rows; leave tenantModelID nil
-			// (mirrors Python resolve_model_id returning None for Builtin).
 			if modelProvider == "Builtin" {
 				tenantModelID = nil
 			} else {
-				modelProviderEntity, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, ownedTenant.TenantID, modelProvider)
+				provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, modelProvider)
 				if err != nil {
 					return err
 				}
-				modelInstanceEntity, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, modelProviderEntity.ID, modelInstance)
+				instance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, modelInstance)
 				if err != nil {
 					return err
 				}
-				modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, modelProviderEntity.ID, modelInstanceEntity.ID, modelName)
+				model, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, modelName)
 				if err != nil {
 					return err
 				}
-				tenantModelID = modelEntity.ID
+				tenantModelID = model.ID
 			}
 		}
 		defaultModel = fmt.Sprintf("%s@%s@%s", modelName, modelInstance, modelProvider)
@@ -698,19 +757,31 @@ func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, mode
 		return fmt.Errorf("model provider, instance and name must be specified together")
 	}
 
-	err = s.tenantDAO.Update(ctx, dao.DB, ownedTenant.TenantID, map[string]interface{}{
+	return dao.DB.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", membership.ID).Updates(map[string]interface{}{
 		modelTypeID:       defaultModel,
 		tenantModelTypeID: tenantModelID,
-	})
+	}).Error
+}
 
-	return err
+func (s *TenantService) currentUserTenant(ctx context.Context, userID string) (*entity.UserTenant, string, error) {
+	membership, handled, err := resolveCurrentUserTenantEE(ctx, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	if handled {
+		return membership, membership.TenantID, nil
+	}
+	membership, err = s.userTenantDAO.GetOwnerByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	return membership, membership.TenantID, nil
 }
 
 // Tenant member role constants.
 const (
 	TenantRoleOwner  = "owner"
 	TenantRoleNormal = "normal"
-	TenantRoleInvite = "invite"
 	TenantRoleAdmin  = "admin"
 )
 
@@ -733,9 +804,8 @@ type TenantMemberResponse struct {
 
 // ListMembers returns all non-owner members of tenantID.
 func (s *TenantService) ListMembers(ctx context.Context, userID, tenantID string) ([]*TenantMemberResponse, common.ErrorCode, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantOwner); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return nil, code, permissionErr
+	if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), userID, tenantID, entity.TenantPermissionManageMembers); err != nil {
+		return nil, tenantRoleErrorCode(err), err
 	}
 	rows, err := s.userTenantDAO.GetMembersByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
@@ -778,12 +848,17 @@ type AddMemberResponse struct {
 
 // AddMember invites a user (by email) to the tenant.
 func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, req *AddMemberRequest) (*AddMemberResponse, common.ErrorCode, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantOwner); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return nil, code, permissionErr
+	if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), userID, tenantID, entity.TenantPermissionManageMembers); err != nil {
+		return nil, tenantRoleErrorCode(err), err
+	}
+	if req == nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("request is required")
 	}
 	if strings.TrimSpace(req.Email) == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("email is required")
+	}
+	if code, err := s.checkTenantInviteEnabled(ctx, tenantID); err != nil {
+		return nil, code, err
 	}
 
 	invitee, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
@@ -793,48 +868,51 @@ func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, 
 		}
 		return nil, common.CodeDataError, err
 	}
-
-	// Reject if already a member or has a pending invitation.
-	userTenant, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, invitee.ID, tenantID)
-	if err == nil {
-		if userTenant != nil {
-			switch userTenant.Role {
-			case TenantRoleOwner:
-				return nil, common.CodeDataError, fmt.Errorf("user is already the tenant owner")
-			case TenantRoleNormal, TenantRoleAdmin:
-				return nil, common.CodeDataError, fmt.Errorf("user is already a member")
-			case TenantRoleInvite:
-				return nil, common.CodeDataError, fmt.Errorf("user already has a pending invitation")
-			}
+	var membership entity.UserTenant
+	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var existing entity.UserTenant
+		loadErr := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND tenant_id = ?", invitee.ID, tenantID).Take(&existing).Error
+		if loadErr != nil && !errors.Is(loadErr, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("load existing Tenant membership: %w", loadErr)
 		}
-	}
-	if err != nil && !dao.IsNotFoundErr(err) {
-		return nil, common.CodeServerError, err
+		if errors.Is(loadErr, gorm.ErrRecordNotFound) {
+			status := entity.TenantMembershipStatusInvited
+			membership = entity.UserTenant{ID: common.GenerateUUID(), UserID: invitee.ID, TenantID: tenantID, InvitedBy: userID, Status: &status}
+			if err := tx.Create(&membership).Error; err != nil {
+				return fmt.Errorf("failed to create invitation: %w", err)
+			}
+			return recordTenantPermissionChange(tx, tenantID, userID, "tenant.member.invited", "user", invitee.ID, "tenant_membership", membership.ID, "invite", 0, 0, nil,
+				map[string]interface{}{"user_id": invitee.ID, "email": invitee.Email, "role": membership.Role, "invited_by": userID, "status": status})
+		}
+		oldStatus := tenantMembershipStatus(existing.Status)
+		switch oldStatus {
+		case entity.TenantMembershipStatusJoined:
+			if existing.Role == TenantRoleOwner {
+				return common.NewCodedError(common.CodeDataError, "user is already the tenant owner")
+			}
+			return common.NewCodedError(common.CodeDataError, "user is already a member")
+		case entity.TenantMembershipStatusInvited:
+			return common.NewCodedError(common.CodeDataError, "user already has a pending invitation")
+		case entity.TenantMembershipStatusRequested, entity.TenantMembershipStatusRejected, entity.TenantMembershipStatusLeft, entity.TenantMembershipStatusRemoved:
+		default:
+			return common.NewCodedError(common.CodeConflict, "Tenant membership has an unsupported status")
+		}
+		before := map[string]interface{}{"user_id": invitee.ID, "role": existing.Role, "status": oldStatus, "invited_by": existing.InvitedBy}
+		status := entity.TenantMembershipStatusInvited
+		if err := tx.Model(&entity.UserTenant{}).Where("id = ?", existing.ID).Updates(map[string]interface{}{"role": "", "status": status, "invited_by": userID}).Error; err != nil {
+			return fmt.Errorf("reinvite Tenant member: %w", err)
+		}
+		existing.Role, existing.InvitedBy, existing.Status = "", userID, &status
+		membership = existing
+		return recordTenantPermissionChange(tx, tenantID, userID, "tenant.member.invited", "user", invitee.ID, "tenant_membership", membership.ID, "invite", 0, 0, before,
+			map[string]interface{}{"user_id": invitee.ID, "email": invitee.Email, "role": membership.Role, "invited_by": userID, "status": status})
+	})
+	if err != nil {
+		return nil, tenantRoleErrorCode(err), err
 	}
 
-	status := string(entity.StatusValid)
-	ut := &entity.UserTenant{
-		ID:        common.GenerateUUID(),
-		UserID:    invitee.ID,
-		TenantID:  tenantID,
-		Role:      TenantRoleInvite,
-		InvitedBy: userID,
-		Status:    &status,
-	}
-	if err = s.userTenantDAO.Create(ctx, dao.DB, ut); err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to create invitation: %w", err)
-	}
-
-	avatar := ""
-	if invitee.Avatar != nil {
-		avatar = *invitee.Avatar
-	}
-	return &AddMemberResponse{
-		ID:       invitee.ID,
-		Avatar:   avatar,
-		Email:    invitee.Email,
-		Nickname: invitee.Nickname,
-	}, common.CodeSuccess, nil
+	return tenantMemberResponse(invitee), common.CodeSuccess, nil
 }
 
 // RemoveMember removes a user from the tenant. The owner may remove members,
@@ -844,54 +922,121 @@ func (s *TenantService) RemoveMember(ctx context.Context, userID, tenantID, targ
 	if s.userTenantDAO == nil {
 		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
 	}
-	if userID != "" && userID == targetUserID {
-		removed, err := s.userTenantDAO.DeleteByUserAndTenantAndRole(ctx, dao.DB, userID, tenantID, TenantRoleInvite)
-		if err != nil {
-			return common.CodeServerError, fmt.Errorf("failed to decline tenant invitation: %w", err)
-		}
-		if removed {
-			return common.CodeSuccess, nil
+	if userID != targetUserID {
+		if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), userID, tenantID, entity.TenantPermissionManageMembers); err != nil {
+			return tenantRoleErrorCode(err), err
 		}
 	}
+	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var membership entity.UserTenant
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND tenant_id = ?", targetUserID, tenantID).Take(&membership).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.NewCodedError(common.CodeDataError, "user has no Tenant membership or invitation")
+			}
+			return fmt.Errorf("load Tenant membership: %w", err)
+		}
+		oldStatus := tenantMembershipStatus(membership.Status)
+		if oldStatus == entity.TenantMembershipStatusRemoved || oldStatus == entity.TenantMembershipStatusRejected || oldStatus == entity.TenantMembershipStatusLeft {
+			return nil
+		}
+		if membership.Role == TenantRoleOwner {
+			return common.NewCodedError(common.CodeArgumentError, "cannot remove or leave the tenant owner")
+		}
 
-	requirement := permission.TenantOwner
-	if userID == targetUserID {
-		requirement = permission.TenantMember
-	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, requirement); err != nil {
-		code, permissionErr := permissionresponse.Normalize(err)
-		return code, permissionErr
-	}
-	targetMembership, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, targetUserID, tenantID)
-	if err != nil {
-		if dao.IsNotFoundErr(err) {
-			return common.CodeDataError, fmt.Errorf("user is not a tenant member")
+		newStatus := entity.TenantMembershipStatusRemoved
+		eventType, actionType := "tenant.member.removed", "remove"
+		if userID == targetUserID {
+			switch oldStatus {
+			case entity.TenantMembershipStatusInvited:
+				newStatus = entity.TenantMembershipStatusRejected
+				eventType, actionType = "tenant.invitation.declined", "reject"
+			case entity.TenantMembershipStatusJoined:
+				newStatus = entity.TenantMembershipStatusLeft
+				eventType, actionType = "tenant.member.left", "leave"
+			default:
+				return common.NewCodedError(common.CodeDataError, "user has no active Tenant membership or invitation")
+			}
+		} else if oldStatus == entity.TenantMembershipStatusInvited {
+			eventType, actionType = "tenant.invitation.revoked", "revoke"
 		}
-		return common.CodeServerError, fmt.Errorf("failed to load tenant member: %w", err)
-	}
-	if targetMembership.Role == TenantRoleOwner {
-		return common.CodeArgumentError, fmt.Errorf("cannot remove the tenant owner")
-	}
-	if err := s.userTenantDAO.DeleteByUserAndTenant(ctx, dao.DB, targetUserID, tenantID); err != nil {
-		return common.CodeServerError, fmt.Errorf("failed to remove member: %w", err)
+
+		before := map[string]interface{}{
+			"user_id": membership.UserID, "role": membership.Role,
+			"invited_by": membership.InvitedBy, "status": oldStatus,
+		}
+		if err := tx.Model(&entity.UserTenant{}).Where("id = ?", membership.ID).
+			Updates(map[string]interface{}{"role": "", "status": newStatus}).Error; err != nil {
+			return fmt.Errorf("update Tenant membership status: %w", err)
+		}
+		after := map[string]interface{}{
+			"user_id": membership.UserID, "role": "",
+			"invited_by": membership.InvitedBy, "status": newStatus,
+		}
+		return recordTenantPermissionChange(tx, tenantID, userID, eventType, "user", targetUserID, "tenant_membership", membership.ID, actionType, 0, 0, before, after)
+	})
+	if err != nil {
+		return tenantRoleErrorCode(err), err
 	}
 	return common.CodeSuccess, nil
 }
 
-// AcceptInvite transitions the calling user's role from "invite" → "normal" for the given tenant.
+// AcceptInvite assigns the Tenant default role when a pending invitation is accepted.
 func (s *TenantService) AcceptInvite(ctx context.Context, userID, tenantID string) (common.ErrorCode, error) {
 	if s.userTenantDAO == nil {
 		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
 	}
-	existing, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
-	if err != nil || existing == nil {
-		return common.CodeDataError, fmt.Errorf("no pending invitation found")
-	}
-	if existing.Role != TenantRoleInvite {
-		return common.CodeArgumentError, fmt.Errorf("no pending invitation to accept")
-	}
-	if err := s.userTenantDAO.UpdateRoleByUserAndTenant(ctx, dao.DB, userID, tenantID, TenantRoleNormal); err != nil {
-		return common.CodeServerError, fmt.Errorf("failed to accept invitation: %w", err)
+	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var membership entity.UserTenant
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("user_id = ? AND tenant_id = ?", userID, tenantID).Take(&membership).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return common.NewCodedError(common.CodeDataError, "no pending invitation found")
+			}
+			return fmt.Errorf("load pending Tenant invitation: %w", err)
+		}
+		if tenantMembershipStatus(membership.Status) != entity.TenantMembershipStatusInvited {
+			return common.NewCodedError(common.CodeArgumentError, "no pending invitation to accept")
+		}
+		role, err := resolveTenantInviteRole(tx, tenantID)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(role.value) == "" {
+			return common.NewCodedError(common.CodeConflict, "Tenant default role is invalid")
+		}
+		status := entity.TenantMembershipStatusJoined
+		if err := tx.Model(&entity.UserTenant{}).Where("id = ?", membership.ID).
+			Updates(map[string]interface{}{"role": role.value, "status": status}).Error; err != nil {
+			return fmt.Errorf("accept Tenant invitation: %w", err)
+		}
+		before := map[string]interface{}{"user_id": userID, "role": membership.Role, "status": tenantMembershipStatus(membership.Status)}
+		after := map[string]interface{}{"user_id": userID, "role": role.value, "status": status}
+		if role.roleID != nil {
+			after["role_id"] = *role.roleID
+		}
+		if role.roleName != "" {
+			after["role_name"] = role.roleName
+		}
+		return recordTenantPermissionChange(tx, tenantID, userID, "tenant.member.joined", "user", userID, "tenant_membership", membership.ID, "join", 0, 0, before, after)
+	})
+	if err != nil {
+		return tenantRoleErrorCode(err), err
 	}
 	return common.CodeSuccess, nil
+}
+
+func tenantMembershipStatus(status *string) string {
+	if status == nil {
+		return ""
+	}
+	return *status
+}
+
+func tenantMemberResponse(user *entity.User) *AddMemberResponse {
+	avatar := ""
+	if user.Avatar != nil {
+		avatar = *user.Avatar
+	}
+	return &AddMemberResponse{ID: user.ID, Avatar: avatar, Email: user.Email, Nickname: user.Nickname}
 }

@@ -204,6 +204,14 @@ function transformObjectArrayToPureArray(
     : [];
 }
 
+/**
+ * Serializes parser form values into per-file-family API parameters.
+ * Normalizes global vision settings while preserving explicit PDF MinerU
+ * controls (including false) and the independent image OCR switch/model ID.
+ *
+ * @param params - Parser form values, including setups and global vision options.
+ * @returns File-family parameters alongside normalized global vision settings.
+ */
 export function transformParserParams(params: ParserFormSchemaType) {
   // Save global vision options from the normalized form alongside the
   // per-family setups, including nodes whose form has not been opened.
@@ -221,7 +229,6 @@ export function transformParserParams(params: ParserFormSchemaType) {
           pages: number[][];
         }
       > = {
-        output_format: cur.output_format,
         suffix: FileTypeSuffixMap[cur.fileFormat as FileType],
       };
 
@@ -230,6 +237,10 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             parse_method: cur.parse_method,
+            mineru_parse_method: cur.mineru_parse_method,
+            mineru_lang: cur.mineru_lang,
+            mineru_formula_enable: cur.mineru_formula_enable,
+            mineru_table_enable: cur.mineru_table_enable,
             lang: cur.lang,
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
@@ -271,6 +282,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             ocr_enabled: cur.ocr_enabled,
+            ocr_model_id: cur.ocr_model_id,
           };
           break;
         case FileType.Email:
@@ -378,13 +390,17 @@ export function transformTokenChunkerParams(
     // while merging everything into a single chunk, but zeroing them here
     // wiped the user's settings on every save (they reloaded as 0 / ["\n"]).
     overlapped_percent: Number(rest.overlapped_percent) / 100,
-    delimiters: transformObjectArrayToPureArray(rest.delimiters, 'value'),
+    delimiters: rest.delimiters.map(
+      ({ value }: { value?: string }) => value ?? '',
+    ),
     table_context_size: imageTableContextWindow,
     image_context_size: imageTableContextWindow,
 
     // Unset children delimiters if this option is not enabled
     children_delimiters: rest.enable_children
-      ? transformObjectArrayToPureArray(rest.children_delimiters, 'value')
+      ? rest.children_delimiters.map(
+          ({ value }: { value?: string }) => value ?? '',
+        )
       : [],
   };
 }
@@ -757,6 +773,20 @@ export const buildDslComponentsByGraph = (
         case Operator.Begin:
           params = transformBeginParams(params);
           break;
+        case Operator.UserFillUp:
+          if (Array.isArray(params.inputs)) {
+            params = {
+              ...params,
+              inputs: params.inputs.reduce(
+                (inputs, { key, ...value }) => {
+                  inputs[key] = value;
+                  return inputs;
+                },
+                {} as Record<string, Omit<BeginQuery, 'key'>>,
+              ),
+            };
+          }
+          break;
         default:
           break;
       }
@@ -1046,12 +1076,13 @@ export function convertToObjectArray<T extends string | number | boolean>(
 }
 
 /**
- * Message (回复消息) components keep their texts in form.content (string[]).
- * The backend rejects the component at canvas run time unless at least one
- * entry is a non-blank string, so missing/non-array/blank-only content all
- * count as empty here as well.
+ * Message accepts text/content strings or content arrays; every entry must
+ * be a non-blank string to match backend execution validation.
  */
 export function isEmptyMessageContent(content?: unknown): boolean {
+  if (typeof content === 'string') {
+    return content.trim() === '';
+  }
   return (
     !Array.isArray(content) ||
     content.length === 0 ||

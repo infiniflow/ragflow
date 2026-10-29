@@ -67,7 +67,8 @@ func (b *BeginComponent) Name() string { return b.name }
 
 // Invoke writes inputs["query"] and (when present) inputs["user_id"] into
 // the shared *CanvasState.Sys namespace, then returns the input map as
-// outputs unchanged. The input map is shallow-copied to avoid aliasing
+// outputs, exposing structured webhook sections at top level.
+// The input map is shallow-copied to avoid aliasing
 // surprises across concurrent goroutines that share an inputs map.
 func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	state, err := runtime.GetStateFromContext(ctx)
@@ -80,13 +81,13 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 
 	// Query: required to drive downstream components.
 	query, _ := inputs["query"].(string)
-	state.Sys["query"] = query
+	state.SetSys("query", query)
 
 	// Optional user_id — present in interactive chat flows, absent in
 	// background jobs. Always a string when set; cast failure silently
 	// drops the value (mirrors Python's getattr fallback).
 	if uid, ok := inputs["user_id"].(string); ok && uid != "" {
-		state.Sys["user_id"] = uid
+		state.SetSys("user_id", uid)
 	}
 
 	// Webhook payload injection. The webhook HTTP handler sets
@@ -96,7 +97,7 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 	// same way they read sys.query / sys.user_id. The chat path never
 	// sets this key, so existing tests stay green.
 	if payload, ok := inputs["webhook_payload"].(map[string]any); ok && len(payload) > 0 {
-		state.Sys["webhook_payload"] = payload
+		state.SetSys("webhook_payload", payload)
 	}
 
 	// Passthrough: a shallow copy keeps the caller's map un-aliased.
@@ -119,6 +120,15 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 			state.SetGlobal("begin@"+field, value)
 		} else if value, ok := state.GetGlobal("begin@" + field); ok {
 			out[field] = value
+		}
+	}
+	// Webhook fields are public Begin outputs referenced as Begin@headers.key,
+	// Begin@query.key and Begin@body.key by the workflow editor.
+	if payload, ok := inputs["webhook_payload"].(map[string]any); ok {
+		for _, section := range []string{"query", "headers", "body"} {
+			if fields, ok := payload[section].(map[string]any); ok {
+				out[section] = maps.Clone(fields)
+			}
 		}
 	}
 	return out, nil
@@ -204,10 +214,12 @@ func (b *BeginComponent) Inputs() map[string]string {
 	}
 }
 
-// Outputs returns the same keys as Inputs (Begin is a passthrough).
+// Outputs describes the entry inputs and structured webhook request sections.
 func (b *BeginComponent) Outputs() map[string]string {
 	return map[string]string{
-		"query":           "Query string (passthrough).",
+		"query":           "Query string, or structured query fields for webhook runs.",
+		"headers":         "Schema-extracted webhook headers.",
+		"body":            "Schema-extracted webhook body fields.",
 		"user_id":         "User id, if provided (passthrough).",
 		"webhook_payload": "Webhook request payload, if provided (passthrough; also written to state.Sys[webhook_payload]).",
 		"inputs":          "Raw inputs map (passthrough).",

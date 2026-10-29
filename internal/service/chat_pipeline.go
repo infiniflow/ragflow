@@ -100,6 +100,12 @@ type AsyncChatResult struct {
 	// the think-block sentence), forwarded so a client can render steps —
 	// tool, status, counts, sources, duration — instead of paragraphs.
 	ThinkEvent *ThinkEvent `json:"think_event,omitempty"`
+	// Usage and ElapsedMs are this turn's cost, emitted on the final chunk so a
+	// client can show what the answer cost. They are the same numbers the
+	// Langfuse generation below records; without them a UI has to parse the
+	// human-readable prompt text to learn anything about cost.
+	Usage     *ChatTurnUsage `json:"usage,omitempty"`
+	ElapsedMs float64        `json:"elapsed_ms,omitempty"`
 	// Internal-only: set when Answer is the run's authoritative full text —
 	// <think> stretch included, citation handles already compacted against the
 	// shipped reference — so the session writer must persist it instead of the
@@ -107,6 +113,15 @@ type AsyncChatResult struct {
 	AnswerIsAuthoritative bool
 	// Internal-only: accumulated answer for building the decorated final result.
 	accumulatedAnswer string
+}
+
+// ChatTurnUsage is one turn's token cost. CompletionTokens is an estimate (the
+// answer has no tokenizer on this path), which is why it is reported separately
+// rather than folded into a single "tokens" number a reader would trust.
+type ChatTurnUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 // ThinkEvent is one structured agentic reasoning step as it goes over the
@@ -183,7 +198,7 @@ type ThinkEvent struct {
 //	│         → sufficiencyCheck → multiQueriesGen → recurse│
 //	│   NO  → Standard vector retrieval                     │
 //	│         vector/hybrid search → rerank →               │
-//	│         TOC enhance → child chunk retrieval →         │
+//	│         child chunk retrieval →                       │
 //	│         Web search → KG retrieval (prepend)           │
 //	│                                                       │
 //	│    enrichChunksWithMetadata (doc metadata)            │
@@ -224,6 +239,12 @@ func (s *ChatPipelineService) AsyncChat(
 	lastMsg := messages[len(messages)-1]
 	if role, _ := lastMsg["role"].(string); role != "user" {
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
+	}
+	if _, err := NormalizeOpenAIMessageContent(lastMsg["content"]); err != nil {
+		return nil, common.NewCodedError(common.CodeArgumentError, err.Error())
+	}
+	if err := validateChatDatasetAccess(ctx, userID, chat.KBIDs); err != nil {
+		return nil, err
 	}
 
 	// Resolve what this conversation can reach BEFORE dispatching: whether it
@@ -359,11 +380,11 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// === Phase 5: Extract Questions, doc_ids, Attachments ===
 		common.Info("Phase 5: Extract questions, doc_ids, attachments")
-		// Retrieve the last 3 user questions.
+		// Entry validation guarantees the final user content normalizes to a question.
 		var questions []string
 		for _, m := range messages {
 			if role, _ := m["role"].(string); role == "user" {
-				if content, ok := m["content"].(string); ok {
+				if content, err := NormalizeOpenAIMessageContent(m["content"]); err == nil {
 					questions = append(questions, content)
 				}
 			}
@@ -691,7 +712,6 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 
 		// When hasKnowledgeParam is true, runs standard retrieval, then:
-		//   - TOC enhancement (if toc_enhance is enabled).
 		//   - Child chunk retrieval.
 		//   - Web search provider (if internet is enabled).
 		//   - Knowledge graph retrieval (if use_kg is enabled).
@@ -699,7 +719,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// When false, the entire block is skipped.
 		if hasKnowledgeParam {
 			// Regular RAG mirroring Python's async_chat — native docStore
-			// retrieval, then the TOC / child chunk / web search / KG
+			// retrieval, then the child chunk / web search / KG
 			// enhancements below.
 			searchQuestion := strings.Join(questions, " ")
 			if embModel != nil {
@@ -770,23 +790,6 @@ func (s *ChatPipelineService) AsyncChat(
 				}
 			}
 
-			// TOC enhancement
-			if useTOC, _ := chat.PromptConfig["toc_enhance"].(bool); useTOC && chatModel != nil && len(kbs) > 0 {
-				enhancer := NewTOCEnhancer(
-					engine.Get(),
-					chatModel,
-					kbTenantIDStrings(kbs),
-					kbIDStrings(kbs),
-					searchQuestion,
-					int(chat.TopN),
-				)
-				if added, err := enhancer.Enhance(ctx, kbinfos); err != nil {
-					common.Warn("TOC enhance failed", zap.Error(err))
-				} else if added > 0 {
-					common.Debug("TOC enhance added chunks", zap.Int("added", added))
-				}
-			}
-
 			// Child chunk retrieval
 			if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok && len(existingChunks) > 0 {
 				kbinfos["chunks"] = nlp.RetrievalByChildren(existingChunks, kbTenantIDStrings(kbs), engine.Get(), ctx)
@@ -853,6 +856,15 @@ func (s *ChatPipelineService) AsyncChat(
 		// Sub-steps: empty_response check → formatPrompt → citationPrompt →
 		// messageFitIn (95% token budget) → multimodal conversion → adjust max_tokens.
 		// If no knowledges and empty_response is configured, yield it and return.
+		// Compiled-serve: swap/extend the retrieved chunk text with knowledge-compiled
+		// products when enabled. Mirrors the agentic locate exit for the standard
+		// (reasoning level 1-4) retrieval path. No-op when inactive or no products
+		// were found for the recalled chunks.
+		if rawChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok && len(rawChunks) > 0 {
+			if served := agentic_rag.CompiledServeChunks(ctx, chat.TenantID, rawChunks, kbIDStrings(kbs)); served != nil {
+				kbinfos["chunks"] = served
+			}
+		}
 		knowledges = s.kbPrompt(kbinfos, modelMaxTokens)
 		common.Info("Phase 10: Build LLM Request")
 		common.Debug("Knowledge prompt",
@@ -2500,8 +2512,13 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 		cnt += drawNode("Title", getMapString(ck, "docnm_kwd", "document_name"))
 		cnt += drawNode("URL", getMapString(ck, "url"))
 		if meta, ok := ck["document_metadata"].(map[string]interface{}); ok {
-			for k, v := range meta {
-				cnt += drawNode(k, v)
+			keys := make([]string, 0, len(meta))
+			for k := range meta {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				cnt += drawNode(k, meta[k])
 			}
 		}
 		cnt += "\n└── Content:\n"
@@ -3098,6 +3115,14 @@ func (s *ChatPipelineService) decorateAnswer(
 		Prompt:    strings.ReplaceAll(timeStats, "\n", "  \n"),
 		CreatedAt: float64(finishChatTs.Unix()),
 		Final:     false, // caller sets Final = true
+		// Same numbers the Langfuse generation above records, on the wire so a
+		// client does not have to parse the human-readable prompt to learn them.
+		Usage: &ChatTurnUsage{
+			PromptTokens:     usedTokenCount,
+			CompletionTokens: tkNum,
+			TotalTokens:      usedTokenCount + tkNum,
+		},
+		ElapsedMs: totalMs,
 	}
 }
 

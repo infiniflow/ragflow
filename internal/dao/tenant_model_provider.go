@@ -55,25 +55,10 @@ func (dao *TenantModelProviderDAO) GetByTenantIDAndProviderName(ctx context.Cont
 	return &provider, nil
 }
 
-// DeleteByTenantID deletes all model providers by tenant ID (hard delete)
-func (dao *TenantModelProviderDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.TenantModelProvider{})
-	return result.RowsAffected, result.Error
-}
-
 // DeleteByTenantIDAndProviderName DeleteByTenantID deletes all providers by tenant ID (hard delete)
 func (dao *TenantModelProviderDAO) DeleteByTenantIDAndProviderName(ctx context.Context, db *gorm.DB, tenantID, providerName string) (int64, error) {
 	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ? AND provider_name = ?", tenantID, providerName).Delete(&entity.TenantModelProvider{})
 	return result.RowsAffected, result.Error
-}
-
-// ListByID list tenant model providers by ID
-func (dao *TenantModelProviderDAO) ListByID(ctx context.Context, db *gorm.DB, id string) ([]string, error) {
-	var providerNames []string
-	err := db.WithContext(ctx).Model(&entity.TenantModelProvider{}).
-		Where("tenant_id = ?", id).
-		Pluck("provider_name", &providerNames).Error
-	return providerNames, err
 }
 
 // GetByTenantID returns all TenantModelProvider rows for a tenant.

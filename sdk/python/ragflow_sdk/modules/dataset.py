@@ -34,7 +34,9 @@ class DataSet(Base):
         self.permission = "me"
         self.document_count = 0
         self.chunk_count = 0
-        self.chunk_method = "naive"
+        self.parser_id = ""
+        self.pipeline_id = None
+        self.language = None
         self.parser_config = None
         self.pagerank = 0
         for k in list(res_dict.keys()):
@@ -42,13 +44,24 @@ class DataSet(Base):
                 res_dict.pop(k)
         super().__init__(rag, res_dict)
 
+    @property
+    def parse_type(self) -> int:
+        """1 when parsed by a builtin parser, 2 when parsed by an ingestion pipeline."""
+        return 2 if self.pipeline_id else 1
+
     def update(self, update_message: dict):
+        if "chunk_method" in update_message:
+            raise ValueError("chunk_method is not supported by RAGFlow 1.0; use parse_type with parser_id or pipeline_id")
         res = self.put(f"/datasets/{self.id}", update_message)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
 
-        self._update_from_dict(self.rag, res.get("data", {}))
+        data = res.get("data", {})
+        # BuiltIn datasets omit pipeline_id from the response; clear the previous
+        # mode before merging so a Pipeline -> BuiltIn update cannot leave stale state.
+        self.pipeline_id = data.get("pipeline_id") or None
+        self._update_from_dict(self.rag, data)
         return self
 
     def upload_documents(self, document_list: list[dict]):

@@ -40,7 +40,7 @@ func TestDatabaseCheckerScopesChatChannelsToTenantMembers(t *testing.T) {
 		t.Fatalf("create tenant membership: %v", err)
 	}
 
-	checker := NewDatabaseChecker(db)
+	checker := newCommunityDatabaseChecker(db)
 	member := Subject{UserID: "member-a"}
 	for _, operation := range []Operation{OperationRead, OperationUpdate, OperationDelete, OperationUse} {
 		if err := checker.CheckResource(context.Background(), member, ResourceRef{Kind: ResourceKindChatChannel, ID: "team-channel"}, operation); err != nil {

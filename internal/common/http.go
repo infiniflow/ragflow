@@ -38,10 +38,64 @@ import (
 const (
 	redactedLogValue      = "[REDACTED]"
 	maxLoggedVectorFloats = 3
+
+	// DefaultMaxJSONRequestBodyBytes is the default limit for non-multipart requests.
+	DefaultMaxJSONRequestBodyBytes int64 = 1 << 20
+	// DefaultMaxMultipartRequestBodyBytes is the default total limit for multipart uploads.
+	DefaultMaxMultipartRequestBodyBytes int64 = 1 << 30
+	// DefaultMaxDocumentUploadBytes is the default per-file limit for dataset document uploads.
+	DefaultMaxDocumentUploadBytes int64 = 128 << 20
+	// MaxWebhookRequestBodyBytes is the default and maximum request body size for agent webhooks.
+	MaxWebhookRequestBodyBytes int64 = 10 * 1_000_000
+
+	ssrfResponseHeaderTimeoutDefault       = 20 * time.Minute
+	schemeSafeResponseHeaderTimeoutDefault = 20 * time.Minute
 )
+
+// GetMaxJSONRequestBodyBytes returns the configured non-multipart request-body
+// limit in bytes, defaulting to 1 MiB.
+func GetMaxJSONRequestBodyBytes() int64 {
+	return getMaxConfiguredBytes(EnvMaxJSONContentLength, "", DefaultMaxJSONRequestBodyBytes)
+}
+
+// GetMaxMultipartRequestBodyBytes returns the configured multipart upload
+// request-body limit in bytes, defaulting to 1 GiB. MAX_CONTENT_LENGTH remains
+// a fallback for existing deployments when the new variable is unset.
+func GetMaxMultipartRequestBodyBytes() int64 {
+	return getMaxConfiguredBytes(EnvMaxMultipartContentLength, EnvMaxContentLength, DefaultMaxMultipartRequestBodyBytes)
+}
+
+// GetMaxDocumentUploadBytes returns the configured per-file limit for dataset document uploads,
+// defaulting to 128 MiB.
+func GetMaxDocumentUploadBytes() int64 {
+	return getMaxConfiguredBytes(EnvMaxDocumentUploadSize, "", DefaultMaxDocumentUploadBytes)
+}
+
+func getMaxConfiguredBytes(envName, fallbackEnvName string, defaultBytes int64) int64 {
+	raw := strings.TrimSpace(GetEnv(envName))
+	if raw == "" && fallbackEnvName != "" {
+		raw = strings.TrimSpace(GetEnv(fallbackEnvName))
+	}
+	if raw == "" {
+		return defaultBytes
+	}
+
+	limit, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || limit <= 0 {
+		return defaultBytes
+	}
+	return limit
+}
 
 var ssrfHttpClient *http.Client
 var schemeSafeHttpClient *http.Client
+
+// llmHTTPResponseHeaderTimeout lets a deployment shorten the wait for response
+// headers, which is what a hung provider endpoint spends on every retry. Each
+// client keeps its own default while the override is unset.
+func llmHTTPResponseHeaderTimeout(def time.Duration) time.Duration {
+	return getEnvDuration(EnvLLMHTTPResponseHeaderTimeout, def)
+}
 
 func GetSSRFHTTPClient() *http.Client {
 	if ssrfHttpClient == nil {
@@ -55,12 +109,12 @@ func GetSSRFHTTPClient() *http.Client {
 		t.MaxIdleConnsPerHost = 10
 		t.IdleConnTimeout = 90 * time.Second
 		t.DisableCompression = false
-		t.ResponseHeaderTimeout = 20 * time.Minute
+		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(ssrfResponseHeaderTimeoutDefault)
 		t.TLSHandshakeTimeout = 30 * time.Second
 
 		var rt http.RoundTripper = t
 		rt = &strictSSRFTransport{base: rt}
-		rt = newProviderLoggingTransport(rt)
+		rt = NewProviderLoggingTransport(rt)
 		ssrfHttpClient = &http.Client{Transport: rt}
 	}
 	return ssrfHttpClient
@@ -78,12 +132,12 @@ func GetSchemeSafeHTTPClient() *http.Client {
 		t.MaxIdleConnsPerHost = 500
 		t.IdleConnTimeout = 90 * time.Second
 		t.DisableCompression = false
-		t.ResponseHeaderTimeout = 60 * time.Second
+		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault)
 		t.TLSHandshakeTimeout = 30 * time.Second
 
 		var rt http.RoundTripper = t
 		rt = &schemeSafeTransport{base: rt}
-		rt = newProviderLoggingTransport(rt)
+		rt = NewProviderLoggingTransport(rt)
 		schemeSafeHttpClient = &http.Client{Transport: rt}
 	}
 	return schemeSafeHttpClient
@@ -97,7 +151,9 @@ const (
 	providerCallLogThreshold   = 30 * time.Second
 )
 
-func newProviderLoggingTransport(base http.RoundTripper) http.RoundTripper {
+// NewProviderLoggingTransport wraps base with provider timing and LLM_DEBUG payload logging.
+// A nil base uses http.DefaultTransport.
+func NewProviderLoggingTransport(base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
@@ -429,9 +485,9 @@ var LookupHost = net.LookupHost
 // a deployment mistake. The explicit "_ForTest" suffix is the
 // signal that production code must never touch it.
 //
-// Host-based database and connector dials are a separate opt-in.
-// AllowConfiguredPrivateHost reads ALLOW_ANY_HOST for those dials
-// only. This function stays limited to the in-memory test hook.
+// Host-based database and connector dials and configured MCP servers are a
+// separate opt-in. AllowConfiguredPrivateHost reads ALLOW_ANY_HOST for those
+// dials only. This function stays limited to the in-memory test hook.
 var AllowAnyHostForTest = false
 
 // allowAnyHost reads the test-only override. Kept as a private
@@ -671,49 +727,51 @@ func allZero(b []byte) bool {
 type response struct {
 	Code    ErrorCode   `json:"code"`
 	Data    interface{} `json:"data"`
-	Message interface{} `json:"message"`
+	Message string      `json:"message"`
 	Total   interface{} `json:"total,omitempty"`
 }
 
 // errorResponse error response
 type errorResponse struct {
-	Code    ErrorCode   `json:"code"`
-	Message interface{} `json:"message"`
+	Code    ErrorCode `json:"code"`
+	Message string    `json:"message"`
+}
+
+func responseMessage(code ErrorCode, message string) string {
+	if message != "" {
+		return message
+	}
+	if code == CodeSuccess {
+		return "success"
+	}
+	return code.Message()
 }
 
 // SuccessWithData returns success response with data
-func SuccessWithData(c *gin.Context, data interface{}, message interface{}) {
+func SuccessWithData(c *gin.Context, data interface{}, message string) {
 	c.JSON(http.StatusOK, response{
 		Code:    CodeSuccess,
 		Data:    data,
-		Message: message,
+		Message: responseMessage(CodeSuccess, message),
 	})
 }
 
 // SuccessWithDataAndTotal returns success response with data and total number
-func SuccessWithDataAndTotal(c *gin.Context, data, total, message interface{}) {
+func SuccessWithDataAndTotal(c *gin.Context, data, total interface{}, message string) {
 	c.JSON(http.StatusOK, response{
 		Code:    CodeSuccess,
 		Data:    data,
 		Total:   total,
-		Message: message,
-	})
-}
-
-// SuccessNoMessage returns success response without message
-func SuccessNoMessage(c *gin.Context, data interface{}) {
-	c.JSON(http.StatusOK, response{
-		Code: CodeSuccess,
-		Data: data,
+		Message: responseMessage(CodeSuccess, message),
 	})
 }
 
 // SuccessNoData returns success response without data
-func SuccessNoData(c *gin.Context, message interface{}) {
+func SuccessNoData(c *gin.Context, message string) {
 	c.JSON(http.StatusOK, response{
 		Code:    CodeSuccess,
 		Data:    nil,
-		Message: message,
+		Message: responseMessage(CodeSuccess, message),
 	})
 }
 
@@ -721,7 +779,7 @@ func SuccessNoData(c *gin.Context, message interface{}) {
 func SuccessWithMessage(c *gin.Context, message string) {
 	c.JSON(http.StatusOK, response{
 		Code:    CodeSuccess,
-		Message: message,
+		Message: responseMessage(CodeSuccess, message),
 	})
 }
 
@@ -729,7 +787,7 @@ func SuccessWithMessage(c *gin.Context, message string) {
 func ErrorWithCode(c *gin.Context, code ErrorCode, message string) {
 	c.JSON(http.StatusOK, errorResponse{
 		Code:    code,
-		Message: message,
+		Message: responseMessage(code, message),
 	})
 }
 
@@ -737,7 +795,7 @@ func ResponseWithCodeData(c *gin.Context, code ErrorCode, data interface{}, mess
 	c.JSON(http.StatusOK, response{
 		Code:    code,
 		Data:    data,
-		Message: message,
+		Message: responseMessage(code, message),
 	})
 }
 
@@ -745,7 +803,7 @@ func ResponseWithHttpCodeData(c *gin.Context, httpCode int, code ErrorCode, data
 	c.JSON(httpCode, response{
 		Code:    code,
 		Data:    data,
-		Message: message,
+		Message: responseMessage(code, message),
 	})
 }
 

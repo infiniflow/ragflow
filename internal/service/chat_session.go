@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/storage"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
+	"ragflow/internal/utility"
 )
 
 // Interfaces for testability — satisfied by the concrete DAO/pipeline types.
@@ -47,8 +49,13 @@ type chatSessionStore interface {
 	Create(ctx context.Context, db *gorm.DB, conv *entity.ChatSession) error
 	UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error
 	DeleteByID(ctx context.Context, db *gorm.DB, id string) error
-	ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error)
+	ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, int64, error)
 	GetDialogByID(ctx context.Context, db *gorm.DB, chatID string) (*entity.Chat, error)
+}
+
+type chatSessionPermissionChecker interface {
+	resourceScopeChecker
+	FilterResources(context.Context, permission.Subject, []permission.ResourceRef, permission.Operation) ([]permission.ResourceRef, error)
 }
 
 type chatPipelineRunner interface {
@@ -81,7 +88,7 @@ type chunkPagerankAdjuster interface {
 // The RAG pipeline is delegated to ChatPipelineService.
 type ChatSessionService struct {
 	chatSessionDAO       chatSessionStore
-	permissionChecker    resourceScopeChecker
+	permissionChecker    chatSessionPermissionChecker
 	pipeline             chatPipelineRunner
 	modelFactory         chatModelInfoResolver
 	chunkFeedbackApplier chunkFeedbackApplier
@@ -106,6 +113,7 @@ type ListChatSessionsRequest struct {
 // ListChatSessionsResponse list chat sessions response
 type ListChatSessionsResponse struct {
 	Sessions []*entity.ChatSession
+	Total    int64
 }
 
 type ChatSessionPayload struct {
@@ -124,24 +132,45 @@ type ChatSessionPayload struct {
 
 // ListChatSessions lists chat sessions for a dialog
 func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, includeHistory ...bool) (*ListChatSessionsResponse, error) {
-	sessionIDs, err := accessibleChatSessionIDs(ctx, s.permissionChecker, userID, chatID, permission.OperationRead)
-	if err != nil {
+	if err := checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationRead); err != nil {
 		_, normalizedErr := normalizeChatPermissionError(err)
 		return nil, normalizedErr
 	}
 
-	// items_per_page == 0 returns an empty list (mirrors Python's list_sessions).
-	if pageSize == 0 {
-		return &ListChatSessionsResponse{Sessions: []*entity.ChatSession{}}, nil
-	}
-
 	// List chat sessions
-	sessions, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, sessionIDs, sessionID, name, terms, page, pageSize, includeHistory...)
+	sessions, total, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, nil, sessionID, name, terms, page, pageSize, includeHistory...)
 	if err != nil {
 		return nil, err
 	}
+	if len(sessions) == 0 {
+		return &ListChatSessionsResponse{Sessions: sessions, Total: total}, nil
+	}
 
-	return &ListChatSessionsResponse{Sessions: sessions}, nil
+	checker := s.permissionChecker
+	if checker == nil {
+		checker = permission.NewDatabaseChecker(dao.DB)
+	}
+	refs := make([]permission.ResourceRef, 0, len(sessions))
+	for _, session := range sessions {
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: session.ID})
+	}
+	accessible, err := checker.FilterResources(ctx, permission.Subject{UserID: userID}, refs, permission.OperationRead)
+	if err != nil {
+		_, normalizedErr := normalizeChatPermissionError(err)
+		return nil, normalizedErr
+	}
+	allowedIDs := make(map[string]bool, len(accessible))
+	for _, ref := range accessible {
+		allowedIDs[ref.ID] = true
+	}
+	filtered := make([]*entity.ChatSession, 0, len(accessible))
+	for _, session := range sessions {
+		if allowedIDs[session.ID] {
+			filtered = append(filtered, session)
+		}
+	}
+
+	return &ListChatSessionsResponse{Sessions: filtered, Total: total}, nil
 }
 
 // GetSession returns one chat session after ownership validation.
@@ -262,7 +291,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 			if len(sessionIDs) == 0 {
 				return map[string]interface{}{}, "success", common.CodeSuccess, nil
 			}
-			sessions, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, sessionIDs, "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 0, -1, false)
+			sessions, _, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, sessionIDs, "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 0, -1, false)
 			if err != nil {
 				return nil, "", common.CodeServerError, err
 			}
@@ -1250,11 +1279,14 @@ func (s *ChatSessionService) ChatCompletions(
 		dialog.LLMID = llmID
 		dialog.LLMSetting = genConfig
 	} else if dialog.LLMID == "" {
-		tenant, err := dao.NewTenantDAO().GetByID(ctx, dao.DB, dialog.TenantID)
-		if err != nil || tenant.LLMID == "" {
+		membership, err := NewTenantService().defaultModelMembership(ctx, userID, dialog.TenantID)
+		if err != nil || membership.LLMID == "" {
 			return fail(errors.New("no default chat model for tenant"))
 		}
-		dialog.LLMID = tenant.LLMID
+		dialog.LLMID = membership.LLMID
+		if membership.TenantLLMID != nil && *membership.TenantLLMID != "" {
+			dialog.TenantLLMID = membership.TenantLLMID
+		}
 		if dialog.LLMSetting == nil {
 			dialog.LLMSetting = entity.JSONMap{}
 		}
@@ -1322,6 +1354,7 @@ func (s *ChatSessionService) ChatCompletions(
 					// through to the DAO.
 					s.compactSessionAssistant(session, result.Answer, messageID)
 					finalLegacyAnswer = s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
+					attachTurnCost(finalLegacyAnswer, result)
 					continue
 				}
 				if result.StartToThink {
@@ -1379,6 +1412,7 @@ func (s *ChatSessionService) ChatCompletions(
 							ans["created_at"] = result.CreatedAt
 						}
 						ans["final"] = true
+						attachTurnCost(ans, result)
 						if chatID != "" {
 							ans["chat_id"] = chatID
 						}
@@ -1442,11 +1476,11 @@ func (s *ChatSessionService) ChatCompletions(
 			finalLegacyAnswer["answer"] = fullAnswer.String()
 			delete(finalLegacyAnswer, "start_to_think")
 			delete(finalLegacyAnswer, "end_to_think")
-			finalChunk := sseWrapper{Code: 0, Message: "", Data: sanitizeJSONFloats(finalLegacyAnswer)}
+			finalChunk := sseWrapper{Code: 0, Message: "success", Data: sanitizeJSONFloats(finalLegacyAnswer)}
 			sendOrCancel(fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(finalChunk)))
 		}
 
-		wrapper := sseWrapper{Code: 0, Message: "", Data: true}
+		wrapper := sseWrapper{Code: 0, Message: "success", Data: true}
 		sendOrCancel(fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(wrapper)))
 	} else {
 		ans := accumulateNonStreamAnswer(resultChan)
@@ -1487,6 +1521,8 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 	var audioBinary interface{}
 	var prompt string
 	var createdAt float64
+	var usage *ChatTurnUsage
+	var elapsedMs float64
 	for result := range resultChan {
 		if result.Final {
 			// The final event carries the complete (decorated) answer;
@@ -1498,6 +1534,8 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 			audioBinary = result.AudioBinary
 			prompt = result.Prompt
 			createdAt = result.CreatedAt
+			usage = result.Usage
+			elapsedMs = result.ElapsedMs
 		} else if result.Answer != "" {
 			answer.WriteString(result.Answer)
 		}
@@ -1516,6 +1554,14 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 	}
 	if createdAt != 0 {
 		ans["created_at"] = createdAt
+	}
+	// The SSE final event carries the turn's cost; the non-stream reply has to
+	// carry it too, or a caller comparing runs has no way to read it at all.
+	if usage != nil {
+		ans["usage"] = usage
+	}
+	if elapsedMs > 0 {
+		ans["elapsed_ms"] = elapsedMs
 	}
 	return ans
 }
@@ -1539,6 +1585,9 @@ func (s *ChatSessionService) normalizeCompletionMessages(
 	lastMessage := messages[len(messages)-1]
 	if lastMessage["role"] != "user" {
 		return nil, "", errors.New("the last content of this conversation is not from user")
+	}
+	if _, err := NormalizeOpenAIMessageContent(lastMessage["content"]); err != nil {
+		return nil, "", err
 	}
 	if storeHistoryMessages {
 		messages = messages[len(messages)-1:]
@@ -1608,7 +1657,9 @@ func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, cha
 }
 
 // GetOrCreateForChannel finds or creates the deterministic conversation for one external chat.
-func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID, channelID, chatID string) (*entity.ChatSession, error) {
+// firstQuery and channelName only affect the display name, and only when the
+// conversation is created here; an existing conversation keeps its name.
+func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID, channelID, chatID, firstQuery, channelName string) (*entity.ChatSession, error) {
 	sessionID := channelSessionID(dialogID, channelID, chatID)
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
 	if err == nil {
@@ -1620,7 +1671,10 @@ func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID
 
 	messagesJSON, _ := json.Marshal([]map[string]interface{}{})
 	referenceJSON, _ := json.Marshal([]interface{}{})
-	name := fmt.Sprintf("channel:%s:%s", channelID, chatID)
+	name := channelSessionName(firstQuery, channelName)
+	if name == "" {
+		name = fmt.Sprintf("channel:%s:%s", channelID, chatID)
+	}
 	session = &entity.ChatSession{
 		ID:        sessionID,
 		DialogID:  dialogID,
@@ -1642,6 +1696,47 @@ func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID
 func channelSessionID(dialogID, channelID, chatID string) string {
 	sum := sha256.Sum256([]byte(dialogID + ":" + channelID + ":" + chatID))
 	return fmt.Sprintf("%x", sum[:])[:32]
+}
+
+// channelSessionNameMaxRunes matches the conversation.name column width.
+const channelSessionNameMaxRunes = 255
+
+// channelMentionMarkup matches platform mention markup that carries an opaque
+// ID instead of readable text, such as Discord's <@123>, <@!123>, <@&123>, and
+// <#123>.
+var channelMentionMarkup = regexp.MustCompile(`<(?:@[!&]?|#)\d+>`)
+
+// channelSessionName builds the display name for a newly created channel
+// session: the chat-channel name in parentheses, then the first user query,
+// as in "(channel: cc) who is Lin Daiyu". Mention markup is removed from the query,
+// so a bot mention never shows up in the name. It returns the empty string
+// when both inputs are blank, so the caller can fall back to the deterministic
+// ID-based name.
+func channelSessionName(firstQuery, channelName string) string {
+	query := normalizeChannelSessionNameText(channelMentionMarkup.ReplaceAllString(firstQuery, " "))
+	channel := normalizeChannelSessionNameText(channelName)
+	if channel == "" {
+		return utility.TruncateRunes(query, channelSessionNameMaxRunes)
+	}
+
+	prefix := "(channel: " + channel + ") "
+	if query == "" {
+		return utility.TruncateRunes(strings.TrimSpace(prefix), channelSessionNameMaxRunes)
+	}
+	prefixRunes := []rune(prefix)
+	if len(prefixRunes) >= channelSessionNameMaxRunes {
+		return string(prefixRunes[:channelSessionNameMaxRunes])
+	}
+	if room := channelSessionNameMaxRunes - len(prefixRunes); len([]rune(query)) > room {
+		query = utility.TruncateRunes(query, room)
+	}
+	return prefix + query
+}
+
+// normalizeChannelSessionNameText collapses every whitespace run, including
+// newlines, into one space and trims the ends.
+func normalizeChannelSessionNameText(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // appendSessionMessage appends the last user message to the session's message history.
@@ -1791,11 +1886,16 @@ type sseAnswerChunk struct {
 	StartToThink bool                   `json:"start_to_think,omitempty"`
 	EndToThink   bool                   `json:"end_to_think,omitempty"`
 	ThinkEvent   interface{}            `json:"think_event,omitempty"`
+	// What the turn cost. Only the final event carries it: a delta is partial
+	// and would need merging, and a zero total would render as "0 tokens",
+	// which reads as a measurement rather than an absence.
+	Usage     *ChatTurnUsage `json:"usage,omitempty"`
+	ElapsedMs float64        `json:"elapsed_ms,omitempty"`
 }
 
-// sseWrapper wraps the SSE response with deterministic field order matching Python:
+// sseWrapper wraps the SSE response with deterministic field order:
 //
-//	{"code": 0, "message": "", "data": ...}
+//	{"code": 0, "message": "success", "data": ...}
 type sseWrapper struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`
@@ -1901,8 +2001,18 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 	startToThink, _ := ans["start_to_think"].(bool)
 	endToThink, _ := ans["end_to_think"].(bool)
 
+	// These two are built from the map rather than from a struct field, so a
+	// value that is absent stays absent.
+	var usage *ChatTurnUsage
+	if u, ok := ans["usage"].(*ChatTurnUsage); ok {
+		usage = u
+	}
+	elapsedMs, _ := ans["elapsed_ms"].(float64)
+
 	chunk := sseAnswerChunk{
 		Answer:       answer,
+		Usage:        usage,
+		ElapsedMs:    elapsedMs,
 		Reference:    ref,
 		AudioBinary:  ans["audio_binary"],
 		Prompt:       prompt,
@@ -1915,8 +2025,26 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 		EndToThink:   endToThink,
 		ThinkEvent:   ans["think_event"],
 	}
-	wrapper := sseWrapper{Code: 0, Message: "", Data: chunk}
+	wrapper := sseWrapper{Code: 0, Message: "success", Data: chunk}
 	return marshalJSONWithSpaces(wrapper)
+}
+
+// attachTurnCost copies a turn's cost onto an SSE payload.
+//
+// The payload is assembled field by field rather than marshalled from
+// AsyncChatResult, so a field added to the result does not reach the wire on its
+// own — it has to be copied here. Only the final event carries it; the deltas
+// are partial and would each need merging.
+func attachTurnCost(payload map[string]interface{}, result AsyncChatResult) {
+	if payload == nil {
+		return
+	}
+	if result.Usage != nil {
+		payload["usage"] = result.Usage
+	}
+	if result.ElapsedMs > 0 {
+		payload["elapsed_ms"] = result.ElapsedMs
+	}
 }
 
 func (s *ChatSessionService) structureAnswer(session *entity.ChatSession, answer string, messageID, conversationID string, reference []interface{}) map[string]interface{} {

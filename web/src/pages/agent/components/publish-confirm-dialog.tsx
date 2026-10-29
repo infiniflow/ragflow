@@ -1,13 +1,5 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import { Button, ButtonLoading } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { ButtonLoading } from '@/components/ui/button';
 import { IFlow } from '@/interfaces/database/agent';
 import { IDataset } from '@/interfaces/database/dataset';
 import { formatDate } from '@/utils/date';
@@ -15,14 +7,12 @@ import { BookPlus } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useIsPipeline } from '../hooks/use-is-pipeline';
+import { AliasFormDialog } from './alias-form-dialog';
 
 interface PublishConfirmDialogProps {
   agentDetail: IFlow;
   loading: boolean;
-  onPublish: () => void;
-  // Returning true blocks the dialog from opening (e.g. unresolved canvas
-  // checklist issues) — the caller is responsible for the user-facing notice.
-  onBeforeOpen?: () => boolean;
+  onPublish: (alias?: string) => void;
 }
 
 function AssociatedDataset({
@@ -66,7 +56,6 @@ export function PublishConfirmDialog({
   agentDetail,
   loading,
   onPublish,
-  onBeforeOpen,
 }: PublishConfirmDialogProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -84,26 +73,12 @@ export function PublishConfirmDialog({
     return agentDetail?.datasets || [];
   }, [agentDetail?.datasets]);
 
-  const handleConfirmPublish = useCallback(() => {
-    onPublish();
-    setOpen(false);
-  }, [onPublish]);
-
-  // A plain button instead of DialogTrigger: Radix opens the dialog on click
-  // regardless of preventDefault, so the guard has to own `setOpen`.
   const handleTriggerClick = useCallback(() => {
-    if (onBeforeOpen?.()) {
-      return;
-    }
     setOpen(true);
-  }, [onBeforeOpen]);
-
-  if (isPipeline) {
-    return null;
-  }
+  }, []);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <>
       <ButtonLoading
         variant={'secondary'}
         loading={loading}
@@ -111,54 +86,41 @@ export function PublishConfirmDialog({
       >
         <BookPlus /> {t('flow.release')}
       </ButtonLoading>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('flow.confirmPublish')}</DialogTitle>
-        </DialogHeader>
-        <DialogDescription>
-          <div className="space-y-3">
-            <div className="text-sm text-text-secondary">
-              {t(
-                `flow.${isPipeline ? 'publishIngestionPipeline' : 'publishAgent'}`,
-              )}
-            </div>
-
-            <section className="bg-bg-input px-2.5 py-4 rounded border border-border-default">
-              <div className="flex gap-2.5 items-center">
-                <RAGFlowAvatar
-                  avatar={agentDetail.avatar}
-                  name={agentDetail.title}
-                  className="size-8"
-                />
-                <span className="text-text-primary text-lg">
-                  {agentDetail.title}
-                </span>
-              </div>
-
-              {isPipeline && (
-                <AssociatedDataset
-                  associatedDatasets={associatedDatasets}
-                ></AssociatedDataset>
-              )}
-            </section>
-
-            <div className="flex flex-col gap-2">
-              {lastPublished && (
-                <div className="flex items-center text-sm text-text-secondary gap-2">
-                  <span>{t('flow.lastPublished')}:</span>
-                  <span>{lastPublished}</span>
-                </div>
-              )}
-            </div>
+      <AliasFormDialog
+        open={open}
+        onOpenChange={setOpen}
+        title={t('flow.confirmPublish')}
+        description={t(
+          `flow.${isPipeline ? 'publishIngestionPipeline' : 'publishAgent'}`,
+        )}
+        onSubmit={onPublish}
+      >
+        <section className="bg-bg-input px-2.5 py-4 rounded border border-border-default">
+          <div className="flex gap-2.5 items-center">
+            <RAGFlowAvatar
+              avatar={agentDetail.avatar}
+              name={agentDetail.title}
+              className="size-8"
+            />
+            <span className="text-text-primary text-lg">
+              {agentDetail.title}
+            </span>
           </div>
-        </DialogDescription>
-        <DialogFooter className="gap-2 mt-4">
-          <Button variant="outline" onClick={() => setOpen(false)}>
-            {t('common.cancel')}
-          </Button>
-          <Button onClick={handleConfirmPublish}>{t('common.confirm')}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+
+          {isPipeline && (
+            <AssociatedDataset
+              associatedDatasets={associatedDatasets}
+            ></AssociatedDataset>
+          )}
+        </section>
+
+        {lastPublished && (
+          <div className="flex items-center text-sm text-text-secondary gap-2">
+            <span>{t('flow.lastPublished')}:</span>
+            <span>{lastPublished}</span>
+          </div>
+        )}
+      </AliasFormDialog>
+    </>
   );
 }

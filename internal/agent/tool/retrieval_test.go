@@ -143,6 +143,28 @@ func TestAgenticSearchDisablesDenseFallback(t *testing.T) {
 	}
 }
 
+// TestRetrievalToolDisablesDenseFallback pins the agentic/human split for the
+// retrieval tool itself. An agent reads these chunks as evidence, so there is
+// no dense-only rescue: it would hand the model rows the query's own words
+// never matched. Only human-facing retrieval keeps that rescue on.
+func TestRetrievalToolDisablesDenseFallback(t *testing.T) {
+	prev := GetRetrievalService()
+	svc := &capturingRetrievalService{}
+	SetRetrievalService(svc)
+	t.Cleanup(func() { SetRetrievalService(prev) })
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(t.Context(), state)
+
+	if _, err := NewRetrievalTool().InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-1"]}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if svc.req.AllowDenseFallback == nil || *svc.req.AllowDenseFallback {
+		t.Fatal("the agent retrieval tool must disable the dense fallback")
+	}
+}
+
 func TestAgenticSearchExcludesCompiledResults(t *testing.T) {
 	previous := GetRetrievalService()
 	service := &capturingRetrievalService{}
@@ -253,7 +275,6 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 		"similarity_threshold":       0.42,
 		"rerank_id":                  "rerank@provider",
 		"cross_languages":            []any{"English", "Chinese"},
-		"toc_enhance":                true,
 		"meta_data_filter":           map[string]any{"method": "manual"},
 	})
 	if err != nil {
@@ -291,7 +312,7 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 	if len(svc.req.CrossLanguages) != 2 || svc.req.CrossLanguages[1] != "Chinese" {
 		t.Fatalf("CrossLanguages=%#v", svc.req.CrossLanguages)
 	}
-	if !svc.req.TOCEnhance || svc.req.MetaDataFilter["method"] != "manual" {
+	if svc.req.MetaDataFilter["method"] != "manual" {
 		t.Fatalf("enhancement request=%#v", svc.req)
 	}
 }
@@ -327,7 +348,6 @@ func TestRetrieval_ParsesEnhancementNodeParams(t *testing.T) {
 
 	built, err := BuildByName("retrieval", map[string]any{
 		"rerank_id":        "rerank-1",
-		"toc_enhance":      true,
 		"meta_data_filter": map[string]any{"method": "manual"},
 		"empty_response":   "empty",
 		"retrieval_from":   "dataset",
@@ -342,7 +362,7 @@ func TestRetrieval_ParsesEnhancementNodeParams(t *testing.T) {
 	if !ok {
 		t.Fatalf("BuildByName(retrieval) returned %T, want *RetrievalTool", built)
 	}
-	if rt.defaults.RerankID != "rerank-1" || !rt.defaults.TOCEnhance {
+	if rt.defaults.RerankID != "rerank-1" {
 		t.Fatalf("enhancement defaults were not parsed: %#v", rt.defaults)
 	}
 	if len(rt.defaults.CrossLanguages) != 1 || rt.defaults.CrossLanguages[0] != "English" {

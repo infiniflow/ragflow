@@ -10,6 +10,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
@@ -88,9 +89,9 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 			continue
 		}
 
-		parserID, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, merged)
-		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), parserID, parserConfig, "local", int64(len(blob)), blob)
-		if err = s.InsertDocument(doc); err != nil {
+		selection, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, merged)
+		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), selection, parserConfig, "local", int64(len(blob)), blob)
+		if err = s.InsertDocument(ctx, doc); err != nil {
 			// Roll back the orphaned blob so a failed insert doesn't leak storage.
 			rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
 			if rmErr != nil {
@@ -133,8 +134,8 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 
 	// Virtual documents have no file type to route on, so they keep the
 	// dataset parser (mirrors Python's _upload_empty_document).
-	doc := s.newDatasetDocument(kb, tenantID, name, "", "virtual", kb.ParserID, kb.ParserConfig, "local", 0, nil)
-	if err = s.InsertDocument(doc); err != nil {
+	doc := s.newDatasetDocument(kb, tenantID, name, "", "virtual", service.CurrentSelection(kb.ParserID, kb.PipelineID), kb.ParserConfig, "local", 0, nil)
+	if err = s.InsertDocument(ctx, doc); err != nil {
 		return nil, common.CodeServerError, err
 	}
 	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
@@ -241,7 +242,7 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 		return nil, common.CodeServerError, err
 	}
 
-	blob, headers, _, err := utility.FetchRemoteFileSafely(ctx, url, maxUploadDocSize)
+	blob, headers, _, err := utility.FetchRemoteFileSafely(ctx, url, common.GetMaxDocumentUploadBytes())
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -271,9 +272,9 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 		return nil, common.CodeServerError, err
 	}
 
-	parserID, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, kb.ParserConfig)
-	doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), parserID, parserConfig, "web", int64(len(blob)), blob)
-	if err = s.InsertDocument(doc); err != nil {
+	selection, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, kb.ParserConfig)
+	doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), selection, parserConfig, "web", int64(len(blob)), blob)
+	if err = s.InsertDocument(ctx, doc); err != nil {
 		rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
 		if rmErr != nil {
 			common.Warn(fmt.Sprintf("UploadWebDocument: failed to insert document, remove blob %s/%s: %v", kb.ID, location, rmErr))
@@ -308,9 +309,9 @@ func normalizeWebDocumentName(name, contentType string, blob []byte) string {
 }
 
 // newDatasetDocument builds a Document row for an upload, deriving suffix and
-// content hash. parserID/parserConfig are resolved by the caller (see
+// content hash. selection/parserConfig are resolved by the caller (see
 // resolveDocumentParser); blob may be nil for the empty/virtual document.
-func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID, filename, location, filetype, parserID string, parserConfig entity.JSONMap, src string, size int64, blob []byte) *entity.Document {
+func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID, filename, location, filetype string, selection *service.ParserSelection, parserConfig entity.JSONMap, src string, size int64, blob []byte) *entity.Document {
 	docID := common.GenerateToken()
 	parserConfig = cloneParserConfigForDocument(parserConfig)
 	status := "1"
@@ -318,24 +319,23 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 	if i := strings.LastIndex(filename, "."); i >= 0 {
 		suffix = filename[i+1:]
 	}
-	if kb.PipelineID != nil {
-		parserID = "" // canvas pipeline mode — parser_id not applicable
-	}
+	parserID, pipelineID := parserSelectionColumns(selection)
 	loc := location
 	doc := &entity.Document{
-		ID:           docID,
-		KbID:         kb.ID,
-		ParserID:     parserID,
-		PipelineID:   kb.PipelineID,
-		ParserConfig: parserConfig,
-		CreatedBy:    tenantID,
-		Type:         filetype,
-		SourceType:   src,
-		Name:         &filename,
-		Location:     &loc,
-		Size:         size,
-		Suffix:       suffix,
-		Status:       &status,
+		ID:                docID,
+		KbID:              kb.ID,
+		ParserID:          parserID,
+		PipelineID:        pipelineID,
+		PipelineVersionID: kb.PipelineVersionID,
+		ParserConfig:      parserConfig,
+		CreatedBy:         tenantID,
+		Type:              filetype,
+		SourceType:        src,
+		Name:              &filename,
+		Location:          &loc,
+		Size:              size,
+		Suffix:            suffix,
+		Status:            &status,
 	}
 	if blob != nil {
 		hash := contentHashHex(blob)
@@ -385,20 +385,21 @@ func docToRawMap(doc *entity.Document) map[string]interface{} {
 }
 
 func readFileHeaderBytes(fh *multipart.FileHeader) ([]byte, error) {
-	if fh.Size > maxUploadDocSize {
-		return nil, fmt.Errorf("file exceeds the maximum allowed size of %d bytes", maxUploadDocSize)
+	maxBytes := common.GetMaxDocumentUploadBytes()
+	if fh.Size > maxBytes {
+		return nil, fmt.Errorf("file exceeds the maximum allowed size of %d bytes", maxBytes)
 	}
 	src, err := fh.Open()
 	if err != nil {
 		return nil, err
 	}
 	defer src.Close()
-	blob, err := io.ReadAll(io.LimitReader(src, maxUploadDocSize+1))
+	blob, err := io.ReadAll(io.LimitReader(src, maxBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(blob) > maxUploadDocSize {
-		return nil, fmt.Errorf("file exceeds the maximum allowed size of %d bytes", maxUploadDocSize)
+	if int64(len(blob)) > maxBytes {
+		return nil, fmt.Errorf("file exceeds the maximum allowed size of %d bytes", maxBytes)
 	}
 	return blob, nil
 }

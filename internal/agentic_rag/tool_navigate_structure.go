@@ -15,16 +15,14 @@
 
 package agentic_rag
 
-// navigate_structure: drill into ONE document's compiled structure (the
+// navigate_structure: drill into documents' compiled structure (the
 // entity/relation outline built at compile time) and return a query-focused
 // <structure_navigation> outline with chunk pointers the model can feed to
 // list_chunks.
 //
-// This tool reads the compiled-structure rows directly from the doc-store and
-// drills them with a keyword-relevance beam, the documented no-vector
-// fallback. The dense-vector seed and claim-recall legs are intentionally
-// omitted; they are additive and can be layered on without changing the
-// tool's contract.
+// The structure is drilled with a keyword-relevance beam. Claim rows are NOT
+// searched here: retrieval in this package is chunk retrieval, and a chunk's
+// claims are fetched by the chunk, never by querying the claim rows.
 //
 // Typical use: call navigate_tree first to route to a document, take its
 // doc_id, then call navigate_structure with that doc_id to see where the answer
@@ -34,6 +32,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -45,14 +44,15 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/service/nav"
 )
 
 const navigateStructureToolName = "navigate_structure"
 
-const navigateStructureToolDescription = `Drill into ONE document's COMPILED STRUCTURE (the entity/relation outline built at compile time) and return a query-focused outline of where the answer sits, with chunk pointers you can pass to list_chunks to deep-read.
-CALL IT AFTER navigate_tree has routed you to a document: take a doc_id from the <tree_navigation> result and pass it as doc_id. It shows the document's internal structure (entities and how they relate) instead of scanning chunks blindly.
-Returns an XML <structure_navigation> document: one <doc> element per readable structure, each with a <structure> outline of "name (type): description [chunks: c1,c2]" lines and optional <claims_sufficient/>. Feed the chunk pointers to list_chunks (anchor_chunk_ids).
-An empty result (<structure_navigation count="0" error="...">) means this document has NO compiled structure of the requested kind - the error attribute says which: "no compiled navigation tree" (route first with navigate_tree), "no document located" (no doc_id), or "no structure" (structure absent for this kind in THAT document - fall back to grep_chunks / search_*_chunks; the verdict is per document, so the tool stays available for other documents).`
+const navigateStructureToolDescription = `Drill into documents' COMPILED STRUCTURE (the entity/relation outline built at compile time) and return a query-focused outline of where the answer sits, with chunk pointers you can pass to list_chunks to deep-read.
+Call it with just a query: it routes the query over the datasets' compiled navigation trees itself, so no prior navigate_tree call is needed. To drill ONE document the model already chose, pass the doc_id from a <tree_navigation> result; that path returns the document's internal structure (entities and how they relate).
+Returns an XML <structure_navigation> document: one <doc> element per readable structure, each with a <structure> outline of lines "- name (type): description [chunks: c1,c2]". Feed the chunk pointers to list_chunks (anchor_chunk_ids).
+An empty result (<structure_navigation count="0" error="...">) means the routed documents have NO compiled structure of the requested kind - the error attribute says which: "route first with navigate_tree" (no doc_id), or "no compiled structure for this kind" (absent in THOSE documents - fall back to grep_chunks / search_*_chunks; the verdict is per document, so the tool stays available for other documents).`
 
 // navigateStructureArgs is the JSON the model sends into InvokableRun.
 type navigateStructureArgs struct {
@@ -83,13 +83,6 @@ var (
 	shapeKwds = []string{"graph", "entity", "relation"}
 )
 
-// Empty-reason constants, mirroring the harness navigation contract.
-const (
-	navStructReasonBadArgs     = "bad_args"
-	navStructReasonNoStructure = "no_structure"
-	navStructReasonNoDoc       = "no_doc"
-)
-
 // Drill-down bounds (mirroring the harness _STRUCT_* limits).
 const (
 	structMaxDepth     = 3   // max TOC levels drilled
@@ -99,6 +92,49 @@ const (
 	structDescSnippet  = 180 // cap on a node's description snippet
 	structMaxChunks    = 4   // cap on chunk snippets returned in the outline
 )
+
+// navQueryRouteDocs bounds the documents a query-only call investigates. The
+// two-step contract (navigate_tree -> navigate_structure) is a real adoption
+// barrier: a query-only call removes it, at the cost of drilling a few routed
+// documents instead of one chosen by the model.
+const navQueryRouteDocs = 3
+
+// navStructureRoute resolves candidate doc_ids for a query when the caller
+// supplied no doc_id. It is the same navigation-tree router navigate_tree uses,
+// so a query-only call and the explicit two-step path rank documents identically.
+var navStructureRoute = func(ctx context.Context, tenantID, kbID, query string, limit int) ([][2]string, error) {
+	return nav.NewNavServiceRouter().Route(ctx, tenantID, kbID, query, nil, limit)
+}
+
+// routeDocIDsForQuery routes the query across the bound datasets and returns the
+// top doc_ids, deduped across datasets and capped at limit.
+func routeDocIDsForQuery(ctx context.Context, tenantID, query string, datasetIDs []string, limit int) []string {
+	if limit <= 0 {
+		limit = navQueryRouteDocs
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, kbID := range datasetIDs {
+		routed, err := navStructureRoute(ctx, tenantID, kbID, query, limit)
+		if err != nil {
+			common.DebugCtx(ctx, "navigate_structure: query route failed",
+				zap.String("kb_id", kbID), zap.Error(err))
+			continue
+		}
+		for _, pair := range routed {
+			did := strings.TrimSpace(pair[0])
+			if did == "" || seen[did] {
+				continue
+			}
+			seen[did] = true
+			out = append(out, did)
+			if len(out) >= limit {
+				return out
+			}
+		}
+	}
+	return out
+}
 
 // structureRel is a parent->child relation of a compiled structure hierarchy.
 type structureRel struct {
@@ -113,7 +149,6 @@ type structureNode struct {
 	nodeType       string
 	desc           string
 	sourceChunkIDs []string
-	vec            []float64
 }
 
 // chunkWithText pairs a chunk id with its text for structure snippet ranking.
@@ -122,24 +157,12 @@ type chunkWithText struct {
 	text string
 }
 
-// structureDrillout is the per-document result of the TOC drill-down.
-type structureDrillout struct {
-	outline    string
-	nodes      int
-	chunkPtrs  int
-	topScore   float64
-	chunkPaths map[string]string
-	selector   string
-}
-
-// StructureRow is one compiled-structure row: the doc-store fields the structure
+// structureRow is one compiled-structure row: the doc-store fields the structure
 // reader reads.
-type StructureRow struct {
-	CompileKwd        string
+type structureRow struct {
 	TemplateKind      string
 	KnowledgeGraphKwd string
 	Content           string
-	Vec               []float64
 }
 
 // structureReader reads a document's compiled structure rows. The production
@@ -147,13 +170,13 @@ type StructureRow struct {
 // is installed (or the engine is available) navigate_structure reports
 // EMPTY/no_structure, falling through to the text tools.
 type structureReader interface {
-	ReadStructure(ctx context.Context, tenantID, kbID, docID string) ([]StructureRow, error)
+	ReadStructure(ctx context.Context, tenantID, kbID, docID string) ([]structureRow, error)
 }
 
 var structReaderInst structureReader
 
-// SetStructureReader installs the (production or test) structure reader.
-func SetStructureReader(r structureReader) {
+// setStructureReader installs the (production or test) structure reader.
+func setStructureReader(r structureReader) {
 	structReaderInst = r
 }
 
@@ -169,7 +192,7 @@ func getStructureReader() structureReader {
 // scoped to ONE document (the tool already knows which document to drill).
 type engineStructureReader struct{}
 
-func (engineStructureReader) ReadStructure(ctx context.Context, tenantID, kbID, docID string) ([]StructureRow, error) {
+func (engineStructureReader) ReadStructure(ctx context.Context, tenantID, kbID, docID string) ([]structureRow, error) {
 	de := engine.Get()
 	if de == nil {
 		return nil, nil
@@ -177,7 +200,7 @@ func (engineStructureReader) ReadStructure(ctx context.Context, tenantID, kbID, 
 	req := &enginetypes.SearchRequest{
 		IndexNames:         []string{indexNameFor(tenantID, "")},
 		KbIDs:              []string{kbID},
-		SelectFields:       []string{"content_with_weight", "compile_kwd", "compilation_template_kind_kwd", "type_kwd", "knowledge_graph_kwd"},
+		SelectFields:       []string{"content_with_weight", "compilation_template_kind_kwd", "type_kwd", "knowledge_graph_kwd"},
 		Filter:             map[string]interface{}{"doc_id": []string{docID}, "knowledge_graph_kwd": shapeKwds},
 		Limit:              3000,
 		IncludeUnavailable: true,
@@ -186,14 +209,13 @@ func (engineStructureReader) ReadStructure(ctx context.Context, tenantID, kbID, 
 	if err != nil {
 		return nil, err
 	}
-	rows := make([]StructureRow, 0, len(res.Chunks))
+	rows := make([]structureRow, 0, len(res.Chunks))
 	for _, row := range res.Chunks {
 		kg, _ := row["type_kwd"].(string)
 		if kg == "" {
 			kg, _ = row["knowledge_graph_kwd"].(string)
 		}
-		sr := StructureRow{
-			CompileKwd:        fmt.Sprint(row["compile_kwd"]),
+		sr := structureRow{
 			TemplateKind:      fmt.Sprint(row["compilation_template_kind_kwd"]),
 			KnowledgeGraphKwd: kg,
 			Content:           fmt.Sprint(row["content_with_weight"]),
@@ -201,6 +223,34 @@ func (engineStructureReader) ReadStructure(ctx context.Context, tenantID, kbID, 
 		rows = append(rows, sr)
 	}
 	return rows, nil
+}
+
+// navStringList coerces a doc-store column into a string slice: engines return
+// []string, []interface{} or a bare string for the same field.
+func navStringList(v any) []string {
+	switch x := v.(type) {
+	case []string:
+		var out []string
+		for _, s := range x {
+			if s = strings.TrimSpace(s); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case []any:
+		var out []string
+		for _, item := range x {
+			if s := strings.TrimSpace(stringFromAny(item)); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case string:
+		if s := strings.TrimSpace(x); s != "" {
+			return []string{s}
+		}
+	}
+	return nil
 }
 
 // indexNameFor resolves the document/structure search index: the tenant's
@@ -224,22 +274,11 @@ func normalizeKindKey(kind string) string {
 	return strings.ToLower(kind)
 }
 
-func normalizeKind(row map[string]interface{}) string {
-	return normalizeKindKey(compilationKind(row))
-}
-
-func compilationKind(row map[string]interface{}) string {
-	if v, ok := row["compilation_template_kind_kwd"].(string); ok && v != "" {
-		return v
-	}
-	return fmt.Sprint(row["knowledge_graph_kwd"])
-}
-
 // rowKind derives the normalized structure kind from a compiled-structure row,
 // using its knowledge_graph_kwd (the row SHAPE: graph / entity / relation) or,
 // failing that, its compilation template kind. This is what keeps a "graph"
 // blob from being filtered out as the wrong kind.
-func rowKind(row StructureRow) string {
+func rowKind(row structureRow) string {
 	kind := row.KnowledgeGraphKwd
 	if kind == "" {
 		kind = row.TemplateKind
@@ -247,9 +286,9 @@ func rowKind(row StructureRow) string {
 	return normalizeKindKey(kind)
 }
 
-// ParseCompiledStructure merges the two row shapes (graph blob / per-entity /
+// parseCompiledStructure merges the two row shapes (graph blob / per-entity /
 // per-relation) into entities / relations, mirroring _query in navigation.py.
-func ParseCompiledStructure(rows []StructureRow, kinds []string) ([]map[string]any, []map[string]any) {
+func parseCompiledStructure(rows []structureRow, kinds []string) ([]map[string]any, []map[string]any) {
 	want := map[string]bool{}
 	for _, k := range kinds {
 		if k != "" {
@@ -269,34 +308,20 @@ func ParseCompiledStructure(rows []StructureRow, kinds []string) ([]map[string]a
 		if !ok {
 			continue
 		}
-		attachVec := func(list []map[string]any) {
-			if len(row.Vec) == 0 {
-				return
-			}
-			for _, m := range list {
-				m["_vec"] = row.Vec
-			}
-		}
 		switch row.KnowledgeGraphKwd {
 		case "graph":
-			es := objectList(graph["entities"])
-			rs := objectList(graph["relations"])
-			attachVec(es)
-			attachVec(rs)
-			entities = append(entities, es...)
-			relations = append(relations, rs...)
+			entities = append(entities, objectList(graph["entities"])...)
+			relations = append(relations, objectList(graph["relations"])...)
 		case "entity":
-			attachVec([]map[string]any{graph})
 			entities = append(entities, graph)
 		case "relation":
-			attachVec([]map[string]any{graph})
 			relations = append(relations, graph)
 		}
 	}
 	return entities, relations
 }
 
-// structureGraphFromRaw maps what ParseCompiledStructure returns onto the typed
+// structureGraphFromRaw maps what parseCompiledStructure returns onto the typed
 // nodes/relations the drill-down consumes (entity -> node conversion included so
 // the drill-down only ever sees structureNode).
 func structureGraphFromRaw(rawEntities, rawRels []map[string]any) ([]structureNode, []structureRel) {
@@ -309,9 +334,6 @@ func structureGraphFromRaw(rawEntities, rawRels []map[string]any) ([]structureNo
 		typ, _ := e["type"].(string)
 		desc, _ := e["description"].(string)
 		n := structureNode{name: name, nodeType: typ, desc: desc}
-		if v, ok := e["_vec"].([]float64); ok {
-			n.vec = v
-		}
 		if ids, ok := e["source_chunk_ids"].([]interface{}); ok {
 			for _, id := range ids {
 				if s, ok := id.(string); ok && s != "" {
@@ -378,55 +400,6 @@ func nodeRelevance(terms []string, name, desc string) int {
 	return n
 }
 
-// nodeScore mirrors _node_score: cosine when a query vector and the node
-// embedding both exist, else keyword relevance. This port leaves nodes
-// vector-less, so it always uses keyword relevance.
-func nodeScore(qvec []float64, terms []string, n structureNode) float64 {
-	if len(qvec) > 0 && len(n.vec) > 0 {
-		return cosine(qvec, n.vec)
-	}
-	return float64(nodeRelevance(terms, n.name, n.desc))
-}
-
-func cosine(a, b []float64) float64 {
-	if len(a) == 0 || len(b) == 0 || len(a) != len(b) {
-		return 0
-	}
-	var dot, na, nb float64
-	for i := range a {
-		dot += a[i] * b[i]
-		na += a[i] * a[i]
-		nb += b[i] * b[i]
-	}
-	if na == 0 || nb == 0 {
-		return 0
-	}
-	return dot / (sqrt(na) * sqrt(nb))
-}
-
-func sqrt(x float64) float64 {
-	if x < 0 {
-		return 0
-	}
-	r := x
-	for i := 0; i < 16; i++ {
-		if r == 0 {
-			break
-		}
-		r = 0.5 * (r + x/r)
-	}
-	return r
-}
-
-func sliceContains(s []string, v string) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
-}
-
 // buildTocTree mirrors _build_toc_tree: a name->node map, the parent->children
 // map, the child->parent map (single parent, last-wins) and the root names.
 func buildTocTree(nodes []structureNode, rels []structureRel) (map[string]structureNode, map[string][]string, map[string]string, []string) {
@@ -487,14 +460,12 @@ func chunkPtrs(ids []string) string {
 	}
 	var seen []string
 	for _, c := range ids {
-		if c == "" {
+		if c == "" || slices.Contains(seen, c) {
 			continue
 		}
-		if !sliceContains(seen, c) {
-			seen = append(seen, c)
-			if len(seen) >= 8 {
-				break
-			}
+		seen = append(seen, c)
+		if len(seen) >= 8 {
+			break
 		}
 	}
 	return strings.Join(seen, ",")
@@ -509,10 +480,7 @@ func collectChunkIDs(nodes []structureNode, capN int) []string {
 	var out []string
 	for _, n := range nodes {
 		for _, c := range n.sourceChunkIDs {
-			if c == "" {
-				continue
-			}
-			if sliceContains(out, c) {
+			if c == "" || slices.Contains(out, c) {
 				continue
 			}
 			out = append(out, c)
@@ -535,34 +503,17 @@ func sortedKeptNames(names map[string]bool) []string {
 	return out
 }
 
-// drillWithAncestors pulls the ancestors of names into the kept set so a path
-// renders as root -> ... -> node.
-func drillWithAncestors(names map[string]bool, parents map[string]string) map[string]bool {
-	for name := range names {
-		cur := parents[name]
-		guard := 0
-		for cur != "" && !names[cur] && guard < structMaxDepth {
-			names[cur] = true
-			cur = parents[cur]
-			guard++
-		}
-	}
-	return names
-}
-
-// drillKeptNodes mirrors _drill_kept_nodes: vector-beam BFS descent from the TOC
-// roots, keeping top-K children per level by keyword relevance (this port has no
-// node vectors, so it always uses the keyword path), returning the kept nodes,
-// the single-parent map, the kept-name set and the overall best score.
-func drillKeptNodes(qvec []float64, terms []string, nodes []structureNode, rels []structureRel) ([]structureNode, map[string]string, map[string]bool, float64) {
+// drillKeptNodes descends from the TOC roots, keeping top-K children per level by
+// keyword relevance, and returns the kept nodes, the single-parent map and the
+// kept-name set.
+func drillKeptNodes(terms []string, nodes []structureNode, rels []structureRel) ([]structureNode, map[string]string, map[string]bool) {
 	byName, children, parents, roots := buildTocTree(nodes, rels)
 	if len(roots) == 0 {
-		return nil, nil, nil, 0.0
+		return nil, nil, nil
 	}
 	frontier := roots
 	keptNames := map[string]bool{}
 	depth := 0
-	bestOverall := 0.0
 	for len(frontier) > 0 && depth <= structMaxDepth {
 		type scored struct {
 			score float64
@@ -571,20 +522,13 @@ func drillKeptNodes(qvec []float64, terms []string, nodes []structureNode, rels 
 		var scoredList []scored
 		for _, n := range frontier {
 			if e, ok := byName[n]; ok {
-				scoredList = append(scoredList, scored{nodeScore(qvec, terms, e), n})
+				scoredList = append(scoredList, scored{float64(nodeRelevance(terms, e.name, e.desc)), n})
 			}
 		}
 		if len(scoredList) == 0 {
 			break
 		}
 		sort.SliceStable(scoredList, func(i, j int) bool { return scoredList[i].score > scoredList[j].score })
-		best := scoredList[0].score
-		if best > bestOverall {
-			bestOverall = best
-		}
-		if len(qvec) == 0 && best < float64(structRelevanceMin) {
-			break
-		}
 		var top []scored
 		for _, s := range scoredList {
 			if s.score >= float64(structRelevanceMin) {
@@ -599,14 +543,13 @@ func drillKeptNodes(qvec []float64, terms []string, nodes []structureNode, rels 
 		}
 		var next []string
 		for _, s := range top {
-			if !keptNames[s.name] {
-				keptNames[s.name] = true
-			}
+			keptNames[s.name] = true
 			next = append(next, children[s.name]...)
 		}
 		frontier = next
 		depth++
 	}
+	// Ancestors of a kept node are pulled in so a path renders root -> node.
 	for name := range keptNames {
 		cur := parents[name]
 		guard := 0
@@ -622,21 +565,7 @@ func drillKeptNodes(qvec []float64, terms []string, nodes []structureNode, rels 
 			kept = append(kept, e)
 		}
 	}
-	return kept, parents, keptNames, bestOverall
-}
-
-// outlineStats mirrors _outline_stats: the entity / chunk-pointer counts for the
-// flat fallback outline (no drill happened => top_score 0).
-func outlineStats(nodes []structureNode) (nodeCount, ptrCount int) {
-	count := len(nodes)
-	if count > structMaxNodes {
-		count = structMaxNodes
-	}
-	ptrs := 0
-	for _, n := range nodes[:count] {
-		ptrs += len(collectChunkIDs([]structureNode{n}, 32))
-	}
-	return count, ptrs
+	return kept, parents, keptNames
 }
 
 // navTypeOr returns a node type, defaulting to "other" (a missing key reads as
@@ -652,7 +581,7 @@ func navTypeOr(t string) string {
 func navOutlineLine(indent, name, nodeType, desc string, chunks []string) string {
 	line := indent + "- " + name + " (" + navTypeOr(nodeType) + ")"
 	if desc != "" {
-		line += ": " + Snippet(desc, structDescSnippet)
+		line += ": " + snippetRunes(desc, structDescSnippet)
 	}
 	if c := chunkPtrs(chunks); c != "" {
 		line += " [chunks: " + c + "]"
@@ -684,26 +613,18 @@ func renderOutline(nodes []structureNode, rels []structureRel) string {
 	return strings.Join(lines, "\n")
 }
 
-// renderTocDrilldown mirrors _render_toc_drilldown's flat + beam paths: when no
-// terms/vector it falls back to the flat outline; otherwise it vector-beam
-// descends toward the query by keyword relevance. loader, when non-nil, fetches
-// chunk texts so short snippets can be appended; a nil loader skips the snippet
-// pass.
-func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rels []structureRel, loader func(ids []string) []chunkWithText) structureDrillout {
-	flat := func() structureDrillout {
-		out := renderOutline(nodes, rels)
-		n, p := outlineStats(nodes)
-		return structureDrillout{outline: out, nodes: n, chunkPtrs: p, topScore: 0.0, chunkPaths: map[string]string{}, selector: "flat"}
-	}
+// renderTocDrilldown drills a document's compiled structure toward the query: no
+// usable query terms fall back to the flat outline, otherwise the tree is
+// descended by keyword relevance. loader, when non-nil, fetches chunk texts so
+// short snippets can be appended.
+func renderTocDrilldown(query string, nodes []structureNode, rels []structureRel, loader func(ids []string) []chunkWithText) string {
 	terms := queryTerms(query)
-	if len(terms) == 0 && len(qvec) == 0 {
-		return flat()
+	if len(terms) == 0 {
+		return renderOutline(nodes, rels)
 	}
-	kept, parents, keptNames, best := drillKeptNodes(qvec, terms, nodes, rels)
+	kept, parents, keptNames := drillKeptNodes(terms, nodes, rels)
 	if len(kept) == 0 {
-		out := flat()
-		out.selector = "beam"
-		return out
+		return renderOutline(nodes, rels)
 	}
 	// depth_of: node -> number of kept ancestors (rendering indentation).
 	depthOf := map[string]int{}
@@ -715,33 +636,6 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 			cur = parents[cur]
 		}
 		depthOf[n] = d
-	}
-	chunkPaths := map[string]string{}
-	for _, e := range kept {
-		name := strings.TrimSpace(e.name)
-		if name == "" {
-			continue
-		}
-		var segs []string
-		segs = append(segs, name)
-		cur := parents[name]
-		guard := 0
-		for cur != "" && guard < structMaxDepth {
-			segs = append(segs, cur)
-			cur = parents[cur]
-			guard++
-		}
-		for i, j := 0, len(segs)-1; i < j; i, j = i+1, j-1 {
-			segs[i], segs[j] = segs[j], segs[i]
-		}
-		path := strings.Join(segs, " -> ")
-		for _, cid := range e.sourceChunkIDs {
-			if cid != "" {
-				if _, seen := chunkPaths[cid]; !seen {
-					chunkPaths[cid] = path
-				}
-			}
-		}
 	}
 	var lines []string
 	count := len(kept)
@@ -756,7 +650,7 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 		indent := strings.Repeat("  ", depthOf[name])
 		lines = append(lines, navOutlineLine(indent, name, e.nodeType, e.desc, e.sourceChunkIDs))
 	}
-	if len(kept) > 0 && loader != nil {
+	if loader != nil {
 		wanted := collectChunkIDs(kept, 32)
 		if len(wanted) > 0 {
 			chunks := loader(wanted)
@@ -769,89 +663,76 @@ func renderTocDrilldown(query string, qvec []float64, nodes []structureNode, rel
 				if text == "" {
 					continue
 				}
-				lines = append(lines, "- [chunk "+c.id+"]: "+Snippet(text, 300))
+				lines = append(lines, "- [chunk "+c.id+"]: "+snippetRunes(text, 300))
 			}
 		}
 	}
-	return structureDrillout{
-		outline:    strings.Join(lines, "\n"),
-		nodes:      len(kept),
-		chunkPtrs:  len(kept),
-		topScore:   best,
-		chunkPaths: chunkPaths,
-		selector:   "beam",
-	}
+	return strings.Join(lines, "\n")
 }
 
 // structureDocSegment renders one <doc> element (doc_id / entities / relations
 // plus the <structure> outline).
-func structureDocSegment(docID, query, kind string, rank int, nodes []structureNode, rels []structureRel, drill structureDrillout) string {
-	esc := func(s string) string { return xmlEscape(s) }
+func structureDocSegment(docID string, rank, entities, relations int, outline string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, `  <doc rank="%d" doc_id="%s" entities="%d" relations="%d">`, rank, esc(docID), len(nodes), len(rels))
-	if drill.outline != "" {
-		b.WriteString("\n    <structure>" + esc(drill.outline) + "</structure>")
+	fmt.Fprintf(&b, `  <doc rank="%d" doc_id="%s" entities="%d" relations="%d">`, rank, xmlEscape(docID), entities, relations)
+	if outline != "" {
+		b.WriteString("\n    <structure>" + xmlEscape(outline) + "</structure>")
 	}
 	b.WriteString("\n  </doc>")
 	return b.String()
-}
-
-// emptyReasonLabel maps an empty-reason constant to the XML error label.
-func emptyReasonLabel(reason string) string {
-	switch reason {
-	case navStructReasonBadArgs:
-		return "query is required"
-	case navStructReasonNoDoc:
-		return "no document located"
-	default:
-		return "no structure"
-	}
 }
 
 // navigateStructures renders the compiled structures of the given documents into
 // a single <structure_navigation> with one <doc> per readable structure. A
 // document without a compiled structure of the requested kind is skipped; an
 // empty result (no doc carried a structure) reports no_structure.
-func navigateStructures(ctx context.Context, tenantID string, query string, docIDs, datasetIDs []string, kind string, reader structureReader) (string, string) {
+func navigateStructures(ctx context.Context, tenantID string, query string, docIDs, datasetIDs []string, kind string, reader structureReader) string {
 	if len(docIDs) == 0 {
-		return navStructEmpty(navStructReasonNoDoc, "route first with navigate_tree"), navStructReasonNoDoc
+		return navStructEmpty("route first with navigate_tree")
 	}
 	kinds := structureKindsFor(kind)
 	var segs []string
-	var docIDsSeen []string
 	for _, did := range docIDs {
-		drill, nodes, rels, empty := readStructureDocCore(ctx, tenantID, query, did, kind, kinds, datasetIDs, reader)
-		if empty != "" {
+		outline, entities, relations, ok := readStructureDocCore(ctx, tenantID, query, did, kinds, datasetIDs, reader)
+		if !ok {
 			continue
 		}
-		segs = append(segs, structureDocSegment(did, query, kind, len(segs)+1, nodes, rels, drill))
-		docIDsSeen = append(docIDsSeen, did)
+		segs = append(segs, structureDocSegment(did, len(segs)+1, entities, relations, outline))
 	}
 	if len(segs) == 0 {
-		return navStructEmpty(navStructReasonNoStructure, "no compiled structure for this kind"), navStructReasonNoStructure
+		return navStructEmpty("no compiled structure for this kind")
 	}
-	esc := func(s string) string { return xmlEscape(s) }
 	parts := append([]string{
-		fmt.Sprintf(`<structure_navigation count="%d" query="%s" kind="%s">`, len(segs), esc(query), esc(kind)),
+		fmt.Sprintf(`<structure_navigation count="%d" query="%s" kind="%s">`, len(segs), xmlEscape(query), xmlEscape(kind)),
 	}, segs...)
 	parts = append(parts, "</structure_navigation>")
-	return strings.Join(parts, "\n"), ""
+	return strings.Join(parts, "\n")
+}
+
+// kindListOf flattens the requested structure kinds into the sorted list the
+// structure reader parses. Rows are selected by compile_kwd, so every read needs
+// it.
+func kindListOf(kinds map[string]bool) []string {
+	out := make([]string, 0, len(kinds))
+	for k := range kinds {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // readStructureDocCore reads ONE document's compiled structure of the requested
-// kind and drills it toward the query. It returns the per-document drill data,
-// the nodes/rels, and an empty-reason ("" means read succeeded).
-func readStructureDocCore(ctx context.Context, tenantID, query, docID, kind string, kinds map[string]bool, datasetIDs []string, reader structureReader) (structureDrillout, []structureNode, []structureRel, string) {
-	none := structureDrillout{chunkPaths: map[string]string{}}
-	switch {
-	case query == "":
-		return none, nil, nil, navStructReasonBadArgs
-	case docID == "":
-		return none, nil, nil, navStructReasonNoDoc
+// kind and drills it toward the query. It returns the rendered outline, the
+// entity/relation counts, and whether the document carried a structure at all.
+func readStructureDocCore(ctx context.Context, tenantID, query, docID string, kinds map[string]bool, datasetIDs []string, reader structureReader) (string, int, int, bool) {
+	if query == "" || docID == "" {
+		return "", 0, 0, false
 	}
+	kindList := kindListOf(kinds)
+
 	var nodes []structureNode
 	var rels []structureRel
-	anyStruct := false
+	read := false
 	for _, kbID := range datasetIDs {
 		rows, err := reader.ReadStructure(ctx, tenantID, kbID, docID)
 		if err != nil {
@@ -862,23 +743,17 @@ func readStructureDocCore(ctx context.Context, tenantID, query, docID, kind stri
 		if len(rows) == 0 {
 			continue
 		}
-		anyStruct = true
-		var kindList []string
-		for k := range kinds {
-			kindList = append(kindList, k)
-		}
-		sort.Strings(kindList)
-		entities, relations := ParseCompiledStructure(rows, kindList)
+		read = true
+		entities, relations := parseCompiledStructure(rows, kindList)
 		es, rs := structureGraphFromRaw(entities, relations)
 		nodes = append(nodes, es...)
 		rels = append(rels, rs...)
 	}
-	if !anyStruct || len(nodes) == 0 {
-		return none, nil, nil, navStructReasonNoStructure
+	if !read || len(nodes) == 0 {
+		return "", 0, 0, false
 	}
 	loader := func(ids []string) []chunkWithText { return structureNodeLoader(ctx, tenantID, ids) }
-	drill := renderTocDrilldown(query, nil, nodes, rels, loader)
-	return drill, nodes, rels, ""
+	return renderTocDrilldown(query, nodes, rels, loader), len(nodes), len(rels), true
 }
 
 // structureNodeLoader fetches chunk texts by id for the drill-down snippet pass.
@@ -934,14 +809,14 @@ func structureKindsFor(kind string) map[string]bool {
 }
 
 func decodeJSONObject(s string) (map[string]any, bool) {
-	v := ExtractJSON(s)
+	v := firstJSONValue(s)
 	m, ok := v.(map[string]any)
 	return m, ok
 }
 
-// ExtractJSON finds the first JSON object in s (tolerating surrounding prose or
+// firstJSONValue finds the first JSON object in s (tolerating surrounding prose or
 // code fences) and returns it decoded.
-func ExtractJSON(s string) any {
+func firstJSONValue(s string) any {
 	start := strings.Index(s, "{")
 	if start < 0 {
 		return nil
@@ -997,8 +872,8 @@ func objectList(v any) []map[string]any {
 	return out
 }
 
-// Snippet truncates s to at most n runes, appending an ellipsis when cut.
-func Snippet(s string, n int) string {
+// snippetRunes truncates s to at most n runes, appending an ellipsis when cut.
+func snippetRunes(s string, n int) string {
 	r := []rune(s)
 	if len(r) <= n {
 		return s
@@ -1008,7 +883,7 @@ func Snippet(s string, n int) string {
 
 // navStructEmpty returns the empty <structure_navigation count="0"> XML carrying
 // an optional error="..." attribute, mirroring the harness navigation contract.
-func navStructEmpty(reason, label string) string {
+func navStructEmpty(label string) string {
 	attr := ""
 	if label != "" {
 		attr = ` error="` + xmlEscape(label) + `"`
@@ -1040,11 +915,11 @@ func (g *NavigateStructureTool) Info(_ context.Context) (*schema.ToolInfo, error
     },
     "doc_id": {
       "type": "string",
-      "description": "The document to drill. Take it from a navigate_tree <doc doc_id> result. Required unless doc_ids is given."
+      "description": "OPTIONAL: the document to drill, taken from a navigate_tree <doc doc_id> result. Omit it to route the query yourself and drill the best-matching documents' structure directly (no navigate_tree call needed)."
     },
     "doc_ids": {
       "type": "array",
-      "description": "Optional explicit document ids to drill (at most 10). When omitted, doc_id is used.",
+      "description": "Optional explicit document ids to drill (at most 10). When omitted, doc_id is used; when both are omitted the query is routed.",
       "items": { "type": "string" },
       "maxItems": 10
     },
@@ -1091,39 +966,60 @@ func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSO
 	if query == "" {
 		return "", fmt.Errorf("navigate_structure: query is required and must be a non-empty string")
 	}
+	// Entry trace: logged BEFORE the enablement check and the backend call, so
+	// the tool-usage gate can tell "never called" from "called and bailed out".
+	common.InfoCtx(ctx, "agentic_rag: navigate_structure called",
+		zap.String("query", query), zap.String("kind", args.Kind),
+		zap.Int("docs", len(args.DocIDs)))
 	if !navToolEnabled(ctx, navigateStructureToolName) {
 		// Marked unavailable for this conversation (bound datasets have no
 		// compiled structure): skip the backend and return the same verdict the
 		// caller falls back from.
 		common.DebugCtx(ctx, "navigate_structure: marked unavailable; skipping backend (no structure)")
-		return navStructEmpty(navStructReasonNoStructure, "no structure"), nil
+		return navStructEmpty("no structure"), nil
 	}
 	datasetIDs, err := resolveDatasetScope(g.datasetIDs, args.DatasetIDs)
 	if err != nil {
 		return "", fmt.Errorf("navigate_structure: %w", err)
 	}
 	if len(datasetIDs) == 0 {
-		return navStructEmpty(navStructReasonNoStructure, "no bound datasets"), nil
+		return navStructEmpty("no bound datasets"), nil
 	}
+
+	reader := getStructureReader()
+
+	text := strings.TrimSpace(query + " " + strings.TrimSpace(args.Keywords))
 
 	docIDs := args.DocIDs
 	if len(docIDs) == 0 && args.DocID != "" {
 		docIDs = []string{args.DocID}
 	}
+	// A doc_id is optional: with none, route the query ourselves so the tool is
+	// usable in one call.
+	routedByQuery := false
 	if len(docIDs) == 0 {
-		return navStructEmpty(navStructReasonNoDoc, "route first with navigate_tree"), nil
+		// The router ranks the whole bound corpus, so a turn restricted to a set
+		// of documents must intersect here.
+		docIDs = intersectDocumentScope(ctx, routeDocIDsForQuery(ctx, g.tenantID, text, datasetIDs, navQueryRouteDocs))
+		if len(docIDs) == 0 {
+			return navStructEmpty("route first with navigate_tree"), nil
+		}
+		routedByQuery = true
 	}
 	if len(docIDs) > 10 {
 		docIDs = docIDs[:10]
 	}
 
-	reader := getStructureReader()
-	if reader == nil {
-		return navStructEmpty(navStructReasonNoStructure, "no structure reader installed"), nil
-	}
-
-	text := strings.TrimSpace(query + " " + strings.TrimSpace(args.Keywords))
-	out, reason := navigateStructures(ctx, g.tenantID, text, docIDs, datasetIDs, args.Kind, reader)
-	_ = reason
+	out := navigateStructures(ctx, g.tenantID, text, docIDs, datasetIDs, args.Kind, reader)
+	// Per-call INFO: the tool-usage gate (kg_tool_calls) is read off the server
+	// log, so a graph tool that rendered a structure without leaving a line here
+	// cannot be told from one that was never called.
+	common.InfoCtx(ctx, "agentic_rag: navigate_structure",
+		zap.String("query", query),
+		zap.Int("datasets", len(datasetIDs)),
+		zap.Int("docs", len(docIDs)),
+		zap.Bool("routed_by_query", routedByQuery),
+		zap.Strings("names", docIDs),
+		zap.Int("out_bytes", len(out)))
 	return out, nil
 }

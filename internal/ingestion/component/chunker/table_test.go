@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/tableutil"
 )
 
@@ -36,7 +37,7 @@ func tableChunksOf(t *testing.T, inputs map[string]any) []map[string]any {
 	if err != nil {
 		t.Fatalf("TableChunker.Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks not []map[string]any: %T", out["chunks"])
 	}
@@ -45,7 +46,7 @@ func tableChunksOf(t *testing.T, inputs map[string]any) []map[string]any {
 
 // tableItem builds a chunker JSON input item carrying the structured TableData
 // contract a post-migration producer emits (derived from markup), plus any
-// extra fields (positions, sheet_index, ck_type, ...). It deliberately does
+// extra fields (positions, sheet_index, ...). It deliberately does
 // NOT set "text": the chunker derives a plain text body from TableData.
 func tableItem(t *testing.T, html string, extra ...map[string]any) map[string]any {
 	t.Helper()
@@ -125,7 +126,7 @@ func TestTableChunkerPreservesHeaderOnlyTable(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("got %d chunks, want the header-only table preserved", len(chunks))
 	}
-	if chunks[0]["ck_type"] != "table" {
+	if chunks[0]["doc_type_kwd"] != "table" {
 		t.Fatalf("chunk = %#v, want a table chunk", chunks[0])
 	}
 	if got, ok := chunks[0]["text"].(string); !ok || got == "" {
@@ -154,7 +155,7 @@ func TestTableChunkerPreservesHeaderOnlySheetAlongsideDataSheet(t *testing.T) {
 		!strings.Contains(row0, "<td>paid</td>") || !strings.Contains(row0, "<th>ID</th>") {
 		t.Fatalf("chunk0 = %#v", chunks[0])
 	}
-	if chunks[1]["ck_type"] != "table" || chunks[1]["table"] != nil {
+	if chunks[1]["doc_type_kwd"] != "table" || chunks[1]["table"] != nil {
 		t.Fatalf("chunk1 = %#v, want the header-only segment whole with TableData cleared", chunks[1])
 	}
 }
@@ -174,7 +175,6 @@ func TestTableChunker_ExpandsHTMLRowsWithAlignedPositions(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			tableItem(t, table, map[string]any{
-				"ck_type":     "table",
 				"sheet_index": 1,
 				"positions":   [][]float64{{1, 1, 1, 1, 2}, {1, 2, 2, 1, 2}, {1, 3, 3, 1, 2}},
 			}),
@@ -238,7 +238,6 @@ func TestTableChunker_NonSpreadsheetPositionsNotAttached(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			tableItem(t, table, map[string]any{
-				"ck_type":   "table",
 				"positions": [][]float64{{1, 1, 1, 1, 1}, {1, 2, 2, 1, 1}, {1, 3, 3, 1, 1}},
 			}),
 		},
@@ -267,7 +266,7 @@ func TestTableChunker_HeaderOnlyHTMLTableKeepsWholePayload(t *testing.T) {
 		"name":          "template.xlsx",
 		"output_format": "json",
 		"json": []map[string]any{
-			tableItem(t, table, map[string]any{"ck_type": "table"}),
+			tableItem(t, table, map[string]any{}),
 		},
 	})
 	if len(chunks) != 1 {
@@ -296,5 +295,32 @@ func TestTableChunker_HeaderlessHTMLFirstRowIsHeader(t *testing.T) {
 	if !strings.Contains(txt, "<th>k</th>") || !strings.Contains(txt, "<th>v</th>") ||
 		!strings.Contains(txt, "<td>a</td>") || !strings.Contains(txt, "<td>b</td>") {
 		t.Errorf("text = %v", chunks[0]["text"])
+	}
+}
+
+// TestTableChunker_HeaderOriginRowspanDoesNotLeak: a vertical merge mastered
+// on the header is a column label, not a value. The table view must leave the
+// data slot empty instead of stamping the header text into the row chunk.
+func TestTableChunker_HeaderOriginRowspanDoesNotLeak(t *testing.T) {
+	table := `<table>` +
+		`<tr><th rowspan="2">H</th><th>Name</th></tr>` +
+		`<tr><td>Alice</td></tr>` +
+		`</table>`
+	chunks := tableChunksOf(t, map[string]any{
+		"name":          "h.xlsx",
+		"output_format": "json",
+		"json": []map[string]any{
+			tableItem(t, table),
+		},
+	})
+	if len(chunks) != 1 {
+		t.Fatalf("got %d chunks, want the single data row", len(chunks))
+	}
+	txt, _ := chunks[0]["text"].(string)
+	if strings.Contains(txt, "<td>H</td>") {
+		t.Fatalf("header label leaked into the data row: %v", txt)
+	}
+	if !strings.Contains(txt, "<td></td><td>Alice</td>") {
+		t.Fatalf("data row lost its real value or column alignment: %v", txt)
 	}
 }

@@ -34,7 +34,6 @@ func TestDOCXParser_RealTableImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := NewDOCXParser()
-	p.ConfigureFromSetup(map[string]any{"output_format": "json"})
 	result := p.ParseWithResult(t.Context(), "docx_table_image.docx", data)
 	if result.Err != nil {
 		t.Fatal(result.Err)
@@ -43,7 +42,7 @@ func TestDOCXParser_RealTableImage(t *testing.T) {
 		t.Fatalf("warnings = %v, want none for an admitted image", result.Warnings)
 	}
 	var tableID string
-	for _, item := range result.JSON {
+	for _, item := range ItemsToMaps(result.JSON) {
 		if item["doc_type_kwd"] == "table" {
 			tableID, _ = item["source_table_id"].(string)
 		}
@@ -51,7 +50,7 @@ func TestDOCXParser_RealTableImage(t *testing.T) {
 	if tableID == "" {
 		t.Fatalf("table with image not found: %+v", result.JSON)
 	}
-	for _, item := range result.JSON {
+	for _, item := range ItemsToMaps(result.JSON) {
 		if item["doc_type_kwd"] != "image" || item["parent_table_id"] != tableID {
 			continue
 		}
@@ -99,7 +98,7 @@ func TestPPTXParser_RealSlideImage(t *testing.T) {
 	if len(result.Warnings) != 0 {
 		t.Fatalf("warnings = %v, want none for an admitted image", result.Warnings)
 	}
-	for _, item := range result.JSON {
+	for _, item := range ItemsToMaps(result.JSON) {
 		if item["doc_type_kwd"] != "image" {
 			continue
 		}

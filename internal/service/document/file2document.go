@@ -241,30 +241,29 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 				continue
 			}
 
-			parserID, parserConfig := resolveDocumentParser(ctx, kb, docName, utility.FileType(file.Type), cloneParserConfigForDocument(kb.ParserConfig))
+			selection, parserConfig := resolveDocumentParser(ctx, kb, docName, utility.FileType(file.Type), cloneParserConfigForDocument(kb.ParserConfig))
+			parserID, pipelineID := parserSelectionColumns(selection)
 			suffix := strings.TrimPrefix(filepath.Ext(docName), ".")
 			doc := &entity.Document{
-				ID:           common.GenerateUUID(),
-				KbID:         kb.ID,
-				ParserID:     parserID,
-				ParserConfig: parserConfig,
-				CreatedBy:    userID,
-				Type:         file.Type,
-				Name:         &docName,
-				Suffix:       suffix,
-				Size:         file.Size,
+				ID:                common.GenerateUUID(),
+				KbID:              kb.ID,
+				ParserID:          parserID,
+				PipelineID:        pipelineID,
+				PipelineVersionID: kb.PipelineVersionID,
+				ParserConfig:      parserConfig,
+				CreatedBy:         userID,
+				Type:              file.Type,
+				Name:              &docName,
+				Suffix:            suffix,
+				Size:              file.Size,
 			}
 			if file.Location != nil {
 				doc.Location = file.Location
 			}
-			if kb.PipelineID != nil {
-				doc.PipelineID = kb.PipelineID
-				doc.ParserID = "" // canvas pipeline mode — parser_id not applicable
-			}
 
 			// InsertDocument creates the row and increments KB doc_num in one
 			// transaction, so a failed insert never leaves a stale counter.
-			if err = s.documentSvc.InsertDocument(doc); err != nil {
+			if err = s.documentSvc.InsertDocument(ctx, doc); err != nil {
 				common.Warn("convertFiles: InsertDocument failed",
 					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))
 				continue

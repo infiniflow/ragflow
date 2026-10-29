@@ -728,3 +728,7 @@ func (d *DeepInfraModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([
 func (d *DeepInfraModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s no such method", d.Name())
 }
+
+func (d *DeepInfraModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", d.Name())
+}

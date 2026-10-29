@@ -73,7 +73,7 @@ func NewMemoryHandler(memoryService *service.MemoryService) *MemoryHandler {
 //
 // Response Format:
 //   - code: Status code (0=success, other=error)
-//   - message: true on success, error message on failure
+//   - message: "success" on success, error message on failure
 //   - data: Memory object on success
 //
 // Business Logic (matching Python create_memory):
@@ -333,7 +333,7 @@ func splitQueryValues(c *gin.Context, key string) []string {
 //
 // Response Format:
 //   - code: Status code
-//   - message: true
+//   - message: "success"
 //   - data.memory_list: Array of Memory objects
 //   - data.total_count: Total record count
 func (h *MemoryHandler) ListMemories(c *gin.Context) {
@@ -405,7 +405,7 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 //
 // Response Format:
 //   - code: Status code
-//   - message: true
+//   - message: "success"
 //   - data: Memory object, including owner_name field
 func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 	// Get memory_id from URL path
@@ -461,7 +461,7 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 //
 // Response Format:
 //   - code: Status code
-//   - message: true
+//   - message: "success"
 //   - data.messages: Array of message objects
 //   - data.storage_type: Storage type
 func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
@@ -514,7 +514,7 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, data, true)
+	common.SuccessWithData(c, data, "success")
 }
 
 type messageMemoryIDs []string
@@ -649,7 +649,7 @@ func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoData(c, true)
+	common.SuccessNoData(c, "success")
 }
 
 func isMemoryServiceNotFound(err error) bool {
@@ -738,7 +738,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoData(c, true)
+	common.SuccessNoData(c, "success")
 }
 
 // GetMessageContent handles GET request for getting message content
@@ -785,7 +785,7 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, data, true)
+	common.SuccessWithData(c, data, "success")
 }
 
 // SearchMessage handles GET request for searching messages
@@ -853,7 +853,7 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, res, true)
+	common.SuccessWithData(c, res, "success")
 }
 
 // GetMessages handles GET request for getting message list
@@ -901,7 +901,7 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, data, true)
+	common.SuccessWithData(c, data, "success")
 }
 
 // isArgumentError determines if an error message is an argument error

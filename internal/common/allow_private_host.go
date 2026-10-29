@@ -29,10 +29,10 @@ import (
 // truthy value (1, true, yes, on), matching the Python host guard.
 //
 // The flag is the development opt-in documented in docker/.env. It applies
-// only to host-based database and connector dials (MySQL, PostgreSQL, IMAP,
-// test_db_connection, ExeSQL), including host.docker.internal. URL and Invoke
-// guards do not call this, so the flag cannot turn off DNS pinning for
-// user-controlled URLs. Default is off.
+// to host-based database and connector dials (MySQL, PostgreSQL, IMAP,
+// test_db_connection, ExeSQL), including host.docker.internal, and configured
+// MCP servers. Other URL and Invoke guards do not call this. DNS pinning
+// remains enabled. Default is off.
 func AllowConfiguredPrivateHost() bool {
 	switch strings.ToLower(strings.TrimSpace(GetEnv(EnvAllowAnyHost))) {
 	case "1", "true", "yes", "on":

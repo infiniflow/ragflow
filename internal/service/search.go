@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"gorm.io/gorm"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -92,8 +93,17 @@ func (s *SearchService) ListSearches(ctx context.Context, userID string, keyword
 
 	// Convert to response format
 	searchApps := make([]map[string]interface{}, len(searches))
+	checker := permission.NewDatabaseChecker(dao.DB)
 	for i, search := range searches {
+		access, err := checker.ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+			Kind: permission.ResourceKindSearchApp,
+			ID:   search.ID,
+		})
+		if err != nil {
+			return nil, err
+		}
 		searchApps[i] = s.toSearchAppResponse(search)
+		searchApps[i]["operator_permission"] = access.PermissionMask
 	}
 
 	return &ListSearchAppsResponse{
@@ -144,6 +154,13 @@ type CreateSearchResponse struct {
 // 6. Save to database within DB.atomic() transaction
 // 7. Return {search_id: id} on success
 func (s *SearchService) CreateSearch(ctx context.Context, userID string, name string, description *string) (*CreateSearchResponse, error) {
+	tenantID, err := requireCurrentTenantID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkFeatureAction(ctx, userID, "search", permission.ActionWrite); err != nil {
+		return nil, err
+	}
 	if err := common.ValidateName(name); err != nil {
 		return nil, err
 	}
@@ -154,7 +171,7 @@ func (s *SearchService) CreateSearch(ctx context.Context, userID string, name st
 	// Generate unique name (same as Python duplicate_name)
 	// search.name is a 128-byte column; keep generated names within it.
 	uniqueName, err := common.UniqueName(name, 128, func(candidate string) (bool, error) {
-		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, userID)
+		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, tenantID)
 		if err != nil {
 			return false, err
 		}
@@ -168,7 +185,7 @@ func (s *SearchService) CreateSearch(ctx context.Context, userID string, name st
 	// Create search entity
 	search := &entity.Search{
 		ID:           searchID,
-		TenantID:     userID,
+		TenantID:     tenantID,
 		Name:         uniqueName,
 		CreatedBy:    userID,
 		SearchConfig: make(entity.JSONMap),
@@ -183,7 +200,12 @@ func (s *SearchService) CreateSearch(ctx context.Context, userID string, name st
 	search.Status = &status
 
 	// Save to database
-	if err = s.searchDAO.Create(ctx, dao.DB, search); err != nil {
+	if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.searchDAO.Create(ctx, tx, search); err != nil {
+			return err
+		}
+		return grantCreatedResourceOwner(ctx, tx, userID, tenantID, permission.ResourceKindSearchApp, search.ID)
+	}); err != nil {
 		return nil, fmt.Errorf("failed to create search: %w", err)
 	}
 
@@ -305,7 +327,7 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 			tenantSvc = NewTenantService()
 		}
 		var defaultModelName string
-		defaultModelName, err = tenantSvc.GetDefaultModelName(ctx, userID, entity.ModelTypeChat)
+		defaultModelName, err = tenantSvc.GetDefaultModelNameForUser(ctx, userID, entity.ModelTypeChat)
 		if err == nil {
 			modelID = strings.TrimSpace(defaultModelName)
 		}
@@ -587,6 +609,14 @@ func (s *SearchService) GetDetail(ctx context.Context, userID, searchID string) 
 		"update_time":   search.UpdateTime,
 		"search_config": map[string]interface{}(search.SearchConfig),
 	}
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+		Kind: permission.ResourceKindSearchApp,
+		ID:   search.ID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result["operator_permission"] = access.PermissionMask
 
 	if search.Avatar != nil {
 		result["avatar"] = *search.Avatar

@@ -94,7 +94,9 @@ import (
 	"ragflow/internal/utility"
 )
 
-const ComponentNameParser = "Parser"
+// ComponentNameParser is the canonical Parser component name; the value lives
+// in the schema package so the pipeline layer can reference the same identity.
+const ComponentNameParser = schema.ComponentNameParser
 
 // pageFormFeed is the byte that text-page mode treats as a
 // hard page boundary. Matches the ASCII form feed (\f, 0x0C) — the
@@ -126,11 +128,10 @@ type visionSettings struct {
 }
 
 // NewParserComponent constructs a Parser from a DSL param map.
-// The default setups are overlaid with the supplied values. Historical
-// output_format values are accepted but normalized to JSON so downstream
-// components consume one parser output protocol. This applies to every
-// family, including PDF and office documents: Markdown is an internal
-// backend representation only and is never a public Parser output.
+// The default setups are overlaid with the supplied values. The Parser
+// emits one output protocol: structured JSON items for every family,
+// including PDF and office documents. Markdown remains an internal backend
+// representation only and is never a public Parser output.
 //
 // Param map shape (all keys optional):
 //
@@ -147,7 +148,6 @@ type visionSettings struct {
 func NewParserComponent(params map[string]any) (runtime.Component, error) {
 	s := defaultSetups()
 	if params == nil {
-		normalizeParserOutputFormats(s)
 		return &ParserComponent{setups: s}, nil
 	}
 	// Canvases saved by the Python-era frontend nest the per-family setups
@@ -195,21 +195,11 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			s[k][fk] = cloneParserSetupValue(fv)
 		}
 	}
-	normalizeParserOutputFormats(s)
 	pc := &ParserComponent{setups: s, enableVisionEnhancement: enableVisionEnhancement, vision: vision}
 	if err := pc.Check(); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)
 	}
 	return pc, nil
-}
-
-func normalizeParserOutputFormats(setups map[string]schema.ParserSetup) {
-	// The Go Parser component intentionally exposes JSON only. Keep this
-	// normalization unconditional so PDF/office legacy Markdown settings
-	// cannot silently select a second public output path.
-	for _, setup := range setups {
-		setup["output_format"] = "json"
-	}
 }
 
 func cloneParserSetupValue(value any) any {
@@ -265,6 +255,9 @@ func (c *ParserComponent) Check() error {
 		if pm, _ := pdf["parse_method"].(string); pm == "" {
 			return errors.New("parse method abnormal. does not support empty value")
 		}
+		if _, err := readMinerUExtractionOptions(pdf); err != nil {
+			return err
+		}
 	}
 	// The whole image contract keys off whether ocr_enabled is present, so a
 	// value of the wrong type must not quietly read as "absent" and fall back to
@@ -273,6 +266,11 @@ func (c *ParserComponent) Check() error {
 		if raw, exists := img["ocr_enabled"]; exists {
 			if _, isBool := raw.(bool); !isBool {
 				return errors.New("parser: image ocr_enabled must be a boolean")
+			}
+		}
+		if raw, exists := img["ocr_model_id"]; exists {
+			if _, isString := raw.(string); !isString {
+				return errors.New("parser: image ocr_model_id must be a string")
 			}
 		}
 		// An image needs at least one text source: local OCR or the global
@@ -299,58 +297,50 @@ func imageSetupRunsOCR(setup schema.ParserSetup) bool {
 }
 
 func defaultSetups() map[string]schema.ParserSetup {
-	return map[string]schema.ParserSetup{
+	s := map[string]schema.ParserSetup{
 		"pdf": {
 			"parse_method":          "deepdoc",
 			"flatten_media_to_text": false,
 			"remove_toc":            false,
 			"remove_header_footer":  false,
 			"suffix":                []string{"pdf"},
-			"output_format":         "json",
 		},
 		"spreadsheet": {
 			"parse_method":          "deepdoc",
 			"flatten_media_to_text": false,
 			"html4excel":            false,
-			"output_format":         "json",
 			"suffix":                []string{"xls", "xlsx", "csv"},
 		},
 		"doc": {
 			"remove_toc":           false,
 			"remove_header_footer": false,
 			"suffix":               []string{"doc"},
-			"output_format":        "json",
 		},
 		"docx": {
 			"flatten_media_to_text": false,
 			"remove_toc":            false,
 			"remove_header_footer":  false,
 			"suffix":                []string{"docx"},
-			"output_format":         "json",
 		},
 		"markdown": {
 			"flatten_media_to_text": false,
 			"suffix":                []string{"md", "markdown", "mdx"},
 			"remove_toc":            false,
-			"output_format":         "json",
 		},
 		"text&code": {
 			"suffix": []string{
 				"txt", "py", "js", "java", "c", "cpp", "h", "php",
 				"go", "ts", "sh", "cs", "kt", "sql",
 			},
-			"output_format": "json",
 		},
 		"html": {
 			"suffix":               []string{"htm", "html"},
 			"remove_toc":           false,
 			"remove_header_footer": false,
-			"output_format":        "json",
 		},
 		"slides": {
-			"parse_method":  "deepdoc",
-			"suffix":        []string{"pptx", "ppt"},
-			"output_format": "json",
+			"parse_method": "deepdoc",
+			"suffix":       []string{"pptx", "ppt"},
 		},
 		"image": {
 			// Default stays on the legacy parse_method shape. ocr_enabled is
@@ -362,7 +352,6 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"llm_id":        "",
 			"system_prompt": "",
 			"suffix":        []string{"jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp"},
-			"output_format": "json",
 		},
 		"email": {
 			"suffix": []string{"eml", "msg"},
@@ -370,7 +359,6 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"from", "to", "cc", "bcc", "date", "subject",
 				"body", "attachments", "metadata",
 			},
-			"output_format": "json",
 		},
 		"audio": {
 			"suffix": []string{
@@ -378,22 +366,19 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"aiff", "au", "midi", "wma", "realaudio", "vqf",
 				"oggvorbis", "ape",
 			},
-			"output_format": "json",
 		},
 		"video": {
-			"suffix":        []string{"mp4", "avi", "mkv"},
-			"output_format": "json",
-			"prompt":        "",
+			"suffix": []string{"mp4", "avi", "mkv"},
+			"prompt": "",
 		},
 		"epub": {
-			"suffix":        []string{"epub"},
-			"output_format": "json",
+			"suffix": []string{"epub"},
 		},
 		"json": {
-			"suffix":        []string{"json", "jsonl", "ldjson"},
-			"output_format": "json",
+			"suffix": []string{"json", "jsonl", "ldjson"},
 		},
 	}
+	return s
 }
 
 // Inputs returns the static parameter metadata. The component
@@ -444,7 +429,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
 		"file_type":     "string: canonical extension used for parser dispatch (for example pdf, md, xlsx, or other).",
 		"output_format": "string: always \"json\".",
-		"json":          "[]map[string]any: canonical structured parser items.",
+		"json":          "[]parser.DocItem: canonical structured parser items.",
 		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
 		"file":          "map[string]any: backend-produced file metadata, when present.",
 		"doc_id":        "string: source document ID, when present.",
@@ -461,7 +446,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 //	  "name":           string (from inputs["name"], file.name, or doc_id),
 //	  "file_type":      string (canonical extension used for parser dispatch),
 //	  "output_format": "json",
-//	  "json":           []map[string]any,
+//	  "json":           []parser.DocItem,
 //	  "lang":           string (from inputs["lang"]; e.g. English, Dutch),
 //	  "_created_time":  RFC3339Nano (via TrackElapsed),
 //	  "_elapsed_time":  float64 seconds (via TrackElapsed),
@@ -510,6 +495,11 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	//     arms are keyed off the utility constants.
 	//
 	fileTypeExt := fileTypeFromInputs(inputs)
+	parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
+	enhanceOn := c.enableVisionEnhancement
+	split := progress.NewSplit(parsePagesOn, enhanceOn)
+	pageWin := split.Take(parsePagesOn)
+	visionWin := split.Take(enhanceOn)
 
 	dispatched, handledVision, visionErr := maybeDispatchPDFVision(ctx, db, fileTypeExt, filename, binary, inputs, setups)
 	if visionErr != nil {
@@ -543,27 +533,28 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		}
 	}
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
-		parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
-		enhanceOn := c.enableVisionEnhancement
-		split := progress.NewSplit(parsePagesOn, enhanceOn)
-		pageWin := split.Take(parsePagesOn)
-		visionWin := split.Take(enhanceOn)
-
 		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups, pageWin)
 		if dispatched.Err == nil && ctx.Err() == nil {
 			pageWin.Report(ctx, 1.0)
-		}
-
-		if c.enableVisionEnhancement {
-			// Enhancement is optional; parser-provided text and image metadata
-			// remain available if a vision model cannot describe an image.
-			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision, visionWin)
 		}
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.
 	if dispatched.Err != nil && fileTypeExt != utility.FileTypeOTHER {
 		return nil, dispatched.Err
+	}
+	if enhanceOn && !handledMedia && !handledImage && !handledAudio && dispatched.Err == nil && ctx.Err() == nil {
+		// PDF dispatch and ordinary parsers share enhancement after normalization.
+		var enhanceErr error
+		dispatched, _, enhanceErr = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision, visionWin)
+		if enhanceErr != nil {
+			return nil, enhanceErr
+		}
+	} else {
+		// Enhancement skipped entirely (disabled or non-PDF media handled):
+		// still strip the transient backend-description marker so it never
+		// reaches the chunker.
+		dispatched = stripBackendDescribedResult(dispatched)
 	}
 	reportParserWarnings(ctx, dispatched.Warnings)
 
@@ -591,7 +582,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// forwards only this explicit output to the next node, so shared
 	// fields must live in Globals.
 	globals.PublishGlobals(ctx, out)
-	items, _ := out["json"].([]map[string]any)
+	items, _ := out["json"].([]parser.DocItem)
 	logParserOutput(dispatched, items)
 	// Progress (_created_time / _elapsed_time stamping, start/done
 	// callbacks) is owned by the canvas framework (realComponentBody),
@@ -599,7 +590,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	return out, nil
 }
 
-func logParserOutput(dispatched parser.ParseResult, items []map[string]any) {
+func logParserOutput(dispatched parser.ParseResult, items []parser.DocItem) {
 	common.Debug("parser stage output",
 		zap.String("component", "Parser"),
 		zap.String("normalized_from", resolveParserNormalizationSource(dispatched)),
@@ -611,20 +602,16 @@ func resolveParserNormalizationSource(dispatched parser.ParseResult) string {
 	if len(dispatched.JSON) > 0 {
 		return "json"
 	}
-	if dispatched.Markdown != "" {
-		return "markdown"
-	}
-	if dispatched.HTML != "" {
-		return "html"
-	}
-	if dispatched.Text != "" {
-		return "text"
-	}
 	return "raw"
 }
 
 func reportParserWarnings(ctx context.Context, warnings []string) {
+	seen := make(map[string]struct{}, len(warnings))
 	for _, warning := range warnings {
+		if _, exists := seen[warning]; exists {
+			continue
+		}
+		seen[warning] = struct{}{}
 		runtime.ReportProgressMessage(ctx, "Parser", "WARNING: "+warning)
 	}
 }

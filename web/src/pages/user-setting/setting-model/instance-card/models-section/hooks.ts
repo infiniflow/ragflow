@@ -52,6 +52,21 @@ const TOOL_FEATURE_KEYS = ['is_tools', 'tool_call', 'tools', 'function_call'];
 /** Sentinel instance name used by draft (unsaved) provider cards. */
 export const DRAFT_INSTANCE_SENTINEL = '__draft__';
 
+/**
+ * Providers whose model listing is meaningful only when an api-key exists
+ * (typed into the draft form or returned with the saved instance details).
+ * Opening their cards without a key would fire a list request the upstream
+ * rejects, so — like VolcEngine — the auto-fetch waits for the key.
+ */
+export const API_KEY_GATED_LIST_PROVIDERS: string[] = [
+  LLMFactory.SystemOne,
+  LLMFactory.RAGcon,
+  LLMFactory.VolcEngine,
+  LLMFactory.DaoXE,
+  LLMFactory.RadeonCloud,
+  LLMFactory.DemonRoute,
+];
+
 // ---------------------------------------------------------------------------
 // Pure helpers (no React state, easy to test)
 // ---------------------------------------------------------------------------
@@ -241,6 +256,14 @@ export function useModelsCatalog({
         provider_name: providerName,
         api_key: apiKey as any,
         base_url: baseUrl,
+        // The saved instance never hands its key back to the browser, but it
+        // does hand back its base URL — so without this the request would go
+        // out unauthenticated and the upstream would answer 401 "no API key".
+        // With the name, the server lists using the stored credential. A draft
+        // has no stored credential, so it is not named here.
+        ...(instanceName && instanceName !== DRAFT_INSTANCE_SENTINEL
+          ? { instance_name: instanceName }
+          : {}),
       });
       if (ret?.code === 0) {
         const merged = applyCatalogOverrides(
@@ -258,7 +281,8 @@ export function useModelsCatalog({
   };
 
   // Auto-fetch the provider's available-models catalog when this section
-  // mounts (effectively "when the card is expanded"). For VolcEngine we
+  // mounts (effectively "when the card is expanded"). For VolcEngine and the
+  // providers in API_KEY_GATED_LIST_PROVIDERS (SystemOne, RAGcon) we
   // wait until an api_key is available (typed in the draft form or loaded
   // from instance details). For providers whose form includes a
   // `base_url` field (e.g. Ollama, Xinference, LocalAI) we defer until a
@@ -287,7 +311,7 @@ export function useModelsCatalog({
         ? (creds.apiKey as Record<string, unknown>)
         : undefined;
     const requiresApiKey =
-      providerName === LLMFactory.VolcEngine ||
+      API_KEY_GATED_LIST_PROVIDERS.includes(providerName) ||
       (providerName === LLMFactory.Bedrock &&
         apiKeyConfig?.auth_mode === 'bedrock_api_key');
     const hasApiKey =

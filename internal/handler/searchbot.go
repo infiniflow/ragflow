@@ -290,7 +290,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	}
 	if modelID == "" && h.tenantSvc != nil {
 		ctx := c.Request.Context()
-		defaultModel, err := h.tenantSvc.GetDefaultModelName(ctx, user.ID, entity.ModelTypeChat)
+		defaultModel, err := h.tenantSvc.GetDefaultModelNameForUser(ctx, user.ID, entity.ModelTypeChat)
 		if err == nil && defaultModel != "" {
 			modelID = defaultModel
 		}
@@ -328,7 +328,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		}
 	}
 	c.Stream(func(w io.Writer) bool {
-		fmt.Fprintf(w, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
+		fmt.Fprintf(w, "data: {\"code\": 0, \"message\": \"success\", \"data\": true}\n\n")
 		return false
 	})
 
@@ -428,16 +428,19 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 	}
 
 	userSvc := service.NewUserService()
-	user, code, err := userSvc.GetUserByBetaAPIToken(ctx, c.GetHeader("Authorization"))
+	identity, code, err := userSvc.ResolveBetaAPIToken(ctx, c.GetHeader("Authorization"))
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, "Authentication error: API key is invalid!")
 		return
 	}
+	setAuthIdentity(c, identity)
+	ctx = c.Request.Context()
+	c.Set("auth_via_beta_token", true)
 	if h.searchSvc == nil {
 		jsonInternalError(c, fmt.Errorf("search service not configured"))
 		return
 	}
-	detail, err := h.searchSvc.GetSearchShareDetail(ctx, user.ID, searchID)
+	detail, err := h.searchSvc.GetSearchShareDetail(ctx, identity.User.ID, searchID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -474,7 +477,7 @@ func sseAnswer(answer string, refs interface{}, final bool) string {
 	}
 	payload := ssePayload{
 		Code:    0,
-		Message: "",
+		Message: "success",
 		Data: askSSEData{
 			Answer:    answer,
 			Reference: refs,
@@ -514,7 +517,7 @@ func sseMarker(marker string) string {
 	} else {
 		d.EndToThink = true
 	}
-	payload := ssePayload{Code: 0, Message: "", Data: d}
+	payload := ssePayload{Code: 0, Message: "success", Data: d}
 	b, _ := json.Marshal(payload)
 	return fmt.Sprintf("data: %s\n\n", string(b))
 }

@@ -875,6 +875,27 @@ func findRepoRoot() string {
 	return "."
 }
 
+// storedCatalogProviders maps provider names found in
+// tenant_model_provider.provider_name and in model references onto the
+// catalog provider that serves those models. Rows created by Python's
+// "Mistral OCR" factory carry that name; their models are the Mistral
+// provider's ocr models.
+var storedCatalogProviders = map[string]string{
+	"mistral ocr": "Mistral",
+}
+
+// CatalogProviderName returns the catalog provider name for a stored provider
+// name, for looking up a stored model in the catalog (FindProvider,
+// GetModelByName). Tenant rows are still looked up by the stored name, and
+// FindProvider itself does not apply this mapping, so provider management
+// keeps treating the stored name as an unknown provider.
+func CatalogProviderName(storedName string) string {
+	if name, ok := storedCatalogProviders[strings.ToLower(strings.TrimSpace(storedName))]; ok {
+		return name
+	}
+	return storedName
+}
+
 func (pm *ProviderManager) FindProvider(name string) *Provider {
 	for i := range pm.Providers {
 		if strings.EqualFold(pm.Providers[i].Name, name) {

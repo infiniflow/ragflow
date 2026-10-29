@@ -43,14 +43,6 @@ import (
 const maxSubAgentDepth = 8
 const defaultAgentDeferredTimeout = 10 * time.Minute
 
-// agentPatternless matches `<model>@<provider>` and
-// `<model>@<instance>@<provider>` (the trailing `@<provider>` is
-// always the last segment — the segment just before the last `@`
-// is treated as the bare model name for upstream API calls). The
-// browser component has the same idea at browser.go:88-92, but
-// keeps the regex greedy for its 2-part fixture; we keep both
-// behaviors here via the in-function split below.
-
 // agentProviderLastSegmentSplit takes a composite llm_id and
 // returns (bareModelName, providerName, true) — or ("", "", false)
 // when no `@<provider>` suffix exists. The bare model name is
@@ -100,7 +92,8 @@ type AgentParam struct {
 	// when it is itself called as a tool by a parent component. Mirrors
 	// Python's `meta: ToolMeta` field — describes the Agent's own
 	// inputs (user_prompt / reasoning / context) for callers.
-	Meta AgentMeta
+	Meta            AgentMeta
+	toolInvocations *toolInvocationRecorder
 	// Cite enables post-stream citation grounding. When true,
 	// the Agent reads the chunks recorded in
 	// state.Retrieval["chunks"] (populated by the Retrieval tool),
@@ -183,6 +176,10 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	tools, err := buildAgentTools(ctx, p)
 	if err != nil {
 		return nil, fmt.Errorf("build tools: %w", err)
+	}
+	tools = wrapReferenceRecordingTools(tools)
+	if p.toolInvocations != nil {
+		tools = wrapToolInvocationRecording(tools, p.toolInvocations)
 	}
 	input := buildAgentInputMessages(ctx, p)
 	// Eino's MaxStep counts graph nodes, not model calls. One ReAct round
@@ -515,7 +512,9 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 // (e.g. "simple-0", "ck-1"). Used only to decide whether a grounding
 // response still has answer text after the markers are removed. The ID:
 // prefix is required so bare brackets like [2026] are not treated as markers.
-var citationGroundingMarkerRe = regexp.MustCompile(`\[ID:\s*[^\]]+\]`)
+// The id cannot contain "[", matching citationGroundingMarkerCaptureRe: an
+// unclosed [ID: must not be stripped together with the text up to a later ].
+var citationGroundingMarkerRe = regexp.MustCompile(`\[ID:\s*[^\[\]]+\]`)
 
 // citationGroundingHasSubstantiveText reports whether s contains any
 // non-whitespace text once citation markers are stripped. Marker-only
@@ -547,7 +546,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	if strings.TrimSpace(content) == "" {
 		return content, nil
 	}
-	systemPrompt, _ := prompts.CitationPlusPrompt(chunks)
+	systemPrompt, ids := prompts.CitationPlusPrompt(chunks)
 	inv := getDefaultChatInvoker()
 	req := ChatInvokeRequest{
 		Driver:    p.Driver,
@@ -563,9 +562,26 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	var resp *ChatInvokeResponse
 	var err error
 	emittedVisible := false
+	var leadingWhitespace strings.Builder
+	emitting := false
+	emitContent := func(text string) error {
+		if text == "" {
+			return nil
+		}
+		if !emitting {
+			leadingWhitespace.WriteString(text)
+			if strings.TrimSpace(leadingWhitespace.String()) == "" {
+				return nil
+			}
+			text = leadingWhitespace.String()
+			emitting = true
+		}
+		emittedVisible = true
+		runtime.EmitAgentMessage(ctx, text, "")
+		return nil
+	}
 	if streamer, ok := inv.(chat.StreamingInvoker); ok {
-		var leadingWhitespace strings.Builder
-		emitting := false
+		streamFilter := newCitationMarkerStreamFilter(ids)
 		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -573,24 +589,19 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 			if isThink || delta == "" {
 				return nil
 			}
-			if !emitting {
-				leadingWhitespace.WriteString(delta)
-				if strings.TrimSpace(leadingWhitespace.String()) == "" {
-					return nil
-				}
-				delta = leadingWhitespace.String()
-				emitting = true
-			}
 			// Structured output is normalized once after grounding. Streaming
 			// these deltas would duplicate that final emission, and the raw
 			// chunks would not match the cleaned content.
 			if len(p.OutputStructure) > 0 {
 				return nil
 			}
-			emittedVisible = true
-			runtime.EmitAgentMessage(ctx, delta, "")
-			return nil
+			return emitContent(streamFilter.Push(delta))
 		})
+		if err == nil {
+			if flushErr := emitContent(streamFilter.Flush()); flushErr != nil {
+				err = flushErr
+			}
+		}
 	} else {
 		resp, err = inv.Invoke(ctx, db, req)
 	}
@@ -603,20 +614,21 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	if resp == nil {
 		return content, fmt.Errorf("citation grounding returned no response")
 	}
-	if strings.TrimSpace(resp.Content) == "" {
+	grounded := filterCitationMarkers(resp.Content, ids)
+	if strings.TrimSpace(grounded) == "" {
 		return content, nil
 	}
 	// Marker-only grounding must not silently replace the first-pass answer
 	// (#20613). Non-stream (or stream that never emitted) can fall back.
 	// Once invalid deltas have already been streamed, surface an error so the
 	// caller does not append the original answer after the bad markers.
-	if !citationGroundingHasSubstantiveText(resp.Content) {
+	if !citationGroundingHasSubstantiveText(grounded) {
 		if emittedVisible {
 			return content, fmt.Errorf("citation grounding returned markers without answer text")
 		}
 		return content, nil
 	}
-	return resp.Content, nil
+	return grounded, nil
 }
 
 // chunksFromState extracts the recorded retrieval chunks from
@@ -1001,6 +1013,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	defer runtime.FinalizeAgentMessage(ctx)
 
 	p := mergeAgentParam(c.param, inputs)
+	p.toolInvocations = &toolInvocationRecorder{}
 	originalModelID := p.ModelID
 	hasRuntimeUserPrompt := false
 	if v, ok := stringFrom(inputs, "user_prompt"); ok {
@@ -1041,6 +1054,18 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		if query, ok := stringFromState(state, "query"); ok {
 			p.UserPrompt = query
 		}
+	}
+	if len(p.OutputStructure) > 0 {
+		keySource := p.OutputStructure
+		if props, ok := p.OutputStructure["properties"].(map[string]any); ok && len(props) > 0 {
+			keySource = props
+		}
+		keys := make([]string, 0, len(keySource))
+		for key := range keySource {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		p.SystemPrompt = appendPromptText(p.SystemPrompt, "Return your final answer as a single valid JSON object containing these keys: "+strings.Join(keys, ", ")+". Do not include markdown fences or prose outside the JSON object.")
 	}
 
 	if p.ModelID == "" {
@@ -1083,12 +1108,20 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		}
 	}
 	if err != nil {
+		invocations := p.toolInvocations.snapshot()
 		// Only step exhaustion is an _ERROR output. Model/tool failures must
 		// stop execution before downstream nodes read an absent content output.
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, compose.ErrExceedMaxSteps) {
+			if len(invocations) > 0 {
+				return map[string]any{"tool_invocations": invocations}, fmt.Errorf("component: Agent.Invoke: %w", err)
+			}
 			return nil, fmt.Errorf("component: Agent.Invoke: %w", err)
 		}
-		return map[string]any{"_ERROR": "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}, nil
+		out := map[string]any{"_ERROR": "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}
+		if len(invocations) > 0 {
+			out["tool_invocations"] = invocations
+		}
+		return out, nil
 	}
 	// Post-stream citation grounding. When Cite is enabled and
 	// the canvas state has recorded retrieval chunks (populated
@@ -1116,7 +1149,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 
 	var groundingStatus string
 	if p.Cite {
-		chunks := chunksFromState(ctx)
+		chunks := limitCitationSources(chunksFromState(ctx), citationGroundingSourceTokenBudget)
 		if len(chunks) == 0 {
 			groundingStatus = "no_chunks"
 		} else {
@@ -1139,6 +1172,9 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		"thinking":   thinking,
 		"tool_calls": extractToolCalls(msg),
 		"artifacts":  artifacts,
+	}
+	if invocations := p.toolInvocations.snapshot(); len(invocations) > 0 {
+		out["tool_invocations"] = invocations
 	}
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
@@ -1218,6 +1254,7 @@ func (c *AgentComponent) Inputs() map[string]string {
 func (c *AgentComponent) Outputs() map[string]string {
 	return map[string]string{
 		"content":          "Final assistant content (after the ReAct loop terminates)",
+		"structured":       "Parsed structured output when configured.",
 		"thinking":         "Model reasoning content, when the provider returns it separately.",
 		"tool_calls":       "One entry per tool call observed during the run",
 		"artifacts":        "Artifacts collected from tool responses (empty in P0)",
@@ -1577,7 +1614,7 @@ func stringFromState(state *runtime.CanvasState, name string) (string, bool) {
 	if state == nil {
 		return "", false
 	}
-	v, ok := state.Sys[name].(string)
+	v, ok := state.GetSysString(name)
 	if !ok || strings.TrimSpace(v) == "" {
 		return "", false
 	}
@@ -2078,6 +2115,9 @@ func agentParamFromMap(params map[string]any) AgentParam {
 // init registers AgentComponent with the orchestrator-owned registry.
 func init() {
 	Register("Agent", func(params map[string]any) (Component, error) {
+		if err := validateAgentToolEntries(params["tools"], false); err != nil {
+			return nil, runtime.NewUserFacingError(fmt.Sprintf("Agent: %v", err))
+		}
 		return NewAgentComponent(agentParamFromMap(params)), nil
 	})
 }

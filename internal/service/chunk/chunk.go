@@ -43,6 +43,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/dao/transaction"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/ingestion/knowledge_compile"
@@ -191,10 +192,10 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 
 	// Check if all kbs resolve to the same base embedding model
 	if len(kbRecords) > 1 {
-		embdNameCache := make(map[string]string)
-		firstEmbeddingKey := knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[0], tenantIDs[0], embdNameCache)
+		embdNames := transaction.NewEmbeddingBaseNameResolver(dao.NewKnowledgebaseDAO().EmbeddingBaseName)
+		firstEmbeddingKey := knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[0], tenantIDs[0], embdNames)
 		for i := 1; i < len(kbRecords); i++ {
-			if knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[i], tenantIDs[i], embdNameCache) != firstEmbeddingKey {
+			if knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[i], tenantIDs[i], embdNames) != firstEmbeddingKey {
 				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
 			}
 		}
@@ -287,8 +288,11 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 			common.Warn("Failed to get flatted metadata", zap.Error(err))
 		} else {
 			common.Info("metadata filter conditions", zap.Any("filter", filter))
-			filteredDocIDs, _ := service.ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, req.DocIDs, []string(req.Datasets))
-			docIDs = filteredDocIDs
+			// nil means no metadata narrowing: search the caller's scope
+			// unfiltered rather than scoping to nothing.
+			if filteredDocIDs := service.ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, req.DocIDs, []string(req.Datasets)); filteredDocIDs != nil {
+				docIDs = filteredDocIDs
+			}
 			common.Info("ApplyMetaDataFilter result", zap.Strings("docIDs", docIDs))
 		}
 	}
@@ -302,7 +306,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	if len(req.CrossLanguages) > 0 || (req.Keyword != nil && *req.Keyword) {
 		tenantSvc := service.NewTenantService()
 		var err error
-		llmModelName, err = tenantSvc.GetDefaultModelName(ctx, tenantIDs[0], entity.ModelTypeChat)
+		llmModelName, err = tenantSvc.GetDefaultModelNameForTenant(ctx, tenantIDs[0], entity.ModelTypeChat)
 		if err != nil || llmModelName == "" {
 			common.Warn("Failed to get default chat model name for LLM transformations", zap.Error(err))
 		} else {
@@ -497,11 +501,11 @@ func resolveSearchbotRetrievalParams(req *service.RetrievalTestRequest, searchCo
 // model name (e.g. "BAAI/bge-m3") so datasets pointing at the same model
 // through different provider instances or storage forms (tenant_model id vs
 // legacy composite name) retrieve together.
-func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, tenantID string, cache map[string]string) string {
+func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, tenantID string, names *transaction.EmbeddingBaseNameResolver) string {
 	if strings.TrimSpace(kb.EmbdID) == "" && (kb.TenantEmbdID == nil || strings.TrimSpace(*kb.TenantEmbdID) == "") {
 		return fmt.Sprintf("default:%s", tenantID)
 	}
-	return "embd:" + dao.NewKnowledgebaseDAO().EmbeddingBaseName(ctx, db, kb, cache)
+	return "embd:" + names.Resolve(ctx, db, kb)
 }
 
 // hydrateChunkVectors replaces zero (placeholder) vectors in chunks with real
@@ -875,6 +879,8 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			"content_with_weight",
 			"img_id",
 			"position_int",
+			// Read back only to emit the `available` boolean.
+			"available_int",
 			// Call for the ES field names: Elasticsearch does not translate
 			// SelectFields (see elasticsearch/chunk.go), while Infinity's
 			// convertSelectFields maps these names onto its own docnm /
@@ -920,6 +926,13 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	for _, chunk := range searchResp.Chunks {
 		// Inline formatChunkForList
 		result := make(map[string]interface{})
+		// `available`: available_int=0 → false, missing → true; the frontend uses
+		// it to render disabled chunks, incl. parent rows.
+		availableInt := 1
+		if stored, ok := common.GetInt(chunk["available_int"]); ok {
+			availableInt = stored
+		}
+		result["available"] = availableInt != 0
 		skipFields := map[string]bool{
 			"_id": true, "authors": true, "_score": true, "SCORE": true, "available_int": true,
 			"important_kwd_empty_count": true, "kb_id": true, "mom_id": true, "page_num_int": true,
@@ -1465,6 +1478,12 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	}
 	if tagFeas != nil {
 		chunkData["tag_feas"] = tagFeas
+	}
+	if kb.Pagerank != 0 {
+		// Python's chunk_api.create stamps the dataset's pagerank on a manually
+		// added chunk (`if kb.pagerank: d["pagerank_fea"] = kb.pagerank`); a
+		// chunk that skipped it would rank at 0 until the setting is re-saved.
+		chunkData[common.PAGERANK_FLD] = kb.Pagerank
 	}
 
 	if req.ImageBase64 != nil {

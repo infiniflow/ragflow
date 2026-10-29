@@ -127,6 +127,7 @@ export const useFetchAllAddedModels = (
   const {
     data,
     isFetching: loading,
+    refetch,
     isFetched,
     isError,
   } = useQuery<IAddedModel[]>({
@@ -150,7 +151,7 @@ export const useFetchAllAddedModels = (
   // `data` is seeded with `initialData: []`, so it can't tell a real empty
   // result apart from "fetch hasn't completed yet" — `isFetched` stays false
   // until a genuine response (or error) arrives.
-  return { data, loading, isFetched, isError };
+  return { data, loading, isFetched, isError, refetch };
 };
 
 /**
@@ -164,14 +165,22 @@ export const useModelValidIds = (
   modelTypes: string[],
   ownerTenantId?: string,
 ) => {
-  const { data, isFetched } = useFetchAllAddedModels(undefined, ownerTenantId);
-
+  const { data, isFetched, refetch } = useFetchAllAddedModels(
+    undefined,
+    ownerTenantId,
+  );
   const validIds = useMemo(
     () => buildValidModelIds(data, modelTypes),
     [data, modelTypes],
   );
 
-  return { validIds, isFetched };
+  const resolveValidIds = async () => {
+    const result = await refetch();
+    if (result.isError) throw result.error;
+    return buildValidModelIds(result.data ?? [], modelTypes);
+  };
+
+  return { validIds, isFetched, resolveValidIds };
 };
 
 export function useFindLlmByUuid() {
@@ -367,7 +376,7 @@ export const useListProviderModels = () => {
   const { isPending: loading, mutateAsync } = useMutation({
     mutationKey: [LLMApiAction.ListProviderModels],
     mutationFn: async (params: IListProviderModelsRequestBody) => {
-      const { provider_name, api_key, base_url } = params;
+      const { provider_name, api_key, base_url, instance_name } = params;
       // GET /api/v1/providers/<provider_name>/models
       // The API accepts api_key and base_url as optional query parameters.
       // api_key is expected as a string; values in {} object form must be
@@ -379,6 +388,12 @@ export const useListProviderModels = () => {
       }
       if (base_url) {
         queryParams.base_url = base_url;
+      }
+      // Sent for an already-saved instance: the API then uses the stored
+      // credential and base URL, which is the only way a provider with no
+      // bundled catalog can be listed after saving.
+      if (instance_name) {
+        queryParams.instance_name = instance_name;
       }
       const { data } = await llmService.listProviderModels(
         { provider_name, params: queryParams },

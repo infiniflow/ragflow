@@ -91,7 +91,7 @@ func goMergeGroupsOracle(paragraphs []string, cap int, overlapPct float64) []str
 		if sub == "" {
 			continue
 		}
-		units = append(units, schema.ChunkDoc{Text: sub, TKNums: intPtr(tokenizeStr(sub)), CKType: "text"})
+		units = append(units, schema.ChunkDoc{Text: sub, TKNums: intPtr(tokenizeStr(sub))})
 	}
 	merged := mergeUnits(units, cap, overlapPct, "")
 	out := make([]string, 0, len(merged))
@@ -187,7 +187,7 @@ func invokeTokenChunker(t *testing.T, text string, chunkTokenSize int, overlappe
 	if msg, ok := out["_ERROR"].(string); ok && msg != "" {
 		t.Fatalf("TokenChunker returned _ERROR: %s", msg)
 	}
-	raw, _ := out["chunks"].([]map[string]any)
+	raw, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	texts := make([]string, 0, len(raw))
 	for _, c := range raw {
 		if s, ok := c["text"].(string); ok {
@@ -239,7 +239,7 @@ func goMergeWithOverlapOracle(paragraphs []string, chunkTokenSize int, overlappe
 		if sub == "" {
 			continue
 		}
-		units = append(units, schema.ChunkDoc{Text: sub, TKNums: intPtr(tokenizeStr(sub)), CKType: "text"})
+		units = append(units, schema.ChunkDoc{Text: sub, TKNums: intPtr(tokenizeStr(sub))})
 	}
 	merged := mergeUnits(units, chunkTokenSize, overlappedPercent, "")
 	out := make([]string, 0, len(merged))

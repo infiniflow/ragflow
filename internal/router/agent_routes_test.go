@@ -55,10 +55,13 @@ func TestAgentRoutesRegistered(t *testing.T) {
 		{http.MethodGet, "/api/v1/agents/abc/versions"},
 		{http.MethodGet, "/api/v1/agents/abc/versions/v1"},
 		{http.MethodDelete, "/api/v1/agents/abc/versions/v1"},
+		{http.MethodPost, "/api/v1/agents/abc/versions/v1/apply"},
 		{http.MethodPost, "/api/v1/agents/abc/reset"},
+		{http.MethodPost, "/api/v1/agents/abc/webhook/credentials"},
+		{http.MethodDelete, "/api/v1/agents/abc/webhook/credentials"},
 	}
-	if len(cases) != 11 {
-		t.Fatalf("expected 11 routes, listed %d", len(cases))
+	if len(cases) != 14 {
+		t.Fatalf("expected 14 routes, listed %d", len(cases))
 	}
 	for _, c := range cases {
 		w := httptest.NewRecorder()
@@ -68,6 +71,21 @@ func TestAgentRoutesRegistered(t *testing.T) {
 		// would panic; what we care about is "not NoRoute 404".
 		if w.Code == http.StatusNotFound {
 			t.Errorf("route %s %s returned 404 — RegisterAgentRoutes did not wire it", c.method, c.path)
+		}
+	}
+}
+
+func TestPublicAgentWebhookRouteRegistered(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	RegisterPublicAgentWebhookRoutes(engine.Group("/api/v1/agents"), &handler.AgentHandler{})
+
+	for _, method := range []string{http.MethodPost, http.MethodGet, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodHead} {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(method, "/api/v1/agents/agent-1/webhook", nil)
+		engine.ServeHTTP(response, request)
+		if response.Code == http.StatusNotFound {
+			t.Errorf("%s production webhook route was not registered", method)
 		}
 	}
 }

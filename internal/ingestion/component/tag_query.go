@@ -25,6 +25,8 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -154,14 +156,14 @@ type resolvedTagSource struct {
 // all_tags_in_portion / tag_query: Go has no tag dataset, so the records come
 // from the tag source file. Returns (nil, nil) when refs is empty or yields no
 // usable records.
-func LoadTagQueryIndex(ctx context.Context, refs []TagSourceRef) (*MemoryTagIndex, error) {
+func LoadTagQueryIndex(ctx context.Context, db *gorm.DB, refs []TagSourceRef) (*MemoryTagIndex, error) {
 	resolved := make([]resolvedTagSource, 0, len(refs))
 	tokens := make([]string, 0, len(refs))
 	for _, ref := range refs {
 		if ref.FileID == "" {
 			continue
 		}
-		f, err := resolveTagSourceFile(ctx, ref.FileID, ref.TenantID)
+		f, err := resolveTagSourceFile(ctx, db, ref.FileID, ref.TenantID)
 		if err != nil {
 			return nil, err
 		}
