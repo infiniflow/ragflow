@@ -824,3 +824,14 @@ func ParseRequestIntPositive(c *gin.Context, parameter, parameterName string, de
 	}
 	return parameterInt, nil
 }
+
+// ResponseWithDetail returns an error envelope with a structured detail
+// payload. Billing resource failures expose detail.current / detail.limit so
+// the web upgrade modal can render the shortage.
+func ResponseWithDetail(c *gin.Context, code ErrorCode, message string, detail interface{}) {
+	c.JSON(http.StatusOK, struct {
+		Code    ErrorCode   `json:"code"`
+		Message interface{} `json:"message"`
+		Detail  interface{} `json:"detail,omitempty"`
+	}{Code: code, Message: message, Detail: detail})
+}

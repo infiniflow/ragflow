@@ -19,6 +19,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/engine"
@@ -32,6 +33,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
+	"ragflow/internal/service/billing"
 	dataset "ragflow/internal/service/dataset"
 )
 
@@ -272,6 +274,25 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 	if tenantID == "" {
 		tenantID = user.ID
 	}
+
+	// Application quota: every new dataset counts as one app, matching
+	// Python's check_dynamic_resources(apps=1).
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		if quotaErr := billingService.CheckResources(ctx, tenantID, billing.ResourceDelta{Apps: 1}); quotaErr != nil {
+			var insufficient *billing.InsufficientResourceError
+			if errors.As(quotaErr, &insufficient) {
+				common.ResponseWithDetail(c, common.CodeBillingAppsInsufficient, quotaErr.Error(), gin.H{
+					"resource": "apps",
+					"current":  insufficient.Current,
+					"limit":    insufficient.Limit,
+				})
+				return
+			}
+			common.ErrorWithCode(c, common.CodeServerError, quotaErr.Error())
+			return
+		}
+	}
+
 	result, code, err := h.datasetsService.CreateDataset(ctx, &req, permission.Subject{
 		UserID:   user.ID,
 		TenantID: tenantID,

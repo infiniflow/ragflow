@@ -38,7 +38,9 @@ import (
 
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/parser"
+
 	"gorm.io/gorm"
+	"ragflow/internal/entity"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
@@ -152,8 +154,9 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 		if pair.RowNum >= 0 {
 			chunk.TopInt = []int{pair.RowNum}
 		}
-		if pair.Image != "" {
+		if pair.Image != "" || pair.MediaRef != nil {
 			chunk.Image = pair.Image
+			chunk.MediaRef = pair.MediaRef
 			chunk.DocType = "image"
 		}
 		if len(pair.PDFPositions) > 0 {
@@ -184,6 +187,7 @@ type qaPair struct {
 	// chunk preserves metadata that Python sets via beAdocPdf/beAdocDocx
 	//
 	Image        string
+	MediaRef     *entity.MediaRef
 	PDFPositions json.RawMessage
 	Positions    json.RawMessage
 	Sheet        string
@@ -443,6 +447,7 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 			p.Sheet = item.Sheet
 			p.SheetIndex = item.SheetIndex
 			p.Image = item.Image
+			p.MediaRef = item.MediaRef
 			p.PDFPositions = item.PDFPositions
 			if len(p.Positions) == 0 {
 				p.Positions = item.Positions

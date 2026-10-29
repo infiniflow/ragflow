@@ -325,11 +325,11 @@ func (s *AgentService) ListAgentSessions(ctx context.Context, userID, _ string, 
 	sessionDAO := dao.NewChatSessionDAO()
 
 	if req.ExpUserID != "" {
-		rows, err := sessionDAO.ListAgentSessionNames(ctx, dao.DB, agentID, req.ExpUserID)
+		total, rows, err := sessionDAO.ListAgentSessionNames(ctx, dao.DB, agentID, req.ExpUserID, req.Page, req.PageSize)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
-		return &ListAgentSessionsResponse{Data: rows, Total: int64(len(rows))}, common.CodeSuccess, nil
+		return &ListAgentSessionsResponse{Data: rows, Total: total}, common.CodeSuccess, nil
 	}
 
 	fromDate, err := parseAgentSessionDate(req.FromDate, false)

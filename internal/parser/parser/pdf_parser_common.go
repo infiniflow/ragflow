@@ -364,7 +364,7 @@ func (p *PDFParser) validateParseMethod() error {
 func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	result := p.parseWithResult(ctx, filename, data)
 	if result.Err == nil {
-		return p.NormalizeResult(ctx, filename, result)
+		return AttachPDFOutlines(p.NormalizeResult(ctx, filename, result), data)
 	}
 	return result
 }

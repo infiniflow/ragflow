@@ -29,17 +29,26 @@ import (
 )
 
 type IngestorConfig struct {
-	// MaxConcurrentWorkers bounds how many ingestion tasks the ingestor runs in
+	// ConcurrentWorkers bounds how many ingestion tasks the ingestor runs in
 	// parallel — it is the NATS consumer worker count. Valid range [1, 256],
 	// enforced at startup by the CLI/env/config resolver (GetIngestor*); a
 	// value outside that range is a fatal startup error. Default 1.
-	MaxConcurrentWorkers int `mapstructure:"max_concurrent_workers"`
+	ConcurrentWorkers int `mapstructure:"concurrent_workers"`
+	// ConcurrentWorkersSet is true when concurrent_workers was explicitly
+	// present in the config file. It lets the server distinguish "unset" (fall
+	// back to the default of 1) from an explicit value such as 0 or a negative
+	// number, which is invalid for the worker count and must be rejected rather
+	// than silently defaulted.
+	ConcurrentWorkersSet bool
 	// PageConcurrency bounds the total number of PDF pages parsed concurrently
 	// across the whole process (it sizes the single shared page worker pool that
 	// all ingestor workers submit to), not a per-document or per-worker limit.
 	// Valid range [1, 16], enforced at startup by the CLI/env/config resolver; a
 	// value outside that range is a fatal startup error. Default 2.
 	PageConcurrency int `mapstructure:"page_concurrency"`
+	// PageConcurrencySet is true when page_concurrency was explicitly present in
+	// the config file, mirroring ConcurrentWorkersSet.
+	PageConcurrencySet bool
 	// CompilerPoolSize bounds the process-wide knowledge-compilation worker
 	// pool that drives the cross-doc KNN / LLM-merge / write stages. 0/negative
 	// falls back to runtime.NumCPU() (or KC_COMPILE_CONCURRENCY if set).
@@ -74,7 +83,7 @@ type IngestorConfig struct {
 // configured values can be validated against a single source of truth.
 const (
 	// MinIngestorWorkers / MaxIngestorWorkers are the inclusive bounds for
-	// ingestor.max_concurrent_workers (the NATS consumer count K).
+	// ingestor.concurrent_workers (the NATS consumer count K).
 	MinIngestorWorkers = 1
 	MaxIngestorWorkers = 256
 	// MinPageConcurrency / MaxPageConcurrency are the inclusive bounds for
@@ -85,7 +94,7 @@ const (
 
 func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 	// Default Ingestor config.
-	c.ingestor.MaxConcurrentWorkers = 1
+	c.ingestor.ConcurrentWorkers = 1
 	c.ingestor.PageConcurrency = 2
 	c.ingestor.CompilerPoolSize = 0
 	c.ingestor.deepDocInferenceConcurrency = 1
@@ -101,11 +110,13 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 		return nil
 	}
 
-	if sub.IsSet("max_concurrent_workers") {
-		c.ingestor.MaxConcurrentWorkers = sub.GetInt("max_concurrent_workers")
+	if sub.IsSet("concurrent_workers") {
+		c.ingestor.ConcurrentWorkers = sub.GetInt("concurrent_workers")
+		c.ingestor.ConcurrentWorkersSet = true
 	}
 	if sub.IsSet("page_concurrency") {
 		c.ingestor.PageConcurrency = sub.GetInt("page_concurrency")
+		c.ingestor.PageConcurrencySet = true
 	}
 	if sub.IsSet("compiler_pool_size") {
 		c.ingestor.CompilerPoolSize = sub.GetInt("compiler_pool_size")
@@ -212,28 +223,32 @@ func (c *Config) GetDeepDocInferenceCPUCores(argValue *int) (int, bool, error) {
 	return val, explicit, nil
 }
 
-// GetIngestorMaxConcurrentWorkers applies the precedence
+// GetIngestorConcurrentWorkers applies the precedence
 // CLI flag > environment variable > config file > default(1) and returns
 // the resolved ingestor worker count (K), validating it against the
 // inclusive range [MinIngestorWorkers, MaxIngestorWorkers]. An out-of-range
-// or noninteger value at any layer is a fatal startup error.
-func (c *Config) GetIngestorMaxConcurrentWorkers(argValue *int) (int, error) {
-	val := MinIngestorWorkers
-	if c.ingestor.MaxConcurrentWorkers > 0 {
-		val = c.ingestor.MaxConcurrentWorkers
-	}
-	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorMaxConcurrentWorkers)); v != "" {
+// or noninteger value at any layer is a fatal startup error. An explicitly
+// configured zero or negative value is rejected (not silently defaulted):
+// the config-layer presence is tracked by ConcurrentWorkersSet so an absent
+// key falls back to the default while an explicit 0/-N fails fast.
+func (c *Config) GetIngestorConcurrentWorkers(argValue *int) (int, error) {
+	val := c.ingestor.ConcurrentWorkers
+	set := c.ingestor.ConcurrentWorkersSet
+	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorConcurrentWorkers)); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorMaxConcurrentWorkers, v, err)
+			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorConcurrentWorkers, v, err)
 		}
-		val = n
+		val, set = n, true
 	}
 	if argValue != nil {
-		val = *argValue
+		val, set = *argValue, true
+	}
+	if !set {
+		val = MinIngestorWorkers
 	}
 	if val < MinIngestorWorkers || val > MaxIngestorWorkers {
-		return 0, fmt.Errorf("ingestor max_concurrent_workers %d out of range [%d, %d]",
+		return 0, fmt.Errorf("ingestor concurrent_workers %d out of range [%d, %d]",
 			val, MinIngestorWorkers, MaxIngestorWorkers)
 	}
 	return val, nil
@@ -244,20 +259,23 @@ func (c *Config) GetIngestorMaxConcurrentWorkers(argValue *int) (int, error) {
 // the resolved per-document page concurrency (N), validating it against
 // the inclusive range [MinPageConcurrency, MaxPageConcurrency]. An
 // out-of-range or noninteger value at any layer is a fatal startup error.
+// As with GetIngestorConcurrentWorkers, an explicitly configured zero or
+// negative page_concurrency is rejected rather than silently defaulted.
 func (c *Config) GetIngestorPageConcurrency(argValue *int) (int, error) {
-	val := 2 // default page concurrency
-	if c.ingestor.PageConcurrency > 0 {
-		val = c.ingestor.PageConcurrency
-	}
+	val := c.ingestor.PageConcurrency
+	set := c.ingestor.PageConcurrencySet
 	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorPageConcurrency)); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
 			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorPageConcurrency, v, err)
 		}
-		val = n
+		val, set = n, true
 	}
 	if argValue != nil {
-		val = *argValue
+		val, set = *argValue, true
+	}
+	if !set {
+		val = 2 // default page concurrency
 	}
 	if val < MinPageConcurrency || val > MaxPageConcurrency {
 		return 0, fmt.Errorf("ingestor page_concurrency %d out of range [%d, %d]",

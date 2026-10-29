@@ -1440,3 +1440,253 @@ func TestDropProviderInstancesRollsBackWhenInstanceDeleteFails(t *testing.T) {
 		t.Fatalf("rollback must keep tenant models for the instance, got %d rows", modelCount)
 	}
 }
+
+// seedDeepSeekProvidersForeignFirst inserts a DeepSeek provider plus a "ds"
+// instance into tenant-1 before tenant-2, so both insertion order and the
+// tenant_id index order put tenant-1 first. Any provider lookup that scans
+// every tenant a user belongs to therefore resolves tenant-1, and every
+// assertion about tenant-2 fails unless the lookup stays inside the request's
+// active tenant.
+func seedDeepSeekProvidersForeignFirst(t *testing.T, db *gorm.DB, tenant1UserID, tenant2UserID string) {
+	t.Helper()
+	activeStatus := entity.TenantMembershipStatusJoined
+	rows := []interface{}{
+		&entity.UserTenant{ID: "user-tenant-1", UserID: tenant1UserID, TenantID: "tenant-1", Role: string(permission.RoleOwner), InvitedBy: tenant1UserID, Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-1", UserID: tenant1UserID, TenantID: "tenant-1", ProviderName: "DeepSeek"},
+		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "ds", APIKey: "sk-tenant-1", Status: "active", Extra: "{}"},
+		&entity.UserTenant{ID: "user-tenant-2", UserID: tenant2UserID, TenantID: "tenant-2", Role: string(permission.RoleOwner), InvitedBy: tenant2UserID, Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-2", UserID: tenant2UserID, TenantID: "tenant-2", ProviderName: "DeepSeek"},
+		&entity.TenantModelInstance{ID: "instance-2", ProviderID: "provider-2", InstanceName: "ds", APIKey: "sk-tenant-2", Status: "active", Extra: "{}"},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+}
+
+func reloadTenantModelInstance(t *testing.T, db *gorm.DB, id string) *entity.TenantModelInstance {
+	t.Helper()
+	var instance entity.TenantModelInstance
+	if err := db.Where("id = ?", id).First(&instance).Error; err != nil {
+		t.Fatalf("failed to reload instance %s: %v", id, err)
+	}
+	return &instance
+}
+
+// TestAlterProviderInstanceUsesActiveTenantProvider pins the reported bug: the
+// saved instance belongs to the active tenant's DeepSeek provider even though
+// the user can also read another tenant's same-named provider.
+func TestAlterProviderInstanceUsesActiveTenantProvider(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedDeepSeekProvidersForeignFirst(t, db, "owner-2", "user-1")
+
+	activeStatus := entity.TenantMembershipStatusJoined
+	if err := db.Create(&entity.UserTenant{
+		ID: "user-tenant-1-member", UserID: "user-1", TenantID: "tenant-1", Role: string(permission.RoleNormal), InvitedBy: "owner-2", Status: &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed tenant-1 membership: %v", err)
+	}
+
+	code, err := NewModelProviderService().AlterProviderInstance(
+		serviceTestContext(t, "user-1", "tenant-2"),
+		"user-1",
+		"DeepSeek",
+		"instance-2",
+		"ds",
+		"sk-tenant-2-updated",
+		"https://api.deepseek.com",
+		"default",
+		[]CreateInstanceModelInfo{{ModelName: "deepseek-v4-pro", ModelTypes: []string{"chat"}, MaxTokens: 8192}},
+	)
+	if err != nil {
+		t.Fatalf("AlterProviderInstance() error = %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code = %v, want %v", code, common.CodeSuccess)
+	}
+
+	instance2 := reloadTenantModelInstance(t, db, "instance-2")
+	if instance2.APIKey != "sk-tenant-2-updated" {
+		t.Fatalf("instance-2 api_key = %q, want the submitted key", instance2.APIKey)
+	}
+	if !strings.Contains(instance2.Extra, "https://api.deepseek.com") {
+		t.Fatalf("instance-2 extra = %q, want the submitted base_url", instance2.Extra)
+	}
+	instance1 := reloadTenantModelInstance(t, db, "instance-1")
+	if instance1.APIKey != "sk-tenant-1" {
+		t.Fatalf("instance-1 api_key = %q, want it untouched", instance1.APIKey)
+	}
+
+	var models []*entity.TenantModel
+	if err := db.Where("instance_id = ?", "instance-2").Find(&models).Error; err != nil {
+		t.Fatalf("failed to list models: %v", err)
+	}
+	if len(models) != 1 || models[0].ModelName != "deepseek-v4-pro" || models[0].ProviderID != "provider-2" {
+		t.Fatalf("models = %#v, want one model under provider-2", models)
+	}
+
+	var foreignModels int64
+	if err := db.Model(&entity.TenantModel{}).Where("instance_id = ?", "instance-1").Count(&foreignModels).Error; err != nil {
+		t.Fatalf("failed to count instance-1 models: %v", err)
+	}
+	if foreignModels != 0 {
+		t.Fatalf("instance-1 models = %d, want none", foreignModels)
+	}
+}
+
+// TestAlterProviderInstanceReportsInstanceProviderMismatch covers the instance
+// identifier of another provider inside the same tenant: the request must fail
+// with an explicit message and leave the data untouched.
+func TestAlterProviderInstanceReportsInstanceProviderMismatch(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	activeStatus := entity.TenantMembershipStatusJoined
+	rows := []interface{}{
+		&entity.UserTenant{ID: "user-tenant-2", UserID: "user-1", TenantID: "tenant-2", Role: string(permission.RoleOwner), InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-deepseek", UserID: "user-1", TenantID: "tenant-2", ProviderName: "DeepSeek"},
+		&entity.TenantModelInstance{ID: "instance-deepseek", ProviderID: "provider-deepseek", InstanceName: "ds", APIKey: "sk-deepseek", Status: "active", Extra: "{}"},
+		&entity.TenantModelProvider{ID: "provider-openai", UserID: "user-1", TenantID: "tenant-2", ProviderName: "OpenAI"},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	code, err := NewModelProviderService().AlterProviderInstance(
+		serviceTestContext(t, "user-1", "tenant-2"),
+		"user-1",
+		"OpenAI",
+		"instance-deepseek",
+		"ds",
+		"sk-should-not-be-written",
+		"",
+		"",
+		[]CreateInstanceModelInfo{{ModelName: "gpt-test", ModelTypes: []string{"chat"}, MaxTokens: 8192}},
+	)
+	if err == nil {
+		t.Fatal("AlterProviderInstance() error = nil, want an instance/provider mismatch")
+	}
+	if code != common.CodeNotFound {
+		t.Fatalf("code = %v, want %v", code, common.CodeNotFound)
+	}
+	if !strings.Contains(err.Error(), "does not belong to provider") {
+		t.Fatalf("error = %q, want an explicit mismatch message", err)
+	}
+
+	instance := reloadTenantModelInstance(t, db, "instance-deepseek")
+	if instance.APIKey != "sk-deepseek" {
+		t.Fatalf("api_key = %q, want the original key", instance.APIKey)
+	}
+	var modelCount int64
+	if err := db.Model(&entity.TenantModel{}).Where("instance_id = ?", "instance-deepseek").Count(&modelCount).Error; err != nil {
+		t.Fatalf("failed to count models: %v", err)
+	}
+	if modelCount != 0 {
+		t.Fatalf("models = %d, want no writes after the mismatch", modelCount)
+	}
+}
+
+// TestAlterProviderInstanceScopesToActiveTenant saves the same provider name in
+// two tenants owned by one user and asserts each save touches only its own row.
+func TestAlterProviderInstanceScopesToActiveTenant(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedDeepSeekProvidersForeignFirst(t, db, "user-1", "user-1")
+
+	service := NewModelProviderService()
+	if code, err := service.AlterProviderInstance(
+		serviceTestContext(t, "user-1", "tenant-2"),
+		"user-1", "DeepSeek", "instance-2", "ds", "sk-from-tenant-2", "", "",
+		[]CreateInstanceModelInfo{{ModelName: "model-2", ModelTypes: []string{"chat"}, MaxTokens: 8192}},
+	); err != nil || code != common.CodeSuccess {
+		t.Fatalf("AlterProviderInstance(tenant-2) = (%v, %v), want success", code, err)
+	}
+	if code, err := service.AlterProviderInstance(
+		serviceTestContext(t, "user-1", "tenant-1"),
+		"user-1", "DeepSeek", "instance-1", "ds", "sk-from-tenant-1", "", "",
+		[]CreateInstanceModelInfo{{ModelName: "model-1", ModelTypes: []string{"chat"}, MaxTokens: 8192}},
+	); err != nil || code != common.CodeSuccess {
+		t.Fatalf("AlterProviderInstance(tenant-1) = (%v, %v), want success", code, err)
+	}
+
+	instance2 := reloadTenantModelInstance(t, db, "instance-2")
+	if instance2.APIKey != "sk-from-tenant-2" {
+		t.Fatalf("instance-2 api_key = %q, want %q", instance2.APIKey, "sk-from-tenant-2")
+	}
+	instance1 := reloadTenantModelInstance(t, db, "instance-1")
+	if instance1.APIKey != "sk-from-tenant-1" {
+		t.Fatalf("instance-1 api_key = %q, want %q", instance1.APIKey, "sk-from-tenant-1")
+	}
+
+	var models2, models1 []*entity.TenantModel
+	if err := db.Where("provider_id = ?", "provider-2").Find(&models2).Error; err != nil {
+		t.Fatalf("failed to list provider-2 models: %v", err)
+	}
+	if err := db.Where("provider_id = ?", "provider-1").Find(&models1).Error; err != nil {
+		t.Fatalf("failed to list provider-1 models: %v", err)
+	}
+	if len(models2) != 1 || models2[0].ModelName != "model-2" || models2[0].InstanceID != "instance-2" {
+		t.Fatalf("provider-2 models = %#v, want model-2 on instance-2", models2)
+	}
+	if len(models1) != 1 || models1[0].ModelName != "model-1" || models1[0].InstanceID != "instance-1" {
+		t.Fatalf("provider-1 models = %#v, want model-1 on instance-1", models1)
+	}
+}
+
+// TestAddModelUsesActiveTenantProvider keeps AddModel inside the active tenant.
+func TestAddModelUsesActiveTenantProvider(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedDeepSeekProvidersForeignFirst(t, db, "user-1", "user-1")
+
+	code, err := NewModelProviderService().AddModel(
+		serviceTestContext(t, "user-1", "tenant-2"),
+		&AddModelRequest{ProviderName: "DeepSeek", InstanceName: "instance-2", ModelName: "added-model", ModelTypes: []string{"chat"}, MaxTokens: 1024},
+		"user-1",
+	)
+	if err != nil {
+		t.Fatalf("AddModel() error = %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code = %v, want %v", code, common.CodeSuccess)
+	}
+
+	var model entity.TenantModel
+	if err := db.Where("model_name = ?", "added-model").First(&model).Error; err != nil {
+		t.Fatalf("failed to reload added model: %v", err)
+	}
+	if model.ProviderID != "provider-2" || model.InstanceID != "instance-2" {
+		t.Fatalf("model provider/instance = %q/%q, want provider-2/instance-2", model.ProviderID, model.InstanceID)
+	}
+}
+
+// TestCreateProviderInstanceUsesActiveTenantProvider keeps new instances inside
+// the active tenant's provider row.
+func TestCreateProviderInstanceUsesActiveTenantProvider(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedDeepSeekProvidersForeignFirst(t, db, "user-1", "user-1")
+
+	code, err := NewModelProviderService().CreateProviderInstance(
+		serviceTestContext(t, "user-1", "tenant-2"),
+		"DeepSeek", "created-in-tenant-2", "sk-created", "", "default", "user-1",
+		[]CreateInstanceModelInfo{{ModelName: "deepseek-v4-pro", ModelTypes: []string{"chat"}, MaxTokens: 8192}},
+	)
+	if err != nil {
+		t.Fatalf("CreateProviderInstance() error = %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code = %v, want %v", code, common.CodeSuccess)
+	}
+
+	var created entity.TenantModelInstance
+	if err := db.Where("instance_name = ?", "created-in-tenant-2").First(&created).Error; err != nil {
+		t.Fatalf("failed to reload created instance: %v", err)
+	}
+	if created.ProviderID != "provider-2" {
+		t.Fatalf("created instance provider_id = %q, want provider-2", created.ProviderID)
+	}
+}
