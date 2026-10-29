@@ -763,40 +763,24 @@ func (s *FileCommitService) ListCommitFiles(ctx context.Context, commitID string
 
 // DiffCommits compares two commits and returns the diff
 func (s *FileCommitService) DiffCommits(ctx context.Context, fromID, toID string) ([]entity.DiffEntry, error) {
-	fromItems, err := s.commitItemDAO.ListByCommitID(ctx, dao.DB, fromID)
+	fromCommit, err := s.commitDAO.GetByID(ctx, dao.DB, fromID)
 	if err != nil {
 		return nil, err
 	}
-	toItems, err := s.commitItemDAO.ListByCommitID(ctx, dao.DB, toID)
-	if err != nil {
-		return nil, err
-	}
-
-	fromMap := make(map[string]*entity.FileCommitItem)
-	for _, item := range fromItems {
-		fromMap[item.FileID] = item
-	}
-	toMap := make(map[string]*entity.FileCommitItem)
-	for _, item := range toItems {
-		toMap[item.FileID] = item
-	}
-
-	// Get tree state for file names (use to commit)
 	toCommit, err := s.commitDAO.GetByID(ctx, dao.DB, toID)
-	treeState := make(map[string]interface{})
-	if err == nil && toCommit != nil && toCommit.TreeState != nil {
-		json.Unmarshal([]byte(*toCommit.TreeState), &treeState)
+	if err != nil {
+		return nil, err
 	}
-
-	getFileName := func(fileID string) string {
-		if entry, ok := treeState[fileID]; ok {
-			if m, ok := entry.(map[string]interface{}); ok {
-				if name, ok := m["name"].(string); ok {
-					return name
-				}
-			}
-		}
-		return fileID
+	if fromCommit.FolderID != toCommit.FolderID {
+		return nil, fmt.Errorf("commits belong to different workspaces")
+	}
+	fromMap, err := activeCommitFiles(fromCommit)
+	if err != nil {
+		return nil, err
+	}
+	toMap, err := activeCommitFiles(toCommit)
+	if err != nil {
+		return nil, err
 	}
 
 	allFileIDs := make(map[string]bool)
@@ -814,42 +798,40 @@ func (s *FileCommitService) DiffCommits(ctx context.Context, fromID, toID string
 	}
 	sort.Strings(sortedIDs)
 
-	var diff []entity.DiffEntry
+	diff := make([]entity.DiffEntry, 0)
 	for _, fid := range sortedIDs {
-		fromItem := fromMap[fid]
-		toItem := toMap[fid]
+		fromFile := fromMap[fid]
+		toFile := toMap[fid]
 
-		var entry entity.DiffEntry
-		entry.FileID = fid
-		entry.FileName = getFileName(fid)
+		entry := entity.DiffEntry{FileID: fid, FileName: fid}
+		if fromFile != nil {
+			entry.FileName = fromFile.Name
+			if fromFile.Hash != "" {
+				entry.OldHash = &fromFile.Hash
+			}
+			if fromFile.Location != "" {
+				entry.OldLocation = &fromFile.Location
+			}
+		}
+		if toFile != nil {
+			entry.FileName = toFile.Name
+			if toFile.Hash != "" {
+				entry.NewHash = &toFile.Hash
+			}
+			if toFile.Location != "" {
+				entry.NewLocation = &toFile.Location
+			}
+		}
 
-		if fromItem != nil && toItem == nil {
-			// Deleted
+		switch {
+		case toFile == nil:
 			entry.Operation = "delete"
-			entry.OldHash = fromItem.NewHash
-			entry.OldLocation = fromItem.NewLocation
-		} else if fromItem == nil && toItem != nil {
-			// Added
+		case fromFile == nil:
 			entry.Operation = "add"
-			entry.NewHash = toItem.NewHash
-			entry.NewLocation = toItem.NewLocation
-		} else {
-			// Both exist — compare hashes
-			fromHash := ""
-			if fromItem.NewHash != nil {
-				fromHash = *fromItem.NewHash
-			}
-			toHash := ""
-			if toItem.NewHash != nil {
-				toHash = *toItem.NewHash
-			}
-			if fromHash != toHash {
-				entry.Operation = "modify"
-				entry.OldHash = fromItem.NewHash
-				entry.OldLocation = fromItem.NewLocation
-				entry.NewHash = toItem.NewHash
-				entry.NewLocation = toItem.NewLocation
-			}
+		case fromFile.Hash != toFile.Hash:
+			entry.Operation = "modify"
+		case fromFile.Name != toFile.Name:
+			entry.Operation = "rename"
 		}
 
 		if entry.Operation != "" {
@@ -858,6 +840,29 @@ func (s *FileCommitService) DiffCommits(ctx context.Context, fromID, toID string
 	}
 
 	return diff, nil
+}
+
+// activeCommitFiles reads the cumulative snapshot, excluding deletion tombstones.
+func activeCommitFiles(commit *entity.FileCommit) (map[string]*entity.TreeNode, error) {
+	if commit.TreeState == nil {
+		return nil, fmt.Errorf("commit %s has no tree snapshot", commit.ID)
+	}
+	var files map[string]*entity.TreeNode
+	if err := json.Unmarshal([]byte(*commit.TreeState), &files); err != nil {
+		return nil, fmt.Errorf("invalid tree snapshot for commit %s: %w", commit.ID, err)
+	}
+	if files == nil {
+		return nil, fmt.Errorf("invalid tree snapshot for commit %s", commit.ID)
+	}
+	for id, file := range files {
+		if file == nil || (file.Status != "0" && file.Status != "1") {
+			return nil, fmt.Errorf("invalid tree entry %s in commit %s", id, commit.ID)
+		}
+		if file.Status == "0" {
+			delete(files, id)
+		}
+	}
+	return files, nil
 }
 
 // GetUncommittedChanges gets uncommitted changes for a workspace folder.
@@ -1054,35 +1059,31 @@ func (s *FileCommitService) buildHierarchicalTree(ctx context.Context, flat map[
 
 // GetCommitFileContent gets file content as it existed in a given commit
 func (s *FileCommitService) GetCommitFileContent(ctx context.Context, folderID, commitID, fileID string) ([]byte, error) {
-	_, err := s.commitDAO.GetByID(ctx, dao.DB, commitID)
+	commit, err := s.commitDAO.GetByID(ctx, dao.DB, commitID)
 	if err != nil {
 		return nil, fmt.Errorf("commit not found: %w", err)
 	}
-
-	item, err := s.commitItemDAO.GetByCommitIDAndFileID(ctx, dao.DB, commitID, fileID)
-	if err != nil {
-		return nil, fmt.Errorf("file not found in commit: %w", err)
+	if commit.FolderID != folderID {
+		return nil, fmt.Errorf("commit not found in workspace")
 	}
-
-	if item.NewHash == nil && item.OldHash == nil {
+	files, err := activeCommitFiles(commit)
+	if err != nil {
+		return nil, err
+	}
+	file := files[fileID]
+	if file == nil {
+		return nil, fmt.Errorf("file not found in commit")
+	}
+	if file.Hash == "" || file.Location == "" {
 		return nil, fmt.Errorf("file has no content in this commit")
 	}
-
-	hash := ""
-	if item.NewHash != nil {
-		hash = *item.NewHash
-	} else if item.OldHash != nil {
-		hash = *item.OldHash
-	}
-
-	objKey := ".objects/" + hash
 
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	blob, err := storageImpl.Get(ctx, folderID, objKey)
+	blob, err := storageImpl.Get(ctx, commit.FolderID, file.Location)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file content from storage: %w", err)
 	}
