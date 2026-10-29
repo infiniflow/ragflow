@@ -2479,9 +2479,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         editAlias: '编辑别名',
         editAliasDescription:
           '为该版本设置一个便于识别的别名，方便后续快速查找。',
-        pinnedTooltip:
-          '该数据集已固定到特定版本。智能体新发布的版本不会影响它。',
-        outdated: '固定的版本不是最新版本。点击了解详情；我们不会自动升级它。',
+        outdated: '当前配置的数据管道版本不是最新版本，也不会自动更新。',
         delete: '删除版本',
         deleteConfirmTitle: '删除该版本？',
         deleteConfirmContent:
