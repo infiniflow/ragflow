@@ -2219,14 +2219,14 @@ func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
 	// second ("Renamed Agent") save by its title instead of relying on list order.
 	var latest *entity.UserCanvasVersion
 	for _, v := range versions {
-		if v.Title != nil && strings.HasPrefix(*v.Title, "owner_Renamed Agent_") {
+		if v.Title != nil && strings.HasPrefix(*v.Title, "Renamed Agent_") {
 			latest = v
 		}
 	}
 	if latest == nil {
 		t.Fatalf("could not find the renamed-agent version among %d versions", len(versions))
 	}
-	if latest.Title == nil || !strings.HasPrefix(*latest.Title, "owner_Renamed Agent_") {
+	if latest.Title == nil || !strings.HasPrefix(*latest.Title, "Renamed Agent_") {
 		t.Fatalf("unexpected version title: %v", latest.Title)
 	}
 	var release bool
@@ -2638,7 +2638,7 @@ func TestPublishAgentUpdatesCanvasAndReleasedVersion(t *testing.T) {
 	if row.Description == nil || *row.Description != description {
 		t.Fatalf("published version description = %v", row.Description)
 	}
-	if row.Title == nil || !strings.HasPrefix(*row.Title, "owner_Published Agent_") {
+	if row.Title == nil || !strings.HasPrefix(*row.Title, "Published Agent_") {
 		t.Fatalf("unexpected published version title: %v", row.Title)
 	}
 
