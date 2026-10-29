@@ -1800,37 +1800,22 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		releaseRegistration()
 	}()
 
-	// Load the version row up front so the run is bound to a real DSL.
+	// DSL resolution: without an explicit version id the run executes the
+	// canvas's current editable draft (canvasRow.DSL) — the DSL the user just
+	// clicked "Run" against, which the front-end auto-saves before running.
+	// Published version rows are only executed through the released path
+	// (runReleasedAgent, embed with release=true) or an explicit ?version= id.
 	//
-	// IDOR guard (v3.5.2 review): when the caller supplies an explicit
-	// version id, the row we load must belong to canvasID — otherwise
-	// any caller who knows a foreign version id could run that
-	// canvas's DSL against their own canvas (a clear
-	// integrity/authorization boundary breach). GetVersion (at the
-	// read path) already enforces this check; the run path did not.
-	// We mirror that check here and surface ErrUserCanvasVersionNotFound
-	// so the handler maps to a clean 404 rather than silently using
-	// the foreign DSL.
+	// IDOR guard: when the caller supplies an explicit version id, the row we
+	// load must belong to canvasID — otherwise any caller who knows a foreign
+	// version id could run that canvas's DSL against their own canvas (a
+	// clear integrity/authorization boundary breach). GetVersion (at the read
+	// path) already enforces this check; the run path mirrors it and surfaces
+	// ErrUserCanvasVersionNotFound so the handler maps to a clean 404 rather
+	// than silently using the foreign DSL. DB-side errors are wrapped with
+	// ErrAgentStorageError so raw DAO strings (DSNs, table names, gorm stack
+	// frames) never reach the client.
 	//
-	// DAO-error visibility (v3.5.2 review): the previous code did
-	// `versionRow, _ = ...` for both GetByID and GetLatest, which
-	// masked every database failure as "no version published" and
-	// let real ops issues hide behind the V1 placeholder answer.
-	// We now distinguish three cases:
-	//   - explicit version, row not found       → 404
-	//   - explicit version, row from other canvas → 404 (IDOR)
-	//   - explicit version, DB error            → 500 (surface it)
-	//   - latest path, no rows + no error       → fall back to canvasRow.DSL (matches Python `completion()`)
-	//   - latest path, DB error                 → 500 (surface it)
-	//
-	// v3.6 follow-up: when no published version exists, fall back to
-	// the canvas's current editable DSL (canvasRow.DSL) instead of
-	// the "no published version" placeholder. The Python reference at
-	// api/db/services/canvas_service.py:332 does the same via
-	// UserCanvasService.get_agent_dsl_with_release(agent_id,
-	// release_mode=False, tenant_id=...) when release_mode is unset
-	// on the request — the front-end's auto-save-on-run path means
-	// the editable DSL is what the user just clicked "Run" against.
 	// The buildRunFunc placeholder branch is reserved for the rare
 	// "canvas exists but has no DSL at all" edge case.
 	var (
@@ -1843,11 +1828,6 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 			if errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
 				return nil, fmt.Errorf("RunAgent: load version %q: %w", version, err)
 			}
-			// Wrap DB-side errors with ErrAgentStorageError so
-			// the handler maps them to CodeServerError (500)
-			// with a sanitized message — raw DAO strings
-			// (DSNs, table names, gorm stack frames) MUST NOT
-			// reach the client.
 			return nil, fmt.Errorf("RunAgent: load version %q: %w: %w", version, err, ErrAgentStorageError)
 		}
 		if row.UserCanvasID != canvasID {
@@ -1861,30 +1841,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 			)
 		}
 		versionRow = row
-	}
-	if versionRow == nil {
-		row, lerr := s.versionDAO.GetLatest(ctx, dao.DB, canvasID)
-		switch {
-		case lerr == nil:
-			versionRow = row
-		case errors.Is(lerr, dao.ErrUserCanvasVersionNotFound):
-			// No published version — fall back to the canvas's
-			// current editable DSL (see v3.6 follow-up comment
-			// above). Mirrors Python's
-			// `get_agent_dsl_with_release(...release_mode=False)`
-			// fallback in completion().
-			if len(canvasRow.DSL) > 0 {
-				dsl = dslpkg.NormalizeForRun(canvasRow.DSL)
-			}
-		default:
-			// Wrap DB-side errors with ErrAgentStorageError
-			// for the same reason as above (no DAO-string
-			// leak to the client).
-			return nil, fmt.Errorf("RunAgent: load latest version for canvas %q: %w: %w", canvasID, lerr, ErrAgentStorageError)
-		}
-	}
-	if dsl == nil {
 		dsl = normalisedDSLForRun(versionRow)
+	} else if len(canvasRow.DSL) > 0 {
+		dsl = dslpkg.NormalizeForRun(canvasRow.DSL)
 	}
 	sessionFound := false
 	if sessionID != "" && s.api4ConversationDAO != nil && dao.DB != nil {
