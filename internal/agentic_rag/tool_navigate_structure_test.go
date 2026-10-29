@@ -523,3 +523,38 @@ func TestParseClaimSupport(t *testing.T) {
 		t.Errorf("reply without a supported field must fail open, got %+v", missingField)
 	}
 }
+
+func TestNavigateStructureToolRejectsDocumentOutsideBoundScope(t *testing.T) {
+	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]structureRow{
+		"d1": {graphRow()},
+	}})
+
+	tool := NewNavigateStructureTool("tenant-1", []string{"kb1"})
+	ctx := withDocumentScope(context.Background(), []string{"d1"})
+	out, err := tool.InvokableRun(ctx, `{"query":"q","doc_ids":["d2"]}`)
+	if err != nil {
+		t.Fatalf("out-of-scope document must not abort the loop: %v", err)
+	}
+	if !strings.Contains(out, toolErrorMarker) || !strings.Contains(out, "outside the conversation") {
+		t.Errorf("expected a <tool_error> naming the bound scope, got:\n%s", out)
+	}
+	if strings.Contains(out, "<structure_navigation") {
+		t.Errorf("an out-of-scope document must not be read, got:\n%s", out)
+	}
+}
+
+func TestNavigateStructureToolReadsOnlyTheBoundDocument(t *testing.T) {
+	installFakeStructureReader(t, fakeStructureReader{byDoc: map[string][]structureRow{
+		"d1": {graphRow()},
+	}})
+
+	tool := NewNavigateStructureTool("tenant-1", []string{"kb1"})
+	ctx := withDocumentScope(context.Background(), []string{"d1"})
+	out, err := tool.InvokableRun(ctx, `{"query":"q","doc_ids":["d1"]}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if !strings.Contains(out, "Alpha (section)") {
+		t.Errorf("the bound document must still be readable, got:\n%s", out)
+	}
+}

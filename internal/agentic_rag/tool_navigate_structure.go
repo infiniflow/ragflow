@@ -994,6 +994,12 @@ func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSO
 	if len(docIDs) == 0 && args.DocID != "" {
 		docIDs = []string{args.DocID}
 	}
+	if len(docIDs) > 0 {
+		docIDs, err = resolveDocumentScope(ctx, docIDs)
+		if err != nil {
+			return "", fmt.Errorf("navigate_structure: %w", err)
+		}
+	}
 	// A doc_id is optional: with none, route the query ourselves so the tool is
 	// usable in one call.
 	routedByQuery := false
