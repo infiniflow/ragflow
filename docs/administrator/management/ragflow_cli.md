@@ -75,7 +75,13 @@ For a source-development checkout, start the Admin Service with `RAGFLOW_DEV_MOD
 RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin --init-superuser
 ```
 
-If this creates the first superuser, its email is `admin@ragflow.io` and its initial password is `admin`. Change that password immediately after the first login. The option does not reset an existing superuser's password.
+If this creates the first superuser, its email is `admin@ragflow.io`. Its initial
+password comes from `DEFAULT_SUPERUSER_PASSWORD` or `ADMIN_DEFAULT_PASSWORD`; if
+neither is set, RAGFlow generates a random password and writes it to
+`logs/admin_bootstrap_password.txt`. For Docker deployments, replace the sample
+`ADMIN_DEFAULT_PASSWORD=admin` in `docker/.env` before first startup whenever
+other hosts can reach the Admin Service. Changing the setting after the
+superuser exists does not reset its password.
 
 Then start the CLI in Admin mode. If `--host` is omitted, it connects to `127.0.0.1:9381` by default:
 

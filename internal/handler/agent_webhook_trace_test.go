@@ -33,6 +33,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 )
 
@@ -58,6 +60,9 @@ func newWebhookTraceTestHandler(t *testing.T) (*AgentHandler, *goredis.Client) {
 	originalDB := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = originalDB })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
+		t.Fatalf("prepare webhook trace permission fixture: %v", err)
+	}
 	if err := db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")}).Error; err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
@@ -92,6 +97,16 @@ func requestWebhookTrace(t *testing.T, h *AgentHandler, canvasID, userID string,
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("GET", path, nil)
+	var user entity.User
+	if err := dao.DB.Where("id = ?", userID).FirstOrCreate(&user, entity.User{ID: userID}).Error; err != nil {
+		t.Fatalf("ensure webhook trace caller: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, "u1", userID, "u1"); err != nil {
+		t.Fatalf("prepare webhook trace caller permission: %v", err)
+	}
+	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
+		UserID: userID, TenantID: "u1",
+	}))
 	c.Set("user", &entity.User{ID: userID})
 	c.Set("user_id", userID)
 	c.Params = gin.Params{{Key: "canvas_id", Value: canvasID}}

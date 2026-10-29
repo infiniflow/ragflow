@@ -36,9 +36,11 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/ingestion/mediacache"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -338,6 +340,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 	indexChunks := append(chunks, parentChunks...)
+	indexdoc.StampDatasetPagerank(indexChunks, s.taskCtx.KB.Pagerank)
 	if err := s.indexWriter.Write(ctx, indexChunks); err != nil {
 		if cleanupErr := s.compensateFailedIndexWrite(ctx, indexChunks); cleanupErr != nil {
 			return nil, fmt.Errorf("write chunks: %w; compensate partial index write: %v", err, cleanupErr)
@@ -373,14 +376,17 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 
 	// Persist is now fully durable: every failure-capable step above
 	// (index write, compiled-product reconcile, Wiki active-MAP state) has
-	// succeeded. Only now drop the per-chunk cache entries this task produced,
-	// so a failure in any of those steps leaves the cache intact for the retry —
-	// the retry resumes after the Parser checkpoint and would otherwise have to
-	// re-pay every embedding/LLM call, which is exactly the cost this cache
-	// exists to absorb. PurgeTask is best-effort and silent when no manifest
-	// exists (e.g. a Redis-less run, where chunkcache.Client() is nil).
+	// succeeded. Only now drop the run-scoped cache entries this task produced,
+	// so a failure in any of those steps leaves chunk results and parser media
+	// intact for retry. Cleanup is best-effort; failed media cleanup is logged
+	// and the entries expire independently.
 	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
 		chunkcache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
+		if s.deps.KV != nil {
+			if err := mediacache.PurgeTask(ctx, s.deps.KV, s.taskCtx.IngestionTask.ID); err != nil {
+				common.Warn("failed to purge task media cache", zap.String("task_id", s.taskCtx.IngestionTask.ID), zap.Error(err))
+			}
+		}
 	}
 
 	return &PipelineResult{
@@ -842,6 +848,13 @@ type PipelineLogInput struct {
 // outcome without the run row that owns it.
 var ErrMissingRunIdentity = errors.New("pipeline log id is required")
 
+// ErrPipelineVersionMissing is the single multi-version Missing sentinel. It is
+// defined once in the dao package (dao.ErrPipelineVersionMissing) and re-exported
+// here so the service and task layers share one identity (review: merge the
+// duplicate service/task sentinels into one implementation). The wrapped message
+// still carries the user-facing hint "pipeline 版本不存在，请重新选择版本".
+var ErrPipelineVersionMissing = dao.ErrPipelineVersionMissing
+
 // RecordPipelineLog persists a pipeline operation log without requiring
 // executor setup. Callers should pass the status in Status.
 //
@@ -1035,6 +1048,24 @@ func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID strin
 	}
 	common.Info(fmt.Sprintf("load canvas %s, name %s", canvasID, canvasTitle))
 
+	// dataflow canvases are versioned (design section 6.2). An explicit pin
+	// resolves that exact version; an empty pin resolves the latest version.
+	// A missing or mis-owned version maps to ErrPipelineVersionMissing so the
+	// parse task fails and the file enters an unparseable Missing state (C4).
+	if canvas.CanvasCategory == "dataflow_canvas" {
+		// Dataflow canvases are versioned (design section 6.2). An explicit pin
+		// resolves that exact version; an empty pin resolves the latest published
+		// version. A missing or mis-owned version returns ErrPipelineVersionMissing
+		// so the parse task fails and the file enters an unparseable Missing state.
+		raw, verr := dao.LoadCanvasVersionDSL(ctx, s.deps.DB, canvasID, s.taskCtx.PipelineVersionID)
+		if verr != nil {
+			return "", "", verr
+		}
+		return string(raw), canvasID, nil
+	}
+
+	// Agent / non-versioned canvases: read the live draft column (out of scope
+	// for multi-version; mirrors the agent read path in the service layer).
 	raw, err := json.Marshal(canvas.DSL)
 	if err != nil {
 		return "", "", fmt.Errorf("marshal canvas dsl %s: %w", canvasID, err)

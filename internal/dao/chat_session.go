@@ -147,20 +147,30 @@ func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	})
 }
 
-// ListByResourceIDs lists only sessions authorized by the permission layer.
-func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, terms []OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error) {
-	if len(sessionIDs) == 0 {
-		return []*entity.ChatSession{}, nil
+// ListByResourceIDs lists sessions for a chat, optionally restricted to sessionIDs.
+func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, terms []OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, int64, error) {
+	if sessionIDs != nil && len(sessionIDs) == 0 {
+		return []*entity.ChatSession{}, 0, nil
 	}
 	var chatSessions []*entity.ChatSession
-	query := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("dialog_id = ? AND id IN ?", chatID, sessionIDs)
+	query := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Model(&entity.ChatSession{}).Where("dialog_id = ?", chatID)
+	if sessionIDs != nil {
+		query = query.Where("id IN ?", sessionIDs)
+	}
 	if sessionID != "" {
 		query = query.Where("id = ?", sessionID)
 	}
 	if name != "" {
 		query = query.Where("name = ?", name)
 	}
-	query = query.Order(chatSessionOrderClause(terms))
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if pageSize == 0 {
+		return []*entity.ChatSession{}, total, nil
+	}
+	query = query.Order(chatSessionOrderClause(terms)).Order("id DESC")
 	if pageSize > 0 {
 		if page < 1 {
 			page = 1
@@ -169,14 +179,14 @@ func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, c
 	}
 	err := query.Find(&chatSessions).Error
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if len(includeHistory) == 0 || includeHistory[0] {
 		if err = hydrateChatSessions(ctx, db, chatSessions); err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 	}
-	return chatSessions, nil
+	return chatSessions, total, nil
 }
 
 // GetDialogByID gets dialog by ID
@@ -210,14 +220,28 @@ func (dao *ChatSessionDAO) DeleteByDialogIDs(ctx context.Context, db *gorm.DB, d
 	return rowsAffected, err
 }
 
-func (dao *ChatSessionDAO) ListAgentSessionNames(ctx context.Context, db *gorm.DB, agentID, expUserID string) ([]map[string]interface{}, error) {
+func (dao *ChatSessionDAO) ListAgentSessionNames(ctx context.Context, db *gorm.DB, agentID, expUserID string, page, pageSize int) (int64, []map[string]interface{}, error) {
+	query := db.WithContext(ctx).Model(&entity.API4Conversation{}).Where("dialog_id = ? AND exp_user_id = ?", agentID, expUserID)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, nil, err
+	}
+
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+
 	var rows []map[string]interface{}
-	err := db.WithContext(ctx).Model(&entity.API4Conversation{}).
+	err := query.
 		Select("id", "name").
-		Where("dialog_id = ? AND exp_user_id = ?", agentID, expUserID).
-		Order("create_date DESC").
+		Order("create_date DESC, id DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
 		Find(&rows).Error
-	return rows, err
+	return total, rows, err
 }
 
 func normalizeAgentSessionOrderBy(orderBy string) string {

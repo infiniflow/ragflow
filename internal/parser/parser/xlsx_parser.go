@@ -27,7 +27,6 @@ import (
 
 type XLSXParser struct {
 	ParseMethod                    string
-	OutputFormat                   string
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
@@ -51,9 +50,6 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
 	}
 	deprecatedHTML4Excel(setup, p.String())
 	deprecatedChunkRows(setup, p.String())
@@ -96,7 +92,6 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 			ctx, filename, data, "XLSX",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
-			p.OutputFormat,
 		)
 	case "", "excelize":
 		// Continue with the local Excelize parser.
@@ -153,7 +148,7 @@ func parseXLSXBytes(data []byte, mediaBudget *embeddedMediaBudget) ([]map[string
 	items := make([]map[string]any, 0)
 	warnings := make([]string, 0)
 	for sheetIdx, sheet := range sheets {
-		records, dataRows, headerRow, sheetWarnings, err := readSpreadsheetRecords(f, sheet)
+		records, dataRows, headerRow, ranges, sheetWarnings, err := readSpreadsheetRecords(f, sheet)
 		if err != nil {
 			return nil, warnings, len(sheets), err
 		}
@@ -167,7 +162,7 @@ func parseXLSXBytes(data []byte, mediaBudget *embeddedMediaBudget) ([]map[string
 		}
 		// One wire shape for every spreadsheet sheet: segmented HTML tables
 		// with row-aligned positions, images interleaved at their anchors.
-		items = append(items, buildSheetItems(records, sheet, sheetIdx+1, headerRow, dataRows, images)...)
+		items = append(items, buildSheetItems(records, sheet, sheetIdx+1, headerRow, dataRows, images, ranges)...)
 		warnings = append(warnings, imageWarnings...)
 	}
 	return items, warnings, len(sheets), nil
@@ -175,9 +170,8 @@ func parseXLSXBytes(data []byte, mediaBudget *embeddedMediaBudget) ([]map[string
 
 func xlsxParseResult(filename string, items []map[string]any, warnings []string, sheets int) ParseResult {
 	return ParseResult{
-		OutputFormat: spreadsheetOutputFormat,
-		File:         map[string]any{"name": filename, "format": "xlsx", "sheets": sheets},
-		JSON:         MapsToItems(items),
-		Warnings:     warnings,
+		File:     map[string]any{"name": filename, "format": "xlsx", "sheets": sheets},
+		JSON:     MapsToItems(items),
+		Warnings: warnings,
 	}
 }

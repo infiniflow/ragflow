@@ -607,21 +607,37 @@ func CropImageRegion(img image.Image, r pdf.DLARegion) (image.Image, error) {
 	return cropped, nil
 }
 
-// CropSectionPositions is the tag-free variant of CropSectionImage. It
-// crops directly from a typed []pdf.Position — for example decoded from a
-// chunk's _pdf_positions matrix — instead of re-parsing a position tag
-// string. The page-image map is keyed by zero-indexed page number.
+// CropMediaSectionPositions crops typed PDF positions for image/table
+// previews: exactly the position bounds, no context bands, no edge dimming.
 //
-// Python: pdf_parser.py:1802 RAGFlowPdfParser.crop()
-func CropSectionPositions(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64) string {
-	return encodeCroppedImage(CropSectionPositionsRaster(positions, decodedImages, zoom))
-}
-
-// CropSectionPositionsRaster crops typed PDF positions and returns the raster
-// without encoding it. Callers that need both OCR and a VLM payload can reuse
-// this image and encode it once after OCR.
-func CropSectionPositionsRaster(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64) image.Image {
-	return cropSectionPositionsRaster(positions, decodedImages, zoom)
+// Python: cropout in _extract_table_figure (pdf_parser.py) — figure/table
+// previews are clean DLA-snapped crops, while only text previews go through
+// crop() with its 120pt context bands and putalpha(128) edge dimming.
+// Routing media through the text path tacks darkened neighbour content
+// above/below every figure.
+//
+// Implementation reuses buildSectionRasterPlan and drops its top/bottom
+// context segments (isEdge): the body segments are computed identically in
+// both paths, so there is no second page-spanning loop to keep in sync.
+func CropMediaSectionPositions(positions []pdf.Position, decodedImages map[int]image.Image, zoom float64) string {
+	plan, ok := buildSectionRasterPlan(positions, decodedImages, zoom)
+	if !ok {
+		return ""
+	}
+	body := plan.segments[:0]
+	for _, s := range plan.segments {
+		if !s.isEdge {
+			body = append(body, s)
+		}
+	}
+	plan.segments = body
+	if len(plan.segments) == 0 {
+		return ""
+	}
+	if !measureSectionRasterPlan(plan, decodedImages) {
+		return ""
+	}
+	return encodeCroppedImage(renderSectionRaster(plan, decodedImages))
 }
 
 // CropSectionPositionsRasterLimited rejects a section before rendering when

@@ -59,7 +59,6 @@ func TestParseFileContent_JSONItems(t *testing.T) {
 
 func TestParseResultText_JSONItemsPreservesOrderAndFallsBackToJSON(t *testing.T) {
 	result, err := parseResultText(parser.ParseResult{
-		OutputFormat: "json",
 		JSON: parser.MapsToItems([]map[string]any{
 			{"text": "first"},
 			{"text": "second"},
@@ -81,7 +80,6 @@ func TestParseResultText_JSONItemsPreservesOrderAndFallsBackToJSON(t *testing.T)
 func TestParseResultText_SpreadsheetSegmentsAreTheirOwnMarkup(t *testing.T) {
 	segment := "<table><caption>Data</caption>\n<tr><th>a</th><th>b</th></tr>\n<tr><td>1</td><td>2</td></tr>\n</table>\n"
 	result, err := parseResultText(parser.ParseResult{
-		OutputFormat: "json",
 		JSON: parser.MapsToItems([]map[string]any{
 			{"text": segment, "doc_type_kwd": "table", "sheet": "Data", "sheet_index": 1},
 		}),
@@ -113,21 +111,8 @@ func TestParseResultText_EmailJSONKeepsSearchableHeaders(t *testing.T) {
 	}
 }
 
-func TestParseResultText_EmptyJSONUsesRenderedFallback(t *testing.T) {
-	result, err := parseResultText(parser.ParseResult{
-		OutputFormat: "json",
-		Markdown:     "legacy markdown",
-	})
-	if err != nil {
-		t.Fatalf("parseResultText: %v", err)
-	}
-	if result != "legacy markdown" {
-		t.Fatalf("parseResultText = %q, want rendered fallback", result)
-	}
-}
-
 func TestParseResultText_EmptyJSONWithoutFallbackReturnsEmpty(t *testing.T) {
-	result, err := parseResultText(parser.ParseResult{OutputFormat: "json"})
+	result, err := parseResultText(parser.ParseResult{})
 	if err != nil {
 		t.Fatalf("parseResultText: %v", err)
 	}
@@ -156,5 +141,28 @@ func TestParseFileContent_MarkdownOutputFormat(t *testing.T) {
 	// This is integration-dependent; verify it doesn't crash and returns something.
 	if result == "" {
 		t.Skip("markdown parser returned empty (integration-only)")
+	}
+}
+
+func TestHTMLContentExtractionWithoutMediaCache(t *testing.T) {
+	input := []byte(`<p>before</p><img alt="figure" src="data:image/png;base64,aGVsbG8="><p>after</p>`)
+	for name, parse := range map[string]func() (string, error){
+		"file":  func() (string, error) { return parseFileContent(t.Context(), "sample.html", input), nil },
+		"agent": func() (string, error) { return parseAgentUploadContent(t.Context(), "sample.html", input, "") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := parse()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{"before", "figure", "after"} {
+				if !strings.Contains(got, want) {
+					t.Errorf("missing %q: %q", want, got)
+				}
+			}
+			if strings.Contains(got, "base64,") || strings.Contains(got, "<img") {
+				t.Fatalf("raw HTML leaked: %q", got)
+			}
+		})
 	}
 }

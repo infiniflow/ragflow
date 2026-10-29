@@ -35,7 +35,8 @@ type MWSModel struct {
 // NewMWSModel creates an MWS model driver.
 func NewMWSModel(baseURL map[string]string, urlSuffix URLSuffix) *MWSModel {
 	driver := NewDummyModel(baseURL, urlSuffix)
-	driver.baseModel.httpClient = common.GetSchemeSafeHTTPClient()
+	driver.baseModel.httpClient = newMWSHTTPClient()
+	driver.baseModel.hideAPIErrorBody = true
 	return &MWSModel{DummyModel: driver}
 }
 
@@ -52,16 +53,18 @@ func (m *MWSModel) NewInstance(baseURL map[string]string) ModelDriver {
 func normalizeMWSProjectURL(rawURL string) (string, error) {
 	value := strings.TrimSuffix(strings.TrimSpace(rawURL), "/")
 	parsed, err := url.Parse(value)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
+	if err != nil || !strings.EqualFold(parsed.Scheme, "https") || !strings.EqualFold(parsed.Hostname(), mwsAPIHost) || (parsed.Port() != "" && parsed.Port() != "443") {
 		return "", fmt.Errorf("MWS API URL must be a project root in the form https://gpt.mwsapis.ru/projects/<project>")
 	}
 	parts := strings.Split(strings.Trim(parsed.Path, "/"), "/")
-	if len(parts) != 2 || parts[0] != "projects" || parts[1] == "" {
+	if len(parts) != 2 || parts[0] != "projects" || parts[1] == "" || parts[1] == "." || parts[1] == ".." {
 		return "", fmt.Errorf("MWS API URL must be a project root in the form https://gpt.mwsapis.ru/projects/<project>")
 	}
-	if parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.User != nil {
+	if parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.User != nil || parsed.Opaque != "" {
 		return "", fmt.Errorf("MWS API URL must not contain credentials, a query string, or a fragment")
 	}
+	parsed.Scheme = "https"
+	parsed.Host = mwsAPIHost
 	parsed.Path = "/projects/" + parts[1]
 	parsed.RawPath = ""
 	return parsed.String(), nil

@@ -221,6 +221,9 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 		if err != nil {
 			return "", err
 		}
+		if fileType == utility.FileTypeHTML {
+			fp = parser.NewHTMLTextParser()
+		}
 		if configurable, ok := fp.(interface{ ConfigureFromSetup(map[string]any) }); ok {
 			configurable.ConfigureFromSetup(map[string]any{"layout_recognize": layoutRecognize})
 		}
@@ -238,43 +241,28 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 }
 
 // parseResultText converts a parser result into the readable text expected by
-// sys.files. JSON results are flattened in item order, preferring each item's
-// text field and serializing items without one as a final fallback.
+// sys.files. Every parser result is structured JSON, so the items are flattened
+// in order, preferring each item's text field and rendering tables; items
+// without either are serialized as a final fallback.
 func parseResultText(res parser.ParseResult) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(res.OutputFormat)) {
-	case "markdown":
-		return res.Markdown, nil
-	case "json":
-		if len(res.JSON) > 0 {
-			parts := make([]string, 0, len(res.JSON))
-			for _, item := range res.JSON {
-				m := item.ToMap()
-				if text, ok := m["text"].(string); ok {
-					parts = append(parts, text)
-					continue
-				}
-				if td, ok := m["table"].(*entity.TableData); ok && td != nil {
-					parts = append(parts, tableutil.RenderTableHTML(td))
-					continue
-				}
-				raw, err := json.Marshal(m)
-				if err != nil {
-					return "", err
-				}
-				parts = append(parts, string(raw))
-			}
-			return strings.Join(parts, "\n"), nil
+	parts := make([]string, 0, len(res.JSON))
+	for _, item := range res.JSON {
+		m := item.ToMap()
+		if text, ok := m["text"].(string); ok {
+			parts = append(parts, text)
+			continue
 		}
-		// Some legacy parsers mark the result as JSON while only populating a
-		// rendered companion field. Preserve that content instead of returning
-		// an empty sys.files value.
-		if res.Markdown != "" {
-			return res.Markdown, nil
+		if td, ok := m["table"].(*entity.TableData); ok && td != nil {
+			parts = append(parts, tableutil.RenderTableHTML(td))
+			continue
 		}
-		return "", nil
-	default:
-		return "", fmt.Errorf("unsupported parser output format %q", res.OutputFormat)
+		raw, err := json.Marshal(m)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, string(raw))
 	}
+	return strings.Join(parts, "\n"), nil
 }
 
 // parseFileContent tries to parse a file's contents using the appropriate parser.
@@ -287,6 +275,9 @@ func parseFileContent(ctx context.Context, filename string, data []byte) string 
 	fp, err := parser.GetParser(fileType)
 	if err != nil {
 		return string(data)
+	}
+	if fileType == utility.FileTypeHTML {
+		fp = parser.NewHTMLTextParser()
 	}
 	res := fp.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {

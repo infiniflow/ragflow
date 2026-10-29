@@ -177,7 +177,8 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, upstream schema.Ch
 		zap.String("variant", "group"),
 		zap.Int("groups", len(groups)),
 	)
-	chunks, _ := buildChunksFromRecordGroups(groups, nil, p, isPlainTextFormat(upstream))
+	docID := globals.GlobalOrInput(parentCtx, nil, "doc_id", upstream.DocID)
+	chunks, _ := buildChunksFromRecordGroups(groups, nil, p, isPlainTextFormat(upstream), docID)
 	// Enforce the title-family token ceiling (chunk_token_cap) right after
 	// build_chunks and BEFORE the on-demand crop, mirroring Python's
 	// invoke() order (build -> cap -> set_chunks). ManualChunker passes
@@ -304,7 +305,7 @@ func isPlainTextFormat(upstream schema.ChunkerFromUpstream) bool {
 // stay aligned with the returned chunks after empty groups are dropped and
 // root_chunk_as_heading is applied, so the token-cap pass can re-prepend a
 // chunk's chain to every piece it splits off.
-func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *titleChunkerParam, plain bool) ([]map[string]any, []string) {
+func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *titleChunkerParam, plain bool, docID string) ([]map[string]any, []string) {
 	chunks := make([]map[string]any, 0, len(groups))
 	var outPrefixes []string
 	if prefixes != nil {
@@ -339,6 +340,9 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 			if first.image != "" {
 				chunk["image"] = first.image
 			}
+			if first.mediaRef != nil {
+				chunk["media_ref"] = first.mediaRef
+			}
 			if first.sheet != "" {
 				chunk["sheet"] = first.sheet
 			}
@@ -367,6 +371,17 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 		if m := mergePositionMatrix(posSrc...); m != nil {
 			chunk["positions"] = m
 		}
+		first := g[0]
+		if !plain && (first.docType == "image" || first.docType == "table") &&
+			chunkText == "" && first.image == "" && first.imgID == nil {
+			if positions := mergePositionMatrix(first.pdfPositions, first.positions); positions != nil {
+				// Seed position-only media identity with coordinates so figures
+				// sharing a root heading stay distinct. The heading text is folded
+				// in below before cropping. These decoded JSON rows always marshal.
+				identity, _ := json.Marshal(positions)
+				chunk["id"] = common.ChunkID(docID, mediaChunkIDPrefix+first.docType+":"+string(identity))
+			}
+		}
 		chunks = append(chunks, chunk)
 		if prefixes != nil {
 			outPrefixes = append(outPrefixes, prefixes[i])
@@ -376,6 +391,10 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 		rootText := toString(chunks[0]["text"])
 		for i := 1; i < len(chunks); i++ {
 			chunks[i]["text"] = rootText + "\n" + toString(chunks[i]["text"])
+			if id := toString(chunks[i]["id"]); id != "" {
+				// Extractor caches key on id, so it must also identify the final text.
+				chunks[i]["id"] = common.ChunkID(docID, mediaChunkIDPrefix+id+":"+toString(chunks[i]["text"]))
+			}
 			if prefixes != nil {
 				outPrefixes[i] = rootText + "\n" + outPrefixes[i]
 			}
@@ -599,17 +618,20 @@ func lineRecordsFromPayload(payload *string) []lineRecord {
 
 // recordsFromStructured converts parser-shaped items into records: text items
 // keep their text, and media items — tables whose TableData has already been
-// rendered to HTML by materializeTableText, images carrying an image payload
-// or reference — pass through as single records. Only an item with none of
-// text, image and img_id is dropped.
+// rendered to HTML by materializeTableText, images carrying an image payload,
+// reference or positions for on-demand cropping — pass through as single
+// records. Only an item with no text, image, img_id or retained position rows
+// is dropped.
 func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 	out := make([]lineRecord, 0, len(items))
 	for _, it := range items {
 		text := itemTextOrFallback(it)
 		// A structured table arrives with Text already rendered from TableData
 		// (materializeTableText); an image item legitimately carries no text —
-		// its payload is the image field. Only a truly empty item is skipped.
-		if text == "" && it.Image == "" && it.ImgID == "" {
+		// its payload may be positions for on-demand cropping rather than inline
+		// image bytes. Only a truly empty item is skipped.
+		if text == "" && !hasMediaPayload(it) &&
+			mergePositionMatrix(it.PDFPositions, it.Positions) == nil {
 			continue
 		}
 		dt := it.DocType
@@ -643,6 +665,7 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 				docType:       dt,
 				imgID:         imgID,
 				image:         image,
+				mediaRef:      it.MediaRef,
 				layout:        it.Layout,
 				pdfPositions:  it.PDFPositions,
 				positions:     it.Positions,

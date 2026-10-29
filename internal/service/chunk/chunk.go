@@ -306,7 +306,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	if len(req.CrossLanguages) > 0 || (req.Keyword != nil && *req.Keyword) {
 		tenantSvc := service.NewTenantService()
 		var err error
-		llmModelName, err = tenantSvc.GetDefaultModelName(ctx, tenantIDs[0], entity.ModelTypeChat)
+		llmModelName, err = tenantSvc.GetDefaultModelNameForTenant(ctx, tenantIDs[0], entity.ModelTypeChat)
 		if err != nil || llmModelName == "" {
 			common.Warn("Failed to get default chat model name for LLM transformations", zap.Error(err))
 		} else {
@@ -1478,6 +1478,12 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	}
 	if tagFeas != nil {
 		chunkData["tag_feas"] = tagFeas
+	}
+	if kb.Pagerank != 0 {
+		// Python's chunk_api.create stamps the dataset's pagerank on a manually
+		// added chunk (`if kb.pagerank: d["pagerank_fea"] = kb.pagerank`); a
+		// chunk that skipped it would rank at 0 until the setting is re-saved.
+		chunkData[common.PAGERANK_FLD] = kb.Pagerank
 	}
 
 	if req.ImageBase64 != nil {

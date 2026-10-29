@@ -119,7 +119,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, result.Sessions, "success")
+	common.SuccessWithDataAndTotal(c, result.Sessions, result.Total, "success")
 }
 
 type ChatCompletionsRequest struct {

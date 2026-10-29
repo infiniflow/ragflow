@@ -23,6 +23,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"gorm.io/gorm"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -87,6 +88,13 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, userID, name
 	if strings.TrimSpace(userID) == "" {
 		return nil, permission.ErrUnauthenticated
 	}
+	tenantID, err := requireCurrentTenantID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := checkFeatureAction(ctx, userID, "chat", permission.ActionWrite); err != nil {
+		return nil, err
+	}
 	if chatID != nil && *chatID != "" {
 		if err := checkChatPermission(ctx, nil, userID, *chatID, permission.OperationUse); err != nil {
 			return nil, err
@@ -94,7 +102,7 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, userID, name
 	}
 	row := &entity.ChatChannel{
 		ID:       common.GenerateUUID(),
-		TenantID: userID,
+		TenantID: tenantID,
 		Name:     name,
 		Channel:  channelType,
 		Config:   config,
@@ -102,7 +110,12 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, userID, name
 		Status:   1,
 	}
 
-	if err := s.chatChannelDAO.Create(ctx, dao.DB, row); err != nil {
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.chatChannelDAO.Create(ctx, tx, row); err != nil {
+			return err
+		}
+		return grantCreatedResourceOwner(ctx, tx, userID, tenantID, permission.ResourceKindChatChannel, row.ID)
+	}); err != nil {
 		return nil, err
 	}
 

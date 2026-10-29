@@ -54,16 +54,15 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "to", "cc", "date", "subject", "body", "metadata"},
+		"fields": []string{"from", "to", "cc", "date", "subject", "body", "metadata"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Fatalf("expected output_format json, got %q", result.OutputFormat)
+	if !result.Produced() {
+		t.Fatalf("expected json output, got %t", result.Produced())
 	}
 	if len(result.JSON) != 2 {
 		t.Fatalf("expected body and header JSON items, got %d", len(result.JSON))
@@ -162,8 +161,8 @@ func TestEmailParser_EmlTextChunkText(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Fatalf("expected output_format json, got %q", result.OutputFormat)
+	if !result.Produced() {
+		t.Fatalf("expected json output, got %t", result.Produced())
 	}
 
 	item := result.JSON[0].ToMap()
@@ -223,8 +222,7 @@ func TestEmailParser_MsgSupported(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"},
+		"fields": []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"},
 	})
 
 	result := p.ParseWithResult(ctx, "sample.msg", data)
@@ -314,8 +312,7 @@ func TestEmailParser_MsgMetadataAlwaysPresent(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "subject"}, // "metadata" intentionally absent
+		"fields": []string{"from", "subject"}, // "metadata" intentionally absent
 	})
 
 	result := p.ParseWithResult(ctx, "sample.msg", data)
@@ -355,8 +352,8 @@ func TestEmailParser_MsgTextOutputExcludesMetadata(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Fatalf("output format = %q, want json", result.OutputFormat)
+	if !result.Produced() {
+		t.Fatalf("output = %t, want true", result.Produced())
 	}
 	if len(result.JSON) == 0 {
 		t.Fatalf("expected non-empty JSON items")
@@ -418,8 +415,7 @@ func TestEmailParser_Base64Attachment(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body", "attachments"},
+		"fields": []string{"from", "body", "attachments"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -451,6 +447,43 @@ func TestEmailParser_Base64Attachment(t *testing.T) {
 	}
 	if fn, _ := atts[0]["filename"].(string); fn != "test.txt" {
 		t.Errorf("filename = %q, want test.txt", fn)
+	}
+}
+
+func TestEmailParser_HTMLAttachmentDoesNotCacheMedia(t *testing.T) {
+	const boundary = "html-media-boundary"
+	attachment := `<html><body><p>Embedded figure</p><img alt="attachment image" src="` +
+		htmlMediaDataURI + `"></body></html>`
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: receiver@test.com",
+		"Subject: HTML attachment",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Outer body.",
+		"--" + boundary,
+		"Content-Type: text/html; charset=utf-8; name=\"embedded.html\"",
+		"Content-Disposition: attachment; filename=\"embedded.html\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		base64.StdEncoding.EncodeToString([]byte(attachment)),
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"fields": []string{"from", "body", "attachments"},
+	})
+	ctx, cache := recordingMediaContext()
+	result := p.ParseWithResult(ctx, "message.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	if cache.putCalls != 0 {
+		t.Fatalf("unexpected media cache writes = %d", cache.putCalls)
 	}
 }
 
@@ -496,8 +529,7 @@ func TestEmailParser_Base64AttachmentInMixedMultipart(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body", "attachments"},
+		"fields": []string{"from", "body", "attachments"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -553,8 +585,7 @@ func TestEmailParser_Multipart(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body"},
+		"fields": []string{"from", "body"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -590,7 +621,6 @@ func TestEmailParser_MetadataAlwaysPresent(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
 		// Note: "metadata" is intentionally NOT in fields.
 		"fields": []string{"from", "subject", "body"},
 	})
@@ -651,8 +681,7 @@ func TestEmailParser_TextHTMLAlwaysPresent(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body"},
+		"fields": []string{"from", "body"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -713,8 +742,7 @@ func TestEmailParser_AttachmentSearchableJSON(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body", "attachments"},
+		"fields": []string{"from", "body", "attachments"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -775,8 +803,7 @@ func TestEmailParser_AttachmentEmptyPayloadSkipped(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body", "attachments"},
+		"fields": []string{"from", "body", "attachments"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -831,8 +858,7 @@ func TestEmailParser_AttachmentUnknownExtSkipped(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-		"fields":        []string{"from", "body", "attachments"},
+		"fields": []string{"from", "body", "attachments"},
 	})
 
 	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
@@ -877,7 +903,6 @@ func TestEmailParser_AttachmentsWithoutBody(t *testing.T) {
 
 	p := NewEmailParser()
 	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
 		// NOTE: "body" is intentionally NOT in fields.
 		"fields": []string{"from", "attachments"},
 	})
@@ -1081,7 +1106,7 @@ func TestRecoverParse_IsolatesPanic(t *testing.T) {
 // TestRecoverParse_PassesThrough verifies a normal parser result is returned
 // unchanged with panicked=false.
 func TestRecoverParse_PassesThrough(t *testing.T) {
-	want := ParseResult{OutputFormat: "json", JSON: []DocItem{NewTextJSONItem("hello")}}
+	want := ParseResult{JSON: []DocItem{NewTextJSONItem("hello")}}
 	res, panicked := recoverParse(func() ParseResult {
 		return want
 	})
@@ -1301,7 +1326,6 @@ func TestParseEML_SinglePartTransferEncoding(t *testing.T) {
 				"Subject: Q3\r\n" + tt.headers + "\r\n\r\n" + tt.body + "\r\n"
 
 			p := NewEmailParser()
-			p.ConfigureFromSetup(map[string]any{"output_format": "json"})
 			result := p.ParseWithResult(t.Context(), "test.eml", []byte(raw))
 			if result.Err != nil {
 				t.Fatalf("unexpected error: %v", result.Err)
@@ -1339,8 +1363,8 @@ func TestEmailParserJSONOmitsDuplicateHeaderText(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON: want non-empty items")
@@ -1352,8 +1376,10 @@ func TestEmailParserJSONOmitsDuplicateHeaderText(t *testing.T) {
 }
 
 // TestEmailParserTextOutputRemoved verifies the Email parser has no "text"
-// output path. A setup requesting output_format "text" must be ignored and the
-// result must be JSON, never a Text payload.
+// output path. A setup requesting produced "text" must be ignored and the
+// result must be JSON, identical to a default-config parse. This pins that the
+// removed text path cannot silently reappear: the "text" produced value must
+// not change the emitted JSON.
 func TestEmailParserTextOutputRemoved(t *testing.T) {
 	ctx := context.Background()
 	raw := strings.Join([]string{
@@ -1365,20 +1391,75 @@ func TestEmailParserTextOutputRemoved(t *testing.T) {
 		"Hello, world!",
 	}, "\r\n")
 
-	p := NewEmailParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "text",
-		"fields":        []string{"from", "to", "subject", "body"},
-	})
+	fields := []string{"from", "to", "subject", "body"}
 
-	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
+	withText := NewEmailParser()
+	withText.ConfigureFromSetup(map[string]any{
+		"produced": "text",
+		"fields":   fields,
+	})
+	textResult := withText.ParseWithResult(ctx, "test.eml", []byte(raw))
+
+	defaultCfg := NewEmailParser()
+	defaultCfg.ConfigureFromSetup(map[string]any{
+		"fields": fields,
+	})
+	defaultResult := defaultCfg.ParseWithResult(ctx, "test.eml", []byte(raw))
+
+	for _, result := range []ParseResult{textResult, defaultResult} {
+		if result.Err != nil {
+			t.Fatalf("unexpected error: %v", result.Err)
+		}
+		if !result.Produced() {
+			t.Fatalf("email must emit json, got produced=%t", result.Produced())
+		}
+		if len(result.JSON) == 0 {
+			t.Fatalf("email json output must contain items, got empty")
+		}
+	}
+
+	// The "text" produced config must be ignored: the JSON payload is
+	// identical to the default-config parse.
+	if len(textResult.JSON) != len(defaultResult.JSON) {
+		t.Fatalf("email json item count changed by produced=text: %d vs %d",
+			len(textResult.JSON), len(defaultResult.JSON))
+	}
+	for i := range textResult.JSON {
+		a, b := textResult.JSON[i].ToMap(), defaultResult.JSON[i].ToMap()
+		if a["text"] != b["text"] {
+			t.Errorf("email item %d text differs under produced=text: %q vs %q", i, a["text"], b["text"])
+		}
+		if a["doc_type_kwd"] != b["doc_type_kwd"] {
+			t.Errorf("email item %d doc_type_kwd differs under produced=text: %v vs %v", i, a["doc_type_kwd"], b["doc_type_kwd"])
+		}
+	}
+}
+
+func TestEmailParser_HTMLAttachmentTextWithoutMediaCache(t *testing.T) {
+	const boundary = "embedded-html"
+	attachment := `<p>before figure</p><img src="data:image/png;base64,aGVsbG8="><p>after figure</p>`
+	raw := strings.Join([]string{
+		"From: sender@test.com", "To: receiver@test.com", "Subject: HTML attachment",
+		"Content-Type: multipart/mixed; boundary=" + boundary, "",
+		"--" + boundary, "Content-Type: text/plain; charset=utf-8", "", "Outer body.",
+		"--" + boundary, "Content-Type: text/html; charset=utf-8; name=\"embedded.html\"",
+		"Content-Disposition: attachment; filename=\"embedded.html\"", "Content-Transfer-Encoding: base64", "",
+		base64.StdEncoding.EncodeToString([]byte(attachment)), "--" + boundary + "--",
+	}, "\r\n")
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{"fields": []string{"from", "body", "attachments"}})
+	result := p.ParseWithResult(t.Context(), "message.eml", []byte(raw))
 	if result.Err != nil {
-		t.Fatalf("unexpected error: %v", result.Err)
+		t.Fatal(result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Fatalf("email must ignore text output_format and emit json, got OutputFormat=%q", result.OutputFormat)
+	var texts []string
+	for _, item := range result.JSON {
+		if text, ok := item.ToMap()["text"].(string); ok {
+			texts = append(texts, text)
+		}
 	}
-	if len(result.JSON) == 0 {
-		t.Fatalf("email json output must contain items, got empty")
+	joined := strings.Join(texts, "\n")
+	if !strings.Contains(joined, "before figure") || !strings.Contains(joined, "after figure") {
+		t.Fatalf("attachment text missing: %q", joined)
 	}
 }

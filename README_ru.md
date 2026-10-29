@@ -220,10 +220,10 @@ Docker подходит для быстрой оценки, интеграцио
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run ragflow_deps/download_deps.py
+   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py` загружает и распаковывает pdfium, pdf_oxide, office_oxide и onnxruntime в `~/ragflow-native-libs`; `download_deps.py` загружает словарь cl100k, модели DeepDoc и ресурсы токенизаторов эмбеддингов в `ragflow_deps/`. Оба скрипта — Python; `uv run` автоматически установит объявленные зависимости (`requests`, а для загрузки моделей и токенизаторов ещё и `huggingface-hub`). Пропустите этот шаг, если те же ресурсы уже подготовлены иным способом. При запуске из корня репозитория сервисы Go автоматически находят `internal/rag/res/deepdoc`; при запуске из другого каталога задайте `DEEPDOC_MODEL_DIR` с его абсолютным путём.
+   `download_dev_deps.py` загружает и распаковывает pdfium, pdf_oxide, office_oxide и onnxruntime в `~/ragflow-native-libs`; `download_deps.py` загружает словарь cl100k, модели DeepDoc и ресурсы токенизаторов эмбеддингов в `deps/`. Оба скрипта — Python; `uv run` автоматически установит объявленные зависимости (`requests`, а для загрузки моделей и токенизаторов ещё и `huggingface-hub`). Пропустите этот шаг, если те же ресурсы уже подготовлены иным способом. При запуске из корня репозитория сервисы Go автоматически находят `internal/rag/res/deepdoc`; при запуске из другого каталога задайте `DEEPDOC_MODEL_DIR` с его абсолютным путём.
 
 3. Соберите сервисы:
 

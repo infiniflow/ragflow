@@ -31,8 +31,10 @@ func setupTenantDAOTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.Tenant{}); err != nil {
-		t.Fatalf("failed to migrate tenant: %v", err)
+	models := []interface{}{&entity.Tenant{}}
+	models = append(models, tenantDAOTestExtraModels()...)
+	if err := db.AutoMigrate(models...); err != nil {
+		t.Fatalf("failed to migrate tenant tables: %v", err)
 	}
 	return db
 }
@@ -57,11 +59,6 @@ func TestTenantDAOGetByIDSkipsInactiveTenant(t *testing.T) {
 		t.Helper()
 		tenant := &entity.Tenant{
 			ID:        id,
-			LLMID:     "llm",
-			EmbdID:    "embd",
-			ASRID:     "asr",
-			Img2TxtID: "img2txt",
-			RerankID:  "rerank",
 			ParserIDs: "naive",
 			Status:    &status,
 		}
@@ -93,11 +90,6 @@ func TestTenantDAOUpdateStatus(t *testing.T) {
 	active := "1"
 	tenant := &entity.Tenant{
 		ID:        "tenant-update",
-		LLMID:     "llm",
-		EmbdID:    "embd",
-		ASRID:     "asr",
-		Img2TxtID: "img2txt",
-		RerankID:  "rerank",
 		ParserIDs: "naive",
 		Status:    &active,
 	}

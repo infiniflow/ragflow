@@ -52,11 +52,11 @@ export interface PromptConfig {
   parallel_api_key?: string;
   querit_api_key?: string;
   search1api_api_key?: string;
+  searchapi_api_key?: string;
   serply_api_key?: string;
   tavily_api_key?: string;
   youcom_api_key?: string;
   web_search_provider?: WebSearchProvider;
-  toc_enhance?: boolean;
 }
 
 export interface Parameter {

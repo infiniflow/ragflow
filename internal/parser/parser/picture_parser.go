@@ -25,6 +25,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"ragflow/internal/parser/media"
 )
 
 // imageExtensions mirrors Python's visual extensions used in
@@ -42,24 +44,11 @@ var imageExtensions = map[string]bool{
 }
 
 // PictureParser emits image files for optional vision enhancement.
-type PictureParser struct {
-	OutputFormat string
-}
+type PictureParser struct{}
 
 // NewPictureParser constructs a PictureParser.
 func NewPictureParser() *PictureParser {
 	return &PictureParser{}
-}
-
-// ConfigureFromSetup reads picture-specific configuration from the
-// parser setup map.
-func (p *PictureParser) ConfigureFromSetup(setup map[string]any) {
-	if p == nil || setup == nil {
-		return
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
 }
 
 // ParseWithResult validates the image extension and returns its image payload.
@@ -82,15 +71,8 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 			Err: fmt.Errorf("picture: unsupported extension %q (filename: %s); accepted: .jpg/.jpeg/.png/.gif/.bmp/.tiff/.tif/.webp/.svg/.ico/.avif/.heic/...", ext, filename),
 		}
 	}
-	if len(data) == 0 || len(data) > MaxImagePayloadBytes {
-		return ParseResult{Err: fmt.Errorf("picture: image payload size %d is outside the %d-byte limit", len(data), MaxImagePayloadBytes)}
-	}
-
-	// Parser output is normalized to JSON at the component boundary, so an
-	// absent backend format defaults to JSON here as well.
-	outFmt := p.OutputFormat
-	if outFmt == "" {
-		outFmt = "json"
+	if len(data) == 0 || len(data) > media.MaxImagePayloadBytes {
+		return ParseResult{Err: fmt.Errorf("picture: image payload size %d is outside the %d-byte limit", len(data), media.MaxImagePayloadBytes)}
 	}
 
 	release, err := AcquireImageMedia(ctx)
@@ -108,7 +90,6 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 		return ParseResult{Err: err}
 	}
 	return ParseResult{
-		OutputFormat: outFmt,
 		File: map[string]any{
 			"name":         filename,
 			"size":         len(data),

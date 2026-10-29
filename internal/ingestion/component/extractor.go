@@ -1680,14 +1680,14 @@ func defaultChatModelRef(ctx context.Context, db *gorm.DB, tenantID string) stri
 		// No database to read the tenant's default chat model from.
 		return ""
 	}
-	tenant, err := dao.NewTenantDAO().GetByID(ctx, db, tenantID)
-	if err != nil || tenant == nil {
+	membership, err := resolveDefaultModelMembership(ctx, db, tenantID)
+	if err != nil || membership == nil {
 		return ""
 	}
-	if tenant.TenantLLMID != nil && *tenant.TenantLLMID != "" {
-		return *tenant.TenantLLMID
+	if membership.TenantLLMID != nil && *membership.TenantLLMID != "" {
+		return *membership.TenantLLMID
 	}
-	return tenant.LLMID
+	return membership.LLMID
 }
 
 // extractorContextFitBudget returns 97% of the model's context window as the

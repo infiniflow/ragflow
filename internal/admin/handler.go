@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -210,28 +211,21 @@ func (h *Handler) ListUsers(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	var users []map[string]interface{}
+	var total int64
 	switch common.GetRAGFlowType() {
 	case common.OpenSourceVersion:
-		users, err = h.service.ListUsers(ctx, pageInt, pageSizeInt, name, status, sort, orderBy)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeServerError, err.Error())
-			return
-		}
-
-		common.SuccessWithData(c, users, "List users")
-		return
+		users, total, err = h.service.ListUsers(ctx, pageInt, pageSizeInt, name, status, sort, orderBy)
 	case common.EnterpriseEdition:
-		users, err = h.service.ListUsersEE(ctx, pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaPtr)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeServerError, err.Error())
-			return
-		}
-		common.SuccessWithData(c, users, "List users")
-		return
+		users, total, err = h.service.ListUsersEE(ctx, pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaPtr)
 	default:
 		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid RAGFlow type")
 		return
 	}
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithDataAndTotal(c, users, total, "List users")
 }
 
 // CreateUserHTTPRequest create user request
@@ -643,16 +637,55 @@ func (h *Handler) ShowVariable(c *gin.Context) {
 
 // SetVariableHTTPRequest set variable request
 type SetVariableHTTPRequest struct {
-	VarName  string `json:"var_name" binding:"required"`
-	VarValue string `json:"var_value" binding:"required"`
+	VarName  string          `json:"var_name"`
+	VarValue json.RawMessage `json:"var_value"`
+}
+
+// Missing values are reported separately from unparsable ones so the client can
+// tell "you forgot the field" apart from "the field is malformed".
+var (
+	errMissingVariableValue = errors.New("Var value is required")
+	errInvalidVariableValue = errors.New("Var value is invalid")
+)
+
+// flattenedVariableValue renders a JSON value into the textual form stored in
+// system_settings.value. Every data type shares that one textual column, so
+// scalars arriving as their native JSON types are rendered back to their
+// literal instead of being rejected for not being a JSON string. Objects and
+// arrays keep their JSON encoding verbatim, which is the stored form of
+// json-typed settings.
+func (r SetVariableHTTPRequest) flattenedVariableValue() (string, error) {
+	raw := bytes.TrimSpace(r.VarValue)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return "", errMissingVariableValue
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return text, nil
+	}
+
+	var boolean bool
+	if err := json.Unmarshal(raw, &boolean); err == nil {
+		return strconv.FormatBool(boolean), nil
+	}
+
+	var number json.Number
+	if err := json.Unmarshal(raw, &number); err == nil {
+		return number.String(), nil
+	}
+
+	if json.Valid(raw) {
+		return string(raw), nil
+	}
+	return "", errInvalidVariableValue
 }
 
 // SetVariable handle set variable
-// Python logic: update or create a system setting with the given name and value
 func (h *Handler) SetVariable(c *gin.Context) {
 	var req SetVariableHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -661,13 +694,14 @@ func (h *Handler) SetVariable(c *gin.Context) {
 		return
 	}
 
-	if req.VarValue == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Var value is required")
+	varValue, err := req.flattenedVariableValue()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	ctx := c.Request.Context()
-	if err := h.service.SetVariable(ctx, req.VarName, req.VarValue); err != nil {
+	if err := h.service.SetVariable(ctx, req.VarName, varValue); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}

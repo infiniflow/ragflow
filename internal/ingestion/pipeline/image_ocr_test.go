@@ -114,8 +114,8 @@ func TestImageOCRSavedConfigToSearchableChunk(t *testing.T) {
 		t.Fatal(err)
 	}
 	const parserID = "Parser:ViewsCaptureLight"
-	config := BuildParserConfig(dsl, map[string]any{parserID: map[string]any{
-		"image":                     map[string]any{"ocr_enabled": true, "ocr_model_id": "ocr-model", "output_format": "json"},
+	config := buildTestParserConfig(t, dsl, map[string]any{parserID: map[string]any{
+		"image":                     map[string]any{"ocr_enabled": true, "ocr_model_id": "ocr-model"},
 		"enable_vision_enhancement": false,
 	}})
 	for _, row := range []any{

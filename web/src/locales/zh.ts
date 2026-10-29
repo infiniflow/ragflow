@@ -505,7 +505,7 @@ export default {
       webCrawl: '网页抓取',
       chunkNumber: '分块数',
       uploadDate: '上传日期',
-      chunkMethod: '切片方法',
+      parsingMode: '解析方式',
       enabled: '启用',
       disabled: '禁用',
       action: '操作',
@@ -627,6 +627,8 @@ export default {
       builtInPipelines: '内置解析流程',
       parserSelectPlaceholder: '选择解析方式',
       parserOptionUnavailable: '不可用',
+      parserOptionUnavailableMessage:
+        '所选的解析方式或流水线版本已不可用，请重新选择。',
       randomSeedTip:
         '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
       datasetDescription: '你的知识库描述。',
@@ -705,9 +707,15 @@ export default {
       dataFlowPlaceholder: '请选择 pipeline',
       buildItFromScratch: '去 Scratch 构建',
       dataFlow: 'pipeline',
-      parseType: '解析方式',
+      parsingMode: '解析方式',
       manualSetup: '自定义Ingestion pipeline',
       builtIn: '内置解析模板',
+      applyParserSettingsTitle: '将解析设置应用到现有文件？',
+      parserSettingsChangeWarning:
+        '默认情况下，更新后的解析设置仅应用于新上传的文件。选择“是”可将设置同时应用于此知识库中的所有现有文件，并替换各文件的自定义解析设置。您仍需手动重新解析这些文件，设置才会对其内容生效。选择“否”可保留现有文件的解析设置。',
+      parserSettingsApplied: '解析设置已应用。请手动重新解析文件以更新其内容。',
+      parserSettingsApplyFailed:
+        '知识库设置已保存，但现有文件尚未更新。选择“是”可重试。',
       noConfigChunkerHint:
         '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
       titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',
@@ -728,8 +736,6 @@ export default {
         '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
       chunkTokenNumberTip:
         '建议的生成文本块的 Token 数阈值。如果切分得到的小文本段 token 数达不到这一阈值就会不断与之后的文本段合并，直至再合并下一个文本段会超过这一阈值为止，此时产生一个最终文本块。如果系统在切分文本段时始终没有遇到文本分段标识符，即便文本段 token 数已经超过这一阈值，系统也不会生成新文本块。',
-      chunkMethod: '切片方法',
-      chunkMethodTip: '说明位于右侧。',
       upload: '上传',
       english: '英文',
       chinese: '中文',
@@ -972,7 +978,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       messagePlaceholder: '请输入消息...',
       exit: '退出',
       multipleModels: '多模型',
-      applyModelConfigs: '应用模型配置',
+      applyModelConfigs: '在单模型对话中使用此模型及其设置',
       conversations: '会话',
       chatApps: '聊天',
       createChat: '创建聊天',
@@ -1043,7 +1049,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       turnElapsed: '耗时 {{seconds}}s',
       decisionModel: '决策模型',
       decisionModelTip:
-        '用于判断检索片段是否值得展示给模型。留空则跟随“设置”中的默认值。',
+        '在将检索到的文本块传递给大语言模型（LLM）之前，评估其与用户问题的相关性。要启用此功能，请先在“设置 → 模型供应商”中配置决策模型，然后在此处选择。默认情况下不使用决策模型。',
       modelMessage: '请选择',
       modelEnabledTools: '可用的工具',
       modelEnabledToolsTip:
@@ -1084,15 +1090,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingLevelNone: 'Naive',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: '自主探索语料库',
-      naiveSettings: 'Naive 设置',
-      agenticSettings: 'Agentic 设置',
+      naiveSettings: 'Naive',
+      agenticSettings: 'Agentic',
       agenticTemplate: 'Agentic 模板',
       agenticTemplateTip:
         'Agentic RAG 运行时使用的系统模板。编辑后为当前助手覆盖默认模板，可一键重置恢复。',
       agenticTemplateTooLong: '模板长度不能超过 32768 个字符',
       resetToDefault: '重置为默认',
       thinkingTip:
-        '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
+        '仅控制官方模型供应商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
       quoteTip: '是否应该显示原文出处？',
       selfRag: 'Self-RAG',
@@ -1192,6 +1198,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       search1apiApiKeyTip:
         '选择 Search1API 后，将使用 Search1API 的网络搜索结果补充知识库检索。',
       search1apiApiKeyMessage: '请输入 Search1API API Key',
+      searchapiApiKeyTip:
+        '选择 SearchApi 后，将使用 SearchApi 的 Google 网络搜索结果补充知识库检索。',
+      searchapiApiKeyMessage: '请输入 SearchApi API Key',
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入 Serply API Key',
@@ -1218,8 +1227,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       chatSetting: '聊天设置',
       avatarHidden: '隐藏头像',
       locale: '语言',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关 Chunk，对这些 Chunk 在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
       deleteSelectedConfirm: '删除选中的 {{count}} 个会话？',
     },
@@ -1714,7 +1721,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       password: '密码',
       passwordDescription: '请输入您当前的密码以更改您的密码。',
-      model: '模型提供商',
+      model: '模型供应商',
       systemModelDescription: '请在开始之前完成这些设置',
       dataSources: '数据源',
       team: '团队',
@@ -1766,7 +1773,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       hideModels: '隐藏模型',
       baseUrl: 'Base URL',
       baseUrlTip:
-        '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
+        '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间供应商都会提供带有 API 密钥的基本 URL。',
       tongyiBaseUrlTip:
         '对于中国用户，不需要填写或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。对于国际用户，使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1。',
       siliconBaseUrlTip:
@@ -1919,7 +1926,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '请输入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 区域',
       GoogleRegionMessage: '请输入 Google Cloud 区域',
-      modelProvidersWarn: `请先在<b>模型提供商</b>中添加 Embedding 模型和 LLM，然后在“设置默认模型”中设置它们。`,
+      modelProvidersWarn: `请先在<b>模型供应商</b>中添加 Embedding 模型和 LLM，然后在“设置默认模型”中设置它们。`,
       apiVersion: 'API版本',
       apiVersionMessage: '请输入API版本!',
       add: '添加',
@@ -2039,6 +2046,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       modelFeatures: '模型特性',
       modelNameRequired: '请输入模型名称',
@@ -2192,6 +2200,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       modified: '更新成功',
       created: '创建成功',
       deleted: '删除成功',
+      deleteIncomplete: '无法确认删除已全部完成。请检查剩余文档后重试。',
       noLangfuseConfigToDelete: '没有可删除的 Langfuse 配置',
       renamed: '重命名成功',
       operated: '操作成功',
@@ -2257,7 +2266,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         author: '作者',
         sectionTitle: '章节标题',
       },
-      canvasCategory: '画布分类',
+      agentCategory: '智能体分类',
       created: '创建于',
       editTags: '编辑标签',
       editTagsDescription: '添加标签以整理和筛选你的智能体。按回车或逗号添加。',
@@ -2418,20 +2427,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       toolTimeout: '工具调用超时',
       toolTimeoutTip:
         '单次工具调用（含 MCP 工具）的超时秒数。长时间运行的工具请调大该值。',
-      maxSteps: '最大步数',
-      headless: '无头模式',
-      enableDefaultExtensions: '启用默认扩展',
-      enableDefaultExtensionsTip:
-        '启用 browser-use 默认扩展（uBlock、Cookie 处理、ClearURLs）。关闭后可避免运行时下载扩展。',
-      chromiumSandbox: 'Chromium 沙箱',
-      chromiumSandboxTip:
-        '是否启用 Chromium 沙箱。Docker root 环境通常需要关闭，普通宿主机环境建议开启。',
-      persistSession: '持久化登录态',
-      persistSessionTip:
-        '开启后将复用该 Browser 节点的浏览器会话，避免重复登录。',
-      uploadSources: '上传来源',
-      uploadSourcesTip:
-        '支持文件 ID、文件 URL 或变量。可用逗号分隔多个值，也支持 JSON 数组格式（如 ["id1","https://example.com/a.pdf"]）。',
       advancedSettings: '高级设置',
       addTools: '添加工具',
       sysPromptDefultValue: `
@@ -2475,6 +2470,26 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         download: '下载',
         loadFailed: '版本加载失败，该版本可能已被删除',
         version: '版本',
+        label: '流水线版本',
+        latest: '最新版本',
+        noPublished: '暂无已发布版本',
+        filterByAlias: '按别名筛选',
+        alias: '别名',
+        addAlias: '添加别名',
+        editAlias: '编辑别名',
+        editAliasDescription:
+          '为该版本设置一个便于识别的别名，方便后续快速查找。',
+        pinnedTooltip:
+          '该数据集已固定到特定版本。智能体新发布的版本不会影响它。',
+        outdated: '固定的版本不是最新版本。点击了解详情；我们不会自动升级它。',
+        delete: '删除版本',
+        deleteConfirmTitle: '删除该版本？',
+        deleteConfirmContent:
+          '若数据集或文件正绑定此版本，删除后将导致对应文件无法解析。此操作不可撤销。',
+        restore: '恢复为当前版本',
+        restoreConfirmTitle: '恢复此版本为当前智能体？',
+        restoreConfirmContent:
+          '当前智能体 DSL 将被此版本替换。再次保存会创建新版本。',
       },
       cite: '显示引文',
       citeTip: '引用',
@@ -2510,7 +2525,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       answerDescription: `该组件用作机器人与人类之间的接口。它接收用户的输入并显示机器人的计算结果。`,
       retrievalDescription: `此组件用于从知识库中检索相关信息。选择知识库。如果没有检索到任何内容，将返回“空响应”。`,
       generateDescription: `此组件用于调用 LLM 生成文本，请注意提示的设置。`,
-      categorizeDescription: `此组件用于对文本进行分类。请指定类别的名称、描述和示例。每个类别都指向不同的下游组件。`,
+      categorizeDescription: `使用聊天模型（LLM）或 SystemOne 决策模型，将当前输入归入一个预定义类别，并将工作流路由到该类别连接的下游组件。请为每个类别指定名称、描述和示例。`,
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
       messageDescription:
         '该组件用来返回工作流最后产生的数据内容和原先设置的文本内容。',
@@ -2584,9 +2599,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
-      browser: 'Browser',
-      browserDescription:
-        '使用 Browser 自动执行浏览器任务。支持模型与提示词配置，上传来源支持文件 ID 与 URL，并可将下载文件保存到指定目录。',
       subtitle: '副标题',
       logoImage: '标志图片',
       logoPosition: '标志位置',
@@ -2616,7 +2628,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       news: '新闻',
       messageHistoryWindowSize: '历史消息窗口大小',
       messageHistoryWindowSizeTip:
-        'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大 Token 数。',
+        '控制所选模型可以参考的近期对话历史范围。窗口越大，使用的 Token 越多，也可能引入无关上下文。',
       wikipedia: '维基百科',
       emailTip:
         '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件为选填项，留空时将使用默认邮箱地址。',
@@ -2967,6 +2979,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       contentTip: 'content: 邮件内容(可选)',
       jsonUploadTypeErrorMessage: '请上传 json 文件',
       jsonUploadContentErrorMessage: 'json 文件错误',
+      jsonUploadCategoryMismatch:
+        'JSON 文件类型与当前分类不符，请切换到对应分类后再导入',
       nameExists: '名称已存在',
       iteration: '迭代',
       iterationDescription: `该组件负责迭代生成新的内容，对列表对象执行多次步骤直至输出所有结果。`,
@@ -3003,7 +3017,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       userPrompt: '用户提示词',
       tagFile: '标签文件',
       tagFileTip:
-        '根据所选标签文件，为每个文本块自动提取最多 N 个相关标签，以提高检索准确性。标签提取可能调用模型并产生额外的 Token 消耗。如果提取失败，原始文本块仍会保留。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。',
+        '根据所选标签文件，为每个文本块自动提取最多 N 个相关标签，以提高检索准确性。标签文件支持 XLSX、XLS、CSV、TXT 格式，每行包含文本和标签两列，多个标签用英文逗号分隔，无需表头。标签提取可能产生额外的 Token 消耗。提取失败时，原始文本块仍会保留。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptTip:
@@ -3089,8 +3103,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '在此处编写您的 SQL 查询。您可以使用变量、原始 SQL，或使用变量语法混合使用两者。',
       frameworkPrompts: '框架',
       release: '发布',
-      production: '正式版',
-      productionTooltip: '此版本已发布到生产环境。可通过 API 或嵌入页面访问。',
       confirmPublish: '确认发布',
       publishIngestionPipeline: '您即将发布此 Ingestion pipeline。',
       publishAgent: '您即将发布此智能体',
@@ -3099,12 +3111,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       createFromBlank: '从空白创建',
       createFromTemplate: '从模板创建',
       importJsonFile: '导入 JSON 文件',
-      duplicate: '复制',
       copyOfAgentName: '{{name}} (副本)',
-      chooseAgentType: '选择智能体类型',
       createPipeline: '数据管道',
       createIngestionPipeline: '创建数据管道',
       createWorkflow: '创建工作流',
+      createCompilationOperator: '创建编译算子',
       tabList: {
         ingestionPipeline: '数据管道',
         compilationOperator: '编译算子',
@@ -3112,7 +3123,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       },
       parser: '解析器',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
-      tokenizer: '索引器',
+      tokenizer: 'Indexer',
       tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '配置有误，请先修正',
       apiKeyRequired: '请输入 API Key',
@@ -3130,20 +3141,22 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       checklist: '检查清单',
       checklistEmpty: '未发现问题',
       checklistTitle: '以下问题可能影响运行或发布',
+      loopRowsIncomplete: '请完善循环变量和终止条件',
+      iterationOutputsIncomplete: '请完善迭代输出名称和引用',
       issueNotConnected: '该步骤未与任何算子连接',
       issueVariableInvalid: '变量失效：{{variable}}',
       memoryUnavailable: '所选记忆不可用（已删除），请重新选择',
       retrievalTemplateDatasetHint:
-        '该模板包含 {{num}} 处未绑定知识库的检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在画布中逐处调整。',
+        '该模板包含 {{num}} 处未绑定知识库的检索，请在下方选择一个知识库，将应用到全部检索；创建后仍可在智能体中逐处调整。',
       retrievalTemplateMemoryHint:
-        '该模板包含 {{num}} 处未绑定记忆的检索，请在下方选择记忆，将应用到全部检索；创建后仍可在画布中逐处调整。',
+        '该模板包含 {{num}} 处未绑定记忆的检索，请在下方选择记忆，将应用到全部检索；创建后仍可在智能体中逐处调整。',
       retrievalDatasetRequired: '请先选择知识库',
       retrievalMemoryRequired: '请先选择记忆',
       tokenizerDescription:
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       generalChunkerDescription:
         '通用文本分块方式，适用于大多数文档类型，可灵活控制块大小、重叠和上下文范围。',
-      tokenChunker: '按 Token 分块',
+      tokenChunker: 'Token Chunker',
       tokenChunkerDescription:
         '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
       titleChunkerDescription:
@@ -3158,7 +3171,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       extractor: '提取器',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
-      compiler: '编译器',
+      compiler: 'Compiler',
       compilerDescription: '使用知识编译模板将文档块编译为知识工件。',
       outputFormat: '输出格式',
       fileFormatOptions: {
@@ -3302,6 +3315,20 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       variableAssignerParameterMissing: '请填写参数',
       webhook: {
         name: '网络钩子',
+        endpoint: '接口地址',
+        testEndpoint: '测试接口地址',
+        personalUrl: '个人 Webhook URL',
+        credentialDescription:
+          '持有此链接即可按你的权限运行 Agent，请妥善保管；重新生成会使旧链接失效。',
+        createCredential: '生成或轮换 URL',
+        revokeCredential: '撤销我的 URL',
+        credentialCreated:
+          'Webhook URL 已生成，请立即复制保存；离开页面后将无法再次查看。',
+        credentialRevoked: 'Webhook URL 已撤销。',
+        credentialRequestFailed: '更新 Webhook URL 失败。',
+        revokeCredentialTitle: '撤销 Webhook URL？',
+        revokeCredentialDescription:
+          '使用此 URL 的请求将立即失效。你可以随时重新生成 URL。',
         methods: '方法',
         contentTypes: '内容类型',
         security: '安全配置',
@@ -3507,20 +3534,179 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       addNow: '立即添加',
     },
 
+    admin: {
+      confirm: '确认',
+      close: '关闭',
+      yes: '是',
+      no: '否',
+      delete: '删除',
+      cancel: '取消',
+      reset: '重置',
+      import: '导入',
+      description: '描述',
+      noDescription: '无描述',
+      none: '无',
+
+      resourceType: {
+        dataset: '数据集',
+        chat: '对话',
+        agent: 'Agent',
+        search: '搜索',
+        file: '文件',
+        team: '团队',
+        memory: '记忆',
+      },
+
+      permissionType: {
+        enable: '启用',
+        read: '读取',
+        write: '写入',
+        share: '共享',
+      },
+
+      serviceStatus: '服务',
+      userManagement: '用户',
+      sandboxSettings: '沙箱',
+      registrationWhitelist: '白名单',
+      roles: '角色',
+      monitoring: '监控',
+
+      sandboxSettingsPage: {
+        description: '配置代码执行沙箱供应商。沙箱由 Agent 中的代码组件使用。',
+        providerSelection: '供应商选择',
+        providerSelectionDescription: '为代码执行选择沙箱供应商',
+
+        namedProviderConfiguration: '{{name}} 配置',
+        namedProviderConfigurationDescription: '配置 {{name}} 的连接设置。',
+
+        saveConfiguration: '保存配置',
+        saving: '保存中...',
+
+        testConnectionResultModal: {
+          title: '连接测试结果',
+          testing: '正在测试与沙箱供应商的连接...',
+          success: '已成功连接沙箱供应商',
+          failed: '连接沙箱供应商失败',
+
+          exitCode: '退出码',
+          executionTime: '执行时间',
+          stdout: '标准输出',
+          stderr: '错误输出 / 堆栈跟踪',
+        },
+
+        testConnection: '测试连接',
+        testing: '测试中...',
+      },
+
+      selectFile: '选择文件',
+      noFileSelected: '未选择文件',
+
+      back: '返回',
+      active: '启用',
+      inactive: '禁用',
+      enable: '启用',
+      disable: '禁用',
+      all: '全部',
+      actions: '操作',
+      newUser: '新建用户',
+      email: '邮箱',
+      name: '名称',
+      nickname: '昵称',
+      status: '状态',
+      id: 'ID',
+      serviceType: '服务类型',
+      host: '主机',
+      port: '端口',
+
+      role: '角色',
+      user: '用户',
+      userType: '用户类型',
+      superuser: '超级用户',
+      normalUser: '普通',
+
+      createTime: '创建时间',
+      lastLoginTime: '最后登录时间',
+      lastUpdateTime: '最后更新时间',
+
+      isAnonymous: '是否匿名',
+      isSuperuser: '是否超级用户',
+
+      deleteUser: '删除用户',
+      deleteUserConfirmation: '确定要删除该用户吗？',
+
+      createNewUser: '新建用户',
+      changePassword: '修改密码',
+      newPassword: '新密码',
+      confirmNewPassword: '确认新密码',
+      password: '密码',
+      confirmPassword: '确认密码',
+
+      invalidEmail: '请输入有效的邮箱地址！',
+      passwordRequired: '请输入密码！',
+      passwordMinLength: '密码长度必须大于 8 个字符。',
+      confirmPasswordRequired: '请确认密码！',
+      confirmPasswordDoNotMatch: '两次输入的密码不一致！',
+
+      read: '读取',
+      write: '写入',
+      share: '共享',
+      create: '创建',
+
+      extraInfo: '额外信息',
+      serviceDetail: '服务 {{name}} 详情',
+      taskExecutorDetail: '任务执行器详情',
+
+      whitelistManagement: '白名单管理',
+      exportAsExcel: '导出 Excel',
+      importFromExcel: '导入 Excel',
+      createEmail: '新建邮箱',
+      deleteEmail: '删除邮箱',
+      editEmail: '编辑邮箱',
+      deleteWhitelistEmailConfirmation:
+        '确定要从白名单中删除该邮箱吗？此操作不可撤销。',
+
+      importWhitelist: '导入白名单（Excel）',
+      importSelectExcelFile: 'Excel 文件（.xlsx）',
+      importOverwriteExistingEmails: '覆盖已存在的邮箱',
+      importValidExcelFile: '请选择有效的 Excel 文件',
+      importFileRequired: '请选择要导入的文件',
+      importFileTips: '文件必须包含名为 <code>email</code> 的单一表头列。',
+
+      chunkNum: '分块',
+      docNum: '文档',
+      tokenNum: '已用 Token',
+      language: '语言',
+      createDate: '创建日期',
+      updateDate: '更新日期',
+      permission: '权限',
+
+      agentTitle: 'Agent 标题',
+
+      newRole: '新建角色',
+      addNewRole: '添加新角色',
+      roleName: '角色名称',
+      roleNameRequired: '角色名称为必填项',
+      resources: '资源',
+
+      editRoleDescription: '编辑角色描述',
+      deleteRole: '删除角色',
+      deleteRoleConfirmation: '确定要删除该角色吗？此操作不可撤销。',
+
+      alive: '存活',
+      timeout: '超时',
+      fail: '失败',
+    },
+
     explore: {
       title: '探索',
-      canvasList: '画布列表',
       sessions: '会话列表',
       newSession: '新建会话',
       newSessionLabel: '开始新对话',
       deleteSession: '删除会话',
-      searchCanvas: '搜索画布...',
       searchSessions: '搜索会话...',
-      noCanvasSelected: '请选择一个画布',
       noSessionSelected: '请选择一个会话或创建新会话',
       noSessionsFound: '未找到会话',
       createFirstSession: '创建您的第一个会话',
-      noCanvasFound: '未找到画布',
       deleteSelectedConfirm: '确定要删除 {{count}} 个会话吗？',
       batchDeleteSessions: '删除会话',
     },

@@ -57,6 +57,34 @@ func TestRouterSetupRemovesActionRoutes(t *testing.T) {
 	}
 }
 
+func TestSystemVariableRoutesAreNotRegisteredOnAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalLogger := common.Logger
+	common.Logger = zap.NewNop()
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	engine := gin.New()
+	r := &Router{authHandler: handler.NewAuthHandler()}
+	r.Setup(engine)
+
+	for _, tt := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/system/variables"},
+		{http.MethodPut, "/api/v1/system/variables"},
+		{http.MethodGet, "/api/v1/system/variables/register_enabled"},
+	} {
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(tt.method, tt.path, nil)
+		engine.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusNotFound {
+			t.Errorf("%s %s status=%d body=%s; want system variable route to be unavailable on the API service", tt.method, tt.path, resp.Code, resp.Body.String())
+		}
+	}
+}
+
 func TestConnectorRoutesDoNotConflictWithOAuthCallbacks(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -146,6 +174,22 @@ func TestRouterSetupRegistersUpdateDatasetRoute(t *testing.T) {
 	}
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("status=%d body=%s; want auth middleware to handle registered UpdateDataset route", resp.Code, resp.Body.String())
+	}
+}
+
+func TestRouterSetupRegistersApplyDatasetParserConfigRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	r := &Router{
+		authHandler:     handler.NewAuthHandler(),
+		datasetsHandler: handler.NewDatasetsHandler(nil, nil),
+	}
+	r.Setup(engine)
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/dataset-1/documents/apply-parser-config", nil)
+	engine.ServeHTTP(resp, req)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s; want auth middleware to handle the registered route", resp.Code, resp.Body.String())
 	}
 }
 
