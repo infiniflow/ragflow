@@ -19,13 +19,9 @@ You can select one or more knowledge bases. When multiple knowledge bases are se
 
 Select knowledge bases based on the intended use case of the Search. Avoid adding large numbers of knowledge bases that are unrelated to the search topic, as this may increase the number of irrelevant results.
 
-## Show chunk metadata
+## Metadata
 
-Controls whether chunk metadata is displayed in search results.
-
-When enabled, search results can display metadata associated with each chunk in addition to its text. This helps users identify the source of the content and further filter or evaluate the results.
-
-If you are mainly interested in the content itself, you can leave this option disabled. Enable it if you need to inspect or verify the sources of the results.
+Use **Metadata** to restrict retrieval by document metadata. Available fields depend on the selected knowledge bases. This setting filters content; it is not a switch for displaying metadata in results.
 
 ## Similarity threshold
 
@@ -38,23 +34,14 @@ Only content with a similarity score that meets or exceeds the threshold is incl
 
 If there are too many results and their relevance is low, try increasing this value. If Search frequently fails to return the expected content, try decreasing it.
 
-## Vector similarity weight
+## Keyword similarity weight
 
-Sets the relative weights of vector similarity and full-text search in hybrid retrieval.
+Sets the full-text weight in hybrid retrieval. For example, `0.7` means full-text weight `0.7` and vector weight `0.3`.
 
-For example, a value of `0.3` means:
+- Increase it to favor keywords, product names, identifiers, and exact terms.
+- Decrease it to favor semantic matches when the query differs from the source wording.
 
-- Vector = `0.3`
-- Full-text = `0.7`
-
-Vector search focuses more on semantic similarity between the query and the document, while full-text search focuses more on matching keywords, terms, and other textual elements.
-
-Therefore:
-
-- Increase the vector weight: Gives greater priority to semantic matching. This is suitable when a user's wording differs from that of the source text.
-- Decrease the vector weight: Gives greater priority to full-text matching. This is suitable for exact matches involving proper nouns, product models, identifiers, fixed terminology, and similar content.
-
-You can generally start with the default value and adjust it based on actual search performance.
+Start with the default value and adjust it based on search results.
 
 ## Rerank candidates
 

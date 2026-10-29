@@ -28,7 +28,7 @@ A memory must be connected to an Agent before historical messages can be written
 1. Select or add the **Retrieval** component on the Agent canvas.
 2. In **Query variable**, select the query source. `sys.query` is commonly used.
 3. In **Retrieval source**, select **Memory**, and select one or more target memories.
-4. Adjust **Similarity threshold**, **Vector similarity weight**, and **Top N** as needed.
+4. Adjust **Similarity threshold**, **Keyword similarity weight**, and **Top N** as needed.
 5. Connect the retrieval result to a subsequent large language model or answer component, so that the Agent can use the retrieved historical context.
 6. Save and run a test, and check whether the answer correctly references historical memories.
 

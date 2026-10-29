@@ -15,7 +15,7 @@ The list contains the following fields:
 | Name | The member's nickname. |
 | Update date | The time when the membership record was last updated. |
 | Email | The member's email address. |
-| Role | The member's team role. `normal` is displayed as **Member**, `invite` is displayed as **Invite**, and `owner` is displayed as **Owner**. |
+| Status | The member's team relationship status. `normal` is displayed as **Member**, `invite` is displayed as **Invite**, and `owner` is displayed as **Owner**. |
 | Action | Operations available for the current member, such as removing a member when permitted. |
 
 You can search members by nickname or email address, and sort members by **Update date**.

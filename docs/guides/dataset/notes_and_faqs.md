@@ -37,9 +37,9 @@ After resolving any storage issues, upload the missing file again and retry pars
 
 ## What Should I Do If Retrieval Testing Cannot Retrieve Content?
 
-It is recommended to troubleshoot in the order of **document status -> chunk -> metadata -> retrieval parameters**. First confirm that the document has been parsed successfully and generated usable chunks. Then check whether metadata has filter conditions that exclude related chunks. Finally, check retrieval parameters such as **Similarity threshold**, **Vector similarity weight**, and **Top K**.
+It is recommended to troubleshoot in the order of **document status -> chunk -> metadata -> retrieval parameters**. First confirm that the document has been parsed successfully and generated usable chunks. Then check whether metadata has filter conditions that exclude related chunks. Finally, check retrieval parameters such as **Similarity threshold**, **Keyword similarity weight**, and **Top N**.
 
-Common causes include documents not yet parsed, no usable chunks generated, metadata filters being too strict, **Similarity threshold** being too high, or **Top K** being too small.
+Common causes include documents not yet parsed, no usable chunks generated, metadata filters being too strict, **Similarity threshold** being too high, or **Top N** being too small.
 
 ## Why Can't I See Artifacts?
 
@@ -66,9 +66,9 @@ During retrieval testing, hybrid search is used to retrieve chunks created by th
 
 This setting is the threshold for retrieving chunks. Chunks with similarity below the threshold are filtered out. By default, the threshold is set to `0.2`. This means only chunks with a hybrid similarity score of `0.2` or higher are retrieved.
 
-#### Vector Similarity Weight
+#### Keyword Similarity Weight
 
-This setting controls the weight of vector similarity in the comprehensive similarity score, whether it is combined with vector cosine similarity or rerank score. By default, it is set to `0.3`, so the other component's weight is `0.7` (`1 - 0.3`).
+This setting controls the keyword similarity weight in hybrid retrieval. The default is `0.7`, leaving a vector similarity or rerank weight of `0.3` (`1 - 0.7`). Increase it to favor keyword matching; decrease it to favor semantic matching.
 
 #### Rerank Model
 

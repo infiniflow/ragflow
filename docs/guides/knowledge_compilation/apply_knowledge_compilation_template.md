@@ -29,13 +29,11 @@ Note: CompilationTemplate only defines "how to compile". A KnowledgeArtifact is 
 
 1. Go to the Dataset page and create a Dataset or open an existing Dataset.
 2. Upload the documents to process.
-3. In the file list, select Configure Ingestion Pipeline.
-4. Select the Ingestion Pipeline that contains CompilerOperator.
+3. Open **Configuration** and find **Parse mode**.
+4. Select the Ingestion Pipeline that contains CompilerOperator and click **Save**.
 5. Start parsing and check in the task logs whether Parser, Chunker, Compiler, and Indexer complete in sequence.
 
-![Create a Dataset and select Pipeline](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/connect_the_pipeline_to_a_knowledge_base_1.jpg)
-
-![Configure an Ingestion Pipeline in Dataset](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/connect_the_pipeline_to_a_knowledge_base_2.jpg)
+![Select the compilation pipeline in Dataset configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/connect_the_pipeline_to_a_knowledge_base.jpg)
 
 If CompilationTemplate is modified, completed documents are not automatically recompiled. You need to reparse or rerun the Pipeline according to the operations currently provided by the product before the new configuration can be applied.
 
