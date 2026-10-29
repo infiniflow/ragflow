@@ -1076,6 +1076,10 @@ func mineruJSONFloatSlice(raw any) []float64 {
 	}
 }
 
+// newMinerUInlineBudget is the budget factory for markdown inlining, a
+// variable so tests can exercise exhaustion with small limits.
+var newMinerUInlineBudget = parser.NewEmbeddedMediaBudget
+
 // mineruZipImages indexes the image members of a MinerU result zip by their
 // path spellings so markdown image references resolve regardless of
 // separator or leading "./".
@@ -1085,10 +1089,23 @@ func mineruZipImages(zipBytes []byte) map[string]*zip.File {
 		return nil
 	}
 	images := make(map[string]*zip.File)
+	// A basename shared by two members is ambiguous: dropping the alias is
+	// better than silently overwriting it, which would inline the wrong
+	// image for a bare-basename markdown reference. Full-path keys still
+	// resolve each member exactly.
+	ambiguousBase := make(map[string]bool)
 	for _, f := range zipReader.File {
 		if strings.HasPrefix(strings.ToLower(mime.TypeByExtension(path.Ext(f.Name))), "image/") {
 			clean := strings.TrimPrefix(path.Clean(f.Name), "./")
-			images[path.Base(f.Name)] = f
+			base := path.Base(f.Name)
+			if ambiguousBase[base] {
+				// stays unresolvable by basename
+			} else if _, taken := images[base]; taken {
+				delete(images, base)
+				ambiguousBase[base] = true
+			} else {
+				images[base] = f
+			}
 			images[clean] = f
 			images[strings.ReplaceAll(clean, "\\", "/")] = f
 		}
@@ -1124,7 +1141,7 @@ func mineruInlineMarkdownImages(markdown string, zipBytes []byte) (string, []str
 	if len(images) == 0 {
 		return markdown, nil
 	}
-	budget := parser.NewEmbeddedMediaBudget()
+	budget := newMinerUInlineBudget()
 	exhausted := false
 	out := mineruMarkdownImagePattern.ReplaceAllStringFunc(markdown, func(match string) string {
 		sub := mineruMarkdownImagePattern.FindStringSubmatch(match)

@@ -47,6 +47,14 @@ type EmbeddedMediaBudget = embeddedMediaBudget
 // NewEmbeddedMediaBudget returns a budget with the shared limits.
 func NewEmbeddedMediaBudget() *EmbeddedMediaBudget { return newEmbeddedMediaBudget() }
 
+// NewEmbeddedMediaBudgetWithLimits returns a budget with explicit limits.
+// Production callers use NewEmbeddedMediaBudget; this exists so tests can
+// exercise per-image, per-document and item-count exhaustion without
+// multi-megabyte fixtures.
+func NewEmbeddedMediaBudgetWithLimits(maxImageBytes, maxTotalBytes, maxItems int) *EmbeddedMediaBudget {
+	return &embeddedMediaBudget{maxImageBytes: maxImageBytes, maxTotalBytes: maxTotalBytes, maxItems: maxItems}
+}
+
 // Include reserves budget for one image payload; see include.
 func (b *embeddedMediaBudget) Include(data []byte) (bool, bool) { return b.include(data) }
 

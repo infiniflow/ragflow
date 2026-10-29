@@ -419,3 +419,101 @@ func TestMinerUInlineMarkdownImagesWithoutZipLeavesMarkdown(t *testing.T) {
 		t.Fatalf("no zip: inlined = %q warnings = %#v", inlined, warnings)
 	}
 }
+
+func buildMinerUTestZip(t *testing.T, members map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, content := range members {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(content)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestMinerUZipImagesAmbiguousBasenameResolvesNoWrongImage(t *testing.T) {
+	zipBytes := buildMinerUTestZip(t, map[string]string{
+		"page1/img.png":  "first-payload",
+		"page2/img.png":  "second-payload",
+		"page1/solo.png": "solo-payload",
+	})
+	images := mineruZipImages(zipBytes)
+
+	// The shared basename must not silently pick one member.
+	if f := mineruLookupZipImage(images, "img.png"); f != nil {
+		t.Fatalf("ambiguous basename resolved to %q, want nil", f.Name)
+	}
+	// Full paths still resolve each member exactly.
+	if f := mineruLookupZipImage(images, "page1/img.png"); f == nil || f.Name != "page1/img.png" {
+		t.Fatalf("page1/img.png resolved to %v", f)
+	}
+	if f := mineruLookupZipImage(images, "page2/img.png"); f == nil || f.Name != "page2/img.png" {
+		t.Fatalf("page2/img.png resolved to %v", f)
+	}
+	// An unshared basename still resolves.
+	if f := mineruLookupZipImage(images, "solo.png"); f == nil || f.Name != "page1/solo.png" {
+		t.Fatalf("solo.png resolved to %v", f)
+	}
+}
+
+func withMinerUInlineBudget(t *testing.T, maxImageBytes, maxTotalBytes, maxItems int) {
+	t.Helper()
+	original := newMinerUInlineBudget
+	newMinerUInlineBudget = func() *parser.EmbeddedMediaBudget {
+		return parser.NewEmbeddedMediaBudgetWithLimits(maxImageBytes, maxTotalBytes, maxItems)
+	}
+	t.Cleanup(func() { newMinerUInlineBudget = original })
+}
+
+func TestMinerUInlineMarkdownImagesDocumentByteBudgetExhaustion(t *testing.T) {
+	// Two 6-byte images against an 8-byte document budget: the second loses
+	// its link, keeps its alt text, and the omission surfaces as a warning.
+	withMinerUInlineBudget(t, 1024, 8, 16)
+	zipBytes := buildMinerUTestZip(t, map[string]string{
+		"images/a.png": "aaaaaa",
+		"images/b.png": "bbbbbb",
+	})
+	markdown := "![first](images/a.png)\ntext\n![second](images/b.png)"
+
+	out, warnings := mineruInlineMarkdownImages(markdown, zipBytes)
+	if !strings.Contains(out, "![first](data:image/png;base64,") {
+		t.Fatalf("first image not inlined: %q", out)
+	}
+	if strings.Contains(out, "![second](data:") || !strings.Contains(out, "second") {
+		t.Fatalf("second image should drop to its alt text: %q", out)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "document image budget") {
+		t.Fatalf("warnings = %q, want one document-budget warning", warnings)
+	}
+}
+
+func TestMinerUInlineMarkdownImagesItemBudgetExhaustion(t *testing.T) {
+	// A 2-item budget inlines two images and drops the third; once exhausted
+	// the walk stops charging further references.
+	withMinerUInlineBudget(t, 1024, 1<<20, 2)
+	zipBytes := buildMinerUTestZip(t, map[string]string{
+		"images/a.png": "aa",
+		"images/b.png": "bb",
+		"images/c.png": "cc",
+	})
+	markdown := "![one](images/a.png)\n![two](images/b.png)\n![three](images/c.png)"
+
+	out, warnings := mineruInlineMarkdownImages(markdown, zipBytes)
+	if !strings.Contains(out, "![one](data:") || !strings.Contains(out, "![two](data:") {
+		t.Fatalf("first two images should inline: %q", out)
+	}
+	if strings.Contains(out, "![three](data:") || !strings.Contains(out, "three") {
+		t.Fatalf("third image should drop to its alt text: %q", out)
+	}
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "item document limit") {
+		t.Fatalf("warnings = %q, want one item-limit warning", warnings)
+	}
+}
