@@ -879,7 +879,9 @@ func cellIsStyled(f *excelize.File, sheet string, row, col int) bool {
 	if st.Font != nil && st.Font.Bold {
 		return true
 	}
-	if st.Fill.Type != "" || len(st.Fill.Color) > 0 {
+	// excelize reports Fill.Type "pattern" even for the default no-fill style;
+	// only a non-zero pattern or an explicit color marks a real fill.
+	if st.Fill.Pattern > 0 || len(st.Fill.Color) > 0 {
 		return true
 	}
 	return false
@@ -996,6 +998,13 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 
 		if styled*2 >= nc || contrast >= 2 {
 			if k == 0 {
+				// Row 1 is subject to the same width validation as any other
+				// candidate: a narrow styled row at the top of a form sheet is
+				// a metadata label, not the column header.
+				if medWidth >= 4 && rowNonEmpty(row)*2 <= medWidth {
+					bestCandidate = 1
+					continue
+				}
 				return 1 // row 1 is already the header
 			}
 			below := records[k+1]
@@ -1034,7 +1043,10 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 		if wideScan > n-1 {
 			wideScan = n - 1
 		}
-		for k := 0; k < wideScan; k++ {
+		// Start after the deferred candidate: rows at or above it were already
+		// rejected by the styled/contrast scan, so matching them again can only
+		// promote a row that was previously refused (e.g. a wide title row).
+		for k := bestCandidate; k < wideScan; k++ {
 			row := records[k]
 			ne := rowNonEmpty(row)
 			// Accept rows within ±2 of the median data width, but reject rows
@@ -1042,6 +1054,22 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 			// labels, not the real column header.
 			if ne < medWidth-2 || ne > medWidth+2 || ne*2 <= medWidth {
 				continue
+			}
+			// The recovered row must close a contiguous narrow metadata block:
+			// if a body-width row already sits between the deferred candidate
+			// and here, this row belongs to a later block (a repeated header
+			// or a section title mid-sheet), and the first candidate was the
+			// real header all along.
+			contiguous := true
+			for j := bestCandidate; j < k; j++ {
+				w := rowNonEmpty(records[j])
+				if w > 0 && w*2 > medWidth {
+					contiguous = false
+					break
+				}
+			}
+			if !contiguous {
+				break
 			}
 			// Reject numeric-majority rows (data, not a header).
 			numCells := 0
@@ -1081,28 +1109,27 @@ func rowNonEmpty(row []string) int {
 	return n
 }
 
-// medianRowWidth samples 3–4 non-adjacent rows from the middle of the sheet
-// and returns the median of their non-empty cell counts. This gives a
-// representative "data row width" without scanning every row.
+// medianRowWidth samples rows from the bottom half of the sheet and returns
+// the median of their non-empty cell counts. Sampling the bottom half keeps
+// top-of-sheet metadata/title blocks out of the estimate; a middle-half window
+// can land entirely inside a long metadata block on short form sheets.
 func medianRowWidth(records [][]string) int {
 	n := len(records)
 	if n < 4 {
 		return 0
 	}
-	// Sample from the middle half: [n/4 .. 3n/4), stepping so picks are
-	// non-adjacent. At least 3, at most 4 samples.
-	start := n / 4
-	end := 3 * n / 4
+	start := n / 2
+	end := n
 	span := end - start
 	if span < 3 {
 		return 0
 	}
-	step := span / 4
-	if step < 2 {
-		step = 2
+	step := span / 5
+	if step < 1 {
+		step = 1
 	}
 	var widths []int
-	for i := start; i < end && len(widths) < 4; i += step {
+	for i := start; i < end && len(widths) < 5; i += step {
 		w := rowNonEmpty(records[i])
 		if w > 0 {
 			widths = append(widths, w)
