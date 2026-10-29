@@ -117,7 +117,7 @@ func (c *SitemapConnector) Validate(ctx context.Context) error {
 		return fmt.Errorf("batch_size must be a positive integer")
 	}
 
-	entries, err := c.listEntries(ctx)
+	entries, err := c.listEntries(ctx, false)
 	if err != nil {
 		return err
 	}
@@ -143,7 +143,7 @@ func (c *SitemapConnector) ValidateConnectorSetting(ctx context.Context, request
 // content fingerprint, so unchanged pages are skipped by the runner before
 // being re-indexed even when the sitemap exposes no usable <lastmod>.
 func (c *SitemapConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
-	entries, err := c.listEntries(ctx)
+	entries, err := c.listEntries(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -180,11 +180,14 @@ func (c *SitemapConnector) OpenSync(ctx context.Context, request SyncRequest) (S
 
 // OpenPrune opens one complete sitemap prune snapshot session.
 //
+// Fetch and traversal failures return no session, so callers cannot delete
+// documents based on a partial retained set.
+//
 // When PDF link discovery is enabled the HTML pages are fetched so that the
 // discovered PDFs are part of the retained set; otherwise they would be pruned
 // as stale right after being indexed.
 func (c *SitemapConnector) OpenPrune(ctx context.Context, request PruneRequest) (PruneSession, error) {
-	entries, err := c.listEntries(ctx)
+	entries, err := c.listEntries(ctx, true)
 	if err != nil {
 		return nil, err
 	}
@@ -206,9 +209,7 @@ func (c *SitemapConnector) OpenPrune(ctx context.Context, request PruneRequest) 
 			}
 			body, contentType, err := c.fetch(ctx, entry.loc)
 			if err != nil {
-				common.Warn("sitemap prune: failed to fetch page for PDF discovery",
-					zap.String("url", entry.loc), zap.Error(err))
-				continue
+				return nil, fmt.Errorf("failed to fetch page %s for prune PDF discovery: %w", entry.loc, err)
 			}
 			if isPDFResponse(contentType, body) {
 				continue
@@ -233,7 +234,11 @@ func (c *SitemapConnector) OpenPrune(ctx context.Context, request PruneRequest) 
 // itself or an ancestor is skipped) and the walk stops after maxSitemapFetches
 // sitemap documents, so one connector configuration cannot trigger unbounded
 // egress.
-func (c *SitemapConnector) listEntries(ctx context.Context) ([]sitemapEntry, error) {
+//
+// With requireComplete, omitted subtrees fail the snapshot so a partial listing
+// cannot authorize pruning. Otherwise nested fetch/validation failures and
+// traversal limits are best effort, allowing sync to process healthy subtrees.
+func (c *SitemapConnector) listEntries(ctx context.Context, requireComplete bool) ([]sitemapEntry, error) {
 	var (
 		entries []sitemapEntry
 		seen    = make(map[string]struct{})
@@ -242,22 +247,28 @@ func (c *SitemapConnector) listEntries(ctx context.Context) ([]sitemapEntry, err
 	)
 	var walk func(sitemapURL string, depth int) error
 	walk = func(sitemapURL string, depth int) error {
-		if depth > maxSitemapDepth {
-			common.Warn("sitemap: max depth reached, stopping", zap.String("url", sitemapURL))
-			return nil
-		}
 		if _, done := visited[sitemapURL]; done {
 			common.Warn("sitemap: nested sitemap already visited, skipping", zap.String("url", sitemapURL))
 			return nil
 		}
+		if depth > maxSitemapDepth {
+			if requireComplete {
+				return fmt.Errorf("sitemap %s exceeds maximum depth of %d", sitemapURL, maxSitemapDepth)
+			}
+			common.Warn("sitemap: max depth reached, stopping", zap.String("url", sitemapURL))
+			return nil
+		}
 		visited[sitemapURL] = struct{}{}
 		if fetched >= maxSitemapFetches {
+			if requireComplete {
+				return fmt.Errorf("sitemap %s exceeds maximum of %d sitemap fetches", sitemapURL, maxSitemapFetches)
+			}
 			common.Warn("sitemap: maximum number of sitemap fetches reached, stopping",
 				zap.String("url", sitemapURL), zap.Int("max", maxSitemapFetches))
 			return nil
 		}
 		if err := validateSitemapURL(sitemapURL); err != nil {
-			if depth == 0 {
+			if depth == 0 || requireComplete {
 				return err
 			}
 			common.Warn("sitemap: skipping invalid nested sitemap URL",
@@ -266,7 +277,7 @@ func (c *SitemapConnector) listEntries(ctx context.Context) ([]sitemapEntry, err
 		}
 		body, _, err := c.fetch(ctx, sitemapURL)
 		if err != nil {
-			if depth == 0 {
+			if depth == 0 || requireComplete {
 				return fmt.Errorf("failed to fetch sitemap %s: %w", sitemapURL, err)
 			}
 			common.Warn("sitemap: failed to fetch nested sitemap",

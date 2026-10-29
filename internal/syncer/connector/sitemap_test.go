@@ -257,7 +257,9 @@ func TestSitemapConnectorFollowPDFLinks(t *testing.T) {
 
 // TestSitemapConnectorOpenPrune verifies the slim snapshot, including discovered PDFs.
 func TestSitemapConnectorOpenPrune(t *testing.T) {
-	connector := newSitemapTestConnector(t, map[string]any{"batch_size": 10}, defaultSitemapFixture())
+	fixture := defaultSitemapFixture()
+	fixture["https://example.com/sitemap-missing.xml"] = [2]string{"application/xml", `<urlset/>`}
+	connector := newSitemapTestConnector(t, map[string]any{"batch_size": 10}, fixture)
 	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
@@ -273,7 +275,7 @@ func TestSitemapConnectorOpenPrune(t *testing.T) {
 		t.Fatalf("prune EOF = %v", err)
 	}
 
-	withPDFs := newSitemapTestConnector(t, map[string]any{"batch_size": 10, "follow_pdf_links": true}, defaultSitemapFixture())
+	withPDFs := newSitemapTestConnector(t, map[string]any{"batch_size": 10, "follow_pdf_links": true}, fixture)
 	session, err = withPDFs.OpenPrune(t.Context(), PruneRequest{})
 	if err != nil {
 		t.Fatalf("OpenPrune failed: %v", err)
@@ -285,6 +287,87 @@ func TestSitemapConnectorOpenPrune(t *testing.T) {
 	if len(batch.Documents) != 7 || batch.Documents[5].SourceID != expectedSitemapSourceID("https://example.com/docs/guide.pdf") {
 		t.Fatalf("prune snapshot with pdf discovery = %+v", batch.Documents)
 	}
+}
+
+// TestSitemapConnectorPruneRejectsFetchFailures ensures listing and PDF discovery
+// errors return no prune session and preserve the underlying fetch failure.
+func TestSitemapConnectorPruneRejectsFetchFailures(t *testing.T) {
+	for name, failedURL := range map[string]string{
+		"root sitemap":   "https://example.com/sitemap.xml",
+		"nested sitemap": "https://example.com/sitemap-missing.xml",
+		"PDF discovery":  "https://example.com/new",
+	} {
+		t.Run(name, func(t *testing.T) {
+			fixture := defaultSitemapFixture()
+			fixture["https://example.com/sitemap-missing.xml"] = [2]string{"application/xml", `<urlset/>`}
+			connector := newSitemapTestConnector(t, map[string]any{"follow_pdf_links": true}, fixture)
+			fetchErr := errors.New("remote URL returned HTTP 503")
+			connector.fetch = func(ctx context.Context, rawURL string) ([]byte, string, error) {
+				if rawURL == failedURL {
+					return nil, "", fetchErr
+				}
+				return fixture.fetch(ctx, rawURL)
+			}
+			session, err := connector.OpenPrune(t.Context(), PruneRequest{})
+			if session != nil || !errors.Is(err, fetchErr) {
+				t.Fatalf("OpenPrune = (%v, %v), want no session and fetch failure", session, err)
+			}
+		})
+	}
+}
+
+// TestSitemapConnectorPruneRejectsInvalidNestedSitemap ensures an invalid child
+// URL cannot silently shrink the snapshot used to authorize deletion.
+func TestSitemapConnectorPruneRejectsInvalidNestedSitemap(t *testing.T) {
+	fixture := sitemapFixture{
+		"https://example.com/sitemap.xml": {"application/xml", `<sitemapindex><sitemap><loc>ftp://example.com/child.xml</loc></sitemap></sitemapindex>`},
+	}
+	connector := newSitemapTestConnector(t, map[string]any{}, fixture)
+	if session, err := connector.OpenPrune(t.Context(), PruneRequest{}); session != nil || err == nil {
+		t.Fatalf("OpenPrune = (%v, %v), want invalid nested URL error", session, err)
+	}
+}
+
+// TestSitemapConnectorPruneAllowsEmptySnapshot keeps complete empty listings valid
+// so confirmed source removals can still be pruned.
+func TestSitemapConnectorPruneAllowsEmptySnapshot(t *testing.T) {
+	fixture := sitemapFixture{
+		"https://example.com/sitemap.xml": {"application/xml", `<sitemapindex><sitemap><loc>https://example.com/child.xml</loc></sitemap></sitemapindex>`},
+		"https://example.com/child.xml":   {"application/xml", `<urlset/>`},
+	}
+	connector := newSitemapTestConnector(t, map[string]any{}, fixture)
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
+	if err != nil {
+		t.Fatalf("OpenPrune failed: %v", err)
+	}
+	defer session.Close()
+	if batch, err := session.NextBatch(t.Context()); len(batch.Documents) != 0 || !errors.Is(err, io.EOF) {
+		t.Fatalf("empty snapshot = (%+v, %v), want EOF so removed documents can be pruned", batch, err)
+	}
+}
+
+// TestSitemapConnectorPruneRejectsDepthLimit distinguishes an omitted subtree from
+// a harmless cycle, while preserving best-effort listing for sync.
+func TestSitemapConnectorPruneRejectsDepthLimit(t *testing.T) {
+	fixture := sitemapFixture{}
+	for depth := 0; depth <= maxSitemapDepth; depth++ {
+		fixture[fmt.Sprintf("https://example.com/sitemap-%d.xml", depth)] = [2]string{"application/xml", fmt.Sprintf(`<sitemapindex><sitemap><loc>https://example.com/sitemap-%d.xml</loc></sitemap></sitemapindex>`, depth+1)}
+	}
+	connector := newSitemapTestConnector(t, map[string]any{"sitemap_url": "https://example.com/sitemap-0.xml"}, fixture)
+	if _, err := connector.listEntries(t.Context(), false); err != nil {
+		t.Fatalf("best-effort listing failed: %v", err)
+	}
+	if session, err := connector.OpenPrune(t.Context(), PruneRequest{}); session != nil || err == nil || !strings.Contains(err.Error(), "maximum depth") {
+		t.Fatalf("OpenPrune = (%v, %v), want depth limit error", session, err)
+	}
+	// A reference to an already visited sitemap does not omit any documents,
+	// even when it occurs at the depth limit.
+	fixture[fmt.Sprintf("https://example.com/sitemap-%d.xml", maxSitemapDepth)] = [2]string{"application/xml", `<sitemapindex><sitemap><loc>https://example.com/sitemap-0.xml</loc></sitemap></sitemapindex>`}
+	session, err := connector.OpenPrune(t.Context(), PruneRequest{})
+	if err != nil {
+		t.Fatalf("OpenPrune rejected a complete cyclic sitemap: %v", err)
+	}
+	session.Close()
 }
 
 // TestSitemapConnectorResume verifies retry resumes after the committed anchor.
@@ -443,7 +526,8 @@ func TestSitemapSemanticIdentifier(t *testing.T) {
 
 // TestSitemapConnectorListEntriesBoundsFetches verifies that nested sitemap
 // indexes referencing themselves or an ancestor are fetched once, and that the
-// walk stops at maxSitemapFetches.
+// walk stops at maxSitemapFetches. A capped best-effort listing must not become
+// a successful prune snapshot.
 func TestSitemapConnectorListEntriesBoundsFetches(t *testing.T) {
 	fetches := map[string]int{}
 	fixture := defaultSitemapFixture()
@@ -453,7 +537,7 @@ func TestSitemapConnectorListEntriesBoundsFetches(t *testing.T) {
 		return fixture.fetch(ctx, rawURL)
 	}
 
-	entries, err := connector.listEntries(t.Context())
+	entries, err := connector.listEntries(t.Context(), false)
 	if err != nil {
 		t.Fatalf("listEntries failed: %v", err)
 	}
@@ -481,7 +565,7 @@ func TestSitemapConnectorListEntriesBoundsFetches(t *testing.T) {
 		total++
 		return wide.fetch(ctx, rawURL)
 	}
-	entries, err = capped.listEntries(t.Context())
+	entries, err = capped.listEntries(t.Context(), false)
 	if err != nil {
 		t.Fatalf("listEntries (wide) failed: %v", err)
 	}
@@ -490,5 +574,12 @@ func TestSitemapConnectorListEntriesBoundsFetches(t *testing.T) {
 	}
 	if len(entries) != maxSitemapFetches-1 {
 		t.Fatalf("entries = %d, want %d", len(entries), maxSitemapFetches-1)
+	}
+	total = 0
+	if session, err := capped.OpenPrune(t.Context(), PruneRequest{}); session != nil || err == nil || !strings.Contains(err.Error(), "sitemap fetches") {
+		t.Fatalf("OpenPrune = (%v, %v), want fetch limit error", session, err)
+	}
+	if total != maxSitemapFetches {
+		t.Fatalf("prune fetches = %d, want %d", total, maxSitemapFetches)
 	}
 }
