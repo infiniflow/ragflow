@@ -46,7 +46,6 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 		return ParseResult{Err: err}
 	}
 	markdown.FetchRemoteImages = false
-	mediaOrdinal := 0
 	for _, page := range response.Pages {
 		if !hasPageCount && page.Index+1 > pageCount {
 			pageCount = page.Index + 1
@@ -62,8 +61,15 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 			}
 			label := strings.ToLower(strings.TrimSpace(block.Label))
 			if models.IsOCRMediaLabel(label) || models.IsOCRImageOnlyText(block.Text) {
-				mediaOrdinal++
-				result.JSON = append(result.JSON, paddleOCRMediaItem(page, block, size, mediaOrdinal))
+				text := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
+				position := paddleOCRBlockPosition(page, block.BBox, size)
+				// A block with neither body text nor a crop region has nothing
+				// media can act on: a crop preview needs positive-area geometry,
+				// and a synthetic text body would index as retrievable text.
+				if text == "" && len(position) == 0 {
+					continue
+				}
+				result.JSON = append(result.JSON, paddleOCRMediaItem(page, text, position))
 				continue
 			}
 			content := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
@@ -138,29 +144,22 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 	return result
 }
 
-// paddleOCRMediaItem keeps a figure-like block as a media item. The service
-// may return only Markdown image markup or no body text at all; either way the
-// block must still reach the chunker with its region so the on-demand crop and
-// vision enhancement can act on it, instead of disappearing from the document.
-func paddleOCRMediaItem(page models.OCRPage, block models.OCRBlock, size [2]float64, ordinal int) DocItem {
-	text := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
-	if text == "" {
-		// A placeholder is required, not cosmetic: the tokenizer drops a chunk
-		// whose text and media context are all empty, so a captionless figure
-		// with no body text would never be indexed. The ordinal then keeps
-		// captionless figures distinct, since the chunk id hashes the body and a
-		// shared placeholder would make every one of them overwrite the same
-		// preview object and index entry.
-		text = fmt.Sprintf("[Image %d]", ordinal)
-	}
+// paddleOCRMediaItem keeps a figure-like block as a media item. The text stays
+// empty when the block carries no body text: the region is preserved for the
+// vision pass and the on-demand crop, while a synthetic placeholder would
+// index as retrievable body text (#21218). The chunker drops a text-less media
+// item that never became retrievable, matching the DeepDoc figure path.
+func paddleOCRMediaItem(page models.OCRPage, text string, position []any) DocItem {
 	fields := map[string]any{
-		"text":            text,
 		"doc_type_kwd":    "image",
 		"layout":          "figure",
 		"page_number":     page.Index + 1,
 		"_preserve_order": true,
 	}
-	if position := paddleOCRBlockPosition(page, block.BBox, size); len(position) > 0 {
+	if text != "" {
+		fields["text"] = text
+	}
+	if len(position) > 0 {
 		matrix := [][]any{position}
 		fields["positions"], fields["_pdf_positions"] = matrix, matrix
 	}

@@ -34,26 +34,22 @@ func TestPaddleOCRBlockPosition(t *testing.T) {
 	}
 }
 
-func TestPaddleOCRPDFResultKeepsUnlocatedText(t *testing.T) {
+func TestPaddleOCRPDFResultDropsUnlocatedMedia(t *testing.T) {
 	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
 	if err != nil {
 		t.Fatal(err)
 	}
 	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Text: "keep me", Label: "text", BBox: []float64{10, 20, 30, 40}}, {Text: "![figure](https://example.invalid/a(1).png)", Label: "image"}}}}}
 	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
-	if result.Err != nil || len(result.JSON) != 2 {
+	if result.Err != nil || len(result.JSON) != 1 {
 		t.Fatalf("result=%+v", result)
 	}
 	item := result.JSON[0].ToMap()
 	if item["text"] != "keep me" || item["positions"] != nil {
 		t.Fatalf("item=%v", item)
 	}
-	// The image-only block has no usable geometry, but it must still survive as
-	// a media item so its caption/placeholder is not silently lost (#21218).
-	image := result.JSON[1].ToMap()
-	if image["text"] != "[Image 1]" || image["doc_type_kwd"] != "image" || image["layout"] != "figure" || image["positions"] != nil {
-		t.Fatalf("image item=%v", image)
-	}
+	// The image-only block has neither body text nor a crop region: a
+	// placeholder would index as body text (#21218), so it is dropped.
 }
 
 func TestPaddleOCRPDFResultKeepsMediaItems(t *testing.T) {
@@ -61,24 +57,28 @@ func TestPaddleOCRPDFResultKeepsMediaItems(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{
-		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)"},
-		{Label: "image", Text: "Figure 1: pipeline"},
-		{Label: "chart", Text: "![chart](https://example.invalid/c.png)"},
-		{Label: "seal", Text: "![seal](https://example.invalid/s.png)"},
-		{Text: "![uncaptioned](https://example.invalid/u.png)"},
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{
+		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)", BBox: []float64{10, 20, 100, 120}},
+		{Label: "image", Text: "Figure 1: pipeline", BBox: []float64{10, 130, 100, 230}},
+		{Label: "chart", Text: "![chart](https://example.invalid/c.png)", BBox: []float64{10, 240, 100, 340}},
+		{Label: "seal", Text: "![seal](https://example.invalid/s.png)", BBox: []float64{10, 350, 100, 450}},
+		{Text: "![uncaptioned](https://example.invalid/u.png)", BBox: []float64{10, 460, 100, 560}},
 	}}}}
 	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
 	if result.Err != nil || len(result.JSON) != 5 {
 		t.Fatalf("result=%+v", result)
 	}
-	for i, wantText := range []string{"[Image 1]", "Figure 1: pipeline", "[Image 3]", "[Image 4]", "[Image 5]"} {
+	for i, wantText := range []string{"", "Figure 1: pipeline", "", "", ""} {
 		item := result.JSON[i].ToMap()
-		if item["doc_type_kwd"] != "image" || item["layout"] != "figure" || item["text"] != wantText {
+		gotText, _ := item["text"].(string)
+		if item["doc_type_kwd"] != "image" || item["layout"] != "figure" || gotText != wantText {
 			t.Fatalf("item %d = %v", i, item)
 		}
 		if item["page_number"] != 1 {
 			t.Fatalf("item %d page_number = %v", i, item["page_number"])
+		}
+		if item["positions"] == nil {
+			t.Fatalf("item %d lost its crop region: %v", i, item)
 		}
 	}
 }
@@ -88,17 +88,18 @@ func TestPaddleOCRMediaItemsSurviveNormalize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{
-		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)"},
-		{Label: "image", Text: "Figure 1: pipeline"},
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{
+		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)", BBox: []float64{10, 20, 100, 120}},
+		{Label: "image", Text: "Figure 1: pipeline", BBox: []float64{10, 130, 100, 230}},
 	}}}}
 	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response))
 	if result.Err != nil || len(result.JSON) != 2 {
 		t.Fatalf("result=%+v", result)
 	}
-	for i, wantText := range []string{"[Image 1]", "Figure 1: pipeline"} {
+	for i, wantText := range []string{"", "Figure 1: pipeline"} {
 		item := result.JSON[i].ToMap()
-		if item["doc_type_kwd"] != "image" || item["layout"] != "figure" || item["text"] != wantText || item["page_number"] != 1 {
+		gotText, _ := item["text"].(string)
+		if item["doc_type_kwd"] != "image" || item["layout"] != "figure" || gotText != wantText || item["page_number"] != 1 {
 			t.Fatalf("item %d = %v", i, item)
 		}
 	}
