@@ -57,6 +57,22 @@ func cgoPositions() map[string]any {
 	}
 }
 
+// itemContext expires on demand instead of on a wall clock, so a test can
+// expire an item budget at a chosen point in the sequence.
+type itemContext struct {
+	context.Context
+	expired <-chan struct{}
+}
+
+func (c itemContext) Err() error {
+	select {
+	case <-c.expired:
+		return context.DeadlineExceeded
+	default:
+		return c.Context.Err()
+	}
+}
+
 // TestVisionCropImage_OnDemandFromPositions verifies the core fix: a parsed
 // item that carries PDF positions but no inlined image is cropped on demand
 // by re-acquiring the source PDF from storage and rendering the region.
@@ -343,7 +359,10 @@ func TestVisionCropImage_ReusesSourceAfterItemContextExpires(t *testing.T) {
 		visionEngineOpener = oldOpener
 	})
 
-	fetchStarted := make(chan struct{})
+	// Buffered: the fetcher signals with a non-blocking send, so an unbuffered
+	// channel drops the signal whenever this goroutine is not parked on the
+	// receive yet, and the test then blocks there forever.
+	fetchStarted := make(chan struct{}, 1)
 	finishFetch := make(chan struct{})
 	fetchCalls := 0
 	visionSourceFetcher = func(ctx context.Context, bucket, path string) ([]byte, error) {
@@ -371,8 +390,12 @@ func TestVisionCropImage_ReusesSourceAfterItemContextExpires(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = cropper.Close() })
 
-	firstItemCtx, cancelFirstItem := context.WithTimeout(invocationCtx, 20*time.Millisecond)
-	defer cancelFirstItem()
+	// Expire the item context exactly when the shared fetch is in flight. A
+	// wall-clock deadline races Crop's entry check on a loaded runner: when the
+	// 20ms elapsed first, Crop returned before fetching and the test waited for
+	// a fetch that never started.
+	expireFirstItem := make(chan struct{})
+	firstItemCtx := itemContext{Context: invocationCtx, expired: expireFirstItem}
 	firstResult := make(chan struct {
 		img *visionImage
 		err error
@@ -384,8 +407,14 @@ func TestVisionCropImage_ReusesSourceAfterItemContextExpires(t *testing.T) {
 			err error
 		}{img: img, err: err}
 	}()
-	<-fetchStarted
-	<-firstItemCtx.Done()
+	// Bound the wait: an unbounded receive turns a missing fetch into a
+	// package-wide 10m timeout instead of a local failure.
+	select {
+	case <-fetchStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("source fetch did not start")
+	}
+	close(expireFirstItem)
 	close(finishFetch)
 	first := <-firstResult
 	if first.err != nil {

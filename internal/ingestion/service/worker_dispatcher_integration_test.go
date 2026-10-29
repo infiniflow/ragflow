@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -38,15 +39,24 @@ import (
 
 func setupRealNatsCluster(t *testing.T) (host string, port int) {
 	t.Helper()
+	// JetStream can still write consumer state while the store is being removed,
+	// which surfaced as "directory not empty" from t.TempDir's cleanup and
+	// failed the test after it had passed. Own the directory and retry the
+	// removal instead.
+	storeDir, err := os.MkdirTemp("", "ragflow-nats-store-")
+	if err != nil {
+		t.Fatalf("create JetStream store dir: %v", err)
+	}
 	opts := &server.Options{
 		Port:      -1,
 		JetStream: true,
-		StoreDir:  t.TempDir(),
+		StoreDir:  storeDir,
 		NoLog:     true,
 		NoSigs:    true,
 	}
 	ns, err := server.NewServer(opts)
 	if err != nil {
+		_ = os.RemoveAll(storeDir)
 		t.Fatalf("create embedded NATS server: %v", err)
 	}
 	ns.Start()
@@ -57,6 +67,12 @@ func setupRealNatsCluster(t *testing.T) (host string, port int) {
 	t.Cleanup(func() {
 		ns.Shutdown()
 		ns.WaitForShutdown()
+		for attempt := 0; attempt < 20; attempt++ {
+			if err := os.RemoveAll(storeDir); err == nil {
+				return
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
 	})
 	addr := ns.Addr().(*net.TCPAddr)
 	return "127.0.0.1", addr.Port
