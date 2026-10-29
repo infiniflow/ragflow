@@ -125,6 +125,7 @@ const svgIcons = [
   LLMFactory.WorldRouter,
   LLMFactory.CloudGPU,
   LLMFactory.Obscurify,
+  LLMFactory.HostingerRouter,
 ];
 
 export const LlmIcon = ({

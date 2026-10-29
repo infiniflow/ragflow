@@ -20,6 +20,7 @@ package handler
 
 import (
 	"errors"
+	"net/http"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -44,6 +45,13 @@ func billingEnforceApps(_ *gin.Context, _ string) bool { return true }
 // billingEnforceStorage admits every upload: the community edition has no
 // storage quota.
 func billingEnforceStorage(_ *gin.Context, _ string, _ int64) bool { return true }
+
+// isOAuthLoginNoRoute reports the OAuth login URL with an empty channel: the
+// Python API resolves it to a Werkzeug MethodNotAllowed, and the community
+// edition has no OAuth routes, so HandleNoRoute has to reproduce that body.
+func isOAuthLoginNoRoute(c *gin.Context) bool {
+	return c.Request.Method == http.MethodGet && c.Request.URL.Path == "/api/v1/auth/login/"
+}
 
 // issueUserAccessToken mints the access token returned after a successful
 // login.
@@ -70,8 +78,25 @@ func (h *SystemHandler) GetConcurrency(c *gin.Context) { eeNotImplemented(c, "Ge
 func (h *SystemHandler) SetConcurrency(c *gin.Context) { eeNotImplemented(c, "Set concurrency") }
 func (h *SystemHandler) GetQuota(c *gin.Context)       { eeNotImplemented(c, "Get quota") }
 
-func (h *UserHandler) IsAdmin(c *gin.Context)              { eeNotImplemented(c, "IsAdmin") }
-func (h *UserHandler) GetMeta(c *gin.Context)              { eeNotImplemented(c, "GetMeta") }
+func (h *UserHandler) IsAdmin(c *gin.Context) { eeNotImplemented(c, "IsAdmin") }
+func (h *UserHandler) GetMeta(c *gin.Context) { eeNotImplemented(c, "GetMeta") }
+
+// GetLoginChannelsDeprecated lists the OAuth authentication channels. The
+// community edition offers password login only, so the list is empty.
+// @Summary Get Login Channels
+// @Description Get all supported OAuth authentication channels
+// @Tags users
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/user/login/channels [get]
+func (h *UserHandler) GetLoginChannelsDeprecated(c *gin.Context) {
+	channels, code, err := h.userService.GetLoginChannels()
+	if err != nil {
+		common.ResponseWithCodeData(c, code, []interface{}{}, "Load channels failure, error: "+err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, channels, "success")
+}
 func (h *ProviderHandler) CreateModelGroup(c *gin.Context) { eeNotImplemented(c, "CreateModelGroup") }
 func (h *ProviderHandler) DeleteModelGroup(c *gin.Context) { eeNotImplemented(c, "DeleteModelGroup") }
 func (h *ProviderHandler) ShowModelGroup(c *gin.Context)   { eeNotImplemented(c, "ShowModelGroup") }
