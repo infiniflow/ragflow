@@ -29,10 +29,10 @@ func TestIsMinerUCloudBase(t *testing.T) {
 }
 
 func TestMinerUCloudModelVersion(t *testing.T) {
-	if got := MinerUCloudModelVersion("pipeline"); got != "pipeline" {
+	if got := minerUCloudModelVersion("pipeline"); got != "pipeline" {
 		t.Fatalf("pipeline = %q", got)
 	}
-	if got := MinerUCloudModelVersion("vlm-http-client"); got != "vlm" {
+	if got := minerUCloudModelVersion("vlm-http-client"); got != "vlm" {
 		t.Fatalf("vlm-http-client = %q", got)
 	}
 }

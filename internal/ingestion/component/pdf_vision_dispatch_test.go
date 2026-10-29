@@ -652,3 +652,37 @@ func TestMineruExtractJSONItemsStructuredContent(t *testing.T) {
 		t.Fatalf("image item = %#v", items[3])
 	}
 }
+
+func TestFinishMinerURemoteResultPrefersStructuredZip(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	entry, err := zw.Create("structured_content.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = entry.Write([]byte(`{"pages":[{"page_idx":0,"blocks":[
+		{"type":"paragraph_title","content":"章节","bbox":[0.1,0.2,0.4,0.3]},
+		{"type":"header","content":"HEADER"}
+	]}]}`))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := finishMinerURemoteResult(t.Context(), "sample.pdf", []byte("%PDF-1.4"), &modelModule.MinerUV1Result{
+		Markdown: "# markdown only",
+		Zip:      buf.Bytes(),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var text strings.Builder
+	for _, item := range parser.ItemsToMaps(res.JSON) {
+		value, _ := item["text"].(string)
+		text.WriteString(value)
+		text.WriteString("\n")
+	}
+	got := text.String()
+	if !strings.Contains(got, "章节") || strings.Contains(got, "HEADER") || strings.Contains(got, "markdown only") {
+		t.Fatalf("text = %q, want structured title without the header or markdown fallback", got)
+	}
+}

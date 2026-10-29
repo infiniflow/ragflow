@@ -361,3 +361,36 @@ func TestMinerUSameOrigin(t *testing.T) {
 		t.Fatal("sanity")
 	}
 }
+
+type minerUErrBody struct{}
+
+func (minerUErrBody) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+func (minerUErrBody) Close() error             { return nil }
+
+type minerUStatusTransport struct{ code int }
+
+func (t minerUStatusTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: t.code, Body: minerUErrBody{}, Header: make(http.Header)}, nil
+}
+
+type minerUFailTransport struct{}
+
+func (minerUFailTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, io.ErrUnexpectedEOF
+}
+
+func TestMinerUProbeGETKeepsStatusWhenBodyReadFails(t *testing.T) {
+	client := &http.Client{Transport: minerUStatusTransport{code: http.StatusOK}}
+	code, err := minerUProbeGET(context.Background(), client, "http://mineru.example/v1/health", "")
+	if err != nil {
+		t.Fatalf("probe error = %v, want nil when the status is already known", err)
+	}
+	if code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", code)
+	}
+
+	client = &http.Client{Transport: minerUFailTransport{}}
+	if _, err = minerUProbeGET(context.Background(), client, "http://mineru.example/v1/health", ""); err == nil {
+		t.Fatal("probe error = nil, want the transport error when no status was received")
+	}
+}

@@ -30,9 +30,9 @@ func IsMinerUCloudBase(baseURL string) bool {
 	return host == "mineru.net" || strings.HasSuffix(host, ".mineru.net")
 }
 
-// MinerUCloudModelVersion maps a self-hosted backend name onto the cloud
+// minerUCloudModelVersion maps a self-hosted backend name onto the cloud
 // model_version field (pipeline or vlm).
-func MinerUCloudModelVersion(backend string) string {
+func minerUCloudModelVersion(backend string) string {
 	switch strings.ToLower(strings.TrimSpace(backend)) {
 	case "", "pipeline", "basic":
 		return "pipeline"
@@ -101,7 +101,7 @@ func ParseMinerUCloud(ctx context.Context, baseURL, apiKey, filename string, con
 	ocr := strings.EqualFold(strings.TrimSpace(parseMethod), "ocr")
 
 	if token != "" {
-		return parseMinerUCloudV4(ctx, client, origin, token, name, content, MinerUCloudModelVersion(backend), lang, ocr)
+		return parseMinerUCloudV4(ctx, client, origin, token, name, content, minerUCloudModelVersion(backend), lang, ocr)
 	}
 	if len(content) > minerUAgentMaxBytes {
 		return nil, fmt.Errorf("MinerU agent API accepts files up to 10MB; set a mineru.net API token to use /api/v4")

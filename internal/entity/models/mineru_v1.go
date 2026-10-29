@@ -129,9 +129,14 @@ func minerUV1SupportCacheKey(baseURL, apiKey string) string {
 	return baseURL + "\x00" + hex.EncodeToString(sum[:])
 }
 
+// minerUProbeGET reports the HTTP status. MinerUSupportsV1 only distinguishes
+// 404/405 from every other status, so a truncated health body must not hide it.
 func minerUProbeGET(ctx context.Context, client *http.Client, rawURL, token string) (int, error) {
 	code, _, err := minerUGET(ctx, client, rawURL, token)
-	return code, err
+	if code != 0 {
+		return code, nil
+	}
+	return 0, err
 }
 
 // MinerUSupportsV1 reports whether baseURL speaks MinerU 4's /v1 HTTP API.
