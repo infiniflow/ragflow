@@ -167,12 +167,10 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.ChatChannel{},
 		&entity.ChatSession{},
 		&entity.ConversationMessage{},
-		&entity.ConversationReference{},
 		&entity.Task{},
 		&entity.APIToken{},
 		&entity.API4Conversation{},
 		&entity.API4ConversationMessage{},
-		&entity.API4ConversationReference{},
 		&entity.Knowledgebase{},
 		&entity.InvitationCode{},
 		&entity.Document{},
@@ -275,7 +273,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		}
 
 		// Add pipeline_version_id columns and lock existing dataflow bindings to a
-		// version. Runs LAST so the shared migration marker only advances to
+		// version. Runs after the lower-target migrations so the marker advances to
 		// v1.0.0-rc3.dev6 after every lower-target migration (notably the
 		// v1.0.0-rc3.dev5 tenant default-model column drop) has already run.
 		if err = MigrateDSLVersionColumns(ctx, DB); err != nil {
@@ -283,6 +281,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		}
 		if err = BackfillDSLVersionBindings(ctx, DB); err != nil {
 			return fmt.Errorf("failed to backfill DSL version bindings: %w", err)
+		}
+		if err = migrateConversationReferences(ctx, DB); err != nil {
+			return fmt.Errorf("failed to move references into messages: %w", err)
 		}
 		common.Info("Database schema migrated successfully")
 	} else {
@@ -394,9 +395,7 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		&entity.KnowledgeCompileBacklog{},
 		&entity.KnowledgeCompileInflight{},
 		&entity.ConversationMessage{},
-		&entity.ConversationReference{},
 		&entity.API4ConversationMessage{},
-		&entity.API4ConversationReference{},
 	}
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {

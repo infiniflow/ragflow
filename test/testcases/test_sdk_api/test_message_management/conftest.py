@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import pytest
 import requests
 from ragflow_sdk import RAGFlow
 
-from message_helpers import assert_identity, wait_until
+from test.testcases.test_sdk_api.test_message_management.message_helpers import assert_identity, wait_until
 
 
 @pytest.fixture(autouse=True)

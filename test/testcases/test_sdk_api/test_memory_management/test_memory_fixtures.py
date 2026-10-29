@@ -18,7 +18,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import conftest
+from test.testcases.test_sdk_api.test_memory_management import conftest
 
 
 def fake_client(monkeypatch, *, fail_cleanup=False):

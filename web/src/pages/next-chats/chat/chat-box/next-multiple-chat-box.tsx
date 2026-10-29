@@ -94,7 +94,6 @@ const ChatCard = forwardRef(function ChatCard(
     addChatBox,
     chatBoxIds,
     clickDocumentButton,
-    conversation,
     value,
     setValue,
     files,
@@ -120,10 +119,7 @@ const ChatCard = forwardRef(function ChatCard(
 
   const { scrollRef } = useScrollToBottom(derivedMessages, messageContainerRef);
 
-  const messageReferences = useMessageReferences(
-    derivedMessages,
-    conversation.reference,
-  );
+  const messageReferences = useMessageReferences(derivedMessages);
 
   const FormSchema = z.object(LlmSettingSchema);
 

@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from conftest import wait_ids
+from test.testcases.test_sdk_api.test_chunk_management_within_dataset.conftest import wait_ids
 from ragflow_sdk import Document
 
 pytestmark = pytest.mark.integration

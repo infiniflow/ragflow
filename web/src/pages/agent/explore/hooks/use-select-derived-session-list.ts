@@ -34,7 +34,6 @@ export const useSelectDerivedSessionList = () => {
       source: '',
       user_id: '',
       dsl: '',
-      reference: [],
       is_new: true,
       name: '',
       version_title: '',

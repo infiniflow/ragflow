@@ -2574,7 +2574,6 @@ func (s *AgentService) createAgentRunSession(
 		UserID:    userID,
 		ExpUserID: &userID,
 		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
 		Source:    &source,
 		DSL:       entity.JSONMap(runDSL),
 	}
@@ -2702,12 +2701,12 @@ func (s *AgentService) persistAgentRunSession(
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
-	history := dao.ConversationHistoryUpdate{Reference: normalizeAgentReferenceEntry(reference), AppendReference: true}
+	history := dao.ConversationHistoryUpdate{}
 	if stringifyAgentUserInput(agentRunQuery(userInput)) != "" {
 		history.QuestionID = messageID
 	}
 	if appendAssistantMessage {
-		history.Message = map[string]interface{}{"role": "assistant", "content": agentSessionMessageContent(answer, thinking), "id": messageID, "created_at": now}
+		history.Message = map[string]interface{}{"role": "assistant", "content": agentSessionMessageContent(answer, thinking), "id": messageID, "created_at": now, "reference": normalizeAgentReferenceEntry(reference)}
 	}
 	updates := map[string]interface{}{
 		"round":  gorm.Expr("COALESCE(round, 0) + 1"),

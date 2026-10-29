@@ -126,6 +126,7 @@ const svgIcons = [
   LLMFactory.CloudGPU,
   LLMFactory.Obscurify,
   LLMFactory.HostingerRouter,
+  LLMFactory.Cheapaimodel,
 ];
 
 export const LlmIcon = ({

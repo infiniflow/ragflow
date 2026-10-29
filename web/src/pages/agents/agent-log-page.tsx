@@ -18,7 +18,6 @@ import {
   IAgentLogMessage,
   IAgentLogResponse,
 } from '@/interfaces/database/agent';
-import { IReferenceObject } from '@/interfaces/database/chat';
 import { formatDate } from '@/utils/date';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -415,7 +414,6 @@ const AgentLogPage: React.FC = () => {
       <AgentLogDetailModal
         isOpen={openModal}
         message={modalData?.message as IAgentLogMessage[]}
-        reference={modalData?.reference as unknown as IReferenceObject}
         onClose={() => setOpenModal(false)}
       />
     </div>

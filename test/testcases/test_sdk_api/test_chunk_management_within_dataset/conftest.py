@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -95,7 +95,7 @@ def add_document(client):
         yield dataset, documents[0]
     finally:
         client.delete_datasets(ids=[dataset.id])
-        assert client.list_datasets(id=dataset.id) == [], "Owned dataset cleanup failed"
+        assert client.list_datasets(ids=[dataset.id]) == [], "Owned dataset cleanup failed"
 
 
 @pytest.fixture

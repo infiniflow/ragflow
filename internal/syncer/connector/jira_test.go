@@ -430,7 +430,16 @@ func TestJiraConnectorDownloadKeepsAuthorizationOnSameOriginRedirect(t *testing.
 	}
 }
 
+const jiraFixtureUpdatedAt = "2026-01-03T10:00:00.000+0000"
+
 func jiraFixtureServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return jiraFixtureServerWithUpdated(t, jiraFixtureUpdatedAt, "")
+}
+
+// jiraFixtureServerWithUpdated serves the issue regardless of the JQL filter, so
+// wantJQL lets a test pin the lower bound the connector actually requested.
+func jiraFixtureServerWithUpdated(t *testing.T, updated, wantJQL string) *httptest.Server {
 	t.Helper()
 	withConnectorLoopbackTestHook(t)
 	mux := http.NewServeMux()
@@ -438,8 +447,13 @@ func jiraFixtureServer(t *testing.T) *httptest.Server {
 		jiraWriteJSON(t, w, map[string]any{"key": "RAG"})
 	})
 	mux.HandleFunc("/rest/api/3/search/jql", func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Query().Get("jql"); !strings.Contains(got, `project = "RAG"`) {
+		got := r.URL.Query().Get("jql")
+		if !strings.Contains(got, `project = "RAG"`) {
 			t.Errorf("jql = %q", got)
+			return
+		}
+		if wantJQL != "" && !strings.Contains(got, wantJQL) {
+			t.Errorf("jql = %q, want it to contain %q", got, wantJQL)
 			return
 		}
 		jiraWriteJSON(t, w, map[string]any{
@@ -448,7 +462,7 @@ func jiraFixtureServer(t *testing.T) *httptest.Server {
 	})
 	var server *httptest.Server
 	mux.HandleFunc("/rest/api/3/issue/bulkfetch", func(w http.ResponseWriter, r *http.Request) {
-		jiraWriteJSON(t, w, map[string]any{"issues": []map[string]any{jiraFixtureIssue(server.URL)}})
+		jiraWriteJSON(t, w, map[string]any{"issues": []map[string]any{jiraFixtureIssue(server.URL, updated)}})
 	})
 	mux.HandleFunc("/attachment/10001", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("attachment body"))
@@ -471,7 +485,7 @@ func jiraResumeFixtureServer(t *testing.T, keys []map[string]any) *httptest.Serv
 	mux.HandleFunc("/rest/api/3/issue/bulkfetch", func(w http.ResponseWriter, r *http.Request) {
 		issues := make([]map[string]any, 0, len(keys))
 		for _, meta := range keys {
-			issue := jiraFixtureIssue(server.URL)
+			issue := jiraFixtureIssue(server.URL, jiraFixtureUpdatedAt)
 			issue["id"] = meta["id"]
 			issue["key"] = meta["key"]
 			issues = append(issues, issue)
@@ -482,9 +496,9 @@ func jiraResumeFixtureServer(t *testing.T, keys []map[string]any) *httptest.Serv
 	return server
 }
 
-func mustJiraResumeConnector(t *testing.T, baseURL string) *JiraConnector {
+func mustJiraResumeConnector(t *testing.T, baseURL string, overrides ...map[string]any) *JiraConnector {
 	t.Helper()
-	connector, err := NewJiraConnector(map[string]any{
+	config := map[string]any{
 		"base_url":        baseURL,
 		"project_key":     "RAG",
 		"batch_size":      10,
@@ -493,21 +507,27 @@ func mustJiraResumeConnector(t *testing.T, baseURL string) *JiraConnector {
 			"jira_api_token":   "token",
 			"rest_api_version": "3",
 		},
-	})
+	}
+	for _, override := range overrides {
+		for key, value := range override {
+			config[key] = value
+		}
+	}
+	connector, err := NewJiraConnector(config)
 	if err != nil {
 		t.Fatalf("NewJiraConnector failed: %v", err)
 	}
 	return connector
 }
 
-func jiraFixtureIssue(baseURL string) map[string]any {
+func jiraFixtureIssue(baseURL, updated string) map[string]any {
 	return map[string]any{
 		"id":  "10000",
 		"key": "RAG-7",
 		"fields": map[string]any{
 			"summary":     "Implement Jira sync",
 			"description": "Implement Jira sync in Go",
-			"updated":     "2026-01-03T10:00:00.000+0000",
+			"updated":     updated,
 			"created":     "2026-01-02T10:00:00.000+0000",
 			"status":      map[string]any{"name": "Open"},
 			"priority":    map[string]any{"name": "High"},
@@ -548,5 +568,57 @@ func TestJiraTimeParsesOffset(t *testing.T) {
 	want := time.Date(2026, 1, 3, 2, 0, 0, 0, time.UTC)
 	if got := value.Time(); !got.Equal(want) {
 		t.Fatalf("time = %s, want %s", got, want)
+	}
+}
+
+func TestJiraSyncKeepsIssuesInsideTheWatermarkMinute(t *testing.T) {
+	// The fixture issue was updated at 2026-01-03T10:00:00Z. A waterline at
+	// 10:00:20Z asks JQL for `updated >= "2026-01-03 09:59"` (time buffer plus
+	// minute precision); the page filter must accept that same span, or the
+	// buffer only widens the response and the issue is dropped by both runs.
+	server := jiraFixtureServer(t)
+	defer server.Close()
+
+	connector := mustJiraResumeConnector(t, server.URL)
+	start := mustTime(t, "2026-01-03T10:00:20Z")
+	end := mustTime(t, "2026-01-03T11:00:00Z")
+	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != server.URL+"/browse/RAG-7" {
+		t.Fatalf("documents = %#v, want the issue updated at 10:00:00Z", batch.Documents)
+	}
+}
+
+func TestJiraSyncHonoursConfiguredTimeBuffer(t *testing.T) {
+	// The issue was updated at 09:58:10Z. A configured 120s buffer — twice the
+	// default — moves the 10:00:20Z watermark back to 09:58:20, floored to
+	// 09:58, so both the requested JQL bound and the page filter must keep the
+	// row. With the 60s default the bound would be 09:59 and the row dropped.
+	server := jiraFixtureServerWithUpdated(t, "2026-01-03T09:58:10.000+0000", `updated >= "2026-01-03 09:58"`)
+	defer server.Close()
+
+	connector := mustJiraResumeConnector(t, server.URL, map[string]any{"time_buffer_seconds": 120})
+	start := mustTime(t, "2026-01-03T10:00:20Z")
+	end := mustTime(t, "2026-01-03T11:00:00Z")
+	session, err := connector.OpenSync(context.Background(), SyncRequest{WindowStart: &start, WindowEnd: end})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer func() { _ = session.Close() }()
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != server.URL+"/browse/RAG-7" {
+		t.Fatalf("documents = %#v, want the issue updated at 09:58:10Z", batch.Documents)
 	}
 }
