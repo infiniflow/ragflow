@@ -346,6 +346,31 @@ func TestConfluenceCQLQuoteEscapesBackslashes(t *testing.T) {
 	}
 }
 
+// TestConfluenceCQLUpperBoundCoversWholeMinute pins the exclusive upper bound for
+// pages and attachments. CQL cannot express the seconds of the window end, so an
+// inclusive `<=` on the truncated value drops the rest of that minute and the
+// next window's lower bound skips those pages and attachments forever.
+func TestConfluenceCQLUpperBoundCoversWholeMinute(t *testing.T) {
+	connector := newTestConfluenceConnector(t, "https://example.atlassian.net/wiki", map[string]any{
+		"index_mode": "page",
+		"page_id":    "123",
+	})
+	end := mustTime(t, "2026-01-04T00:00:30Z")
+
+	cases := map[string]string{
+		"page":       connector.pageCQL(nil, end, false),
+		"attachment": connector.attachmentCQL("123", nil, end, false),
+	}
+	for name, cql := range cases {
+		if !strings.Contains(cql, `lastmodified < '2026-01-04 00:01'`) {
+			t.Fatalf("%s CQL = %q, want an exclusive bound at the next minute tick", name, cql)
+		}
+		if strings.Contains(cql, `lastmodified <=`) {
+			t.Fatalf("%s CQL = %q, want no inclusive upper bound", name, cql)
+		}
+	}
+}
+
 func TestConfluenceSemanticIdentifierAlwaysUsesFullPath(t *testing.T) {
 	// Every identifier carries the full hierarchical path: space, ancestors, title.
 	got := confluenceSemanticIdentifier("Engineering", []string{"Root"}, "Page")
