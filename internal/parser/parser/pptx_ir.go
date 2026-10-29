@@ -17,24 +17,16 @@
 package parser
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"ragflow/internal/entity"
 )
 
-// buildPPTXJSONSections converts office_oxide presentation IR JSON into one
-// text item per slide followed by that slide's image items. The IR carries
-// exactly one section per slide, so section index + 1 is the slide number.
-// Per-slide text is flattened with the shared IR walker (docxElementText),
-// which covers paragraphs, headings, text boxes, tables, and (nested) lists.
-//
-// A slide without extractable text (blank layout, image-only) still
-// yields an item with an empty text field, so slide_number stays
-// aligned with the source deck.
-//
-// Pure Go (no cgo) so the IR → items transform is unit-testable without
-// the office_oxide native library.
+// buildPPTXJSONSections emits text runs, tables and images in slide order.
+// Every item retains its slide number; a blank slide emits an empty text item.
+// Container elements are traversed recursively so grouped tables remain structured.
 func buildPPTXJSONSections(irJSON string, budget *embeddedMediaBudget) ([]map[string]any, error) {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
@@ -45,54 +37,81 @@ func buildPPTXJSONSections(irJSON string, budget *embeddedMediaBudget) ([]map[st
 	}
 	items := make([]map[string]any, 0, len(ir.Sections))
 	for i, sec := range ir.Sections {
+		start := len(items)
 		var lines []string
-		for _, el := range sec.Elements {
-			// Each element's full text (paragraphs, table cells, list
-			// items, etc.) becomes a single value; the shared IR walker
-			// already inserts newlines between rows/items (cellSep "\n"),
-			// so internal newlines are preserved as-is. Only the
-			// element-level split is collapsed (one element → one value or
-			// none if empty).
-			if text := strings.TrimSpace(docxElementText(el, "\n")); text != "" {
-				lines = append(lines, text)
+		flushText := func() {
+			if len(lines) > 0 {
+				items = append(items, map[string]any{"text": strings.Join(lines, "\n"), "doc_type_kwd": "text"})
+				lines = nil
 			}
 		}
-		items = append(items, map[string]any{
-			"text":         strings.Join(lines, "\n"),
-			"doc_type_kwd": "text",
-			"slide_number": i + 1,
-		})
+		tableSequence := 0
+		var emitElements func([]docxIRElement)
+		emitElements = func(elements []docxIRElement) {
+			for _, el := range elements {
+				var units []map[string]any
+				switch el.Type {
+				case "table":
+					if len(el.Rows) == 0 {
+						continue
+					}
+					flushText()
+					tableSequence++
+					items = appendOfficeTableSections(items, el, "", fmt.Sprintf("pptx-slide-%d-table-%d", i+1, tableSequence), budget)
+					continue
+				case "text_box":
+					emitElements(el.contentBlocks())
+					continue
+				case "list":
+					for _, item := range el.Items {
+						emitElements(item.Content)
+						if item.Nested != nil {
+							emitElements([]docxIRElement{{Type: "list", Items: item.Nested.Items}})
+						}
+					}
+					continue
+				case "paragraph", "heading":
+					units = appendDOCXParagraphSections(nil, el, false, budget)
+				case "image":
+					units, _ = appendDOCXImageSection(nil, el.Data, budget, nil)
+				default:
+					if text := strings.TrimSpace(docxElementText(el, "\n")); text != "" {
+						lines = append(lines, text)
+					}
+				}
+				for _, unit := range units {
+					if unit["doc_type_kwd"] == "text" {
+						lines = append(lines, unit["text"].(string))
+						continue
+					}
+					flushText()
+					items = append(items, unit)
+				}
+			}
+		}
+		emitElements(sec.Elements)
+		flushText()
+		if len(items) == start {
+			items = append(items, map[string]any{"text": "", "doc_type_kwd": "text"})
+		}
 		mediaOrder := 0
-		forEachDOCXIRImage(sec.Elements, func(data []byte) bool {
-			mediaOrder++
-			imageItem := map[string]any{
-				"text":         "",
-				"image":        nil,
-				"doc_type_kwd": "image",
-				"slide_number": i + 1,
-				"media_order":  mediaOrder,
+		for _, item := range items[start:] {
+			item["slide_number"] = i + 1
+			if item["doc_type_kwd"] == "image" {
+				mediaOrder++
+				item["media_order"] = mediaOrder
 			}
-			included, keepWalking := budget.include(data)
-			if included {
-				imageItem["image"] = base64.StdEncoding.EncodeToString(data)
-			} else if keepWalking {
-				imageItem["media_omitted"] = true
-			} else {
-				return false
-			}
-			items = append(items, imageItem)
-			return keepWalking
-		})
+		}
 	}
 	return items, nil
 }
 
-// itemsAllEmpty reports whether every item lacks both text and image payloads.
-// A deck whose IR sections all flatten to "" and contain no images must fall
-// back to PlainText instead of emitting empty chunks that the Tokenizer later
-// filters, silently yielding 0 chunks.
+// itemsAllEmpty reports whether a presentation has no text, tables or images.
 func itemsAllEmpty(items []map[string]any) bool {
 	for _, it := range items {
+		if table, ok := it["table"].(*entity.TableData); ok && table != nil && len(table.Grid) > 0 {
+			return false
+		}
 		if text, _ := it["text"].(string); strings.TrimSpace(text) != "" {
 			return false
 		}

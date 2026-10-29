@@ -27,6 +27,9 @@ import (
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/parser/media"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -37,6 +40,31 @@ type mockCanvasStage struct {
 	output map[string]any
 	called bool
 	calls  int
+}
+
+type pipelineContextMediaCache struct {
+	scope string
+}
+
+func (c *pipelineContextMediaCache) Put(context.Context, string, string, []byte) (entity.MediaRef, error) {
+	return entity.MediaRef{Scope: c.scope}, nil
+}
+
+func (c *pipelineContextMediaCache) Get(context.Context, entity.MediaRef) ([]byte, error) {
+	return nil, nil
+}
+
+type mediaCacheContextStage struct{}
+
+func (*mediaCacheContextStage) Invoke(ctx context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
+	cache, ok := media.CacheFromContext(ctx).(*pipelineContextMediaCache)
+	if !ok {
+		return nil, errors.New("pipeline media cache is not attached")
+	}
+	if got := globals.TaskID(ctx); got != cache.scope {
+		return nil, fmt.Errorf("pipeline task id = %q, want media cache scope %q", got, cache.scope)
+	}
+	return map[string]any{"media_cache_scope": cache.scope}, nil
 }
 
 func (m *mockCanvasStage) Invoke(_ context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
@@ -201,6 +229,44 @@ func TestPipelineRun_InstanceFactoryOverridesDefaultFactory(t *testing.T) {
 	}
 	if got := stage["marker"]; got != "instance" {
 		t.Fatalf("stage.marker = %v, want instance", got)
+	}
+}
+
+func TestPipelineRunAttachesInjectedMediaCacheWithTaskScope(t *testing.T) {
+	const stageName = "p.MediaCacheContextStage"
+	runtime.MustRegister(stageName, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) {
+			return &mediaCacheContextStage{}, nil
+		},
+		runtime.Metadata{Version: "1.0.0"})
+
+	const taskID = "task-media-cache"
+	cache := &pipelineContextMediaCache{scope: taskID}
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["stage"]},
+				"stage": {"obj": {"component_name": "p.MediaCacheContextStage", "params": {}}, "upstream": ["begin"]}
+			},
+			"path": ["begin", "stage"],
+			"graph": {"nodes": []}
+		}
+	}`), taskID, WithDocumentID("doc-media-cache"))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+	pipe.media = cache
+
+	out, err := pipe.Run(t.Context(), map[string]any{"name": "image.html"}, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	stage, ok := out["stage"].(map[string]any)
+	if !ok {
+		t.Fatalf("stage output = %T, want map[string]any", out["stage"])
+	}
+	if got := stage["media_cache_scope"]; got != taskID {
+		t.Fatalf("media cache scope = %v, want %q", got, taskID)
 	}
 }
 

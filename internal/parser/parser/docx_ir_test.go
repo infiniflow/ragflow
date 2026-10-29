@@ -34,7 +34,7 @@ func TestBuildDOCXJSONSections_FromJSON(t *testing.T) {
 		{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
 		// The table sits under heading "Title", so it carries the
 		// heading-location caption (mirrors Python __get_nearest_title).
-		{"image": nil, "doc_type_kwd": "table", "table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "cell", ColSpan: 1, RowSpan: 1}}}, HeaderRows: 1, Caption: "Table Location: Title"}},
+		{"doc_type_kwd": "table", "table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "cell", ColSpan: 1, RowSpan: 1}}}, HeaderRows: 1, Caption: "Table Location: Title"}},
 		{"text": "item1", "image": nil, "doc_type_kwd": "text"},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -516,6 +516,28 @@ func TestExtractDOCXFiguresFromIR_NonParagraphContext(t *testing.T) {
 	}
 }
 
+// TestExtractDOCXFiguresFromIR_NestedImages verifies that images inside
+// tables and text boxes reach the figure metadata. Section emission recurses
+// into these containers, so a top-level-only figure walk would omit images
+// the parser actually emits.
+func TestExtractDOCXFiguresFromIR_NestedImages(t *testing.T) {
+	irJSON := `{"sections":[{"elements":[
+		{"type":"paragraph","content":[{"type":"text","text":"before"}]},
+		{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"cell"},{"type":"image","data":"aGVsbG8="}]}]}]}]},
+		{"type":"text_box","content":[{"type":"paragraph","content":[{"type":"image","data":"d29ybGQ="}]}]}
+	]}]}`
+	figs := extractDOCXFiguresFromIR(irJSON, newEmbeddedMediaBudget())
+	if len(figs) != 2 {
+		t.Fatalf("expected 2 nested figures, got %d: %+v", len(figs), figs)
+	}
+	if figs[0].Image != "aGVsbG8=" || figs[1].Image != "d29ybGQ=" {
+		t.Fatalf("nested figures = %+v", figs)
+	}
+	if !strings.Contains(figs[0].ContextAbove, "cell") {
+		t.Errorf("ContextAbove = %q, want the nested cell text", figs[0].ContextAbove)
+	}
+}
+
 // TestCollectDOCXText_BoundedByMaxLen pins that the joined context
 // never exceeds maxLen runes, even though newline separators are
 // inserted between blocks (they are not counted by the per-block
@@ -611,8 +633,7 @@ func TestExtractTextFromListItem_NestedNull(t *testing.T) {
 }
 
 // TestExtractTextFromListItem_NestedTable verifies that a table nested
-// inside a list item's content is flattened, not silently dropped. The old
-// path only recognized paragraph/heading blocks in item.Content.
+// inside a list item remains structured beside the preceding text.
 func TestExtractTextFromListItem_NestedTable(t *testing.T) {
 	irJSON := `{"sections":[{"elements":[
 		{"type":"list","items":[
@@ -628,12 +649,10 @@ func TestExtractTextFromListItem_NestedTable(t *testing.T) {
 		]}
 	]}]}`
 	sections := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
-	if len(sections) != 1 {
-		t.Fatalf("expected 1 section, got %d: %+v", len(sections), sections)
+	if len(sections) != 2 || sections[0]["text"] != "before" {
+		t.Fatalf("sections=%#v", sections)
 	}
-	if got := sections[0]["text"]; got != "before\nc1\nc2" {
-		t.Errorf("list item with nested table text = %q, want %q", got, "before\nc1\nc2")
-	}
+	requireTableRows(t, sections[1], [][]string{{"c1", "c2"}})
 }
 
 // TestJoinCellText_NestedList verifies that a list nested inside a table
@@ -682,9 +701,7 @@ func TestBuildDOCXJSONSections_TextBoxTable(t *testing.T) {
 	if len(sections) != 1 {
 		t.Fatalf("expected 1 section, got %d: %+v", len(sections), sections)
 	}
-	if got := sections[0]["text"]; got != "Q1\nA1" {
-		t.Errorf("text_box table text = %q, want %q", got, "Q1\nA1")
-	}
+	requireTableRows(t, sections[0], [][]string{{"Q1", "A1"}})
 }
 
 // TestBuildDOCXJSONSections_NestedList verifies end-to-end that a
@@ -700,11 +717,13 @@ func TestBuildDOCXJSONSections_NestedList(t *testing.T) {
 		]}
 	]}]}`
 	sections := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
-	if len(sections) != 1 {
-		t.Fatalf("expected 1 section, got %d: %+v", len(sections), sections)
+	if len(sections) != 3 {
+		t.Fatalf("sections=%#v", sections)
 	}
-	if got := sections[0]["text"]; got != "L1\nL2a\nL2b" {
-		t.Errorf("nested list text = %q, want %q", got, "L1\nL2a\nL2b")
+	for i, want := range []string{"L1", "L2a", "L2b"} {
+		if sections[i]["text"] != want {
+			t.Fatalf("section[%d]=%#v", i, sections[i])
+		}
 	}
 }
 

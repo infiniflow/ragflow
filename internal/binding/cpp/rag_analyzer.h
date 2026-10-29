@@ -163,7 +163,7 @@ public:
 
     std::unique_ptr<Stemmer> stemmer_;
 
-    OpenCC* opencc_{nullptr};
+    std::unique_ptr<OpenCC> opencc_;
 
     mutable std::vector<char> lowercase_string_buffer_;
 

@@ -136,6 +136,7 @@ func NewRouter(
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	engine.Use(requestBodyLimitMiddleware())
 	SetupEERouter(engine)
 
 	// Mark all responses from Go with a header for debugging.
@@ -190,6 +191,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 
 		apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
+
+		RegisterPublicAgentWebhookRoutes(apiNoAuth.Group("/agents"), r.agentHandler)
 
 		RegisterEENoAuthRouter(apiNoAuth, r)
 	}
@@ -341,6 +344,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
+				datasets.POST("/:dataset_id/documents/apply-parser-config", r.documentHandler.ApplyDatasetParserConfig)
 				// Scheduler compile-status contract; replaces the retired
 				// RunIndex/TraceIndex/DeleteIndex /index routes.
 				datasets.GET("/:dataset_id/compilation/status", r.datasetsHandler.GetCompilationStatus)

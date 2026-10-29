@@ -339,6 +339,14 @@ export const useDeleteKnowledge = () => {
   return { data, loading, deleteKnowledge: mutateAsync };
 };
 
+export const DatasetPipelineConfigurationKeys = {
+  detail: (knowledgeBaseId: string | null | undefined) =>
+    [
+      KnowledgeApiAction.FetchDatasetPipelineConfiguration,
+      knowledgeBaseId,
+    ] as const,
+};
+
 export const useUpdateKnowledge = (shouldFetchList = false) => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const queryClient = useQueryClient();
@@ -392,6 +400,9 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
       const { data = {} } = await updateKb(kbId, requestBody);
       if (data.code === 0) {
         message.success(i18n.t(`message.updated`));
+        queryClient.invalidateQueries({
+          queryKey: DatasetPipelineConfigurationKeys.detail(kbId),
+        });
         if (shouldFetchList) {
           queryClient.invalidateQueries({
             queryKey: [KnowledgeApiAction.FetchKnowledgeListByPage],
@@ -427,14 +438,6 @@ export const useFetchKnowledgeBaseConfiguration = (props?: {
   });
 
   return { data, loading };
-};
-
-export const DatasetPipelineConfigurationKeys = {
-  detail: (knowledgeBaseId: string | null | undefined) =>
-    [
-      KnowledgeApiAction.FetchDatasetPipelineConfiguration,
-      knowledgeBaseId,
-    ] as const,
 };
 
 export const useFetchDatasetPipelineConfiguration = (props?: {

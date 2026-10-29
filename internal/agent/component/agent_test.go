@@ -66,6 +66,9 @@ func TestAgent_NoToolsReAct(t *testing.T) {
 	if len(toolCalls) != 0 {
 		t.Errorf("tool_calls=%d, want 0", len(toolCalls))
 	}
+	if _, exists := out["tool_invocations"]; exists {
+		t.Errorf("tool_invocations unexpectedly present without tool calls: %#v", out["tool_invocations"])
+	}
 	if calls != 1 {
 		t.Errorf("runner called %d times, want 1", calls)
 	}
@@ -815,6 +818,51 @@ func TestAgent_ExhaustRoundsError(t *testing.T) {
 	}
 	if got := out["_ERROR"]; got != "**ERROR**: [GraphRunError] exceeds max steps" {
 		t.Fatalf("_ERROR = %v, want step-exhaustion error envelope", got)
+	}
+}
+
+func TestAgent_ToolInvocationsWithRunnerErrors(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		runnerErr    error
+		wantError    bool
+		wantEnvelope bool
+	}{
+		{name: "max steps", runnerErr: fmt.Errorf("[GraphRunError] %w", compose.ErrExceedMaxSteps), wantEnvelope: true},
+		{name: "other failure", runnerErr: errors.New("provider failed"), wantError: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			withAgentRunner(t, func(ctx context.Context, p AgentParam) (*schema.Message, error) {
+				recorder := &toolInvocationRecordingTool{
+					InvokableTool: &referenceRecordingFakeTool{out: `{"ok":true}`},
+					name:          "search",
+					recorder:      p.toolInvocations,
+				}
+				if _, err := recorder.InvokableRun(ctx, `{"query":"test"}`); err != nil {
+					return nil, err
+				}
+				return nil, tt.runnerErr
+			})
+
+			out, err := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1}).Invoke(t.Context(), nil, map[string]any{"user_prompt": "test"})
+			if tt.wantError {
+				if err == nil || !errors.Is(err, tt.runnerErr) {
+					t.Fatalf("Invoke error = %v, want wrapped %v", err, tt.runnerErr)
+				}
+			} else if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if tt.wantEnvelope {
+				if got := out["_ERROR"]; got != "**ERROR**: [GraphRunError] exceeds max steps" {
+					t.Fatalf("_ERROR = %v, want step-exhaustion envelope", got)
+				}
+			} else if _, ok := out["_ERROR"]; ok {
+				t.Fatalf("unexpected _ERROR output: %#v", out["_ERROR"])
+			}
+			if invocations, ok := out["tool_invocations"].([]map[string]any); !ok || len(invocations) != 1 {
+				t.Fatalf("tool_invocations = %#v, want one invocation", out["tool_invocations"])
+			}
+		})
 	}
 }
 

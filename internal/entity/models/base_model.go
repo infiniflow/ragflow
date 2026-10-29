@@ -33,14 +33,18 @@ import (
 
 // APIStatusError is a provider HTTP failure with its status code preserved, so
 // callers can act on the status (failover cooldown, retry) instead of matching
-// the error text. The shared request helpers return it; the message is byte-for-
-// byte what plain fmt.Errorf produced before, so existing assertions still hold.
+// the error text. hideBody prevents untrusted MWS responses from echoing
+// credentials through user-visible error messages.
 type APIStatusError struct {
-	Status int
-	Body   string
+	Status   int
+	Body     string
+	hideBody bool
 }
 
 func (e *APIStatusError) Error() string {
+	if e.hideBody {
+		return fmt.Sprintf("API request failed with status %d", e.Status)
+	}
 	return fmt.Sprintf("API request failed with status %d: %s", e.Status, e.Body)
 }
 
@@ -49,6 +53,7 @@ type BaseModel struct {
 	URLSuffix        URLSuffix
 	httpClient       *http.Client
 	AllowEmptyAPIKey bool
+	hideAPIErrorBody bool
 	// authHeader, when non-nil, supplies the (name, value) pair used for
 	// authentication instead of the default "Authorization: Bearer <key>".
 	// Drivers with non-standard auth (e.g. Xiaomi's api-key header, Xunfei's
@@ -235,7 +240,7 @@ func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APICon
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody}
 	}
 
 	body, err = readModelResponseBody(resp.Body)
@@ -270,7 +275,7 @@ func (b *BaseModel) doGetRequest(ctx context.Context, url string, apiConfig *API
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody}
 	}
 
 	body, err := readModelResponseBody(resp.Body)
@@ -303,7 +308,7 @@ func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *
 		if err != nil {
 			return fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return &APIStatusError{Status: resp.StatusCode, Body: string(body)}
+		return &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody}
 	}
 
 	return handler(resp.Body)

@@ -16,7 +16,6 @@ import DebugContent from '../../debug-content';
 import { Operator } from '../../constant';
 import { useCanvasReadonly } from '../../context';
 import { transferInputsArrayToObject } from '../../form/begin-form/use-watch-change';
-import { buildBeginInputListFromObject } from '../../form/begin-form/utils';
 import {
   deserializeCodeOutputContract,
   getBusinessOutputs,
@@ -24,6 +23,7 @@ import {
 import useGraphStore from '../../store';
 import { ModelInputs } from './model-inputs';
 import {
+  buildDebugInputList,
   groupCodeExecDebugOutput,
   shouldUseCodeExecDebugLayout,
 } from './utils';
@@ -110,8 +110,12 @@ const SingleDebugSheet = ({
   );
 
   const list = useMemo(() => {
-    return buildBeginInputListFromObject(inputForm);
-  }, [inputForm]);
+    return buildDebugInputList(inputForm, node?.data.form);
+  }, [inputForm, node?.data.form]);
+  const initialValues = useMemo(
+    () => Object.fromEntries(list.map((input, index) => [index, input.value])),
+    [list],
+  );
 
   useEffect(() => {
     setCaptureModelInputs(false);
@@ -216,7 +220,9 @@ const SingleDebugSheet = ({
             </div>
           )}
           <DebugContent
+            key={componentId}
             parameters={list}
+            initialValues={initialValues}
             ok={onOk}
             isNext={false}
             loading={loading}

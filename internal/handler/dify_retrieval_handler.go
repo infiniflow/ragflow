@@ -232,6 +232,10 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 	pageSize := 1024
 	if topK != nil {
+		if *topK < 1 || *topK > 1024 {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be between 1 and 1024")
+			return
+		}
 		pageSize = *topK
 	}
 
@@ -258,26 +262,30 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		docIDs = []string{service.NoMatchDocIDSentinel}
 	}
 
-	// Label question for rank features
+	// Hand the label result over unconditionally: an empty map says "issue no
+	// rank-feature clause", while a nil pointer would let the nlp layer substitute
+	// its {pagerank_fea: 10} default and add a clause the reference never sends.
 	kbs := []*entity.Knowledgebase{kb}
 	rankFeature := h.metadataSvc.LabelQuestion(ctx, req.Query, kbs)
 
-	// Chunk retrieval
+	// Chunk retrieval. Without RerankCandidatesCount the service defaults the
+	// window to 64 and rejects any top_k above it, including the 1024 default.
+	// Keep 64 as the floor so a small top_k still ranks the same candidates.
+	rerankWindow := max(pageSize, 64)
 	sr := &nlp.RetrievalRequest{
-		Question:            req.Query,
-		TenantIDs:           []string{kb.TenantID},
-		KbIDs:               []string{req.KnowledgeID},
-		DocIDs:              docIDs,
-		Page:                1,
-		PageSize:            pageSize,
-		KNNTopK:             topK,
-		SimilarityThreshold: scoreThreshold,
-		EmbeddingModel:      embModel,
-		Language:            entity.KnowledgebasesLanguage(kbs),
+		Question:              req.Query,
+		TenantIDs:             []string{kb.TenantID},
+		KbIDs:                 []string{req.KnowledgeID},
+		DocIDs:                docIDs,
+		Page:                  1,
+		PageSize:              pageSize,
+		RerankCandidatesCount: &rerankWindow,
+		KNNTopK:               topK,
+		SimilarityThreshold:   scoreThreshold,
+		EmbeddingModel:        embModel,
+		Language:              entity.KnowledgebasesLanguage(kbs),
 	}
-	if rankFeature != nil {
-		sr.RankFeature = &rankFeature
-	}
+	sr.RankFeature = &rankFeature
 
 	result, err := h.retrievalSvc.Retrieval(c.Request.Context(), sr)
 	if err != nil {

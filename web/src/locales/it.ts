@@ -1775,6 +1775,7 @@ Esempio: Virtual Hosted Style`,
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Mostra contenuto',
       hideToc: 'Nascondi contenuto',
@@ -1947,20 +1948,6 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       maxRounds: 'Round massimi di riflessione',
       delayAfterError: 'Ritardo dopo errore',
       maxRetries: 'Round massimi di ritentativo',
-      maxSteps: 'Passi massimi',
-      headless: 'Headless',
-      enableDefaultExtensions: 'Abilita estensioni predefinite',
-      enableDefaultExtensionsTip:
-        'Abilita le estensioni predefinite di browser-use (uBlock, gestione cookie, ClearURLs). Disabilita questo per evitare download di estensioni in runtime.',
-      chromiumSandbox: 'Sandbox Chromium',
-      chromiumSandboxTip:
-        'Se abilitare la sandbox Chromium. Negli ambienti Docker root questo è solitamente disabilitato; su host normali è consigliato abilitarlo.',
-      persistSession: 'Mantieni sessione',
-      persistSessionTip:
-        'Quando abilitato, questo nodo Browser riutilizza la sua sessione del browser per evitare accessi ripetuti.',
-      uploadSources: 'Carica sorgenti',
-      uploadSourcesTip:
-        'Supporta ID di file, URL di file o variabili. Puoi separare più valori con virgole o usare un formato array JSON (ad esempio ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Impostazioni avanzate',
       addTools: 'Aggiungi strumenti',
       sysPromptDefaultValue: `
@@ -2064,9 +2051,6 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
         "Un componente che cerca tramite l'URL dell'istanza SearXNG fornita. Specifica TopN e l'URL dell'istanza.",
       docGenerator: 'Generatore Documenti',
       docGeneratorDescription: `Genera un file da contenuto Markdown.`,
-      browser: 'Browser',
-      browserDescription:
-        'Automatizza attività del browser. Supporta la configurazione del modello e azioni guidate da prompt. Le sorgenti di caricamento supportano ID di file e URL, e i file scaricati possono essere salvati in una cartella di destinazione.',
       subtitle: 'Sottotitolo',
       logoImage: 'Immagine Logo',
       logoPosition: 'Posizione Logo',
@@ -2839,7 +2823,7 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
       failed: 'Fallito',
       logTitle: 'Titolo',
       tags: 'Tag',
-      canvasCategory: 'Categoria canvas',
+      agentCategory: 'Categoria canvas',
     },
     llmTools: {
       bad_calculator: {
@@ -3030,10 +3014,10 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
         share: 'Condividi',
       },
 
-      serviceStatus: 'Stato servizio',
-      userManagement: 'Gestione utenti',
-      sandboxSettings: 'Impostazioni sandbox',
-      registrationWhitelist: 'Whitelist registrazione',
+      serviceStatus: 'Servizi',
+      userManagement: 'Utenti',
+      sandboxSettings: 'Sandbox',
+      registrationWhitelist: 'Whitelist',
       roles: 'Ruoli',
       monitoring: 'Monitoraggio',
 
@@ -3137,7 +3121,7 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
       importWhitelist: 'Importa whitelist (Excel)',
       importSelectExcelFile: 'File Excel (.xlsx)',
       importOverwriteExistingEmails: 'Sovrascrivi email esistenti',
-      importInvalidExcelFile: 'Seleziona un file Excel valido',
+      importValidExcelFile: 'Seleziona un file Excel valido',
       importFileRequired: 'Seleziona un file da importare',
       importFileTips:
         'Il file deve contenere una singola colonna di intestazione chiamata <code>email</code>.',
@@ -3151,7 +3135,6 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
       permission: 'Permesso',
 
       agentTitle: 'Titolo agente',
-      canvasCategory: 'Categoria canvas',
 
       newRole: 'Nuovo ruolo',
       addNewRole: 'Aggiungi nuovo ruolo',
@@ -3170,18 +3153,14 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
     },
     explore: {
       title: 'Avvia',
-      canvasList: 'Lista Canvas',
       sessions: 'Sessioni',
       newSession: 'Nuova sessione',
       newSessionLabel: 'Avvia una nuova conversazione',
       deleteSession: 'Elimina sessione',
-      searchCanvas: 'Cerca canvas...',
       searchSessions: 'Cerca sessioni...',
-      noCanvasSelected: 'Seleziona un canvas',
       noSessionSelected: 'Seleziona una sessione o creane una nuova',
       noSessionsFound: 'Nessuna sessione trovata',
       createFirstSession: 'Crea la tua prima sessione',
-      noCanvasFound: 'Nessun canvas trovato',
       deleteSelectedConfirm:
         'Sei sicuro di voler eliminare {{count}} sessioni?',
       batchDeleteSessions: 'Elimina sessioni',

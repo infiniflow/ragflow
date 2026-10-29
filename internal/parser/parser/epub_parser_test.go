@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 // epubTestChapter is one spine item of a test EPUB. A missing chapter is
@@ -89,6 +91,29 @@ func buildTestEPUB(t *testing.T, chapters []epubTestChapter) []byte {
 func parseTestEPUB(t *testing.T, chapters []epubTestChapter) ParseResult {
 	t.Helper()
 	return NewEPUBParser().ParseWithResult(context.Background(), "book.epub", buildTestEPUB(t, chapters))
+}
+
+func TestEPUBParserReportsDocumentImageLimitAcrossChapters(t *testing.T) {
+	image := `<img src="data:image/png;base64,aGVsbG8=">`
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "one.xhtml", content: epubTestHTML(strings.Repeat(image, 128))},
+		{name: "two.xhtml", content: epubTestHTML(strings.Repeat(image, 129) + "<p>After images.</p>")},
+	})
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	images := 0
+	for _, item := range res.JSON {
+		if item.ToMap()["doc_type_kwd"] == "image" {
+			images++
+		}
+	}
+	if images != 256 || !strings.Contains(epubTestText(res), "After images.") {
+		t.Fatalf("images=%d text=%q", images, epubTestText(res))
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "256-item document limit") {
+		t.Fatalf("missing document image limit warning: %v", res.Warnings)
+	}
 }
 
 func epubTestText(res ParseResult) string {
@@ -168,7 +193,7 @@ func TestEPUBParser_NoReadableChapterIsAnError(t *testing.T) {
 
 func TestEPUBParser_ImageOnlyChapterCountsAsRead(t *testing.T) {
 	// The image-only chapter was read and has no text; the book is not unreadable.
-	// No <title>: stripHTMLTags keeps its text, and the chapter would not be text-free.
+	// The chapter has no body text.
 	imageOnly := `<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><body><img src="plate.png" alt=""/></body></html>`
 	res := parseTestEPUB(t, []epubTestChapter{
 		{name: "ch1.xhtml", content: imageOnly},
@@ -207,9 +232,7 @@ func TestEPUBParser_ResolvesManifestHrefsAsURLs(t *testing.T) {
 	}
 }
 
-// The head's <title> and block elements outside the old list ended without a
-// break, so their text ran into the next word: "Testchapter text" and
-// "TermDefinition".
+// Chapter title text and block boundaries retain their text representation.
 func TestEPUBParser_SeparatesBlockElements(t *testing.T) {
 	res := parseTestEPUB(t, []epubTestChapter{
 		{name: "ch1.xhtml", content: epubTestHTML(
@@ -221,6 +244,31 @@ func TestEPUBParser_SeparatesBlockElements(t *testing.T) {
 	}
 	if got, want := epubTestText(res), "Test chapter text Term Definition Figure 1 Afterword Epilogue"; got != want {
 		t.Errorf("text = %q, want %q", got, want)
+	}
+}
+
+// A self-closing raw-text element is valid XHTML but an unclosed start tag
+// under HTML5 rules, which would swallow the rest of the chapter.
+func TestEPUBParser_SelfClosingRawTextKeepsFollowingContent(t *testing.T) {
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "ch1.xhtml", content: epubTestHTML(
+			`<script src="chapter.js"/><style type="text/css"/><p>After self-closing.</p>` +
+				`<table><tr><td>Owner</td><td>RET</td></tr></table>`)},
+	})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if text := epubTestText(res); !strings.Contains(text, "After self-closing.") {
+		t.Fatalf("body after self-closing raw-text element lost: %q", text)
+	}
+	tables := 0
+	for _, item := range res.JSON {
+		if item.ToMap()["doc_type_kwd"] == "table" {
+			tables++
+		}
+	}
+	if tables != 1 {
+		t.Fatalf("table after self-closing raw-text element lost: %#v", ItemsToMaps(res.JSON))
 	}
 }
 
@@ -237,5 +285,70 @@ func TestEPUBParser_DecodesCharacterReferences(t *testing.T) {
 	}
 	if text, want := epubTestText(res), "don’t stop — café ½ cup … & & &bogus;"; !strings.Contains(text, want) {
 		t.Errorf("text = %q, want it to contain %q", text, want)
+	}
+}
+
+func TestEPUBParserPreservesChapterTextUnits(t *testing.T) {
+	paragraph := strings.Repeat("chapter prose ", 600)
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "one.xhtml", content: epubTestHTML("<p>" + paragraph + "</p><p>End one.</p>")},
+		{name: "two.xhtml", content: epubTestHTML("<p>Second &ldquo;chapter&rdquo;.</p><p>\u3000End&#x00A0;two.</p>")},
+	})
+	if res.Err != nil || len(res.JSON) != 2 {
+		t.Fatalf("expected one text item per chapter: items=%d err=%v", len(res.JSON), res.Err)
+	}
+	if got, want := res.JSON[0].ToMap()["text"], "Test "+paragraph+"End one."; got != want {
+		t.Fatal("first chapter text changed")
+	}
+	if got, want := res.JSON[1].ToMap()["text"], "Test Second \"chapter\". \u3000End two."; got != want {
+		t.Fatalf("second chapter text=%q, want %q", got, want)
+	}
+}
+
+func TestEPUBParser_GB2312(t *testing.T) {
+	// Create an in-memory EPUB zip with GB2312-encoded chapter XHTML
+	chapterContent := `<?xml version="1.0" encoding="GB2312"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>第一章</title></head>
+<body><h1>第一章 破晓</h1><p>这是一段包含中文的EPUB正文内容。</p></body>
+</html>`
+	chapterGBK, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte(chapterContent))
+	if err != nil {
+		t.Fatalf("GBK encode: %v", err)
+	}
+
+	containerXML := `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`
+	contentOPF := `<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookID" version="2.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>测试</dc:title></metadata><manifest><item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="c1"/></spine></package>`
+
+	buf := new(bytes.Buffer)
+	zw := zip.NewWriter(buf)
+	w, _ := zw.Create("META-INF/container.xml")
+	w.Write([]byte(containerXML))
+	w, _ = zw.Create("OEBPS/content.opf")
+	w.Write([]byte(contentOPF))
+	w, _ = zw.Create("OEBPS/c1.xhtml")
+	w.Write(chapterGBK)
+	zw.Close()
+
+	p := NewEPUBParser()
+	res := p.ParseWithResult(context.Background(), "book.epub", buf.Bytes())
+	if res.Err != nil {
+		t.Fatalf("EPUBParser.ParseWithResult failed: %v", res.Err)
+	}
+	if len(res.JSON) == 0 {
+		t.Fatal("want non-empty JSON items from EPUB")
+	}
+	text := epubTestText(res)
+	if strings.ContainsRune(text, '\ufffd') {
+		t.Errorf("EPUB text contains replacement runes: %s", text)
+	}
+	for _, want := range []string{"第一章 破晓", "这是一段包含中文的EPUB正文内容。"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("EPUB text missing %q; got: %s", want, text)
+		}
+	}
+	if enc, _ := res.File["encoding"].(string); enc != "gb2312" && enc != "gbk" && enc != "gb18030" {
+		t.Errorf("EPUB File.encoding = %q, want gb2312/gbk/gb18030", enc)
 	}
 }

@@ -24,7 +24,7 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-// Embed embeds req after cutting every text to what this model accepts,
+// Embed splits req at the effective input-count limit, cuts every text to what this model accepts,
 // and retries with a smaller budget if the provider still rejects an input as over
 // its window. It is the embedding counterpart of RerankModel.Rerank, which cuts its
 // documents the same way for the same reason.
@@ -57,6 +57,44 @@ func (m *EmbeddingModel) Embed(ctx context.Context, req EmbedRequest, embeddingC
 	if len(req.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
+	batchSize := m.ResolveBatchSize()
+	if len(req.Texts) <= batchSize {
+		return m.embedBatch(ctx, req, embeddingConfig, usage)
+	}
+	out := make([]EmbeddingData, 0, len(req.Texts))
+	var inputTokens, outputTokens, totalTokens int
+	for start := 0; start < len(req.Texts); start += batchSize {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		batch := req
+		batch.Texts = req.Texts[start:min(start+batchSize, len(req.Texts))]
+		var batchUsage *common.ModelUsage
+		if usage != nil {
+			copy := *usage
+			copy.InputTokens, copy.OutputTokens, copy.TotalTokens = 0, 0, 0
+			batchUsage = &copy
+		}
+		embeds, err := m.embedBatch(ctx, batch, embeddingConfig, batchUsage)
+		if usage != nil {
+			inputTokens += batchUsage.InputTokens
+			outputTokens += batchUsage.OutputTokens
+			totalTokens += batchUsage.TotalTokens
+			*usage = *batchUsage
+			usage.InputTokens, usage.OutputTokens, usage.TotalTokens = inputTokens, outputTokens, totalTokens
+		}
+		if err != nil {
+			return nil, err
+		}
+		for i := range embeds {
+			embeds[i].Index += start
+		}
+		out = append(out, embeds...)
+	}
+	return out, nil
+}
+
+func (m *EmbeddingModel) embedBatch(ctx context.Context, req EmbedRequest, embeddingConfig *EmbeddingConfig, usage *common.ModelUsage) ([]EmbeddingData, error) {
 	tokenizerID, quotaKey := m.ResolveTokenizerID(), m.QuotaKey()
 	if err := tokenizer.RefuseUnavailableCounter(tokenizerID, quotaKey); err != nil {
 		return nil, err
@@ -128,6 +166,7 @@ func (m *EmbeddingModel) embedIsolating(ctx context.Context, req EmbedRequest, e
 					return nil, fmt.Errorf("embedding input %d: driver returned %d embeddings for one text", i, len(embeds))
 				}
 				out[i], fitted = embeds[0], true
+				out[i].Index = i
 				break
 			}
 			if !tokenizer.IsOverLimitError(err) {

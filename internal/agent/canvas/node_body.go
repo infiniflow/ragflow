@@ -161,7 +161,8 @@ func buildNodeBodyWithOptions(ctx context.Context, cpnID, name, displayName stri
 		// without the runtime.Component interface needing to expose Name().
 		// The factory returns the class name as the DSL's `component_name`
 		// field, which is also what ComponentBase.Name() would have returned.
-		return realComponentBodyWithOptions(cpnID, name, displayName, comp, opts), nil
+		body := realComponentBodyWithOptions(cpnID, name, displayName, comp, opts)
+		return withExceptionHandler(cpnID, params, body), nil
 	}
 	// Fallback: no factory registered. This path is only exercised by
 	// canvas-only unit tests; production wiring always installs a
@@ -170,6 +171,55 @@ func buildNodeBodyWithOptions(ctx context.Context, cpnID, name, displayName stri
 		return nil, fmt.Errorf("agent: component %q has unknown component_name %q (typo? not in isKnownPrimitive, not in legacyNoOpNames)", cpnID, name)
 	}
 	return placeholderBody(cpnID), nil
+}
+
+func exceptionTargets(params map[string]any) []string {
+	switch targets := params["exception_goto"].(type) {
+	case []string:
+		return targets
+	case []any:
+		return decodeStringSlice(targets)
+	}
+	return nil
+}
+
+func withExceptionHandler(cpnID string, params map[string]any, body nodeBodyFn) nodeBodyFn {
+	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
+		out, invokeErr := body(ctx, in)
+		err := invokeErr
+		if err == nil {
+			if message, _ := out["_ERROR"].(string); message != "" {
+				err = errors.New(message)
+			}
+		}
+		if err == nil || IsInterruptError(err) || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			return out, err
+		}
+		switch params["exception_method"] {
+		case "goto":
+			if targets := exceptionTargets(params); len(targets) > 0 {
+				if out == nil {
+					out = make(map[string]any)
+				}
+				out["_ERROR"] = err.Error()
+				out["_next"] = targets
+				out["__cpn_id__"] = cpnID
+				return out, nil
+			}
+		case "comment":
+			if value, _ := params["exception_default_value"].(string); value != "" {
+				runtime.EmitCanvasMessage(ctx, value)
+				if out == nil {
+					out = make(map[string]any)
+				}
+				out["content"] = value
+				out["_ERROR"] = err.Error()
+				out["__cpn_id__"] = cpnID
+				return out, nil
+			}
+		}
+		return out, invokeErr
+	}
 }
 
 // legacyNoOpBody returns the body installed for DSL v1 sentinel
@@ -254,11 +304,16 @@ func realComponentBodyWithOptions(cpnID, componentClass, displayName string, com
 		cctx = runtime.BindComponentFraction(cctx, cpnID)
 
 		var out map[string]any
+		var componentOut map[string]any
 		invokeErr := runtime.TrackProgress(cpnID, runtime.ProgressCallbackFromContext(ctx), func() error {
 			var e error
 			out, e = runtime.TrackElapsed(componentClass, func() (map[string]any, error) {
-				return comp.Invoke(runtime.WithComponentExecutionOptions(cctx, opts), dao.DB, in)
+				componentOut, e = comp.Invoke(runtime.WithComponentExecutionOptions(cctx, opts), dao.DB, in)
+				return componentOut, e
 			})
+			if out == nil {
+				out = componentOut
+			}
 			return e
 		})
 		if invokeErr != nil {
@@ -270,12 +325,12 @@ func realComponentBodyWithOptions(cpnID, componentClass, displayName string, com
 				common.Debug("agent: component invoke cancelled",
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("agent: component %q invoke: cancelled: %w", logName, invokeErr)
+				return out, fmt.Errorf("agent: component %q invoke: cancelled: %w", logName, invokeErr)
 			case errors.Is(invokeErr, context.DeadlineExceeded):
 				common.Error("agent: component invoke failed", invokeErr,
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("agent: component %q invoke: context deadline exceeded: %w", logName, invokeErr)
+				return out, fmt.Errorf("agent: component %q invoke: context deadline exceeded: %w", logName, invokeErr)
 			default:
 				// Surface the failure as a structured log line. The wrapped error
 				// already carries the full cause chain (e.g. deepseek DNS/timeout),
@@ -284,7 +339,7 @@ func realComponentBodyWithOptions(cpnID, componentClass, displayName string, com
 				common.Error("agent: component invoke failed", invokeErr,
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("agent: component %q invoke: %w", logName, invokeErr)
+				return out, fmt.Errorf("agent: component %q invoke: %w", logName, invokeErr)
 			}
 		}
 		if out == nil {
@@ -346,6 +401,9 @@ func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 		out, err := body(ctx, in)
 		if err != nil {
 			if state != nil {
+				if invocations, ok := out["tool_invocations"]; ok {
+					state.SetVar(cpnID, "tool_invocations", invocations)
+				}
 				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, err)
 			}
 			return nil, err
@@ -369,8 +427,8 @@ func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 			state.SetVar(outputCpnID, k, v)
 		}
 		if runtime.IsDeferredStream(out["content"]) {
-			runtime.RegisterDeferredNode(ctx, cpnID, func() {
-				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+			runtime.RegisterDeferredNode(ctx, cpnID, func(nodeErr error) {
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nodeErr)
 			})
 		} else {
 			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)

@@ -21,10 +21,7 @@ package ingestor
 import (
 	"context"
 	"fmt"
-	"os"
 	"ragflow/internal/server/local"
-	"strconv"
-	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -39,66 +36,11 @@ import (
 	"ragflow/internal/ingestion/task"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
-	"ragflow/internal/server/config"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nav"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 )
-
-// resolveIngestorMaxConcurrentWorkers applies the precedence
-// CLI flag > environment variable > config file > default(1) and returns the
-// resolved ingestor worker count (K), validating it against the inclusive
-// range [MinIngestorWorkers, MaxIngestorWorkers]. An out-of-range or
-// noninteger value at any layer is a fatal startup error.
-func resolveIngestorMaxConcurrentWorkers(args *bootstrap.ServerArgs, configured int) (int, error) {
-	val := config.MinIngestorWorkers
-	if configured > 0 {
-		val = configured
-	}
-	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorMaxConcurrentWorkers)); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorMaxConcurrentWorkers, v, err)
-		}
-		val = n
-	}
-	if args.IngestorMaxConcurrentWorkers != nil {
-		val = *args.IngestorMaxConcurrentWorkers
-	}
-	if val < config.MinIngestorWorkers || val > config.MaxIngestorWorkers {
-		return 0, fmt.Errorf("ingestor max_concurrent_workers %d out of range [%d, %d]",
-			val, config.MinIngestorWorkers, config.MaxIngestorWorkers)
-	}
-	return val, nil
-}
-
-// resolveIngestorPageConcurrency applies the precedence
-// CLI flag > environment variable > config file > default(2) and returns the
-// resolved per-document page concurrency (N), validating it against the
-// inclusive range [MinPageConcurrency, MaxPageConcurrency]. An out-of-range or
-// noninteger value at any layer is a fatal startup error.
-func ResolveIngestorPageConcurrency(args *bootstrap.ServerArgs, configured int) (int, error) {
-	val := 2 // default page concurrency
-	if configured > 0 {
-		val = configured
-	}
-	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorPageConcurrency)); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorPageConcurrency, v, err)
-		}
-		val = n
-	}
-	if args.IngestorPageConcurrency != nil {
-		val = *args.IngestorPageConcurrency
-	}
-	if val < config.MinPageConcurrency || val > config.MaxPageConcurrency {
-		return 0, fmt.Errorf("ingestor page_concurrency %d out of range [%d, %d]",
-			val, config.MinPageConcurrency, config.MaxPageConcurrency)
-	}
-	return val, nil
-}
 
 func logTokenizerCounters() {
 	var available, unavailable []string
@@ -148,7 +90,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	ingestorCfg := globalConfig.GetIngestorConfig()
 	// Resolve the ingestor worker count (K) from CLI > env > config > default(1)
 	// and fail fast on an out-of-range value.
-	workers, err := resolveIngestorMaxConcurrentWorkers(args, ingestorCfg.MaxConcurrentWorkers)
+	workers, err := globalConfig.GetIngestorConcurrentWorkers(args.IngestorConcurrentWorkers)
 	if err != nil {
 		return err
 	}
@@ -162,7 +104,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 		KV:     kvrocks.Get(),
 	}
 	// Fail fast at the assembly point: a misconfigured ingestor (missing doc
-	// engine, database, or message queue) must never reach Start as a "healthy"
+	// engine, database, message queue, or Kvrocks) must never reach Start as a "healthy"
 	// service that silently cannot consume.
 	if err = ingestorDeps.Validate(); err != nil {
 		common.Error("Invalid ingestor dependencies", err)

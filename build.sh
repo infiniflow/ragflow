@@ -11,6 +11,11 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 
+# EE (enterprise) build extensions - sourced so the OSS body below stays
+# untouched and merge conflicts against the EE branch are limited to this
+# single line plus the guarded hook call inside run_native_integration_tests.
+[[ -f "${SCRIPT_DIR}/build_ee.sh" ]] && source "${SCRIPT_DIR}/build_ee.sh"
+
 # Build directories
 CPP_DIR="$PROJECT_ROOT/internal/binding/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
@@ -1091,6 +1096,14 @@ run_native_integration_tests() {
       CGO_ENABLED=1 \
       go test -tags "cgo static integration fetch_testdata" -race -count=1 \
       ./internal/deepdoc/parser/pdf/inference/native_analyzer/... )
+
+    # EE build extensions hook (build_ee.sh, sourced near the top of this
+    # script). Guarded so an empty/absent build_ee.sh is a safe no-op on the
+    # OSS path; the EE build defines run_ee_native_integration_tests to run its
+    # own native integration/parity tests at this point.
+    if declare -F run_ee_native_integration_tests >/dev/null 2>&1; then
+        run_ee_native_integration_tests
+    fi
 }
 
 # Run Go tests gated behind a build tag (or space-separated tag list), e.g.

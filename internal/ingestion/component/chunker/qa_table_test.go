@@ -28,6 +28,14 @@ func TestExtractQATableFollowsStructure(t *testing.T) {
 			want: [][2]string{{"q", "a"}},
 		},
 		{
+			// A rowspan answer covers the next question too. The QA view
+			// resolves the covered slot instead of dropping the row.
+			name: "rowspan",
+			html: `<table><tr><td>q1</td><td rowspan="2">a1</td></tr>` +
+				`<tr><td>q2</td></tr></table>`,
+			want: [][2]string{{"q1", "a1"}, {"q2", "a1"}},
+		},
+		{
 			name: "missing </td>",
 			html: "<table><tr><td>q<td>a</tr></table>",
 			want: [][2]string{{"q", "a"}},

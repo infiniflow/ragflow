@@ -32,8 +32,7 @@ import (
 	"time"
 
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
-	"github.com/open-dingtalk/dingtalk-stream-sdk-go/clientV2"
-	"github.com/open-dingtalk/dingtalk-stream-sdk-go/payload"
+	"github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
 	"go.uber.org/zap"
 
 	"ragflow/internal/channels/core"
@@ -64,7 +63,7 @@ type dingTalkChannel struct {
 	cancel          context.CancelFunc
 	handler         core.MessageHandler
 	client          *http.Client
-	stream          clientV2.OpenDingTalkClient
+	stream          *client.StreamClient
 	sessionWebhooks map[string]string
 	processed       map[string]time.Time
 	inflight        map[string]time.Time
@@ -81,26 +80,31 @@ type dingTalkQueuedMessage struct {
 }
 
 // newDingTalkChannel creates a DingTalk stream channel backed by the official SDK.
-func newDingTalkChannel(account dingTalkAccount) *dingTalkChannel {
+func newDingTalkChannel(account dingTalkAccount) (*dingTalkChannel, error) {
 	if account.APIBaseURL == "" {
 		account.APIBaseURL = defaultDingTalkAPIBaseURL
 	}
 	if account.Timeout <= 0 {
 		account.Timeout = defaultDingTalkTimeout
 	}
+	proxyURL, err := dingTalkSafeProxyURL()
+	if err != nil {
+		return nil, err
+	}
 	ch := &dingTalkChannel{
 		account:         account,
-		client:          &http.Client{Timeout: account.Timeout},
+		client:          newSafeChannelHTTPClient(account.Timeout, channelURLPolicy{exactHosts: []string{"oapi.dingtalk.com"}}),
 		sessionWebhooks: map[string]string{},
 		processed:       map[string]time.Time{},
 		inflight:        map[string]time.Time{},
 		workers:         map[string]*dingTalkWorker{},
 	}
-	ch.stream = clientV2.NewBuilder().
-		Credential(&clientV2.AuthClientCredential{ClientId: account.ClientID, ClientSecret: account.ClientSecret}).
-		RegisterCallbackHandler(payload.BotMessageCallbackTopic, ch.handleBotCallback).
-		Build()
-	return ch
+	ch.stream = client.NewStreamClient(
+		client.WithAppCredential(client.NewAppCredentialConfig(account.ClientID, account.ClientSecret)),
+		client.WithProxy(proxyURL),
+	)
+	ch.stream.RegisterChatBotCallbackRouter(ch.handleBotCallback)
+	return ch, nil
 }
 
 // newDingTalkChannelFromConfig builds a DingTalk channel from chat_channel.config.credential.
@@ -124,7 +128,7 @@ func newDingTalkChannelFromConfig(accountID string, cfg map[string]any) (*dingTa
 		ClientSecret: clientSecret,
 		APIBaseURL:   firstString(cfg, "api_base_url", "api_url"),
 		Timeout:      timeout,
-	}), nil
+	})
 }
 
 // ChannelID returns the platform identifier used by the chat-channel runtime.
@@ -235,25 +239,27 @@ func (c *dingTalkChannel) run(ctx context.Context) {
 }
 
 // handleBotCallback receives DingTalk bot messages from the official stream SDK.
-func (c *dingTalkChannel) handleBotCallback(data *chatbot.BotCallbackDataModel) (*chatbot.BotCallbackRespModel, error) {
+func (c *dingTalkChannel) handleBotCallback(ctx context.Context, data *chatbot.BotCallbackDataModel) ([]byte, error) {
 	c.mu.Lock()
-	ctx := c.ctx
+	runCtx := c.ctx
 	c.mu.Unlock()
-	if ctx == nil {
+	if runCtx != nil {
+		ctx = runCtx
+	} else if ctx == nil {
 		ctx = context.Background()
 	}
 	incoming, dedupKey, ok := c.normalizeBotMessage(data)
 	if !ok {
-		return &chatbot.BotCallbackRespModel{}, nil
+		return []byte(`{"response":{}}`), nil
 	}
 	if dedupKey != "" && !c.beginMessage(dedupKey) {
 		common.Info("dingtalk: skipping duplicate message", zap.String("account_id", c.account.AccountID), zap.String("dedup_key", dedupKey))
-		return &chatbot.BotCallbackRespModel{}, nil
+		return []byte(`{"response":{}}`), nil
 	}
 	if !c.enqueueIncoming(ctx, dingTalkQueuedMessage{incoming: incoming, dedupKey: dedupKey}) && dedupKey != "" {
 		c.cancelInflight(dedupKey)
 	}
-	return &chatbot.BotCallbackRespModel{}, nil
+	return []byte(`{"response":{}}`), nil
 }
 
 // normalizeBotMessage converts DingTalk SDK bot callback data to the chat-channel message model.
@@ -462,8 +468,9 @@ func (c *dingTalkChannel) postWebhook(ctx context.Context, sessionWebhook string
 }
 
 // dingTalkExtractText extracts user text from DingTalk message payload variants.
-func dingTalkExtractText(data map[string]any) string {
-	text := data["text"]
+func dingTalkExtractText(data any) string {
+	dataMap := dingTalkMap(data)
+	text := dataMap["text"]
 	if textMap := dingTalkMap(text); len(textMap) > 0 {
 		if content := dingTalkString(textMap["content"]); content != "" {
 			return content
@@ -473,7 +480,7 @@ func dingTalkExtractText(data map[string]any) string {
 		return content
 	}
 
-	content := data["content"]
+	content := dataMap["content"]
 	if contentMap := dingTalkMap(content); len(contentMap) > 0 {
 		for _, key := range []string{"text", "content", "recognition"} {
 			if value := dingTalkString(contentMap[key]); strings.TrimSpace(value) != "" {

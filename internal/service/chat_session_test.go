@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"reflect"
 	"strings"
@@ -33,6 +34,8 @@ type fakeSessionStore struct {
 	createErr     error
 	updateByIDErr error
 	getDialogErr  error
+	scopeCalls    int
+	filteredRefs  []permission.ResourceRef
 	// record calls
 	createCalled []*entity.ChatSession
 	updateCalled []struct {
@@ -164,7 +167,7 @@ func (f *fakeSessionStore) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	return nil
 }
 
-func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, _ []dao.OrderTerm, _, _ int, _ ...bool) ([]*entity.ChatSession, error) {
+func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, _ []dao.OrderTerm, _, pageSize int, _ ...bool) ([]*entity.ChatSession, int64, error) {
 	allowedIDs := make(map[string]struct{}, len(sessionIDs))
 	for _, id := range sessionIDs {
 		allowedIDs[id] = struct{}{}
@@ -174,7 +177,7 @@ func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chat
 		if s.DialogID != chatID {
 			continue
 		}
-		if _, ok := allowedIDs[s.ID]; !ok {
+		if _, ok := allowedIDs[s.ID]; sessionIDs != nil && !ok {
 			continue
 		}
 		if sessionID != "" && s.ID != sessionID {
@@ -191,7 +194,11 @@ func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chat
 		}
 		result = append(result, s)
 	}
-	return result, nil
+	total := int64(len(result))
+	if pageSize == 0 {
+		result = []*entity.ChatSession{}
+	}
+	return result, total, nil
 }
 
 func (f *fakeSessionStore) GetDialogByID(ctx context.Context, db *gorm.DB, chatID string) (*entity.Chat, error) {
@@ -261,6 +268,7 @@ func (f *fakeSessionStore) CheckResource(_ context.Context, subject permission.S
 }
 
 func (f *fakeSessionStore) Scope(ctx context.Context, subject permission.Subject, query permission.ScopeQuery) (permission.Scope, error) {
+	f.scopeCalls++
 	if query.Kind != permission.ResourceKindChatSession || query.Parent.Kind != permission.ResourceKindChat {
 		return permission.Scope{}, permission.ErrInvalidPermission
 	}
@@ -290,6 +298,21 @@ func (f *fakeSessionStore) Scope(ctx context.Context, subject permission.Subject
 	scope.Mode = permission.ScopeIDs
 	scope.ResourceIDs = ids
 	return scope, nil
+}
+
+func (f *fakeSessionStore) FilterResources(ctx context.Context, subject permission.Subject, refs []permission.ResourceRef, operation permission.Operation) ([]permission.ResourceRef, error) {
+	f.filteredRefs = append(f.filteredRefs, refs...)
+	var accessible []permission.ResourceRef
+	for _, ref := range refs {
+		if err := f.CheckResource(ctx, subject, ref, operation); err != nil {
+			if errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrResourceNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		accessible = append(accessible, ref)
+	}
+	return accessible, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -430,24 +453,60 @@ func requireFloatClose(t *testing.T, got, want float64) {
 // ===================================================================
 
 func TestListChatSessions_Success(t *testing.T) {
+	db := setupChatListTestDB(t)
+	if err := db.AutoMigrate(&entity.ChatSession{}); err != nil {
+		t.Fatalf("failed to migrate sessions: %v", err)
+	}
 	store := newFakeSessionStore()
-	store.sessions["s1"] = &entity.ChatSession{ID: "s1", DialogID: "chat-1"}
-	store.sessions["s2"] = &entity.ChatSession{ID: "s2", DialogID: "chat-1"}
+	createdAt := int64(1000)
+	for i := 0; i < 41; i++ {
+		session := &entity.ChatSession{ID: fmt.Sprintf("session-%02d", i), DialogID: "chat-1", BaseModel: entity.BaseModel{CreateTime: &createdAt}}
+		store.sessions[session.ID] = session
+		if err := db.Create(session).Error; err != nil {
+			t.Fatalf("failed to create session: %v", err)
+		}
+	}
+	if err := db.Create(&entity.ChatSession{ID: "other-chat-session", DialogID: "chat-2"}).Error; err != nil {
+		t.Fatalf("failed to create other chat session: %v", err)
+	}
 	store.dialogExists["tenant-1|chat-1"] = true
 
 	svc := &ChatSessionService{
-		chatSessionDAO:    store,
+		chatSessionDAO:    dao.NewChatSessionDAO(),
 		permissionChecker: store,
 		pipeline:          &fakePipeline{},
 	}
 
 	ctx := t.Context()
-	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 1, 30)
+	terms := []dao.OrderTerm{{Column: "create_time", Desc: true}}
+	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, 1, 30, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(resp.Sessions) != 2 {
-		t.Fatalf("expected 2 sessions, got %d", len(resp.Sessions))
+	if resp.Total != 41 || len(resp.Sessions) != 30 || len(store.filteredRefs) != 30 || store.scopeCalls != 0 {
+		t.Fatalf("expected total=41 and 30 sessions checked without a full scope scan, got total=%d sessions=%d checked=%d scope=%d", resp.Total, len(resp.Sessions), len(store.filteredRefs), store.scopeCalls)
+	}
+	for i, session := range resp.Sessions {
+		if want := fmt.Sprintf("session-%02d", 40-i); session.ID != want || store.filteredRefs[i].ID != want {
+			t.Fatalf("session %d: got %s, checked %s, want %s", i, session.ID, store.filteredRefs[i].ID, want)
+		}
+	}
+	for page, wantCount := range map[int]int{4: 10, 5: 1, 6: 0} {
+		resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, page, 10, false)
+		if err != nil {
+			t.Fatalf("page %d: %v", page, err)
+		}
+		if resp.Total != 41 || len(resp.Sessions) != wantCount {
+			t.Fatalf("page %d: got total=%d and %d sessions, want total=41 and %d sessions", page, resp.Total, len(resp.Sessions), wantCount)
+		}
+	}
+	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, 1, 0, false)
+	if err != nil || resp.Total != 41 || len(resp.Sessions) != 0 {
+		t.Fatalf("zero page size: got response=%+v err=%v, want total=41 and no sessions", resp, err)
+	}
+	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "session-01", "", terms, 1, 30, false)
+	if err != nil || resp.Total != 1 || len(resp.Sessions) != 1 {
+		t.Fatalf("ID filter: got response=%+v err=%v, want total=1 and one session", resp, err)
 	}
 }
 

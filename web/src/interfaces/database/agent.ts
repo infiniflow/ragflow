@@ -370,3 +370,8 @@ export interface IWebhookTrace {
   next_since_ts: number;
   finished: boolean;
 }
+
+export interface IAgentWebhookCredential {
+  credential: string;
+  webhook_url: string;
+}

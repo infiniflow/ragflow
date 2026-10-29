@@ -27,13 +27,15 @@ func TestPDFTableItemsOmitHTMLText(t *testing.T) {
 			return []map[string]any{item}
 		}},
 		{"opendataloader html", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "html": tableHTML})
+			items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "html": tableHTML}, nil)
+			return items
 		}},
 		{"tcadp html content", func() []map[string]any {
 			return tcadpAnyToItems(map[string]any{"type": "table", "content": tableHTML})
 		}},
 		{"somark html", func() []map[string]any {
-			return []map[string]any{soMarkBlockToItem(map[string]any{"type": "table", "content": tableHTML}, false)}
+			items, _ := soMarkBlockToItems(t.Context(), map[string]any{"type": "table", "content": tableHTML}, false, &htmlWalkState{})
+			return items
 		}},
 		{"docx table", func() []map[string]any {
 			return buildDOCXJSONSections(docxIR, newEmbeddedMediaBudget())

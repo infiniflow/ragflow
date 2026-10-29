@@ -290,7 +290,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	}
 	if modelID == "" && h.tenantSvc != nil {
 		ctx := c.Request.Context()
-		defaultModel, err := h.tenantSvc.GetDefaultModelName(ctx, user.ID, entity.ModelTypeChat)
+		defaultModel, err := h.tenantSvc.GetDefaultModelNameForUser(ctx, user.ID, entity.ModelTypeChat)
 		if err == nil && defaultModel != "" {
 			modelID = defaultModel
 		}
@@ -434,6 +434,7 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 		return
 	}
 	setAuthIdentity(c, identity)
+	ctx = c.Request.Context()
 	c.Set("auth_via_beta_token", true)
 	if h.searchSvc == nil {
 		jsonInternalError(c, fmt.Errorf("search service not configured"))
