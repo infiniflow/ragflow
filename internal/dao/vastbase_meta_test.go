@@ -23,9 +23,11 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/server/config"
 
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
+	"gorm.io/gorm/schema"
 )
 
 // openVastbaseMetaForSQL builds a gorm session speaking the vastbase dialect
@@ -101,8 +103,8 @@ func TestBuildVastbaseMetaDSN(t *testing.T) {
 func TestVastbaseUpsertModelsHaveNoReturningFields(t *testing.T) {
 	db := openVastbaseMetaForSQL(t)
 	for _, model := range []interface{}{
-		&entity.SystemSettings{},  // migration version marker upsert
-		&entity.TenantLangfuse{},  // SaveByTenantID upsert
+		&entity.SystemSettings{}, // migration version marker upsert
+		&entity.TenantLangfuse{}, // SaveByTenantID upsert
 		&entity.CanvasTemplate{}, // template seeding upsert
 	} {
 		stmt := &gorm.Statement{DB: db, Dest: model}
@@ -163,5 +165,52 @@ func TestVastbaseWithoutReturningEscapeHatch(t *testing.T) {
 	})
 	if strings.Contains(sql, "RETURNING") {
 		t.Errorf("plain insert SQL %q should omit RETURNING under disable_returning", sql)
+	}
+}
+
+// TestVastbaseDialectorHandsOutGuardedMigrator pins the wiring the B-mode
+// phantom drop rides on: the dialector must hand out the migrator that skips
+// dropping uni_<table>_<column> constraints no code path created. The stock
+// postgres migrator aborts --migrate with 42704 on the first model whose
+// single-column unique index a manual migration has just created.
+func TestVastbaseDialectorHandsOutGuardedMigrator(t *testing.T) {
+	db := openVastbaseMetaForSQL(t)
+	if _, ok := db.Migrator().(vastbaseMigrator); !ok {
+		t.Fatalf("vastbase migrator = %T, want vastbaseMigrator", db.Migrator())
+	}
+}
+
+// TestVastbaseMigratorSkipsPhantomUniqueDrop pins the guard itself: a column
+// the database reports unique while the field carries no unique tag must not
+// reach the stock drop. The zero embed is deliberate — any delegation panics,
+// so removing the guard fails this test loudly instead of silently dropping.
+func TestVastbaseMigratorSkipsPhantomUniqueDrop(t *testing.T) {
+	field := &schema.Field{} // no unique tag, like entity.User.Email
+	if err := (vastbaseMigrator{}).MigrateColumnUnique(&entity.User{}, field, uniqueColumnType{unique: true}); err != nil {
+		t.Fatalf("phantom unique drop was not skipped: %v", err)
+	}
+}
+
+// TestIsVastbaseMetaDBTargetsTheWrapperType pins the precision of the skip
+// guard: it matches the vastbase dialector by type, so a future genuine
+// PostgreSQL connection keeps running the MySQL-flavored schema alignment
+// and fails loudly at its catalog probes instead of being silently skipped.
+func TestIsVastbaseMetaDBTargetsTheWrapperType(t *testing.T) {
+	if !isVastbaseMetaDB(openVastbaseMetaForSQL(t)) {
+		t.Fatal("vastbase dialector not recognized")
+	}
+
+	plain, err := gorm.Open(postgres.New(postgres.Config{
+		DSN: "host=localhost user=ragflow dbname=rag_flow",
+	}), &gorm.Config{
+		DryRun:               true,
+		DisableAutomaticPing: true,
+		Logger:               logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("open plain postgres dialector: %v", err)
+	}
+	if isVastbaseMetaDB(plain) {
+		t.Fatal("a plain postgres dialector must not match the vastbase skip")
 	}
 }

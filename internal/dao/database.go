@@ -118,6 +118,57 @@ func (m namedIndexMigrator) MigrateColumnUnique(dst interface{}, field *schema.F
 	return m.Migrator.MigrateColumnUnique(dst, field, columnType)
 }
 
+// vastbaseDialector hands out a vastbaseMigrator instead of the stock one.
+// B mode reports the named unique indexes the manual migrations create as
+// single-column UNIQUE constraints, so the stock migrator derives the
+// matching uni_<table>_<column> name and drops a constraint no code path
+// ever created; the PostgreSQL wire answers 42704 and aborts --migrate on
+// the first affected model (user.email, then ingestion_task.document_id).
+type vastbaseDialector struct {
+	*postgres.Dialector
+}
+
+// The capabilities gorm discovers by type assertion on db.Dialector.
+var (
+	_ gorm.Dialector                     = vastbaseDialector{}
+	_ gorm.ErrorTranslator               = vastbaseDialector{}
+	_ gorm.SavePointerDialectorInterface = vastbaseDialector{}
+)
+
+func (d vastbaseDialector) Migrator(db *gorm.DB) gorm.Migrator {
+	migrator, ok := d.Dialector.Migrator(db).(postgres.Migrator)
+	if !ok {
+		// An unsupported driver shape degrades to the stock behaviour rather
+		// than panicking, mirroring newMigrationAwareDialector.
+		return d.Dialector.Migrator(db)
+	}
+	return vastbaseMigrator{Migrator: migrator}
+}
+
+// vastbaseMigrator is the postgres counterpart of namedIndexMigrator: the
+// same phantom unique-constraint drop, guarded by the same predicate.
+type vastbaseMigrator struct {
+	postgres.Migrator
+}
+
+var _ migrator.BuildIndexOptionsInterface = vastbaseMigrator{}
+
+func (m vastbaseMigrator) MigrateColumnUnique(dst interface{}, field *schema.Field, columnType gorm.ColumnType) error {
+	if phantomUniqueDrop(field, columnType) {
+		return nil
+	}
+	return m.Migrator.MigrateColumnUnique(dst, field, columnType)
+}
+
+// isVastbaseMetaDB reports whether db runs on the vastbase dialector. Guarding
+// by the wrapper type rather than Dialector.Name() keeps a future genuine
+// PostgreSQL dialector out of the skip: instead of silently skipping schema
+// alignment, it fails loudly at the MySQL-flavored catalog probes.
+func isVastbaseMetaDB(db *gorm.DB) bool {
+	_, ok := db.Dialector.(vastbaseDialector)
+	return ok
+}
+
 // newVastbaseDialector builds the metadata-database dialector. lib/pq is the
 // driver (DriverName "postgres"), matching the document engine's connection to
 // the same instance; WithoutReturning is the peewee returning_clause=False
@@ -125,16 +176,22 @@ func (m namedIndexMigrator) MigrateColumnUnique(dst interface{}, field *schema.F
 // auto-increment ids.
 //
 // The metadata database must run in B (MySQL) compatibility mode — created
-// that way by docker/vastbase/init/01_init.sh. B mode parses MySQL syntax
-// over the PostgreSQL wire protocol, so every SQL statement the codebase
-// issues (DAO queries, migrations, entity-tag DDL types like longtext) stays
-// verbatim MySQL; no dialect branching is needed anywhere.
+// that way by docker/vastbase/init/01_init.sh, with the catalog emulation
+// enabled by 02_bcompat.sh (lower_case_table_names=1): without it unquoted
+// identifiers keep their written case and the uppercase INFORMATION_SCHEMA
+// views the migrations probe do not resolve. B mode parses MySQL syntax over
+// the PostgreSQL wire protocol, so hand-written DML, DDL and catalog SQL all
+// stay verbatim MySQL; no dialect branching is needed.
 func newVastbaseDialector(cfg config.VastbaseMetaConfig) gorm.Dialector {
-	return postgres.New(postgres.Config{
+	base := postgres.New(postgres.Config{
 		DriverName:       "postgres",
 		DSN:              buildVastbaseMetaDSN(cfg),
 		WithoutReturning: cfg.DisableReturning,
 	})
+	if dialector, ok := base.(*postgres.Dialector); ok {
+		return vastbaseDialector{Dialector: dialector}
+	}
+	return base
 }
 
 // isLocalMetaDBHost reports whether the metadata host is loopback or a

@@ -29,6 +29,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/lib/pq"
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
@@ -350,6 +351,8 @@ func TestWrappersExposeEverythingWrappedTypeDoes(t *testing.T) {
 	}{
 		{"dialector", reflect.TypeOf(&mysql.Dialector{}), reflect.TypeOf(migrationAwareDialector{}), "Migrator"},
 		{"migrator", reflect.TypeOf(mysql.Migrator{}), reflect.TypeOf(namedIndexMigrator{}), "MigrateColumnUnique"},
+		{"dialector", reflect.TypeOf(&postgres.Dialector{}), reflect.TypeOf(vastbaseDialector{}), "Migrator"},
+		{"migrator", reflect.TypeOf(postgres.Migrator{}), reflect.TypeOf(vastbaseMigrator{}), "MigrateColumnUnique"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for i := 0; i < tc.wrapped.NumMethod(); i++ {

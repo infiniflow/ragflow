@@ -36,29 +36,38 @@ import (
 func ptr[T any](v T) *T { return &v }
 
 // vastbaseIntegrationConfig reads the target instance from the environment:
-// VASTBASE_META_HOST/PORT/USER/PASSWORD/NAME/SSL_MODE (defaults match the
-// bundled docker deployment). Run with:
+// RAGFLOW_TEST_VASTBASE_META_HOST/PORT/USER/PASSWORD/NAME/SSL_MODE (defaults
+// match the bundled docker deployment). Like the engine-specific suites
+// (ES/OceanBase), this suite self-skips unless HOST is set: the CI runners
+// do not provision a Vastbase instance. Run against the bundled deployment
+// with:
 //
-//	go test -tags integration ./internal/dao/ -run TestVastbaseMeta -v
+//	RAGFLOW_TEST_VASTBASE_META_HOST=127.0.0.1 \
+//	  go test -tags integration ./internal/dao/ -run TestVastbaseMeta -v
 func vastbaseIntegrationConfig(t *testing.T) config.VastbaseMetaConfig {
 	t.Helper()
+	const envPrefix = "RAGFLOW_TEST_VASTBASE_META_"
 	get := func(key, fallback string) string {
-		if v := os.Getenv(key); v != "" {
+		if v := os.Getenv(envPrefix + key); v != "" {
 			return v
 		}
 		return fallback
 	}
-	port, err := strconv.Atoi(get("VASTBASE_META_PORT", "5432"))
+	host := get("HOST", "")
+	if host == "" {
+		t.Skip("RAGFLOW_TEST_VASTBASE_META_HOST is not set: this suite needs a live Vastbase G100 meta instance")
+	}
+	port, err := strconv.Atoi(get("PORT", "5432"))
 	if err != nil {
-		t.Fatalf("invalid VASTBASE_META_PORT: %v", err)
+		t.Fatalf("invalid RAGFLOW_TEST_VASTBASE_META_PORT: %v", err)
 	}
 	cfg := config.VastbaseMetaConfig{
-		Host:         get("VASTBASE_META_HOST", "127.0.0.1"),
+		Host:         host,
 		Port:         port,
-		User:         get("VASTBASE_META_USER", "ragflow"),
-		Password:     get("VASTBASE_META_PASSWORD", "Infini_Rag@123"),
-		DatabaseName: get("VASTBASE_META_NAME", "rag_flow"),
-		SSLMode:      get("VASTBASE_META_SSL_MODE", "disable"),
+		User:         get("USER", "ragflow"),
+		Password:     get("PASSWORD", "Infini_Rag@123"),
+		DatabaseName: get("NAME", "rag_flow"),
+		SSLMode:      get("SSL_MODE", "disable"),
 	}
 	return cfg
 }
@@ -223,6 +232,96 @@ func TestVastbaseMetaDuplicateObjectSQLSTATE(t *testing.T) {
 		if !isPostgresDuplicateObjectErr(err) {
 			t.Fatalf("duplicate DDL error not classified as convergence: %v", err)
 		}
+	}
+}
+
+// TestVastbaseMetaManualMigrationsConverge runs the manual migration set in
+// the order InitDB uses against a schema AutoMigrate already populated, then
+// runs it again: the second pass over existing tables is what every restart
+// executes on a live deployment. Every catalog probe here is the verbatim
+// MySQL SQL the migrations issue, so this also pins that the B-mode catalog
+// emulation (lower_case_table_names=1, docker/vastbase/init/02_bcompat.sh)
+// stays in place — without it these queries fail with
+// `relation "information_schema.COLUMNS" does not exist`.
+func TestVastbaseMetaManualMigrationsConverge(t *testing.T) {
+	db := openVastbaseIntegrationDB(t)
+	ctx := context.Background()
+
+	for _, model := range autoMigrateModels() {
+		if err := autoMigrateSafely(ctx, db, model); err != nil {
+			t.Fatalf("autoMigrate %T: %v", model, err)
+		}
+	}
+	if err := RunMigrations(ctx, db); err != nil {
+		t.Fatalf("migrations over populated schema: %v", err)
+	}
+	if err := RunMigrations(ctx, db); err != nil {
+		t.Fatalf("second migration pass: %v", err)
+	}
+
+	// Every unique contract must hold afterwards, probed the same way the
+	// migrations probe: through the MySQL catalog emulation.
+	uniqueContracts := []struct {
+		table   string
+		columns []string
+		index   string
+	}{
+		{"tenant_llm", []string{"tenant_id", "llm_factory", "llm_name"}, "uk_tenant_llm"},
+		{"user", []string{"email"}, "idx_user_email"},
+		{"user_canvas", []string{"user_id", "canvas_category", "title"}, "idx_user_canvas_user_category_title"},
+		{"ingestion_task", []string{"document_id"}, "idx_ingestion_task_document_id"},
+	}
+	for _, contract := range uniqueContracts {
+		hasUnique, err := hasUniqueIndex(ctx, db, contract.table, contract.columns)
+		if err != nil {
+			t.Fatalf("probe unique index on %s: %v", contract.table, err)
+		}
+		if !hasUnique {
+			t.Errorf("no unique index on %s(%v) after migrations", contract.table, contract.columns)
+		}
+		var idxExists int64
+		if err := db.WithContext(ctx).Raw(
+			`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+			WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?`,
+			contract.table, contract.index).Scan(&idxExists).Error; err != nil {
+			t.Fatalf("probe index %s: %v", contract.index, err)
+		}
+		if idxExists == 0 {
+			t.Errorf("index %s missing after migrations", contract.index)
+		}
+	}
+
+	// The knowledgebase name contract is the generated-column scheme: the
+	// name_ci column and its unique index must both be there.
+	var nameCiColumns int64
+	if err := db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'knowledgebase' AND COLUMN_NAME = 'name_ci'`).
+		Scan(&nameCiColumns).Error; err != nil {
+		t.Fatalf("probe knowledgebase.name_ci: %v", err)
+	}
+	if nameCiColumns == 0 {
+		t.Error("knowledgebase.name_ci generated column missing after migrations")
+	}
+
+	// And the tenant_llm uniqueness must actually reject a duplicate row.
+	modelType := "chat"
+	llmName := "converge-model"
+	seed := &entity.TenantLLM{
+		TenantID:   "integration-converge",
+		LLMFactory: "openai-api-compatible",
+		ModelType:  &modelType,
+		APIKey:     ptr("integration"),
+		APIBase:    ptr("https://example.invalid/v1"),
+		LLMName:    &llmName,
+	}
+	if err := db.Create(seed).Error; err != nil {
+		t.Fatalf("seed tenant_llm: %v", err)
+	}
+	defer db.Exec("DELETE FROM tenant_llm WHERE tenant_id = ?", seed.TenantID)
+	duplicate := *seed
+	duplicate.ID = 0
+	if err := db.Create(&duplicate).Error; !errors.Is(err, gorm.ErrDuplicatedKey) {
+		t.Fatalf("duplicate tenant_llm error = %v, want gorm.ErrDuplicatedKey", err)
 	}
 }
 
