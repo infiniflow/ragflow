@@ -40,8 +40,32 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 
 	backend := models.ResolveMinerUBackend(parser.MinerUBackend, parser.MinerUAPIKey)
 	serverURL := models.ResolveMinerUServerURL(parser.MinerUServerURL, parser.MinerUAPIKey)
-	if err := models.ValidateMinerUConfig(backend, serverURL); err != nil {
+	if _, ok := models.ValidMinerUBackends[backend]; !ok {
+		return ParseResult{Err: models.ValidateMinerUConfig(backend, serverURL)}
+	}
+	if models.IsMinerUCloudBase(apiServer) {
+		if err := models.ValidateMinerUConfigForAPI(backend, serverURL, true); err != nil {
+			return ParseResult{Err: err}
+		}
+		parsed, err := models.ParseMinerUCloud(ctx, apiServer, apiKey, filename, data, backend, "", "")
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("parser: MinerU cloud: %w", err)}
+		}
+		return minerUMarkdownResult(ctx, filename, parsed)
+	}
+	v1, err := models.MinerUSupportsV1(ctx, apiServer, apiKey)
+	if err != nil {
+		return ParseResult{Err: fmt.Errorf("parser: MinerU probe: %w", err)}
+	}
+	if err := models.ValidateMinerUConfigForAPI(backend, serverURL, v1); err != nil {
 		return ParseResult{Err: err}
+	}
+	if v1 {
+		parsed, err := models.ParseMinerUV1(ctx, apiServer, apiKey, filename, data, backend, "", 0)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("parser: MinerU V1: %w", err)}
+		}
+		return minerUMarkdownResult(ctx, filename, parsed)
 	}
 	timeout := parser.MinerUPollTimeout
 	if timeout <= 0 {
@@ -73,6 +97,17 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 		pageCount = 1
 	}
 	return pdfMarkdownToResult(ctx, filename, content, pageCount)
+}
+
+func minerUMarkdownResult(ctx context.Context, filename string, parsed *models.MinerUV1Result) ParseResult {
+	content := ""
+	if parsed != nil {
+		content = parsed.Markdown
+	}
+	if strings.TrimSpace(content) == "" {
+		return ParseResult{Err: fmt.Errorf("parser: MinerU result is empty")}
+	}
+	return pdfMarkdownToResult(ctx, filename, content, 1)
 }
 
 func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID string, apiConfig *models.APIConfig, timeout time.Duration) (string, error) {

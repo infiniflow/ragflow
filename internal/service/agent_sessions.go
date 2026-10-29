@@ -653,21 +653,9 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		return nil, common.CodeDataError, err
 	}
 
-	// Resolve the latest version title so the session records which version it
-	// belongs to. GetLatest mirrors the RunAgent path and Python's
-	// release_mode=false lookup; a canvas without any version row yet is a
-	// normal state and leaves the title nil.
-	var versionTitle *string
-	if s.versionDAO != nil {
-		versionRow, verr := s.versionDAO.GetLatest(ctx, dao.DB, req.AgentID)
-		if verr != nil && !errors.Is(verr, dao.ErrUserCanvasVersionNotFound) {
-			return nil, common.CodeServerError, fmt.Errorf("load latest version title: %w", verr)
-		}
-		if versionRow != nil {
-			versionTitle = versionRow.Title
-		}
-	}
-
+	// The session stores the draft DSL (or a caller-supplied one), never a
+	// version row's DSL, so VersionTitle stays nil: the log's Version column
+	// must name the version actually run, and a draft run is bound to none.
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		name = "session"
@@ -692,7 +680,6 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		Message:      messages,
 		Source:       sourcePtr,
 		DSL:          dsl,
-		VersionTitle: versionTitle,
 	}
 	if err := s.api4ConversationDAO.Create(ctx, dao.DB, row); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("create agent session: %w", err)

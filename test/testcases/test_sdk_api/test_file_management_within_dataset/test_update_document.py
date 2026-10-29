@@ -14,10 +14,17 @@
 #  limitations under the License.
 #
 
+import os
 from unittest.mock import Mock
 
 import pytest
 from ragflow_sdk import Document
+
+
+_unindexed_rename = pytest.mark.skipif(
+    os.getenv("RAGFLOW_SDK_DOC_ENGINE", os.getenv("DOC_ENGINE")) == "elasticsearch",
+    reason="Go updateDocumentNameOnly updates chunks for an unparsed document without an Elasticsearch index (document_dataset_update.go:587; elasticsearch/chunk.go:353)",
+)
 
 
 @pytest.mark.integration
@@ -26,14 +33,15 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "name, expected_message",
         [
-            ("new_name.txt", ""),
-            (f"{'a' * 251}.txt", ""),
+            pytest.param("new_name.txt", "", marks=_unindexed_rename),
+            pytest.param(f"{'a' * 251}.txt", "", marks=_unindexed_rename),
             (0, "Field: <name> - Message: <Input should be a valid string> - Value: <0>"),
             (None, "Field: <name> - Message: <Input should be a valid string> - Value: <None>"),
             ("", "the extension of file can't be changed"),
             ("ragflow_test_upload_0", "the extension of file can't be changed"),
             ("ragflow_test_upload_1.txt", "duplicated document name in the same dataset"),
-            ("RAGFLOW_TEST_UPLOAD_1.TXT", ""),
+            ("RAGFLOW_TEST_UPLOAD_1.TXT", "duplicated document name in the same dataset"),
+            pytest.param("RAGFLOW_TEST_UPLOAD_0.TXT", "", marks=_unindexed_rename),
         ],
     )
     def test_name(self, add_documents, name, expected_message):
@@ -107,8 +115,8 @@ class TestDocumentParserSelection:
             ("presentation", "selected pipeline does not support file type"),
             ("picture", "selected pipeline does not support file type"),
             ("email", "selected pipeline does not support file type"),
-            ("knowledge_graph", "selected pipeline does not support file type"),
-            ("tag", "selected pipeline does not support file type"),
+            ("knowledge_graph", "unknown builtin parser_id: knowledge_graph"),
+            ("tag", "unknown builtin parser_id: tag"),
             ("", "`chunk_method` (empty string) is not valid"),
             ("other_chunk_method", "unknown builtin parser_id: other_chunk_method"),
         ],

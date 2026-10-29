@@ -67,20 +67,56 @@ func TestNormalizeHTMLImageSourceMatchesDecode(t *testing.T) {
 	}
 }
 
-func TestHTMLImageExceedsConfiguredLimit(t *testing.T) {
-	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "5")
-	for _, tc := range []struct {
+// TestHTMLImageDecodedSizeMatchesDecode checks that the allocation-free
+// preflight accepts exactly what DecodeHTMLImageSource accepts and reports the
+// same decoded size, so budget admission never diverges from the actual write.
+func TestHTMLImageDecodedSizeMatchesDecode(t *testing.T) {
+	cases := []struct {
 		src  string
-		want bool
+		want int // -1 means the source is malformed
 	}{
-		{"data:image/png;base64,aGVsbG8=", false},
-		{"data:image/png;base64,aGVsbG8", false},
-		{"data:image/png;base64,aGVsbG8h", true},
-		{"data:image/png;base64,YQ==", false},
-	} {
-		if got := HTMLImageExceedsLimit(tc.src); got != tc.want {
-			t.Errorf("%q: got %v, want %v", tc.src, got, tc.want)
+		{"data:image/png;base64,aGVsbG8=", 5},
+		{"data:image/png;base64,aGVsbG8", 5},
+		{"data:image/png;base64,aGVs\nbG8", 5},
+		{"DATA:IMAGE/PNG;BASE64,aGVsbG8=", 5},
+		{"data:image/png;base64,YQ==", 1},
+		{"data:image/png;base64,YWI=", 2},
+		{"data:image/png;base64,YQ", 1},
+		{"data:image/png;base64,", -1},
+		{"data:image/png;base64,YQ=", -1},
+		{"data:image/png;base64,YQ===", -1},
+		{"data:image/png;base64,G0==JbjQ", -1},
+		{"data:image/png;base64,Y?==", -1},
+		{"data:image/png;" + strings.Repeat("x", 200) + ",aGVsbG8=", -1},
+	}
+	for _, tc := range cases {
+		size, ok := HTMLImageDecodedSize(tc.src)
+		_, data, decodeOK := DecodeHTMLImageSource(tc.src)
+		if ok != (tc.want >= 0) {
+			t.Errorf("%q: HTMLImageDecodedSize ok = %v, want %v", tc.src, ok, tc.want >= 0)
+			continue
 		}
+		if ok != decodeOK {
+			t.Errorf("%q: preflight ok = %v, decode ok = %v", tc.src, ok, decodeOK)
+			continue
+		}
+		if ok && (size != tc.want || size != len(data)) {
+			t.Errorf("%q: size = %d, want %d (decoded %d)", tc.src, size, tc.want, len(data))
+		}
+	}
+}
+
+// TestHTMLImageDecodedSizeIgnoresPerImageLimit checks that the preflight
+// reports the size of a syntactically valid payload even when it exceeds the
+// configured per-image limit, leaving the limit decision to the caller.
+func TestHTMLImageDecodedSizeIgnoresPerImageLimit(t *testing.T) {
+	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "2")
+	size, ok := HTMLImageDecodedSize("data:image/png;base64,aGVsbG8=")
+	if !ok || size != 5 {
+		t.Fatalf("size, ok = %d, %v, want 5, true", size, ok)
+	}
+	if size <= HTMLImageMaxBytes() {
+		t.Fatalf("size %d does not exceed the configured limit %d", size, HTMLImageMaxBytes())
 	}
 }
 
