@@ -16,6 +16,10 @@
 
 package models
 
+import "context"
+
+const hostingerRouterProviderName = "Hostinger Router"
+
 // HostingerRouterModel drives Hostinger Router, an OpenAI-compatible LLM router
 // (https://router.hostinger.com/v1) that serves models from many providers
 // under unprefixed ids such as "claude-sonnet-5" and regional variants such as
@@ -39,4 +43,28 @@ func (m *HostingerRouterModel) Name() string {
 // NewInstance returns a driver bound to the given base URL.
 func (m *HostingerRouterModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewHostingerRouterModel(baseURL, m.baseModel.URLSuffix)
+}
+
+// ListModels lists the router's models. The OpenAI-compatible listing infers
+// types from model names, which reports vision models as chat-only, so models
+// in the Hostinger Router catalogue keep the catalogue's types.
+func (m *HostingerRouterModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	models, err := m.OpenAIAPICompatibleModel.ListModels(ctx, apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	pm := GetProviderManager()
+	if pm == nil {
+		return models, nil
+	}
+	provider := pm.FindProvider(hostingerRouterProviderName)
+	if provider == nil {
+		return models, nil
+	}
+	for i := range models {
+		if entry := pm.FindModel(provider, models[i].Name); entry != nil && len(entry.ModelTypes) > 0 {
+			models[i].ModelTypes = append([]string(nil), entry.ModelTypes...)
+		}
+	}
+	return models, nil
 }

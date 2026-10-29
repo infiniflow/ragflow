@@ -196,3 +196,49 @@ func TestHostingerRouterListModelsAndCheckConnection(t *testing.T) {
 		t.Fatalf("CheckConnection: %v", err)
 	}
 }
+
+// TestHostingerRouterListModelsKeepsCatalogueTypes tests that listed models in
+// the Hostinger Router catalogue keep its types, so vision models are not
+// reported as chat-only, while other models keep name-inferred types.
+func TestHostingerRouterListModelsKeepsCatalogueTypes(t *testing.T) {
+	withSSRFBypass(t)
+	prev := providerManager
+	defer func() { providerManager = prev }()
+	dir, restore := setupProviderTestDir(t, "hostinger_router.json")
+	defer restore()
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{"id": "claude-sonnet-5"},
+				{"id": "gpt-5-mini-eu"},
+				{"id": "text-embedding-3-small"},
+				{"id": "glm-5.2"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	list, err := newHostingerRouterForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &testAPIKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	got := map[string][]string{}
+	for _, m := range list {
+		got[m.Name] = m.ModelTypes
+	}
+	for _, name := range []string{"claude-sonnet-5", "gpt-5-mini-eu"} {
+		if !containsModelType(got[name], "vision") || !containsModelType(got[name], "chat") {
+			t.Errorf("%s types=%v, want chat and vision", name, got[name])
+		}
+	}
+	if !containsModelType(got["text-embedding-3-small"], "embedding") {
+		t.Errorf("text-embedding-3-small types=%v, want embedding", got["text-embedding-3-small"])
+	}
+	if !containsModelType(got["glm-5.2"], "chat") {
+		t.Errorf("glm-5.2 types=%v, want name-inferred chat", got["glm-5.2"])
+	}
+}
