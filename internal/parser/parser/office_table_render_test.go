@@ -1282,23 +1282,132 @@ func TestDetectHeaderRow_FourColumnForm(t *testing.T) {
 	}
 }
 
-// TestInheritMergedHeader unit-tests the merge inheritance helper directly.
-func TestInheritMergedHeader(t *testing.T) {
-	records := [][]string{
-		{"MASTER", "", "Q2"}, // header row: B1 blank, merged from master A1
-		{"a", "b", "c"},
+// TestDetectHeaderRow_ShortFormSheet covers a ~10-row form sheet: the metadata
+// block reaches past the middle of the sheet, so only bottom-half sampling
+// yields a usable body-width median. Rows 1–5 are narrow (styled) metadata,
+// row 6 is the real 4-column header.
+func TestDetectHeaderRow_ShortFormSheet(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		// Rows 1–5: two-cell bold metadata labels (row 1 included — the width
+		// check must apply to row 1 too).
+		for r := 1; r <= 5; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "Label")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "Value")
+			mustSetCellStyle(t, f, "Sheet1", cellRef('A', r), cellRef('B', r), bold)
+		}
+		// Row 6: real 4-column header.
+		for i, hdr := range []string{"Kód", "Popis", "Množstvo", "Cena"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 6), hdr)
+		}
+		mustSetCellStyle(t, f, "Sheet1", "A6", "D6", bold)
+		// Rows 7–10: data.
+		for r := 7; r <= 10; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "SO01")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "item")
+			mustSetCell(t, f, "Sheet1", cellRef('C', r), 3)
+			mustSetCell(t, f, "Sheet1", cellRef('D', r), 9)
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "short-form.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	mm := map[[2]int][2]int{
-		{1, 1}: {1, 1},
-		{1, 2}: {1, 1}, // B1's master is A1
-		{1, 3}: {1, 3},
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Kód</th><th>Popis</th><th>Množstvo</th><th>Cena</th>") {
+		t.Fatalf("short form must select the row-6 header:\n%s", text)
 	}
-	inheritMergedHeader(records, 1, mm)
-	if records[0][1] != "MASTER" {
-		t.Fatalf("expected B1 to inherit A1 master text, got %q", records[0][1])
+	if strings.Contains(text, "<th>Label</th><th>Value</th>") {
+		t.Fatalf("metadata row must not be promoted to header:\n%s", text)
 	}
-	if records[0][2] != "Q2" {
-		t.Fatalf("expected non-merged C1 to keep its value, got %q", records[0][2])
+}
+
+// TestDetectHeaderRow_RecoveryStartsAfterCandidate reproduces the ordering bug
+// where the width-recovery scan restarted at the top of the sheet and matched
+// a wide unstyled title row (row 1) instead of the real header below a
+// deferred narrow candidate.
+func TestDetectHeaderRow_RecoveryStartsAfterCandidate(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		// Row 1: four unstyled text cells — wide enough to pass the ±2 median
+		// check if the recovery scan revisits it.
+		for i, v := range []string{"Section", "A", "Summary", "Note"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 1), v)
+		}
+		// Rows 2–4: narrow bold metadata.
+		for r := 2; r <= 4; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "Meta")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "x")
+			mustSetCellStyle(t, f, "Sheet1", cellRef('A', r), cellRef('B', r), bold)
+		}
+		// Row 5: real unstyled 6-column header, outside the styled-scan window.
+		for i, hdr := range []string{"Col1", "Col2", "Col3", "Col4", "Col5", "Col6"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 5), hdr)
+		}
+		// Rows 6–15: text-only data so the unstyled header gets no contrast
+		// signal and must be found by the width-recovery scan.
+		for r := 6; r <= 15; r++ {
+			for c := 0; c < 6; c++ {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), "value")
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "ordering.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Col1</th>") {
+		t.Fatalf("recovery must find the header below the deferred candidate:\n%s", text)
+	}
+	if strings.Contains(text, "<th>Section</th>") {
+		t.Fatalf("title row above the deferred candidate must not be promoted:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_MultiBlockKeepsFirstHeader covers multi-block sheets:
+// a narrow styled first header is deferred, but body-width data rows sit
+// between it and a later repeated header, so the recovery scan must stop and
+// keep the first styled header rather than demoting it to a data row.
+func TestDetectHeaderRow_MultiBlockKeepsFirstHeader(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		// Row 1: real header, narrow (5 cells) relative to the 10-wide body.
+		for i, hdr := range []string{"Code", "Item", "Unit", "Qty", "Price"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 1), hdr)
+		}
+		mustSetCellStyle(t, f, "Sheet1", "A1", "E1", bold)
+		// Rows 2–4: 10-wide numeric-majority data block.
+		for r := 2; r <= 4; r++ {
+			for c := 0; c < 10; c++ {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), r*c+1)
+			}
+		}
+		// Row 5: repeated header of the second block (styled, body width).
+		for c := 0; c < 10; c++ {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), 5), "H")
+		}
+		mustSetCellStyle(t, f, "Sheet1", "A5", "J5", bold)
+		// Rows 6–12: more numeric data.
+		for r := 6; r <= 12; r++ {
+			for c := 0; c < 10; c++ {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), r+c)
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "multi-block.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Code</th>") {
+		t.Fatalf("first styled header must be kept, not demoted:\n%s", text)
+	}
+	if strings.Contains(text, "<th>H</th>") {
+		t.Fatalf("repeated header of a later block must not be promoted:\n%s", text)
 	}
 }
 
