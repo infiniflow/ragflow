@@ -2794,7 +2794,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       comma: 'Comma',
       semicolon: 'Semicolon',
       period: 'Period',
-      lineBreak: 'Line break',
+      linebreak: 'Line break',
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
