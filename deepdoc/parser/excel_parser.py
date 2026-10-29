@@ -255,11 +255,35 @@ class RAGFlowExcelParser:
         return highest
 
     @staticmethod
+    def _get_actual_column_count(ws):
+        """Return the last column holding a value in any row.
+
+        A worksheet's ``<dimension>`` tag records the used range, and Excel
+        inflates it whenever a style is applied to a far column even with no
+        value written there. openpyxl materialises a cell object for every
+        column that tag declares, so iterating unbounded over a four-column
+        sheet can yield 16384 cells per row: slow to walk and, before this
+        bound, thousands of phantom columns for header parsing to name.
+
+        Only materialized cells are inspected, so this costs one pass over the
+        cells that actually exist rather than one per declared column.
+        """
+        highest = 0
+        for (_row_idx, col_idx), cell in ws._cells.items():
+            value = cell.value
+            if value is not None and str(value).strip():
+                highest = max(highest, col_idx)
+        return highest
+
+    @staticmethod
     def _get_rows_limited(ws):
         actual_rows = RAGFlowExcelParser._get_actual_row_count(ws)
         if actual_rows == 0:
             return []
-        return list(ws.iter_rows(min_row=1, max_row=actual_rows))
+        actual_cols = RAGFlowExcelParser._get_actual_column_count(ws)
+        if actual_cols == 0:
+            return []
+        return list(ws.iter_rows(min_row=1, max_row=actual_rows, max_col=actual_cols))
 
     def html(self, fnm, chunk_rows=256):
         from html import escape
