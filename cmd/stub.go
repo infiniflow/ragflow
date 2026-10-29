@@ -14,19 +14,20 @@
 //  limitations under the License.
 //
 
-//go:build !ee
-
 package main
 
 import (
 	"context"
-	"errors"
 
+	deepdocserver "ragflow/internal/deepdoc/server"
 	"ragflow/internal/server/bootstrap"
 )
 
-// runDeepDoc reports that the EE DeepDoc inference server is an enterprise
-// capability.
+// runDeepDoc is the stub entrypoint of the --deepdoc mode: it only hands the
+// call to the edition-selected implementation in internal/deepdoc/server, which
+// serves inference when the ee tag is set and reports the capability as
+// enterprise-only otherwise. Nothing edition-aware lives here, so build.sh links
+// this file for both editions.
 func runDeepDoc(ctx context.Context, serverName string, args *bootstrap.ServerArgs) error {
-	return errors.New("the DeepDoc inference server is only available in the enterprise edition")
+	return deepdocserver.RunServer(ctx, serverName, args.Port)
 }

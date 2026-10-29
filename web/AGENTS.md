@@ -45,6 +45,15 @@ The frontend serves only the **Go** backend. There is no runtime backend detecti
 
 Do not reintroduce backend-variant primitives or detection helpers (e.g. a `useIsGoBackend` hook, `pickByBackend`, `<BackendVariant>`, or an `/api/v1/language` probe) and do not create `go/`-vs-`python/` variant directories or files.
 
+### Enterprise Overlays
+
+`src/ee/` holds the enterprise customization of shared modules at the same path it overrides. This tree ships those files empty so every shared import resolves; the enterprise repository ships the real implementation. Keep both sides in that shape:
+
+- `src/ee/locales/<lang>-private.ts` carries enterprise locale strings and `src/ee/utils/api-private.ts` enterprise-only API endpoints. Both stay empty objects here.
+- The shared file only imports the overlay and merges it — `merge(base, private)` in `src/locales/config.ts`, `merge(apiEndpoints, apiPrivate)` in `src/utils/api.ts`. Never inline enterprise strings or endpoints into `src/locales/*.ts` or `src/utils/api.ts`, and never delete the overlay import.
+- The edition is chosen by the file's content, never at runtime: no `import.meta.env` switch that selects enterprise code and no `isEnterprise` branch in shared modules.
+- Adding a new overlay means adding the empty file here and the implementation downstream in the same change.
+
 ### CSS and Layout Debugging
 
 When fixing CSS/layout issues (especially flex truncation, ellipsis, or element sizing), **always inspect the full parent hierarchy** for `flex-shrink`, `min-width`, and `overflow` constraints before applying fixes like `min-w-0`. Do not repeatedly apply the same fix without verifying the root cause.
