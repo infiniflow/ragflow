@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -65,7 +65,6 @@ GO_ONLY_PATH_SKIPS = {
     "test_dataset_mangement/test_list_datasets.py::TestDatasetsList::test_id": "Go dataset list does not apply the id filter",
     "test_dataset_mangement/test_list_datasets.py::TestDatasetsList::test_id_empty": "Go dataset list accepts an empty id instead of rejecting it",
     "test_dataset_mangement/test_list_datasets.py::TestDatasetsList::test_name_and_id": "Go dataset list does not combine name and id filters",
-    "test_memory_management/test_list_memory.py::TestMemoryList::test_get_config_invalid_memory_id_raises": "Go memory config lookup does not reject an unknown memory id",
     "test_message_management/test_add_message.py::TestAddRawMessage": "Go built-in embedding uses an unavailable localhost:6380 endpoint",
     "test_message_management/test_add_message.py::TestAddMultipleTypeMessage": "Go built-in embedding uses an unavailable localhost:6380 endpoint",
     "test_message_management/test_add_message.py::TestAddToMultipleMemory": "Go built-in embedding uses an unavailable localhost:6380 endpoint",

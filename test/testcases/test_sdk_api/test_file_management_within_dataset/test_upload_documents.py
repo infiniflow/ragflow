@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -15,24 +15,34 @@
 #
 import string
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 import pytest
-from configs import DOCUMENT_NAME_LIMIT
-from utils.file_utils import create_txt_file
+
+DOCUMENT_NAME_MAX_BYTES = 255
+TEXT_FILE_CONTENT = "This is the content of a test TXT file."
 
 
+def _create_text_file(path: Path) -> Path:
+    path.write_text(TEXT_FILE_CONTENT, encoding="utf-8")
+    return path
+
+
+@pytest.mark.integration
 class TestDocumentsUpload:
     @pytest.mark.p1
     def test_valid_single_upload(self, add_dataset_func, tmp_path):
         dataset = add_dataset_func
-        fp = create_txt_file(tmp_path / "ragflow_test.txt")
+        fp = _create_text_file(tmp_path / "ragflow_test.txt")
         with fp.open("rb") as f:
             blob = f.read()
 
         documents = dataset.upload_documents([{"display_name": fp.name, "blob": blob}])
-        for document in documents:
-            assert document.dataset_id == dataset.id, str(document)
-            assert document.name == fp.name, str(document)
+        assert len(documents) == 1, str(documents)
+        document = documents[0]
+        assert document.dataset_id == dataset.id, str(document)
+        assert document.name == fp.name, str(document)
+        assert [item.id for item in dataset.list_documents(id=document.id)] == [document.id]
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -59,9 +69,10 @@ class TestDocumentsUpload:
             blob = f.read()
 
         documents = dataset.upload_documents([{"display_name": fp.name, "blob": blob}])
-        for document in documents:
-            assert document.dataset_id == dataset.id, str(document)
-            assert document.name == fp.name, str(document)
+        assert len(documents) == 1, str(documents)
+        document = documents[0]
+        assert document.dataset_id == dataset.id, str(document)
+        assert document.name == fp.name, str(document)
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
@@ -97,38 +108,73 @@ class TestDocumentsUpload:
             blob = f.read()
 
         documents = dataset.upload_documents([{"display_name": fp.name, "blob": blob}])
-        for document in documents:
-            assert document.size == 0, str(document)
+        assert len(documents) == 1, str(documents)
+        document = documents[0]
+        assert document.size == 0, str(document)
+        assert [item.id for item in dataset.list_documents(id=document.id)] == [document.id]
 
     @pytest.mark.p3
     def test_filename_empty(self, add_dataset_func, tmp_path):
         dataset = add_dataset_func
-        fp = create_txt_file(tmp_path / "ragflow_test.txt")
+        fp = _create_text_file(tmp_path / "ragflow_test.txt")
 
         with fp.open("rb") as f:
             blob = f.read()
 
         with pytest.raises(Exception) as exception_info:
             dataset.upload_documents([{"display_name": "", "blob": blob}])
-        assert str(exception_info.value) == "No file selected!", str(exception_info.value)
+        assert str(exception_info.value) == "No file part!", str(exception_info.value)
 
     @pytest.mark.p2
     def test_filename_max_length(self, add_dataset_func, tmp_path):
         dataset = add_dataset_func
-        fp = create_txt_file(tmp_path / f"{'a' * (DOCUMENT_NAME_LIMIT - 4)}.txt")
+        fp = _create_text_file(tmp_path / f"{'a' * (DOCUMENT_NAME_MAX_BYTES - len('.txt'))}.txt")
 
         with fp.open("rb") as f:
             blob = f.read()
 
         documents = dataset.upload_documents([{"display_name": fp.name, "blob": blob}])
-        for document in documents:
-            assert document.dataset_id == dataset.id, str(document)
-            assert document.name == fp.name, str(document)
+        assert len(documents) == 1, str(documents)
+        document = documents[0]
+        assert document.dataset_id == dataset.id, str(document)
+        assert document.name == fp.name, str(document)
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "display_name",
+        [
+            "a" * 252 + ".txt",
+            "界" * 84 + ".txt",
+        ],
+    )
+    def test_filename_over_limit(self, add_dataset_func, display_name):
+        assert len(display_name.encode("utf-8")) == DOCUMENT_NAME_MAX_BYTES + 1
+
+        with pytest.raises(Exception, match="File name must be 255 bytes or less\\."):
+            add_dataset_func.upload_documents([{"display_name": display_name, "blob": b"content"}])
+
+    @pytest.mark.p2
+    def test_partial_upload_persists_successful_file(self, add_dataset_func):
+        dataset = add_dataset_func
+        content = b"valid document in a mixed upload"
+
+        with pytest.raises(Exception, match="rejected\\.exe: This type of file has not been supported yet!"):
+            dataset.upload_documents(
+                [
+                    {"display_name": "accepted.txt", "blob": content},
+                    {"display_name": "rejected.exe", "blob": b"not an executable"},
+                ]
+            )
+
+        documents = dataset.list_documents(page_size=10)
+        assert len(documents) == 1
+        assert documents[0].name == "accepted.txt"
+        assert documents[0].download() == content
 
     @pytest.mark.p2
     def test_duplicate_files(self, add_dataset_func, tmp_path):
         dataset = add_dataset_func
-        fp = create_txt_file(tmp_path / "ragflow_test.txt")
+        fp = _create_text_file(tmp_path / "ragflow_test.txt")
 
         with fp.open("rb") as f:
             blob = f.read()
@@ -144,7 +190,7 @@ class TestDocumentsUpload:
     @pytest.mark.p3
     def test_same_file_repeat(self, add_dataset_func, tmp_path):
         dataset = add_dataset_func
-        fp = create_txt_file(tmp_path / "ragflow_test.txt")
+        fp = _create_text_file(tmp_path / "ragflow_test.txt")
 
         with fp.open("rb") as f:
             blob = f.read()
@@ -176,26 +222,26 @@ class TestDocumentsUpload:
         assert document.name == fp.name, str(document)
 
     @pytest.mark.p3
-    def test_multiple_files(self, client, add_dataset_func, tmp_path):
+    def test_multiple_files(self, add_dataset_func, tmp_path):
         dataset = add_dataset_func
         expected_document_count = 20
         document_infos = []
         for i in range(expected_document_count):
-            fp = create_txt_file(tmp_path / f"ragflow_test_upload_{i}.txt")
+            fp = _create_text_file(tmp_path / f"ragflow_test_upload_{i}.txt")
             with fp.open("rb") as f:
                 blob = f.read()
             document_infos.append({"display_name": fp.name, "blob": blob})
         documents = dataset.upload_documents(document_infos)
         assert len(documents) == expected_document_count, str(documents)
 
-        retrieved_dataset = client.get_dataset(name=dataset.name)
-        assert retrieved_dataset.document_count == expected_document_count, str(retrieved_dataset)
+        retrieved_documents = dataset.list_documents(page_size=expected_document_count)
+        assert {document.id for document in retrieved_documents} == {document.id for document in documents}
 
     @pytest.mark.p3
-    def test_concurrent_upload(self, client, add_dataset_func, tmp_path):
+    def test_concurrent_upload(self, add_dataset_func, tmp_path):
         dataset = add_dataset_func
         count = 20
-        fps = [create_txt_file(tmp_path / f"ragflow_test_{i}.txt") for i in range(count)]
+        fps = [_create_text_file(tmp_path / f"ragflow_test_{i}.txt") for i in range(count)]
 
         def upload_file(fp):
             with fp.open("rb") as f:
@@ -204,8 +250,12 @@ class TestDocumentsUpload:
 
         with ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(upload_file, fp) for fp in fps]
-        responses = list(as_completed(futures))
-        assert len(responses) == count, responses
+        uploaded = []
+        for future in as_completed(futures):
+            result = future.result()
+            assert len(result) == 1, result
+            uploaded.extend(result)
 
-        retrieved_dataset = client.get_dataset(name=dataset.name)
-        assert retrieved_dataset.document_count == count, str(retrieved_dataset)
+        assert len(uploaded) == count
+        retrieved_documents = dataset.list_documents(page_size=count)
+        assert {document.id for document in retrieved_documents} == {document.id for document in uploaded}

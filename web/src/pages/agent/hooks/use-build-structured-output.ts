@@ -6,7 +6,10 @@ import {
   JsonSchemaDataType,
   Operator,
 } from '../constant';
-import useGraphStore from '../store';
+import {
+  useSnapshotAwareGetNode,
+  useSnapshotAwareGetOperatorTypeFromId,
+} from './use-snapshot-graph';
 
 function splitValue(value?: string) {
   return typeof value === 'string' ? value?.split('@') : [];
@@ -16,7 +19,7 @@ function getNodeId(value: string) {
 }
 
 export function useShowSecondaryMenu() {
-  const { getOperatorTypeFromId } = useGraphStore((state) => state);
+  const getOperatorTypeFromId = useSnapshotAwareGetOperatorTypeFromId();
 
   const showSecondaryMenu = useCallback(
     (value: string, outputLabel: string) => {
@@ -33,7 +36,7 @@ export function useShowSecondaryMenu() {
 }
 
 export function useGetStructuredOutputByValue() {
-  const { getNode } = useGraphStore((state) => state);
+  const getNode = useSnapshotAwareGetNode();
 
   const getStructuredOutput = useCallback(
     (value: string) => {
@@ -52,9 +55,7 @@ export function useGetStructuredOutputByValue() {
 }
 
 export function useFindAgentStructuredOutputLabel() {
-  const getOperatorTypeFromId = useGraphStore(
-    (state) => state.getOperatorTypeFromId,
-  );
+  const getOperatorTypeFromId = useSnapshotAwareGetOperatorTypeFromId();
 
   const findAgentStructuredOutputLabel = useCallback(
     (
@@ -92,7 +93,7 @@ export function useFindAgentStructuredOutputLabel() {
 }
 
 export function useFindAgentStructuredOutputTypeByValue() {
-  const { getOperatorTypeFromId } = useGraphStore((state) => state);
+  const getOperatorTypeFromId = useSnapshotAwareGetOperatorTypeFromId();
   const filterStructuredOutput = useGetStructuredOutputByValue();
 
   const findTypeByValue = useCallback(
@@ -159,7 +160,7 @@ export function useFindAgentStructuredOutputTypeByValue() {
 }
 
 export function useFindAgentStructuredOutputLabelByValue() {
-  const { getNode } = useGraphStore((state) => state);
+  const getNode = useSnapshotAwareGetNode();
 
   const findAgentStructuredOutputLabel = useCallback(
     (value?: string) => {
