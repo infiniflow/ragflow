@@ -17,14 +17,18 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/service"
 )
 
 // fakePipelineRegistry is a test double for builtinPipelineRegistry.
@@ -244,5 +248,52 @@ func TestPipelineHandler_GetPipeline_NotFound(t *testing.T) {
 	}
 	if resp.Code == int(common.CodeSuccess) {
 		t.Fatal("expected error code for nonexistent pipeline")
+	}
+}
+
+// TestPipelineHandler_AuthenticatedServesBuiltin locks the contract that an
+// authenticated request reaches the handler and returns the built-in catalog.
+// Built-in templates have no tenant scoping, so gating the /pipelines
+// namespace behind auth must not block authenticated reads of the static
+// catalog. It mirrors the authorized-group wiring (AuthMiddleware + route)
+// with a stub token resolver and guards against a future change that would
+// wrongly require ownership on built-in templates.
+func TestPipelineHandler_AuthenticatedServesBuiltin(t *testing.T) {
+	items := []*pipelinepkg.BuiltinPipelineMeta{
+		{ParserID: "general", Title: "General"},
+	}
+	h := &PipelineHandler{registry: fakePipelineRegistry{items: items}}
+
+	stub := &stubUserTokenResolver{
+		resolveAccessTokenFn: func(ctx context.Context, auth string) (*service.AuthIdentity, common.ErrorCode, error) {
+			return &service.AuthIdentity{User: &entity.User{ID: "u-1"}}, common.CodeSuccess, nil
+		},
+	}
+	ah := &AuthHandler{userService: stub}
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	g := r.Group("/api/v1")
+	g.Use(ah.AuthMiddleware())
+	g.GET("/pipelines", h.ListPipelines)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/pipelines?type=builtin", nil)
+	req.Header.Set("Authorization", "token")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s; want 200", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Data struct {
+			Total int64 `json:"total"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Data.Total != 1 {
+		t.Fatalf("total=%d; want 1", resp.Data.Total)
 	}
 }
