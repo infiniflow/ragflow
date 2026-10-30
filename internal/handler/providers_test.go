@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
 	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
@@ -54,6 +56,7 @@ func setupProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 	if err := db.AutoMigrate(
+		&entity.User{},
 		&entity.UserTenant{},
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
@@ -75,6 +78,8 @@ func seedProviderHandlerModel(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	activeStatus := "1"
 	rows := []interface{}{
+		// The enterprise policy resolves the tenant role through the user row.
+		&entity.User{ID: "user-1", Nickname: "user", Email: "user-1@test.local", IsAuthenticated: "1", IsActive: "1", IsAnonymous: "0"},
 		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
 		&entity.TenantModelProvider{ID: "provider-1", UserID: "user-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
@@ -284,6 +289,84 @@ func TestProviderHandlerAlterModelRejectsMissingModelSelector(t *testing.T) {
 	body := decodeProviderHandlerResponse(t, recorder)
 	if common.ErrorCode(body["code"].(float64)) != common.CodeBadRequest {
 		t.Fatalf("code = %v, want %v", body["code"], common.CodeBadRequest)
+	}
+}
+
+type providerModelListProbe struct {
+	*modelModule.DummyModel
+	apiKey string
+	region string
+	calls  int
+}
+
+func (p *providerModelListProbe) ListModels(_ context.Context, config *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
+	p.calls++
+	if config.ApiKey != nil {
+		p.apiKey = *config.ApiKey
+	}
+	if config.Region != nil {
+		p.region = *config.Region
+	}
+	return []modelModule.ListModelResponse{{Name: "gpt-live-test", ModelTypes: []string{"chat"}}}, nil
+}
+
+func (p *providerModelListProbe) NewInstance(map[string]string) modelModule.ModelDriver {
+	return p
+}
+
+func TestListModelsSavedCredentialsUsesProviderCatalogMerge(t *testing.T) {
+	db := setupProviderHandlerTestDB(t)
+	useProviderHandlerTestDB(t, db)
+	seedProviderHandlerModel(t, db)
+	// The enterprise policy also reads group, role and grant tables; the
+	// fixture migrates and seeds them, and is a no-op in the community build.
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1"); err != nil {
+		t.Fatalf("prepare provider permission fixture: %v", err)
+	}
+
+	provider := dao.GetModelProviderManager().FindProvider("OpenAI")
+	if provider == nil {
+		t.Fatal("OpenAI provider is not configured")
+	}
+	probe := &providerModelListProbe{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	originalDriver := provider.ModelDriver
+	provider.ModelDriver = probe
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/providers/OpenAI/models?use_saved_credentials=true&instance_name=default", nil)
+	ctx.Params = gin.Params{{Key: "provider_id_or_name", Value: "OpenAI"}}
+	ctx.Set("user_id", "user-1")
+	ctx.Request = ctx.Request.WithContext(permission.WithSubject(ctx.Request.Context(), permission.Subject{
+		UserID: "user-1", TenantID: "tenant-1",
+	}))
+
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).ListModels(ctx)
+	body := decodeProviderHandlerResponse(t, recorder)
+	if common.ErrorCode(body["code"].(float64)) != common.CodeSuccess {
+		t.Fatalf("ListModels() response = %v, want success", body)
+	}
+	if probe.calls != 1 || probe.apiKey != "sk-test" || probe.region != "default" {
+		t.Fatalf("provider list calls=%d region=%q, want one call with saved key and default region", probe.calls, probe.region)
+	}
+
+	models, ok := body["data"].([]interface{})
+	if !ok {
+		t.Fatalf("ListModels() data = %T, want model list", body["data"])
+	}
+	modelNames := make(map[string]bool, len(models))
+	for _, item := range models {
+		model, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("model entry = %T, want object", item)
+		}
+		name, _ := model["name"].(string)
+		modelNames[name] = true
+	}
+	if !modelNames["gpt-live-test"] || !modelNames["gpt-5.6"] {
+		t.Fatalf("ListModels() names = %v, want live model and catalog model", modelNames)
 	}
 }
 

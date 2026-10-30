@@ -13,6 +13,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	componentpkg "ragflow/internal/ingestion/component"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
@@ -20,6 +21,8 @@ import (
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
+
+	"go.uber.org/zap"
 )
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
@@ -156,12 +159,10 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 		return nil, common.CodeServerError, err
 	}
-	if code, err := s.validateDatasetDocumentUpdate(ctx, doc, req, present); err != nil {
+	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, userID, doc, req, present); err != nil {
 		return nil, code, err
 	}
 
-	// Normalize chunk_method into the same selection used to clean and save
-	// parser_config. An omitted selection keeps the document's own template.
 	parseType, parserID := req.ParseType, req.ParserID
 	hasSelection := parseType != nil ||
 		(parserID != nil && strings.TrimSpace(*parserID) != "") ||
@@ -190,6 +191,58 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		selectionChanged = !previousOK || !targetOK || previous.ParserID != target.ParserID
 	}
 	hasConfig := present["parser_config"] && req.ParserConfig != nil
+
+	effectiveVersionID := doc.PipelineVersionID
+	repointVersion := false
+	if isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" && present["pipeline_version_id"] {
+		canvasID := strings.TrimSpace(*effPipelineID)
+		if req.PipelineVersionID != nil && strings.TrimSpace(*req.PipelineVersionID) != "" {
+			requested := strings.TrimSpace(*req.PipelineVersionID)
+			v, verr := dao.NewUserCanvasVersionDAO().GetByID(ctx, dao.DB, requested)
+			if verr != nil {
+				if errors.Is(verr, dao.ErrUserCanvasVersionNotFound) {
+					return nil, common.CodeDataError, fmt.Errorf("pipeline version %s not found: %w", requested, service.ErrPipelineVersionMissing)
+				}
+				return nil, common.CodeServerError, fmt.Errorf("load pipeline version %s: %w", requested, verr)
+			}
+			if v.UserCanvasID != canvasID {
+				return nil, common.CodeDataError, fmt.Errorf("pipeline version %s does not belong to canvas %s: %w", requested, canvasID, service.ErrPipelineVersionMissing)
+			}
+			effectiveVersionID = &requested
+		} else {
+			if isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
+				return nil, common.CodeBadRequest, service.ErrPipelineVersionEmpty
+			}
+			effectiveVersionID = nil
+		}
+		repointVersion = true
+	}
+
+	if !present["pipeline_version_id"] && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
+		// C5/G3: a canvas-to-canvas switch without supplying a version is a
+		// missing-version Save and is rejected, so the document cannot silently
+		// track the new canvas latest. A builtin-to-canvas switch is allowed: it
+		// tracks the new canvas latest, and any broken-DSL error surfaces below.
+		docOnCanvas := doc.PipelineID != nil && strings.TrimSpace(*doc.PipelineID) != ""
+		pipelineChanged := doc.PipelineID == nil || strings.TrimSpace(*doc.PipelineID) != strings.TrimSpace(*effPipelineID)
+		if docOnCanvas && pipelineChanged {
+			return nil, common.CodeBadRequest, service.ErrPipelineVersionEmpty
+		}
+	}
+
+	versionChanged := false
+	if repointVersion {
+		oldV := ""
+		if doc.PipelineVersionID != nil {
+			oldV = strings.TrimSpace(*doc.PipelineVersionID)
+		}
+		newV := ""
+		if effectiveVersionID != nil {
+			newV = strings.TrimSpace(*effectiveVersionID)
+		}
+		versionChanged = newV != oldV
+	}
+
 	if (sel != nil || present["parser_config"]) && isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
 		accessErr := permission.NewDatabaseChecker(dao.DB).CheckDependency(
 			ctx,
@@ -207,8 +260,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 
 	parserUpdates := map[string]interface{}{}
 	if sel != nil || hasConfig {
-		// Validate the target before any document, file, or metadata writes.
-		dslJSON, err := service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
+		dslJSON, err := service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID, effectiveVersionID)
 		if err != nil {
 			return nil, common.CodeDataError, err
 		}
@@ -220,7 +272,9 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		if err != nil {
 			return nil, common.CodeDataError, fmt.Errorf("invalid pipeline DSL: %w", err)
 		}
-		if doc.Name != nil {
+		// File-family compatibility is only declared by builtin parser DSLs. Canvas
+		// pipelines do not declare supported file families, so skip the check there.
+		if !isPipeline && doc.Name != nil {
 			family := componentpkg.ParserFileFamily(utility.GetFileExtension(*doc.Name))
 			if family != "" {
 				if declared, found := configDeclaredFamily(cleaned, family); found && !declared {
@@ -229,8 +283,6 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 		}
 		if selectionChanged || hasConfig {
-			// Inherited runtime delimiters are not an explicit override when
-			// this request changes parent_child.
 			parentChildOverrides := maps.Clone(rawConfig)
 			for componentID, raw := range req.ParserConfig {
 				if requested, ok := raw.(map[string]any); ok {
@@ -246,6 +298,39 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 	}
 
+	// C3 / A3: a pipeline (canvas) switch OR a version switch resets
+	// parser_config to the new DSL defaults — but only when the request carried
+	// no parser_config of its own. A submitted config has already been
+	// reconciled against the new version's DSL by BuildParserConfig above
+	// (unknown operators dropped, missing params defaulted), and the settings
+	// form resets itself to the new defaults on a switch before the user
+	// edits — so a submitted config is authoritative and must not be
+	// discarded. This mirrors the dataset-layer behavior so the two layers
+	// stay consistent.
+	//
+	// pipelineChanged tracks a genuine canvas change (incl. builtin→canvas);
+	// versionChanged tracks a pinned-version change. Builtin→builtin switches are
+	// not pipelineID changes and stay outside this reset (they are handled by the
+	// first block as a normal selection rebuild).
+	pipelineChanged := isPipeline && req.PipelineID != nil &&
+		(doc.PipelineID == nil || strings.TrimSpace(*req.PipelineID) != strings.TrimSpace(*doc.PipelineID))
+	if (pipelineChanged || versionChanged) && !hasConfig {
+		cpDefaults, cpErr := service.ResolveComponentParamsDefaults(ctx, effParserID, effPipelineID, effectiveVersionID)
+		if cpErr != nil {
+			common.Warn("document pipeline/version switch: failed to resolve component params defaults, keeping prior parser_config",
+				zap.String("parserID", effParserID), zap.Error(cpErr))
+		} else {
+			llmID, _, llmErr := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
+			if llmErr != nil {
+				common.Warn("document pipeline/version switch: failed to resolve default chat model, falling back to no llm binding",
+					zap.String("tenant_id", kb.TenantID), zap.Error(llmErr))
+				llmID = ""
+			}
+			cleaned := service.ApplyComponentScopedParserConfig(cpDefaults, llmID)
+			parserUpdates["parser_config"] = cleaned
+		}
+	}
+
 	if sel != nil {
 		if isPipeline {
 			parserUpdates["pipeline_id"] = *effPipelineID
@@ -254,6 +339,15 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			parserUpdates["pipeline_id"] = ""
 		}
 	}
+
+	if repointVersion {
+		var colValue interface{}
+		if effectiveVersionID != nil {
+			colValue = *effectiveVersionID
+		}
+		parserUpdates["pipeline_version_id"] = colValue
+	}
+
 	if present["meta_fields"] {
 		if err = s.replaceDocumentMetadata(ctx, documentID, req.MetaFields); err != nil {
 			return nil, common.CodeDataError, err
@@ -264,7 +358,6 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			return nil, common.CodeDataError, err
 		}
 	}
-	// Save selection and config together; parsed content changes only on reparse.
 	if len(parserUpdates) > 0 {
 		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, parserUpdates); err != nil {
 			return nil, common.CodeDataError, err
@@ -324,15 +417,11 @@ func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *e
 	}
 }
 
-func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
+func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, datasetID, documentID, userID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
 	if req == nil {
 		return common.CodeDataError, errors.New("invalid request payload")
 	}
 
-	// Reject any configuration edit while the document is parsing or scheduled.
-	// This guard is field-agnostic: every editable field (name, parser_config,
-	// chunk_method, pipeline_id, enabled, meta_fields) is blocked so the
-	// in-flight parser never reads a config that changed underneath it.
 	if len(present) > 0 {
 		if code, err := s.validateDocumentModifiable(ctx, doc); err != nil {
 			return code, err
@@ -372,8 +461,12 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, doc
 		}
 	}
 
+	if present["parse_type"] || present["parser_id"] || present["pipeline_id"] {
+		if _, err := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID); err != nil {
+			return common.CodeDataError, err
+		}
+	}
 	if present["name"] {
-		// An explicit null name is a type error, not an unset field.
 		if req.Name == nil {
 			return common.CodeDataError, errors.New("Field: <name> - Message: <Input should be a valid string> - Value: <None>")
 		}
@@ -388,7 +481,6 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, doc
 		}
 	}
 	if present["parser_config"] && req.ParserConfig != nil {
-		// Reject invalid page ranges before any names or metadata are persisted.
 		if err := pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return common.CodeDataError, err
 		}
@@ -396,7 +488,6 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, doc
 
 	return common.CodeSuccess, nil
 }
-
 func requestField[T any](value *T, present bool) *T {
 	if !present {
 		return nil
@@ -431,6 +522,14 @@ func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.
 	}
 
 	return common.CodeSuccess, nil
+}
+
+func isPresentationFile(name *string) bool {
+	if name == nil {
+		return false
+	}
+	ext := strings.ToLower(filepath.Ext(*name))
+	return ext == ".ppt" || ext == ".pptx" || ext == ".pages" || ext == ".dps" || ext == ".dpt"
 }
 
 func validateMetaFields(meta map[string]any) error {
@@ -486,6 +585,15 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 	titleTks, _ := tok.Tokenize(newName)
 	titleSmTks, _ := tok.FineGrainedTokenize(titleTks)
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+	if doc.ChunkNum == 0 && engine.Type(s.docEngine) == engine.EngineElasticsearch {
+		exists, err := s.docEngine.ChunkStoreExists(ctx, indexName, doc.KbID)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return nil
+		}
+	}
 	return s.docEngine.UpdateChunks(
 		ctx,
 		map[string]interface{}{"doc_id": doc.ID},
@@ -497,6 +605,24 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 		indexName,
 		doc.KbID,
 	)
+}
+
+func (s *DocumentService) updateDocumentParserConfig(ctx context.Context, documentID string, config map[string]any) error {
+	if len(config) == 0 {
+		return nil
+	}
+
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, documentID)
+	if err != nil {
+		return fmt.Errorf("document(%s) not found", documentID)
+	}
+
+	merged := common.DeepMergeMaps(doc.ParserConfig, config)
+	pipelinepkg.ApplyParentChildChunkerConfig(merged, config)
+
+	return s.documentDAO.UpdateByID(ctx, dao.DB, documentID, map[string]interface{}{
+		"parser_config": entity.JSONMap(merged),
+	})
 }
 
 func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, doc *entity.Document, metaFields map[string]interface{}) (*UpdateDatasetDocumentResponse, error) {
@@ -526,6 +652,7 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, d
 		DatasetID:            doc.KbID,
 		ParserID:             doc.ParserID,
 		PipelineID:           doc.PipelineID,
+		PipelineVersionID:    doc.PipelineVersionID,
 		ParserConfig:         doc.ParserConfig,
 		SourceType:           doc.SourceType,
 		Type:                 doc.Type,
@@ -550,6 +677,13 @@ func (s *DocumentService) toUpdateDatasetDocumentResponse(ctx context.Context, d
 		UpdateTime:           doc.UpdateTime,
 		UpdateDate:           doc.UpdateDate,
 	}, nil
+}
+
+// validDocumentChunkMethods mirrors Python's UpdateDocumentReq chunk_method set.
+var validDocumentChunkMethods = map[string]bool{
+	"naive": true, "manual": true, "qa": true, "table": true, "paper": true,
+	"book": true, "laws": true, "presentation": true, "picture": true,
+	"one": true, "knowledge_graph": true, "email": true, "tag": true,
 }
 
 // pythonFloatRepr formats a float the way Python's str()/repr() does:

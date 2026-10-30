@@ -687,13 +687,13 @@ func TestConnectorHandlerListSyncLogs(t *testing.T) {
 				capture: capture,
 			}}
 			router := gin.New()
-			router.GET("/api/v1/connectors/sync_logs", func(c *gin.Context) {
+			router.GET("/api/v1/connectors/sync-logs", func(c *gin.Context) {
 				c.Set("user", &entity.User{ID: "tenant-1"})
 				h.ListSyncLogs(c)
 			})
 
 			resp := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/sync_logs"+tt.query, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/sync-logs"+tt.query, nil)
 			router.ServeHTTP(resp, req)
 
 			var body map[string]interface{}

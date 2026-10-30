@@ -15,7 +15,7 @@ Build a workflow that answers product questions through retrieval and collects c
 
 ## Build the workflow
 
-1. [Create a blank Workflow Agent](../creation_and_management.md#create-from-blank-agent) named `Customer support demo`.
+1. [Create a blank Workflow Agent](../create_and_manage_workflows.md#create-from-blank-workflow) named `Customer support demo`.
 2. After **Begin**, add **Categorize**. Use `sys.query` as the query variable and select the chat model.
 3. Add two categories:
 

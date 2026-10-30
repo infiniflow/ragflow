@@ -19,7 +19,7 @@ Graph configuration mainly includes:
 - Global rules
 - EntitySpecification
 - RelationSpecification
-- Re-splitting Parser output
+- Re-chunk parser output
 
 ### Global Rules
 
@@ -32,6 +32,14 @@ Configuration recommendations:
 - For professional domain documents, supplement domain-specific constraints through rules.
 
 Example: Extract only core people, organizations, products, and key events from the document. Keep entity names complete and do not generate entities that cannot be confirmed.
+
+### Re-chunk parser output
+
+Enable **Re-chunk parser output** to group related source content before entity and relationship extraction. Turning it on displays **Rechunking rules**, where you can review or edit the instructions for regrouping adjacent source chunks.
+
+The supplied rules preserve source order, use every source chunk exactly once, and keep self-contained tables, lists, figures, and code blocks intact. Adjust the rules for your documents while preserving the source evidence. When the switch is off, compilation uses the existing source chunks without this regrouping step.
+
+Click **Save** to save the template, then reparse a sample with the pipeline that references it and check the Graph result. This setting affects compilation input and does not replace the pipeline's Chunker component.
 
 ### EntitySpecification
 
@@ -241,9 +249,9 @@ Supported operations:
 
 ![PageIndex configuration description](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/page-index-configuration-description.jpg)
 
-## MindMap
+## Mindmap
 
-MindMap generates a hierarchical structure around the core topic of a document, displaying content relationships through a central topic, branches, and keywords. It helps users quickly understand the main content, knowledge structure, and concept relationships of a document.
+Mindmap generates a hierarchical structure around the core topic of a document, displaying content relationships through a central topic, branches, and keywords. It helps users quickly understand the main content, knowledge structure, and concept relationships of a document.
 
 ### Global Rules
 
@@ -256,6 +264,14 @@ Configuration recommendations:
 - Keep node names concise and avoid using complete sentences as nodes.
 - Maintain clear hierarchical relationships and avoid duplicate or circular references.
 - Keep node language consistent with the original text.
+
+### Re-chunk parser output
+
+Enable **Re-chunk parser output** to group related source content before extracting topics and branches. Turning it on displays **Rechunking rules**, where you can review or edit the instructions for regrouping adjacent source chunks.
+
+The supplied rules preserve source order, use every source chunk exactly once, and keep self-contained tables, lists, figures, and code blocks intact. Adjust the rules for your documents while preserving the source evidence. When the switch is off, compilation uses the existing source chunks without this regrouping step.
+
+Click **Save** to save the template, then reparse a sample with the pipeline that references it and check the Mindmap result. This setting affects compilation input and does not replace the pipeline's Chunker component.
 
 ### EntitySpecification
 
@@ -322,7 +338,7 @@ Recommendations:
 - Node names should be short and clear for final display.
 - Adjust node definitions based on document type. For example, technical documents can add types such as "module" and "function", while business documents can add types such as "process" and "role".
 
-![MindMap node configuration description](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/mind-map-node-configuration-description.jpg)
+![Mindmap node configuration description](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/mind-map-node-configuration-description.jpg)
 
 ## Timeline
 
@@ -342,6 +358,14 @@ The system provides the following default rules:
 - When multiple events have the same time information, arrange them in the order they appear in the document.
 
 Users can adjust rules based on actual business requirements, such as specifying event types to focus on, limiting the time range, or supplementing domain-specific requirements.
+
+### Re-chunk parser output
+
+Enable **Re-chunk parser output** to group related source content before extracting dates and events. Turning it on displays **Rechunking rules**, where you can review or edit the instructions for regrouping adjacent source chunks.
+
+The supplied rules preserve source order, use every source chunk exactly once, and keep self-contained tables, lists, figures, and code blocks intact. Adjust the rules for your documents while preserving the source evidence. When the switch is off, compilation uses the existing source chunks without this regrouping step.
+
+Click **Save** to save the template, then reparse a sample with the pipeline that references it and check the Timeline result. This setting affects compilation input and does not replace the pipeline's Chunker component.
 
 ### EntitySpecification
 

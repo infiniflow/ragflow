@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
@@ -223,4 +225,147 @@ func TestMigrateKnowledgeCompileQueues_Integration(t *testing.T) {
 			t.Fatalf("%s must have no primary key or unique indexes: count=%d err=%v", table, count, err)
 		}
 	}
+}
+
+func openIngestionTaskMigrationDB(t *testing.T) (*gorm.DB, context.Context) {
+	t.Helper()
+
+	dsn := os.Getenv("RAGFLOW_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("RAGFLOW_TEST_MYSQL_DSN unset: this test needs a throwaway MySQL database")
+	}
+
+	db, err := gorm.Open(newMigrationAwareDialector(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get database connection pool: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("failed to close database connection pool: %v", err)
+		}
+	})
+	return db, context.Background()
+}
+
+func createDuplicateIngestionTaskSchema(t *testing.T, db *gorm.DB, ctx context.Context, withPipelineLog bool) {
+	t.Helper()
+
+	tables := []string{"ingestion_task"}
+	if withPipelineLog {
+		tables = append(tables, "pipeline_operation_log")
+	}
+	for _, table := range tables {
+		if db.Migrator().HasTable(table) {
+			t.Fatalf("%s already exists; this test requires an empty database", table)
+		}
+	}
+	t.Cleanup(func() {
+		for _, table := range tables {
+			if err := db.WithContext(context.Background()).Migrator().DropTable(table); err != nil {
+				t.Errorf("failed to drop %s test table: %v", table, err)
+			}
+		}
+	})
+	if err := db.WithContext(ctx).Exec(`CREATE TABLE ingestion_task (
+		id varchar(32) NOT NULL PRIMARY KEY,
+		document_id varchar(32) NOT NULL,
+		status varchar(32) NOT NULL,
+		create_time bigint NULL,
+		pipeline_log_id varchar(32) NULL
+	)`).Error; err != nil {
+		t.Fatalf("create ingestion_task: %v", err)
+	}
+	if err := db.WithContext(ctx).Exec(
+		"CREATE INDEX idx_ingestion_task_document_id ON ingestion_task(document_id)",
+	).Error; err != nil {
+		t.Fatalf("create legacy document index: %v", err)
+	}
+	if !withPipelineLog {
+		return
+	}
+	if err := db.WithContext(ctx).Exec(`CREATE TABLE pipeline_operation_log (
+		id varchar(32) NOT NULL PRIMARY KEY,
+		document_id varchar(32) NOT NULL,
+		operation_status varchar(32) NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create pipeline_operation_log: %v", err)
+	}
+}
+
+func TestMigrateIngestionTaskDocumentIDUnique_Integration(t *testing.T) {
+	db, ctx := openIngestionTaskMigrationDB(t)
+
+	t.Run("repairs terminal duplicates", func(t *testing.T) {
+		createDuplicateIngestionTaskSchema(t, db, ctx, true)
+		if err := db.WithContext(ctx).Exec(
+			"INSERT INTO pipeline_operation_log (id, document_id, operation_status) VALUES (?, ?, ?)",
+			"run-done", "doc-duplicate", string(entity.TaskStatusDone),
+		).Error; err != nil {
+			t.Fatalf("seed completed pipeline log: %v", err)
+		}
+		if err := db.WithContext(ctx).Exec(`INSERT INTO ingestion_task
+			(id, document_id, status, create_time, pipeline_log_id)
+			VALUES
+			('task-old', 'doc-duplicate', 'COMPLETED', 100, 'run-done'),
+			('task-new', 'doc-duplicate', 'FAILED', 200, NULL)`).Error; err != nil {
+			t.Fatalf("seed duplicate ingestion tasks: %v", err)
+		}
+
+		if err := migrateIngestionTaskDocumentIDUnique(ctx, db); err != nil {
+			t.Fatalf("migrateIngestionTaskDocumentIDUnique: %v", err)
+		}
+		var ids []string
+		if err := db.WithContext(ctx).Table("ingestion_task").Pluck("id", &ids).Error; err != nil {
+			t.Fatalf("list remaining ingestion tasks: %v", err)
+		}
+		if !reflect.DeepEqual(ids, []string{"task-new"}) {
+			t.Fatalf("remaining task ids = %v, want [task-new]", ids)
+		}
+		hasUnique, err := hasUniqueIndex(ctx, db, "ingestion_task", []string{"document_id"})
+		if err != nil {
+			t.Fatalf("check unique document index: %v", err)
+		}
+		if !hasUnique {
+			t.Fatal("ingestion_task.document_id is not unique after migration")
+		}
+		if err := migrateIngestionTaskDocumentIDUnique(ctx, db); err != nil {
+			t.Fatalf("second migrateIngestionTaskDocumentIDUnique: %v", err)
+		}
+	})
+
+	t.Run("rejects active duplicate", func(t *testing.T) {
+		createDuplicateIngestionTaskSchema(t, db, ctx, false)
+		if err := db.WithContext(ctx).Exec(`INSERT INTO ingestion_task
+			(id, document_id, status, create_time, pipeline_log_id)
+			VALUES
+			('task-active', 'doc-duplicate', 'RUNNING', 100, NULL),
+			('task-new', 'doc-duplicate', 'COMPLETED', 200, NULL)`).Error; err != nil {
+			t.Fatalf("seed duplicate ingestion tasks: %v", err)
+		}
+
+		err := migrateIngestionTaskDocumentIDUnique(ctx, db)
+		for _, want := range []string{"doc-duplicate", "task-active", common.RUNNING} {
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("migration error = %v, want it to contain %q", err, want)
+			}
+		}
+		var count int64
+		if err := db.WithContext(ctx).Table("ingestion_task").Count(&count).Error; err != nil {
+			t.Fatalf("count ingestion tasks: %v", err)
+		}
+		if count != 2 {
+			t.Fatalf("ingestion task count = %d, want 2 after failed migration", count)
+		}
+		hasUnique, err := hasUniqueIndex(ctx, db, "ingestion_task", []string{"document_id"})
+		if err != nil {
+			t.Fatalf("check unique document index: %v", err)
+		}
+		if hasUnique {
+			t.Fatal("ingestion_task.document_id unexpectedly became unique")
+		}
+	})
 }

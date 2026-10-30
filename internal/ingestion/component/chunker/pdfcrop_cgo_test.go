@@ -384,7 +384,7 @@ func TestCropImageChunks_StreamingUpload(t *testing.T) {
 	// matches the expected per-chunk ids rather than the call order.
 	wantIDs := make(map[string]struct{}, len(chunks))
 	for _, ck := range chunks {
-		wantIDs[common.ChunkID("doc1", ck.Text)] = struct{}{}
+		wantIDs[canonicalChunkID("doc1", ck)] = struct{}{}
 	}
 	for _, c := range rec.calls {
 		if c.dataLen == 0 {
@@ -398,7 +398,7 @@ func TestCropImageChunks_StreamingUpload(t *testing.T) {
 	// ("<kb_id>-<chunkID>"); keyed by input position, which is deterministic
 	// even though the upload order is not.
 	for i, ck := range out {
-		wantImgID := "kb1-" + common.ChunkID("doc1", chunks[i].Text)
+		wantImgID := "kb1-" + canonicalChunkID("doc1", chunks[i])
 		if ck.ImgID != wantImgID {
 			t.Errorf("chunk %d: ImgID = %q, want %q", i, ck.ImgID, wantImgID)
 		}
@@ -492,8 +492,8 @@ func TestCropImageChunks_StreamingUploadUsesFinalizedText(t *testing.T) {
 
 	// Finalized text = removeTag(ContextAbove + removeTag(Text) + ContextBelow)
 	//                 = "ABOVE body".
-	wantID := common.ChunkID("doc1", "ABOVE body")
-	rawID := common.ChunkID("doc1", "body")
+	wantID := canonicalChunkID("doc1", schema.ChunkDoc{DocType: "image", Text: "body", ContextAbove: "ABOVE ", PDFPositions: pos})
+	rawID := canonicalChunkID("doc1", schema.ChunkDoc{DocType: "image", Text: "body", PDFPositions: pos})
 
 	if rec.calls[0].chunkID == rawID {
 		t.Errorf("upload keyed by raw text %q; want finalized-text key %q", rawID, wantID)
@@ -503,6 +503,71 @@ func TestCropImageChunks_StreamingUploadUsesFinalizedText(t *testing.T) {
 	}
 	if out[0].ImgID != "kb1-"+wantID {
 		t.Errorf("ImgID = %q, want %q", out[0].ImgID, "kb1-"+wantID)
+	}
+}
+
+// TestCropImageChunks_DistinctIdsForSameTextMedia pins the identity contract
+// for media chunks that share a caption: a PaddleOCR/DeepDoc document can emit
+// several figures whose text is the same short label ("图", "Figure"), and a
+// text-only id collapses them onto one chunk id — one MinIO object overwrites
+// the other and the index keeps a single entry. The region digest folded into
+// the media identity separates them, end to end: distinct canonical ids,
+// distinct streamed upload keys, distinct img_ids.
+func TestCropImageChunks_DistinctIdsForSameTextMedia(t *testing.T) {
+	ctx := withIngestionGlobals(t, "kb1", "doc1")
+
+	rec := &recordingUploader{}
+	orig := ChunkImageUploader
+	ChunkImageUploader = rec.upload
+	t.Cleanup(func() { ChunkImageUploader = orig })
+
+	eng := mockCropEngine{}
+	chunks := []schema.ChunkDoc{
+		{DocType: "image", Text: "图", PDFPositions: jsonPositions(t, []float64{1, 10, 100, 10, 100})},
+		{DocType: "image", Text: "图", PDFPositions: jsonPositions(t, []float64{1, 200, 300, 400, 500})},
+	}
+
+	ids := []string{canonicalChunkID("doc1", chunks[0]), canonicalChunkID("doc1", chunks[1])}
+	if ids[0] == ids[1] {
+		t.Fatalf("same-text media at different regions share chunk id %q", ids[0])
+	}
+
+	out := cropImageChunks(ctx, eng, chunks)
+	if len(out) != 2 {
+		t.Fatalf("len(out) = %d, want 2", len(out))
+	}
+	if out[0].ImgID == out[1].ImgID {
+		t.Errorf("preview objects collapsed: both chunks ImgID = %q", out[0].ImgID)
+	}
+	if len(rec.calls) != 2 {
+		t.Fatalf("upload calls = %d, want 2", len(rec.calls))
+	}
+	keys := map[string]struct{}{}
+	for _, c := range rec.calls {
+		keys[c.chunkID] = struct{}{}
+	}
+	if len(keys) != 2 {
+		t.Errorf("upload keys = %v, want 2 distinct", keys)
+	}
+	for i, ck := range out {
+		if ck.ImgID != "kb1-"+ids[i] {
+			t.Errorf("chunk %d: ImgID = %q, want %q", i, ck.ImgID, "kb1-"+ids[i])
+		}
+		// cropImageChunks stamps the final chunk id alongside img_id; the
+		// decorator reuses it, so this is the id the index and retrieval see.
+		if ck.ID != ids[i] {
+			t.Errorf("chunk %d: ID = %q, want %q", i, ck.ID, ids[i])
+		}
+	}
+
+	// Text chunks are unaffected by the region digest: the same body at two
+	// locations must keep the plain text id.
+	textIDs := []string{
+		canonicalChunkID("doc1", schema.ChunkDoc{Text: "same body", PDFPositions: chunks[0].PDFPositions}),
+		canonicalChunkID("doc1", schema.ChunkDoc{Text: "same body", PDFPositions: chunks[1].PDFPositions}),
+	}
+	if textIDs[0] != textIDs[1] {
+		t.Errorf("text chunk ids diverged by position: %q vs %q", textIDs[0], textIDs[1])
 	}
 }
 

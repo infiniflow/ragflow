@@ -647,16 +647,34 @@ func (j *JinaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Lis
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
+	var result struct {
+		Data *[]json.RawMessage `json:"data"`
+	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
+	if result.Data == nil {
+		return nil, fmt.Errorf("invalid model list response: data must be an array")
+	}
 
-	// convert result["data"] to []map[string]interface{}
-	models := make([]ModelListItem, 0, len(result["data"].([]interface{})))
-	for _, model := range result["data"].([]interface{}) {
-		modelName := model.(map[string]interface{})["id"].(string)
+	models := make([]ModelListItem, 0, len(*result.Data))
+	for i, rawModel := range *result.Data {
+		var model map[string]json.RawMessage
+		if err := json.Unmarshal(rawModel, &model); err != nil || model == nil {
+			return nil, fmt.Errorf("invalid model list response: data[%d] must be a model object", i)
+		}
+		rawID, ok := model["id"]
+		if !ok {
+			return nil, fmt.Errorf("invalid model list response: data[%d].id is required", i)
+		}
+		var id string
+		if err := json.Unmarshal(rawID, &id); err != nil {
+			return nil, fmt.Errorf("invalid model list response: data[%d].id must be a string: %w", i, err)
+		}
+		modelName := strings.TrimSpace(id)
+		if modelName == "" {
+			return nil, fmt.Errorf("invalid model list response: data[%d].id must be a non-empty string", i)
+		}
 		models = append(models, ModelListItem{
 			ID:      modelName,
 			OwnedBy: "",

@@ -167,8 +167,16 @@ func (e *serenedbEngine) exec(ctx context.Context, query string, args ...interfa
 
 // queryMaps runs a query and shapes each row into a map keyed by column name,
 // decoding JSON and array columns to structured values.
+type sqlQueryer interface {
+	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
+}
+
 func (e *serenedbEngine) queryMaps(ctx context.Context, query string, args ...interface{}) ([]map[string]interface{}, error) {
-	rows, err := e.db.QueryContext(ctx, query, args...)
+	return queryMapsWith(ctx, e.db, query, args...)
+}
+
+func queryMapsWith(ctx context.Context, db sqlQueryer, query string, args ...interface{}) ([]map[string]interface{}, error) {
+	rows, err := db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}

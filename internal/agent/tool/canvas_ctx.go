@@ -35,8 +35,8 @@ func CheckCanvasDependencies(ctx context.Context, db *gorm.DB, kind permission.R
 	if err != nil || state == nil {
 		return nil
 	}
-	canvasID, _ := state.Sys["canvas_id"].(string)
-	userID, _ := state.Sys["user_id"].(string)
+	canvasID, _ := state.GetSysString("canvas_id")
+	userID, _ := state.GetSysString("user_id")
 	canvasID = strings.TrimSpace(canvasID)
 	userID = strings.TrimSpace(userID)
 	if canvasID == "" {
@@ -73,10 +73,10 @@ func canvasTenantID(ctx context.Context) string {
 	if err != nil || state == nil {
 		return ""
 	}
-	if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
+	if tenantID, _ := state.GetSysString("tenant_id"); tenantID != "" {
 		return tenantID
 	}
-	userID, _ := state.Sys["user_id"].(string)
+	userID, _ := state.GetSysString("user_id")
 	return userID
 }
 
@@ -96,7 +96,7 @@ func canvasDatasetIDs(ctx context.Context, explicit []string) []string {
 	if err != nil || state == nil {
 		return nil
 	}
-	if id, _ := state.Sys["dataset_id"].(string); id != "" {
+	if id, _ := state.GetSysString("dataset_id"); id != "" {
 		return []string{id}
 	}
 	return nil

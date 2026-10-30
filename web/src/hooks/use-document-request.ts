@@ -590,10 +590,15 @@ export const useRemoveDocument = () => {
       const ids = Array.isArray(documentIds) ? documentIds : [documentIds];
       const { data } = await deleteDocument(datasetId!, ids);
       if (data.code === 0) {
-        message.success(i18n.t('message.deleted'));
         queryClient.invalidateQueries({
           queryKey: DocumentKeys.all(),
         });
+        // The bulk count confirms completed cleanup, but cannot identify failed IDs.
+        if (Array.isArray(documentIds) && data.data?.deleted !== ids.length) {
+          message.warning(i18n.t('message.deleteIncomplete'));
+          return;
+        }
+        message.success(i18n.t('message.deleted'));
       }
       return data.code;
     },
@@ -657,6 +662,7 @@ export const useSetDocumentPipelineParser = () => {
       documentId,
       datasetId,
       parserConfig,
+      pipelineVersionId,
     }: {
       parserId: string;
       pipelineId: string;
@@ -664,6 +670,7 @@ export const useSetDocumentPipelineParser = () => {
       documentId: string;
       datasetId: string;
       parserConfig?: IChangeParserConfigRequestBody;
+      pipelineVersionId?: string;
     }) => {
       const updateData: Record<string, unknown> = {
         parser_id: parserId,
@@ -672,6 +679,15 @@ export const useSetDocumentPipelineParser = () => {
 
       if (parse_type !== undefined) {
         updateData.parse_type = parse_type;
+      }
+
+      // Pin a specific dataflow canvas version (design section 5 sticky
+      // snapshot). An explicit empty string means the user picked
+      // Latest (track the canvas latest), so it must be sent for the
+      // backend to clear the pin; only an omitted value (undefined) keeps
+      // the current pin.
+      if (pipelineVersionId !== undefined) {
+        updateData.pipeline_version_id = pipelineVersionId;
       }
 
       if (parserConfig) {

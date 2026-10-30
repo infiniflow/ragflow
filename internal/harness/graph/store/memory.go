@@ -234,8 +234,7 @@ func (s *InMemoryStore) Batch(ctx context.Context, ops []Op) ([]Result, error) {
 			}
 			results[i] = Result{Value: searchResults, Error: nil}
 		case ListNamespacesOp:
-			// Implement ListNamespacesOp
-			namespaces, err := s.ListNamespaces(ctx, o.MatchConditions, o.MaxDepth, o.Limit, o.Offset)
+			namespaces, err := s.listNamespaces(o.MatchConditions, o.MaxDepth, o.Limit, o.Offset)
 			if err != nil {
 				results[i] = Result{Value: nil, Error: err}
 			} else {
@@ -458,6 +457,11 @@ func (s *InMemoryStore) ListNamespaces(ctx context.Context, conditions []MatchCo
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	return s.listNamespaces(conditions, maxDepth, limit, offset)
+}
+
+func (s *InMemoryStore) listNamespaces(conditions []MatchCondition, maxDepth *int,
+	limit, offset int) ([][]string, error) {
 	if s.closed {
 		return nil, &StoreError{Message: "store is closed"}
 	}

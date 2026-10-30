@@ -24,23 +24,45 @@ type FileUploadDirectUploadProps = {
   maxFiles?: number;
 };
 
+/**
+ * Uses value as initial upload metadata and emits it with successful current selections.
+ * Each selection owns a record so removed or replaced uploads cannot change the field.
+ */
 export function FileUploadDirectUpload({
   value,
   onChange,
   maxFiles,
 }: FileUploadDirectUploadProps) {
   const [files, setFiles] = React.useState<File[]>([]);
-  const uploadedFilesRef = React.useRef<Record<string, any>[]>(
+  const initialUploadedFilesRef = React.useRef<Record<string, any>[]>(
     Array.isArray(value) ? value : value ? [value] : [],
+  );
+  const uploadedFilesRef = React.useRef(
+    new Map<File, { data?: Record<string, any> }>(),
   );
 
   const { uploadAgentFile } = useUploadAgentFile();
 
+  /** Reports initial metadata plus successful current selections in selection order. */
+  const notifyUploadedFilesChange = React.useCallback(() => {
+    onChange([
+      ...initialUploadedFilesRef.current,
+      ...Array.from(uploadedFilesRef.current.values()).flatMap(({ data }) =>
+        data ? [data] : [],
+      ),
+    ]);
+  }, [onChange]);
+
+  /** Uploads concurrently, ignoring callbacks whose selection record is no longer current. */
   const onUpload: NonNullable<FileUploadProps['onUpload']> = React.useCallback(
     async (files, { onSuccess, onError }) => {
       try {
         const uploadPromises = files.map(async (file) => {
+          const upload = uploadedFilesRef.current.get(file);
+          if (!upload) return;
+
           const handleError = (error?: any) => {
+            if (uploadedFilesRef.current.get(file) !== upload) return;
             onError(
               file,
               error instanceof Error ? error : new Error('Upload failed'),
@@ -48,13 +70,11 @@ export function FileUploadDirectUpload({
           };
           try {
             const ret = await uploadAgentFile([file]);
+            if (uploadedFilesRef.current.get(file) !== upload) return;
             if (ret.code === 0) {
               onSuccess(file);
-              uploadedFilesRef.current = [
-                ...uploadedFilesRef.current,
-                ret.data,
-              ];
-              onChange(uploadedFilesRef.current);
+              upload.data = ret.data;
+              notifyUploadedFilesChange();
             } else {
               handleError();
             }
@@ -70,7 +90,7 @@ export function FileUploadDirectUpload({
         console.error('Unexpected error during upload:', error);
       }
     },
-    [onChange, uploadAgentFile],
+    [notifyUploadedFilesChange, uploadAgentFile],
   );
 
   const onFileReject = React.useCallback((file: File, message: string) => {
@@ -79,20 +99,25 @@ export function FileUploadDirectUpload({
     });
   }, []);
 
+  /** Reconciles File identities; deleting a record invalidates its pending callbacks. */
   const handleFilesChange = React.useCallback(
     (newFiles: File[]) => {
-      // Find removed files and update uploadedFilesRef
-      const removedFiles = files.filter((f) => !newFiles.includes(f));
-      if (removedFiles.length > 0) {
-        const removedIndices = removedFiles.map((f) => files.indexOf(f));
-        uploadedFilesRef.current = uploadedFilesRef.current.filter(
-          (_, idx) => !removedIndices.includes(idx),
-        );
-        onChange(uploadedFilesRef.current);
+      let removedFiles = false;
+      for (const file of uploadedFilesRef.current.keys()) {
+        if (!newFiles.includes(file)) {
+          uploadedFilesRef.current.delete(file);
+          removedFiles = true;
+        }
       }
+      for (const file of newFiles) {
+        if (!uploadedFilesRef.current.has(file)) {
+          uploadedFilesRef.current.set(file, {});
+        }
+      }
+      if (removedFiles) notifyUploadedFilesChange();
       setFiles(newFiles);
     },
-    [files, onChange],
+    [notifyUploadedFilesChange],
   );
 
   return (

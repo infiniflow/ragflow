@@ -48,11 +48,10 @@ func createAPI4ConversationForDAOTest(t *testing.T, id, agentID string) {
 	t.Helper()
 	ctx := t.Context()
 	if err := NewAPI4ConversationDAO().Create(ctx, DB, &entity.API4Conversation{
-		ID:        id,
-		DialogID:  agentID,
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       id,
+		DialogID: agentID,
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
 	}); err != nil {
 		t.Fatalf("failed to create api conversation %s: %v", id, err)
 	}

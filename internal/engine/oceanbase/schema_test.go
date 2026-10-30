@@ -159,3 +159,26 @@ func TestFindVectorColumnUsesExpectedColumn(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestTableCollationMatchesEngine(t *testing.T) {
+	for _, tc := range []struct{ engine, collation string }{{"oceanbase", "utf8mb4_unicode_ci"}, {"seekdb", "utf8mb4_general_ci"}} {
+		t.Run(tc.engine, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			engine := newEngineWithDB(tc.engine, "test", db)
+			query := regexp.QuoteMeta("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?")
+			mock.ExpectQuery(query).WithArgs("test", "memory_test").WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(0))
+			mock.ExpectExec(regexp.QuoteMeta("CREATE TABLE `memory_test` (`id` VARCHAR(32)) DEFAULT CHARSET=utf8mb4 COLLATE=" + tc.collation + " ORGANIZATION=heap")).WillReturnResult(sqlmock.NewResult(0, 0))
+			mock.ExpectQuery(query).WithArgs("test", "memory_test").WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
+			if err := engine.ensureTable(t.Context(), "memory_test", []columnDefinition{{name: "id", typeSQL: "VARCHAR(32)"}}, "test_"); err != nil {
+				t.Fatal(err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

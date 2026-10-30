@@ -161,7 +161,7 @@ The SeaFile data source is used to synchronize account, library, or directory co
 - **Batch size**: Set the number of items processed in each batch.
 - **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
 
-![SeaFile](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/SeaFile.jpg)
+![SeaFile connection configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/SeaFile.jpg)
 
 ## S3
 
@@ -277,20 +277,25 @@ The MySQL data source is used to synchronize table records or query results in M
 
 **Configuration parameters**:
 
-- **Name**: Customize the name in RAGFlow to identify this MySQL connection.
-- **Host**: Fill in the database host address.
-- **Port**: Fill in the database port.
-- **Database**: Fill in the database name that needs to be synchronized.
-- **Username**: Fill in the database username.
-- **Password**: Fill in the database password.
-- **SQL query**: Fill in the SQL statement used to read data.
-- **Content column**: Select the field to be written as document content.
-- **Metadata column**: Select the field to be written as metadata.
-- **ID column**: Select the unique ID field.
-- **Timestamp column**: Select the field used to determine incremental updates.
-- **Sync deleted files**: After this is enabled, deleted records can be removed from the knowledge base index according to the field mapping or cleanup task.
+- **Name**: Enter a connection name for display in RAGFlow.
+- **Host**: Enter the database hostname or IP address reachable from the RAGFlow server.
+- **Port**: Enter the MySQL service port, usually `3306`.
+- **Database**: Enter the database name to read.
+- **Username / Password**: Enter the database account and password. Use an account with read access to the required tables.
+- **SQL Query**: Enter a `SELECT` query to limit the imported rows or columns. Leave it empty to load all tables in the database.
+- **Content Columns**: Enter the column names to use as document text, separated by commas, such as `title,description,content`.
+- **Metadata Columns**: Enter comma-separated column names to store as metadata, such as `category,status`.
+- **ID Column**: Enter a stable, unique record identifier, such as `id`, so records can be identified across synchronizations.
+- **Timestamp Column**: Enter the last-update column, such as `updated_at`, for incremental synchronization.
+- **File Extension**: Enter the extension for generated documents, such as `.txt`, `.md`, or `.html`. Match it to the content format.
+- **Batch Size**: Enter a positive number of records to process per batch.
+- **Sync deleted files**: Enable this to remove synchronized documents when their source records are deleted.
 
-![MySQL](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/MySQL.jpg)
+When using a custom query, use the column names or aliases returned by that query for the column settings. Click **Test connection** to check the configuration, then **Confirm** to create the connection.
+
+![MySQL connection configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/MySQL.jpg)
+
+![MySQL additional configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/MySQL_2.jpg)
 
 ## PostgreSQL
 
@@ -300,9 +305,15 @@ The PostgreSQL data source is used to synchronize table records or query results
 
 **Account version requirements**: Both personal self-built databases and enterprise databases can be used. It is recommended to use a read-only account to connect to the target database tables.
 
-**Configuration parameters**: The configuration fields are the same as those for MySQL, including name, host, port, database, username, password, SQL query, content column, metadata column, ID column, timestamp column, and sync deleted files.
+**Configuration parameters**:
 
-![PostgreSQL](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/PostgreSQL.jpg)
+The fields and column settings are the same as those for **MySQL** above: **Name**, **Host**, **Port**, **Database**, **Username**, **Password**, **SQL Query**, **Content Columns**, **Metadata Columns**, **ID Column**, **Timestamp Column**, **File Extension**, **Batch Size**, and **Sync deleted files**.
+
+Use the PostgreSQL service port, usually `5432`, and PostgreSQL syntax for a custom `SELECT` query. Leave **SQL Query** empty to load all tables. Click **Test connection**, then **Confirm**.
+
+![PostgreSQL connection configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/PostgreSQL.jpg)
+
+![PostgreSQL additional configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/PostgreSQL_2.jpg)
 
 ## BigQuery
 
@@ -314,19 +325,28 @@ The BigQuery data source is used to synchronize table records or query results i
 
 **Configuration parameters**:
 
-- **Name**: Customize the name in RAGFlow to identify this BigQuery connection.
-- **Service account JSON**: Fill in or upload the service account JSON used to access BigQuery.
-- **Project ID**: Fill in the Google Cloud project ID.
-- **Dataset**: Fill in the dataset name.
-- **Table**: Fill in the table name.
-- **SQL query**: Fill in the SQL statement used to read data.
-- **Content column**: Select the field to be written as document content.
-- **Metadata column**: Select the field to be written as metadata.
-- **ID column**: Select the unique ID field.
-- **Timestamp column**: Select the field used to determine incremental updates.
-- **Sync deleted files**: After this is enabled, deleted records can be removed from the knowledge base index according to the field mapping or cleanup task.
+- **Name**: Enter a connection name for display in RAGFlow.
+- **Project ID**: Enter the Google Cloud project ID, such as `my-gcp-project`.
+- **Location**: Enter the BigQuery dataset location, such as `US` or `EU`.
+- **Service Account JSON**: Paste the complete JSON key for a service account with access to the data and permission to run BigQuery jobs.
+- **Dataset ID / Table ID**: Enter the source dataset and table IDs, such as `analytics` and `customers`.
+- **SQL Query**: Enter a GoogleSQL query to select the source data. Leave it empty to use **Dataset ID** and **Table ID**.
+- **Content Columns**: Enter comma-separated result column names to use as document text, such as `name,description,notes`. This field is required.
+- **Metadata Columns**: Enter comma-separated result column names to store as metadata, such as `status,region`.
+- **ID Column**: Enter a stable, unique record identifier, such as `customer_id`.
+- **Timestamp Column**: Enter the last-update column, such as `updated_at`, for incremental synchronization.
+- **Max Bytes Billed**: Enter the maximum bytes a query is allowed to bill. For example, `1073741824` is 1 GiB.
+- **Job Timeout (ms)**: Enter the query job timeout in milliseconds; `300000` is 5 minutes.
+- **Page Size**: Enter the number of query-result rows to fetch per page.
+- **Batch Size**: Enter the number of records to process per synchronization batch.
+- **Use Query Cache**: Enable this to allow BigQuery to reuse eligible cached query results.
+- **Sync deleted files**: Enable this to remove synchronized documents when their source records are deleted.
 
-![BigQuery](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/BigQuery.jpg)
+Use source column names, or result aliases when using a custom query. Click **Test connection**, then **Confirm**.
+
+![BigQuery connection configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/BigQuery.jpg)
+
+![BigQuery additional configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/BigQuery_2.jpg)
 
 ## GitHub
 
@@ -358,16 +378,19 @@ The GitLab data source is used to synchronize GitLab repositories, issues, merge
 
 **Configuration parameters**:
 
-- **Name**: Customize the name in RAGFlow to identify this GitLab connection.
-- **GitLab instance URL**: Fill in the GitLab service address.
-- **Project ID or path**: Fill in the GitLab project ID or project path.
-- **Access token**: Fill in the GitLab access token.
-- **Include merge requests**: Select whether to synchronize merge requests.
-- **Include issues**: Select whether to synchronize issues.
-- **Include repository files**: Select whether to synchronize repository files.
-- **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
+- **Name**: Enter a connection name for display in RAGFlow.
+- **Project Owner**: Enter the user or group namespace that owns the project. Include subgroups when applicable, such as `my-group/my-subgroup`.
+- **Project Name**: Enter the project path name. For `my-group/my-project`, use `my-group` as **Project Owner** and `my-project` as **Project Name**.
+- **GitLab Personal Access Token**: Enter a token with read access to the selected project content.
+- **GitLab URL**: Enter the GitLab instance base URL, such as `https://gitlab.com` or your self-hosted address.
+- **Include Merge Requests**: Enable this to synchronize merge requests.
+- **Include Issues**: Enable this to synchronize issues.
+- **Include Code Files**: Enable this to synchronize repository source files.
+- **Sync deleted files**: Enable this to remove synchronized content deleted from GitLab.
 
-![GitLab](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/GitLab.jpg)
+Select the content types you need, click **Test connection**, then **Confirm**.
+
+![GitLab connection configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/GitLab.jpg)
 
 ## Bitbucket
 
@@ -396,17 +419,18 @@ The Azure DevOps data source is used to synchronize Azure Repos source files and
 
 **Permission requirements**: The personal access token (PAT) must have the **Code (Read)** scope for the target organization.
 
-**Account version requirements**: Both Azure DevOps Services (`dev.azure.com`) and self-hosted Azure DevOps Server are supported. For a self-hosted server, provide the full collection URL as the organization, for example `https://tfs.contoso.com/DefaultCollection`. The URL must use HTTPS, because the personal access token is sent in the `Authorization` header.
+**Account version requirements**: Both Azure DevOps Services (`dev.azure.com`) and self-hosted Azure DevOps Server are supported. For a self-hosted server, provide its service or collection URL as described below. HTTP and HTTPS URLs are accepted; use HTTPS to protect the personal access token sent in the `Authorization` header.
 
 **Configuration parameters**:
 
 - **Name**: Customize the name in RAGFlow to identify this Azure DevOps connection.
-- **Azure DevOps Personal Access Token**: The PAT used to access the organization.
-- **Azure DevOps Organization**: The organization name, or the collection URL of a self-hosted server.
-- **Index Mode**: Choose whether to index every repository in the organization, only selected team projects, or only selected repositories.
+- **Azure DevOps personal access token**: The PAT used to access the organization.
+- **Base URL**: For Azure DevOps Services, this is optional when an organization name is provided and defaults to `https://dev.azure.com`. For self-hosted Azure DevOps Server, provide the service URL here, or provide the full collection URL under **Azure DevOps organization**. If the organization field is empty, Base URL must include the collection path, for example `https://tfs.contoso.com/DefaultCollection`.
+- **Azure DevOps organization**: Enter the hosted organization name, the collection name to append to Base URL, or a full self-hosted collection URL. Leave it empty only when Base URL already includes the collection path. Explicit URLs must use `http://` or `https://`, include a valid host, and contain no query parameters, fragments, or embedded credentials. The same URL restrictions apply to Base URL.
+- **Index Mode**: Choose **Organization**, **Projects**, or **Repositories**. Organization indexes every repository visible to the token in the organization; the other modes show fields for narrowing the scope.
 - **Projects**: Comma separated team project names, used when indexing by project.
 - **Repositories**: Comma separated repositories, used when indexing by repository. Use `project/repo` to disambiguate repositories that share a name across projects.
-- **Content Types**: Choose whether to index source files, pull requests, or both.
+- **Content types**: Choose whether to index source files, pull requests, or both.
 
 Pull request descriptions are re-fetched individually when they reach the 400 character limit imposed by the list endpoint, so long descriptions are indexed in full. Completed and abandoned pull requests are filtered by their close date; active ones are always re-indexed because Azure DevOps exposes no dependable "last updated" timestamp for them.
 - **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
@@ -423,17 +447,27 @@ The Jira data source is used to synchronize issues, comments, and project record
 
 **Configuration parameters**:
 
-- **Name**: Customize the name in RAGFlow to identify this Jira connection.
-- **Jira base URL**: Fill in the Jira site address.
-- **Email or username**: Fill in the Jira account.
-- **API token or password**: Fill in the Jira API token or password.
-- **Project key**: Fill in the Jira project key that needs to be synchronized.
-- **JQL**: Fill in the JQL condition used to limit the synchronization scope.
-- **Sync comments**: Select whether to synchronize issue comments.
-- **Sync attachments**: Select whether to synchronize attachments.
-- **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
+- **Name**: Enter a connection name for display in RAGFlow.
+- **Mode**: Select **Cloud** for Jira Cloud or **Server** for Jira Server / Data Center.
+- **Jira User Email / Jira Username**: In Cloud mode, enter the account email. In Server mode, enter the Jira username.
+- **Jira Base URL**: Enter the Jira site address, such as `https://your-domain.atlassian.net`, without an issue-specific path.
+- **Jira API Token / Jira Password**: In Cloud mode, enter the account's API token. In Server mode, enter its password.
+- **Use Scoped Token**: In Cloud mode, enable this only when the API token was created with explicit scopes.
+- **Project Key**: Enter the project key, such as `RAG`, to restrict synchronization to that project.
+- **Custom JQL**: Enter a complete filter, such as `project = RAG AND updated >= -7d`. When provided, this replaces the **Project Key** filter; include the project condition here if needed.
+- **Batch Size**: Enter a positive number of issues to fetch per batch.
+- **Attachment Size Limit (bytes)**: Enter the maximum attachment size to download; `10485760` is 10 MiB.
+- **Labels to Skip**: Use **+** to add labels. Issues carrying a listed label are excluded.
+- **Comment Email Blacklist**: Use **+** to add author email addresses whose comments should be excluded.
+- **Include Comments**: Enable this to include issue comments.
+- **Include Attachments**: Enable this to download issue attachments within the configured size limit.
+- **Sync deleted files**: Enable this to remove synchronized content deleted from Jira.
 
-![Jira](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/Jira.jpg)
+Click **Test connection** to check the account and site settings, then **Confirm**.
+
+![Jira connection configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/Jira.jpg)
+
+![Jira additional configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/Jira_2.jpg)
 
 ## Asana
 
@@ -741,49 +775,6 @@ The Feishu Wiki data source is used to synchronize downloadable file nodes from 
 - **Batch size**: Set the number of files processed in each batch. The default value is **2**.
 
 
-## Azure DevOps
-
-The Azure DevOps data source is used to synchronize source code and pull request content from Azure DevOps organizations, projects, or repositories to a RAGFlow knowledge base. The synchronization scope and content type can be configured as needed.
-
-**Permission requirements**: The Azure DevOps personal access token must have read access to the target organization, project, or repository. Read access to pull requests is also required when pull request content is synchronized.
-
-**Account version requirements**: An Azure DevOps account and a valid Personal Access Token (PAT) are required.
-
-**Configuration parameters**:
-
-- **Name**: Customize the name in RAGFlow to identify this Azure DevOps connection.
-- **Azure DevOps personal access token**: Fill in the Personal Access Token used to access Azure DevOps.
-- **Base URL**: Fill in the Azure DevOps service URL. The default value is `https://dev.azure.com`.
-- **Azure DevOps organization**: Fill in the Azure DevOps organization to access.
-- **Index mode**: Select the synchronization scope. The options are **Organization**, **Project**, and **Repository**.
-- **Organization**: Index all repositories visible to the token in the specified organization.
-- **Project**: Index content in a specified project. When selected, fill in the **Project** field.
-- **Repository**: Index a specified repository. When selected, fill in the **Repository** field.
-- **Project**: Fill this in when the index mode is **Project**.
-- **Repository**: Fill this in when the index mode is **Repository**.
-- **Content type**: Select the content to synchronize. The options are **Code**, **Pull requests**, and **Both**.
-- **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
-
-
-## Xquik
-
-The Xquik data source is used to search posts on X through Xquik and synchronize matching posts to a RAGFlow knowledge base. Search conditions, result ordering, and pagination settings can be configured to control the synchronized content.
-
-**Permission requirements**: A valid Xquik API key with permission to access the corresponding search API is required.
-
-**Account version requirements**: An account with access to the Xquik API is required. Available data and API usage limits depend on the Xquik service and account configuration.
-
-**Configuration parameters**:
-
-- **Name**: Customize the name in RAGFlow to identify this Xquik connection.
-- **Xquik API key**: Fill in the API key used to access Xquik.
-- **X search query**: Fill in the query used to search posts on X, for example, `ragflow lang:en`.
-- **Result order**: Select the order in which search results are returned, such as **Latest**.
-- **Posts per page**: Set the number of posts retrieved per page. The default value is **100**.
-- **Maximum pages**: Set the maximum number of result pages retrieved during synchronization. The default value is **10**.
-- **Batch size**: Set the number of posts processed in each batch. The default value is **32**.
-
-
 ## WebDAV
 
 The WebDAV data source is used to connect to a WebDAV server and synchronize files from a specified remote path to a RAGFlow knowledge base.
@@ -838,3 +829,21 @@ The Salesforce data source is used to connect to Salesforce and synchronize reco
 - **API version**: Set the Salesforce API version to use. The default value in the current UI is `v59.0`.
 - **Batch size**: Set the number of records processed in each batch. The default value is **2**.
 - **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
+
+## Zotero
+
+Use Zotero to synchronize PDF attachments from a Zotero library into a RAGFlow Dataset for retrieval and question answering about papers and references.
+
+**Permission requirements**: Use a Zotero API key with read access to the target library. Attachment files must be downloadable from the selected storage service. For WebDAV, the account must have read access to the attachment storage.
+
+**Configuration parameters**:
+
+- **Name**: Enter a name that identifies this connection.
+- **Zotero user ID**: Enter the ID of the Zotero user whose library you want to synchronize.
+- **Zotero API key**: Enter the key used to read that library.
+- **Attachment storage**: Choose **Zotero cloud** for attachments stored in Zotero storage, or **WebDAV** for attachments stored on a WebDAV server.
+- When **WebDAV** is selected, complete the server URL, username, and password fields that appear. These fields are required for WebDAV storage.
+- **Batch Size**: Set the number of files processed per batch. The default is `4`.
+- **Sync deleted files**: Enable if files deleted from the source should also be removed from the Dataset index during synchronization.
+
+Click **Test connection** with the completed settings, then **Confirm** to create the connection. Link it to a Dataset using [Add to a Knowledge Base and Sync](./add_to_knowledge_base_and_sync.md). Check synchronization logs and document parsing results on a small sample before importing a large library.

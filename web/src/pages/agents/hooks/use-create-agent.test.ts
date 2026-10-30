@@ -12,7 +12,7 @@ jest.mock('@/hooks/logic-hooks/navigate-hooks', () => ({
 }));
 
 jest.mock('@/hooks/use-agent-request', () => ({
-  useSetAgent: jest.fn(),
+  useCreateAgent: jest.fn(),
 }));
 
 jest.mock('@/pages/agent/utils/dsl-bridge', () => ({
@@ -29,7 +29,7 @@ const mockAgentRequest = require('@/hooks/use-agent-request');
 const mockDslBridge = require('@/pages/agent/utils/dsl-bridge');
 
 const hideCreatingModal = jest.fn();
-const setAgent = jest.fn();
+const createAgent = jest.fn();
 const navigate = jest.fn();
 const navigateToAgent = jest.fn(() => navigate);
 
@@ -52,9 +52,9 @@ beforeEach(() => {
     showModal: jest.fn(),
   });
   mockNavigateHooks.useNavigatePage.mockReturnValue({ navigateToAgent });
-  mockAgentRequest.useSetAgent.mockReturnValue({
+  mockAgentRequest.useCreateAgent.mockReturnValue({
     loading: false,
-    setAgent,
+    createAgent,
   });
 });
 
@@ -62,7 +62,7 @@ describe('useCreateAgentOrPipeline', () => {
   it.each(CreateScenarios)(
     'navigates $flowType to its canvas after creation',
     async ({ flowType, canvasCategory }) => {
-      setAgent.mockResolvedValue({
+      createAgent.mockResolvedValue({
         code: 0,
         data: { id: 'canvas-id' },
       });
@@ -75,7 +75,7 @@ describe('useCreateAgentOrPipeline', () => {
         });
       });
 
-      expect(setAgent).toHaveBeenCalledWith({
+      expect(createAgent).toHaveBeenCalledWith({
         title: 'New agent',
         dsl: {},
         canvas_category: canvasCategory,
@@ -90,7 +90,7 @@ describe('useCreateAgentOrPipeline', () => {
   );
 
   it('stays on the list when creation fails', async () => {
-    setAgent.mockResolvedValue({ code: 1 });
+    createAgent.mockResolvedValue({ code: 1 });
 
     const { result } = renderHook(() => useCreateAgentOrPipeline());
     await act(async () => {

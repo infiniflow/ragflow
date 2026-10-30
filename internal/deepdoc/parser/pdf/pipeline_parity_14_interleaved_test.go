@@ -22,7 +22,7 @@ import (
 // NaiveVerticalMerge before cell fill, and a strictly-NESTED re-detected box
 // ('Hardware' fully inside 'Software Hardware') was CONCATENATED by
 // mergeTwoBoxes into 'Software Hardware Hardware'; Python keeps the longer
-// box only. Fixed by dedupNestedBoxes (table_extract.go), which drops a box
+// box only. Fixed by dedupTableBoxes (table_extract.go), which drops a box
 // strictly nested inside another box whose trimmed text contains it, before
 // the merge.
 //
@@ -136,7 +136,7 @@ func TestPipelineParity14TextTableInterleaved(t *testing.T) {
 			ex = fmt.Sprintf("e.g. %q vs Python %q", dup[0].goVal, dup[0].pyVal)
 		}
 		t.Errorf("table-cell-fill-pre-vs-post-merge-order regression: %d Go cells contain a duplicated token from overlapping-box concatenation, gridSim=%.1f%% (%s). "+
-			"Go must merge overlapping OCR boxes before cell fill, matching Python's construct_table order.",
+			"Duplicate OCR fragments must be removed before cell assignment.",
 			len(dup), gridSim, ex)
 	}
 }

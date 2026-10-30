@@ -35,7 +35,8 @@ var pptxExtract = deepdocoffice.OpenAndExtract
 // ZIP-based OOXML presentations and "ppt" for the legacy binary
 // OLE format.
 type PPTXParser struct {
-	format string
+	format   string
+	textOnly bool
 
 	// TCADP cloud-parsing configuration
 	ParseMethod                    string
@@ -76,8 +77,8 @@ func (p *PPTXParser) ConfigureFromSetup(setup map[string]any) {
 	}
 }
 
-// ParseWithResult emits one JSON item per slide with the slide's
-// plain text.
+// ParseWithResult emits one JSON item per slide with the slide's plain text,
+// tables and media_ref image items. A text-only parser skips images.
 func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	// p == nil guard: the struct is embedded by value in PPTParser and
 	// always created via NewPPTXParser or the "ppt"-format constructor in
@@ -151,10 +152,16 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 			JSON: MapsToItems(itemsFromPlainText(plainText)),
 		}
 	}
-	budget := newEmbeddedMediaBudget()
-	items, err := buildPPTXJSONSections(irJSON, budget)
+	var sink *officeMediaSink
+	if !p.textOnly {
+		sink = newOfficeMediaSink(ctx, officeMediaFormatPPTX)
+	}
+	items, err := buildPPTXJSONSections(irJSON, sink)
 	if err != nil {
 		return ParseResult{Err: err}
+	}
+	if sink != nil && sink.err != nil {
+		return ParseResult{Err: sink.err}
 	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
@@ -174,6 +181,6 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	return ParseResult{
 		File:     map[string]any{"name": filename, "format": effFormat},
 		JSON:     MapsToItems(items),
-		Warnings: budget.warnings(),
+		Warnings: sink.warnings(),
 	}
 }

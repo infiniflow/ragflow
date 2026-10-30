@@ -1,17 +1,17 @@
 ---
 sidebar_position: 9
-title: "Logs: Logs"
-sidebar_label: "Logs: Logs"
+title: "Logs"
+sidebar_label: "Logs"
 slug: /dataset_logs
 sidebar_custom_props:
   categoryIcon: LucideDatabaseZap
 ---
 
-# Logs: Logs
+# Logs
 
 ## Log Overview
 
-**Logs** is used to view execution records of tasks related to the current dataset. The top of the page displays statistics such as **Total files**, **Processing**, and **Downloading**. The lower area is divided into document logs and dataset-level logs by log type. Document logs focus on the processing process of a single document. Dataset-level logs focus on tasks within the entire dataset scope. When troubleshooting, first determine whether the problem occurs in a single document or the entire dataset, then go to the corresponding logs to view details.
+**Logs** shows task execution records for the current dataset. The top of the page displays file, processing, and downloading statistics. Use the **File**, **Dataset**, and **Data source** tabs to inspect document processing, dataset-level tasks, and external data source synchronization respectively.
 
 ## Document Logs
 
@@ -46,13 +46,25 @@ When a dataset-level processing task fails, does not complete for a long time, o
 
 > Tip: For tasks executed on a single document, such as document parsing, view document logs. For tasks executed on the entire dataset, such as **Knowledge Compilation**, view dataset-level logs.
 
+## Data Source Logs
+
+Open **Logs** and select **Data source** to check synchronization tasks for the current dataset. The table shows:
+
+- **Time started**: The time shown for the task record.
+- **Status**: The task's execution status.
+- **Task Type**: `sync` synchronizes content; `prune` removes content deleted from the source.
+- **Summary**: Synchronization progress, results, or error information.
+
+Use this tab when source files are missing or synchronization fails. For parsing failures after synchronization, check **File** logs.
+
 ## Log Troubleshooting Suggestions
 
 When task execution is abnormal or does not complete for a long time, first select the corresponding logs based on task type, then troubleshoot based on task status and log details.
 
 - **Document processing tasks**: View document logs. Document logs record processing tasks for specific documents. Use information such as **Filename**, **Source**, **Ingestion pipeline**, **Task**, and **Status** to confirm which document and processing flow has the exception. For documents processed with **Data Pipeline**, you can also use the entry in **Operations** to view the corresponding pipeline execution result.
 - **Dataset-level processing tasks**: View dataset-level logs. Dataset-level tasks such as **Knowledge Compilation** are recorded here. Use **Processing type** and **Status** to find the corresponding task, and view log details through **Operations**.
+- **Data source synchronization**: Select **Data source** and check **Status**, **Task Type**, and **Summary**.
 - **Task execution failed**: When **Status** is **Failed**, open the corresponding task log details and view the specific error information.
 - **Task does not complete for a long time**: When a task stays in **Pending**, **Running**, or **Schedule** for a long time, first confirm the current task status and start time, then view log details to determine whether the task is still running normally.
 
-> Note: Document logs and dataset-level logs record different types of processing tasks. They are not parent-child logs or summary logs. When troubleshooting, select the corresponding log based on the actual task.
+> Note: File, dataset, and data source logs cover different task types. Select the tab that matches the task you are troubleshooting.
