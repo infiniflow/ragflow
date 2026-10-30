@@ -21,7 +21,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -496,11 +495,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 				return "", false
 			}
 			if raw != nil {
-				mime := http.DetectContentType(raw)
-				if !strings.HasPrefix(mime, "image/") {
-					mime = "image/octet-stream"
-				}
-				return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(raw), true
+				return "data:" + remoteImageMIME(raw) + ";base64," + base64.StdEncoding.EncodeToString(raw), true
 			}
 			return strings.ToLower(src[:strings.IndexByte(src, ',')+1]) + encoded, true
 		}
