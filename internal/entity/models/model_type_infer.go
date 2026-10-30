@@ -31,6 +31,7 @@ const (
 	modelTypeVision    = "vision"
 	modelTypeTTS       = "tts"
 	modelTypeOCR       = "ocr"
+	modelTypeDecision  = "decision"
 )
 
 const (
@@ -119,6 +120,8 @@ func inferModelTypesByName(modelName string) []string {
 		strings.Contains(lowerName, "gpt-4o") ||
 		hasToken("vl", "vlm", "vision", "llava", "internvl", "pixtral", "qvq", "image", "video"):
 		return []string{modelTypeChat, modelTypeVision}
+	case hasToken("decision") || hasToken("nimble", "tev1", "clef") || strings.Contains(lowerName, "clef-flash"):
+		return []string{modelTypeDecision}
 	default:
 		return nil
 	}
