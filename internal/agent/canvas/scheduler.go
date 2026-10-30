@@ -122,7 +122,7 @@ func isKnownPrimitive(name string) bool {
 		return true
 	}
 	switch strings.ToLower(name) {
-	case "begin", "message", "llm", "categorize", "switch",
+	case "begin", "message", "llm", "categorize", "scoredswitch", "switch",
 		"agent", "invoke", "dataoperations", "listoperations",
 		"stringtransform", "variableaggregator", "variableassigner",
 		"loop", "parallel": // macros in BuildWorkflow; the pre-pass absorbs them.

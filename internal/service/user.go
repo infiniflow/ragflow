@@ -797,7 +797,8 @@ func tenantModelSettingUpdates(raw map[string]interface{}) (map[string]interface
 		switch key {
 		case "llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id":
 		case "tenant_llm_id", "tenant_embd_id", "tenant_asr_id", "tenant_img2txt_id", "tenant_rerank_id",
-			"tts_id", "tenant_tts_id", "ocr_id", "tenant_ocr_id", "decision_id", "tenant_decision_id":
+			"tts_id", "tenant_tts_id", "ocr_id", "tenant_ocr_id", "decision_id", "tenant_decision_id",
+			"scoring_id", "tenant_scoring_id":
 			nullable = true
 		default:
 			return nil, fmt.Errorf("unsupported model setting %q", key)

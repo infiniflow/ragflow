@@ -7,6 +7,7 @@ import { z } from 'zod';
 export type OutputType = {
   title: string;
   type?: string;
+  description?: string;
 };
 
 type OutputProps = {
@@ -44,7 +45,12 @@ export function Output({
             key={idx}
             className="bg-background-highlight text-accent-primary rounded-sm px-2 py-1"
           >
-            {x.title}: <span className="text-text-secondary">{x.type}</span>
+            <div>
+              {x.title}: <span className="text-text-secondary">{x.type}</span>
+            </div>
+            {x.description ? (
+              <p className="mt-0.5 text-xs text-text-secondary">{x.description}</p>
+            ) : null}
           </li>
         ))}
       </ul>

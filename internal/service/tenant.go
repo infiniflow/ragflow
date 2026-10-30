@@ -393,6 +393,8 @@ func tenantDefaultModelFields(modelType string) (string, string, entity.ModelTyp
 		// spoken to in the System One protocol (one request, several questions)
 		// and is chosen independently of the answering model.
 		return "decision_id", "tenant_decision_id", entity.ModelTypeDecision, nil
+	case "scoring":
+		return "scoring_id", "tenant_scoring_id", entity.ModelTypeScoring, nil
 	default:
 		return "", "", 0, fmt.Errorf("model type %s is invalid", modelType)
 	}
@@ -470,7 +472,7 @@ func isDefaultModelType(modelType entity.ModelType) bool {
 	switch modelType {
 	case entity.ModelTypeChat, entity.ModelTypeEmbedding, entity.ModelTypeRerank,
 		entity.ModelTypeSpeech2Text, entity.ModelTypeImage2Text, entity.ModelTypeTTS,
-		entity.ModelTypeOCR, entity.ModelTypeDecision:
+		entity.ModelTypeOCR, entity.ModelTypeDecision, entity.ModelTypeScoring:
 		return true
 	default:
 		return false
@@ -614,6 +616,7 @@ func listDefaultModels(ctx context.Context, s *TenantService, membership *entity
 		{modelType: "ocr", modelID: ptrStringValue(membership.OCRID), rowID: membership.TenantOCRID},
 		{modelType: "tts", modelID: ptrStringValue(membership.TTSID), rowID: membership.TenantTTSID},
 		{modelType: "decision", modelID: ptrStringValue(membership.DecisionID), rowID: membership.TenantDecisionID},
+		{modelType: "scoring", modelID: ptrStringValue(membership.ScoringID), rowID: membership.TenantScoringID},
 	}
 	result := make([]ModelItem, 0, len(models))
 	for _, model := range models {

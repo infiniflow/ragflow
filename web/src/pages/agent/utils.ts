@@ -39,6 +39,10 @@ import {
   TypesWithArray,
   WebhookSecurityAuthType,
 } from './constant';
+import {
+  ScoredSwitchEscalateHandleId,
+  showsScoredSwitchEscalateHandle,
+} from './scored-switch';
 import { BeginFormSchemaType } from './form/begin-form/schema';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
@@ -166,6 +170,43 @@ function buildCategorize(edges: Edge[], nodes: Node[], nodeId: string) {
     }, {});
 
     params.category_description = nextCategoryDescription;
+  }
+  return omit(params, 'items');
+}
+
+function buildScoredSwitch(edges: Edge[], nodes: Node[], nodeId: string) {
+  const node = nodes.find((x) => x.id === nodeId);
+  const params = { ...(node?.data.form ?? {}) } as Record<string, any>;
+  if (node && node.data.label === Operator.ScoredSwitch) {
+    const subEdges = edges.filter((x) => x.source === nodeId);
+    const items = (params.items || []) as Array<{
+      name: string;
+      description?: string;
+      uuid: string;
+    }>;
+    const escalateEnabled = showsScoredSwitchEscalateHandle(
+      params.escalate_enabled,
+      params.field_mode,
+    );
+    params.escalate_enabled = escalateEnabled;
+    params.options = items.map((item) => ({
+      name: item.name,
+      description: item.description,
+      uuid: item.uuid,
+      to: filterTargetsBySourceHandleId(subEdges, item.uuid),
+    }));
+    params.escalate_to = escalateEnabled
+      ? filterTargetsBySourceHandleId(subEdges, ScoredSwitchEscalateHandleId)
+      : [];
+    params.field_to =
+      params.field_mode === true
+        ? filterTargetsBySourceHandleId(subEdges, NodeHandleId.End)
+        : [];
+    if (Array.isArray(params.tasks)) {
+      params.tasks = params.tasks.map((task: Record<string, unknown>) =>
+        omit(task, '_key'),
+      );
+    }
   }
   return omit(params, 'items');
 }
@@ -741,6 +782,9 @@ export const buildDslComponentsByGraph = (
         case Operator.Categorize:
           params = buildCategorize(edges, nodes, id);
           break;
+        case Operator.ScoredSwitch:
+          params = buildScoredSwitch(edges, nodes, id);
+          break;
 
         case Operator.Switch: {
           const switchParams = params as ISwitchForm;
@@ -1009,6 +1053,15 @@ export const duplicateNodeForm = (nodeData?: RAGFlowNodeType['data']) => {
       };
       return pre;
     }, {});
+  }
+  if (nodeData?.label === Operator.ScoredSwitch) {
+    form.escalate_to = [];
+    if (Array.isArray(form.options)) {
+      form.options = form.options.map((option: Record<string, any>) => ({
+        ...option,
+        to: [],
+      }));
+    }
   }
 
   return {

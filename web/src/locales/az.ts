@@ -2887,6 +2887,14 @@ Nümunə: Virtual host üslubu`,
         'LLM-i cavab yaratmağa yönəldən komponent. Təlimatın düzgün təyin edildiyinə əmin olun.',
       categorizeDescription:
         'İstifadəçi girişlərini əvvəlcədən müəyyən edilmiş kateqoriyalara ayırmaq üçün LLM-dən istifadə edən komponent. Hər kateqoriya üçün ad, təsvir və nümunələri, həmçinin müvafiq növbəti komponenti göstərdiyinizə əmin olun.',
+      scoredSwitchQuestionRequired: 'Hər əlavə sual üçün təlimat lazımdır',
+      scoredSwitchLevelMinimum: 'Ən azı iki səviyyə əlavə edin',
+      scoredSwitchFieldMinimum: 'Ən azı bir sahə əlavə edin',
+      scoredSwitchFieldNameInvalid: 'Sahə adı hərf və ya alt xətt ilə başlamalıdır',
+      scoredSwitchListItemsRequired: 'Siyahı üçün element növü lazımdır',
+      scoredSwitchEstimateBoundsRequired: 'Qiymətləndirmə üçün minimum və maksimum lazımdır',
+      scoredSwitchForecastRequired: 'Proqnoz üçün üfüq və interval lazımdır',
+      scoredSwitchDecimalsRange: 'Onluqlar 0 ilə 6 arasında olmalıdır',
       relevantDescription:
         'Əvvəlki çıxışın istifadəçinin son sorğusuna uyğun olub-olmadığını qiymətləndirmək üçün LLM-dən istifadə edən komponent. Hər qiymətləndirmə nəticəsi üçün növbəti komponenti göstərdiyinizə əmin olun.',
       rewriteQuestionDescription:

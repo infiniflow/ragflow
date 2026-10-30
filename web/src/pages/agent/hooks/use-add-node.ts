@@ -4,6 +4,7 @@ import humanId from 'human-id';
 import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
+import { v4 as uuid } from 'uuid';
 import { useTranslation } from 'react-i18next';
 import {
   NodeHandleId,
@@ -43,6 +44,7 @@ import {
   initialQueritContentsValues,
   initialQueritValues,
   initialRetrievalValues,
+  initialScoredSwitchValues,
   initialSearXNGValues,
   initialStringTransformValues,
   initialSwitchValues,
@@ -152,6 +154,7 @@ function useAddGroupNode() {
 export const useInitializeOperatorParams = () => {
   const defaultModelDictionary = useFetchDefaultModelDictionary();
   const llmId = defaultModelDictionary.llm_id;
+  const scoringId = defaultModelDictionary.scoring_id;
 
   const initialFormValuesMap = useMemo(() => {
     return {
@@ -160,6 +163,10 @@ export const useInitializeOperatorParams = () => {
       [Operator.Categorize]: {
         ...initialCategorizeValues,
         llm_id: llmId,
+      },
+      [Operator.ScoredSwitch]: {
+        ...initialScoredSwitchValues,
+        llm_id: scoringId,
       },
       [Operator.Message]: initialMessageValues,
       [Operator.DuckDuckGo]: initialDuckValues,
@@ -228,11 +235,20 @@ export const useInitializeOperatorParams = () => {
       [Operator.DocGenerator]: initialDocGeneratorValues,
       [Operator.ExcelProcessor]: {},
     } satisfies Record<Operator, unknown>;
-  }, [defaultModelDictionary, llmId]);
+  }, [defaultModelDictionary, llmId, scoringId]);
 
   const initializeOperatorParams = useCallback(
     (operatorName: Operator, position: Position) => {
       const initialValues = initialFormValuesMap[operatorName];
+      if (operatorName === Operator.ScoredSwitch) {
+        return {
+          ...initialValues,
+          items: [
+            { name: 'option_a', description: '', uuid: uuid() },
+            { name: 'option_b', description: '', uuid: uuid() },
+          ],
+        };
+      }
       if (isBottomSubAgent(operatorName, position)) {
         return {
           ...initialValues,
