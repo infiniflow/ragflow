@@ -464,6 +464,100 @@ func TestMarkdownParserIngestionBudgetRejectionCountedOnce(t *testing.T) {
 	}
 }
 
+// markdownTableTexts returns the cell texts of every table item in res.
+func markdownTableTexts(t *testing.T, res ParseResult) []string {
+	t.Helper()
+	var texts []string
+	for _, item := range ItemsToMaps(res.JSON) {
+		table, ok := item["table"].(*entity.TableData)
+		if !ok {
+			continue
+		}
+		for _, row := range table.CellTexts() {
+			texts = append(texts, row...)
+		}
+	}
+	return texts
+}
+
+// TestMarkdownParserIngestionKeepsLocalTableImageReference pins that an
+// unresolved table image keeps its Markdown reference: ParseTableHTML's
+// cellText ignores <img>, so dropping the image without a text fallback
+// silently loses the cell's content.
+func TestMarkdownParserIngestionKeepsLocalTableImageReference(t *testing.T) {
+	ctx, cache := recordingMediaContext()
+	md := "| Field | Value |\n|---|---|\n| Figure | ![fig](images/a.png) |\n"
+	res := markdownIngestionParser(t).ParseWithResult(ctx, "table.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(cache.puts) != 0 {
+		t.Fatalf("cache puts = %+v, want none", cache.puts)
+	}
+	if images := markdownImageItems(t, res); len(images) != 0 {
+		t.Fatalf("image items = %+v, want none", images)
+	}
+	joined := strings.Join(markdownTableTexts(t, res), "\n")
+	if !strings.Contains(joined, "![fig](images/a.png)") {
+		t.Fatalf("table cell lost the image reference: %q", joined)
+	}
+}
+
+// TestMarkdownParserIngestionKeepsFailedRemoteTableImageAlt pins the text
+// fallback for a table image that could not be downloaded.
+func TestMarkdownParserIngestionKeepsFailedRemoteTableImageAlt(t *testing.T) {
+	allowLoopbackImages(t)
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	ctx, cache := recordingMediaContext()
+
+	md := "| Field | Value |\n|---|---|\n| Figure | ![diagram](" + server.URL + "/gone.png) |\n"
+	res := markdownIngestionParser(t).ParseWithResult(ctx, "table.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("remote fetches = %d, want 1", hits.Load())
+	}
+	if len(cache.puts) != 0 {
+		t.Fatalf("cache puts = %+v, want none", cache.puts)
+	}
+	joined := strings.Join(markdownTableTexts(t, res), "\n")
+	if !strings.Contains(joined, "diagram") {
+		t.Fatalf("table cell lost the image alt text: %q", joined)
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "could not be downloaded") {
+		t.Fatalf("missing remote download warning: %v", res.Warnings)
+	}
+}
+
+// TestMarkdownParserIngestionKeepsInvalidDataURITableImageAlt pins the text
+// fallback for a table image whose data URI cannot be decoded, and that the
+// invalid source is counted once.
+func TestMarkdownParserIngestionKeepsInvalidDataURITableImageAlt(t *testing.T) {
+	ctx, cache := recordingMediaContext()
+	md := "| Field | Value |\n|---|---|\n| Figure | ![broken](data:image/png;base64,!!!) |\n"
+	res := markdownIngestionParser(t).ParseWithResult(ctx, "table.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if cache.putCalls != 0 {
+		t.Fatalf("cache Put calls = %d, want 0", cache.putCalls)
+	}
+	joined := strings.Join(markdownTableTexts(t, res), "\n")
+	if !strings.Contains(joined, "broken") || strings.Contains(joined, "base64") {
+		t.Fatalf("table cell text = %q, want the alt text without the data URI", joined)
+	}
+	warnings := strings.Join(res.Warnings, "\n")
+	if got := strings.Count(warnings, "unresolved image reference"); got != 1 {
+		t.Fatalf("unresolved warnings = %d, want 1: %v", got, res.Warnings)
+	}
+}
+
 // TestMarkdownParserIngestionStopsRemoteDownloadsAfterByteBudget pins that an
 // unknown-size download rejected by the run byte budget stops later downloads
 // before they reach the network.
