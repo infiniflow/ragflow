@@ -9,7 +9,7 @@ export default {
       delete: 'O‘chirish',
       deleteModalTitle: 'Buni o‘chirishni xohlaysizmi ?',
       deleteThem: 'Bularni o‘chirishni xohlaysizmi ?',
-      removeModalTitle: 'Buni olib tashlashni xohlaysizmi ?',
+      removeIt: 'Buni olib tashlashni xohlaysizmi ?',
       ok: 'Ok',
       cancel: 'Bekor qilish',
       yes: 'Ha',
