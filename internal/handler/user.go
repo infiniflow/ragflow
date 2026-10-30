@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
-	"strconv"
 	"time"
 
 	"ragflow/internal/service"
@@ -294,14 +293,9 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 // @Router /api/v1/users/{id} [get]
 func (h *UserHandler) GetUserByID(c *gin.Context) {
 	ctx := c.Request.Context()
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 32)
-	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, false, "invalid user id")
-		return
-	}
+	id := c.Param("id")
 
-	user, code, err := h.userService.GetUserByID(ctx, uint(id))
+	user, code, err := h.userService.GetUserByID(ctx, id)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
