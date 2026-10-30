@@ -20,10 +20,10 @@ import (
 	"testing"
 )
 
-func TestDecodeHTMLImageSourceCaseAndPadding(t *testing.T) {
-	mime, data, ok := DecodeHTMLImageSource("DATA:IMAGE/PNG;BASE64,aGVsbG8")
+func TestDecodeDataImageSourceCaseAndPadding(t *testing.T) {
+	mime, data, ok := DecodeDataImageSource("DATA:IMAGE/PNG;BASE64,aGVsbG8")
 	if !ok {
-		t.Fatal("DecodeHTMLImageSource rejected a valid case-insensitive data URI")
+		t.Fatal("DecodeDataImageSource rejected a valid case-insensitive data URI")
 	}
 	if mime != "image/png" {
 		t.Errorf("mime = %q, want image/png", mime)
@@ -33,7 +33,7 @@ func TestDecodeHTMLImageSourceCaseAndPadding(t *testing.T) {
 	}
 }
 
-func TestDecodeHTMLImageSourceRejectsInvalidAndOversizedHeaders(t *testing.T) {
+func TestDecodeDataImageSourceRejectsInvalidAndOversizedHeaders(t *testing.T) {
 	for _, src := range []string{
 		"data:image/png;base64,",
 		"data:image/png;base64,YQ=",
@@ -41,21 +41,21 @@ func TestDecodeHTMLImageSourceRejectsInvalidAndOversizedHeaders(t *testing.T) {
 		"data:image/png;base64,G0==JbjQ",
 		"data:image/png;" + strings.Repeat("x", 200) + ",aGVsbG8=",
 	} {
-		if _, _, ok := DecodeHTMLImageSource(src); ok {
-			t.Errorf("DecodeHTMLImageSource(%q) succeeded", src)
+		if _, _, ok := DecodeDataImageSource(src); ok {
+			t.Errorf("DecodeDataImageSource(%q) succeeded", src)
 		}
 	}
 }
 
-func TestNormalizeHTMLImageSourceMatchesDecode(t *testing.T) {
+func TestNormalizeDataImageSourceMatchesDecode(t *testing.T) {
 	src := "data:image/png;base64,aGVs\nbG8"
-	normalized, size, normalizedSum, ok := NormalizeHTMLImageSource(src)
+	normalized, size, normalizedSum, ok := NormalizeDataImageSource(src)
 	if !ok {
-		t.Fatal("NormalizeHTMLImageSource rejected a valid payload")
+		t.Fatal("NormalizeDataImageSource rejected a valid payload")
 	}
-	mime, data, ok := DecodeHTMLImageSource(src)
+	mime, data, ok := DecodeDataImageSource(src)
 	if !ok {
-		t.Fatal("DecodeHTMLImageSource rejected a valid payload")
+		t.Fatal("DecodeDataImageSource rejected a valid payload")
 	}
 	if normalized != "data:image/png;base64,aGVsbG8=" {
 		t.Fatalf("normalized = %q", normalized)
@@ -67,10 +67,10 @@ func TestNormalizeHTMLImageSourceMatchesDecode(t *testing.T) {
 	}
 }
 
-// TestHTMLImageDecodedSizeMatchesDecode checks that the allocation-free
-// preflight accepts exactly what DecodeHTMLImageSource accepts and reports the
+// TestDataImageDecodedSizeMatchesDecode checks that the allocation-free
+// preflight accepts exactly what DecodeDataImageSource accepts and reports the
 // same decoded size, so budget admission never diverges from the actual write.
-func TestHTMLImageDecodedSizeMatchesDecode(t *testing.T) {
+func TestDataImageDecodedSizeMatchesDecode(t *testing.T) {
 	cases := []struct {
 		src  string
 		want int // -1 means the source is malformed
@@ -90,10 +90,10 @@ func TestHTMLImageDecodedSizeMatchesDecode(t *testing.T) {
 		{"data:image/png;" + strings.Repeat("x", 200) + ",aGVsbG8=", -1},
 	}
 	for _, tc := range cases {
-		size, ok := HTMLImageDecodedSize(tc.src)
-		_, data, decodeOK := DecodeHTMLImageSource(tc.src)
+		size, ok := DataImageDecodedSize(tc.src)
+		_, data, decodeOK := DecodeDataImageSource(tc.src)
 		if ok != (tc.want >= 0) {
-			t.Errorf("%q: HTMLImageDecodedSize ok = %v, want %v", tc.src, ok, tc.want >= 0)
+			t.Errorf("%q: DataImageDecodedSize ok = %v, want %v", tc.src, ok, tc.want >= 0)
 			continue
 		}
 		if ok != decodeOK {
@@ -106,27 +106,16 @@ func TestHTMLImageDecodedSizeMatchesDecode(t *testing.T) {
 	}
 }
 
-// TestHTMLImageDecodedSizeIgnoresPerImageLimit checks that the preflight
+// TestDataImageDecodedSizeIgnoresPerImageLimit checks that the preflight
 // reports the size of a syntactically valid payload even when it exceeds the
 // configured per-image limit, leaving the limit decision to the caller.
-func TestHTMLImageDecodedSizeIgnoresPerImageLimit(t *testing.T) {
-	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "2")
-	size, ok := HTMLImageDecodedSize("data:image/png;base64,aGVsbG8=")
+func TestDataImageDecodedSizeIgnoresPerImageLimit(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_IMAGE_MAX_BYTES", "2")
+	size, ok := DataImageDecodedSize("data:image/png;base64,aGVsbG8=")
 	if !ok || size != 5 {
 		t.Fatalf("size, ok = %d, %v, want 5, true", size, ok)
 	}
-	if size <= HTMLImageMaxBytes() {
-		t.Fatalf("size %d does not exceed the configured limit %d", size, HTMLImageMaxBytes())
-	}
-}
-
-func TestHTMLImageLimitDefaultsAndConfiguration(t *testing.T) {
-	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "")
-	if got := HTMLImageMaxBytes(); got != 32<<20 {
-		t.Fatalf("default = %d", got)
-	}
-	t.Setenv("RAGFLOW_HTML_IMAGE_MAX_BYTES", "67108864")
-	if got := HTMLImageMaxBytes(); got != 64<<20 {
-		t.Fatalf("configured = %d", got)
+	if size <= ImageMaxBytes() {
+		t.Fatalf("size %d does not exceed the configured limit %d", size, ImageMaxBytes())
 	}
 }

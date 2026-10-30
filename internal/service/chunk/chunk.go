@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -657,18 +658,12 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 			return nil, common.CodeDataError, fmt.Errorf("you don't own the document %s", docID)
 		}
 
-		task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, dao.DB, docID)
-		if err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("get ingestion task for %s: %w", docID, err)
-		}
-		if task == nil || task.Status == common.COMPLETED ||
-			task.Status == common.STOPPED || task.Status == common.FAILED {
-			return &service.StopParsingResponse{
-				Data: map[string]interface{}{"error_code": docStopParsingInvalidStateErrorCode},
-			}, common.CodeDataError, fmt.Errorf("%s", docStopParsingInvalidStateMessage)
-		}
-
 		if err = s.cancelAllTasksOfDoc(ctx, doc); err != nil {
+			if errors.Is(err, document.ErrParseNotRunning) {
+				return &service.StopParsingResponse{
+					Data: map[string]interface{}{"error_code": docStopParsingInvalidStateErrorCode},
+				}, common.CodeDataError, fmt.Errorf("%s", docStopParsingInvalidStateMessage)
+			}
 			return nil, common.CodeServerError, err
 		}
 		// CancelDocParse (inside cancelAllTasksOfDoc) already issues

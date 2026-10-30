@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	deepdocoffice "ragflow/internal/deepdoc/parser/office"
+	"ragflow/internal/parser/media"
 )
 
 // docxExtract is a test seam for the native office_oxide extraction. It
@@ -98,7 +99,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	// Extract IR JSON for section building and embedded-image extraction.
 	// The budget bounds image payloads so the downstream VLM enhancement
 	// stays within limits.
-	budget := newEmbeddedMediaBudget()
+	budget := media.NewBudget()
 	if irJSON != "" {
 		figures := extractDOCXFiguresFromIR(irJSON, budget)
 		if len(figures) > 0 {
@@ -145,7 +146,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	return ParseResult{
 		File:     fileMeta,
 		JSON:     MapsToItems(sections),
-		Warnings: budget.warnings(),
+		Warnings: budget.Warnings(),
 	}
 }
 
