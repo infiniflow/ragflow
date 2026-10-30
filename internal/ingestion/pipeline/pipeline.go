@@ -37,6 +37,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var _ mediacache.Backend = (*kvrocks.Client)(nil)
+
 // Pipeline is a compiled ingestion canvas plus task-scoped metadata.
 type Pipeline struct {
 	taskID     string
@@ -111,6 +113,10 @@ func WithProgressSink(s ProgressSink) PipelineOption {
 // It accepts either the inner canvas DSL or the template wrapper whose
 // top-level `dsl` field carries that canvas.
 func NewPipelineFromDSL(dsl []byte, taskID string, opts ...PipelineOption) (*Pipeline, error) {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return nil, errors.New("pipeline: task id is required")
+	}
 	// UnwrapCanvasDSL is the single source of truth for stripping the
 	// optional {"dsl": {...}} canvas envelope; it also reports a nil/unparseable
 	// DSL.
@@ -270,11 +276,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	globals.SetTaskID(runCtx, p.taskID)
 	mediaCache := p.media
 	if mediaCache == nil && p.kv != nil {
-		scope := p.taskID
-		if scope == "" {
-			scope = p.documentID
-		}
-		mediaCache = mediacache.New(p.kv, scope)
+		mediaCache = mediacache.New(p.kv, p.taskID)
 	}
 	if mediaCache != nil {
 		runCtx = media.WithCache(runCtx, mediaCache)

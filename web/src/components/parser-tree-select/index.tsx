@@ -4,9 +4,11 @@ import {
   ParserOptionKind,
 } from '@/hooks/use-parser-options';
 import { cn } from '@/lib/utils';
-import { AlertCircle, TriangleAlert } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ParserUnavailableLabel } from '../parser-unavailable-label';
+import { PipelineVersionLabel } from '../pipeline-version-label';
 import { TreeSelect, TreeSelectNode } from '../tree-select';
 import { useParserTreeData } from './use-parser-tree-data';
 
@@ -74,13 +76,26 @@ export function ParserTreeSelect({
   );
 
   // Reuse the leaf's rich label (title + secondary alias / builtin tag) for
-  // the closed-select display. While the option list is still loading the
-  // node is undefined — fall back to the placeholder instead of a blank.
+  // the closed-select display, except for aliased versions: there the trigger
+  // caps the alias at 30% of its width with an ellipsis (the dropdown row
+  // keeps the full alias). While the option list is still loading the node is
+  // undefined — fall back to the placeholder instead of a blank.
   const renderSelected = useCallback(
-    (node: TreeSelectNode | undefined) =>
-      node
-        ? (node.label ?? node.title)
-        : (placeholder ?? t('common.pleaseSelect')),
+    (node: TreeSelectNode | undefined) => {
+      if (!node) return placeholder ?? t('common.pleaseSelect');
+      const alias = node.data?.alias;
+      if (alias) {
+        return (
+          <PipelineVersionLabel
+            title={node.data?.title ?? ''}
+            alias={alias}
+            className="w-full"
+            aliasClassName="max-w-[30%]"
+          />
+        );
+      }
+      return node.label ?? node.title;
+    },
     [placeholder, t],
   );
 
@@ -88,28 +103,30 @@ export function ParserTreeSelect({
   // (e.g. a deleted pipeline or pruned version) and options have finished
   // loading, render a localized "unavailable" label instead of the raw
   // internal value.
-  const renderMissingParser = useCallback(
-    () => (
-      <span className="flex items-center gap-1.5">
-        <TriangleAlert className="size-4 flex-shrink-0" />
-        <span className="truncate">
-          {t('knowledgeConfiguration.parserOptionUnavailable', {
-            defaultValue: 'unavailable',
-          })}
-        </span>
-      </span>
-    ),
-    [t],
-  );
+  const renderMissingParser = useCallback(() => <ParserUnavailableLabel />, []);
 
-  // The outdated icon is pure decoration (no click action); clicks pass
-  // through to the trigger and open the dropdown as usual. It is hidden while
-  // the value is already reported as missing — a deleted pin is the stronger
-  // signal.
+  // The outdated icon is a pure hint. The Radix tooltip trigger renders a
+  // raw <button> with no `type`, which inside the surrounding forms (dataset
+  // settings, document pipeline dialog) defaults to type="submit" — clicking
+  // the icon would submit the form, and stopPropagation alone cannot cancel
+  // that native default action. type="button" removes it, while the click
+  // handlers still swallow the event before it bubbles to the TreeSelect
+  // trigger, so the click neither toggles the dropdown nor triggers the lazy
+  // version fetches that follow. It is hidden while the value is already
+  // reported as missing — a deleted pin is the stronger signal.
+  const stopHintClick = useCallback((e: React.SyntheticEvent) => {
+    e.stopPropagation();
+  }, []);
+
   const trailingAddon =
     outdated && (loading || selectedLeafExists) ? (
-      <RAGFlowTooltip tooltip={t('flow.version.outdated')}>
-        <AlertCircle className="size-4 text-destructive flex-shrink-0" />
+      <RAGFlowTooltip
+        tooltip={t('flow.version.outdated')}
+        type="button"
+        onClick={stopHintClick}
+        onPointerDown={stopHintClick}
+      >
+        <AlertCircle className="size-4 flex-shrink-0 text-state-warning" />
       </RAGFlowTooltip>
     ) : undefined;
 

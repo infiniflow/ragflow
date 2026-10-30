@@ -86,10 +86,12 @@ export const getDocumentProgressMessage = (
 ) => document.latest_ingestion_event?.message || '-';
 
 /**
- * Label shown in the dataset table's parse column. A built-in pipeline renders
- * its parser id with the first letter capitalized ("general" -> "General"); a
- * canvas pipeline keeps the user-chosen title (falling back to the raw id)
- * untouched. "naive" is the legacy alias of the built-in general pipeline.
+ * Parser label for a document. A built-in pipeline renders its parser id with
+ * the first letter capitalized ("general" -> "General"); a canvas pipeline
+ * keeps the user-chosen title (falling back to the raw id) untouched. "naive"
+ * is the legacy alias of the built-in general pipeline. The parse column shows
+ * this for built-in parsers, and as the fallback for pipeline documents until
+ * their pipeline version resolves (see useDocumentPipelineVersion).
  */
 export const getDocumentParserLabel = (
   document: Pick<
@@ -239,6 +241,7 @@ const VisualSwitchSuffixes = new Set([
   'jpeg',
   'png',
   'tif',
+  'tiff',
   'gif',
   'bmp',
   'pcx',

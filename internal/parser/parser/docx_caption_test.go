@@ -39,7 +39,7 @@ func TestBuildDOCXJSONSections_TableCaption_ByHeading(t *testing.T) {
 		`{"type":"heading","level":1,"content":[{"type":"text","text":"设备台账"}]}`,
 		docxCaptionTableBody,
 	)
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, nil)
 	if got := docxCaptionFindTableCaption(t, sections); got != "Table Location: 设备台账" {
 		t.Errorf("caption = %q, want %q", got, "Table Location: 设备台账")
 	}
@@ -55,7 +55,7 @@ func TestBuildDOCXJSONSections_TableCaption_NestedHeading(t *testing.T) {
 		`{"type":"heading","level":3,"content":[{"type":"text","text":"H3"}]}`,
 		docxCaptionTableBody,
 	)
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, nil)
 	if got := docxCaptionFindTableCaption(t, sections); got != "Table Location: H1 > H2 > H3" {
 		t.Errorf("caption = %q, want %q", got, "Table Location: H1 > H2 > H3")
 	}
@@ -67,7 +67,7 @@ func TestBuildDOCXJSONSections_TableCaption_HeadingAfterTable(t *testing.T) {
 		docxCaptionTableBody,
 		`{"type":"heading","level":1,"content":[{"type":"text","text":"后续标题"}]}`,
 	)
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, nil)
 	if got := docxCaptionFindTableCaption(t, sections); got != "" {
 		t.Errorf("table should have no caption when heading is after it, got %q", got)
 	}
@@ -83,7 +83,7 @@ func TestBuildDOCXJSONSections_TableCaption_SiblingHeadingSupersedes(t *testing.
 		`{"type":"heading","level":2,"content":[{"type":"text","text":"H2b"}]}`,
 		docxCaptionTableBody,
 	)
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, nil)
 	if got := docxCaptionFindTableCaption(t, sections); got != "Table Location: H1 > H2b" {
 		t.Errorf("caption = %q, want %q", got, "Table Location: H1 > H2b")
 	}
@@ -99,7 +99,7 @@ func TestBuildDOCXJSONSections_TableCaption_DeeperHeadingAfterSibling(t *testing
 		`{"type":"heading","level":3,"content":[{"type":"text","text":"H3b"}]}`,
 		docxCaptionTableBody,
 	)
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, nil)
 	if got := docxCaptionFindTableCaption(t, sections); got != "Table Location: H2b > H3b" {
 		t.Errorf("caption = %q, want %q", got, "Table Location: H2b > H3b")
 	}
@@ -113,7 +113,7 @@ func TestBuildDOCXJSONSections_TableCaption_EmptyHeadingIgnored(t *testing.T) {
 		`{"type":"heading","level":2,"content":[{"type":"text","text":"  "}]}`,
 		docxCaptionTableBody,
 	)
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, nil)
 	if got := docxCaptionFindTableCaption(t, sections); got != "Table Location: H1" {
 		t.Errorf("caption = %q, want %q", got, "Table Location: H1")
 	}
@@ -126,7 +126,7 @@ func TestBuildDOCXJSONSections_TableCaption_OutlineSpansSections(t *testing.T) {
 		{"title":"","elements":[{"type":"heading","level":1,"content":[{"type":"text","text":"第一章"}]}]},
 		{"title":"","elements":[` + docxCaptionTableBody + `]}
 	]}`
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, nil)
 	if got := docxCaptionFindTableCaption(t, sections); got != "Table Location: 第一章" {
 		t.Errorf("caption = %q, want %q", got, "Table Location: 第一章")
 	}
@@ -139,7 +139,7 @@ func TestBuildDOCXJSONSections_TableCaption_PlainParagraphNotCaption(t *testing.
 		`{"type":"paragraph","content":[{"type":"text","text":"设备流转明细"}]}`,
 		docxCaptionTableBody,
 	)
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, nil)
 	if got := docxCaptionFindTableCaption(t, sections); got != "" {
 		t.Errorf("plain paragraph must not become a caption, got %q", got)
 	}
@@ -147,7 +147,7 @@ func TestBuildDOCXJSONSections_TableCaption_PlainParagraphNotCaption(t *testing.
 
 // Corner: empty IR yields no sections.
 func TestBuildDOCXJSONSections_TableCaption_Empty(t *testing.T) {
-	sections := buildDOCXJSONSections(`{"sections":[]}`, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(`{"sections":[]}`, nil)
 	if len(sections) != 0 {
 		t.Errorf("empty IR should yield no sections, got %d", len(sections))
 	}
@@ -161,7 +161,7 @@ func TestBuildDOCXJSONSections_TableCaption_ExplicitPreferredOverLocation(t *tes
 		`{"type":"heading","level":1,"content":[{"type":"text","text":"设备台账"}]}`,
 		docxCaptionTableBody,
 	)
-	sections := buildDOCXJSONSectionsWithCaptions(ir, newEmbeddedMediaBudget(), []string{"设备流转明细"})
+	sections := buildDOCXJSONSectionsWithCaptions(ir, nil, []string{"设备流转明细"})
 	if got := docxCaptionFindTableCaption(t, sections); got != "设备流转明细" {
 		t.Errorf("explicit caption = %q, want %q", got, "设备流转明细")
 	}
@@ -170,7 +170,7 @@ func TestBuildDOCXJSONSections_TableCaption_ExplicitPreferredOverLocation(t *tes
 // An explicit caption is attached even when the table sits under no heading.
 func TestBuildDOCXJSONSections_TableCaption_ExplicitWithNoHeading(t *testing.T) {
 	ir := docxCaptionTableIR(docxCaptionTableBody)
-	sections := buildDOCXJSONSectionsWithCaptions(ir, newEmbeddedMediaBudget(), []string{"设备流转明细"})
+	sections := buildDOCXJSONSectionsWithCaptions(ir, nil, []string{"设备流转明细"})
 	if got := docxCaptionFindTableCaption(t, sections); got != "设备流转明细" {
 		t.Errorf("explicit caption = %q, want %q", got, "设备流转明细")
 	}
@@ -182,7 +182,7 @@ func TestBuildDOCXJSONSections_TableCaption_BlankDoesNotOverrideLocation(t *test
 		`{"type":"heading","level":1,"content":[{"type":"text","text":"设备台账"}]}`,
 		docxCaptionTableBody,
 	)
-	sections := buildDOCXJSONSectionsWithCaptions(ir, newEmbeddedMediaBudget(), []string{""})
+	sections := buildDOCXJSONSectionsWithCaptions(ir, nil, []string{""})
 	if got := docxCaptionFindTableCaption(t, sections); got != "Table Location: 设备台账" {
 		t.Errorf("caption = %q, want %q", got, "Table Location: 设备台账")
 	}

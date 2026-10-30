@@ -1,5 +1,5 @@
 #
-#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -63,12 +63,14 @@ class RAGFlow:
         permission: str = "me",
         parser_config: Optional[DataSet.ParserConfig] = None,
         language: Optional[str] = None,
+        *,
+        pipeline_version_id: str | None = None,
     ) -> DataSet:
         """Create a dataset with a builtin parser or an ingestion pipeline.
 
         ``parse_type=1`` selects a builtin parser and defaults ``parser_id`` to
         ``"general"``. ``parse_type=2`` selects an ingestion pipeline and requires
-        ``pipeline_id``.
+        ``pipeline_id`` and a pinned ``pipeline_version_id``.
         """
         if parser_id is not None and not isinstance(parser_id, str):
             raise ValueError("parser_id must be a string")
@@ -104,6 +106,9 @@ class RAGFlow:
             payload["parser_config"] = parser_config.to_json()
         if language is not None:
             payload["language"] = language
+
+        if pipeline_version_id is not None:
+            payload["pipeline_version_id"] = pipeline_version_id
 
         res = self.post("/datasets", payload)
         res = res.json()

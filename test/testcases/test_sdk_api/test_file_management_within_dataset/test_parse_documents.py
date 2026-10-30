@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,121 +13,173 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import pytest
-from common import bulk_upload_documents, list_all_documents
-from ragflow_sdk import DataSet
+from ragflow_sdk.modules.dataset import DataSet
 from ragflow_sdk.modules.document import Document
-from utils import wait_for
 
 
-@wait_for(30, 1, "Document parsing timeout")
-def condition(_dataset: DataSet, _document_ids: list[str] = None):
-    documents = _dataset.list_documents(page_size=100)
+def _document_rows(dataset, document_ids):
+    rows = []
+    max_pages = len(document_ids) // 100 + 1
+    for page in range(1, max_pages + 1):
+        response = dataset.rag.get(
+            f"/datasets/{dataset.id}/documents",
+            params={"ids": document_ids, "page": page, "page_size": 100},
+        ).json()
+        if response.get("code") != 0:
+            raise AssertionError(response.get("message"))
+        batch = response["data"]["docs"]
+        rows.extend(batch)
+        if len(batch) < 100:
+            return rows
+    raise AssertionError(f"Document ID filter exceeded the expected {max_pages} pages")
 
-    if _document_ids is None:
-        for document in documents:
-            if document.run != "DONE":
-                return False
-        return True
 
-    target_ids = set(_document_ids)
-    for document in documents:
-        if document.id in target_ids:
-            if document.run != "DONE":
-                return False
-    return True
-
-
-def validate_document_details(dataset, document_ids):
+def _wait_for_terminal_statuses(dataset, document_ids, timeout, previous_event_ids=None):
+    deadline = time.monotonic() + timeout
     target_ids = set(document_ids)
-    found_ids = set()
-    for document in list_all_documents(dataset):
-        if document.id in target_ids:
-            found_ids.add(document.id)
-            assert document.run == "DONE"
-            assert len(document.process_begin_at) > 0
-            assert document.process_duration > 0
-            assert document.progress > 0
-            assert "Task done" in document.progress_msg
-    assert found_ids == target_ids
+    terminal = {"COMPLETED", "STOPPED", "FAILED"}
+    rows = {}
+    while time.monotonic() < deadline:
+        rows = {row["id"]: row for row in _document_rows(dataset, document_ids)}
+        terminal_rows = rows.keys() == target_ids and all(row.get("ingestion_status") in terminal for row in rows.values())
+        new_events = previous_event_ids is None or all(
+            isinstance(row.get("latest_ingestion_event"), dict) and row["latest_ingestion_event"].get("id") != previous_event_ids[doc_id] for doc_id, row in rows.items()
+        )
+        if terminal_rows and new_events:
+            return rows
+        time.sleep(min(1, max(0, deadline - time.monotonic())))
+    statuses = {doc_id: row.get("ingestion_status") for doc_id, row in rows.items()}
+    raise AssertionError(f"Parsing did not reach a terminal state within {timeout}s: {statuses}")
 
 
+def _assert_completed(rows, document_ids):
+    assert set(rows) == set(document_ids)
+    for row in rows.values():
+        assert row["ingestion_status"] == "COMPLETED"
+        assert row["process_begin_at"]
+        assert row["process_duration"] > 0
+        assert row["progress"] >= 1
+        assert row["chunk_count"] >= 0
+        assert row["token_count"] >= 0
+
+
+@pytest.mark.integration
 class TestDocumentsParse:
     @pytest.mark.parametrize(
-        "payload, expected_message",
+        "document_ids, expected_message",
         [
-            pytest.param(None, "AttributeError", marks=pytest.mark.skip),
-            pytest.param({"document_ids": []}, "`document_ids` is required", marks=pytest.mark.p3),
-            pytest.param({"document_ids": ["invalid_id"]}, "Documents not found: ['invalid_id']", marks=pytest.mark.p3),
-            pytest.param({"document_ids": ["\n!?。；！？\"'"]}, "Documents not found: ['\\n!?。；！？\"\\'']", marks=pytest.mark.p3),
-            pytest.param("not json", "AttributeError", marks=pytest.mark.skip),
-            pytest.param(lambda r: {"document_ids": r[:1]}, "", marks=pytest.mark.p3),
-            pytest.param(lambda r: {"document_ids": r}, "", marks=pytest.mark.p3),
+            (None, "`document_ids` is required"),
+            ([], "`document_ids` is required"),
+            (["invalid_id"], "documents not found: [invalid_id]"),
+            (["\n!?。；！？\"'"], "documents not found: ["),
+            ("not json", "Invalid request body"),
         ],
     )
-    def test_basic_scenarios(self, add_documents_func, payload, expected_message):
-        dataset, documents = add_documents_func
-        if callable(payload):
-            payload = payload([doc.id for doc in documents])
+    def test_invalid_document_ids(self, add_documents_func, document_ids, expected_message):
+        dataset, _documents = add_documents_func
+        with pytest.raises(Exception) as exc_info:
+            dataset.async_parse_documents(document_ids=document_ids)
+        assert expected_message in str(exc_info.value)
 
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                dataset.async_parse_documents(**payload)
-            assert expected_message in str(exception_info.value), str(exception_info.value)
-        else:
-            dataset.async_parse_documents(**payload)
-            condition(dataset, payload["document_ids"])
-            validate_document_details(dataset, payload["document_ids"])
+    @pytest.mark.parametrize("selection", ["one", "all"])
+    def test_parse_valid_documents(self, add_documents_func, integration_settings, selection):
+        dataset, documents = add_documents_func
+        document_ids = [document.id for document in documents]
+        if selection == "one":
+            document_ids = document_ids[:1]
+
+        assert dataset.async_parse_documents(document_ids=document_ids) is None
+        rows = _wait_for_terminal_statuses(dataset, document_ids, integration_settings["parse_timeout"])
+        _assert_completed(rows, document_ids)
 
     @pytest.mark.parametrize(
-        "payload",
-        [
-            pytest.param(lambda r: {"document_ids": ["invalid_id"] + r}, marks=pytest.mark.p3),
-            pytest.param(lambda r: {"document_ids": r[:1] + ["invalid_id"] + r[1:3]}, marks=pytest.mark.p3),
-            pytest.param(lambda r: {"document_ids": r + ["invalid_id"]}, marks=pytest.mark.p3),
-        ],
+        "invalid_position",
+        ["first", "middle", "last"],
     )
-    def test_parse_partial_invalid_document_id(self, add_documents_func, payload):
+    def test_invalid_id_rejects_entire_parse_request(self, add_documents_func, invalid_position):
         dataset, documents = add_documents_func
-        document_ids = [doc.id for doc in documents]
-        payload = payload(document_ids)
+        document_ids = [document.id for document in documents]
+        ids = list(document_ids)
+        index = {"first": 0, "middle": len(ids) // 2, "last": len(ids)}[invalid_position]
+        ids.insert(index, "invalid_id")
+        before = {row["id"]: row["ingestion_status"] for row in _document_rows(dataset, document_ids)}
 
-        with pytest.raises(Exception) as exception_info:
-            dataset.async_parse_documents(**payload)
-        assert "Documents not found: ['invalid_id']" in str(exception_info.value), str(exception_info.value)
+        with pytest.raises(Exception, match="documents not found:"):
+            dataset.async_parse_documents(document_ids=ids)
 
-        condition(dataset, document_ids)
-        validate_document_details(dataset, document_ids)
+        after = {row["id"]: row["ingestion_status"] for row in _document_rows(dataset, document_ids)}
+        assert {doc_id: after[doc_id] for doc_id in document_ids} == {doc_id: before[doc_id] for doc_id in document_ids}
 
-    @pytest.mark.p3
-    def test_repeated_parse(self, add_documents_func):
+    def test_repeated_parse_reprocesses_completed_documents(self, add_documents_func, integration_settings):
         dataset, documents = add_documents_func
-        document_ids = [doc.id for doc in documents]
+        document_ids = [document.id for document in documents]
+
         dataset.async_parse_documents(document_ids=document_ids)
-        condition(dataset, document_ids)
-        dataset.async_parse_documents(document_ids=document_ids)
+        first_rows = _wait_for_terminal_statuses(dataset, document_ids, integration_settings["parse_timeout"])
+        _assert_completed(first_rows, document_ids)
+        first_event_ids = {doc_id: row["latest_ingestion_event"]["id"] for doc_id, row in first_rows.items()}
 
-    @pytest.mark.p3
-    def test_duplicate_parse(self, add_documents_func):
+        dataset.async_parse_documents(document_ids=document_ids)
+        second_rows = _wait_for_terminal_statuses(
+            dataset,
+            document_ids,
+            integration_settings["parse_timeout"],
+            previous_event_ids=first_event_ids,
+        )
+        _assert_completed(second_rows, document_ids)
+
+    def test_duplicate_ids_are_parsed_once(self, add_documents_func, integration_settings):
         dataset, documents = add_documents_func
-        document_ids = [doc.id for doc in documents]
+        document_ids = [document.id for document in documents]
+
         dataset.async_parse_documents(document_ids=document_ids + document_ids)
-        condition(dataset, document_ids)
-        validate_document_details(dataset, document_ids)
+        rows = _wait_for_terminal_statuses(dataset, document_ids, integration_settings["parse_timeout"])
+        _assert_completed(rows, document_ids)
+
+    @pytest.mark.p3
+    def test_parse_100_files(self, add_dataset_func, upload_documents, integration_settings):
+        dataset = add_dataset_func
+        documents = upload_documents(dataset, 100)
+        document_ids = [document.id for document in documents]
+
+        dataset.async_parse_documents(document_ids=document_ids)
+        rows = _wait_for_terminal_statuses(dataset, document_ids, integration_settings["parse_timeout"])
+        _assert_completed(rows, document_ids)
+
+    @pytest.mark.p3
+    def test_concurrent_parse(self, add_dataset_func, upload_documents, integration_settings):
+        dataset = add_dataset_func
+        documents = upload_documents(dataset, 100)
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(dataset.async_parse_documents, [document.id]) for document in documents]
+            for future in as_completed(futures):
+                assert future.result() is None
+
+        document_ids = [document.id for document in documents]
+        rows = _wait_for_terminal_statuses(dataset, document_ids, integration_settings["parse_timeout"])
+        _assert_completed(rows, document_ids)
 
 
-@pytest.mark.p2
-def test_get_documents_status_handles_terminal_and_progress_paths(add_dataset_func, monkeypatch):
-    """Collect terminal states and completed progress without another lookup."""
-    dataset = add_dataset_func
-    states = {"doc-done": ("DONE", 0.0), "doc-fail": ("FAIL", -1.0), "doc-cancel": ("CANCEL", 0.3), "doc-progress": ("RUNNING", 1.0)}
+def test_get_documents_status_handles_terminal_and_progress_paths(monkeypatch):
+    dataset = DataSet(None, {"id": "dataset-1"})
+    states = {
+        "doc-done": ("DONE", 0.0),
+        "doc-fail": ("FAIL", -1.0),
+        "doc-cancel": ("CANCEL", 0.3),
+        "doc-progress": ("RUNNING", 1.0),
+    }
     calls = []
 
     def _list_documents(id=None, **_kwargs):
         calls.append(id)
         run, progress = states[id]
-        return [Document(dataset.rag, {"id": id, "run": run, "progress": progress, "chunk_count": 2, "token_count": 4})]
+        return [Document(None, {"id": id, "run": run, "progress": progress, "chunk_count": 2, "token_count": 4})]
 
     monkeypatch.setattr(dataset, "list_documents", _list_documents)
     monkeypatch.setattr("time.sleep", lambda *_args: pytest.fail("terminal documents must not be polled again"))
@@ -137,10 +189,8 @@ def test_get_documents_status_handles_terminal_and_progress_paths(add_dataset_fu
     assert sorted(calls) == sorted(states)
 
 
-@pytest.mark.p2
-def test_get_documents_status_propagates_lookup_error(add_dataset_func, monkeypatch):
-    """Surface the original lookup error instead of silently retrying."""
-    dataset = add_dataset_func
+def test_get_documents_status_propagates_lookup_error(monkeypatch):
+    dataset = DataSet(None, {"id": "dataset-1"})
     error = RuntimeError("temporary list failure")
     calls = []
 
@@ -157,10 +207,8 @@ def test_get_documents_status_propagates_lookup_error(add_dataset_func, monkeypa
     assert calls == ["doc-1"]
 
 
-@pytest.mark.p2
-def test_get_documents_status_raises_for_missing_document(add_dataset_func, monkeypatch):
-    """Stop waiting when the requested document is no longer returned."""
-    dataset = add_dataset_func
+def test_get_documents_status_raises_for_missing_document(monkeypatch):
+    dataset = DataSet(None, {"id": "dataset-1"})
     calls = []
 
     def _list_documents(id=None, **_kwargs):
@@ -175,11 +223,10 @@ def test_get_documents_status_raises_for_missing_document(add_dataset_func, monk
     assert calls == ["doc-1"]
 
 
-@pytest.mark.p2
-def test_parse_documents_keyboard_interrupt_triggers_cancel_then_returns_status(add_dataset_func, monkeypatch):
-    dataset = add_dataset_func
+def test_parse_documents_keyboard_interrupt_triggers_cancel_then_returns_status(monkeypatch):
+    dataset = DataSet(None, {"id": "dataset-1"})
     state = {"cancel_calls": 0, "status_calls": 0}
-    expected_status = [("doc-1", "DONE", 1, 2)]
+    expected_status = [("doc-1", "CANCEL", 1, 2)]
 
     def _raise_keyboard_interrupt(_document_ids):
         raise KeyboardInterrupt
@@ -197,16 +244,12 @@ def test_parse_documents_keyboard_interrupt_triggers_cancel_then_returns_status(
     monkeypatch.setattr(dataset, "async_cancel_parse_documents", _cancel)
     monkeypatch.setattr(dataset, "_get_documents_status", _status)
 
-    status = dataset.parse_documents(["doc-1"])
-    assert status == expected_status
-    assert state["cancel_calls"] == 1
-    assert state["status_calls"] == 1
+    assert dataset.parse_documents(["doc-1"]) == expected_status
+    assert state == {"cancel_calls": 1, "status_calls": 1}
 
 
-@pytest.mark.p2
-def test_parse_documents_returns_first_completed_status(add_dataset_func, monkeypatch):
-    """Return the first wait result without polling the documents twice."""
-    dataset = add_dataset_func
+def test_parse_documents_returns_first_completed_status(monkeypatch):
+    dataset = DataSet(None, {"id": "dataset-1"})
     state = {"status_calls": 0}
 
     def _noop_parse(_document_ids):
@@ -220,74 +263,86 @@ def test_parse_documents_returns_first_completed_status(add_dataset_func, monkey
     monkeypatch.setattr(dataset, "async_parse_documents", _noop_parse)
     monkeypatch.setattr(dataset, "_get_documents_status", _status)
 
-    status = dataset.parse_documents(["doc-1"])
+    assert dataset.parse_documents(["doc-1"]) == [("doc-1", "DONE-1", 1, 2)]
     assert state["status_calls"] == 1
-    assert status == [("doc-1", "DONE-1", 1, 2)]
 
 
-@pytest.mark.p2
-def test_async_cancel_parse_documents_raises_on_nonzero_code(add_dataset_func, monkeypatch):
-    dataset = add_dataset_func
+def test_async_parse_documents_sends_document_ids(monkeypatch):
+    dataset = DataSet(None, {"id": "dataset-1"})
+    calls = []
 
-    class _Resp:
+    class _Response:
         @staticmethod
         def json():
-            return {"code": 102, "message": "cancel failed"}
+            return {"code": 0}
 
-    monkeypatch.setattr(dataset, "rm", lambda *_args, **_kwargs: _Resp())
+    def _post(path, body):
+        calls.append((path, body))
+        return _Response()
 
-    with pytest.raises(Exception) as exc_info:
-        dataset.async_cancel_parse_documents(["doc-1"])
-    assert "cancel failed" in str(exc_info.value), str(exc_info.value)
-
-
-@pytest.mark.p3
-def test_parse_100_files(add_dataset_func, tmp_path):
-    @wait_for(200, 1, "Document parsing timeout")
-    def condition_inner(_dataset: DataSet, _count: int):
-        docs = list_all_documents(_dataset, limit=_count)
-        if len(docs) < _count:
-            return False
-        for document in docs:
-            if document.run != "DONE":
-                return False
-        return True
-
-    count = 100
-    dataset = add_dataset_func
-    documents = bulk_upload_documents(dataset, count, tmp_path)
-    document_ids = [doc.id for doc in documents]
-
-    dataset.async_parse_documents(document_ids=document_ids)
-    condition_inner(dataset, count)
-    validate_document_details(dataset, document_ids)
+    monkeypatch.setattr(dataset, "post", _post)
+    assert dataset.async_parse_documents(["doc-1", "doc-2"]) is None
+    assert calls == [("/datasets/dataset-1/chunks", {"document_ids": ["doc-1", "doc-2"]})]
 
 
-@pytest.mark.p3
-def test_concurrent_parse(add_dataset_func, tmp_path):
-    @wait_for(200, 1, "Document parsing timeout")
-    def condition_inner(_dataset: DataSet, _count: int):
-        docs = list_all_documents(_dataset, limit=_count)
-        if len(docs) < _count:
-            return False
-        for document in docs:
-            if document.run != "DONE":
-                return False
-        return True
+def test_terminal_status_from_previous_parse_run_is_not_reused(monkeypatch):
+    dataset = DataSet(None, {"id": "dataset-1"})
+    row = {
+        "id": "doc-1",
+        "ingestion_status": "COMPLETED",
+        "latest_ingestion_event": {"id": 42},
+    }
+    calls = []
 
-    count = 100
-    dataset = add_dataset_func
-    documents = bulk_upload_documents(dataset, count, tmp_path)
-    document_ids = [doc.id for doc in documents]
+    class _Response:
+        @staticmethod
+        def json():
+            return {"code": 0, "data": {"docs": [row]}}
 
-    def parse_doc(doc_id):
-        dataset.async_parse_documents(document_ids=[doc_id])
+    class _Rag:
+        @staticmethod
+        def get(_path, params):
+            calls.append(params)
+            return _Response()
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(parse_doc, doc.id) for doc in documents]
+    dataset.rag = _Rag()
 
-    responses = list(as_completed(futures))
-    assert len(responses) == count, responses
+    with pytest.raises(AssertionError, match="did not reach a terminal state"):
+        _wait_for_terminal_statuses(
+            dataset,
+            ["doc-1"],
+            timeout=0.02,
+            previous_event_ids={"doc-1": 42},
+        )
+    assert calls
+    assert all(call == {"ids": ["doc-1"], "page": 1, "page_size": 100} for call in calls)
 
-    condition_inner(dataset, count)
-    validate_document_details(dataset, document_ids)
+
+@pytest.mark.parametrize(
+    "ingestion_status, progress, expected_status",
+    [
+        ("COMPLETED", 1.0, "DONE"),
+        ("FAILED", -1.0, "FAIL"),
+        ("STOPPED", 0.0, "CANCEL"),
+    ],
+)
+def test_parse_documents_returns_documented_terminal_status(monkeypatch, ingestion_status, progress, expected_status):
+    dataset = DataSet(None, {"id": "dataset-1"})
+
+    def _list_documents(**_kwargs):
+        return [
+            Document(
+                None,
+                {
+                    "id": "doc-1",
+                    "ingestion_status": ingestion_status,
+                    "progress": progress,
+                    "chunk_count": 2,
+                    "token_count": 4,
+                },
+            )
+        ]
+
+    monkeypatch.setattr(dataset, "list_documents", _list_documents)
+    monkeypatch.setattr("time.sleep", lambda *_args: pytest.fail("terminal documents must not be polled again"))
+    assert dataset._get_documents_status(["doc-1"]) == [("doc-1", expected_status, 2, 4)]

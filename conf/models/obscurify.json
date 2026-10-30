@@ -1,0 +1,93 @@
+{
+  "name": "Obscurify.ai",
+  "url": {
+    "default": "https://obscurify.ai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "obscurify",
+  "models": [
+    {
+      "name": "deepseek/deepseek-v4-flash",
+      "context_length": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.3",
+      "context_length": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2-0905",
+      "context_length": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen/qwen3-coder",
+      "context_length": 262000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "meta-llama/llama-3.3-70b-instruct",
+      "context_length": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.5",
+      "context_length": 1050000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-sonnet-5.5",
+      "context_length": 1000000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-3.8-flash",
+      "context_length": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}

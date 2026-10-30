@@ -161,13 +161,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// to choose between Go and Python code paths.
 		apiNoAuth.GET("/language", r.systemHandler.Language)
 
-		// Pipeline catalog. Public static data (shipped with the binary),
-		// no auth required. The front end uses it to populate the parser
-		// picker without hard-coding the parser_id list.
-		// Query: ?type=builtin returns built-in templates (default).
-		apiNoAuth.GET("/pipelines", r.pipelineHandler.ListPipelines)
-		apiNoAuth.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
-
 		// searchbots
 		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchBotDetail)
 
@@ -181,20 +174,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
 		apiNoAuth.GET("/connectors/box/oauth/web/callback", r.connectorHandler.BoxWebOAuthCallback)
-		// Forgot-password flow (fixes #15282).
-		// Routes are intentionally registered before any auth middleware:
-		// a user who has forgotten their password is, by definition,
-		// unauthenticated.
-		apiNoAuth.POST("/auth/password/forgot/captcha", r.userHandler.ForgotCaptcha)
-		apiNoAuth.POST("/auth/password/forgot/otp", r.userHandler.ForgotSendOTP)
-		apiNoAuth.POST("/auth/password/forgot/otp/verify", r.userHandler.ForgotVerifyOTP)
-		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 
 		apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
 
 		RegisterPublicAgentWebhookRoutes(apiNoAuth.Group("/agents"), r.agentHandler)
 
-		RegisterEENoAuthRouter(apiNoAuth, r)
+		RegisterEENoAuthRouter(engine, apiNoAuth, r)
 	}
 
 	// Beta-token routes. Mirrors python's
@@ -203,8 +188,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 	apiBetaAuth.Use(r.authHandler.BetaAuthMiddleware())
 	{
 		searchBotGroup := apiBetaAuth.Group("/searchbots")
-		searchBotGroup.POST("/related_questions", r.searchBotHandler.Handle)
-		searchBotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
+		searchBotGroup.POST("/related-questions", r.searchBotHandler.Handle)
+		searchBotGroup.POST("/retrieval", r.searchBotHandler.RetrievalTest)
 		searchBotGroup.POST("/ask", r.searchBotHandler.Ask)
 		searchBotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
 
@@ -241,6 +226,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	authorized := engine.Group("")
 	authorized.Use(r.authHandler.AuthMiddleware())
 	RegisterEEProtectedRouter(authorized, r)
+	RegisterEEAuthRouter(authorized, r)
 	{
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
@@ -285,10 +271,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Tenant routes (per-tenant resources)
 			tenant := v1.Group("/tenant")
 			{
-				tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)         // Internal API only for GO
-				tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)       // Internal API only for GO
-				tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)   // Internal API only for GO
-				tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore) // Internal API only for GO
+				tenant.POST("/chunk-store", r.tenantHandler.CreateChunkStore)         // Internal API only for GO
+				tenant.DELETE("/chunk-store", r.tenantHandler.DeleteChunkStore)       // Internal API only for GO
+				tenant.POST("/metadata-store", r.tenantHandler.CreateMetadataStore)   // Internal API only for GO
+				tenant.DELETE("/metadata-store", r.tenantHandler.DeleteMetadataStore) // Internal API only for GO
 			}
 
 			// Document routes
@@ -557,7 +543,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// command is for CLI
 			command := v1
 			{
-				command.POST("/chat/to_model", r.providerHandler.ChatToModel)
+				command.POST("/chat/to-model", r.providerHandler.ChatToModel)
 				command.POST("/embeddings", r.providerHandler.EmbedText)
 				command.POST("/rerank", r.providerHandler.RerankDocument)
 				command.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
@@ -602,6 +588,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
 			}
 
+			// Pipeline catalog. Built-in templates are static data shipped
+			// with the binary, but the endpoint is gated behind auth so the
+			// /pipelines namespace is already auth-protected when per-tenant
+			// user pipelines (dataflow canvases) are added later. Those will
+			// reuse user_canvas + CheckCanvasPermission for ownership checks.
+			// Query: ?type=builtin returns built-in templates (default).
+			v1.GET("/pipelines", r.pipelineHandler.ListPipelines)
+			v1.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
+
 			// Component catalog — Phase 4 of
 			// port-rag-flow-pipeline-to-go.md. Optional
 			// ?category=ingestion,agent,shared filter; defaults to
@@ -624,7 +619,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				connectors.GET("", r.connectorHandler.ListConnectors)
 				connectors.POST("", r.connectorHandler.CreateConnector)
-				connectors.GET("/sync_logs", r.connectorHandler.ListSyncLogs)
+				connectors.GET("/sync-logs", r.connectorHandler.ListSyncLogs)
 				connectors.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connectors.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
 				connectors.POST("/box/oauth/web/start", r.connectorHandler.StartBoxWebOAuth)

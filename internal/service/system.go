@@ -41,14 +41,16 @@ func NewSystemService() *SystemService {
 
 // ConfigResponse system configuration response
 type ConfigResponse struct {
-	EnableRegister bool `json:"registerEnabled"`
+	EnableRegister       bool `json:"registerEnabled"`
+	DisablePasswordLogin bool `json:"disablePasswordLogin"`
 }
 
 // GetConfig get system configuration
 func (s *SystemService) GetConfig() (*ConfigResponse, error) {
 	cfg := server.GetConfig()
 	return &ConfigResponse{
-		EnableRegister: cfg.EnableRegister(),
+		EnableRegister:       cfg.EnableRegister(),
+		DisablePasswordLogin: cfg.DisablePasswordLogin(),
 	}, nil
 }
 

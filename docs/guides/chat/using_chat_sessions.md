@@ -31,9 +31,21 @@ Use different conversations for different topics. For example, after discussing 
 
 Enter a question in the message box and press **Enter**, or click **Send**. Press **Shift+Enter** to insert a line break.
 
-While an answer is being generated, click **Stop** to interrupt it. Before sending a question, you can select a Thinking mode, enable or disable web search, and add attachments.
+While an answer is being generated, click **Stop** to interrupt it. Before sending a question, select a Thinking mode, enable web search when available, or add attachments.
 
 Chat generates an answer using the current conversation history together with the Chat's configured knowledge bases, model, and system prompt.
+
+## Choose a Thinking Mode
+
+Open the mode selector beside the message box and choose **Naive** or **Agentic** before sending a question. Use Naive for straightforward retrieval questions and Agentic for investigations or comparisons across documents.
+
+The corresponding settings are under **Chat setting > Advanced settings > Naive** and **Agentic**. Expanding one of those settings groups does not select the mode for your question. See [Chat Configuration](./chat_configuration.md) to configure each flow.
+
+## Use Web Search
+
+When a web search provider is configured, the message box shows a globe-shaped web search control. Enable it before sending a question that needs public web information; turn it off when web search is not needed.
+
+If the control is missing, open **Chat setting > Advanced settings > Web search provider**, select a provider, complete its required API key field, and click **Save**. Providers that require no key only need to be selected and saved. See [Configure Web Search](./chat_configuration.md#configure-web-search).
 
 ## Upload Files
 
@@ -67,9 +79,9 @@ RAGFlow provides an HTTP API for integration:
 You can also embed the created Chat assistant in a third-party webpage with an iframe:
 
 1. [Acquire an API key](../../develop/acquire_ragflow_api_key.md) before continuing. Otherwise, an error occurs.
-2. Hover over the target Chat assistant and click **Edit** to open the iframe window.
+2. Click the paper-airplane icon next to the Chat name to open **Embed into website**.
 3. Copy the iframe code and embed it in your webpage.
 
 ![Open the iframe configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/embed_into_website_1.jpg)
 
-![Copy the iframe code](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/embed_into_website_2.jpg)
+![Example of the embedded Chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/embed_into_website_2.jpg)

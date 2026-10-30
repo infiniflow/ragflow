@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -14,25 +14,27 @@
 #  limitations under the License.
 #
 
+from unittest.mock import Mock
+
 import pytest
-from configs import DOCUMENT_NAME_LIMIT
-from ragflow_sdk import DataSet
-from configs import DEFAULT_PARSER_CONFIG
+from ragflow_sdk import Document
 
 
+@pytest.mark.integration
 class TestDocumentsUpdated:
     @pytest.mark.p1
     @pytest.mark.parametrize(
         "name, expected_message",
         [
             ("new_name.txt", ""),
-            (f"{'a' * (DOCUMENT_NAME_LIMIT - 4)}.txt", ""),
-            (0, "AttributeError"),
-            (None, "AttributeError"),
-            ("", "The extension of file can't be changed"),
-            ("ragflow_test_upload_0", "The extension of file can't be changed"),
-            ("ragflow_test_upload_1.txt", "Duplicated document name in the same dataset"),
-            ("RAGFLOW_TEST_UPLOAD_1.TXT", ""),
+            (f"{'a' * 251}.txt", ""),
+            (0, "Field: <name> - Message: <Input should be a valid string> - Value: <0>"),
+            (None, "Field: <name> - Message: <Input should be a valid string> - Value: <None>"),
+            ("", "the extension of file can't be changed"),
+            ("ragflow_test_upload_0", "the extension of file can't be changed"),
+            ("ragflow_test_upload_1.txt", "duplicated document name in the same dataset"),
+            ("RAGFLOW_TEST_UPLOAD_1.TXT", "duplicated document name in the same dataset"),
+            ("RAGFLOW_TEST_UPLOAD_0.TXT", ""),
         ],
     )
     def test_name(self, add_documents, name, expected_message):
@@ -40,81 +42,76 @@ class TestDocumentsUpdated:
         document = documents[0]
 
         if expected_message:
-            if name is None or (isinstance(name, int) and name == 0):
-                # Skip tests that don't raise exceptions as expected
-                pytest.skip("This test case doesn't consistently raise an exception as expected")
-            elif name == "":
-                # Check if empty string raises an exception or not
-                try:
-                    document.update({"name": name})
-                    # If no exception is raised, the test expectation might be wrong
-                    pytest.skip("Empty string name doesn't raise an exception as expected")
-                except Exception as e:
-                    assert expected_message in str(e), str(e)
-            elif name == "ragflow_test_upload_0":
-                # Check if this case raises an exception or not
-                try:
-                    document.update({"name": name})
-                    # If no exception is raised, the test expectation might be wrong
-                    pytest.skip("Name without extension doesn't raise an exception as expected")
-                except Exception as e:
-                    assert expected_message in str(e), str(e)
-            else:
-                with pytest.raises(Exception) as exception_info:
-                    document.update({"name": name})
-                assert expected_message in str(exception_info.value), str(exception_info.value)
-        else:
-            document.update({"name": name})
-            docs = dataset.list_documents(id=document.id)
-            updated_doc = [doc for doc in docs if doc.id == document.id][0]
-            assert updated_doc.name == name, str(updated_doc)
+            with pytest.raises(Exception) as exception_info:
+                document.update({"name": name})
+            assert expected_message in str(exception_info.value), str(exception_info.value)
+            return
+
+        document.update({"name": name})
+        docs = dataset.list_documents(id=document.id)
+        updated_doc = next(doc for doc in docs if doc.id == document.id)
+        assert updated_doc.name == name, str(updated_doc)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
-        "meta_fields, expected_message",
+        "meta_fields, expected_error",
         [
-            ({"test": "test"}, ""),
-            ("test", "meta_fields must be a dictionary"),
+            ({"author": "Ada", "year": 2025, "tags": ["one", "two"]}, ""),
+            ({"nested": {"x": 1}}, "The type is not supported"),
+            ({"tags": [{"x": 1}]}, "The type is not supported in list"),
         ],
     )
-    def test_meta_fields(self, add_documents, meta_fields, expected_message):
-        _, documents = add_documents
+    def test_meta_fields(self, add_documents, meta_fields, expected_error):
+        dataset, documents = add_documents
         document = documents[0]
-
-        if expected_message:
+        original = dataset.list_documents(id=document.id)[0].meta_fields.to_json()
+        if expected_error:
             with pytest.raises(Exception) as exception_info:
                 document.update({"meta_fields": meta_fields})
-            assert expected_message in str(exception_info.value), str(exception_info.value)
-        else:
-            document.update({"meta_fields": meta_fields})
+            assert expected_error in str(exception_info.value)
+            unchanged = dataset.list_documents(id=document.id)[0].meta_fields.to_json()
+            assert unchanged == original
+            return
 
-    @pytest.mark.p2
-    def test_meta_fields_invalid_type_guard_p2(self, add_documents):
-        _, documents = add_documents
-        document = documents[0]
-        with pytest.raises(Exception) as exception_info:
-            document.update({"meta_fields": "not-a-dict"})
-        assert "meta_fields must be a dictionary" in str(exception_info.value), str(exception_info.value)
+        document.update({"meta_fields": meta_fields})
 
+        docs = dataset.list_documents(id=document.id)
+        updated_doc = next(doc for doc in docs if doc.id == document.id)
+        assert updated_doc.meta_fields.to_json() == meta_fields
+
+
+@pytest.mark.p2
+def test_meta_fields_rejects_non_dictionary_without_backend():
+    rag = Mock()
+    document = Document(rag, {"dataset_id": "dataset-1", "id": "document-1"})
+
+    with pytest.raises(Exception, match="meta_fields must be a dictionary"):
+        document.update({"meta_fields": "not-a-dict"})
+    rag.patch.assert_not_called()
+
+
+@pytest.mark.integration
+class TestDocumentParserSelection:
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "chunk_method, expected_message",
         [
             ("naive", ""),
-            ("manual", ""),
-            ("qa", ""),
-            ("table", ""),
-            ("paper", ""),
+            ("general", ""),
             ("book", ""),
             ("laws", ""),
-            ("presentation", ""),
-            ("picture", ""),
             ("one", ""),
-            ("knowledge_graph", ""),
-            ("email", ""),
-            ("tag", ""),
+            ("qa", ""),
+            ("table", ""),
+            ("manual", "selected pipeline does not support file type"),
+            ("paper", "selected pipeline does not support file type"),
+            ("presentation", "selected pipeline does not support file type"),
+            ("picture", "selected pipeline does not support file type"),
+            ("email", "selected pipeline does not support file type"),
+            ("knowledge_graph", "unknown builtin parser_id: knowledge_graph"),
+            ("tag", "unknown builtin parser_id: tag"),
             ("", "`chunk_method` (empty string) is not valid"),
-            ("other_chunk_method", "`chunk_method` other_chunk_method doesn't exist"),
+            ("other_chunk_method", "unknown builtin parser_id: other_chunk_method"),
         ],
     )
     def test_chunk_method(self, add_documents, chunk_method, expected_message):
@@ -122,125 +119,19 @@ class TestDocumentsUpdated:
         document = documents[0]
 
         if expected_message:
-            if chunk_method == "":
-                # Check if empty string raises an exception or not
-                try:
-                    document.update({"chunk_method": chunk_method})
-                    # If no exception is raised, skip this test
-                    pytest.skip("Empty chunk_method doesn't raise an exception as expected")
-                except Exception as e:
-                    assert expected_message in str(e), str(e)
-            elif chunk_method == "other_chunk_method":
-                with pytest.raises(Exception) as exception_info:
-                    document.update({"chunk_method": chunk_method})
-                assert expected_message in str(exception_info.value), str(exception_info.value)
-            else:
-                with pytest.raises(Exception) as exception_info:
-                    document.update({"chunk_method": chunk_method})
-                assert expected_message in str(exception_info.value), str(exception_info.value)
-        else:
-            document.update({"chunk_method": chunk_method})
-            docs = dataset.list_documents()
-            updated_doc = [doc for doc in docs if doc.id == document.id][0]
-            assert updated_doc.chunk_method == chunk_method, str(updated_doc)
+            with pytest.raises(Exception) as exception_info:
+                document.update({"chunk_method": chunk_method})
+            assert expected_message in str(exception_info.value), str(exception_info.value)
+            return
 
-    @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "payload, expected_message",
-        [
-            ({"chunk_count": 1}, "can't change `chunk_count`"),
-            pytest.param(
-                {"create_date": "Fri, 14 Mar 2025 16:53:42 GMT"},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"create_time": 1},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"created_by": "ragflow_test"},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"dataset_id": "ragflow_test"},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"id": "ragflow_test"},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"location": "ragflow_test.txt"},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"process_begin_at": 1},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"process_duration": 1.0},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            ({"progress": 1.0}, "can't change `progress`"),
-            pytest.param(
-                {"progress_msg": "ragflow_test"},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"run": "ragflow_test"},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"size": 1},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"source_type": "ragflow_test"},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"thumbnail": "ragflow_test"},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            ({"token_count": 1}, "can't change `token_count`"),
-            pytest.param(
-                {"type": "ragflow_test"},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"update_date": "Fri, 14 Mar 2025 16:33:17 GMT"},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-            pytest.param(
-                {"update_time": 1},
-                "The input parameters are invalid",
-                marks=pytest.mark.skip(reason="issues/6104"),
-            ),
-        ],
-    )
-    def test_invalid_field(self, add_documents, payload, expected_message):
-        _, documents = add_documents
-        document = documents[0]
+        document.update({"chunk_method": chunk_method})
+        docs = dataset.list_documents(id=document.id)
+        updated_doc = next(doc for doc in docs if doc.id == document.id)
+        assert updated_doc.chunk_method == chunk_method, str(updated_doc)
 
-        with pytest.raises(Exception) as exception_info:
-            document.update(payload)
-        assert expected_message in str(exception_info.value), str(exception_info.value)
 
+@pytest.mark.integration
+class TestImmutableDocumentFields:
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "payload, expected_message",
@@ -250,265 +141,149 @@ class TestDocumentsUpdated:
     )
     def test_immutable_fields_chunk_count(self, add_documents, payload, expected_message):
         _, documents = add_documents
-        document = documents[0]
-
         with pytest.raises(Exception) as exception_info:
-            document.update(payload)
+            documents[0].update(payload)
         assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"token_count": 9999}, "can't change `token_count`"),  # Attempt to change immutable field
+            ({"token_count": 9999}, "can't change `token_count`"),
         ],
     )
     def test_immutable_fields_token_count(self, add_documents, payload, expected_message):
         _, documents = add_documents
-        document = documents[0]
-
         with pytest.raises(Exception) as exception_info:
-            document.update(payload)
+            documents[0].update(payload)
         assert expected_message in str(exception_info.value), str(exception_info.value)
 
-    @pytest.mark.p3
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"progress": 0.5}, "can't change `progress`"),  # Attempt to change immutable field
-            ({"progress": 1.5}, "Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <1.5>"),  # Attempt to change immutable field
+            ({"progress": 0.5}, "can't change `progress`"),
+            ({"progress": 1.0}, "can't change `progress`"),
+            (
+                {"progress": 1.5},
+                "Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <1.5>",
+            ),
         ],
     )
     def test_immutable_fields_progress(self, add_documents, payload, expected_message):
         _, documents = add_documents
-        document = documents[0]
-
         with pytest.raises(Exception) as exception_info:
-            document.update(payload)
+            documents[0].update(payload)
         assert expected_message in str(exception_info.value), str(exception_info.value)
 
 
-DEFAULT_PARSER_CONFIG_FOR_TEST = {
-    "layout_recognize": "DeepDOC",
-    "chunk_token_num": 512,
-    "delimiter": "\n",
-    "auto_keywords": 0,
-    "auto_questions": 0,
-    "html4excel": False,
-    "topn_tags": 3,
-    "raptor": {
-        "use_raptor": True,
-        "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
-        "max_token": 512,
-        "clustering_threshold": 0.3,
-        "clustering_ratio": 0.5,
-        "max_cluster": 64,
-        "random_seed": 0,
-    },
-    "graphrag": {
-        "use_graphrag": True,
-        "entity_types": [
-            "organization",
-            "person",
-            "geo",
-            "event",
-            "category",
-        ],
-        "method": "light",
-        "batch_chunk_token_size": 4096,
-    },
-}
-
-
-class TestUpdateDocumentParserConfig:
+@pytest.mark.integration
+class TestUnknownUpdateFields:
     @pytest.mark.p3
     @pytest.mark.parametrize(
-        "chunk_method, parser_config, expected_message",
+        "payload",
         [
-            ("naive", {}, ""),
-            pytest.param(
-                "naive",
-                DEFAULT_PARSER_CONFIG_FOR_TEST,
-                "",
-                marks=pytest.mark.skip(reason="DEFAULT_PARSER_CONFIG contains fields not allowed in document update API"),
-            ),
-            pytest.param(
-                "naive",
-                {"chunk_token_num": -1},
-                "Field: <parser_config.chunk_token_num> - Message: <Input should be greater than or equal to 1> - Value: <-1>",
-            ),
-            (
-                "naive",
-                {"chunk_token_num": 0},
-                "Input should be greater than or equal to 1",
-            ),
-            (
-                "naive",
-                {"chunk_token_num": 100000000},
-                "Input should be less than or equal to 2048",
-            ),
-            (
-                "naive",
-                {"chunk_token_num": 3.14},
-                "Input should be a valid integer",
-            ),
-            (
-                "naive",
-                {"chunk_token_num": "1024"},
-                "Input should be a valid integer",
-            ),
-            ("naive", {"layout_recognize": "DeepDOC"}, ""),
-            ("naive", {"layout_recognize": "Naive"}, ""),
-            ("naive", {"html4excel": True}, ""),
-            ("naive", {"html4excel": False}, ""),
-            (
-                "naive",
-                {"html4excel": 1},
-                "Input should be a valid boolean",
-            ),
-            ("naive", {"delimiter": ""}, "String should have at least 1 character"),
-            ("naive", {"delimiter": "`##`"}, ""),
-            (
-                "naive",
-                {"delimiter": 1},
-                "Input should be a valid string",
-            ),
-            (
-                "naive",
-                {"task_page_size": -1},
-                "Input should be greater than or equal to 1",
-            ),
-            (
-                "naive",
-                {"task_page_size": 0},
-                "Input should be greater than or equal to 1",
-            ),
-            pytest.param(
-                "naive",
-                {"task_page_size": 100000000},
-                "",
-            ),
-            (
-                "naive",
-                {"task_page_size": 3.14},
-                "Input should be a valid integer",
-            ),
-            (
-                "naive",
-                {"task_page_size": "1024"},
-                "Input should be a valid integer",
-            ),
-            (
-                "naive",
-                {
-                    "raptor": {
-                        "use_raptor": True,
-                        "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
-                        "max_token": 512,
-                        "clustering_threshold": 0.3,
-                        "clustering_ratio": 0.5,
-                        "max_cluster": 64,
-                        "random_seed": 0,
-                    }
-                },
-                "",
-            ),
-            ("naive", {"raptor": {"use_raptor": False}}, ""),
-            (
-                "naive",
-                {"invalid_key": "invalid_value"},
-                "",
-            ),
-            (
-                "naive",
-                {"auto_keywords": -1},
-                "Input should be greater than or equal to 0",
-            ),
-            pytest.param(
-                "naive",
-                {"auto_keywords": 32},
-                "",
-            ),
-            (
-                "naive",
-                {"auto_keywords": 3.14},
-                "Input should be a valid integer",
-            ),
-            (
-                "naive",
-                {"auto_keywords": "1024"},
-                "Input should be a valid integer",
-            ),
-            (
-                "naive",
-                {"auto_questions": -1},
-                "Input should be greater than or equal to 0",
-            ),
-            pytest.param(
-                "naive",
-                {"auto_questions": 10},
-                "",
-            ),
-            (
-                "naive",
-                {"auto_questions": 3.14},
-                "Input should be a valid integer",
-            ),
-            (
-                "naive",
-                {"auto_questions": "1024"},
-                "Input should be a valid integer",
-            ),
-            (
-                "naive",
-                {"topn_tags": -1},
-                "Input should be greater than or equal to 1",
-            ),
-            pytest.param(
-                "naive",
-                {"topn_tags": 10},
-                "",
-            ),
-            (
-                "naive",
-                {"topn_tags": 3.14},
-                "Input should be a valid integer",
-            ),
-            (
-                "naive",
-                {"topn_tags": "1024"},
-                "Input should be a valid integer",
-            ),
+            {"create_date": "Fri, 14 Mar 2025 16:53:42 GMT"},
+            {"create_time": 1},
+            {"created_by": "ragflow_test"},
+            {"dataset_id": "ragflow_test"},
+            {"id": "ragflow_test"},
+            {"location": "ragflow_test.txt"},
+            {"process_begin_at": 1},
+            {"process_duration": 1.0},
+            {"progress_msg": "ragflow_test"},
+            {"run": "ragflow_test"},
+            {"size": 1},
+            {"source_type": "ragflow_test"},
+            {"thumbnail": "ragflow_test"},
+            {"type": "ragflow_test"},
+            {"update_date": "Fri, 14 Mar 2025 16:33:17 GMT"},
+            {"update_time": 1},
         ],
     )
-    def test_parser_config(self, client, add_documents, chunk_method, parser_config, expected_message):
+    def test_unknown_fields_are_ignored_without_mutation(self, add_documents, payload):
         dataset, documents = add_documents
         document = documents[0]
-        from operator import attrgetter
+        path = f"/datasets/{dataset.id}/documents"
+        before = dataset.rag.get(path, params={"id": document.id}).json()["data"]["docs"][0]
 
-        update_data = {"chunk_method": chunk_method, "parser_config": parser_config}
+        document.update(payload)
+        after = dataset.rag.get(path, params={"id": document.id}).json()["data"]["docs"][0]
+        for field in before.keys() - {"update_date", "update_time"}:
+            assert after[field] == before[field], f"{field} changed for {payload}"
+        for field in ("update_date", "update_time"):
+            if field in payload:
+                assert after[field] != payload[field], f"{field} was applied from {payload}"
+
+
+@pytest.mark.integration
+class TestUpdateDocumentParserConfig:
+    @pytest.mark.p2
+    @pytest.mark.parametrize(
+        "parser_config, saved_path, expected_value, expected_message",
+        [
+            ({}, None, None, ""),
+            (
+                {"GeneralChunker:SixApplesFall": {"chunk_token_size": 256}},
+                ("GeneralChunker:SixApplesFall", "chunk_token_size"),
+                256,
+                "",
+            ),
+            (
+                {"GeneralChunker:SixApplesFall": {"delimiters": ["!"]}},
+                ("GeneralChunker:SixApplesFall", "delimiters"),
+                ["!"],
+                "",
+            ),
+            (
+                {"Extractor:AutoExtractDefault": {"keywords": {"top_n": 5}}},
+                ("Extractor:AutoExtractDefault", "keywords", "top_n"),
+                5,
+                "",
+            ),
+            (
+                {"Extractor:AutoExtractDefault": {"questions": {"top_n": 5}}},
+                ("Extractor:AutoExtractDefault", "questions", "top_n"),
+                5,
+                "",
+            ),
+            (
+                {"Extractor:AutoExtractDefault": {"tags": {"top_n": 3}}},
+                ("Extractor:AutoExtractDefault", "tags", "top_n"),
+                3,
+                "",
+            ),
+            (
+                {"GeneralChunker:SixApplesFall": {"delimiters": ["!"] * 33000}},
+                None,
+                None,
+                "exceeds size limit",
+            ),
+            ([], None, None, "input should be a valid dictionary"),
+            ({"Parser:HipSignsRhyme": {"pdf": {"pages": [[0, 5]]}}}, None, None, "page"),
+        ],
+    )
+    def test_parser_config(self, add_documents, parser_config, saved_path, expected_value, expected_message):
+        dataset, documents = add_documents
+        document = documents[0]
+        original_config = dataset.list_documents(id=document.id)[0].parser_config.to_json()
 
         if expected_message:
             with pytest.raises(Exception) as exception_info:
-                document.update(update_data)
-            assert expected_message in str(exception_info.value), str(exception_info.value)
+                document.update({"parser_config": parser_config})
+            assert expected_message in str(exception_info.value).lower()
+            unchanged = dataset.list_documents(id=document.id)[0].parser_config.to_json()
+            assert unchanged == original_config
+            return
+
+        document.update({"parser_config": parser_config})
+        docs = dataset.list_documents(id=document.id)
+        updated_doc = next(doc for doc in docs if doc.id == document.id)
+        saved = updated_doc.parser_config.to_json()
+        if saved_path:
+            value = saved
+            for key in saved_path:
+                value = value[key]
+            assert value == expected_value
         else:
-            document.update(update_data)
-            docs = dataset.list_documents(id=document.id)
-            updated_doc = [doc for doc in docs if doc.id == document.id][0]
-            if parser_config:
-                for k, v in parser_config.items():
-                    if k in {"graphrag", "raptor"}:
-                        assert not hasattr(updated_doc.parser_config, k), str(updated_doc)
-                        continue
-                    if isinstance(v, dict):
-                        for kk, vv in v.items():
-                            assert attrgetter(f"{k}.{kk}")(updated_doc.parser_config) == vv, str(updated_doc)
-                    else:
-                        assert attrgetter(k)(updated_doc.parser_config) == v, str(updated_doc)
-            else:
-                expected_config = DataSet.ParserConfig(
-                    client,
-                    DEFAULT_PARSER_CONFIG,
-                )
-                assert str(updated_doc.parser_config) == str(expected_config), str(updated_doc)
+            assert saved == original_config

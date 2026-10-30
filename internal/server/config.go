@@ -156,6 +156,16 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse default models config error: %w", err)
 	}
 
+	err = globalConfig.ParseOAuthConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse OAuth config error: %w", err)
+	}
+
+	err = globalConfig.ParseAuditConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse audit log config error: %w", err)
+	}
+
 	return nil
 }
 

@@ -23,12 +23,8 @@ import (
 	"strings"
 )
 
-const (
-	// MaxImagePayloadBytes bounds compressed image data accepted by media paths.
-	MaxImagePayloadBytes = 32 << 20
-	// maxStreamBuffer caps the copy buffer used while validating a payload.
-	maxStreamBuffer = 32 << 10
-)
+// maxStreamBuffer caps the copy buffer used while validating a payload.
+const maxStreamBuffer = 32 << 10
 
 // NormalizeBase64ImagePayload validates an external image payload within its
 // decoded byte limit and returns standard base64 with padding, no CR/LF, the
@@ -81,7 +77,7 @@ func cleanBase64ImagePayload(payload string, maxDecodedBytes int) (string, bool)
 	if maxDecodedBytes < 0 {
 		return "", false
 	}
-	encodedBytes, ok := scanBase64ImagePayload(payload, base64.StdEncoding.EncodedLen(maxDecodedBytes))
+	encodedBytes, _, ok := scanBase64ImagePayload(payload, base64.StdEncoding.EncodedLen(maxDecodedBytes))
 	if !ok {
 		return "", false
 	}
@@ -94,42 +90,51 @@ func cleanBase64ImagePayload(payload string, maxDecodedBytes int) (string, bool)
 }
 
 // scanBase64ImagePayload counts the base64 characters of an image payload
-// (CR/LF excluded) and rejects a payload whose padding is malformed: '=' may
+// (CR/LF excluded) and returns the padding count. It rejects bytes outside the
+// standard base64 alphabet and a payload whose padding is malformed: '=' may
 // only appear in the final quantum, at most twice, and the character count
 // must form whole quanta.
 //
 // The padding rule is what rejects data that follows a padded quantum. Go's
 // streaming decoder only reports that when the whole payload lands in one
 // decode call, so it cannot be left to the decoder.
-func scanBase64ImagePayload(payload string, maxEncodedBytes int) (int, bool) {
-	encodedBytes := 0
-	padding := 0
+func scanBase64ImagePayload(payload string, maxEncodedBytes int) (encodedBytes, padding int, ok bool) {
 	sawPadding := false
 	for i := 0; i < len(payload); i++ {
-		if payload[i] == '\r' || payload[i] == '\n' {
+		c := payload[i]
+		if c == '\r' || c == '\n' {
 			continue
 		}
 		encodedBytes++
 		if encodedBytes > maxEncodedBytes {
-			return 0, false
+			return 0, 0, false
 		}
-		if payload[i] == '=' {
+		if c == '=' {
 			sawPadding = true
 			padding++
 			if padding > 2 {
-				return 0, false
+				return 0, 0, false
 			}
 			continue
 		}
-		if sawPadding {
-			return 0, false
+		if sawPadding || !isBase64Alphabet(c) {
+			return 0, 0, false
 		}
 	}
 	if encodedBytes == 0 {
-		return 0, false
+		return 0, 0, false
 	}
 	if encodedBytes%4 == 1 || (padding > 0 && encodedBytes%4 != 0) {
-		return 0, false
+		return 0, 0, false
 	}
-	return encodedBytes, true
+	return encodedBytes, padding, true
+}
+
+// isBase64Alphabet reports whether c is a standard base64 alphabet byte.
+func isBase64Alphabet(c byte) bool {
+	switch {
+	case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '+', c == '/':
+		return true
+	}
+	return false
 }

@@ -136,6 +136,13 @@ ingestor:
   # (highest precedence). Valid range [1, 16]. Default 2.
   page_concurrency: 2
   compiler_pool_size: 0
+  # log:
+    # type: file              # file | database
+    # format: json            # text | json (reserved; text only today)
+    # path: ingest_log.log    # empty/missing = binary default (server_main.log / admin_server.log / ingestion_server.log)
+    # max_size: 100           # MB before rotation
+    # max_backups: 10         # retained rotated files
+    # max_age: 30             # days
 file_syncer:
   max_concurrent_syncs: 5
 user_default_llm:
@@ -215,6 +222,7 @@ user_default_llm:
 #    http_secret_key:
 #  site:
 #    switch: false
+#  disable_password_login: false
 # permission:
 #   switch: false
 #   component: false
@@ -242,3 +250,10 @@ user_default_llm:
 #   max_backups: 10          # retained rotated files
 #   max_age: 30              # days
 #   compress: true           # gzip rotated files; default true. Set false to disable.
+# audit:
+#  type: file              # file | database
+#  format: json            # text | json (reserved; text only today)
+#  path: audit_log.log     # empty/missing = binary default (server_main.log / admin_server.log / ingestion_server.log)
+#  max_size: 100          # MB before rotation
+#  max_backups: 10         # retained rotated files
+#  max_age: 30             # days

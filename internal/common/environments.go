@@ -262,6 +262,7 @@ const (
 	EnvFirecrawlRelayTimeout             = "FIRECRAWL_RELAY_TIMEOUT"
 	EnvRAGFlowSecretKey                  = "RAGFLOW_SECRET_KEY"
 	EnvEnableRegister                    = "ENABLE_REGISTER"
+	EnvDisablePasswordLogin              = "DISABLE_PASSWORD_LOGIN"
 	EnvMinioHost                         = "MINIO_HOST"
 	EnvMinioRegion                       = "MINIO_REGION"
 	EnvLang                              = "LANG"
@@ -320,6 +321,13 @@ const (
 	// ingestor.inference_cpu_cores config key and is itself overridden by the
 	// --deepdoc-inference-cpu-cores CLI flag.
 	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
+
+	// Media extraction limits. The parser media budget and the run media cache
+	// read these per call: the per-image payload limit, the number of distinct
+	// images one run may cache, and the total decoded bytes one run may cache.
+	EnvMediaImageMaxBytes   = "RAGFLOW_MEDIA_IMAGE_MAX_BYTES"
+	EnvMediaMaxImagesPerRun = "RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN"
+	EnvMediaMaxBytesPerRun  = "RAGFLOW_MEDIA_MAX_BYTES_PER_RUN"
 
 	// Typed-decision model. Unset RAGFLOW_DECISION_DIR leaves the feature off:
 	// every caller degrades to unfiltered behaviour, so a deployment without the

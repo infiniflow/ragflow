@@ -53,6 +53,16 @@ const (
 	// entries — so it needs no separate marker count. Prose can accumulate the
 	// occasional run, which is why the threshold is three and not one.
 	tocMinMergedRuns = 3
+	// tocMinLongEntryLeader is the shortest leader run that lets a long box be
+	// read as one TOC entry line. Tab leaders run for many characters; prose
+	// that merely ends in an ellipsis and a number does not, and must keep
+	// counting as prose.
+	tocMinLongEntryLeader = 6
+	// tocMinShortEntryLeader is the same floor for short boxes. A short entry
+	// stays a marker rather than body evidence, but an ellipsis that is only
+	// sentence punctuation ("The result is ... 42") must not turn three prose
+	// lines into a TOC page.
+	tocMinShortEntryLeader = 4
 	// tocMaxLeadPages bounds how many leading pages without body text may
 	// precede the TOC. A cover, copyright page or frontispiece carries no body
 	// text and is skipped, so a TOC that is not physically page one is still
@@ -100,7 +110,7 @@ var (
 	// fragment. Counting these runs tells a TOC block that upstream merged into
 	// one long box apart from a paragraph. Digits accept the full-width forms
 	// pageNumberPattern accepts, for the same reason.
-	tocEntryRunPattern = regexp.MustCompile(`(\.{2,}|…{2,}|⋯{2,}|·{2,})\s*[0-9０-９]{1,4}\s*[IVXLCDMivxlcdm]{0,5}`)
+	tocEntryRunPattern = regexp.MustCompile(`(\.{2,}|…{2,}|⋯{2,}|·{2,})\s*([0-9０-９]{1,4}\s*[IVXLCDMivxlcdm]{0,5}|[IVXLCDMivxlcdm]{1,7}\b)`)
 	// tocLeaderOnlyPattern matches a box that is nothing but leader
 	// characters (dots, ellipses, middots, spaces): the leader column of a
 	// dotted TOC entry. Such a box is long but carries no body text, so it
@@ -316,6 +326,7 @@ type pageShape struct {
 	markers int  // short boxes opening with a chapter marker or holding a page number
 	merged  bool // a long box carrying tocMinMergedRuns leader+page-number runs
 	body    int  // marker-less, leader-less short boxes longer than tocBodyRunes
+	entries int  // long entry lines: count toward the list threshold, not as prose
 }
 
 func shapeOfPage(boxes []pdf.TextBox, indices []int) pageShape {
@@ -326,17 +337,34 @@ func shapeOfPage(boxes []pdf.TextBox, indices []int) pageShape {
 			continue
 		}
 		if utf8.RuneCountInString(text) > tocMaxProseRunes {
-			s.prose++
+			// A leader column is typographic filler, never prose. OCR detection
+			// misses it, so the native-text recovery emits it as its own long
+			// box; counting it as prose kept every page it appeared on.
+			if tocLeaderOnlyPattern.MatchString(text) {
+				continue
+			}
 			// A merged TOC block is long by definition, so the run count is the
-			// only evidence it can carry. Cap the search: the answer is a
-			// three-way comparison, not the exact number of runs.
+			// only evidence it can carry. It is confirmed entries, not prose:
+			// counting it as prose let three merged blocks guard their own page.
 			if len(tocEntryRunPattern.FindAllStringIndex(text, tocMinMergedRuns)) >= tocMinMergedRuns {
 				s.merged = true
+				continue
 			}
+			// An entry line — optional title, leaders, page number — is a TOC
+			// entry, not a paragraph. It confirms the page like any other
+			// marker instead of contradicting it as body text. Require a real
+			// tab leader here: a prose sentence that happens to end in an
+			// ellipsis and a number must keep counting as prose.
+			if isTOCEntryLine(text, tocMinLongEntryLeader) {
+				s.markers++
+				s.entries++
+				continue
+			}
+			s.prose++
 			continue
 		}
 		s.short++
-		if chapterEntryPattern.MatchString(text) || pageNumberPattern.MatchString(text) {
+		if chapterEntryPattern.MatchString(text) || pageNumberPattern.MatchString(text) || isTOCEntryLine(text, tocMinShortEntryLeader) {
 			s.markers++
 			continue
 		}
@@ -347,14 +375,52 @@ func shapeOfPage(boxes []pdf.TextBox, indices []int) pageShape {
 	return s
 }
 
-// isTOC reports whether the page reads as a table of contents: a list of short
-// boxes carrying entry markers, or one long box that is itself a run of
-// entries, and no body text either way.
+// isTOCEntryLine reports whether text ends with one TOC entry's tail: a leader
+// run followed by the entry's page number. minLeader is the shortest leader run
+// accepted, so a long box only reads as an entry when its tab leader is real.
+// Space-separated leader segments count as one run (OCR often splits them).
+// The leader+number grammar is reuse of tocEntryRunPattern; prose that merely
+// contains an ellipsis does not end in a run and never matches.
+func isTOCEntryLine(text string, minLeader int) bool {
+	locs := tocEntryRunPattern.FindAllStringIndex(text, -1)
+	if len(locs) == 0 {
+		return false
+	}
+	loc := locs[len(locs)-1]
+	if strings.TrimSpace(text[loc[1]:]) != "" {
+		return false
+	}
+	// Walk back over the leader run so segments split by spaces all count.
+	start := loc[0]
+	for start > 0 {
+		r, size := utf8.DecodeLastRuneInString(text[:start])
+		if r == ' ' || r == '\t' || r == '.' || r == '…' || r == '⋯' || r == '·' {
+			start -= size
+			continue
+		}
+		break
+	}
+	leader := 0
+	for _, r := range text[start:loc[1]] {
+		switch r {
+		case '.', '…', '⋯', '·':
+			leader++
+		case ' ', '\t':
+		default:
+			return leader >= minLeader
+		}
+	}
+	return false
+}
+
+// isTOC reports whether the page reads as a table of contents: a list of entry
+// boxes carrying markers, or one long box that is itself a run of entries, and
+// no body text either way.
 func (s pageShape) isTOC() bool {
 	if s.carriesProse() {
 		return false
 	}
-	return s.merged || (s.short >= tocMinShortBoxes && s.markers >= tocMinEntries)
+	return s.merged || (s.short+s.entries >= tocMinShortBoxes && s.markers >= tocMinEntries)
 }
 
 // carriesProse reports whether the page carries body text. No signal may drop

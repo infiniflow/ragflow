@@ -276,13 +276,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "gpt-5.1-chat-latest",
-                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
-                    "max_tokens": 400000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
                     "llm_name": "gpt-5",
                     "tags": "LLM,CHAT,400k,IMAGE2TEXT",
                     "max_tokens": 400000,
@@ -304,13 +297,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "gpt-5-chat-latest",
-                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
-                    "max_tokens": 400000,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
                     "llm_name": "gpt-4.1",
                     "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1047576,
@@ -325,28 +311,7 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "gpt-4.1-nano",
-                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
-                    "max_tokens": 1047576,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "gpt-4.5-preview",
-                    "tags": "LLM,CHAT,128K",
-                    "max_tokens": 128000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
                     "llm_name": "o3",
-                    "tags": "LLM,CHAT,200K,IMAGE2TEXT",
-                    "max_tokens": 200000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "o4-mini",
                     "tags": "LLM,CHAT,200K,IMAGE2TEXT",
                     "max_tokens": 200000,
                     "model_type": "chat",
@@ -374,20 +339,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "gpt-3.5-turbo",
-                    "tags": "LLM,CHAT,4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "gpt-3.5-turbo-16k-0613",
-                    "tags": "LLM,CHAT,16k",
-                    "max_tokens": 16385,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
                     "llm_name": "text-embedding-ada-002",
                     "tags": "TEXT EMBEDDING,8K",
                     "max_tokens": 8191,
@@ -413,27 +364,6 @@
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 26214400,
                     "model_type": "speech2text",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "gpt-4",
-                    "tags": "LLM,CHAT,8K",
-                    "max_tokens": 8191,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "gpt-4-turbo",
-                    "tags": "LLM,CHAT,8K",
-                    "max_tokens": 8191,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "gpt-4-32k",
-                    "tags": "LLM,CHAT,32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat",
                     "is_tools": false
                 },
                 {
@@ -3548,6 +3478,30 @@
             "status": "1",
             "llm": [],
             "url": "https://cloudgpu.app/v1"
+        },
+        {
+            "name": "Obscurify.ai",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [],
+            "url": "https://obscurify.ai/v1"
+        },
+        {
+            "name": "Hostinger Router",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://router.hostinger.com/v1"
+        },
+        {
+            "name": "cheapaimodel",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.cheapaimodel.ai/v1"
         },
         {
             "name": "StepFun",

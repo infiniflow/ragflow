@@ -9,7 +9,8 @@ export default {
       delete: '删除',
       deleteModalTitle: '确定删除吗?',
       deleteThem: '确定要删除吗？',
-      removeModalTitle: '确定移除吗？',
+      removeIt: '确定移除吗？',
+      removeThem: '确定移除吗？',
       ok: '确认',
       cancel: '取消',
       yes: '是',
@@ -45,7 +46,6 @@ export default {
       viewLess: '收起',
       comingSoon: '即将推出',
       download: '下载',
-      figure: '引文',
       close: '关闭',
       preview: '预览',
       move: '移动',
@@ -359,6 +359,9 @@ export default {
     },
     knowledgeDetails: {
       continueUpload: '继续上传',
+      uploadPipelineDeletedTitle: '解析 Pipeline 不可用',
+      uploadPipelineDeletedContent:
+        '该数据集配置的解析 Pipeline 已被删除或没有已发布版本，无法在上传时自动解析。请在数据集设置中重新配置 Pipeline，或继续上传后为文件单独配置解析方式。',
       reselectParser: '重新选择解析方法',
       goAddModel: '前往添加模型',
       uploadMissingModelsTitle: '部分文件缺少解析所需的模型',
@@ -1045,7 +1048,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       model: '模型',
       modelTip: '大语言聊天模型',
       tokensSpent:
-        '消耗 {{total}} tokens（输入 {{prompt}} + 输出 {{completion}}）',
+        '消耗 {{total}} tokens（输入 {{prompt}}, 输出 {{completion}}）',
       turnElapsed: '耗时 {{seconds}}s',
       decisionModel: '决策模型',
       decisionModelTip:
@@ -1761,6 +1764,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       apiKey: 'API Key',
       apiKeyMessage: '请输入API Key',
       apiKeyPlaceholder: '请输入API Key',
+      credentialClearToRemove: '清空此字段并保存即可移除已保存的凭据',
       apiKeyTip: 'API Key可以通过注册相应的LLM供应商来获取。',
       aimlapiGetKey: '获取 API Key',
       aimlapiCheckStatus: '检查状态',
@@ -1799,6 +1803,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       mineruApiserver: 'MinerU API 服务器',
       mineruApiserverMessage: '请输入 MinerU API 服务器地址！',
       mineruApiserverPlaceholder: '例如：http://host.docker.internal:9987',
+      mineruApiToken: 'MinerU API Token',
+      mineruApiTokenPlaceholder: 'mineru.net API 管理页创建的 Token（可选）',
+      mineruApiTokenTip:
+        '填写后走官方精准解析（/api/v4，支持 vlm）。留空则使用免登录的 Agent 轻量接口。自建 MinerU 不需要填写。',
       mineruOutputDir: 'MinerU 输出目录',
       mineruOutputDirMessage: '请输入 MinerU 输出目录！',
       mineruOutputDirPlaceholder: '/tmp/mineru',
@@ -1834,7 +1842,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        '所有新创建的知识库使用的默认 Embedding 模型。如未显示可选模型，请检查你是否在使用 RAGFlow slim 版(不含 Embedding 模型)；或前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
+        '所有新创建的知识库使用的默认 Embedding 模型。如未显示可选模型，前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       img2txtModel: 'VLM',
       img2txtModelTip:
         '所有新创建的知识库都将使用默认的 VLM 模型。 它可以描述图片或视频。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
@@ -2035,6 +2043,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       batchAddModels: '添加全部模型',
       batchRemoveModels: '移除全部模型',
       batchVerifyModels: '验证全部模型',
+      moreActions: '更多操作',
       editCustomModelTitle: '编辑模型',
       modelMaxTokens: '最大上下文长度',
       modelTypes: {
@@ -2479,14 +2488,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         editAlias: '编辑别名',
         editAliasDescription:
           '为该版本设置一个便于识别的别名，方便后续快速查找。',
-        pinnedTooltip:
-          '该数据集已固定到特定版本。智能体新发布的版本不会影响它。',
-        outdated: '固定的版本不是最新版本。点击了解详情；我们不会自动升级它。',
+        outdated: '当前配置的数据管道版本不是最新版本，也不会自动更新。',
         delete: '删除版本',
         deleteConfirmTitle: '删除该版本？',
         deleteConfirmContent:
           '若数据集或文件正绑定此版本，删除后将导致对应文件无法解析。此操作不可撤销。',
-        restore: '恢复为当前版本',
+        deleteAgentConfirmContent:
+          '若该智能体已嵌入网站或对外提供服务，删除最新发布版本将导致线上服务回退到更早的版本或中断。删除不影响当前画布内容，但操作不可撤销。',
+        restore: '恢复为当前草稿',
         restoreConfirmTitle: '恢复此版本为当前智能体？',
         restoreConfirmContent:
           '当前智能体 DSL 将被此版本替换。再次保存会创建新版本。',
@@ -2520,6 +2529,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       operation: '操作',
       run: '运行',
       save: '保存',
+      saveDraft: '保存草稿',
       title: 'ID：',
       beginDescription: '这是流程开始的地方',
       answerDescription: `该组件用作机器人与人类之间的接口。它接收用户的输入并显示机器人的计算结果。`,
@@ -3108,7 +3118,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       confirmPublish: '确认发布',
       publishIngestionPipeline: '您即将发布此 Ingestion pipeline。',
       publishAgent: '您即将发布此智能体',
-      linkedDataset: '已关联的知识库：',
       lastPublished: '上次发布时间',
       createFromBlank: '从空白创建',
       createFromTemplate: '从模板创建',
@@ -3123,7 +3132,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         compilationOperator: '编译算子',
         workflow: '工作流',
       },
-      parser: '解析器',
+      parser: 'Parser',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
       tokenizer: 'Indexer',
       tokenizerRequired: '请先添加索引器节点',
@@ -3163,14 +3172,14 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
       titleChunkerDescription:
         '按标题层级拆分文档。通过正则表达式定义各级标题，再选择层级或分组模式控制切片方式。',
-      titleChunker: '按标题分块',
+      titleChunker: 'Title Chunker',
       manualChunkerDescription:
         '手册类文档分块方式，适用于产品手册、用户指南等，可根据文档结构进行分块并保留必要的上下文。',
       oneChunkerDescription: '此 Chunker 无需额外配置。',
       qAChunkerDescription: '此 Chunker 无需额外配置。',
       tableChunkerDescription: '此 Chunker 无需额外配置。',
       pageChunkerDescription: '此 Chunker 无需额外配置。',
-      extractor: '提取器',
+      extractor: 'Transformer',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
       compiler: 'Compiler',
@@ -3451,6 +3460,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       arabic: '阿拉伯语',
       turkish: '土耳其语',
       dutch: '荷兰语',
+      slovak: '斯洛伐克语',
+      czech: '捷克语',
     },
     pagination: {
       total: '总共 {{total}} 条',

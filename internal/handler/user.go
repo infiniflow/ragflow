@@ -17,10 +17,10 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
@@ -45,21 +45,20 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 	}
 }
 
-// authCookie carries the signed access token to the SPA after login so its
-// JavaScript can send it back as an Authorization header on later requests.
-// Not HttpOnly because the SPA has to read it; the server validates the token
-// signature and expiry on every request.
-const authCookie = "ragflow_auth"
+// oauthAuthCookie is the cookie the callback writes on success, so the SPA
+// can pick up the signed access token after the redirect. The frontend
+// reads it and either re-issues the value as an Authorization header on
+// subsequent API calls or hands it off to its own token store. Not
+// HttpOnly so the SPA's JS can read it.
+const oauthAuthCookie = "ragflow_auth"
 
-// setAuthCookie writes the signed access token so the SPA can send it back as
-// a bearer token. Not HttpOnly so the SPA can copy it into its Authorization
-// header. The server checks the token signature and expiry on each request.
-func setAuthCookie(c *gin.Context, token string) {
-	// codeql[go/cookie-httponly-not-set] Intentional: the SPA reads the cookie
-	// via document.cookie, and the API validates the token signature and
-	// expiry on each request.
+// setOAuthAuthCookie writes the signed access token so the SPA can pick it
+// up after the redirect. Not HttpOnly so the SPA can copy it into its
+// Authorization header on subsequent fetches. The server checks the token
+// signature and expiry on each request.
+func setOAuthAuthCookie(c *gin.Context, token string) {
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     authCookie,
+		Name:     oauthAuthCookie,
 		Value:    token,
 		Path:     "/",
 		MaxAge:   60 * 60 * 24 * 7,
@@ -78,6 +77,19 @@ func setAuthCookie(c *gin.Context, token string) {
 // @Router /api/v1/users [post]
 func (h *UserHandler) Register(c *gin.Context) {
 	ctx := c.Request.Context()
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "register",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	var req service.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
@@ -93,20 +105,26 @@ func (h *UserHandler) Register(c *gin.Context) {
 		common.ResponseWithCodeData(c, code, data, err.Error())
 		return
 	}
+	operationLog.UserID = user.ID
+	operationLog.UserName = user.Email
 
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = err
 		return
 	}
 	authToken, err := issueUserAccessToken(user, secretKey)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = err
 		return
 	}
 
 	c.Header("Authorization", authToken)
-	setAuthCookie(c, authToken)
+	setOAuthAuthCookie(c, authToken)
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")
 	c.Header("Access-Control-Allow-Headers", "*")
@@ -135,30 +153,23 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		clickhouseDriver := clickhouse.GetDriver()
-		err := clickhouseDriver.SaveOperationLog(operationLog)
-		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
-			return
-		}
+		common.Audit(operationLog)
 	}()
 
 	var req service.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
-		operationLog.ErrorCode = uint16(common.CodeBadRequest)
-		operationLog.Message = err.Error()
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = err
 		return
 	}
-	operationLog.ResourceName = req.Username
+	operationLog.UserName = req.Username
 
 	user, code, err := h.userService.Login(ctx, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, false, err.Error())
-		operationLog.ErrorCode = uint16(code)
-		operationLog.Message = err.Error()
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 	operationLog.UserID = user.ID
@@ -166,25 +177,23 @@ func (h *UserHandler) Login(c *gin.Context) {
 	// Sign the access token with the active tenant context.
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
-		errMessage := fmt.Sprintf("Failed to get secret key: %s", err.Error())
-		common.ResponseWithCodeData(c, common.CodeServerError, false, errMessage)
-		operationLog.ErrorCode = uint16(common.CodeServerError)
-		operationLog.Message = errMessage
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		errMessage := fmt.Errorf("failed to get secret key: %s", err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, false, errMessage.Error())
+		operationLog.Code = int(common.CodeServerError)
+		operationLog.Error = errMessage
 		return
 	}
 	authToken, err := issueUserAccessToken(user, secretKey)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
-		operationLog.ErrorCode = uint16(common.CodeServerError)
-		operationLog.Message = "Failed to generate auth token"
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		operationLog.Code = int(common.CodeServerError)
+		operationLog.Error = err
 		return
 	}
 
 	// Set Authorization header with signed token
 	c.Header("Authorization", authToken)
-	setAuthCookie(c, authToken)
+	setOAuthAuthCookie(c, authToken)
 	// Set CORS headers
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")
@@ -214,68 +223,58 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		clickhouseDriver := clickhouse.GetDriver()
-		err := clickhouseDriver.SaveOperationLog(operationLog)
-		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
-			return
-		}
+		common.Audit(operationLog)
 	}()
 
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
-		operationLog.ErrorCode = uint16(common.CodeBadRequest)
-		operationLog.Message = err.Error()
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = err
 		return
 	}
-	operationLog.ResourceName = req.Email
+	operationLog.UserName = req.Email
 
 	if !local.IsAdminAvailable() {
 		adminStatus := local.GetAdminStatus()
 		common.ResponseWithCodeData(c, common.CodeAuthenticationError, "No", adminStatus.Reason)
-		operationLog.ErrorCode = uint16(common.CodeAuthenticationError)
-		operationLog.Message = adminStatus.Reason
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		operationLog.Code = int(common.CodeAuthenticationError)
+		operationLog.Error = errors.New(adminStatus.Reason)
 		return
 	}
 
 	user, code, err := h.userService.LoginByEmail(ctx, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, false, err.Error())
-		operationLog.ErrorCode = uint16(code)
-		operationLog.Message = err.Error()
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 	operationLog.UserID = user.ID
 
 	if user.IsSuperuser != nil && *user.IsSuperuser {
 		common.ResponseWithCodeData(c, common.CodeForbidden, false, "super admin should not login to this page.")
-		operationLog.ErrorCode = uint16(common.CodeForbidden)
-		operationLog.Message = "super admin should not login to this page."
+		operationLog.Code = int(common.CodeForbidden)
+		operationLog.Error = fmt.Errorf("super admin should not login to this page")
 		return
 	}
 
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
-		errorMessage := fmt.Sprintf("Failed to get secret key: %s", err.Error())
-		common.ResponseWithCodeData(c, common.CodeServerError, false, errorMessage)
-		operationLog.ErrorCode = uint16(common.CodeServerError)
-		operationLog.Message = errorMessage
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		errorMessage := fmt.Errorf("failed to get secret key: %s", err.Error())
+		common.ResponseWithCodeData(c, common.CodeServerError, false, errorMessage.Error())
+		operationLog.Code = int(common.CodeServerError)
+		operationLog.Error = errorMessage
 		return
 	}
 	authToken, err := issueUserAccessToken(user, secretKey)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
-		operationLog.ErrorCode = uint16(common.CodeServerError)
-		operationLog.Message = "Failed to generate auth token"
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		operationLog.Code = int(common.CodeServerError)
+		operationLog.Error = err
 		return
 	}
-	setAuthCookie(c, authToken)
+	setOAuthAuthCookie(c, authToken)
 	c.Header("Authorization", authToken)
 	c.Header("Access-Control-Allow-Origin", "*")
 	c.Header("Access-Control-Allow-Methods", "*")
@@ -330,16 +329,11 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		clickhouseDriver := clickhouse.GetDriver()
-		err := clickhouseDriver.SaveOperationLog(operationLog)
-		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
-			return
-		}
+		common.Audit(operationLog)
 	}()
 
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     authCookie,
+		Name:     oauthAuthCookie,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
@@ -351,11 +345,10 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	// Same as AuthMiddleware@auth.go
 	token := c.GetHeader("Authorization")
 	if token == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, common.CodeUnauthorized, nil, "Missing Authorization header")
+		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, common.CodeUnauthorized, nil, "missing authorization header")
 		c.Abort()
-		operationLog.ErrorCode = uint16(common.CodeUnauthorized)
-		operationLog.Message = "Missing Authorization header"
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		operationLog.Code = int(common.CodeUnauthorized)
+		operationLog.Error = fmt.Errorf("missing authorization header")
 		return
 	}
 
@@ -364,21 +357,20 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 		c.Abort()
-		operationLog.ErrorCode = uint16(code)
-		operationLog.Message = "Invalid access token"
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 	user := identity.User
 	operationLog.UserID = user.ID
+	operationLog.UserName = user.Email
 
 	// Logout user
 	code, err = h.userService.Logout(ctx, user)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, false, err.Error())
-		operationLog.ErrorCode = uint16(code)
-		operationLog.Message = err.Error()
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 
@@ -486,11 +478,28 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 // @Router /v1/user/set_tenant_info [post]
 func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	ctx := c.Request.Context()
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "set_tenant_info",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
+	operationLog.UserName = user.Email
 
 	requiredKeys := []string{"tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id"}
 	missingArgumentMessage := "required argument are missing: tenant_id,asr_id,embd_id,img2txt_id,llm_id; "
@@ -498,6 +507,8 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	var payload map[string]interface{}
 	if err := c.ShouldBindBodyWith(&payload, binding.JSON); err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, missingArgumentMessage)
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = err
 		return
 	}
 
@@ -509,6 +520,8 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	}
 	if len(missing) > 0 {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)))
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = errors.New(fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)))
 		return
 	}
 
@@ -538,6 +551,8 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	code, err := h.userService.SetTenantInfo(ctx, user.ID, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 
@@ -553,166 +568,4 @@ func joinStrings(values []string) string {
 		result += "," + values[i]
 	}
 	return result
-}
-
-// ---- Forgot-password flow (fixes #15282) -----------------------------
-//
-// Mirrors api/apps/restful_apis/user_api.py /auth/password/... endpoints.
-//
-// Contract divergence from Python: the Python endpoint returns a
-// rendered image (Content-Type: image/JPEG) from the python-captcha
-// library and stores the captcha under captcha:<email>. This Go port
-// returns a server-issued captcha_id plus a PNG captcha image (as a
-// data URL the FE drops straight into <img src>), and stores
-// captcha:<captcha_id>. The plaintext text only ever appears as
-// raster pixels — the OTP step reuses the captcha_id to look the
-// expected text up server-side.
-//
-// The PNG is rendered using stdlib `image/png` + a hand-rolled 5x7
-// bitmap font in internal/utility/captcha_png.go, because no Go
-// captcha library is vendored in go.mod (no network during build).
-// PR #15290 review (Hz-186) explicitly asked for a raster after the
-// earlier SVG implementation: the SVG embedded the answer in <text>
-// nodes, so a scripted client could base64-decode the response and
-// grep the captcha directly. PNG closes that attack — the response
-// bytes never reference the original text.
-
-type forgotCaptchaRequest struct {
-	Email string `form:"email" json:"email"`
-}
-
-// ForgotCaptcha POST /api/v1/auth/password/forgot/captcha
-// @Summary Issue forgot-password captcha
-// @Description Generates a captcha for the email and stores it in Redis
-// for 60 seconds keyed by a server-issued captcha_id. Returns the id
-// and a PNG image (data URL) the FE renders inside <img src>. The
-// plaintext code never appears in the response — only as raster
-// pixels — so a scripted client can't regex it out (fixes the
-// SVG-text leak from the previous iteration, per PR #15290 review).
-// @Tags auth
-// @Accept json
-// @Produce json
-// @Param email query string false "user email (also accepted in JSON body)"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/auth/password/forgot/captcha [post]
-func (h *UserHandler) ForgotCaptcha(c *gin.Context) {
-	var req forgotCaptchaRequest
-	// Python reads from request.args (query string), accept both for parity.
-	if v := c.Query("email"); v != "" {
-		req.Email = v
-	} else {
-		_ = c.ShouldBindJSON(&req)
-	}
-
-	ctx := c.Request.Context()
-	captchaID, captchaImage, errCode, err := h.userService.ForgotIssueCaptcha(ctx, req.Email)
-	if err != nil {
-		common.ResponseWithCodeData(c, errCode, false, err.Error())
-		return
-	}
-	common.SuccessWithData(c, gin.H{
-		"captcha_id":    captchaID,
-		"captcha_image": captchaImage,
-	}, "captcha issued")
-}
-
-type forgotSendOTPRequest struct {
-	Email     string `json:"email"`
-	CaptchaID string `json:"captcha_id"`
-	Captcha   string `json:"captcha"`
-}
-
-// ForgotSendOTP POST /api/v1/auth/password/forgot/otp
-// @Summary Send forgot-password OTP
-// @Description Validates the captcha (looked up by captcha_id), then
-// mints a one-time code, stores a salted hash in Redis (5 min TTL,
-// attempt cap, resend cooldown), and emails the OTP to the user.
-// @Tags auth
-// @Param request body forgotSendOTPRequest true "email + captcha_id + captcha"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/auth/password/forgot/otp [post]
-func (h *UserHandler) ForgotSendOTP(c *gin.Context) {
-	var req forgotSendOTPRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
-		return
-	}
-	ctx := c.Request.Context()
-	errCode, err := h.userService.ForgotSendOTP(ctx, req.Email, req.CaptchaID, req.Captcha)
-	if err != nil {
-		common.ResponseWithCodeData(c, errCode, false, err.Error())
-		return
-	}
-	common.SuccessWithData(c, true, "verification passed, email sent")
-}
-
-type forgotVerifyOTPRequest struct {
-	Email string `json:"email"`
-	OTP   string `json:"otp"`
-}
-
-// ForgotVerifyOTP POST /api/v1/auth/password/forgot/otp/verify
-// @Summary Verify forgot-password OTP
-// @Description Consumes the OTP if it matches, sets a short-lived
-// verified flag the reset endpoint will gate on. Wrong-OTP attempts
-// are counted and a 30-minute lockout kicks in at the limit.
-// @Tags auth
-// @Param request body forgotVerifyOTPRequest true "email + otp"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/auth/password/forgot/otp/verify [post]
-func (h *UserHandler) ForgotVerifyOTP(c *gin.Context) {
-	var req forgotVerifyOTPRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
-		return
-	}
-	ctx := c.Request.Context()
-	errCode, err := h.userService.ForgotVerifyOTP(ctx, req.Email, req.OTP)
-	if err != nil {
-		common.ResponseWithCodeData(c, errCode, false, err.Error())
-		return
-	}
-	common.SuccessWithData(c, true, "otp verified")
-}
-
-// ForgotResetPassword POST /api/v1/auth/password/reset
-// @Summary Reset password after OTP verification
-// @Description Requires a successful prior verify call (verified flag
-// set in Redis). Updates the password hash and rotates the access
-// token so the response can auto-login the user.
-// @Tags auth
-// @Accept json
-// @Produce json
-// @Param request body service.ForgotResetPasswordRequest true "email + new password"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/auth/password/reset [post]
-func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
-	ctx := c.Request.Context()
-	var req service.ForgotResetPasswordRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
-		return
-	}
-
-	user, code, err := h.userService.ForgotResetPassword(ctx, &req)
-	if err != nil {
-		common.ResponseWithCodeData(c, code, false, err.Error())
-		return
-	}
-
-	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
-	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, false, fmt.Sprintf("Failed to get secret key: %s", err.Error()))
-		return
-	}
-	authToken, err := issueUserAccessToken(user, secretKey)
-	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
-		return
-	}
-	c.Header("Authorization", authToken)
-	c.Header("Access-Control-Expose-Headers", "Authorization")
-
-	profile := h.userService.GetUserProfile(ctx, user)
-	common.SuccessWithData(c, profile, "Password reset successful. Logged in.")
 }

@@ -9,7 +9,8 @@ export default {
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete it ?',
       deleteThem: 'Are you sure to delete them ?',
-      removeModalTitle: 'Are you sure to remove it ?',
+      removeIt: 'Are you sure to remove it ?',
+      removeThem: 'Are you sure to remove them ?',
       ok: 'Ok',
       cancel: 'Cancel',
       yes: 'Yes',
@@ -58,7 +59,6 @@ export default {
       viewLess: 'View less',
       comingSoon: 'Coming soon',
       download: 'Download',
-      figure: 'Fig.',
       close: 'Close',
       preview: 'Preview',
       move: 'Move',
@@ -402,6 +402,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       continueUpload: 'Continue upload',
+      uploadPipelineDeletedTitle: 'Parsing pipeline unavailable',
+      uploadPipelineDeletedContent:
+        'The pipeline configured for this dataset has been deleted or has no published version, so uploaded files cannot be parsed automatically. Reconfigure a pipeline in the dataset settings, or upload now and configure parsing for each file individually.',
       reselectParser: 'Reselect parse method',
       goAddModel: 'Go add model',
       uploadMissingModelsTitle: 'Some files lack a required model',
@@ -1154,7 +1157,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       operation: 'Operation',
       model: 'Model',
       modelTip: 'Large language chat model',
-      tokensSpent: '{{total}} tokens ({{prompt}} in + {{completion}} out)',
+      tokensSpent: '{{total}} tokens ({{prompt}} input, {{completion}} output)',
       turnElapsed: '{{seconds}}s',
       decisionModel: 'Decision model',
       decisionModelTip:
@@ -2137,6 +2140,8 @@ Example: Virtual Hosted Style`,
       apiKey: 'API Key',
       apiKeyMessage: 'Please enter the API Key',
       apiKeyPlaceholder: 'Please enter the API Key',
+      credentialClearToRemove:
+        'Clear this field to remove the saved credential',
       apiKeyTip:
         'The API Key can be obtained by registering the corresponding LLM supplier.',
       aimlapiGetKey: 'Get API key',
@@ -2178,6 +2183,11 @@ Example: Virtual Hosted Style`,
       mineruApiserver: 'MinerU API Server',
       mineruApiserverMessage: 'Please input the MinerU API Server URL!',
       mineruApiserverPlaceholder: 'e.g. http://host.docker.internal:9987',
+      mineruApiToken: 'MinerU API token',
+      mineruApiTokenPlaceholder:
+        'Token from mineru.net API management (optional)',
+      mineruApiTokenTip:
+        'When set, RAGFlow uses the official precise API (/api/v4, including vlm). Leave empty to use the no-login agent API. Not required for a self-hosted MinerU server.',
       mineruOutputDir: 'MinerU Output Directory',
       mineruOutputDirMessage: 'Please input the MinerU output directory!',
       mineruOutputDirPlaceholder: '/tmp/mineru',
@@ -2211,7 +2221,7 @@ Example: Virtual Hosted Style`,
         'The model that judges whether a retrieved passage is worth showing the LLM. Leave unset to keep the retrieved text unfiltered.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check the Model providers page to see if your model provider supports this model.',
+        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check the Model providers page to see if your model provider supports this model.',
       img2txtModel: 'VLM',
       img2txtModelTip:
         'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.',
@@ -2461,6 +2471,7 @@ Example: Virtual Hosted Style`,
       batchAddModels: 'Add all models',
       batchRemoveModels: 'Remove all models',
       batchVerifyModels: 'Verify all models',
+      moreActions: 'More actions',
       editCustomModelTitle: 'Edit model',
       modelMaxTokens: 'Max context length',
       modelFeatures: 'Model features',
@@ -2793,7 +2804,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       comma: 'Comma',
       semicolon: 'Semicolon',
       period: 'Period',
-      lineBreak: 'Line break',
+      linebreak: 'Line break',
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
@@ -2914,6 +2925,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       operation: 'operation',
       run: 'Run',
       save: 'Save',
+      saveDraft: 'Save draft',
       title: 'ID:',
       beginDescription: 'This is where the flow begins.',
       answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
@@ -3354,6 +3366,15 @@ Best for: Documents with flowing, contextually connected content — such as boo
       optional: 'Optional',
       pasteFileLink: 'Paste file link',
       testRun: 'Test run',
+      captureModelInputs: 'Capture model inputs',
+      captureModelInputsHint:
+        'Test runs execute the agent and its tools. Expanding or copying captured inputs does not run them again.',
+      modelInputs: 'Model inputs',
+      modelInputSummary:
+        'Recorded entries: {{count}} · Omitted calls: {{omittedCount}}',
+      noModelInputs: 'No model calls were captured in this run.',
+      modelInputsUnavailable: 'Model inputs are unavailable for this run.',
+      testRunError: 'Test run failed ({{code}}): {{message}}',
       debugRunLimits:
         'A debug run verifies that the flow executes without errors: PDF parses only the first 2 pages (other formats parse all pages); if a chunker node is present, only the first 3 chunks are previewed; if a knowledge-compiler node is present, it runs locally only and does not trigger a dataset rebuild or notification.',
       template: 'Template',
@@ -3445,15 +3466,15 @@ This delimiter is used to split the input text into several text pieces echo of 
         editAlias: 'Edit alias',
         editAliasDescription:
           'Give this version a memorable alias so you can find it quickly later.',
-        pinnedTooltip:
-          'This dataset is pinned to a specific version. New versions published on the agent will not affect it.',
         outdated:
-          'The pinned version is not the latest. Click to learn more; we will not upgrade it automatically.',
+          'The configured pipeline version is not the latest and will not be updated automatically.',
         delete: 'Delete version',
         deleteConfirmTitle: 'Delete this version?',
         deleteConfirmContent:
           'Deleting a version that a dataset or file is bound to will make that file unparseable. This cannot be undone.',
-        restore: 'Restore as current',
+        deleteAgentConfirmContent:
+          'If this agent is embedded in a website or serving external traffic, deleting its latest published version will roll back or interrupt the live service. Your current canvas is not affected. This cannot be undone.',
+        restore: 'Restore as current draft',
         restoreConfirmTitle: 'Restore this version as the current agent?',
         restoreConfirmContent:
           'The current agent DSL will be replaced by this version. Save again to create a new version.',
@@ -3593,7 +3614,6 @@ This process aggregates variables from multiple branches into a single variable 
       publishIngestionPipeline:
         'You are about to publish this Ingestion pipeline.',
       publishAgent: 'You are about to publish this agent',
-      linkedDataset: 'Linked dataset:',
       lastPublished: 'Last published',
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',

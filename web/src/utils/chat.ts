@@ -18,9 +18,13 @@ import {
   ChatVariableEnabledField,
   EmptyConversationId,
 } from '@/constants/chat';
-import { IMessage, Message } from '@/interfaces/database/chat';
+import {
+  IMessage,
+  IReference,
+  IReferenceObject,
+  Message,
+} from '@/interfaces/database/chat';
 import type { CompletionChunk } from '@/services/chat-completion-stream';
-import { omit } from 'lodash';
 import { v4 as uuid } from 'uuid';
 import {
   buildCitationDisplayMap,
@@ -44,11 +48,28 @@ export const buildMessageUuid = (message: Partial<Message | IMessage>) => {
 export const buildMessageListWithUuid = (messages?: Message[]) => {
   return (
     messages?.map((x: Message | IMessage) => ({
-      ...omit(x, 'reference'),
+      ...x,
       id: buildMessageUuid(x),
     })) ?? []
   );
 };
+
+export const buildReferenceObject = (
+  reference?: IReference,
+): IReferenceObject => ({
+  chunks: Object.fromEntries(
+    (reference?.chunks ?? []).map((chunk, index) => [
+      chunk.citation_id ?? String(index),
+      chunk,
+    ]),
+  ),
+  doc_aggs: Object.fromEntries(
+    Object.values(reference?.doc_aggs ?? {}).map((document) => [
+      document.doc_id,
+      document,
+    ]),
+  ),
+});
 
 export const generateConversationId = () => {
   return uuid().replace(/-/g, '');

@@ -1,6 +1,12 @@
 package parser
 
-import "testing"
+import (
+	"encoding/base64"
+	"strings"
+	"testing"
+
+	"ragflow/internal/entity"
+)
 
 // TestBuildPPTXJSONSections feeds office_oxide presentation IR JSON
 // directly into buildPPTXJSONSections and asserts one JSON item per
@@ -172,7 +178,7 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			items, err := buildPPTXJSONSections(tt.irJSON, newEmbeddedMediaBudget())
+			items, err := buildPPTXJSONSections(tt.irJSON, nil)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("buildPPTXJSONSections: want error, got items %+v", items)
@@ -211,39 +217,53 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 }
 
 func TestBuildPPTXJSONSections_ExtractsSlideImagesInOrder(t *testing.T) {
+	images := [][]byte{officeTestPNG(t, 1), officeTestPNG(t, 2), officeTestPNG(t, 3)}
 	irJSON := `{"sections":[{"elements":[
 		{"type":"paragraph","content":[{"type":"text","text":"slide text"}]},
-		{"type":"image","data":"aGVsbG8="},
-		{"type":"table","rows":[{"cells":[{"content":[{"type":"image","data":"aW1hZ2U="}]}]}]}
-	]},{"elements":[{"type":"image","data":"c2Vjb25k"}]}]}`
+		{"type":"image","data":"` + base64.StdEncoding.EncodeToString(images[0]) + `"},
+		{"type":"table","rows":[{"cells":[{"content":[{"type":"image","data":"` + base64.StdEncoding.EncodeToString(images[1]) + `"}]}]}]}
+	]},{"elements":[{"type":"image","data":"` + base64.StdEncoding.EncodeToString(images[2]) + `"}]}]}`
 
-	items, err := buildPPTXJSONSections(irJSON, newEmbeddedMediaBudget())
+	sink, cache := officeMediaTestSink(t, officeMediaFormatPPTX)
+	items, err := buildPPTXJSONSections(irJSON, sink)
 	if err != nil {
 		t.Fatalf("buildPPTXJSONSections: %v", err)
+	}
+	if sink.err != nil {
+		t.Fatalf("sink error: %v", sink.err)
 	}
 	want := []struct {
 		docType string
 		text    string
-		image   string
+		image   int
 		slide   int
 		order   int
 	}{
 		{docType: "text", text: "slide text", slide: 1},
-		{docType: "image", image: "aGVsbG8=", slide: 1, order: 1},
+		{docType: "image", image: 0, slide: 1, order: 1},
 		{docType: "table", slide: 1},
-		{docType: "image", image: "aW1hZ2U=", slide: 1, order: 2},
-		{docType: "image", image: "c2Vjb25k", slide: 2, order: 1},
+		{docType: "image", image: 1, slide: 1, order: 2},
+		{docType: "image", image: 2, slide: 2, order: 1},
 	}
 	if len(items) != len(want) {
 		t.Fatalf("items = %+v, want %d slide/text and image items", items, len(want))
+	}
+	if len(cache.puts) != len(images) {
+		t.Fatalf("cache writes = %d, want %d", len(cache.puts), len(images))
 	}
 	for i, w := range want {
 		item := items[i]
 		if item["doc_type_kwd"] != w.docType || item["slide_number"] != w.slide {
 			t.Errorf("item %d identity = %+v, want type %q slide %d", i, item, w.docType, w.slide)
 		}
-		if w.docType == "image" && (item["image"] != w.image || item["media_order"] != w.order) {
-			t.Errorf("item %d image = %+v, want payload %q order %d", i, item, w.image, w.order)
+		if w.docType == "image" {
+			requireOfficeMediaRef(t, item)
+			if item["media_order"] != w.order {
+				t.Errorf("item %d media_order = %v, want %d", i, item["media_order"], w.order)
+			}
+			if string(cache.puts[w.image].data) != string(images[w.image]) {
+				t.Errorf("item %d cache payload mismatch", i)
+			}
 		}
 		if w.docType == "text" && item["text"] != w.text {
 			t.Errorf("item %d text = %v, want %q", i, item["text"], w.text)
@@ -272,9 +292,14 @@ func TestItemsAllEmpty(t *testing.T) {
 			want:  false,
 		},
 		{
-			name:  "image payload",
-			items: []map[string]any{{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"}},
-			want:  false,
+			name: "image reference",
+			items: []map[string]any{{"text": "", "doc_type_kwd": "image", "media_ref": &entity.MediaRef{
+				Format: "pptx",
+				Kind:   entity.MediaKindKV,
+				Scope:  "run-1",
+				SHA256: strings.Repeat("a", 64),
+			}}},
+			want: false,
 		},
 	}
 	for _, tt := range tests {

@@ -93,6 +93,29 @@ describe('ParserTreeSelect', () => {
     expect(container.textContent).toContain('jin');
   });
 
+  it('caps the alias in both the trigger display and the row', () => {
+    render(
+      <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,
+    );
+    const leaf = mockTreeProps.data[0].children[0];
+    expect(leaf.data).toEqual({ title: 'v1 title', alias: 'jin' });
+
+    // textContent is matched exactly so the title span ('v1 title') and the
+    // wrapper ('v1 titlejin') don't collide with the alias span ('jin').
+    const findAliasSpan = (container: HTMLElement) =>
+      Array.from(container.querySelectorAll('span')).find(
+        (el) => el.textContent === 'jin',
+      );
+
+    const { container: trigger } = render(
+      <>{mockTreeProps.renderSelected(leaf)}</>,
+    );
+    expect(findAliasSpan(trigger)?.className).toContain('max-w-[30%]');
+
+    const { container: row } = render(<>{leaf.label}</>);
+    expect(findAliasSpan(row)?.className).toContain('max-w-60');
+  });
+
   it('auto-expands the branch holding the selection', () => {
     render(
       <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,
@@ -130,6 +153,30 @@ describe('ParserTreeSelect', () => {
     const emptyFlow = mockTreeProps.data[1];
     expect(emptyFlow.children[0].id).toBe('pipeline:pipe-2:loading');
     expect([...mockTreeProps.loadingIds]).toContain('pipeline:pipe-2');
+  });
+
+  it("keeps a collapsed branch's versions instead of reverting to the loading placeholder", () => {
+    mockVersionQueries = [
+      { isSuccess: true, data: VersionList },
+      { isSuccess: true, data: [{ id: 'v2', title: 'v2 title' }] },
+    ];
+    render(
+      <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,
+    );
+    act(() => {
+      mockTreeProps.onExpandedChange(
+        new Set(['pipeline:pipe-1', 'pipeline:pipe-2']),
+      );
+    });
+    // Collapse pipe-2: its versions must stay in the tree. Reverting to the
+    // empty-titled loading placeholder would make the search filter drop the
+    // whole branch while a search term is active.
+    act(() => {
+      mockTreeProps.onExpandedChange(new Set(['pipeline:pipe-1']));
+    });
+
+    const collapsed = mockTreeProps.data[1];
+    expect(collapsed.children[0].id).toBe('pipeline:pipe-2:v2');
   });
 
   it('shows a disabled empty row for a branch with no published versions', () => {
@@ -200,6 +247,20 @@ describe('ParserTreeSelect', () => {
       />,
     );
     expect(mockTreeProps.trailingAddon).toBeUndefined();
+  });
+
+  it('renders the outdated icon as a non-submit button inside forms', () => {
+    render(
+      <ParserTreeSelect
+        value="pipeline:pipe-1:v1"
+        onChange={jest.fn()}
+        outdated
+      />,
+    );
+    // The tooltip trigger renders a raw <button>; without an explicit
+    // type="button" it defaults to submit and clicking the icon would submit
+    // the surrounding form (dataset settings, document pipeline dialog).
+    expect(mockTreeProps.trailingAddon.props.type).toBe('button');
   });
 
   it('flags the trigger border only while the owning field is invalid', () => {

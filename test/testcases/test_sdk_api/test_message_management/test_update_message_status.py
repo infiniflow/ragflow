@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,60 +13,78 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import random
-
 import pytest
-from ragflow_sdk import RAGFlow, Memory
-from configs import INVALID_API_TOKEN, HOST_ADDRESS, SDK_UNAUTHORIZED_ERROR_MESSAGE
+from ragflow_sdk import Memory, RAGFlow
+
+from test.testcases.test_sdk_api.test_message_management.message_helpers import assert_content, wait_until
+
+pytestmark = pytest.mark.integration
 
 
 class TestAuthorization:
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "invalid_auth, expected_message",
-        [
-            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-        ],
-    )
-    def test_auth_invalid(self, invalid_auth, expected_message):
-        client = RAGFlow(invalid_auth, HOST_ADDRESS)
-        with pytest.raises(Exception) as exception_info:
-            memory = Memory(client, {"id": "empty_memory_id"})
-            memory.update_message_status(0, False)
-        assert str(exception_info.value) == expected_message, str(exception_info.value)
+    @pytest.mark.parametrize("invalid_auth", [None, "invalid-token"])
+    def test_auth_invalid(self, populated_memory, integration_settings, invalid_auth):
+        memory = populated_memory["memory"]
+        rag = RAGFlow(invalid_auth, integration_settings["base_url"])
+        row = populated_memory["rows"][0]
+        with pytest.raises(Exception, match="^Invalid access token$"):
+            Memory(rag, {"id": memory.id}).update_message_status(row["message_id"], False)
+        content = memory.get_message_content(row["message_id"])
+        assert content["status"] is True, content
+        assert_content(content, populated_memory["payloads"][0], memory.id)
 
 
-@pytest.mark.usefixtures("add_memory_with_5_raw_message_func")
 class TestUpdateMessageStatus:
-    @pytest.mark.p3
-    def test_update_to_false(self, client):
-        memory_id = self.memory_id
-        memory = Memory(client, {"id": memory_id})
-        list_res = memory.list_memory_messages()
-        assert len(list_res["messages"]["message_list"]) > 0, str(list_res)
+    def test_update_to_false(self, populated_memory):
+        memory = populated_memory["memory"]
+        row = populated_memory["rows"][0]
+        assert memory.update_message_status(row["message_id"], False) is True
+        content = wait_until(
+            lambda: memory.get_message_content(row["message_id"]),
+            lambda content: content.get("status") is False,
+        )
+        assert_content(content, populated_memory["payloads"][0], memory.id)
+        assert memory.update_message_status(row["message_id"], False) is True
+        assert memory.get_message_content(row["message_id"])["status"] is False
+        for survivor in populated_memory["rows"][1:]:
+            assert memory.get_message_content(survivor["message_id"])["status"] is True
 
-        message = random.choice(list_res["messages"]["message_list"])
-        res = memory.update_message_status(message["message_id"], False)
-        assert res, str(res)
+    def test_update_to_true(self, populated_memory):
+        memory = populated_memory["memory"]
+        row = populated_memory["rows"][0]
+        assert memory.update_message_status(row["message_id"], False) is True
+        wait_until(
+            lambda: memory.get_message_content(row["message_id"]),
+            lambda content: content.get("status") is False,
+        )
+        assert memory.update_message_status(row["message_id"], True) is True
+        content = wait_until(
+            lambda: memory.get_message_content(row["message_id"]),
+            lambda content: content.get("status") is True,
+        )
+        assert_content(content, populated_memory["payloads"][0], memory.id)
+        assert memory.update_message_status(row["message_id"], True) is True
+        assert memory.get_message_content(row["message_id"])["status"] is True
 
-        updated_message_res = memory.get_message_content(message["message_id"])
-        assert not updated_message_res["status"], str(updated_message_res)
+    @pytest.mark.parametrize("status", [None, "false", "true", 0, 1, [], {}])
+    def test_status_must_be_boolean(self, populated_memory, status):
+        memory = populated_memory["memory"]
+        row = populated_memory["rows"][0]
+        with pytest.raises(Exception, match=r"^Status must be a boolean\.$"):
+            memory.update_message_status(row["message_id"], status)
+        content = memory.get_message_content(row["message_id"])
+        assert content["status"] is True, content
+        assert_content(content, populated_memory["payloads"][0], memory.id)
 
-    @pytest.mark.p3
-    def test_update_to_true(self, client):
-        memory_id = self.memory_id
-        memory = Memory(client, {"id": memory_id})
-        list_res = memory.list_memory_messages()
-        assert len(list_res["messages"]["message_list"]) > 0, str(list_res)
-        # set 1 random message to false first
-        message = random.choice(list_res["messages"]["message_list"])
-        set_to_false_res = memory.update_message_status(message["message_id"], False)
-        assert set_to_false_res, str(set_to_false_res)
-        updated_message_res = memory.get_message_content(message["message_id"])
-        assert not updated_message_res["status"], updated_message_res
-        # set to true
-        set_to_true_res = memory.update_message_status(message["message_id"], True)
-        assert set_to_true_res, str(set_to_true_res)
-        res = memory.get_message_content(message["message_id"])
-        assert res["status"], res
+    @pytest.mark.parametrize("message_id", [-1, "bad", "", "1:2"])
+    def test_invalid_message_id(self, populated_memory, message_id):
+        with pytest.raises(Exception, match="message_id|formatted as memory_id:message_id"):
+            populated_memory["memory"].update_message_status(message_id, False)
+
+    def test_nonexistent_message(self, populated_memory, doc_engine):
+        with pytest.raises(Exception, match="Message .*not found"):
+            populated_memory["memory"].update_message_status(9223372036854775807, False)
+
+    def test_nonexistent_memory(self, client):
+        with pytest.raises(Exception, match="^Resource not found$"):
+            Memory(client, {"id": "missing-message-test-memory"}).update_message_status(0, False)

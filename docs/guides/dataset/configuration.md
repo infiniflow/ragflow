@@ -12,18 +12,19 @@ sidebar_custom_props: {
 
 ## Basic Information
 
-The configuration page is used to maintain the core configuration of a dataset. Basic information includes **Name**, **Language**, **Avatar**, **Description**, **Embedding model**, **PageRank**.
+The configuration page is used to maintain the core configuration of a dataset. Basic information includes **Name**, **Language**, **Avatar**, **Description**, **Permissions**, **Embedding model**, **PageRank**.
 
 - **Name**: The dataset name. It can still be modified after creation and is used in list cards and the detail page title.
 - **Language**: The primary language of the dataset. The language setting affects language assumptions during parsing and model processing.
 - **Avatar**: The dataset avatar. Image uploads are supported, and the maximum image size is 4 MB.
 - **Description**: The dataset description, used to describe the material scope, business purpose, or maintenance notes.
+- **Permissions**: Choose **Only me** for personal access or **Team** to share the dataset with workspace members.
 - **Embedding model**: The model used to vectorize chunks. Before the dataset contains chunks, you can change the model directly. Once chunks exist, selecting a different model on the configuration page triggers a compatibility check against sampled existing vectors. The vector dimensions must match, and the average cosine similarity must be at least 0.9. If the check fails, the previous selection is restored. Saving a model change does not automatically re-embed existing chunks.
 - **PageRank**: Sets the dataset's PageRank score. During retrieval, this score is added to the hybrid similarity score of matched chunks in the dataset, increasing their ranking weight. This is suitable when content from a specific dataset needs higher priority during retrieval across multiple datasets.
 
 ## Parsing Method
 
-The parsing method determines how a dataset processes uploaded documents and how documents are converted into chunks. **Parse type** in configuration provides two entries: **Built-in** and **Pipeline**.
+The parsing method determines how uploaded documents are processed into chunks. In **Parsing mode**, select a built-in template or expand a custom ingestion pipeline and select one of its published versions from the same dropdown.
 
 ### Built-in Parsing
 
@@ -39,6 +40,7 @@ The following built-in parsing methods are available:
 - **Book**: Designed for DOCX, PDF, and TXT books or other long documents with a chapter-based structure.
 - **Laws**: Designed for legal documents in DOCX, PDF, and TXT formats. Chunk boundaries are identified based on the structural characteristics of legal documents.
 - **Presentation**: Designed for presentations in PDF and PPTX formats. Each page or slide is typically treated as an individual chunk.
+- **Picture**: Processes image and video materials into searchable text using OCR and visual descriptions. Configure the relevant OCR or vision model for the content you want to process.
 - **One**: Treats the entire document as a single chunk. This method is suitable for relatively short documents when the complete context needs to be preserved.
 - **Audio**: An audio parsing method for audio files such as WAV, MP3, AAC, FLAC, and OGG. It uses an ASR model to transcribe audio into text and then generates chunks from the transcription.
 - **Email**: An email parsing method for email files such as EML and MSG. It extracts content including the sender, recipients, subject, body, and attachments, and generates chunks from the extracted content.
@@ -47,7 +49,7 @@ The following built-in parsing methods are available:
 
 Selection suggestion: choose the parsing method based on the form of the material itself. Use **General** first for regular documents; use **Table** first for tabular materials; choose the corresponding method for Q&A collections, manuals, papers, images, audio, and emails to reduce later chunk adjustment costs.
 
-### Build-in Parsing Configuration
+### Built-in Parsing Configuration
 
 After selecting a built-in template parsing method, you can further configure document parsing, chunking, and content enhancement. Appropriate settings can improve the accuracy and recall of subsequent retrieval.
 
@@ -56,6 +58,12 @@ Different built-in methods display different configuration options. Refer to the
 #### Parser Configuration
 
 Parser configuration determines how different types of content are processed. You can configure parsing parameters for each format according to the document structure, layout complexity, and extraction requirements. This helps improve content extraction and the accuracy of subsequent chunk generation.
+
+##### Vision Enhancement
+
+- **Enable vision enhancement**: Uses a vision model to describe image and table blocks. This shared setting applies across document formats.
+- **Model**: Select an available vision model after enabling enhancement.
+- **System prompt**: Set instructions for the generated descriptions. Vision enhancement adds model calls and token usage.
 
 ##### PDF Parsing
 
@@ -76,69 +84,42 @@ Configure how PDF documents are parsed. You can select a parsing method based on
 
   External models are often better suited to complex layouts, scanned documents, images, borderless tables, and mixed text and images. However, they incur additional model calls and token usage. The available models depend on the configured model providers and their capabilities.
 - **Page range:** Specifies which PDF pages to parse. You can set a start and end page and add multiple page ranges to avoid processing unnecessary content.
-- **Disable vision model:** Controls whether a VLM is used during PDF parsing. When this option is enabled, no vision model assists with parsing. When disabled, a vision model can help interpret complex layouts or content combining text and images.
-- **Model:** Selects the vision model to use when PDF parsing requires one. A more capable vision model may provide a more complete understanding of complex layouts and visual content. Parsing quality and token usage depend on the selected model.
 
 ##### Table Parsing
 
-Configure how tables in documents are parsed. The system can use a built-in parser or a vision model to recognize table structure and extract text and cell information.
-
-- **Parsing method:** Selects a parser or model for tables. Methods differ in table structure recognition, cell content extraction, and handling of complex layouts. Built-in methods include:
-  - **DeepDOC:** RAGFlow's built-in document parser. It recognizes table structure and extracts cell content, making it suitable for most standard tables.
-  - **TCADP Parser:** An open-source parser from Tencent that can recognize and parse tables in documents.
-
-  You can also select an external model already configured in the system. Available models are grouped by model provider in the drop-down list. For complex tables, borderless tables, merged rows or columns, or tables that require visual interpretation, choose an external model with vision or document understanding capabilities as needed. External models may incur additional model calls and token usage.
-- **Disable vision model:** Controls whether a vision model is used for table parsing. Built-in parsers may be sufficient for regular tables with clear boundaries. A vision model can help with complex or borderless tables.
-- **Model:** Selects the vision model used for table parsing when vision support is enabled. Models may differ in their understanding of table structure and complex layouts, as well as in token usage.
-
-For ordinary text-based PDFs, consider starting with a built-in parser. For scanned documents, multi-column layouts, complex tables, and mixed text and images, a vision model may improve parsing quality. Because vision models incur additional calls and token usage, enable them according to the document type.
+Select **DeepDOC** or **TCADP Parser** from the **Parser** list to extract table content and structure. Vision models are configured through the shared **Enable vision enhancement** setting above.
 
 ##### Image Parsing
 
-Configure how image files are parsed so that text or visual content can be converted into text for subsequent chunking and retrieval.
+- **OCR**: Extracts text from images and is enabled by default.
+- **OCR model**: Select **DeepDoc** for local OCR or an available **PaddleOCR** model.
+- **Enable vision enhancement**: Adds visual descriptions using the shared model and prompt settings above. It can run together with OCR.
 
-- **Parsing method:** Selects how image files are processed.
-  - **OCR:** Uses optical character recognition to extract text from images. It is suitable for screenshots, scans, photographs, and other images containing readable text.
-  - **External model:** Uses a configured model with visual understanding capabilities. Compared with traditional OCR, such a model can recognize text and interpret layouts, charts, objects, and relationships between text and images. External models are grouped by model provider in the drop-down list. The available models depend on the configured providers and model capabilities.
-
-For images that mainly contain clear text, consider starting with OCR. For charts, complex layouts, interface screenshots, or content that requires visual understanding, select an external vision model. External models may incur additional model calls and token usage.
-
-Parsing quality also depends on image clarity, text size, layout, and overall image quality.
+Keep OCR or vision enhancement enabled so images can produce searchable text. To turn OCR off, first enable vision enhancement.
 
 ##### Markdown Parsing
 
 Parse Markdown documents while preserving their text and basic structure for subsequent chunking.
 
-- **Remove original table of contents:** Removes an existing table of contents during parsing to avoid repeating title links and body content.
-- **Disable vision model:** Controls whether a vision model assists with Markdown parsing. When enabled, no vision model is used. When disabled, the selected vision model can process images or other content in the Markdown document that requires visual understanding.
-- **Model:** Selects the vision model when one is needed. Available models depend on the configured model providers and their capabilities. External models may incur additional model calls and token usage.
-
 ##### HTML Parsing
 
 Parse HTML documents to extract useful text and structured content while filtering page elements that need not be included in knowledge base retrieval.
 
-- **Remove original table of contents:** Removes an existing table of contents or navigation list to reduce duplicated content.
 - **Remove headers and footers:** Attempts to remove repeated headers and footers, reducing the effect of navigation and copyright information on chunking and retrieval.
 
-For HTML files saved or exported from websites, decide whether to enable these options based on the page structure. Keep headers, footers, or tables of contents when they contain information you need.
+For HTML files saved or exported from websites, keep headers and footers if they contain information you need.
 
 ##### DOC Parsing
 
-Parse Word documents in `.doc` format. You can choose whether to remove the table of contents, headers, and footers, and whether to use an external vision model for complex content.
+Parse Word documents in `.doc` format. Use **Remove headers and footers** to exclude repeated content. Visual descriptions use the shared **Enable vision enhancement** setting above.
 
-- **Remove original table of contents:** Removes the existing table of contents to reduce duplication between the contents list and the document body.
 - **Remove headers and footers:** Attempts to remove repeated headers and footers so that page numbers, document titles, and copyright information do not repeatedly appear in chunks.
-- **Disable vision model:** Controls whether an external vision model assists with DOC parsing. When enabled, no vision model is called. When disabled, you can select a configured external model to further parse images, complex layouts, or other visual content.
-- **Model:** Selects an external model to assist with DOC parsing. Only models already configured in the system are available. The options depend on the connected providers and model capabilities. External models may incur additional model calls and token usage.
 
 ##### DOCX Parsing
 
-Parse Word documents in `.docx` format. You can choose whether to remove the table of contents, headers, and footers, and whether to use an external vision model for complex content.
+Parse Word documents in `.docx` format. Use **Remove headers and footers** to exclude repeated content. Visual descriptions use the shared **Enable vision enhancement** setting above.
 
-- **Remove original table of contents:** Removes the existing table of contents to avoid duplicating headings and body content.
 - **Remove headers and footers:** Removes repeated headers and footers to reduce irrelevant information in subsequent chunks and search results.
-- **Disable vision model:** Controls whether an external vision model is used for DOCX parsing. When enabled, no vision model is used. When disabled, an external model can help interpret images, complex layouts, and other visual content.
-- **Model:** Selects an external model to assist with DOCX parsing. This option only lists configured external models; it does not offer built-in parsing methods such as DeepDOC, Naive, or Docling. The available models depend on the configured model providers.
 
 ##### PPTX Parsing
 
@@ -152,14 +133,6 @@ Configure how PPTX files are parsed. Text, tables, images, and other slide conte
 For PPTX files mainly containing text and standard tables, consider starting with DeepDOC or TCADP Parser. For complex layouts, mixed text and images, many images, or content requiring visual interpretation, choose a capable external model. External models may incur additional model calls and token usage.
 
 Parsing quality depends on slide layout, image quality, content complexity, and the selected method.
-
-##### Video Parsing
-
-Configure how video files are parsed. An external model recognizes and interprets speech, visuals, and other content, then converts the results into text for subsequent chunking and retrieval.
-
-Select a configured external model with video or multimodal understanding capabilities. Video parsing supports only external models already configured in the system. Such a model can analyze video frames, visible text, speech, and contextual information to generate corresponding text.
-
-Available models depend on the configured providers and their capabilities. Long videos, frequent scene changes, and complex content may increase processing time and model usage. External models may incur additional calls and token usage. Parsing quality depends on video quality, audio and visual clarity, content complexity, and the selected model.
 
 ##### Audio Parsing
 
@@ -229,26 +202,28 @@ Group works well when continuity between nearby sections matters. It combines ad
 
 #### Extractor Configuration
 
+Open the **Extractor** tab to configure enrichment after chunking. Expand a function to view its settings and use the switch beside its name to enable it; expanding the section alone does not enable processing. The panel lists **Auto keywords**, **Auto-question**, **Tags**, **Summary**, and **Metadata**.
+
 The Extractor adds information to chunks after chunking. It can use a model to generate keywords, questions, tags, contextual summaries, and metadata. These additions can improve subsequent retrieval and question answering.
 
 ##### Model
 
-Select the model used by the Extractor. Automatic keywords, automatic questions, augmented context, and metadata that requires model generation call the selected model. Available models depend on the configured providers and their capabilities.
+Select the model used by the Extractor. Enabled keyword, question, summary, and metadata generation functions call the selected model. Available models depend on the configured providers and their capabilities.
 
-##### Automatic Keywords
+##### Auto keywords
 
 Automatically extract keywords or phrases that represent the main content of each chunk.
 
-- **Number of automatic keywords:** Sets how many keywords are generated for each chunk. Set it to **0** to disable keyword extraction.
+- **Number of keywords to extract:** Sets how many keywords are generated for each chunk. Turn on the **Auto keywords** switch and set the required number. Turn the switch off to disable extraction.
 - **System prompt:** Sets the instruction sent to the model. The default prompt asks the model to analyze the text and extract the `{{ topn }}` most important keywords or phrases. You can adapt the prompt to specify keyword types, output language, or format.
 
 Generated keywords add semantic information to chunks and can help with retrieval and content matching.
 
-##### Automatic Questions
+##### Auto-question
 
 Automatically generate questions that each chunk can answer. This adds query-like expressions to the content.
 
-- **Number of automatic questions:** Sets how many questions are generated for each chunk. Set it to **0** to disable question generation.
+- **Auto-question number:** Sets how many questions are generated for each chunk. Turn on the **Auto-question** switch and set the required number. Turn the switch off to disable question generation.
 - **System prompt:** Sets the instruction sent to the model. The default prompt asks the model to understand the text and generate `{{ topn }}` questions related to its main content.
 
 Generated questions should cover important information in the chunk without repeating the same meaning. They can make document content easier to match with users' natural-language questions.
@@ -257,16 +232,16 @@ Generated questions should cover important information in the chunk without repe
 
 Extract or match tags for chunks using a prepared tag file. Tags can classify knowledge content and add semantic information.
 
-- **Number of automatically extracted tags:** Sets how many tags are extracted for each chunk. Set it to **0** to disable automatic tag extraction.
+- **Auto-tags:** Sets how many tags are extracted for each chunk. Enable the **Tags** switch to use this function; turn it off to disable processing.
 - **Tag file:** Selects the file used for tag extraction. The system matches or generates tags for chunks based on the selected tag collection.
 
 Prepare a tag file suitable for the knowledge base before using this feature. A well-designed tag system can support content classification, retrieval, and filtering.
 
-##### Augmented Context
+##### Summary
 
 Generate a concise contextual summary for each chunk and add it as supplementary information. This helps a chunk retain essential background when viewed separately from its source document.
 
-- **Enable augmented context:** Calls the selected model to generate contextual information from the chunk.
+- **Summary** switch: Enables the selected model to summarize chunk content. Turn it off when summaries are not required.
 - **System prompt:** Sets the instruction sent to the model. The default prompt asks for a concise summary faithful to the source content, without introducing information absent from it.
 
 Augmented context is useful when a chunk may lose important background after splitting. For example, a chunk containing only a short passage can gain a summary of its subject and context, helping retrieval and model understanding.
@@ -277,53 +252,51 @@ Enabling this feature increases model calls and token usage.
 
 Add structured metadata to parsed content. Metadata describes document or chunk attributes and can be used for retrieval, filtering, and content management.
 
-- **Enable metadata:** Extracts or generates metadata according to the configured fields.
+- **Metadata** switch: Enables extraction or generation according to the configured fields.
 - **Settings:** Opens the metadata generation settings, where you configure the fields to extract or generate.
 
 Metadata generation settings provide the following options:
 
-- **Generate:** Define metadata fields to generate. Add fields and configure their descriptions, types, and values. The system generates metadata based on these settings.
-- **Built-in parser template:** Use structured information already provided during parsing as a metadata source, without defining the same information again.
+- **Generation:** Define metadata fields to generate. Add fields and configure their descriptions, types, and values. The system generates metadata based on these settings.
+- **Built-in:** Enable predefined fields such as `update_time` and `file_name`.
 - **Add:** Add a metadata field with a name, description, type, and value according to your needs.
 
 For example, you can add fields for document type, department, author, subject, date, or business category. Well-configured metadata lets you narrow subsequent searches with metadata conditions. Metadata generated by a model may incur additional model calls and token usage.
 
 #### Indexer Configuration
 
-Configure how chunks are indexed and written to the retrieval engine. You can use full-text search, vector search, or both, and specify which content field is indexed. The Indexer uses the embedding model configured for the knowledge base; you do not need to select one here.
+Indexer prepares chunks for the retrieval engine. **Search method** displays the methods configured for the selected parsing mode, such as **Embedding** and **Full-text**. Review these labels, then configure **Filename embedding weight** and **Field** below. The Indexer uses the embedding model configured for the Dataset; this panel has no separate embedding model selector.
 
-- **Search methods:** Select one or more ways to index and retrieve chunks.
+- **Search method:** Displays **Embedding** and **Full-text** as labels. These are not selectable checkboxes in the current panel.
   - **Embedding:** Creates vector representations and a vector index for semantic retrieval. A relevant chunk may be retrieved even when the query does not use the same words as the source text.
   - **Full-text:** Creates a full-text index for keyword matching. This is useful for product codes, names, technical terms, code, and other content requiring exact matches.
-  - **Embedding + Full-text:** Creates both vector and full-text indexes to support semantic and keyword matching.
 - **Filename embedding weight:** Sets the filename's weight in the vector representation. The filename contributes semantic information alongside the chunk content. A higher value gives it more influence. Increase the weight when filenames clearly express document topics; decrease it when filenames are random identifiers or have little meaning.
-- **Fields:** Specifies the content used for indexing and retrieval. Available fields are **Processed text**, **Questions**, and **Augmented context**.
+- **Field:** Selects the content to embed. Available fields are **Processed text**, **Questions**, and **Augmented context**.
   - **Processed text:** Indexes the chunk body produced by the Parser, Chunker, and other preceding steps. This is the most direct method and the default selection.
-  - **Questions:** Indexes questions generated by the Extractor's Automatic Questions feature. A user's question can then match a pre-generated question, which is useful for question-answering knowledge bases. Configure automatic question extraction before using this field.
-  - **Augmented context:** Indexes context generated by the Extractor instead of relying only on the original chunk content. This is useful when chunks need additional background for effective retrieval.
+  - **Questions:** Indexes questions generated by the Extractor's **Auto-question** function. A user's question can then match a pre-generated question, which is useful for question-answering knowledge bases. Configure automatic question extraction before using this field.
+  - **Augmented context:** Embeds the summary generated by the Extractor's **Summary** function. This is useful when chunks need additional background for effective retrieval.
 
-For most knowledge bases, you can enable both **Embedding** and **Full-text** and index **Processed text**. If you have enabled Automatic Questions or Augmented Context, consider indexing **Questions** or **Augmented context** according to the types of queries you expect.
+Start with **Processed text**. To use **Questions**, first enable **Auto-question** in Extractor; to use **Augmented context**, enable **Summary**. Validate that the required content is generated before relying on it for retrieval.
 
 ### Custom Ingestion Pipeline
 
 **Pipeline** means using a custom **Ingestion Pipeline** as the dataset's parsing method. It is suitable for scenarios that require custom document processing logic or complex processing flows.
 
-The pipeline must be created and configured in **Agent > Ingestion Pipeline** in advance. In the dataset, you do not need to configure the processing nodes inside the pipeline again. You only need to select the created pipeline.
+Create and publish the pipeline in **Agent > Ingestion pipeline** before applying it to a Dataset. A saved draft alone is not selectable for parsing.
 
-Usage:
+1. Configure the pipeline, click **Save draft**, and resolve any **Checklist** issues.
+2. Click **Publish** and confirm to create a version.
+3. Open the Dataset's **Configuration > Parsing mode**.
+4. Expand the custom pipeline and select the published version you want to use within the same dropdown. There is no separate Version selector. **No published versions** means you must publish the pipeline first. Entries marked **Built in** can be selected directly.
+5. Click **Save**, then parse a sample document to validate the result.
 
-1. Create and configure an **Ingestion Pipeline** in **Agent > Ingestion Pipeline**.
-2. Go to **Dataset > Configuration** and select **Pipeline** as the parsing method.
-3. Select the pipeline to use from the pipeline list.
-4. Save the configuration. Afterward, documents in the dataset are processed according to the selected pipeline.
-
-If no pipeline is currently available, you can use the entry provided in the pipeline area to go to **Agent** and create one.
+The Dataset retains its selected version when another version is published. To apply an update, select the new version in **Parsing mode**, save, and reparse the documents that need the updated processing. Existing chunks are not regenerated automatically.
 
 > Note: For pipeline creation, node configuration, and flow orchestration, see [**Ingestion Pipeline**](../agent/ingestion_pipeline/create_ingestion_pipeline.md).
 
 ### Auto Metadata: Automatic Metadata Configuration
 
-**Auto Metadata** is used to configure metadata automatically generated during document parsing. The system supports two types of metadata: **Generation** and **Built-in**. You can configure them separately as needed.
+Open **Extractor > Metadata > Settings** to configure metadata automatically generated during document parsing. Enable the **Metadata** switch for the settings to take effect during processing. The system supports two types of metadata: **Generation** and **Built-in**. You can configure them separately as needed.
 
 > Note: Changes in **Metadata generation settings** only take effect for newly parsed documents later. They do not automatically update documents that have already completed parsing. To apply the new configuration to existing documents, parse the relevant documents again.
 
@@ -338,6 +311,8 @@ If no pipeline is currently available, you can use the entry provided in the pip
 
 After saving, the system generates corresponding metadata from document content during subsequent document parsing based on these field definitions.
 
+![Configure a generated metadata field](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/auto_metadata_configuration_2.jpg)
+
 #### Built-in: Built-in Metadata
 
 **Built-in** provides system-predefined metadata fields. You do not need to manually create or configure field rules. Use the switch on the right side of each corresponding field to choose whether to generate that metadata during document parsing. The following built-in fields are currently supported:
@@ -346,6 +321,8 @@ After saving, the system generates corresponding metadata from document content 
 - **file_name**: Records the document file name.
 
 Select the fields to use, enable their switches, and then click **Save** to save the configuration. Generated metadata can be used in document management and retrieval filtering. To view or edit generated metadata, [**Metadata management**](../dataset/metadata_management.md).
+
+![Enable built-in metadata fields](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/auto_metadata_configuration_3.jpg)
 
 ### Table Column Role Configuration
 

@@ -33,6 +33,7 @@ import (
 var CompoundDocumentSignature = []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}
 
 type XLSParser struct {
+	textOnly                       bool
 	ParseMethod                    string
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
@@ -98,11 +99,19 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		err         error
 	)
 	if bytes.HasPrefix(data, CompoundDocumentSignature) {
+		// BIFF8 extraction reads cell text only; the drawing layer is not
+		// parsed, so no image can reach the media cache from this branch.
 		items, sheetsCount, err = parseBIFF8Bytes(ctx, data)
 	} else {
-		mediaBudget := newEmbeddedMediaBudget()
-		items, warnings, sheetsCount, err = parseXLSXBytes(data, mediaBudget)
-		warnings = append(warnings, mediaBudget.warnings()...)
+		var sink *officeMediaSink
+		if !p.textOnly {
+			sink = newOfficeMediaSink(ctx, officeMediaFormatXLSX)
+		}
+		items, warnings, sheetsCount, err = parseXLSXBytes(data, sink)
+		if err == nil && sink != nil && sink.err != nil {
+			return ParseResult{Err: sink.err}
+		}
+		warnings = append(warnings, sink.warnings()...)
 	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}

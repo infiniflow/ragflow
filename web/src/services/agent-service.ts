@@ -251,8 +251,14 @@ export const fetchAgentLogsByCanvasId = (
   });
 };
 
-export const fetchAgentLogsById = (canvasId: string, sessionId: string) => {
-  return request.get(api.fetchAgentSessionById(canvasId, sessionId));
+export const fetchAgentLogsById = (
+  canvasId: string,
+  sessionId: string,
+  params?: Pick<IAgentLogsRequest, 'include_reference' | 'include_prompt'>,
+) => {
+  return request.get(api.fetchAgentSessionById(canvasId, sessionId), {
+    params,
+  });
 };
 
 export const fetchPipeLineList = (params: IPipeLineListRequest) => {

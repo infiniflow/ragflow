@@ -119,7 +119,10 @@ export enum LLMFactory {
   Runcrate = 'Runcrate',
   WorldRouter = 'WorldRouter',
   CloudGPU = 'CloudGPU',
+  Obscurify = 'Obscurify.ai',
+  Cheapaimodel = 'cheapaimodel',
   SystemOne = 'SystemOne',
+  HostingerRouter = 'Hostinger Router',
 }
 
 // Please lowercase the file name
@@ -221,6 +224,9 @@ export const IconMap = {
   [LLMFactory.Runcrate]: 'runcrate',
   [LLMFactory.WorldRouter]: 'worldrouter',
   [LLMFactory.CloudGPU]: 'cloudgpu',
+  [LLMFactory.Obscurify]: 'obscurify',
+  [LLMFactory.HostingerRouter]: 'hostinger-router',
+  [LLMFactory.Cheapaimodel]: 'cheapaimodel',
 };
 
 /**
@@ -272,6 +278,10 @@ export const APIMapUrl = {
   [LLMFactory.WorldRouter]:
     'https://worldrouter.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=provider&utm_campaign=integration',
   [LLMFactory.CloudGPU]: 'https://cloudgpu.app/api/console',
+  [LLMFactory.Obscurify]: 'https://obscurify.ai/account',
+  [LLMFactory.HostingerRouter]: 'https://hpanel.hostinger.com/ai-router',
+  [LLMFactory.Cheapaimodel]:
+    'https://console.cheapaimodel.ai/keys?utm_source=ragflow',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

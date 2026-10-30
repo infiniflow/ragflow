@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -657,18 +658,12 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 			return nil, common.CodeDataError, fmt.Errorf("you don't own the document %s", docID)
 		}
 
-		task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, dao.DB, docID)
-		if err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("get ingestion task for %s: %w", docID, err)
-		}
-		if task == nil || task.Status == common.COMPLETED ||
-			task.Status == common.STOPPED || task.Status == common.FAILED {
-			return &service.StopParsingResponse{
-				Data: map[string]interface{}{"error_code": docStopParsingInvalidStateErrorCode},
-			}, common.CodeDataError, fmt.Errorf("%s", docStopParsingInvalidStateMessage)
-		}
-
 		if err = s.cancelAllTasksOfDoc(ctx, doc); err != nil {
+			if errors.Is(err, document.ErrParseNotRunning) {
+				return &service.StopParsingResponse{
+					Data: map[string]interface{}{"error_code": docStopParsingInvalidStateErrorCode},
+				}, common.CodeDataError, fmt.Errorf("%s", docStopParsingInvalidStateMessage)
+			}
 			return nil, common.CodeServerError, err
 		}
 		// CancelDocParse (inside cancelAllTasksOfDoc) already issues
@@ -992,6 +987,12 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 				}
 			}
 		}
+		result["id"] = result["chunk_id"]
+		result["content"] = result["content_with_weight"]
+		utility.SetFieldArray(result, "important_keywords", result["important_kwd"])
+		utility.SetFieldArray(result, "questions", result["question_kwd"])
+		result["document_id"] = req.DocID
+		result["dataset_id"] = doc.KbID
 		chunks = append(chunks, result)
 	}
 
@@ -1314,7 +1315,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		// Delete all chunks for this document
 		condition["doc_id"] = req.DocID
 	default:
-		return 0, fmt.Errorf("either chunk_ids or delete_all must be provided")
+		return 0, nil
 	}
 
 	deletedCount, err := s.docEngine.DeleteChunks(ctx, condition, indexName, doc.KbID)

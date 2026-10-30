@@ -96,11 +96,11 @@ func TestMarkdownTableImageTimeoutDoesNotConsumeBudget(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	doc := markdownNew().Parse([]byte("| A | B |\n|---|---|\n| Logo | ![logo](http://127.0.0.1/logo.png) |\n"))
-	budget := newEmbeddedMediaBudget()
+	budget := newMediaBudgetForTest()
 	var items []map[string]any
-	unresolved := walkMarkdownBlocksWithImages(ctx, doc, &items, false, true, &htmlWalkState{mediaBudget: budget})
-	if budget.items != 0 || unresolved != 0 {
-		t.Fatalf("timed out image consumed budget: attempts=%d unresolved=%d", budget.items, unresolved)
+	unresolved := walkMarkdownBlocksWithImages(ctx, doc, &items, false, true, &htmlWalkState{budget: budget})
+	if budget.Count() != 0 || unresolved != 0 {
+		t.Fatalf("timed out image consumed budget: attempts=%d unresolved=%d", budget.Count(), unresolved)
 	}
 }
 
@@ -172,7 +172,7 @@ func TestPDFMarkdownPreservesEmptyHeaderTable(t *testing.T) {
 func TestSoMarkPreservesMarkdownTableAndNotes(t *testing.T) {
 	items, pages, _ := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{map[string]any{"blocks": []any{
 		map[string]any{"type": "table", "content": "Before.\n\n| | |\n|---|---|\n| Owner | RET |\n\nAfter."},
-	}}}}}}, false)
+	}}}}}}, false, nil)
 	if pages != 1 || len(items) != 3 {
 		t.Fatalf("pages=%d items=%#v", pages, items)
 	}
@@ -189,7 +189,7 @@ func TestSoMarkPreservesPageOnSplitTableItems(t *testing.T) {
 	items, _, _ := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
 		map[string]any{"blocks": []any{}},
 		map[string]any{"blocks": []any{map[string]any{"type": "table", "content": "Before.\n\n| A | B |\n|---|---|\n| Owner | RET |\n\nAfter."}}},
-	}}}}, false)
+	}}}}, false, nil)
 	if len(items) != 3 {
 		t.Fatalf("items=%#v", items)
 	}
@@ -268,7 +268,7 @@ func TestOfficeTableRetainsDefaultHeaderCount(t *testing.T) {
 
 func TestOfficeTablePreservesLiteralCellText(t *testing.T) {
 	el := docxIRElement{Type: "table", Rows: []docxIRRow{{Cells: []docxIRCell{{Content: []docxIRElement{{Type: "paragraph", Content: json.RawMessage(`[{"type":"text","text":" <b>A & B</b>\nsecond line "}]`)}}}}}}}
-	items := appendOfficeTableSections(nil, el, " A & <B> ", "table-1", newEmbeddedMediaBudget())
+	items := appendOfficeTableSections(nil, el, " A & <B> ", "table-1", nil)
 	if len(items) != 1 {
 		t.Fatalf("items=%#v", items)
 	}

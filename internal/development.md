@@ -300,18 +300,45 @@ docker compose -f docker/docker-compose-base.yml --profile infinity up -d
   deployment disables the Valkey/Redis service so there is no clash). Export these
   before running `./bin/ragflow_server ...` on the host, or load them from
   `docker/.env-go`:
-```bash
-export KVROCKS_HOST=127.0.0.1
-export KVROCKS_PORT=6379
-```
+  ```bash
+  export KVROCKS_HOST=127.0.0.1
+  export KVROCKS_PORT=6379
+  ```
   In docker the Go services override these to `kvrocks:6379` automatically
   (see `docker-compose-go.yml`). If Kvrocks is unreachable at startup the
   process fails fast with `failed to connect to Kvrocks`.
-  HTML ingestion uses Kvrocks to hand inline images from the parser to the
-  chunker; the ingestor also validates the injected Kvrocks client at startup.
-  HTML image payloads default to a 32 MiB per-image limit; set
-  `RAGFLOW_HTML_IMAGE_MAX_BYTES` to a positive byte count to change it.
+  HTML, EPUB, DOCX, PPTX and XLSX ingestion use Kvrocks to hand embedded images
+  from the parser to the chunker; the ingestor also validates the injected
+  Kvrocks client at startup.
+  Image payloads share a default 32 MiB per-image limit across data URIs,
+  ZIP-entry extraction, picture parsing, vision encoding and media-cache writes.
+  Set `RAGFLOW_MEDIA_IMAGE_MAX_BYTES` to a positive byte count to change it.
+  Native PDF region cropping retains its separate page/raster limits.
+  The parser budget and media cache apply the same numeric run caps: 1024 items
+  and 1 GiB of decoded image bytes per run. The parser counts distinct source
+  references; the cache counts distinct SHA-256 payloads. Set
+  `RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN` and `RAGFLOW_MEDIA_MAX_BYTES_PER_RUN` to
+  positive values to change them. Quota state is keyed by ingestion task and
+  persists across retries of that task until cleanup or the 24-hour media TTL.
+  Office parsers deduplicate sources by payload digest. DOC/PPT share their
+  Office family path; BIFF8 XLS does not extract embedded pictures. Office IR
+  and Excelize expose already materialized image bytes, so these budgets bound
+  emitted/cached payloads, not native extraction or ZIP decoding peak memory.
+  DOC/DOCX and PPT/PPTX identify image MIME types from payload signatures;
+  XLSX-content spreadsheets use an extension allowlist, including EMZ/WMZ
+  which the byte-only Office detector does not recognize. Unsupported images
+  are skipped with warnings.
+  File text extraction and email attachment re-chunking use text-only parsers;
+  Office images skipped by limits produce warnings without placeholder items.
+  Debug previews use a temporary `pipeline_<document-id>` run scope and purge
+  their cache state when the preview finishes.
 
+  Validate Office media handoff against the services configured in
+  `conf/service_conf.yaml` (real MySQL, Kvrocks and MinIO):
+
+  ```bash
+  RAGFLOW_REAL_OFFICE_MEDIA_TEST=1 bash build.sh --test-integration-go ./internal/ingestion/pipeline -run '^TestOfficeMediaRealServices$' -v
+  ```
 
 - Start RAGFlow
 Note: Database migrations must complete before starting any server mode.

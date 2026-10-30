@@ -978,7 +978,7 @@ func (c *CLI) DevCreateChunkStoreCommand(commandCount int, cmd *Command) (Respon
 		"vector_size": vectorSize,
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/tenant/chunk_store", httpClient.AuthKind(), nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", "/tenant/chunk-store", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chunk store: %w", err)
 	}
@@ -1030,7 +1030,7 @@ func (c *CLI) DevDropChunkStoreCommand(commandCount int, cmd *Command) (Response
 		"kb_id": datasetID,
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", "/tenant/chunk_store", httpClient.AuthKind(), nil, payload)
+	resp, err := httpClient.Request(commandCount, "DELETE", "/tenant/chunk-store", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop chunk store: %w", err)
 	}
@@ -1067,7 +1067,7 @@ func (c *CLI) DevCreateMetadataStoreCommand(commandCount int, cmd *Command) (Res
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/tenant/metadata_store", httpClient.AuthKind(), nil, nil)
+	resp, err := httpClient.Request(commandCount, "POST", "/tenant/metadata-store", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create metadata store: %w", err)
 	}
@@ -1104,7 +1104,7 @@ func (c *CLI) DevDropMetadataStoreCommand(commandCount int, cmd *Command) (Respo
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", "/tenant/metadata_store", httpClient.AuthKind(), nil, nil)
+	resp, err := httpClient.Request(commandCount, "DELETE", "/tenant/metadata-store", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop metadata store: %w", err)
 	}
@@ -1787,7 +1787,7 @@ func (c *CLI) APIChatToModelCommand(commandCount int, cmd *Command) (ResponseIf,
 	effort := cmd.Params["effort"].(string)
 	verbosity := cmd.Params["verbosity"].(string)
 
-	url := "/chat/to_model"
+	url := "/chat/to-model"
 
 	payload := map[string]interface{}{
 		"messages": formattedMessages,
@@ -3023,12 +3023,9 @@ func (c *CLI) APIParseLocalFileCommand(commandCount int, cmd *Command) (Response
 	}
 
 	fileType := utility.GetFileType(filename)
-	fileParser, err := parser.GetParser(fileType)
+	fileParser, err := parser.GetTextOnlyParser(fileType)
 	if err != nil {
 		return nil, err
-	}
-	if fileType == utility.FileTypeHTML {
-		fileParser = parser.NewHTMLTextParser()
 	}
 
 	fileContent, err := os.ReadFile(filename)
@@ -3126,7 +3123,7 @@ func (c *CLI) APIListSyncLogsCommand(commandCount int, cmd *Command) (ResponseIf
 		datasetID = id
 	}
 
-	url := "/connectors/sync_logs"
+	url := "/connectors/sync-logs"
 	query := netUrl.Values{}
 	if datasetID != "" {
 		query.Set("dataset_id", datasetID)

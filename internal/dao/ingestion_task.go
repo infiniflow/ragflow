@@ -294,15 +294,13 @@ func (dao *IngestionTaskDAO) CountActiveByDatasetID(ctx context.Context, db *gor
 	return count, err
 }
 
-// DeleteIfTerminal deletes ingestion tasks for a document that are in a
-// terminal state (COMPLETED, STOPPED, FAILED), or not yet running
-// (CREATED, SCHEDULED).
-// RUNNING and STOPPING tasks are NOT deleted because an in-flight worker
-// would keep writing chunks and corrupt a new run's results.
-// Returns the number of rows deleted.
-func (dao *IngestionTaskDAO) DeleteIfTerminal(ctx context.Context, db *gorm.DB, documentID string) (int64, error) {
-	result := db.WithContext(ctx).Where("document_id = ? AND status NOT IN (?, ?)",
-		documentID, common.RUNNING, common.STOPPING).
+// DeleteIfTerminal deletes one terminal ingestion task by ID. Cleanup freezes
+// CREATED and SCHEDULED tasks before calling this method; if another writer
+// moves the task back to a non-terminal state, the conditional delete leaves it
+// in place.
+func (dao *IngestionTaskDAO) DeleteIfTerminal(ctx context.Context, db *gorm.DB, taskID string) (int64, error) {
+	result := db.WithContext(ctx).
+		Where("id = ? AND status IN ?", taskID, []string{common.COMPLETED, common.STOPPED, common.FAILED}).
 		Delete(&entity.IngestionTask{})
 	if result.Error != nil {
 		return 0, result.Error

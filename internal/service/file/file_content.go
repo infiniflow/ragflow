@@ -217,12 +217,9 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 	content := string(data)
 	fileType := utility.GetFileType(filename)
 	if fileType != utility.FileTypeOTHER {
-		fp, err := parser.GetParser(fileType)
+		fp, err := parser.GetTextOnlyParser(fileType)
 		if err != nil {
 			return "", err
-		}
-		if fileType == utility.FileTypeHTML {
-			fp = parser.NewHTMLTextParser()
 		}
 		if configurable, ok := fp.(interface{ ConfigureFromSetup(map[string]any) }); ok {
 			configurable.ConfigureFromSetup(map[string]any{"layout_recognize": layoutRecognize})
@@ -272,12 +269,9 @@ func parseFileContent(ctx context.Context, filename string, data []byte) string 
 	if fileType == utility.FileTypeOTHER {
 		return string(data)
 	}
-	fp, err := parser.GetParser(fileType)
+	fp, err := parser.GetTextOnlyParser(fileType)
 	if err != nil {
 		return string(data)
-	}
-	if fileType == utility.FileTypeHTML {
-		fp = parser.NewHTMLTextParser()
 	}
 	res := fp.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {

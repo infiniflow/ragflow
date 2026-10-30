@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -103,6 +104,34 @@ func TestAsyncChat_EmptyMessages(t *testing.T) {
 	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for empty messages, got nil")
+	}
+}
+
+func TestAsyncChatRejectsNonStringUserContent(t *testing.T) {
+	s := &ChatPipelineService{}
+	messages := []map[string]interface{}{{"role": "user", "content": map[string]interface{}{"text": "question"}}}
+	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), messages, false, nil)
+	if err == nil || !strings.Contains(err.Error(), "messages[0].content is invalid") {
+		t.Fatalf("AsyncChat error = %v, want indexed invalid user content error", err)
+	}
+}
+
+func TestValidateUserMessageContentPreservesTextParts(t *testing.T) {
+	messages := []map[string]interface{}{{
+		"role": "user",
+		"content": []interface{}{
+			map[string]interface{}{"type": "text", "text": "question"},
+		},
+	}}
+	if err := validateUserMessageContent(messages); err != nil {
+		t.Fatalf("valid text content parts rejected: %v", err)
+	}
+}
+
+func TestValidateUserMessageContentRejectsNil(t *testing.T) {
+	messages := []map[string]interface{}{{"role": "user", "content": nil}}
+	if err := validateUserMessageContent(messages); err == nil || !strings.Contains(err.Error(), "messages[0].content") {
+		t.Fatalf("validation error = %v, want indexed missing-content error", err)
 	}
 }
 
@@ -2221,5 +2250,35 @@ func TestSynthesizeTTS_CleansTextBeforeCallingDriver(t *testing.T) {
 				t.Errorf("audio = %v, want audio present = %v", audio, wantCall)
 			}
 		})
+	}
+}
+
+func TestAsyncChat_ContextCancellationTerminatesGoroutine(t *testing.T) {
+	db := setupChatPipelineVisionTestDB(t)
+	seedChatPipelineVisionTenant(t, db, "glm-4-flash@ZHIPU-AI")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel context to simulate client disconnect
+
+	chat := dialForTest("glm-4-flash@ZHIPU-AI")
+	results, err := NewChatPipelineService().AsyncChat(ctx, "user-1", chat,
+		[]map[string]interface{}{{"role": "user", "content": "Question"}}, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Do NOT drain results with a background goroutine.
+	// AsyncChat must detect pre-cancelled context, exit, and close results.
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-results:
+			if !ok {
+				// success: AsyncChat goroutine exited cleanly without leaking
+				return
+			}
+		case <-timeout:
+			t.Fatal("AsyncChat goroutine leaked: did not terminate when context was cancelled")
+		}
 	}
 }

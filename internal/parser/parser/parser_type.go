@@ -22,38 +22,68 @@ import (
 	"ragflow/internal/utility"
 )
 
-// GetParser returns the ParseResultProducer for the given file type.
-// Each format picks a single backend — the Python dispatcher does
-// not pass any lib_type knob for these families, so the Go side
-// mirrors that with one constructor per format. Constructors mirror
-// the NewPDFParser shape (no error return): none of them have inputs
-// that could fail, so the error slot is dead weight.
+// GetTextOnlyParser returns a parser for readable-text extraction: previews,
+// attachments, agent uploads and CLI parsing. Embedded media is skipped even
+// when the extraction is nested inside an ingestion run (email attachments).
+// These paths also work without an injected run media cache.
+func GetTextOnlyParser(fileType utility.FileType) (ParseResultProducer, error) {
+	return newParser(fileType, true)
+}
+
+// GetParser returns the ingestion parser for the given file type.
 func GetParser(fileType utility.FileType) (ParseResultProducer, error) {
+	return newParser(fileType, false)
+}
+
+// newParser owns the format routes for both ingestion and text extraction.
+func newParser(fileType utility.FileType, textOnly bool) (ParseResultProducer, error) {
 	switch fileType {
 	case utility.FileTypePPTX:
-		return NewPPTXParser(), nil
+		p := NewPPTXParser()
+		p.textOnly = textOnly
+		return p, nil
 	case utility.FileTypePPT:
-		return NewPPTParser(), nil
+		p := NewPPTParser()
+		p.pptx.textOnly = textOnly
+		return p, nil
 	case utility.FileTypeXLSX:
-		return NewXLSXParser("")
+		p, err := NewXLSXParser("")
+		if err != nil {
+			return nil, err
+		}
+		p.textOnly = textOnly
+		return p, nil
 	case utility.FileTypeXLS:
-		return NewXLSParser("")
+		p, err := NewXLSParser("")
+		if err != nil {
+			return nil, err
+		}
+		p.textOnly = textOnly
+		return p, nil
 	case utility.FileTypeCSV:
 		return NewCSVParser(), nil
 	case utility.FileTypeDOCX:
-		return NewDOCXParser(), nil
+		p := NewDOCXParser()
+		p.textOnly = textOnly
+		return p, nil
 	case utility.FileTypeDOC:
-		return NewDOCParser(), nil
+		p := NewDOCParser()
+		p.textOnly = textOnly
+		return p, nil
 	case utility.FileTypePDF:
 		return NewPDFParser(), nil
 	case utility.FileTypeHTML:
-		return NewHTMLParser(), nil
+		p := NewHTMLParser()
+		p.textOnly = textOnly
+		return p, nil
 	case utility.FileTypeMarkdown:
 		return NewMarkdownParser(GoMarkdown)
 	case utility.FileTypeTXT:
 		return NewTextParser(), nil
 	case utility.FileTypeEPUB:
-		return NewEPUBParser(), nil
+		p := NewEPUBParser()
+		p.textOnly = textOnly
+		return p, nil
 	case utility.FileTypeJSON:
 		return NewJSONParser(), nil
 	case utility.FileTypeEMAIL:

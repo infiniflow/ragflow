@@ -9,7 +9,7 @@ export default {
       delete: 'Sil',
       deleteModalTitle: 'Silmek istediğinizden emin misiniz?',
       deleteThem: 'Bunları silmek istediğinizden emin misiniz?',
-      removeModalTitle: 'Kaldırmak istediğinizden emin misiniz?',
+      removeIt: 'Kaldırmak istediğinizden emin misiniz?',
       ok: 'Tamam',
       cancel: 'İptal',
       yes: 'Evet',
@@ -58,7 +58,6 @@ export default {
       viewLess: 'Daha az göster',
       comingSoon: 'Yakında',
       download: 'İndir',
-      figure: 'Şek.',
       close: 'Kapat',
       preview: 'Önizleme',
       move: 'Taşı',
@@ -1152,7 +1151,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       operation: 'İşlem',
       model: 'Model',
       modelTip: 'Büyük dil sohbet modeli',
-      tokensSpent: '{{total}} token ({{prompt}} giriş + {{completion}} çıkış)',
+      tokensSpent: '{{total}} token ({{prompt}} giriş, {{completion}} çıkış)',
       turnElapsed: '{{seconds}} sn',
       decisionModel: 'Karar modeli',
       decisionModelTip:
@@ -2186,7 +2185,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         "Alınan bir pasajın LLM'ye gösterilmeye değer olup olmadığına karar veren model. Alınan metni filtrelemeden bırakmak için boş bırakın.",
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'Her yeni oluşturulan dataset için varsayılan embedding model. Açılır listede bir embedding model bulamıyorsanız, RAGFlow slim sürümünü (embedding modeller içermez) kullanıp kullanmadığınızı kontrol edin veya model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için “Model sağlayıcıları” sayfasına bakın.',
+        'Her yeni oluşturulan dataset için varsayılan embedding model. Açılır listede bir embedding model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için “Model sağlayıcıları” sayfasına bakın.',
       img2txtModel: 'VLM',
       img2txtModelTip:
         'Her yeni oluşturulan dataset için varsayılan VLM. Bir resmi veya videoyu tanımlar. Açılır listede bir model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için “Model sağlayıcıları” sayfasına bakın.',
