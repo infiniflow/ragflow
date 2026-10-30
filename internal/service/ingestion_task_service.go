@@ -372,18 +372,20 @@ func (s *IngestionTaskService) PrepareDocumentTaskForCleanup(ctx context.Context
 		return s.supersedeUnstartedTask(ctx, task.ID, terminalMessage)
 	case common.RUNNING, common.STOPPING:
 		return nil, fmt.Errorf("document %s ingestion task %s is %s; stop it and wait for a terminal state before cleanup", documentID, task.ID, task.Status)
+	// Terminal cleanup can proceed when its ledger has already been deleted.
+	// Queued tasks above must still settle successfully before becoming removable.
 	case common.STOPPED:
-		if err := s.settleTaskRun(ctx, task, entity.TaskStatusCancel, terminalMessage); err != nil {
+		if err := s.settleTaskRun(ctx, task, entity.TaskStatusCancel, terminalMessage); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 		return task, nil
 	case common.COMPLETED:
-		if err := s.settleTaskRun(ctx, task, entity.TaskStatusDone, taskTerminalMessageComplete); err != nil {
+		if err := s.settleTaskRun(ctx, task, entity.TaskStatusDone, taskTerminalMessageComplete); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 		return task, nil
 	case common.FAILED:
-		if err := s.settleTaskRun(ctx, task, entity.TaskStatusFail, taskTerminalMessageFailed); err != nil {
+		if err := s.settleTaskRun(ctx, task, entity.TaskStatusFail, taskTerminalMessageFailed); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, err
 		}
 		return task, nil
@@ -459,10 +461,10 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 	// failed, a retry must finish it before the task row is deleted.
 	if task.Status == common.STOPPED && task.PipelineLogID != nil && *task.PipelineLogID != "" {
 		run, runErr := s.pipelineLogDAO.GetByID(ctx, dao.DB, *task.PipelineLogID)
-		if runErr != nil {
+		if runErr != nil && !errors.Is(runErr, gorm.ErrRecordNotFound) {
 			return nil, runErr
 		}
-		if run.RunCount != nil && *run.RunCount > 0 {
+		if run != nil && run.RunCount != nil && *run.RunCount > 0 {
 			if err := s.settleTaskRun(ctx, task, entity.TaskStatusCancel, "Task superseded by a new parse request."); err != nil {
 				return nil, err
 			}

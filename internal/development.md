@@ -309,8 +309,10 @@ export KVROCKS_PORT=6379
   process fails fast with `failed to connect to Kvrocks`.
   HTML, EPUB, DOCX, PPTX and XLSX ingestion use Kvrocks to hand embedded images from the parser to
   the chunker; the ingestor also validates the injected Kvrocks client at startup.
-  Inline image payloads default to a 32 MiB per-image limit; set
-  `RAGFLOW_MEDIA_IMAGE_MAX_BYTES` to a positive byte count to change it.
+  Image payloads share a default 32 MiB per-image limit across data URIs,
+  ZIP-entry extraction, picture parsing, vision encoding and media-cache writes.
+  Set `RAGFLOW_MEDIA_IMAGE_MAX_BYTES` to a positive byte count to change it.
+  Native PDF region cropping retains its separate page/raster limits.
   The parser budget and media cache apply the same numeric run caps: 1024 items
   and 1 GiB of decoded image bytes per run. The parser counts distinct source
   references; the cache counts distinct SHA-256 payloads. Set
