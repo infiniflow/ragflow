@@ -444,6 +444,19 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 			}
 		}
 	}
+	// A queued task becomes STOPPED before its run is settled. If settlement
+	// failed, a retry must finish it before the task row is deleted.
+	if task.Status == common.STOPPED && task.PipelineLogID != nil && *task.PipelineLogID != "" {
+		run, runErr := s.pipelineLogDAO.GetByID(ctx, dao.DB, *task.PipelineLogID)
+		if runErr != nil {
+			return nil, runErr
+		}
+		if run.RunCount != nil && *run.RunCount > 0 {
+			if err := s.settleStoppedTaskRun(ctx, task, "Task superseded by a new parse request."); err != nil {
+				return nil, err
+			}
+		}
+	}
 	info, err := s.ingestionTaskDAO.Delete(ctx, dao.DB, taskID, userID)
 	if err != nil {
 		return nil, err
