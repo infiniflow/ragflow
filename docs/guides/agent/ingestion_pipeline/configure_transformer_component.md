@@ -33,6 +33,8 @@ The panel lists **Auto keywords**, **Auto-question**, **Tags**, **Summary**, and
 
 Enable only the functions you need. Review the prompts for your document language, required output, and business scope before processing a large collection of files.
 
+![Transformer model, enrichment functions, and Metadata Settings](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_transformer_model_and_metadata.jpg)
+
 ## Configure Metadata
 
 1. Expand **Metadata**, turn on its switch, and click **Settings**.

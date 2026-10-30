@@ -44,6 +44,8 @@ An editable pipeline has **Save draft**, **Publish**, and **Management** in the 
 | Checklist | Appears when configuration issues are detected. Open it and click an issue to locate the affected component. Correct the configuration; the button disappears when no issues are detected. |
 | Management | Open the pipeline's variables, version history, JSON export, or settings. |
 
+![Pipeline Save draft, Publish, and Management menu](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_canvas_publish_management.jpg)
+
 ### Management Menu
 
 | Entry | What you can do |

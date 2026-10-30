@@ -47,7 +47,11 @@ Area description: the connected data source area is used to manage the connectio
 
 ### Set a Connected Data Source
 
-Click the settings button on the right side of a connected data source to enter the settings page of that connection. The settings page is used to view and maintain the configuration of the current connection. It is suitable for use when a token expires, the synchronization scope changes, the refresh frequency needs to be adjusted, or the synchronization result is abnormal.
+Click the settings button on the right side of a connected data source to enter the settings page of that connection.
+
+![Set a Connected Data Source](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/Set_a_Connected_Data_Source.jpg)
+
+The settings page is used to view and maintain the configuration of the current connection. It is suitable for use when a token expires, the synchronization scope changes, the refresh frequency needs to be adjusted, or the synchronization result is abnormal.
 
 Common fields on the settings page include:
 
@@ -61,8 +65,6 @@ Common fields on the settings page include:
 - **Test connection**: Verifies whether the current configuration can successfully connect to the external data source. It is recommended to test the connection before saving the configuration or starting a sync task.
 
 After changing settings, click **Test connection**, then **Save**. With no unsaved changes, the primary button may show **Stop** or **Resume**, depending on the connection status. Updated settings apply to subsequent synchronization tasks.
-
-![Set a Connected Data Source](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/Set_a_Connected_Data_Source.jpg)
 
 ### View Connected Data Source Logs
 
