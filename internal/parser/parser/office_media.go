@@ -21,7 +21,6 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -44,34 +43,18 @@ const (
 // normal DOCX/PPTX/XLSX parsers always construct a sink, so a missing cache
 // fails the parse instead of silently dropping images.
 type officeMediaSink struct {
-	ctx    context.Context
-	cache  media.Cache
-	budget *media.Budget
-	format string
-	// refs memoizes each image digest for the parse. A nil value means the
-	// source was already rejected, so repeats neither charge the budget nor
-	// inflate the warning counters.
-	refs map[string]*entity.MediaRef
-
+	sink          *media.Sink
+	format        string
 	err           error
 	invalidImages int
-	limitSkips    int
 }
 
 func newOfficeMediaSink(ctx context.Context, format string) *officeMediaSink {
-	return &officeMediaSink{
-		ctx:    ctx,
-		cache:  media.CacheFromContext(ctx),
-		budget: media.NewBudget(),
-		format: format,
-	}
+	return &officeMediaSink{sink: media.NewSink(ctx, format, media.NewBudget()), format: format}
 }
 
-// put validates one embedded image, charges it against the document budget
-// and stores it in the run media cache. It returns false when the image must
-// be skipped: the caller stays in sync with a warning already recorded here or
-// on the budget. Cache failures other than the run limit set err, which the
-// parser turns into a parse failure; a run-limit skip is a per-image warning.
+// put keeps Office payload identification local and delegates source admission,
+// deduplication and cache failures to the shared media sink.
 func (s *officeMediaSink) put(data []byte, mime string) (*entity.MediaRef, bool) {
 	if s == nil || s.err != nil {
 		return nil, false
@@ -82,78 +65,34 @@ func (s *officeMediaSink) put(data []byte, mime string) (*entity.MediaRef, bool)
 	}
 	if mime == "" {
 		mime = officeImageMIME(data)
-		if mime == "" {
-			s.invalidImages++
-			return nil, false
-		}
 	}
-	if s.cache == nil {
-		s.err = fmt.Errorf("%s media cache is not configured", s.format)
+	if mime == "" {
+		s.invalidImages++
 		return nil, false
 	}
-	// The IR carries only bytes, so the digest is the stable source identity:
-	// one repeated image shares a single budget admission, one cache write and
-	// one MediaRef.
-	source := officeMediaSource(data)
-	if ref, seen := s.refs[source]; seen {
-		if ref == nil {
-			return nil, false
-		}
-		return ref, true
-	}
-	reservation, admission := s.budget.Reserve(media.Size(len(data)))
-	if admission != media.Admitted || !reservation.Commit(media.Size(len(data))) {
-		s.memoizeRef(source, nil)
-		return nil, false
-	}
-	ref, err := s.cache.Put(s.ctx, s.format, mime, data)
-	if err != nil {
-		if errors.Is(err, media.ErrMediaLimitExceeded) {
-			s.limitSkips++
-			s.memoizeRef(source, nil)
-			return nil, false
-		}
-		s.err = fmt.Errorf("%s media cache write: %w", s.format, err)
-		return nil, false
-	}
-	s.memoizeRef(source, &ref)
-	return &ref, true
+	// The IR supplies bytes rather than source paths. Use the payload digest
+	// so repeated images share one admission and reference.
+	ref, err := s.sink.Resolve(officeMediaSource(data), media.Size(len(data)), func() (string, []byte, bool) {
+		return mime, data, true
+	})
+	s.err = err
+	return ref, ref != nil
 }
 
 func (s *officeMediaSink) warnings() []string {
 	if s == nil {
 		return nil
 	}
-	warnings := s.budget.Warnings()
+	warnings := s.sink.Warnings()
 	if s.invalidImages > 0 {
-		warnings = append(warnings, fmt.Sprintf(
-			"%s parser skipped %d invalid or unsupported embedded image(s)",
-			s.format,
-			s.invalidImages,
-		))
-	}
-	if s.limitSkips > 0 {
-		warnings = append(warnings, fmt.Sprintf(
-			"%s parser skipped %d image(s) after the run media cache limit",
-			s.format,
-			s.limitSkips,
-		))
+		warnings = append(warnings, fmt.Sprintf("%s parser skipped %d invalid or unsupported embedded image(s)", s.format, s.invalidImages))
 	}
 	return warnings
 }
 
-// officeMediaSource returns the digest used to dedupe budget admissions and
-// cache writes for one parse.
 func officeMediaSource(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
-}
-
-func (s *officeMediaSink) memoizeRef(source string, ref *entity.MediaRef) {
-	if s.refs == nil {
-		s.refs = make(map[string]*entity.MediaRef)
-	}
-	s.refs[source] = ref
 }
 
 var (
@@ -171,9 +110,6 @@ func officeImageMIME(data []byte) string {
 	if len(data) == 0 {
 		return ""
 	}
-	if mime := http.DetectContentType(data); strings.HasPrefix(mime, "image/") {
-		return mime
-	}
 	switch {
 	case bytes.HasPrefix(data, tiffLittleEndian), bytes.HasPrefix(data, tiffBigEndian):
 		return "image/tiff"
@@ -181,7 +117,11 @@ func officeImageMIME(data []byte) string {
 		return "image/x-emf"
 	case isWMFImage(data):
 		return "image/x-wmf"
-	case isSVGImage(data):
+	}
+	if mime := http.DetectContentType(data); strings.HasPrefix(mime, "image/") {
+		return mime
+	}
+	if isSVGImage(data) {
 		return "image/svg+xml"
 	}
 	return ""
@@ -207,15 +147,19 @@ func isWMFImage(data []byte) bool {
 // carry the original extension.
 func isSVGImage(data []byte) bool {
 	trimmed := bytes.TrimSpace(bytes.TrimPrefix(data, utf8BOM))
-	lower := bytes.ToLower(trimmed)
-	if bytes.HasPrefix(lower, []byte("<svg")) {
+	if len(trimmed) > 1024 {
+		trimmed = trimmed[:1024]
+	}
+	if len(trimmed) >= 4 && bytes.EqualFold(trimmed[:4], []byte("<svg")) {
 		return true
 	}
-	if !bytes.HasPrefix(lower, []byte("<?xml")) {
+	if len(trimmed) < 5 || !bytes.EqualFold(trimmed[:5], []byte("<?xml")) {
 		return false
 	}
-	if len(lower) > 1024 {
-		lower = lower[:1024]
+	for i := 5; i+4 <= len(trimmed); i++ {
+		if trimmed[i] == '<' && bytes.EqualFold(trimmed[i:i+4], []byte("<svg")) {
+			return true
+		}
 	}
-	return bytes.Contains(lower, []byte("<svg"))
+	return false
 }

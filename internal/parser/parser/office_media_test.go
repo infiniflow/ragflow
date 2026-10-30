@@ -425,3 +425,14 @@ func TestPPTXTextParserSkipsImagesWithoutCache(t *testing.T) {
 		t.Fatalf("warnings = %v, want none for a text-only parse", res.Warnings)
 	}
 }
+
+// SVG sniffing must inspect a bounded prefix without copying a large payload.
+func TestOfficeSVGSniffDoesNotCopyPayload(t *testing.T) {
+	data := append([]byte(`<?xml version="1.0"?><SVG xmlns="http://www.w3.org/2000/svg">`), bytes.Repeat([]byte("X"), 1<<20)...)
+	if !isSVGImage(data) {
+		t.Fatal("SVG not recognized")
+	}
+	if allocations := testing.AllocsPerRun(10, func() { _ = isSVGImage(data) }); allocations != 0 {
+		t.Fatalf("SVG sniff allocated %v times; want no payload copy", allocations)
+	}
+}

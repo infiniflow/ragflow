@@ -29,12 +29,12 @@ func TestBuildDOCXJSONSections_FromJSON(t *testing.T) {
 
 	got := buildDOCXJSONSections(irJSON, nil)
 	want := []map[string]any{
-		{"text": "Title", "image": nil, "doc_type_kwd": "text", "layout": "heading"},
-		{"text": "Hello", "image": nil, "doc_type_kwd": "text"},
+		{"text": "Title", "doc_type_kwd": "text", "layout": "heading"},
+		{"text": "Hello", "doc_type_kwd": "text"},
 		// The table sits under heading "Title", so it carries the
 		// heading-location caption (mirrors Python __get_nearest_title).
 		{"doc_type_kwd": "table", "table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "cell", ColSpan: 1, RowSpan: 1}}}, HeaderRows: 1, Caption: "Table Location: Title"}},
-		{"text": "item1", "image": nil, "doc_type_kwd": "text"},
+		{"text": "item1", "doc_type_kwd": "text"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("buildDOCXJSONSections mismatch:\n got: %+v\nwant: %+v", got, want)
@@ -481,5 +481,17 @@ func TestBuildDOCXJSONSections_EmitsListAndTextBoxImages(t *testing.T) {
 				t.Errorf("section %d image payload mismatch", i)
 			}
 		}
+	}
+}
+
+func TestDOCXImageTraversalStopsAfterFatalFailure(t *testing.T) {
+	elements := []docxIRElement{
+		{Type: "table", Rows: []docxIRRow{{Cells: []docxIRCell{{Content: []docxIRElement{{Type: "image", Data: []byte("first")}, {Type: "image", Data: []byte("second")}}}}}}},
+		{Type: "image", Data: []byte("third")},
+	}
+	visits := 0
+	completed := forEachDOCXIRImage(elements, func([]byte) bool { visits++; return false })
+	if completed || visits != 1 {
+		t.Fatalf("completed=%v visits=%d; want false, 1", completed, visits)
 	}
 }

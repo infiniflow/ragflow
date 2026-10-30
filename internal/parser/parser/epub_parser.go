@@ -36,7 +36,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -379,7 +378,7 @@ func epubMediaResolver(entries map[string]*zip.File, state *htmlWalkState, chapt
 		// and cached once per parse, even when different chapters reference it.
 		// A nil value records a source that was already rejected, so repeated
 		// references do not re-read it or inflate the warning counters.
-		if ref, seen := state.epubMediaMemo[name]; seen {
+		if ref, seen := state.mediaOutput().Lookup("entry:" + name); seen {
 			if ref == nil {
 				return nil, false
 			}
@@ -388,13 +387,13 @@ func epubMediaResolver(entries map[string]*zip.File, state *htmlWalkState, chapt
 		mime, ok := images[name]
 		if !ok {
 			state.unresolvedImages++
-			state.memoizeEPUBMedia(name, nil)
+			state.mediaOutput().Skip("entry:" + name)
 			return nil, false
 		}
 		entry, ok := entries[name]
 		if !ok {
 			state.unresolvedImages++
-			state.memoizeEPUBMedia(name, nil)
+			state.mediaOutput().Skip("entry:" + name)
 			return nil, false
 		}
 		return state.loadEPUBMedia(name, mime, entry)
@@ -410,43 +409,22 @@ func (s *htmlWalkState) loadEPUBMedia(name, mime string, entry *zip.File) (*enti
 	if entry.UncompressedSize64 <= uint64(maxBytes) {
 		declared = media.Size(entry.UncompressedSize64)
 	}
-	// Check the declared uncompressed size against both byte limits before
-	// reserving an item slot or decompressing the entry.
-	reservation, admission := s.budget.Reserve(declared)
-	if admission != media.Admitted {
-		s.memoizeEPUBMedia(name, nil)
-		return nil, false
-	}
-	f, err := entry.Open()
-	if err != nil {
-		s.unresolvedImages++
-		s.memoizeEPUBMedia(name, nil)
-		return nil, false
-	}
-	data, err := io.ReadAll(io.LimitReader(f, int64(maxBytes)+1))
-	f.Close()
-	if err != nil || len(data) == 0 {
-		s.unresolvedImages++
-		s.memoizeEPUBMedia(name, nil)
-		return nil, false
-	}
-	if !reservation.Commit(media.Size(len(data))) {
-		s.memoizeEPUBMedia(name, nil)
-		return nil, false
-	}
-	ref, err := s.mediaCache.Put(s.ctx, s.cacheFormat(), mime, data)
-	if err != nil {
-		if errors.Is(err, media.ErrMediaLimitExceeded) {
-			s.mediaLimitSkips++
-			s.memoizeEPUBMedia(name, nil)
-			return nil, false
+	ref, err := s.mediaOutput().Resolve("entry:"+name, declared, func() (string, []byte, bool) {
+		f, err := entry.Open()
+		if err != nil {
+			s.unresolvedImages++
+			return "", nil, false
 		}
-		s.err = fmt.Errorf("%s media cache write: %w", s.cacheFormat(), err)
-		s.memoizeEPUBMedia(name, nil)
-		return nil, false
-	}
-	s.memoizeEPUBMedia(name, &ref)
-	return &ref, true
+		defer f.Close()
+		data, err := io.ReadAll(io.LimitReader(f, int64(maxBytes)+1))
+		if err != nil || len(data) == 0 {
+			s.unresolvedImages++
+			return "", nil, false
+		}
+		return mime, data, true
+	})
+	s.err = err
+	return ref, ref != nil
 }
 
 // appendEPUBChapter keeps continuous chapter prose together, splitting only

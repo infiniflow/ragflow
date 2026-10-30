@@ -45,11 +45,9 @@ func NewXLSXParser(_ string) (*XLSXParser, error) {
 // in-cell images to a run media cache. Non-ingestion callers use it for
 // previews, attachments and CLI parsing.
 func NewXLSXTextParser() *XLSXParser {
-	return &XLSXParser{
-		TCADPTableResultType:           "1",
-		TCADPMarkdownImageResponseType: "1",
-		textOnly:                       true,
-	}
+	p, _ := NewXLSXParser("")
+	p.textOnly = true
+	return p
 }
 
 func (p *XLSXParser) String() string {
@@ -140,11 +138,8 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if !changed {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w", err)}
 	}
-	// The first parse attempt is discarded, so its media reservations must not
-	// affect the normalized retry's output.
-	if !p.textOnly {
-		sink = newOfficeMediaSink(ctx, officeMediaFormatXLSX)
-	}
+	// Normalization changes only workbook sheet names. Reuse source memo and
+	// admissions: already cached image bytes are identical on the second pass.
 	items, warnings, sheets, retryErr := parseXLSXBytes(normalized, sink)
 	if retryErr != nil {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}

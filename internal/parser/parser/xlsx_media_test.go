@@ -72,8 +72,8 @@ func TestXLSXTextParserSkipsImagesWithoutCache(t *testing.T) {
 
 // TestXLSXParserNormalizationRetryEmitsImage covers a workbook whose second
 // sheet needs name normalization: the first attempt parses the first sheet
-// (including its image) and then fails; the retry must build the image
-// reference from its own media sink instead of reusing discarded state.
+// (including its image) and then fails; the retry must reuse the admitted image
+// reference without loading or writing the same source a second time.
 func TestXLSXParserNormalizationRetryEmitsImage(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "Name")
@@ -122,8 +122,8 @@ func TestXLSXParserNormalizationRetryEmitsImage(t *testing.T) {
 	if imageItem["sheet"] != "Sheet1" || imageItem["cell"] != "C3" {
 		t.Fatalf("image identity = %+v, want Sheet1!C3", imageItem)
 	}
-	if cache.putCalls != 2 {
-		t.Fatalf("cache writes = %d, want one per parse attempt", cache.putCalls)
+	if cache.putCalls != 1 {
+		t.Fatalf("cache writes = %d, want one across both parse attempts", cache.putCalls)
 	}
 	if !strings.Contains(strings.Join(res.Warnings, "\n"), "Visible_Data") {
 		t.Fatalf("warnings = %v, want sheet-name normalization warning", res.Warnings)

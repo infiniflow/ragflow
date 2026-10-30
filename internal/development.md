@@ -307,7 +307,7 @@ export KVROCKS_PORT=6379
   In docker the Go services override these to `kvrocks:6379` automatically
   (see `docker-compose-go.yml`). If Kvrocks is unreachable at startup the
   process fails fast with `failed to connect to Kvrocks`.
-  HTML and EPUB ingestion use Kvrocks to hand inline images from the parser to
+  HTML, EPUB, DOCX, PPTX and XLSX ingestion use Kvrocks to hand embedded images from the parser to
   the chunker; the ingestor also validates the injected Kvrocks client at startup.
   Inline image payloads default to a 32 MiB per-image limit; set
   `RAGFLOW_MEDIA_IMAGE_MAX_BYTES` to a positive byte count to change it.
@@ -317,8 +317,22 @@ export KVROCKS_PORT=6379
   `RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN` and `RAGFLOW_MEDIA_MAX_BYTES_PER_RUN` to
   positive values to change them. Quota state is keyed by ingestion task and
   persists across retries of that task until cleanup or the 24-hour media TTL.
+  Office parsers deduplicate sources by payload digest. DOC/PPT share their
+  Office family path; BIFF8 XLS does not extract embedded pictures. Office IR
+  and Excelize expose already materialized image bytes, so these budgets bound
+  emitted/cached payloads, not native extraction or ZIP decoding peak memory.
+  File text extraction and email attachment re-chunking use text-only parsers;
+  Office images skipped by limits produce warnings without placeholder items.
   Debug previews use a temporary `pipeline_<document-id>` run scope and purge
   their cache state when the preview finishes.
+
+
+  Validate Office media handoff against the services configured in
+  `conf/service_conf.yaml` (real MySQL, Kvrocks and MinIO):
+
+```bash
+RAGFLOW_REAL_OFFICE_MEDIA_TEST=1 bash build.sh --test-integration-go ./internal/ingestion/pipeline -run '^TestOfficeMediaRealServices$' -v
+```
 
 
 - Start RAGFlow

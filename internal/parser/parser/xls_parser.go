@@ -53,11 +53,9 @@ func NewXLSParser(_ string) (*XLSParser, error) {
 // attachments and CLI parsing. BIFF8 image extraction is not implemented, so
 // only the XLSX-content fallback can carry images.
 func NewXLSTextParser() *XLSParser {
-	return &XLSParser{
-		TCADPTableResultType:           "1",
-		TCADPMarkdownImageResponseType: "1",
-		textOnly:                       true,
-	}
+	p, _ := NewXLSParser("")
+	p.textOnly = true
+	return p
 }
 
 func (p *XLSParser) String() string {

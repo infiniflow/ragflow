@@ -199,54 +199,64 @@ type docxTableImage struct {
 	column int
 }
 
-func forEachDOCXTableImage(el docxIRElement, visit func(docxTableImage)) {
+func forEachDOCXTableImage(el docxIRElement, visit func(docxTableImage) bool) bool {
 	for rowIndex, row := range el.Rows {
 		for columnIndex, cell := range row.Cells {
-			forEachDOCXIRImage(cell.Content, func(data []byte) {
-				visit(docxTableImage{data: data, row: rowIndex + 1, column: columnIndex + 1})
-			})
+			if !forEachDOCXIRImage(cell.Content, func(data []byte) bool {
+				return visit(docxTableImage{data: data, row: rowIndex + 1, column: columnIndex + 1})
+			}) {
+				return false
+			}
 		}
 	}
+	return true
 }
 
-// forEachDOCXIRImage visits image payloads without first collecting a second
-// document-sized slice of image references. A skipped image is handled by the
-// media sink; traversal itself never stops early.
-func forEachDOCXIRImage(elements []docxIRElement, visit func([]byte)) {
+// forEachDOCXIRImage stops when a visitor reports a fatal failure. Resource
+// omissions keep walking so later text and repeated admitted images survive.
+func forEachDOCXIRImage(elements []docxIRElement, visit func([]byte) bool) bool {
 	for _, el := range elements {
 		switch el.Type {
 		case "image":
-			if len(el.Data) > 0 {
-				visit(el.Data)
+			if len(el.Data) > 0 && !visit(el.Data) {
+				return false
 			}
 		case "paragraph", "heading":
 			for _, run := range el.contentRuns() {
-				if run.Type == "image" && len(run.Data) > 0 {
-					visit(run.Data)
+				if run.Type == "image" && len(run.Data) > 0 && !visit(run.Data) {
+					return false
 				}
-				forEachDOCXIRImage(run.Content, visit)
+				if !forEachDOCXIRImage(run.Content, visit) {
+					return false
+				}
 			}
 		case "table":
-			for _, row := range el.Rows {
-				for _, cell := range row.Cells {
-					forEachDOCXIRImage(cell.Content, visit)
-				}
+			if !forEachDOCXTableImage(el, func(image docxTableImage) bool { return visit(image.data) }) {
+				return false
 			}
 		case "list":
-			forEachDOCXIRListImage(docxIRList{Items: el.Items}, visit)
+			if !forEachDOCXIRListImage(docxIRList{Items: el.Items}, visit) {
+				return false
+			}
 		case "text_box":
-			forEachDOCXIRImage(el.contentBlocks(), visit)
+			if !forEachDOCXIRImage(el.contentBlocks(), visit) {
+				return false
+			}
 		}
 	}
+	return true
 }
 
-func forEachDOCXIRListImage(list docxIRList, visit func([]byte)) {
+func forEachDOCXIRListImage(list docxIRList, visit func([]byte) bool) bool {
 	for _, item := range list.Items {
-		forEachDOCXIRImage(item.Content, visit)
-		if item.Nested != nil {
-			forEachDOCXIRListImage(*item.Nested, visit)
+		if !forEachDOCXIRImage(item.Content, visit) {
+			return false
+		}
+		if item.Nested != nil && !forEachDOCXIRListImage(*item.Nested, visit) {
+			return false
 		}
 	}
+	return true
 }
 
 // docxElementText returns the plain-text rendering of any supported
@@ -391,6 +401,9 @@ func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink, tableCaptio
 			defer func() { headings = parentHeadings }()
 		}
 		for ei := 0; ei < len(elements); ei++ {
+			if sink != nil && sink.err != nil {
+				return
+			}
 			el := elements[ei]
 			// TEMPORARY: this merge is a stopgap. Revisit it once docxIRRow
 			// carries a three-state header field and office_oxide populates
@@ -513,13 +526,14 @@ func appendOfficeTableSections(sections []map[string]any, el docxIRElement, capt
 	table := NewTableDataJSONItem(officeIRTableData(el, caption), "", nil).ToMap()
 
 	var tableImages []docxTableImage
-	forEachDOCXTableImage(el, func(tableImage docxTableImage) {
+	forEachDOCXTableImage(el, func(tableImage docxTableImage) bool {
 		ref, ok := sink.put(tableImage.data, "")
 		if !ok {
-			return
+			return sink == nil || sink.err == nil
 		}
 		tableImage.ref = ref
 		tableImages = append(tableImages, tableImage)
+		return true
 	})
 	if len(tableImages) > 0 {
 		table["source_table_id"] = tableID
@@ -552,7 +566,6 @@ func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, he
 		}
 		item := map[string]any{
 			"text":         value,
-			"image":        nil,
 			"doc_type_kwd": "text",
 		}
 		if heading {
@@ -564,6 +577,9 @@ func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, he
 		sections = appendDOCXImageSection(sections, data, sink, nil)
 	}
 	for _, run := range el.contentRuns() {
+		if sink != nil && sink.err != nil {
+			return sections
+		}
 		switch run.Type {
 		case "text":
 			text.WriteString(run.Text)
@@ -573,7 +589,9 @@ func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, he
 			flushText()
 			appendImage(run.Data)
 		}
-		forEachDOCXIRImage(run.Content, func(data []byte) { flushText(); appendImage(data) })
+		if !forEachDOCXIRImage(run.Content, func(data []byte) bool { flushText(); appendImage(data); return sink == nil || sink.err == nil }) {
+			return sections
+		}
 	}
 	flushText()
 	return sections

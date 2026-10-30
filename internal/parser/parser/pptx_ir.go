@@ -48,6 +48,9 @@ func buildPPTXJSONSections(irJSON string, sink *officeMediaSink) ([]map[string]a
 		var emitElements func([]docxIRElement)
 		emitElements = func(elements []docxIRElement) {
 			for _, el := range elements {
+				if sink != nil && sink.err != nil {
+					return
+				}
 				var units []map[string]any
 				switch el.Type {
 				case "table":

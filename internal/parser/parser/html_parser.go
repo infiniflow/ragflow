@@ -19,7 +19,6 @@ package parser
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -133,13 +132,8 @@ type htmlWalkState struct {
 	mediaOrder          int
 	skippedInlineImages int
 	unresolvedImages    int
-	mediaLimitSkips     int
 	budget              *media.Budget
-	// dataURIMemo and epubMediaMemo dedupe sources across one parse. A nil
-	// value means the source was already processed and skipped; a non-nil
-	// value is the reference every later occurrence reuses.
-	dataURIMemo   map[string]*entity.MediaRef
-	epubMediaMemo map[string]*entity.MediaRef
+	mediaSink           *media.Sink
 	// refOnly defers image bytes to content-addressed references instead of
 	// carrying the normalized data URI on the item. HTML and EPUB set it;
 	// formats that still inline image bytes leave it false.
@@ -159,9 +153,10 @@ type htmlWalkState struct {
 
 func (s *htmlWalkState) warnings() []string {
 	var warnings []string
-	warnings = append(warnings, s.budget.Warnings()...)
-	if s.mediaLimitSkips > 0 {
-		warnings = append(warnings, fmt.Sprintf("document parser skipped %d image(s) after the run media cache limit", s.mediaLimitSkips))
+	if s.mediaSink != nil {
+		warnings = append(warnings, s.mediaSink.Warnings()...)
+	} else {
+		warnings = append(warnings, s.budget.Warnings()...)
 	}
 	if s.skippedInlineImages > 0 {
 		warnings = append(warnings, fmt.Sprintf("document parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages))
@@ -200,56 +195,26 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 		return "", nil, false
 	}
 	if s.refOnly {
-		// A repeated source is decoded and written once; every reference still
-		// receives the same MediaRef. A nil memo value means it was already
-		// processed and skipped, so the warning counters are not inflated.
-		if ref, seen := s.dataURIMemo[src]; seen {
-			if ref == nil {
-				return "", nil, false
-			}
-			return "", ref, true
+		sink := s.mediaOutput()
+		key := "data:" + src
+		if ref, seen := sink.Lookup(key); seen {
+			return "", ref, ref != nil
 		}
-		// Validate and size the payload without allocating so budget admission
-		// happens before the decode. Malformed sources never spend budget.
 		size, ok := media.DataImageDecodedSize(src)
 		if !ok {
 			s.skippedInlineImages++
-			s.memoizeDataURI(src, nil)
+			sink.Skip(key)
 			return "", nil, false
 		}
-		if s.mediaCache == nil {
-			s.err = fmt.Errorf("%s media cache is not configured", s.cacheFormat())
-			return "", nil, false
-		}
-		// Repeated sources share one reservation, so a document made of one
-		// repeated data URI stays bounded without capping its references.
-		reservation, admission := s.budget.Reserve(media.Size(size))
-		if admission != media.Admitted {
-			s.memoizeDataURI(src, nil)
-			return "", nil, false
-		}
-		mime, data, ok := media.DecodeDataImageSource(src)
-		if !ok {
-			s.skippedInlineImages++
-			s.memoizeDataURI(src, nil)
-			return "", nil, false
-		}
-		if !reservation.Commit(media.Size(len(data))) {
-			s.memoizeDataURI(src, nil)
-			return "", nil, false
-		}
-		ref, err := s.mediaCache.Put(s.ctx, s.cacheFormat(), mime, data)
-		if err != nil {
-			if errors.Is(err, media.ErrMediaLimitExceeded) {
-				s.mediaLimitSkips++
-				s.memoizeDataURI(src, nil)
-				return "", nil, false
+		ref, err := sink.Resolve(key, media.Size(size), func() (string, []byte, bool) {
+			mime, data, ok := media.DecodeDataImageSource(src)
+			if !ok {
+				s.skippedInlineImages++
 			}
-			s.err = fmt.Errorf("%s media cache write: %w", s.cacheFormat(), err)
-			return "", nil, false
-		}
-		s.memoizeDataURI(src, &ref)
-		return "", &ref, true
+			return mime, data, ok
+		})
+		s.err = err
+		return "", ref, ref != nil
 	}
 	reservation, admission := s.budget.ReserveOccurrence(media.UnknownSize)
 	if admission != media.Admitted {
@@ -266,18 +231,12 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 	return normalized, nil, true
 }
 
-func (s *htmlWalkState) memoizeDataURI(src string, ref *entity.MediaRef) {
-	if s.dataURIMemo == nil {
-		s.dataURIMemo = make(map[string]*entity.MediaRef)
+// mediaOutput shares source admission and writes across data URIs and EPUB entries.
+func (s *htmlWalkState) mediaOutput() *media.Sink {
+	if s.mediaSink == nil {
+		s.mediaSink = media.NewSink(media.WithCache(s.ctx, s.mediaCache), s.cacheFormat(), s.budget)
 	}
-	s.dataURIMemo[src] = ref
-}
-
-func (s *htmlWalkState) memoizeEPUBMedia(name string, ref *entity.MediaRef) {
-	if s.epubMediaMemo == nil {
-		s.epubMediaMemo = make(map[string]*entity.MediaRef)
-	}
-	s.epubMediaMemo[name] = ref
+	return s.mediaSink
 }
 
 // walkHTMLBlocksWithState emits normalized text and image items in document

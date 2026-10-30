@@ -618,6 +618,9 @@ func extractXLSXImages(f *excelize.File, sheet string, sink *officeMediaSink) ([
 	items := make([]map[string]any, 0, len(cells))
 	warnings := make([]string, 0)
 	for _, cell := range cells {
+		if sink.err != nil {
+			break
+		}
 		pictures, err := f.GetPictures(sheet, cell)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("XLSX image extraction failed for sheet %q cell %s: %v", sheet, cell, err))
