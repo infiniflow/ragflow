@@ -400,14 +400,23 @@ func TestRetrieval_RoutesMemoryRequests(t *testing.T) {
 	SetMemoryRetrievalService(memoryService)
 	t.Cleanup(func() { SetMemoryRetrievalService(previous) })
 
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.Sys["user_id"] = "user-42"
+	ctx := runtime.WithState(t.Context(), state)
+
 	rt := NewRetrievalToolWithDefaults(retrievalArgs{
 		MemoryIDs: []string{"memory-1"},
 	})
-	if _, err := rt.InvokableRun(t.Context(), `{"query":"remember this"}`); err != nil {
+	if _, err := rt.InvokableRun(ctx, `{"query":"remember this"}`); err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	if memoryService.req.RetrievalFrom != "memory" {
 		t.Fatalf("RetrievalFrom = %q, want memory", memoryService.req.RetrievalFrom)
+	}
+	// No user_id on the node: the run's authenticated user stands in, so the
+	// search is never left without a user filter.
+	if memoryService.req.UserID != "user-42" {
+		t.Fatalf("UserID = %q, want the run user user-42", memoryService.req.UserID)
 	}
 	if len(memoryService.req.MemoryIDs) != 1 || memoryService.req.MemoryIDs[0] != "memory-1" {
 		t.Fatalf("MemoryIDs = %#v", memoryService.req.MemoryIDs)
@@ -471,15 +480,41 @@ func TestRetrieval_RoutesMemoryRequestsWithUserFilter(t *testing.T) {
 	}
 }
 
+func TestRetrieval_ModelSuppliedUserIDIsIgnored(t *testing.T) {
+	previous := GetMemoryRetrievalService()
+	memoryService := &capturingRetrievalService{}
+	SetMemoryRetrievalService(memoryService)
+	t.Cleanup(func() { SetMemoryRetrievalService(previous) })
+
+	// The Agent tool path is the one whose arguments come from a model, so
+	// build it the way the registry does: user_id is resolved from the node
+	// config and the model's value is dropped.
+	built, err := BuildByName("retrieval", map[string]any{
+		"retrieval_from": "memory",
+		"memory_ids":     []any{"memory-1"},
+		"user_id":        "user-42",
+	})
+	if err != nil {
+		t.Fatalf("BuildByName(retrieval): %v", err)
+	}
+	if _, err = built.(*RetrievalTool).InvokableRun(t.Context(), `{"query":"remember this","user_id":"someone-else"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if memoryService.req.UserID != "user-42" {
+		t.Fatalf("UserID = %q, want the node value user-42", memoryService.req.UserID)
+	}
+}
+
 func TestRetrieval_UnsetBareUserRefYieldsNoFilter(t *testing.T) {
 	previous := GetMemoryRetrievalService()
 	memoryService := &capturingRetrievalService{}
 	SetMemoryRetrievalService(memoryService)
 	t.Cleanup(func() { SetMemoryRetrievalService(previous) })
 
-	// sys.user_id is deliberately left unset: an unresolvable bare ref must
-	// mean "no user filter" (UserID == ""), not a literal "sys.user_id"
-	// filter that matches no user.
+	// sys.user_id is deliberately left unset: an unresolvable bare ref must not
+	// become a literal "sys.user_id" filter that matches no user, and the run
+	// has no authenticated user either, so the memory search must fail closed
+	// instead of returning every user's messages.
 	state := runtime.NewCanvasState("run-1", "session-1")
 	ctx := runtime.WithState(t.Context(), state)
 
@@ -487,11 +522,10 @@ func TestRetrieval_UnsetBareUserRefYieldsNoFilter(t *testing.T) {
 		MemoryIDs: []string{"memory-1"},
 		UserID:    "sys.user_id",
 	})
-	if _, err := rt.InvokableRun(ctx, `{"query":"remember this"}`); err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
-	if memoryService.req.UserID != "" {
-		t.Fatalf("UserID = %q, want empty (no user filter) for unset sys.user_id", memoryService.req.UserID)
+	if _, err := rt.InvokableRun(ctx, `{"query":"remember this"}`); err == nil {
+		t.Fatal("InvokableRun: expected a fail-closed error for an unfiltered memory search")
+	} else if !strings.Contains(err.Error(), "requires a user_id") {
+		t.Fatalf("err = %v, want the user_id requirement", err)
 	}
 
 	// The braced form of an unset ref keeps the loud failure — Python's

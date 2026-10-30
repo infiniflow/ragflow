@@ -161,6 +161,9 @@ const componentNameRetrieval = "Retrieval"
 
 var legacyRetrievalQueryPattern = regexp.MustCompile(`(?s)^\s*UserFillUp:\s*(.*?)\s+Input\s+(.*?)\s*$`)
 
+// newRetrievalComponent builds the tool without a node-level user_id channel:
+// this component assembles its own arguments (node config merged with upstream
+// outputs), so the value it passes is not model output.
 func newRetrievalComponent(params map[string]any) (Component, error) {
 	return &retrievalComponent{
 		inner:  agenttool.NewRetrievalTool(),
