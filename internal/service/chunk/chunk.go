@@ -987,6 +987,12 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 				}
 			}
 		}
+		result["id"] = result["chunk_id"]
+		result["content"] = result["content_with_weight"]
+		utility.SetFieldArray(result, "important_keywords", result["important_kwd"])
+		utility.SetFieldArray(result, "questions", result["question_kwd"])
+		result["document_id"] = req.DocID
+		result["dataset_id"] = doc.KbID
 		chunks = append(chunks, result)
 	}
 
@@ -1309,7 +1315,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		// Delete all chunks for this document
 		condition["doc_id"] = req.DocID
 	default:
-		return 0, fmt.Errorf("either chunk_ids or delete_all must be provided")
+		return 0, nil
 	}
 
 	deletedCount, err := s.docEngine.DeleteChunks(ctx, condition, indexName, doc.KbID)
