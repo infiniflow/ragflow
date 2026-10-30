@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -15,6 +15,8 @@
 #
 
 import logging
+
+from typing import Any
 
 from .base import Base
 from .chunk import Chunk
@@ -92,7 +94,12 @@ class Document(Base):
             return chunks
         raise Exception(res.get("message"))
 
-    def add_chunk(self, content: str, important_keywords: list[str] = [], questions: list[str] = [], image_base64: str | None = None, *, tag_kwd: list[str] = []):
+    def add_chunk(self, content: str, important_keywords: list[str] | None = [], questions: list[str] | None = [], image_base64: Any = None, *, tag_kwd: list[str] | None = []):
+        for field, value in (("important_keywords", important_keywords), ("questions", questions), ("tag_kwd", tag_kwd)):
+            if value is None:
+                raise ValueError(f"`{field}` is required to be a list")
+        if image_base64 is not None and not isinstance(image_base64, str):
+            raise ValueError("`image_base64` must be a string")
         body = {"content": content, "important_keywords": important_keywords, "tag_kwd": tag_kwd, "questions": questions}
         if image_base64 is not None:
             body["image_base64"] = image_base64
