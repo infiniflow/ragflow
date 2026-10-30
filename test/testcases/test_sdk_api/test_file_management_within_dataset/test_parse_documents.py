@@ -322,30 +322,8 @@ def test_terminal_status_from_previous_parse_run_is_not_reused(monkeypatch):
     "ingestion_status, progress, expected_status",
     [
         ("COMPLETED", 1.0, "DONE"),
-        pytest.param(
-            "FAILED",
-            -1.0,
-            "FAIL",
-            marks=pytest.mark.skip(
-                reason=(
-                    "Go document-list handler internal/handler/document.go:mapDocumentListItem "
-                    "returns ingestion_status, which sdk/python/ragflow_sdk/modules/document.py:Document.__init__ "
-                    "drops; DataSet._get_documents_status then polls forever for failed tasks."
-                )
-            ),
-        ),
-        pytest.param(
-            "STOPPED",
-            0.0,
-            "CANCEL",
-            marks=pytest.mark.skip(
-                reason=(
-                    "Go document-list handler internal/handler/document.go:mapDocumentListItem "
-                    "returns ingestion_status, which sdk/python/ragflow_sdk/modules/document.py:Document.__init__ "
-                    "drops; DataSet._get_documents_status then polls forever for cancelled tasks."
-                )
-            ),
-        ),
+        ("FAILED", -1.0, "FAIL"),
+        ("STOPPED", 0.0, "CANCEL"),
     ],
 )
 def test_parse_documents_returns_documented_terminal_status(monkeypatch, ingestion_status, progress, expected_status):

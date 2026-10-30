@@ -150,7 +150,7 @@ func TestListChatSessionsChecksChatPermissionWhenThereAreNoSessions(t *testing.T
 		permissionChecker: emptyChatSessionScopeChecker{checkErr: permission.ErrPermissionDenied},
 	}
 
-	result, err := svc.ListChatSessions(t.Context(), "outsider", "chat-1", "", "", nil, 1, 20)
+	result, err := svc.ListChatSessions(t.Context(), "outsider", "chat-1", "", "", "", nil, 1, 20)
 	if result != nil {
 		t.Fatalf("expected no response for unauthorized chat, got %+v", result)
 	}

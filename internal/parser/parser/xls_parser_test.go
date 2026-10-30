@@ -302,7 +302,8 @@ func TestXLSParser_ImagesDoNotRunOCR(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewXLSParser: %v", err)
 	}
-	result := p.ParseWithResult(t.Context(), "with-image.xls", workbook.Bytes())
+	ctx, cache := officeMediaTestContext()
+	result := p.ParseWithResult(ctx, "with-image.xls", workbook.Bytes())
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
@@ -313,8 +314,15 @@ func TestXLSParser_ImagesDoNotRunOCR(t *testing.T) {
 			break
 		}
 	}
-	if imageItem == nil || imageItem["image"] != "data:image/png;base64,"+base64.StdEncoding.EncodeToString(imageBytes) {
-		t.Fatalf("image item = %+v, want retained picture payload", imageItem)
+	if imageItem == nil {
+		t.Fatalf("image item missing: %+v", ItemsToMaps(result.JSON))
+	}
+	ref := requireOfficeMediaRef(t, imageItem)
+	if ref.Format != officeMediaFormatXLSX || ref.MIME != "image/png" {
+		t.Fatalf("media_ref = %+v, want xlsx image/png", ref)
+	}
+	if len(cache.puts) != 1 || string(cache.puts[0].data) != string(imageBytes) {
+		t.Fatalf("cache writes = %+v, want the picture bytes", cache.puts)
 	}
 	if len(result.Warnings) != 0 {
 		t.Fatalf("warnings = %v, want none for an admitted image", result.Warnings)
@@ -324,10 +332,6 @@ func TestXLSParser_ImagesDoNotRunOCR(t *testing.T) {
 func TestXLSParser_CapsEmbeddedImageCount(t *testing.T) {
 	const limit = 256
 	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "256")
-	var imageData bytes.Buffer
-	if err := png.Encode(&imageData, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
-		t.Fatalf("encode fixture: %v", err)
-	}
 	f := excelize.NewFile()
 	defer f.Close()
 	for i := 0; i <= limit; i++ {
@@ -335,7 +339,7 @@ func TestXLSParser_CapsEmbeddedImageCount(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cell %d: %v", i, err)
 		}
-		if err := f.AddPictureFromBytes("Sheet1", cell, &excelize.Picture{Extension: ".png", File: imageData.Bytes()}); err != nil {
+		if err := f.AddPictureFromBytes("Sheet1", cell, &excelize.Picture{Extension: ".png", File: officeTestPNG(t, i)}); err != nil {
 			t.Fatalf("AddPictureFromBytes(%s): %v", cell, err)
 		}
 	}
@@ -353,7 +357,8 @@ func TestXLSParser_CapsEmbeddedImageCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewXLSParser: %v", err)
 	}
-	result := p.ParseWithResult(t.Context(), "many-images.xls", workbook.Bytes())
+	ctx, _ := officeMediaTestContext()
+	result := p.ParseWithResult(ctx, "many-images.xls", workbook.Bytes())
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
@@ -361,6 +366,7 @@ func TestXLSParser_CapsEmbeddedImageCount(t *testing.T) {
 	for _, item := range ItemsToMaps(result.JSON) {
 		if item["doc_type_kwd"] == "image" {
 			imageCount++
+			requireOfficeMediaRef(t, item)
 		}
 	}
 	if imageCount != limit {

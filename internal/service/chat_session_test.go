@@ -154,7 +154,7 @@ func (f *fakeSessionStore) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	return nil
 }
 
-func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, _ []dao.OrderTerm, _, pageSize int, _ ...dao.ConversationHistoryOptions) ([]*entity.ChatSession, int64, error) {
+func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chatID string, sessionIDs []string, sessionID, name, sessionUserID string, _ []dao.OrderTerm, _, pageSize int, _ ...dao.ConversationHistoryOptions) ([]*entity.ChatSession, int64, error) {
 	allowedIDs := make(map[string]struct{}, len(sessionIDs))
 	for _, id := range sessionIDs {
 		allowedIDs[id] = struct{}{}
@@ -168,6 +168,9 @@ func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chat
 			continue
 		}
 		if sessionID != "" && s.ID != sessionID {
+			continue
+		}
+		if sessionUserID != "" && (s.UserID == nil || *s.UserID != sessionUserID) {
 			continue
 		}
 		if name != "" {
@@ -585,7 +588,7 @@ func TestListChatSessions_Success(t *testing.T) {
 
 	ctx := t.Context()
 	terms := []dao.OrderTerm{{Column: "create_time", Desc: true}}
-	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, 1, 30, dao.ConversationHistoryOptions{NoHistory: true})
+	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "", terms, 1, 30, dao.ConversationHistoryOptions{NoHistory: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -598,7 +601,7 @@ func TestListChatSessions_Success(t *testing.T) {
 		}
 	}
 	for page, wantCount := range map[int]int{4: 10, 5: 1, 6: 0} {
-		resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, page, 10, dao.ConversationHistoryOptions{NoHistory: true})
+		resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "", terms, page, 10, dao.ConversationHistoryOptions{NoHistory: true})
 		if err != nil {
 			t.Fatalf("page %d: %v", page, err)
 		}
@@ -606,11 +609,11 @@ func TestListChatSessions_Success(t *testing.T) {
 			t.Fatalf("page %d: got total=%d and %d sessions, want total=41 and %d sessions", page, resp.Total, len(resp.Sessions), wantCount)
 		}
 	}
-	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, 1, 0, dao.ConversationHistoryOptions{NoHistory: true})
+	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "", terms, 1, 0, dao.ConversationHistoryOptions{NoHistory: true})
 	if err != nil || resp.Total != 41 || len(resp.Sessions) != 0 {
 		t.Fatalf("zero page size: got response=%+v err=%v, want total=41 and no sessions", resp, err)
 	}
-	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "session-01", "", terms, 1, 30, dao.ConversationHistoryOptions{NoHistory: true})
+	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "session-01", "", "", terms, 1, 30, dao.ConversationHistoryOptions{NoHistory: true})
 	if err != nil || resp.Total != 1 || len(resp.Sessions) != 1 {
 		t.Fatalf("ID filter: got response=%+v err=%v, want total=1 and one session", resp, err)
 	}
@@ -626,7 +629,7 @@ func TestListChatSessions_NotOwner(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 1, 30)
+	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 1, 30)
 	if err == nil || err.Error() != "Resource not found" {
 		t.Fatalf("got %v", err)
 	}

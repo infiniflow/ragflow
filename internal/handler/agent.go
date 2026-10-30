@@ -203,7 +203,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		}
 	}
 
-	orderby := c.DefaultQuery("orderby", "create_time")
+	orderby := c.Query("orderby")
 
 	desc := true
 	if v := c.Query("desc"); v != "" {

@@ -67,9 +67,10 @@ func TestTableRegressionMarkdownFlattenBesideTable(t *testing.T) {
 }
 
 func TestTableRegressionPPTXNestedImageRun(t *testing.T) {
-	ir := `{"sections":[{"elements":[{"type":"paragraph","content":[{"type":"text","text":"before"},{"type":"image","content":[{"type":"text_box","content":[{"type":"image","data":"aGVsbG8="}]}]},{"type":"text","text":"after"}]}]}]}`
+	ir := `{"sections":[{"elements":[{"type":"paragraph","content":[{"type":"text","text":"before"},{"type":"image","content":[{"type":"text_box","content":[{"type":"image","data":"` + officeTestImageB64(t, 23) + `"}]}]},{"type":"text","text":"after"}]}]}]}`
 
-	after, err := buildPPTXJSONSections(ir, nil)
+	sink, _ := officeMediaTestSink(t, officeMediaFormatPPTX)
+	after, err := buildPPTXJSONSections(ir, sink)
 	if err != nil || len(after) != 3 || after[0]["text"] != "before" || after[2]["text"] != "after" {
 		t.Fatalf("text/image order lost: %#v err=%v", after, err)
 	}
@@ -77,10 +78,14 @@ func TestTableRegressionPPTXNestedImageRun(t *testing.T) {
 	for _, item := range after {
 		if item["doc_type_kwd"] == "image" {
 			images++
+			requireOfficeMediaRef(t, item)
 		}
 	}
 	if images != 1 {
 		t.Error("image inside a nested run was dropped")
+	}
+	if sink.err != nil {
+		t.Fatalf("sink error: %v", sink.err)
 	}
 }
 
