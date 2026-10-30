@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"image/png"
-	"os"
 	"sync/atomic"
 	"testing"
 
@@ -17,10 +16,7 @@ import (
 )
 
 func TestGeneralPDFContextOnlyMedia(t *testing.T) {
-	data, err := os.ReadFile("testdata/general_pdf_children.pdf")
-	if err != nil {
-		t.Fatal(err)
-	}
+	data := newGeneralPDFChildPreviewFixture(t)
 	for _, kind := range []string{"image", "table"} {
 		for _, scenario := range []string{"crop", "retry upload", "no context", "no source", "missing source", "invalid pdf", "missing page"} {
 			t.Run(kind+"/"+scenario, func(t *testing.T) {

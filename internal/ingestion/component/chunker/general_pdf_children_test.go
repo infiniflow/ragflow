@@ -8,7 +8,6 @@ import (
 	"errors"
 	"image/color"
 	"image/png"
-	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,10 +20,7 @@ import (
 
 func TestGeneralPDFChildren(t *testing.T) {
 	// Red, green and blue markers occupy the alpha, beta and gamma regions.
-	data, err := os.ReadFile("testdata/general_pdf_children.pdf")
-	if err != nil {
-		t.Fatal(err)
-	}
+	data := newGeneralPDFChildPreviewFixture(t)
 	for _, tc := range []struct {
 		name       string
 		children   []string
