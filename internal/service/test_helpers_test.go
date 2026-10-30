@@ -275,11 +275,6 @@ func insertTestIngestionTask(t *testing.T, id, userID, docID, datasetID string) 
 	insertTestIngestionTaskWithStatus(t, id, userID, docID, datasetID, common.CREATED)
 }
 
-// grantServiceTestResource grants nothing: the community edition has no
-// per-resource permission table to seed.
-func grantServiceTestResource(_ *testing.T, _ string, _ string, _ string, _ string, _ int32) {
-}
-
 // permissionChangeLogTestModels adds no tables: the community edition has no
 // permission audit log.
 func permissionChangeLogTestModels() []interface{} { return nil }

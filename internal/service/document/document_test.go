@@ -582,6 +582,9 @@ func seedDocumentPreviewMemberAccess(t *testing.T, db *gorm.DB) {
 	}).Error; err != nil {
 		t.Fatalf("insert Tenant member: %v", err)
 	}
+	// The enterprise policy resolves shared datasets through an explicit grant
+	// plus a feature role; the community edition needs neither (no-op stub).
+	seedDocumentPreviewMemberAccessEE(t, db)
 }
 
 func testDocumentService(t *testing.T) *DocumentService {

@@ -9,7 +9,7 @@ export default {
       delete: 'Sil',
       deleteModalTitle: 'Silmek istediğinizden emin misiniz?',
       deleteThem: 'Bunları silmek istediğinizden emin misiniz?',
-      removeModalTitle: 'Kaldırmak istediğinizden emin misiniz?',
+      removeIt: 'Kaldırmak istediğinizden emin misiniz?',
       ok: 'Tamam',
       cancel: 'İptal',
       yes: 'Evet',
@@ -1151,7 +1151,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       operation: 'İşlem',
       model: 'Model',
       modelTip: 'Büyük dil sohbet modeli',
-      tokensSpent: '{{total}} token ({{prompt}} giriş + {{completion}} çıkış)',
+      tokensSpent: '{{total}} token ({{prompt}} giriş, {{completion}} çıkış)',
       turnElapsed: '{{seconds}} sn',
       decisionModel: 'Karar modeli',
       decisionModelTip:

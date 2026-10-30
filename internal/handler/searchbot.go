@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -48,7 +49,7 @@ type SearchBotMindMapRequest struct {
 	SearchID string             `json:"search_id,omitempty"`
 }
 
-// SearchBotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval-test.
+// SearchBotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval.
 type SearchBotRetrievalTestRequest struct {
 	KbIDs                    common.StringSlice     `json:"kb_ids" binding:"required"`
 	Question                 string                 `json:"question" binding:"required"`
@@ -99,7 +100,7 @@ type SearchBotRequest struct {
 // SearchBotHandler handles searchbot endpoints:
 //
 //	POST /api/v1/searchbots/related-questions
-//	POST /api/v1/searchbots/retrieval-test
+//	POST /api/v1/searchbots/retrieval
 //	POST /api/v1/searchbots/ask
 //	POST /api/v1/searchbots/mindmap
 type SearchBotHandler struct {
@@ -166,7 +167,7 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 // @Tags searchBots
 // @Param request body SearchBotRetrievalTestRequest true "Retrieval test parameters"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/searchbots/retrieval-test [post]
+// @Router /api/v1/searchbots/retrieval [post]
 func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -313,24 +314,32 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		h.sseWriter.Write(c, sseError("model factory not configured"))
 		return
 	}
-	ctx := c.Request.Context()
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	c.Request = c.Request.WithContext(ctx)
+	hadError := false
 	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, TenantID: user.ID, ModelID: modelID}
 	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, user.ID, req.Question, filtered, options) {
+		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
-			h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false))
+			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false))
 		case service.AskDeltaMarker:
-			h.sseWriter.Write(c, sseMarker(delta.Value))
+			ok = h.sseWriter.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:
-			h.sseWriter.Write(c, sseError(delta.Value))
+			hadError = true
+			ok = h.sseWriter.Write(c, sseError(delta.Value))
 		case service.AskDeltaFinal:
-			h.sseWriter.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+		}
+		if !ok || ctx.Err() != nil {
+			cancel()
+			break
 		}
 	}
-	c.Stream(func(w io.Writer) bool {
-		fmt.Fprintf(w, "data: {\"code\": 0, \"message\": \"success\", \"data\": true}\n\n")
-		return false
-	})
+	if !hadError && ctx.Err() == nil {
+		h.sseWriter.Write(c, "data: {\"code\": 0, \"message\": \"success\", \"data\": true}\n\n")
+	}
 
 }
 
@@ -523,17 +532,22 @@ func sseMarker(marker string) string {
 }
 
 type SSEWriter interface {
-	Write(c *gin.Context, data string)
+	Write(c *gin.Context, data string) bool
 }
 
 // ginSSEWriter is the production SSEWriter backed by gin.Context.Stream.
 type ginSSEWriter struct{}
 
-func (w *ginSSEWriter) Write(c *gin.Context, data string) {
-	c.Stream(func(w io.Writer) bool {
-		fmt.Fprint(w, data)
+func (w *ginSSEWriter) Write(c *gin.Context, data string) bool {
+	if c.Request.Context().Err() != nil {
+		return false
+	}
+	var writeErr error
+	clientGone := c.Stream(func(w io.Writer) bool {
+		_, writeErr = fmt.Fprint(w, data)
 		return false
 	})
+	return !clientGone && writeErr == nil && c.Request.Context().Err() == nil
 }
 
 // toRetrievalServiceRequest maps the handler DTO to the service DTO.
