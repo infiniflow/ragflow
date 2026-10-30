@@ -1,18 +1,18 @@
 ---
 sidebar_position: 4
-title: Import and Export Agents
-sidebar_label: Import and Export Agents
+title: Import and Export Workflows
+sidebar_label: Import and Export Workflows
 slug: /import_and_export_agents
 sidebar_custom_props: {
   categoryIcon: RagAiAgent
 }
 ---
 
-# Import and Export Agents
+# Import and Export Workflows
 
 Use JSON files to back up a workflow configuration or move it to another account or environment. This chapter covers **Workflow**; pipeline import and export are described in the [pipeline manual](./ingestion_pipeline/create_ingestion_pipeline.md#import-and-export-a-pipeline).
 
-## Import Agent
+## Import Workflow
 
 1. Open **Agent** and select **Workflow**.
 2. Open the creation menu and choose **Import JSON file**. On an empty list, use the **Import JSON file** entry directly.
@@ -20,7 +20,7 @@ Use JSON files to back up a workflow configuration or move it to another account
 4. Click **Save**, then open the imported workflow card.
 5. Check its components and [imported dependencies](#check-imported-dependencies), click **Save draft**, and test with **Run** before publishing.
 
-## Export Agent
+## Export Workflow
 
 1. Open **Agent > Workflow** and click the workflow card you want to export.
 2. Check that the canvas contains the configuration you want to keep. The canvas export uses the current components and connections.

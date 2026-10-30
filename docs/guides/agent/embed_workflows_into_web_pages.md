@@ -1,16 +1,16 @@
 ---
 sidebar_position: 5
-title: Embed into Web Pages
-sidebar_label: Embed into Web Pages
+title: Embed Workflows into Web Pages
+sidebar_label: Embed Workflows into Web Pages
 slug: /embed_into_web_pages
 sidebar_custom_props: {
   categoryIcon: RagAiAgent
 }
 ---
 
-# Embed into Web Pages
+# Embed Workflows into Web Pages
 
-## Embed Agent Via Webpage
+## Embed a Workflow into a Webpage
 Embed a **Workflow** Agent in a website as a fullscreen chat or floating widget.
 
 Follow these steps to embed an Agent from a self-managed deployment. Obtain an API key under **User settings > API** before configuring the embed; see [Acquire a RAGFlow API key](../../develop/acquire_ragflow_api_key.md).

@@ -1,14 +1,14 @@
 ---
 sidebar_position: 6
-title: Understand the Canvas
-sidebar_label: Understand the Canvas
+title: Understand the Workflow Canvas
+sidebar_label: Understand the Workflow Canvas
 slug: /understand_the_canvas
 sidebar_custom_props: {
   categoryIcon: RagAiAgent
 }
 ---
 
-# Understand the Canvas
+# Understand the Workflow Canvas
 
 ## Add Components
 This chapter describes the Workflow canvas. Click a component's outgoing connection point to select the next component. Workflow components include `Begin`, `Agent`, `Retrieval`, `Message`, `Await response`, `Switch`, `Iteration`, `Categorize`, `Code`, `Text processing`, `Execute SQL`, and `HTTP Request`.
@@ -64,9 +64,9 @@ The buttons in the upper-right corner let you save, test, publish, and manage th
 | Conversation variable | Define and maintain variables used during a conversation. Use the variable selector in component fields to reference them. |
 | Version history | Browse saved version records and inspect their configurations. Use version information to identify the configuration you need; a history record alone does not mean that it is published. |
 | Log | Review workflow execution records. Search by **ID/Title** or date, open a record to inspect its state and version, or use **Export current page** to download the displayed records. |
-| Export | Download the current canvas configuration as JSON. See [Import and Export Agents](./import_and_export_agents.md). |
+| Export | Download the current canvas configuration as JSON. See [Import and Export Workflows](./import_and_export_workflows.md). |
 | Settings | Change the workflow title, avatar, description, and access permissions for yourself or your team. Save the settings dialog to apply changes. |
-| Embed into webpage | Open the website embedding options and copy the integration code for your website. See [Embed an Agent into Your Website](./embed_into_web_pages.md). |
+| Embed into webpage | Open the website embedding options and copy the integration code for your website. See [Embed a Workflow into Your Website](./embed_workflows_into_web_pages.md). |
 
 ### Test and Publish a Workflow
 

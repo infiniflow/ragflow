@@ -1,14 +1,14 @@
 ---
 sidebar_position: 3
-title: Creation and Management
-sidebar_label: Creation and Management
+title: Create and Manage Workflows
+sidebar_label: Create and Manage Workflows
 slug: /creation_and_management
 sidebar_custom_props: {
   categoryIcon: RagAiAgent
 }
 ---
 
-# Creation and Management
+# Create and Manage Workflows
 
 ## Open the Workflow List
 
@@ -46,11 +46,11 @@ Templates provide components and connections for common tasks. Select one that i
 ## Search, Copy and Delete Agent
 
 - **Search**: Enter the workflow name in the list's search box.
-- **Copy**: Open the workflow, select **Management > Export**, then [import the JSON](./import_and_export_agents.md#import-agent) with a different name.
+- **Copy**: Open the workflow, select **Management > Export**, then [import the JSON](./import_and_export_workflows.md#import-workflow) with a different name.
 - **Delete**: Open the card's **…** menu, select **Delete**, and complete the confirmation. Export a copy first if you need to keep the configuration.
 
 ## Save, Test and Publish
 
 The canvas displays the latest **Autosaved** time. **Save draft** saves your current editing configuration; it does not create a published version. Use **Run** to check the workflow, then **Publish** when the configuration is ready for use.
 
-See [Canvas Toolbar](./understand_the_canvas.md#canvas-toolbar) for the purpose of each upper-right button, publishing steps, and the entries in **Management**.
+See [Canvas Toolbar](./understand_workflow_canvas.md#canvas-toolbar) for the purpose of each upper-right button, publishing steps, and the entries in **Management**.
