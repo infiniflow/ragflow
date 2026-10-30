@@ -59,7 +59,17 @@ func TestListAllModelsPagesFromTheFirstModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("page past the end: %v", err)
 	}
-	if len(beyond) != 0 {
-		t.Fatalf("page past the end returned %d models, want 0", len(beyond))
+	if beyond == nil || len(beyond) != 0 {
+		t.Fatalf("page past the end = %v, want empty non-nil so JSON encodes []", beyond)
+	}
+
+	// An omitted `page` reaches the service as 0; with a page size it must still
+	// start at the first page instead of returning the whole catalog.
+	omitted, err := svc.ListAllModels(0, pageSize)
+	if err != nil {
+		t.Fatalf("omitted page: %v", err)
+	}
+	if len(omitted) != pageSize || omitted[0]["name"] != all[0]["name"] {
+		t.Fatalf("omitted page returned %d models starting at %v, want the first page of %d", len(omitted), omitted[0]["name"], pageSize)
 	}
 }

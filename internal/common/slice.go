@@ -16,10 +16,12 @@
 
 package common
 
-// SlicePage returns a shallow copy of s bounded to the requested page window.
+// SlicePage returns the requested page window of s. The result is a sub-slice
+// that shares its backing array with s; callers that need isolation must copy.
 // A page <= 0 or pageSize <= 0 returns s unchanged (caller did not ask to page).
-// Out-of-range pages return nil; the high bound is clamped so a page that
-// straddles the end never exposes elements past len(s).
+// Out-of-range pages return an empty slice, never nil, so JSON encoders emit
+// []; the high bound is clamped so a page that straddles the end never exposes
+// elements past len(s).
 //
 // The page bound is checked arithmetically before computing the offset so an
 // unbounded positive page/page_size can never overflow to a negative start and
@@ -30,7 +32,7 @@ func SlicePage[T any](s []T, page, pageSize int) []T {
 	}
 	// page-1 must be <= (len(s)-1)/pageSize, i.e. start must be < len(s).
 	if page-1 > (len(s)-1)/pageSize {
-		return nil
+		return []T{}
 	}
 	start := (page - 1) * pageSize
 	if pageSize >= len(s)-start {

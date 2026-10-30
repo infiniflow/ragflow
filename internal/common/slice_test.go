@@ -20,12 +20,13 @@ import "testing"
 
 // TestSlicePage_NoOverflowPanic guards the review-Critical integer overflow:
 // an unbounded positive page/page_size must never overflow (page-1)*pageSize to
-// a negative start and panic; out-of-range pages return nil.
+// a negative start and panic; out-of-range pages return an empty, non-nil
+// slice so JSON encodes [] rather than null.
 func TestSlicePage_NoOverflowPanic(t *testing.T) {
 	s := []int{1, 2, 3, 4, 5}
-	// A huge page must return nil, not panic on an overflowing offset.
-	if got := SlicePage(s, 1<<40, 1<<40); got != nil {
-		t.Fatalf("huge page/pageSize = %v, want nil", got)
+	// A huge page must return an empty slice, not panic on an overflowing offset.
+	if got := SlicePage(s, 1<<40, 1<<40); got == nil || len(got) != 0 {
+		t.Fatalf("huge page/pageSize = %v, want empty non-nil", got)
 	}
 	if got := SlicePage(s, 2, 3); len(got) != 2 || got[0] != 4 || got[1] != 5 {
 		t.Fatalf("page2/size3 = %v, want [4 5]", got)
@@ -33,8 +34,8 @@ func TestSlicePage_NoOverflowPanic(t *testing.T) {
 	if got := SlicePage(s, 3, 2); len(got) != 1 || got[0] != 5 {
 		t.Fatalf("page3/size2 (start 4) = %v, want [5]", got)
 	}
-	if got := SlicePage(s, 4, 2); got != nil {
-		t.Fatalf("page4/size2 (start 6 >= len 5) = %v, want nil", got)
+	if got := SlicePage(s, 4, 2); got == nil || len(got) != 0 {
+		t.Fatalf("page4/size2 (start 6 >= len 5) = %v, want empty non-nil", got)
 	}
 	// Empty/no-paging semantics preserved (empty input returns the empty slice,
 	// never a panic).

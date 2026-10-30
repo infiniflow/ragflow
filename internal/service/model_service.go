@@ -3324,6 +3324,11 @@ func (m *ModelProviderService) ListAllModels(page, pageSize int) ([]map[string]i
 	if err != nil {
 		return nil, err
 	}
+	// The handler defaults an omitted `page` to 0. With a positive page_size
+	// that still asks for the first page, not for the whole catalog.
+	if page == 0 && pageSize > 0 {
+		page = 1
+	}
 	return common.SlicePage(models, page, pageSize), nil
 }
 
