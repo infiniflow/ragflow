@@ -154,6 +154,7 @@ func (dao *UserTenantDAO) GetNumMembers(ctx context.Context, db *gorm.DB, tenant
 type TenantInfoByUserID struct {
 	TenantID   string `json:"tenant_id"`
 	Role       string `json:"role"`
+	Status     string `json:"status"`
 	Nickname   string `json:"nickname"`
 	Email      string `json:"email"`
 	Avatar     string `json:"avatar"`
@@ -200,9 +201,12 @@ func (dao *UserTenantDAO) GetMembersByTenantID(ctx context.Context, db *gorm.DB,
 func (dao *UserTenantDAO) GetTenantsByUserID(ctx context.Context, db *gorm.DB, userID string) ([]*TenantInfoByUserID, error) {
 	var results []*TenantInfoByUserID
 	err := db.WithContext(ctx).Table("user_tenant").
-		Select("user_tenant.tenant_id, user_tenant.role, user.nickname, user.email, user.avatar, user.update_date").
-		Joins("JOIN user ON user_tenant.tenant_id = user.id AND user_tenant.user_id = ? AND user_tenant.status = ?", userID, "1").
-		Where("user_tenant.status = ?", "1").
+		Select("user_tenant.tenant_id, user_tenant.role, user_tenant.status, user.nickname, user.email, user.avatar, user.update_date").
+		Joins("JOIN user ON user_tenant.tenant_id = user.id").
+		Where("user_tenant.user_id = ? AND user_tenant.status IN ?", userID, []string{
+			entity.TenantMembershipStatusJoined,
+			entity.TenantMembershipStatusInvited,
+		}).
 		Scan(&results).Error
 	return results, err
 }
