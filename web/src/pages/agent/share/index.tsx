@@ -5,6 +5,7 @@ import MessageItem from '@/components/next-message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useSyncThemeFromParams } from '@/components/theme-provider';
+import { VirtualMessageList } from '@/components/virtual-message-list';
 import { MessageType } from '@/constants/chat';
 import { useUploadAgentFileWithProgress } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
@@ -12,7 +13,6 @@ import i18n, { changeLanguageAsync } from '@/locales/config';
 import DebugContent from '@/pages/agent/debug-content';
 import { useCacheChatLog } from '@/pages/agent/hooks/use-cache-chat-log';
 import { useAwaitComponentData } from '@/pages/agent/hooks/use-chat-logic';
-import { buildMessageUuidWithRole } from '@/utils/chat';
 import { isEmpty } from 'lodash';
 import React, { forwardRef, useCallback } from 'react';
 import {
@@ -47,7 +47,7 @@ const ChatContainer = () => {
     handleInputChange,
     value,
     sendLoading,
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     derivedMessages,
     hasError,
@@ -130,60 +130,59 @@ const ChatContainer = () => {
             )}
             ref={messageContainerRef}
           >
-            <div>
-              {derivedMessages?.map((message, i) => {
-                return (
-                  <MessageItem
-                    visibleAvatar={visibleAvatar}
-                    conversationId={conversationId}
-                    currentEventListWithoutMessageById={
-                      currentEventListWithoutMessageById
-                    }
-                    setCurrentMessageId={setCurrentMessageId}
-                    key={buildMessageUuidWithRole(message)}
-                    item={message}
-                    nickname="You"
-                    reference={findReferenceByMessageId(message.id)}
-                    loading={
-                      message.role === MessageType.Assistant &&
-                      sendLoading &&
-                      derivedMessages?.length - 1 === i
-                    }
-                    isShare={true}
-                    avatarDialog={inputsData.avatar}
-                    agentName={inputsData.title}
-                    index={i}
-                    clickDocumentButton={clickDocumentButton}
-                    showLikeButton={false}
-                    showLoudspeaker={false}
-                    showLog={false}
-                    sendLoading={sendLoading}
-                  >
-                    {message.role === MessageType.Assistant &&
-                      derivedMessages.length - 1 === i && (
-                        <DebugContent
-                          parameters={buildInputList(message)}
-                          message={message}
-                          ok={handleOk(message)}
-                          isNext={false}
-                          btnText={'Submit'}
-                        ></DebugContent>
-                      )}
-                    {message.role === MessageType.Assistant &&
-                      derivedMessages.length - 1 !== i && (
-                        <div>
-                          <div>{message?.data?.tips}</div>
+            <VirtualMessageList
+              className="w-full"
+              items={derivedMessages}
+              virtualizer={virtualizer}
+              renderItem={(message, i) => (
+                <MessageItem
+                  visibleAvatar={visibleAvatar}
+                  conversationId={conversationId}
+                  currentEventListWithoutMessageById={
+                    currentEventListWithoutMessageById
+                  }
+                  setCurrentMessageId={setCurrentMessageId}
+                  item={message}
+                  nickname="You"
+                  reference={findReferenceByMessageId(message.id)}
+                  loading={
+                    message.role === MessageType.Assistant &&
+                    sendLoading &&
+                    derivedMessages?.length - 1 === i
+                  }
+                  isShare={true}
+                  avatarDialog={inputsData.avatar}
+                  agentName={inputsData.title}
+                  index={i}
+                  clickDocumentButton={clickDocumentButton}
+                  showLikeButton={false}
+                  showLoudspeaker={false}
+                  showLog={false}
+                  sendLoading={sendLoading}
+                >
+                  {message.role === MessageType.Assistant &&
+                    derivedMessages.length - 1 === i && (
+                      <DebugContent
+                        parameters={buildInputList(message)}
+                        message={message}
+                        ok={handleOk(message)}
+                        isNext={false}
+                        btnText={'Submit'}
+                      ></DebugContent>
+                    )}
+                  {message.role === MessageType.Assistant &&
+                    derivedMessages.length - 1 !== i && (
+                      <div>
+                        <div>{message?.data?.tips}</div>
 
-                          <div>
-                            {buildInputList(message)?.map((item) => item.value)}
-                          </div>
+                        <div>
+                          {buildInputList(message)?.map((item) => item.value)}
                         </div>
-                      )}
-                  </MessageItem>
-                );
-              })}
-            </div>
-            <div ref={scrollRef} />
+                      </div>
+                    )}
+                </MessageItem>
+              )}
+            />
           </div>
           {isTaskMode || (
             <div className="flex w-full justify-center md:mb-8">
