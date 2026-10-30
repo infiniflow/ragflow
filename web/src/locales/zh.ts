@@ -1045,7 +1045,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       model: '模型',
       modelTip: '大语言聊天模型',
       tokensSpent:
-        '消耗 {{total}} tokens（输入 {{prompt}} + 输出 {{completion}}）',
+        '消耗 {{total}} tokens（输入 {{prompt}}, 输出 {{completion}}）',
       turnElapsed: '耗时 {{seconds}}s',
       decisionModel: '决策模型',
       decisionModelTip:

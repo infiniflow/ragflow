@@ -4482,7 +4482,7 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 
 func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool, error) {
 	if usedTokenCount >= modelMaxTokens {
-		return 0, false, fmt.Errorf("prompt uses %d tokens, leaving no completion capacity for model max_tokens %d", usedTokenCount, modelMaxTokens)
+		return 0, false, fmt.Errorf("prompt uses %d tokens, leaving no completion capacity for model max context length %d", usedTokenCount, modelMaxTokens)
 	}
 	if cfg == nil || cfg.MaxTokens == nil {
 		return 0, false, nil
