@@ -17,7 +17,7 @@
 package config
 
 type AuditConfig struct {
-	Level      string `mapstructure:"level"`       // debug, info, warn, error; default "warn"
+	Type       string `mapstructure:"type"`        // file, database; default "file"
 	Format     string `mapstructure:"format"`      // json, text (reserved for future use); default "json"
 	Path       string `mapstructure:"path"`        // per-binary file override; empty = use cmd/* hardcoded default
 	MaxSize    int    `mapstructure:"max_size"`    // MB before rotation; default 100

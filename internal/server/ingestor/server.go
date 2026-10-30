@@ -65,7 +65,7 @@ func logTokenizerCounters() {
 func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args *bootstrap.ServerArgs) error {
 	globalConfig := server.GetConfig()
 	ingestLogConfig := globalConfig.GetIngestLogConfig()
-	err := common.InitIngestLog(ingestLogConfig.GetFileOutput(), serverName)
+	err := common.InitIngestLog(ingestLogConfig.Type, ingestLogConfig.GetFileOutput(), serverName)
 	if err != nil {
 		common.Fatal("Failed to initialize ingest logger", zap.Error(err))
 	}

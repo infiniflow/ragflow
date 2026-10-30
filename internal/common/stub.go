@@ -32,14 +32,14 @@ func GetRAGFlowType() string {
 	return OpenSourceVersion
 }
 
-func InitAudit(file FileOutput, serviceName string) error {
+func InitAudit(logType string, file FileOutput, serviceName string) error {
 	return nil
 }
 
 func Audit(operationLog *OperationLog, fields ...zap.Field) {
 }
 
-func InitIngestLog(file FileOutput, serviceName string) error {
+func InitIngestLog(logType string, file FileOutput, serviceName string) error {
 	return nil
 }
 
