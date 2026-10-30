@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -141,32 +142,43 @@ type OpenAIChatRequest struct {
 	MaxTokens        *int     `json:"max_tokens,omitempty"`
 }
 
-func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID string, bodyBytes []byte) {
+// openAIArgumentError marks a malformed request body, which is reported with
+// the argument error code instead of the data error code.
+type openAIArgumentError struct{ error }
+
+// parseOpenAIChatRequest decodes the request body and returns it together with
+// the normalized messages the completion runs on. The client's own history is
+// kept: this endpoint has no session to restore earlier turns from, so
+// dropping them would leave the pipeline with a single user message.
+func parseOpenAIChatRequest(bodyBytes []byte) (OpenAIChatRequest, []map[string]interface{}, error) {
 	var req OpenAIChatRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
-		s.writeArgError(c, err.Error())
-		return
+		return req, nil, openAIArgumentError{err}
 	}
-	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if _, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages); err != nil {
+		return req, nil, err
+	}
+	messages, err := normalizeOpenAIMessages(CompletionMessages(req.Question, req.Query, req.Messages))
 	if err != nil {
-		s.writeDataError(c, err.Error())
-		return
+		return req, nil, err
 	}
-	if req.Question != "" || req.Query != "" {
-		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
+	if len(messages) == 0 {
+		return req, nil, errors.New("You have to provide messages.")
 	}
-	if len(req.Messages) > 0 {
-		req.Messages = req.Messages[len(req.Messages)-1:]
-	}
+	return req, messages, nil
+}
+
+func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID string, bodyBytes []byte) {
 	common.Info("OpenAIChatCompletions started", zap.String("chat_id", chatID))
 
-	normalizedMessages, err := normalizeOpenAIMessages(req.Messages)
+	req, normalizedMessages, err := parseOpenAIChatRequest(bodyBytes)
 	if err != nil {
-		s.writeDataError(c, err.Error())
-		return
-	}
-	if len(normalizedMessages) == 0 {
-		s.writeDataError(c, "You have to provide messages.")
+		var argErr openAIArgumentError
+		if errors.As(err, &argErr) {
+			s.writeArgError(c, err.Error())
+		} else {
+			s.writeDataError(c, err.Error())
+		}
 		return
 	}
 	if req.MaxTokens != nil && *req.MaxTokens <= 0 {

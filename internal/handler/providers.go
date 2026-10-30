@@ -1001,17 +1001,12 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		return
 	}
 
-	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	_, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
 		return
 	}
-	if req.Question != "" || req.Query != "" {
-		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
-	}
-	if len(req.Messages) > 0 {
-		req.Messages = req.Messages[len(req.Messages)-1:]
-	}
+	req.Messages = service.CompletionMessages(req.Question, req.Query, req.Messages)
 	if req.ModelID == nil {
 		if req.ProviderName == nil || *req.ProviderName == "" {
 			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
