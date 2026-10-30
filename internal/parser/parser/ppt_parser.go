@@ -27,6 +27,12 @@ func NewPPTParser() *PPTParser {
 	return &PPTParser{pptx: PPTXParser{format: "ppt"}}
 }
 
+// NewPPTTextParser extracts legacy PPT text without writing embedded images
+// to a run media cache.
+func NewPPTTextParser() *PPTParser {
+	return &PPTParser{pptx: PPTXParser{format: "ppt", textOnly: true}}
+}
+
 func (p *PPTParser) String() string {
 	return "PPTParser"
 }

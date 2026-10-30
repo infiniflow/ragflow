@@ -24,8 +24,6 @@ import (
 	"time"
 
 	excel "github.com/jloor/go-excel-reader"
-
-	"ragflow/internal/parser/media"
 )
 
 // CompoundDocumentSignature is the OLE compound-document magic
@@ -35,6 +33,7 @@ import (
 var CompoundDocumentSignature = []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}
 
 type XLSParser struct {
+	textOnly                       bool
 	ParseMethod                    string
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
@@ -47,6 +46,18 @@ func NewXLSParser(_ string) (*XLSParser, error) {
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}, nil
+}
+
+// NewXLSTextParser extracts legacy spreadsheet text without writing embedded
+// images to a run media cache. Non-ingestion callers use it for previews,
+// attachments and CLI parsing. BIFF8 image extraction is not implemented, so
+// only the XLSX-content fallback can carry images.
+func NewXLSTextParser() *XLSParser {
+	return &XLSParser{
+		TCADPTableResultType:           "1",
+		TCADPMarkdownImageResponseType: "1",
+		textOnly:                       true,
+	}
 }
 
 func (p *XLSParser) String() string {
@@ -100,11 +111,19 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		err         error
 	)
 	if bytes.HasPrefix(data, CompoundDocumentSignature) {
+		// BIFF8 extraction reads cell text only; the drawing layer is not
+		// parsed, so no image can reach the media cache from this branch.
 		items, sheetsCount, err = parseBIFF8Bytes(ctx, data)
 	} else {
-		mediaBudget := media.NewBudget()
-		items, warnings, sheetsCount, err = parseXLSXBytes(data, mediaBudget)
-		warnings = append(warnings, mediaBudget.Warnings()...)
+		var sink *officeMediaSink
+		if !p.textOnly {
+			sink = newOfficeMediaSink(ctx, officeMediaFormatXLSX)
+		}
+		items, warnings, sheetsCount, err = parseXLSXBytes(data, sink)
+		if err == nil && sink != nil && sink.err != nil {
+			return ParseResult{Err: sink.err}
+		}
+		warnings = append(warnings, sink.warnings()...)
 	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}

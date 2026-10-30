@@ -22,6 +22,34 @@ import (
 	"ragflow/internal/utility"
 )
 
+// GetTextOnlyParser returns the parser used by callers that extract readable
+// text outside an ingestion run: file previews, chat attachments, agent
+// uploads and CLI parsing. These callers have no run media cache, so formats
+// whose normal parser writes image references return a text-only variant that
+// skips embedded images instead of failing on them.
+func GetTextOnlyParser(fileType utility.FileType) (ParseResultProducer, error) {
+	switch fileType {
+	case utility.FileTypeHTML:
+		return NewHTMLTextParser(), nil
+	case utility.FileTypeEPUB:
+		return NewEPUBTextParser(), nil
+	case utility.FileTypeDOCX:
+		return NewDOCXTextParser(), nil
+	case utility.FileTypeDOC:
+		return NewDOCTextParser(), nil
+	case utility.FileTypePPTX:
+		return NewPPTXTextParser(), nil
+	case utility.FileTypePPT:
+		return NewPPTTextParser(), nil
+	case utility.FileTypeXLSX:
+		return NewXLSXTextParser(), nil
+	case utility.FileTypeXLS:
+		return NewXLSTextParser(), nil
+	default:
+		return GetParser(fileType)
+	}
+}
+
 // GetParser returns the ParseResultProducer for the given file type.
 // Each format picks a single backend — the Python dispatcher does
 // not pass any lib_type knob for these families, so the Go side
