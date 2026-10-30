@@ -37,6 +37,8 @@ const yahooFinanceToolDescription = "The Yahoo Finance service provides access t
 
 const yahooFinanceStockCodeDescription = "The stock code or company name."
 
+const yahooFinanceMaxResponseBytes = 4 << 20
+
 const (
 	yahooFinanceInfoDescription              = "Fetch stock information."
 	yahooFinanceHistoryDescription           = "Fetch historical market data."
@@ -466,9 +468,12 @@ func (y *YahooFinanceTool) fetchYahooFinanceCrumb(ctx context.Context) (string, 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", "", fmt.Errorf("yahoo_finance: crumb endpoint returned %d", resp.StatusCode)
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, yahooFinanceMaxResponseBytes+1))
 	if err != nil {
 		return "", "", fmt.Errorf("yahoo_finance: read crumb: %w", err)
+	}
+	if len(body) > yahooFinanceMaxResponseBytes {
+		return "", "", fmt.Errorf("yahoo_finance: crumb response too large")
 	}
 	crumb := strings.TrimSpace(string(body))
 	if crumb == "" {

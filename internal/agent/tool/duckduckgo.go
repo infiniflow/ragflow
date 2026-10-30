@@ -45,6 +45,8 @@ const duckduckgoChannelNews = "news"
 
 const duckduckgoPromptMaxTokens = 200000
 
+const duckduckgoMaxResponseBytes = 4 << 20
+
 var duckduckgoSearchEndpoint = "https://duckduckgo.com/html/"
 var duckduckgoNewsEndpoint = "https://duckduckgo.com/news.js"
 var duckduckgoNewsBootstrapEndpoint = "https://duckduckgo.com/"
@@ -398,9 +400,12 @@ func (d *DuckDuckGoTool) fetchDuckDuckGoNewsVQD(ctx context.Context, query strin
 		return "", fmt.Errorf("duckduckgo: news bootstrap returned %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, duckduckgoMaxResponseBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("duckduckgo: read news bootstrap: %w", err)
+	}
+	if len(body) > duckduckgoMaxResponseBytes {
+		return "", fmt.Errorf("duckduckgo: news bootstrap response too large")
 	}
 	matches := duckduckgoVQDPattern.FindSubmatch(body)
 	if len(matches) != 2 {

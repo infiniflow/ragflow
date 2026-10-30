@@ -34,11 +34,12 @@ import (
 )
 
 const (
-	queritToolName        = "querit_search"
-	queritToolDescription = "Search the web via the Querit API and return the complete search response."
-	queritEndpoint        = "https://api.querit.ai/v1/search"
-	queritMaxAttempts     = 3
-	queritPromptMaxTokens = 200000
+	queritToolName         = "querit_search"
+	queritToolDescription  = "Search the web via the Querit API and return the complete search response."
+	queritEndpoint         = "https://api.querit.ai/v1/search"
+	queritMaxAttempts      = 3
+	queritPromptMaxTokens  = 200000
+	queritMaxResponseBytes = 4 << 20
 )
 
 var (
@@ -289,10 +290,13 @@ func doQueritRequest(
 			return nil, fmt.Errorf("upstream returned %d", resp.StatusCode)
 		}
 
-		raw, readErr := io.ReadAll(resp.Body)
+		raw, readErr := io.ReadAll(io.LimitReader(resp.Body, queritMaxResponseBytes+1))
 		_ = resp.Body.Close()
 		if readErr != nil {
 			return nil, fmt.Errorf("read response: %w", readErr)
+		}
+		if len(raw) > queritMaxResponseBytes {
+			return nil, fmt.Errorf("response too large")
 		}
 		return raw, nil
 	}
