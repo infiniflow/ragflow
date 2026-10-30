@@ -898,7 +898,8 @@ func buildQWeatherTool(params map[string]any) (einotool.BaseTool, error) {
 		return nil, err
 	}
 	return NewQWeatherToolWith(nil, apiKey), nil
-  
+}
+
 func buildTushareTool(params map[string]any) (einotool.BaseTool, error) {
 	var token string
 	if value, exists := params["token"]; exists {
