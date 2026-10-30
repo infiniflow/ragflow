@@ -2440,9 +2440,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// downstream Message was skipped by an exception/branch path.
 		runtime.CompleteAllDeferredNodes(ctx2)
 		runtime.FinalizeAgentMessage(ctx2)
-		messageEventsEmitted := runtime.AgentMessageEventsEmittedRun(ctx2)
+		messageContentEmitted := runtime.AgentMessageContentEmittedRun(ctx2)
 		messageEventsSuppressed := runtime.AgentMessageEventsSuppressedRun(ctx2)
-		shouldEmitMessage := messageEventsEmitted || !messageEventsSuppressed
+		shouldEmitMessage := messageContentEmitted || !messageEventsSuppressed
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -2466,7 +2466,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					)
 				}
 				if answer != "" && shouldEmitMessage {
-					if !messageEventsEmitted {
+					if !messageContentEmitted {
 						emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 					}
 
@@ -2480,7 +2480,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 			if failureText := deferredAgentStreamFailureText(err); failureText != "" {
 				visibleAnswer := answer
-				if visibleAnswer == "" && !messageEventsEmitted && shouldEmitMessage {
+				if visibleAnswer == "" && !messageContentEmitted && shouldEmitMessage {
 					emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
 					visibleAnswer = failureText
 				}
@@ -2502,6 +2502,32 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 				return state, nil
 			}
+			// Surface a visible technical error when the run failed without
+			// producing a final answer. Otherwise the SSE stream closes silently
+			// and the client cannot tell an exhausted-rounds or provider
+			// failure from a slow answer. Client disconnects are harmless:
+			// the emit just has no consumer. Unrecognised canvas/component
+			// errors keep their run-level error event.
+			if answer == "" && shouldEmitMessage {
+				if failureText, ok := agentRunFailureText(err); ok {
+					emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
+					if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, failureText, thinking, referencePayload, dsl, state, true); persistErr != nil {
+						s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "persist session: "+persistErr.Error())
+						s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
+						return nil, canvas.NewInternalRunError(
+							fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
+						)
+					}
+					meData, _ := json.Marshal(canvas.MessageEndEvent{
+						Attachment: attachment,
+						Reference:  referencePayload,
+					})
+					emit("message_end", string(meData))
+					s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "invoke: "+err.Error())
+					s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
+					return state, nil
+				}
+			}
 			s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "invoke: "+err.Error())
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 			return nil, canvasInvokeError(err)
@@ -2519,7 +2545,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
 			)
 		}
-		if !messageEventsEmitted && shouldEmitMessage {
+		if !messageContentEmitted && shouldEmitMessage {
 			emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 		}
 
@@ -3059,6 +3085,31 @@ func tenantIDFromRoot(root map[string]any) string {
 		return s
 	}
 	return ""
+}
+
+// agentRunFailureText renders a visible technical-error message for run
+// failures that produced no content, so the client sees a reason instead
+// of a silently closed stream. The second return value is true only for
+// recognized agent-runtime failures (max rounds, model timeout, empty
+// response, cancellation); generic/unrecognised errors are left for the
+// caller to propagate as run-level error events.
+func agentRunFailureText(err error) (string, bool) {
+	msg := ""
+	if err != nil {
+		msg = strings.ToLower(err.Error())
+	}
+	switch {
+	case strings.Contains(msg, "exceeds max steps"):
+		return "**ERROR**: The agent did not finish its answer — it reached the internal step limit (max_rounds). Please try again or narrow the question.", true
+	case strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "timeout"):
+		return "**ERROR**: The model endpoint did not respond in time. Please try again.", true
+	case strings.Contains(msg, "no choices in response"):
+		return "**ERROR**: The model endpoint returned an empty response. Please try again.", true
+	case strings.Contains(msg, "context canceled"):
+		return "**ERROR**: The connection was closed early. Please try again.", true
+	default:
+		return "", false
+	}
 }
 
 // deferredAgentStreamFailureText returns the user-facing failure text the
