@@ -449,7 +449,7 @@ const apiEndpoints = {
   askShare: `${restAPIv1}/searchbots/ask`,
   mindmapShare: `${restAPIv1}/searchbots/mindmap`,
   getRelatedQuestionsShare: `${restAPIv1}/searchbots/related-questions`,
-  retrievalTestShare: `${restAPIv1}/searchbots/retrieval-test`,
+  retrievalTestShare: `${restAPIv1}/searchbots/retrieval`,
 
   // memory
   createMemory: `${restAPIv1}/memories`,
