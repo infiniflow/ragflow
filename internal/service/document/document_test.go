@@ -789,6 +789,29 @@ func insertTestIngestionTaskWithStatus(t *testing.T, id, userID, docID, datasetI
 	}
 }
 
+func insertTestOpenTaskRun(t *testing.T, taskID, logID, userID, docID, datasetID string) {
+	t.Helper()
+	insertTestIngestionTaskWithStatus(t, taskID, userID, docID, datasetID, common.CREATED)
+
+	runCount := 1
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              logID,
+		DocumentID:      docID,
+		TenantID:        "tenant-1",
+		KbID:            datasetID,
+		ParserID:        "naive",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusUnstart),
+		RunCount:        &runCount,
+	}).Error; err != nil {
+		t.Fatalf("insert open pipeline run: %v", err)
+	}
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("pipeline_log_id", logID).Error; err != nil {
+		t.Fatalf("bind open pipeline run: %v", err)
+	}
+}
+
 // insertTestIngestionTaskAt inserts a historical task with an explicit
 // create_time so newest-first ordering is deterministic.
 func insertTestIngestionTaskAt(t *testing.T, id, userID, docID, datasetID, status string, createTime int64) {
@@ -1043,7 +1066,7 @@ func TestClearDocumentParseResultsPurgesEveryTerminalTaskManifest(t *testing.T) 
 	if err != nil {
 		t.Fatalf("load document: %v", err)
 	}
-	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); err != nil {
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
 		t.Fatalf("clearDocumentParseResults: %v", err)
 	}
 	if !purged["task-old"] || !purged["task-new"] {
@@ -1055,6 +1078,65 @@ func TestClearDocumentParseResultsPurgesEveryTerminalTaskManifest(t *testing.T) 
 		t.Fatalf("terminal task survived cleanup: %+v", remaining)
 	}
 	assertNoIngestionTasks(t, db, "doc-1")
+}
+
+func TestDocumentCleanupRecordsCallerSpecificTaskCancellationReason(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*DocumentService, *entity.Document) error
+		want string
+	}{
+		{
+			name: "delete document",
+			run: func(svc *DocumentService, _ *entity.Document) error {
+				return svc.deleteDocumentFull(t.Context(), "doc-1")
+			},
+			want: taskTerminalMessageDocumentDeleted,
+		},
+		{
+			name: "remove document keep file",
+			run: func(svc *DocumentService, _ *entity.Document) error {
+				return svc.RemoveDocumentKeepFile(t.Context(), "doc-1")
+			},
+			want: taskTerminalMessageDocumentRemoved,
+		},
+		{
+			name: "clear parse results",
+			run: func(svc *DocumentService, doc *entity.Document) error {
+				return svc.clearDocumentParseResults(t.Context(), doc, "tenant-1", taskTerminalMessageSuperseded)
+			},
+			want: taskTerminalMessageSuperseded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+			insertTestOpenTaskRun(t, "task-1", "parse-run-1", "user-1", "doc-1", "kb-1")
+
+			svc := testDocumentService(t)
+			svc.purgeTaskState = func(context.Context, string) error { return nil }
+			doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+			if err != nil {
+				t.Fatalf("load document: %v", err)
+			}
+			if err := tt.run(svc, doc); err != nil {
+				t.Fatalf("%s: %v", tt.name, err)
+			}
+
+			var terminal entity.IngestionTaskLog
+			if err := db.Where("pipeline_log_id = ? AND event_type = ?", "parse-run-1", dao.EventTypeTerminal).
+				First(&terminal).Error; err != nil {
+				t.Fatalf("load terminal event: %v", err)
+			}
+			if terminal.Message != tt.want {
+				t.Fatalf("terminal message = %q, want %q", terminal.Message, tt.want)
+			}
+		})
+	}
 }
 
 func TestDocumentCleanupRejectsActiveHistoricalTask(t *testing.T) {
@@ -1088,7 +1170,9 @@ func TestDocumentCleanupRejectsActiveHistoricalTask(t *testing.T) {
 				},
 				{
 					name: "clear parse results",
-					run:  func() error { return svc.clearDocumentParseResults(t.Context(), doc, "tenant-1") },
+					run: func() error {
+						return svc.clearDocumentParseResults(t.Context(), doc, "tenant-1", taskTerminalMessageSuperseded)
+					},
 				},
 			}
 			for _, tt := range tests {
@@ -3568,7 +3652,7 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 
-	if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1"); err != nil {
+	if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
 		t.Fatalf("clearDocumentParseResults failed: %v", err)
 	}
 
@@ -3610,7 +3694,7 @@ func TestClearDocumentParseResultsDeletesDocumentGeneratedChunks(t *testing.T) {
 		t.Fatalf("load document: %v", err)
 	}
 
-	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); err != nil {
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
 		t.Fatalf("clearDocumentParseResults failed: %v", err)
 	}
 	if !engine.generatedDeleted {
@@ -3643,7 +3727,7 @@ func TestClearDocumentParseResultsDeletesSourceChunkImages(t *testing.T) {
 		t.Fatalf("load document: %v", err)
 	}
 
-	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); err != nil {
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
 		t.Fatalf("clearDocumentParseResults failed: %v", err)
 	}
 	if imageStore.ObjExist(t.Context(), "kb-1", "image-001") {
@@ -3666,7 +3750,7 @@ func TestClearDocumentParseResultsPurgesTaskStateBeforeDeletingTask(t *testing.T
 		t.Fatalf("load document: %v", err)
 	}
 
-	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); !errors.Is(err, purgeErr) {
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1", taskTerminalMessageSuperseded); !errors.Is(err, purgeErr) {
 		t.Fatalf("clearDocumentParseResults error = %v, want purge error", err)
 	}
 	remaining, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1")
@@ -3744,10 +3828,10 @@ func TestClearDocumentParseResultsIsIdempotentForStaleDocSnapshot(t *testing.T) 
 	}
 
 	svc := testDocumentService(t)
-	if err = svc.clearDocumentParseResults(ctx, staleDoc, "tenant-1"); err != nil {
+	if err = svc.clearDocumentParseResults(ctx, staleDoc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
 		t.Fatalf("first clearDocumentParseResults failed: %v", err)
 	}
-	if err = svc.clearDocumentParseResults(ctx, staleDoc, "tenant-1"); err != nil {
+	if err = svc.clearDocumentParseResults(ctx, staleDoc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
 		t.Fatalf("second clearDocumentParseResults failed: %v", err)
 	}
 
@@ -3780,7 +3864,7 @@ func TestClearDocumentParseResults_RejectsNonTerminalIngestionTask(t *testing.T)
 			}
 			svc := testDocumentService(t)
 
-			if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1"); err == nil {
+			if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1", taskTerminalMessageSuperseded); err == nil {
 				t.Fatalf("expected error for %s ingestion task, got nil", status)
 			}
 			// The non-terminal task must NOT be deleted.
@@ -3817,7 +3901,7 @@ func TestClearDocumentParseResultsDoesNotClearResultsWhenTaskStartsRunning(t *te
 	if err != nil {
 		t.Fatalf("get document: %v", err)
 	}
-	if err = testDocumentService(t).clearDocumentParseResults(ctx, doc, "tenant-1"); err == nil || !strings.Contains(err.Error(), "started running") {
+	if err = testDocumentService(t).clearDocumentParseResults(ctx, doc, "tenant-1", taskTerminalMessageSuperseded); err == nil || !strings.Contains(err.Error(), "started running") {
 		t.Fatalf("expected reparse cleanup to reject a task that started running, got %v", err)
 	}
 	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
@@ -3864,7 +3948,7 @@ func TestClearDocumentParseResults_DeletesTerminalIngestionTask(t *testing.T) {
 			}
 			svc := testDocumentService(t)
 
-			if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1"); err != nil {
+			if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
 				t.Fatalf("clearDocumentParseResults for %s task: %v", status, err)
 			}
 			task, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
@@ -5374,9 +5458,10 @@ func TestIngest_DeleteOnlyCleansTasks(t *testing.T) {
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
-	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+	insertTestOpenTaskRun(t, "task-1", "parse-run-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
+	svc.purgeTaskState = func(context.Context, string) error { return nil }
 	ctx := documentTestContext(t.Context())
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
@@ -5396,6 +5481,15 @@ func TestIngest_DeleteOnlyCleansTasks(t *testing.T) {
 	}
 	if task != nil {
 		t.Fatal("expected task to be deleted in delete-only mode")
+	}
+
+	var terminal entity.IngestionTaskLog
+	if err := db.Where("pipeline_log_id = ? AND event_type = ?", "parse-run-1", dao.EventTypeTerminal).
+		First(&terminal).Error; err != nil {
+		t.Fatalf("load terminal event: %v", err)
+	}
+	if terminal.Message != taskTerminalMessageParseResultsDeleted {
+		t.Fatalf("terminal message = %q, want delete-only reason", terminal.Message)
 	}
 
 	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")

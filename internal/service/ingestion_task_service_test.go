@@ -1073,6 +1073,61 @@ func TestIngestionTaskServiceRemoveSettlesNumberedQueuedRun(t *testing.T) {
 	}
 }
 
+func TestIngestionTaskServicePrepareDocumentTasksForCleanupRecordsCleanupReason(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	runCount := 1
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              "cleanup-open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusUnstart),
+		RunCount:        &runCount,
+	}).Error; err != nil {
+		t.Fatalf("seed numbered pipeline log: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "cleanup-open-log").Error; err != nil {
+		t.Fatalf("bind numbered pipeline log: %v", err)
+	}
+
+	tasks, err := NewIngestionTaskService().PrepareDocumentTasksForCleanup(
+		t.Context(),
+		"doc-1",
+		"Task cancelled by document cleanup.",
+	)
+	if err != nil {
+		t.Fatalf("PrepareDocumentTasksForCleanup failed: %v", err)
+	}
+	if len(tasks) != 1 || tasks[0].Status != common.STOPPED {
+		t.Fatalf("cleanup tasks = %+v, want one STOPPED task", tasks)
+	}
+
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "cleanup-open-log").Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.OperationStatus != string(entity.TaskStatusCancel) {
+		t.Fatalf("pipeline run status = %q, want %q", run.OperationStatus, entity.TaskStatusCancel)
+	}
+
+	var terminal entity.IngestionTaskLog
+	if err := db.Where("pipeline_log_id = ? AND event_type = ?", "cleanup-open-log", dao.EventTypeTerminal).
+		First(&terminal).Error; err != nil {
+		t.Fatalf("load terminal event: %v", err)
+	}
+	if terminal.Message != "Task cancelled by document cleanup." {
+		t.Fatalf("terminal message = %q, want cleanup reason", terminal.Message)
+	}
+}
+
 func TestIngestionTaskServiceRemovePurgesTaskState(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

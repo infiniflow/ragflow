@@ -285,7 +285,7 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 
 	// Freeze and purge every task before any row is deleted. A purge failure
 	// leaves the document in place so a retry can still find the cache state.
-	if err := s.purgeDocumentTaskStateForCleanup(ctx, docID); err != nil {
+	if err := s.purgeDocumentTaskStateForCleanup(ctx, docID, taskTerminalMessageDocumentDeleted); err != nil {
 		return err
 	}
 	if _, err := s.ingestionTaskDAO.DeleteByDocumentIDIfTerminal(ctx, dao.DB, docID); err != nil {
@@ -334,7 +334,7 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 
 	// Freeze and purge every task before any task or document row is touched.
 	// Active workers must be stopped before this path can run.
-	if err := s.purgeDocumentTaskStateForCleanup(ctx, docID); err != nil {
+	if err := s.purgeDocumentTaskStateForCleanup(ctx, docID, taskTerminalMessageDocumentRemoved); err != nil {
 		return err
 	}
 	if _, err := s.ingestionTaskDAO.DeleteByDocumentIDIfTerminal(ctx, dao.DB, docID); err != nil {

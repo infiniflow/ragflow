@@ -34,7 +34,11 @@ var documentParseLocks = struct {
 }{locks: make(map[string]*documentParseLock)}
 
 const (
-	cleanupBatchTimeout = 30 * time.Second
+	cleanupBatchTimeout                    = 30 * time.Second
+	taskTerminalMessageSuperseded          = "Task superseded by a new parse request."
+	taskTerminalMessageDocumentDeleted     = "Task cancelled by document deletion."
+	taskTerminalMessageDocumentRemoved     = "Task cancelled by document removal."
+	taskTerminalMessageParseResultsDeleted = "Task cancelled by parse result deletion."
 )
 
 func lockDocumentParse(docID string) func() {
@@ -63,8 +67,8 @@ func lockDocumentParse(docID string) func() {
 // cleanup if any task is RUNNING or STOPPING, and only then removes the
 // run-scoped cache state for the complete task set. The bounded context makes
 // Redis outages and hung clients observable before a destructive cleanup.
-func (s *DocumentService) purgeDocumentTaskStateForCleanup(ctx context.Context, docID string) error {
-	tasks, err := s.ingestionTaskSvc.PrepareDocumentTasksForCleanup(ctx, docID)
+func (s *DocumentService) purgeDocumentTaskStateForCleanup(ctx context.Context, docID, terminalMessage string) error {
+	tasks, err := s.ingestionTaskSvc.PrepareDocumentTasksForCleanup(ctx, docID, terminalMessage)
 	if err != nil {
 		return fmt.Errorf("prepare ingestion tasks for document %s cleanup: %w", docID, err)
 	}
@@ -105,7 +109,7 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	}
 
 	if opts.RerunWithDelete {
-		if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID); err != nil {
+		if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID, taskTerminalMessageSuperseded); err != nil {
 			return err
 		}
 	}
@@ -304,7 +308,7 @@ func (s *DocumentService) AssertIngestionTasksTerminal(ctx context.Context, docI
 	return nil
 }
 
-func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *entity.Document, tenantID string) error {
+func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *entity.Document, tenantID, terminalMessage string) error {
 	if doc == nil {
 		return fmt.Errorf("document is nil")
 	}
@@ -312,7 +316,7 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	// Freeze queued work and reject any active worker before cache or result
 	// cleanup. The lookup covers every task for the document, including
 	// historical duplicate rows left by pre-index deployments.
-	if err := s.purgeDocumentTaskStateForCleanup(ctx, doc.ID); err != nil {
+	if err := s.purgeDocumentTaskStateForCleanup(ctx, doc.ID, terminalMessage); err != nil {
 		return err
 	}
 

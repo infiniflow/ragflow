@@ -35,8 +35,8 @@ var ErrActiveIngestionTask = errors.New("active ingestion task")
 
 // CleanupTaskBatch is the locked task set prepared for document cleanup.
 // Tasks contains every row observed in the transaction; Frozen contains the
-// queued rows transitioned to STOPPED so their run ledgers can be settled
-// before the database lock is released.
+// queued rows transitioned to STOPPED so the caller can settle their run
+// ledgers after the transaction commits.
 type CleanupTaskBatch struct {
 	Tasks  []*entity.IngestionTask
 	Frozen []*entity.IngestionTask

@@ -351,14 +351,14 @@ func (s *IngestionTaskService) SupersedeUnstartedTask(ctx context.Context, taskI
 // in one database transaction and rejects the cleanup if any task is already
 // RUNNING or STOPPING. The service settles the run ledgers of tasks frozen by
 // that transaction before returning their complete task set.
-func (s *IngestionTaskService) PrepareDocumentTasksForCleanup(ctx context.Context, documentID string) ([]*entity.IngestionTask, error) {
+func (s *IngestionTaskService) PrepareDocumentTasksForCleanup(ctx context.Context, documentID, terminalMessage string) ([]*entity.IngestionTask, error) {
 	batch, err := s.ingestionTaskDAO.FreezeForCleanup(ctx, dao.DB, documentID)
 	if err != nil {
 		return nil, err
 	}
 	for _, task := range batch.Frozen {
 		s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
-		s.recordRunTerminal(ctx, task, "Task superseded by a new parse request.")
+		s.recordRunTerminal(ctx, task, terminalMessage)
 	}
 	return batch.Tasks, nil
 }

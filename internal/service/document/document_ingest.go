@@ -160,7 +160,7 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		}
 
 		if req.Delete {
-			if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID); err != nil {
+			if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID, taskTerminalMessageParseResultsDeleted); err != nil {
 				return common.CodeExceptionError, err
 			}
 		}
