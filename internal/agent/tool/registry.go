@@ -411,7 +411,7 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		switch key {
 		case "dataset_ids", "kb_ids", "top_n", "rerank_candidates_count", "top_k", "similarity_threshold",
 			"keywords_similarity_weight", "use_kg", "rerank_id", "empty_response",
-			"meta_data_filter", "retrieval_from", "memory_ids",
+			"highlight", "meta_data_filter", "retrieval_from", "memory_ids",
 			"kb_vars", "cross_languages", "function_name", "description", "meta",
 			"inputs", "outputs", "user_id":
 		default:
@@ -459,6 +459,9 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	}
 	if v, ok := boolParam(params, "use_kg"); ok {
 		defaults.UseKG = v
+	}
+	if v, ok := boolParam(params, "highlight"); ok {
+		defaults.Highlight = boolPtr(v)
 	}
 	if v, ok := floatParam(params, "similarity_threshold"); ok {
 		defaults.SimilarityThreshold = &v

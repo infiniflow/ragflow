@@ -61,6 +61,7 @@ type retrievalArgs struct {
 	SimilarityThreshold      *float64       `json:"similarity_threshold,omitempty"`
 	RerankID                 string         `json:"rerank_id,omitempty"`
 	CrossLanguages           []string       `json:"cross_languages,omitempty"`
+	Highlight                *bool          `json:"highlight,omitempty"`
 	MetaDataFilter           map[string]any `json:"meta_data_filter,omitempty"`
 	RetrievalFrom            string         `json:"retrieval_from,omitempty"`
 	EmptyResponse            string         `json:"empty_response,omitempty"`
@@ -84,6 +85,7 @@ type chunkPayload struct {
 	Content    string  `json:"content,omitempty"`
 	DocumentID string  `json:"document_id,omitempty"`
 	Score      float64 `json:"score,omitempty"`
+	Highlight  string  `json:"highlight,omitempty"`
 }
 
 // RetrievalTool is the Retrieval tool. It validates the input
@@ -209,6 +211,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		AllowDenseFallback:       new(false),
 		RerankID:                 args.RerankID,
 		CrossLanguages:           append([]string(nil), args.CrossLanguages...),
+		Highlight:                highlightEnabled(args.Highlight),
 		MetaDataFilter:           cloneStringAnyMap(args.MetaDataFilter),
 		RetrievalFrom:            args.RetrievalFrom,
 		UserID:                   args.UserID,
@@ -240,6 +243,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 			Content:    c.Content,
 			DocumentID: c.DocumentID,
 			Score:      c.Score,
+			Highlight:  c.Highlight,
 		})
 	}
 	formalizedContent := renderChunks(chunks, args.Query)
@@ -313,8 +317,15 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	if args.RetrievalFrom == "" && len(args.MemoryIDs) > 0 {
 		args.RetrievalFrom = "memory"
 	}
+	if args.Highlight == nil {
+		args.Highlight = r.defaults.Highlight
+	}
 	args.UseKG = args.UseKG || r.defaults.UseKG
 	return args
+}
+
+func highlightEnabled(value *bool) bool {
+	return value != nil && *value
 }
 
 func cloneStringAnyMap(src map[string]any) map[string]any {
