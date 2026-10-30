@@ -10,13 +10,15 @@ import (
 	"os"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component"
+	"ragflow/internal/ingestion/task/indexdoc"
 	"ragflow/internal/storage"
 )
 
-func TestGeneralPDFChildPreviews(t *testing.T) {
+func TestGeneralPDFChildren(t *testing.T) {
 	data, err := os.ReadFile("../../../deepdoc/parser/pdf/pdfium/testdata/page_sizes.pdf")
 	if err != nil {
 		t.Fatal(err)
@@ -110,6 +112,44 @@ func TestGeneralPDFChildPreviews(t *testing.T) {
 			}
 			if objects := store.(*storage.MemoryStorage).Inspect(); len(objects) != len(tc.want)+1 {
 				t.Errorf("stored %d objects, want source PDF plus %d child previews", len(objects), len(tc.want))
+			}
+			if _, err := indexdoc.ProcessChunksForPipeline(chunks, "doc-1", "source.pdf", time.Unix(0, 0)); err != nil {
+				t.Fatal(err)
+			}
+			parents := indexdoc.MaterializeParentChunks("preview-test", chunks)
+			wantParents := 0
+			if len(tc.children) > 0 {
+				wantParents = 1
+			}
+			if len(parents) != wantParents {
+				t.Fatalf("parent rows = %d, want %d", len(parents), wantParents)
+			}
+			rowsByID := make(map[string]map[string]any)
+			for _, row := range append(parents, chunks...) {
+				id, _ := row["id"].(string)
+				if id == "" || rowsByID[id] != nil {
+					t.Fatalf("parent/child rows have empty or duplicate ID %q", id)
+				}
+				rowsByID[id] = row
+			}
+			for i, chunk := range chunks {
+				if chunk["id"] != common.ChunkID("doc-1", tc.want[i]) || chunk["content_with_weight"] != tc.want[i] {
+					t.Errorf("child %d identity or text changed during index normalization: %#v", i, chunk)
+				}
+				if wantParents == 0 {
+					if chunk["mom_id"] != nil {
+						t.Errorf("unsplit chunk has unexpected mom_id %v", chunk["mom_id"])
+					}
+					continue
+				}
+				if chunk["mom_id"] != parents[0]["id"] {
+					t.Errorf("child %d mom_id = %v, want %v", i, chunk["mom_id"], parents[0]["id"])
+				}
+			}
+			if wantParents > 0 {
+				if parents[0]["content_with_weight"] != "alpha#beta#gamma" || parents[0]["available_int"] != 0 {
+					t.Errorf("parent must retain the full text as a hidden row: %#v", parents[0])
+				}
 			}
 			if len(chunks) > 1 {
 				parent := run(nil)
