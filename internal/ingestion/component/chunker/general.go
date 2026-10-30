@@ -271,6 +271,10 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	}
 	flushBody()
 
+	// Finalize child text and positions before cropping stamps IDs and uploads
+	// previews. Splitting an uploaded chunk would copy its ID and image to
+	// every child, causing index overwrites and mismatched previews.
+	chunks = finalizeGeneralChunks(chunks, childrenPattern)
 	engine, err := newPDFEngineFromUpstream(ctx, db, upstream)
 	if err != nil {
 		common.Warn("GeneralChunker: could not open PDF for on-demand cropping", zap.Error(err))
@@ -279,7 +283,6 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		defer engine.Close()
 		chunks = cropImageChunks(ctx, engine, chunks)
 	}
-	chunks = finalizeGeneralChunks(chunks, childrenPattern)
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("GeneralChunker: %w", err)
 	}
@@ -1459,11 +1462,7 @@ func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Reg
 	visible := make([]schema.ChunkDoc, 0, len(chunks))
 	for _, chunk := range chunks {
 		chunk.Text = removeTag(chunk.Text)
-		// Keep a chunk whenever it still carries retrievable content. A
-		// streamed crop upload sets ImgID and clears Image, so an uploaded
-		// media chunk (text may be only a position tag, or empty) must be
-		// retained via its ImgID — otherwise the already-uploaded image is
-		// dropped and its MinIO object orphaned.
+		// Keep media payloads even when their text is empty.
 		if strings.TrimSpace(chunk.Text) == "" && !hasMediaPayload(chunk) {
 			continue
 		}
