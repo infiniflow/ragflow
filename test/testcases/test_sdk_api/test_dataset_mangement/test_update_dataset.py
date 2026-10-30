@@ -277,7 +277,7 @@ class TestDatasetUpdate:
                 dataset.update({"pagerank": 50})
             assert client.list_datasets(id=dataset.id)[0].pagerank == 0
             return
-        if engine not in {"elasticsearch", "oceanbase", "seekdb", "vastbase", "serenedb"}:
+        if engine not in {"elasticsearch", "opensearch", "oceanbase", "seekdb", "vastbase", "serenedb"}:
             pytest.fail(f"Unrecognized pagerank engine configuration: {engine}")
         for value in [50, 100, 0]:
             dataset.update({"pagerank": value})
