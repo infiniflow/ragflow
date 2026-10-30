@@ -257,6 +257,42 @@ func TestHTMLParser_BoundsRemoteImageFetchingPerDocument(t *testing.T) {
 	}
 }
 
+func TestHTMLParser_FetchesRemoteTableImage(t *testing.T) {
+	allowLoopbackImages(t)
+	var hits atomic.Int32
+	const body = "\x89PNG\r\n\x1a\ncell-bytes"
+	server := imageTestServer(t, body, &hits)
+	ctx, cache := recordingMediaContext()
+
+	result := NewHTMLParser().ParseWithResult(ctx, "table.html", []byte(`<table><tr><td><img alt="cell" src="`+server.URL+`/cell.png"></td></tr></table>`))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("remote fetches = %d, want 1", hits.Load())
+	}
+	if len(cache.puts) != 1 || string(cache.puts[0].data) != body {
+		t.Fatalf("cache puts = %+v", cache.puts)
+	}
+	var imageItem map[string]any
+	for _, item := range result.JSON {
+		m := item.ToMap()
+		if m["doc_type_kwd"] == DocTypeImage {
+			imageItem = m
+		}
+	}
+	if imageItem == nil {
+		t.Fatalf("no image item emitted: %+v", ItemsToMaps(result.JSON))
+	}
+	ref := entity.MediaRefFromAny(imageItem["media_ref"])
+	if ref == nil || ref.Format != "html" || ref.Size != int64(len(body)) {
+		t.Fatalf("media_ref = %+v", ref)
+	}
+	if imageItem["parent_table_id"] == nil {
+		t.Fatalf("table image lost its parent table: %+v", imageItem)
+	}
+}
+
 func TestHTMLTextParserSkipsRemoteImages(t *testing.T) {
 	allowLoopbackImages(t)
 	var hits atomic.Int32

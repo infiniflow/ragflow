@@ -156,8 +156,8 @@ type htmlWalkState struct {
 	budget              *media.Budget
 	mediaSink           *media.Sink
 	// refOnly defers image bytes to content-addressed references instead of
-	// carrying the normalized data URI on the item. HTML and EPUB set it;
-	// formats that still inline image bytes leave it false.
+	// carrying the normalized data URI on the item. HTML, EPUB and Markdown
+	// ingestion set it; formats that still inline image bytes leave it false.
 	refOnly bool
 	// fetchRemoteImages downloads HTTP(S) image sources into the run media
 	// cache while refOnly is set. The HTML parser enables it; text-only
@@ -216,6 +216,11 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 	if s.resolveMedia != nil {
 		if ref, ok := s.resolveMedia(src); ok {
 			return "", ref, true
+		}
+		if s.err != nil {
+			// The resolver already recorded a fatal cache failure; running the
+			// refOnly data-URI fallback would write the same source again.
+			return "", nil, false
 		}
 	}
 	if s.resolveImage != nil {
@@ -583,7 +588,7 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 			src := htmlAttribute(n, "src")
 			normalized, ref, ok := state.imageSource(src)
 			if !ok {
-				if state.resolveImage != nil || state.skipImages {
+				if state.resolveImage != nil || state.resolveMedia != nil || state.skipImages {
 					w.writeText(htmlAttribute(n, "alt"))
 				}
 				return
@@ -701,7 +706,7 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) []htmlTableImage {
 					if state.err != nil {
 						return
 					}
-					if state.resolveImage != nil || state.skipImages {
+					if state.resolveImage != nil || state.resolveMedia != nil || state.skipImages {
 						// ParseTableHTML's cellText ignores <img>, so replace
 						// an unresolved table image with its Markdown reference.
 						alt := htmlAttribute(node, "alt")
