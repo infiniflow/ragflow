@@ -371,7 +371,7 @@ func TestRESTRetrievalChunkDeletionConsistency(t *testing.T) {
 }
 
 func TestRESTRelatedQuestions(t *testing.T) {
-	path := "/searchbots/related_questions"
+	path := "/searchbots/related-questions"
 	for _, token := range []string{"", "invalid-api-key"} {
 		config := *TestConfig
 		config.APIKey = token

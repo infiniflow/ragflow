@@ -1532,7 +1532,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
-// TestDBConnection POST /api/v1/agents/test_db_connection
+// TestDBConnection POST /api/v1/agents/test-db-connection
 func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
