@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
@@ -80,6 +81,9 @@ func TestAsyncDeleteSpaceDeletesTheFolderAsItsCreator(t *testing.T) {
 		t.Fatalf("failed to migrate skill space: %v", err)
 	}
 	pushServiceDB(t, db)
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "owner-1", "member-1"); err != nil {
+		t.Fatalf("prepare skill space permission fixture: %v", err)
+	}
 
 	factory := storage.GetStorageFactory()
 	previous := factory.GetStorage()
@@ -153,6 +157,9 @@ func TestAsyncDeleteSpaceRetriesTheFolderLookup(t *testing.T) {
 		t.Fatalf("failed to migrate skill space: %v", err)
 	}
 	pushServiceDB(t, db)
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "owner-1", "member-1"); err != nil {
+		t.Fatalf("prepare skill space permission fixture: %v", err)
+	}
 
 	factory := storage.GetStorageFactory()
 	previous := factory.GetStorage()
