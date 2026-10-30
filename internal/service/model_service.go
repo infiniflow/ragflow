@@ -841,24 +841,15 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		if err := m.modelInstanceDAO.Create(ctx, tx, tenantModelInstance); err != nil {
 			return err
 		}
-		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{
+		if err := permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{
 			Kind: permission.ResourceKindModelInstance, ID: tenantModelInstance.ID,
-		})
+		}); err != nil {
+			return err
+		}
+		return m.addModelsToNewInstance(ctx, tx, provider, tenantModelInstance, modelInfo)
 	})
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
-	}
-
-	// Add models to the instance. The instance row above is already committed
-	// (TenantModelInstanceDAO.Create owns its own transaction), so a failure
-	// here has to be undone explicitly or the tenant keeps a half-populated
-	// instance and can no longer reuse the instance name.
-	if err = m.addModelsToNewInstance(ctx, provider, tenantModelInstance, modelInfo); err != nil {
-		if rollbackErr := m.rollbackCreatedInstance(ctx, instanceID); rollbackErr != nil {
-			common.Logger.Error("failed to roll back model instance after model creation failure",
-				zap.String("instance_id", instanceID), zap.Error(rollbackErr))
-		}
-		return common.CodeServerError, err
 	}
 
 	return common.CodeSuccess, nil
@@ -866,10 +857,10 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 
 // addModelsToNewInstance creates the models of a freshly created provider
 // instance, either the requested ones or the provider's factory defaults.
-func (m *ModelProviderService) addModelsToNewInstance(ctx context.Context, provider *entity.TenantModelProvider, instance *entity.TenantModelInstance, modelInfo []CreateInstanceModelInfo) error {
+func (m *ModelProviderService) addModelsToNewInstance(ctx context.Context, db *gorm.DB, provider *entity.TenantModelProvider, instance *entity.TenantModelInstance, modelInfo []CreateInstanceModelInfo) error {
 	if len(modelInfo) > 0 {
 		for _, model := range modelInfo {
-			if err := m.addModelToInstance(ctx, provider, instance, model); err != nil {
+			if err := m.addModelToInstance(ctx, db, provider, instance, model); err != nil {
 				return err
 			}
 		}
@@ -894,7 +885,7 @@ func (m *ModelProviderService) addModelsToNewInstance(ctx context.Context, provi
 		} else if llm.MaxTokens != nil {
 			contextLength = *llm.MaxTokens
 		}
-		if err := m.addModelToInstance(ctx, provider, instance, CreateInstanceModelInfo{
+		if err := m.addModelToInstance(ctx, db, provider, instance, CreateInstanceModelInfo{
 			ModelName:  llm.Name,
 			ModelTypes: llm.ModelTypes,
 			MaxTokens:  contextLength,
@@ -904,18 +895,6 @@ func (m *ModelProviderService) addModelsToNewInstance(ctx context.Context, provi
 		}
 	}
 	return nil
-}
-
-// rollbackCreatedInstance removes a provider instance together with any models
-// already created under it, so a failed instance creation leaves nothing behind.
-func (m *ModelProviderService) rollbackCreatedInstance(ctx context.Context, instanceID string) error {
-	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if _, err := m.modelDAO.DeleteByInstanceIDs(ctx, tx, []string{instanceID}); err != nil {
-			return err
-		}
-		_, err := m.modelInstanceDAO.DeleteByIDs(ctx, tx, []string{instanceID})
-		return err
-	})
 }
 
 // CreateNameOnlyProviderInstance creates a provider instance with only a name,
@@ -961,9 +940,9 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 }
 
 // addModelToInstance creates a single model under the given provider instance.
-func (m *ModelProviderService) addModelToInstance(ctx context.Context, provider *entity.TenantModelProvider, instance *entity.TenantModelInstance, model CreateInstanceModelInfo) error {
+func (m *ModelProviderService) addModelToInstance(ctx context.Context, db *gorm.DB, provider *entity.TenantModelProvider, instance *entity.TenantModelInstance, model CreateInstanceModelInfo) error {
 	// Check for duplicate model.
-	_, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, model.ModelName)
+	_, err := m.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, db, provider.ID, instance.ID, model.ModelName)
 	if err == nil {
 		return fmt.Errorf("model '%s' already exists for provider '%s' and instance '%s'", model.ModelName, provider.ProviderName, instance.InstanceName)
 	}
@@ -977,7 +956,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, provider 
 		combinedType |= entity.ModelTypeFromString(t)
 	}
 
-	// Build extra fields. Mirrors Python's extra_fields in add_model_to_instance.
+	// Build the model configuration.
 	extraFields := map[string]interface{}{
 		"max_tokens": model.MaxTokens,
 	}
@@ -986,7 +965,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, provider 
 			extraFields[k] = v
 		}
 	}
-	if err = m.createModelRecord(ctx, dao.DB, provider.ID, instance.ID, model.ModelName, combinedType, "active", extraFields); err != nil {
+	if err = m.createModelRecord(ctx, db, provider.ID, instance.ID, model.ModelName, combinedType, "active", extraFields); err != nil {
 		return fmt.Errorf("fail to create model '%s': %w", model.ModelName, err)
 	}
 
@@ -2491,7 +2470,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 				}
 			} else {
 				// Add new model.
-				if err = m.addModelToInstance(ctx, provider, instance, mdl); err != nil {
+				if err = m.addModelToInstance(ctx, dao.DB, provider, instance, mdl); err != nil {
 					return common.CodeServerError, err
 				}
 			}

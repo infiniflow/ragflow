@@ -574,8 +574,13 @@ func TestCreateProviderInstanceRollsBackInstanceWhenModelCreationFails(t *testin
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
 
-	// The second entry duplicates the first one, so model creation fails after
-	// the instance row has already been committed.
+	// Reject compensating DELETEs: failure must roll back the transaction,
+	// including the first model, without issuing any cleanup statements.
+	if err := db.Exec(`CREATE TRIGGER reject_instance_cleanup BEFORE DELETE ON tenant_model_instance
+		BEGIN SELECT RAISE(ABORT, 'instance cleanup is forbidden'); END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The second entry duplicates the first, after its INSERT has succeeded.
 	duplicated := CreateInstanceModelInfo{ModelName: "gpt-duplicate", ModelTypes: []string{"chat"}, MaxTokens: 8192}
 	code, err := NewModelProviderService().CreateProviderInstance(
 		serviceTestContext(t, "user-1", "user-1"),
@@ -606,6 +611,24 @@ func TestCreateProviderInstanceRollsBackInstanceWhenModelCreationFails(t *testin
 	if modelCount != 0 {
 		t.Fatalf("models = %d, want 0 after rollback", modelCount)
 	}
+	code, err = NewModelProviderService().CreateProviderInstance(
+		serviceTestContext(t, "user-1", "user-1"), "OpenAI", "broken-instance", "sk-rollback", "", "default", "user-1",
+		[]CreateInstanceModelInfo{duplicated, {ModelName: "gpt-second", ModelTypes: []string{"chat"}}},
+	)
+	if code != common.CodeSuccess || err != nil {
+		t.Fatalf("retry CreateProviderInstance() = (%v, %v)", code, err)
+	}
+	var instance entity.TenantModelInstance
+	if err := db.Where("instance_name = ?", "broken-instance").Take(&instance).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&entity.TenantModel{}).Where("instance_id = ?", instance.ID).Count(&modelCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if modelCount != 2 {
+		t.Fatalf("retry models = %d, want 2", modelCount)
+	}
+
 }
 
 func TestModelProviderServiceAlterModelStatusByID(t *testing.T) {
