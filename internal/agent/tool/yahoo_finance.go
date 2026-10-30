@@ -437,7 +437,14 @@ func (y *YahooFinanceTool) fetchYahooFinanceJSONWithHeaders(ctx context.Context,
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("yahoo_finance: upstream returned %d", resp.StatusCode)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(target); err != nil {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, yahooFinanceMaxResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("yahoo_finance: read response: %w", err)
+	}
+	if len(body) > yahooFinanceMaxResponseBytes {
+		return fmt.Errorf("yahoo_finance: response too large")
+	}
+	if err := json.Unmarshal(body, target); err != nil {
 		return fmt.Errorf("yahoo_finance: decode response: %w", err)
 	}
 	return nil
