@@ -110,16 +110,14 @@ type OpenAIStreamEvent struct {
 // keeping handler-level concerns (message filtering, generation config merge,
 // reference metadata enrichment) on the service itself.
 type OpenAIChatService struct {
-	chatSvc      *ChatService
-	tenantLLMSvc *TenantLLMService
-	pipeline     *ChatPipelineService
+	chatSvc  *ChatService
+	pipeline *ChatPipelineService
 }
 
 func NewOpenAIChatService() *OpenAIChatService {
 	return &OpenAIChatService{
-		chatSvc:      NewChatService(),
-		tenantLLMSvc: NewTenantLLMService(),
-		pipeline:     NewChatPipelineService(),
+		chatSvc:  NewChatService(),
+		pipeline: NewChatPipelineService(),
 	}
 }
 
@@ -264,11 +262,6 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	if req.Model != "model" {
 		if _, mErr := s.pipeline.ModelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat, resolvedModel); mErr != nil {
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
-			return
-		}
-		apiKey, apiErr := s.tenantLLMSvc.GetAPIKeyFromInstance(ctx, dialog.TenantID, req.Model)
-		if apiErr != nil || apiKey == "" {
-			s.writeDataError(c, fmt.Sprintf("Cannot use specified model %s.", req.Model))
 			return
 		}
 		dialog.LLMID = resolvedModel

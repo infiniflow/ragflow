@@ -31,23 +31,15 @@ import (
 
 // SearchService search service
 type SearchService struct {
-	searchDAO     *dao.SearchDAO
-	datasetDAO    *dao.KnowledgebaseDAO
-	tenantService *TenantService
+	searchDAO  *dao.SearchDAO
+	datasetDAO *dao.KnowledgebaseDAO
 }
 
 // NewSearchService create search service
 func NewSearchService() *SearchService {
 	return &SearchService{
-		searchDAO:     dao.NewSearchDAO(),
-		datasetDAO:    dao.NewKnowledgebaseDAO(),
-		tenantService: NewTenantService(),
-	}
-}
-
-func (s *SearchService) SetTenantService(tenantService *TenantService) {
-	if tenantService != nil {
-		s.tenantService = tenantService
+		searchDAO:  dao.NewSearchDAO(),
+		datasetDAO: dao.NewKnowledgebaseDAO(),
 	}
 }
 
@@ -322,14 +314,10 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 
 	modelID, _ := stringFromSearchConfig(searchConfig["chat_id"])
 	if modelID == "" {
-		tenantSvc := s.tenantService
-		if tenantSvc == nil {
-			tenantSvc = NewTenantService()
-		}
-		var defaultModelName string
-		defaultModelName, err = tenantSvc.GetDefaultModelNameForUser(ctx, userID, entity.ModelTypeChat)
-		if err == nil {
-			modelID = strings.TrimSpace(defaultModelName)
+		if access, accessErr := ModelAccessForUser(ctx, userID); accessErr == nil {
+			if info, infoErr := NewModelFactory().ResolveDefaultInfo(ctx, access, entity.ModelTypeChat); infoErr == nil {
+				modelID = ModelReference(info)
+			}
 		}
 	}
 

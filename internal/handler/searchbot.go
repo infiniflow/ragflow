@@ -147,7 +147,7 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 		return
 	}
 
-	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.modelFactory)
+	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.modelFactory)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -288,11 +288,13 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 			modelID = chatID
 		}
 	}
-	if modelID == "" && h.tenantSvc != nil {
+	if modelID == "" && h.modelFactory != nil {
 		ctx := c.Request.Context()
-		defaultModel, err := h.tenantSvc.GetDefaultModelNameForUser(ctx, user.ID, entity.ModelTypeChat)
-		if err == nil && defaultModel != "" {
-			modelID = defaultModel
+		access, err := service.ModelAccessForUser(ctx, user.ID)
+		if err == nil {
+			if info, infoErr := h.modelFactory.ResolveDefaultInfo(ctx, access, entity.ModelTypeChat); infoErr == nil {
+				modelID = service.ModelReference(info)
+			}
 		}
 	}
 	if modelID == "" {

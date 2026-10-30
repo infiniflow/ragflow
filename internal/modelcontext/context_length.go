@@ -14,16 +14,18 @@
 //  limitations under the License.
 //
 
-package dao
+package modelcontext
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
 
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 )
@@ -45,12 +47,11 @@ import (
 //     context_length (via the tenant row, the composite reference parts, or
 //     the resolved driver + model name).
 //
-// This is the shared implementation behind the agent LLM component, the
-// ingestion Extractor, and service.ModelProviderService — those packages
-// cannot import each other (import cycles), so the lookup lives here.
+// This is the shared implementation behind the Agent LLM component and the
+// Ingestion Extractor, which cannot depend on the Service package.
 func ResolveModelContentLength(ctx context.Context, db *gorm.DB, tenantID, modelRef, driver, modelName string) int {
 	if db == nil {
-		db = DB
+		db = dao.DB
 	}
 	pureName, instanceName, providerName, composite := splitCompositeModelRef(modelRef)
 
@@ -66,22 +67,22 @@ func ResolveModelContentLength(ctx context.Context, db *gorm.DB, tenantID, model
 	// 2. Catalog fallbacks (only when there is no custom override).
 	// 2a. Active tenant row → its provider row → catalog context_length.
 	if obj != nil && obj.Status == "active" {
-		if provider, err := NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
-			if mdl, err := GetModelProviderManager().GetModelByName(models.CatalogProviderName(provider.ProviderName), obj.ModelName); err == nil && mdl.ContextLength != nil {
+		if provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
+			if mdl, err := dao.GetModelProviderManager().GetModelByName(models.CatalogProviderName(provider.ProviderName), obj.ModelName); err == nil && mdl.ContextLength != nil {
 				return *mdl.ContextLength
 			}
 		}
 	}
 	// 2b. Composite reference with no tenant row → catalog by reference parts.
 	if composite {
-		if mdl, err := GetModelProviderManager().GetModelByName(models.CatalogProviderName(providerName), pureName); err == nil && mdl.ContextLength != nil {
+		if mdl, err := dao.GetModelProviderManager().GetModelByName(models.CatalogProviderName(providerName), pureName); err == nil && mdl.ContextLength != nil {
 			return *mdl.ContextLength
 		}
 	}
 	// 2c. Resolved driver + bare model name: fallback when modelRef is a
 	//     tenant id that could not be resolved without a database.
 	if driver != "" && modelName != "" {
-		if mdl, err := GetModelProviderManager().GetModelByName(models.CatalogProviderName(driver), modelName); err == nil && mdl.ContextLength != nil {
+		if mdl, err := dao.GetModelProviderManager().GetModelByName(models.CatalogProviderName(driver), modelName); err == nil && mdl.ContextLength != nil {
 			return *mdl.ContextLength
 		}
 	}
@@ -99,15 +100,22 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 		if tenantID == "" {
 			return nil
 		}
-		provider, err := NewTenantModelProviderDAO().GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
+		ownerUserID := tenantID
+		owner, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tenantID)
+		if err == nil {
+			ownerUserID = owner.UserID
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		provider, err := dao.NewTenantModelProviderDAO().GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, ownerUserID, providerName)
 		if err != nil || provider == nil {
 			return nil
 		}
-		instance, err := NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
+		instance, err := dao.NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
 		if err != nil || instance == nil || instance.Status != "active" {
 			return nil
 		}
-		obj, err := NewTenantModelDAO().GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx, db, provider.ID, instance.ID, int(entity.ModelTypeChat), pureName)
+		obj, err := dao.NewTenantModelDAO().GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx, db, provider.ID, instance.ID, int(entity.ModelTypeChat), pureName)
 		if err != nil || obj == nil {
 			return nil
 		}
@@ -116,7 +124,7 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 	if modelRef == "" {
 		return nil
 	}
-	obj, err := NewTenantModelDAO().GetByID(ctx, db, modelRef)
+	obj, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelRef)
 	if err != nil || obj == nil {
 		return nil
 	}

@@ -1664,7 +1664,7 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 // web/src/interfaces/database/llm.ts:64-71.
 //
 // The previous contract routed this path to TenantHandler.GetModels →
-// TenantService.ListTenantDefaultModels, which only enumerates the 6-7
+// UserTenantService.ListDefaultModels, which only enumerates the 6-7
 // default tenant fields and returned `[]` for any tenant without
 // defaults, breaking the front-end's "View Models" list. The Go port
 // has no writers for tenant_model, so this endpoint must be driven by

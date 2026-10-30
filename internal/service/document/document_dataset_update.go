@@ -291,7 +291,10 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 				}
 			}
 			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, parentChildOverrides)
-			llmID, _, _ := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
+			llmID := ""
+			if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.ModelAccess{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+				llmID = service.ModelReference(modelInfo)
+			}
 			cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
 			parserUpdates["parser_config"] = cleaned
 		}
@@ -319,11 +322,12 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			common.Warn("document pipeline/version switch: failed to resolve component params defaults, keeping prior parser_config",
 				zap.String("parserID", effParserID), zap.Error(cpErr))
 		} else {
-			llmID, _, llmErr := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
-			if llmErr != nil {
+			llmID := ""
+			if modelInfo, llmErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.ModelAccess{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); llmErr == nil {
+				llmID = service.ModelReference(modelInfo)
+			} else if !errors.Is(llmErr, service.ErrNoDefaultModel) {
 				common.Warn("document pipeline/version switch: failed to resolve default chat model, falling back to no llm binding",
 					zap.String("tenant_id", kb.TenantID), zap.Error(llmErr))
-				llmID = ""
 			}
 			cleaned := service.ApplyComponentScopedParserConfig(cpDefaults, llmID)
 			parserUpdates["parser_config"] = cleaned

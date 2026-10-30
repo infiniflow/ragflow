@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -164,11 +165,13 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 	}
 	defaultEmbdID := req.EmbdID
 	if defaultEmbdID == "" {
-		defaultEmbdID, _, err = NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeEmbedding)
-		if err != nil {
-			common.Error("Failed to resolve default embedding model for skill space", err,
+		info, modelErr := NewModelFactory().ResolveDefaultInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, entity.ModelTypeEmbedding)
+		if modelErr == nil {
+			defaultEmbdID = ModelReference(info)
+		} else if !errors.Is(modelErr, ErrNoDefaultModel) {
+			common.Error("Failed to resolve default embedding model for skill space", modelErr,
 				zap.String("tenantID", tenantID), zap.String("userID", userID))
-			return nil, common.CodeOperatingError, fmt.Errorf("failed to resolve default embedding model: %w", err)
+			return nil, common.CodeOperatingError, fmt.Errorf("failed to resolve default embedding model: %w", modelErr)
 		}
 	}
 

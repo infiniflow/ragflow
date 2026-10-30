@@ -201,7 +201,10 @@ func rebuildParserConfig(ctx context.Context, kb *entity.Knowledgebase, target, 
 		cleaned["metadata"] = meta
 	}
 	pipelinepkg.ApplyParentChildChunkerConfig(cleaned, raw)
-	llmID, _ := service.NewTenantService().GetDefaultModelNameForTenant(ctx, kb.TenantID, entity.ModelTypeChat)
+	llmID := ""
+	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.ModelAccess{TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+		llmID = service.ModelReference(modelInfo)
+	}
 	cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
 	return cleaned, true
 }

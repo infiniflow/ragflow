@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
@@ -54,6 +55,44 @@ type modelTarget struct {
 type ModelAccess struct {
 	UserID   string
 	TenantID string
+}
+
+// ErrNoDefaultModel reports that a membership has no configured model for the
+// requested capability.
+var ErrNoDefaultModel = errors.New("no default model configured")
+
+// ModelAccessForUser resolves the current tenant context for an authenticated
+// user. Request handlers should use this when they need to resolve the user's
+// default model rather than assuming the user's personal tenant.
+func ModelAccessForUser(ctx context.Context, userID string) (ModelAccess, error) {
+	tenantID, err := requireCurrentTenantID(ctx, userID)
+	if err != nil {
+		return ModelAccess{}, err
+	}
+	return ModelAccess{UserID: userID, TenantID: tenantID}, nil
+}
+
+// ModelReference returns the internal ID when available, falling back to the
+// composite name for built-in or catalog-only models.
+func ModelReference(info *modelModule.ModelInfo) string {
+	if info == nil {
+		return ""
+	}
+	if id := strings.TrimSpace(info.ID); id != "" {
+		return id
+	}
+	name := strings.TrimSpace(info.Name)
+	if name == "" {
+		return ""
+	}
+	if provider := strings.TrimSpace(info.ProviderName); provider != "" {
+		instance := strings.TrimSpace(info.InstanceName)
+		if instance == "" {
+			return name + "@" + provider
+		}
+		return name + "@" + instance + "@" + provider
+	}
+	return name
 }
 
 // ModelFactory resolves model references, checks access, and constructs typed
@@ -176,6 +215,21 @@ func (f *ModelFactory) NewDefaultTTSModel(ctx context.Context, access ModelAcces
 
 // ResolveInfo returns model metadata without exposing API credentials or a driver.
 func (f *ModelFactory) ResolveInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error) {
+	access = modelAccessFromContext(ctx, access)
+	if modelType == entity.ModelTypeOCR {
+		modelName, instanceName, providerName := splitRightAnchoredModelName(modelRef)
+		if modelName == "deepdoc" && instanceName == "default" && providerName == "infiniflow" {
+			if err := f.authorize(ctx, access); err != nil {
+				return nil, err
+			}
+			return &modelModule.ModelInfo{
+				Name:         modelName,
+				ProviderName: providerName,
+				InstanceName: instanceName,
+				ModelTypes:   []string{entity.ModelTypeOCR.String()},
+			}, nil
+		}
+	}
 	target, err := f.resolveConfig(ctx, access, modelType, modelRef)
 	if err != nil {
 		return nil, err
@@ -297,12 +351,12 @@ func splitRightAnchoredModelName(compositeName string) (modelName, instanceName,
 }
 
 type tenantModelExtra struct {
-	MaxTokens    *int     `json:"max_tokens"`
-	ModelTypes   []string `json:"model_types"`
-	MaxDimension *int     `json:"max_dimension"`
-	MaxBatchSize *int     `json:"max_batch_size"`
-	Dimensions   []int    `json:"dimensions"`
-	Thinking     *bool    `json:"thinking"`
+	MaxTokens    json.RawMessage `json:"max_tokens"`
+	ModelTypes   []string        `json:"model_types"`
+	MaxDimension *int            `json:"max_dimension"`
+	MaxBatchSize *int            `json:"max_batch_size"`
+	Dimensions   []int           `json:"dimensions"`
+	Thinking     *bool           `json:"thinking"`
 }
 
 func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.TenantModel) (*modelModule.Model, error) {
@@ -327,9 +381,13 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 			model.Thinking = &thinking
 		}
 	}
+	documentParseSupported := model.ModelTypeMap["doc_parse"]
 
 	if modelEntity.ModelType != 0 {
 		setModelInfoTypes(&model, entity.ModelType(modelEntity.ModelType))
+		if documentParseSupported {
+			model.ModelTypeMap["doc_parse"] = true
+		}
 	}
 
 	if strings.TrimSpace(modelEntity.Extra) == "" {
@@ -340,8 +398,8 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 		return nil, err
 	}
 
-	if extra.MaxTokens != nil && *extra.MaxTokens > 0 {
-		contextLength := *extra.MaxTokens
+	if maxTokens := maxTokensFromJSON(extra.MaxTokens); maxTokens > 0 {
+		contextLength := maxTokens
 		model.ContextLength = &contextLength
 	}
 	if modelEntity.ModelType == 0 && len(extra.ModelTypes) > 0 {
@@ -349,6 +407,9 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 		model.ModelTypeMap = make(map[string]bool, len(extra.ModelTypes))
 		for _, modelType := range extra.ModelTypes {
 			model.ModelTypeMap[modelType] = true
+		}
+		if documentParseSupported {
+			model.ModelTypeMap["doc_parse"] = true
 		}
 	}
 	if extra.MaxDimension != nil && *extra.MaxDimension > 0 {
@@ -368,6 +429,27 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 	}
 
 	return &model, nil
+}
+
+func maxTokensFromJSON(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	var number json.Number
+	if err := json.Unmarshal(raw, &number); err == nil {
+		if value, err := strconv.ParseFloat(number.String(), 64); err == nil && value > 0 {
+			return int(value)
+		}
+		return 0
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		value, err := strconv.Atoi(strings.TrimSpace(text))
+		if err == nil && value > 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func setModelInfoTypes(modelInfo *modelModule.Model, modelTypes entity.ModelType) {
@@ -405,7 +487,7 @@ func maxOutputFromModelInfo(modelInfo *modelModule.Model) int {
 }
 
 func (f *ModelFactory) resolveConfig(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
-	access = normalizeModelAccess(access)
+	access = modelAccessFromContext(ctx, access)
 	if err := f.authorize(ctx, access); err != nil {
 		return nil, err
 	}
@@ -417,16 +499,25 @@ func (f *ModelFactory) resolveConfigAuthorized(ctx context.Context, access Model
 	if modelRef == "" {
 		return nil, fmt.Errorf("%w: model ref is required", errModelConfigUnavailable)
 	}
-	if modelType == 0 {
-		return nil, fmt.Errorf("%w: model type is required", errModelConfigUnavailable)
-	}
-
+	// A zero type skips category filtering for catalog-only capabilities such
+	// as doc_parse that are not represented by entity.ModelType.
 	return f.resolveModel(ctx, access, modelType, modelRef)
 }
 
 func normalizeModelAccess(access ModelAccess) ModelAccess {
 	access.TenantID = strings.TrimSpace(access.TenantID)
 	access.UserID = strings.TrimSpace(access.UserID)
+	return access
+}
+
+func modelAccessFromContext(ctx context.Context, access ModelAccess) ModelAccess {
+	access = normalizeModelAccess(access)
+	if access.UserID == "" {
+		if subject, ok := permission.SubjectFromContext(ctx); ok && strings.TrimSpace(subject.UserID) != "" &&
+			(strings.TrimSpace(subject.TenantID) == "" || strings.TrimSpace(subject.TenantID) == access.TenantID) {
+			access.UserID = strings.TrimSpace(subject.UserID)
+		}
+	}
 	return access
 }
 
@@ -449,40 +540,47 @@ func (f *ModelFactory) authorize(ctx context.Context, access ModelAccess) error 
 	return nil
 }
 
+func (f *ModelFactory) tenantOwnerMembership(ctx context.Context, tenantID string) (*entity.UserTenant, error) {
+	if f == nil || f.userTenantDAO == nil {
+		return nil, fmt.Errorf("%w: user tenant DAO is not initialized", errModelConfigUnavailable)
+	}
+	membership, err := f.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return &entity.UserTenant{UserID: tenantID, TenantID: tenantID}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tenant owner: %s: %w", tenantID, err)
+	}
+	return membership, nil
+}
+
 func (f *ModelFactory) resolveDefaultConfig(ctx context.Context, access ModelAccess, modelType entity.ModelType) (*modelTarget, error) {
-	access = normalizeModelAccess(access)
+	access = modelAccessFromContext(ctx, access)
 	if err := f.authorize(ctx, access); err != nil {
 		return nil, err
 	}
 	if modelType == 0 {
 		return nil, fmt.Errorf("%w: model type is required", errModelConfigUnavailable)
 	}
-	if modelType == entity.ModelTypeOCR {
-		return nil, fmt.Errorf("OCR model name is required")
-	}
-	if f.userTenantDAO == nil {
-		return nil, fmt.Errorf("%w: user Tenant DAO is not initialized", errModelConfigUnavailable)
-	}
 	var membership *entity.UserTenant
 	var err error
-	if access.UserID != "" {
+	if access.UserID == "" {
+		membership, err = f.tenantOwnerMembership(ctx, access.TenantID)
+	} else {
 		membership, err = f.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, access.UserID, access.TenantID)
-		if err != nil && (access.UserID != access.TenantID || !errors.Is(err, gorm.ErrRecordNotFound)) {
-			return nil, fmt.Errorf("failed to get user tenant model settings: %s type %s: %w", access.TenantID, modelType, err)
+		if errors.Is(err, gorm.ErrRecordNotFound) && access.UserID == access.TenantID {
+			membership, err = f.tenantOwnerMembership(ctx, access.TenantID)
 		}
 	}
-	if membership == nil {
-		membership, err = f.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, access.TenantID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get tenant owner model settings: %s type %s: %w", access.TenantID, modelType, err)
-		}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user tenant model settings: %s type %s: %w", access.TenantID, modelType, err)
 	}
 	modelName, modelID := defaultModelRefs(membership, modelType)
 	if modelID != "" {
 		return f.resolveConfigAuthorized(ctx, access, modelType, modelID)
 	}
 	if strings.TrimSpace(modelName) == "" {
-		return nil, fmt.Errorf("no default %s model is set", modelType)
+		return nil, fmt.Errorf("%w: %s", ErrNoDefaultModel, modelType)
 	}
 	return f.resolveConfigAuthorized(ctx, access, modelType, modelName)
 }
@@ -493,21 +591,21 @@ func defaultModelRefs(membership *entity.UserTenant, modelType entity.ModelType)
 	}
 	switch modelType {
 	case entity.ModelTypeChat:
-		return membership.LLMID, ptrStringValue(membership.TenantLLMID)
+		return membership.LLMID, stringValue(membership.TenantLLMID)
 	case entity.ModelTypeEmbedding:
-		return membership.EmbdID, ptrStringValue(membership.TenantEmbdID)
+		return membership.EmbdID, stringValue(membership.TenantEmbdID)
 	case entity.ModelTypeRerank:
-		return membership.RerankID, ptrStringValue(membership.TenantRerankID)
+		return membership.RerankID, stringValue(membership.TenantRerankID)
 	case entity.ModelTypeSpeech2Text:
-		return membership.ASRID, ptrStringValue(membership.TenantASRID)
+		return membership.ASRID, stringValue(membership.TenantASRID)
 	case entity.ModelTypeImage2Text:
-		return membership.Img2TxtID, ptrStringValue(membership.TenantImg2TxtID)
+		return membership.Img2TxtID, stringValue(membership.TenantImg2TxtID)
 	case entity.ModelTypeTTS:
-		return ptrStringValue(membership.TTSID), ptrStringValue(membership.TenantTTSID)
+		return stringValue(membership.TTSID), stringValue(membership.TenantTTSID)
 	case entity.ModelTypeOCR:
-		return ptrStringValue(membership.OCRID), ptrStringValue(membership.TenantOCRID)
+		return stringValue(membership.OCRID), stringValue(membership.TenantOCRID)
 	case entity.ModelTypeDecision:
-		return ptrStringValue(membership.DecisionID), ptrStringValue(membership.TenantDecisionID)
+		return stringValue(membership.DecisionID), stringValue(membership.TenantDecisionID)
 	default:
 		return "", ""
 	}
@@ -516,7 +614,7 @@ func defaultModelRefs(membership *entity.UserTenant, modelType entity.ModelType)
 // ResolveModelType returns every model category supported by modelRef. A
 // model may expose multiple categories, such as chat and vision.
 func (s *ModelFactory) ResolveModelType(ctx context.Context, access ModelAccess, modelRef string) ([]entity.ModelType, error) {
-	access = normalizeModelAccess(access)
+	access = modelAccessFromContext(ctx, access)
 	if err := s.authorize(ctx, access); err != nil {
 		return nil, err
 	}
@@ -618,9 +716,6 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 	}
 
 	modelType := entity.ModelType(modelEntity.ModelType)
-	if modelType == 0 {
-		return nil, fmt.Errorf("%w: tenant model %q has no model type", errModelConfigUnavailable, modelRef)
-	}
 	if s.modelProviderDAO == nil || s.modelInstanceDAO == nil {
 		return nil, fmt.Errorf("%w: model factory is not initialized", errModelConfigUnavailable)
 	}
@@ -635,11 +730,30 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 	if providerEntity == nil {
 		return nil, fmt.Errorf("%w: provider id=%s not found for model %q", errModelConfigUnavailable, modelEntity.ProviderID, modelRef)
 	}
+	if providerEntity.TenantID != tenantID {
+		return nil, fmt.Errorf(
+			"%w: tenant %s cannot use a model owned by tenant %s",
+			errModelConfigUnavailable,
+			tenantID,
+			providerEntity.TenantID,
+		)
+	}
+	tenantOwner, err := s.tenantOwnerMembership(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if providerEntity.UserID != tenantOwner.UserID {
+		return nil, fmt.Errorf(
+			"%w: tenant %s can use only its owner's model configuration",
+			errModelConfigUnavailable,
+			tenantID,
+		)
+	}
 	if userID != "" {
-		if err := checkModelPermission(ctx, userID, permission.ResourceKindModelProvider, providerEntity.ID, permission.OperationRead); err != nil {
+		if err := s.checkResourcePermission(ctx, userID, permission.ResourceKindModelProvider, providerEntity.ID, permission.OperationRead); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot read model provider %q: %w", errModelConfigUnavailable, userID, providerEntity.ProviderName, err)
 		}
-		if err := checkModelPermission(ctx, userID, permission.ResourceKindModel, modelEntity.ID, permission.OperationUse); err != nil {
+		if err := s.checkResourcePermission(ctx, userID, permission.ResourceKindModel, modelEntity.ID, permission.OperationUse); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model %q: %w", errModelConfigUnavailable, userID, modelRef, err)
 		}
 	} else if providerEntity.TenantID != tenantID {
@@ -661,7 +775,7 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 		return nil, fmt.Errorf("%w: instance id=%s does not belong to provider id=%s", errModelConfigUnavailable, modelEntity.InstanceID, providerEntity.ID)
 	}
 	if userID != "" {
-		if err := checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instanceEntity.ID, permission.OperationUse); err != nil {
+		if err := s.checkResourcePermission(ctx, userID, permission.ResourceKindModelInstance, instanceEntity.ID, permission.OperationUse); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, userID, instanceEntity.InstanceName, err)
 		}
 	}
@@ -702,7 +816,7 @@ func (s *ModelFactory) resolveModel(ctx context.Context, access ModelAccess, mod
 	if err != nil {
 		return nil, err
 	}
-	if !identity.modelType.Has(modelType) {
+	if modelType != 0 && !identity.modelType.Has(modelType) {
 		return nil, fmt.Errorf("%w: tenant model %q cannot be used as %s model", errModelConfigUnavailable, modelRef, modelType.String())
 	}
 	return s.resolveTenantModel(ctx, modelType, modelRef, identity)
@@ -803,7 +917,11 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 		}
 	}
 
-	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, access.TenantID, providerName)
+	owner, err := s.tenantOwnerMembership(ctx, access.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	provider, err := s.modelProviderDAO.GetByTenantIDAndUserIDAndProviderName(ctx, dao.DB, access.TenantID, owner.UserID, providerName)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("%w: provider %q lookup failed: %w", errModelConfigUnavailable, providerName, err)
@@ -814,7 +932,7 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 		return nil, fmt.Errorf("%w: provider %q not found for model %q", errModelConfigUnavailable, providerName, modelRef)
 	}
 	if access.UserID != "" {
-		if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModelProvider, provider.ID, permission.OperationRead); err != nil {
+		if err = s.checkResourcePermission(ctx, access.UserID, permission.ResourceKindModelProvider, provider.ID, permission.OperationRead); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot read model provider %q: %w", errModelConfigUnavailable, access.UserID, providerName, err)
 		}
 	}
@@ -829,7 +947,7 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 		return nil, fmt.Errorf("%w: instance %q not found for model %q", errModelConfigUnavailable, instanceName, modelRef)
 	}
 	if access.UserID != "" {
-		if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
+		if err = s.checkResourcePermission(ctx, access.UserID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, access.UserID, instanceName, err)
 		}
 	}
@@ -855,14 +973,14 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 		candidateTypes := entity.ModelType(candidate.ModelType)
 		if strings.EqualFold(candidate.Status, "active") {
 			availableTypes |= candidateTypes
-			if candidateTypes.Has(modelType) && modelEntity == nil {
+			if (modelType == 0 || candidateTypes.Has(modelType)) && modelEntity == nil {
 				modelEntity = candidate
 			}
-		} else if candidateTypes.Has(modelType) {
+		} else if modelType == 0 || candidateTypes.Has(modelType) {
 			disabledForRequestedType = true
 		}
 	}
-	if availableTypes != 0 && !availableTypes.Has(modelType) {
+	if modelType != 0 && availableTypes != 0 && !availableTypes.Has(modelType) {
 		return nil, fmt.Errorf("%w: model %q cannot be used as %s model", errModelConfigUnavailable, modelRef, modelType.String())
 	}
 	if modelEntity == nil && availableTypes == 0 && disabledForRequestedType {
@@ -871,9 +989,9 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 
 	catalogName := modelModule.CatalogProviderName(providerName)
 	providerInfo := dao.GetModelProviderManager().FindProvider(catalogName)
-	if availableTypes != 0 {
+	if modelEntity != nil {
 		if access.UserID != "" {
-			if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModel, modelEntity.ID, permission.OperationUse); err != nil {
+			if err = s.checkResourcePermission(ctx, access.UserID, permission.ResourceKindModel, modelEntity.ID, permission.OperationUse); err != nil {
 				return nil, fmt.Errorf("%w: user %s cannot use model %q: %w", errModelConfigUnavailable, access.UserID, modelRef, err)
 			}
 		}
@@ -889,7 +1007,13 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 		if err != nil {
 			return nil, fmt.Errorf("%w: read model metadata: %v", errModelConfigUnavailable, err)
 		}
-		setModelInfoTypes(modelInfo, availableTypes)
+		if availableTypes != 0 {
+			documentParseSupported := modelInfo != nil && modelInfo.ModelTypeMap["doc_parse"]
+			setModelInfoTypes(modelInfo, availableTypes)
+			if documentParseSupported {
+				modelInfo.ModelTypeMap["doc_parse"] = true
+			}
+		}
 		return &modelTarget{
 			ModelID:       modelEntity.ID,
 			ModelName:     modelEntity.ModelName,
@@ -923,7 +1047,7 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 		return nil, fmt.Errorf("%w: model config not found: %s", errModelConfigUnavailable, modelRef)
 	}
 	availableTypes = entity.ModelTypeFromStrings(modelInfo.ModelTypes)
-	if !availableTypes.Has(modelType) {
+	if modelType != 0 && !availableTypes.Has(modelType) {
 		return nil, fmt.Errorf("%w: model %q cannot be used as %s model", errModelConfigUnavailable, modelRef, modelType.String())
 	}
 	driver, err := newModelDriverForBaseURL(targetProvider.ModelDriver, providerName, region, baseURL)
@@ -988,7 +1112,11 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, access Mod
 		return 0, fmt.Errorf("%w: model factory is not initialized", errModelConfigUnavailable)
 	}
 
-	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, access.TenantID, providerName)
+	owner, err := s.tenantOwnerMembership(ctx, access.TenantID)
+	if err != nil {
+		return 0, err
+	}
+	provider, err := s.modelProviderDAO.GetByTenantIDAndUserIDAndProviderName(ctx, dao.DB, access.TenantID, owner.UserID, providerName)
 	if err != nil {
 		return 0, fmt.Errorf("%w: provider %q lookup failed: %w", errModelConfigUnavailable, providerName, err)
 	}
@@ -996,7 +1124,7 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, access Mod
 		return 0, fmt.Errorf("%w: provider %q not found for model %q", errModelConfigUnavailable, providerName, modelRef)
 	}
 	if access.UserID != "" {
-		if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModelProvider, provider.ID, permission.OperationRead); err != nil {
+		if err = s.checkResourcePermission(ctx, access.UserID, permission.ResourceKindModelProvider, provider.ID, permission.OperationRead); err != nil {
 			return 0, fmt.Errorf("%w: user %s cannot read model provider %q: %w", errModelConfigUnavailable, access.UserID, providerName, err)
 		}
 	}
@@ -1011,7 +1139,7 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, access Mod
 		return 0, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceName)
 	}
 	if access.UserID != "" {
-		if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
+		if err = s.checkResourcePermission(ctx, access.UserID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
 			return 0, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, access.UserID, instanceName, err)
 		}
 	}
@@ -1027,7 +1155,7 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, access Mod
 		}
 		if strings.EqualFold(model.Status, "active") {
 			if access.UserID != "" {
-				if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModel, model.ID, permission.OperationUse); err != nil {
+				if err = s.checkResourcePermission(ctx, access.UserID, permission.ResourceKindModel, model.ID, permission.OperationUse); err != nil {
 					return 0, fmt.Errorf("%w: user %s cannot use model %q: %w", errModelConfigUnavailable, access.UserID, modelRef, err)
 				}
 			}
@@ -1074,4 +1202,13 @@ func modelTypesFromBitmask(modelType entity.ModelType) []entity.ModelType {
 		}
 	}
 	return modelTypes
+}
+
+func (f *ModelFactory) checkResourcePermission(ctx context.Context, userID string, kind permission.ResourceKind, id string, operation permission.Operation) error {
+	return permission.NewDatabaseChecker(dao.DB).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: kind, ID: id},
+		operation,
+	)
 }

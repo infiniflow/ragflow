@@ -22,10 +22,7 @@ import (
 	"fmt"
 	"strings"
 
-	"gorm.io/gorm"
-
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	modelModule "ragflow/internal/entity/models"
 )
 
@@ -34,29 +31,12 @@ import (
 // runtime configuration. Provider, instance, API configuration, and driver
 // resolution are handled internally.
 type ModelCallService struct {
-	providerService *ModelProviderService
-	modelFactory    *ModelFactory
+	modelFactory *ModelFactory
 }
 
-// NewModelCallService creates a model-call service with the standard model
-// provider and model resolver.
+// NewModelCallService creates a model-call service with the standard resolver.
 func NewModelCallService() *ModelCallService {
-	return NewModelCallServiceWithProviderService(NewModelProviderService(), NewModelFactory())
-}
-
-// NewModelCallServiceWithProviderService creates a model-call service using
-// an existing provider service for provider metadata and balance operations.
-func NewModelCallServiceWithProviderService(providerService *ModelProviderService, modelFactory *ModelFactory) *ModelCallService {
-	if providerService == nil {
-		providerService = NewModelProviderService()
-	}
-	if modelFactory == nil {
-		modelFactory = NewModelFactory()
-	}
-	return &ModelCallService{
-		providerService: providerService,
-		modelFactory:    modelFactory,
-	}
+	return &ModelCallService{modelFactory: NewModelFactory()}
 }
 
 // ChatToModelWithMessages sends messages to the model selected by modelRef.
@@ -197,7 +177,7 @@ func (s *ModelCallService) AudioSpeech(ctx context.Context, modelRef, userID str
 	if s == nil || s.modelFactory == nil {
 		return nil, common.CodeServerError, errors.New("model call service is not initialized")
 	}
-	tenantID, tenantErr := s.ownerTenantID(ctx, userID)
+	tenantID, tenantErr := requireCurrentTenantID(ctx, userID)
 	access := ModelAccess{UserID: userID, TenantID: tenantID}
 	if tenantErr != nil {
 		if strings.TrimSpace(modelRef) != "" {
@@ -303,46 +283,24 @@ func (s *ModelCallService) OCRFile(ctx context.Context, modelRef, userID string,
 }
 
 // ParseFile parses content or url with the document parser selected by
-// modelRef. doc_parse is a provider catalog capability rather than a member
-// of entity.ModelType, so this method uses the existing model-info resolver.
+// modelRef. A zero model type resolves catalog-only capabilities such as doc_parse.
 func (s *ModelCallService) ParseFile(ctx context.Context, modelRef, userID string, content []byte, url *string, config *modelModule.ParseFileConfig) (*modelModule.ParseFileResponse, common.ErrorCode, error) {
-	info, err := s.resolveModelInfo(ctx, modelRef, userID)
+	access, _, code, err := s.modelAccessForUser(ctx, userID)
+	if err != nil {
+		return nil, code, err
+	}
+	target, err := s.modelFactory.resolveConfig(ctx, access, 0, modelRef)
 	if err != nil {
 		return nil, common.CodeNotFound, err
 	}
-	if info.ModelInfo == nil || !info.ModelInfo.ModelTypeMap["doc_parse"] {
+	if target.ModelInfo == nil || !target.ModelInfo.ModelTypeMap["doc_parse"] {
 		return nil, common.CodeNotFound, fmt.Errorf("model %q is not a document parser", modelRef)
 	}
 	if config == nil {
 		config = &modelModule.ParseFileConfig{}
 	}
 
-	modelDriver := info.ProviderInfo.ModelDriver
-	if info.ModelEntity != nil {
-		if info.ModelEntity.Status != "active" {
-			return nil, common.CodeNotFound, errors.New("model is inactive")
-		}
-		region := ""
-		baseURL := ""
-		if info.APIConfig != nil {
-			if info.APIConfig.Region != nil {
-				region = *info.APIConfig.Region
-			}
-			if info.APIConfig.BaseURL != nil {
-				baseURL = *info.APIConfig.BaseURL
-			}
-		}
-		modelDriver, err = newModelDriverForBaseURL(info.ProviderInfo.ModelDriver, info.ProviderEntity.ProviderName, region, baseURL)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-	}
-
-	modelName := info.ModelInfo.Name
-	if info.ModelEntity != nil && info.ModelEntity.ModelName != "" {
-		modelName = info.ModelEntity.ModelName
-	}
-	response, err := modelDriver.ParseFile(ctx, &modelName, content, url, info.APIConfig, config, nil)
+	response, err := target.Driver.ParseFile(ctx, &target.ModelName, content, url, target.APIConfig, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -353,10 +311,10 @@ func (s *ModelCallService) ParseFile(ctx context.Context, modelRef, userID strin
 }
 
 func (s *ModelCallService) modelAccessForUser(ctx context.Context, userID string) (ModelAccess, string, common.ErrorCode, error) {
-	if s == nil || s.providerService == nil || s.modelFactory == nil {
+	if s == nil || s.modelFactory == nil {
 		return ModelAccess{}, "", common.CodeServerError, errors.New("model call service is not initialized")
 	}
-	tenantID, err := s.ownerTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		return ModelAccess{}, "", common.CodeNotFound, err
 	}
@@ -375,32 +333,4 @@ func populateModelUsage(usage *common.ModelUsage, info *modelModule.ModelInfo, a
 	if apiConfig != nil && apiConfig.ApiKey != nil {
 		usage.APIKey = *apiConfig.ApiKey
 	}
-}
-
-func (s *ModelCallService) ownerTenantID(ctx context.Context, userID string) (string, error) {
-	return requireCurrentTenantID(ctx, userID)
-}
-
-func (s *ModelCallService) resolveModelInfo(ctx context.Context, modelRef, userID string) (*ModelInstanceAndProviderInfo, error) {
-	if s == nil || s.providerService == nil {
-		return nil, errors.New("model call service is not initialized")
-	}
-	modelRef = strings.TrimSpace(modelRef)
-	if modelRef == "" {
-		return nil, errors.New("model ref is required")
-	}
-
-	model, err := s.providerService.modelDAO.GetByID(ctx, dao.DB, modelRef)
-	if err == nil && model != nil {
-		return s.providerService.getModelInstanceAndProviderByID(ctx, &modelRef, userID, nil)
-	}
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
-	}
-
-	modelName, instanceName, providerName, err := common.ParseCompositeModelName(modelRef)
-	if err != nil {
-		return nil, err
-	}
-	return s.providerService.getModelInstanceAndProviderByName(ctx, &providerName, &instanceName, &modelName, userID, nil)
 }

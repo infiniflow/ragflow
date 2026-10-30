@@ -577,7 +577,7 @@ func TestLLM_Invoke_UnresolvableModelFallsBackTo8192(t *testing.T) {
 
 // TestLLM_Invoke_UsesModelContentLengthBudget verifies that the message
 // fitting budget in Invoke is the chat model's context window
-// (content_length) resolved via dao.ResolveModelContentLength — NOT the
+// (content_length) resolved via modelcontext.ResolveModelContentLength — NOT the
 // canvas max_tokens / the 8192 fallback. A user prompt far larger than the
 // 8192 fallback (but well inside gpt-4o@openai's 128k window) must be passed
 // through to the invoker untrimmed.

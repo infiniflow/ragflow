@@ -33,21 +33,6 @@ func checkModelPermission(ctx context.Context, userID string, kind permission.Re
 	)
 }
 
-func accessibleModelResourceIDs(ctx context.Context, userID string, kind permission.ResourceKind, parent permission.ResourceRef, operation permission.Operation, entry *permission.ResourceRef, entryOperation permission.Operation) ([]string, error) {
-	query := permission.ScopeQuery{Kind: kind, Parent: parent, Operation: operation}
-	if entry != nil {
-		query.Entry = entry
-		query.EntryOp = entryOperation
-	}
-	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: userID}, query)
-	if err != nil {
-		return nil, err
-	}
-	if scope.Mode != permission.ScopeIDs {
-		return []string{}, nil
-	}
-	return scope.ResourceIDs, nil
-}
 func normalizeModelPermissionError(err error) (common.ErrorCode, error) {
 	return permissionresponse.NormalizeHidden(err)
 }
