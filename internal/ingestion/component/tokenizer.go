@@ -302,22 +302,23 @@ func newTokenizerComponent(params map[string]any, resolver EmbedderResolver) (ru
 			// are dropped: an empty selection keeps the default
 			// instead of selecting no text at all.
 			var fields []string
+			add := func(s string) {
+				if s = strings.TrimSpace(s); s != "" {
+					fields = append(fields, s)
+				}
+			}
 			switch t := v.(type) {
 			case string:
-				if t != "" {
-					fields = []string{t}
-				}
+				add(t)
 			case []any:
 				for _, x := range t {
-					if s, ok := x.(string); ok && s != "" {
-						fields = append(fields, s)
+					if s, ok := x.(string); ok {
+						add(s)
 					}
 				}
 			case []string:
 				for _, s := range t {
-					if s != "" {
-						fields = append(fields, s)
-					}
+					add(s)
 				}
 			}
 			if len(fields) > 0 {

@@ -399,6 +399,8 @@ func TestTokenizerComponent_NewTokenizerComponent_FieldsReplaceDefault(t *testin
 		{name: "empty any slice", fields: []any{}, want: []string{"text"}},
 		{name: "blank string", fields: "", want: []string{"text"}},
 		{name: "blank entries dropped", fields: []any{"keywords", ""}, want: []string{"keywords"}},
+		{name: "whitespace string", fields: "   ", want: []string{"text"}},
+		{name: "whitespace trimmed", fields: []string{" summary ", "  "}, want: []string{"summary"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
