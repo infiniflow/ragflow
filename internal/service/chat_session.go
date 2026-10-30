@@ -1115,12 +1115,15 @@ func (s *ChatSessionService) ChatCompletions(
 	receivedAt := float64(time.Now().UnixNano()) / 1e9
 	fail := func(err error) (map[string]interface{}, error) {
 		if stream && streamChan != nil {
-			s.sendSSEError(streamChan, err.Error())
+			s.sendSSEError(ctx, streamChan, err.Error())
 		}
 		return nil, err
 	}
 
 	sendOrCancel := func(data string) bool {
+		if ctx.Err() != nil {
+			return false
+		}
 		select {
 		case streamChan <- data:
 			return true
@@ -1262,6 +1265,9 @@ func (s *ChatSessionService) ChatCompletions(
 		var finalLegacyAnswer map[string]interface{}
 
 		for result := range resultChan {
+			if ctx.Err() != nil {
+				break
+			}
 			if result.Reference != nil && len(reference) > 0 {
 				reference[len(reference)-1] = result.Reference
 			}
@@ -1274,15 +1280,17 @@ func (s *ChatSessionService) ChatCompletions(
 						content = result.Answer
 					}
 					s.appendAssistantToSession(session, content, messageID)
-					if ctx.Err() == nil {
-						messages := s.getSessionMessagesAsSlice(session)
+					messages := s.getSessionMessagesAsSlice(session)
+					if len(messages) > 0 {
 						message := messages[len(messages)-1]
 						if result.Prompt != "" {
 							message["prompt"] = result.Prompt
 						}
 						attachTurnCost(message, result)
-						s.updateSessionMessages(ctx, session, messages, reference)
 					}
+					saveCtx, saveCancel := context.WithTimeout(context.Background(), 5*time.Second)
+					s.updateSessionMessages(saveCtx, session, messages, reference)
+					saveCancel()
 				}
 				if result.AnswerIsAuthoritative {
 					fullAnswer.Reset()
@@ -1296,7 +1304,9 @@ func (s *ChatSessionService) ChatCompletions(
 						if chatID != "" {
 							ans["chat_id"] = chatID
 						}
-						sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
+						if !sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))) {
+							break
+						}
 					}
 					// Synchronize the in-memory session snapshot with the final
 					// event before building the response. This does not write
@@ -1337,7 +1347,9 @@ func (s *ChatSessionService) ChatCompletions(
 				if chatID != "" {
 					ans["chat_id"] = chatID
 				}
-				sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
+				if !sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))) {
+					break
+				}
 			} else {
 				if result.Final {
 					// Synchronize the in-memory session snapshot with the final
@@ -1349,7 +1361,9 @@ func (s *ChatSessionService) ChatCompletions(
 						if chatID != "" {
 							ans["chat_id"] = chatID
 						}
-						sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
+						if !sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))) {
+							break
+						}
 					} else {
 						ans := s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
 						if result.Reference != nil {
@@ -1365,7 +1379,9 @@ func (s *ChatSessionService) ChatCompletions(
 						if chatID != "" {
 							ans["chat_id"] = chatID
 						}
-						sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
+						if !sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))) {
+							break
+						}
 					}
 					continue
 				}
@@ -1418,10 +1434,12 @@ func (s *ChatSessionService) ChatCompletions(
 				if chatID != "" {
 					ans["chat_id"] = chatID
 				}
-				sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
+				if !sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID))) {
+					break
+				}
 			}
 		}
-		if legacy && finalLegacyAnswer != nil {
+		if legacy && finalLegacyAnswer != nil && ctx.Err() == nil {
 			finalLegacyAnswer["answer"] = fullAnswer.String()
 			delete(finalLegacyAnswer, "start_to_think")
 			delete(finalLegacyAnswer, "end_to_think")
@@ -1429,8 +1447,10 @@ func (s *ChatSessionService) ChatCompletions(
 			sendOrCancel(fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(finalChunk)))
 		}
 
-		wrapper := sseWrapper{Code: 0, Message: "success", Data: true}
-		sendOrCancel(fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(wrapper)))
+		if ctx.Err() == nil {
+			wrapper := sseWrapper{Code: 0, Message: "success", Data: true}
+			sendOrCancel(fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(wrapper)))
+		}
 	} else {
 		ans := accumulateNonStreamAnswer(resultChan)
 		if session != nil {
@@ -1439,7 +1459,9 @@ func (s *ChatSessionService) ChatCompletions(
 				result["chat_id"] = chatID
 			}
 			if ctx.Err() == nil && !strings.Contains(stringValue(ans["answer"]), "**ERROR**") {
-				s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
+				saveCtx, saveCancel := context.WithTimeout(context.Background(), 5*time.Second)
+				s.updateSessionMessages(saveCtx, session, s.getSessionMessagesAsSlice(session), reference)
+				saveCancel()
 			}
 			return sanitizeJSONFloats(result).(map[string]interface{}), nil
 		}
@@ -1763,7 +1785,7 @@ func (s *ChatSessionService) getSessionMessagesAsSlice(session *entity.ChatSessi
 }
 
 // sendSSEError sends an error in SSE format through the stream channel.
-func (s *ChatSessionService) sendSSEError(streamChan chan<- string, errMsg string) {
+func (s *ChatSessionService) sendSSEError(ctx context.Context, streamChan chan<- string, errMsg string) {
 	wrapper := sseWrapper{
 		Code:    500,
 		Message: errMsg,
@@ -1772,7 +1794,13 @@ func (s *ChatSessionService) sendSSEError(streamChan chan<- string, errMsg strin
 			"reference": []interface{}{},
 		},
 	}
-	streamChan <- fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(wrapper))
+	if ctx != nil && ctx.Err() != nil {
+		return
+	}
+	select {
+	case streamChan <- fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(wrapper)):
+	case <-ctx.Done():
+	}
 }
 
 // Helper methods

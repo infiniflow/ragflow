@@ -486,8 +486,9 @@ type bufferSSEWriter struct {
 	buf strings.Builder
 }
 
-func (w *bufferSSEWriter) Write(_ *gin.Context, data string) {
+func (w *bufferSSEWriter) Write(_ *gin.Context, data string) bool {
 	w.buf.WriteString(data)
+	return true
 }
 
 func (w *bufferSSEWriter) String() string { return w.buf.String() }
@@ -678,5 +679,55 @@ func TestSseError_Format(t *testing.T) {
 	}
 	if !strings.Contains(s, `"reference":[]`) {
 		t.Errorf("missing empty reference array: %s", s)
+	}
+}
+
+type closeNotifyRecorder struct {
+	*httptest.ResponseRecorder
+	closed chan bool
+}
+
+func newCloseNotifyRecorder() *closeNotifyRecorder {
+	return &closeNotifyRecorder{
+		ResponseRecorder: httptest.NewRecorder(),
+		closed:           make(chan bool, 1),
+	}
+}
+
+func (c *closeNotifyRecorder) CloseNotify() <-chan bool {
+	return c.closed
+}
+
+func (c *closeNotifyRecorder) Close() {
+	c.closed <- true
+}
+
+func TestGinSSEWriter_WriteMultipleDeltasAndDisconnect(t *testing.T) {
+	gin.SetMode(gin.ReleaseMode)
+	rec := newCloseNotifyRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest("GET", "/", nil)
+
+	writer := &ginSSEWriter{}
+
+	if !writer.Write(c, "data: delta1\n\n") {
+		t.Fatal("expected first write to succeed")
+	}
+	if !writer.Write(c, "data: delta2\n\n") {
+		t.Fatal("expected second write to succeed")
+	}
+
+	// Simulate client disconnect
+	rec.Close()
+	if writer.Write(c, "data: delta3\n\n") {
+		t.Fatal("expected write to fail after client disconnect")
+	}
+
+	body := rec.Body.String()
+	if !strings.Contains(body, "delta1") || !strings.Contains(body, "delta2") {
+		t.Fatalf("expected body to contain delta1 and delta2, got: %q", body)
+	}
+	if strings.Contains(body, "delta3") {
+		t.Fatalf("expected delta3 to not be written after disconnect, got: %q", body)
 	}
 }
