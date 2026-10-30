@@ -1045,55 +1045,6 @@ func (e *Engine) buildMetadataQueryFromCondition(condition map[string]interface{
 	}
 }
 
-func parseOrderByExpr(orderBy *types.OrderByExpr) []map[string]interface{} {
-	if orderBy == nil || len(orderBy.Fields) == 0 {
-		return nil
-	}
-
-	var result []map[string]interface{}
-	for _, field := range orderBy.Fields {
-		direction := "asc"
-		if field.Type == types.SortDesc {
-			direction = "desc"
-		}
-
-		if field.Field == "id" {
-			continue
-		}
-
-		if field.Field == "page_num_int" || field.Field == "top_int" {
-			result = append(result, map[string]interface{}{
-				field.Field: map[string]interface{}{
-					"order":         direction,
-					"unmapped_type": "float",
-					"mode":          "avg",
-					"numeric_type":  "double",
-				},
-			})
-		} else if strings.HasSuffix(field.Field, "_int") || strings.HasSuffix(field.Field, "_flt") {
-			result = append(result, map[string]interface{}{
-				field.Field: map[string]interface{}{
-					"order":         direction,
-					"unmapped_type": "float",
-				},
-			})
-		} else if field.Field == "_score" || field.Field == "score" {
-			result = append(result, map[string]interface{}{
-				"_score": direction,
-			})
-		} else {
-			result = append(result, map[string]interface{}{
-				field.Field: map[string]interface{}{
-					"order":         direction,
-					"unmapped_type": "keyword",
-				},
-			})
-		}
-	}
-
-	return result
-}
-
 func dedupeStrings(s []string) []string {
 	if len(s) == 0 {
 		return s
