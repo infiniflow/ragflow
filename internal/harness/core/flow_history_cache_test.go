@@ -58,8 +58,8 @@ func fhcTransferEvent(agentName, dest string) *AgentEvent {
 	return ev
 }
 
-// fhcFullReplayEntries reproduces the pre-cache genInput event loop. Every
-// incremental result is checked against it.
+// fhcFullReplayEntries reconstructs entries by replaying the whole event log.
+// Every incremental result is checked against it.
 func fhcFullReplayEntries(root *AgentInput, events []any, skipTransfer bool) []*HistoryEntry {
 	entries := make([]*HistoryEntry, 0, len(root.Messages)+len(events))
 	for _, m := range root.Messages {
@@ -109,11 +109,11 @@ func fhcContents(msgs []Message) []string {
 	return out
 }
 
-func fhcCacheState(rc *runContext, skipTransfer bool) (scanned, lastIndex int) {
+func fhcCacheState(rc *runContext, skipTransfer bool) (scanned, lastIndex int, version uint64) {
 	rc.historyMu.Lock()
 	defer rc.historyMu.Unlock()
 	c := rc.historyCacheFor(skipTransfer)
-	return c.scannedEvents, c.lastEventIndex
+	return c.scannedEvents, c.lastEventIndex, c.entriesVersion
 }
 
 func TestFlowAgentGenInput_IncrementalMatchesFullReplay(t *testing.T) {
@@ -143,7 +143,7 @@ func TestFlowAgentGenInput_IncrementalMatchesFullReplay(t *testing.T) {
 		if err != nil {
 			t.Fatalf("batch %d: genInput: %v", i, err)
 		}
-		want, _ := defaultRewriteEntries("supervisor", fhcFullReplayEntries(root, events, false))
+		want := defaultRewriteEntries("supervisor", fhcFullReplayEntries(root, events, false))
 		fhcAssertMessages(t, want, got.Messages)
 	}
 }
@@ -161,11 +161,14 @@ func TestFlowAgentGenInput_OnlyScansNewEvents(t *testing.T) {
 	if _, err := fa.genInput(ctx, rc, false); err != nil {
 		t.Fatalf("initial genInput: %v", err)
 	}
-	scanned, last := fhcCacheState(rc, false)
+	scanned, last, version := fhcCacheState(rc, false)
 	if scanned != initial || last != initial {
 		t.Fatalf("initial cache state = scanned %d, last %d; want %d, %d", scanned, last, initial, initial)
 	}
 
+	// Regression: normal agent steps append through runSession.addEvent, which
+	// must not bump the epoch or force a rebuild. The next transfer may only
+	// scan the newly appended events.
 	const appended = 5
 	for i := 0; i < appended; i++ {
 		rc.Session.addEvent(fhcEvent("worker", fmt.Sprintf("new event %d", i)))
@@ -173,12 +176,15 @@ func TestFlowAgentGenInput_OnlyScansNewEvents(t *testing.T) {
 	if _, err := fa.genInput(ctx, rc, false); err != nil {
 		t.Fatalf("incremental genInput: %v", err)
 	}
-	scanned, last = fhcCacheState(rc, false)
+	scanned, last, versionAfter := fhcCacheState(rc, false)
 	if scanned != initial+appended {
 		t.Fatalf("scanned events = %d, want %d (full replay re-scanned the log)", scanned, initial+appended)
 	}
 	if last != initial+appended {
 		t.Fatalf("lastProcessedEventIndex = %d, want %d", last, initial+appended)
+	}
+	if versionAfter != version {
+		t.Fatalf("entriesVersion changed from %d to %d after plain addEvent; cache was rebuilt", version, versionAfter)
 	}
 }
 
@@ -195,7 +201,7 @@ func TestFlowAgentGenInput_InvalidatedOnSessionMutation(t *testing.T) {
 	if _, err := fa.genInput(ctx, rc, false); err != nil {
 		t.Fatalf("initial genInput: %v", err)
 	}
-	if scanned, _ := fhcCacheState(rc, false); scanned != initial {
+	if scanned, _, _ := fhcCacheState(rc, false); scanned != initial {
 		t.Fatalf("initial scanned = %d, want %d", scanned, initial)
 	}
 
@@ -204,7 +210,7 @@ func TestFlowAgentGenInput_InvalidatedOnSessionMutation(t *testing.T) {
 	if _, err := fa.genInput(ctx, rc, false); err != nil {
 		t.Fatalf("append genInput: %v", err)
 	}
-	if scanned, _ := fhcCacheState(rc, false); scanned != initial+1 {
+	if scanned, _, _ := fhcCacheState(rc, false); scanned != initial+1 {
 		t.Fatalf("scanned after append = %d, want %d", scanned, initial+1)
 	}
 
@@ -218,14 +224,14 @@ func TestFlowAgentGenInput_InvalidatedOnSessionMutation(t *testing.T) {
 		t.Fatalf("join genInput: %v", err)
 	}
 	allEvents := rc.Session.getEvents()
-	scanned, last := fhcCacheState(rc, false)
+	scanned, last, _ := fhcCacheState(rc, false)
 	if scanned != 2*(initial+1)+1 {
 		t.Fatalf("scanned after join = %d, want full rebuild of %d events", scanned, 2*(initial+1)+1)
 	}
 	if last != len(allEvents) {
 		t.Fatalf("lastProcessedEventIndex after join = %d, want %d", last, len(allEvents))
 	}
-	want, _ := defaultRewriteEntries("supervisor", fhcFullReplayEntries(root, allEvents, false))
+	want := defaultRewriteEntries("supervisor", fhcFullReplayEntries(root, allEvents, false))
 	got, err := fa.genInput(ctx, rc, false)
 	if err != nil {
 		t.Fatalf("post-join genInput: %v", err)
@@ -246,7 +252,7 @@ func TestFlowAgentGenInput_InvalidatedOnSessionMutation(t *testing.T) {
 	if len(rewound) != initial/2 {
 		t.Fatalf("rewound event count = %d, want %d", len(rewound), initial/2)
 	}
-	scannedAfterRewrite, lastAfterRewrite := fhcCacheState(rc, false)
+	scannedAfterRewrite, lastAfterRewrite, _ := fhcCacheState(rc, false)
 	if lastAfterRewrite != len(rewound) {
 		t.Fatalf("lastProcessedEventIndex after rewind = %d, want %d", lastAfterRewrite, len(rewound))
 	}
@@ -257,7 +263,7 @@ func TestFlowAgentGenInput_InvalidatedOnSessionMutation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rewound genInput: %v", err)
 	}
-	want, _ = defaultRewriteEntries("supervisor", fhcFullReplayEntries(root, rewound, false))
+	want = defaultRewriteEntries("supervisor", fhcFullReplayEntries(root, rewound, false))
 	fhcAssertMessages(t, want, got.Messages)
 }
 
@@ -284,7 +290,7 @@ func TestFlowAgentGenInput_SkipTransferMatchesFullReplay(t *testing.T) {
 			if err != nil {
 				t.Fatalf("batch %d skip=%v: genInput: %v", i, skip, err)
 			}
-			want, _ := defaultRewriteEntries("supervisor", fhcFullReplayEntries(root, events, skip))
+			want := defaultRewriteEntries("supervisor", fhcFullReplayEntries(root, events, skip))
 			fhcAssertMessages(t, want, got.Messages)
 		}
 	}
@@ -332,7 +338,7 @@ func TestFlowAgentGenInput_NestedSupervisorWorker(t *testing.T) {
 			if err != nil {
 				t.Fatalf("batch %d %s: genInput: %v", i, tc.name, err)
 			}
-			want, _ := defaultRewriteEntries(tc.rewrite, fhcFullReplayEntries(root, events, false))
+			want := defaultRewriteEntries(tc.rewrite, fhcFullReplayEntries(root, events, false))
 			fhcAssertMessages(t, want, got.Messages)
 		}
 	}
@@ -346,8 +352,11 @@ func TestFlowAgentGenInput_CustomRewriterStillCallsEveryTransfer(t *testing.T) {
 	var calls int
 	custom := func(_ context.Context, entries []*HistoryEntry) ([]Message, error) {
 		calls++
-		// Mutating the entries must not corrupt the shared cache.
+		// Mutating the received entries must not corrupt the shared cache.
 		if len(entries) > 0 {
+			if entries[0].Message != nil {
+				entries[0].Message.Content = "mutated"
+			}
 			entries[0].Message = nil
 		}
 		return []Message{schema.UserMessage("custom")}, nil
@@ -375,6 +384,53 @@ func TestFlowAgentGenInput_CustomRewriterStillCallsEveryTransfer(t *testing.T) {
 	if len(cached) == 0 || cached[0].Message == nil {
 		t.Fatal("custom rewriter corrupted the cached history entries")
 	}
+	if cached[0].Message.Content != "question" {
+		t.Fatalf("custom rewriter mutated cached message: got %q", cached[0].Message.Content)
+	}
+}
+
+func TestFlowAgentGenInput_ReturnedMessagesDoNotPolluteCache(t *testing.T) {
+	ctx := t.Context()
+	root := &AgentInput{Messages: []Message{schema.UserMessage("question")}}
+	rc := &runContext{RootInput: root, Session: newRunSession()}
+	fa := toFlowAgent(ctx, &fhcAgent{name: "supervisor"})
+
+	withExtra := fhcEvent("worker", "worker reply")
+	withExtra.Output.MessageOutput.Message.Extra = map[string]any{"key": "original"}
+	rc.Session.addEvent(withExtra)
+	rc.Session.addEvent(fhcEvent("supervisor", "supervisor reply"))
+
+	got, err := fa.genInput(ctx, rc, false)
+	if err != nil {
+		t.Fatalf("genInput: %v", err)
+	}
+	for _, m := range got.Messages {
+		if m == nil {
+			continue
+		}
+		m.Content = "mutated"
+		m.Role = schema.RoleTool
+		if m.Extra != nil {
+			m.Extra["key"] = "mutated"
+		}
+	}
+
+	want := defaultRewriteEntries("supervisor", fhcFullReplayEntries(root, rc.Session.getEvents(), false))
+	got, err = fa.genInput(ctx, rc, false)
+	if err != nil {
+		t.Fatalf("second genInput: %v", err)
+	}
+	fhcAssertMessages(t, want, got.Messages)
+
+	var extra any
+	for _, m := range got.Messages {
+		if m != nil && m.Extra != nil {
+			extra = m.Extra["key"]
+		}
+	}
+	if extra != "original" {
+		t.Fatalf("cached Extra map was polluted: got %v, want original", extra)
+	}
 }
 
 func TestFlowAgentGenInput_LongSessionDoesNotRescan(t *testing.T) {
@@ -396,10 +452,10 @@ func TestFlowAgentGenInput_LongSessionDoesNotRescan(t *testing.T) {
 		if err != nil {
 			t.Fatalf("batch %d: genInput: %v", i, err)
 		}
-		want, _ := defaultRewriteEntries("supervisor", fhcFullReplayEntries(root, events, false))
+		want := defaultRewriteEntries("supervisor", fhcFullReplayEntries(root, events, false))
 		fhcAssertMessages(t, want, got.Messages)
 	}
-	scanned, last := fhcCacheState(rc, false)
+	scanned, last, _ := fhcCacheState(rc, false)
 	if scanned != total {
 		t.Fatalf("scanned events = %d, want %d; long session was replayed", scanned, total)
 	}

@@ -468,9 +468,12 @@ func commitEvents(rc *runContext, entries []*eventWrapEntry) {
 		// If committing to a lane, append to its event slice.
 		rc.Session.BranchEvents.Events = append(rc.Session.BranchEvents.Events, entries...)
 	} else {
-		// Otherwise, commit to main shared Events slice with lock. The commit
-		// reshuffles events from forked lanes, so bump the epoch to force the
-		// incremental history cache to rebuild.
+		// Otherwise, commit to main shared Events slice with lock.
+		//
+		// Normal agent steps append through runSession.addEvent and do not bump
+		// the epoch, so the history cache stays incremental. A commit lands
+		// events collected from forked lanes, which can be ordered before a
+		// cached prefix, so bump the epoch to force a rebuild.
 		rc.Session.mu.Lock()
 		rc.Session.events = append(rc.Session.events, entries...)
 		rc.Session.epoch++

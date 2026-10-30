@@ -122,31 +122,23 @@ func (a *flowAgent) getAgent(ctx context.Context, name string) *flowAgent {
 
 func defaultHistoryRewriter(name string) HistoryRewriter {
 	return func(ctx context.Context, entries []*HistoryEntry) ([]Message, error) {
-		msgs, _ := defaultRewriteEntries(name, entries)
-		return msgs, nil
+		return defaultRewriteEntries(name, entries), nil
 	}
 }
 
 // defaultRewriteEntries rewrites entries with the built-in per-entry rule.
-// The second result reports whether the message was freshly rewritten; the
-// incremental cache uses it to hand out independent copies on every transfer,
-// matching the allocation behavior of a full replay.
-func defaultRewriteEntries(name string, entries []*HistoryEntry) ([]Message, []bool) {
+func defaultRewriteEntries(name string, entries []*HistoryEntry) []Message {
 	msgs := make([]Message, 0, len(entries))
-	fresh := make([]bool, 0, len(entries))
 	for _, e := range entries {
 		m := e.Message
-		rewritten := false
 		if !e.IsUserInput && e.AgentName != name {
 			m = rewriteMsg(m, e.AgentName)
-			rewritten = true
 		}
 		if m != nil {
 			msgs = append(msgs, m)
-			fresh = append(fresh, rewritten)
 		}
 	}
-	return msgs, fresh
+	return msgs
 }
 
 func rewriteMsg(msg Message, agentName string) Message {
@@ -194,7 +186,6 @@ type rewrittenHistory struct {
 	entriesVersion uint64
 	lastEntryIndex int
 	msgs           []Message
-	fresh          []bool
 }
 
 func (rc *runContext) historyCacheFor(skipTransfer bool) *historyCache {
@@ -211,10 +202,10 @@ func (rc *runContext) historyCacheFor(skipTransfer bool) *historyCache {
 // syncHistoryEntriesLocked brings the cached entries up to date with the
 // session event log and returns them. The caller must hold rc.historyMu.
 //
-// Events only append in the common (non-branch) case, so the cache extends
-// from lastEventIndex instead of replaying the whole log. Any state mutation
-// that can reorder or truncate the log bumps the session epoch and forces a
-// rebuild.
+// Normal agent steps append through runSession.addEvent without bumping the
+// session epoch, so the cache extends from lastEventIndex instead of replaying
+// the whole log. Only non-append mutations (parallel branch joins through
+// commitEvents, rewinds) bump the epoch and force a rebuild.
 func (rc *runContext) syncHistoryEntriesLocked(root *AgentInput, skipTransfer bool) []*HistoryEntry {
 	c := rc.historyCacheFor(skipTransfer)
 	events, total, epoch, branchMode := rc.Session.eventSnapshotSince(c.lastEventIndex)
@@ -268,10 +259,10 @@ func (rc *runContext) syncHistoryEntriesLocked(root *AgentInput, skipTransfer bo
 	return c.entries
 }
 
-// syncRewrittenLocked returns the built-in rewriter output for a. Existing
-// messages are reused; only entries appended since the agent last ran are
-// rewritten. Freshly rewritten messages are copied on return so a caller
-// cannot mutate the cache, matching full-replay allocation behavior.
+// syncRewrittenLocked returns a deep copy of the built-in rewriter output for
+// a. Existing messages are reused inside the cache; only entries appended
+// since the agent last ran are rewritten. Every returned message is copied so
+// a caller cannot mutate the cached history.
 func (rc *runContext) syncRewrittenLocked(a *flowAgent, entries []*HistoryEntry, skipTransfer bool) []Message {
 	c := rc.historyCacheFor(skipTransfer)
 	if c.rewritten == nil {
@@ -283,22 +274,15 @@ func (rc *runContext) syncRewrittenLocked(a *flowAgent, entries []*HistoryEntry,
 		c.rewritten[a] = r
 	}
 	if r.lastEntryIndex < len(entries) {
-		msgs, fresh := defaultRewriteEntries(a.historyName, entries[r.lastEntryIndex:])
-		r.msgs = append(r.msgs, msgs...)
-		r.fresh = append(r.fresh, fresh...)
+		r.msgs = append(r.msgs, defaultRewriteEntries(a.historyName, entries[r.lastEntryIndex:])...)
 		r.lastEntryIndex = len(entries)
 	}
 	out := make([]Message, len(r.msgs))
 	for i, m := range r.msgs {
-		if !r.fresh[i] || m == nil {
-			out[i] = m
+		if m == nil {
 			continue
 		}
-		cp := *m
-		if cp.Extra != nil {
-			cp.Extra = copyMap(cp.Extra)
-		}
-		out[i] = &cp
+		out[i] = copyMessage(m)
 	}
 	return out
 }
@@ -313,12 +297,15 @@ func (a *flowAgent) genInput(ctx context.Context, rc *runContext, skipTransfer b
 		rc.historyMu.Unlock()
 		return &AgentInput{Messages: msgs, EnableStreaming: root.EnableStreaming}, nil
 	}
-	// A custom rewriter sees fresh HistoryEntry values, as it did before the
-	// cache existed, so it cannot corrupt the cached entries.
+	// Custom rewriters receive deep-copied entries so they cannot mutate the
+	// cached history.
 	snapshot := make([]*HistoryEntry, len(entries))
 	for i, e := range entries {
-		cp := *e
-		snapshot[i] = &cp
+		cp := &HistoryEntry{IsUserInput: e.IsUserInput, AgentName: e.AgentName, Message: e.Message}
+		if cp.Message != nil {
+			cp.Message = copyMessage(cp.Message)
+		}
+		snapshot[i] = cp
 	}
 	rc.historyMu.Unlock()
 
