@@ -1,9 +1,11 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -307,6 +309,21 @@ func TestVerifyProviderModelNamesUnverifiableTypes(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "quantum") {
 		t.Fatalf("verifyProviderModel() error = %v, want it to name the unverifiable type", err)
+	}
+}
+
+// OCR services decode the verification image before recognizing anything, so
+// an image that fails to decode fails verification of a working model.
+func TestMinimalPNGDecodes(t *testing.T) {
+	img, err := png.Decode(bytes.NewReader(minimalPNG()))
+	if err != nil {
+		t.Fatalf("decode verification image: %v", err)
+	}
+	if bounds := img.Bounds(); bounds.Dx() != 1 || bounds.Dy() != 1 {
+		t.Fatalf("verification image bounds = %v, want 1x1", bounds)
+	}
+	if r, g, b, _ := img.At(0, 0).RGBA(); r != 0xffff || g != 0xffff || b != 0xffff {
+		t.Fatalf("verification image pixel = %v, want white", img.At(0, 0))
 	}
 }
 
