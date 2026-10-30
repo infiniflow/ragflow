@@ -233,6 +233,32 @@ def test_sdk_crud_http_contract(monkeypatch, operation):
     assert kwargs["headers"] == {"Authorization": "Bearer unit-token"}
 
 
+@pytest.mark.parametrize("field", ["id", "name", "user_id"])
+def test_list_sessions_optional_filter_types(monkeypatch, field):
+    from beartype.roar import BeartypeCallHintParamViolation
+    from ragflow_sdk import Chat
+
+    chat = Chat(None, {"id": "chat-1"})
+
+    class Response:
+        def json(self):
+            return {"code": 0, "data": []}
+
+    calls = []
+
+    def get(path, params):
+        calls.append((path, params))
+        return Response()
+
+    monkeypatch.setattr(chat, "get", get)
+    assert chat.list_sessions() == []
+    assert chat.list_sessions(**{field: None}) == []
+    assert calls[0] == calls[1]
+    with pytest.raises(BeartypeCallHintParamViolation):
+        chat.list_sessions(**{field: 1})
+    assert len(calls) == 2
+
+
 @pytest.mark.parametrize("operation", ["create", "update", "delete"])
 def test_sdk_crud_api_errors(monkeypatch, operation):
     from ragflow_sdk import Chat

@@ -91,3 +91,24 @@ func TestForgetMessageRejectsMalformedPath(t *testing.T) {
 		t.Fatalf("code = %v, want %v; body=%s", code, common.CodeArgumentError, w.Body.String())
 	}
 }
+
+func TestSearchMessageRejectsInvalidSimilarity(t *testing.T) {
+	for _, field := range []string{"similarity_threshold", "keywords_similarity_weight"} {
+		for _, value := range []string{"-0.1", "1.1", "invalid", "nan", "inf"} {
+			t.Run(field+value, func(t *testing.T) {
+				w := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(w)
+				c.Set("user", &entity.User{ID: "user-1"})
+				c.Request = httptest.NewRequest("GET", "/messages/search?"+field+"="+value, nil)
+				(&MemoryHandler{}).SearchMessage(c)
+				var payload struct{ Code int }
+				if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+					t.Fatal(err)
+				}
+				if payload.Code != 101 {
+					t.Fatalf("response=%s", w.Body.String())
+				}
+			})
+		}
+	}
+}

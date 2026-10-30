@@ -22,6 +22,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -830,8 +831,16 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 
 	query := c.Query("query")
 
-	similarityThreshold, _ := strconv.ParseFloat(c.DefaultQuery("similarity_threshold", "0.2"), 64)
-	keywordsSimilarityWeight, _ := strconv.ParseFloat(c.DefaultQuery("keywords_similarity_weight", "0.7"), 64)
+	similarityThreshold, err := strconv.ParseFloat(c.DefaultQuery("similarity_threshold", "0.2"), 64)
+	if err != nil || math.IsNaN(similarityThreshold) || math.IsInf(similarityThreshold, 0) || similarityThreshold < 0 || similarityThreshold > 1 {
+		common.ErrorWithCode(c, common.CodeArgumentError, "similarity_threshold must be a finite number between 0 and 1")
+		return
+	}
+	keywordsSimilarityWeight, err := strconv.ParseFloat(c.DefaultQuery("keywords_similarity_weight", "0.7"), 64)
+	if err != nil || math.IsNaN(keywordsSimilarityWeight) || math.IsInf(keywordsSimilarityWeight, 0) || keywordsSimilarityWeight < 0 || keywordsSimilarityWeight > 1 {
+		common.ErrorWithCode(c, common.CodeArgumentError, "keywords_similarity_weight must be a finite number between 0 and 1")
+		return
+	}
 	topN, _ := strconv.Atoi(c.DefaultQuery("top_n", "5"))
 	if topN <= 0 || topN > 100 {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "top_n must be between 1 and 100")

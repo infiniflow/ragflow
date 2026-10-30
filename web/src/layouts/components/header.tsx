@@ -18,7 +18,7 @@ import {
   useListTenant,
 } from '@/hooks/use-user-setting-request';
 import { cn } from '@/lib/utils';
-import { TenantRole } from '@/pages/user-setting/constants';
+import { TenantMembershipStatus } from '@/pages/user-setting/constants';
 import { Routes } from '@/routes';
 import {
   LucideChevronDown,
@@ -48,7 +48,7 @@ export function Header({
 
   const { data: tenantData } = useListTenant();
   const hasNotification = useMemo(
-    () => tenantData?.some((x) => x.role === TenantRole.Invite),
+    () => tenantData?.some((x) => x.status === TenantMembershipStatus.Invited),
     [tenantData],
   );
 

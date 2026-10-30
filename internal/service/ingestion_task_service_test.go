@@ -2413,3 +2413,54 @@ func TestIngestionTaskServiceAdvanceRejectsMissingIdentity(t *testing.T) {
 		t.Fatalf("missing identity created %d pipeline log rows, want 0", got)
 	}
 }
+
+// A deleted ledger must not strand a terminal task during document cleanup.
+// Active/queued tasks still require valid identity; runtime event writes remain strict.
+func TestIngestionTaskServiceCleanupMissingRun(t *testing.T) {
+	for _, status := range []string{common.STOPPED, common.COMPLETED, common.FAILED, common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING} {
+		t.Run(status, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
+			if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "deleted-run").Error; err != nil {
+				t.Fatal(err)
+			}
+			svc := NewIngestionTaskService()
+			svc.purgeTaskState = func(context.Context, string) error { return nil }
+			terminal := common.IsTerminalTaskStatus(status)
+			prepared, err := svc.PrepareDocumentTaskForCleanup(t.Context(), "doc-1", "Document cleanup")
+			if terminal {
+				if err != nil || prepared == nil || prepared.ID != "task-1" {
+					t.Fatalf("terminal cleanup: task=%v err=%v", prepared, err)
+				}
+			} else if err == nil {
+				t.Fatal("nonterminal cleanup accepted missing run identity")
+			}
+			// Recreate the original state: preparing a queued task may freeze it.
+			if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", status).Error; err != nil {
+				t.Fatal(err)
+			}
+			_, err = svc.Remove(t.Context(), "task-1", sptr("user-1"))
+			if terminal {
+				if err != nil {
+					t.Fatalf("Remove terminal task with deleted run: %v", err)
+				}
+				if _, err := svc.GetTask(t.Context(), "task-1"); !errors.Is(err, common.ErrTaskNotFound) {
+					t.Fatalf("task remains after removal: %v", err)
+				}
+			} else if err == nil {
+				t.Fatal("removed nonterminal task with missing run identity")
+			}
+			if err := svc.RecordTerminal(t.Context(), "deleted-run", "task-1", "runtime write"); !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("runtime event error = %v, want missing run failure", err)
+			}
+			var events int64
+			if err := db.Model(&entity.IngestionTaskLog{}).Where("pipeline_log_id = ?", "deleted-run").Count(&events).Error; err != nil {
+				t.Fatal(err)
+			}
+			if events != 0 {
+				t.Fatalf("orphan terminal events = %d", events)
+			}
+		})
+	}
+}

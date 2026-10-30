@@ -231,8 +231,12 @@ func (e *Engine) ensureTableWithLock(ctx context.Context, tableName string, colu
 		for _, column := range columns {
 			definitions = append(definitions, quoteIdentifier(column.name)+" "+column.typeSQL)
 		}
-		query := fmt.Sprintf("CREATE TABLE %s (%s) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci ORGANIZATION=heap",
-			quoteIdentifier(tableName), strings.Join(definitions, ", "))
+		collation := "utf8mb4_unicode_ci"
+		if e.engineType == "seekdb" {
+			collation = "utf8mb4_general_ci"
+		}
+		query := fmt.Sprintf("CREATE TABLE %s (%s) DEFAULT CHARSET=utf8mb4 COLLATE=%s ORGANIZATION=heap",
+			quoteIdentifier(tableName), strings.Join(definitions, ", "), collation)
 		_, err := e.db.ExecContext(ctx, query)
 		return err
 	})

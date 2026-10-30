@@ -38,7 +38,7 @@ func TestPDFTableItemsOmitHTMLText(t *testing.T) {
 			return items
 		}},
 		{"docx table", func() []map[string]any {
-			return buildDOCXJSONSections(docxIR, newMediaBudgetForTest())
+			return buildDOCXJSONSections(docxIR, nil)
 		}},
 	}
 	for _, tc := range cases {
