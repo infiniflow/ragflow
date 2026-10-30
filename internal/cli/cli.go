@@ -849,9 +849,9 @@ Commands (User Mode):
 
 Commands (Admin Mode):
   LIST USERS;                                            - List the first page of users
-  LIST USERS WITH keyword 'alice' status 'active' order 'create_date' sort 'asc' page 1 page_size 10;
+  LIST USERS WITH keyword 'alice' status 'active' order 'create_time' sort 'asc' page 1 page_size 10;
                                                          - Search, filter, sort, and paginate users
-  User list sorting supports create_date and last_login_time.
+  User list sorting supports create_time and last_login_time.
   LIST USERS WITH role 'Reader' plan 'Pro' quota 80 days 30 page 2 page_size 10;
                                                          - Enterprise filters with pagination
   LIST USERS STORAGE TOP 20;                             - Enterprise storage ranking, top results

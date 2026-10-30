@@ -25,7 +25,7 @@ import (
 	"strings"
 )
 
-// LIST USERS WITH keyword 'alice' status 'active' order 'create_date' sort 'asc'
+// LIST USERS WITH keyword 'alice' status 'active' order 'create_time' sort 'asc'
 // page 1 page_size 10 role 'Reader' plan 'Pro' quota 80 days 30;
 func (p *Parser) parseAdminUserListOptions() (*Command, error) {
 	p.nextToken() // WITH

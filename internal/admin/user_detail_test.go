@@ -98,7 +98,7 @@ func TestListUsersQueryParameters(t *testing.T) {
 		total int64
 	}
 	tests := []queryTest{
-		{"?keyword=USER&status=active&order=create_date&sort=asc", common.CodeSuccess, 1},
+		{"?keyword=USER&status=active&order=create_time&sort=asc", common.CodeSuccess, 1},
 		{"?keyword=missing", common.CodeSuccess, 0},
 		{"?status=unknown", common.CodeBadRequest, 0},
 		{"?order=password", common.CodeBadRequest, 0},
@@ -107,7 +107,7 @@ func TestListUsersQueryParameters(t *testing.T) {
 		{"?order=is_active", common.CodeBadRequest, 0},
 		{"?order=is_superuser", common.CodeBadRequest, 0},
 		{"?order=id", common.CodeBadRequest, 0},
-		{"?order=create_time", common.CodeBadRequest, 0},
+		{"?order=create_date", common.CodeBadRequest, 0},
 		{"?sort=unknown", common.CodeBadRequest, 0},
 		{"?top=5&page=1", common.CodeBadRequest, 0},
 		{"?top=5&page_size=10", common.CodeBadRequest, 0},
@@ -154,8 +154,8 @@ func TestListUsersAcceptsSharedClientParameters(t *testing.T) {
 		total int64
 		count int
 	}{
-		{"?keyword=User&status=active&role=Reader&plan=Pro&quota=0&days=30&order=create_date&sort=asc&page=1&page_size=1", 2, 1},
-		{"?keyword=User&status=active&role=Reader&plan=Pro&quota=80&days=30&order=create_date&sort=asc", 2, 2},
+		{"?keyword=User&status=active&role=Reader&plan=Pro&quota=0&days=30&order=create_time&sort=asc&page=1&page_size=1", 2, 1},
+		{"?keyword=User&status=active&role=Reader&plan=Pro&quota=80&days=30&order=create_time&sort=asc", 2, 2},
 		{"?keyword=missing&role=Reader&plan=Pro&quota=0", 0, 0},
 		{"?status=inactive&plan=Pro&days=30", 1, 1},
 	} {
@@ -185,6 +185,7 @@ func setupAdminUserDetailTest(t *testing.T) *Handler {
 	t.Cleanup(testutil.ReplaceDBForTest(t, db))
 
 	now := time.Date(2026, time.September, 16, 12, 0, 0, 0, time.UTC)
+	createdAt := now.UnixMilli()
 	isSuperuser := false
 	statusValid := string(entity.StatusValid)
 	language := "English"
@@ -200,7 +201,7 @@ func setupAdminUserDetailTest(t *testing.T) *Handler {
 		LoginChannel:    &loginChannel,
 		Status:          &statusValid,
 		IsSuperuser:     &isSuperuser,
-		BaseModel:       entity.BaseModel{CreateDate: &now, UpdateDate: &now},
+		BaseModel:       entity.BaseModel{CreateTime: &createdAt, CreateDate: &now, UpdateDate: &now},
 	}
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)

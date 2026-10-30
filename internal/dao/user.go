@@ -139,7 +139,7 @@ func (dao *UserDAO) UpdateAccessToken(ctx context.Context, db *gorm.DB, user *en
 type UserListOrder uint8
 
 const (
-	UserListByCreateDate UserListOrder = iota
+	UserListByCreateTime UserListOrder = iota
 	UserListByLastLoginTime
 )
 
@@ -201,8 +201,8 @@ func userListQuery(ctx context.Context, db *gorm.DB, keyword string, active *boo
 func userListOrder(order UserListOrder, desc bool) (clause.OrderByColumn, error) {
 	var field string
 	switch order {
-	case UserListByCreateDate:
-		field = "create_date"
+	case UserListByCreateTime:
+		field = "create_time"
 	case UserListByLastLoginTime:
 		field = "last_login_time"
 	default:

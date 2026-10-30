@@ -69,8 +69,8 @@ func parseUserListOptions(page, pageSize int, keyword, status, direction, field 
 
 	field = strings.ToLower(strings.TrimSpace(field))
 	switch field {
-	case "", "create_date":
-		opts.OrderBy = dao.UserListByCreateDate
+	case "", "create_time":
+		opts.OrderBy = dao.UserListByCreateTime
 	case "last_login_time":
 		opts.OrderBy = dao.UserListByLastLoginTime
 	default:

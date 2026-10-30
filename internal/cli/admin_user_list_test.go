@@ -28,7 +28,7 @@ import (
 func TestAdminUserListRequests(t *testing.T) {
 	for _, tt := range []struct{ input, query string }{
 		{"LIST USERS;", ""},
-		{"LIST USERS WITH keyword 'Alice + 日志' status 'active' order 'create_date' sort 'asc' page 2 page_size 5;", "keyword=Alice+%2B+%E6%97%A5%E5%BF%97&order=create_date&page=2&page_size=5&sort=asc&status=active"},
+		{"LIST USERS WITH keyword 'Alice + 日志' status 'active' order 'create_time' sort 'asc' page 2 page_size 5;", "keyword=Alice+%2B+%E6%97%A5%E5%BF%97&order=create_time&page=2&page_size=5&sort=asc&status=active"},
 		{"LIST USERS WITH role 'Reader' plan 'Pro' quota 0;", "plan=Pro&quota=0&role=Reader"},
 		{"LIST USERS WITH plan 'Pro' days 30 page 2 page_size 10;", "days=30&page=2&page_size=10&plan=Pro"},
 		{"LIST USERS WITH order 'storage' top 50;", "order=storage&top=50"},
