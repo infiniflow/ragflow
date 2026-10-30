@@ -1446,3 +1446,143 @@ func TestAgentDisabledTemperatureAndTopP(t *testing.T) {
 		}
 	}
 }
+
+func TestAgent_MultipleRetrievalToolsUseFunctionName(t *testing.T) {
+	p := AgentParam{
+		Tools: []string{"search_archa_metodika", "search_archa_data"},
+		ToolParams: map[string]map[string]any{
+			"search_archa_metodika": {
+				"component_name": "Retrieval",
+				"function_name":  "search_archa_metodika",
+				"description":    "Vyhľadávanie v metodike.",
+				"kb_ids":         []any{"kb-metodika"},
+				"top_n":          float64(10),
+			},
+			"search_archa_data": {
+				"component_name": "Retrieval",
+				"function_name":  "search_archa_data",
+				"description":    "Vyhľadávanie v projektovej dokumentácii.",
+				"kb_ids":         []any{"kb-data"},
+				"top_n":          float64(25),
+			},
+		},
+		MaxRounds: 1,
+	}
+	tools, err := buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("len(tools) = %d, want 2", len(tools))
+	}
+	names := make(map[string]bool)
+	for _, tool := range tools {
+		info, err := tool.Info(t.Context())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		names[info.Name] = true
+	}
+	if !names["search_archa_metodika"] || !names["search_archa_data"] {
+		t.Fatalf("expected distinct retrieval tool names, got %v", names)
+	}
+}
+
+// TestAgent_DedupeToolDefinitions verifies that duplicate tool names are
+// dropped when identical and renamed when their configuration differs.
+func TestAgent_DedupeToolDefinitions(t *testing.T) {
+	// Two retrieval instances with the same advertised name and identical
+	// configuration should collapse to one tool.
+	p := AgentParam{
+		Tools: []string{"retrieval", "search_my_dateset"},
+		ToolParams: map[string]map[string]any{
+			"retrieval": {
+				"component_name": "Retrieval",
+				"function_name":  "search_archa_data",
+				"kb_ids":         []any{"kb-a"},
+			},
+			"search_my_dateset": {
+				"component_name": "Retrieval",
+				"function_name":  "search_archa_data",
+				"kb_ids":         []any{"kb-a"},
+			},
+		},
+		MaxRounds: 1,
+	}
+	tools, err := buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("identical duplicates: len(tools) = %d, want 1", len(tools))
+	}
+
+	// A differently configured retrieval instance should be kept under a
+	// unique name rather than being silently dropped.
+	p.ToolParams["search_my_dateset"]["kb_ids"] = []any{"kb-b"}
+	tools, err = buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("different defaults: len(tools) = %d, want 2", len(tools))
+	}
+	names := make(map[string]bool, len(tools))
+	for _, tool := range tools {
+		info, err := tool.Info(t.Context())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		names[info.Name] = true
+	}
+	if !names["search_archa_data"] || !names["search_archa_data_2"] {
+		t.Fatalf("expected base name and renamed duplicate, got %v", names)
+	}
+
+	// Two retrieval instances with the same dataset but different top_n are
+	// distinct configurations and must both be kept.
+	p.ToolParams["search_my_dateset"]["kb_ids"] = []any{"kb-a"}
+	p.ToolParams["search_my_dateset"]["top_n"] = float64(25)
+	tools, err = buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("different top_n: len(tools) = %d, want 2", len(tools))
+	}
+
+	// Renamed tools must remain usable by Eino's ToolsNode; wrapping them
+	// in a type that only implements BaseTool breaks invocation.
+	if _, err := compose.NewToolNode(t.Context(), &compose.ToolsNodeConfig{Tools: tools}); err != nil {
+		t.Fatalf("NewToolNode with renamed tools: %v", err)
+	}
+}
+
+// TestAgent_SubAgentNameCollisionRenamed verifies that two sub-agents whose
+// normalized names collide receive distinct tool names.
+func TestAgent_SubAgentNameCollisionRenamed(t *testing.T) {
+	p := AgentParam{
+		SubAgents: []SubAgentTool{
+			{Name: "Data Analyst"},
+			{Name: "data-analyst"},
+		},
+	}
+	tools, err := buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("len(tools) = %d, want 2", len(tools))
+	}
+	names := make(map[string]bool)
+	for _, tool := range tools {
+		info, err := tool.Info(t.Context())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		names[info.Name] = true
+	}
+	if len(names) != 2 {
+		t.Fatalf("expected 2 distinct names, got %v", names)
+	}
+}
