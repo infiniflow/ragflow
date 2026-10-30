@@ -373,3 +373,86 @@ func TestPDFMarkdownKeepsInlineDataURIImage(t *testing.T) {
 		t.Fatalf("PDF Markdown normalization emitted a media_ref: %+v", images[0])
 	}
 }
+
+func TestMarkdownParserIngestionFlattenKeepsImageAsText(t *testing.T) {
+	ctx, cache := recordingMediaContext()
+	p := markdownIngestionParser(t)
+	markdown, ok := p.(*MarkdownParser)
+	if !ok {
+		t.Fatalf("GetParser(FileTypeMarkdown) = %T", p)
+	}
+	markdown.FlattenMediaToText = true
+
+	res := p.ParseWithResult(ctx, "flatten.md", []byte("![figure]("+markdownMediaDataURI+")\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(cache.puts) != 1 || string(cache.puts[0].data) != "hello" {
+		t.Fatalf("cache puts = %+v", cache.puts)
+	}
+	items := ItemsToMaps(res.JSON)
+	if len(items) != 1 || items[0]["doc_type_kwd"] != DocTypeText {
+		t.Fatalf("flattened items = %+v, want one text item", items)
+	}
+	if entity.MediaRefFromAny(items[0]["media_ref"]) == nil {
+		t.Fatalf("flattened image lost its media_ref: %+v", items[0])
+	}
+}
+
+// TestMarkdownTextParserSkipsImages pins the text-only contract: preview, CLI
+// and attachment parsing must not download remote images, decode data URIs or
+// emit image payloads, while keeping the alt text and surrounding prose.
+func TestMarkdownTextParserSkipsImages(t *testing.T) {
+	allowLoopbackImages(t)
+	var hits atomic.Int32
+	server := imageTestServer(t, "\x89PNG\r\n\x1a\nremote", &hits)
+
+	p, err := GetTextOnlyParser(utility.FileTypeMarkdown)
+	if err != nil {
+		t.Fatalf("GetTextOnlyParser(FileTypeMarkdown): %v", err)
+	}
+	markdown, ok := p.(*MarkdownParser)
+	if !ok || !markdown.textOnly || markdown.mediaRefs {
+		t.Fatalf("GetTextOnlyParser(FileTypeMarkdown) = %#v, want the text-only parser", p)
+	}
+
+	input := "Before\n\n![alt text](" + server.URL + "/image.png)\n\n" +
+		"![inline](data:image/png;base64,aGVsbG8=)\n\n" +
+		"![broken](data:image/png;base64,!!!)\n\n" +
+		"| A | B |\n|---|---|\n| x | ![cell alt](" + server.URL + "/cell.png) |\n\n" +
+		"After\n"
+	// No media cache is attached: a text-only parse must not need one.
+	res := p.ParseWithResult(context.Background(), "text.md", []byte(input))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("text-only Markdown reached the network %d time(s)", hits.Load())
+	}
+	var texts []string
+	for _, item := range ItemsToMaps(res.JSON) {
+		if _, ok := item["image"]; ok {
+			t.Fatalf("text-only Markdown retained inline image bytes: %+v", item)
+		}
+		if _, ok := item["media_ref"]; ok {
+			t.Fatalf("text-only Markdown emitted a media_ref: %+v", item)
+		}
+		if text, ok := item["text"].(string); ok && text != "" {
+			texts = append(texts, text)
+		}
+		if table, ok := item["table"].(*entity.TableData); ok {
+			for _, row := range table.CellTexts() {
+				texts = append(texts, strings.Join(row, " "))
+			}
+		}
+	}
+	joined := strings.Join(texts, "\n")
+	for _, want := range []string{"Before", "After", "alt text", "inline", "broken", "cell alt"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("text-only Markdown lost %q: %q", want, joined)
+		}
+	}
+	if len(res.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none for a text-only parse", res.Warnings)
+	}
+}

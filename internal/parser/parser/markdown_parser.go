@@ -98,7 +98,12 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 // been removed; callers consume ParseResult directly.
 func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	state := &htmlWalkState{budget: media.NewBudget()}
-	if p.mediaRefs {
+	switch {
+	case p.textOnly:
+		// Text-only callers have no run media cache and must not reach the
+		// network or decode inline payloads.
+		state.skipImages = true
+	case p.mediaRefs:
 		state.refOnly = true
 		state.ctx = ctx
 		state.mediaCache = media.CacheFromContext(ctx)
