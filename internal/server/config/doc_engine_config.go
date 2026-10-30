@@ -25,6 +25,7 @@ import (
 
 type DocEngineConfig struct {
 	ES        ElasticsearchConfig `mapstructure:"es"`
+	OS        OpenSearchConfig    `mapstructure:"os"`
 	Infinity  InfinityConfig      `mapstructure:"infinity"`
 	OceanBase OceanBaseConfig     `mapstructure:"oceanbase"`
 	SeekDB    OceanBaseConfig     `mapstructure:"seekdb"`
@@ -55,6 +56,17 @@ type ElasticsearchConfig struct {
 	Hosts    string `mapstructure:"hosts"`
 	Username string `mapstructure:"username"`
 	Password string `mapstructure:"password"`
+}
+
+// OpenSearchConfig OpenSearch configuration
+type OpenSearchConfig struct {
+	Hosts              string `mapstructure:"hosts"`
+	Username           string `mapstructure:"username"`
+	Password           string `mapstructure:"password"`
+	CACertPath         string `mapstructure:"ca_cert_path"`
+	ClientCertPath     string `mapstructure:"client_cert_path"`
+	ClientKeyPath      string `mapstructure:"client_key_path"`
+	InsecureSkipVerify bool   `mapstructure:"insecure_skip_verify"`
 }
 
 // InfinityConfig Infinity configuration
@@ -103,6 +115,7 @@ type VastbaseConfig struct {
 func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
 	c.parseInfinityConfig(v)
 	c.parseElasticsearchConfig(v)
+	c.parseOpenSearchConfig(v)
 	c.parseOceanBaseConfig(v, "oceanbase", &c.docEngine.OceanBase)
 	c.parseOceanBaseConfig(v, "seekdb", &c.docEngine.SeekDB)
 	c.parseSereneDBConfig(v)
@@ -372,6 +385,56 @@ func (e ElasticsearchConfig) ExportConfigs() map[string]interface{} {
 
 func (c *Config) IsElasticConfigured() bool {
 	return c.docEngine.ES.Hosts != ""
+}
+
+func (c *Config) parseOpenSearchConfig(v *viper.Viper) {
+	// Default OpenSearch config
+	c.docEngine.OS.Hosts = "http://localhost:1201"
+	c.docEngine.OS.Username = "admin"
+	c.docEngine.OS.Password = "infini_rag_flow_OS_01"
+	c.docEngine.OS.InsecureSkipVerify = false
+
+	// Fully qualified parent keys, not v.Sub("os"): Sub drops root Viper's
+	// AutomaticEnv bindings (env prefix/replacer), and IsSet("os") cannot see
+	// child environment variables, so an env-only deployment (RAGFLOW_OS_HOSTS,
+	// etc. with no YAML section) would silently keep every default.
+	if v.IsSet("os.hosts") {
+		c.docEngine.OS.Hosts = v.GetString("os.hosts")
+	}
+	if v.IsSet("os.username") {
+		c.docEngine.OS.Username = v.GetString("os.username")
+	}
+	if v.IsSet("os.password") {
+		c.docEngine.OS.Password = v.GetString("os.password")
+	}
+	if v.IsSet("os.ca_cert_path") {
+		c.docEngine.OS.CACertPath = v.GetString("os.ca_cert_path")
+	}
+	if v.IsSet("os.client_cert_path") {
+		c.docEngine.OS.ClientCertPath = v.GetString("os.client_cert_path")
+	}
+	if v.IsSet("os.client_key_path") {
+		c.docEngine.OS.ClientKeyPath = v.GetString("os.client_key_path")
+	}
+	if v.IsSet("os.insecure_skip_verify") {
+		c.docEngine.OS.InsecureSkipVerify = v.GetBool("os.insecure_skip_verify")
+	}
+}
+
+func (c *Config) GetOpenSearchConfig() OpenSearchConfig {
+	return c.docEngine.OS
+}
+
+func (o OpenSearchConfig) ExportConfigs() map[string]interface{} {
+	osConfigs := make(map[string]interface{})
+	osConfigs["hosts"] = o.Hosts
+	osConfigs["username"] = o.Username
+	osConfigs["password"] = o.Password
+	return osConfigs
+}
+
+func (c *Config) IsOpenSearchConfigured() bool {
+	return c.docEngine.OS.Hosts != ""
 }
 
 func (c *Config) GetInfinityConfig() InfinityConfig {
