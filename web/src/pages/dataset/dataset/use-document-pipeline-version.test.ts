@@ -21,6 +21,8 @@ describe('useDocumentPipelineVersion', () => {
     // never produces data.
     mockUseFetchCanvasVersionList.mockImplementation((canvasId?: string) => ({
       data: canvasId ? versions : undefined,
+      loading: false,
+      isError: false,
     }));
   });
 
@@ -33,8 +35,9 @@ describe('useDocumentPipelineVersion', () => {
     );
 
     expect(mockUseFetchCanvasVersionList).toHaveBeenCalledWith('canvas-1');
-    expect(result.current?.id).toBe('v1');
-    expect(result.current?.alias).toBe('111');
+    expect(result.current.version?.id).toBe('v1');
+    expect(result.current.version?.alias).toBe('111');
+    expect(result.current.missing).toBe(false);
   });
 
   it('tracks the latest version when nothing is pinned', () => {
@@ -45,10 +48,11 @@ describe('useDocumentPipelineVersion', () => {
       }),
     );
 
-    expect(result.current?.id).toBe('v2');
+    expect(result.current.version?.id).toBe('v2');
+    expect(result.current.missing).toBe(false);
   });
 
-  it('resolves to undefined when the pinned version is gone', () => {
+  it('flags a pinned version that no longer exists as missing', () => {
     const { result } = renderHook(() =>
       useDocumentPipelineVersion({
         pipeline_id: 'canvas-1',
@@ -56,7 +60,58 @@ describe('useDocumentPipelineVersion', () => {
       }),
     );
 
-    expect(result.current).toBeUndefined();
+    expect(result.current.version).toBeUndefined();
+    expect(result.current.missing).toBe(true);
+  });
+
+  it('flags an unpinned binding whose pipeline has no published versions left', () => {
+    mockUseFetchCanvasVersionList.mockReturnValue({
+      data: [],
+      loading: false,
+      isError: false,
+    });
+    const { result } = renderHook(() =>
+      useDocumentPipelineVersion({
+        pipeline_id: 'canvas-1',
+        pipeline_version_id: '',
+      }),
+    );
+
+    expect(result.current.version).toBeUndefined();
+    expect(result.current.missing).toBe(true);
+  });
+
+  it('flags a pipeline whose version list failed to load (deleted pipeline)', () => {
+    mockUseFetchCanvasVersionList.mockReturnValue({
+      data: undefined,
+      loading: false,
+      isError: true,
+    });
+    const { result } = renderHook(() =>
+      useDocumentPipelineVersion({
+        pipeline_id: 'deleted-canvas',
+        pipeline_version_id: 'v1',
+      }),
+    );
+
+    expect(result.current.missing).toBe(true);
+  });
+
+  it('stays quiet while the version list is in flight', () => {
+    mockUseFetchCanvasVersionList.mockReturnValue({
+      data: undefined,
+      loading: true,
+      isError: false,
+    });
+    const { result } = renderHook(() =>
+      useDocumentPipelineVersion({
+        pipeline_id: 'canvas-1',
+        pipeline_version_id: 'v1',
+      }),
+    );
+
+    expect(result.current.version).toBeUndefined();
+    expect(result.current.missing).toBe(false);
   });
 
   it('stays disabled for built-in parser documents', () => {
@@ -68,6 +123,7 @@ describe('useDocumentPipelineVersion', () => {
     );
 
     expect(mockUseFetchCanvasVersionList).toHaveBeenCalledWith(undefined);
-    expect(result.current).toBeUndefined();
+    expect(result.current.version).toBeUndefined();
+    expect(result.current.missing).toBe(false);
   });
 });

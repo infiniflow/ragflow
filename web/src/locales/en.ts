@@ -402,6 +402,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       continueUpload: 'Continue upload',
+      uploadPipelineDeletedTitle: 'Parsing pipeline unavailable',
+      uploadPipelineDeletedContent:
+        'The pipeline configured for this dataset has been deleted or has no published version, so uploaded files cannot be parsed automatically. Reconfigure a pipeline in the dataset settings, or upload now and configure parsing for each file individually.',
       reselectParser: 'Reselect parse method',
       goAddModel: 'Go add model',
       uploadMissingModelsTitle: 'Some files lack a required model',

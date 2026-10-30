@@ -4,9 +4,10 @@ import {
   ParserOptionKind,
 } from '@/hooks/use-parser-options';
 import { cn } from '@/lib/utils';
-import { AlertCircle, TriangleAlert } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ParserUnavailableLabel } from '../parser-unavailable-label';
 import { PipelineVersionLabel } from '../pipeline-version-label';
 import { TreeSelect, TreeSelectNode } from '../tree-select';
 import { useParserTreeData } from './use-parser-tree-data';
@@ -102,19 +103,7 @@ export function ParserTreeSelect({
   // (e.g. a deleted pipeline or pruned version) and options have finished
   // loading, render a localized "unavailable" label instead of the raw
   // internal value.
-  const renderMissingParser = useCallback(
-    () => (
-      <span className="flex items-center gap-1.5">
-        <TriangleAlert className="size-4 flex-shrink-0" />
-        <span className="truncate">
-          {t('knowledgeConfiguration.parserOptionUnavailable', {
-            defaultValue: 'unavailable',
-          })}
-        </span>
-      </span>
-    ),
-    [t],
-  );
+  const renderMissingParser = useCallback(() => <ParserUnavailableLabel />, []);
 
   // The outdated icon is a pure hint. The Radix tooltip trigger renders a
   // raw <button> with no `type`, which inside the surrounding forms (dataset
