@@ -93,7 +93,7 @@
       {
         "kwd": {
           "match_pattern": "regex",
-          "match": "^(.*_(kwd|id|ids|uid|uids)|uid)$",
+          "match": "^(.*_(kwd|id|ids|uid|uids)|uid|id)$",
           "mapping": {
             "type": "keyword",
             "similarity": "boolean",
@@ -134,9 +134,11 @@
           "match_pattern": "regex",
           "match": "^.*_(with_weight|list)$",
           "mapping": {
-            "type": "text",
-            "index": "false",
-            "store": true
+            "type": "keyword",
+            "index": true,
+            "store": true,
+            "ignore_above": 8191,
+            "doc_values": false
           }
         }
       },
@@ -153,6 +155,17 @@
           "match": "*_feas",
           "mapping": {
             "type": "rank_features"
+          }
+        }
+      },
+      {
+        "knn_vector": {
+          "match": "*_384_vec",
+          "mapping": {
+            "type": "knn_vector",
+            "index": true,
+            "space_type": "cosinesimil",
+            "dimension": 384
           }
         }
       },
@@ -208,6 +221,39 @@
             "index": true,
             "space_type": "cosinesimil",
             "dimension": 2048
+          }
+        }
+      },
+      {
+        "knn_vector": {
+          "match": "*_2560_vec",
+          "mapping": {
+            "type": "knn_vector",
+            "index": true,
+            "space_type": "cosinesimil",
+            "dimension": 2560
+          }
+        }
+      },
+      {
+        "knn_vector": {
+          "match": "*_3072_vec",
+          "mapping": {
+            "type": "knn_vector",
+            "index": true,
+            "space_type": "cosinesimil",
+            "dimension": 3072
+          }
+        }
+      },
+      {
+        "knn_vector": {
+          "match": "*_3584_vec",
+          "mapping": {
+            "type": "knn_vector",
+            "index": true,
+            "space_type": "cosinesimil",
+            "dimension": 3584
           }
         }
       },

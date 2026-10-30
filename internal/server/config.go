@@ -230,6 +230,9 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 	case "vastbase":
 		vastbaseConfig := globalConfig.GetVastbaseConfig()
 		allConfigs = append(allConfigs, vastbaseConfig.ExportConfigs())
+	case "opensearch":
+		opensearchConfig := globalConfig.GetOpenSearchConfig()
+		allConfigs = append(allConfigs, opensearchConfig.ExportConfigs())
 	default:
 		return nil, fmt.Errorf("not supported doc engine: %s", docEngineType)
 	}

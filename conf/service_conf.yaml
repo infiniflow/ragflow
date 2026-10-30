@@ -50,10 +50,12 @@ os:
   hosts: 'http://localhost:1201'
   username: 'admin'
   password: 'infini_rag_flow_OS_01'
-  # Optional hybrid (BM25 + KNN) search tuning. The connector self-provisions the
-  # normalization search pipeline on start-up (requires OpenSearch >= 2.10).
-  # hybrid_search_pipeline: 'ragflow_hybrid_pipeline'
-  # hybrid_search_weights: [0.5, 0.5]   # [text/BM25 leg, vector/KNN leg]
+  ca_cert_path: ''
+  client_cert_path: ''
+  client_key_path: ''
+  insecure_skip_verify: false
+  # OpenSearch indices require an actual index.max_result_window >= 10,000 (OpenSearch default).
+  # RAGFlow uses a fixed result window of 10,000 for pagination boundaries across all doc engines.
 infinity:
   uri: 'localhost:23817'
   postgres_port: 5432
