@@ -485,9 +485,10 @@ var LookupHost = net.LookupHost
 // a deployment mistake. The explicit "_ForTest" suffix is the
 // signal that production code must never touch it.
 //
-// Host-based database and connector dials and configured MCP servers are a
-// separate opt-in. AllowConfiguredPrivateHost reads ALLOW_ANY_HOST for those
-// dials only. This function stays limited to the in-memory test hook.
+// Host-based database and connector dials, configured MCP servers, and the
+// SearXNG URL stored in an Agent node config are a separate opt-in.
+// AllowConfiguredPrivateHost reads ALLOW_ANY_HOST for those dials only. This
+// function stays limited to the in-memory test hook.
 var AllowAnyHostForTest = false
 
 // allowAnyHost reads the test-only override. Kept as a private

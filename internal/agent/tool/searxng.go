@@ -32,6 +32,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
+	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
 )
 
@@ -95,8 +96,34 @@ func newSearXNGTool(helper *HTTPHelper, searxngURL string, topN int) *SearXNGToo
 		helper:  helper,
 		url:     strings.TrimSpace(searxngURL),
 		topN:    topN,
-		resolve: ResolveConfiguredURL,
+		resolve: resolveSearXNGURL,
 	}
+}
+
+// resolveSearXNGURL pins the node-configured SearXNG host before dialing. The
+// URL comes from a tenant-editable node config, so private addresses stay
+// blocked unless the operator sets ALLOW_ANY_HOST, the same opt-in that gates
+// every other configured host dial.
+func resolveSearXNGURL(rawURL string) (string, net.IP, error) {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", nil, fmt.Errorf("ssrf: parse url: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", nil, fmt.Errorf("ssrf: unsupported scheme %q", u.Scheme)
+	}
+	pinned, enabled, err := common.PinConfiguredPrivateHost(u.Hostname())
+	if !enabled {
+		return ResolveAndValidate(rawURL)
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("ssrf: resolve %s: %w", u.Hostname(), err)
+	}
+	ip := net.ParseIP(pinned)
+	if ip == nil {
+		return "", nil, fmt.Errorf("ssrf: could not parse resolved address %q for %s", pinned, u.Hostname())
+	}
+	return u.Hostname(), ip, nil
 }
 
 // Info exposes only the model-call arguments.

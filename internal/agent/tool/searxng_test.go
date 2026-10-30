@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
 )
 
@@ -320,8 +321,33 @@ func TestSearXNGDoesNotRetryFailedRequest(t *testing.T) {
 	}
 }
 
-func TestSearXNGConfiguredPrivateHostIsFetched(t *testing.T) {
+func TestSearXNGPrivateHostBlockedByDefault(t *testing.T) {
 	t.Parallel()
+	ctx := t.Context()
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	}))
+	defer server.Close()
+
+	searchTool := newSearXNGTool(nil, server.URL, 0)
+	out, err := searchTool.InvokableRun(ctx, `{"query":"private"}`)
+	if !errors.Is(err, ErrSSRFBlocked) {
+		t.Fatalf("err = %v, want ErrSSRFBlocked", err)
+	}
+	if !strings.Contains(out, `"_ERROR"`) {
+		t.Fatalf("output = %s, want _ERROR envelope", out)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("request calls = %d, want 0", calls.Load())
+	}
+}
+
+func TestSearXNGPrivateHostAllowedByAllowAnyHost(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "1")
 	ctx := t.Context()
 
 	var calls atomic.Int32
@@ -346,16 +372,20 @@ func TestSearXNGConfiguredPrivateHostIsFetched(t *testing.T) {
 	}
 }
 
-func TestSearXNGConfiguredURLRejectsUnsupportedScheme(t *testing.T) {
-	t.Parallel()
+func TestSearXNGRejectsUnsupportedScheme(t *testing.T) {
+	for _, allowAnyHost := range []string{"", "1"} {
+		t.Run("ALLOW_ANY_HOST="+allowAnyHost, func(t *testing.T) {
+			t.Setenv(common.EnvAllowAnyHost, allowAnyHost)
 
-	searchTool := newSearXNGTool(nil, "ftp://example.com", 0)
-	out, err := searchTool.InvokableRun(t.Context(), `{"query":"scheme"}`)
-	if err == nil || !strings.Contains(err.Error(), "unsupported scheme") {
-		t.Fatalf("err = %v, want unsupported scheme error", err)
-	}
-	if !strings.Contains(out, `"_ERROR"`) {
-		t.Fatalf("output = %s, want _ERROR envelope", out)
+			searchTool := newSearXNGTool(nil, "ftp://example.com", 0)
+			out, err := searchTool.InvokableRun(t.Context(), `{"query":"scheme"}`)
+			if err == nil || !strings.Contains(err.Error(), "unsupported scheme") {
+				t.Fatalf("err = %v, want unsupported scheme error", err)
+			}
+			if !strings.Contains(out, `"_ERROR"`) {
+				t.Fatalf("output = %s, want _ERROR envelope", out)
+			}
+		})
 	}
 }
 

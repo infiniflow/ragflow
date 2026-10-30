@@ -30,8 +30,9 @@ import (
 //
 // The flag is the development opt-in documented in docker/.env. It applies
 // to host-based database and connector dials (MySQL, PostgreSQL, IMAP,
-// test_db_connection, ExeSQL), including host.docker.internal, and configured
-// MCP servers. Other URL and Invoke guards do not call this. DNS pinning
+// test_db_connection, ExeSQL), including host.docker.internal, to configured
+// MCP servers, and to the SearXNG URL stored in an Agent node config. Guards
+// on model-supplied URLs and Invoke inputs do not call this. DNS pinning
 // remains enabled. Default is off.
 func AllowConfiguredPrivateHost() bool {
 	switch strings.ToLower(strings.TrimSpace(GetEnv(EnvAllowAnyHost))) {
@@ -47,7 +48,7 @@ var noteAllowConfiguredPrivateHost sync.Once
 // noteConfiguredPrivateHost logs once that private hosts are permitted.
 func noteConfiguredPrivateHost(host string) {
 	noteAllowConfiguredPrivateHost.Do(func() {
-		zap.L().Warn("ALLOW_ANY_HOST is enabled; private database and connector hosts are allowed",
+		zap.L().Warn("ALLOW_ANY_HOST is enabled; private configured hosts are allowed",
 			zap.String("host", host),
 		)
 	})
