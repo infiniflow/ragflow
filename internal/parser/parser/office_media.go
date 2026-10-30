@@ -59,7 +59,14 @@ func (s *officeMediaSink) put(data []byte, mime string) (*entity.MediaRef, bool)
 	if s == nil || s.err != nil {
 		return nil, false
 	}
+	// The IR supplies bytes rather than source paths. Memoize every digest,
+	// including rejected sources, so repeated omissions are counted once.
+	source := officeMediaSource(data)
+	if ref, seen := s.sink.Lookup(source); seen && ref == nil {
+		return nil, false
+	}
 	if len(data) == 0 {
+		s.sink.Skip(source)
 		s.invalidImages++
 		return nil, false
 	}
@@ -67,12 +74,11 @@ func (s *officeMediaSink) put(data []byte, mime string) (*entity.MediaRef, bool)
 		mime = officeImageMIME(data)
 	}
 	if mime == "" {
+		s.sink.Skip(source)
 		s.invalidImages++
 		return nil, false
 	}
-	// The IR supplies bytes rather than source paths. Use the payload digest
-	// so repeated images share one admission and reference.
-	ref, err := s.sink.Resolve(officeMediaSource(data), media.Size(len(data)), func() (string, []byte, bool) {
+	ref, err := s.sink.Resolve(source, media.Size(len(data)), func() (string, []byte, bool) {
 		return mime, data, true
 	})
 	s.err = err

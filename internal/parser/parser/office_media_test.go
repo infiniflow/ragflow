@@ -445,3 +445,29 @@ func TestOfficeSVGSniffDoesNotCopyPayload(t *testing.T) {
 		t.Fatalf("SVG sniff allocated %v times; want no payload copy", allocations)
 	}
 }
+
+func TestOfficeMediaSinkCountsDistinctInvalidPayloadsWithoutSpendingBudget(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "1")
+	sink, cache := officeMediaTestSink(t, officeMediaFormatDOCX)
+	for _, data := range [][]byte{nil, {}, []byte("unrecognized-a"), []byte("unrecognized-a"), []byte("unrecognized-b"), []byte("unrecognized-b")} {
+		if ref, ok := sink.put(data, ""); ok || ref != nil {
+			t.Fatalf("invalid payload accepted: %q", data)
+		}
+	}
+	if cache.putCalls != 0 {
+		t.Fatalf("invalid payload cache writes = %d, want 0", cache.putCalls)
+	}
+	if ref, ok := sink.put(officeTestPNG(t, 2), ""); !ok || ref == nil {
+		t.Fatal("invalid payloads consumed the only image slot")
+	}
+	if sink.err != nil {
+		t.Fatalf("sink error: %v", sink.err)
+	}
+	warnings := sink.warnings()
+	if len(warnings) != 1 || !strings.Contains(warnings[0], "skipped 3 invalid or unsupported embedded image(s)") {
+		t.Fatalf("warnings = %v, want one warning for three distinct invalid payloads", warnings)
+	}
+	if cache.putCalls != 1 {
+		t.Fatalf("cache writes = %d, want only the valid image", cache.putCalls)
+	}
+}
