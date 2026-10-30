@@ -279,7 +279,7 @@ func TestUpdateDataset_ParseTypePipelineRejectsParserID(t *testing.T) {
 	pipelineID := "ABCDEF0123456789ABCDEF0123456789"
 	parseType := 2
 
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", "tenant-1", service.UpdateDatasetRequest{
 		ParserID:   &chunkMethod,
 		PipelineID: &pipelineID,
 		ParseType:  &parseType,
@@ -295,7 +295,7 @@ func TestUpdateDataset_ParseTypePipelineRejectsParserID(t *testing.T) {
 	}
 }
 
-func TestUpdateDataset_PipelineSwitchPreservesSubmittedParserConfig(t *testing.T) {
+func TestUpdateDataset_PipelineSwitchKeepsSubmittedParserConfig(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
@@ -318,11 +318,16 @@ func TestUpdateDataset_PipelineSwitchPreservesSubmittedParserConfig(t *testing.T
 		t.Fatalf("marshal canvas DSL: %v", err)
 	}
 	seedDatasetUpdateCanvas(t, pipelineID, "tenant-1", dslJSON)
+	// C5/G3: a Pipeline-mode switch now requires an explicit version (the empty
+	// version is no longer auto-backfilled). Seed one and pass it.
+	verID := "version0000000000000000000000cc"
+	seedCanvasVersion(t, db, pipelineID, verID, 0)
 
 	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
-		PipelineID: &pipelineID,
-		ParseType:  &parseType,
+		PipelineID:        &pipelineID,
+		ParseType:         &parseType,
+		PipelineVersionID: &verID,
 		ParserConfig: map[string]interface{}{
 			"Parser:CustomP": map[string]interface{}{
 				"pdf": map[string]interface{}{"remove_toc": true},
@@ -340,6 +345,12 @@ func TestUpdateDataset_PipelineSwitchPreservesSubmittedParserConfig(t *testing.T
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
+	// A pipeline (canvas) switch with a submitted parser_config keeps the
+	// submitted values, reconciled against the new canvas DSL by
+	// BuildParserConfig: the settings form resets itself to the new defaults
+	// on a switch, so the submitted config carries the user's edits of the new
+	// pipeline and must not be discarded. remove_toc=true must survive on top
+	// of the new canvas DSL default (false).
 	parserParams, ok := persisted.ParserConfig["Parser:CustomP"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("expected Parser:CustomP in parser_config, got %#v", persisted.ParserConfig)
@@ -349,7 +360,7 @@ func TestUpdateDataset_PipelineSwitchPreservesSubmittedParserConfig(t *testing.T
 		t.Fatalf("expected pdf parser config, got %#v", parserParams)
 	}
 	if removeTOC, ok := pdfParams["remove_toc"].(bool); !ok || !removeTOC {
-		t.Fatalf("remove_toc = %#v, want true", pdfParams["remove_toc"])
+		t.Fatalf("remove_toc = %#v, want true (submitted value kept on pipeline switch)", pdfParams["remove_toc"])
 	}
 }
 
@@ -1044,6 +1055,7 @@ func migrateDatasetUpdateTestTables(t *testing.T, db *gorm.DB) {
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
 		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
 	); err != nil {
 		t.Fatalf("failed to migrate dataset update tables: %v", err)
 	}

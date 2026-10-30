@@ -149,6 +149,14 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chats [post]
 func (h *ChatHandler) Create(c *gin.Context) {
+	quotaUser, ok := billingQuotaUser(c)
+	if !ok {
+		return
+	}
+	if !billingEnforceApps(c, quotaUser.ID) {
+		return
+	}
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)

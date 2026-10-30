@@ -137,6 +137,9 @@ type memoryMessageDocEngine struct {
 	updateID    string
 }
 
+func (e *memoryMessageDocEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return map[string]interface{}{"id": "present"}, nil
+}
 func (e *memoryMessageDocEngine) Search(ctx context.Context, req *enginetypes.SearchRequest) (*enginetypes.SearchResult, error) {
 	e.searchReq = req
 	if e.searchResp != nil {
@@ -1040,5 +1043,45 @@ func TestUpdateMessageUpdatesStatusByMessageDocID(t *testing.T) {
 	}
 	if docEngine.updateValue["status"] != 1 {
 		t.Fatalf("status update = %+v, want status 1", docEngine.updateValue)
+	}
+}
+
+type missingMessageEngine struct {
+	memoryMessageDocEngine
+	getErr error
+}
+
+func (e *missingMessageEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return nil, e.getErr
+}
+func TestUpdateMessageRejectsMissingAndFailedReads(t *testing.T) {
+	for _, readErr := range []error{nil, enginetypes.ErrDocumentNotFound, errors.New("database unavailable")} {
+		setupMemoryMessageTestDB(t)
+		seedMemoryMessages(t)
+		e := &missingMessageEngine{getErr: readErr}
+		svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), db: dao.DB, docEngine: e}
+		ok, err := svc.UpdateMessage(serviceTestContext(t, "user-1", "user-1"), "user-1", "mem-owned", 42, true)
+		if ok || err == nil || e.updateCond != nil {
+			t.Fatalf("ok=%v error=%v update=%v", ok, err, e.updateCond)
+		}
+		var missing *ResourceNotFoundError
+		if readErr != nil && !errors.Is(readErr, enginetypes.ErrDocumentNotFound) {
+			if !errors.Is(err, readErr) {
+				t.Fatal(err)
+			}
+		} else if !errors.As(err, &missing) {
+			t.Fatalf("expected missing, got%v", err)
+		}
+	}
+}
+
+func TestMemorySearchRejectsInvalidSimilarityBeforeStorage(t *testing.T) {
+	for _, field := range []string{"similarity_threshold", "keywords_similarity_weight"} {
+		for _, value := range []interface{}{-0.1, 1.1, "invalid", math.NaN(), math.Inf(1), nil} {
+			_, code, err := (&MemoryService{}).SearchMessage(t.Context(), "user", nil, map[string]interface{}{field: value})
+			if code != common.CodeArgumentError || err == nil {
+				t.Fatalf("%s=%v code=%v err=%v", field, value, code, err)
+			}
+		}
 	}
 }

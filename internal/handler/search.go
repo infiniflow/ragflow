@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
@@ -159,6 +160,14 @@ type CreateSearchRequest struct {
 }
 
 func (h *SearchHandler) CreateSearch(c *gin.Context) {
+	quotaUser, ok := billingQuotaUser(c)
+	if !ok {
+		return
+	}
+	if !billingEnforceApps(c, quotaUser.ID) {
+		return
+	}
+
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -432,21 +441,30 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 
 	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, TenantID: plan.UserID, ModelID: plan.ModelID}
 
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	c.Request = c.Request.WithContext(ctx)
+
 	hadError := false
-	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.DatasetIDs, plan.Options) {
+	for delta := range h.askService.StreamWithOptions(ctx, adapter, plan.UserID, plan.Question, plan.DatasetIDs, plan.Options) {
+		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
-			writer.Write(c, sseAnswer(delta.Value, nil, false))
+			ok = writer.Write(c, sseAnswer(delta.Value, nil, false))
 		case service.AskDeltaMarker:
-			writer.Write(c, sseMarker(delta.Value))
+			ok = writer.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:
 			hadError = true
-			writer.Write(c, sseError(delta.Value))
+			ok = writer.Write(c, sseError(delta.Value))
 		case service.AskDeltaFinal:
-			writer.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+			ok = writer.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+		}
+		if !ok || ctx.Err() != nil {
+			cancel()
+			break
 		}
 	}
-	if !hadError {
+	if !hadError && ctx.Err() == nil {
 		writer.Write(c, "data: {\"code\": 0, \"message\": \"success\", \"data\": true}\n\n")
 	}
 }

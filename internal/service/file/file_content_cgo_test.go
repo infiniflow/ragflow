@@ -21,6 +21,8 @@ package file
 import (
 	"archive/zip"
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -77,5 +79,36 @@ func TestParseFileContent_DOCXReadsJSONItems(t *testing.T) {
 	}
 	if content == string(data) {
 		t.Fatal("content fell back to raw docx bytes instead of parsed items")
+	}
+}
+
+// TestOfficeContentExtractionWithoutMediaCache pins that previews, uploads and
+// other non-ingestion callers use the text-only Office parsers: an
+// image-bearing .docx must yield readable text instead of failing because no
+// run media cache is attached.
+func TestOfficeContentExtractionWithoutMediaCache(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "parser", "parser", "testdata", "docx_table_image.docx"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, parse := range map[string]func() (string, error){
+		"file":  func() (string, error) { return parseFileContent(t.Context(), "image.docx", data), nil },
+		"agent": func() (string, error) { return parseAgentUploadContent(t.Context(), "image.docx", data, "") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := parse()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, want := range []string{"intro", "before"} {
+				if !strings.Contains(got, want) {
+					t.Errorf("missing %q: %q", want, got)
+				}
+			}
+			if strings.Contains(got, "media_ref") || strings.Contains(got, "base64,") {
+				t.Fatalf("media payload leaked into text-only content: %q", got)
+			}
+		})
 	}
 }

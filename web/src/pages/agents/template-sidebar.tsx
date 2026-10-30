@@ -7,7 +7,6 @@ import {
   Component,
   MessageCircleCode,
   PencilRuler,
-  Route,
   Sparkle,
 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -18,7 +17,6 @@ export enum MenuItemKey {
   CustomerSupport = 'Customer Support',
   Marketing = 'Marketing',
   ConsumerApp = 'Consumer App',
-  Pipeline = 'Ingestion Pipeline',
   Other = 'Other',
 }
 
@@ -70,13 +68,6 @@ export function SideBar({
               'flow.' + lowerFirst(MenuItemKey.ConsumerApp.replace(' ', '')),
             ),
             key: MenuItemKey.ConsumerApp,
-          },
-          {
-            icon: Route,
-            label: t(
-              'flow.' + lowerFirst(MenuItemKey.Pipeline.replace(' ', '')),
-            ),
-            key: MenuItemKey.Pipeline,
           },
           {
             icon: PencilRuler,

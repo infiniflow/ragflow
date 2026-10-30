@@ -86,11 +86,6 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse doc engine config error: %w", err)
 	}
 
-	err = globalConfig.ParseStorageEngineConfig(v)
-	if err != nil {
-		return fmt.Errorf("parse storage engine config error: %w", err)
-	}
-
 	err = globalConfig.ParseCacheEngineConfig(v)
 	if err != nil {
 		return fmt.Errorf("parse cache engine config error: %w", err)
@@ -146,6 +141,11 @@ func Init(configPath string) error {
 		return fmt.Errorf("get environments error: %w", err)
 	}
 
+	err = globalConfig.ParseStorageEngineConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse storage engine config error: %w", err)
+	}
+
 	err = globalConfig.ParseBillingConfig(v)
 	if err != nil {
 		return fmt.Errorf("parse billing config error: %w", err)
@@ -161,6 +161,11 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse OAuth config error: %w", err)
 	}
 
+	err = globalConfig.ParseAuditConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse audit log config error: %w", err)
+	}
+
 	return nil
 }
 
@@ -170,7 +175,7 @@ func GetConfig() *config.Config {
 }
 
 // MCPAllowPrivateHosts reports whether self-hosted MCP servers on private
-// networks are permitted (RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS). It is nil-safe:
+// networks are permitted (ALLOW_ANY_HOST). It is nil-safe:
 // an uninitialized global config yields false so callers fail closed instead
 // of panicking on a nil *config.Config.
 func MCPAllowPrivateHosts() bool {

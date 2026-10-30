@@ -26,8 +26,7 @@
 // Concurrency: a single sync.RWMutex guards every map in CanvasState
 // (plan §2.5 — "start simple"). Helper methods (GetVar / SetVar /
 // ReadVars / Snapshot / etc.) lock internally; callers should not
-// acquire OutputsLock unless they have a specific reason to extend a
-// critical section.
+// access the exported map fields directly from concurrent run paths.
 package runtime
 
 import (
@@ -717,6 +716,64 @@ func (s *CanvasState) SetGlobal(key string, val any) {
 		s.Globals = make(map[string]any)
 	}
 	s.Globals[key] = val
+}
+
+// GetSys reads a value from the sys namespace.
+func (s *CanvasState) GetSys(key string) (any, bool) {
+	if s == nil {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value, ok := s.Sys[key]
+	return value, ok
+}
+
+// GetSysString reads a string value from the sys namespace.
+func (s *CanvasState) GetSysString(key string) (string, bool) {
+	value, ok := s.GetSys(key)
+	if !ok {
+		return "", false
+	}
+	text, ok := value.(string)
+	return text, ok
+}
+
+// SetSys writes a value into the sys namespace.
+func (s *CanvasState) SetSys(key string, value any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	s.Sys[key] = value
+}
+
+// GetEnv reads a value from the env namespace.
+func (s *CanvasState) GetEnv(key string) (any, bool) {
+	if s == nil {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value, ok := s.Env[key]
+	return value, ok
+}
+
+// SetEnv writes a value into the env namespace.
+func (s *CanvasState) SetEnv(key string, value any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Env == nil {
+		s.Env = make(map[string]any)
+	}
+	s.Env[key] = value
 }
 
 // GetRetrievalChunks returns a snapshot of the chunks recorded in

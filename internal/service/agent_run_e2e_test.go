@@ -18,7 +18,7 @@
 // production chain.
 //
 // These tests pin the production chain end-to-end: loadCanvasForUser
-// → versionDAO.GetLatest → decodeCanvasFromDSL → canvas.Compile →
+// → draft DSL resolution → decodeCanvasFromDSL → canvas.Compile →
 // cc.Workflow.Invoke → orchestrator answer extraction. They also
 // cover the boot-wiring surface (Kvrocks-backed CheckPointStore +
 // RunTracker) and the failure paths (compile error, invoke
@@ -61,14 +61,16 @@ import (
 )
 
 // makeCanvasWithDSL inserts a canvas + tenant + user + a published
-// version whose DSL is the supplied map. The returned version id is
-// what RunAgent consumes when the caller does not pass an explicit
-// version (it falls through to GetLatest).
+// version, with the supplied DSL on both the canvas row (the editable
+// draft) and the version row. RunAgent without an explicit version id
+// executes the draft, so the canvas-row DSL is what these tests run.
 func makeCanvasWithDSL(t *testing.T, canvasID, userID, tenantID, versionID string, dsl map[string]any) {
 	t.Helper()
-	dao.DB.Create(&entity.User{ID: userID, Nickname: "owner", Email: userID + "@test.com"})
-	dao.DB.Create(&entity.Tenant{ID: tenantID, Name: sptr(tenantID)})
-	dao.DB.Create(&entity.UserTenant{ID: tenantID + "-" + userID, UserID: userID, TenantID: tenantID, Role: "owner", Status: sptr("1")})
+	dao.DB.Where("id = ?", userID).FirstOrCreate(&entity.User{ID: userID, Nickname: "owner", Email: userID + "@test.com"})
+	dao.DB.Where("id = ?", tenantID).FirstOrCreate(&entity.Tenant{ID: tenantID, Name: sptr(tenantID)})
+	dao.DB.Where("user_id = ? AND tenant_id = ?", userID, tenantID).FirstOrCreate(&entity.UserTenant{
+		ID: tenantID + "-" + userID, UserID: userID, TenantID: tenantID, Role: "owner", Status: sptr("1"),
+	})
 	dao.DB.Create(&entity.UserCanvas{
 		ID:             canvasID,
 		UserID:         userID,
@@ -77,6 +79,7 @@ func makeCanvasWithDSL(t *testing.T, canvasID, userID, tenantID, versionID strin
 		Permission:     "me",
 		CanvasType:     sptr("agent"),
 		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap(dsl),
 	})
 	dao.DB.Create(&entity.UserCanvasVersion{
 		ID:           versionID,
@@ -207,7 +210,7 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 		"user-1",
 		"canvas-hello",
 		"session-hello",
-		"", // latest version
+		"", // draft DSL
 		"world", nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
@@ -284,11 +287,10 @@ func TestRunAgent_SessionHistoryFeedsSysHistoryAndPersists(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-history", "user-1", "tenant-1", "v-history", dsl)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-history",
-		DialogID:  "canvas-history",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       "session-history",
+		DialogID: "canvas-history",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -469,12 +471,11 @@ func TestRunAgent_RejectsSessionOwnedByAnotherUser(t *testing.T) {
 	makeCanvasWithDSL(t, "canvas-session-owner", "user-1", "tenant-1", "v-session-owner", dsl)
 	foreignMessage := json.RawMessage(`[{"role":"assistant","content":"foreign"}]`)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-foreign",
-		DialogID:  "canvas-session-owner",
-		UserID:    "user-2",
-		Message:   foreignMessage,
-		Reference: json.RawMessage(`[]`),
-		DSL:       entity.JSONMap(dsl),
+		ID:       "session-foreign",
+		DialogID: "canvas-session-owner",
+		UserID:   "user-2",
+		Message:  foreignMessage,
+		DSL:      entity.JSONMap(dsl),
 	}); err != nil {
 		t.Fatalf("create foreign session: %v", err)
 	}
@@ -546,20 +547,21 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 					"component_name": "Begin",
 					"params":         map[string]any{},
 				},
-				"downstream": []any{"message_0"},
+				"downstream": []any{"user_fill_up_0"},
 			},
 			"message_0": map[string]any{
 				"obj": map[string]any{
 					"component_name": "Message",
 					"params":         map[string]any{"text": "got: {{user_fill_up_0@user_input}}"},
 				},
-				"upstream": []any{"begin_0", "user_fill_up_0"},
+				"upstream": []any{"user_fill_up_0"},
 			},
 			"user_fill_up_0": map[string]any{
 				"obj": map[string]any{
 					"component_name": "UserFillUp",
 					"params":         map[string]any{"enable_tips": true},
 				},
+				"upstream":   []any{"begin_0"},
 				"downstream": []any{"message_0"},
 			},
 		},
@@ -567,12 +569,11 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-fillup", "user-1", "tenant-1", "v-fillup", dsl)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-fillup",
-		DialogID:  "canvas-fillup",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-		DSL:       entity.JSONMap(dsl),
+		ID:       "session-fillup",
+		DialogID: "canvas-fillup",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
+		DSL:      entity.JSONMap(dsl),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -704,12 +705,11 @@ func TestRunAgent_InterruptPersistsPartialAssistantHistory(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-partial", "user-1", "tenant-1", "v-partial", dsl)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-partial",
-		DialogID:  "canvas-partial",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-		DSL:       entity.JSONMap(dsl),
+		ID:       "session-partial",
+		DialogID: "canvas-partial",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
+		DSL:      entity.JSONMap(dsl),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -780,6 +780,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 					"component_name": "UserFillUp",
 					"params":         map[string]any{"enable_tips": true},
 				},
+				"upstream":   []any{"begin_0"},
 				"downstream": []any{"message_0"},
 			},
 			"message_0": map[string]any{
@@ -787,7 +788,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 					"component_name": "Message",
 					"params":         map[string]any{"text": "got: {{user_fill_up_0@user_input}}"},
 				},
-				"upstream": []any{"begin_0", "user_fill_up_0"},
+				"upstream": []any{"user_fill_up_0"},
 			},
 		},
 		"path": []any{"begin_0", "user_fill_up_0", "message_0"},
@@ -1908,7 +1909,7 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 		"user-1",
 		"canvas-cp",
 		"session-cp",
-		"", // latest version
+		"", // draft DSL
 		"world", nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)

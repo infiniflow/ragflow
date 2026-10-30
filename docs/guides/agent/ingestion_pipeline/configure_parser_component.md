@@ -10,131 +10,63 @@ sidebar_custom_props: {
 
 # Configure the Parser Component
 
-The **Parser** component converts your files into structured text while preserving layout, tables, headers and other formatting.
+**Parser** extracts document content into structured items for a downstream Chunker. The available controls depend on the file category and the selected parser.
 
-It supports 8 file categories and more than 23 formats, including PDF, images, audio, video, email, spreadsheets (Excel), Word, PPT, HTML and Markdown.
+1. Open an editable pipeline under **Agent > Ingestion pipeline** and click **Parser**.
+2. Configure the categories your files require: **PDF**, **Spreadsheet**, **Image**, **Email**, **Markdown**, **Text & Code**, **HTML**, **DOC**, **DOCX**, **PPTX**, and **Audio**. There is no separate Video category in the current panel.
+3. Review the shared vision settings and the options for each required category below.
 
-![Select parser file format](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_2.jpg)
+## Vision Enhancement
 
-Key configurations:
+**Enable vision enhancement** is a shared switch at the top of the Parser panel. Turn it on to generate image descriptions, then select **Model** and review **System prompt**. Configure an accessible vision model first if the required model is not listed.
 
-For PDF files, select one of the following:
+This switch is separate from **OCR** under Image: OCR recognizes text, while vision enhancement generates descriptions. Keep at least one enabled for image processing.
 
-- **DeepDoc** (default): RAGFlow's built-in model. Best suited for scanned documents or complex layouts with tables.
-- **MinerU**: Industry-leading for complex elements such as mathematical formulas and complex layouts.
-- **Naive**: Simple text extraction. Use it for clean, text-based PDFs without complex elements.
+## PDF
+
+| Setting | How to use it |
+| --- | --- |
+| Detect multi-column layout | Enable for documents whose text is arranged in multiple columns. Check the reading order on sample pages. |
+| Remove original table of contents | Remove the document's existing table of contents from the parsed content when it is not needed for retrieval. |
+| Remove header and footer | Exclude repeated page headers and footers. |
+| Parser | Choose the parsing method or a configured model. See the choices below. |
+| Page ranges | Enter the start and end pages to process. Use **Add page** to add another range. |
+
+The **Parser** dropdown includes **DeepDOC**, **Naive**, **Docling**, **OpenDataLoader**, **TCADP Parser**, and **MonkeyOCRv2**, followed by available configured models grouped by provider. Choose a parser appropriate for your deployment and document layout, and validate its results on a sample file. **Naive** provides simple text extraction for text-based PDFs.
 
 ![Configure PDF parser method](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_1.jpg)
 
-### MinerU formula and table controls
+Some selections expose additional controls:
 
-When a MinerU model is selected for PDF, **Formula recognition** and **Table
-recognition** are saved on that Parser component's PDF setup as
-`mineru_formula_enable` and `mineru_table_enable`. Both default to enabled when
-omitted; an explicit `false` requests disabling the corresponding control,
-subject to the API and backend capabilities below.
+- **Language** appears for parsers that support this setting. Select the document language when the field is shown.
+- **TCADP Parser** shows **Table result type** (Markdown or HTML) and **Markdown image response type** (URL or Text).
+- A configured **MinerU** model exposes **Formula recognition** and **Table recognition**. These are conditional model settings; MinerU is not a fixed entry in the parser catalog. Add and configure the service in model settings before selecting its model.
 
-- **`/file_parse`, pipeline and VLM backends:** RAGFlow forwards both controls
-  as the `formula_enable` and `table_enable` multipart fields.
-- **`/file_parse`, hybrid backends:** Table recognition follows the table
-  control. The formula control applies to **inline formulas only**; MinerU
-  still recognizes block formulas.
-- **V1 upload/job API:** This protocol has no formula/table switches. Omitted
-  or enabled controls keep the existing job request. Disabling either control
-  fails with an explicit error before a file is uploaded or a job is created;
-  use a `/file_parse` server when these controls are required.
+Configured OCR and vision models depend on the pipeline owner's available providers and permissions. If a required model is missing or parsing fails, check its availability and connection settings. Selecting a parser does not configure its external service.
 
-For example, the component-scoped PDF configuration below disables formulas
-while retaining table recognition:
+## Image
 
-```json
-{
-  "pdf": {
-    "parse_method": "<tenant MinerU model ID>",
-    "mineru_formula_enable": false,
-    "mineru_table_enable": true
-  }
-}
-```
+1. Leave **OCR** enabled when you need to recognize text in images.
+2. Select **OCR model**. The panel offers the built-in DeepDoc option and configured OCR models where available.
+3. To generate image descriptions, enable the shared **Enable vision enhancement** switch at the top of the panel and configure its model and prompt.
 
-### Tenant SoMark and OpenDataLoader models
+To turn OCR off, enable vision enhancement first. The panel rejects a configuration with both disabled.
 
-The Go Parser can use an enrolled **SoMark** or **OpenDataLoader** OCR model
-by tenant-model ID or by `model@instance@provider` reference, for example:
+![Parser image OCR settings and shared vision enhancement](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_parser_image_ocr.jpg)
 
-```json
-{
-  "pdf": {
-    "parse_method": "SoMark-model@production@SoMark"
-  }
-}
-```
+## Other File Categories
 
-`layout_recognizer` also accepts a reference. Selection follows the existing PDF
-model rule: a model reference in `parse_method` takes precedence; otherwise the
-reference in `layout_recognizer` is used.
+| Category | Configuration |
+| --- | --- |
+| Spreadsheet | Choose **Parser**. The fixed choices are DeepDOC and TCADP Parser; configured models may also be listed. TCADP Parser exposes the table and image response controls described above. |
+| Email | Select the required entries in **Field**: `from`, `to`, `cc`, `bcc`, `date`, `subject`, `body`, and `attachments`. |
+| Markdown / Text & Code | These sections have no additional parsing controls in the current panel. |
+| HTML / DOC / DOCX | Set **Remove header and footer** as required. |
+| PPTX | Choose **Parser**. The fixed choices are DeepDOC and TCADP Parser; configured models may also be listed. TCADP Parser exposes its table and image response controls. |
+| Audio | Select **Model** for speech recognition. Configure an accessible speech-to-text model first if none is available. |
 
-The selected model and instance must be active, OCR-capable and owned by the
-current tenant/provider. The Parser resolves the instance endpoint and key on
-each execution, so credential changes apply without resaving the pipeline.
-SoMark supports ordinary instance key/base-URL storage; OpenDataLoader also
-supports its provider-card JSON configuration, including nested `api_key` maps.
+## Output and Validation
 
-For an explicit reference, a missing endpoint, inaccessible/disabled model or
-invalid instance configuration is an error. The Parser never substitutes another
-instance, a global environment credential or a generic VLM. An empty optional
-key remains empty. Transport SSRF protections still apply.
+**Output** displays `json` as an array of objects. This is the node's output definition, not an output selector. Connect **Token Chunker** or **Title Chunker** after Parser to split the parsed items into `chunks`.
 
-SoMark's non-secret per-model format/feature settings supply defaults; explicit
-pipeline options override them. An explicit `false` is retained. Resolved
-credentials stay on the per-run parser object, not in saved pipeline settings.
-
-Bare engine names (`somark`, `opendataloader`) continue to use their existing
-parser-specific setup/environment configuration.
-
-### Other file types
-
-For image files:
-
-- **OCR** is on by default. **OCR model** starts with **DeepDoc** for local
-  OCR. Select an added **PaddleOCR** or **PaddleOCR.local** model to use
-  that tenant model's instance instead; select **DeepDoc** again to return to
-  local OCR.
-- If the model list cannot be loaded, the field displays an error and preserves
-  the saved selection. A successful empty list is shown separately; **DeepDoc**
-  remains available in either case.
-- Turning **OCR** off skips both local and selected-model OCR without clearing
-  the saved selection. **Enable vision enhancement** independently controls VLM
-  descriptions: selecting an OCR model never enables vision enhancement.
-- SVG files have their document text read directly; they are not submitted to
-  PaddleOCR or a VLM.
-- Image attachments and extracted text continue through the picture pipeline's
-  OneChunker and Tokenizer. An unavailable, disabled, inaccessible, or failing
-  selected model is reported in Parser warnings, without falling back to another
-  OCR instance. An image with no OCR text or vision description has no searchable
-  text and is discarded by the Tokenizer.
-
-For Go Parser configuration, the image family stores `ocr_enabled` and optional
-`ocr_model_id` (an enrolled tenant model ID, not a provider name). An omitted or
-empty `ocr_model_id` keeps local OCR. The selected model must be an active OCR
-model on an active PaddleOCR instance belonging to the pipeline's tenant.
-Self-hosted instances need a configured base URL. A cloud instance without one
-uses the public catalog endpoint and logs a warning with tenant, model and
-instance IDs, not credentials. Server-wide endpoint environment variables do not
-replace an explicitly selected instance.
-
-For email files:
-
-- Select specific fields to parse, such as `subject` and `body`, for precise extraction.
-
-For spreadsheets:
-
-- Output in HTML format, preserving row and column structure.
-
-For Word/PPT:
-
-- Output in JSON format, preserving document hierarchy, such as headings, paragraphs and slides.
-
-For text and markup (HTML/MD):
-
-- Formatting tags are automatically removed and clean text is output.
+Click **Save draft**, resolve any **Checklist** issues, publish a version, and [validate it in a test Dataset](./test_run.md). Check extracted text, reading order, tables, and image descriptions for the file types and features you use.

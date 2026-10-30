@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -127,6 +127,7 @@ class DataSet(Base):
         import time
 
         terminal_states = {"DONE", "FAIL", "CANCEL"}
+        ingestion_terminal_states = {"COMPLETED": "DONE", "FAILED": "FAIL", "STOPPED": "CANCEL"}
         interval_sec = 1
         pending = set(document_ids)
         finished = []
@@ -136,7 +137,11 @@ class DataSet(Base):
                 if not docs:
                     raise RuntimeError(f"Document {doc_id} not found while waiting for parsing to finish")
                 doc = docs[0]
-                if isinstance(doc.run, str) and doc.run.upper() in terminal_states:
+                status = ingestion_terminal_states.get(doc.ingestion_status)
+                if status:
+                    finished.append((doc_id, status, doc.chunk_count, doc.token_count))
+                    pending.discard(doc_id)
+                elif isinstance(doc.run, str) and doc.run.upper() in terminal_states:
                     finished.append((doc_id, doc.run, doc.chunk_count, doc.token_count))
                     pending.discard(doc_id)
                 elif float(doc.progress or 0.0) >= 1.0:

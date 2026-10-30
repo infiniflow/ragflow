@@ -26,9 +26,14 @@ import (
 	excel "github.com/jloor/go-excel-reader"
 )
 
-var compoundDocumentSignature = []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}
+// CompoundDocumentSignature is the OLE compound-document magic
+// (D0 CF 11 E0 ...), the on-disk container for legacy BIFF .xls.
+// Shared with the tag source reader (internal/ingestion/component/tag_source.go),
+// which applies the same magic check to legacy .xls tag files.
+var CompoundDocumentSignature = []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}
 
 type XLSParser struct {
+	textOnly                       bool
 	ParseMethod                    string
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
@@ -93,12 +98,20 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		sheetsCount int
 		err         error
 	)
-	if bytes.HasPrefix(data, compoundDocumentSignature) {
+	if bytes.HasPrefix(data, CompoundDocumentSignature) {
+		// BIFF8 extraction reads cell text only; the drawing layer is not
+		// parsed, so no image can reach the media cache from this branch.
 		items, sheetsCount, err = parseBIFF8Bytes(ctx, data)
 	} else {
-		mediaBudget := newEmbeddedMediaBudget()
-		items, warnings, sheetsCount, err = parseXLSXBytes(data, mediaBudget)
-		warnings = append(warnings, mediaBudget.warnings()...)
+		var sink *officeMediaSink
+		if !p.textOnly {
+			sink = newOfficeMediaSink(ctx, officeMediaFormatXLSX)
+		}
+		items, warnings, sheetsCount, err = parseXLSXBytes(data, sink)
+		if err == nil && sink != nil && sink.err != nil {
+			return ParseResult{Err: sink.err}
+		}
+		warnings = append(warnings, sink.warnings()...)
 	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
@@ -131,7 +144,7 @@ func parseBIFF8Bytes(ctx context.Context, data []byte) ([]map[string]any, int, e
 		if err := ctx.Err(); err != nil {
 			return nil, sheetCount, err
 		}
-		items = append(items, buildSheetItems(records, reader.SheetName(), sheetIndex+1, headerRow, dataRows, nil)...)
+		items = append(items, buildSheetItems(records, reader.SheetName(), sheetIndex+1, headerRow, dataRows, nil, nil)...)
 	}
 	if err := reader.Err(); err != nil {
 		return nil, sheetCount, fmt.Errorf("read BIFF workbook: %w", err)
@@ -140,6 +153,10 @@ func parseBIFF8Bytes(ctx context.Context, data []byte) ([]map[string]any, int, e
 }
 
 func readBIFF8Records(ctx context.Context, reader excel.Reader) ([][]string, []int, int) {
+	// The BIFF reader exposes cell values but not merged ranges, so .xls rows
+	// are emitted without ColSpan/RowSpan geometry. A vertical merge in a
+	// legacy workbook therefore stays a dense row with an empty slave cell;
+	// xlsx is the format that carries full merge geometry into TableData.
 	type numberedRow struct {
 		number int
 		cells  []string
@@ -152,7 +169,7 @@ func readBIFF8Records(ctx context.Context, reader excel.Reader) ([][]string, []i
 		}
 		cells := make([]string, reader.FieldCount())
 		for col := range cells {
-			cells[col] = spreadsheetCellString(reader.GetValue(col))
+			cells[col] = SpreadsheetCellString(reader.GetValue(col))
 		}
 		if rowIsEmpty(cells) {
 			continue
@@ -174,7 +191,10 @@ func readBIFF8Records(ctx context.Context, reader excel.Reader) ([][]string, []i
 	return records, dataRows, rows[0].number
 }
 
-func spreadsheetCellString(value any) string {
+// SpreadsheetCellString renders one BIFF cell as text: times use RFC3339,
+// nil is empty, everything else is Sprint'd and trimmed by the caller.
+// Shared with the tag source reader (internal/ingestion/component/tag_source.go).
+func SpreadsheetCellString(value any) string {
 	switch value := value.(type) {
 	case nil:
 		return ""

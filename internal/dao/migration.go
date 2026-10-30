@@ -19,10 +19,12 @@ package dao
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -80,7 +82,38 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to migrate tenant model data: %w", err)
 	}
 
+	// Drop the unused tenant-level model group tables. Failover is configured
+	// per conversation instead, so nothing reads or writes these any more.
+	if err := dropModelGroupTables(ctx, db); err != nil {
+		return fmt.Errorf("failed to drop tenant model group tables: %w", err)
+	}
+
 	common.Info("All manual migrations completed successfully")
+	return nil
+}
+
+// dropModelGroupTables removes tenant_model_group and
+// tenant_model_group_mapping.
+//
+// The tables were created by AutoMigrate for a tenant-scoped failover-group
+// feature that was never shipped: no service read them, and the per-conversation
+// failover path replaced the concept entirely. Their Go definitions are gone, so
+// without this they would linger in every existing database with no way to remove
+// them. AutoMigrate cannot express a drop, hence the explicit migration.
+//
+// Guarded by HasTable so a database that never had them is a no-op, and
+// mapping-first because it references the group table.
+func dropModelGroupTables(ctx context.Context, db *gorm.DB) error {
+	migrator := db.WithContext(ctx).Migrator()
+	for _, table := range []string{"tenant_model_group_mapping", "tenant_model_group"} {
+		if !migrator.HasTable(table) {
+			continue
+		}
+		if err := migrator.DropTable(table); err != nil {
+			return fmt.Errorf("drop %s: %w", table, err)
+		}
+		common.Info("Dropped unused table", zap.String("table", table))
+	}
 	return nil
 }
 
@@ -231,17 +264,8 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 		return nil
 	}
 
-	var duplicateCount int64
-	if err = db.WithContext(ctx).Raw(`
-		SELECT COUNT(*) FROM (
-			SELECT document_id FROM ingestion_task GROUP BY document_id HAVING COUNT(*) > 1
-		) AS duplicates
-	`).Scan(&duplicateCount).Error; err != nil {
+	if err = repairDuplicateIngestionTasks(ctx, db); err != nil {
 		return err
-	}
-	if duplicateCount > 0 {
-		common.Warn("Found duplicate document_id values in ingestion_task, cannot add unique index", zap.Int64("count", duplicateCount))
-		return nil
 	}
 
 	// A non-unique index under the same name would block the unique one.
@@ -250,6 +274,132 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 	}
 
 	return addUniqueIndex(ctx, db, "ingestion_task", indexName, columns)
+}
+
+// repairDuplicateIngestionTasks keeps the task selected by GetByDocumentID and
+// removes older terminal rows before the unique document index is created.
+// Active duplicates and terminal rows whose bound pipeline log is still open
+// require operator intervention because deleting them could orphan a worker or
+// run ledger.
+func repairDuplicateIngestionTasks(ctx context.Context, db *gorm.DB) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var documentIDs []string
+		if err := tx.Model(&entity.IngestionTask{}).
+			Select("document_id").
+			Group("document_id").
+			Having("COUNT(*) > 1").
+			Order("document_id").
+			Pluck("document_id", &documentIDs).Error; err != nil {
+			return fmt.Errorf("find duplicate ingestion_task.document_id values: %w", err)
+		}
+		if len(documentIDs) == 0 {
+			return nil
+		}
+
+		hasPipelineLogID := tx.Migrator().HasColumn(&entity.IngestionTask{}, "pipeline_log_id")
+		columns := "id, document_id, status, create_time"
+		if hasPipelineLogID {
+			columns += ", pipeline_log_id"
+		}
+
+		var staleTasks []entity.IngestionTask
+		for _, documentID := range documentIDs {
+			var tasks []entity.IngestionTask
+			if err := tx.Model(&entity.IngestionTask{}).
+				Select(columns).
+				Where("document_id = ?", documentID).
+				Order("COALESCE(create_time, 0) DESC").
+				Order("id DESC").
+				Find(&tasks).Error; err != nil {
+				return fmt.Errorf("load duplicate ingestion tasks for document %s: %w", documentID, err)
+			}
+			if len(tasks) < 2 {
+				continue
+			}
+			for _, task := range tasks[1:] {
+				if !common.IsTerminalTaskStatus(task.Status) {
+					return fmt.Errorf(
+						"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s is %s; stop ingestors and resolve the duplicate task before upgrading",
+						task.ID, task.DocumentID, task.Status,
+					)
+				}
+				if hasPipelineLogID && task.PipelineLogID != nil && *task.PipelineLogID != "" {
+					if err := requireSettledDuplicateTaskRun(tx, task); err != nil {
+						return err
+					}
+				}
+				staleTasks = append(staleTasks, task)
+			}
+		}
+
+		for _, task := range staleTasks {
+			result := tx.Where("id = ? AND status = ?", task.ID, task.Status).
+				Delete(&entity.IngestionTask{})
+			if result.Error != nil {
+				return fmt.Errorf("delete duplicate ingestion task %s: %w", task.ID, result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf(
+					"cannot delete duplicate ingestion task %s for document %s: task changed during migration",
+					task.ID, task.DocumentID,
+				)
+			}
+		}
+		common.Warn(
+			"Removed duplicate terminal ingestion tasks before adding the unique document index",
+			zap.Int("rows", len(staleTasks)),
+		)
+		return nil
+	})
+}
+
+func requireSettledDuplicateTaskRun(tx *gorm.DB, task entity.IngestionTask) error {
+	if !tx.Migrator().HasTable("pipeline_operation_log") {
+		return fmt.Errorf(
+			"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s references pipeline log %s, but pipeline_operation_log is missing",
+			task.ID, task.DocumentID, *task.PipelineLogID,
+		)
+	}
+
+	var operationStatus string
+	err := tx.Table("pipeline_operation_log").
+		Select("operation_status").
+		Where("id = ? AND document_id = ?", *task.PipelineLogID, task.DocumentID).
+		Take(&operationStatus).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf(
+			"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s references missing pipeline log %s",
+			task.ID, task.DocumentID, *task.PipelineLogID,
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("load pipeline log %s for duplicate task %s: %w", *task.PipelineLogID, task.ID, err)
+	}
+	if isOpenPipelineOperationStatus(operationStatus) {
+		return fmt.Errorf(
+			"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s is bound to open pipeline log %s; settle the log before upgrading",
+			task.ID, task.DocumentID, *task.PipelineLogID,
+		)
+	}
+	if !isTerminalPipelineOperationStatus(operationStatus) {
+		return fmt.Errorf(
+			"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s is bound to pipeline log %s with unknown status %q",
+			task.ID, task.DocumentID, *task.PipelineLogID, operationStatus,
+		)
+	}
+	return nil
+}
+
+func isOpenPipelineOperationStatus(status string) bool {
+	return slices.Contains(expandPipelineOperationStatuses(OpenPipelineOperationStatuses()), status)
+}
+
+func isTerminalPipelineOperationStatus(status string) bool {
+	return slices.Contains(expandPipelineOperationStatuses([]string{
+		string(entity.TaskStatusCancel),
+		string(entity.TaskStatusDone),
+		string(entity.TaskStatusFail),
+	}), status)
 }
 
 // migrateIngestionTaskPipelineLogID adds ingestion_task.pipeline_log_id when

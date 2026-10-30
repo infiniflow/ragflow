@@ -35,6 +35,7 @@ export const mapModelKey = {
   rerank: 'Rerank',
   tts: 'TTS',
   ocr: 'OCR',
+  decision: 'Decision',
   scoring: 'Scoring',
 };
 
@@ -48,7 +49,8 @@ const orderMap: Record<ModelType, number> = {
   image2text: 6,
   vision: 6,
   ocr: 7,
-  scoring: 8,
+  decision: 8,
+  scoring: 9,
 };
 
 type ModelType =
@@ -61,6 +63,7 @@ type ModelType =
   | 'image2text'
   | 'vision'
   | 'ocr'
+  | 'decision'
   | 'scoring';
 
 export const sortModelTypes = (modelTypes: string[]) => {

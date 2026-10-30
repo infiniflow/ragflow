@@ -183,6 +183,40 @@ func TestMergeCaptions_TallTableCaptionNearEdgeAttaches(t *testing.T) {
 	}
 }
 
+// TestMergeCaptions_FarTableDoesNotOutrankEligibleTable locks the vertical
+// limit as a pre-filter. Ranking alone can hand the caption to a table just
+// past maxCaptionVGap (its combined distance is smaller because dx is tiny),
+// and the attachment predicate then rejects the whole search — although a
+// touching table with a large centre offset is in range. Distance: far table
+// 201pt gap + 16pt dx ≈ 40657; wide table 0pt gap + 266pt dx ≈ 70756.
+func TestMergeCaptions_FarTableDoesNotOutrankEligibleTable(t *testing.T) {
+	far := pdf.Section{
+		Text: "<table><tr><td>far</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 300, Right: 400, Top: 427, Bottom: 500}}}
+	wide := pdf.Section{
+		Text: "<table><tr><td>wide</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 200, Right: 1000, Top: 226, Bottom: 300}}}
+	caption := pdf.Section{
+		Text: "Table 2: Wide", LayoutType: pdf.DLALabelTableCaption,
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 280, Right: 388, Top: 213, Bottom: 226}}}
+	result := MergeCaptions([]pdf.Section{far, wide, caption})
+	if len(result) != 2 {
+		t.Fatalf("expected 2 sections (two tables, caption consumed), got %d: %v", len(result), textsOf(result))
+	}
+	attached := false
+	for _, s := range result {
+		if strings.Contains(s.Text, "<caption>Table 2: Wide</caption>") {
+			attached = true
+			if !strings.Contains(s.Text, "wide") || strings.Contains(s.Text, "far") {
+				t.Errorf("caption attached to the wrong table: %q", s.Text)
+			}
+		}
+	}
+	if !attached {
+		t.Errorf("caption dropped because the out-of-range table won the ranking: %v", textsOf(result))
+	}
+}
+
 // TestMergeCaptions_CaptionOtherPageDoesNotAttach locks the page-scope guard:
 // a caption clearly ABOVE or BELOW a table's Y band on a DIFFERENT page must
 // NOT attach. The edge-distance alone is page-local-coordinate blind — a
@@ -407,12 +441,12 @@ func TestMergeCaptions_FigureCaptionKeptWithMarkerFigure(t *testing.T) {
 // table OR figure (nearest(tables)/nearest(figures), `elif fk`) and drops it
 // only when BOTH searches fail. Go used to search tables only and delete the
 // caption when none was reachable — losing text Python keeps, for English
-// body text AND for correctly-DLA-labeled "table caption" sections alike
+// text captions AND for correctly-DLA-labeled "table caption" sections alike
 // (language-independent; the figure here is deliberately neutral-text so the
 // figure-self-deletion bug cannot mask this path).
 func TestMergeCaptions_TableCaptionFallsBackToFigure(t *testing.T) {
 	for _, caption := range []pdf.Section{
-		{Text: "Table 1 shows revenue by category.", LayoutType: pdf.LayoutTypeText,
+		{Text: "Table 1: revenue by category.", LayoutType: pdf.LayoutTypeText,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 510, Bottom: 530}}},
 		{Text: "Quarterly revenue breakdown", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 510, Bottom: 530}}},
@@ -436,35 +470,156 @@ func TestMergeCaptions_TableCaptionFallsBackToFigure(t *testing.T) {
 	}
 }
 
-// TestMergeCaptions_EnglishTable1OpeningParagraphSwallowed pins the SHARED
-// (Python-identical) heuristic boundary of the CJK fix: a body paragraph that
-// STARTS with "Table N" is classified a caption by BOTH implementations
-// (Python's re.match is start-anchored too) and consumed into the table's
-// <caption>. The text is retained — misplacement parity with Python, not a
-// Go regression; only the CJK false-positive class was fixed.
-func TestMergeCaptions_EnglishTable1OpeningParagraphSwallowed(t *testing.T) {
+// TestMergeCaptions_EnglishTableCrossReferenceStaysWithRealCaption models the
+// RAG-paper sample from #20672: a real "Table 9: …" caption and a body sentence
+// "Table 9 reports …" both sit near the table. Only the real caption may join
+// the <caption>; the body sentence stays its own section, and the table's
+// highlight geometry covers the caption only.
+func TestMergeCaptions_EnglishTableCrossReferenceStaysWithRealCaption(t *testing.T) {
+	const (
+		caption = "Table 9: Fine-grained retrieval recall for the adaptive expansion ablation."
+		body    = "Table 9 reports the adaptive expansion ablation, as shown in Figure 5."
+	)
 	sections := []pdf.Section{
 		{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
-		{Text: "Table 1 shows revenue by category for the fiscal year.", LayoutType: pdf.LayoutTypeText,
+		{Text: caption, LayoutType: pdf.LayoutTypeText,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 170, Bottom: 190}}},
+		{Text: body, LayoutType: pdf.LayoutTypeText,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 410, Bottom: 430}}},
+	}
+	result := MergeCaptions(sections)
+	if len(result) != 2 {
+		t.Fatalf("expected table + body sentence, got %d sections: %v", len(result), textsOf(result))
+	}
+	var table *pdf.Section
+	foundBody := false
+	for i := range result {
+		if result[i].LayoutType == pdf.LayoutTypeTable {
+			table = &result[i]
+		}
+		if result[i].LayoutType == pdf.LayoutTypeText && result[i].Text == body {
+			foundBody = true
+		}
+	}
+	if table == nil || !strings.Contains(table.Text, "<caption>"+caption+"</caption>") {
+		t.Fatalf("real caption not attached to the table: %v", textsOf(result))
+	}
+	if !foundBody {
+		t.Errorf("cross-reference body sentence dropped or rewritten: %v", textsOf(result))
+	}
+	if len(table.Positions) != 2 || !hasBox(table.Positions, 170, 190) {
+		t.Errorf("table geometry must cover the caption box only, got %+v", table.Positions)
+	}
+	if hasBox(table.Positions, 410, 430) {
+		t.Errorf("body sentence box leaked into the table's highlight geometry: %+v", table.Positions)
+	}
+}
+
+// TestMergeCaptions_EnglishTable1OpeningParagraphKept locks the #20672
+// divergence from Python. Start-anchored pattern matching alone classified
+// "Table 1 shows revenue …" as a caption, and MergeCaptions then moved the body
+// sentence into the table's <caption> and deleted it as a standalone section.
+// The sentence now stays body text and the table receives no caption.
+func TestMergeCaptions_EnglishTable1OpeningParagraphKept(t *testing.T) {
+	const body = "Table 1 shows revenue by category for the fiscal year."
+	sections := []pdf.Section{
+		{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		{Text: body, LayoutType: pdf.LayoutTypeText,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 170, Bottom: 195}}},
 	}
 	result := MergeCaptions(sections)
+	if len(result) != 2 {
+		t.Fatalf("expected the body sentence and the table as separate sections, got %d: %v", len(result), textsOf(result))
+	}
+	found := false
 	for _, s := range result {
-		if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, "<caption>Table 1 shows revenue") {
-			return
+		if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, "<caption>") {
+			t.Errorf("body sentence consumed into <caption>: %v", textsOf(result))
+		}
+		if s.LayoutType == pdf.LayoutTypeText && s.Text == body {
+			found = true
 		}
 	}
-	t.Errorf("expected the start-anchored English paragraph consumed into <caption> (Python parity); sections = %v",
-		textsOf(result))
+	if !found {
+		t.Errorf("body sentence dropped or rewritten; sections = %v", textsOf(result))
+	}
+}
+
+// TestMergeCaptions_LabeledCrossReferenceStaysBodyText covers the DLA half of
+// #20672: a caption LABEL must not override the boundary rule, or MergeCaptions
+// injects the prose into the table's <caption> (sibling table present) or
+// deletes it outright (no table near).
+func TestMergeCaptions_LabeledCrossReferenceStaysBodyText(t *testing.T) {
+	const prose = "Table 1, we present the F1 scores and success rates for KNOWAGENT."
+	for _, label := range []string{pdf.DLALabelTableCaption, "table_caption"} {
+		withTable := []pdf.Section{
+			{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+			{Text: prose, LayoutType: label,
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 410, Bottom: 430}}},
+		}
+		result := MergeCaptions(withTable)
+		if len(result) != 2 {
+			t.Fatalf("label %q: expected table + prose, got %d sections: %v", label, len(result), textsOf(result))
+		}
+		for _, s := range result {
+			if strings.Contains(s.Text, "<caption>") {
+				t.Errorf("label %q: prose injected into <caption>: %v", label, textsOf(result))
+			}
+		}
+
+		noTable := []pdf.Section{
+			{Text: prose, LayoutType: label,
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 410, Bottom: 430}}},
+		}
+		result = MergeCaptions(noTable)
+		if len(result) != 1 || result[0].Text != prose {
+			t.Errorf("label %q: prose deleted when no table is near: %v", label, textsOf(result))
+		}
+	}
+}
+
+// TestMergeCaptions_ProperNounCrossReferenceLandsInCaption measures the cost of
+// the boundary rule's known limitation (see
+// TestCaptionKind_ProperNounContinuationIsCaption): the sentence is misread as a
+// caption and merged into the table's <caption> rather than dropped, so its
+// text stays in the output and indexed with the table. Pinning this keeps the
+// limitation honest: if a later change makes the no-target branch delete
+// captions again, this test turns RED and the trade-off has to be re-argued.
+func TestMergeCaptions_ProperNounCrossReferenceLandsInCaption(t *testing.T) {
+	const sentence = "Table 3 Smith et al. report the F1 scores."
+	sections := []pdf.Section{
+		{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		{Text: sentence, LayoutType: pdf.LayoutTypeText,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 170, Bottom: 195}}},
+	}
+	result := MergeCaptions(sections)
+	inCaption := false
+	for _, s := range result {
+		if s.LayoutType == pdf.LayoutTypeTable {
+			start := strings.Index(s.Text, "<caption>")
+			end := strings.Index(s.Text, "</caption>")
+			if start >= 0 && end > start && strings.Contains(s.Text[start+len("<caption>"):end], sentence) {
+				inCaption = true
+			}
+		} else if strings.Contains(s.Text, sentence) {
+			t.Errorf("misclassified sentence survived as a standalone section: %v", textsOf(result))
+		}
+	}
+	if !inCaption {
+		t.Errorf("misclassified sentence not placed in the table's <caption>; sections = %v", textsOf(result))
+	}
 }
 
 // TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach locks the figure-side
 // page-scope guard (go_bug figure-caption-cross-page-attached). Page-local
 // coordinates repeat on every page, so the figure search used to match on
-// page-local distance alone: here the page-2 caption's page-local centre is
-// CLOSER to the page-0 figure (dist²=13225) than to the page-2 figure it
-// belongs to (dist²=21025). The caption was therefore glued to the page-0
+// page-local gap alone: here the page-2 caption's page-local box is CLOSER to
+// the page-0 figure (50pt gap) than to the page-2 figure it belongs to (80pt
+// gap). The caption was therefore glued to the page-0
 // figure — pages away — and its own figure was left with no caption at all.
 func TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach(t *testing.T) {
 	sections := []pdf.Section{
@@ -641,8 +796,8 @@ func TestMergeCaptions_IdenticalBoxOtherPageNotChosen(t *testing.T) {
 func TestMergeCaptions_SamePageFigureBeatsPageLessNearer(t *testing.T) {
 	sections := []pdf.Section{
 		// page-less figure, much CLOSER to the caption than the same-page one:
-		// dist² 56 against the same-page figure's 6006, so distance alone would
-		// pick it.
+		// it overlaps the caption's Y band (edge gap 0) against the same-page
+		// figure's 20pt, so distance alone would pick it.
 		{Text: "page-less chart", LayoutType: pdf.LayoutTypeFigure, Image: "np",
 			Positions: []pdf.Position{{Left: 100, Right: 400, Top: 500, Bottom: 540}}},
 		{Text: "same-page chart", LayoutType: pdf.LayoutTypeFigure, Image: "sp",

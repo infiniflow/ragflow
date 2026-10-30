@@ -18,7 +18,6 @@ import {
   IAgentLogMessage,
   IAgentLogResponse,
 } from '@/interfaces/database/agent';
-import { IReferenceObject } from '@/interfaces/database/chat';
 import { formatDate } from '@/utils/date';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -50,6 +49,11 @@ const getEndOfToday = (): Date => {
 const AgentLogPage: React.FC = () => {
   const { t } = useTranslation();
   const { navigateToAgents, navigateToAgent } = useNavigatePage();
+  // Zero-arg wrapper: passing navigateToAgents straight to onClick would feed
+  // the click event into its canvasCategory parameter.
+  const handleBackToAgents = useCallback(() => {
+    navigateToAgents();
+  }, [navigateToAgents]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
   const { id: canvasId } = useParams();
   const init = {
@@ -252,7 +256,7 @@ const AgentLogPage: React.FC = () => {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink onClick={navigateToAgents}>
+              <BreadcrumbLink onClick={handleBackToAgents}>
                 {t('flow.agent')}
               </BreadcrumbLink>
             </BreadcrumbItem>
@@ -410,7 +414,6 @@ const AgentLogPage: React.FC = () => {
       <AgentLogDetailModal
         isOpen={openModal}
         message={modalData?.message as IAgentLogMessage[]}
-        reference={modalData?.reference as unknown as IReferenceObject}
         onClose={() => setOpenModal(false)}
       />
     </div>

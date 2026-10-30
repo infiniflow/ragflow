@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -304,6 +305,9 @@ func (c *AzureDevOpsConnector) checkSettings() error {
 	if c.batchSize <= 0 {
 		return fmt.Errorf("batch_size must be a positive integer")
 	}
+	if _, _, err := assertConnectorURLSafeHTTPS(c.baseURL); err != nil {
+		return fmt.Errorf("Invalid connector settings: unsafe Azure DevOps URL: %w", err)
+	}
 	return nil
 }
 
@@ -419,15 +423,26 @@ func (c *AzureDevOpsConnector) get(ctx context.Context, apiURL string, expectJSO
 	var lastErr error
 
 	for attempt := 0; attempt < azureDevOpsRetryTries; attempt++ {
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-		if err != nil {
-			return nil, err
+		timeout := 60 * time.Second
+		if c.httpClient != nil && c.httpClient.Timeout > 0 {
+			timeout = c.httpClient.Timeout
 		}
-		request.Header.Set("Accept", "application/json")
-		request.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(":"+c.pat)))
-
-		response, err := c.httpClient.Do(request)
+		response, err := connectorRequest(ctx, connectorRequestOptions{
+			Method: http.MethodGet,
+			RawURL: apiURL,
+			Headers: map[string]string{
+				"Accept":        "application/json",
+				"Authorization": "Basic " + base64.StdEncoding.EncodeToString([]byte(":"+c.pat)),
+			},
+			Timeout:  timeout,
+			Base:     c.httpClient,
+			Validate: assertConnectorURLSafeHTTPS,
+		})
 		if err != nil {
+			var unsafeErr *connectorUnsafeURLError
+			if errors.As(err, &unsafeErr) {
+				return nil, unsafeErr.Err
+			}
 			lastErr = err
 			if sleepErr := sleepForAzureDevOps(ctx, delay); sleepErr != nil {
 				return nil, sleepErr

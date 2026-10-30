@@ -131,7 +131,7 @@ func TestIngest_ApplyKB_RealDatasetAPIChain(t *testing.T) {
 		t.Fatalf("seed document: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	enabled := true
 	if _, code, err := newDatasetService().UpdateMetadataConfig(ctx, "kb-1", "user-1", &service.MetadataConfigRequest{
 		Enabled:         &enabled,
@@ -246,7 +246,7 @@ func TestIngest_ApplyKB_DisabledDatasetAPIChain(t *testing.T) {
 		t.Fatalf("seed document: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	disabled := false
 	if _, code, err := newDatasetService().UpdateMetadataConfig(ctx, "kb-1", "user-1", &service.MetadataConfigRequest{
 		Enabled: &disabled,
@@ -313,7 +313,7 @@ func TestIngest_ApplyKB_RealCreatedDatasetChain(t *testing.T) {
 		t.Fatalf("set membership embd id: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	parserID := "general"
 	parseType := 1
 	team := "team"

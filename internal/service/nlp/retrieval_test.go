@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -76,6 +77,82 @@ func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 	}
 }
 
+func TestRetrievalRejectsPaginationWithRerankModel(t *testing.T) {
+	service := NewRetrievalService(nil, &dao.DocumentDAO{})
+	top := 10
+	threshold := 0.5
+	vectorWeight := 0.3
+
+	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   2,
+		PageSize:               10,
+		RerankModel:            modelModule.NewRerankModel(&captureDriver{}, nil, nil, 0),
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+	})
+	if err == nil || !strings.Contains(err.Error(), "Pagination is not supported") {
+		t.Fatalf("error = %v, want pagination rejection when a rerank model is set", err)
+	}
+}
+
+func TestRetrievalRerankCandidatesGuardPrecedesPaginationGuard(t *testing.T) {
+	service := NewRetrievalService(nil, &dao.DocumentDAO{})
+	top := 10
+	threshold := 0.5
+	vectorWeight := 0.3
+
+	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   7,
+		PageSize:               10,
+		RerankModel:            modelModule.NewRerankModel(&captureDriver{}, nil, nil, 0),
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+	})
+	if err == nil || !strings.Contains(err.Error(), "rerank_candidates_count") {
+		t.Fatalf("error = %v, want the candidates-window guard to reject before the pagination guard", err)
+	}
+}
+
+func TestRetrievalFirstPageWithRerankModelCallsReranker(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	driver := &captureDriver{}
+	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
+		{"id": "chunk-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9},
+	}}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	top := 10
+	threshold := 0.0
+	vectorWeight := 0.3
+	aggs := false
+
+	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1,
+		PageSize:               1,
+		RerankModel:            modelModule.NewRerankModel(driver, nil, nil, 0),
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+	})
+	if err != nil {
+		t.Fatalf("Retrieval failed on page 1 with a rerank model: %v", err)
+	}
+	if len(driver.documents) != 1 {
+		t.Fatalf("reranker received %d documents, want 1", len(driver.documents))
+	}
+}
+
 func TestRetrievalPreservesCompilationKindWhenPresent(t *testing.T) {
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
@@ -114,6 +191,164 @@ func TestRetrievalPreservesCompilationKindWhenPresent(t *testing.T) {
 	}
 	if _, ok := result.Chunks[1]["compile_kwd"]; ok {
 		t.Fatalf("ordinary chunk unexpectedly has compile_kwd: %#v", result.Chunks[1])
+	}
+}
+
+// TestRetrievalProjectsRankFeatureFields pins the source projection. The
+// reranker reads pagerank_fea and tag_feas off Field, and Field is the engine's
+// projection of exactly SelectFields, so both must be requested.
+func TestRetrievalProjectsRankFeatureFields(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
+		{"id": "chunk-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9},
+	}}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	threshold := 0.0
+	vectorWeight := 1.0
+	aggs := false
+	if _, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1,
+		PageSize:               1,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+	}); err != nil {
+		t.Fatalf("Retrieval failed: %v", err)
+	}
+	if len(docEngine.selectedFields) == 0 {
+		t.Fatal("no search was issued")
+	}
+	for _, fields := range docEngine.selectedFields {
+		if !slices.Contains(fields, common.PAGERANK_FLD) || !slices.Contains(fields, common.TAG_FLD) {
+			t.Fatalf("search fields = %v, want %s and %s", fields, common.PAGERANK_FLD, common.TAG_FLD)
+		}
+	}
+}
+
+// TestRetrievalProjectsQuestionTokenFields pins the same projection contract for
+// the generated-question fields. The reranker folds question_tks into its term
+// input with a ×6 weight and the dataset search API reports question_kwd as
+// "questions", but both are read off Field — the engine's projection of exactly
+// SelectFields — so omitting them scores those tokens as absent.
+func TestRetrievalProjectsQuestionTokenFields(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
+		{"id": "chunk-1", "content_ltks": "alpha", "content_with_weight": "alpha", "question_tks": "beta", "_score": 0.9},
+	}}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	threshold := 0.0
+	vectorWeight := 1.0
+	aggs := false
+	if _, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1,
+		PageSize:               1,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+	}); err != nil {
+		t.Fatalf("Retrieval failed: %v", err)
+	}
+	if len(docEngine.selectedFields) == 0 {
+		t.Fatal("no search was issued")
+	}
+	for _, fields := range docEngine.selectedFields {
+		if !slices.Contains(fields, "question_tks") || !slices.Contains(fields, "question_kwd") {
+			t.Fatalf("search fields = %v, want question_tks and question_kwd", fields)
+		}
+	}
+}
+
+// TestRetrievalPagerankBoostsRanking drives the whole path: identical chunks,
+// only pagerank_fea differs, so the boosted chunk must win and its similarity
+// must carry the pagerank on top of the hybrid score.
+func TestRetrievalPagerankBoostsRanking(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
+		{"id": "plain", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.5},
+		{"id": "boosted", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.5, common.PAGERANK_FLD: float64(4)},
+	}}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	threshold := 0.0
+	vectorWeight := 1.0
+	aggs := false
+	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1,
+		PageSize:               2,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+	})
+	if err != nil {
+		t.Fatalf("Retrieval failed: %v", err)
+	}
+	if len(result.Chunks) != 2 {
+		t.Fatalf("chunks = %d, want 2", len(result.Chunks))
+	}
+	if got := result.Chunks[0]["chunk_id"]; got != "boosted" {
+		t.Fatalf("first chunk = %v, want boosted (pagerank must outrank the tie)", got)
+	}
+	boosted, _ := result.Chunks[0]["similarity"].(float64)
+	plain, _ := result.Chunks[1]["similarity"].(float64)
+	if boosted-plain < 4-1e-9 {
+		t.Fatalf("similarity delta = %v, want the 4-point pagerank boost", boosted-plain)
+	}
+}
+
+// TestRetrievalVectorOnlyKeepsPagerank covers the dense-only path: the engine
+// issues no scored bool query there, so the engine can never apply its
+// rank_feature clause and the similarity must pick pagerank up locally.
+// vector_similarity keeps the engine's raw kNN score (asserted below).
+func TestRetrievalVectorOnlyKeepsPagerank(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
+		{"id": "chunk-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.5, common.PAGERANK_FLD: float64(3)},
+	}}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	threshold := 0.0
+	vectorWeight := 1.0
+	aggs := false
+	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1,
+		PageSize:               1,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+		VectorOnly:             true,
+	})
+	if err != nil {
+		t.Fatalf("Retrieval failed: %v", err)
+	}
+	if len(result.Chunks) != 1 {
+		t.Fatalf("chunks = %d, want 1", len(result.Chunks))
+	}
+	if got, _ := result.Chunks[0]["similarity"].(float64); got != 3.5 {
+		t.Fatalf("similarity = %v, want engine score 0.5 + pagerank 3", got)
+	}
+	if got, _ := result.Chunks[0]["vector_similarity"].(float64); got != 0.5 {
+		t.Fatalf("vector_similarity = %v, want the raw kNN score 0.5 (rank features belong to similarity only)", got)
+	}
+	if got, _ := result.Chunks[0]["term_similarity"].(float64); got != 0 {
+		t.Fatalf("term_similarity = %v, want 0 for a dense-only request", got)
 	}
 }
 

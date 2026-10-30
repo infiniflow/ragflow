@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -28,6 +29,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 )
 
 const (
@@ -39,6 +41,10 @@ const (
 
 // sptr returns a pointer to the given string.
 func sptr(s string) *string { return &s }
+
+func isAccessDeniedOrHidden(err error) bool {
+	return errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrResourceNotFound)
+}
 
 // setupServiceTestDB initializes an in-memory SQLite database for service tests.
 func setupServiceTestDB(t *testing.T) *gorm.DB {
@@ -59,6 +65,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.IngestionTaskLog{},
 		&entity.PipelineOperationLog{},
 		&entity.UserCanvas{},
+		&entity.UserCanvasVersion{},
 		&entity.File2Document{},
 		&entity.File{},
 		&entity.User{},
@@ -117,7 +124,9 @@ func serviceTestContext(t *testing.T, userID, tenantID string, additionalMemberI
 					}
 				}
 			}
-			prepareServiceTestContextEE(t, tenantID, memberIDs...)
+			if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, memberIDs...); err != nil {
+				t.Fatalf("prepare enterprise permission fixture: %v", err)
+			}
 		}
 	}
 	return permission.WithSubject(t.Context(), permission.Subject{UserID: userID, TenantID: tenantID})

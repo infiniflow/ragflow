@@ -667,6 +667,237 @@ func TestRemoveTOCBoxes_ShortLineBodyPageIsNotTOC(t *testing.T) {
 	}
 }
 
+// TestRemoveTOCBoxes_LeaderPageNumberBoxesAreEntries pins the shape the
+// OCR-merge path produces after #21399: detection misses the leader dots, so
+// native-text recovery emits them as their own boxes (".... 1"). Those boxes
+// are longer than tocBodyRunes, so the body guard used to read the TOC page as
+// body text and keep it. They are entries and must count as markers.
+func TestRemoveTOCBoxes_LeaderPageNumberBoxesAreEntries(t *testing.T) {
+	boxes := []pdf.TextBox{tb("目录", 0, 72, 110, 100, 120)}
+	titles := []string{
+		"第一章 道可道", "第二章 天下皆知", "第三章 不尚贤", "第四章 道冲",
+		"第五章 守中", "第六章 谷神", "第七章 后其身而身先", "第八章 夫唯不争",
+	}
+	leaders := []string{
+		".............................................. 1",
+		".............................................. 5",
+		"............................................. 9",
+		"............ ................................ 13",
+		"............ ................................ 17",
+		"............ ................................. 21",
+		"........... ............................... 25",
+		"........... ................................... 29",
+	}
+	for i, title := range titles {
+		y := float64(160 + i*30)
+		boxes = append(boxes, tb(title, 0, 72, 200, y, y+15))
+		boxes = append(boxes, tb(leaders[i], 0, 72, 520, y, y+15))
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	boxes = append(boxes, bodyPageBoxes(2)...)
+
+	got := removeTOCWholeDoc(boxes, nil)
+	if n := countPage(got, 0); n != 0 {
+		t.Fatalf("leader+page-number boxes read as entries, the TOC page must be dropped, %d boxes survived", n)
+	}
+	if n := countPage(got, 1); n != 3 {
+		t.Fatalf("body page 1 must survive, %d of 3 boxes", n)
+	}
+}
+
+// TestRemoveTOCBoxes_LongLeaderBoxesAreNotProse pins the real 道德经 shape:
+// OCR detection misses the leader dots, so native-text recovery emits each
+// leader column as its own 50–100 rune box, while titles and page numbers land
+// in separate boxes. The leader boxes are longer than tocMaxProseRunes but
+// carry no text; counting them as prose kept the whole TOC.
+func TestRemoveTOCBoxes_LongLeaderBoxesAreNotProse(t *testing.T) {
+	boxes := []pdf.TextBox{tb("目录", 0, 72, 110, 100, 120)}
+	titles := []string{
+		"第1章  “道”", "第2章  圣人居无为之事", "第3章  无为而治", "第4章  道冲",
+		"第5章  “守中”", "第6章  “谷神”", "第7章  后其身而身先", "第8章  夫唯不争",
+	}
+	for i, title := range titles {
+		y := float64(160 + i*30)
+		boxes = append(boxes,
+			tb(title, 0, 72, 220, y, y+15),
+			tb(strings.Repeat(".", 40+i*7), 0, 220, 500, y, y+15),
+			tb(fmt.Sprintf(".%d", 3+i*2), 0, 500, 520, y, y+15),
+		)
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	boxes = append(boxes, bodyPageBoxes(2)...)
+
+	got := removeTOCWholeDoc(boxes, nil)
+	if n := countPage(got, 0); n != 0 {
+		t.Fatalf("a page of leader columns is a TOC page, %d boxes survived", n)
+	}
+	if n := countPage(got, 1); n != 3 {
+		t.Fatalf("body page 1 must survive, %d of 3 boxes", n)
+	}
+}
+
+// TestRemoveTOCBoxes_LongEntryLinesWithoutBookmark pins the second half of the
+// recovered-line fix: a bookmarkless TOC whose entries are each one long
+// "title + leaders + number" box has almost no short boxes, so the entry lines
+// themselves must count toward the list threshold. They have real tab leaders,
+// so they are entries rather than prose.
+func TestRemoveTOCBoxes_LongEntryLinesWithoutBookmark(t *testing.T) {
+	boxes := []pdf.TextBox{tb("目录", 0, 72, 110, 100, 120)}
+	for i := 0; i < 8; i++ {
+		y := float64(160 + i*30)
+		title := fmt.Sprintf("第%d章 ", i+1) + strings.Repeat("说明", 20)
+		boxes = append(boxes, tb(title+" "+strings.Repeat(".", 20)+fmt.Sprintf(" %d", 3+i*2), 0, 72, 520, y, y+15))
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	boxes = append(boxes, bodyPageBoxes(2)...)
+
+	got := removeTOCWholeDoc(boxes, nil)
+	if n := countPage(got, 0); n != 0 {
+		t.Fatalf("long entry lines must count toward the TOC shape, %d boxes survived", n)
+	}
+}
+
+// TestRemoveTOCBoxes_LongProseWithEllipsisIsNotEntry keeps the long-box rule
+// safe: prose ending in an ellipsis and a number does not have a real tab
+// leader, so it still counts as prose and protects the page.
+func TestRemoveTOCBoxes_LongProseWithEllipsisIsNotEntry(t *testing.T) {
+	line := func(tail string) string {
+		return "The measured value is reported in the appendix table " +
+			strings.Repeat("with detail ", 4) + tail
+	}
+	boxes := []pdf.TextBox{
+		tb("目录", 0, 72, 110, 100, 120),
+		tb("第1章 绪论", 0, 72, 200, 160, 175),
+		tb("第2章 背景", 0, 72, 200, 190, 205),
+		tb("第3章 方法", 0, 72, 200, 220, 235),
+		tb(line("... 42"), 0, 72, 520, 250, 265),
+		tb(line("... 43"), 0, 72, 520, 280, 295),
+		tb(line("... 44"), 0, 72, 520, 310, 325),
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	got := removeTOCWholeDoc(boxes, map[int]bool{0: true})
+	if n := countPage(got, 0); n != 7 {
+		t.Fatalf("prose with a short ellipsis must protect the page, %d of 7 boxes survived", n)
+	}
+}
+
+// TestRemoveTOCBoxes_RomanEntryLines pins Roman-only page numbers: "Preface
+// .... vii" has no decimal number, so the run grammar must accept a Roman
+// numeral on its own.
+func TestRemoveTOCBoxes_RomanEntryLines(t *testing.T) {
+	boxes := []pdf.TextBox{tb("Contents", 0, 72, 110, 100, 120)}
+	romans := []string{"i", "ii", "iii", "iv", "v", "vi", "vii", "viii"}
+	for i := 0; i < 8; i++ {
+		y := float64(160 + i*30)
+		title := "Preface " + strings.Repeat("notes ", 10)
+		boxes = append(boxes, tb(title+" "+strings.Repeat(".", 12)+" "+romans[i], 0, 72, 520, y, y+15))
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	boxes = append(boxes, bodyPageBoxes(2)...)
+
+	got := removeTOCWholeDoc(boxes, nil)
+	if n := countPage(got, 0); n != 0 {
+		t.Fatalf("roman-numbered entry lines must be detected, %d boxes survived", n)
+	}
+}
+
+// TestRemoveTOCBoxes_MergedBlocksAreNotProse: several long boxes that each
+// hold multiple leader+number runs are confirmed entries. Counting them as
+// prose let three such blocks protect their own page.
+func TestRemoveTOCBoxes_MergedBlocksAreNotProse(t *testing.T) {
+	boxes := []pdf.TextBox{tb("目录", 0, 72, 110, 100, 120)}
+	block := "Chapter One ...... 3 Chapter Two ...... 4 Chapter Three ...... 5"
+	for i := 0; i < 3; i++ {
+		y := float64(160 + i*30)
+		boxes = append(boxes, tb(block, 0, 72, 520, y, y+15))
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	boxes = append(boxes, bodyPageBoxes(2)...)
+
+	got := removeTOCWholeDoc(boxes, nil)
+	if n := countPage(got, 0); n != 0 {
+		t.Fatalf("merged TOC blocks must not guard their own page, %d boxes survived", n)
+	}
+}
+
+// TestRemoveTOCBoxes_SpacedLeaderRunsAreEntries: OCR often splits a leader run
+// into space-separated segments. The threshold must count the whole run, not
+// just the last segment before the page number.
+func TestRemoveTOCBoxes_SpacedLeaderRunsAreEntries(t *testing.T) {
+	boxes := []pdf.TextBox{tb("目录", 0, 72, 110, 100, 120)}
+	for i := 0; i < 8; i++ {
+		y := float64(160 + i*30)
+		title := fmt.Sprintf("第%d章 ", i+1) + strings.Repeat("说明", 20)
+		text := title + " " + strings.Repeat(".", 30) + " " + strings.Repeat(".", 4) + fmt.Sprintf(" %d", 3+i*2)
+		boxes = append(boxes, tb(text, 0, 72, 520, y, y+15))
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	boxes = append(boxes, bodyPageBoxes(2)...)
+
+	got := removeTOCWholeDoc(boxes, nil)
+	if n := countPage(got, 0); n != 0 {
+		t.Fatalf("space-separated leader runs must count as one run, %d boxes survived", n)
+	}
+}
+
+// TestRemoveTOCBoxes_ShortProseWithEllipsisIsNotEntry: on a short box, a bare
+// "..." before a number is sentence punctuation, not a tab leader. Three such
+// prose lines must keep the page.
+func TestRemoveTOCBoxes_ShortProseWithEllipsisIsNotEntry(t *testing.T) {
+	boxes := []pdf.TextBox{
+		tb("目录", 0, 72, 110, 100, 120),
+		tb("第1章 绪论", 0, 72, 200, 160, 175),
+		tb("第2章 背景", 0, 72, 200, 190, 205),
+		tb("第3章 方法", 0, 72, 200, 220, 235),
+		tb("The measured result is ... 42", 0, 72, 520, 250, 265),
+		tb("The second result is ... 43", 0, 72, 520, 280, 295),
+		tb("The third result is ... 44", 0, 72, 520, 310, 325),
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	got := removeTOCWholeDoc(boxes, map[int]bool{0: true})
+	if n := countPage(got, 0); n != 7 {
+		t.Fatalf("short prose ending in an ellipsis must protect the page, %d of 7 boxes survived", n)
+	}
+}
+
+// TestRemoveTOCBoxes_RomanRunNeedsWordBoundary: without a word boundary the
+// Roman alternative matches the first letter of ordinary words, so three
+// "... word" fragments in one prose box look like a merged TOC block and the
+// page is dropped. The prose must keep protecting itself.
+func TestRemoveTOCBoxes_RomanRunNeedsWordBoundary(t *testing.T) {
+	boxes := []pdf.TextBox{
+		tb("目录", 0, 72, 110, 100, 120),
+		tb("第1章 绪论", 0, 72, 200, 160, 175),
+		tb("第2章 背景", 0, 72, 200, 190, 205),
+		tb("第3章 方法", 0, 72, 200, 220, 235),
+		tb("The results were ... delivered ... discussed ... measured in the appendix.", 0, 72, 520, 250, 265),
+		tb("The second set was ... delivered ... discussed ... measured in the same way.", 0, 72, 520, 280, 295),
+		tb("The third set was ... delivered ... discussed ... measured before the review.", 0, 72, 520, 310, 325),
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	got := removeTOCWholeDoc(boxes, nil)
+	if n := countPage(got, 0); n != 7 {
+		t.Fatalf("prose fragments must not form a merged TOC block, %d of 7 boxes survived", n)
+	}
+}
+
+// TestRemoveTOCBoxes_ProseWithEllipsisIsNotAnEntry keeps the entry pattern
+// from weakening the body guard: an ellipsis followed by words (not a page
+// number) is prose, and so is a page of such lines.
+func TestRemoveTOCBoxes_ProseWithEllipsisIsNotAnEntry(t *testing.T) {
+	boxes := []pdf.TextBox{
+		tb("第一章 绪论", 0, 72, 200, 100, 115),
+		tb("The argument continues here... and the reader should follow it carefully.", 0, 72, 520, 130, 145),
+		tb("A second sentence of prose... with an ellipsis and more words after it.", 0, 72, 520, 160, 175),
+		tb("A third sentence of prose... that only looks like an entry at a glance.", 0, 72, 520, 190, 205),
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	got := removeTOCWholeDoc(boxes, nil)
+	if n := countPage(got, 0); n != 4 {
+		t.Fatalf("prose with an ellipsis must stay, %d of 4 boxes survived", n)
+	}
+}
+
 func TestRemoveTOCText_Normalize(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"Hello   World", "hello world"},

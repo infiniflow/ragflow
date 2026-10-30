@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -1151,6 +1152,16 @@ func (s *MemoryService) UpdateMessageStatus(ctx context.Context, userID, memoryI
 	}
 
 	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
+	message, err := s.docEngine.GetChunk(ctx, MemoryIndexName(memory.TenantID), messageDocID, []string{memoryID})
+	if err != nil {
+		if isMessageDocumentNotFound(err) {
+			return false, &ResourceNotFoundError{Resource: "Message", ID: messageDocID}
+		}
+		return false, fmt.Errorf("failed to load message before status update: %w", err)
+	}
+	if message == nil {
+		return false, &ResourceNotFoundError{Resource: "Message", ID: messageDocID}
+	}
 	statusValue := 0
 	if status {
 		statusValue = 1
@@ -1206,6 +1217,14 @@ func (s *MemoryService) GetMessageContent(ctx context.Context, userID, memoryID 
 }
 
 func (s *MemoryService) SearchMessage(ctx context.Context, userID string, filterDict, params map[string]interface{}) ([]map[string]interface{}, common.ErrorCode, error) {
+	for _, field := range []string{"similarity_threshold", "keywords_similarity_weight"} {
+		if value, exists := params[field]; exists {
+			number := memoryFloatParam(value, math.NaN())
+			if math.IsNaN(number) || math.IsInf(number, 0) || number < 0 || number > 1 {
+				return nil, common.CodeArgumentError, fmt.Errorf("%s must be a finite number between 0 and 1", field)
+			}
+		}
+	}
 	memoryIDs := splitFilterValues(filterDict["memory_id"])
 	memories, err := s.filterAccessibleMemories(ctx, userID, memoryIDs)
 	if err != nil {
@@ -1869,7 +1888,7 @@ func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.M
 		filter["agent_id"] = agentIDs
 	}
 	if keywords = strings.TrimSpace(keywords); keywords != "" {
-		filter["session_id"] = keywords
+		filter["session_id_contains"] = keywords
 	}
 	filter["memory_id"] = []string{memoryID}
 	indexNames := memorySearchIndexNames([]*entity.Memory{memory}, s.docEngine)
@@ -1881,7 +1900,7 @@ func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.M
 		SelectFields: selectFields,
 		Filter:       filter,
 		MatchExprs:   []interface{}{},
-		OrderBy:      (&enginetypes.OrderByExpr{}).Desc("valid_at"),
+		OrderBy:      (&enginetypes.OrderByExpr{}).Desc("valid_at").Desc("message_id"),
 	}
 	rawResult, err := s.docEngine.Search(ctx, rawReq)
 	if err != nil {
