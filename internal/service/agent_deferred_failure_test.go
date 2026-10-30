@@ -106,7 +106,9 @@ func TestRunAgent_DeferredAgentModelFailureStaysInChatStream(t *testing.T) {
 		},
 		"path": []any{"begin_0", "Agent:fail_0", "Message:fail_0"},
 	}
-	dao.DB.Create(&entity.TenantModelProvider{ID: "prov-deferred-fail", UserID: "user-1", ProviderName: "OpenAI-API-Compatible", TenantID: "tenant-1"})
+	// Model validation runs against the canvas owner's personal tenant
+	// (tenant id == user id), not a shared tenant picked from membership.
+	dao.DB.Create(&entity.TenantModelProvider{ID: "prov-deferred-fail", UserID: "user-1", ProviderName: "OpenAI-API-Compatible", TenantID: "user-1"})
 	dao.DB.Create(&entity.TenantModelInstance{ID: "inst-deferred-fail", InstanceName: "unreachable", ProviderID: "prov-deferred-fail", APIKey: "test-key", Extra: `{"base_url": "http://127.0.0.1:59999/v1"}`})
 	dao.DB.Create(&entity.TenantModel{ID: "unavailable-model", ModelName: "unavailable-model", ProviderID: "prov-deferred-fail", InstanceID: "inst-deferred-fail", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: "{}"})
 	makeCanvasWithDSL(t, "canvas-deferred-fail", "user-1", "tenant-1", "v-deferred-fail", dsl)
