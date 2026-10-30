@@ -644,7 +644,7 @@ func markdownMediaResolver(state *htmlWalkState, walkCtx context.Context, fetchR
 			return nil, false
 		}
 		if media.IsDataImageSource(src) {
-			ref, invalid := state.storeDataURIMedia(src, src)
+			ref, invalid := state.storeDataURIMedia("data:"+src, src)
 			if invalid {
 				state.unresolvedImages++
 			}
@@ -734,7 +734,6 @@ func resolveImageURL(ctx context.Context, imageURL string, budget *media.Budget)
 	return encoded, raw, false, true
 }
 
-// resolveImageURL resolves one bounded Markdown image attempt. It returns
 // headingText returns a canonical ATX heading (marker plus inline text).
 // Keeping the marker in the parser payload preserves the Markdown structure
 // for GeneralChunker and downstream LLM prompts; layout alone does not carry
