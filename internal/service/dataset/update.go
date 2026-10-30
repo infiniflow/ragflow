@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -68,7 +69,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 		if name == "" {
 			return nil, common.CodeDataError, errors.New("String should have at least 1 character")
 		}
-		if len(name) > 128 {
+		if utf8.RuneCountInString(name) > 128 {
 			return nil, common.CodeDataError, errors.New("String should have at most 128 characters")
 		}
 		simpleUpdates["name"] = name
@@ -160,7 +161,10 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 	pagerankRequested := req.Pagerank != nil
 	if pagerankRequested {
 		requestedPagerank = *req.Pagerank
-		if *req.Pagerank < 0 || *req.Pagerank > 100 {
+		if *req.Pagerank < 0 {
+			return nil, common.CodeDataError, errors.New("input should be greater than or equal to 0")
+		}
+		if *req.Pagerank > 100 {
 			return nil, common.CodeDataError, errors.New("input should be less than or equal to 100")
 		}
 		if d.docEngine == nil {
