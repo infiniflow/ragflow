@@ -161,13 +161,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// to choose between Go and Python code paths.
 		apiNoAuth.GET("/language", r.systemHandler.Language)
 
-		// Pipeline catalog. Public static data (shipped with the binary),
-		// no auth required. The front end uses it to populate the parser
-		// picker without hard-coding the parser_id list.
-		// Query: ?type=builtin returns built-in templates (default).
-		apiNoAuth.GET("/pipelines", r.pipelineHandler.ListPipelines)
-		apiNoAuth.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
-
 		// searchbots
 		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchBotDetail)
 
@@ -602,6 +595,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				plugin.GET("/tools", r.pluginHandler.ListLLMTools)
 			}
+
+			// Pipeline catalog. Built-in templates are static data shipped
+			// with the binary, but the endpoint is gated behind auth so the
+			// /pipelines namespace is already auth-protected when per-tenant
+			// user pipelines (dataflow canvases) are added later. Those will
+			// reuse user_canvas + CheckCanvasPermission for ownership checks.
+			// Query: ?type=builtin returns built-in templates (default).
+			v1.GET("/pipelines", r.pipelineHandler.ListPipelines)
+			v1.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
 
 			// Component catalog — Phase 4 of
 			// port-rag-flow-pipeline-to-go.md. Optional
