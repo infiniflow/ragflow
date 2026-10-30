@@ -464,6 +464,32 @@ func TestMarkdownParserIngestionBudgetRejectionCountedOnce(t *testing.T) {
 	}
 }
 
+// TestMarkdownParserIngestionStopsRemoteDownloadsAfterByteBudget pins that an
+// unknown-size download rejected by the run byte budget stops later downloads
+// before they reach the network.
+func TestMarkdownParserIngestionStopsRemoteDownloadsAfterByteBudget(t *testing.T) {
+	allowLoopbackImages(t)
+	t.Setenv("RAGFLOW_MEDIA_MAX_BYTES_PER_RUN", "1")
+	var hits atomic.Int32
+	server := imageTestServer(t, "\x89PNG\r\n\x1a\nremote", &hits)
+	ctx, cache := recordingMediaContext()
+
+	md := "![a](" + server.URL + "/a.png)\n\n![b](" + server.URL + "/b.png)\n"
+	res := markdownIngestionParser(t).ParseWithResult(ctx, "budget.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("remote fetches = %d, want 1 once the byte budget is spent", hits.Load())
+	}
+	if len(cache.puts) != 0 {
+		t.Fatalf("cache puts = %+v, want none", cache.puts)
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "after reaching the 1-byte run image budget") {
+		t.Fatalf("missing byte-budget warning: %v", res.Warnings)
+	}
+}
+
 // TestMarkdownTextParserSkipsImages pins the text-only contract: preview, CLI
 // and attachment parsing must not download remote images, decode data URIs or
 // emit image payloads, while keeping the alt text and surrounding prose.
