@@ -81,7 +81,7 @@ class TestUpdateMessageStatus:
         with pytest.raises(Exception, match="message_id|formatted as memory_id:message_id"):
             populated_memory["memory"].update_message_status(message_id, False)
 
-    def test_nonexistent_message(self, populated_memory, doc_engine):
+    def test_nonexistent_message(self, populated_memory):
         with pytest.raises(Exception, match="Message .*not found"):
             populated_memory["memory"].update_message_status(9223372036854775807, False)
 
