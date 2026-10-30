@@ -298,19 +298,23 @@ func newTokenizerComponent(params map[string]any, resolver EmbedderResolver) (ru
 		}
 		if v, ok := params["fields"]; ok {
 			// Replace (not append) so fields = ["summary"] does not
-			// silently embed the default "text" as well.
-			p.Fields = nil
+			// silently embed the default "text" as well. An empty
+			// value keeps the default instead of embedding nothing.
+			var fields []string
 			switch t := v.(type) {
 			case string:
-				p.Fields = []string{t}
+				fields = []string{t}
 			case []any:
 				for _, x := range t {
 					if s, ok := x.(string); ok {
-						p.Fields = append(p.Fields, s)
+						fields = append(fields, s)
 					}
 				}
 			case []string:
-				p.Fields = append(p.Fields, t...)
+				fields = append(fields, t...)
+			}
+			if len(fields) > 0 {
+				p.Fields = fields
 			}
 		}
 	}

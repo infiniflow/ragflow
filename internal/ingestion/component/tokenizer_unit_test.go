@@ -385,7 +385,7 @@ func TestTokenizerComponent_NewTokenizerComponent_Defaults(t *testing.T) {
 
 // TestTokenizerComponent_NewTokenizerComponent_FieldsReplaceDefault
 // verifies that a caller-supplied fields value is the full set, not an
-// addition to the ["text"] default.
+// addition to the ["text"] default, and that an empty value keeps it.
 func TestTokenizerComponent_NewTokenizerComponent_FieldsReplaceDefault(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -395,6 +395,8 @@ func TestTokenizerComponent_NewTokenizerComponent_FieldsReplaceDefault(t *testin
 		{name: "string", fields: "summary", want: []string{"summary"}},
 		{name: "string slice", fields: []string{"text"}, want: []string{"text"}},
 		{name: "any slice", fields: []any{"keywords", "summary"}, want: []string{"keywords", "summary"}},
+		{name: "empty string slice", fields: []string{}, want: []string{"text"}},
+		{name: "empty any slice", fields: []any{}, want: []string{"text"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
