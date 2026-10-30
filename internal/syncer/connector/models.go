@@ -29,8 +29,10 @@ import (
 var ErrSyncResumeInvalid = errors.New("sync resume checkpoint is no longer valid")
 
 // ErrDocumentSkipped marks a per-document fetch failure the runner must not
-// treat as a task failure. The document is counted as skipped and retried on
-// the next sync, so one unreadable file cannot block the whole task.
+// treat as a task failure, so one unreadable file cannot block the whole task.
+// The document is counted as skipped and re-listed only while the connector
+// window still selects it; a source that keeps failing past that window is not
+// revisited until its own metadata changes.
 var ErrDocumentSkipped = errors.New("document fetch skipped")
 
 // SourceDocument is the normalized document emitted by datasource connectors.
