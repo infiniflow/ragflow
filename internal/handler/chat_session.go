@@ -132,7 +132,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 		return
 	}
 	options.NoHistory = includeHistory == "false" || includeHistory == "False"
-	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), terms, page, pageSize, options)
+	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), c.Query("user_id"), terms, page, pageSize, options)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return

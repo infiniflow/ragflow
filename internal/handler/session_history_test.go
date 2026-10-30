@@ -146,7 +146,7 @@ func TestSessionHistoryQueryFlags(t *testing.T) {
 					t.Fatal(err)
 				}
 				key := "messages"
-				if endpoint != "chat" {
+				if endpoint != "chat" && endpoint != "chat_list" {
 					key = "message"
 				}
 				var messages []map[string]interface{}
