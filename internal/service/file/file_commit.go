@@ -38,6 +38,7 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // FileCommitService file commit service
@@ -96,15 +97,10 @@ func (s *FileCommitService) fileTreeContains(ctx context.Context, tx *gorm.DB, f
 
 // CreateCommit creates a new commit for a workspace folder
 func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
-	// 1. Authorize every file the commit names before anything is written.
-	if err := s.authorizeCommitFiles(ctx, folderID, changes); err != nil {
-		return nil, err
-	}
-
-	// 2. Get the latest commit for this folder
+	// 1. Get the latest commit for this folder
 	latestCommit, _ := s.commitDAO.GetLatestByFolderID(ctx, dao.DB, folderID)
 
-	// 3. Build tree state from latest commit
+	// 2. Build tree state from latest commit
 	treeState := make(map[string]interface{})
 	if latestCommit != nil && latestCommit.TreeState != nil {
 		if err := json.Unmarshal([]byte(*latestCommit.TreeState), &treeState); err != nil {
@@ -113,7 +109,7 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 		}
 	}
 
-	// 4. Create commit record
+	// 3. Create commit record
 	commitID := common.GenerateUUID()
 	nowMs := time.Now().UnixMilli()
 
@@ -133,6 +129,13 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 	// All DB operations run inside a single transaction.
 	var treeStr string
 	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Authorize the named files against the rows this transaction is about
+		// to write, holding them so a concurrent move cannot relocate a file
+		// between the ancestry check and the update below.
+		if err := s.authorizeCommitFiles(ctx, tx, folderID, changes); err != nil {
+			return err
+		}
+
 		// Save commit
 		if err := tx.Create(commit).Error; err != nil {
 			return fmt.Errorf("failed to create commit: %w", err)
@@ -300,9 +303,13 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 // (IDOR, CWE-639). A change may record the deletion of a file that was already
 // removed, so an unknown ID is rejected only for operations that write the file
 // row.
-func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, folderID string, changes []entity.FileChange) error {
-	folder, err := s.fileDAO.GetByID(ctx, dao.DB, folderID)
-	if err != nil {
+//
+// It runs inside the commit transaction and locks the rows it reads: a
+// concurrent move would otherwise be able to relocate a file (or one of its
+// ancestors) after the parent chain was checked and before the write.
+func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, tx *gorm.DB, folderID string, changes []entity.FileChange) error {
+	var folder entity.File
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", folderID).First(&folder).Error; err != nil {
 		return fmt.Errorf("resolve commit folder %s: %w", folderID, err)
 	}
 	if folder.Type != FileTypeFolder {
@@ -321,7 +328,7 @@ func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, folderID s
 		operations[change.FileID] = append(operations[change.FileID], change.Operation)
 	}
 
-	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, ids)
+	files, err := lockedCommitFiles(tx, ids)
 	if err != nil {
 		return fmt.Errorf("resolve commit files: %w", err)
 	}
@@ -340,13 +347,24 @@ func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, folderID s
 		}
 	}
 
-	return s.ensureFilesInFolder(ctx, folderID, existing)
+	return ensureFilesInFolder(tx, folderID, existing)
+}
+
+// lockedCommitFiles loads file rows for the commit transaction with write locks
+// so their parent_id cannot change underneath the ancestry check.
+func lockedCommitFiles(tx *gorm.DB, ids []string) ([]*entity.File, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var files []*entity.File
+	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id IN ?", ids).Find(&files).Error
+	return files, err
 }
 
 // ensureFilesInFolder rejects files whose parent chain does not reach folderID.
 // Ancestors are resolved one folder level at a time, so a commit verifies all of
 // its files with one query per tree depth instead of one query per file.
-func (s *FileCommitService) ensureFilesInFolder(ctx context.Context, folderID string, files map[string]*entity.File) error {
+func ensureFilesInFolder(tx *gorm.DB, folderID string, files map[string]*entity.File) error {
 	if len(files) == 0 {
 		return nil
 	}
@@ -379,7 +397,7 @@ func (s *FileCommitService) ensureFilesInFolder(ctx context.Context, folderID st
 		if len(load) == 0 {
 			break
 		}
-		ancestors, err := s.fileDAO.GetByIDs(ctx, dao.DB, load)
+		ancestors, err := lockedCommitFiles(tx, load)
 		if err != nil {
 			return fmt.Errorf("resolve commit file ancestors: %w", err)
 		}
