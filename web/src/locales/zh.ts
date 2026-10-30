@@ -358,6 +358,9 @@ export default {
     },
     knowledgeDetails: {
       continueUpload: '继续上传',
+      uploadPipelineDeletedTitle: '解析 Pipeline 不可用',
+      uploadPipelineDeletedContent:
+        '该数据集配置的解析 Pipeline 已被删除或没有已发布版本，无法在上传时自动解析。请在数据集设置中重新配置 Pipeline，或继续上传后为文件单独配置解析方式。',
       reselectParser: '重新选择解析方法',
       goAddModel: '前往添加模型',
       uploadMissingModelsTitle: '部分文件缺少解析所需的模型',
