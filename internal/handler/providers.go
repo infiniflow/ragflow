@@ -196,7 +196,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 			regionOverride = &value
 		}
 		apiKeyConfig := json.RawMessage(c.Query("api_key_config"))
-		instanceModels, err := h.modelProviderService.ListSupportedModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"), service.ListSupportedModelsOptions{
+		instanceModels, err := h.fetchSavedProviderModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"), service.SavedProviderModelOptions{
 			APIKeyConfig: apiKeyConfig,
 			BaseURL:      baseURLOverride,
 			Region:       regionOverride,
@@ -205,28 +205,14 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 			common.ErrorWithCode(c, common.CodeDataError, err.Error())
 			return
 		}
-		for _, model := range instanceModels {
-			if _, ok := model["max_tokens"]; !ok {
-				if contextLength, ok := model["context_length"]; ok && contextLength != nil {
-					model["max_tokens"] = contextLength
-				}
-			}
-		}
 		common.SuccessWithData(c, instanceModels, "success")
 		return
 	}
 	_, baseURLProvided := c.GetQuery("base_url")
 	_, regionProvided := c.GetQuery("region")
 	if instanceName != "" && !apiKeyProvided && !baseURLProvided && !regionProvided {
-		instanceModels, err := h.modelProviderService.ListSupportedModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"), service.ListSupportedModelsOptions{})
+		instanceModels, err := h.fetchSavedProviderModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"), service.SavedProviderModelOptions{})
 		if err == nil {
-			for _, model := range instanceModels {
-				if _, ok := model["max_tokens"]; !ok {
-					if contextLength, ok := model["context_length"]; ok && contextLength != nil {
-						model["max_tokens"] = contextLength
-					}
-				}
-			}
 			common.SuccessWithData(c, instanceModels, "success")
 			return
 		}
@@ -236,7 +222,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		}
 	}
 
-	result, err := FetchProviderModels(c.Request.Context(), providerName, apiKey, baseURL)
+	result, err := FetchProviderModels(c.Request.Context(), providerName, apiKey, baseURL, region)
 	if err != nil {
 		var codedErr *common.CodedError
 		if errors.As(err, &codedErr) {
@@ -249,10 +235,19 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
+func (h *ProviderHandler) fetchSavedProviderModels(ctx context.Context, providerName, instanceName, userID string, options service.SavedProviderModelOptions) ([]map[string]interface{}, error) {
+	config, err := h.modelProviderService.ResolveSavedProviderModelConfig(ctx, providerName, instanceName, userID, options)
+	if err != nil {
+		return nil, err
+	}
+
+	return FetchProviderModels(ctx, providerName, config.APIKey, config.BaseURL, config.Region)
+}
+
 // FetchProviderModels returns the bundled model catalog, optionally enriched
 // with models discovered from the configured provider endpoint. Admin uses the
 // same catalog behavior while resolving its system-scoped provider data.
-func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL string) ([]map[string]interface{}, error) {
+func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL, region string) ([]map[string]interface{}, error) {
 	// 1. Get static models from config (maybe nil when models list is empty)
 	staticModels, _ := dao.GetModelProviderManager().ListModels(providerName)
 	if staticModels == nil {
@@ -262,6 +257,10 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL stri
 	// 2. Attempt live API fetch when the provider has enough connection data.
 	apiKey = strings.TrimSpace(apiKey)
 	baseURL = strings.TrimSpace(baseURL)
+	region = strings.TrimSpace(region)
+	if region == "" {
+		region = "default"
+	}
 	var remoteModels []map[string]interface{}
 	remoteFetched := false
 	// remoteFetchErr records why a requested live fetch produced nothing, so it
@@ -283,7 +282,7 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL stri
 		}
 	}
 
-	canFetchRemote := baseURL != ""
+	canFetchRemote := baseURL != "" || apiKey != ""
 	if bedrockProvider {
 		// Bedrock's existing SigV4 modes keep using the static catalog. Only
 		// API-key auth needs a live catalog scoped to the supplied credential.
@@ -292,14 +291,12 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL stri
 	if canFetchRemote {
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo != nil && providerInfo.ModelDriver != nil {
-			region := "default"
-			baseURLByRegion := map[string]string{region: baseURL}
-			driver := providerInfo.ModelDriver.NewInstance(baseURLByRegion)
+			driver := providerInfo.ModelDriver
+			if baseURL != "" {
+				driver = driver.NewInstance(map[string]string{region: baseURL})
+			}
 			if driver != nil {
-				apiConfig := &models.APIConfig{
-					ApiKey: &apiKey,
-					Region: &region,
-				}
+				apiConfig := &models.APIConfig{ApiKey: &apiKey, Region: &region}
 				if liveModels, err := driver.ListModels(ctx, apiConfig); err == nil {
 					remoteFetched = true
 					for _, m := range liveModels {
@@ -812,7 +809,7 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 	if keywords == "true" {
 		// list supported models
 
-		modelList, err := h.modelProviderService.ListSupportedModels(ctx, providerName, instanceName, c.GetString("user_id"), service.ListSupportedModelsOptions{})
+		modelList, err := h.fetchSavedProviderModels(ctx, providerName, instanceName, c.GetString("user_id"), service.SavedProviderModelOptions{})
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
