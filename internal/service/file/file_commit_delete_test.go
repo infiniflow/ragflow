@@ -85,6 +85,13 @@ func seedLiveFile(t *testing.T, db *gorm.DB, id, parentID string) {
 	}
 }
 
+func seedFolder(t *testing.T, db *gorm.DB, id, parentID string) {
+	t.Helper()
+	if err := db.Create(&entity.File{ID: id, ParentID: parentID, TenantID: "t1", CreatedBy: "u1", Name: id, Type: "folder"}).Error; err != nil {
+		t.Fatalf("seed folder %s: %v", id, err)
+	}
+}
+
 // A tombstone for a file that is still in the folder would hide that file from
 // GetUncommittedChanges: the scan marks committed entries as processed and
 // skips tombstones, so the live row is reported as neither deleted nor added.
@@ -99,7 +106,7 @@ func TestCreateCommit_RejectsDeleteOfLiveFile(t *testing.T) {
 		t.Fatalf("seed parent commit: %v", err)
 	}
 	seedLiveFile(t, db, "f2", "folder-1")
-	seedLiveFile(t, db, "sub-1", "folder-1")
+	seedFolder(t, db, "sub-1", "folder-1")
 	seedLiveFile(t, db, "f4", "sub-1")
 
 	for _, fileID := range []string{"f2", "f4"} {
