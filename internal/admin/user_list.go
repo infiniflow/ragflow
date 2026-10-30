@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"ragflow/internal/dao"
@@ -55,6 +56,9 @@ func parseUserListOptions(page, pageSize int, keyword, status, direction, field 
 	opts := dao.UserListOptions{Keyword: strings.TrimSpace(keyword), Limit: pageSize}
 	if page < 1 || pageSize < 1 {
 		return opts, fmt.Errorf("%w: page and page_size must be positive integers", errInvalidUserListQuery)
+	}
+	if page-1 > math.MaxInt/pageSize {
+		return opts, fmt.Errorf("%w: pagination offset is too large", errInvalidUserListQuery)
 	}
 	opts.Offset = (page - 1) * pageSize
 	status = strings.ToLower(strings.TrimSpace(status))

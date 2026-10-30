@@ -19,6 +19,7 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -115,6 +116,9 @@ func TestListUsersQueryParameters(t *testing.T) {
 		{"?top=0", common.CodeBadRequest, 0},
 		{"?page=0", common.CodeBadRequest, 0},
 		{"?page_size=0", common.CodeBadRequest, 0},
+		{fmt.Sprintf("?page=%d&page_size=10", math.MaxInt), common.CodeBadRequest, 0},
+		{fmt.Sprintf("?page=%d&page_size=4", math.MaxInt/2+2), common.CodeBadRequest, 0},
+		{fmt.Sprintf("?page=%d&page_size=4", math.MaxInt/2+3), common.CodeBadRequest, 0},
 	}
 	if common.GetRAGFlowType() == common.OpenSourceVersion {
 		tests = append(tests, queryTest{"?status=inactive", common.CodeSuccess, 0})

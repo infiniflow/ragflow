@@ -18,6 +18,7 @@ package admin
 
 import (
 	"errors"
+	"math"
 	"reflect"
 	"testing"
 	"time"
@@ -50,6 +51,9 @@ func TestListUsersRejectsInvalidQueryBeforeDatabaseAccess(t *testing.T) {
 		{name: "negative page", page: -1, pageSize: 10},
 		{name: "zero page size", page: 1},
 		{name: "negative page size", page: 1, pageSize: -1},
+		{name: "offset overflow to negative", page: math.MaxInt, pageSize: 10},
+		{name: "offset overflow to zero", page: math.MaxInt/2 + 2, pageSize: 4},
+		{name: "offset overflow to positive", page: math.MaxInt/2 + 3, pageSize: 4},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			// No DAO or database is configured: invalid input must fail in the service.
@@ -57,6 +61,25 @@ func TestListUsersRejectsInvalidQueryBeforeDatabaseAccess(t *testing.T) {
 			users, total, err := svc.ListUsers(t.Context(), tt.page, tt.pageSize, "", tt.status, tt.direction, tt.field)
 			if !errors.Is(err, errInvalidUserListQuery) || users != nil || total != 0 {
 				t.Fatalf("ListUsers() = (%v, %d, %v)", users, total, err)
+			}
+		})
+	}
+}
+
+func TestParseUserListOptionsPaginationBounds(t *testing.T) {
+	for _, tt := range []struct {
+		name                       string
+		page, pageSize, wantOffset int
+	}{
+		{name: "normal page", page: 3, pageSize: 10, wantOffset: 20},
+		{name: "maximum page with unit size", page: math.MaxInt, pageSize: 1, wantOffset: math.MaxInt - 1},
+		{name: "maximum page size on first page", page: 1, pageSize: math.MaxInt},
+		{name: "maximum valid offset", page: 2, pageSize: math.MaxInt, wantOffset: math.MaxInt},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			opts, err := parseUserListOptions(tt.page, tt.pageSize, "", "", "", "")
+			if err != nil || opts.Offset != tt.wantOffset || opts.Limit != tt.pageSize {
+				t.Fatalf("parseUserListOptions() = (%+v, %v), want offset %d, limit %d", opts, err, tt.wantOffset, tt.pageSize)
 			}
 		})
 	}
