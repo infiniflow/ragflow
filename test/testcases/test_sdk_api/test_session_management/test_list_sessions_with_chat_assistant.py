@@ -105,16 +105,12 @@ class TestSessionsWithChatAssistantList:
         with pytest.raises(Exception, match="^Resource not found$"):
             chat.list_sessions()
 
-    @pytest.mark.skip(reason="Go ListChatSessions never reads user_id or filters by it (internal/handler/chat_session.go); remove when documented user_id filtering is implemented")
     @pytest.mark.parametrize("combined", [False, True])
     def test_user_id(self, add_sessions_with_chat_assistant, combined):
         chat, sessions = add_sessions_with_chat_assistant
         filters = {"id": sessions[0].id, "name": sessions[0].name} if combined else {}
         assert chat.list_sessions(user_id="nonexistent-session-user", **filters) == []
 
-    @pytest.mark.skip(
-        reason="Go list serializes entity.ChatSession as dialog_id/message, but SDK Session requires chat_id/messages (internal/handler/chat_session.go and sdk/python/ragflow_sdk/modules/session.py); remove when list returns SDK session schema"
-    )
     def test_list_response_session_contract(self, chat):
         created = chat.create_session()
         listed = chat.list_sessions(id=created.id)

@@ -294,7 +294,6 @@ def test_chat_stream_preserves_runtime_error_answer(monkeypatch):
 @pytest.mark.p2
 @pytest.mark.parametrize("session_type", ["chat", "agent"])
 @pytest.mark.parametrize("stream", [False, True])
-@pytest.mark.skip(reason="Python SDK Session.ask ignores nonzero response codes: Go validation errors lose their message in KeyError('data') instead of raising the API error")
 def test_session_ask_preserves_api_error_message(monkeypatch, session_type, stream):
     session = Session(None, {"id": "session", f"{session_type}_id": "parent"})
     error = {"code": 102, "message": "Session not found!"}

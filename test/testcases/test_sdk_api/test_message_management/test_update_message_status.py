@@ -81,11 +81,7 @@ class TestUpdateMessageStatus:
         with pytest.raises(Exception, match="message_id|formatted as memory_id:message_id"):
             populated_memory["memory"].update_message_status(message_id, False)
 
-    def test_nonexistent_message(self, populated_memory, doc_engine):
-        if doc_engine == "infinity":
-            pytest.skip("Infinity UpdateChunks discards the update result and succeeds for a missing message (internal/engine/infinity/chunk.go:743-758); status update must report missing Message.")
-        if doc_engine in ("oceanbase", "seekdb"):
-            pytest.skip("OceanBase UpdateChunks ignores SQL affected rows and succeeds for a missing message (internal/engine/oceanbase/crud.go:292-294); status update must report missing Message.")
+    def test_nonexistent_message(self, populated_memory):
         with pytest.raises(Exception, match="Message .*not found"):
             populated_memory["memory"].update_message_status(9223372036854775807, False)
 
