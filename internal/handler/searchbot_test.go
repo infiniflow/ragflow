@@ -62,7 +62,7 @@ func setupSearchbotsTest(userID string) (*SearchBotHandler, *mockChunkService, *
 	r.Use(func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: userID})
 	})
-	r.POST("/api/v1/searchbots/retrieval_test", h.RetrievalTest)
+	r.POST("/api/v1/searchbots/retrieval-test", h.RetrievalTest)
 	return h, mockSvc, r
 }
 
@@ -71,7 +71,7 @@ func TestSearchBotsRetrieval_Basic(t *testing.T) {
 
 	body := `{"kb_ids": ["kb1"], "question": "test question"}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 
@@ -107,7 +107,7 @@ func TestSearchBotsRetrieval_MissingKbID(t *testing.T) {
 	_, _, r := setupSearchbotsTest("user1")
 	body := `{"question": "test"}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -130,7 +130,7 @@ func TestSearchBotsRetrieval_MissingQuestion(t *testing.T) {
 	_, _, r := setupSearchbotsTest("user1")
 	body := `{"kb_ids": ["kb1"]}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -153,10 +153,10 @@ func TestSearchBotsRetrieval_NoAuth(t *testing.T) {
 	h := NewSearchBotHandler(nil, nil, nil, &mockChunkService{})
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.POST("/api/v1/searchbots/retrieval_test", h.RetrievalTest)
+	r.POST("/api/v1/searchbots/retrieval-test", h.RetrievalTest)
 	w := httptest.NewRecorder()
 	body := `{"kb_ids": ["kb1"], "question": "test"}`
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
@@ -173,7 +173,7 @@ func TestSearchBotsRetrieval_ServiceError(t *testing.T) {
 	}
 	w := httptest.NewRecorder()
 	body := `{"kb_ids": ["kb1"], "question": "test"}`
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -197,7 +197,7 @@ func TestSearchBotsRetrieval_KbIDSingleString(t *testing.T) {
 
 	body := `{"kb_ids": "kb1", "question": "test"}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 
@@ -218,7 +218,7 @@ func TestSearchBotsRetrieval_KbIDArray(t *testing.T) {
 
 	body := `{"kb_ids": ["a","b"], "question": "test"}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 
@@ -236,7 +236,7 @@ func TestSearchBotsRetrieval_KbIDArray(t *testing.T) {
 func TestSearchBotsRetrieval_InvalidJSON(t *testing.T) {
 	_, _, r := setupSearchbotsTest("user1")
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader("{invalid}"))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader("{invalid}"))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -248,7 +248,7 @@ func TestSearchBotsRetrieval_EmptyStringKbID(t *testing.T) {
 	_, _, r := setupSearchbotsTest("user1")
 	body := `{"kb_ids": "", "question": "test"}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -267,7 +267,7 @@ func TestSearchBotsRetrieval_WhitespaceOnlyKbID(t *testing.T) {
 	_, _, r := setupSearchbotsTest("user1")
 	body := `{"kb_ids": "  ", "question": "test"}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -291,7 +291,7 @@ func TestSearchBotsRetrieval_DefaultsApplied(t *testing.T) {
 
 	body := `{"kb_ids": ["kb1"], "question": "does this default?"}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 
@@ -330,7 +330,7 @@ func TestSearchBotsRetrieval_TopKZero(t *testing.T) {
 	_, _, r := setupSearchbotsTest("user1")
 	body := `{"kb_ids": ["kb1"], "question": "test", "top_k": 0}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -349,7 +349,7 @@ func TestSearchBotsRetrieval_TopKNegative(t *testing.T) {
 	_, _, r := setupSearchbotsTest("user1")
 	body := `{"kb_ids": ["kb1"], "question": "test", "top_k": -1}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -393,7 +393,7 @@ func TestSearchBotsRetrieval_EmptyQuestion(t *testing.T) {
 	_, _, r := setupSearchbotsTest("user1")
 	body := `{"kb_ids": ["kb1"], "question": ""}`
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval_test", strings.NewReader(body))
+	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval-test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusBadRequest {
@@ -409,7 +409,7 @@ func setupSearchBotRequest(body string) (*gin.Context, *httptest.ResponseRecorde
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("POST", "/api/v1/searchbots/related_questions",
+	c.Request = httptest.NewRequest("POST", "/api/v1/searchbots/related-questions",
 		strings.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("user", &entity.User{ID: "user-1"})
