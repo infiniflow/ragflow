@@ -32,6 +32,7 @@ func TestQWeather_BuildURL(t *testing.T) {
 
 	cases := []struct {
 		name     string
+		apiKey   string
 		params   qweatherParams
 		wantLoc  string
 		wantKey  string
@@ -41,7 +42,8 @@ func TestQWeather_BuildURL(t *testing.T) {
 	}{
 		{
 			name:     "Beijing, default lang",
-			params:   qweatherParams{APIKey: "K-abc", Location: "101010100"},
+			apiKey:   "K-abc",
+			params:   qweatherParams{Location: "101010100"},
 			wantLoc:  "101010100",
 			wantKey:  "K-abc",
 			wantLang: "zh",
@@ -50,7 +52,8 @@ func TestQWeather_BuildURL(t *testing.T) {
 		},
 		{
 			name:     "lat,lon with explicit English",
-			params:   qweatherParams{APIKey: "K-xyz", Location: "39.904,116.405", Lang: "en"},
+			apiKey:   "K-xyz",
+			params:   qweatherParams{Location: "39.904,116.405", Lang: "en"},
 			wantLoc:  "39.904,116.405",
 			wantKey:  "K-xyz",
 			wantLang: "en",
@@ -61,7 +64,7 @@ func TestQWeather_BuildURL(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := buildQWeatherURL(tc.params)
+			got := buildQWeatherURL(tc.apiKey, tc.params)
 			u, err := url.Parse(got)
 			if err != nil {
 				t.Fatalf("url.Parse(%q): %v", got, err)
@@ -115,10 +118,10 @@ func TestQWeather_ParseResponse(t *testing.T) {
 	helper := NewHTTPHelper().WithClient(&http.Client{
 		Transport: rewriteHostTransport(srv.URL),
 	})
-	tool := NewQWeatherToolWith(helper)
+	tool := NewQWeatherToolWith(helper, "K-abc")
 
 	out, err := tool.InvokableRun(ctx,
-		`{"api_key":"K-abc","location":"101010100"}`)
+		`{"location":"101010100"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -173,10 +176,10 @@ func TestQWeather_UpstreamBusinessError(t *testing.T) {
 	helper := NewHTTPHelper().WithClient(&http.Client{
 		Transport: rewriteHostTransport(srv.URL),
 	})
-	tool := NewQWeatherToolWith(helper)
+	tool := NewQWeatherToolWith(helper, "K-abc")
 
 	_, err := tool.InvokableRun(ctx,
-		`{"api_key":"K-abc","location":"000000000"}`)
+		`{"location":"000000000"}`)
 	if err == nil {
 		t.Fatal("expected error for non-200 upstream code, got nil")
 	}
@@ -185,18 +188,64 @@ func TestQWeather_UpstreamBusinessError(t *testing.T) {
 	}
 }
 
-func TestQWeather_RejectsMissingAPIKey(t *testing.T) {
+// TestQWeather_RejectsMissingCredential pins that the credential is a
+// server-side setting: an unconfigured tool fails before any request, and the
+// model cannot inject one through its arguments.
+func TestQWeather_RejectsMissingCredential(t *testing.T) {
+	t.Setenv("QWEATHER_API_KEY", "")
 	ctx := t.Context()
-	t.Parallel()
 
 	tool := NewQWeatherTool()
 	_, err := tool.InvokableRun(ctx,
-		`{"location":"101010100"}`)
+		`{"api_key":"model-supplied","location":"101010100"}`)
 	if err == nil {
-		t.Fatal("expected error for missing api_key")
+		t.Fatal("expected error for unconfigured api_key")
 	}
-	if !strings.Contains(err.Error(), "api_key") {
-		t.Errorf("err = %v, want to mention api_key", err)
+	if !strings.Contains(err.Error(), "api_key is not configured") {
+		t.Errorf("err = %v, want to mention api_key is not configured", err)
+	}
+}
+
+func TestQWeather_UsesEnvCredential(t *testing.T) {
+	t.Setenv("QWEATHER_API_KEY", "env-key")
+	ctx := t.Context()
+
+	var gotKey string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotKey = r.URL.Query().Get("key")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":"200","now":{"temp":"23"}}`))
+	}))
+	defer srv.Close()
+
+	prev := qweatherEndpoint
+	qweatherEndpoint = srv.URL + "/v7/weather/now"
+	t.Cleanup(func() { qweatherEndpoint = prev })
+
+	helper := NewHTTPHelper().WithClient(&http.Client{
+		Transport: rewriteHostTransport(srv.URL),
+	})
+	if _, err := NewQWeatherToolWith(helper, "").InvokableRun(ctx, `{"location":"101010100"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if gotKey != "env-key" {
+		t.Errorf("server saw key = %q, want env-key", gotKey)
+	}
+}
+
+func TestQWeather_BuildByNameUsesNodeCredential(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("qweather", map[string]any{"api_key": "node-key"})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	tool, ok := built.(*QWeatherTool)
+	if !ok {
+		t.Fatalf("BuildByName returned %T, want *QWeatherTool", built)
+	}
+	if tool.apiKey != "node-key" {
+		t.Errorf("apiKey = %q, want node-key", tool.apiKey)
 	}
 }
 
@@ -204,9 +253,9 @@ func TestQWeather_RejectsMissingLocation(t *testing.T) {
 	ctx := t.Context()
 	t.Parallel()
 
-	tool := NewQWeatherTool()
+	tool := NewQWeatherToolWith(nil, "K-abc")
 	_, err := tool.InvokableRun(ctx,
-		`{"api_key":"K-abc"}`)
+		`{}`)
 	if err == nil {
 		t.Fatal("expected error for missing location")
 	}
@@ -229,5 +278,16 @@ func TestQWeather_Info(t *testing.T) {
 	}
 	if !strings.Contains(info.Desc, "QWeather") && !strings.Contains(info.Desc, "和风") {
 		t.Errorf("Desc = %q, want to mention QWeather", info.Desc)
+	}
+	params, err := info.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("ToJSONSchema: %v", err)
+	}
+	raw, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal params schema: %v", err)
+	}
+	if strings.Contains(string(raw), `"api_key"`) {
+		t.Fatalf("schema exposes api_key; the credential must stay server-side: %s", raw)
 	}
 }

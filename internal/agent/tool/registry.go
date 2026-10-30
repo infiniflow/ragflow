@@ -44,7 +44,7 @@ var registry = map[string]Factory{
 	"vector_search":              noConfig("vector_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolVectorSearch) }),
 	"bm25_search":                noConfig("bm25_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolBM25Search) }),
 	"wiki_query":                 noConfig("wiki_query", func() einotool.BaseTool { return NewWikiQueryTool() }),
-	"deepl":                      noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
+	"deepl":                      buildDeepLTool,
 	"duckduckgo":                 buildDuckDuckGoTool,
 	"email":                      buildEmailTool,
 	"execute_sql":                buildExeSQLTool,
@@ -56,7 +56,7 @@ var registry = map[string]Factory{
 	"jin10":                      noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
 	"keenable":                   buildKeenableTool,
 	"pubmed":                     buildPubMedTool,
-	"qweather":                   noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
+	"qweather":                   buildQWeatherTool,
 	"querit":                     buildQueritTool,
 	"querit_contents":            buildQueritContentsTool,
 	"querit_search":              buildQueritTool,
@@ -104,6 +104,21 @@ func noConfig(name string, fn func() einotool.BaseTool) Factory {
 		}
 		return fn(), nil
 	}
+}
+
+// stringCredentialParam reads the node-level api_key shared by tools whose
+// model-facing params carry no credential. A missing or nil value yields an
+// empty string so the tool can fall back to its env var.
+func stringCredentialParam(name string, params map[string]any) (string, error) {
+	value, exists := params["api_key"]
+	if !exists || value == nil {
+		return "", nil
+	}
+	apiKey, valid := value.(string)
+	if !valid {
+		return "", fmt.Errorf("agent tool: tool %q requires string node-level param api_key", name)
+	}
+	return apiKey, nil
 }
 
 // BuildByName resolves a tool name into an Eino BaseTool.
@@ -867,6 +882,22 @@ func buildSearch1APICrawlTool(params map[string]any) (einotool.BaseTool, error) 
 		}
 	}
 	return newSearch1APICrawlTool(nil, apiKey, defaultURL), nil
+}
+
+func buildDeepLTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, err := stringCredentialParam(deeplToolName, params)
+	if err != nil {
+		return nil, err
+	}
+	return NewDeepLToolWith(nil, apiKey), nil
+}
+
+func buildQWeatherTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, err := stringCredentialParam(qweatherToolName, params)
+	if err != nil {
+		return nil, err
+	}
+	return NewQWeatherToolWith(nil, apiKey), nil
 }
 
 func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {
