@@ -58,6 +58,11 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	// Set log level
 	bootstrap.SetLogger(serverName, args)
 
+	// Initialize the ingestion lifecycle event sink (best-effort; off unless
+	// ingestor.log.path is configured). Flush it on shutdown.
+	bootstrap.SetIngestLog(serverName)
+	defer common.SyncIngestLog()
+
 	// Start heartbeat reporter to admin server
 	if hb := bootstrap.StartHeartbeat(
 		common.ServerTypeFileSyncer,

@@ -88,14 +88,37 @@ func ParseCompositeModelName(compositeName string) (modelName, instanceName, pro
 }
 
 type IngestLog struct {
-	EventTime  time.Time      `json:"event_time"`
-	UserID     string         `json:"user_id"`
-	UserName   string         `json:"user_name"`
-	Worker     string         `json:"worker"`
-	TaskID     string         `json:"task_id"`
-	Filename   string         `json:"filename"`
-	Code       int            `json:"code"`
-	Error      error          `json:"error"`
-	DurationMS int64          `json:"duration_ms"`
-	Operation  map[string]any `json:"operation"`
+	// identity / routing
+	EventTime time.Time `json:"event_time"`
+	TenantID  string    `json:"tenant_id"`
+	DatasetID string    `json:"dataset_id"`
+	DocID     string    `json:"doc_id"`
+	UserID    string    `json:"user_id"`
+	UserName  string    `json:"user_name"`
+	Worker    string    `json:"worker"`
+	TaskID    string    `json:"task_id"`
+	// event
+	EventType string `json:"event_type"` // created|scheduled|running|completed|failed|stopped
+	Status    string `json:"status"`
+	Code      int    `json:"code"`
+	// ErrorInfo is the terminal reason as a plain string (not an error
+	// interface) so the event serializes cleanly and portably to external
+	// dashboards / ClickHouse.
+	ErrorInfo string `json:"error_info,omitempty"`
+	// file
+	Filename string `json:"filename"`
+	FileType string `json:"file_type"`
+	FileSize int64  `json:"file_size"`
+	ParserID string `json:"parser_id"`
+	// timing (all UTC)
+	UploadTime     time.Time      `json:"upload_time"`
+	EnqueueTime    time.Time      `json:"enqueue_time"`
+	BeginTime      time.Time      `json:"begin_time"`
+	EndTime        time.Time      `json:"end_time"`
+	DurationMS     int64          `json:"duration_ms"`
+	WaitDurationS  float64        `json:"wait_duration_s"`
+	ParseDurationS float64        `json:"parse_duration_s"`
+	Progress       float64        `json:"progress"`
+	RunCount       int            `json:"run_count"`
+	Operation      map[string]any `json:"operation,omitempty"`
 }
