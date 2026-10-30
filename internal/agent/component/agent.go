@@ -1175,10 +1175,16 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
 	}
-	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
+	contentStreamed := runtime.AgentMessageContentEmitted(ctx)
 	switch {
-	case !streamed:
-		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
+	case !contentStreamed:
+		// No answer content has reached the client yet. When only thinking
+		// was streamed, avoid re-emitting the thinking delta at the end.
+		if runtime.AgentMessageEventsEmitted(ctx) {
+			runtime.EmitAgentMessage(ctx, content+artifactMD, "")
+		} else {
+			runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
+		}
 	case artifactMD != "":
 		// Python's stream_output_with_tools_async yields the tool-artifact
 		// markdown as a trailing delta after the LLM stream, so the live SSE

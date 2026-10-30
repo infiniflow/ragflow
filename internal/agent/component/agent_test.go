@@ -377,6 +377,47 @@ func TestAgent_EmitsThinking(t *testing.T) {
 	}
 }
 
+// TestAgent_EmitsAnswerAfterThinkingOnlyStream: when the model streamed
+// only reasoning deltas and the final answer lives in the returned message,
+// the answer must still be emitted once. The thinking delta must not be
+// re-emitted at the end.
+func TestAgent_EmitsAnswerAfterThinkingOnlyStream(t *testing.T) {
+	withAgentRunner(t, func(ctx context.Context, _ AgentParam) (*schema.Message, error) {
+		runtime.EmitAgentMessage(ctx, "", "thinking delta")
+		return &schema.Message{
+			Role:             schema.Assistant,
+			Content:          "final answer",
+			ReasoningContent: "thinking delta",
+		}, nil
+	})
+
+	var emitted []string
+	var thinking []string
+	ctx := runtime.WithAgentMessageEmitter(t.Context(), func(contentDelta, thinkingDelta string) {
+		if contentDelta != "" {
+			emitted = append(emitted, contentDelta)
+		}
+		if thinkingDelta != "" {
+			thinking = append(thinking, thinkingDelta)
+		}
+	})
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "hello"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["content"], "final answer"; got != want {
+		t.Errorf("content=%v, want %v", got, want)
+	}
+	if len(emitted) != 1 || emitted[0] != "final answer" {
+		t.Errorf("emitted content=%v, want [final answer]", emitted)
+	}
+	if len(thinking) != 1 || thinking[0] != "thinking delta" {
+		t.Errorf("emitted thinking=%v, want single thinking delta", thinking)
+	}
+}
+
 func TestAgent_MessageEmissionIsScopedPerInvocation(t *testing.T) {
 	responses := []string{"first answer", "second answer"}
 	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
