@@ -86,3 +86,16 @@ func ParseCompositeModelName(compositeName string) (modelName, instanceName, pro
 	n := len(parts)
 	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
 }
+
+type IngestLog struct {
+	EventTime  time.Time      `json:"event_time"`
+	UserID     string         `json:"user_id"`
+	UserName   string         `json:"user_name"`
+	Worker     string         `json:"worker"`
+	TaskID     string         `json:"task_id"`
+	Filename   string         `json:"filename"`
+	Code       int            `json:"code"`
+	Error      error          `json:"error"`
+	DurationMS int64          `json:"duration_ms"`
+	Operation  map[string]any `json:"operation"`
+}

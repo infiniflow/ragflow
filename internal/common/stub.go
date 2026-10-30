@@ -43,6 +43,6 @@ func InitIngestLog(logType string, file FileOutput, serviceName string) error {
 	return nil
 }
 
-func IngestLog(fields ...zap.Field) {
+func LogIngest(fields ...zap.Field) {
 
 }
