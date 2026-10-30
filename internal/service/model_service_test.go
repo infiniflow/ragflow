@@ -940,6 +940,9 @@ func TestCheckConnectionUsesStoredCredentialsAndAllowsOwnerOverrides(t *testing.
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
+	if err := db.Model(&entity.TenantModelProvider{}).Where("id = ?", "provider-1").Update("tenant_id", "tenant-1").Error; err != nil {
+		t.Fatalf("move provider into test tenant: %v", err)
+	}
 	if err := db.Model(&entity.TenantModelInstance{}).Where("id = ?", "instance-1").Updates(map[string]interface{}{
 		"api_key": "sk-stored-secret",
 		"extra":   `{"region":"us-east-1","base_url":"https://stored.example"}`,
