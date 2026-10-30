@@ -645,6 +645,46 @@ func assertMaterializedMediaContext(t *testing.T, chunk map[string]any, wantText
 	}
 }
 
+func TestFinalizePDFChunksRetainsContextOnlyMedia(t *testing.T) {
+	chunks := []schema.ChunkDoc{{
+		DocType:      "image",
+		ContextAbove: "before.",
+	}}
+	if got := finalizeGeneralChunks(chunks, nil); len(got) != 0 {
+		t.Fatalf("non-PDF finalizer retained context-only media: %#v", got)
+	}
+	if got := finalizePDFChunks(chunks, nil); len(got) != 1 {
+		t.Fatalf("PDF finalizer dropped context-only media: %#v", got)
+	}
+}
+
+func TestGeneralChunkerDropsContextOnlyMediaOutsidePDF(t *testing.T) {
+	for _, fileType := range []string{"docx", "md", "txt"} {
+		t.Run(fileType, func(t *testing.T) {
+			component, err := NewGeneralChunker(map[string]any{"image_context_size": 64})
+			if err != nil {
+				t.Fatalf("NewGeneralChunker: %v", err)
+			}
+			out, err := component.Invoke(t.Context(), nil, map[string]any{
+				"name":          "source." + fileType,
+				"file_type":     fileType,
+				"output_format": "json",
+				"json": []map[string]any{
+					{"text": "before.", "doc_type_kwd": "text"},
+					{"text": "", "doc_type_kwd": "image"},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			chunks := outputChunks(t, out)
+			if len(chunks) != 1 || chunks[0]["text"] != "before." || chunks[0]["doc_type_kwd"] != "text" {
+				t.Fatalf("context-only media survived outside PDF: %#v", chunks)
+			}
+		})
+	}
+}
+
 func TestGeneralChunkerMarkdownAttachesMediaContext(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{
 		"chunk_token_size":   10,

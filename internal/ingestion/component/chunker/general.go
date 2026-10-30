@@ -274,7 +274,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	// Finalize child text and positions before cropping stamps IDs and uploads
 	// previews. Splitting an uploaded chunk would copy its ID and image to
 	// every child, causing index overwrites and mismatched previews.
-	chunks = finalizeGeneralChunks(chunks, childrenPattern)
+	chunks = finalizePDFChunks(chunks, childrenPattern)
 	engine, err := newPDFEngineFromUpstream(ctx, db, upstream)
 	if err != nil {
 		common.Warn("GeneralChunker: could not open PDF for on-demand cropping", zap.Error(err))
@@ -1467,12 +1467,26 @@ func sliceGeneralSplitPieces(unit schema.ChunkDoc, parts []string) []schema.Chun
 	return out
 }
 
+// finalizePDFChunks retains context-only media through pre-crop finalization:
+// the PDF cropper may still attach the missing payload. Other formats have no
+// later stage that can fill it, so they use finalizeGeneralChunks directly.
+func finalizePDFChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Regexp) []schema.ChunkDoc {
+	return finalizeGeneralChunksWithContextRetention(chunks, childrenPattern, true)
+}
+
 func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Regexp) []schema.ChunkDoc {
+	return finalizeGeneralChunksWithContextRetention(chunks, childrenPattern, false)
+}
+
+func finalizeGeneralChunksWithContextRetention(chunks []schema.ChunkDoc, childrenPattern *regexp.Regexp, retainContextOnlyMedia bool) []schema.ChunkDoc {
 	visible := make([]schema.ChunkDoc, 0, len(chunks))
 	for _, chunk := range chunks {
 		chunk.Text = removeTag(chunk.Text)
-		// Media context can supply retrievable text before a crop adds its payload.
-		if strings.TrimSpace(canonicalChunkText(chunk)) == "" && !hasMediaPayload(chunk) {
+		text := chunk.Text
+		if retainContextOnlyMedia {
+			text = canonicalChunkText(chunk)
+		}
+		if strings.TrimSpace(text) == "" && !hasMediaPayload(chunk) {
 			continue
 		}
 		visible = append(visible, chunk)
