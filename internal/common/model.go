@@ -62,8 +62,8 @@ type OperationLog struct {
 	ResourceID    string    `json:"resource_id"`
 	ResourceName  string    `json:"resource_name"`
 	RequestParams string    `json:"request_params"`
-	ErrorCode     uint16    `json:"error_code"`
-	Message       string    `json:"message"`
+	Code          int       `json:"code"`
+	Error         error     `json:"error"`
 	DurationMS    int64     `json:"duration_ms"`
 }
 

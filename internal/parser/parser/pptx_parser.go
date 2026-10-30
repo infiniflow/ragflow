@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	deepdocoffice "ragflow/internal/deepdoc/parser/office"
+	"ragflow/internal/parser/media"
 )
 
 // pptxExtract is a test seam for the native office_oxide extraction. It
@@ -151,7 +152,7 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 			JSON: MapsToItems(itemsFromPlainText(plainText)),
 		}
 	}
-	budget := newEmbeddedMediaBudget()
+	budget := media.NewBudget()
 	items, err := buildPPTXJSONSections(irJSON, budget)
 	if err != nil {
 		return ParseResult{Err: err}
@@ -174,6 +175,6 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	return ParseResult{
 		File:     map[string]any{"name": filename, "format": effFormat},
 		JSON:     MapsToItems(items),
-		Warnings: budget.warnings(),
+		Warnings: budget.Warnings(),
 	}
 }

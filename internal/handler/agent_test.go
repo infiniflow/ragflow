@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -58,6 +59,7 @@ func setupHandlerAgentsTestDB(t *testing.T) *gorm.DB {
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
 		&entity.API4Conversation{},
+		&entity.API4ConversationMessage{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -351,6 +353,70 @@ func TestCreateAgentUsesAuthenticatedUserID(t *testing.T) {
 	}
 	if created.EffectiveTenantID() == "" {
 		t.Fatal("created agent has no tenant_id")
+	}
+}
+
+func TestCreateAgentSessionReturnsAgentBinding(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodPost, "/api/v1/agents/canvas-1/sessions")
+	c.Params = gin.Params{{Key: "canvas_id", Value: "canvas-1"}}
+	if err := db.Create(&entity.UserCanvas{ID: "canvas-1", UserID: "user-1", TenantID: sptr("user-1"), DSL: entity.JSONMap{}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	NewAgentHandler(t.Context(), service.NewAgentService(), nil).CreateAgentSession(c)
+	var response struct {
+		Code int
+		Data map[string]any
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != 0 || response.Data["agent_id"] != "canvas-1" {
+		t.Fatalf("response: %s", w.Body.String())
+	}
+}
+
+func TestDeleteAgentSessionsAcceptsBodyAndQuery(t *testing.T) {
+	for _, tc := range []struct {
+		name, query, body string
+		remaining         int64
+	}{
+		{"selected body", "", `{"ids":["first"]}`, 1},
+		{"all body", "", `{"delete_all":true}`, 0},
+		{"selected query", "?ids=first", "", 1},
+		{"all query", "?delete_all=true", "", 0},
+		{"empty body is safe", "", `{}`, 2},
+		{"null ids are safe", "", `{"ids":null}`, 2},
+		{"body takes precedence", "?delete_all=true", `{"ids":["first"]}`, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			url := "/api/v1/agents/canvas-1/sessions" + tc.query
+			c, w, db := setupGinContextWithUserAndDB(t, http.MethodDelete, url)
+			c.Params = gin.Params{{Key: "canvas_id", Value: "canvas-1"}}
+			c.Request.Body = io.NopCloser(strings.NewReader(tc.body))
+			if err := db.Create(&entity.UserCanvas{ID: "canvas-1", UserID: "user-1", TenantID: sptr("user-1")}).Error; err != nil {
+				t.Fatal(err)
+			}
+			for _, id := range []string{"first", "second"} {
+				if err := db.Create(&entity.API4Conversation{ID: id, DialogID: "canvas-1", UserID: "user-1"}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			NewAgentHandler(t.Context(), service.NewAgentService(), nil).DeleteAgentSession(c)
+			var response struct{ Code int }
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != 0 {
+				t.Fatalf("response: %s", w.Body.String())
+			}
+			var remaining int64
+			if err := db.Model(&entity.API4Conversation{}).Count(&remaining).Error; err != nil {
+				t.Fatal(err)
+			}
+			if remaining != tc.remaining {
+				t.Fatalf("remaining=%d, want %d; response: %s", remaining, tc.remaining, w.Body.String())
+			}
+		})
 	}
 }
 

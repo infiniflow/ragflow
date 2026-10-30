@@ -1215,7 +1215,7 @@ Beispiel: Virtual Hosted Style`,
         'Das Standard-Chat-LLM, das alle neu erstellten Wissensdatenbanken verwenden werden.',
       embeddingModel: 'Embedding-Modell',
       embeddingModelTip:
-        'Das Standard-Einbettungsmodell für jede neu erstellte Wissensdatenbank. Wenn Sie kein Einbettungsmodell in der Dropdown-Liste finden, prüfen Sie, ob Sie die RAGFlow Slim Edition verwenden (die keine Einbettungsmodelle enthält), oder überprüfen Sie die Seite „Modellanbieter“, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
+        'Das Standard-Einbettungsmodell für jede neu erstellte Wissensdatenbank. Wenn Sie kein Einbettungsmodell in der Dropdown-Liste finden, überprüfen Sie die Seite „Modellanbieter“, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',
       img2txtModel: 'Img2txt-Modell',
       img2txtModelTip:
         'Das Standardmodell img2txt für jede neu erstellte Wissensdatenbank. Es beschreibt ein Bild oder Video. Wenn Sie kein Modell im Dropdown-Menü finden können, überprüfen Sie die Seite „Modellanbieter“, um zu sehen, ob Ihr Modellanbieter dieses Modell unterstützt.',

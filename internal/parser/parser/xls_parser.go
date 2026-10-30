@@ -24,6 +24,8 @@ import (
 	"time"
 
 	excel "github.com/jloor/go-excel-reader"
+
+	"ragflow/internal/parser/media"
 )
 
 // CompoundDocumentSignature is the OLE compound-document magic
@@ -100,9 +102,9 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 	if bytes.HasPrefix(data, CompoundDocumentSignature) {
 		items, sheetsCount, err = parseBIFF8Bytes(ctx, data)
 	} else {
-		mediaBudget := newEmbeddedMediaBudget()
+		mediaBudget := media.NewBudget()
 		items, warnings, sheetsCount, err = parseXLSXBytes(data, mediaBudget)
-		warnings = append(warnings, mediaBudget.warnings()...)
+		warnings = append(warnings, mediaBudget.Warnings()...)
 	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
