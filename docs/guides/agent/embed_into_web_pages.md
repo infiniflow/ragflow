@@ -19,7 +19,8 @@ Steps:
 1. On the Agent page, click the target Agent to open its editing page.
 2. Click **Management > Embed into webpage** in the upper right corner of the canvas to open the embedding settings.
 
-![Embed Agent into webpage menu](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/embed_agent_into_webpage.jpg)
+   ![Embed Agent into webpage menu](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/embed_an_agent_web_page.jpg)
+
 3. In **Embed Setup**, choose **Fullscreen chat (traditional iframe)** or **Floating widget (Intercom-style)**.
 4. Set **Language**, **User ID**, and display options as needed. Enable **Published** to use the published version of the Agent.
 5. For a floating widget, use **Widget Customization** to adjust its title, text, and colors. Click **Save widget settings** to save the settings.

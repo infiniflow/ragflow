@@ -59,17 +59,11 @@ Recommendation: When using this feature for the first time, select a small numbe
 
 ## Standard Workflow
 
-1. **Create a knowledge compilation template**: On the Agent page, select **Compilation Operator** when creating a new Agent. Then create a template based on the type of knowledge artifact to generate and complete the related parameter configuration.
-2. **Configure the Ingestion Pipeline**: Add Compiler to the Ingestion Pipeline and select the created knowledge compilation template.
-3. **Apply the Ingestion Pipeline**: In Dataset, select the documents to process and apply the configured Ingestion Pipeline.
-4. **Execute knowledge compilation**: The system parses documents according to the Pipeline configuration and generates the corresponding knowledge artifacts based on the selected template.
-5. **View knowledge artifacts**: After compilation is complete, view generated artifacts such as Graph, Tree, PageIndex, MindMap, Timeline, or Wiki.
-
-![Create a knowledge compilation template](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/usage-flow-standard-usage-flow.jpg)
-
-![Choose Compilation Operator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/usage-flow-standard-usage-flow-2.jpg)
-
-Note: This section helps users quickly understand the overall workflow of knowledge compilation and only shows the operation interface for "creating a knowledge compilation template". Ingestion Pipeline configuration, document application, knowledge artifact viewing, and other operations are described in detail in the corresponding later chapters with interface screenshots. For specific operations, refer to the relevant chapters.
+1. **Create a knowledge compilation template**: Open **Agent** and select **Compilation operator**. Choose **Create from blank** to open **Add template**. Enter **Name**, optionally enter **Description**, and select **Template**: Graph, Mindmap, PageIndex, Timeline, Tree, or Wiki. Complete **Global rules** and the settings displayed for the selected type, then click **Save**. See [Basic Information Configuration](./basic_information_configuration.md).
+2. **Configure the ingestion pipeline**: Create or open a pipeline under **Agent > Ingestion pipeline**. Add **Compiler**, select the saved template group under **Operator**, and choose the model used for compilation. Connect the processing steps to **Indexer**.
+3. **Publish the pipeline**: Click **Save draft**, resolve any reported configuration issues, then click **Publish** and confirm.
+4. **Apply the pipeline**: Open the target Dataset's **Configuration**, open **Parsing mode**, expand the custom pipeline, select its published version within that dropdown, and click **Save**.
+5. **Execute and check compilation**: Upload and parse a representative document. After processing completes, inspect the generated artifacts before processing more documents. See [Apply a Knowledge Compilation Template](./apply_knowledge_compilation_template.md).
 
 Typical flow: Parser -> Chunker -> Compiler -> Indexer.
 

@@ -16,7 +16,7 @@ Click **Create dataset** on the dataset list page, then complete the following s
 
 1. Enter **Name**.
 2. Select an available **Embedding model**.
-3. In **Parse mode**, choose a built-in template, such as **General**, or an ingestion pipeline previously created in **Agent**. Built-in templates and saved pipelines appear in the same list.
+3. In **Parsing mode**, choose a built-in template, such as **General**, or an ingestion pipeline previously created in **Agent**. Built-in templates and saved pipelines appear in the same list.
 4. Click **Save**, then review the dataset's **Configuration** before uploading documents.
 
 ## View Dataset List

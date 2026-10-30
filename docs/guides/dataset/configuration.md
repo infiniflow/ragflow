@@ -24,7 +24,7 @@ The configuration page is used to maintain the core configuration of a dataset. 
 
 ## Parsing Method
 
-The parsing method determines how uploaded documents are processed into chunks. In **Parse mode**, select a built-in template or a saved ingestion pipeline from the same drop-down list.
+The parsing method determines how uploaded documents are processed into chunks. In **Parsing mode**, select a built-in template or expand a custom ingestion pipeline and select one of its published versions from the same dropdown.
 
 ### Built-in Parsing
 
@@ -40,6 +40,7 @@ The following built-in parsing methods are available:
 - **Book**: Designed for DOCX, PDF, and TXT books or other long documents with a chapter-based structure.
 - **Laws**: Designed for legal documents in DOCX, PDF, and TXT formats. Chunk boundaries are identified based on the structural characteristics of legal documents.
 - **Presentation**: Designed for presentations in PDF and PPTX formats. Each page or slide is typically treated as an individual chunk.
+- **Picture**: Processes image and video materials into searchable text using OCR and visual descriptions. Configure the relevant OCR or vision model for the content you want to process.
 - **One**: Treats the entire document as a single chunk. This method is suitable for relatively short documents when the complete context needs to be preserved.
 - **Audio**: An audio parsing method for audio files such as WAV, MP3, AAC, FLAC, and OGG. It uses an ASR model to transcribe audio into text and then generates chunks from the transcription.
 - **Email**: An email parsing method for email files such as EML and MSG. It extracts content including the sender, recipients, subject, body, and attachments, and generates chunks from the extracted content.
@@ -133,14 +134,6 @@ For PPTX files mainly containing text and standard tables, consider starting wit
 
 Parsing quality depends on slide layout, image quality, content complexity, and the selected method.
 
-##### Video Parsing
-
-Configure how video files are parsed. An external model recognizes and interprets speech, visuals, and other content, then converts the results into text for subsequent chunking and retrieval.
-
-Select a configured external model with video or multimodal understanding capabilities. Video parsing supports only external models already configured in the system. Such a model can analyze video frames, visible text, speech, and contextual information to generate corresponding text.
-
-Available models depend on the configured providers and their capabilities. Long videos, frequent scene changes, and complex content may increase processing time and model usage. External models may incur additional calls and token usage. Parsing quality depends on video quality, audio and visual clarity, content complexity, and the selected model.
-
 ##### Audio Parsing
 
 Configure how audio files are parsed. An external model transcribes speech into text for subsequent chunking and retrieval.
@@ -209,26 +202,28 @@ Group works well when continuity between nearby sections matters. It combines ad
 
 #### Extractor Configuration
 
+Open the **Extractor** tab to configure enrichment after chunking. Expand a function to view its settings and use the switch beside its name to enable it; expanding the section alone does not enable processing. The panel lists **Auto keywords**, **Auto-question**, **Tags**, **Summary**, and **Metadata**.
+
 The Extractor adds information to chunks after chunking. It can use a model to generate keywords, questions, tags, contextual summaries, and metadata. These additions can improve subsequent retrieval and question answering.
 
 ##### Model
 
-Select the model used by the Extractor. Automatic keywords, automatic questions, augmented context, and metadata that requires model generation call the selected model. Available models depend on the configured providers and their capabilities.
+Select the model used by the Extractor. Enabled keyword, question, summary, and metadata generation functions call the selected model. Available models depend on the configured providers and their capabilities.
 
-##### Automatic Keywords
+##### Auto keywords
 
 Automatically extract keywords or phrases that represent the main content of each chunk.
 
-- **Number of automatic keywords:** Sets how many keywords are generated for each chunk. Set it to **0** to disable keyword extraction.
+- **Number of keywords to extract:** Sets how many keywords are generated for each chunk. Turn on the **Auto keywords** switch and set the required number. Turn the switch off to disable extraction.
 - **System prompt:** Sets the instruction sent to the model. The default prompt asks the model to analyze the text and extract the `{{ topn }}` most important keywords or phrases. You can adapt the prompt to specify keyword types, output language, or format.
 
 Generated keywords add semantic information to chunks and can help with retrieval and content matching.
 
-##### Automatic Questions
+##### Auto-question
 
 Automatically generate questions that each chunk can answer. This adds query-like expressions to the content.
 
-- **Number of automatic questions:** Sets how many questions are generated for each chunk. Set it to **0** to disable question generation.
+- **Auto-question number:** Sets how many questions are generated for each chunk. Turn on the **Auto-question** switch and set the required number. Turn the switch off to disable question generation.
 - **System prompt:** Sets the instruction sent to the model. The default prompt asks the model to understand the text and generate `{{ topn }}` questions related to its main content.
 
 Generated questions should cover important information in the chunk without repeating the same meaning. They can make document content easier to match with users' natural-language questions.
@@ -237,16 +232,16 @@ Generated questions should cover important information in the chunk without repe
 
 Extract or match tags for chunks using a prepared tag file. Tags can classify knowledge content and add semantic information.
 
-- **Number of automatically extracted tags:** Sets how many tags are extracted for each chunk. Set it to **0** to disable automatic tag extraction.
+- **Auto-tags:** Sets how many tags are extracted for each chunk. Enable the **Tags** switch to use this function; turn it off to disable processing.
 - **Tag file:** Selects the file used for tag extraction. The system matches or generates tags for chunks based on the selected tag collection.
 
 Prepare a tag file suitable for the knowledge base before using this feature. A well-designed tag system can support content classification, retrieval, and filtering.
 
-##### Augmented Context
+##### Summary
 
 Generate a concise contextual summary for each chunk and add it as supplementary information. This helps a chunk retain essential background when viewed separately from its source document.
 
-- **Enable augmented context:** Calls the selected model to generate contextual information from the chunk.
+- **Summary** switch: Enables the selected model to summarize chunk content. Turn it off when summaries are not required.
 - **System prompt:** Sets the instruction sent to the model. The default prompt asks for a concise summary faithful to the source content, without introducing information absent from it.
 
 Augmented context is useful when a chunk may lose important background after splitting. For example, a chunk containing only a short passage can gain a summary of its subject and context, helping retrieval and model understanding.
@@ -257,13 +252,13 @@ Enabling this feature increases model calls and token usage.
 
 Add structured metadata to parsed content. Metadata describes document or chunk attributes and can be used for retrieval, filtering, and content management.
 
-- **Enable metadata:** Extracts or generates metadata according to the configured fields.
+- **Metadata** switch: Enables extraction or generation according to the configured fields.
 - **Settings:** Opens the metadata generation settings, where you configure the fields to extract or generate.
 
 Metadata generation settings provide the following options:
 
-- **Generate:** Define metadata fields to generate. Add fields and configure their descriptions, types, and values. The system generates metadata based on these settings.
-- **Built-in parser template:** Use structured information already provided during parsing as a metadata source, without defining the same information again.
+- **Generation:** Define metadata fields to generate. Add fields and configure their descriptions, types, and values. The system generates metadata based on these settings.
+- **Built-in:** Enable predefined fields such as `update_time` and `file_name`.
 - **Add:** Add a metadata field with a name, description, type, and value according to your needs.
 
 For example, you can add fields for document type, department, author, subject, date, or business category. Well-configured metadata lets you narrow subsequent searches with metadata conditions. Metadata generated by a model may incur additional model calls and token usage.
@@ -272,38 +267,36 @@ For example, you can add fields for document type, department, author, subject, 
 
 Configure how chunks are indexed and written to the retrieval engine. You can use full-text search, vector search, or both, and specify which content field is indexed. The Indexer uses the embedding model configured for the knowledge base; you do not need to select one here.
 
-- **Search methods:** Select one or more ways to index and retrieve chunks.
+- **Search method:** Displays **Embedding** and **Full-text** as labels. These are not selectable checkboxes in the current panel.
   - **Embedding:** Creates vector representations and a vector index for semantic retrieval. A relevant chunk may be retrieved even when the query does not use the same words as the source text.
   - **Full-text:** Creates a full-text index for keyword matching. This is useful for product codes, names, technical terms, code, and other content requiring exact matches.
-  - **Embedding + Full-text:** Creates both vector and full-text indexes to support semantic and keyword matching.
 - **Filename embedding weight:** Sets the filename's weight in the vector representation. The filename contributes semantic information alongside the chunk content. A higher value gives it more influence. Increase the weight when filenames clearly express document topics; decrease it when filenames are random identifiers or have little meaning.
-- **Fields:** Specifies the content used for indexing and retrieval. Available fields are **Processed text**, **Questions**, and **Augmented context**.
+- **Field:** Selects the content to embed. Available fields are **Processed text**, **Questions**, and **Augmented context**.
   - **Processed text:** Indexes the chunk body produced by the Parser, Chunker, and other preceding steps. This is the most direct method and the default selection.
-  - **Questions:** Indexes questions generated by the Extractor's Automatic Questions feature. A user's question can then match a pre-generated question, which is useful for question-answering knowledge bases. Configure automatic question extraction before using this field.
-  - **Augmented context:** Indexes context generated by the Extractor instead of relying only on the original chunk content. This is useful when chunks need additional background for effective retrieval.
+  - **Questions:** Indexes questions generated by the Extractor's **Auto-question** function. A user's question can then match a pre-generated question, which is useful for question-answering knowledge bases. Configure automatic question extraction before using this field.
+  - **Augmented context:** Embeds the summary generated by the Extractor's **Summary** function. This is useful when chunks need additional background for effective retrieval.
 
-For most knowledge bases, you can enable both **Embedding** and **Full-text** and index **Processed text**. If you have enabled Automatic Questions or Augmented Context, consider indexing **Questions** or **Augmented context** according to the types of queries you expect.
+Start with **Processed text**. To use **Questions**, first enable **Auto-question** in Extractor; to use **Augmented context**, enable **Summary**. Validate that the required content is generated before relying on it for retrieval.
 
 ### Custom Ingestion Pipeline
 
 **Pipeline** means using a custom **Ingestion Pipeline** as the dataset's parsing method. It is suitable for scenarios that require custom document processing logic or complex processing flows.
 
-The pipeline must be created and configured in **Agent > Ingestion Pipeline** in advance. In the dataset, you do not need to configure the processing nodes inside the pipeline again. You only need to select the created pipeline.
+Create and publish the pipeline in **Agent > Ingestion pipeline** before applying it to a Dataset. A saved draft alone is not selectable for parsing.
 
-Usage:
+1. Configure the pipeline, click **Save draft**, and resolve any **Checklist** issues.
+2. Click **Publish** and confirm to create a version.
+3. Open the Dataset's **Configuration > Parsing mode**.
+4. Expand the custom pipeline and select the required published version within the same dropdown. There is no separate Version selector. **No published versions** means you must publish the pipeline first. Entries marked **Built in** can be selected directly.
+5. Click **Save**, then parse a sample document to validate the result.
 
-1. Create and configure an **Ingestion Pipeline** in **Agent > Ingestion Pipeline**.
-2. Go to **Dataset > Configuration** and select **Pipeline** as the parsing method.
-3. Select the pipeline to use from the pipeline list.
-4. Save the configuration. Afterward, documents in the dataset are processed according to the selected pipeline.
-
-If no pipeline is currently available, you can use the entry provided in the pipeline area to go to **Agent** and create one.
+The Dataset retains its selected version when another version is published. To apply an update, select the new version in **Parsing mode**, save, and reparse the documents that need the updated processing. Existing chunks are not regenerated automatically.
 
 > Note: For pipeline creation, node configuration, and flow orchestration, see [**Ingestion Pipeline**](../agent/ingestion_pipeline/create_ingestion_pipeline.md).
 
 ### Auto Metadata: Automatic Metadata Configuration
 
-**Auto Metadata** is used to configure metadata automatically generated during document parsing. The system supports two types of metadata: **Generation** and **Built-in**. You can configure them separately as needed.
+Open **Extractor > Metadata > Settings** to configure metadata automatically generated during document parsing. Enable the **Metadata** switch for the settings to take effect during processing. The system supports two types of metadata: **Generation** and **Built-in**. You can configure them separately as needed.
 
 > Note: Changes in **Metadata generation settings** only take effect for newly parsed documents later. They do not automatically update documents that have already completed parsing. To apply the new configuration to existing documents, parse the relevant documents again.
 

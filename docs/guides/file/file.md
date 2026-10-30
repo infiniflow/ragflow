@@ -31,7 +31,7 @@ RAGFlow file management lets you build your own file system through nested folde
 
 After clicking **Add File** in the upper-right corner of the page, select **Upload File** to open the upload window. The upload control contains two tabs: **File** and **Folder**. You can select one or more files, or upload an entire folder.
 
-![Upload files](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_files.jpg)
+![Upload files](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_file_2.jpg)
 
 ### Upload File
 

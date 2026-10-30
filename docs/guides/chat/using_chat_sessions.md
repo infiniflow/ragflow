@@ -31,9 +31,21 @@ Use different conversations for different topics. For example, after discussing 
 
 Enter a question in the message box and press **Enter**, or click **Send**. Press **Shift+Enter** to insert a line break.
 
-While an answer is being generated, click **Stop** to interrupt it. Before sending a question, you can select a Thinking mode, enable or disable web search, and add attachments.
+While an answer is being generated, click **Stop** to interrupt it. Before sending a question, select a Thinking mode, enable web search when available, or add attachments.
 
 Chat generates an answer using the current conversation history together with the Chat's configured knowledge bases, model, and system prompt.
+
+## Choose a Thinking Mode
+
+Open the mode selector beside the message box and choose **Naive** or **Agentic** before sending a question. Use Naive for straightforward retrieval questions and Agentic for investigations or comparisons across documents.
+
+The corresponding settings are under **Chat setting > Advanced settings > Naive** and **Agentic**. Expanding one of those settings groups does not select the mode for your question. See [Chat Configuration](./chat_configuration.md) to configure each flow.
+
+## Use Web Search
+
+When a web search provider is configured, the message box shows a globe-shaped web search control. Enable it before sending a question that needs public web information; turn it off when web search is not needed.
+
+If the control is missing, open **Chat setting > Advanced settings > Web search provider**, select a provider, complete its required API key field, and click **Save**. Providers that require no key only need to be selected and saved. See [Configure Web Search](./chat_configuration.md#configure-web-search).
 
 ## Upload Files
 

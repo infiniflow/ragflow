@@ -10,72 +10,47 @@ sidebar_custom_props: {
 
 # Creation and Management
 
-## Access Agent Page
-After logging into RAGFlow, click **Agent** in the top navigation bar to enter the Agent page. Created Agents are displayed as cards. Click an existing card to continue editing; click the creation entry to create a new Agent.
+## Open the Workflow List
 
-![Agent list](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_list.jpg)
+Click **Agent** in the top navigation bar, then select **Workflow**. Each card represents a workflow. Click a card to open its canvas and continue editing.
+
+Select the category before creating an application. This chapter covers Workflow. For document processing, see [Create an Ingestion Pipeline](./ingestion_pipeline/create_ingestion_pipeline.md). For compilation templates, see [Knowledge Compilation](../knowledge_compilation/overview.md).
+
+## Create from Blank Agent
+
+1. Open **Agent > Workflow**.
+2. Open the **+** creation menu in the upper-right corner and choose **Create from blank**. On an empty list, you can use the **Create from blank** entry directly.
+
+   ![Workflow category and Create from blank entry](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_an_agent_from_blank_1.jpg)
+
+3. In **Create workflow**, enter **Name** and click **Confirm**.
+4. Open the workflow card. A blank workflow starts with **Begin**.
+5. Click **Begin** to configure its mode and inputs. Use its outgoing connection point to add the next component, then configure the component in the panel on the right.
+6. Connect the remaining steps and click **Save draft**. Use **Run** to test the workflow before publishing it.
+
+Each workflow has one Begin component. Begin is the entry point and cannot be deleted.
 
 ## Create from Template
-RAGFlow provides Agent templates for different business scenarios. When creating from a template, the system presets common components and connections. Users only need to modify models, knowledge bases, prompts, interface addresses or output content.
 
-Steps:
-1. Enter the Agent page.
-2. Open **Create agent > Create from template**.
+Templates provide components and connections for common tasks. Select one that is close to your task, then replace its models, datasets, prompts, and tool settings with resources available to your account.
 
-![Create from a template entry](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_from_a_template_2.jpg)
-3. Select an appropriate template on the template page, such as Deep Research, Knowledge Base Q&A, Data Analysis or E-commerce Customer Service template.
+1. Open **Agent > Workflow** and choose **Create from template** from the creation menu.
 
-![Select an Agent template](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_from_a_template_3.jpg)
-4. Enter the Agent name.
-5. Confirm the creation.
-6. After entering the canvas, check the configuration of each component and save.
+   ![Workflow Create from template entry](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_from_a_template_2.jpg)
 
-![Template Agent canvas](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_from_a_template_4.jpg)
-## Create from Blank Agent
-A blank Workflow starts with **Begin**. Use a component's outgoing connection point to add downstream components. An Ingestion pipeline starts with **Begin → Parser**; see [Create an Ingestion Pipeline](./ingestion_pipeline/create_ingestion_pipeline.md) for its setup.
+2. Browse the template categories and select a suitable template.
+3. Use the selected template and complete the name and confirmation prompts.
+4. Open the created workflow and check each component. In particular, reselect models, datasets, and tools that the template requires.
+5. Click **Save draft**, then **Run** and test with representative inputs.
 
-Steps:
-1. Enter the Agent page.
-2. Open **Create agent**.
-3. Select **Create from blank**.
-
-![Create from blank entry](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_an_agent_from_blank_1.jpg)
-4. Select **Workflow**, **Ingestion pipeline**, or **Compilation operator**, enter **Name**, and click **Confirm**. Choose Workflow for a conversational Agent.
-5. Open the created card to enter its canvas. For **Compilation operator**, configure the template group and model as described in [Configure the Compiler Component](./ingestion_pipeline/understand_core_ingestion_pipeline_components.md#configure-the-compiler-component).
-6. For a Workflow, click the outgoing connection point on **Begin** and add the next component.
-
-![Add components to a blank Agent](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_an_agent_from_blank_3.jpg)
-7. Configure each component.
-8. Click **Save**.
-
-:::tip NOTE
-The `Begin` component is the start of the workflow. Each Agent can only have one Begin component and it cannot be deleted. After creation, configure Begin first, then configure subsequent components.
-:::
 ## Search, Copy and Delete Agent
-- **Search**: Enter the Agent name in the list's search box.
-- **Copy**: Open the Agent, choose **Management > Export**, then [import the JSON](./import_and_export_agents.md#import-agent) with a different name.
-- **Delete**: Open the card's **…** menu, select **Delete**, and confirm the Agent name. Deletion removes the Agent and its saved versions. Export a copy first if you need to keep its configuration.
 
-## Save and Publish
+- **Search**: Enter the workflow name in the list's search box.
+- **Copy**: Open the workflow, select **Management > Export**, then [import the JSON](./import_and_export_agents.md#import-agent) with a different name.
+- **Delete**: Open the card's **…** menu, select **Delete**, and complete the confirmation. Export a copy first if you need to keep the configuration.
 
-The editor shows the latest autosave time.
+## Save, Test and Publish
 
-- **Save**: Save the editing configuration.
-- **Run**: Test the workflow in the editor.
-- **Launch**: Open the conversation page in Conversational mode.
-- **Publish**: Create a published version after checking the test results.
+The canvas displays the latest **Autosaved** time. **Save draft** saves your current editing configuration; it does not create a published version. Use **Run** to check the workflow, then **Publish** when the configuration is ready for use.
 
-## Management
-
-The Workflow canvas provides these entries under **Management**:
-
-| Entry | Purpose |
-| --- | --- |
-| Conversation variable | Configure variables used in a conversation. |
-| Version history | Browse recorded versions and inspect their canvas configurations. A history entry alone does not indicate a published version. |
-| Log | Search execution records by **ID/Title** and date. View state, version, and other record details, or use **Export current page**. |
-| Export | Export the Agent configuration. |
-| Settings | Open Agent settings. |
-| Embed into webpage | Open the website embedding options. |
-
-Available controls differ for other Agent types. Ingestion pipeline creation and validation are covered in the [pipeline guide](./ingestion_pipeline/create_ingestion_pipeline.md).
+See [Canvas Toolbar](./understand_the_canvas.md#canvas-toolbar) for the purpose of each upper-right button, publishing steps, and the entries in **Management**.

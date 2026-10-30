@@ -18,8 +18,8 @@ Configuration steps:
 
 1. Create or open an Ingestion Pipeline.
 2. Add and connect Parser, Chunker, Compiler, and Indexer.
-3. Open CompilerOperator and select the target CompilationTemplate from the template list.
-4. Check node connections and required parameters, and then save the Pipeline.
+3. Open **Compiler**, select the target template group under **Operator**, and choose an available compilation model.
+4. Check node connections and required parameters, click **Save draft**, then **Publish** and confirm to create a pipeline version.
 
 ![Configure Ingestion Pipeline with CompilerOperator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_ingestion_pipeline_apply_knowledge_compilation_template.jpg)
 
@@ -29,8 +29,8 @@ Note: CompilationTemplate only defines "how to compile". A KnowledgeArtifact is 
 
 1. Go to the Dataset page and create a Dataset or open an existing Dataset.
 2. Upload the documents to process.
-3. Open **Configuration** and find **Parse mode**.
-4. Select the Ingestion Pipeline that contains CompilerOperator and click **Save**.
+3. Open **Configuration** and find **Parsing mode**.
+4. Open **Parsing mode**, expand the ingestion pipeline that contains **Compiler**, select its published version within that dropdown, and click **Save**. If it shows **No published versions**, publish the pipeline first.
 5. Start parsing and check in the task logs whether Parser, Chunker, Compiler, and Indexer complete in sequence.
 
 ![Select the compilation pipeline in Dataset configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/connect_the_pipeline_to_a_knowledge_base.jpg)
