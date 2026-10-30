@@ -40,22 +40,24 @@ const (
 	TTL          = 24 * time.Hour
 )
 
-// Store is a run-scoped media cache backed by a chunkcache.Store. It dedupes
-// writes by digest and bounds how many distinct images, and how many decoded
-// bytes, one run may keep in the backend.
+// Store is a run-scoped media cache backed by a Backend. It dedupes writes by
+// digest and bounds how many distinct images, and how many decoded bytes, one
+// run may keep in the backend.
 type Store struct {
-	backend chunkcache.Store
+	backend Backend
 	scope   string
 
 	maxImages int
 	maxBytes  int64
 }
 
-// atomicStore is the fail-closed admission primitive used by production
-// Kvrocks and by in-memory tests. The quota, media value, and manifest update
-// happen in one backend operation so separate Store instances and processes
-// cannot each admit a full run allowance.
-type atomicStore interface {
+// Backend provides the cache lifecycle operations and atomic quota admission.
+// The quota, media value, and manifest update happen in one MediaPut operation
+// so separate Store instances and processes cannot each admit a full run
+// allowance.
+type Backend interface {
+	chunkcache.Store
+
 	MediaPut(
 		ctx context.Context,
 		mediaKey, digestKey, stateKey, digest, value string,
@@ -69,7 +71,7 @@ type atomicStore interface {
 // New returns a cache bound to one ingestion run. A nil backend is a valid
 // value so callers can surface configured-cache failures only when media is
 // actually encountered.
-func New(backend chunkcache.Store, scope string) *Store {
+func New(backend Backend, scope string) *Store {
 	return &Store{
 		backend:   backend,
 		scope:     strings.TrimSpace(scope),
@@ -112,16 +114,12 @@ func (s *Store) Put(ctx context.Context, format, mime string, data []byte) (enti
 	}
 
 	key := s.key(digest)
-	atomicBackend, ok := s.backend.(atomicStore)
-	if !ok {
-		return entity.MediaRef{}, errors.New("mediacache: backend does not support atomic quota admission")
-	}
 	mk := ""
 	if globals.TaskID(ctx) != "" {
 		mk = manifestKey(s.scope)
 	}
 	digestKey, stateKey := quotaKeys(s.scope)
-	accepted, _, err := atomicBackend.MediaPut(
+	accepted, _, err := s.backend.MediaPut(
 		ctx,
 		key,
 		digestKey,

@@ -411,8 +411,8 @@ func (s *htmlWalkState) loadEPUBMedia(name, mime string, entry *zip.File) (*enti
 		declared = media.Size(entry.UncompressedSize64)
 	}
 	// Check the declared uncompressed size against both byte limits before
-	// reserving a source slot or decompressing the entry.
-	reservation, admission := s.budget.Reserve(name, declared)
+	// reserving an item slot or decompressing the entry.
+	reservation, admission := s.budget.Reserve(declared)
 	if admission != media.Admitted {
 		s.memoizeEPUBMedia(name, nil)
 		return nil, false

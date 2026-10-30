@@ -135,7 +135,7 @@ const (
 			return {1, 0}
 		end
 
-		local images = tonumber(redis.call("HGET", state_key, "images") or "0")
+		local images = redis.call("SCARD", digest_key)
 		local bytes  = tonumber(redis.call("HGET", state_key, "bytes") or "0")
 		if max_images > 0 and images >= max_images then
 			return {0, 0}
@@ -147,7 +147,6 @@ const (
 		redis.call("SET", media_key, value, "EX", ttl)
 		track_manifest()
 		redis.call("SADD", digest_key, digest)
-		redis.call("HINCRBY", state_key, "images", 1)
 		redis.call("HINCRBY", state_key, "bytes", #value)
 		redis.call("EXPIRE", digest_key, ttl)
 		redis.call("EXPIRE", state_key, ttl)

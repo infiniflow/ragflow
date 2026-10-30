@@ -211,9 +211,9 @@ func TestHTMLMediaRealServices(t *testing.T) {
 	if member, err := kv.GetClient().SIsMember(t.Context(), digestKey, retryRef.SHA256).Result(); err != nil || !member {
 		t.Fatalf("quota digest membership = %v, %v; want true", member, err)
 	}
-	images, err := kv.GetClient().HGet(t.Context(), stateKey, "images").Result()
-	if err != nil || images != "1" {
-		t.Fatalf("quota images = %q, %v; want 1", images, err)
+	images, err := kv.GetClient().SCard(t.Context(), digestKey).Result()
+	if err != nil || images != 1 {
+		t.Fatalf("quota images = %d, %v; want 1", images, err)
 	}
 	bytesUsed, err := kv.GetClient().HGet(t.Context(), stateKey, "bytes").Result()
 	if err != nil || bytesUsed != fmt.Sprint(len(png)) {

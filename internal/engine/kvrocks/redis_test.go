@@ -223,6 +223,50 @@ func TestMediaPutEnforcesQuotaAndRestoresDuplicate(t *testing.T) {
 	}
 }
 
+func TestMediaPutCountsDigestSetInsteadOfMirroredHash(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+	digestKey := "mc:quota:scard:digests"
+	stateKey := "mc:quota:scard:state"
+
+	accepted, inserted, err := r.MediaPut(
+		ctx,
+		"mc:media:scard:a",
+		digestKey,
+		stateKey,
+		"digest-a",
+		"a",
+		"",
+		"",
+		1,
+		100,
+		time.Hour,
+	)
+	if err != nil || !accepted || !inserted {
+		t.Fatalf("first MediaPut = (%v, %v, %v), want (true, true, nil)", accepted, inserted, err)
+	}
+	if err := r.GetClient().HSet(ctx, stateKey, "images", 0).Err(); err != nil {
+		t.Fatalf("make mirrored image count diverge: %v", err)
+	}
+
+	accepted, inserted, err = r.MediaPut(
+		ctx,
+		"mc:media:scard:b",
+		digestKey,
+		stateKey,
+		"digest-b",
+		"b",
+		"",
+		"",
+		1,
+		100,
+		time.Hour,
+	)
+	if err != nil || accepted || inserted {
+		t.Fatalf("second MediaPut = (%v, %v, %v), want (false, false, nil)", accepted, inserted, err)
+	}
+}
+
 func TestMediaPutRejectsByteOverflow(t *testing.T) {
 	r, _ := newStrictTestClient(t)
 	ctx := t.Context()

@@ -39,30 +39,29 @@ const (
 	RejectedInvalid
 )
 
-// Budget enforces one parser run's image count and byte limits. Stable sources
-// are admitted once through Reserve; source-less payloads use
-// ReserveOccurrence so each occurrence consumes one item.
+// Budget enforces one parser run's image count and byte limits. Reserve checks
+// declared bytes before reserving a stable source; ReserveOccurrence preserves
+// sequential extraction semantics by consuming the count slot first.
 type Budget struct {
 	limits Limits
 
-	sources         map[string]*budgetSource
-	sourcesUsed     int
+	itemsUsed       int
 	totalBytes      int64
 	oversizedImages int
 	totalOverflows  int
 	countExhausted  bool
 }
 
-type budgetSource struct {
+type budgetItem struct {
 	included bool
 	charged  bool
 }
 
-// Reservation is one admitted source or occurrence. Commit applies the actual
-// payload size after the caller reads or decodes it.
+// Reservation is one admitted item. Commit applies the actual payload size
+// after the caller reads or decodes it.
 type Reservation struct {
 	budget *Budget
-	entry  *budgetSource
+	item   *budgetItem
 }
 
 // NewBudget returns a run budget using the current configured limits.
@@ -72,45 +71,27 @@ func NewBudget() *Budget {
 
 // NewBudgetWithLimits returns a run budget with an explicit limits snapshot.
 func NewBudgetWithLimits(limits Limits) *Budget {
-	return &Budget{
-		limits:  limits,
-		sources: make(map[string]*budgetSource),
-	}
+	return &Budget{limits: limits}
 }
 
-// Reserve admits a stable source before its bytes are read. Repeated references
-// to an included source reuse the same reservation. A declared size rejected
-// by a byte limit is memoized as charged without consuming a source slot.
-func (b *Budget) Reserve(source string, declared Size) (*Reservation, Admission) {
+// Reserve admits a stable source before its bytes are read. A declared size
+// rejected by a byte limit does not consume a count slot. Callers memoize the
+// source so a successful reservation is reused without another Budget lookup.
+func (b *Budget) Reserve(declared Size) (*Reservation, Admission) {
 	if declared != UnknownSize && declared < 0 {
 		return nil, RejectedInvalid
 	}
-	if entry, ok := b.sources[source]; ok {
-		reservation := &Reservation{budget: b, entry: entry}
-		if entry.charged {
-			return nil, RejectedByBytes
-		}
-		if entry.included {
-			return reservation, Admitted
-		}
-		if declared != UnknownSize && !b.admitBytes(entry, declared) {
-			return nil, RejectedByBytes
-		}
-		return reservation, Admitted
-	}
 	if declared != UnknownSize && !b.canAdmitBytes(declared) {
-		b.sources[source] = &budgetSource{charged: true}
 		b.noteByteRejection(declared)
 		return nil, RejectedByBytes
 	}
-	if b.countExhausted || b.sourcesUsed >= b.limits.MaxImagesPerRun {
+	if b.countExhausted || b.itemsUsed >= b.limits.MaxImagesPerRun {
 		b.countExhausted = true
 		return nil, RejectedByCount
 	}
-	entry := &budgetSource{}
-	b.sources[source] = entry
-	b.sourcesUsed++
-	return &Reservation{budget: b, entry: entry}, Admitted
+	item := &budgetItem{}
+	b.itemsUsed++
+	return &Reservation{budget: b, item: item}, Admitted
 }
 
 // ReserveOccurrence admits a source-less payload. The occurrence consumes one
@@ -120,41 +101,41 @@ func (b *Budget) ReserveOccurrence(declared Size) (*Reservation, Admission) {
 	if declared != UnknownSize && declared < 0 {
 		return nil, RejectedInvalid
 	}
-	if b.countExhausted || b.sourcesUsed >= b.limits.MaxImagesPerRun {
+	if b.countExhausted || b.itemsUsed >= b.limits.MaxImagesPerRun {
 		b.countExhausted = true
 		return nil, RejectedByCount
 	}
-	entry := &budgetSource{}
-	b.sourcesUsed++
-	if declared != UnknownSize && !b.admitBytes(entry, declared) {
+	item := &budgetItem{}
+	b.itemsUsed++
+	if declared != UnknownSize && !b.admitBytes(item, declared) {
 		return nil, RejectedByBytes
 	}
-	return &Reservation{budget: b, entry: entry}, Admitted
+	return &Reservation{budget: b, item: item}, Admitted
 }
 
 // Commit applies the actual payload size to a reservation. It is idempotent
-// for an included source and keeps byte-rejected reservations rejected.
+// for an included item and keeps byte-rejected reservations rejected.
 func (r *Reservation) Commit(actual Size) bool {
-	if r == nil || r.budget == nil || r.entry == nil {
+	if r == nil || r.budget == nil || r.item == nil {
 		return false
 	}
-	if r.entry.included {
+	if r.item.included {
 		return true
 	}
-	if r.entry.charged || actual < 0 {
+	if r.item.charged || actual < 0 {
 		return false
 	}
-	if !r.budget.admitBytes(r.entry, actual) {
+	if !r.budget.admitBytes(r.item, actual) {
 		return false
 	}
-	r.entry.included = true
+	r.item.included = true
 	r.budget.totalBytes += int64(actual)
 	return true
 }
 
-// Count reports how many source or occurrence slots this run has reserved.
+// Count reports how many items this run has reserved.
 func (b *Budget) Count() int {
-	return b.sourcesUsed
+	return b.itemsUsed
 }
 
 func (b *Budget) canAdmitBytes(size Size) bool {
@@ -164,14 +145,14 @@ func (b *Budget) canAdmitBytes(size Size) bool {
 	return int64(size) <= b.limits.MaxBytesPerRun-b.totalBytes
 }
 
-func (b *Budget) admitBytes(entry *budgetSource, size Size) bool {
-	if entry.charged {
+func (b *Budget) admitBytes(item *budgetItem, size Size) bool {
+	if item.charged {
 		return false
 	}
 	if b.canAdmitBytes(size) {
 		return true
 	}
-	entry.charged = true
+	item.charged = true
 	b.noteByteRejection(size)
 	return false
 }

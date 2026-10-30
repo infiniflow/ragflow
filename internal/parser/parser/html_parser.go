@@ -223,7 +223,7 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 		}
 		// Repeated sources share one reservation, so a document made of one
 		// repeated data URI stays bounded without capping its references.
-		reservation, admission := s.budget.Reserve(src, media.Size(size))
+		reservation, admission := s.budget.Reserve(media.Size(size))
 		if admission != media.Admitted {
 			s.memoizeDataURI(src, nil)
 			return "", nil, false
