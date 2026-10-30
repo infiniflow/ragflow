@@ -102,6 +102,11 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	// Set log level
 	bootstrap.SetLogger(serverName, args)
 
+	// Initialize the ingestion lifecycle event sink (best-effort; off unless
+	// ingestor.log.path is configured). Flush it on shutdown.
+	bootstrap.SetIngestLog(serverName)
+	defer common.SyncIngestLog()
+
 	validator := utility.NewScheduledTask("Admin validator", globalConfig.GetHeartbeatInterval(), adminapi.CheckServicePeriodically)
 	validator.Start()
 	defer validator.Stop()

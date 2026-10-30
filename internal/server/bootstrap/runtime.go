@@ -60,6 +60,22 @@ func SetLogger(serverName string, arguments *ServerArgs) {
 	}
 }
 
+// SetIngestLog (re)initializes the ingestion lifecycle event sink for the given
+// server name from the configured ingest_log settings. It mirrors SetLogger so
+// every server mode that can emit (the API server creating/enqueuing tasks, the
+// ingestor running them, etc.) shares one sink. Emission is best-effort: a sink
+// init failure is logged but never fatal, and a no-op sink keeps the feature
+// dormant when ingestor.log.path is unset.
+func SetIngestLog(serverName string) {
+	globalConfig := server.GetConfig()
+	ingestLogConfig := globalConfig.GetIngestLogConfig()
+	// Flush any prior sink before swapping it out (e.g. on a reconfigure).
+	common.SyncIngestLog()
+	if err := common.InitIngestLog(ingestLogConfig.Type, ingestLogConfig.GetFileOutput(), serverName); err != nil {
+		common.Error("Failed to initialize ingest log sink", err)
+	}
+}
+
 // StartHeartbeat initializes and starts the heartbeat reporter to the admin
 // server. It is shared by the API, ingestor, and syncer server modes. The
 // caller must defer the returned *utility.ScheduledTask's Stop() method.
