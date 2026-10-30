@@ -139,7 +139,7 @@ var ThreatPatterns = []ThreatPattern{
 		Description: "Python rmtree on absolute or root-relative path",
 	},
 	{
-		Pattern:     `rm\s+(-[a-zA-Z]*r[a-zA-Z]*\s+|--)recursive\s+).*\$`,
+		Pattern:     `rm\s+(-[a-zA-Z]*r[a-zA-Z]*|--recursive)\s+.*\$`,
 		PatternID:   "rm_recursive_dangerous",
 		Severity:    "high",
 		Category:    "destructive",
