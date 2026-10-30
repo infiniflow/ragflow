@@ -25,38 +25,10 @@ import (
 )
 
 // Placeholder stubs satisfying engine.DocEngine during incremental milestones.
-// Each method will be replaced by concrete implementations in Commits 5-9.
-
-func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
-	return fmt.Errorf("CreateChunkStore pending Commit 5")
-}
-
-func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error) {
-	return nil, fmt.Errorf("InsertChunks pending Commit 5")
-}
-
-func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, baseName string, datasetID string) error {
-	return fmt.Errorf("UpdateChunks pending Commit 5")
-}
-
-func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interface{}, baseName string, datasetID string) (int64, error) {
-	return 0, fmt.Errorf("DeleteChunks pending Commit 5")
-}
+// Each method will be replaced by concrete implementations in Commits 6-9.
 
 func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	return nil, fmt.Errorf("Search pending Commits 7-8")
-}
-
-func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, datasetIDs []string) (interface{}, error) {
-	return nil, fmt.Errorf("GetChunk pending Commit 5")
-}
-
-func (e *Engine) DropChunkStore(ctx context.Context, baseName, datasetID string) error {
-	return fmt.Errorf("DropChunkStore pending Commit 5")
-}
-
-func (e *Engine) ChunkStoreExists(ctx context.Context, baseName, datasetID string) (bool, error) {
-	return false, fmt.Errorf("ChunkStoreExists pending Commit 5")
 }
 
 func (e *Engine) CreateMetadataStore(ctx context.Context, tenantID string) error {
