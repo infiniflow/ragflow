@@ -51,10 +51,7 @@ export function SingleChatBox({ conversation }: IProps) {
 
   const showInternet = useShowInternet();
 
-  const messageReferences = useMessageReferences(
-    messages,
-    conversation.reference,
-  );
+  const messageReferences = useMessageReferences(messages);
 
   useEffect(() => {
     // Skip when the conversation prop is stale — its id doesn't match the
@@ -103,6 +100,7 @@ export function SingleChatBox({ conversation }: IProps) {
               index={i}
               isLast={i === messages.length - 1}
               removeMessageById={removeMessageById}
+              deleteDisabled={message.awaitingServerId}
               regenerateMessage={regenerateMessage}
               sendLoading={sendLoading}
             />

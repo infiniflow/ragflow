@@ -31,6 +31,7 @@ import (
 	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // componentCtx builds a Gin context for one of the
@@ -46,6 +47,10 @@ func componentCtx(t *testing.T, method, path, body string) (*gin.Context, *httpt
 		c.Request.Header.Set("Content-Type", "application/json")
 	}
 	c.Set("user", &entity.User{ID: "u-1"})
+	// The auth middleware attaches the permission subject in production; the
+	// enterprise policy needs the tenant from it, so mirror that here.
+	c.Request = c.Request.WithContext(permission.WithSubject(
+		c.Request.Context(), permission.Subject{UserID: "u-1", TenantID: "u-1"}))
 	return c, w
 }
 
@@ -159,67 +164,6 @@ func TestGetComponentInputForm_ExeSQLDynamicInputForm(t *testing.T) {
 	}
 }
 
-func TestGetComponentInputForm_BrowserDynamicInputForm(t *testing.T) {
-	cv := &entity.UserCanvas{
-		ID: "c1",
-		DSL: map[string]any{
-			"components": map[string]any{
-				"Browser:FlatWolvesTry": map[string]any{
-					"obj": map[string]any{
-						"component_name": "Browser",
-						"params": map[string]any{
-							"llm_id":  "gpt-4o@OpenAI",
-							"prompts": "{sys.query}",
-						},
-					},
-				},
-			},
-		},
-	}
-	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
-
-	c, w := componentCtx(t, "GET", "/api/v1/agents/c1/components/Browser:FlatWolvesTry/input-form", "")
-	c.Params = gin.Params{
-		{Key: "canvas_id", Value: "c1"},
-		{Key: "component_id", Value: "Browser:FlatWolvesTry"},
-	}
-	h.GetComponentInputForm(c)
-
-	if w.Code != 200 {
-		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
-	}
-	var env struct {
-		Code int                    `json:"code"`
-		Data map[string]interface{} `json:"data"`
-	}
-	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
-		t.Fatalf("decode: %v (body=%s)", err, w.Body.String())
-	}
-	if env.Code != 0 {
-		t.Fatalf("code = %d, want 0; body=%s", env.Code, w.Body.String())
-	}
-	prompts, ok := env.Data["prompts"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("data.prompts = %v, want a map", env.Data["prompts"])
-	}
-	if prompts["name"] != "Prompts" {
-		t.Errorf("data.prompts.name = %v, want Prompts", prompts["name"])
-	}
-	if prompts["type"] != "paragraph" {
-		t.Errorf("data.prompts.type = %v, want paragraph", prompts["type"])
-	}
-	uploadSources, ok := env.Data["upload_sources"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("data.upload_sources = %v, want a map", env.Data["upload_sources"])
-	}
-	if uploadSources["name"] != "Upload sources" {
-		t.Errorf("data.upload_sources.name = %v, want Upload sources", uploadSources["name"])
-	}
-	if uploadSources["type"] != "line" {
-		t.Errorf("data.upload_sources.type = %v, want line", uploadSources["type"])
-	}
-}
-
 func TestGetComponentInputForm_CanvasNotFound(t *testing.T) {
 	h := &AgentHandler{loader: &fakeCanvasLoader{err: dao.ErrUserCanvasNotFound}}
 
@@ -265,10 +209,11 @@ func TestGetComponentInputForm_NoInputForm(t *testing.T) {
 		ID: "c1",
 		DSL: map[string]any{
 			"components": map[string]any{
-				"answer": map[string]any{
+				"message": map[string]any{
 					"obj": map[string]any{
-						"component_name": "Answer",
+						"component_name": "Message",
 						// no params.inputs
+						"params": map[string]any{"text": "hello"},
 					},
 				},
 			},
@@ -276,10 +221,10 @@ func TestGetComponentInputForm_NoInputForm(t *testing.T) {
 	}
 	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
 
-	c, w := componentCtx(t, "GET", "/api/v1/agents/c1/components/answer/input-form", "")
+	c, w := componentCtx(t, "GET", "/api/v1/agents/c1/components/message/input-form", "")
 	c.Params = gin.Params{
 		{Key: "canvas_id", Value: "c1"},
-		{Key: "component_id", Value: "answer"},
+		{Key: "component_id", Value: "message"},
 	}
 	h.GetComponentInputForm(c)
 
@@ -338,6 +283,8 @@ func (s *sysEchoComponent) Invoke(ctx context.Context, _ *gorm.DB, _ map[string]
 	return map[string]any{
 		"query":     state.Sys["query"],
 		"tenant_id": state.Sys["tenant_id"],
+		"user_id":   state.Sys["user_id"],
+		"canvas_id": state.Sys["canvas_id"],
 	}, nil
 }
 
@@ -366,7 +313,7 @@ func TestDebugComponent_SeedsSysInputsIntoCanvasState(t *testing.T) {
 	}
 	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
 
-	body := `{"params":{"sys.query":{"value":"hello sys"}}}`
+	body := `{"params":{"sys.query":{"value":"hello sys"},"sys.user_id":{"value":"attacker"},"sys.canvas_id":{"value":"other-canvas"}}}`
 	c, w := componentCtx(t, "POST", "/api/v1/agents/c1/components/probe/debug", body)
 	c.Params = gin.Params{
 		{Key: "canvas_id", Value: "c1"},
@@ -386,6 +333,167 @@ func TestDebugComponent_SeedsSysInputsIntoCanvasState(t *testing.T) {
 	}
 	if env.Data["query"] != "hello sys" {
 		t.Fatalf("data.query = %v, want 'hello sys'", env.Data["query"])
+	}
+	if env.Data["user_id"] != "u-1" {
+		t.Errorf("data.user_id = %v, want authenticated caller u-1", env.Data["user_id"])
+	}
+	if env.Data["canvas_id"] != "c1" {
+		t.Errorf("data.canvas_id = %v, want loaded canvas c1", env.Data["canvas_id"])
+	}
+}
+
+// templateEchoComponent resolves a template from its params against the
+// CanvasState carried on the invoke context. It pins the debug endpoint's
+// cpn@param -> state.Outputs seeding: without it, ResolveTemplate returns
+// "Can't find variable".
+type templateEchoComponent struct{ template string }
+
+func (c *templateEchoComponent) Invoke(ctx context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
+	state, err := agentruntime.GetStateFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := agentruntime.ResolveTemplate(c.template, state)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"content": resolved}, nil
+}
+
+// debugWithTemplate runs the DebugComponent endpoint against a Probe
+// component whose params.template is `template`, and returns the decoded
+// response data map.
+func debugWithTemplate(t *testing.T, template, body string) map[string]interface{} {
+	t.Helper()
+
+	origFactory := agentruntime.DefaultFactory()
+	agentruntime.SetDefaultFactory(func(name string, params map[string]any) (agentruntime.Component, error) {
+		if name != "Probe" {
+			return nil, errors.New("unexpected component name: " + name)
+		}
+		tpl, _ := params["template"].(string)
+		return &templateEchoComponent{template: tpl}, nil
+	})
+	t.Cleanup(func() { agentruntime.SetDefaultFactory(origFactory) })
+
+	cv := &entity.UserCanvas{
+		ID: "c1",
+		DSL: map[string]any{
+			"components": map[string]any{
+				"probe": map[string]any{
+					"obj": map[string]any{
+						"component_name": "Probe",
+						"params":         map[string]any{"template": template},
+					},
+				},
+			},
+		},
+	}
+	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
+
+	c, w := componentCtx(t, "POST", "/api/v1/agents/c1/components/probe/debug", body)
+	c.Params = gin.Params{
+		{Key: "canvas_id", Value: "c1"},
+		{Key: "component_id", Value: "probe"},
+	}
+	h.DebugComponent(c)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, w.Body.String())
+	}
+	if env.Code != 0 {
+		t.Fatalf("code = %d, want 0; body=%s", env.Code, w.Body.String())
+	}
+	return env.Data
+}
+
+func TestDebugComponent_SeedsRefInputsIntoCanvasState(t *testing.T) {
+	data := debugWithTemplate(t,
+		"{{Retrieval:FewLinesCry@formalized_content}}",
+		`{"params":{"Retrieval:FewLinesCry@formalized_content":{"value":"doc body"}}}`,
+	)
+	if data["content"] != "doc body" {
+		t.Fatalf("data.content = %v, want 'doc body'", data["content"])
+	}
+}
+
+func TestDebugComponent_SeedsDottedRefInputsIntoCanvasState(t *testing.T) {
+	data := debugWithTemplate(t,
+		"{{Retrieval:TwoWords@chunk.content}}",
+		`{"params":{"Retrieval:TwoWords@chunk.content":{"value":"nested hit"}}}`,
+	)
+	if data["content"] != "nested hit" {
+		t.Fatalf("data.content = %v, want 'nested hit'", data["content"])
+	}
+}
+
+func TestDebugComponent_MalformedRefKeyIsIgnored(t *testing.T) {
+	data := debugWithTemplate(t,
+		"{{ok@ref}}",
+		`{"params":{"@leading":{"value":"x"},"trailing@":{"value":"y"},"ok@ref":{"value":"z"}}}`,
+	)
+	if data["content"] != "z" {
+		t.Fatalf("data.content = %v, want 'z'", data["content"])
+	}
+}
+
+func TestDebugComponent_SeedsUserIDIntoCanvasState(t *testing.T) {
+	origFactory := agentruntime.DefaultFactory()
+	agentruntime.SetDefaultFactory(func(name string, _ map[string]any) (agentruntime.Component, error) {
+		if name != "Probe" {
+			return nil, errors.New("unexpected component name: " + name)
+		}
+		return &sysEchoComponent{}, nil
+	})
+	t.Cleanup(func() { agentruntime.SetDefaultFactory(origFactory) })
+
+	cv := &entity.UserCanvas{
+		ID: "c1",
+		DSL: map[string]any{
+			"components": map[string]any{
+				"probe": map[string]any{
+					"obj": map[string]any{
+						"component_name": "Probe",
+						"params":         map[string]any{},
+					},
+				},
+			},
+		},
+	}
+	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
+
+	// The body attempts to spoof sys.user_id; the authenticated caller
+	// identity must win so retrieval authorization cannot be bypassed.
+	body := `{"params":{"sys.user_id":{"value":"attacker-user"}}}`
+	c, w := componentCtx(t, "POST", "/api/v1/agents/c1/components/probe/debug", body)
+	c.Params = gin.Params{
+		{Key: "canvas_id", Value: "c1"},
+		{Key: "component_id", Value: "probe"},
+	}
+	h.DebugComponent(c)
+
+	if w.Code != 200 {
+		t.Fatalf("status = %d, want 200; body=%s", w.Code, w.Body.String())
+	}
+	var env struct {
+		Code int                    `json:"code"`
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode: %v (body=%s)", err, w.Body.String())
+	}
+	if env.Data["user_id"] != "u-1" {
+		t.Fatalf("data.user_id = %v, want u-1", env.Data["user_id"])
+	}
+	if env.Data["tenant_id"] != "u-1" {
+		t.Fatalf("data.tenant_id = %v, want u-1", env.Data["tenant_id"])
 	}
 }
 

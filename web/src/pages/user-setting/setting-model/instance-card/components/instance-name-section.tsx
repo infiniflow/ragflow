@@ -19,24 +19,29 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useTranslate } from '@/hooks/common-hooks';
 import { Trash2 } from 'lucide-react';
+import { InstanceSaveButton } from './instance-save-button';
 
 export interface InstanceNameSectionProps {
   draftName: string;
   setDraftName: (name: string) => void;
   handleDelete: () => Promise<void>;
+  /** Persist the draft with the typed-in name. */
+  handleSave: () => void;
+  /** True while the save request is in flight. */
+  saving: boolean;
 }
 
 /**
  * The instance-name input section shown at the top of a draft (unsaved)
- * card. The input carries the destructive red border and is paired with
- * a delete icon. There is no inline Save button - the parent page's
- * top Save button drives persistence through the imperative ref API.
- * The helper text below explains the workflow.
+ * card. The input is paired with a delete icon and the card's Save
+ * button, which persists only this draft.
  */
 export function InstanceNameSection({
   draftName,
   setDraftName,
   handleDelete,
+  handleSave,
+  saving,
 }: InstanceNameSectionProps) {
   const { t: tSetting } = useTranslate('setting');
 
@@ -49,14 +54,12 @@ export function InstanceNameSection({
         <span className="text-state-error mr-0.5">*</span>
         {tSetting('instanceName')}
       </label>
-      <div className="flex items-center">
+      <div className="flex items-center gap-2">
         <Input
           id="instance-name-input"
           value={draftName}
           onChange={(e) => setDraftName(e.target.value)}
           placeholder={tSetting('instanceNamePlaceholder')}
-          // The input itself carries the red border. Persists while the
-          // name is unsaved.
           className="flex-1"
           data-testid="instance-name-input"
         />
@@ -64,13 +67,14 @@ export function InstanceNameSection({
           <Button
             variant="delete"
             size="icon-sm"
-            className="ml-2 shrink-0"
+            className="shrink-0"
             aria-label={tSetting('deleteInstance')}
             data-testid="draft-delete"
           >
             <Trash2 className="size-4" />
           </Button>
         </ConfirmDeleteDialog>
+        <InstanceSaveButton onSave={handleSave} saving={saving} />
       </div>
     </div>
   );

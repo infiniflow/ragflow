@@ -32,6 +32,7 @@ const StringFields = [
 
 interface IProps {
   parameters: BeginQuery[];
+  initialValues?: Record<string, unknown>;
   message?: IMessage;
   ok(parameters: any[]): void;
   isNext?: boolean;
@@ -44,6 +45,7 @@ interface IProps {
 
 const DebugContent = ({
   parameters,
+  initialValues,
   message,
   ok,
   isNext = true,
@@ -81,7 +83,10 @@ const DebugContent = ({
         }
 
         if (cur.optional) {
-          fieldSchema = fieldSchema.optional();
+          fieldSchema = z.preprocess(
+            (val) => (val === '' ? undefined : val),
+            fieldSchema.optional(),
+          );
         }
 
         const index = idx.toString();
@@ -99,6 +104,15 @@ const DebugContent = ({
 
   const form = useForm<z.infer<typeof formSchemaValues.schema>>({
     defaultValues: formSchemaValues.values,
+    values: initialValues
+      ? Object.fromEntries(
+          Object.entries(formSchemaValues.values).map(([key, value]) => [
+            key,
+            initialValues[key] ?? value,
+          ]),
+        )
+      : undefined,
+    resetOptions: { keepDirtyValues: true },
     resolver: zodResolver(formSchemaValues.schema),
   });
 

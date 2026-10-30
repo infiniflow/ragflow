@@ -23,12 +23,17 @@ import {
 import {
   useFetchChat,
   useGetChatSearchParams,
-  usePatchChat,
+  useUpdateChat,
 } from '@/hooks/use-chat-request';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IClientConversation } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
+import {
+  deriveModelPreset,
+  removeUselessFieldsFromValues,
+  setLLMSettingEnabledValues,
+} from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { isEmpty, omit, trim } from 'lodash';
@@ -75,6 +80,7 @@ type ChatCardProps = {
   id: string;
   idx: number;
   conversation: IClientConversation;
+  isAnyBoxLoading: boolean;
   setLoading(id: string, loading: boolean): void;
 } & Pick<
   MultipleChatBoxProps,
@@ -92,17 +98,17 @@ const ChatCard = forwardRef(function ChatCard(
     addChatBox,
     chatBoxIds,
     clickDocumentButton,
-    conversation,
     value,
     setValue,
     files,
     clearFiles,
     setLoading,
+    isAnyBoxLoading,
   }: ChatCardProps,
   ref,
 ) {
   const { id: dialogId } = useParams();
-  const { patchChat } = usePatchChat();
+  const { updateChat } = useUpdateChat();
 
   const { derivedMessages, handlePressEnter, sendLoading } =
     useSendSingleMessage({
@@ -117,10 +123,7 @@ const ChatCard = forwardRef(function ChatCard(
 
   const { scrollRef } = useScrollToBottom(derivedMessages, messageContainerRef);
 
-  const messageReferences = useMessageReferences(
-    derivedMessages,
-    conversation.reference,
-  );
+  const messageReferences = useMessageReferences(derivedMessages);
 
   const FormSchema = z.object(LlmSettingSchema);
 
@@ -137,19 +140,26 @@ const ChatCard = forwardRef(function ChatCard(
   const { data: currentDialog } = useFetchChat();
   const findLlmByUuid = useFindLlmByUuid();
 
-  // Each card must keep its own independently selected model after the initial
-  // sync. Without this guard, clicking "Apply" in one card patches the dialog
+  // Each card must keep its own independently selected config after the initial
+  // sync. Without this guard, clicking "Apply" in one card updates the dialog
   // (which invalidates [FetchChat] and refetches currentDialog), and the
-  // changed currentDialog.llm_id would then overwrite every other card's
-  // llm_id via this effect. Sync only when dialogId changes (initial load or
-  // conversation switch), not when currentDialog.llm_id changes due to Apply.
+  // changed currentDialog would then overwrite every other card's values via
+  // this effect. Sync only when dialogId changes (initial load or conversation
+  // switch), not when currentDialog changes due to Apply.
   const syncedDialogIdRef = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     if (syncedDialogIdRef.current !== dialogId && currentDialog?.llm_id) {
-      form.setValue('llm_id', currentDialog.llm_id);
+      // The preset name is not part of the stored llm_setting; derive it from
+      // the stored values so the freedom select reflects them.
+      form.reset({
+        ...currentDialog.llm_setting,
+        ...setLLMSettingEnabledValues(currentDialog.llm_setting),
+        parameter: deriveModelPreset(currentDialog.llm_setting),
+        llm_id: currentDialog.llm_id,
+      });
       syncedDialogIdRef.current = dialogId;
     }
-  }, [currentDialog?.llm_id, dialogId, form]);
+  }, [currentDialog, dialogId, form]);
 
   const isLatestChat = idx === chatBoxIds.length - 1;
 
@@ -160,31 +170,30 @@ const ChatCard = forwardRef(function ChatCard(
   const handleApplyConfig = useCallback(() => {
     const values = form.getValues();
     const llmId = values.llm_id;
-    patchChat({
+    const llmSetting = removeUselessFieldsFromValues(values, '');
+    // Replace the full settings object so disabled fields are removed instead
+    // of surviving a PATCH merge with the previously saved values.
+    updateChat({
       chatId: dialogId!,
       params: {
-        ...currentDialog,
         llm_id: llmId,
         tenant_llm_id: llmId,
         llm_setting: {
-          ...omit(values, 'llm_id'),
+          ...omit(llmSetting, 'llm_id'),
           model_type: findLlmByUuid(llmId)?.model_type || 'chat',
         },
       },
     });
-  }, [currentDialog, dialogId, form, patchChat, findLlmByUuid]);
+  }, [dialogId, form, updateChat, findLlmByUuid]);
 
-  useImperativeHandle(
-    ref,
-    (): HandlePressEnterType => (params) => {
-      return handlePressEnter({
-        ...params,
-        ...form.getValues(),
-        storeHistoryMessages: false,
-        omitSessionId: true,
-      });
-    },
-  );
+  useImperativeHandle(ref, (): HandlePressEnterType => (params) => {
+    return handlePressEnter({
+      ...params,
+      ...removeUselessFieldsFromValues(form.getValues(), ''),
+      storeHistoryMessages: false,
+      omitSessionId: true,
+    });
+  });
 
   useEffect(() => {
     setLoading(id, sendLoading);
@@ -215,7 +224,7 @@ const ChatCard = forwardRef(function ChatCard(
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  disabled={isEmpty(llmId)}
+                  disabled={isEmpty(llmId) || isAnyBoxLoading}
                   onClick={handleApplyConfig}
                   data-testid="chat-detail-multimodel-card-apply"
                   data-card-index={idx}
@@ -231,6 +240,7 @@ const ChatCard = forwardRef(function ChatCard(
               <Button
                 variant="ghost"
                 size="icon-sm"
+                disabled={isAnyBoxLoading}
                 onClick={handleRemoveChatBox}
                 data-testid="chat-detail-multimodel-card-remove"
                 data-card-index={idx}
@@ -242,6 +252,7 @@ const ChatCard = forwardRef(function ChatCard(
               <Button
                 variant="ghost"
                 size="icon-sm"
+                disabled={isAnyBoxLoading}
                 onClick={addChatBox}
                 data-testid="chat-detail-multimodel-add-card"
               >
@@ -313,6 +324,7 @@ export function MultipleChatBox({
   }, []);
 
   const allChatBoxLoading = [...chatBoxLoading.values()];
+  const isAnyBoxLoading = allChatBoxLoading.some((loading) => loading);
 
   const showInternet = useShowInternet();
 
@@ -367,6 +379,7 @@ export function MultipleChatBox({
             setValue={setValue}
             clearFiles={clearFiles}
             setLoading={setLoading}
+            isAnyBoxLoading={isAnyBoxLoading}
           ></ChatCard>
         ))}
       </div>
@@ -374,7 +387,7 @@ export function MultipleChatBox({
         <NextMessageInput
           disabled={disabled}
           sendDisabled={sendDisabled}
-          sendLoading={allChatBoxLoading.some((loading) => loading)}
+          sendLoading={isAnyBoxLoading}
           value={value}
           resize="vertical"
           onInputChange={handleInputChange}

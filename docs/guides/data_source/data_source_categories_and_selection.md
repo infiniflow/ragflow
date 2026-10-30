@@ -14,6 +14,8 @@ RAGFlow supports many data sources. It is recommended to first select a major ca
 
 **Documents and collaboration platforms**: Used to synchronize team documents, wikis, cloud drive files, and collaborative documents. This category is suitable for building enterprise knowledge bases or project repositories. It includes Confluence, Notion, Feishu Wiki, Google Drive, OneDrive, SharePoint, Box, Dropbox, WebDAV, and SeaFile.
 
+**Research libraries**: Use **Zotero** to synchronize PDF attachments from papers and references. Choose Zotero cloud or WebDAV according to where the attachments are stored.
+
 **Object storage**: Used to synchronize large numbers of files in buckets or containers. This category is suitable for historical data archiving, batch file import, and centralized management of cloud files. It includes S3, Google Cloud Storage, Oracle Storage, R2, and Azure Blob Storage.
 
 **Databases and data warehouses**: Used to synchronize structured records or query results. This category is suitable for business data Q&A, metric knowledge retention, and retrieval of data analysis results. It includes MySQL, PostgreSQL, and BigQuery.

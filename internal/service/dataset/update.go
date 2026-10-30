@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -13,6 +14,8 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 
 	"go.uber.org/zap"
@@ -28,14 +31,13 @@ type datasetPagerankUpdate struct {
 	datasetID string
 }
 
-func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
-	tenantID = strings.TrimSpace(tenantID)
+	userID = strings.TrimSpace(userID)
 	if _, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
 		if dao.IsNotFoundErr(err) {
-			// Match Python: nonexistent and not-owned datasets share the
-			// "lacks permission" error so existence is not revealed (IDOR).
-			return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
@@ -67,7 +69,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		if name == "" {
 			return nil, common.CodeDataError, errors.New("String should have at least 1 character")
 		}
-		if len(name) > 128 {
+		if utf8.RuneCountInString(name) > 128 {
 			return nil, common.CodeDataError, errors.New("String should have at most 128 characters")
 		}
 		simpleUpdates["name"] = name
@@ -102,19 +104,19 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		simpleUpdates["permission"] = permission
 	}
 
-	if req.ParseType == nil && req.ParserID != nil && req.PipelineID != nil {
-		return nil, common.CodeDataError, errors.New("mutually exclusive")
+	// Validate the parse_type/parser_id/pipeline_id triple. FromRequest rejects
+	// any partial or contradictory combination (e.g. an id without parse_type,
+	// or both ids). A fully-absent block is allowed on update and means "keep
+	// current" — handled below via Resolve.
+	sel, modeErr := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID)
+	if modeErr != nil {
+		return nil, common.CodeDataError, modeErr
 	}
-
-	if req.PipelineID != nil || req.ParseType != nil {
-		isBuiltin, isPipeline, modeErr := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
-		if modeErr != nil {
-			return nil, common.CodeDataError, modeErr
-		}
-		if isBuiltin && req.PipelineID != nil {
+	if sel != nil {
+		if sel.IsBuiltIn() && req.PipelineID != nil {
 			req.PipelineID = nil
 		}
-		if isPipeline && req.ParserID != nil {
+		if sel.IsPipeline() && req.ParserID != nil {
 			req.ParserID = nil
 		}
 	}
@@ -139,10 +141,15 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	}
 
 	if req.ParserConfig != nil {
-		if err = validateDatasetParserConfig(req.ParserConfig); err != nil {
-			return nil, common.CodeArgumentError, err
+		dropped, err := ValidateParserConfig(req.ParserConfig)
+		if len(dropped) > 0 {
+			common.Warn("dropping unscoped (flat) parser_config keys; keys must be component-scoped (contain ':')",
+				zap.Strings("keys", dropped),
+				zap.String("dataset_id", datasetID),
+				zap.String("user_id", userID),
+			)
 		}
-		if err = validateDatasetParserConfigSize(req.ParserConfig); err != nil {
+		if err != nil {
 			return nil, common.CodeArgumentError, err
 		}
 		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
@@ -154,7 +161,10 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	pagerankRequested := req.Pagerank != nil
 	if pagerankRequested {
 		requestedPagerank = *req.Pagerank
-		if *req.Pagerank < 0 || *req.Pagerank > 100 {
+		if *req.Pagerank < 0 {
+			return nil, common.CodeDataError, errors.New("input should be greater than or equal to 0")
+		}
+		if *req.Pagerank > 100 {
 			return nil, common.CodeDataError, errors.New("input should be less than or equal to 100")
 		}
 		if d.docEngine == nil {
@@ -163,7 +173,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	}
 
 	requestedAnyUpdate := len(simpleUpdates) > 0 || connectorsProvided || parserIDProvided ||
-		pipelineID != nil || embdIDProvided || pagerankRequested || req.ParserConfig != nil || req.ParserConfigProvided
+		pipelineID != nil || embdIDProvided || pagerankRequested || req.ParserConfig != nil || req.ParserConfigProvided || req.PipelineVersionID != nil
 	if !requestedAnyUpdate {
 		return nil, common.CodeDataError, errors.New("no properties were modified")
 	}
@@ -174,30 +184,74 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
-		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(tx, datasetID, tenantID)
+		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID, userID)
 		if authErr != nil {
 			txCode = code
 			return authErr
 		}
-
-		if req.Permission != nil && lockedKB.TenantID != tenantID {
-			txCode = common.CodeDataError
-			return errors.New("only dataset owner can change permission")
+		if sel != nil || pipelineID != nil || req.ParserConfig != nil || req.ParserConfigProvided {
+			current := service.CurrentSelection(lockedKB.ParserID, lockedKB.PipelineID)
+			effective, resolveErr := service.Resolve(current, sel)
+			if resolveErr != nil {
+				txCode = common.CodeDataError
+				return resolveErr
+			}
+			isPipeline, _, effectivePipelineID := effective.Effective()
+			if isPipeline && effectivePipelineID != nil && strings.TrimSpace(*effectivePipelineID) != "" {
+				accessErr := permission.NewLockingDatabaseChecker(tx).CheckDependency(
+					ctx,
+					permission.Subject{UserID: userID, TenantID: lockedKB.TenantID},
+					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: lockedKB.ID},
+					permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effectivePipelineID)},
+					permission.OperationUpdate,
+					permission.OperationUse,
+				)
+				if accessErr != nil {
+					txCode, accessErr = permissionresponse.Normalize(accessErr)
+					return accessErr
+				}
+			}
 		}
 
 		updates := make(map[string]interface{}, len(simpleUpdates)+6)
 		for key, value := range simpleUpdates {
 			updates[key] = value
 		}
+		if permissionValue, ok := updates["permission"].(string); ok {
+			if permissionValue != lockedKB.Permission {
+				accessErr := permission.NewLockingDatabaseChecker(tx).CheckResource(
+					ctx,
+					permission.Subject{UserID: userID},
+					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
+					permission.OperationShare,
+				)
+				if accessErr != nil {
+					txCode, accessErr = permissionresponse.Normalize(accessErr)
+					return accessErr
+				}
+			}
+			if permissionValue == lockedKB.Permission {
+				delete(updates, "permission")
+			}
+		}
 
-		if nameValue, ok := updates["name"].(string); ok && strings.ToLower(nameValue) != strings.ToLower(lockedKB.Name) {
-			var existing entity.Knowledgebase
-			lookupErr := tx.Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", nameValue, tenantID, string(entity.StatusValid)).First(&existing).Error
-			if lookupErr != nil && !dao.IsNotFoundErr(lookupErr) {
+		if nameValue, ok := updates["name"].(string); ok {
+			available, nameErr := common.NameAvailable(lockedKB.Name, nameValue, func(candidate string) (bool, error) {
+				var existing entity.Knowledgebase
+				lookupErr := tx.Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", candidate, lockedKB.TenantID, string(entity.StatusValid)).First(&existing).Error
+				if lookupErr != nil {
+					if dao.IsNotFoundErr(lookupErr) {
+						return false, nil
+					}
+					return false, lookupErr
+				}
+				return true, nil
+			})
+			if nameErr != nil {
 				txCode = common.CodeServerError
 				return errors.New("database operation failed")
 			}
-			if lookupErr == nil {
+			if !available {
 				txCode = common.CodeDataError
 				return fmt.Errorf("Dataset name '%s' already exists", nameValue)
 			}
@@ -217,36 +271,66 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			} else {
 				tenantEmbdID = ""
 			}
-			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, tenantID)
+			modelAccess := service.ModelAccess{UserID: userID, TenantID: lockedKB.TenantID}
+			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, modelAccess)
 			if !ok {
 				txCode = common.CodeDataError
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				target, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelFactory().ResolveInfo(ctx, modelAccess, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
-					tenantEmbdID = target.ModelID
+					tenantEmbdID = target.ID
 				}
 			}
 			updates["embd_id"] = effectiveEmbdID
 			updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
 		}
 
+		// Design §5 fallback chains (v5.1/v5.2): when the request omits a field,
+		// fall back to the persisted (locked) binding rather than resetting to
+		// latest/nil. This is what makes the sticky snapshot (B4), the pinned-DSL
+		// parser_config rebuild (B1), and single-field PATCH (B2) correct.
+		canvasCtx := pipelineID
+		if canvasCtx == nil {
+			canvasCtx = lockedKB.PipelineID
+		}
+		pipelineChanged := pipelineID != nil && (lockedKB.PipelineID == nil || *pipelineID != *lockedKB.PipelineID)
+		requestedVersion := req.PipelineVersionID
+		if requestedVersion == nil && !pipelineChanged {
+			requestedVersion = lockedKB.PipelineVersionID
+		}
+
 		if req.ParserConfig != nil && len(req.ParserConfig) > 0 {
-			// Resolve effective mode/IDs once via the shared helper. parse_type
-			// is authoritative; the per-mode req IDs were already cleaned above,
-			// but ResolveParseMode does not rely on that — it ignores the
-			// non-applicable ID for the selected mode.
-			isPipeline, effParserID, effPipelineID := service.ResolveParseMode(
-				req.ParseType, req.ParserID, req.PipelineID,
-				service.ParseModeState{ParserID: lockedKB.ParserID, PipelineID: lockedKB.PipelineID})
-			dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
+			// Resolve the effective mode/IDs once. sel is the request selection
+			// (nil when the whole selection block was omitted); current is the
+			// persisted selection. Resolve applies PATCH semantics: an omitted
+			// block keeps the current mode so only parser_config changes still
+			// load the correct DSL.
+			current := service.CurrentSelection(lockedKB.ParserID, lockedKB.PipelineID)
+			eff, resolveErr := service.Resolve(current, sel)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			isPipeline, effParserID, effPipelineID := eff.Effective()
+			// Thread the effective pipeline version (design §5): use the §5 fallback
+			// requestedVersion (explicit pin when supplied, else the persisted
+			// pinned version) so a parser_config-only PATCH (B1) rebuilds from the
+			// pinned DSL rather than the canvas latest. The binding block below
+			// re-resolves the same value (and surfaces any ownership error); a load
+			// failure here is best-effort for parser_config rebuild only.
+			effVersionID, _ := resolvePipelineVersionID(ctx, tx, effPipelineID, requestedVersion)
+			dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID, effVersionID)
 			if dslErr != nil {
 				common.Warn("failed to load pipeline DSL for building parser_config",
 					zap.String("parserID", effParserID), zap.Error(dslErr))
 			}
 			if dslJSON != nil {
-				parserConfig := pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
+				parserConfig, buildErr := pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
+				if buildErr != nil {
+					txCode = common.CodeDataError
+					return buildErr
+				}
 				updates["parser_config"] = preserveDatasetParserConfigState(parserConfig, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}
@@ -264,7 +348,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 		if parserIDProvided && parserID != lockedKB.ParserID {
 			if _, ok := updates["parser_config"]; !ok {
-				if resolved, cpErr := service.ResolveComponentParamsDefaults(ctx, parserID, nil); cpErr != nil {
+				if resolved, cpErr := service.ResolveComponentParamsDefaults(ctx, parserID, nil, nil); cpErr != nil {
 					common.Warn("failed to resolve component params defaults on parser_id switch",
 						zap.String("parserID", parserID), zap.Error(cpErr))
 				} else if resolved != nil {
@@ -278,17 +362,70 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			}
 		}
 
-		pipelineChanged := pipelineID != nil && (lockedKB.PipelineID == nil || *pipelineID != *lockedKB.PipelineID)
-		if _, ok := updates["parser_config"]; pipelineChanged && !ok {
-			cfgParserID := lockedKB.ParserID
-			if parserIDProvided {
-				cfgParserID = parserID
+		// pipelineChanged already computed in the §5 prep block above.
+		// C3 (T26/V5): an explicit, non-empty version that differs from the
+		// currently pinned version is a version switch even when the pipeline
+		// canvas is unchanged. Such a switch must reset the component params to
+		// the new version defaults (below), not only a pipeline_id change.
+		versionChanged := false
+		if req.PipelineVersionID != nil && strings.TrimSpace(*req.PipelineVersionID) != "" {
+			if lockedKB.PipelineVersionID == nil || strings.TrimSpace(*req.PipelineVersionID) != strings.TrimSpace(*lockedKB.PipelineVersionID) {
+				versionChanged = true
 			}
-			if cpDefaults, cpErr := service.ResolveComponentParamsDefaults(ctx, cfgParserID, pipelineID); cpErr != nil {
-				common.Warn("failed to resolve component params defaults on pipeline change",
-					zap.String("parserID", cfgParserID), zap.Error(cpErr))
-			} else if cpDefaults != nil {
-				updates["parser_config"] = preserveDatasetParserConfigState(cpDefaults, lockedKB.ParserConfig, req.ParserConfig)
+		}
+		// Design C5/G3: an empty pipeline_version_id in Pipeline mode is REJECTED
+		// (no longer silently cleared or auto-backfilled to the canvas latest).
+		// The Save fails with ErrPipelineVersionEmpty so the UI can show the red
+		// Missing badge and the "版本信息缺失" error. BuiltIn mode (no canvas
+		// bound) is exempt and may carry an empty version.
+		isEffPipeline := canvasCtx != nil && strings.TrimSpace(*canvasCtx) != ""
+		if req.PipelineVersionID != nil {
+			if strings.TrimSpace(*req.PipelineVersionID) != "" {
+				bound, perr := resolvePipelineVersionID(ctx, tx, canvasCtx, req.PipelineVersionID)
+				if perr != nil {
+					txCode = common.CodeBadRequest
+					return perr
+				}
+				updates["pipeline_version_id"] = bound
+			} else if isEffPipeline {
+				// Explicit empty version in Pipeline mode: reject (do not clear the
+				// pin). Only BuiltIn-mode explicit empties are allowed to clear.
+				txCode = common.CodeBadRequest
+				return service.ErrPipelineVersionEmpty
+			} else {
+				// BuiltIn mode explicit empty: clear the pin (no canvas to pin to).
+				updates["pipeline_version_id"] = nil
+			}
+		} else if pipelineChanged && pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
+			// Switching to a Pipeline canvas without an explicit version is a
+			// missing-version Save (design C5/G3): reject rather than silently
+			// locking the new canvas's latest version.
+			txCode = common.CodeBadRequest
+			return service.ErrPipelineVersionEmpty
+		}
+		// C3 / A3: a pipeline (canvas) switch or a version switch resets
+		// parser_config to the new DSL defaults — but only when the request
+		// carried no parser_config of its own. A submitted config has already
+		// been reconciled against the new version's DSL by BuildParserConfig
+		// above (unknown operators dropped, missing params defaulted), and the
+		// settings form itself resets to the new defaults on a switch before
+		// the user edits — so a submitted config is authoritative and must not
+		// be discarded.
+		if pipelineChanged || versionChanged {
+			if _, submitted := updates["parser_config"]; !submitted {
+				cfgParserID := lockedKB.ParserID
+				if parserIDProvided {
+					cfgParserID = parserID
+				}
+				effVersionID, _ := resolvePipelineVersionID(ctx, tx, canvasCtx, requestedVersion)
+				cpDefaults, cpErr := service.ResolveComponentParamsDefaults(ctx, cfgParserID, canvasCtx, effVersionID)
+				if cpErr != nil {
+					common.Warn("failed to resolve component params defaults on pipeline/version change",
+						zap.String("parserID", cfgParserID), zap.Error(cpErr))
+				}
+				if cpErr == nil {
+					updates["parser_config"] = cpDefaults
+				}
 			}
 		}
 
@@ -298,8 +435,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 		if effectiveParserConfig != nil {
 			llmID := ""
-			if ownerTenant, tenantErr := d.tenantDAO.GetByID(ctx, tx, lockedKB.TenantID); tenantErr == nil && ownerTenant != nil {
-				llmID = ownerTenant.LLMID
+			var membership entity.UserTenant
+			if tenantErr := tx.Where("user_id = ? AND tenant_id = ? AND status = ?", userID, lockedKB.TenantID, entity.TenantMembershipStatusJoined).Take(&membership).Error; tenantErr == nil {
+				llmID = membership.LLMID
 			}
 			effectiveParserConfig = service.ApplyComponentScopedParserConfig(
 				effectiveParserConfig,
@@ -363,7 +501,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 	}
 
-	data := datasetToMap(updatedKB)
+	data := datasetToMap(ctx, updatedKB)
 	data["connectors"] = datasetConnectorsOrEmpty(linkedConnectors)
 	return data, common.CodeSuccess, nil
 }
@@ -408,34 +546,28 @@ func publishDatasetSyncerTasks(taskIDs []string) {
 	}
 }
 
-func (d *DatasetService) lockAccessibleDatasetForUpdate(tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {
+func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {
 	var kb entity.Knowledgebase
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND status = ?", datasetID, string(entity.StatusValid)).
 		First(&kb).Error
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("dataset not found")
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 
-	if kb.TenantID == userID {
-		return &kb, common.CodeSuccess, nil
-	}
-	if kb.Permission != string(entity.TenantPermissionTeam) {
-		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
-	}
-
-	var relation entity.UserTenant
-	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("tenant_id = ? AND user_id = ? AND status = ?", kb.TenantID, userID, "1").
-		First(&relation).Error
+	err = permission.NewLockingDatabaseChecker(tx).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
+		permission.OperationUpdate,
+	)
 	if err != nil {
-		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
-		}
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return nil, code, permissionErr
 	}
 
 	return &kb, common.CodeSuccess, nil

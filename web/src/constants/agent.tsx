@@ -79,6 +79,7 @@ export enum AgentCategory {
 
 export enum AgentQuery {
   Category = 'category',
+  CanvasCategory = 'canvas_category',
 }
 
 export enum Operator {
@@ -86,7 +87,6 @@ export enum Operator {
   Retrieval = 'Retrieval',
   Categorize = 'Categorize',
   Message = 'Message',
-  RewriteQuestion = 'RewriteQuestion',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',
   PubMed = 'PubMed',
@@ -120,8 +120,9 @@ export enum Operator {
   KeenableSearch = 'KeenableSearch',
   YouComSearch = 'YouComSearch',
   SofyaSearch = 'SofyaSearch',
+  Search1APISearch = 'Search1APISearch',
+  Search1APICrawl = 'Search1APICrawl',
   DocGenerator = 'DocGenerator',
-  Browser = 'Browser',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
   ListOperations = 'ListOperations',

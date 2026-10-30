@@ -11,7 +11,10 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/parser/tableutil"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -40,7 +43,7 @@ func (s *DocumentService) GetDocumentImage(ctx context.Context, userID, imageID 
 // composite image ID belongs to an indexed chunk of an accessible document.
 func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc == nil || !s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID) {
+	if err != nil || doc == nil || service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, doc.KbID, permission.OperationRead) != nil {
 		return nil, ErrDocumentImageNotFound
 	}
 	bucket, objectKey, ok := strings.Cut(imageID, "-")
@@ -68,7 +71,7 @@ func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, userI
 // document metadata.
 func (s *DocumentService) GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc == nil || !s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID) || doc.Thumbnail == nil || *doc.Thumbnail == "" || strings.HasPrefix(*doc.Thumbnail, imgBase64Prefix) {
+	if err != nil || doc == nil || service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, doc.KbID, permission.OperationRead) != nil || doc.Thumbnail == nil || *doc.Thumbnail == "" || strings.HasPrefix(*doc.Thumbnail, imgBase64Prefix) {
 		return nil, ErrDocumentImageNotFound
 	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -225,29 +228,14 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(ctx context.Context, f
 	return out
 }
 
-// sandboxArtifactAccessible reports whether userID may reach at
-// least one agent canvas whose session references filename.
-// Mirrors `UserCanvasService.accessible(dialog_id, user_id)` from
-// the Python fix; on the Go side this is the same predicate as
-// UserCanvasDAO.Accessible (owner or team permission, with the
-// latter scoped to the caller's tenant membership — PR review
-// round 5).
+// sandboxArtifactAccessible reports whether userID may read at least one
+// canvas whose session references filename.
 func (s *DocumentService) sandboxArtifactAccessible(ctx context.Context, filename, userID string) bool {
 	if userID == "" {
 		return false
 	}
-	// Fetch the caller's tenant list once; passing it into
-	// canvasDAO.Accessible ensures the team-permission branch only
-	// matches canvases the caller can actually see. An empty list
-	// (callers without tenant data) is safe — it effectively disables
-	// the team branch, so the only matches are canvases the caller
-	// directly owns.
-	tenantIDs, terr := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
-	if terr != nil {
-		tenantIDs = nil
-	}
 	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(ctx, filename, userID) {
-		if s.canvasDAO.Accessible(ctx, dao.DB, dialogID, userID, tenantIDs) {
+		if service.CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, dialogID, permission.OperationRead) == nil {
 			return true
 		}
 	}
@@ -279,13 +267,9 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID 
 		return nil, ErrPreviewDocumentNotFound
 	}
 
-	// Reuse KnowledgebaseDAO.Accessible — the exact rule the chunk list on
-	// the same page uses — so the two panels can never disagree: the owning
-	// tenant always, and tenant members only when the dataset's permission
-	// is TEAM. A denial stays indistinguishable from a missing document so
-	// an unauthorized caller cannot probe document IDs (mirrors Python
-	// DocumentService.accessible in the preview path).
-	if !s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID) {
+	// Keep access denial indistinguishable from a missing document so callers
+	// cannot probe document IDs.
+	if service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, doc.KbID, permission.OperationRead) != nil {
 		return nil, ErrPreviewDocumentNotFound
 	}
 
@@ -332,11 +316,37 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID 
 }
 
 // extractDOCPreviewText extracts plain text from a legacy .doc
-// document via the office_oxide-backed DOCParser.
+// document via the office_oxide-backed DOCParser. The parser only emits JSON
+// payloads, so the preview text is flattened from the JSON items.
 func extractDOCPreviewText(ctx context.Context, filename string, data []byte) (string, error) {
-	res := parser.NewDOCParser().ParseWithResult(ctx, filename, data)
+	p, err := parser.GetTextOnlyParser(utility.FileTypeDOC)
+	if err != nil {
+		return "", err
+	}
+	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
 		return "", res.Err
 	}
-	return res.Text, nil
+	return docPreviewText(res)
+}
+
+// docPreviewText flattens parser items for the legacy .doc preview. Table
+// items carry only TableData, so render them instead of dropping the table
+// content from the preview.
+func docPreviewText(res parser.ParseResult) (string, error) {
+	if len(res.JSON) == 0 {
+		return "", fmt.Errorf("doc preview: no content extracted")
+	}
+	parts := make([]string, 0, len(res.JSON))
+	for _, item := range res.JSON {
+		m := item.ToMap()
+		if text, ok := m["text"].(string); ok && text != "" {
+			parts = append(parts, text)
+			continue
+		}
+		if table, ok := m["table"].(*entity.TableData); ok && table != nil {
+			parts = append(parts, tableutil.RenderTableHTML(table))
+		}
+	}
+	return strings.Join(parts, "\n"), nil
 }

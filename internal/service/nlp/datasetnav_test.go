@@ -29,7 +29,7 @@ type memNavEngine struct {
 
 func newMemNavEngine() *memNavEngine { return &memNavEngine{} }
 
-func (m *memNavEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, _ string, datasetID string) ([]string, error) {
+func (m *memNavEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, _ string, datasetID string, _ string) ([]string, error) {
 	ids := make([]string, 0, len(chunks))
 	for _, c := range chunks {
 		// A caller-provided row id is kept, exactly as the real engines do it
@@ -134,7 +134,7 @@ func (m *memNavEngine) Close() error               { return nil }
 func (m *memNavEngine) Ping(context.Context) error { return nil }
 func (m *memNavEngine) GetType() string            { return "mem" }
 func (m *memNavEngine) SupportsPageRank() bool     { return false }
-func (m *memNavEngine) CreateChunkStore(context.Context, string, string, int, string) error {
+func (m *memNavEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
 func (m *memNavEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
@@ -187,6 +187,8 @@ func (m *memNavEngine) GetScores(map[string]interface{}) map[string]float64 { re
 func (m *memNavEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
 	return nil
 }
+
+const navCompileKwd = "dataset_nav"
 
 // matchNavRow mirrors dataset_nav._matches_condition (dataset_nav.py:598-608):
 // every field must have one of the row's values equal to one of the condition's
@@ -307,6 +309,56 @@ func newTestNav(eng *memNavEngine) *NavService {
 	return ns
 }
 
+func TestNavServicePageIndexRowsAndCleanup(t *testing.T) {
+	eng := &memNavEngine{}
+	ns := newTestNav(eng)
+	if err := ns.UpsertDoc(t.Context(), nav.UpsertDocInput{TenantID: "t1", KbID: "kb1", DocID: "d1", CompileKind: "page_index", Summary: "Page index summary"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(eng.rows) != 2 {
+		t.Fatalf("rows = %d, want document and cluster", len(eng.rows))
+	}
+	for _, row := range eng.rows {
+		if row["compile_kwd"] != "page_index" {
+			t.Fatalf("compile_kwd = %v, want page_index", row["compile_kwd"])
+		}
+		wantScope := "doc"
+		if row["type_kwd"] == "nav_cluster" {
+			wantScope = "dataset"
+		}
+		if row["scope_kwd"] != wantScope {
+			t.Fatalf("scope_kwd = %v, want %s for %s", row["scope_kwd"], wantScope, row["type_kwd"])
+		}
+		if row["type_kwd"] == "nav_cluster" {
+			row["compile_kwd"] = "dataset_nav"
+		}
+	}
+	if err := ns.UpsertDoc(t.Context(), nav.UpsertDocInput{TenantID: "t1", KbID: "kb1", DocID: "d2", CompileKind: "page_index", Summary: "Page index summary"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(eng.rows) != 3 {
+		t.Fatalf("rows = %d, want two documents in one cluster", len(eng.rows))
+	}
+	for _, row := range eng.rows {
+		if row["compile_kwd"] != "page_index" {
+			t.Fatalf("updated compile_kwd = %v, want page_index", row["compile_kwd"])
+		}
+	}
+	hits, err := ns.Search(t.Context(), "t1", "kb1", "Page index", nil, nil, 5)
+	if err != nil || len(hits) == 0 {
+		t.Fatalf("Search = %v, %v", hits, err)
+	}
+	if err := ns.RemoveDoc(t.Context(), "t1", "kb1", "d1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ns.RemoveDoc(t.Context(), "t1", "kb1", "d2"); err != nil {
+		t.Fatal(err)
+	}
+	if len(eng.rows) != 0 {
+		t.Fatalf("rows after RemoveDoc = %d, want 0", len(eng.rows))
+	}
+}
+
 // TestNavService_UpsertDoc_WritesNavRow asserts acceptance #1: after UpsertDoc
 // the row carries both compile_kwd=dataset_nav and available_int=0.
 func TestNavService_UpsertDoc_WritesNavRow(t *testing.T) {
@@ -319,8 +371,8 @@ func TestNavService_UpsertDoc_WritesNavRow(t *testing.T) {
 		t.Fatal("expected at least one nav row")
 	}
 	row := eng.rows[0]
-	if row["compile_kwd"] != "dataset_nav" {
-		t.Errorf("compile_kwd = %v, want dataset_nav", row["compile_kwd"])
+	if row["compile_kwd"] != "tree" {
+		t.Errorf("compile_kwd = %v, want tree", row["compile_kwd"])
 	}
 	if row["available_int"] != 0 {
 		t.Errorf("available_int = %v, want 0", row["available_int"])
@@ -451,7 +503,7 @@ func TestNavService_ListClusters_SearchReturnsPrunedForest(t *testing.T) {
 			"content_with_weight": `{"type":"nav_doc","description":"孤儿概要"}`,
 		},
 	}
-	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1"); err != nil {
+	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1", ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -755,7 +807,7 @@ func TestNavService_Search_DocScope(t *testing.T) {
 		row(nav.TypeNavCluster, "kb1", "covering d1+d2", []string{"d1", "d2"}, 0.4),
 		row(nav.TypeNavCluster, "kb1", "covering d2 only", []string{"d2"}, 1),
 	}
-	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1"); err != nil {
+	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1", ""); err != nil {
 		t.Fatal(err)
 	}
 	q := make([]float32, dim)
@@ -853,7 +905,7 @@ func TestNavService_Search_DocScopeBeyondAnyPoolSize(t *testing.T) {
 			"q_4_vec":     vec(0.4),
 		},
 	)
-	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1"); err != nil {
+	if _, err := eng.InsertChunks(t.Context(), rows, "", "kb1", ""); err != nil {
 		t.Fatal(err)
 	}
 	q := make([]float32, dim)
@@ -1051,7 +1103,7 @@ func TestNavService_UpsertDoc_PlacementBySimilarity(t *testing.T) {
 			"doc_count_int": 0, "content_with_weight": `{"type":"nav_cluster","description":"topic"}`,
 			"q_1024_vec": vec,
 		}
-		if _, err := eng.InsertChunks(t.Context(), []map[string]interface{}{row}, "", "kb1"); err != nil {
+		if _, err := eng.InsertChunks(t.Context(), []map[string]interface{}{row}, "", "kb1", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1202,7 +1254,7 @@ func TestNavService_FindBestCluster_DeepestMatchWins(t *testing.T) {
 			"doc_count_int": 0, "content_with_weight": `{"type":"nav_cluster","description":"topic"}`,
 			"q_1024_vec": vec,
 		}
-		if _, err := eng.InsertChunks(t.Context(), []map[string]interface{}{row}, "", "kb1"); err != nil {
+		if _, err := eng.InsertChunks(t.Context(), []map[string]interface{}{row}, "", "kb1", ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1338,7 +1390,7 @@ func TestNavService_SummariesByDocIDs_DescriptionLabel(t *testing.T) {
 				"doc_id": "d9", "title_kwd": "出师表全文内容与赏析",
 				"content_with_weight": `{"type":"nav_doc"}`,
 			},
-		}, "", "kb1"); err != nil {
+		}, "", "kb1", ""); err != nil {
 			t.Fatal(err)
 		}
 		got := ns.SummariesByDocIDs(t.Context(), "t1", "kb1", []string{"d9"})
@@ -1357,7 +1409,7 @@ func TestNavService_SummariesByDocIDs_DescriptionLabel(t *testing.T) {
 				"doc_id": rawID, "title_kwd": rawID,
 				"content_with_weight": `{"type":"nav_doc"}`,
 			},
-		}, "", "kb1"); err != nil {
+		}, "", "kb1", ""); err != nil {
 			t.Fatal(err)
 		}
 		got := ns.SummariesByDocIDs(t.Context(), "t1", "kb1", []string{rawID})
@@ -1453,7 +1505,7 @@ func TestNavService_MaybeSplitCluster_SplitsOverfull(t *testing.T) {
 			"doc_count_int": 1,
 		})
 	}
-	if _, err := eng.InsertChunks(t.Context(), rows, idx, "kb1"); err != nil {
+	if _, err := eng.InsertChunks(t.Context(), rows, idx, "kb1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := ns.maybeSplitCluster(t.Context(), "t1", "kb1", clusterName, ""); err != nil {

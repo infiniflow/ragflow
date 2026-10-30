@@ -36,14 +36,14 @@ import { useHandleUploadDocument } from './use-upload-document';
 
 export default function Dataset() {
   const { t } = useTranslation();
+  const { knowledgeBase } = useKnowledgeBaseContext();
   const {
     documentUploadVisible,
     hideDocumentUploadModal,
     showDocumentUploadModal,
     onDocumentUploadOk,
     documentUploadLoading,
-  } = useHandleUploadDocument();
-  const { knowledgeBase } = useKnowledgeBaseContext();
+  } = useHandleUploadDocument(knowledgeBase?.pipeline_id);
   const {
     searchString,
     documents,
@@ -90,12 +90,11 @@ export default function Dataset() {
 
   useClearSelectionOnPageChange(pagination, clearRowSelection);
 
-  const { list, handleRunClick: handleOperationIconClick } =
-    useBulkOperateDataset({
-      documents,
-      rowSelection,
-      setRowSelection,
-    });
+  const { list } = useBulkOperateDataset({
+    documents,
+    rowSelection,
+    setRowSelection,
+  });
 
   const { selectedIds: selectedRowKeys } = useSelectedIds(
     rowSelection,

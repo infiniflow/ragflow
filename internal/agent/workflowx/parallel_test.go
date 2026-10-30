@@ -638,6 +638,36 @@ func TestParallel_InvokeRejectsInputCountMismatch(t *testing.T) {
 	}
 }
 
+func TestParallel_ResumeBuilderFailureSkipsItemInvocation(t *testing.T) {
+	cloneErr := errors.New("state clone failed")
+	payload, err := encodeParallelState(ParallelInterruptState{
+		OriginalInputsJSON: []byte(`[1,2]`),
+		CompletedResults:   map[int]any{0: 10},
+		InterruptedIndices: []int{1},
+		TotalCount:         2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	sub := testCountingRunnable{fn: func(_ context.Context, in int, _ ...compose.Option) (int, error) {
+		calls.Add(1)
+		return in, nil
+	}}
+	opts := getParallelOptions([]ParallelOption{
+		WithParallelContextBuilder(func(ctx context.Context, _ any, _ int) (context.Context, error) {
+			return ctx, cloneErr
+		}),
+	})
+	_, err = runParallelInvoke(injectResumeState(t.Context(), payload), "par", sub, nil, opts, newParallelBridgeState(nil))
+	if !errors.Is(err, cloneErr) {
+		t.Fatalf("resume error = %v, want state clone failure", err)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("sub invoked %d times after state clone failure", calls.Load())
+	}
+}
+
 // TestParallel_EmptyInput_NoSubInvoke asserts that an empty input
 // slice returns []O{}, nil without invoking the inner sub-workflow.
 func TestParallel_EmptyInput_NoSubInvoke(t *testing.T) {

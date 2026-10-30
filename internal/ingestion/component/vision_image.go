@@ -31,14 +31,25 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 
+	"ragflow/internal/parser/media"
 	parserlib "ragflow/internal/parser/parser"
 )
 
+var (
+	maxVisionImageBytes = media.ImageMaxBytes()
+	maxVLMEncodedBytes  = (maxVisionImageBytes+2)/3*4 + 256
+)
+
 const (
-	maxVisionImageBytes  = parserlib.MaxImagePayloadBytes
-	maxVisionImagePixels = parserlib.MaxImagePixels
-	maxVisionImageEdge   = parserlib.MaxImageEdge
-	maxVLMEncodedBytes   = (maxVisionImageBytes+2)/3*4 + 256
+	// maxVLMCropPixels and maxVLMCropEdge bound the raster of PDF page crops
+	// rendered for the vision model (see vision_enhancement_cgo.go). They are a
+	// pixel budget for the VLM crop path and are intentionally separate from
+	// the file/inline image parser, which now uses the opt-in raster-byte limit
+	// (RAGFLOW_IMAGE_RASTER_MAX_BYTES, default 0 = unlimited). These keep their
+	// historical values because a 0-byte ceiling would map to a 0-pixel crop
+	// budget and reject every VLM crop.
+	maxVLMCropPixels = 40_000_000
+	maxVLMCropEdge   = 12_000
 )
 
 func materializeInlineVisionImage(raw string) (*visionImage, error) {
@@ -92,12 +103,15 @@ func inspectVisionImagePayload(payload string) (string, error) {
 	}
 	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
 		decoder := base64.NewDecoder(encoding, &visionPayloadReader{source: payload})
-		config, format, err := image.DecodeConfig(io.LimitReader(decoder, maxVisionImageBytes+1))
+		config, format, err := image.DecodeConfig(io.LimitReader(decoder, int64(maxVisionImageBytes)+1))
 		if err != nil {
 			continue
 		}
-		if config.Width <= 0 || config.Height <= 0 || config.Width > maxVisionImageEdge || config.Height > maxVisionImageEdge || int64(config.Width)*int64(config.Height) > maxVisionImagePixels {
-			return "", fmt.Errorf("vision image: image dimensions %dx%d exceed limits", config.Width, config.Height)
+		if config.Width <= 0 || config.Height <= 0 {
+			return "", fmt.Errorf("vision image: image has invalid dimensions %dx%d", config.Width, config.Height)
+		}
+		if err := parserlib.CheckImageRasterLimit(config.Width, config.Height); err != nil {
+			return "", fmt.Errorf("vision image: %w", err)
 		}
 		return format, nil
 	}
@@ -119,7 +133,7 @@ func decodeVisionPayload(raw string) ([]byte, error) {
 	}
 	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
 		decoder := base64.NewDecoder(encoding, &visionPayloadReader{source: encoded})
-		data, err := io.ReadAll(io.LimitReader(decoder, maxVisionImageBytes+1))
+		data, err := io.ReadAll(io.LimitReader(decoder, int64(maxVisionImageBytes)+1))
 		if err != nil {
 			continue
 		}
@@ -165,7 +179,11 @@ func imageWithinVisionLimits(img image.Image) bool {
 	}
 	bounds := img.Bounds()
 	width, height := bounds.Dx(), bounds.Dy()
-	return width > 0 && height > 0 && width <= maxVisionImageEdge && height <= maxVisionImageEdge && int64(width)*int64(height) <= maxVisionImagePixels
+	if width <= 0 || height <= 0 {
+		return false
+	}
+	// Edge is unbounded (mirrors Python); only the opt-in raster-byte ceiling applies.
+	return parserlib.CheckImageRasterLimit(width, height) == nil
 }
 
 func imageMIMEForFormat(format string) string {

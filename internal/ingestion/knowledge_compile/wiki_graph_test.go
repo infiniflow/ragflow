@@ -18,6 +18,7 @@ package knowledge_compile
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -34,7 +35,7 @@ func page(pageType, slug string, outlinks ...string) wikiPageProjection {
 
 func findEntity(rows []map[string]interface{}, slug string) map[string]interface{} {
 	for _, r := range rows {
-		if r["compile_kwd"] == compileKwdWikiEntity && r["slug_kwd"] == slug {
+		if r["compile_kwd"] == "wiki" && r["type_kwd"] == compileKwdWikiEntity && r["slug_kwd"] == slug {
 			return r
 		}
 	}
@@ -43,7 +44,7 @@ func findEntity(rows []map[string]interface{}, slug string) map[string]interface
 
 func findRelation(rows []map[string]interface{}, from, to string) map[string]interface{} {
 	for _, r := range rows {
-		if r["compile_kwd"] == compileKwdWikiRelation && r["from_kwd"] == from && r["to_kwd"] == to {
+		if r["compile_kwd"] == "wiki" && r["type_kwd"] == compileKwdWikiRelation && r["from_kwd"] == from && r["to_kwd"] == to {
 			return r
 		}
 	}
@@ -64,6 +65,15 @@ func TestProjectWikiGraphRowsWritesSearchContent(t *testing.T) {
 	entity := findEntity(rows, "entity/刘备")
 	if entity == nil {
 		t.Fatal("missing entity")
+	}
+	var payload struct {
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal([]byte(metaString(entity, "content_with_weight")), &payload); err != nil {
+		t.Fatalf("decode graph entity: %v", err)
+	}
+	if payload.Description != p.Summary {
+		t.Fatalf("description = %q, want stored summary %q", payload.Description, p.Summary)
 	}
 	// Python tokenizes slug + description into content_ltks and writes no title
 	// token column on the entity row (dataset_wiki_generator.py:750-773); the
@@ -103,6 +113,11 @@ func TestProjectWikiGraphRowsCrossBatchEdgeSurvives(t *testing.T) {
 	}
 	if findRelation(rows, "entity/alpha", "entity/beta") == nil {
 		t.Fatalf("cross-page edge entity/alpha -> entity/beta not materialized")
+	}
+	for _, row := range rows {
+		if row["scope_kwd"] != "dataset" {
+			t.Fatalf("scope_kwd = %v, want dataset for wiki graph row", row["scope_kwd"])
+		}
 	}
 }
 
@@ -252,8 +267,8 @@ func TestProjectWikiGraphRowsFieldMapping(t *testing.T) {
 	if e == nil {
 		t.Fatalf("missing entity")
 	}
-	if e["entity_type_kwd"] != "wiki_concept" {
-		t.Fatalf("expected entity_type_kwd=wiki_concept, got %v", e["entity_type_kwd"])
+	if e["entity_type_kwd"] != "concept" {
+		t.Fatalf("expected entity_type_kwd=concept, got %v", e["entity_type_kwd"])
 	}
 	// id format: wiki_entity:{kb}:{slug} xxhashed to 16 hex chars.
 	id, _ := e["id"].(string)
@@ -346,5 +361,28 @@ func TestProjectWikiGraphRowsSelfLoopSkipped(t *testing.T) {
 	}
 	if findEntity(rows, "entity/alpha") == nil {
 		t.Fatalf("the self-referencing entity must still exist")
+	}
+}
+
+// TestProjectWikiGraphRowsResolvesDatasetLanguage pins that graph rows are
+// tokenized with the language of the dataset they are written to.
+func TestProjectWikiGraphRowsResolvesDatasetLanguage(t *testing.T) {
+	var resolved []string
+	w := engineWriter{resolveLanguage: func(_ context.Context, datasetID string) (string, error) {
+		resolved = append(resolved, datasetID)
+		return "slovak", nil
+	}}
+	if _, err := w.projectWikiGraphRows(context.Background(), "t1", kbForTest, []wikiPageProjection{page("entity", "škola")}); err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	if len(resolved) != 1 || resolved[0] != kbForTest {
+		t.Fatalf("language resolved for %v, want [%s]", resolved, kbForTest)
+	}
+
+	w.resolveLanguage = func(context.Context, string) (string, error) {
+		return "", errors.New("dataset lookup failed")
+	}
+	if _, err := w.projectWikiGraphRows(context.Background(), "t1", kbForTest, []wikiPageProjection{page("entity", "škola")}); err == nil {
+		t.Fatal("projection must fail when the dataset language cannot be resolved")
 	}
 }

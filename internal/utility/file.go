@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 type FileType string
@@ -51,7 +52,32 @@ const (
 
 var (
 	filenameLenLimit = 255
+
+	// videoExtensions is the single source of truth for video containers.
+	// GetFileType (runtime dispatch) and the ingestion parser-family mapping
+	// read this set. FilenameType keeps the legacy upload bucket (video is
+	// admitted as visual and routed to the picture pipeline), so every video
+	// container accepted below must also be present here.
+	videoExtensions = map[string]struct{}{
+		"mp4": {}, "avi": {}, "mkv": {}, "mov": {}, "webm": {}, "flv": {},
+		"mpeg": {}, "mpg": {}, "wmv": {}, "3gp": {}, "3gpp": {},
+		"rm": {}, "rmvb": {}, "asf": {}, "dat": {}, "asx": {}, "wvx": {},
+		"mpe": {}, "mpa": {},
+	}
 )
+
+// IsVideoExtension reports whether ext (with or without a leading dot,
+// case-insensitive) is a video container.
+func IsVideoExtension(ext string) bool {
+	normalized := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(ext), "."))
+	_, ok := videoExtensions[normalized]
+	return ok
+}
+
+// IsVideoFilename reports whether filename has a video extension.
+func IsVideoFilename(filename string) bool {
+	return IsVideoExtension(filepath.Ext(filename))
+}
 
 func init() {
 }
@@ -68,6 +94,8 @@ func normalizeFilename(filename string) (string, bool) {
 	return strings.ToLower(base), true
 }
 
+// GetFileType classifies a filename by its case-insensitive extension.
+// It returns FileTypeOTHER when the extension is missing or unsupported.
 func GetFileType(filename string) FileType {
 
 	ext := filepath.Ext(filename)
@@ -78,20 +106,24 @@ func GetFileType(filename string) FileType {
 		suffix = strings.ToLower(ext)
 	}
 
+	if IsVideoExtension(suffix) {
+		return FileTypeVIDEO
+	}
+
 	switch suffix {
 	case "pdf":
 		return FileTypePDF
-	case "xls":
+	case "xls", "et", "ett":
 		return FileTypeXLS
 	case "xlsx":
 		return FileTypeXLSX
 	case "csv":
 		return FileTypeCSV
-	case "doc":
+	case "doc", "wps", "wpt":
 		return FileTypeDOC
 	case "docx":
 		return FileTypeDOCX
-	case "ppt":
+	case "ppt", "dps", "dpt":
 		return FileTypePPT
 	case "pptx":
 		return FileTypePPTX
@@ -111,9 +143,6 @@ func GetFileType(filename string) FileType {
 	case "da", "wave", "wav", "mp3", "aac", "flac", "ogg",
 		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus":
 		return FileTypeAURAL
-	case "mp4", "avi", "mkv", "mov", "webm", "flv", "mpeg",
-		"mpg", "wmv", "3gp", "3gpp":
-		return FileTypeVIDEO
 	case "png", "jpg", "jpeg", "gif", "bmp":
 		return FileTypeVISUAL
 	case "tiff", "tif", "webp", "svg", "ico":
@@ -125,10 +154,22 @@ func GetFileType(filename string) FileType {
 	}
 }
 
+// FilenameType returns the upload category for a filename.
+// It classifies supported extensions and returns FileTypeOTHER for invalid
+// filenames or unsupported extensions.
 func FilenameType(filename string) FileType {
 	normalized, ok := normalizeFilename(filename)
 	if !ok {
 		return FileTypeOTHER
+	}
+
+	// Video is admitted at upload in the legacy visual bucket and routed to the
+	// picture pipeline; parsing is blocked later (no parser implements video
+	// analysis). Keep the admission here so every video container in the shared
+	// set passes the upload gate, including webm/flv/3gp/3gpp which the old
+	// bucket missed.
+	if IsVideoFilename(normalized) {
+		return FileTypeVISUAL
 	}
 
 	if matched, _ := regexp.MatchString(`.*\.pdf$`, normalized); matched {
@@ -137,8 +178,8 @@ func FilenameType(filename string) FileType {
 
 	docExtensions := []string{
 		"msg", "eml", "doc", "docx", "ppt", "pptx", "yml", "xml", "htm", "json", "jsonl", "ldjson",
-		"csv", "txt", "ini", "xls", "xlsx", "wps", "rtf", "hlp", "pages", "numbers", "key",
-		"md", "mdx", "py", "js", "java", "c", "cpp", "h", "php", "go", "ts", "sh", "cs", "kt",
+		"csv", "txt", "ini", "xls", "xlsx", "wps", "wpt", "et", "ett", "dps", "dpt", "rtf", "hlp", "pages", "numbers", "key",
+		"md", "markdown", "mdx", "py", "js", "java", "c", "cpp", "h", "php", "go", "ts", "sh", "cs", "kt",
 		"html", "sql", "epub",
 	}
 	for _, ext := range docExtensions {
@@ -157,10 +198,8 @@ func FilenameType(filename string) FileType {
 	}
 
 	visualExtensions := []string{
-		"jpg", "jpeg", "png", "tif", "gif", "bmp", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
+		"jpg", "jpeg", "png", "tif", "tiff", "gif", "bmp", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
 		"pcd", "dxf", "ufo", "eps", "ai", "raw", "wmf", "webp", "avif", "apng", "icon", "ico",
-		"mpg", "mpeg", "avi", "rm", "rmvb", "mov", "wmv", "asf", "dat", "asx", "wvx", "mpe",
-		"mpa", "mp4", "mkv",
 	}
 	for _, ext := range visualExtensions {
 		if strings.HasSuffix(normalized, "."+ext) {
@@ -206,6 +245,24 @@ func GetFileExtension(filename string) string {
 		return strings.ToLower(ext[1:])
 	}
 	return strings.ToLower(ext)
+}
+
+// TruncateFilename shortens name to at most maxBytes bytes. It keeps the
+// extension when it fits and cuts on a rune boundary, so the result stays
+// valid UTF-8 and keeps the file type the extension implies.
+func TruncateFilename(name string, maxBytes int) string {
+	if len(name) <= maxBytes {
+		return name
+	}
+	ext := filepath.Ext(name)
+	if len(ext) >= maxBytes {
+		ext = ""
+	}
+	end := maxBytes - len(ext)
+	for end > 0 && !utf8.RuneStart(name[end]) {
+		end--
+	}
+	return name[:end] + ext
 }
 
 // CONTENT_TYPE_MAP maps file extensions to MIME content types
@@ -404,8 +461,7 @@ func ResolveAttachmentContentType(ext string, mimeType string) (string, string) 
 		normalizedType := strings.ToLower(stripContentTypeParams(mimeType))
 		contentType = normalizedType
 		// Reverse-lookup extension from CONTENT_TYPE_MAP only when
-		// no explicit ext was provided. Never overwrite a caller-
-		// supplied extension (e.g. ext=svg&mime_type=image/png must
+		// no explicit ext was provided. Never overwrite a caller-supplied extension (e.g. ext=svg&mime_type=image/png must
 		// stay ext=svg for the force-attachment check).
 		if ext == "" {
 			for knownExt, knownType := range CONTENT_TYPE_MAP {

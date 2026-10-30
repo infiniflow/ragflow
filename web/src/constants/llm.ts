@@ -108,8 +108,21 @@ export enum LLMFactory {
   AIMLAPI = 'aimlapi.com',
   GreenPT = 'GreenPT',
   Synthorai = 'Synthorai',
+  RadeonCloud = 'Radeon Cloud',
   ApiRoute = 'API-Route',
   CheaperInference = 'Cheaper Inference',
+  Opper = 'Opper',
+  DemonRoute = 'Demon Route',
+  TrustedRouter = 'TrustedRouter',
+  EmpirioLabs = 'EmpirioLabs AI',
+  AIStupidLevel = 'AI Stupid Level',
+  Runcrate = 'Runcrate',
+  WorldRouter = 'WorldRouter',
+  CloudGPU = 'CloudGPU',
+  Obscurify = 'Obscurify.ai',
+  Cheapaimodel = 'cheapaimodel',
+  SystemOne = 'SystemOne',
+  HostingerRouter = 'Hostinger Router',
 }
 
 // Please lowercase the file name
@@ -200,13 +213,36 @@ export const IconMap = {
   [LLMFactory.AIMLAPI]: 'aimlapi',
   [LLMFactory.GreenPT]: 'greenpt',
   [LLMFactory.Synthorai]: 'synthorai',
+  [LLMFactory.RadeonCloud]: 'radeon-cloud',
   [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
   [LLMFactory.CheaperInference]: 'cheaperinference',
+  [LLMFactory.Opper]: 'opper',
+  [LLMFactory.TrustedRouter]: 'trustedrouter',
+  [LLMFactory.EmpirioLabs]: 'empiriolabs',
+  [LLMFactory.AIStupidLevel]: 'aistupidlevel',
+  [LLMFactory.Runcrate]: 'runcrate',
+  [LLMFactory.WorldRouter]: 'worldrouter',
+  [LLMFactory.CloudGPU]: 'cloudgpu',
+  [LLMFactory.Obscurify]: 'obscurify',
+  [LLMFactory.HostingerRouter]: 'hostinger-router',
+  [LLMFactory.Cheapaimodel]: 'cheapaimodel',
 };
+
+/**
+ * Providers that may serve a given model type.
+ *
+ * Types without an entry are unrestricted — listing every provider here would
+ * be a second copy of the catalog that goes stale. Decision is intentionally
+ * unrestricted: the backend derives the System One endpoint from the selected
+ * instance's own base URL, so any provider that serves that path on its
+ * instances can offer decision models.
+ */
+export const ModelTypeProviderMap: Record<string, string[]> = {};
 
 export const ModelTypeToField: Record<string, string> = {
   chat: 'llm_id',
+  decision: 'decision_id',
   embedding: 'embd_id',
   vision: 'img2txt_id',
   asr: 'asr_id',
@@ -216,6 +252,7 @@ export const ModelTypeToField: Record<string, string> = {
 
 export const FieldToModelType: Record<string, string> = {
   llm_id: 'chat',
+  decision_id: 'decision',
   embd_id: 'embedding',
   img2txt_id: 'vision',
   asr_id: 'asr',
@@ -231,6 +268,20 @@ export const APIMapUrl = {
   [LLMFactory.ApiRoute]: 'https://www.api-route.com',
   [LLMFactory.DaoXE]: 'https://daoxe.com',
   [LLMFactory.CheaperInference]: 'https://cheaperinference.com',
+  [LLMFactory.Opper]: 'https://platform.opper.ai',
+  [LLMFactory.TrustedRouter]: 'https://trustedrouter.com/keys',
+  [LLMFactory.EmpirioLabs]:
+    'https://platform.empiriolabs.ai/dashboard/api-keys',
+  [LLMFactory.AIStupidLevel]: 'https://aistupidlevel.info/router/keys',
+  [LLMFactory.Runcrate]:
+    'https://www.runcrate.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=directory&utm_campaign=gpu_pricing',
+  [LLMFactory.WorldRouter]:
+    'https://worldrouter.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=provider&utm_campaign=integration',
+  [LLMFactory.CloudGPU]: 'https://cloudgpu.app/api/console',
+  [LLMFactory.Obscurify]: 'https://obscurify.ai/account',
+  [LLMFactory.HostingerRouter]: 'https://hpanel.hostinger.com/ai-router',
+  [LLMFactory.Cheapaimodel]:
+    'https://console.cheapaimodel.ai/keys?utm_source=ragflow',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
@@ -252,7 +303,7 @@ export const APIMapUrl = {
   [LLMFactory.AzureOpenAI]:
     'https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/keys',
-  [LLMFactory.XunFeiSpark]: 'https://console.xfyun.cn/services/cbm',
+  [LLMFactory.XunFeiSpark]: 'https://maas.xfyun.cn/apikey',
   [LLMFactory.MiniMax]:
     'https://platform.minimaxi.com/user-center/basic-information',
   [LLMFactory.Groq]: 'https://console.groq.com/keys',
@@ -280,7 +331,7 @@ export const APIMapUrl = {
   [LLMFactory.DeerAPI]: 'https://api.deerapi.com/token',
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
-  [LLMFactory.PaddleOCR]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.PaddleOCR]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.SoMark]: 'https://somark.cn/workbench/apikey',
   [LLMFactory.N1n]: 'https://docs.n1n.ai',
   [LLMFactory.Avian]: 'https://avian.io',
@@ -315,7 +366,7 @@ export const APIMapUrl = {
   [LLMFactory.JiekouAI]: 'https://jiekou.ai',
   [LLMFactory.MinerU]: 'https://mineru.net',
   [LLMFactory.MinerUNet]: 'https://mineru.net',
-  [LLMFactory.PaddleOCRLocal]: 'https://www.paddleocr.ai/latest/',
+  [LLMFactory.PaddleOCRLocal]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
 };

@@ -66,6 +66,9 @@ func TestAgent_NoToolsReAct(t *testing.T) {
 	if len(toolCalls) != 0 {
 		t.Errorf("tool_calls=%d, want 0", len(toolCalls))
 	}
+	if _, exists := out["tool_invocations"]; exists {
+		t.Errorf("tool_invocations unexpectedly present without tool calls: %#v", out["tool_invocations"])
+	}
 	if calls != 1 {
 		t.Errorf("runner called %d times, want 1", calls)
 	}
@@ -803,7 +806,7 @@ func TestAgent_ToolCallRound(t *testing.T) {
 
 func TestAgent_ExhaustRoundsError(t *testing.T) {
 	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
-		return nil, errors.New("[GraphRunError] exceeds max steps")
+		return nil, fmt.Errorf("[GraphRunError] %w", compose.ErrExceedMaxSteps)
 	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 2})
@@ -814,7 +817,52 @@ func TestAgent_ExhaustRoundsError(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got := out["_ERROR"]; got != "**ERROR**: [GraphRunError] exceeds max steps" {
-		t.Fatalf("_ERROR = %v, want Python-compatible error envelope", got)
+		t.Fatalf("_ERROR = %v, want step-exhaustion error envelope", got)
+	}
+}
+
+func TestAgent_ToolInvocationsWithRunnerErrors(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		runnerErr    error
+		wantError    bool
+		wantEnvelope bool
+	}{
+		{name: "max steps", runnerErr: fmt.Errorf("[GraphRunError] %w", compose.ErrExceedMaxSteps), wantEnvelope: true},
+		{name: "other failure", runnerErr: errors.New("provider failed"), wantError: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			withAgentRunner(t, func(ctx context.Context, p AgentParam) (*schema.Message, error) {
+				recorder := &toolInvocationRecordingTool{
+					InvokableTool: &referenceRecordingFakeTool{out: `{"ok":true}`},
+					name:          "search",
+					recorder:      p.toolInvocations,
+				}
+				if _, err := recorder.InvokableRun(ctx, `{"query":"test"}`); err != nil {
+					return nil, err
+				}
+				return nil, tt.runnerErr
+			})
+
+			out, err := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1}).Invoke(t.Context(), nil, map[string]any{"user_prompt": "test"})
+			if tt.wantError {
+				if err == nil || !errors.Is(err, tt.runnerErr) {
+					t.Fatalf("Invoke error = %v, want wrapped %v", err, tt.runnerErr)
+				}
+			} else if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if tt.wantEnvelope {
+				if got := out["_ERROR"]; got != "**ERROR**: [GraphRunError] exceeds max steps" {
+					t.Fatalf("_ERROR = %v, want step-exhaustion envelope", got)
+				}
+			} else if _, ok := out["_ERROR"]; ok {
+				t.Fatalf("unexpected _ERROR output: %#v", out["_ERROR"])
+			}
+			if invocations, ok := out["tool_invocations"].([]map[string]any); !ok || len(invocations) != 1 {
+				t.Fatalf("tool_invocations = %#v, want one invocation", out["tool_invocations"])
+			}
+		})
 	}
 }
 
@@ -1373,6 +1421,28 @@ func TestAgentDisabledMaxTokens(t *testing.T) {
 		p = mergeAgentParam(AgentParam{}, inputs)
 		if p.MaxTokens == nil || *p.MaxTokens != 256 {
 			t.Fatal("enabled or unflagged max_tokens lost")
+		}
+	}
+}
+
+func TestAgentDisabledTemperatureAndTopP(t *testing.T) {
+	p := mergeAgentParam(AgentParam{}, map[string]any{
+		"temperature": 0.2, "temperatureEnabled": false,
+		"top_p": 0.75, "topPEnabled": false,
+	})
+	if p.Temperature != nil {
+		t.Fatalf("disabled temperature still applied: %v", *p.Temperature)
+	}
+	if p.TopP != nil {
+		t.Fatalf("disabled top_p still applied: %v", *p.TopP)
+	}
+	for _, inputs := range []map[string]any{
+		{"temperature": 0.2, "top_p": 0.75},
+		{"temperature": 0.2, "temperatureEnabled": true, "top_p": 0.75, "topPEnabled": true},
+	} {
+		p = mergeAgentParam(AgentParam{}, inputs)
+		if p.Temperature == nil || *p.Temperature != 0.2 || p.TopP == nil || *p.TopP != 0.75 {
+			t.Fatal("enabled or unflagged temperature/top_p lost")
 		}
 	}
 }

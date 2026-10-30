@@ -20,9 +20,13 @@
 package serenedb
 
 import (
+	"context"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
 
 	"ragflow/internal/engine/types"
 	"ragflow/internal/server/config"
@@ -69,6 +73,14 @@ func TestBuildFiltersArrayUsesListContains(t *testing.T) {
 	mustContain(t, got[0], "list_contains(tag_kwd, 'a')")
 	mustContain(t, got[0], " OR ")
 	mustContain(t, got[0], "list_contains(tag_kwd, 'b')")
+}
+
+func TestBuildFiltersKnowledgeGraphCompatibility(t *testing.T) {
+	got := buildFilters(map[string]interface{}{"knowledge_graph_kwd": []string{"entity", "relation"}})
+	want := "(type_kwd IN ('entity', 'relation') OR knowledge_graph_kwd IN ('entity', 'relation'))"
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("graph filter = %v, want %q", got, want)
+	}
 }
 
 func TestBuildFiltersScalarAndIn(t *testing.T) {
@@ -197,10 +209,19 @@ func TestBuildFulltextSQLSingleColumn(t *testing.T) {
 	mustNotContain(t, sql, "title_tks @@")
 }
 
-func TestBuildVectorSQLThresholdInWhere(t *testing.T) {
-	pm := parsedMatch{vectorData: []float64{3, 4}, vecThreshold: 0.2}
+// The similarity threshold must NOT reach the WHERE clause: there it compiles to
+// a radius search instead of a top-k lookup (173,001 ms vs 136 ms at k=1024 on
+// 111.8M chunks). Elasticsearch applies it as a post-filter, OpenSearch drops
+// it, and RAGFlow re-applies it against the hybrid score afterwards.
+//
+// hasVecThreshold must be SET here. Without it the fixture describes a request
+// that supplied no threshold at all, so the assertion holds trivially and the
+// test would still pass if buildVectorSQL started emitting the radius predicate
+// for a threshold that WAS given - the only case it is meant to guard.
+func TestBuildVectorSQLThresholdNotInWhere(t *testing.T) {
+	pm := parsedMatch{vectorData: []float64{3, 4}, vecThreshold: 0.2, hasVecThreshold: true}
 	sql := buildVectorSQL("t", "id", "TRUE", pm, 10, 5)
-	mustContain(t, sql, "-(q_2_vec_n <#> ARRAY[0.6,0.8]::FLOAT[2]) >= 0.2")
+	mustNotContain(t, sql, ">= 0.2")
 	mustContain(t, sql, "ORDER BY q_2_vec_n <#> ARRAY[0.6,0.8]::FLOAT[2] LIMIT 10 OFFSET 5")
 }
 
@@ -217,6 +238,43 @@ func TestBuildFusionSQLShape(t *testing.T) {
 	mustContain(t, sql, "ORDER BY _score DESC")
 	mustContain(t, sql, "content_ltks @@ 'q'")
 	mustContain(t, sql, "t.id, t.content_ltks") // output fields prefixed with t.
+}
+
+func TestBuildFusionSQLThresholdFiltersAfterLimit(t *testing.T) {
+	pm := parsedMatch{
+		textQuery: "q", vectorData: []float64{3, 4},
+		textTopN: 200, vectorTopN: 200, vectorWeight: 0.95,
+		vecThreshold: 0.2, hasVecThreshold: true,
+	}
+	sql := buildFusionSQL("t", "id", []string{"id"}, "TRUE", pm, 0, 30)
+	// Applied to the already-limited candidates, so the IVF scan still returns top-k...
+	mustContain(t, sql, "LIMIT 200) c WHERE sim >= 0.2")
+	// ...and never as a radius predicate on the scan itself.
+	mustNotContain(t, sql, "AS sim\n    FROM idx_t WHERE TRUE AND")
+}
+
+func TestBuildFusionSQLNoThresholdStillExcludesNulls(t *testing.T) {
+	pm := parsedMatch{
+		textQuery: "q", vectorData: []float64{3, 4},
+		textTopN: 200, vectorTopN: 200, vectorWeight: 0.95,
+	}
+	sql := buildFusionSQL("t", "id", []string{"id"}, "TRUE", pm, 0, 30)
+	mustNotContain(t, sql, "WHERE sim >=")
+	// COALESCE(v.sim, 0) would otherwise score a vectorless row as zero.
+	mustContain(t, sql, "WHERE sim IS NOT NULL")
+}
+
+func TestDropNullSimRemovesVectorlessRows(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"id": "a", vecSimColumn: 0.9},
+		{"id": "b", vecSimColumn: nil},
+		{"id": "c"},
+		{"id": "d", vecSimColumn: -0.4},
+	}
+	got := dropNullSim(rows)
+	if len(got) != 2 || got[0]["id"] != "a" || got[1]["id"] != "d" {
+		t.Errorf("dropNullSim = %v, want the two rows carrying a similarity", got)
+	}
 }
 
 func TestBuildUpsert(t *testing.T) {
@@ -332,14 +390,86 @@ func TestParseMatchExprs(t *testing.T) {
 }
 
 func TestBoundRunSQL(t *testing.T) {
-	if got := boundRunSQL("SELECT * FROM t;", 1024); got != "SELECT * FROM t LIMIT 1024" {
-		t.Errorf("bound = %q", got)
+	if got, err := boundRunSQL("SELECT * FROM t;", 1024); err != nil || got != "SELECT * FROM t\nLIMIT 1024" {
+		t.Errorf("bound = %q, error = %v", got, err)
 	}
-	if got := boundRunSQL("SELECT * FROM t LIMIT 5", 1024); got != "SELECT * FROM t LIMIT 5" {
-		t.Errorf("existing limit must be kept: %q", got)
+	if got, err := boundRunSQL("SELECT * FROM t LIMIT 5", 1024); err != nil || got != "SELECT * FROM t LIMIT 5" {
+		t.Errorf("existing limit must be kept: %q, error = %v", got, err)
 	}
-	if got := boundRunSQL("UPDATE t SET x=1", 1024); got != "UPDATE t SET x=1" {
-		t.Errorf("non-select must be untouched: %q", got)
+	if _, err := boundRunSQL("UPDATE t SET x=1", 1024); err == nil {
+		t.Error("UPDATE should be rejected")
+	}
+	if _, err := boundRunSQL("WITH changed AS (DELETE FROM t RETURNING id) SELECT * FROM changed", 1024); err == nil {
+		t.Error("data-modifying CTE should be rejected")
+	}
+	if _, err := boundRunSQL("SELECT 1; DROP TABLE t", 1024); err == nil {
+		t.Error("multiple statements should be rejected")
+	}
+	if _, err := boundRunSQL("SELECT 1 --\r; DROP TABLE t", 1024); err == nil {
+		t.Error("CR-terminated comment must not hide a second statement")
+	}
+	if _, err := boundRunSQL(`SELECT E'\'' ; DROP TABLE t; --'`, 1024); err == nil {
+		t.Error("backslash escape in E string must not hide a second statement")
+	}
+	if _, err := boundRunSQL("SELECT 'x\\'; DROP TABLE t; --'", 1024); err == nil {
+		t.Error("ambiguous backslash escape in a plain string must be rejected")
+	}
+	if got, err := boundRunSQL("SELECT 'UPDATE; DROP'; -- ignored trailing comment", 1024); err != nil || got != "SELECT 'UPDATE; DROP'\nLIMIT 1024" {
+		t.Errorf("quoted commands should not be interpreted as SQL: %q, error = %v", got, err)
+	}
+	if got, err := boundRunSQL("SELECT * FROM t -- trailing comment", 1024); err != nil || got != "SELECT * FROM t -- trailing comment\nLIMIT 1024" {
+		t.Errorf("limit should follow a trailing line comment: %q, error = %v", got, err)
+	}
+}
+
+func TestRunSQLRejectsMutationStatementsBeforeExecution(t *testing.T) {
+	for _, query := range []string{
+		"DROP TABLE chunks",
+		"UPDATE chunks SET content = 'changed'",
+		"SELECT 1 INTO chunks",
+		"WITH changed AS (DELETE FROM chunks RETURNING id) SELECT * FROM changed",
+		"SELECT 1; DROP TABLE chunks",
+	} {
+		t.Run(query, func(t *testing.T) {
+			db, _, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("sqlmock.New: %v", err)
+			}
+			defer db.Close()
+
+			engine := &serenedbEngine{db: db}
+			_, err = engine.RunSQL(context.Background(), "chunks", query, nil, "json")
+			if err == nil {
+				t.Fatalf("RunSQL(%q) error = %v, want read-only SELECT rejection before query execution", query, err)
+			}
+			if !strings.Contains(err.Error(), "only read-only SELECT statements") && !strings.Contains(err.Error(), "multiple SQL statements are not allowed") {
+				t.Fatalf("RunSQL(%q) error = %v, want read-only SELECT rejection before query execution", query, err)
+			}
+		})
+	}
+}
+
+func TestRunSQLUsesReadOnlyTransaction(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT 1\nLIMIT 1024")).WillReturnRows(sqlmock.NewRows([]string{"value"}).AddRow(1))
+	mock.ExpectCommit()
+
+	engine := &serenedbEngine{db: db}
+	rows, err := engine.RunSQL(context.Background(), "chunks", "SELECT 1", nil, "json")
+	if err != nil {
+		t.Fatalf("RunSQL: %v", err)
+	}
+	if len(rows) != 1 || rows[0]["value"] != int64(1) {
+		t.Fatalf("RunSQL rows = %#v", rows)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("SQL expectations: %v", err)
 	}
 }
 

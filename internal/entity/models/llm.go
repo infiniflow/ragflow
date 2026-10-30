@@ -391,6 +391,7 @@ func (m *EinoChatModel) labelOf(idx int) string {
 }
 
 // generateOnce runs one Generate attempt against a single chain entry.
+// It captures normalized input immediately before the driver call when enabled.
 func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	if cm == nil || cm.ModelDriver == nil {
 		return nil, fmt.Errorf("models: EinoChatModel: nil inner ModelDriver")
@@ -409,21 +410,19 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	if err != nil {
 		return nil, err
 	}
-	// eino's ChatModelAgent binds tools via the per-call model.WithTools option
-	// (not by calling WithTools). Merge those into the config so the model
-	// actually emits tool_calls; otherwise the ReAct loop would have no tools.
-	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
-	if err != nil {
-		return nil, err
-	}
 	// Once a tool result is in context the model must be free to answer in
 	// prose. Code-exec agents pin tool_choice to "required"/execute_code, and
 	// keeping that pin on the follow-up turn would loop forever instead of
-	// returning the answer.
-	if chatCfg != nil && containsToolResult(internal) {
+	// returning the answer. Explicit per-call choices can require further tools.
+	if chatCfg != nil && containsToolResult(internal) && model.GetCommonOptions(nil, opts...).ToolChoice == nil {
 		choice := "auto"
 		chatCfg.ToolChoice = &choice
 		chatCfg.ToolChoiceValue = nil
+	}
+	// Per-call options override defaults, including the release after tool results.
+	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
+	if err != nil {
+		return nil, err
 	}
 	common.Debug("models: eino generate request",
 		zap.String("model", *cm.ModelName),
@@ -432,6 +431,7 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	)
 	common.Debug("models: eino generate message skeleton",
 		zap.String("skeleton", describeInternalMessages(internal)))
+	captureModelInput(ctx, *cm.ModelName, internal)
 	resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, internal, cm.APIConfig, chatCfg, nil)
 	if err != nil {
 		// The chat paths surface this to the user as `**ERROR**: <err>`
@@ -583,24 +583,71 @@ func toolChoiceBody(choice string) map[string]any {
 // chatConfigWithOptsTools overlays tools supplied via the per-call
 // model.WithTools option onto base. eino's ChatModelAgent binds tools this way,
 // so Generate/Stream must honor opts or the model will never emit tool_calls.
-// When opts carries no tools, base is returned unchanged.
+// Explicit per-call tool choices override the wrapper's initial-turn choice.
 func (m *EinoChatModel) chatConfigWithOptsTools(base *ChatConfig, opts []model.Option) (*ChatConfig, error) {
 	co := model.GetCommonOptions(nil, opts...)
-	if co == nil || len(co.Tools) == 0 {
+	if co == nil || (len(co.Tools) == 0 && co.ToolChoice == nil) {
 		return base, nil
-	}
-	tools, err := openAIToolsFromEino(co.Tools)
-	if err != nil {
-		return nil, err
 	}
 	cfg := &ChatConfig{}
 	if base != nil {
 		cp := *base
 		cfg = &cp
 	}
-	cfg.Tools = tools
+	if len(co.Tools) > 0 {
+		tools, err := openAIToolsFromEino(co.Tools)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Tools = tools
+	}
 	choice := "auto"
+	// ADK supplies tools per call. Preserve the wrapper's explicit choice
+	// when binding them, including its named-function request body.
+	if m.toolChoice != nil && *m.toolChoice != "" {
+		choice = *m.toolChoice
+		cfg.ToolChoiceValue = nil
+		if body := toolChoiceBody(choice); body != nil {
+			cfg.ToolChoiceValue = body
+		}
+	}
 	cfg.ToolChoice = &choice
+	if co.ToolChoice != nil {
+		switch *co.ToolChoice {
+		case schema.ToolChoiceAllowed:
+			choice = "auto"
+		case schema.ToolChoiceForbidden:
+			choice = "none"
+			cfg.Tools = nil
+		case schema.ToolChoiceForced:
+			choice = "required"
+			if len(co.AllowedToolNames) == 1 {
+				choice = co.AllowedToolNames[0]
+			}
+		default:
+			return nil, fmt.Errorf("models: unsupported tool choice %q", *co.ToolChoice)
+		}
+		cfg.ToolChoiceValue = nil
+		if body := toolChoiceBody(choice); body != nil {
+			cfg.ToolChoiceValue = body
+		}
+		if len(co.AllowedToolNames) > 0 && *co.ToolChoice != schema.ToolChoiceForbidden && (*co.ToolChoice != schema.ToolChoiceForced || len(co.AllowedToolNames) > 1) {
+			allowed := make(map[string]bool, len(co.AllowedToolNames))
+			for _, name := range co.AllowedToolNames {
+				allowed[name] = true
+			}
+			tools, _ := cfg.Tools.([]map[string]any)
+			filtered := make([]map[string]any, 0, len(tools))
+			for _, t := range tools {
+				function, _ := t["function"].(map[string]any)
+				name, _ := function["name"].(string)
+				if allowed[name] {
+					filtered = append(filtered, t)
+				}
+			}
+			cfg.Tools = filtered
+		}
+	}
 	return cfg, nil
 }
 
@@ -725,8 +772,8 @@ func toolCallsFromInternal(calls []map[string]interface{}) []schema.ToolCall {
 }
 
 // containsToolResult reports whether any message already carries a tool
-// result. ReAct turns that contain results must keep tool_choice free: the
-// model is expected to answer, not to fire another tool.
+// result. Initial-turn constraints are released after a result, while an
+// explicit per-call choice may still require another retrieval step.
 func containsToolResult(messages []Message) bool {
 	for _, message := range messages {
 		if message.Role == "tool" {
@@ -742,6 +789,7 @@ func containsToolResult(messages []Message) bool {
 // With a failover chain, a stream that fails BEFORE any delta was emitted
 // moves to the next model; once deltas have reached the client the call
 // cannot be replayed, so the error is surfaced as-is.
+// Opt-in input capture records each actual driver attempt, including failover.
 func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	if m == nil || len(m.chain) == 0 {
 		return nil, fmt.Errorf("models: EinoChatModel: empty model chain")
@@ -771,19 +819,18 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	if err != nil {
 		return nil, err
 	}
-	// Same tool-binding fix as Generate: honor the per-call model.WithTools
-	// option so the ReAct loop's model requests actually carry tool definitions.
-	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
-	if err != nil {
-		return nil, err
-	}
 	// Same tool_choice release as generateOnce: a turn carrying tool results
 	// must be able to produce the final text instead of being forced to call
-	// a tool again.
-	if chatCfg != nil && containsToolResult(internalMessage) {
+	// a tool again, unless an explicit per-call choice requires it.
+	if chatCfg != nil && containsToolResult(internalMessage) && model.GetCommonOptions(nil, opts...).ToolChoice == nil {
 		choice := "auto"
 		chatCfg.ToolChoice = &choice
 		chatCfg.ToolChoiceValue = nil
+	}
+	// Per-call options override defaults, including the release after tool results.
+	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
+	if err != nil {
+		return nil, err
 	}
 	common.Debug("models: eino stream request",
 		zap.String("model", modelNameOf(m.chain[0])),
@@ -875,6 +922,7 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 			}
 			attemptCfg.ToolCallsResult = nil
 			attemptCfg.UsageResult = nil
+			captureModelInput(ctx, *cm.ModelName, internalMessage)
 			err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, internalMessage, cm.APIConfig, attemptCfg, nil, sender)
 			if err != nil {
 				// Same user-visible shape as generateOnce's error: lead with the

@@ -5,16 +5,16 @@ import {
   useRunDocument,
   useUploadDocument,
 } from '@/hooks/use-document-request';
-import { FileType } from '@/constants/file';
 import { IDocumentInfo } from '@/interfaces/database/document';
-import { getExtension, getUnSupportedFilesCount } from '@/utils/document-util';
+import { getUnSupportedFilesCount } from '@/utils/document-util';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { buildParserGapModalContent } from './parser-gap-content';
+import { buildUploadGapModalContent } from './parser-gap-content';
+import { useDatasetPipelineMissing } from './use-dataset-pipeline-missing';
 import { useParserGapValidation } from './use-parser-gap-validation';
-import { getFileTypeByExtension, hasUnsupportedTypeGap } from './utils';
+import { hasUnsupportedTypeGap } from './utils';
 
-export const useHandleUploadDocument = () => {
+export const useHandleUploadDocument = (pipelineId?: string) => {
   const { t } = useTranslation();
   const {
     visible: documentUploadVisible,
@@ -23,18 +23,16 @@ export const useHandleUploadDocument = () => {
   } = useSetModalState();
   const { uploadDocument, loading } = useUploadDocument();
   const { runDocumentByIds } = useRunDocument();
-  const { findParseGaps } = useParserGapValidation();
+  const { findParseGaps, findDocumentParseGaps } = useParserGapValidation();
+  const pipelineMissing = useDatasetPipelineMissing(pipelineId);
 
   const proceedUpload = useCallback(
-    async (
-      {
-        fileList,
-        parseOnCreation,
-        tableColumnMode,
-        tableColumnRoles,
-      }: UploadFormSchemaType,
-      failingFileTypes: Set<FileType>,
-    ) => {
+    async ({
+      fileList,
+      parseOnCreation,
+      tableColumnMode,
+      tableColumnRoles,
+    }: UploadFormSchemaType) => {
       // Build parser_config if column roles are configured
       let parserConfig: Record<string, any> | undefined;
       if (
@@ -58,19 +56,18 @@ export const useHandleUploadDocument = () => {
         return;
       }
 
-      // Trigger parsing for both full and partial success when parseOnCreation
-      // is enabled; files whose required model is missing are uploaded but not
-      // auto-parsed.
+      // Auto-parse is decided from each uploaded document's own parser_config —
+      // the config the backend resolved for it (an undeclared family is
+      // reseeded with the pipeline that owns it, or with general). This is the
+      // same validation the parse button applies, so files whose required model
+      // is missing are uploaded but not auto-parsed.
       if (
         (isSuccess || isPartialSuccess) &&
         parseOnCreation &&
         ret.data?.length > 0
       ) {
         const runnableDocuments = (ret.data as IDocumentInfo[]).filter(
-          (doc) => {
-            const fileType = getFileTypeByExtension(getExtension(doc.name));
-            return !fileType || !failingFileTypes.has(fileType);
-          },
+          (doc) => findDocumentParseGaps([doc]).length === 0,
         );
         if (runnableDocuments.length > 0) {
           runDocumentByIds({
@@ -94,45 +91,75 @@ export const useHandleUploadDocument = () => {
 
       return ret?.code;
     },
-    [uploadDocument, runDocumentByIds, hideDocumentUploadModal],
+    [
+      uploadDocument,
+      runDocumentByIds,
+      findDocumentParseGaps,
+      hideDocumentUploadModal,
+    ],
   );
 
-  const onDocumentUploadOk = useCallback(
+  const validateGapsAndUpload = useCallback(
     async (values: UploadFormSchemaType) => {
-      const { fileList } = values;
-      if (fileList.length === 0) {
-        return;
-      }
-
-      const names = fileList.map((file) =>
+      const names = values.fileList.map((file) =>
         file instanceof File ? file.name : file.file.name,
       );
       const gaps = findParseGaps(names);
       if (gaps.length > 0) {
-        const failingFileTypes = new Set(gaps.map((gap) => gap.fileType));
         Modal.warning({
           title: t(
             hasUnsupportedTypeGap(gaps)
               ? 'knowledgeDetails.uploadUnsupportedTypesTitle'
               : 'knowledgeDetails.uploadMissingModelsTitle',
           ),
-          content: buildParserGapModalContent(t, gaps, {
+          content: buildUploadGapModalContent(t, gaps, {
             missingModel: 'knowledgeDetails.addModelAfterUploadHint',
-            unsupportedType: 'knowledgeDetails.reselectParserAfterUploadHint',
+            autoSwitch: 'knowledgeDetails.reselectParserAfterUploadHint',
+            manualSwitch: 'knowledgeDetails.manualSwitchAfterUploadHint',
+            mixedSwitch: 'knowledgeDetails.mixedSwitchAfterUploadHint',
           }),
           okText: t('knowledgeDetails.continueUpload'),
           cancelText: t('common.cancel'),
           closable: false,
           onOk: () => {
-            proceedUpload(values, failingFileTypes);
+            proceedUpload(values);
           },
         });
         return;
       }
 
-      return proceedUpload(values, new Set());
+      return proceedUpload(values);
     },
     [findParseGaps, proceedUpload, t],
+  );
+
+  const onDocumentUploadOk = useCallback(
+    async (values: UploadFormSchemaType) => {
+      if (values.fileList.length === 0) {
+        return;
+      }
+
+      // The configured pipeline can no longer parse, so parse-on-creation
+      // would silently do nothing. Confirm first; on "Continue upload" the
+      // parsing is dropped. The gap check still runs because the backend
+      // reseeds parser configs at upload regardless.
+      if (values.parseOnCreation && pipelineMissing) {
+        Modal.warning({
+          title: t('knowledgeDetails.uploadPipelineDeletedTitle'),
+          content: t('knowledgeDetails.uploadPipelineDeletedContent'),
+          okText: t('knowledgeDetails.continueUpload'),
+          cancelText: t('common.cancel'),
+          closable: false,
+          onOk: () => {
+            validateGapsAndUpload({ ...values, parseOnCreation: false });
+          },
+        });
+        return;
+      }
+
+      return validateGapsAndUpload(values);
+    },
+    [pipelineMissing, validateGapsAndUpload, t],
   );
 
   return {

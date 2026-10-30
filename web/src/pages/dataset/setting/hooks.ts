@@ -1,0 +1,206 @@
+import { ParseType } from '@/constants/knowledge';
+import {
+  useFetchDatasetPipelineConfiguration,
+  useUpdateKnowledge,
+} from '@/hooks/use-knowledge-request';
+import { IConnector } from '@/interfaces/database/dataset';
+import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
+import {
+  getOperatorType,
+  transformFormConfigToApi,
+  transformSavedParserConfigToForm,
+} from '@/utils/pipeline-operator';
+import { pick } from 'lodash';
+import {
+  Dispatch,
+  SetStateAction,
+  useCallback,
+  useEffect,
+  useMemo,
+} from 'react';
+import { UseFormReturn } from 'react-hook-form';
+import { DatasetSettingFormValues } from './form-schema';
+
+export function useHasParsedDocument(isEdit?: boolean) {
+  const { data: knowledgeDetails } = useFetchDatasetPipelineConfiguration({
+    isEdit,
+  });
+  return knowledgeDetails.chunk_count > 0;
+}
+
+export const useFetchDatasetSettingOnMount = (
+  form: UseFormReturn<DatasetSettingFormValues>,
+) => {
+  const { data: knowledgeDetails, loading } =
+    useFetchDatasetPipelineConfiguration();
+  const { dataSourceInfo } = useDataSourceInfo();
+
+  const sourceData = useMemo(() => {
+    return (knowledgeDetails?.connectors ?? []).map(
+      (connector: IConnector) => ({
+        ...connector,
+        icon:
+          dataSourceInfo[connector.source as keyof typeof dataSourceInfo]
+            ?.icon || '',
+      }),
+    );
+  }, [knowledgeDetails?.connectors, dataSourceInfo]);
+
+  useEffect(() => {
+    const formParserConfig = transformSavedParserConfigToForm(
+      knowledgeDetails.parser_config as Record<string, any> | undefined,
+    );
+
+    const formValues = {
+      ...pick(knowledgeDetails, [
+        'description',
+        'name',
+        'permission',
+        'language',
+        'connectors',
+        'pagerank',
+        'avatar',
+        'pipeline_id',
+        'pipeline_version_id',
+        'parser_id',
+      ]),
+      embedding_model: knowledgeDetails.embedding_model,
+      connectors: sourceData,
+      parse_type: knowledgeDetails.pipeline_id
+        ? ParseType.Pipeline
+        : ParseType.BuiltIn,
+      // Backfill the pinned version (design section 5/C2); an absent pin
+      // renders as the empty (track latest) form value.
+      pipeline_version_id: knowledgeDetails.pipeline_version_id ?? '',
+      parser_config: formParserConfig,
+    } as DatasetSettingFormValues;
+    form.reset(formValues);
+  }, [form, knowledgeDetails, sourceData]);
+
+  return { knowledgeDetails, loading, sourceData };
+};
+
+export const useSaveDatasetSetting = () => {
+  const { saveKnowledgeConfiguration, loading } = useUpdateKnowledge();
+
+  const handleSave = useCallback(
+    async (values: DatasetSettingFormValues) => {
+      const payload = { ...values };
+
+      // Apply forward transforms to parser_config if in pipeline mode. Each node
+      // (e.g. Extractor:AutoExtractDefault) already carries its own modular
+      // metadata, so no flat top-level `metadata`/`parent_child` key is emitted
+      // — the Go backend requires component-scoped keys. Skip any non-operator
+      // (flat, key-without-":") entries that may linger from a stale form copy.
+      if (payload.parser_config) {
+        const transformedConfig: Record<string, any> = {};
+        for (const [operatorId, config] of Object.entries(
+          payload.parser_config,
+        )) {
+          if (!operatorId.includes(':')) {
+            continue;
+          }
+          const operatorType = getOperatorType(operatorId);
+          transformedConfig[operatorId] = transformFormConfigToApi(
+            operatorType,
+            config as Record<string, any>,
+          );
+        }
+        payload.parser_config = transformedConfig;
+      }
+
+      if (payload.parse_type === ParseType.BuiltIn) {
+        payload.pipeline_id = undefined;
+        // A version pin only exists for a dataflow pipeline; drop it in
+        // built-in mode so no stale canvas version is submitted.
+        payload.pipeline_version_id = undefined;
+      } else {
+        payload.parser_id = undefined;
+      }
+      return saveKnowledgeConfiguration(payload);
+    },
+    [saveKnowledgeConfiguration],
+  );
+
+  return { handleSave, loading };
+};
+
+export const usePipelineDataList = (sourceData: any[] | undefined) => {
+  const { dataSourceInfo } = useDataSourceInfo();
+
+  return useMemo(
+    () =>
+      sourceData?.map((item) => ({
+        ...item,
+        icon:
+          dataSourceInfo[item.source as keyof typeof dataSourceInfo]?.icon ||
+          '',
+      })),
+    [sourceData, dataSourceInfo],
+  );
+};
+
+export const useConnectorHandlers = (
+  form: UseFormReturn<any>,
+  sourceData?: any[],
+  setSourceData?: Dispatch<SetStateAction<any[] | undefined>>,
+) => {
+  const { dataSourceInfo } = useDataSourceInfo();
+
+  const handleLinkOrEditSubmit = useCallback(
+    (data: any[] | undefined) => {
+      if (data) {
+        const connectors = data.map((connector) => ({
+          ...connector,
+          auto_parse: (connector as IConnector).auto_parse === '0' ? '0' : '1',
+          icon:
+            dataSourceInfo[connector.source as keyof typeof dataSourceInfo]
+              ?.icon || '',
+        }));
+        setSourceData?.(connectors);
+        form.setValue('connectors', connectors || []);
+      }
+    },
+    [dataSourceInfo, form, setSourceData],
+  );
+
+  const unbindFunc = useCallback(
+    (data: any) => {
+      if (data) {
+        const connectors = sourceData?.filter(
+          (connector) => connector.id !== data.id,
+        );
+        setSourceData?.(connectors);
+        form.setValue('connectors', connectors || []);
+      }
+    },
+    [sourceData, form, setSourceData],
+  );
+
+  const handleAutoParse = useCallback(
+    ({
+      source_id,
+      isAutoParse,
+    }: {
+      source_id: string;
+      isAutoParse: boolean;
+    }) => {
+      if (source_id) {
+        const connectors = sourceData?.map((connector) => {
+          if (connector.id === source_id) {
+            return {
+              ...connector,
+              auto_parse: isAutoParse ? '1' : '0',
+            };
+          }
+          return connector;
+        });
+        setSourceData?.(connectors);
+        form.setValue('connectors', connectors || []);
+      }
+    },
+    [sourceData, form, setSourceData],
+  );
+
+  return { handleLinkOrEditSubmit, unbindFunc, handleAutoParse };
+};

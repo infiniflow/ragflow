@@ -11,7 +11,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - Keep refactors centered on the owning abstraction, not on adjacent compatibility layers.
 
 ## Current stack
-- Backend: Go implements the API, admin, ingestor, and syncer modes in `cmd/ragflow_server.go`; the CLI runs from `cmd/ragflow-cli.go`. The Python API, admin, and workers are still present and `docker/entrypoint.sh` still defaults to Python when `API_PROXY_SCHEME` is unset. Go-only operation is the migration target, not the current repository state.
+- Backend: Go implements the API, admin, ingestor, and syncer modes in `cmd/ragflow_server.go`; the CLI runs from `cmd/ragflow-cli.go`. The Docker entrypoint starts the Go services according to its command-line flags, and the frontend development server uses fixed Go backend proxy routes. The Python API, admin, and workers are still present pending removal.
 - Frontend: React + TypeScript + Vite in `web/`. When working under `web/`, read and follow `web/AGENTS.md` for frontend conventions.
 - The Go module contains the server, ingestion, parsing, agent runtime, CLI, and supporting services.
 - Runtime services commonly include MySQL/PostgreSQL, Kvrocks, NATS JetStream, MinIO, ClickHouse, and Elasticsearch/Infinity/OpenSearch depending on configuration.
@@ -20,12 +20,12 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - Move any still-required behavior and test coverage into the Go backend or the frontend before deleting the old implementation. Do not preserve a Python server, compatibility layer, fallback, or dual-backend path.
 - Before deleting `rag/`, move the Go DeepDoc `.ort` models and `ocr.res` out of `internal/rag/res/deepdoc/`, then update model discovery, dependency preparation, Docker packaging, and tests together.
 - Remove the frontend's Go/Python backend variants and update `web/CLAUDE.md` when the frontend no longer needs them. Until then, treat its dual-backend instructions as migration-only guidance; new frontend work should target the Go API.
-- Update Docker's default entrypoint, dependency image, and CI workflows when removing their Python paths. Until then, select Go explicitly with `API_PROXY_SCHEME=go` where that variable controls startup.
+- Update Docker's default entrypoint, dependency image, and CI workflows when removing their remaining Python paths. Keep the frontend development proxy routes aligned with the Go API and Admin ports in `web/vite.config.ts`.
 - Keep this guide aligned with the checked-in tree. Once the Python directories are deleted, remove their migration inventory below.
 
 ## Code Layout to Expect
 - `cmd/ragflow_server.go`: Go entrypoint for the API, admin, ingestor, and syncer modes (`--api`, `--admin`, `--ingestor`, `--syncer`).
-- `cmd/ragflow-cli.go`: Go CLI entrypoint.
+- `cmd/ragflow-cli/`: Go CLI entrypoint.
 - `api/`, `rag/`, `deepdoc/`, and `agent/`: legacy Python implementation pending deletion. Do not add features or extend dependencies there.
 - `internal/`: main Go application code. Important subtrees:
 - `internal/agent/`: Go agent runtime, canvas execution, components, tool bindings, workflow helpers.
@@ -53,7 +53,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - `web/`: frontend application.
 - `docker/`: local and production compose files.
 - `sdk/python/`: legacy Python client SDK pending deletion.
-- `ragflow_deps/download_go_deps.py`: current Python helper for Go native libraries and model files; replace it before deleting it. `build.sh` currently reads its ONNX Runtime version pin.
+- `tools/scripts/download_dev_deps.py` and `deps/download_deps.py`: Python downloaders for the Go build's dependencies. `download_dev_deps.py` pulls the native static libraries (pdfium, pdf_oxide, office_oxide, onnxruntime) that `build.sh` links; `download_deps.py` pulls the runtime resources (cl100k BPE table, DeepDoc models, embedding tokenizer assets). Versions and URLs are defined inline in each downloader (`tools/scripts/download_dev_deps.py` for native static libraries, `deps/download_deps.py` for runtime resources); the tokenizer assets are inlined as `TOKENIZER_ASSETS` in each downloader. Replace these with non-Python preparation before removing Python dependencies.
 - `test/`: contains Python tests, including tests that import the legacy Python implementation directly. Migrate needed coverage to Go tests or frontend tests, then remove the Python tests; keep only tests for supported code.
 
 ## Go-Specific Rules
@@ -62,6 +62,18 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - Remove commented-out Go code instead of leaving recovery notes in place.
 - Keep package comments and doc comments aligned with the current runtime path, not with migration history.
 
+## Enterprise stubs
+Enterprise-only code lives in the downstream enterprise repository, never here: it is written as `*_ee.go` / `*_ee_test.go` files carrying `//go:build ee`. This tree keeps only what the open-source build needs:
+
+- A capability the shared code cannot implement open-source gets a `stub.go` in the same package with `//go:build !ee`, exposing exactly the surface the shared call sites use.
+- A capability that is absent from this tree altogether needs no stub: the downstream repository carries that file and its build tag on its own.
+- Keep stubs minimal: when shared code calls several enterprise functions in a row, collapse them into one entry point instead of stubbing each one.
+- Review every stub from the caller's side: it returns a zero value or an error, and the open-source build still has to behave correctly — the call site needs the fallback that keeps normal operation intact.
+- Never inline enterprise content into a shared file (a config section, an environment variable, a frontend module). The edition is selected by build tags or by an environment variable, and the enterprise repository ships the counterpart file.
+- Both trees must build: this one with `bash build.sh --go`, the enterprise one with `RAGFLOW_GO_TAGS=ee bash build.sh --go`.
+- New tests are Go tests run through `bash build.sh --test`, never pytest. Integration and system tests must exercise the real implementation — no mocks or stubs of the code under test.
+
+## GORM query traps
 ## GORM query traps
 - **Never pass a bare string ID as the second argument to `Take`/`First`** (e.g. `Take(&x, id)`). Under GORM v1.25.7 a non-numeric string is treated as a raw SQL condition and concatenated into the `WHERE` clause: `Take(&x, "88b17c7a...")` emits `WHERE 88b17c7a... LIMIT 1`, which MySQL rejects with `Error 1054 (42S22): Unknown column '...' in 'where clause'`. Only strings that parse via `strconv.Atoi` are treated as primary-key values, so this bug is invisible for integer IDs and catastrophic for UUID primary keys. Always bind explicitly: `Take(&x, "id = ?", id)` or `Where("id = ?", id).Take(&x)`.
 - When you change a query form across many files, verify the generated SQL with a `Session(&gorm.Session{DryRun: true})` probe before relying on it. A passing unit test with no rows and a broken `WHERE` clause look identical unless the SQL is inspected.
@@ -129,7 +141,7 @@ bash build.sh --test-manual                 # local opt-in only
 bash build.sh --test-all                    # integration + e2e; excludes manual
 ```
 
-Native libraries and Go DeepDoc models currently come from `ragflow_deps/download_go_deps.py`; see `README_zh.md` for its isolated setup. The Go tokenizer also needs `ragflow_deps/cl100k_base.tiktoken`, which the current Python dependency pipeline provides. These are build/runtime resource preparation steps, not a Python server requirement.
+Native libraries, Go DeepDoc models, tokenizer assets, and `deps/cl100k_base.tiktoken` come from `tools/scripts/download_dev_deps.py` (native static libs) and `deps/download_deps.py` (models, cl100k, tokenizer assets); run them with `uv run`. Build the Go resource image with `cd deps && docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .` after downloading the resources.
 
 ### Frontend
 ```bash

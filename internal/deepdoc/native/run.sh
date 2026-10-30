@@ -15,7 +15,7 @@ cd "$SCRIPT_DIR"
 # dlopen(NULL); no ORT_LIB is needed.
 #
 # Default MODEL_DIR to the canonical repo model dir (internal/rag/res/deepdoc) so running
-# `download_go_deps.py` is enough — no MODEL_DIR export is required for local
+# `download_deps.py` is enough — no MODEL_DIR export is required for local
 # Go DeepDoc runs. Override with `MODEL_DIR=... bash run.sh` if needed.
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 MODEL_DIR="${MODEL_DIR:-$REPO_ROOT/internal/rag/res/deepdoc}"

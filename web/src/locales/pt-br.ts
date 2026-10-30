@@ -86,6 +86,8 @@ export default {
       noMoreData: 'Isso é tudo. Nada mais.',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Continue o envio e o sistema mudará automaticamente esses arquivos para uma configuração de análise integrada compatível.',
       dataset: 'Conjunto de dados',
       testing: 'Teste de recuperação',
       files: 'Arquivos',
@@ -102,7 +104,7 @@ export default {
       webCrawl: 'Rastreamento na web',
       chunkNumber: 'Número de fragmentos',
       uploadDate: 'Data de upload',
-      chunkMethod: 'Método de fragmentação',
+      parsingMode: 'Modo de análise',
       enabled: 'Habilitar',
       disabled: 'Desabilitar',
       action: 'Ação',
@@ -208,6 +210,8 @@ export default {
       metaData: 'Metadados',
     },
     knowledgeConfiguration: {
+      parsingMode: 'Modo de análise',
+      builtInSuffix: ' (built in)',
       imageTableContextWindow: 'Janela de contexto de imagem e tabela',
       imageTableContextWindowTip:
         'Captura N tokens de texto acima e abaixo da imagem e da tabela para fornecer um contexto de fundo mais rico.',
@@ -229,8 +233,6 @@ export default {
         "Se definido como 'Equipe', todos os membros da equipe poderão gerenciar a base de conhecimento.",
       chunkTokenNumberTip:
         'Define o limite de tokens para um fragmento. Um parágrafo com menos tokens que esse limite será combinado com o próximo parágrafo até que a contagem de tokens ultrapasse o limite, momento em que um fragmento será criado. Nenhum novo bloco será criado a menos que um delimitador seja encontrado, mesmo que esse limite seja excedido.',
-      chunkMethod: 'Método de fragmentação',
-      chunkMethodTip: 'Veja as dicas à direita.',
       upload: 'Enviar',
       english: 'Inglês',
       chinese: 'Chinês',
@@ -555,19 +557,19 @@ export default {
         'O modelo LLM padrão que todos os novos bancos de conhecimento usarão.',
       embeddingModel: 'Modelo de incorporação',
       embeddingModelTip:
-        'O modelo de incorporação padrão para cada nova base de conhecimento criada. Se você não encontrar um modelo de incorporação na lista suspensa, verifique se está usando a edição slim do RAGFlow (que não inclui modelos de incorporação) ou consulte https://ragflow.io/docs/dev/supported_models para verificar se o provedor do modelo suporta este modelo.',
+        'O modelo de incorporação padrão para cada nova base de conhecimento criada. Se você não encontrar um modelo de incorporação na lista suspensa, consulte a página Provedores de modelos para verificar se o provedor do modelo suporta este modelo.',
       img2txtModel: 'Modelo Img2Txt',
       img2txtModelTip:
-        'O modelo padrão img2txt para cada base de conhecimento recém-criada. Ele descreve uma imagem ou vídeo. Se você não conseguir encontrar um modelo no menu suspenso, verifique https://ragflow.io/docs/dev/supported_models para ver se seu provedor de modelo suporta este modelo.',
+        'O modelo padrão img2txt para cada base de conhecimento recém-criada. Ele descreve uma imagem ou vídeo. Se você não conseguir encontrar um modelo no menu suspenso, verifique a página Provedores de modelos para ver se seu provedor de modelo suporta este modelo.',
       sequence2txtModel: 'Modelo Speech2Txt',
       sequence2txtModelTip:
-        'O modelo ASR padrão que todos os novos bancos de conhecimento usarão. Use este modelo para converter vozes em texto correspondente. Se você não conseguir encontrar um modelo no menu suspenso, verifique https://ragflow.io/docs/dev/supported_models para ver se seu provedor de modelo suporta este modelo.',
+        'O modelo ASR padrão que todos os novos bancos de conhecimento usarão. Use este modelo para converter vozes em texto correspondente. Se você não conseguir encontrar um modelo no menu suspenso, verifique a página Provedores de modelos para ver se seu provedor de modelo suporta este modelo.',
       rerankModel: 'Modelo de Reordenação',
       rerankModelTip:
-        'O modelo de rerank padrão para reranking de trechos. Se você não encontrar um modelo no menu suspenso, verifique https://ragflow.io/docs/dev/supported_models para ver se o seu provedor de modelo oferece suporte a este modelo.',
+        'O modelo de rerank padrão para reranking de trechos. Se você não encontrar um modelo no menu suspenso, verifique a página Provedores de modelos para ver se o seu provedor de modelo oferece suporte a este modelo.',
       ttsModel: 'Modelo TTS',
       ttsModelTip:
-        'O modelo padrão de text-to-speech. Se você não encontrar um modelo no menu suspenso, verifique https://ragflow.io/docs/dev/supported_models para ver se o seu provedor de modelo oferece suporte a este modelo.',
+        'O modelo padrão de text-to-speech. Se você não encontrar um modelo no menu suspenso, verifique a página Provedores de modelos para ver se o seu provedor de modelo oferece suporte a este modelo.',
       workspace: 'Área de trabalho',
       upgrade: 'Atualizar',
       addLlmTitle: 'Adicionar LLM',
@@ -718,7 +720,7 @@ export default {
       destinationFolder: 'Pasta de destino',
     },
     flow: {
-      cite: 'Citar',
+      cite: 'Mostrar citações',
       citeTip: 'dicaDeCitação',
       name: 'Nome',
       nameMessage: 'Por favor, insira o nome',
@@ -1205,7 +1207,7 @@ export default {
         'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
       promptMessage: 'O prompt é obrigatório',
       runningHintText: 'está rodando...🕞',
-      canvasCategory: 'Categoria de canvas',
+      agentCategory: 'Categoria de canvas',
       tags: 'Tags',
       created: 'Criado',
       id: 'ID',

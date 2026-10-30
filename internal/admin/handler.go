@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,7 +26,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
-	"ragflow/internal/handler"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
@@ -60,15 +60,9 @@ type ErrorResponse struct {
 func (h *Handler) Healthz(c *gin.Context) {
 	result, allOK := service.GetComponentsHealthz(c.Request.Context())
 	if allOK {
-		c.JSON(http.StatusOK, gin.H{
-			"code": 0,
-			"data": result,
-		})
+		common.SuccessWithData(c, result, "success")
 	} else {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code": common.CodeServerError,
-			"data": result,
-		})
+		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, result, "")
 	}
 }
 
@@ -119,7 +113,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := common.DumpAccessToken(*user.AccessToken, "", secretKey)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, fmt.Sprintf("Failed to generate auth token: %s", err.Error()))
 		return
@@ -217,28 +211,21 @@ func (h *Handler) ListUsers(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	var users []map[string]interface{}
+	var total int64
 	switch common.GetRAGFlowType() {
 	case common.OpenSourceVersion:
-		users, err = h.service.ListUsers(ctx, pageInt, pageSizeInt, name, status, sort, orderBy)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeServerError, err.Error())
-			return
-		}
-
-		common.SuccessWithData(c, users, "List users")
-		return
+		users, total, err = h.service.ListUsers(ctx, pageInt, pageSizeInt, name, status, sort, orderBy)
 	case common.EnterpriseEdition:
-		users, err = h.service.ListUsersEE(ctx, pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaPtr)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeServerError, err.Error())
-			return
-		}
-		common.SuccessWithData(c, users, "List users")
-		return
+		users, total, err = h.service.ListUsersEE(ctx, pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaPtr)
 	default:
 		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid RAGFlow type")
 		return
 	}
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithDataAndTotal(c, users, total, "List users")
 }
 
 // CreateUserHTTPRequest create user request
@@ -650,16 +637,55 @@ func (h *Handler) ShowVariable(c *gin.Context) {
 
 // SetVariableHTTPRequest set variable request
 type SetVariableHTTPRequest struct {
-	VarName  string `json:"var_name" binding:"required"`
-	VarValue string `json:"var_value" binding:"required"`
+	VarName  string          `json:"var_name"`
+	VarValue json.RawMessage `json:"var_value"`
+}
+
+// Missing values are reported separately from unparsable ones so the client can
+// tell "you forgot the field" apart from "the field is malformed".
+var (
+	errMissingVariableValue = errors.New("Var value is required")
+	errInvalidVariableValue = errors.New("Var value is invalid")
+)
+
+// flattenedVariableValue renders a JSON value into the textual form stored in
+// system_settings.value. Every data type shares that one textual column, so
+// scalars arriving as their native JSON types are rendered back to their
+// literal instead of being rejected for not being a JSON string. Objects and
+// arrays keep their JSON encoding verbatim, which is the stored form of
+// json-typed settings.
+func (r SetVariableHTTPRequest) flattenedVariableValue() (string, error) {
+	raw := bytes.TrimSpace(r.VarValue)
+	if len(raw) == 0 || bytes.Equal(raw, []byte("null")) {
+		return "", errMissingVariableValue
+	}
+
+	var text string
+	if err := json.Unmarshal(raw, &text); err == nil {
+		return text, nil
+	}
+
+	var boolean bool
+	if err := json.Unmarshal(raw, &boolean); err == nil {
+		return strconv.FormatBool(boolean), nil
+	}
+
+	var number json.Number
+	if err := json.Unmarshal(raw, &number); err == nil {
+		return number.String(), nil
+	}
+
+	if json.Valid(raw) {
+		return string(raw), nil
+	}
+	return "", errInvalidVariableValue
 }
 
 // SetVariable handle set variable
-// Python logic: update or create a system setting with the given name and value
 func (h *Handler) SetVariable(c *gin.Context) {
 	var req SetVariableHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Var name is required")
+		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -668,13 +694,14 @@ func (h *Handler) SetVariable(c *gin.Context) {
 		return
 	}
 
-	if req.VarValue == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Var value is required")
+	varValue, err := req.flattenedVariableValue()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	ctx := c.Request.Context()
-	if err := h.service.SetVariable(ctx, req.VarName, req.VarValue); err != nil {
+	if err := h.service.SetVariable(ctx, req.VarName, varValue); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -682,7 +709,8 @@ func (h *Handler) SetVariable(c *gin.Context) {
 	common.SuccessNoData(c, "Set variable successfully")
 }
 
-// ListConfigs handle list configs
+// ListConfigs returns configurations, including plaintext credentials, for
+// superuser inspection. AuthMiddleware enforces superuser access.
 func (h *Handler) ListConfigs(c *gin.Context) {
 	configs, err := h.service.ListAllConfigs()
 	if err != nil {
@@ -740,7 +768,7 @@ func (h *Handler) GetSandboxProviderSchema(c *gin.Context) {
 
 // GetSandboxConfig handle get sandbox config
 func (h *Handler) GetSandboxConfig(c *gin.Context) {
-	config, err := h.service.GetSandboxConfig(c.Request.Context())
+	config, err := h.service.GetSandboxConfig(c.Request.Context(), c.Query("provider_type"))
 	if err != nil {
 		writeSandboxError(c, err)
 		return
@@ -820,8 +848,7 @@ func writeSandboxError(c *gin.Context, err error) {
 	common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 }
 
-// AuthMiddleware JWT auth middleware
-// Validates that the user is authenticated and is a superuser (admin)
+// AuthMiddleware authenticates system administrators for admin routes.
 func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
@@ -833,14 +860,15 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Get user by access token
-		user, code, err := h.userService.GetUserByToken(ctx, token)
+		identity, code, err := h.userService.ResolveAccessToken(ctx, token)
 		if err != nil {
 			common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 			c.Abort()
 			return
 		}
 
-		if !*user.IsSuperuser {
+		user := identity.User
+		if user.IsSuperuser == nil || !*user.IsSuperuser {
 			common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "Permission denied")
 			c.Abort()
 			return
@@ -848,6 +876,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 
 		c.Set("user", user)
 		c.Set("user_id", user.ID)
+		c.Set("tenant_id", identity.TenantID)
 		c.Set("email", user.Email)
 		c.Next()
 	}
@@ -1020,101 +1049,9 @@ func (h *Handler) ShowMessageQueue(c *gin.Context) {
 	common.SuccessWithData(c, result, "show message queue successfully")
 }
 
-type RemoveIngestionTaskRequest struct {
-	Tasks  []string `json:"tasks"`
-	Email  *string  `json:"email"`
-	Status *string  `json:"status"`
-}
-
-func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
-	var req RemoveIngestionTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
-		return
-	}
-	ctx := c.Request.Context()
-	if req.Email == nil && req.Status == nil {
-		tasks, err := h.service.RemoveIngestionTasks(ctx, req.Tasks)
-		if err != nil {
-			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
-			return
-		}
-
-		common.SuccessWithData(c, tasks, "Remove tasks successfully")
-	} else {
-		tasks, err := h.service.RemoveIngestionTasksByCondition(ctx, req.Tasks, req.Email, req.Status)
-		if err != nil {
-			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
-			return
-		}
-		common.SuccessWithData(c, tasks, "Remove tasks successfully")
-	}
-}
-
-type StopIngestionTaskRequest struct {
-	Tasks  []string `json:"tasks"`
-	Email  *string  `json:"email"`
-	Status *string  `json:"status"`
-}
-
-func (h *Handler) StopIngestionTasks(c *gin.Context) {
-	var req StopIngestionTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Task ID is required")
-		return
-	}
-	ctx := c.Request.Context()
-	if req.Email == nil && req.Status == nil {
-		tasks, err := h.service.StopIngestionTasks(ctx, req.Tasks)
-		if err != nil {
-			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
-			return
-		}
-		var result []map[string]string
-		for _, task := range tasks {
-			result = append(result, map[string]string{
-				"task_id": task.ID,
-				"status":  task.Status,
-			})
-		}
-
-		common.SuccessWithData(c, result, "Stop tasks successfully")
-	} else {
-		tasks, err := h.service.StopIngestionTasksByCondition(ctx, req.Tasks, req.Email, req.Status)
-		if err != nil {
-			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
-			return
-		}
-		common.SuccessWithData(c, tasks, "Stop tasks successfully")
-	}
-}
-
-type ListIngestionTasksRequest struct {
-	Email  *string `json:"email"`
-	Status *string `json:"status"`
-}
-
-// ListIngestionTasks handle list ingestion tasks
-func (h *Handler) ListIngestionTasks(c *gin.Context) {
-	var err error
-	var tasks []map[string]interface{}
-	var req ListIngestionTasksRequest
-	ctx := c.Request.Context()
-
-	if err = c.ShouldBindJSON(&req); err != nil {
-		tasks, err = h.service.ListIngestionTasks(ctx)
-	} else {
-		tasks, err = h.service.ListIngestionTasksByCondition(ctx, req.Email, req.Status)
-	}
-
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-	}
-	common.SuccessWithData(c, tasks, "Get all tasks")
-}
-
 func (h *Handler) ListIngestors(c *gin.Context) {
 	serverList := GlobalServerStore.ListInfos()
+	serverList = AppendServiceList(serverList)
 	var ingestorResults []map[string]string
 	now := time.Now()
 	for _, ingestorServer := range serverList {
@@ -1145,7 +1082,7 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 		return
 	}
 
-	taskID := utility.GenerateUUID()
+	taskID := common.GenerateUUID()
 	//ingestionManager.SubmitTask(&common.TaskAssignment{
 	//	TaskId:     taskID,
 	//	TaskType:   "SHUTDOWN",
@@ -1242,7 +1179,7 @@ func (h *Handler) PingStore(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if storageImpl.Health(ctx) {
-		common.SuccessNoMessage(c, "SUCCESS")
+		common.SuccessWithData(c, "SUCCESS", "success")
 	} else {
 		common.ErrorWithCode(c, common.CodeServerError, "storage health check failed")
 	}
@@ -1252,7 +1189,7 @@ func (h *Handler) PingCache(c *gin.Context) {
 	ctx := c.Request.Context()
 	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
-		common.SuccessNoMessage(c, "SUCCESS")
+		common.SuccessWithData(c, "SUCCESS", "success")
 	} else {
 		common.ErrorWithCode(c, common.CodeServerError, "cache health check failed")
 	}
@@ -1273,7 +1210,7 @@ func (h *Handler) PingEngine(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, "SUCCESS")
+	common.SuccessWithData(c, "SUCCESS", "success")
 }
 
 func (h *Handler) GetHardwareInfo(c *gin.Context) {

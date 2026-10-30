@@ -29,10 +29,7 @@ import {
   IClaimsResponse,
   IStructureGraphResponse,
 } from '@/interfaces/database/document-structure';
-import {
-  IChangeParserConfigRequestBody,
-  IDocumentMetaRequestBody,
-} from '@/interfaces/request/document';
+import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import {
@@ -593,10 +590,15 @@ export const useRemoveDocument = () => {
       const ids = Array.isArray(documentIds) ? documentIds : [documentIds];
       const { data } = await deleteDocument(datasetId!, ids);
       if (data.code === 0) {
-        message.success(i18n.t('message.deleted'));
         queryClient.invalidateQueries({
           queryKey: DocumentKeys.all(),
         });
+        // The bulk count confirms completed cleanup, but cannot identify failed IDs.
+        if (Array.isArray(documentIds) && data.data?.deleted !== ids.length) {
+          message.warning(i18n.t('message.deleteIncomplete'));
+          return;
+        }
+        message.success(i18n.t('message.deleted'));
       }
       return data.code;
     },
@@ -656,25 +658,36 @@ export const useSetDocumentPipelineParser = () => {
     mutationFn: async ({
       parserId,
       pipelineId,
-      parseType,
+      parse_type,
       documentId,
       datasetId,
       parserConfig,
+      pipelineVersionId,
     }: {
       parserId: string;
       pipelineId: string;
-      parseType?: number;
+      parse_type?: number;
       documentId: string;
       datasetId: string;
       parserConfig?: IChangeParserConfigRequestBody;
+      pipelineVersionId?: string;
     }) => {
       const updateData: Record<string, unknown> = {
         parser_id: parserId,
         pipeline_id: pipelineId,
       };
 
-      if (parseType !== undefined) {
-        updateData.parse_type = parseType;
+      if (parse_type !== undefined) {
+        updateData.parse_type = parse_type;
+      }
+
+      // Pin a specific dataflow canvas version (design section 5 sticky
+      // snapshot). An explicit empty string means the user picked
+      // Latest (track the canvas latest), so it must be sent for the
+      // backend to clear the pin; only an omitted value (undefined) keeps
+      // the current pin.
+      if (pipelineVersionId !== undefined) {
+        updateData.pipeline_version_id = pipelineVersionId;
       }
 
       if (parserConfig) {
@@ -700,39 +713,6 @@ export const useSetDocumentPipelineParser = () => {
   });
 
   return { setDocumentPipelineParser: mutateAsync, data, loading };
-};
-
-export const useSetDocumentMeta = () => {
-  const queryClient = useQueryClient();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [DocumentApiAction.SetDocumentMeta],
-    mutationFn: async (params: IDocumentMetaRequestBody) => {
-      try {
-        const { data } = await kbService.setMeta({
-          meta: params.meta,
-          doc_id: params.documentId,
-        });
-
-        if (data?.code === 0) {
-          queryClient.invalidateQueries({
-            queryKey: DocumentKeys.all(),
-          });
-
-          message.success(i18n.t('message.modified'));
-        }
-        return data?.code;
-      } catch (error) {
-        message.error('error:' + error);
-      }
-    },
-  });
-
-  return { setDocumentMeta: mutateAsync, data, loading };
 };
 
 export const useCreateDocument = () => {

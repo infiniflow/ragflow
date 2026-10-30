@@ -6,20 +6,56 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
-func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateDatasetRequest, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+// resolvePipelineVersionID determines which canvas version to bind for a
+// dataset/document in Pipeline mode (design section 5 sticky snapshot). When a
+// specific version is requested it must belong to the bound pipeline (ownership
+// check, design T13); otherwise the latest version of the bound canvas is used.
+// BuiltIn mode (no pipelineID) yields nil.
+func resolvePipelineVersionID(ctx context.Context, db *gorm.DB, pipelineID *string, requestedVersionID *string) (*string, error) {
+	if pipelineID == nil || strings.TrimSpace(*pipelineID) == "" {
+		return nil, nil
+	}
+	canvasID := strings.TrimSpace(*pipelineID)
+	if requestedVersionID != nil && strings.TrimSpace(*requestedVersionID) != "" {
+		v, err := dao.NewUserCanvasVersionDAO().GetByID(ctx, db, strings.TrimSpace(*requestedVersionID))
+		if err != nil {
+			if errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
+				return nil, fmt.Errorf("pipeline version %s not found: %w", *requestedVersionID, service.ErrPipelineVersionMissing)
+			}
+			return nil, fmt.Errorf("load pipeline version %s: %w", *requestedVersionID, err)
+		}
+		if v.UserCanvasID != canvasID {
+			return nil, fmt.Errorf("pipeline version %s does not belong to canvas %s: %w", *requestedVersionID, canvasID, service.ErrPipelineVersionMissing)
+		}
+		return requestedVersionID, nil
+	}
+	if v, err := dao.NewUserCanvasVersionDAO().GetLatest(ctx, db, canvasID); err == nil && v != nil {
+		return &v.ID, nil
+	}
+	return nil, nil
+}
+
+func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateDatasetRequest, subject permission.Subject) (map[string]interface{}, common.ErrorCode, error) {
+	tenantID := strings.TrimSpace(subject.TenantID)
+	userID := strings.TrimSpace(subject.UserID)
+	if tenantID == "" || userID == "" {
+		return nil, common.CodeUnauthorized, errors.New("user id and tenant id are required")
+	}
 	if !common.IsValidString(req.Name) {
 		return nil, common.CodeDataError, errors.New("dataset name must be string")
 	}
@@ -28,39 +64,51 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	if name == "" {
 		return nil, common.CodeDataError, errors.New("dataset name can't be empty")
 	}
-	if len(name) > entity.DatasetNameLimit {
-		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(name), entity.DatasetNameLimit)
+	if utf8.RuneCountInString(name) > entity.DatasetNameLimit {
+		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", utf8.RuneCountInString(name), entity.DatasetNameLimit)
 	}
 
 	tenant, err := d.tenantDAO.GetByID(ctx, dao.DB, tenantID)
 	if err != nil || tenant == nil {
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, subject, tenantID, permission.TenantMember); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, subject, "dataset", permission.ActionWrite); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
+	}
 
-	// A built-in parser_id is valid without parse_type. parse_type is only
-	// required when selecting a pipeline or explicitly supplied.
-	if req.PipelineID != nil || req.ParseType != nil {
-		isBuiltin, isPipeline, err := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
-		if err != nil {
-			return nil, common.CodeDataError, err
-		}
-		if isBuiltin && req.PipelineID != nil {
-			req.PipelineID = nil
-		}
-		if isPipeline && req.ParserID != nil {
-			req.ParserID = nil
-		}
+	// parse_type is required on dataset creation: it explicitly selects BuiltIn
+	// (1) or Pipeline (2) mode. This replaces the previous silent default to
+	// BuiltIn when the field was omitted. FromRequest validates the
+	// parse_type/parser_id/pipeline_id triple; Resolve enforces that a selection
+	// is actually present (current is nil on create).
+	sel, err := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	if _, err = service.Resolve(nil, sel); err != nil {
+		return nil, common.CodeDataError, err
+	}
+	if sel.IsBuiltIn() && req.PipelineID != nil {
+		req.PipelineID = nil
+	}
+	if sel.IsPipeline() && req.ParserID != nil {
+		req.ParserID = nil
 	}
 
 	parserID := string(entity.ParserTypeGeneral)
-	permission := "me"
+	visibility := "me"
 	embeddingModel := ""
 	var language *string
 	pipelineID := req.PipelineID
 
 	if req.Permission != nil {
-		permission = strings.TrimSpace(*req.Permission)
-		if permission != "me" && permission != "team" {
+		visibility = strings.TrimSpace(*req.Permission)
+		if visibility != "me" && visibility != "team" {
 			return nil, common.CodeDataError, errors.New("Input should be 'me' or 'team'")
 		}
 	}
@@ -97,7 +145,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	}
 
 	if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
-		if ok, err := canvasAccessibleForUser(ctx, tenantID, strings.TrimSpace(*pipelineID)); err != nil {
+		if ok, err := canvasAccessibleForUser(ctx, subject, strings.TrimSpace(*pipelineID)); err != nil {
 			return nil, common.CodeServerError, err
 		} else if !ok {
 			return nil, common.CodeDataError, errors.New("canvas is not accessible")
@@ -105,10 +153,14 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	}
 
 	if req.ParserConfig != nil {
-		if err := validateDatasetParserConfig(req.ParserConfig); err != nil {
-			return nil, common.CodeArgumentError, err
+		dropped, err := ValidateParserConfig(req.ParserConfig)
+		if len(dropped) > 0 {
+			common.Warn("dropping unscoped (flat) parser_config keys; keys must be component-scoped (contain ':')",
+				zap.Strings("keys", dropped),
+				zap.String("tenant_id", tenantID),
+			)
 		}
-		if err := validateDatasetParserConfigSize(req.ParserConfig); err != nil {
+		if err != nil {
 			return nil, common.CodeArgumentError, err
 		}
 		if err := pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
@@ -116,19 +168,34 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 	isPipeline := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
-	dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, parserID, pipelineID)
+	// design C5/G3: an empty version in Pipeline mode is no longer auto-backfilled
+	// to the canvas latest; the Save is rejected so the UI can show the red Missing
+	// badge and surface the "版本信息缺失" error. BuiltIn mode (no canvas bound) is
+	// exempt.
+	if isPipeline && (req.PipelineVersionID == nil || strings.TrimSpace(*req.PipelineVersionID) == "") {
+		return nil, common.CodeBadRequest, service.ErrPipelineVersionEmpty
+	}
+	pipelineVersionID, verr := resolvePipelineVersionID(ctx, dao.DB, pipelineID, req.PipelineVersionID)
+	if verr != nil {
+		return nil, common.CodeBadRequest, verr
+	}
+	dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, parserID, pipelineID, pipelineVersionID)
 	parserConfig := entity.JSONMap{}
 	if dslErr != nil {
 		common.Warn("failed to load pipeline DSL for building parser_config",
 			zap.String("parserID", parserID), zap.Error(dslErr))
 	} else {
-		parserConfig = pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+		var buildErr error
+		parserConfig, buildErr = pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+		if buildErr != nil {
+			return nil, common.CodeArgumentError, buildErr
+		}
 	}
 
-	// Preserve the public default shape when parser_config is empty. The
-	// parent_child block remains the single source of truth; chunker
-	// children_delimiters are derived below only when it is configured.
+	// Preserve the public default shape without overriding pipeline delimiters
+	// unless the request explicitly configures parent_child.
 	parentChild := resolveParentChild(req.ParserConfig)
+	parentChildConfigured := parentChild != nil
 	if parentChild == nil {
 		parentChild = map[string]interface{}{
 			"use_parent_child":   false,
@@ -156,14 +223,18 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 			}
 		}
 	}
-	pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, parentChildConfig)
+	if parentChildConfigured {
+		pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, parentChildConfig)
+	}
 
 	var parserConfigMap map[string]interface{} = parserConfig
 
-	embdID := tenant.EmbdID
-	tenantEmbdID := ptrStringValue(tenant.TenantEmbdID)
+	embdID, tenantEmbdID, err := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeEmbedding)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
 	if embeddingModel != "" {
-		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, tenantID)
+		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, service.ModelAccess{UserID: userID, TenantID: tenantID})
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
@@ -171,41 +242,51 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		tenantEmbdID = ""
 	}
 	if embdID != "" && tenantEmbdID == "" {
-		target, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+		target, err := service.NewModelFactory().ResolveInfo(ctx, service.ModelAccess{UserID: userID, TenantID: tenantID}, entity.ModelTypeEmbedding, embdID)
 		if err == nil {
-			tenantEmbdID = target.ModelID
+			tenantEmbdID = target.ID
 		} else {
 			return nil, common.CodeDataError, err
 		}
 	}
 
-	kbID := utility.GenerateToken()
+	kbID := common.GenerateToken()
 	status := string(entity.StatusValid)
-	// Mirror Python's duplicate_name: append (1), (2), ... until the name is
-	// unique within the tenant.
-	name = d.dedupeDatasetName(ctx, name, tenantID)
+	// Fall back to a numbered name when the requested one is already taken.
+	dedupedName, dedupeErr := d.dedupeDatasetName(ctx, name, tenantID)
+	if dedupeErr != nil {
+		return nil, common.CodeServerError, dedupeErr
+	}
+	name = dedupedName
 
-	parserConfig = service.ApplyComponentScopedParserConfig(
-		parserConfig,
-		tenant.LLMID,
-	)
+	llmID, _, err := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeChat)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 
 	kb := &entity.Knowledgebase{
-		ID:           kbID,
-		Name:         name,
-		TenantID:     tenantID,
-		CreatedBy:    tenantID,
-		ParserID:     parserID,
-		PipelineID:   pipelineID,
-		ParserConfig: entity.JSONMap(parserConfigMap),
-		Permission:   permission,
-		Language:     language,
-		EmbdID:       embdID,
-		TenantEmbdID: stringPtrIfNotEmpty(tenantEmbdID),
-		Status:       &status,
+		ID:                kbID,
+		PipelineVersionID: pipelineVersionID,
+		Name:              name,
+		TenantID:          tenantID,
+		CreatedBy:         userID,
+		ParserID:          parserID,
+		PipelineID:        pipelineID,
+		ParserConfig:      entity.JSONMap(parserConfigMap),
+		Permission:        visibility,
+		Language:          language,
+		EmbdID:            embdID,
+		TenantEmbdID:      stringPtrIfNotEmpty(tenantEmbdID),
+		Status:            &status,
 	}
 
-	if err = d.kbDAO.Create(ctx, dao.DB, kb); err != nil {
+	if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := d.kbDAO.Create(ctx, tx, kb); err != nil {
+			return err
+		}
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, subject, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID})
+	}); err != nil {
 		if dao.IsDuplicateKeyErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("dataset name '%s' already exists", name)
 		}
@@ -221,21 +302,15 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		return nil, common.CodeServerError, errors.New("dataset created failed")
 	}
 
-	return datasetToMap(createdKB), common.CodeSuccess, nil
+	return datasetToMap(ctx, createdKB), common.CodeSuccess, nil
 }
 
-// dedupeDatasetName mirrors Python's duplicate_name: if the name already
-// exists within the tenant, append (1), (2), ... until it is unique.
-func (d *DatasetService) dedupeDatasetName(ctx context.Context, name, tenantID string) string {
-	candidate := name
-	for i := 1; i < 1000; i++ {
-		existing, err := d.kbDAO.GetByName(ctx, dao.DB, candidate, tenantID)
-		if err != nil || existing == nil {
-			return candidate
-		}
-		candidate = fmt.Sprintf("%s(%d)", name, i)
-	}
-	return candidate
+// dedupeDatasetName returns a non-colliding dataset name within the tenant,
+// appending (1), (2), ... when the requested name is already taken.
+func (d *DatasetService) dedupeDatasetName(ctx context.Context, name, tenantID string) (string, error) {
+	return common.UniqueNameCharacters(name, entity.DatasetNameLimit, func(candidate string) (bool, error) {
+		return d.kbDAO.NameExists(ctx, dao.DB, tenantID, candidate)
+	})
 }
 
 func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
@@ -248,20 +323,32 @@ func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID strin
 	// or malformed id simply fails the permission check.
 	normalizedID, err := normalizeDatasetID(datasetID)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
+		code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+		return nil, code, permissionErr
 	}
 	datasetID = normalizedID
 
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
+	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return nil, code, permissionErr
 	}
 
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil || kb == nil {
-		return nil, common.CodeDataError, errors.New("invalid Dataset ID")
+		code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+		return nil, code, permissionErr
 	}
 
-	data := datasetToMap(kb)
+	data := datasetToMap(ctx, kb)
+	operatorPermission, err := service.ResolveOperatorPermission(ctx, userID, permission.ResourceRef{
+		Kind: permission.ResourceKindDataset,
+		ID:   kb.ID,
+	})
+	if err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return nil, code, permissionErr
+	}
+	data["operator_permission"] = operatorPermission
 
 	size, err := d.documentDAO.SumSizeByDatasetID(ctx, dao.DB, datasetID)
 	if err != nil {
@@ -278,7 +365,13 @@ func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID strin
 	return data, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, deleteAll bool, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, deleteAll bool, subject permission.Subject) (map[string]interface{}, common.ErrorCode, error) {
+	subject.UserID = strings.TrimSpace(subject.UserID)
+	subject.TenantID = strings.TrimSpace(subject.TenantID)
+	if subject.UserID == "" {
+		return nil, common.CodeUnauthorized, errors.New("user id is required")
+	}
+
 	normalizedIDs := make([]string, 0, len(ids))
 	seenIDs := make(map[string]struct{}, len(ids))
 	for _, id := range ids {
@@ -293,12 +386,20 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 		normalizedIDs = append(normalizedIDs, normalizedID)
 	}
 
-	// If no explicit ids and deleteAll is set, resolve all datasets for this tenant.
+	checker := permission.NewDatabaseChecker(dao.DB)
+	// Delete-all is tenant-scoped and remains an owner-only operation.
 	if len(normalizedIDs) == 0 {
 		if !deleteAll {
 			return map[string]interface{}{"deleted": []string{}}, common.CodeSuccess, nil
 		}
-		kbs, err := d.kbDAO.Query(ctx, dao.DB, map[string]interface{}{"tenant_id": tenantID})
+		if subject.TenantID == "" {
+			return nil, common.CodeUnauthorized, errors.New("tenant id is required to delete all datasets")
+		}
+		if err := checker.CheckTenant(ctx, subject, subject.TenantID, permission.TenantOwner); err != nil {
+			code, permissionErr := permissionresponse.Normalize(err)
+			return nil, code, permissionErr
+		}
+		kbs, err := d.kbDAO.Query(ctx, dao.DB, map[string]interface{}{"tenant_id": subject.TenantID})
 		if err != nil {
 			return nil, common.CodeServerError, errors.New("database operation failed")
 		}
@@ -307,11 +408,28 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 		}
 	}
 
-	// Validate ownership: collect KBs that exist and belong to this tenant.
+	refs := make([]permission.ResourceRef, 0, len(normalizedIDs))
+	for _, id := range normalizedIDs {
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: id})
+	}
+	accessible, err := checker.FilterResources(ctx, subject, refs, permission.OperationDelete)
+	if err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
+	}
+	accessibleIDs := make(map[string]struct{}, len(accessible))
+	for _, ref := range accessible {
+		accessibleIDs[ref.ID] = struct{}{}
+	}
+
 	kbs := make([]*entity.Knowledgebase, 0, len(normalizedIDs))
 	unauthorizedIDs := make([]string, 0)
 	for _, id := range normalizedIDs {
-		kb, err := d.kbDAO.GetByIDAndTenantID(ctx, dao.DB, id, tenantID)
+		if _, ok := accessibleIDs[id]; !ok {
+			unauthorizedIDs = append(unauthorizedIDs, id)
+			continue
+		}
+		kb, err := d.kbDAO.GetByID(ctx, dao.DB, id)
 		if err != nil || kb == nil {
 			unauthorizedIDs = append(unauthorizedIDs, id)
 			continue
@@ -319,13 +437,13 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 		kbs = append(kbs, kb)
 	}
 	if len(unauthorizedIDs) > 0 {
-		return nil, common.CodeDataError,
-			fmt.Errorf("user '%s' lacks permission for datasets: '%s'", tenantID, strings.Join(unauthorizedIDs, ", "))
+		_, permissionErr := permissionresponse.Normalize(permission.ErrPermissionDenied)
+		return nil, common.CodeForbidden, permissionErr
 	}
 
 	successCount := 0
 	for _, kb := range kbs {
-		if err := d.deleteDataset(ctx, tenantID, kb); err != nil {
+		if err := d.deleteDataset(ctx, kb); err != nil {
 			common.Warn("deleteDataset failed", zap.String("dataset", datasetNameAndID(kb)), zap.String("kb_id", kb.ID), zap.Error(err))
 			return nil, common.CodeServerError, err
 		}
@@ -338,7 +456,7 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 	}, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb *entity.Knowledgebase) error {
+func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledgebase) error {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return fmt.Errorf("storage not initialized")
@@ -422,7 +540,7 @@ func (d *DatasetService) deleteDataset(ctx context.Context, tenantID string, kb 
 		// Delete the KB folder file record.
 		if err := tx.Unscoped().
 			Where("source_type = ? AND type = ? AND name = ? AND tenant_id = ?",
-				string(entity.FileSourceKnowledgebase), "folder", kb.Name, tenantID).
+				string(entity.FileSourceKnowledgebase), "folder", kb.Name, kb.TenantID).
 			Delete(&entity.File{}).Error; err != nil {
 			return fmt.Errorf("delete dataset error for %s", kb.ID)
 		}
@@ -452,8 +570,9 @@ func datasetNameAndID(kb *entity.Knowledgebase) string {
 	return fmt.Sprintf("%s (%s)", kb.Name, kb.ID)
 }
 
-func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID, userID string, ids []string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
+func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID, userID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	id = strings.TrimSpace(id)
+	canvasID = strings.TrimSpace(canvasID)
 	if id != "" && len(ids) > 0 {
 		return nil, 0, common.CodeDataError, fmt.Errorf("should not provide both 'id':%s and 'ids':%s", id, pythonStringListRepr(ids))
 	}
@@ -463,26 +582,9 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 			return nil, 0, common.CodeArgumentError, err
 		}
 		id = normalizedID
-
-		kbs, err := d.kbDAO.GetKBByIDAndUserID(ctx, dao.DB, id, userID)
-		if err != nil {
-			return nil, 0, common.CodeServerError, errors.New("database operation failed")
-		}
-		if len(kbs) == 0 {
-			return nil, 0, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, id)
-		}
 	}
 
 	name = strings.TrimSpace(name)
-	if name != "" {
-		kbs, err := d.kbDAO.GetKBByNameAndUserID(ctx, dao.DB, name, userID)
-		if err != nil {
-			return nil, 0, common.CodeServerError, errors.New("database operation failed")
-		}
-		if len(kbs) == 0 {
-			return nil, 0, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, name)
-		}
-	}
 
 	if page <= 0 {
 		page = 1
@@ -496,98 +598,129 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	keywords = strings.TrimSpace(keywords)
 	parserID = strings.TrimSpace(parserID)
 
-	tenantIDs := make([]string, 0, len(ownerIDs))
+	filteredOwnerIDs := make([]string, 0, len(ownerIDs))
+	seenOwnerIDs := make(map[string]struct{}, len(ownerIDs))
 	for _, ownerID := range ownerIDs {
 		ownerID = strings.TrimSpace(ownerID)
-		if ownerID != "" {
-			tenantIDs = append(tenantIDs, ownerID)
+		if ownerID == "" {
+			continue
 		}
-	}
-	queryUserID := userID
-	var joinedTenantIDs []string
-	if len(tenantIDs) > 0 {
-		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
-		if err != nil {
-			return nil, 0, common.CodeServerError, errors.New("database operation failed")
+		if _, exists := seenOwnerIDs[ownerID]; exists {
+			continue
 		}
-		allowedTenantIDs := map[string]struct{}{userID: {}}
-		for _, joinedTenant := range joinedTenants {
-			if joinedTenant == nil || joinedTenant.TenantID == "" {
-				continue
-			}
-			allowedTenantIDs[joinedTenant.TenantID] = struct{}{}
-			joinedTenantIDs = append(joinedTenantIDs, joinedTenant.TenantID)
-		}
-		filteredTenantIDs := tenantIDs[:0]
-		queryUserID = ""
-		for _, tenantID := range tenantIDs {
-			if _, ok := allowedTenantIDs[tenantID]; !ok {
-				continue
-			}
-			filteredTenantIDs = append(filteredTenantIDs, tenantID)
-			if tenantID == userID {
-				queryUserID = userID
-			}
-		}
-		tenantIDs = filteredTenantIDs
-	} else {
-		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
-		if err != nil {
-			return nil, 0, common.CodeServerError, errors.New("database operation failed")
-		}
-		for _, joinedTenant := range joinedTenants {
-			if joinedTenant == nil || joinedTenant.TenantID == "" {
-				continue
-			}
-			tenantIDs = append(tenantIDs, joinedTenant.TenantID)
-			joinedTenantIDs = append(joinedTenantIDs, joinedTenant.TenantID)
-		}
+		seenOwnerIDs[ownerID] = struct{}{}
+		filteredOwnerIDs = append(filteredOwnerIDs, ownerID)
 	}
 
-	// Mirror Python: ids are checked for accessibility against the joined
-	// tenants (not the owner-filtered tenant list) before filtering.
-	if len(ids) > 0 {
-		accessibleIDs, err := d.kbDAO.GetAccessibleIDs(ctx, dao.DB, joinedTenantIDs, userID, ids)
-		if err != nil {
-			return nil, 0, common.CodeServerError, errors.New("database operation failed")
+	var kbs []*entity.KnowledgebaseListItem
+	var total int64
+	var deniedIDs []string
+	operatorPermissions := make(map[string]int32)
+	err := dao.DB.Transaction(func(tx *gorm.DB) error {
+		checker := permission.NewDatabaseChecker(tx)
+		subject := permission.Subject{UserID: userID}
+		operation := permission.OperationRead
+		var entry *permission.ResourceRef
+		if canvasID != "" {
+			operation = permission.OperationUse
+			entry = &permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
 		}
-		accessible := make(map[string]struct{}, len(accessibleIDs))
-		for _, accessibleID := range accessibleIDs {
-			accessible[accessibleID] = struct{}{}
+		checkAccess := func(datasetID string) error {
+			dependency := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}
+			if entry == nil {
+				return checker.CheckResource(ctx, subject, dependency, operation)
+			}
+			return checker.CheckDependency(ctx, subject, *entry, dependency, permission.OperationRun, operation)
 		}
-		filteredIDs := make([]string, 0, len(ids))
-		deniedIDs := make([]string, 0, len(ids))
-		for _, datasetID := range ids {
-			if _, ok := accessible[datasetID]; ok {
-				filteredIDs = append(filteredIDs, datasetID)
+		listQuery := tx.WithContext(ctx).Model(&entity.Knowledgebase{})
+		var resourceIDs []string
+
+		switch {
+		case id != "":
+			checkErr := checkAccess(id)
+			if checkErr != nil {
+				return checkErr
+			}
+			listQuery = listQuery.Where("knowledgebase.id = ?", id)
+		case len(ids) > 0:
+			resourceIDs = make([]string, 0, len(ids))
+			for _, datasetID := range ids {
+				checkErr := checkAccess(datasetID)
+				if checkErr == nil {
+					resourceIDs = append(resourceIDs, datasetID)
+					continue
+				}
+				if errors.Is(checkErr, permission.ErrPermissionDenied) ||
+					errors.Is(checkErr, permission.ErrMembershipNotFound) ||
+					errors.Is(checkErr, permission.ErrResourceNotFound) {
+					deniedIDs = append(deniedIDs, datasetID)
+					continue
+				}
+				return checkErr
+			}
+			if len(resourceIDs) == 0 {
+				listQuery = listQuery.Where("1 = 0")
 			} else {
-				deniedIDs = append(deniedIDs, datasetID)
+				listQuery = listQuery.Where("knowledgebase.id IN ?", resourceIDs)
 			}
+		default:
+			scopeQuery := permission.ScopeQuery{Kind: permission.ResourceKindDataset, Operation: operation}
+			if entry != nil {
+				scopeQuery.Entry = entry
+				scopeQuery.EntryOp = permission.OperationRun
+			}
+			scope, checkErr := checker.QueryScope(ctx, subject, scopeQuery)
+			if checkErr != nil {
+				return checkErr
+			}
+			listQuery = scope.Apply(listQuery)
 		}
-		if len(deniedIDs) > 0 {
-			common.Warn("User lacks permission for datasets",
-				zap.String("user_id", userID),
-				zap.Strings("dataset_ids", deniedIDs),
-			)
+		listed, count, err := d.kbDAO.ListByQuery(ctx, listQuery, filteredOwnerIDs, page, pageSize, terms, keywords, parserID, name)
+		if err != nil {
+			return err
 		}
-		ids = filteredIDs
-		if len(ids) == 0 {
-			return []map[string]interface{}{}, 0, common.CodeSuccess, nil
+		kbs, total = listed, count
+		for _, kb := range kbs {
+			if kb == nil {
+				continue
+			}
+			access, accessErr := checker.ResolveAccess(ctx, subject, permission.ResourceRef{
+				Kind: permission.ResourceKindDataset,
+				ID:   kb.ID,
+			})
+			if accessErr != nil {
+				return accessErr
+			}
+			operatorPermissions[kb.ID] = access.PermissionMask
 		}
-	}
-
-	kbs, total, err := d.kbDAO.GetByTenantIDs(ctx, dao.DB, tenantIDs, queryUserID, page, pageSize, terms, keywords, parserID, id, name, ids)
+		return nil
+	})
 	if err != nil {
+		if errors.Is(err, permission.ErrUnauthenticated) || errors.Is(err, permission.ErrPermissionDenied) ||
+			errors.Is(err, permission.ErrMembershipNotFound) || errors.Is(err, permission.ErrResourceNotFound) {
+			code, permissionErr := permissionresponse.Normalize(err)
+			return nil, 0, code, permissionErr
+		}
 		return nil, 0, common.CodeServerError, errors.New("database operation failed")
+	}
+	if len(deniedIDs) > 0 {
+		common.Warn("User lacks permission for datasets",
+			zap.String("user_id", userID),
+			zap.Strings("dataset_ids", common.Deduplicate(deniedIDs)),
+		)
 	}
 
 	data := make([]map[string]interface{}, 0, len(kbs))
 	modelNameCache := make(map[string]string)
+	// Resolve the latest version id per canvas once for the whole page so the
+	// per-row outdated flag does not issue a GetLatest per dataset (N+1).
+	latestVersionByCanvas := latestVersionIDsByCanvas(ctx, kbs)
 	for _, kb := range kbs {
 		if kb == nil {
 			continue
 		}
-		item := datasetListItemToMap(kb)
+		item := datasetListItemToMap(latestVersionByCanvas, kb)
+		item["operator_permission"] = operatorPermissions[kb.ID]
 		// Mirror the memory list: surface the concrete model display name
 		// (modelName@instance@provider) instead of a raw tenant_model ID.
 		tenantEmbdID := ptrStringValue(kb.TenantEmbdID)
@@ -601,22 +734,31 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	return data, total, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) ListDatasetFilters(ctx context.Context, userID string) (map[string]interface{}, common.ErrorCode, error) {
-	joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, common.CodeServerError, errors.New("database operation failed")
-	}
-
-	tenantIDs := make([]string, 0, len(joinedTenants))
-	for _, joinedTenant := range joinedTenants {
-		if joinedTenant == nil || joinedTenant.TenantID == "" {
-			continue
+func (d *DatasetService) ListDatasetFilters(ctx context.Context, userID, canvasID string) (map[string]interface{}, common.ErrorCode, error) {
+	owners := make([]*entity.DatasetOwnerFilter, 0)
+	err := dao.DB.Transaction(func(tx *gorm.DB) error {
+		query := permission.ScopeQuery{Kind: permission.ResourceKindDataset, Operation: permission.OperationRead}
+		if canvasID = strings.TrimSpace(canvasID); canvasID != "" {
+			query.Operation = permission.OperationUse
+			query.Entry = &permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
+			query.EntryOp = permission.OperationRun
 		}
-		tenantIDs = append(tenantIDs, joinedTenant.TenantID)
-	}
-
-	owners, err := d.kbDAO.GetOwnerFilter(ctx, dao.DB, tenantIDs, userID)
+		scope, err := permission.NewDatabaseChecker(tx).Scope(ctx, permission.Subject{UserID: userID}, query)
+		if err != nil {
+			return err
+		}
+		if scope.Mode == permission.ScopeNone {
+			return nil
+		}
+		owners, err = d.kbDAO.GetOwnerFilterByResourceIDs(ctx, tx, scope.ResourceIDs)
+		return err
+	})
 	if err != nil {
+		if errors.Is(err, permission.ErrUnauthenticated) || errors.Is(err, permission.ErrPermissionDenied) ||
+			errors.Is(err, permission.ErrMembershipNotFound) || errors.Is(err, permission.ErrResourceNotFound) {
+			code, permissionErr := permissionresponse.Normalize(err)
+			return nil, code, permissionErr
+		}
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 
@@ -687,7 +829,7 @@ func (d *DatasetService) deleteDatasetEngineData(ctx context.Context, kb *entity
 	if _, err := d.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docIDs}, indexName, kb.ID); err != nil {
 		common.Logger.Warn(fmt.Sprintf("deleteDataset: failed to delete chunks for kb %s: %v", kb.ID, err))
 	}
-	if _, err := d.docEngine.DeleteMetadata(ctx, map[string]interface{}{"doc_id": docIDs}, kb.TenantID); err != nil {
+	if _, err := d.docEngine.DeleteMetadata(ctx, map[string]interface{}{"kb_id": kb.ID}, kb.TenantID); err != nil {
 		common.Logger.Warn(fmt.Sprintf("deleteDataset: failed to delete metadata for kb %s: %v", kb.ID, err))
 	}
 }

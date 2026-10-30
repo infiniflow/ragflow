@@ -29,10 +29,10 @@ package chunker
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
@@ -72,17 +72,14 @@ func (c *OneChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 	return c.invoke(ctx, inputs)
 }
 
+// invoke collapses the decoded upstream payload into a single chunk.
 func (c *OneChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return inputErrorOutput(err), nil
 	}
 
 	switch upstream.OutputFormat {
@@ -119,7 +116,6 @@ func emitOne(text, docType string) map[string]any {
 		// scope here.
 		Text:    removeTag(text),
 		DocType: docType,
-		CKType:  docType,
 	}})
 }
 
@@ -142,23 +138,27 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		it := src[0]
 		docType := itemDocType(it)
 		text := itemTextOrFallback(it)
-		if strings.TrimSpace(text) == "" && it.Image == "" {
+		if strings.TrimSpace(text) == "" && !hasMediaPayload(it) {
 			return emptyOutputs()
 		}
 		out := schema.ChunkDoc{
 			// Strip parser coordinate tags (see emitOne).
 			Text:         removeTag(text),
 			DocType:      docType,
-			CKType:       docType,
 			Image:        it.Image,
+			ImgID:        it.ImgID,
+			MediaRef:     it.MediaRef,
 			Positions:    it.Positions,
 			PDFPositions: it.PDFPositions,
+			Sheet:        it.Sheet,
+			SheetIndex:   it.SheetIndex,
 		}
 		return chunkOutputs([]schema.ChunkDoc{out})
 	}
 
 	var parts []string
 	var img string
+	var mediaRef *entity.MediaRef
 	for _, it := range src {
 		if t := itemTextOrFallback(it); t != "" {
 			// Strip parser coordinate tags before joining (see emitOne).
@@ -167,12 +167,15 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		if img == "" && it.Image != "" {
 			img = it.Image
 		}
+		if mediaRef == nil && it.MediaRef != nil {
+			mediaRef = it.MediaRef
+		}
 	}
 	merged := strings.Join(parts, "\n")
-	if strings.TrimSpace(merged) == "" && img == "" {
+	if strings.TrimSpace(merged) == "" && img == "" && mediaRef == nil {
 		return emptyOutputs()
 	}
-	out := schema.ChunkDoc{Text: merged, DocType: "text", CKType: "text"}
+	out := schema.ChunkDoc{Text: merged, DocType: "text"}
 	// Multi-item merge produces a single text-only chunk mirroring Python
 	// one.py:166-168. Per-item Positions/PDFPositions are intentionally
 	// not carried — merging coordinates from different source items would
@@ -181,6 +184,7 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 	if img != "" {
 		out.Image = img
 	}
+	out.MediaRef = mediaRef
 	return chunkOutputs([]schema.ChunkDoc{out})
 }
 

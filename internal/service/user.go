@@ -41,13 +41,19 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/dao"
-
-	"ragflow/internal/utility"
+	"ragflow/internal/service/billing"
 )
 
 // UserService user service
 type UserService struct {
 	userDAO *dao.UserDAO
+}
+
+// AuthIdentity contains the identity resolved from a user token or API key.
+type AuthIdentity struct {
+	User     *entity.User
+	TenantID string
+	APIToken *entity.APIToken
 }
 
 // NewUserService create user service
@@ -133,8 +139,8 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		return nil, common.CodeServerError, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	userID := utility.GenerateToken()
-	accessToken := utility.GenerateToken()
+	userID := common.GenerateToken()
+	accessToken := common.GenerateToken()
 	status := "1"
 	loginChannel := "password"
 	isSuperuser := false
@@ -195,17 +201,10 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     llmID,
-		EmbdID:    embdID,
-		ASRID:     asrID,
-		Img2TxtID: img2txtID,
-		RerankID:  rerankID,
-		TTSID:     &ttsID,
-		OCRID:     &ocrID,
 		ParserIDs: "naive:General,qa:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
-	userTenantID := utility.GenerateToken()
+	userTenantID := common.GenerateToken()
 	userTenant := &entity.UserTenant{
 		ID:        userTenantID,
 		UserID:    userID,
@@ -213,8 +212,15 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		Role:      "owner",
 		InvitedBy: userID,
 		Status:    &status,
+		LLMID:     llmID,
+		EmbdID:    embdID,
+		ASRID:     asrID,
+		Img2TxtID: img2txtID,
+		RerankID:  rerankID,
+		TTSID:     &ttsID,
+		OCRID:     &ocrID,
 	}
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file__ := ""
 	rootFile := &entity.File{
 		ID:        fileID,
@@ -228,12 +234,16 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	}
 
 	db := dao.GetDB()
+	tenantDAO := dao.NewTenantDAO()
 	if err = db.Transaction(func(tx *gorm.DB) error {
 		if err = tx.Create(user).Error; err != nil {
 			return fmt.Errorf("failed to create user: %w", err)
 		}
+		if err = dao.ApplyDefaultTenantInviteEnabled(ctx, tx, tenant); err != nil {
+			return fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
+		}
 
-		if err = tx.Create(tenant).Error; err != nil {
+		if err = tenantDAO.Create(ctx, tx, tenant); err != nil {
 			return fmt.Errorf("failed to create tenant: %w", err)
 		}
 
@@ -275,12 +285,15 @@ func (s *UserService) Login(ctx context.Context, req *LoginRequest) (*entity.Use
 	}
 
 	// Generate new access token
-	token := utility.GenerateToken()
+	token := common.GenerateToken()
 	user.AccessToken = &token
 	now := time.Now().Truncate(time.Second)
 	user.LastLoginTime = &now
 	if err := s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
+	}
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		billingService.SyncLoginTokenRateLimit(ctx, user.ID, token)
 	}
 
 	return user, common.CodeSuccess, nil
@@ -312,13 +325,16 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 	}
 
 	// Generate new access token
-	token := utility.GenerateToken()
+	token := common.GenerateToken()
 	user.AccessToken = &token
 	now := time.Now().Truncate(time.Second)
 	user.LastLoginTime = &now
 
 	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
+	}
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		billingService.SyncLoginTokenRateLimit(ctx, user.ID, token)
 	}
 
 	return user, common.CodeSuccess, nil
@@ -486,35 +502,37 @@ func defaultUserLanguage() string {
 	return "English"
 }
 
-// GetUserByToken gets user by authorization header
-// The token parameter is the authorization header value, which needs to be decrypted
-// using itsdangerous URLSafeTimedSerializer to get the actual access_token
-func (s *UserService) GetUserByToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error) {
+// ResolveAccessToken validates a signed user token and returns its identity
+// and tenant context.
+func (s *UserService) ResolveAccessToken(ctx context.Context, authorization string) (*AuthIdentity, common.ErrorCode, error) {
 	// Get secret key from config
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		return nil, common.CodeUnauthorized, err
 	}
 
-	// Extract access token from authorization header
-	// Equivalent to: access_token = str(jwt.loads(authorization)) in Python
-	accessToken, err := utility.ExtractAccessToken(authorization, secretKey)
+	tokenContext, err := common.ExtractAccessTokenContext(authorization, secretKey)
 	if err != nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization token: %w", err)
 	}
 
 	// Validate token format (should be at least 32 chars, UUID format)
-	if len(accessToken) < 32 {
+	if len(tokenContext.AccessToken) < 32 {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token format")
 	}
 
 	// Get user by access token
-	user, err := s.userDAO.GetByAccessToken(ctx, dao.DB, accessToken)
+	user, err := s.userDAO.GetByAccessToken(ctx, dao.DB, tokenContext.AccessToken)
 	if err != nil {
 		return nil, common.CodeUnauthorized, err
 	}
 
-	return user, common.CodeSuccess, nil
+	tenantID, err := resolveUserAuthTenant(ctx, user, tokenContext.TenantID)
+	if err != nil {
+		return nil, common.CodeUnauthorized, err
+	}
+
+	return &AuthIdentity{User: user, TenantID: tenantID}, common.CodeSuccess, nil
 }
 
 // UpdateUserAccessToken updates user's access token
@@ -526,7 +544,7 @@ func (s *UserService) UpdateUserAccessToken(ctx context.Context, user *entity.Us
 func (s *UserService) Logout(ctx context.Context, user *entity.User) (common.ErrorCode, error) {
 	// Invalidate token by setting it to an invalid value
 	// Similar to Python implementation: "INVALID_" + secrets.token_hex(16)
-	invalidToken := "INVALID_" + utility.GenerateToken()
+	invalidToken := "INVALID_" + common.GenerateToken()
 	err := s.UpdateUserAccessToken(ctx, user, invalidToken)
 	if err != nil {
 		return common.CodeServerError, err
@@ -666,7 +684,7 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 				return common.CodeExceptionError, err
 			}
 			user.Password = &hashedPassword
-			invalidToken := "INVALID_" + utility.GenerateToken()
+			invalidToken := "INVALID_" + common.GenerateToken()
 			user.AccessToken = &invalidToken
 		}
 	}
@@ -714,7 +732,7 @@ func (s *UserService) ChangePassword(ctx context.Context, user *entity.User, req
 			return common.CodeServerError, fmt.Errorf("failed to hash new password: %w", err)
 		}
 		user.Password = &hashedPassword
-		invalidToken := "INVALID_" + utility.GenerateToken()
+		invalidToken := "INVALID_" + common.GenerateToken()
 		user.AccessToken = &invalidToken
 	}
 
@@ -737,31 +755,66 @@ type SetTenantInfoRequest struct {
 	Raw       map[string]interface{} `json:"-"`
 }
 
-// SetTenantInfo updates tenant model configuration
+// SetTenantInfo updates default models on the caller's current Tenant membership.
 func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *SetTenantInfoRequest) (common.ErrorCode, error) {
-	_ = userID
-	tenantDAO := dao.NewTenantDAO()
-	updates := make(map[string]interface{})
-
-	for key, value := range req.Raw {
-		if key == "tenant_id" {
-			continue
-		}
-		updates[key] = value
+	if req == nil {
+		return common.CodeArgumentError, fmt.Errorf("model settings are required")
 	}
-
-	tenantID := ""
-	if req.TenantID != nil {
-		tenantID = *req.TenantID
+	updates, err := tenantModelSettingUpdates(req.Raw)
+	if err != nil {
+		return common.CodeArgumentError, err
 	}
-
+	tenantID, err := requireCurrentTenantID(ctx, userID)
+	if err != nil {
+		return common.CodeForbidden, err
+	}
+	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != "" && strings.TrimSpace(*req.TenantID) != tenantID {
+		return common.CodeForbidden, fmt.Errorf("tenant_id must match the active Tenant context")
+	}
+	userTenantDAO := dao.NewUserTenantDAO()
+	membership, err := userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
+	if err != nil {
+		return common.CodeForbidden, err
+	}
 	if len(updates) > 0 {
-		if err := tenantDAO.Update(ctx, dao.DB, tenantID, updates); err != nil {
+		if err := dao.DB.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", membership.ID).Updates(updates).Error; err != nil {
 			return common.CodeExceptionError, err
 		}
 	}
-
 	return common.CodeSuccess, nil
+}
+
+func tenantModelSettingUpdates(raw map[string]interface{}) (map[string]interface{}, error) {
+	updates := make(map[string]interface{}, len(raw))
+	for key, value := range raw {
+		if key == "tenant_id" {
+			if _, ok := value.(string); !ok {
+				return nil, fmt.Errorf("tenant_id must be a string")
+			}
+			continue
+		}
+		nullable := false
+		switch key {
+		case "llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id":
+		case "tenant_llm_id", "tenant_embd_id", "tenant_asr_id", "tenant_img2txt_id", "tenant_rerank_id",
+			"tts_id", "tenant_tts_id", "ocr_id", "tenant_ocr_id", "decision_id", "tenant_decision_id":
+			nullable = true
+		default:
+			return nil, fmt.Errorf("unsupported model setting %q", key)
+		}
+		if value == nil {
+			if !nullable {
+				return nil, fmt.Errorf("%s cannot be null", key)
+			}
+			updates[key] = nil
+			continue
+		}
+		if _, ok := value.(string); !ok {
+			return nil, fmt.Errorf("%s must be a string", key)
+		}
+		updates[key] = value
+	}
+	return updates, nil
 }
 
 // UserTenantService user tenant service
@@ -822,380 +875,71 @@ func convertToUserTenantRelation(userTenant *entity.UserTenant) *UserTenantRelat
 	}
 }
 
-// GetUserByAPIToken gets user by access key from Authorization header
-// This is used for API token authentication
-// The authorization parameter should be in format: "Bearer <token>" or just "<token>"
-func (s *UserService) GetUserByAPIToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error) {
-	if authorization == "" {
-		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
-	}
-
-	// Split authorization header to get the token
-	// Expected format: "Bearer <token>" or "<token>"
-	parts := strings.Split(authorization, " ")
-	var token string
-	if len(parts) == 2 {
-		token = parts[1]
-	} else if len(parts) == 1 {
-		token = parts[0]
-	} else {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
-	}
-
-	// Query API token from database
-	apiTokenDAO := dao.NewAPITokenDAO()
-	userToken, err := apiTokenDAO.GetByAPIToken(ctx, dao.DB, token)
-	if err != nil || userToken == nil {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token")
-	}
-
-	// Get user by tenant_id from API token
-	user, err := s.userDAO.GetByTenantID(ctx, dao.DB, userToken.TenantID)
+// ResolveAPIToken validates an API key and resolves its authentication identity.
+func (s *UserService) ResolveAPIToken(ctx context.Context, authorization string) (*AuthIdentity, common.ErrorCode, error) {
+	token, err := parseAuthorizationToken(authorization)
 	if err != nil {
-		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for this access token")
+		return nil, common.CodeUnauthorized, err
 	}
 
-	// Check if user's access_token is empty
+	apiToken, err := dao.NewAPITokenDAO().GetByAPIToken(ctx, dao.DB, token)
+	if err != nil || apiToken == nil {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid API token")
+	}
+	return s.resolveAPITokenIdentity(ctx, apiToken)
+}
+
+// ResolveBetaAPIToken validates a beta key and resolves its user, tenant, and
+// associated API token metadata.
+func (s *UserService) ResolveBetaAPIToken(ctx context.Context, authorization string) (*AuthIdentity, common.ErrorCode, error) {
+	token, err := parseAuthorizationToken(authorization)
+	if err != nil {
+		return nil, common.CodeUnauthorized, err
+	}
+
+	apiTokens, err := dao.NewAPITokenDAO().GetByBeta(ctx, dao.DB, token)
+	if err != nil || len(apiTokens) == 0 {
+		return nil, common.CodeUnauthorized, fmt.Errorf("invalid beta API token")
+	}
+	return s.resolveAPITokenIdentity(ctx, apiTokens[0])
+}
+
+func (s *UserService) resolveAPITokenIdentity(ctx context.Context, apiToken *entity.APIToken) (*AuthIdentity, common.ErrorCode, error) {
+	if apiToken.UserID == nil || *apiToken.UserID == "" {
+		return nil, common.CodeUnauthorized, fmt.Errorf("API token is missing user identity")
+	}
+
+	user, err := s.userDAO.GetByIDString(ctx, dao.DB, *apiToken.UserID)
+	if err != nil {
+		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for API token")
+	}
 	if user.AccessToken == nil || *user.AccessToken == "" {
 		return nil, common.CodeUnauthorized, fmt.Errorf("user has empty access_token in database")
 	}
+	tenantID, err := resolveUserAuthTenant(ctx, user, apiToken.TenantID)
+	if err != nil {
+		return nil, common.CodeUnauthorized, err
+	}
 
-	return user, common.CodeSuccess, nil
-
+	apiTokenMetadata := *apiToken
+	apiTokenMetadata.TenantID = tenantID
+	return &AuthIdentity{User: user, TenantID: tenantID, APIToken: &apiTokenMetadata}, common.CodeSuccess, nil
 }
 
-// GetAPITokenByBeta returns the APIToken row whose `beta` column
-// matches the given raw token. Used by the beta-auth middleware
-// to expose DialogID (the real agent_id) to downstream handlers
-// without re-parsing the Authorization header. Mirrors
-// `APIToken.query(beta=token)` from python bot_api.py:agent_bot_logs.
-func (s *UserService) GetAPITokenByBeta(ctx context.Context, authorization string) (*entity.APIToken, error) {
-	authorization = strings.TrimSpace(authorization)
-	if authorization == "" {
-		return nil, fmt.Errorf("authorization header is empty")
-	}
+func parseAuthorizationToken(authorization string) (string, error) {
 	parts := strings.Fields(authorization)
-	var token string
-	if len(parts) == 2 {
-		token = parts[1]
-	} else if len(parts) == 1 {
+	switch len(parts) {
+	case 1:
 		if strings.EqualFold(parts[0], "Bearer") {
-			return nil, fmt.Errorf("invalid authorization format")
+			return "", fmt.Errorf("invalid authorization format")
 		}
-		token = parts[0]
-	} else {
-		return nil, fmt.Errorf("invalid authorization format")
-	}
-	if token == "" {
-		return nil, fmt.Errorf("invalid authorization format")
-	}
-	apiTokenDAO := dao.NewAPITokenDAO()
-	tokens, err := apiTokenDAO.GetByBeta(ctx, dao.DB, token)
-	if err != nil {
-		return nil, err
-	}
-	if len(tokens) == 0 {
-		return nil, fmt.Errorf("invalid API token")
-	}
-	return tokens[0], nil
-}
-
-// GetUserByBetaAPIToken gets user by beta access key from Authorization
-// header. This mirrors Python's AUTH_BETA flow used by public bot endpoints.
-func (s *UserService) GetUserByBetaAPIToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error) {
-	authorization = strings.TrimSpace(authorization)
-	if authorization == "" {
-		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
-	}
-
-	parts := strings.Fields(authorization)
-	var token string
-	if len(parts) == 2 {
-		token = parts[1]
-	} else if len(parts) == 1 {
-		if strings.EqualFold(parts[0], "Bearer") {
-			return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+		return parts[0], nil
+	case 2:
+		if !strings.EqualFold(parts[0], "Bearer") || parts[1] == "" {
+			return "", fmt.Errorf("invalid authorization format")
 		}
-		token = parts[0]
-	} else {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
+		return parts[1], nil
+	default:
+		return "", fmt.Errorf("invalid authorization format")
 	}
-	if token == "" {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization format")
-	}
-
-	apiTokenDAO := dao.NewAPITokenDAO()
-	userTokens, err := apiTokenDAO.GetByBeta(ctx, dao.DB, token)
-	if err != nil || len(userTokens) == 0 {
-		return nil, common.CodeUnauthorized, fmt.Errorf("invalid beta access token")
-	}
-	userToken := userTokens[0]
-
-	user, err := s.userDAO.GetByTenantID(ctx, dao.DB, userToken.TenantID)
-	if err != nil {
-		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for this beta access token")
-	}
-
-	if user.AccessToken == nil || *user.AccessToken == "" {
-		return nil, common.CodeUnauthorized, fmt.Errorf("user has empty access_token in database")
-	}
-
-	return user, common.CodeSuccess, nil
-}
-
-// ---- Forgot-password flow (mirrors api/apps/restful_apis/user_api.py
-// `/auth/password/...` endpoints, fixes #15282) -------------------------
-
-// ForgotIssueCaptcha mints a captcha for the given email and stores the
-// expected text in Redis under utility.CaptchaIDRedisKey, keyed by a
-// fresh server-side captcha_id, with a 60s TTL. Returns the captcha_id
-// and a renderable SVG image (data URL) the FE drops into <img src> so
-// the human can read the challenge and type the answer. The plaintext
-// code itself is never sent to the client outside the rendered image.
-//
-// Refuses unknown emails to avoid leaking the user list — matches Python.
-func (s *UserService) ForgotIssueCaptcha(ctx context.Context, email string) (captchaID, imageDataURL string, code common.ErrorCode, err error) {
-	if email == "" {
-		return "", "", common.CodeArgumentError, fmt.Errorf("email is required")
-	}
-	if _, err = s.userDAO.GetByEmail(ctx, dao.DB, email); err != nil {
-		return "", "", common.CodeDataError, fmt.Errorf("invalid email")
-	}
-
-	text, err := utility.GenerateCaptchaCode()
-	if err != nil {
-		return "", "", common.CodeServerError, err
-	}
-	captchaID = utility.GenerateToken()
-	if ok := kvrocks.Get().Set(ctx, utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
-		return "", "", common.CodeServerError, fmt.Errorf("failed to store captcha")
-	}
-	imageDataURL = utility.RenderCaptchaPNGDataURL(text)
-	return captchaID, imageDataURL, common.CodeSuccess, nil
-}
-
-// ForgotSendOTP verifies the captcha (looked up by the server-issued
-// captcha_id), then issues an OTP and emails it. Hash-and-salt is
-// stored in Redis under the keys returned by utility.OTPRedisKeys.
-// Resend cooldown and per-email lockout behaviour otherwise match the
-// Python implementation byte-for-byte.
-func (s *UserService) ForgotSendOTP(ctx context.Context, email, captchaID, captcha string) (common.ErrorCode, error) {
-	if email == "" || captchaID == "" || captcha == "" {
-		return common.CodeArgumentError, fmt.Errorf("email, captcha_id and captcha required")
-	}
-	if _, err := s.userDAO.GetByEmail(ctx, dao.DB, email); err != nil {
-		return common.CodeDataError, fmt.Errorf("invalid email")
-	}
-
-	rc := kvrocks.Get()
-	captchaKey := utility.CaptchaIDRedisKey(captchaID)
-	stored, _ := rc.Get(ctx, captchaKey)
-	if stored == "" {
-		return common.CodeNotEffective, fmt.Errorf("invalid or expired captcha")
-	}
-	if !strings.EqualFold(strings.TrimSpace(stored), strings.TrimSpace(captcha)) {
-		return common.CodeAuthenticationError, fmt.Errorf("invalid or expired captcha")
-	}
-	// One-shot: consume the captcha so a leaked captcha_id cannot be
-	// reused for a stream of OTP requests.
-	rc.Delete(ctx, captchaKey)
-
-	codeKey, attemptsKey, lastSentKey, lockKey := utility.OTPRedisKeys(email)
-
-	// Lockout — a previous verify burst already locked this email; do not
-	// let a request for a new OTP wipe the lock (deliberate divergence
-	// from the Python implementation, which deletes the lock here and so
-	// allows a locked attacker to clear their own lockout by re-requesting).
-	if locked, _ := rc.Get(ctx, lockKey); locked != "" {
-		return common.CodeNotEffective, fmt.Errorf("too many attempts, try later")
-	}
-
-	// Resend cooldown — refuse if we already sent within the window.
-	if lastSent, _ := rc.Get(ctx, lastSentKey); lastSent != "" {
-		ts, parseErr := strconv.ParseInt(lastSent, 10, 64)
-		if parseErr == nil {
-			elapsed := time.Since(time.Unix(ts, 0))
-			remaining := utility.OTPResendCooldown - elapsed
-			if remaining > 0 {
-				return common.CodeNotEffective, fmt.Errorf("you still have to wait %d seconds", int(remaining.Seconds()))
-			}
-		}
-	}
-
-	otp, err := utility.GenerateOTPCode()
-	if err != nil {
-		return common.CodeServerError, err
-	}
-	salt, err := utility.GenerateOTPSalt()
-	if err != nil {
-		return common.CodeServerError, err
-	}
-	codeHash := utility.HashOTPCode(otp, salt)
-	now := strconv.FormatInt(time.Now().Unix(), 10)
-
-	// Snapshot the previous OTP-flow state so we can restore it if email
-	// delivery fails — otherwise the user is throttled by lastSentKey
-	// even though they never received the code.
-	prevCode, _ := rc.Get(ctx, codeKey)
-	prevAttempts, _ := rc.Get(ctx, attemptsKey)
-	prevLastSent, _ := rc.Get(ctx, lastSentKey)
-
-	if !rc.Set(ctx, codeKey, utility.EncodeOTPStorageValue(codeHash, salt), utility.OTPTTL) {
-		return common.CodeServerError, fmt.Errorf("failed to store otp")
-	}
-	rc.Set(ctx, attemptsKey, "0", utility.OTPTTL)
-	rc.Set(ctx, lastSentKey, now, utility.OTPTTL)
-	// Note: lockKey is intentionally not cleared here. If the user has
-	// been locked out by a previous verify burst, requesting a new OTP
-	// does not lift the lock — we already refused above.
-
-	ttlMin := int(utility.OTPTTL.Minutes())
-	cfg := server.GetConfig()
-	if err = utility.SendResetCodeEmail(cfg.GetSMTPConfig(), email, otp, ttlMin); err != nil {
-		// Roll back: restore prior code/attempts/last-sent or remove the
-		// keys we just wrote so the next attempt isn't blocked by the
-		// resend cooldown a failed send just installed.
-		if prevCode != "" {
-			rc.Set(ctx, codeKey, prevCode, utility.OTPTTL)
-		} else {
-			rc.Delete(ctx, codeKey)
-		}
-		if prevAttempts != "" {
-			rc.Set(ctx, attemptsKey, prevAttempts, utility.OTPTTL)
-		} else {
-			rc.Delete(ctx, attemptsKey)
-		}
-		if prevLastSent != "" {
-			rc.Set(ctx, lastSentKey, prevLastSent, utility.OTPTTL)
-		} else {
-			rc.Delete(ctx, lastSentKey)
-		}
-		return common.CodeServerError, fmt.Errorf("failed to send email")
-	}
-	return common.CodeSuccess, nil
-}
-
-// ForgotVerifyOTP checks an OTP submitted by the user. On success, it
-// consumes the OTP/attempt counters and writes a short-lived "verified"
-// flag the reset endpoint will gate on.
-func (s *UserService) ForgotVerifyOTP(ctx context.Context, email, otp string) (common.ErrorCode, error) {
-	if email == "" || otp == "" {
-		return common.CodeArgumentError, fmt.Errorf("email and otp are required")
-	}
-	if _, err := s.userDAO.GetByEmail(ctx, dao.DB, email); err != nil {
-		return common.CodeDataError, fmt.Errorf("invalid email")
-	}
-
-	rc := kvrocks.Get()
-	codeKey, attemptsKey, lastSentKey, lockKey := utility.OTPRedisKeys(email)
-
-	if locked, _ := rc.Get(ctx, lockKey); locked != "" {
-		return common.CodeNotEffective, fmt.Errorf("too many attempts, try later")
-	}
-
-	stored, _ := rc.Get(ctx, codeKey)
-	if stored == "" {
-		return common.CodeNotEffective, fmt.Errorf("expired otp")
-	}
-	storedHash, salt, err := utility.DecodeOTPStorageValue(stored)
-	if err != nil {
-		return common.CodeServerError, fmt.Errorf("otp storage corrupted")
-	}
-
-	if utility.HashOTPCode(strings.ToUpper(strings.TrimSpace(otp)), salt) != storedHash {
-		// bump attempts; lock on >= limit
-		attempts := 0
-		if cur, _ := rc.Get(ctx, attemptsKey); cur != "" {
-			if n, perr := strconv.Atoi(cur); perr == nil {
-				attempts = n
-			}
-		}
-		attempts++
-		rc.Set(ctx, attemptsKey, strconv.Itoa(attempts), utility.OTPTTL)
-		if attempts >= utility.OTPAttemptLimit {
-			rc.Set(ctx, lockKey, strconv.FormatInt(time.Now().Unix(), 10), utility.OTPAttemptLockDuration)
-		}
-		return common.CodeAuthenticationError, fmt.Errorf("expired otp")
-	}
-
-	// Success: clear OTP state, mark email verified.
-	rc.Delete(ctx, codeKey)
-	rc.Delete(ctx, attemptsKey)
-	rc.Delete(ctx, lastSentKey)
-	rc.Delete(ctx, lockKey)
-	if !rc.Set(ctx, utility.OTPVerifiedRedisKey(email), "1", utility.OTPTTL) {
-		return common.CodeServerError, fmt.Errorf("failed to set verification state")
-	}
-	return common.CodeSuccess, nil
-}
-
-// ForgotResetPasswordRequest carries the JSON body of /auth/password/reset.
-//
-// No `binding` tags on purpose: gin's validator fires inside
-// c.ShouldBindJSON and produces a verbose
-// `Key: 'ForgotResetPasswordRequest.Email' Error:Field validation ...`
-// message that diverges from the Python contract for this endpoint,
-// which returns the friendlier `"email and passwords are required"`
-// (api/apps/restful_apis/user_api.py:forget_reset_password). Letting
-// the binding succeed with zero values means the existing service
-// check below produces the matching message, and an entirely missing
-// JSON body now gets exactly Python's response.
-type ForgotResetPasswordRequest struct {
-	Email              string `json:"email"`
-	NewPassword        string `json:"new_password"`
-	ConfirmNewPassword string `json:"confirm_new_password"`
-}
-
-// ForgotResetPassword finalises the reset: only proceeds if the verified
-// flag is set, validates the two ciphertexts match after RSA decryption,
-// updates the password hash, and clears the verified flag. Returns the
-// user so the handler can auto-login (matching Python's
-// `construct_response(auth=user.get_id())`).
-func (s *UserService) ForgotResetPassword(ctx context.Context, req *ForgotResetPasswordRequest) (*entity.User, common.ErrorCode, error) {
-	if req.Email == "" || req.NewPassword == "" || req.ConfirmNewPassword == "" {
-		return nil, common.CodeArgumentError, fmt.Errorf("email and passwords are required")
-	}
-
-	rc := kvrocks.Get()
-	verifiedKey := utility.OTPVerifiedRedisKey(req.Email)
-	if v, _ := rc.Get(ctx, verifiedKey); v != "1" {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("email not verified")
-	}
-
-	plain, err := common.DecryptPassword(req.NewPassword)
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("fail to decrypt password")
-	}
-	confirm, err := common.DecryptPassword(req.ConfirmNewPassword)
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("fail to decrypt password")
-	}
-	if plain != confirm {
-		return nil, common.CodeArgumentError, fmt.Errorf("passwords do not match")
-	}
-
-	user, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
-	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("invalid email")
-	}
-
-	hashed, err := common.GenerateWerkzeugPasswordHash(plain)
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to hash new password: %w", err)
-	}
-	user.Password = &hashed
-
-	// Auto-login: rotate the access token like LoginByEmail does so the
-	// handler can immediately mint an Authorization header.
-	token := utility.GenerateToken()
-	user.AccessToken = &token
-	now := time.Now().Truncate(time.Second)
-	user.LastLoginTime = &now
-
-	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to reset password: %w", err)
-	}
-
-	rc.Delete(ctx, verifiedKey)
-	return user, common.CodeSuccess, nil
 }

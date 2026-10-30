@@ -10,9 +10,10 @@ import { useIsMcp } from '../hooks/use-is-mcp';
 
 type TitleInputProps = {
   node?: RAGFlowNodeType;
+  readOnly?: boolean;
 };
 
-export function TitleInput({ node }: TitleInputProps) {
+export function TitleInput({ node, readOnly = false }: TitleInputProps) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLInputElement>(null);
   const { name, handleNameBlur, handleNameChange } = useHandleNodeNameChange({
@@ -58,6 +59,10 @@ export function TitleInput({ node }: TitleInputProps) {
       {node?.id === BeginId ? (
         // Begin node is not editable
         <span>{t(`flow.${BeginId}`)}</span>
+      ) : readOnly ? (
+        // A read-only canvas never enters name-editing mode: renaming writes
+        // the store via useHandleNodeNameChange.
+        <div className="flex items-center gap-2.5 text-base">{name}</div>
       ) : isEditingMode ? (
         <Input
           ref={inputRef}

@@ -20,9 +20,10 @@
 // nlp.RetrievalService, which requires a doc engine + document
 // DAO. Those require network access and aren't worth standing up
 // in a unit test. Instead we exercise the translation layer
-// (translateChunk + helpers) directly — that's the surface that
+// (translateChunk + helpers) and the rank-feature resolution
+// (resolveRankFeature) directly — that's the surface that
 // differs between the nlp chunk shape and the agent-tool chunk
-// shape, and it's the only piece the adapter owns.
+// shape, and the only piece the adapter itself decides.
 
 package tool
 
@@ -32,10 +33,14 @@ import (
 	"math"
 	"testing"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service/nlp"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -225,7 +230,7 @@ func TestTranslateChunk_MissingAllScores(t *testing.T) {
 // must produce an adapter whose Search returns the missing-service
 // error, not a panic.
 func TestNewNLPRetrievalAdapter_NilService(t *testing.T) {
-	a := NewNLPRetrievalAdapter(nil, nil, nil)
+	a := NewNLPRetrievalAdapter(nil, RetrievalModelConstructors{}, nil)
 	_, err := a.Search(context.TODO(), nil, RetrievalRequest{Query: "hi"})
 	if err == nil {
 		t.Fatal("expected error from nil-service adapter")
@@ -412,6 +417,49 @@ func TestNLPRetrievalAdapter_SearchRejectsDatasetsFromMultipleTenants(t *testing
 	}
 }
 
+func TestNLPRetrievalAdapter_SearchRequiresDatasetUsePermission(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate permission tables: %v", err)
+	}
+	status := string(entity.StatusValid)
+	dataset := entity.Knowledgebase{
+		ID: "kb-private", TenantID: "tenant-1", Name: "private", EmbdID: "embedding@provider",
+		Permission: string(entity.TenantPermissionMe), CreatedBy: "owner", Status: &status,
+	}
+	if err := db.Create(&dataset).Error; err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	memberships := []entity.UserTenant{
+		{ID: "owner-membership", UserID: "owner", TenantID: "tenant-1", Role: string(permission.RoleOwner), InvitedBy: "owner", Status: &status},
+		{ID: "member-membership", UserID: "member", TenantID: "tenant-1", Role: string(permission.RoleNormal), InvitedBy: "owner", Status: &status},
+	}
+	if err := db.Create(&memberships).Error; err != nil {
+		t.Fatalf("create memberships: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "owner", "member"); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
+
+	adapter := &NLPRetrievalAdapter{
+		svc:   &nlp.RetrievalService{},
+		kbDAO: fakeKnowledgebaseLookup{kbs: []*entity.Knowledgebase{&dataset}},
+	}
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.Sys["user_id"] = "member"
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "member", TenantID: "tenant-1"})
+	_, err = adapter.Search(ctx, db, RetrievalRequest{
+		Query: "hello", DatasetIDs: []string{dataset.ID}, UserID: "owner",
+	})
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("Search error = %v, want permission denial for runtime caller despite req.UserID=owner", err)
+	}
+}
+
 func TestNLPRetrievalAdapter_ResolveDatasetsFromDatasetIDs(t *testing.T) {
 	a := &NLPRetrievalAdapter{
 		kbDAO: fakeKnowledgebaseLookup{
@@ -491,24 +539,22 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			resolver := &fakeModelResolver{modelName: "resolved-model"}
+			var gotRef string
 			adapter := &NLPRetrievalAdapter{
-				modelConfigResolver: func(
-					_ context.Context,
-					_ string,
-					_ entity.ModelType,
-					modelRef string,
-				) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-					resolver.call = "resolve:" + modelRef
-					return nil, resolver.modelName, &modelModule.APIConfig{}, 512, resolver.err
+				modelConstructors: RetrievalModelConstructors{
+					Embedding: func(_ context.Context, _ string, modelRef string) (*modelModule.EmbeddingModel, error) {
+						gotRef = modelRef
+						modelName := "resolved-model"
+						return modelModule.NewEmbeddingModel(&modelModule.DummyModel{}, &modelName, &modelModule.APIConfig{}, 512), nil
+					},
 				},
 			}
 			model, err := adapter.resolveEmbeddingModel(t.Context(), test.kb)
 			if err != nil {
 				t.Fatalf("resolveEmbeddingModel: %v", err)
 			}
-			if resolver.call != test.wantCall {
-				t.Fatalf("resolver call = %q, want %q", resolver.call, test.wantCall)
+			if got := "resolve:" + gotRef; got != test.wantCall {
+				t.Fatalf("constructor model ref = %q, want %q", got, test.wantCall)
 			}
 			if model == nil || model.ModelName == nil || *model.ModelName != "resolved-model" {
 				t.Fatalf("resolved model = %#v", model)
@@ -556,12 +602,6 @@ type fakeKnowledgebaseLookup struct {
 	err error
 }
 
-type fakeModelResolver struct {
-	call      string
-	modelName string
-	err       error
-}
-
 func (f fakeKnowledgebaseLookup) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Knowledgebase, error) {
 	requested := make(map[string]struct{}, len(ids))
 	for _, id := range ids {
@@ -586,4 +626,143 @@ func (f fakeKnowledgebaseLookup) GetByName(_ context.Context, _ *gorm.DB, name, 
 		}
 	}
 	return nil, gorm.ErrRecordNotFound
+}
+
+// stubRankFeatureEnhancer records whether the question was labelled.
+type stubRankFeatureEnhancer struct {
+	labels map[string]float64
+	calls  int
+}
+
+func (s *stubRankFeatureEnhancer) CrossLanguages(context.Context, string, string, []string) (string, error) {
+	return "", nil
+}
+
+func (s *stubRankFeatureEnhancer) FilterDocuments(
+	context.Context, map[string]any, string, *modelModule.ChatModel, []string, []string,
+) ([]string, error) {
+	return nil, nil
+}
+
+func (s *stubRankFeatureEnhancer) LabelQuestion(
+	context.Context, string, []*entity.Knowledgebase,
+) map[string]float64 {
+	s.calls++
+	return s.labels
+}
+
+func (s *stubRankFeatureEnhancer) RetrieveByChildren(
+	context.Context, []map[string]any, []string,
+) []map[string]any {
+	return nil
+}
+
+func testRankFeatureKBs() []*entity.Knowledgebase {
+	return []*entity.Knowledgebase{{ID: "kb-1", TenantID: "tenant-1"}}
+}
+
+// No tag source: labelling yields nil, which must still reach the request as an
+// empty map instead of letting the nlp layer apply its default.
+func TestResolveRankFeature_NoTagSourceReturnsEmptyMap(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: nil}
+
+	got := resolveRankFeature(context.Background(), nil, enhancer, "q", testRankFeatureKBs(), false)
+
+	if got == nil {
+		t.Fatal("rankFeature = nil, want an empty (non-nil) map")
+	}
+	if len(got) != 0 {
+		t.Fatalf("rankFeature = %v, want empty", got)
+	}
+	if enhancer.calls != 1 {
+		t.Fatalf("LabelQuestion calls = %d, want 1", enhancer.calls)
+	}
+}
+
+func TestResolveRankFeature_TagMatchIsForwarded(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: map[string]float64{"tag_1": 0.8}}
+
+	got := resolveRankFeature(context.Background(), nil, enhancer, "q", testRankFeatureKBs(), false)
+
+	if got["tag_1"] != 0.8 {
+		t.Fatalf("rankFeature = %v, want tag_1=0.8", got)
+	}
+}
+
+// A caller-supplied feature wins over the enhancer and must not trigger a label
+// lookup.
+func TestResolveRankFeature_PrefersRequestSuppliedFeature(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: map[string]float64{"from_enhancer": 0.1}}
+	requested := map[string]float64{"from_request": 0.5}
+
+	got := resolveRankFeature(context.Background(), &requested, enhancer, "q", testRankFeatureKBs(), false)
+
+	if got["from_request"] != 0.5 || len(got) != 1 {
+		t.Fatalf("rankFeature = %v, want only from_request=0.5", got)
+	}
+	if enhancer.calls != 0 {
+		t.Fatalf("LabelQuestion calls = %d, want 0", enhancer.calls)
+	}
+}
+
+// A vector-only request skips the label lookup; the map must still be non-nil.
+func TestResolveRankFeature_VectorOnlySkipsLabelling(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: map[string]float64{"tag_1": 0.8}}
+
+	got := resolveRankFeature(context.Background(), nil, enhancer, "q", testRankFeatureKBs(), true)
+
+	if got == nil {
+		t.Fatal("rankFeature = nil, want an empty (non-nil) map")
+	}
+	if len(got) != 0 {
+		t.Fatalf("rankFeature = %v, want empty", got)
+	}
+	if enhancer.calls != 0 {
+		t.Fatalf("LabelQuestion calls = %d, want 0", enhancer.calls)
+	}
+}
+
+func TestResolveRankFeature_NilEnhancerReturnsEmptyMap(t *testing.T) {
+	got := resolveRankFeature(context.Background(), nil, nil, "q", testRankFeatureKBs(), false)
+
+	if got == nil {
+		t.Fatal("rankFeature = nil, want an empty (non-nil) map")
+	}
+	if len(got) != 0 {
+		t.Fatalf("rankFeature = %v, want empty", got)
+	}
+}
+
+// nil and {} are distinct: nil asks for labelling, {} means there are none.
+func TestResolveRankFeature_ExplicitEmptyMapSuppressesLabelling(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: map[string]float64{"tag_1": 0.8}}
+	requested := map[string]float64{}
+
+	got := resolveRankFeature(context.Background(), &requested, enhancer, "q", testRankFeatureKBs(), false)
+
+	if got == nil {
+		t.Fatal("rankFeature = nil, want an empty (non-nil) map")
+	}
+	if len(got) != 0 {
+		t.Fatalf("rankFeature = %v, want empty", got)
+	}
+	if enhancer.calls != 0 {
+		t.Fatalf("LabelQuestion calls = %d, want 0", enhancer.calls)
+	}
+}
+
+// The result must not alias the caller's map.
+func TestResolveRankFeature_ReturnsDetachedCopy(t *testing.T) {
+	requested := map[string]float64{"tag_1": 0.4}
+
+	got := resolveRankFeature(context.Background(), &requested, nil, "q", testRankFeatureKBs(), false)
+	got["tag_1"] = 0.9
+	got["injected"] = 1.0
+
+	if requested["tag_1"] != 0.4 {
+		t.Fatalf("caller map mutated through the result: %v", requested)
+	}
+	if _, ok := requested["injected"]; ok {
+		t.Fatalf("caller map gained a key through the result: %v", requested)
+	}
 }

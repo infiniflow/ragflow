@@ -126,7 +126,7 @@ function useImportExcelForm() {
             );
           },
           {
-            message: t('admin.invalidExcelFile'),
+            message: t('admin.importValidExcelFile'),
           },
         ),
       overwriteExisting: z.boolean().optional(),

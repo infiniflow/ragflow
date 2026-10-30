@@ -24,11 +24,13 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
@@ -44,19 +46,14 @@ type TestDBConnectionRequest struct {
 	Password string      `json:"password"`
 }
 
-// AllowAnyHostForTest mirrors common.AllowAnyHostForTest: a test-only
-// override that disables the SSRF guard in AssertHostIsSafe. Production
-// code MUST leave this at false. Tests that need to talk to a local
-// httptest server or stub-resolved DB host flip it on and reset it
-// in t.Cleanup.
-//
-// The previous form was an env-var check (ALLOW_ANY_HOST=1) which was
-// a live runtime toggle any operator could flip to disable the SSRF
-// guard globally. PR review round 6, Major #3: this is a process-
-// memory boolean only — no env var, no deployment flag, no path to
-// bypass from outside the test binary.
+// AllowAnyHostForTest is a test-only override that disables the SSRF guard
+// in AssertHostIsSafe. Production code must leave it false. Operators allow
+// private database hosts with ALLOW_ANY_HOST; that flag does not relax URL
+// or Invoke checks.
 var AllowAnyHostForTest = false
 
+// allowAnyHost reports the in-memory test override. AssertHostIsSafe checks
+// ALLOW_ANY_HOST separately so URL and Invoke guards stay strict.
 func allowAnyHost() bool {
 	return AllowAnyHostForTest
 }
@@ -75,6 +72,9 @@ func AssertHostIsSafe(host string) (string, error) {
 			zap.String("host", host),
 		)
 		return host, nil
+	}
+	if pinned, enabled, err := common.PinConfiguredPrivateHost(host); enabled {
+		return pinned, err
 	}
 
 	ips, err := net.LookupIP(host)
@@ -243,10 +243,11 @@ func (s *AgentService) TestDBConnection(ctx context.Context, userID string, req 
 		return common.CodeDataError, err
 	}
 
+	var db *sql.DB
+	dbProbeTimeout := 5 * time.Second
 	switch req.DBType {
 	case "mysql", "mariadb", "oceanbase":
 		port := dbConnectionPort(req.Port)
-		dbProbeTimeout := 5 * time.Second
 		config := mysql.Config{
 			User:                 req.Username,
 			Passwd:               req.Password,
@@ -256,24 +257,35 @@ func (s *AgentService) TestDBConnection(ctx context.Context, userID string, req 
 			Timeout:              dbProbeTimeout,
 			AllowNativePasswords: true,
 		}
-		var db *sql.DB
 		db, err = sql.Open("mysql", config.FormatDSN())
-		if err != nil {
-			return common.CodeExceptionError, err
+	case "postgres", "postgresql":
+		dsn := url.URL{
+			Scheme: "postgres",
+			User:   url.UserPassword(req.Username, req.Password),
+			Host:   net.JoinHostPort(safeHost, dbConnectionPort(req.Port)),
+			Path:   "/" + req.Database,
+			RawQuery: url.Values{
+				"sslmode":         {"disable"},
+				"connect_timeout": {"5"},
+			}.Encode(),
 		}
-		defer db.Close()
-
-		newCtx, cancel := context.WithTimeout(ctx, dbProbeTimeout)
-		defer cancel()
-
-		if err = db.PingContext(newCtx); err != nil {
-			return common.CodeExceptionError, err
-		}
-		if _, err = db.ExecContext(newCtx, "SELECT 1"); err != nil {
-			return common.CodeExceptionError, err
-		}
+		db, err = sql.Open("postgres", dsn.String())
 	default:
 		return common.CodeExceptionError, errors.New("unsupported database type")
+	}
+	if err != nil {
+		return common.CodeExceptionError, err
+	}
+	defer db.Close()
+
+	newCtx, cancel := context.WithTimeout(ctx, dbProbeTimeout)
+	defer cancel()
+
+	if err = db.PingContext(newCtx); err != nil {
+		return common.CodeExceptionError, err
+	}
+	if _, err = db.ExecContext(newCtx, "SELECT 1"); err != nil {
+		return common.CodeExceptionError, err
 	}
 
 	return common.CodeSuccess, nil

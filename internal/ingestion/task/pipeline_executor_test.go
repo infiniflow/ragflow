@@ -16,6 +16,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 )
@@ -25,6 +26,37 @@ import (
 // =============================================================================
 
 func strPtr(s string) *string { return &s }
+
+func TestProcessOutputPurgesRunStateOnSuccessfulNoOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		output map[string]any
+	}{
+		{name: "nil output", output: nil},
+		{name: "empty output", output: map[string]any{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			taskCtx := &TaskContext{
+				Doc:           entity.Document{ID: "doc-1"},
+				IngestionTask: &entity.IngestionTask{ID: "task-1"},
+			}
+			var purgedTaskID string
+			exec := &PipelineExecutor{
+				taskCtx: taskCtx,
+				purgeTaskState: func(ctx context.Context, taskID string) error {
+					purgedTaskID = taskID
+					return nil
+				},
+			}
+			if _, err := exec.processOutput(context.Background(), tc.output, time.Now()); err != nil {
+				t.Fatalf("processOutput: %v", err)
+			}
+			if purgedTaskID != "task-1" {
+				t.Fatalf("purged task id = %q, want task-1", purgedTaskID)
+			}
+		})
+	}
+}
 
 // TestMarkCompiledProductsHidden verifies the pipeline caller stages ONLY the
 // wiki variant's per-document rows as available_int=0 (they are intermediate
@@ -155,9 +187,17 @@ func setupPipelineExecutorTestDB(t *testing.T) func() {
 	return func() { dao.DB = origDB }
 }
 
+// testPipelineDeps builds the dependency bundle the package tests use: the
+// swapped-in test database (see setupPipelineExecutorDB) and no engine —
+// executor tests stub the index writer with WithInsertFunc, and the
+// engine-touching paths guard a nil engine.
+func testPipelineDeps() *ingestion.Deps {
+	return &ingestion.Deps{DB: dao.DB}
+}
+
 func mustNewPipelineExecutor(t *testing.T, taskCtx *TaskContext, canvasID string, docBulkSize int) *PipelineExecutor {
 	t.Helper()
-	svc, err := NewPipelineExecutor(taskCtx, canvasID, docBulkSize)
+	svc, err := NewPipelineExecutor(taskCtx, canvasID, docBulkSize, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}
@@ -169,7 +209,7 @@ func mustNewPipelineExecutor(t *testing.T, taskCtx *TaskContext, canvasID string
 // =============================================================================
 
 func TestNewPipelineExecutor_Basic(t *testing.T) {
-	svc, err := NewPipelineExecutor(makeTaskCtx(), "flow-1", 0)
+	svc, err := NewPipelineExecutor(makeTaskCtx(), "flow-1", 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}
@@ -185,14 +225,14 @@ func TestNewPipelineExecutor_Basic(t *testing.T) {
 }
 
 func TestNewPipelineExecutor_RejectsNilTaskContext(t *testing.T) {
-	_, err := NewPipelineExecutor(nil, "flow-1", 0)
+	_, err := NewPipelineExecutor(nil, "flow-1", 0, testPipelineDeps())
 	if err == nil {
 		t.Fatal("expected error for nil task context")
 	}
 }
 
 func TestNewPipelineExecutor_RejectsEmptyCanvasID(t *testing.T) {
-	_, err := NewPipelineExecutor(makeTaskCtx(), "", 0)
+	_, err := NewPipelineExecutor(makeTaskCtx(), "", 0, testPipelineDeps())
 	if err == nil {
 		t.Fatal("expected error for empty canvas id")
 	}
@@ -213,7 +253,7 @@ func TestNewPipelineExecutor_RejectsIncompleteTaskContext(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := makeTaskCtx()
 			tt.mutate(ctx)
-			_, err := NewPipelineExecutor(ctx, "flow-1", 0)
+			_, err := NewPipelineExecutor(ctx, "flow-1", 0, testPipelineDeps())
 			if err == nil {
 				t.Fatal("expected validation error")
 			}
@@ -229,7 +269,7 @@ func TestNewPipelineExecutor_AcceptsDebugTaskContext(t *testing.T) {
 	ctx := makeTaskCtx()
 	ctx.KB = entity.Knowledgebase{ID: ""}
 	ctx.Doc.KbID = ""
-	if _, err := NewPipelineExecutor(ctx, "flow-1", 0); err != nil {
+	if _, err := NewPipelineExecutor(ctx, "flow-1", 0, testPipelineDeps()); err != nil {
 		t.Fatalf("debug TaskContext rejected: %v", err)
 	}
 }
@@ -991,8 +1031,7 @@ func TestPipelineExecutor_Execute_DoesNotLogCanceledRun(t *testing.T) {
 // Execute is the ctx received by runPipelineFunc - the task context must flow
 // through to the pipeline run.
 func TestPipelineExecutor_Execute_PropagatesContext(t *testing.T) {
-	type ctxKey string
-	const key ctxKey = "trace"
+	const key string = "trace"
 	taskCtx := makeTaskCtx()
 	ctx := t.Context()
 	taskCtx.Ctx = context.WithValue(ctx, key, "task-ctx")

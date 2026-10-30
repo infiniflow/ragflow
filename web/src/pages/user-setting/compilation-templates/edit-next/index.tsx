@@ -15,49 +15,28 @@
  */
 
 import BackButton from '@/components/back-button';
-import { Button } from '@/components/ui/button';
-import { Form } from '@/components/ui/form';
-import { CompilationTemplateKind } from '@/constants/compilation';
+import { CompilationTemplateGroupEditor } from '@/components/compilation-template-group';
 import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
-import { Routes } from '@/routes';
-import { useCallback, useMemo } from 'react';
-import { useWatch } from 'react-hook-form';
+import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 
-import { BlueprintSection } from './components/blueprint-section';
-import { TemplateConfiguration } from './components/template-configuration';
-import { useEditNextCompilationTemplateGroup } from './hooks/use-edit-next-compilation-template-group';
-
-const SelectedTemplateIndex = 0;
-
-const agentsUrl = Routes.Agents;
+import { resolveAgentsUrl } from './utils';
 
 export default function EditNextCompilationTemplate() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const agentsUrl = resolveAgentsUrl(searchParams.get('source'));
 
   const navigateToAgents = useCallback(() => {
     navigate(agentsUrl);
-  }, [navigate]);
+  }, [navigate, agentsUrl]);
 
-  const { form, kindOptions, builtins, onSubmit, isCreate, isLoading } =
-    useEditNextCompilationTemplateGroup({
-      onSuccess: navigateToAgents,
-    });
-  const { data: group } = useFetchCompilationTemplateGroup();
-
-  const selectedKind = useWatch({
-    control: form.control,
-    name: `templates.${SelectedTemplateIndex}.kind`,
-  });
-
-  const isArtifacts = selectedKind === CompilationTemplateKind.Artifacts;
-
-  const handleSave = useMemo(
-    () => form.handleSubmit(onSubmit),
-    [form, onSubmit],
-  );
+  const isCreate = isCreateCompilationTemplateGroup(id);
+  const { data: group } = useFetchCompilationTemplateGroup(id);
 
   return (
     <section className="h-full flex flex-col bg-bg-base">
@@ -70,33 +49,12 @@ export default function EditNextCompilationTemplate() {
         </h2>
       </header>
 
-      <Form {...form}>
-        <form className="flex-1 min-h-0 flex flex-col" onSubmit={handleSave}>
-          <TemplateConfiguration
-            form={form}
-            builtins={builtins}
-            kindOptions={kindOptions}
-            selectedTemplateIndex={SelectedTemplateIndex}
-          >
-            {isArtifacts && (
-              <BlueprintSection
-                form={form}
-                selectedTemplateIndex={SelectedTemplateIndex}
-                builtins={builtins}
-              />
-            )}
-          </TemplateConfiguration>
-
-          <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-end gap-5">
-            <Button type="button" variant="outline" onClick={navigateToAgents}>
-              {t('common.back')}
-            </Button>
-            <Button type="submit" loading={isLoading}>
-              {t('common.save')}
-            </Button>
-          </footer>
-        </form>
-      </Form>
+      <CompilationTemplateGroupEditor
+        id={id}
+        onSuccess={navigateToAgents}
+        onCancel={navigateToAgents}
+        cancelText={t('common.back')}
+      />
     </section>
   );
 }

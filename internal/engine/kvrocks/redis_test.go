@@ -43,8 +43,48 @@ func newStrictTestClient(t *testing.T) (*Client, *miniredis.Miniredis) {
 		client:           rdb,
 		luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
 		luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
+		luaMediaPut:      redis.NewScript(luaMediaPutScript),
 		// luaAutoIncrement intentionally not loaded; not used here.
 	}, mr
+}
+
+func TestTotalSystemMemoryHuman(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		info map[string]string
+		want string
+	}{
+		{
+			name: "prefers total_system_memory_human",
+			info: map[string]string{
+				"total_system_memory_human": "16.00G",
+				"maxmemory_human":           "4.00G",
+			},
+			want: "16.00G",
+		},
+		{
+			name: "falls back to maxmemory_human",
+			info: map[string]string{
+				"maxmemory_human": "4.00G",
+			},
+			want: "4.00G",
+		},
+		{
+			name: "empty when neither field present",
+			info: map[string]string{
+				"used_memory_human": "128.00M",
+			},
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := totalSystemMemoryHuman(tc.info); got != tc.want {
+				t.Fatalf("totalSystemMemoryHuman() = %q, want %q", got, tc.want)
+			}
+		})
+	}
 }
 
 // TestEvalTokenBucketStrict_AllowedThenDenied walks the bucket through
@@ -103,5 +143,272 @@ func TestEvalTokenBucketStrict_NilClient(t *testing.T) {
 	}
 	if ok {
 		t.Fatalf("expected allowed=false on nil client (fail-closed)")
+	}
+}
+
+func TestMediaPutEnforcesQuotaAndRestoresDuplicate(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+	mediaKey := "mc:media:test:a"
+	digestKey := "mc:quota:test:digests"
+	stateKey := "mc:quota:test:state"
+	manifestKey := "mc:manifest:test"
+
+	accepted, inserted, err := r.MediaPut(
+		ctx,
+		mediaKey,
+		digestKey,
+		stateKey,
+		"digest-a",
+		"abc",
+		manifestKey,
+		mediaKey,
+		1,
+		3,
+		time.Hour,
+	)
+	if err != nil || !accepted || !inserted {
+		t.Fatalf("first MediaPut = (%v, %v, %v), want (true, true, nil)", accepted, inserted, err)
+	}
+	accepted, inserted, err = r.MediaPut(
+		ctx,
+		"mc:media:test:b",
+		digestKey,
+		stateKey,
+		"digest-b",
+		"b",
+		manifestKey,
+		"mc:media:test:b",
+		1,
+		3,
+		time.Hour,
+	)
+	if err != nil || accepted || inserted {
+		t.Fatalf("limit MediaPut = (%v, %v, %v), want (false, false, nil)", accepted, inserted, err)
+	}
+
+	if !r.Delete(ctx, mediaKey) {
+		t.Fatal("delete media value failed")
+	}
+	for _, key := range []string{digestKey, stateKey} {
+		if err := r.GetClient().Expire(ctx, key, time.Second).Err(); err != nil {
+			t.Fatalf("shorten %s TTL: %v", key, err)
+		}
+	}
+	accepted, inserted, err = r.MediaPut(
+		ctx,
+		mediaKey,
+		digestKey,
+		stateKey,
+		"digest-a",
+		"abc",
+		manifestKey,
+		mediaKey,
+		1,
+		3,
+		time.Hour,
+	)
+	if err != nil || !accepted || inserted {
+		t.Fatalf("restore MediaPut = (%v, %v, %v), want (true, false, nil)", accepted, inserted, err)
+	}
+	value, err := r.Get(ctx, mediaKey)
+	if err != nil || value != "abc" {
+		t.Fatalf("restored value = %q, %v; want abc, nil", value, err)
+	}
+	for _, key := range []string{mediaKey, digestKey, stateKey} {
+		ttl, err := r.GetClient().TTL(ctx, key).Result()
+		if err != nil || ttl < 59*time.Minute {
+			t.Fatalf("restored %s TTL = %v, %v; want the refreshed one-hour lifetime", key, ttl, err)
+		}
+	}
+}
+
+func TestMediaPutCountsDigestSetInsteadOfMirroredHash(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+	digestKey := "mc:quota:scard:digests"
+	stateKey := "mc:quota:scard:state"
+
+	accepted, inserted, err := r.MediaPut(
+		ctx,
+		"mc:media:scard:a",
+		digestKey,
+		stateKey,
+		"digest-a",
+		"a",
+		"",
+		"",
+		1,
+		100,
+		time.Hour,
+	)
+	if err != nil || !accepted || !inserted {
+		t.Fatalf("first MediaPut = (%v, %v, %v), want (true, true, nil)", accepted, inserted, err)
+	}
+	if err := r.GetClient().HSet(ctx, stateKey, "images", 0).Err(); err != nil {
+		t.Fatalf("make mirrored image count diverge: %v", err)
+	}
+
+	accepted, inserted, err = r.MediaPut(
+		ctx,
+		"mc:media:scard:b",
+		digestKey,
+		stateKey,
+		"digest-b",
+		"b",
+		"",
+		"",
+		1,
+		100,
+		time.Hour,
+	)
+	if err != nil || accepted || inserted {
+		t.Fatalf("second MediaPut = (%v, %v, %v), want (false, false, nil)", accepted, inserted, err)
+	}
+}
+
+func TestMediaPutRejectsByteOverflow(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+	digestKey := "mc:quota:bytes:digests"
+	stateKey := "mc:quota:bytes:state"
+
+	accepted, inserted, err := r.MediaPut(
+		ctx,
+		"mc:media:bytes:a",
+		digestKey,
+		stateKey,
+		"digest-a",
+		"abcde",
+		"",
+		"",
+		10,
+		5,
+		time.Hour,
+	)
+	if err != nil || !accepted || !inserted {
+		t.Fatalf("first MediaPut = (%v, %v, %v), want (true, true, nil)", accepted, inserted, err)
+	}
+	accepted, inserted, err = r.MediaPut(
+		ctx,
+		"mc:media:bytes:b",
+		digestKey,
+		stateKey,
+		"digest-b",
+		"b",
+		"",
+		"",
+		10,
+		5,
+		time.Hour,
+	)
+	if err != nil || accepted || inserted {
+		t.Fatalf("overflow MediaPut = (%v, %v, %v), want (false, false, nil)", accepted, inserted, err)
+	}
+}
+
+func TestClientSetNXDistinguishesContention(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+
+	acquired, err := r.SetNX(ctx, "lock:document", "owner-1", time.Minute)
+	if err != nil {
+		t.Fatalf("first SetNX returned error: %v", err)
+	}
+	if !acquired {
+		t.Fatal("first SetNX acquired = false, want true")
+	}
+
+	acquired, err = r.SetNX(ctx, "lock:document", "owner-2", time.Minute)
+	if err != nil {
+		t.Fatalf("contended SetNX returned error: %v", err)
+	}
+	if acquired {
+		t.Fatal("contended SetNX acquired = true, want false")
+	}
+}
+
+func TestClientGetReturnsEmptyValueForMissingKey(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+
+	got, err := r.Get(t.Context(), "missing")
+	if err != nil {
+		t.Fatalf("Get missing key returned error: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("Get missing key = %q, want empty string", got)
+	}
+}
+
+func TestClientSetNXReturnsTransportError(t *testing.T) {
+	r, mr := newStrictTestClient(t)
+	mr.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	acquired, err := r.SetNX(ctx, "lock:document", "owner-1", time.Minute)
+	if err == nil {
+		t.Fatal("SetNX error = nil, want transport error")
+	}
+	if acquired {
+		t.Fatal("SetNX acquired = true on transport failure, want false")
+	}
+}
+
+func TestClientSetNXReturnsErrorForNilClient(t *testing.T) {
+	var r *Client
+
+	acquired, err := r.SetNX(t.Context(), "lock:document", "owner-1", time.Minute)
+	if err == nil {
+		t.Fatal("SetNX error = nil, want initialization error")
+	}
+	if acquired {
+		t.Fatal("SetNX acquired = true for nil client, want false")
+	}
+}
+
+func TestDistributedLockSpinAcquireReturnsTransportError(t *testing.T) {
+	r, mr := newStrictTestClient(t)
+	mr.Close()
+	lock := &DistributedLock{
+		client:    r,
+		lockKey:   "lock:document",
+		lockValue: "owner-1",
+		timeout:   time.Minute,
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	if err := lock.SpinAcquire(ctx); err == nil {
+		t.Fatal("SpinAcquire error = nil, want transport error")
+	}
+}
+
+func TestDistributedLockAcquireReturnsCleanupError(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	r.luaDeleteIfEqual = redis.NewScript(`return redis.error_reply("cleanup failed")`)
+	lock := &DistributedLock{
+		client:    r,
+		lockKey:   "lock:document",
+		lockValue: "owner-1",
+		timeout:   time.Minute,
+	}
+
+	acquired, err := lock.Acquire(t.Context())
+	if err == nil {
+		t.Fatal("Acquire error = nil, want cleanup error")
+	}
+	if acquired {
+		t.Fatal("Acquire acquired = true on cleanup failure, want false")
+	}
+
+	exists, err := r.client.Exists(t.Context(), lock.lockKey).Result()
+	if err != nil {
+		t.Fatalf("check lock key after cleanup failure: %v", err)
+	}
+	if exists != 0 {
+		t.Fatal("Acquire attempted SetNX after cleanup failure")
 	}
 }

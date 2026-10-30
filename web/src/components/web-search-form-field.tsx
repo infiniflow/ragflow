@@ -20,6 +20,8 @@ import firecrawlLogo from '@/assets/firecrawl.png';
 import linkupLogo from '@/assets/linkup.png';
 import parallelLogo from '@/assets/svg/parallel.svg';
 import queritLogo from '@/assets/querit.png';
+import search1apiLogo from '@/assets/search1api.png';
+import searchapiLogo from '@/assets/searchapi.png';
 import serplyLogo from '@/assets/serply.png';
 import tavilyLogo from '@/assets/svg/tavily.svg';
 import youcomLogo from '@/assets/svg/youcom.svg';
@@ -68,6 +70,16 @@ const webSearchProviderCatalog = [
     name: 'Querit',
     logo: queritLogo,
     value: WebSearchProvider.Querit,
+  },
+  {
+    name: 'Search1API',
+    logo: search1apiLogo,
+    value: WebSearchProvider.Search1API,
+  },
+  {
+    name: 'SearchApi',
+    logo: searchapiLogo,
+    value: WebSearchProvider.SearchApi,
   },
   {
     name: 'Serply',
@@ -147,6 +159,18 @@ const providerKeyConfig = {
     tip: 'queritApiKeyTip',
     placeholder: 'queritApiKeyMessage',
     helpUrl: 'https://querit.ai',
+  },
+  [WebSearchProvider.Search1API]: {
+    name: 'prompt_config.search1api_api_key',
+    tip: 'search1apiApiKeyTip',
+    placeholder: 'search1apiApiKeyMessage',
+    helpUrl: 'https://app.s1.dev',
+  },
+  [WebSearchProvider.SearchApi]: {
+    name: 'prompt_config.searchapi_api_key',
+    tip: 'searchapiApiKeyTip',
+    placeholder: 'searchapiApiKeyMessage',
+    helpUrl: 'https://www.searchapi.io',
   },
   [WebSearchProvider.Serply]: {
     name: 'prompt_config.serply_api_key',

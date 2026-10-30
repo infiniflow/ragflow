@@ -18,6 +18,8 @@ package component
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -423,14 +425,79 @@ func TestMessage_DeferredStreamSurfacesResultError(t *testing.T) {
 	})
 	ctx := runtime.WithDeferredNodeRegistry(withStateForTest(t.Context(), state))
 	completed := false
-	runtime.RegisterDeferredNode(ctx, "agent_0", func() { completed = true })
+	var completedErr error
+	runtime.RegisterDeferredNode(ctx, "agent_0", func(err error) {
+		completed = true
+		completedErr = err
+	})
 
 	_, err := c.Invoke(ctx, nil, map[string]any{"text": "{{agent_0@content}}"})
 	if err == nil || !strings.Contains(err.Error(), "upstream 402") {
 		t.Fatalf("Invoke error = %v, want upstream 402", err)
 	}
-	if completed {
-		t.Fatal("deferred node completed after result _ERROR")
+	if !completed || completedErr == nil || !strings.Contains(completedErr.Error(), "upstream 402") {
+		t.Fatalf("expected deferred node completion with error, got completed=%v, err=%v", completed, completedErr)
+	}
+}
+
+func TestMessage_DeferredStreamOpenFailure(t *testing.T) {
+	for _, cause := range []error{errors.New("model unavailable"), context.Canceled, context.DeadlineExceeded} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			c, _ := NewMessageComponent(nil)
+			state := canvas.NewCanvasState("run-deferred-open-error", "task-deferred-open-error")
+			state.SetVar("agent_0", "content", &runtime.DeferredStream{
+				Open: func(context.Context, runtime.AgentDeltaSink) (map[string]any, error) {
+					return nil, fmt.Errorf("agent failed: %w", cause)
+				},
+			})
+			_, err := c.Invoke(withStateForTest(t.Context(), state), nil, map[string]any{"text": "{{agent_0@content}}"})
+			deferred, ok := errors.AsType[*runtime.DeferredStreamError](err)
+			if !ok {
+				t.Fatalf("Invoke error = %v, want DeferredStreamError", err)
+			}
+			if cause == context.Canceled || cause == context.DeadlineExceeded {
+				if !errors.Is(err, cause) {
+					t.Fatalf("Invoke error = %v, want preserved %v", err, cause)
+				}
+			} else if got := deferred.FailureText(); got != "**ERROR**: agent failed: model unavailable" {
+				t.Fatalf("failure text = %q, want chat error envelope", got)
+			}
+		})
+	}
+}
+
+func TestMessage_DeferredStreamErrorPersistsOutputsBeforeCompletion(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result map[string]any
+		err    error
+	}{
+		{name: "provider error", result: map[string]any{"tool_invocations": []map[string]any{{"tool_name": "search"}}}, err: errors.New("provider failed")},
+		{name: "step exhaustion", result: map[string]any{"_ERROR": "**ERROR**: exceeds max steps", "tool_invocations": []map[string]any{{"tool_name": "search"}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := NewMessageComponent(nil)
+			state := canvas.NewCanvasState("run-deferred-output", "task-deferred-output")
+			state.SetVar("agent_0", "content", &runtime.DeferredStream{
+				Open: func(context.Context, runtime.AgentDeltaSink) (map[string]any, error) {
+					return tc.result, tc.err
+				},
+			})
+			ctx := runtime.WithDeferredNodeRegistry(withStateForTest(t.Context(), state))
+			var outputAtCompletion any
+			runtime.RegisterDeferredNode(ctx, "agent_0", func(error) {
+				outputAtCompletion, _ = state.GetVar("agent_0@tool_invocations")
+			})
+
+			_, err := c.Invoke(ctx, nil, map[string]any{"text": "{{agent_0@content}}"})
+			if err == nil {
+				t.Fatal("expected deferred stream failure")
+			}
+			invocations, ok := outputAtCompletion.([]map[string]any)
+			if !ok || len(invocations) != 1 || invocations[0]["tool_name"] != "search" {
+				t.Fatalf("tool_invocations at completion = %#v, want recorded search invocation", outputAtCompletion)
+			}
+		})
 	}
 }
 
@@ -452,7 +519,7 @@ func TestMessage_FormalizedContentFallback(t *testing.T) {
 	}
 }
 
-func TestMessage_SingleStringFallback(t *testing.T) {
+func TestMessage_DoesNotUseUnconfiguredUpstreamResult(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-6", "task-6")
 	ctx := withStateForTest(t.Context(), state)
@@ -464,8 +531,49 @@ func TestMessage_SingleStringFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, _ := out["content"].(string); got != "single upstream text" {
-		t.Errorf("content: got %q, want %q", got, "single upstream text")
+	if got, _ := out["content"].(string); got != "" {
+		t.Errorf("content: got %q, want empty content", got)
+	}
+}
+
+func TestMessage_AttachmentOnlyDoesNotResurrectResult(t *testing.T) {
+	c, _ := NewMessageComponent(map[string]any{"content": []any{"{{source@attachments}}"}})
+	state := canvas.NewCanvasState("run-attachment-only", "task-attachment-only")
+	state.SetVar("source", "attachments", []map[string]any{{
+		"doc_id": "d-1", "filename": "report.md", "mime_type": "text/markdown",
+		"url": "/api/v1/agents/attachments/d-1/download",
+	}})
+	ctx := withStateForTest(t.Context(), state)
+	out, err := c.Invoke(ctx, nil, map[string]any{
+		"content":     "upstream content",
+		"attachments": []any{map[string]any{"doc_id": "d-1", "filename": "report.md", "mime_type": "text/markdown", "url": "/api/v1/agents/attachments/d-1/download"}},
+		"result":      "upstream result",
+		"stream":      false,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); strings.Contains(got, "upstream result") || strings.Contains(got, "upstream content") {
+		t.Fatalf("content = %q, must not contain unconfigured upstream text", got)
+	}
+	downloads, ok := out["downloads"].([]DownloadInfo)
+	if !ok || len(downloads) != 1 || downloads[0].DocID != "d-1" {
+		t.Fatalf("downloads = %#v, want attachment metadata", out["downloads"])
+	}
+}
+
+func TestMessage_MissingAttachmentIsOptional(t *testing.T) {
+	c, _ := NewMessageComponent(map[string]any{"content": []any{"{{source@attachments}}"}})
+	state := canvas.NewCanvasState("run-missing-attachment", "task-missing-attachment")
+	ctx := withStateForTest(t.Context(), state)
+	out, err := c.Invoke(ctx, nil, map[string]any{
+		"content": "upstream content", "result": "upstream result",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "" {
+		t.Fatalf("content = %q, want empty", got)
 	}
 }
 

@@ -114,10 +114,10 @@ func setupTestDocEngine(t *testing.T, engineType engine.EngineType, tenantID, da
 	_ = docEngine.DropChunkStore(ctx, baseName, datasetID)
 
 	// Create chunk store (note: vec dimension = 2 because our test chunks have q_2_vec)
-	if err := docEngine.CreateChunkStore(ctx, baseName, datasetID, 2, "naive"); err != nil {
+	if err := docEngine.CreateChunkStore(ctx, baseName, datasetID, 2, "naive", ""); err != nil {
 		// If create failed, maybe it exists; try dropping and recreating
 		_ = docEngine.DropChunkStore(ctx, baseName, datasetID)
-		if err := docEngine.CreateChunkStore(ctx, baseName, datasetID, 2, "naive"); err != nil {
+		if err := docEngine.CreateChunkStore(ctx, baseName, datasetID, 2, "naive", ""); err != nil {
 			_ = docEngine.Close()
 			t.Fatalf("Could not create chunk store: %v", err)
 		}
@@ -209,7 +209,7 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetByID failed: %v", err)
 			}
-			taskCtx, err := LoadFromIngestionTask(ctx, ingestionTask)
+			taskCtx, err := LoadFromIngestionTask(ctx, dao.DB, ingestionTask)
 			if err != nil {
 				t.Fatalf("LoadFromIngestionTask failed: %v", err)
 			}
@@ -256,7 +256,7 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 			svc.WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
 				insertChunksCalled = true
 				t.Logf("DocEngine InsertChunks called! baseName=%s datasetID=%s len(chunks)=%d", baseName, datasetID, len(chunks))
-				ids, err := docEngine.InsertChunks(ctx, chunks, baseName, datasetID)
+				ids, err := docEngine.InsertChunks(ctx, chunks, baseName, datasetID, "")
 				if err != nil {
 					t.Logf("WARNING: InsertChunks err=%v", err)
 				}

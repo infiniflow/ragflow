@@ -66,6 +66,8 @@ sse
 
 If the MCP server does not require authentication, leave **Authorization Token** empty. The manual form does not expose arbitrary headers, variables, or a description field. For another authentication scheme or custom headers, use a JSON import with a string-to-string `headers` object, as shown in the example below.
 
+When the server supports bearer authentication, keep the URL free of credentials and put the key in **Authorization Token**. RAGFlow's own MCP endpoint uses this header; query-string keys do not authenticate it. Existing third-party query-authentication URLs remain supported because their authentication requirements depend on the server. Ordinary MCP configuration responses mask the authorization token, and unchanged edits and connection tests reuse the saved value server-side. Explicit configuration downloads include credentials so they can be imported again.
+
 Make sure that the path in **URL** matches the endpoint actually exposed by the MCP server. For example, a Streamable HTTP server commonly uses `/mcp`, while an SSE server commonly uses `/sse`.
 
 RAGFlow keeps **Save** disabled until the current connection settings have been tested successfully and at least one tool has been discovered. If you change the URL, server type, or authorization token, test the connection again before saving.
@@ -75,10 +77,10 @@ RAGFlow keeps **Save** disabled until the current connection settings have been 
 RAGFlow validates the endpoint before connecting:
 
 - The URL must use `http://` or `https://` and contain a host. `stdio://` is not supported.
-- Every address returned by DNS must be publicly routable. Loopback, private, link-local, reserved, Docker-network, and other non-public addresses are rejected.
+- By default, every address returned by DNS must be publicly routable. Loopback, private, link-local, reserved, Docker-network, and other non-public addresses are rejected.
 - The Go MCP client connects to the validated address directly and does not use HTTP proxy environment variables.
 
-Consequently, endpoints such as `localhost`, `127.0.0.1`, `::1`, `10.x.x.x`, `172.16.x.x` through `172.31.x.x`, and `192.168.x.x` cannot be added through this path. `ALLOW_ANY_HOST` does not disable this validation. Publish the MCP endpoint on a public address whose DNS records all resolve to public addresses.
+To connect to self-hosted MCP endpoints on private or Docker networks, set `ALLOW_ANY_HOST=true` in the RAGFlow backend environment and restart the backend. This shared setting also permits private database and connector hosts. Accepted true values are `1`, `true`, `yes`, and `on` (case-insensitive, with surrounding whitespace ignored). HTTP/HTTPS scheme validation, DNS resolution, and connection pinning remain enabled.
 
 ## Troubleshoot a failed connection
 

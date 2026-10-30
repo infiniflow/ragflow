@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -65,10 +66,11 @@ func Rerank(
 	cfield string,
 	qb *QueryBuilder,
 	rankFeature map[string]float64,
+	language string,
 ) (sim []float64, tsim []float64, vsim []float64, err error) {
 	// If reranker model is provided and there are results, use model reranking
 	if rerankModel != nil && total > 0 {
-		return RerankByModel(ctx, rerankModel, chunks, nil, nil, query, tkWeight, vtWeight, cfield, qb, rankFeature)
+		return RerankByModel(ctx, rerankModel, chunks, nil, nil, query, tkWeight, vtWeight, cfield, qb, rankFeature, language)
 	}
 
 	// Otherwise, use fallback logic based on engine type
@@ -84,7 +86,7 @@ func Rerank(
 	}
 
 	// For Elasticsearch: need to perform reranking and apply rank features
-	sim, tsim, vsim = RerankStandard(chunks, keywords, questionVector, query, tkWeight, vtWeight, cfield, qb, rankFeature)
+	sim, tsim, vsim = RerankStandard(chunks, keywords, questionVector, query, tkWeight, vtWeight, cfield, qb, rankFeature, language)
 	return sim, tsim, vsim, nil
 }
 
@@ -100,6 +102,7 @@ func RerankByModel(
 	cfield string,
 	qb *QueryBuilder,
 	rankFeature map[string]float64,
+	language string,
 ) (sim []float64, tsim []float64, vsim []float64, err error) {
 	if chunks == nil || len(chunks) == 0 {
 		return []float64{}, []float64{}, []float64{}, nil
@@ -112,7 +115,7 @@ func RerankByModel(
 	// Extract keywords from query
 	keywords := []string{}
 	if qb != nil {
-		_, keywords = qb.Question(query, "qa", 0.6)
+		_, keywords = qb.Question(query, "qa", 0.6, language)
 	}
 	common.Info("RerankByModel keywords extracted", zap.Any("keywords", keywords))
 
@@ -132,19 +135,10 @@ func RerankByModel(
 			}
 		}
 
-		contentLtks := extractContentTokens(chunk, cfield)
-		titleTks := extractTitleTokens(chunk)
-		importantKwd := extractImportantKeywords(chunk)
-		questionTks := extractQuestionTokens(chunk)
-
 		// Unlike RerankStandard/RerankWithKNN, the fields are not repeated here:
 		// these tokens are joined back into `docs` for a cross-encoder, where
 		// duplicating a field would distort the model's own scoring.
-		tks := make([]string, 0, len(contentLtks)+len(titleTks)+len(importantKwd)+len(questionTks))
-		tks = append(tks, contentLtks...)
-		tks = append(tks, titleTks...)
-		tks = append(tks, importantKwd...)
-		tks = append(tks, questionTks...)
+		tks := buildRerankTokens(chunk, cfield, 1, 1, 1)
 		insTw = append(insTw, tks)
 
 		// Feed the reranker the natural chunk text (markup preserved), not the
@@ -162,10 +156,10 @@ func RerankByModel(
 	}
 
 	// Calculate token similarity
-	tsim = TokenSimilarity(keywords, insTw, qb)
+	tsim = TokenSimilarity(keywords, insTw, qb, language)
 
 	// Get similarity scores from reranker model
-	rerankResponse, err := rerankModel.Rerank(ctx, models.RerankRequest{Query: query, Documents: docs}, rerankModel.APIConfig, &models.RerankConfig{}, nil)
+	rerankResponse, err := rerankModel.Rerank(ctx, models.RerankRequest{Query: query, Documents: docs}, &models.RerankConfig{}, nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -277,6 +271,7 @@ func RerankStandard(
 	cfield string,
 	qb *QueryBuilder,
 	rankFeature map[string]float64,
+	language string,
 ) (sim []float64, tsim []float64, vsim []float64) {
 	chunkCount := len(chunks)
 	if chunkCount == 0 {
@@ -287,7 +282,7 @@ func RerankStandard(
 
 	// Compute keywords fresh from query
 	if qb != nil && len(keywords) == 0 {
-		_, keywords = qb.Question(query, "qa", 0.6)
+		_, keywords = qb.Question(query, "qa", 0.6, language)
 	}
 	common.Info("RerankStandard keywords", zap.Any("keywords", keywords))
 
@@ -306,25 +301,8 @@ func RerankStandard(
 		chunkVector := extractVector(chunk, vectorColumn, zeroVector)
 		insEmbd = append(insEmbd, chunkVector)
 
-		// Extract tokens
-		contentLtks := extractContentTokens(chunk, cfield)
-		titleTks := extractTitleTokens(chunk)
-		questionTks := extractQuestionTokens(chunk)
-		importantKwd := extractImportantKeywords(chunk)
-
-		// Combine tokens with weights: content + title*2 + important_kwd*5 + question_tks*6
-		tks := make([]string, 0, len(contentLtks)+len(titleTks)*2+len(importantKwd)*5+len(questionTks)*6)
-		tks = append(tks, contentLtks...)
-		for i := 0; i < 2; i++ {
-			tks = append(tks, titleTks...)
-		}
-		for i := 0; i < 5; i++ {
-			tks = append(tks, importantKwd...)
-		}
-		for i := 0; i < 6; i++ {
-			tks = append(tks, questionTks...)
-		}
-		insTw = append(insTw, tks)
+		insTw = append(insTw, buildRerankTokens(
+			chunk, cfield, titleRepeat, importantRepeat, questionRepeat))
 	}
 
 	if len(insEmbd) == 0 {
@@ -332,7 +310,7 @@ func RerankStandard(
 	}
 
 	// Calculate hybrid similarity
-	sim, tsim, vsim = HybridSimilarity(questionVector, insEmbd, keywords, insTw, tkWeight, vtWeight, qb)
+	sim, tsim, vsim = HybridSimilarity(questionVector, insEmbd, keywords, insTw, tkWeight, vtWeight, qb, language)
 
 	// Apply rank feature scores (tag_score * 10 + pagerank)
 	// Always apply pageranks, even when rankFeature is nil/empty
@@ -376,6 +354,7 @@ func HybridSimilarity(
 	btkss [][]string,
 	tkWeight, vtWeight float64,
 	qb *QueryBuilder,
+	language string,
 ) (sim []float64, tsim []float64, vsim []float64) {
 	// Calculate vector similarities using cosine similarity
 	vsim = make([]float64, len(bvecs))
@@ -383,7 +362,7 @@ func HybridSimilarity(
 		vsim[i] = cosineSimilarity(avec, bvec)
 	}
 
-	tsim = TokenSimilarity(atks, btkss, qb)
+	tsim = TokenSimilarity(atks, btkss, qb, language)
 
 	// Check if all vector similarities are zero
 	allZero := true
@@ -395,7 +374,7 @@ func HybridSimilarity(
 	}
 
 	if allZero {
-		return tsim, tsim, vsim
+		return slices.Clone(tsim), tsim, vsim
 	}
 
 	// Combine similarities
@@ -409,11 +388,11 @@ func HybridSimilarity(
 }
 
 // TokenSimilarity calculates token-based similarity
-func TokenSimilarity(atks []string, btkss [][]string, qb *QueryBuilder) []float64 {
-	atksDict, atksKeyOrder := tokensToDict(atks, qb)
+func TokenSimilarity(atks []string, btkss [][]string, qb *QueryBuilder, language string) []float64 {
+	atksDict, atksKeyOrder := tokensToDict(atks, qb, language)
 	btkssDicts := make([]map[string]float64, len(btkss))
 	for i, btks := range btkss {
-		btkssDicts[i], _ = tokensToDict(btks, qb)
+		btkssDicts[i], _ = tokensToDict(btks, qb, language)
 	}
 
 	similarities := make([]float64, len(btkssDicts))
@@ -426,13 +405,13 @@ func TokenSimilarity(atks []string, btkss [][]string, qb *QueryBuilder) []float6
 
 // tokensToDict converts tokens to a weighted dictionary.
 // Also returns the insertion order of keys to match Python's dict insertion order.
-func tokensToDict(tks []string, qb *QueryBuilder) (map[string]float64, []string) {
+func tokensToDict(tks []string, qb *QueryBuilder, language string) (map[string]float64, []string) {
 	d := make(map[string]float64)
 	var keyOrder []string
 	if qb == nil || qb.termWeight == nil {
 		return d, keyOrder
 	}
-	wts := qb.termWeight.Weights(tks, false)
+	wts := qb.termWeight.Weights(tks, false, language)
 
 	for i, tw := range wts {
 		t := tw.Term
@@ -623,6 +602,44 @@ func extractImportantKeywords(fields map[string]interface{}) []string {
 	}
 }
 
+// Field repetition multipliers for the token-based rerank paths. RerankByModel
+// passes 1 for all three: it joins the tokens into natural text for a
+// cross-encoder, where duplication would distort the model's own score.
+const (
+	titleRepeat     = 2
+	importantRepeat = 5
+	questionRepeat  = 6
+)
+
+// buildRerankTokens assembles content + title*titleRepeat +
+// important*importantRepeat + question*questionRepeat, in that order.
+// The returned slice is never nil.
+func buildRerankTokens(
+	chunk map[string]interface{},
+	cfield string,
+	titleRepeat, importantRepeat, questionRepeat int,
+) []string {
+	content := extractContentTokens(chunk, cfield)
+	title := extractTitleTokens(chunk)
+	important := extractImportantKeywords(chunk)
+	question := extractQuestionTokens(chunk)
+
+	tks := make([]string, 0,
+		len(content)+len(title)*titleRepeat+
+			len(important)*importantRepeat+len(question)*questionRepeat)
+	tks = append(tks, content...)
+	for i := 0; i < titleRepeat; i++ {
+		tks = append(tks, title...)
+	}
+	for i := 0; i < importantRepeat; i++ {
+		tks = append(tks, important...)
+	}
+	for i := 0; i < questionRepeat; i++ {
+		tks = append(tks, question...)
+	}
+	return tks
+}
+
 // cosineSimilarity calculates cosine similarity between two vectors.
 // Three parallel pairwise sums (dot, ||a||², ||b||²) keep precision
 // comparable to numpy's float64 reductions.
@@ -659,6 +676,17 @@ func parseFloat(s string) (float64, error) {
 // Formula: tag_score * 10 + pagerank (per document)
 func applyRankFeatureScores(chunks []map[string]interface{}, sim []float64, rankFeature map[string]float64) []float64 {
 	if len(chunks) == 0 || len(sim) == 0 {
+		return sim
+	}
+	// Only the overlapping prefix carries chunk-level rank features; scores
+	// beyond the chunk list keep their input value. A length mismatch is an
+	// upstream bug, so log it instead of silently scoring part of the list.
+	if len(sim) != len(chunks) {
+		common.Warn("rank feature: sim/chunks length mismatch, applying rank features to the overlapping prefix only",
+			zap.Int("simLen", len(sim)), zap.Int("chunkLen", len(chunks)))
+	}
+	if len(sim) > len(chunks) {
+		applyRankFeatureScores(chunks, sim[:len(chunks)], rankFeature)
 		return sim
 	}
 
@@ -762,6 +790,17 @@ func applyRankFeatureScores(chunks []map[string]interface{}, sim []float64, rank
 // This is used when we have the field map from search results
 func applyRankFeatureScoresForIDs(ids []string, field map[string]map[string]interface{}, sim []float64, rankFeature map[string]float64) []float64 {
 	if len(ids) == 0 || len(sim) == 0 {
+		return sim
+	}
+	// Only the overlapping prefix carries chunk-level rank features; scores
+	// beyond the id list keep their input value. A length mismatch is an
+	// upstream bug, so log it instead of silently scoring part of the list.
+	if len(sim) != len(ids) {
+		common.Warn("rank feature: sim/ids length mismatch, applying rank features to the overlapping prefix only",
+			zap.Int("simLen", len(sim)), zap.Int("idLen", len(ids)))
+	}
+	if len(sim) > len(ids) {
+		applyRankFeatureScoresForIDs(ids, field, sim[:len(ids)], rankFeature)
 		return sim
 	}
 
@@ -921,6 +960,7 @@ func RerankWithKNN(
 	cfield string,
 	qb *QueryBuilder,
 	rankFeature map[string]float64,
+	language string,
 ) (sim []float64, tsim []float64, vsim []float64) {
 	if len(ids) == 0 {
 		return []float64{}, []float64{}, []float64{}
@@ -947,7 +987,7 @@ func RerankWithKNN(
 	// Extract keywords from query
 	keywords := []string{}
 	if qb != nil {
-		_, keywords = qb.Question(query, "qa", 0.6)
+		_, keywords = qb.Question(query, "qa", 0.6, language)
 	}
 	common.InfoCtx(ctx, "RerankWithKNN keywords", zap.Any("keywords", keywords))
 
@@ -965,29 +1005,12 @@ func RerankWithKNN(
 		}
 
 		// Normalize text content - split, dedupe while preserving order (OrderedDict effect)
-		contentLtks := extractContentTokens(chunk, cfield)
-		titleTks := extractTitleTokens(chunk)
-		questionTks := extractQuestionTokens(chunk)
-		importantKwd := extractImportantKeywords(chunk)
-
-		// Combine tokens with weights: content + title*2 + important_kwd*5 + question_tks*6
-		// This matches Python: tks = content_ltks + title_tks * 2 + important_kwd * 5 + question_tks * 6
-		tks := make([]string, 0, len(contentLtks)+len(titleTks)*2+len(importantKwd)*5+len(questionTks)*6)
-		tks = append(tks, contentLtks...)
-		for i := 0; i < 2; i++ {
-			tks = append(tks, titleTks...)
-		}
-		for i := 0; i < 5; i++ {
-			tks = append(tks, importantKwd...)
-		}
-		for i := 0; i < 6; i++ {
-			tks = append(tks, questionTks...)
-		}
-		insTw = append(insTw, tks)
+		insTw = append(insTw, buildRerankTokens(
+			chunk, cfield, titleRepeat, importantRepeat, questionRepeat))
 	}
 
 	// Calculate token similarity
-	tsim = TokenSimilarity(keywords, insTw, qb)
+	tsim = TokenSimilarity(keywords, insTw, qb, language)
 	common.InfoCtx(ctx, "RerankWithKNN tsim", zap.Float64s("tsim", tsim))
 
 	// Build vector similarity from knnScores - matches Python's np.array([knn_scores.get(chunk_id, 0.0) for chunk_id in sres.ids])
@@ -1032,6 +1055,12 @@ func toFloat64(v interface{}) (float64, bool) {
 		return float64(val), true
 	case int32:
 		return float64(val), true
+	case string:
+		// The engine's field projection stringifies non-string values
+		// (pagerank_fea arrives as "7"), and Python's rerank coerces the same
+		// string through np.array(..., dtype=float).
+		f, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
+		return f, err == nil
 	default:
 		return 0, false
 	}

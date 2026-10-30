@@ -18,13 +18,10 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	neturl "net/url"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -357,14 +354,13 @@ func buildKeenableReferences(envelope map[string]any) ([]map[string]any, []map[s
 		if !ok {
 			continue
 		}
-		content := truncateKeenableRunes(strings.TrimSpace(keenableValueString(result["description"])), 10000)
-		if content == "" || content == "None" {
+		content := truncateKeenableRunes(keenableResultContent(result), 10000)
+		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(keenableHashInt(content, 100000000), 10)
 		title := keenableValueString(result["title"])
 		resultURL := keenableValueString(result["url"])
-		displayID := strconv.FormatInt(keenableHashInt(documentID, 500), 10)
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -387,6 +383,18 @@ func buildKeenableReferences(envelope map[string]any) ([]map[string]any, []map[s
 	return chunks, docAggs
 }
 
+// keenableResultContent returns a result's page text. Keenable carries it in
+// "snippet" and often leaves "description" empty, so "description" is only
+// the fallback.
+func keenableResultContent(result map[string]any) string {
+	for _, field := range []string{"snippet", "description"} {
+		if content := keenableValueString(result[field]); content != "" && content != "None" {
+			return content
+		}
+	}
+	return ""
+}
+
 func renderKeenableReferences(chunks []map[string]any) string {
 	blocks := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -405,12 +413,6 @@ func keenableValueString(value any) string {
 		return "None"
 	}
 	return strings.TrimSpace(fmt.Sprint(value))
-}
-
-func keenableHashInt(value string, modulus int64) int64 {
-	sum := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(sum[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateKeenableRunes(value string, limit int) string {

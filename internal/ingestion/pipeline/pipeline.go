@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"ragflow/internal/agent/canvas"
@@ -28,10 +29,15 @@ import (
 	"ragflow/internal/common"
 	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/ingestion/mediacache"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 )
+
+var _ mediacache.Backend = (*kvrocks.Client)(nil)
 
 // Pipeline is a compiled ingestion canvas plus task-scoped metadata.
 type Pipeline struct {
@@ -40,6 +46,8 @@ type Pipeline struct {
 	// the document table for existing status projections.
 	canvas  *canvas.Canvas
 	tracker *canvas.RunTracker       // optional injected; nil -> resolve at Run
+	kv      *kvrocks.Client          // optional; nil -> no tracker fallback (unit/test runs)
+	media   media.Cache              // optional injected run media cache
 	factory runtime.ComponentFactory // optional instance-scoped component factory
 	sink    ProgressSink             // optional progress sink; nil -> drop events (DB-independent)
 }
@@ -49,10 +57,18 @@ type Pipeline struct {
 type PipelineOption func(*Pipeline)
 
 // WithRunTracker injects a RunTracker for progress mirroring (terminal
-// run-status marks). When unset, Run resolves one from the global Kvrocks
-// client.
+// run-status marks). When unset and no Kvrocks client is configured, Run does
+// not mirror progress.
 func WithRunTracker(t *canvas.RunTracker) PipelineOption {
 	return func(p *Pipeline) { p.tracker = t }
+}
+
+// WithKV injects the Kvrocks client used to resolve a RunTracker when none is
+// injected. It replaces the previous global kvrocks.Get() lookup, so the
+// pipeline no longer reads a process-wide singleton (arch_test.go guards that
+// rule). A nil client disables the RunTracker fallback.
+func WithKV(kv *kvrocks.Client) PipelineOption {
+	return func(p *Pipeline) { p.kv = kv }
 }
 
 // WithDocumentID binds the pipeline's owning document so numeric progress can
@@ -97,6 +113,10 @@ func WithProgressSink(s ProgressSink) PipelineOption {
 // It accepts either the inner canvas DSL or the template wrapper whose
 // top-level `dsl` field carries that canvas.
 func NewPipelineFromDSL(dsl []byte, taskID string, opts ...PipelineOption) (*Pipeline, error) {
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return nil, errors.New("pipeline: task id is required")
+	}
 	// UnwrapCanvasDSL is the single source of truth for stripping the
 	// optional {"dsl": {...}} canvas envelope; it also reports a nil/unparseable
 	// DSL.
@@ -175,8 +195,7 @@ func cloneMapOrEmpty(m map[string]any) map[string]any {
 }
 
 // defaultTrackerTTL is the expiry applied to the RunTracker run-status hash.
-// It matches the per-chunk cache TTL (chunkcache.TTL) so both expire on the
-// same horizon.
+// It matches the model-result cache TTL; media has its own one-day TTL.
 var defaultTrackerTTL = 7 * 24 * time.Hour
 
 // Run executes the full ingestion graph described by the canonical DSL.
@@ -206,7 +225,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	// MarkSucceeded/MarkFailed/MarkCancelled marks). Resume-from-checkpoint is
 	// intentionally not supported: the pipeline always runs the full graph
 	// from the entry node, and component-level replay decisions (e.g. serving
-	// prior LLM/embedding results from the per-chunk cache) belong to the
+	// prior LLM/embedding results from the run cache) belong to the
 	// components themselves.
 	tracker := p.resolveTracker()
 
@@ -251,10 +270,17 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	// them mid-run.
 	globals.SeedIngestionGlobals(runCtx, current)
 	// Expose the task id on the run context so every component can register the
-	// per-chunk cache keys it writes into the task manifest (chunkcache). Without
+	// run-cache keys it writes into the task manifest (chunkcache). Without
 	// this the manifest is never populated and PurgeTask on success becomes a
 	// no-op, leaving orphaned cache entries until TTL expiry.
 	globals.SetTaskID(runCtx, p.taskID)
+	mediaCache := p.media
+	if mediaCache == nil && p.kv != nil {
+		mediaCache = mediacache.New(p.kv, p.taskID)
+	}
+	if mediaCache != nil {
+		runCtx = media.WithCache(runCtx, mediaCache)
+	}
 
 	return p.runPlain(runCtx, current, compiled, tracker, runState)
 }
@@ -266,8 +292,8 @@ func (p *Pipeline) resolveTracker() *canvas.RunTracker {
 	if p.tracker != nil {
 		return p.tracker
 	}
-	if kvrocks.Get() != nil {
-		return canvas.NewRunTracker(defaultTrackerTTL)
+	if p.kv != nil {
+		return canvas.NewRunTrackerWithClient(p.kv.GetClient(), defaultTrackerTTL)
 	}
 	return nil
 }
@@ -343,11 +369,7 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 		case runtime.PhaseExit:
 			msg = componentName + " Done"
 		case runtime.PhaseError:
-			if ev.Err != nil {
-				msg = componentName + ": " + ev.Err.Error()
-			} else {
-				msg = componentName + " Error"
-			}
+			msg = formatComponentFailure(componentName, ev.Err)
 		}
 		// Surface every component lifecycle event as a structured log line so
 		// a component failure (e.g. an LLM/client error) is captured in
@@ -395,6 +417,30 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 			Phase:      int(ev.Phase),
 		})
 	}
+}
+
+func formatComponentFailure(componentName string, err error) string {
+	if err == nil {
+		return componentName + " Error"
+	}
+	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), context.DeadlineExceeded.Error()) {
+		switch componentName {
+		case schema.ComponentNameExtractor:
+			return "Extractor: Document extraction timed out while waiting for the configured LLM. Check that the model service is reachable, then retry."
+		case schema.ComponentNameCompiler:
+			return "Compiler: Document compilation timed out. Check that the configured model service is reachable and responsive, then retry."
+		}
+	}
+
+	message := err.Error()
+	prefix := componentName + ":"
+	for componentName != "" && strings.HasPrefix(strings.ToLower(message), strings.ToLower(prefix)) {
+		message = strings.TrimSpace(message[len(prefix):])
+	}
+	if componentName == "" {
+		return message
+	}
+	return componentName + ": " + message
 }
 
 type detailedProgressSink interface {

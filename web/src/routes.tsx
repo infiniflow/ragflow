@@ -15,15 +15,9 @@
  */
 
 import { lazy, memo, Suspense } from 'react';
-import {
-  createBrowserRouter,
-  Navigate,
-  redirect,
-  type RouteObject,
-} from 'react-router';
+import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 import FallbackComponent from './components/fallback-component';
 import { IS_ENTERPRISE } from './pages/admin/utils';
-import authorizationUtil from './utils/authorization-util';
 
 export enum Routes {
   Root = '/',
@@ -37,6 +31,7 @@ export enum Routes {
   Agent = '/agent',
   AgentTemplates = '/agent-templates',
   Agents = '/agents',
+  Pipeline = '/pipeline',
   Explore = '/explore',
   AgentExplore = `${Routes.Agent}/:id/explore`,
   Memories = '/memories',
@@ -168,16 +163,6 @@ const routeConfigOptions = [
     path: Routes.Root,
     layout: false,
     Component: () => import('@/layouts/root-layout'),
-    loader: ({ request }: { request: Request }) => {
-      const url = new URL(request.url);
-      const auth = url.searchParams.get('auth');
-      if (auth) {
-        authorizationUtil.setAuthorization(auth);
-        url.searchParams.delete('auth');
-        return redirect(`${url.pathname}${url.search}`);
-      }
-      return null;
-    },
     children: [
       {
         path: Routes.Root,
@@ -358,6 +343,10 @@ const routeConfigOptions = [
         errorElement: <FallbackComponent />,
       },
     ],
+  },
+  {
+    path: `${Routes.Pipeline}/:id`,
+    Component: () => import('@/pages/builtin-pipeline'),
   },
   {
     path: `${Routes.AgentLogPage}/:id`,

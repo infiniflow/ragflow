@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
@@ -43,14 +44,14 @@ import (
 
 // KBServiceIface abstracts KnowledgebaseService for the Dify handler.
 type KBServiceIface interface {
-	GetByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
-	Accessible(ctx context.Context, kbID, userID string) bool
+	GetKnowledgebaseByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
+	CheckAccess(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error
 }
 
-// ModelResolver abstracts model configuration resolution for the Dify handler.
-type ModelResolver interface {
-	ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*service.ModelTarget, error)
-	ResolveDefaultModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType) (*service.ModelTarget, error)
+// ModelCreator supplies typed model instances to Dify retrieval.
+type ModelCreator interface {
+	NewEmbeddingModel(ctx context.Context, access service.ModelAccess, modelRef string) (*modelModule.EmbeddingModel, error)
+	NewDefaultChatModel(ctx context.Context, access service.ModelAccess) (*modelModule.ChatModel, error)
 }
 
 // MetadataServiceIface abstracts MetadataService for the Dify handler.
@@ -131,12 +132,12 @@ type difyRecord struct {
 
 // DifyRetrievalHandler handles Dify-compatible retrieval requests.
 type DifyRetrievalHandler struct {
-	kbSvc         KBServiceIface
-	modelResolver ModelResolver
-	metadataSvc   MetadataServiceIface
-	retrievalSvc  RetrievalServiceIface
-	docDAO        DocumentDAOIface
-	docEngine     engine.DocEngine
+	kbSvc        KBServiceIface
+	modelFactory ModelCreator
+	metadataSvc  MetadataServiceIface
+	retrievalSvc RetrievalServiceIface
+	docDAO       DocumentDAOIface
+	docEngine    engine.DocEngine
 }
 
 // NewDifyRetrievalHandler creates a new DifyRetrievalHandler.
@@ -144,19 +145,19 @@ type DifyRetrievalHandler struct {
 // a pipeline that depends on per-request model configuration.
 func NewDifyRetrievalHandler(
 	kbSvc KBServiceIface,
-	modelResolver ModelResolver,
+	modelFactory ModelCreator,
 	metadataSvc MetadataServiceIface,
 	retrievalSvc RetrievalServiceIface,
 	docDAO DocumentDAOIface,
 	docEngine engine.DocEngine,
 ) *DifyRetrievalHandler {
 	return &DifyRetrievalHandler{
-		kbSvc:         kbSvc,
-		modelResolver: modelResolver,
-		metadataSvc:   metadataSvc,
-		retrievalSvc:  retrievalSvc,
-		docDAO:        docDAO,
-		docEngine:     docEngine,
+		kbSvc:        kbSvc,
+		modelFactory: modelFactory,
+		metadataSvc:  metadataSvc,
+		retrievalSvc: retrievalSvc,
+		docDAO:       docDAO,
+		docEngine:    docEngine,
 	}
 }
 
@@ -205,7 +206,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	kb, err := h.kbSvc.GetByID(ctx, req.KnowledgeID)
+	kb, err := h.kbSvc.GetKnowledgebaseByID(ctx, req.KnowledgeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			common.ResponseWithHttpCodeData(c, http.StatusNotFound, common.CodeNotFound, nil, "Knowledge base not found!")
@@ -215,8 +216,8 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		return
 	}
 
-	if !h.kbSvc.Accessible(ctx, req.KnowledgeID, user.ID) {
-		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, common.CodeAuthenticationError, nil, "No authorization")
+	if err := h.kbSvc.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KnowledgeID, permission.OperationUse); err != nil {
+		respondHTTPPermissionError(c, err, false)
 		return
 	}
 
@@ -231,16 +232,20 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 	pageSize := 1024
 	if topK != nil {
+		if *topK < 1 || *topK > 1024 {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be between 1 and 1024")
+			return
+		}
 		pageSize = *topK
 	}
 
 	// Get embedding model
-	target, err := h.modelResolver.ResolveModelConfig(ctx, kb.TenantID, entity.ModelTypeEmbedding, kb.EmbdID)
+	access := service.ModelAccess{UserID: user.ID, TenantID: kb.TenantID}
+	embModel, err := h.modelFactory.NewEmbeddingModel(ctx, access, kb.EmbdID)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to get embedding model: %v", err))
 		return
 	}
-	embModel := modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 
 	// Metadata filter
 	metas, metaErr := h.metadataSvc.GetFlattedMetaByKBs(ctx, []string{req.KnowledgeID})
@@ -257,25 +262,30 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		docIDs = []string{service.NoMatchDocIDSentinel}
 	}
 
-	// Label question for rank features
+	// Hand the label result over unconditionally: an empty map says "issue no
+	// rank-feature clause", while a nil pointer would let the nlp layer substitute
+	// its {pagerank_fea: 10} default and add a clause the reference never sends.
 	kbs := []*entity.Knowledgebase{kb}
 	rankFeature := h.metadataSvc.LabelQuestion(ctx, req.Query, kbs)
 
-	// Chunk retrieval
+	// Chunk retrieval. Without RerankCandidatesCount the service defaults the
+	// window to 64 and rejects any top_k above it, including the 1024 default.
+	// Keep 64 as the floor so a small top_k still ranks the same candidates.
+	rerankWindow := max(pageSize, 64)
 	sr := &nlp.RetrievalRequest{
-		Question:            req.Query,
-		TenantIDs:           []string{kb.TenantID},
-		KbIDs:               []string{req.KnowledgeID},
-		DocIDs:              docIDs,
-		Page:                1,
-		PageSize:            pageSize,
-		KNNTopK:             topK,
-		SimilarityThreshold: scoreThreshold,
-		EmbeddingModel:      embModel,
+		Question:              req.Query,
+		TenantIDs:             []string{kb.TenantID},
+		KbIDs:                 []string{req.KnowledgeID},
+		DocIDs:                docIDs,
+		Page:                  1,
+		PageSize:              pageSize,
+		RerankCandidatesCount: &rerankWindow,
+		KNNTopK:               topK,
+		SimilarityThreshold:   scoreThreshold,
+		EmbeddingModel:        embModel,
+		Language:              entity.KnowledgebasesLanguage(kbs),
 	}
-	if rankFeature != nil {
-		sr.RankFeature = &rankFeature
-	}
+	sr.RankFeature = &rankFeature
 
 	result, err := h.retrievalSvc.Retrieval(c.Request.Context(), sr)
 	if err != nil {
@@ -292,11 +302,10 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 	// KG retrieval (optional)
 	if req.UseKG {
-		target, kgErr := h.modelResolver.ResolveDefaultModelConfig(ctx, kb.TenantID, entity.ModelTypeChat)
+		chatModel, kgErr := h.modelFactory.NewDefaultChatModel(ctx, access)
 		if kgErr != nil {
 			common.Warn("KG retrieval: failed to get chat model", zap.String("kbID", req.KnowledgeID), zap.Error(kgErr))
-		} else if target != nil {
-			chatModel := modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+		} else if chatModel != nil {
 			kgPipeline := graph.NewPipeline(
 				h.docEngine,
 				[]string{req.KnowledgeID},
@@ -392,5 +401,5 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 // HealthCheck Health check returns a simple health check response.
 func (h *DifyRetrievalHandler) HealthCheck(c *gin.Context) {
-	common.SuccessNoMessage(c, true)
+	common.SuccessWithData(c, true, "success")
 }

@@ -3,38 +3,46 @@ import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
 import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { ListDeletionKey } from '@/constants/list-deletion';
 import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentListByPage } from '@/hooks/use-agent-request';
 import { useDeleteCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
-import { Routes } from '@/routes';
+import { AgentListItemType } from '@/interfaces/database/agent';
 import { pick } from 'lodash';
-import { Clipboard, ClipboardPlus, FileInput, Plus } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useCallback, useEffect, useState } from 'react';
 import { AgentCard } from './agent-card';
+import {
+  AgentCreateMenu,
+  AgentsEmptyStateActions,
+} from './agent-create-actions';
+import { AgentTabGroup } from './agent-tab-group';
+import { BuiltinCatalogProbe } from './builtin-catalog-probe';
+import { BuiltinPipelineSection } from './builtin-pipeline-section';
+import {
+  resolveAgentsEmptyState,
+  shouldShowBuiltinForCategory,
+} from './builtin-pipeline-list';
 import { CompilationTemplateCard } from './compilation-template-card';
+import { FlowType } from './constant';
 import { CreateAgentDialog } from './create-agent-dialog';
+import { useAgentCreateActions } from './hooks/use-agent-create-actions';
+import { useAgentTab } from './hooks/use-agent-tab';
 import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
 import { useSelectFilters } from './hooks/use-select-filters';
 import { UploadAgentDialog } from './upload-agent-dialog';
 import { useHandleImportJsonFile } from './use-import-json';
 import { useRenameAgent } from './use-rename-agent';
 
-const CompilationGroupCategory = 'compilation_template_group';
-
 export default function Agents() {
-  const { t } = useTranslation();
+  const {
+    searchUrl,
+    setSearchUrl,
+    activeCategory,
+    activeType,
+    handleTabChange,
+  } = useAgentTab();
 
   const {
     data,
@@ -48,10 +56,26 @@ export default function Agents() {
     setFilterValue,
     handleFilterSubmit,
     checkValue,
-  } = useFetchAgentListByPage();
+    debouncedSearchString,
+  } = useFetchAgentListByPage(activeCategory);
 
-  const { navigateToAgentTemplates } = useNavigatePage();
-  const navigate = useNavigate();
+  // Built-in pipelines are parsing methods => dataflow canvases, so the section
+  // (and its catalog request) is mounted only for the Pipeline tab.
+  const builtinVisible = shouldShowBuiltinForCategory(activeCategory);
+
+  // Lifted filtered built-in catalog state, reported by BuiltinCatalogProbe so
+  // the empty-state decision can use *matched* built-in items rather than just
+  // category eligibility.
+  const [builtinState, setBuiltinState] = useState<{
+    length: number;
+    loading: boolean;
+  }>({ length: 0, loading: false });
+
+  useEffect(() => {
+    if (!builtinVisible) {
+      setBuiltinState({ length: 0, loading: false });
+    }
+  }, [builtinVisible]);
 
   const {
     agentRenameLoading,
@@ -75,11 +99,18 @@ export default function Agents() {
     fileUploadVisible,
     onFileUploadOk,
     hideFileUploadModal,
-  } = useHandleImportJsonFile();
+  } = useHandleImportJsonFile(activeCategory);
+
+  const createActions = useAgentCreateActions(
+    activeType,
+    activeCategory,
+    showCreatingModal,
+    handleImportJson,
+  );
 
   const { deleteGroup } = useDeleteCompilationTemplateGroup();
 
-  const filters = useSelectFilters();
+  const filters = useSelectFilters(activeCategory);
 
   useEffect(() => {
     checkValue(filters);
@@ -99,11 +130,17 @@ export default function Agents() {
     setFilterValue,
   });
 
+  const { navigateToCompilationEditor } = useNavigatePage();
+
+  const handleCreateCompilation = useCallback(() => {
+    navigateToCompilationEditor();
+  }, [navigateToCompilationEditor]);
+
   const handleEditCompilation = useCallback(
     (id: string) => () => {
-      navigate(`${Routes.CompilationTemplatesEditNext}/${id}?source=agents`);
+      navigateToCompilationEditor(id);
     },
-    [navigate],
+    [navigateToCompilationEditor],
   );
 
   const handleDeleteCompilation = useCallback(
@@ -113,72 +150,69 @@ export default function Agents() {
     [deleteGroup],
   );
 
-  const [searchUrl, setSearchUrl] = useSearchParams();
   const isCreate = searchUrl.get('isCreate') === 'true';
 
   useEffect(() => {
     if (isCreate) {
       showCreatingModal();
-      searchUrl.delete('isCreate');
-      setSearchUrl(searchUrl);
+      const nextParams = new URLSearchParams(searchUrl);
+      nextParams.delete('isCreate');
+      setSearchUrl(nextParams, { replace: true });
     }
   }, [isCreate, showCreatingModal, searchUrl, setSearchUrl]);
 
+  const emptyState = resolveAgentsEmptyState({
+    dataLength: data.length,
+    builtinItemsLength: builtinState.length,
+    searchString: debouncedSearchString,
+    listLoading,
+    builtinVisible,
+    builtinLoading: builtinState.loading,
+  });
+
   return (
     <>
+      {builtinVisible && (
+        <BuiltinCatalogProbe
+          canvasCategory={activeCategory}
+          searchString={debouncedSearchString}
+          onReport={setBuiltinState}
+        />
+      )}
       <article
         className="size-full min-w-0 flex flex-col"
         data-testid="agents-list"
       >
         <header className="mb-4 min-w-0 px-5 pt-8">
           <ListFilterBar
-            title={t('flow.agents')}
-            icon="agents"
             searchString={searchString}
             onSearchChange={handleInputChange}
             filters={filters}
             onChange={handleFilterSubmit}
             value={filterValue}
+            leftPanel={
+              <AgentTabGroup
+                activeCategory={activeCategory}
+                onTabChange={handleTabChange}
+              />
+            }
           >
-            <DropdownMenu>
-              <DropdownMenuTrigger data-testid="create-agent" asChild>
-                <Button>
-                  <Plus className="size-[1em]" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent data-testid="agent-create-menu">
-                <DropdownMenuItem
-                  justifyBetween={false}
-                  onClick={showCreatingModal}
-                >
-                  <Clipboard />
-                  {t('flow.createFromBlank')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  justifyBetween={false}
-                  onClick={() => navigateToAgentTemplates()}
-                >
-                  <ClipboardPlus />
-                  {t('flow.createFromTemplate')}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  data-testid="agent-import-json"
-                  justifyBetween={false}
-                  onClick={handleImportJson}
-                >
-                  <FileInput />
-                  {t('flow.importJsonFile')}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <AgentCreateMenu
+              actions={createActions}
+              directOnClick={
+                activeType === FlowType.Compiler
+                  ? handleCreateCompilation
+                  : undefined
+              }
+            />
           </ListFilterBar>
         </header>
 
-        {data.length ? (
+        {emptyState === 'content' ? (
           <>
             <CardContainer className="flex-1 overflow-auto px-5">
               {data.map((x) =>
-                x.type === CompilationGroupCategory ? (
+                x.type === AgentListItemType.CompilationTemplateGroup ? (
                   <CompilationTemplateCard
                     key={x.id}
                     data={x}
@@ -193,28 +227,39 @@ export default function Agents() {
                   />
                 ),
               )}
+
+              {builtinVisible && (
+                <BuiltinPipelineSection
+                  canvasCategory={activeCategory}
+                  searchString={debouncedSearchString}
+                  showDivider={data.length > 0}
+                />
+              )}
             </CardContainer>
 
-            <footer className="mt-4 px-5 pb-5">
-              <RAGFlowPagination
-                {...pick(pagination, 'current', 'pageSize')}
-                total={pagination.total}
-                onChange={handlePageChange}
-              />
-            </footer>
+            {data.length > 0 && (
+              <footer className="mt-4 px-5 pb-5">
+                <RAGFlowPagination
+                  {...pick(pagination, 'current', 'pageSize')}
+                  total={pagination.total}
+                  onChange={handlePageChange}
+                />
+              </footer>
+            )}
           </>
-        ) : searchString ? (
+        ) : emptyState === 'search-empty' ? (
           <div className="flex-1 flex items-center justify-center">
             <EmptyAppCard
               showIcon
               size="large"
               className="w-[480px] p-14"
               isSearch
+              testId="agents-search-empty"
               type={EmptyCardType.Agent}
-              onClick={() => showCreatingModal()}
+              onClick={showCreatingModal}
             />
           </div>
-        ) : listLoading ? null : (
+        ) : emptyState === 'loading' ? null : (
           <div className="flex-1 flex items-center justify-center">
             <EmptyAppCard
               showIcon
@@ -222,43 +267,8 @@ export default function Agents() {
               className="w-[480px] p-14 !cursor-default"
               type={EmptyCardType.Agent}
               tabIndex={-1}
-              // onClick={() => showCreatingModal()}
             >
-              <ul className="flex flex-col gap-y-5 text-text-secondary text-sm pt-5">
-                <li data-testid="agents-empty-create">
-                  <Button
-                    variant="static"
-                    size="auto"
-                    onClick={showCreatingModal}
-                  >
-                    <Clipboard className="size-[1em]" />
-                    {t('flow.createFromBlank')}
-                  </Button>
-                </li>
-
-                <li>
-                  <Button
-                    asLink
-                    variant="static"
-                    size="auto"
-                    to={Routes.AgentTemplates}
-                  >
-                    <ClipboardPlus className="size-[1em]" />
-                    {t('flow.createFromTemplate')}
-                  </Button>
-                </li>
-
-                <li>
-                  <Button
-                    variant="static"
-                    size="auto"
-                    onClick={handleImportJson}
-                  >
-                    <FileInput className="size-[1em]" />
-                    {t('flow.importJsonFile')}
-                  </Button>
-                </li>
-              </ul>
+              <AgentsEmptyStateActions actions={createActions} />
             </EmptyAppCard>
           </div>
         )}
@@ -277,6 +287,7 @@ export default function Agents() {
           loading={loading}
           visible={creatingVisible}
           hideModal={hideCreatingModal}
+          selectedType={activeType}
           onOk={handleCreateAgentOrPipeline}
         ></CreateAgentDialog>
       )}

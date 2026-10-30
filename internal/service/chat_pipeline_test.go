@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -103,6 +104,58 @@ func TestAsyncChat_EmptyMessages(t *testing.T) {
 	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for empty messages, got nil")
+	}
+}
+
+func TestAsyncChatRejectsNonStringUserContent(t *testing.T) {
+	s := &ChatPipelineService{}
+	messages := []map[string]interface{}{{"role": "user", "content": map[string]interface{}{"text": "question"}}}
+	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), messages, false, nil)
+	if err == nil || !strings.Contains(err.Error(), "messages[0].content is invalid") {
+		t.Fatalf("AsyncChat error = %v, want indexed invalid user content error", err)
+	}
+}
+
+func TestValidateUserMessageContentPreservesTextParts(t *testing.T) {
+	messages := []map[string]interface{}{{
+		"role": "user",
+		"content": []interface{}{
+			map[string]interface{}{"type": "text", "text": "question"},
+		},
+	}}
+	if err := validateUserMessageContent(messages); err != nil {
+		t.Fatalf("valid text content parts rejected: %v", err)
+	}
+}
+
+func TestValidateUserMessageContentRejectsNil(t *testing.T) {
+	messages := []map[string]interface{}{{"role": "user", "content": nil}}
+	if err := validateUserMessageContent(messages); err == nil || !strings.Contains(err.Error(), "messages[0].content") {
+		t.Fatalf("validation error = %v, want indexed missing-content error", err)
+	}
+}
+
+func TestAsyncChatRejectsUnauthorizedDatasetsBeforeStartingPipeline(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	insertForeignPrivateDatasetForChatTest(t, db)
+
+	chat := dialForTest("")
+	chat.KBIDs = []interface{}{"kb-private"}
+	results, err := (&ChatPipelineService{}).AsyncChat(
+		serviceTestContext(t, "user-1", "user-1"),
+		"user-1",
+		chat,
+		[]map[string]interface{}{{"role": "user", "content": "show me the private dataset"}},
+		false,
+		nil,
+	)
+	if err == nil {
+		for range results {
+		}
+		t.Fatal("AsyncChat accepted another user's private dataset")
+	}
+	if !isAccessDeniedOrHidden(err) {
+		t.Fatalf("AsyncChat error = %v, want access denied or hidden resource", err)
 	}
 }
 
@@ -1233,6 +1286,9 @@ func TestExpectedDocNameColumn(t *testing.T) {
 	if got := expectedDocNameColumn("seekdb"); got != "docnm_kwd" {
 		t.Errorf("seekdb = %q, want docnm_kwd", got)
 	}
+	if got := expectedDocNameColumn("vastbase"); got != "docnm_kwd" {
+		t.Errorf("vastbase = %q, want docnm_kwd", got)
+	}
 	if got := expectedDocNameColumn("elasticsearch"); got != "docnm_kwd" {
 		t.Errorf("elasticsearch = %q, want docnm_kwd", got)
 	}
@@ -1669,400 +1725,11 @@ func TestClampChatConfigMaxTokensRejectsExhaustedCapacity(t *testing.T) {
 	}
 }
 
-// stubHarness installs a fake harnessRetriever returning the given answer and
-// restores the previous one when the test ends.
-func stubHarness(t *testing.T, answer string) {
-	t.Helper()
-	prev := harnessRetriever
-	t.Cleanup(func() { harnessRetriever = prev })
-	harnessRetriever = func(ctx context.Context, req HarnessRequest) (HarnessResult, error) {
-		return HarnessResult{Answer: answer}, nil
-	}
-}
-
-// TestRetrieveViaHarnessForwardsRetrievalTuning pins the fix for a harness that
-// ignored the dialog's retrieval settings: without them it falls back to its
-// package default top_n=12, so a dialog configured with top_n=8 retrieved a
-// different passage set than the standard path — the failure that answered a
-// two-document comparison from one document's chunks because that document's
-// nine chunks filled the widened budget.
-func TestRetrieveViaHarnessForwardsRetrievalTuning(t *testing.T) {
-	prev := harnessRetriever
-	t.Cleanup(func() { harnessRetriever = prev })
-	var got HarnessRequest
-	harnessRetriever = func(_ context.Context, req HarnessRequest) (HarnessResult, error) {
-		got = req
-		return HarnessResult{}, nil
-	}
-
-	s := &ChatPipelineService{}
-	want := HarnessRetrieval{
-		TopN:                   8,
-		SimilarityThreshold:    0.2,
-		VectorSimilarityWeight: 0.3,
-		RerankCandidatesCount:  64,
-	}
-	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "low", "t", "m", "sess", want, nil, nil, nil, "", nil); err != nil {
-		t.Fatalf("retrieveViaHarness: %v", err)
-	}
-	if got.Retrieval != want {
-		t.Errorf("harness retrieval = %+v, want %+v", got.Retrieval, want)
-	}
-}
-
 // collectSink records every delta with its isThink flag.
 func collectSink(got *[]string, thinks *[]bool) func(string, bool) {
 	return func(delta string, isThink bool) {
 		*got = append(*got, delta)
 		*thinks = append(*thinks, isThink)
-	}
-}
-
-// collectThinkSink is collectSink's structured twin: the harness' step events in
-// order, so a test can assert what reached the request's ThinkSink.
-func collectThinkSink(events *[]ThinkEvent) func(ThinkEvent) {
-	return func(ev ThinkEvent) { *events = append(*events, ev) }
-}
-
-// TestRetrieveViaHarnessDoesNotSynthesizeLoopLines pins the fix for a trace that
-// described a loop which had not run: the pipeline used to emit
-// "[Tool loop] Deciding what to do next ..." / "Step 1: running rag..." around
-// EVERY non-naive harness call, whether or not the outer react loop was the
-// thing driving research. Those steps are now reported by the loop itself
-// (advanced_rag.runOuterReact*), so a harness stub — which by definition runs no
-// outer loop — must produce no narration at all.
-func TestRetrieveViaHarnessDoesNotSynthesizeLoopLines(t *testing.T) {
-	stubHarness(t, "the final cited answer")
-	var receivedHistory []map[string]interface{}
-	retriever := harnessRetriever
-	harnessRetriever = func(ctx context.Context, req HarnessRequest) (HarnessResult, error) {
-		receivedHistory = req.Messages
-		return retriever(ctx, req)
-	}
-	history := []map[string]interface{}{{"role": "user", "content": "earlier question"}, {"role": "assistant", "content": "earlier answer"}, {"role": "user", "content": "q"}}
-
-	var got []string
-	var thinks []bool
-	var events []ThinkEvent
-	s := &ChatPipelineService{}
-	_, _, _, answer, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", HarnessRetrieval{}, nil, collectSink(&got, &thinks), collectThinkSink(&events), "", history)
-	if err != nil {
-		t.Fatalf("retrieveViaHarness: %v", err)
-	}
-	if !reflect.DeepEqual(receivedHistory, history) {
-		t.Fatalf("harness history = %#v, want %#v", receivedHistory, history)
-	}
-	if answer != "the final cited answer" {
-		t.Fatalf("answer = %q", answer)
-	}
-	if len(got) != 0 {
-		t.Errorf("the pipeline synthesized %d think delta(s), want none: %#v", len(got), got)
-	}
-	if len(events) != 0 {
-		t.Errorf("the pipeline synthesized %d step event(s), want none: %#v", len(events), events)
-	}
-}
-
-// TestRetrieveViaHarnessForwardsThinkSink pins the structured-step channel: the
-// sink the pipeline is given reaches the harness request, and the events the
-// harness emits arrive with their fields intact.
-func TestRetrieveViaHarnessForwardsThinkSink(t *testing.T) {
-	prev := harnessRetriever
-	t.Cleanup(func() { harnessRetriever = prev })
-	harnessRetriever = func(ctx context.Context, req HarnessRequest) (HarnessResult, error) {
-		if req.ThinkSink == nil {
-			return HarnessResult{}, fmt.Errorf("harness request carries no ThinkSink")
-		}
-		req.ThinkSink(ThinkEvent{
-			Kind: "tool_result", Stage: "Function tool", Tool: "retrieve",
-			Status: "ok", Reason: "no_doc", Cause: "index not found", Results: 3, Documents: 2,
-			Sources: []string{"c1", "c2"}, DurationMS: 12,
-			Summary: "[Function tool] The retrieve tool returned 3 results.",
-		})
-		return HarnessResult{Answer: "a"}, nil
-	}
-
-	// The text sink is beside the point here (this test is about the structured
-	// channel) and the local `got` below is the EVENT, so leave answerSink nil.
-	var events []ThinkEvent
-	s := &ChatPipelineService{}
-	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "high", "t", "m", "sess", HarnessRetrieval{}, nil, nil, collectThinkSink(&events), "", nil); err != nil {
-		t.Fatalf("retrieveViaHarness: %v", err)
-	}
-	// Only what the harness reported: the pipeline adds nothing of its own.
-	var got *ThinkEvent
-	for i := range events {
-		if events[i].Kind == "tool_result" {
-			got = &events[i]
-			break
-		}
-	}
-	if got == nil {
-		t.Fatalf("no tool_result among %#v", events)
-	}
-	if got.Tool != "retrieve" || got.Status != "ok" || got.Cause != "index not found" ||
-		got.Results != 3 || got.Documents != 2 || got.DurationMS != 12 ||
-		len(got.Sources) != 2 || got.Summary == "" {
-		t.Errorf("event lost fields on the way through: %#v", *got)
-	}
-	if len(events) != 1 {
-		t.Errorf("events = %#v, want only what the harness reported", events)
-	}
-}
-
-// TestHarnessThinkSinkForwardsEvent covers the pipeline-side half: one event in,
-// one chunk out, carrying the event and no answer delta.
-func TestHarnessThinkSinkForwardsEvent(t *testing.T) {
-	out := make(chan AsyncChatResult, 1)
-	harnessThinkSink(context.Background(), out)(ThinkEvent{Kind: "stage", Summary: "[Planner] x"})
-
-	select {
-	case chunk := <-out:
-		if chunk.ThinkEvent == nil || chunk.ThinkEvent.Kind != "stage" || chunk.ThinkEvent.Summary != "[Planner] x" {
-			t.Fatalf("chunk = %#v, want the event", chunk)
-		}
-		if chunk.Answer != "" || chunk.Final {
-			t.Errorf("an event chunk must carry no answer and not be final: %#v", chunk)
-		}
-	default:
-		t.Fatal("event was not forwarded")
-	}
-
-	// A cancelled request must not block the producer.
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	harnessThinkSink(ctx, make(chan AsyncChatResult))(ThinkEvent{Summary: "y"})
-}
-
-// TestRetrieveViaHarnessNaiveEmitsNothing guards the naive path: no agentic loop
-// runs, so nothing is narrated — and with the pipeline no longer synthesizing
-// its own lines, nothing is emitted at all.
-func TestRetrieveViaHarnessNaiveEmitsNothing(t *testing.T) {
-	stubHarness(t, "x")
-
-	var got []string
-	var thinks []bool
-	s := &ChatPipelineService{}
-	if _, _, _, _, err := s.retrieveViaHarness(t.Context(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", HarnessRetrieval{}, nil, collectSink(&got, &thinks), nil, "", nil); err != nil {
-		t.Fatalf("retrieveViaHarness: %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("naive mode emitted %d deltas, want 0: %#v", len(got), got)
-	}
-}
-
-// TestDecorateHarnessAnswerReferenceUsesClientChunkShape pins that the reasoning
-// path hands consumers the same reference shape as the non-reasoning one
-// (content / document_name / dataset_id — not the engine keys), and that the
-// source chunks are left untouched (no in-place vector stripping).
-func TestDecorateHarnessAnswerReferenceUsesClientChunkShape(t *testing.T) {
-	src := map[string]interface{}{
-		"chunk_id":            "c1",
-		"content_with_weight": "hello",
-		"docnm_kwd":           "Doc One",
-		"doc_id":              "d1",
-		"kb_id":               "kb1",
-		"vector":              []float64{0.1, 0.2},
-	}
-	kbinfos := map[string]interface{}{
-		"chunks":   []map[string]interface{}{src},
-		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"}},
-	}
-
-	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos, nil, nil, true)
-	if res.Reference == nil {
-		t.Fatal("a cited answer must carry a reference")
-	}
-	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
-	if len(chunks) != 1 {
-		t.Fatalf("reference chunks = %#v, want 1", res.Reference["chunks"])
-	}
-	if chunks[0]["content"] != "hello" || chunks[0]["document_name"] != "Doc One" || chunks[0]["dataset_id"] != "kb1" {
-		t.Errorf("reference chunk = %#v, want the client-facing keys populated", chunks[0])
-	}
-	for _, engineKey := range []string{"content_with_weight", "docnm_kwd", "kb_id", "vector"} {
-		if _, has := chunks[0][engineKey]; has {
-			t.Errorf("reference chunk leaked engine key %q", engineKey)
-		}
-	}
-	if _, has := src["vector"]; !has {
-		t.Error("the shared source chunk lost its vector: the reference must not mutate it")
-	}
-}
-
-// TestReferenceChunksKeepsRenderedSlots pins the index contract of the reference
-// payload: the client resolves a marker by indexing reference.chunks with the
-// number the model wrote, so entry i has to be the chunk of rendered block i. A
-// block whose chunk cannot be located keeps its slot — dropping it would slide
-// every later marker onto a passage the model never cited.
-func TestReferenceChunksKeepsRenderedSlots(t *testing.T) {
-	pool := []map[string]interface{}{
-		{"chunk_id": "p0", "content": "zero"},
-		{"chunk_id": "p1", "content": "one"},
-		{"chunk_id": "p2", "content": "two"},
-	}
-	// Rendered blocks: pool 2, one that cannot be located, pool 0. The remaining
-	// pool chunk follows so nothing retrieved is lost.
-	got := referenceChunks([]int{2, -1, 0}, pool)
-	if len(got) != 4 {
-		t.Fatalf("reference = %d entries (%v), want 3 rendered slots plus the pool remainder", len(got), got)
-	}
-	if got[0]["chunk_id"] != "p2" || got[1] != nil || got[2]["chunk_id"] != "p0" {
-		t.Fatalf("reference = %v, want p2 at block 0, an empty slot at block 1, p0 at block 2", got)
-	}
-	if got[3]["chunk_id"] != "p1" {
-		t.Errorf("reference tail = %v, want the remaining pool chunk p1", got[3])
-	}
-}
-
-// TestReferenceChunksFallsBackToPoolOrder keeps the no-CiteChunkIDs behavior: the
-// pool order is then the numbering, so the reference is the pool untouched.
-func TestReferenceChunksFallsBackToPoolOrder(t *testing.T) {
-	pool := []map[string]interface{}{{"chunk_id": "p0"}, {"chunk_id": "p1"}}
-	got := referenceChunks(nil, pool)
-	if len(got) != 2 || got[0]["chunk_id"] != "p0" || got[1]["chunk_id"] != "p1" {
-		t.Fatalf("reference = %v, want the pool in order", got)
-	}
-}
-
-// TestCitationAuditReportsFigureChunkAndImage pins the observability line that
-// answers "why does Fig. n show no image": it names the chunk behind each cited
-// figure (Fig. n = rendered block n-1) and whether that chunk has an image, so a
-// text-only chunk (nothing to draw) is distinguishable from a marker that resolved
-// to the wrong chunk.
-func TestCitationAuditReportsFigureChunkAndImage(t *testing.T) {
-	chunks := []map[string]interface{}{
-		{"chunk_id": "c0", "image_id": "img-0"},
-		{"chunk_id": "c1"},
-		{"chunk_id": "c2", "img_id": "img-2"},
-	}
-	// Rendered blocks: pool 2, pool 0, pool 1 (Fig. 1..3). The model cited blocks 0
-	// and 2, so pool 2 (image) and pool 1 (no image) come back resolved.
-	got := citationAudit([]int{2, 0, 1}, []int{2, 1}, chunks)
-	want := "Fig.1=c2 image=true Fig.3=c1 image=false"
-	if got != want {
-		t.Errorf("citationAudit = %q, want %q", got, want)
-	}
-}
-
-// TestDecorateHarnessAnswerRewritesSlotCitations is the end-to-end lock for
-// the leaked "[ID:Slot 0]" bug: the harness answer arrives citing the internal
-// slot table, and the final answer must cite the chunk that filled the slot
-// instead — with that chunk present in the reference payload.
-func TestDecorateHarnessAnswerRewritesSlotCitations(t *testing.T) {
-	kbinfos := map[string]interface{}{
-		"chunks": []map[string]interface{}{
-			{"chunk_id": "c1", "content_with_weight": "unrelated", "doc_id": "d0", "docnm_kwd": "Other"},
-			{"chunk_id": "c9", "content_with_weight": "eiffel", "doc_id": "d1", "docnm_kwd": "Doc One"},
-		},
-		"doc_aggs": []interface{}{
-			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
-		},
-	}
-	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer(
-		"The tower opened in 1889 [ID:Slot 0].",
-		kbinfos,
-		map[string][]string{"0": {"c9"}},
-		nil,
-		true,
-	)
-	if strings.Contains(res.Answer, "[ID:Slot") {
-		t.Fatalf("final answer still carries the internal slot citation: %q", res.Answer)
-	}
-	if !strings.Contains(res.Answer, "[ID:1]") {
-		t.Fatalf("final answer must cite the evidence chunk pool index, got %q", res.Answer)
-	}
-	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
-	// The reference keeps the whole citation pool (Python parity); it must at
-	// least carry the slot's evidence chunk so [ID:1] is openable.
-	found := false
-	for _, c := range chunks {
-		if c["content"] == "eiffel" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("reference must carry the slot's evidence chunk, got %#v", res.Reference["chunks"])
-	}
-}
-
-func TestAsyncChatHarnessQuote(t *testing.T) {
-	db := setupChatPipelineVisionTestDB(t)
-	seedChatPipelineVisionTenant(t, db, "glm-4-flash@ZHIPU-AI")
-	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "Knowledge"}).Error; err != nil {
-		t.Fatal(err)
-	}
-	previousHarness := harnessRetriever
-	t.Cleanup(func() { harnessRetriever = previousHarness })
-	harnessRetriever = func(_ context.Context, req HarnessRequest) (HarnessResult, error) {
-		req.AnswerSink("Research[ID:", true)
-		req.AnswerSink("0] done", true)
-		for _, delta := range []string{"Answer[", "ID:0", "] end"} {
-			req.AnswerSink(delta, false)
-		}
-		return HarnessResult{
-			Answer:  "Answer[ID:0] end",
-			Chunks:  []map[string]interface{}{{"chunk_id": "c1", "content_with_weight": "Evidence", "doc_id": "d1"}},
-			DocAggs: []map[string]interface{}{{"doc_id": "d1", "doc_name": "Source"}},
-		}, nil
-	}
-	for _, tt := range []struct {
-		name            string
-		config, request any
-		wantQuote       bool
-	}{
-		{"default enabled", nil, nil, true},
-		{"chat disabled", false, true, false},
-		{"request disabled", true, false, false},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			chat := dialForTest("glm-4-flash@ZHIPU-AI")
-			chat.KBIDs = entity.JSONSlice{"kb-1"}
-			chat.PromptConfig["system"] = "Answer using {knowledge}"
-			chat.PromptConfig["quote"] = tt.config
-			results, err := NewChatPipelineService().AsyncChat(t.Context(), "user-1", chat,
-				[]map[string]interface{}{{"role": "user", "content": "Question"}}, true,
-				map[string]interface{}{"reasoning": 1, "quote": tt.request})
-			if err != nil {
-				t.Fatal(err)
-			}
-			var streamed, reasoning strings.Builder
-			var final AsyncChatResult
-			want := "Answer end"
-			if tt.wantQuote {
-				want = "Answer[ID:0] end"
-			}
-			for result := range results {
-				reasoning.WriteString(result.Reasoning)
-				if result.Final {
-					final = result
-				} else {
-					streamed.WriteString(result.Answer)
-					if !strings.HasPrefix(want, streamed.String()) {
-						t.Fatalf("stream leaked citation text: %q", streamed.String())
-					}
-				}
-			}
-			if !final.Final || final.Answer != want || streamed.String() != want {
-				t.Fatalf("stream=%q final=%+v, want %q", streamed.String(), final, want)
-			}
-			// The evidence ships either way; only doc_aggs follows the cite switch.
-			chunks, _ := final.Reference["chunks"].([]map[string]interface{})
-			if len(chunks) != 1 {
-				t.Fatalf("reference chunks = %#v, want the harness evidence", final.Reference["chunks"])
-			}
-			if _, hasDocAggs := final.Reference["doc_aggs"]; hasDocAggs != tt.wantQuote {
-				t.Fatalf("doc_aggs presence = %v, quote=%v: %#v", hasDocAggs, tt.wantQuote, final.Reference)
-			}
-			if !tt.wantQuote && strings.Contains(reasoning.String(), "[ID:") {
-				t.Fatalf("disabled citations must be removed from reasoning, got %q", reasoning.String())
-			}
-		})
 	}
 }
 
@@ -2072,7 +1739,7 @@ func TestAsyncChatEmptyResponseQuoteDisabled(t *testing.T) {
 	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "Knowledge"}).Error; err != nil {
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", CreatedBy: "user-1", Name: "Knowledge"}).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -2080,7 +1747,8 @@ func TestAsyncChatEmptyResponseQuoteDisabled(t *testing.T) {
 	chat.KBIDs = entity.JSONSlice{"kb-1"}
 	chat.PromptConfig["system"] = "Answer using {knowledge}"
 	chat.PromptConfig["empty_response"] = "Nothing found."
-	results, err := NewChatPipelineService().AsyncChat(t.Context(), "user-1", chat,
+	ctx := serviceTestContext(t, "user-1", "tenant-1")
+	results, err := NewChatPipelineService().AsyncChat(ctx, "user-1", chat,
 		[]map[string]interface{}{{"role": "user", "content": "Question"}}, true,
 		map[string]interface{}{"quote": false})
 	if err != nil {
@@ -2105,10 +1773,10 @@ func TestAsyncChatEmptyResponseQuoteDisabled(t *testing.T) {
 // the client contract (the SSE `think_event` field), so renaming or dropping a tag
 // breaks every client while neither the compiler nor any Go caller notices.
 //
-// It is also the only assertion on this struct's shape, which is why the harness
-// ALIASES it (harness.ThinkEvent) instead of carrying a second copy bridged field
-// by field in cmd — that copy compiled for as long as it stayed a subset, and
-// silently dropped any field added on the other side.
+// It is also the only assertion on this struct's shape, which is why a producer
+// ALIASES this type instead of carrying a second copy bridged field by field —
+// that copy compiled for as long as it stayed a subset, and silently dropped
+// any field added on the other side.
 func TestThinkEventWireKeys(t *testing.T) {
 	// Every field populated: with `omitempty` on all but Kind and Summary, that is
 	// what makes the whole key set appear.
@@ -2162,225 +1830,6 @@ func thinkEventWireKeys(t *testing.T, ev ThinkEvent) []string {
 	return keys
 }
 
-// TestDecorateHarnessAnswerUncitedKeepsChunks pins that an agentic answer using
-// no citation marker still carries the evidence it was grounded on: the pool is
-// the provenance of the answer, and the cite switch governs the doc_aggs cards
-// rather than the passages themselves.
-func TestDecorateHarnessAnswerUncitedKeepsChunks(t *testing.T) {
-	kbinfos := map[string]interface{}{
-		"chunks": []map[string]interface{}{
-			{
-				"chunk_id":            "c1",
-				"content_with_weight": "the wolf is grey",
-				"doc_id":              "d1",
-				"docnm_kwd":           "wolf.jpg",
-				"kb_id":               "kb1",
-			},
-		},
-		"doc_aggs": []interface{}{
-			map[string]interface{}{"doc_id": "d1", "doc_name": "wolf.jpg"},
-		},
-	}
-
-	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("小狼的颜色是灰色的。", kbinfos, nil, nil, true)
-	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
-	if len(chunks) != 1 || chunks[0]["id"] != "c1" {
-		t.Fatalf("reference chunks = %#v, want the evidence pool", res.Reference["chunks"])
-	}
-}
-
-// TestDecorateHarnessAnswerCitesThinkBlock ensures citations emitted inside the
-// hidden thinking block still resolve to client-visible source documents.
-func TestDecorateHarnessAnswerCitesThinkBlock(t *testing.T) {
-	kbinfos := map[string]interface{}{
-		"chunks": []map[string]interface{}{
-			{
-				"chunk_id":            "c1",
-				"content_with_weight": "the wolf is grey",
-				"doc_id":              "d1",
-				"docnm_kwd":           "wolf.jpg",
-			},
-		},
-		"doc_aggs": []interface{}{
-			map[string]interface{}{"doc_id": "d1", "doc_name": "wolf.jpg"},
-		},
-	}
-
-	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer(" thinkingSupported by [ID:0]. response小狼的颜色是灰色的。", kbinfos, nil, []string{"c1"}, true)
-	if res.Reference == nil {
-		t.Fatal("a think-block citation must carry a reference")
-	}
-	if aggs, _ := res.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 || aggs[0].(map[string]interface{})["doc_id"] != "d1" {
-		t.Fatalf("reference doc_aggs = %#v, want the cited document", res.Reference["doc_aggs"])
-	}
-}
-
-// TestDecorateHarnessAnswerResolvesRenderedPosition is the regression lock for
-// the one-passage agentic answer that came back with no reference. The compose
-// numbers its evidence 0-based and the model writes that number, so the marker
-// and the reference line up: the passage it names is openable, and a marker that
-// names nothing is removed instead of being handed to the client.
-func TestDecorateHarnessAnswerResolvesRenderedPosition(t *testing.T) {
-	kbinfos := map[string]interface{}{
-		"chunks": []map[string]interface{}{
-			{
-				"chunk_id":            "c1",
-				"content_with_weight": "the wolf is grey",
-				"doc_id":              "d1",
-				"docnm_kwd":           "wolf.jpg",
-			},
-		},
-		"doc_aggs": []interface{}{
-			map[string]interface{}{"doc_id": "d1", "doc_name": "wolf.jpg"},
-		},
-	}
-
-	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("小狼的颜色是灰色的 [ID:0]。", kbinfos, nil, []string{"c1"}, true)
-	if !strings.Contains(res.Answer, "[ID:0]") {
-		t.Fatalf("the marker is the client's index and must survive, got %q", res.Answer)
-	}
-	if res.Reference == nil {
-		t.Fatal("a one-passage agentic answer must carry a reference")
-	}
-	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
-	if len(chunks) != 1 || chunks[0]["document_name"] != "wolf.jpg" {
-		t.Fatalf("reference chunks = %#v, want the cited passage", res.Reference["chunks"])
-	}
-
-	// The old numbering (a 1-based position) names no entry in a one-passage
-	// reference, so it must be dropped rather than shipped as a dead marker.
-	res = s.decorateHarnessAnswer("小狼的颜色是灰色的 [ID:1]。", kbinfos, nil, []string{"c1"}, true)
-	if strings.Contains(res.Answer, "[ID:1]") {
-		t.Fatalf("an unresolvable marker must be dropped, got %q", res.Answer)
-	}
-	// The unresolvable marker is dropped, but the evidence it was drawn from
-	// still ships.
-	remaining, _ := res.Reference["chunks"].([]map[string]interface{})
-	if len(remaining) != 1 || remaining[0]["document_name"] != "wolf.jpg" {
-		t.Fatalf("reference chunks = %#v, want the evidence passage", res.Reference["chunks"])
-	}
-}
-
-// TestDecorateHarnessAnswerOrdersReferenceByRenderedOrder pins the ordering half
-// of the contract: the compose renders the evidence similarity-ranked (and
-// capped), so rendered position 0 is not pool[0]. The reference must put the
-// rendered list first — a marker's index is its position there — and append the
-// rest of the pool.
-func TestDecorateHarnessAnswerOrdersReferenceByRenderedOrder(t *testing.T) {
-	kbinfos := map[string]interface{}{
-		"chunks": []map[string]interface{}{
-			{"chunk_id": "c1", "content_with_weight": "unrelated", "doc_id": "d1", "docnm_kwd": "Doc One"},
-			{"chunk_id": "c2", "content_with_weight": "unrelated too", "doc_id": "d1", "docnm_kwd": "Doc One"},
-			{"chunk_id": "c3", "content_with_weight": "eiffel", "doc_id": "d2", "docnm_kwd": "Doc Two"},
-		},
-		"doc_aggs": []interface{}{
-			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
-			map[string]interface{}{"doc_id": "d2", "doc_name": "Doc Two"},
-		},
-	}
-
-	s := &ChatPipelineService{}
-	// The compose ranked c3 first, so the model's [ID:0] is c3.
-	res := s.decorateHarnessAnswer(
-		"The tower opened in 1889 [ID:0].",
-		kbinfos,
-		nil,
-		[]string{"c3", "c1"},
-		true,
-	)
-	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
-	if len(chunks) != 3 {
-		t.Fatalf("reference chunks = %#v, want the rendered list plus the remaining pool", res.Reference["chunks"])
-	}
-	if chunks[0]["content"] != "eiffel" || chunks[0]["id"] != "c3" {
-		t.Fatalf("reference[0] = %#v, want the rendered first passage c3", chunks[0])
-	}
-	if chunks[1]["id"] != "c1" || chunks[2]["id"] != "c2" {
-		t.Fatalf("reference order = %#v, want [c3 c1 c2]", chunks)
-	}
-	// Only Doc Two (c3) was cited, so the other document is filtered out.
-	aggs, _ := res.Reference["doc_aggs"].([]interface{})
-	if len(aggs) != 1 {
-		t.Fatalf("reference doc_aggs = %#v, want only the cited document", res.Reference["doc_aggs"])
-	}
-	if dam, _ := aggs[0].(map[string]interface{}); dam["doc_id"] != "d2" {
-		t.Fatalf("reference doc_aggs = %#v, want d2", aggs[0])
-	}
-}
-
-// TestDecorateHarnessAnswerDropsOnlyCanonicalMarkers pins the text-safety rule: a
-// canonical citation naming no rendered passage is removed (the user could never
-// open it), while a bare bracketed number in prose is left alone — "[2024]" is far
-// more likely to be ordinary text than a citation, and deleting user-visible text
-// is worse than a chip that cannot open.
-func TestDecorateHarnessAnswerDropsOnlyCanonicalMarkers(t *testing.T) {
-	kbinfos := map[string]interface{}{
-		"chunks": []map[string]interface{}{
-			{"chunk_id": "c1", "content_with_weight": "one", "doc_id": "d1", "docnm_kwd": "Doc One"},
-		},
-		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"}},
-	}
-
-	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer(
-		"发布于 [2024] 年 [ID:0]，并在 [ID:7] 修订。",
-		kbinfos,
-		nil,
-		[]string{"c1"},
-		true,
-	)
-	if !strings.Contains(res.Answer, "[2024]") {
-		t.Errorf("prose brackets must survive, got %q", res.Answer)
-	}
-	if !strings.Contains(res.Answer, "[ID:0]") {
-		t.Errorf("a resolvable citation must survive, got %q", res.Answer)
-	}
-	if strings.Contains(res.Answer, "[ID:7]") {
-		t.Errorf("an unresolvable canonical marker must be dropped, got %q", res.Answer)
-	}
-}
-
-// TestDecorateHarnessAnswerKeepsPositionsAfterUnknownBlock: when the harness
-// publishes an id the pool does not carry, that block keeps its slot so the blocks
-// after it keep the numbers the model saw. A marker naming a later block must
-// still resolve to the right chunk — and to the right document for doc_aggs.
-func TestDecorateHarnessAnswerKeepsPositionsAfterUnknownBlock(t *testing.T) {
-	kbinfos := map[string]interface{}{
-		"chunks": []map[string]interface{}{
-			{"chunk_id": "c1", "content_with_weight": "one", "doc_id": "d1", "docnm_kwd": "Doc One"},
-			{"chunk_id": "c2", "content_with_weight": "two", "doc_id": "d1", "docnm_kwd": "Doc One"},
-			{"chunk_id": "c3", "content_with_weight": "eiffel", "doc_id": "d2", "docnm_kwd": "Doc Two"},
-		},
-		"doc_aggs": []interface{}{
-			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
-			map[string]interface{}{"doc_id": "d2", "doc_name": "Doc Two"},
-		},
-	}
-
-	s := &ChatPipelineService{}
-	// The harness rendered c1, an unknown chunk, then c3 — so [ID:2] is c3.
-	res := s.decorateHarnessAnswer(
-		"The tower opened in 1889 [ID:2].",
-		kbinfos,
-		nil,
-		[]string{"c1", "gone", "c3"},
-		true,
-	)
-	if !strings.Contains(res.Answer, "[ID:2]") {
-		t.Fatalf("a marker past the unknown block must survive, got %q", res.Answer)
-	}
-	aggs, _ := res.Reference["doc_aggs"].([]interface{})
-	if len(aggs) != 1 {
-		t.Fatalf("reference doc_aggs = %#v, want only the cited document", res.Reference["doc_aggs"])
-	}
-	if dam, _ := aggs[0].(map[string]interface{}); dam["doc_id"] != "d2" {
-		t.Fatalf("reference doc_aggs = %#v, want d2 (c3)", aggs[0])
-	}
-}
-
 // setupChatPipelineToolSupportTestDB seeds an in-memory scope whose models differ
 // only in their persisted tool-calling flag, so the probe runs without the provider
 // catalog:
@@ -2431,18 +1880,27 @@ func setupChatPipelineToolSupportTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
-// seedChatPipelineToolSupportTenant sets the tenant's default chat model, which
+// seedChatPipelineToolSupportTenant sets the owner membership's default chat model, which
 // the no-explicit-LLM branch of the probe resolves.
 func seedChatPipelineToolSupportTenant(t *testing.T, db *gorm.DB, defaultLLMID string) {
 	t.Helper()
 	status := string(entity.StatusValid)
 	if err := db.Create(&entity.Tenant{
 		ID:     "tenant-1",
-		LLMID:  defaultLLMID,
 		Status: &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
 	}
+	if err := db.Model(&entity.UserTenant{}).Where("id = ?", "user-tenant-1").Update("llm_id", defaultLLMID).Error; err != nil {
+		t.Fatalf("failed to configure owner default model: %v", err)
+	}
+}
+
+// configTools reports the is_tools flag getLLMModelConfig carries, read the way
+// a consumer of that config map does.
+func configTools(cfg map[string]interface{}) bool {
+	v, _ := cfg["is_tools"].(bool)
+	return v
 }
 
 // TestGetLLMModelConfigCarriesToolSupport pins that the resolution reports the
@@ -2466,7 +1924,7 @@ func TestGetLLMModelConfigCarriesToolSupport(t *testing.T) {
 			if err != nil {
 				t.Fatalf("getLLMModelConfig(%s) failed: %v", tc.llm, err)
 			}
-			if got := chatConfigSupportsTools(cfg); got != tc.wantTools {
+			if got := configTools(cfg); got != tc.wantTools {
 				t.Errorf("is_tools for %s = %v, want %v", tc.llm, got, tc.wantTools)
 			}
 			if got, _ := cfg["model_type"].(string); got != tc.wantType {
@@ -2482,8 +1940,8 @@ func TestResolveModelConfigRejectsImage2TextOnlyModel(t *testing.T) {
 	setupChatPipelineToolSupportTestDB(t)
 	svc := NewChatPipelineService()
 
-	_, err := svc.ModelProviderSvc.modelSolver().ResolveModelConfig(
-		t.Context(), "tenant-1", entity.ModelTypeChat, "model-image2text-tools",
+	_, err := svc.ModelFactory.resolveConfig(
+		t.Context(), ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-image2text-tools",
 	)
 	if err == nil {
 		t.Fatal("ResolveModelConfig accepted an image2text-only model as chat")
@@ -2510,7 +1968,7 @@ func TestGetLLMModelConfigRejectsUnusableModels(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm})
-			if err == nil && chatConfigSupportsTools(cfg) {
+			if err == nil && configTools(cfg) {
 				t.Errorf("unusable model %s reported tool support", tc.llm)
 			}
 		})
@@ -2529,7 +1987,7 @@ func TestGetLLMModelConfigFallsBackToTenantDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getLLMModelConfig(tenant default) failed: %v", err)
 	}
-	if !chatConfigSupportsTools(cfg) {
+	if !configTools(cfg) {
 		t.Error("tenant default with is_tools=true reported no tool support, want true")
 	}
 }
@@ -2545,56 +2003,123 @@ func TestGetLLMModelConfigTenantDefaultWithoutToolSupport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getLLMModelConfig(tenant default) failed: %v", err)
 	}
-	if chatConfigSupportsTools(cfg) {
+	if configTools(cfg) {
 		t.Error("tenant default with is_tools=false reported tool support, want false")
 	}
 }
 
-// TestChatConfigSupportsToolsFailClosed is the guard case for the config read: a
-// missing config, a config without the flag, and a flag carrying anything but a
-// truthy boolean all mean "no tool support", the same outcome as Python's default.
-func TestChatConfigSupportsToolsFailClosed(t *testing.T) {
-	if chatConfigSupportsTools(nil) {
-		t.Error("nil config reported tool support, want false")
-	}
-	if chatConfigSupportsTools(map[string]interface{}{"model_type": "chat"}) {
-		t.Error("config without an is_tools flag reported tool support, want false")
-	}
-	for _, v := range []interface{}{false, "false", "", 0, nil} {
-		if chatConfigSupportsTools(map[string]interface{}{"is_tools": v}) {
-			t.Errorf("is_tools=%#v reported tool support, want false", v)
-		}
-	}
-	if !chatConfigSupportsTools(map[string]interface{}{"is_tools": true}) {
-		t.Error("is_tools=true reported no tool support, want true")
+// TestResolveReasoningLevelReadsAgenticLevel pins where the agentic RAG mode is
+// selected from. The level arrives as a number (frontend sends
+// Number(getThinkingLevel())), from the request first and the dialog's
+// prompt_config second, and reasoningLevelAgentic is the one level that means
+// anything beyond "retrieve normally".
+func TestResolveReasoningLevelReadsAgenticLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		kwargs       map[string]interface{}
+		promptConfig map[string]interface{}
+		want         int
+	}{
+		{"absent everywhere", nil, nil, 0},
+		{"naive from request", map[string]interface{}{"reasoning": 0}, nil, 0},
+		{"stale level from request", map[string]interface{}{"reasoning": 3}, nil, 3},
+		{"agentic from request", map[string]interface{}{"reasoning": 5}, nil, reasoningLevelAgentic},
+		{
+			"request float from JSON",
+			map[string]interface{}{"reasoning": float64(reasoningLevelAgentic)},
+			nil,
+			reasoningLevelAgentic,
+		},
+		{
+			"agentic from dialog config",
+			nil,
+			map[string]interface{}{"reasoning": 5},
+			reasoningLevelAgentic,
+		},
+		{
+			// The UI always sends the level, so a request value must win over
+			// a dialog pinned to a different mode.
+			"request overrides dialog config",
+			map[string]interface{}{"reasoning": 2},
+			map[string]interface{}{"reasoning": 5},
+			2,
+		},
+		// chat_settings.ts writes a boolean, which must not read as agentic.
+		{"boolean false is not agentic", nil, map[string]interface{}{"reasoning": false}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveReasoningLevel(tc.kwargs, tc.promptConfig)
+			if got != tc.want {
+				t.Errorf("resolveReasoningLevel() = %d, want %d", got, tc.want)
+			}
+		})
 	}
 }
 
-// TestReasoningNeedsAgenticGraphGatesOnToolSupport pins the gate Python
-// rag_agent applies before building its agentic loop: reasoning level 0 turns it
-// off, and so does a chat model that cannot call tools. Only reasoning enabled
-// together with tool support drives the agentic graph.
-func TestReasoningNeedsAgenticGraphGatesOnToolSupport(t *testing.T) {
-	capable := map[string]interface{}{"model_type": "chat", "is_tools": true}
-	incapable := map[string]interface{}{"model_type": "chat", "is_tools": false}
-	chat := &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}
-
+// TestQuoteEnabledNeedsBothSourcesToAgree pins the effective citation setting:
+// the request and the dialog each get a veto, and an absent setting on either
+// side leaves citations on.
+//
+// The agentic dispatch resolves this before the retrieval phases, so it is the
+// same function Phase 6 uses. When the agentic branch resolved it separately
+// (or not at all), a request's quote:false was ignored and every agentic answer
+// still shipped [ID:N] markers plus a reference payload.
+func TestQuoteEnabledNeedsBothSourcesToAgree(t *testing.T) {
 	for _, tc := range []struct {
-		name           string
-		chat           *entity.Chat
-		cfg            map[string]interface{}
-		reasoningLevel int
-		want           bool
+		name         string
+		kwargs       map[string]interface{}
+		promptConfig map[string]interface{}
+		want         bool
 	}{
-		{"reasoning off", chat, capable, 0, false},
-		{"reasoning on and tool-capable", chat, capable, 2, true},
-		{"reasoning on but no tool support", chat, incapable, 2, false},
-		{"reasoning on, unresolvable model", chat, nil, 4, false},
-		{"reasoning on, nil dialog", nil, capable, 2, false},
+		{"neither source", nil, nil, true},
+		{"request on", map[string]interface{}{"quote": true}, nil, true},
+		{"request off", map[string]interface{}{"quote": false}, nil, false},
+		{"dialog off", nil, map[string]interface{}{"quote": false}, false},
+		{"request off wins over dialog on", map[string]interface{}{"quote": false}, map[string]interface{}{"quote": true}, false},
+		// The dialog is a second veto, not a way to re-enable what the request
+		// turned off.
+		{"dialog off wins over request on", map[string]interface{}{"quote": true}, map[string]interface{}{"quote": false}, false},
+		// A non-bool is not a decision; ignore it rather than disabling citations.
+		{"non-bool request value", map[string]interface{}{"quote": "false"}, nil, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := reasoningNeedsAgenticGraph(tc.chat, tc.cfg, tc.reasoningLevel); got != tc.want {
-				t.Errorf("reasoningNeedsAgenticGraph(level=%d) = %v, want %v", tc.reasoningLevel, got, tc.want)
+			if got := quoteEnabled(tc.kwargs, tc.promptConfig); got != tc.want {
+				t.Errorf("quoteEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAgenticDispatchRequiresKnowledgeBaseScope pins that the agentic branch is
+// unreachable without a knowledge base.
+//
+// The agent resolves a citation against an explicit kb_id scope, and
+// buildBoolQueryFromCondition drops that term when the scope is empty — so an
+// agentic turn on a KB-less dialog would resolve a cited chunk out of ANY KB in
+// the tenant. The dispatch therefore falls through instead of running the agent
+// with an unbounded scope, which keeps the empty-scope query unconstructible
+// rather than trusting each retrieval path to defend itself.
+func TestAgenticDispatchRequiresKnowledgeBaseScope(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		hasKBs bool
+		kwargs map[string]interface{}
+		want   bool
+	}{
+		{"agentic level with KBs", true, map[string]interface{}{"reasoning": reasoningLevelAgentic}, true},
+		{"agentic level without KBs", false, map[string]interface{}{"reasoning": reasoningLevelAgentic}, false},
+		{"explicit agent_mode without KBs", false, map[string]interface{}{"agent_mode": "smart-reasoning"}, false},
+		{"explicit agent_mode with KBs", true, map[string]interface{}{"agent_mode": "smart-reasoning"}, true},
+		{"no selection without KBs", false, map[string]interface{}{"reasoning": 0}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Mirrors the guard in AsyncChat's agentic branch.
+			_, byMode := tc.kwargs["agent_mode"].(string)
+			byLevel := resolveReasoningLevel(tc.kwargs, nil) == reasoningLevelAgentic
+			dispatches := (byMode || byLevel) && tc.hasKBs
+			if dispatches != tc.want {
+				t.Errorf("dispatches to agentic = %v, want %v (byMode=%v byLevel=%v hasKBs=%v)",
+					dispatches, tc.want, byMode, byLevel, tc.hasKBs)
 			}
 		})
 	}
@@ -2612,7 +2137,7 @@ func TestGetLLMModelConfigReadsToolSupportPerResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getLLMModelConfig failed: %v", err)
 	}
-	if !chatConfigSupportsTools(cfg) {
+	if !configTools(cfg) {
 		t.Fatal("tool-capable model reported no support")
 	}
 
@@ -2625,7 +2150,135 @@ func TestGetLLMModelConfigReadsToolSupportPerResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("getLLMModelConfig after the flag flip failed: %v", err)
 	}
-	if chatConfigSupportsTools(cfg) {
+	if configTools(cfg) {
 		t.Error("a flipped is_tools flag was not seen by the next resolution")
+	}
+}
+
+// ttsSpyDriver records the text a TTS driver is asked to synthesize.
+type ttsSpyDriver struct {
+	modelModule.ModelDriver
+	input  string
+	called bool
+}
+
+func (d *ttsSpyDriver) AudioSpeech(_ context.Context, _ *string, audioContent *string, _ *modelModule.APIConfig, _ *modelModule.TTSConfig, _ *common.ModelUsage) (*modelModule.TTSResponse, error) {
+	d.input = *audioContent
+	d.called = true
+	return &modelModule.TTSResponse{Audio: []byte("audio")}, nil
+}
+
+// TestSynthesizeTTS_CutsAtFiveHundredCharacters pins the cap to 500 characters,
+// so a CJK answer keeps its length and never ends in half a rune.
+func TestSynthesizeTTS_CutsAtFiveHundredCharacters(t *testing.T) {
+	spy := &ttsSpyDriver{}
+	name := "tts"
+	ttsModel := modelModule.NewTTSModel(spy, &name, nil)
+	s := &ChatPipelineService{}
+	if audio := s.synthesizeTTS(t.Context(), ttsModel, strings.Repeat("知", 600)); audio == nil {
+		t.Fatal("expected audio")
+	}
+	if want := strings.Repeat("知", 500); spy.input != want {
+		t.Errorf("TTS input is %d bytes / %d runes, want 500 whole characters", len(spy.input), len([]rune(spy.input)))
+	}
+}
+
+func TestCleanTTSText(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "empty"},
+		{name: "ASCII below limit", text: strings.Repeat("a", 499), want: strings.Repeat("a", 499)},
+		{name: "ASCII at limit", text: strings.Repeat("a", 500), want: strings.Repeat("a", 500)},
+		{name: "ASCII over limit", text: strings.Repeat("a", 501), want: strings.Repeat("a", 500)},
+		{name: "CJK below limit", text: strings.Repeat("知", 499), want: strings.Repeat("知", 499)},
+		{name: "CJK at limit", text: strings.Repeat("知", 500), want: strings.Repeat("知", 500)},
+		{name: "CJK over limit", text: strings.Repeat("知", 501), want: strings.Repeat("知", 500)},
+		{name: "mixed rune widths", text: strings.Repeat("aé知𐐀", 126), want: strings.Repeat("aé知𐐀", 125)},
+		{name: "control emoji and whitespace", text: "\x00\t你好🙂\nworld\x7f  ", want: "你好 world"},
+		{name: "tags", text: "<think>reason</think> <b>answer</b>", want: "reason answer"},
+		{name: "comparisons", text: "2 < 3 and 4 > 1; a < b and c > d", want: "2 < 3 and 4 > 1; a < b and c > d"},
+		{name: "compact comparisons", text: "a<b>c; x<value>y", want: "a<b>c; x<value>y"},
+		{name: "unclosed tag", text: "<B>answer", want: "<B>answer"},
+		{name: "unmatched closing tag", text: "a</b>c", want: "a</b>c"},
+		{name: "nested tags", text: "<B><i>answer</i></b>", want: "answer"},
+		{name: "unmatched outer tag", text: "<b>unclosed <b>paired</b>", want: "<b>unclosed paired"},
+		{name: "encoded comparisons", text: "a&lt;b&gt;c", want: "a&lt;b&gt;c"},
+		{name: "incomplete tag", text: `answer <b title="unfinished`, want: `answer <b title="unfinished`},
+		{name: "quoted attributes", text: `<b title="a > b">answer</b> <span title='c > d'>text</span><br/>`, want: "answer text"},
+		{name: "trailing reasoning tag", text: "答案</think>", want: "答案"},
+		{name: "invalid UTF-8", text: "\xff知\xc3é\xe7\x9f", want: "知é"},
+		{name: "valid replacement character", text: "知\ufffdé", want: "知\ufffdé"},
+		{name: "cleanup before limit", text: "<think>" + strings.Repeat("知", 499) + "</think>\xff界🙂\x00余", want: strings.Repeat("知", 499) + "界"},
+		{name: "cleanup to empty", text: "<think></think>🙂\xff\x00 \t\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cleanTTSText(tc.text); got != tc.want {
+				t.Errorf("cleanTTSText() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSynthesizeTTS_CleansTextBeforeCallingDriver(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "mixed answer", text: "\xff<think>思考</think> \x00hello🙂", want: "思考 hello"},
+		{name: "compact comparison", text: "a<b>c", want: "a<b>c"},
+		{name: "empty"},
+		{name: "cleanup to empty", text: "<think></think>🙂\xff\x00 \t\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spy := &ttsSpyDriver{}
+			name := "tts"
+			ttsModel := modelModule.NewTTSModel(spy, &name, nil)
+			s := &ChatPipelineService{}
+			audio := s.synthesizeTTS(t.Context(), ttsModel, tc.text)
+			wantCall := tc.want != ""
+			if spy.called != wantCall {
+				t.Errorf("TTS driver called = %v, want %v", spy.called, wantCall)
+			}
+			if spy.input != tc.want {
+				t.Errorf("TTS input = %q, want %q", spy.input, tc.want)
+			}
+			if (audio != nil) != wantCall {
+				t.Errorf("audio = %v, want audio present = %v", audio, wantCall)
+			}
+		})
+	}
+}
+
+func TestAsyncChat_ContextCancellationTerminatesGoroutine(t *testing.T) {
+	db := setupChatPipelineVisionTestDB(t)
+	seedChatPipelineVisionTenant(t, db, "glm-4-flash@ZHIPU-AI")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel context to simulate client disconnect
+
+	chat := dialForTest("glm-4-flash@ZHIPU-AI")
+	results, err := NewChatPipelineService().AsyncChat(ctx, "user-1", chat,
+		[]map[string]interface{}{{"role": "user", "content": "Question"}}, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Do NOT drain results with a background goroutine.
+	// AsyncChat must detect pre-cancelled context, exit, and close results.
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-results:
+			if !ok {
+				// success: AsyncChat goroutine exited cleanly without leaking
+				return
+			}
+		case <-timeout:
+			t.Fatal("AsyncChat goroutine leaked: did not terminate when context was cancelled")
+		}
 	}
 }

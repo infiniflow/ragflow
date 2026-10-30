@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
@@ -31,7 +32,7 @@ import (
 type SearchHandler struct {
 	searchService *service.SearchService
 	userService   *service.UserService
-	streamLLM     *service.ModelProviderService
+	modelFactory  *service.ModelFactory
 	askService    *service.AskService
 	sseWriter     SSEWriter
 }
@@ -46,8 +47,8 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 }
 
 // SetCompletionDependencies wires the streaming search completion runtime.
-func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.ModelProviderService, askService *service.AskService) {
-	h.streamLLM = streamLLM
+func (h *SearchHandler) SetCompletionDependencies(modelFactory *service.ModelFactory, askService *service.AskService) {
+	h.modelFactory = modelFactory
 	h.askService = askService
 }
 
@@ -133,6 +134,9 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, err := h.searchService.ListSearches(ctx, userID, keywords, page, pageSize, terms, ownerIDs)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
@@ -156,6 +160,14 @@ type CreateSearchRequest struct {
 }
 
 func (h *SearchHandler) CreateSearch(c *gin.Context) {
+	quotaUser, ok := billingQuotaUser(c)
+	if !ok {
+		return
+	}
+	if !billingEnforceApps(c, quotaUser.ID) {
+		return
+	}
+
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -217,9 +229,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	ctx := c.Request.Context()
 	search, err := h.searchService.GetSearchDetail(ctx, userID, searchID)
 	if err != nil {
-		// Check if it's a permission error
-		if err.Error() == "has no permission for this operation" {
-			common.ResponseWithCodeData(c, common.CodeOperatingError, false, "Has no permission for this operation.")
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		// Not found error
@@ -276,9 +286,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	ctx := c.Request.Context()
 	err := h.searchService.DeleteSearch(ctx, userID, searchID)
 	if err != nil {
-		// Check if it's an authorization error
-		if err.Error() == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeDataError, false, "No authorization")
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		// Delete failed error
@@ -333,10 +341,11 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	ctx := c.Request.Context()
 	updatedSearch, err := h.searchService.UpdateSearch(ctx, userID, searchID, &req)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		errMsg := err.Error()
 		switch errMsg {
-		case "no authorization":
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 		case "duplicated search name":
 			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Duplicated search name.")
 		default:
@@ -392,8 +401,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 	ctx := c.Request.Context()
 	plan, code, err := searchSvc.PrepareCompletion(ctx, user.ID, c.Param("search_id"), &req)
 	if err != nil {
-		if code == common.CodeAuthenticationError {
-			common.ResponseWithCodeData(c, code, false, err.Error())
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		if code == common.CodeServerError {
@@ -426,28 +434,37 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		writer.Write(c, sseError("ask service not configured"))
 		return
 	}
-	if h.streamLLM == nil {
-		writer.Write(c, sseError("streaming LLM not configured"))
+	if h.modelFactory == nil {
+		writer.Write(c, sseError("model factory not configured"))
 		return
 	}
 
-	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: plan.UserID, ModelID: plan.ModelID}
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, TenantID: plan.UserID, ModelID: plan.ModelID}
+
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	c.Request = c.Request.WithContext(ctx)
 
 	hadError := false
-	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.DatasetIDs, plan.Options) {
+	for delta := range h.askService.StreamWithOptions(ctx, adapter, plan.UserID, plan.Question, plan.DatasetIDs, plan.Options) {
+		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
-			writer.Write(c, sseAnswer(delta.Value, nil, false))
+			ok = writer.Write(c, sseAnswer(delta.Value, nil, false))
 		case service.AskDeltaMarker:
-			writer.Write(c, sseMarker(delta.Value))
+			ok = writer.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:
 			hadError = true
-			writer.Write(c, sseError(delta.Value))
+			ok = writer.Write(c, sseError(delta.Value))
 		case service.AskDeltaFinal:
-			writer.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+			ok = writer.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+		}
+		if !ok || ctx.Err() != nil {
+			cancel()
+			break
 		}
 	}
-	if !hadError {
-		writer.Write(c, "data: {\"code\": 0, \"message\": \"\", \"data\": true}\n\n")
+	if !hadError && ctx.Err() == nil {
+		writer.Write(c, "data: {\"code\": 0, \"message\": \"success\", \"data\": true}\n\n")
 	}
 }

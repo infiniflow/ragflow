@@ -86,11 +86,6 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse doc engine config error: %w", err)
 	}
 
-	err = globalConfig.ParseStorageEngineConfig(v)
-	if err != nil {
-		return fmt.Errorf("parse storage engine config error: %w", err)
-	}
-
 	err = globalConfig.ParseCacheEngineConfig(v)
 	if err != nil {
 		return fmt.Errorf("parse cache engine config error: %w", err)
@@ -146,6 +141,11 @@ func Init(configPath string) error {
 		return fmt.Errorf("get environments error: %w", err)
 	}
 
+	err = globalConfig.ParseStorageEngineConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse storage engine config error: %w", err)
+	}
+
 	err = globalConfig.ParseBillingConfig(v)
 	if err != nil {
 		return fmt.Errorf("parse billing config error: %w", err)
@@ -161,6 +161,11 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse OAuth config error: %w", err)
 	}
 
+	err = globalConfig.ParseAuditConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse audit log config error: %w", err)
+	}
+
 	return nil
 }
 
@@ -169,6 +174,20 @@ func GetConfig() *config.Config {
 	return globalConfig
 }
 
+// MCPAllowPrivateHosts reports whether self-hosted MCP servers on private
+// networks are permitted (ALLOW_ANY_HOST). It is nil-safe:
+// an uninitialized global config yields false so callers fail closed instead
+// of panicking on a nil *config.Config.
+func MCPAllowPrivateHosts() bool {
+	if globalConfig == nil {
+		return false
+	}
+	return globalConfig.GetMCPAllowPrivateHosts()
+}
+
+// GetAllConfigs collects backend connection settings for administrator inspection.
+// ExportConfigs intentionally retains plaintext credentials; the admin configuration
+// endpoint restricts access to superusers, while PrintAll masks credentials in logs.
 func GetAllConfigs() ([]map[string]interface{}, error) {
 	var allConfigs []map[string]interface{}
 
@@ -200,6 +219,9 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 	case "seekdb":
 		seekDBConfig := globalConfig.GetSeekDBConfig()
 		allConfigs = append(allConfigs, seekDBConfig.ExportConfigs())
+	case "vastbase":
+		vastbaseConfig := globalConfig.GetVastbaseConfig()
+		allConfigs = append(allConfigs, vastbaseConfig.ExportConfigs())
 	default:
 		return nil, fmt.Errorf("not supported doc engine: %s", docEngineType)
 	}
@@ -271,21 +293,65 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 	return allConfigs, nil
 }
 
-// PrintAll prints all configuration settings
+var sensitiveConfigKeys = map[string]struct{}{
+	"password":        {},
+	"mail_password":   {},
+	"secret":          {},
+	"secret_key":      {},
+	"client_secret":   {},
+	"api_key":         {},
+	"host_api_key":    {},
+	"http_app_key":    {},
+	"http_secret_key": {},
+	"access_key":      {},
+	"secret_id":       {},
+	"session_token":   {},
+	"sas_token":       {},
+
+	"open_dataloader_api_key": {},
+	"paddle_ocr_access_token": {},
+	"somark_api_key":          {},
+	"tcad_api_key":            {},
+	"docling_api_key":         {},
+	"mineru_api_key":          {},
+	"tavily_api_key":          {},
+	"querit_api_key":          {},
+}
+
+// PrintAll logs all configuration settings with credentials masked.
 func PrintAll() {
 	if globalViper == nil {
 		common.Info("Configuration not initialized")
 		return
 	}
 
-	allSettings := globalViper.AllSettings()
-	// The standalone MCP key grants every self-host client the same identity.
-	if mcp, ok := allSettings["mcp"].(map[string]interface{}); ok {
-		delete(mcp, "host_api_key")
-	}
+	allSettings := maskConfigCredentials(globalViper.AllSettings()).(map[string]any)
 	common.Info("=== All Configurations ===")
 	for key, value := range allSettings {
 		common.Info("config", zap.String("key", key), zap.Any("value", value))
 	}
 	common.Info("=== End Configurations ===")
+}
+
+func maskConfigCredentials(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		settings := make(map[string]any, len(value))
+		for key, child := range value {
+			if _, sensitive := sensitiveConfigKeys[strings.ToLower(key)]; sensitive {
+				settings[key] = "******"
+				continue
+			}
+			settings[key] = maskConfigCredentials(child)
+		}
+		return settings
+	case []any:
+		settings := make([]any, len(value))
+		for i, child := range value {
+			settings[i] = maskConfigCredentials(child)
+		}
+		return settings
+	default:
+		return value
+	}
 }

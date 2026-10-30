@@ -22,20 +22,19 @@ import { ListDeletionKey } from '@/constants/list-deletion';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import {
   AgentListItem,
+  DSL,
   IAgentLogResponse,
   IAgentLogsRequest,
   IAgentLogsResponse,
   IBuiltinPipelineListResponse,
   IFlow,
   IFlowTemplate,
+  IAgentWebhookCredential,
   IPipeLineListRequest,
   ITraceData,
   IWebhookTrace,
 } from '@/interfaces/database/agent';
-import {
-  IAgentWebhookTraceRequest,
-  IDebugSingleRequestBody,
-} from '@/interfaces/request/agent';
+import { IAgentWebhookTraceRequest } from '@/interfaces/request/agent';
 import i18n from '@/locales/config';
 import { IInputs } from '@/pages/agent/interface';
 import { useGetSharedChatSearchParams } from '@/pages/next-chats/hooks/use-send-shared-message';
@@ -48,13 +47,21 @@ import agentService, {
   fetchSharedTrace,
   fetchTrace,
   fetchWebhookTrace,
+  issueAgentWebhookCredential,
+  revokeAgentWebhookCredential,
   updateAgent,
   updateAgentTags,
+  updateVersion,
   uploadAgentFile,
 } from '@/services/agent-service';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { markListItemsDeleted } from '@/utils/list-deletion-util';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { get, isEmpty, set } from 'lodash';
 import { useCallback, useState } from 'react';
@@ -63,6 +70,7 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { useSessionList } from './use-session-list';
 
 export const enum AgentApiAction {
   FetchAgentListByPage = 'fetchAgentListByPage',
@@ -73,7 +81,8 @@ export const enum AgentApiAction {
   DeleteAgent = 'deleteAgent',
   FetchAgentDetail = 'fetchAgentDetail',
   ResetAgent = 'resetAgent',
-  SetAgent = 'setAgent',
+  CreateAgent = 'createAgent',
+  SaveAgent = 'saveAgent',
   FetchAgentTemplates = 'fetchAgentTemplates',
   UploadAgentFile = 'uploadAgentFile',
   UploadAgentFileWithProgress = 'uploadAgentFileWithProgress',
@@ -89,6 +98,8 @@ export const enum AgentApiAction {
   CancelDataflow = 'cancelDataflow',
   CancelCanvas = 'cancelCanvas',
   FetchWebhookTrace = 'fetchWebhookTrace',
+  CreateWebhookCredential = 'createWebhookCredential',
+  RevokeWebhookCredential = 'revokeWebhookCredential',
   FetchSessionsByCanvasId = 'fetchSessionsByCanvasId',
   FetchSessionById = 'fetchSessionById',
   CreateAgentSession = 'createAgentSession',
@@ -98,11 +109,17 @@ export const enum AgentApiAction {
   FetchSharedAgent = 'fetchSharedAgent',
   FetchAgentTags = 'fetchAgentTags',
   UpdateAgentTags = 'updateAgentTags',
-  FetchPipelineNodes = 'fetchPipelineNodes',
   FetchBuiltinPipelineList = 'fetchBuiltinPipelineList',
   FetchBuiltinPipelineDetail = 'fetchBuiltinPipelineDetail',
 }
 
+// Invalidation rule for the list-page queries (list/filters/tags): they all
+// use gcTime: 0 and refetch on mount, so invalidating them only matters while
+// the agents list page is still mounted — i.e. from the list page's own
+// mutations (delete, rename, tag edits, compilation group delete). Create and
+// save flows navigate away or run on the canvas page, where these queries are
+// inactive; invalidating them there only fires wasted refetches from the list
+// page still mounted behind the create dialog.
 export const AgentKeys = {
   templates: () => [AgentApiAction.FetchAgentTemplates] as const,
   list: (params?: unknown) =>
@@ -112,13 +129,18 @@ export const AgentKeys = {
   all: () => [AgentApiAction.FetchAllAgentList] as const,
   listAll: (canvasCategory?: string) =>
     [AgentApiAction.FetchAgentList, canvasCategory] as const,
-  filters: () => [AgentApiAction.FetchAgentFilters] as const,
+  filters: (canvasCategory?: string) =>
+    canvasCategory === undefined
+      ? ([AgentApiAction.FetchAgentFilters] as const)
+      : ([AgentApiAction.FetchAgentFilters, canvasCategory] as const),
   tags: (canvasCategory?: string) =>
     canvasCategory === undefined
       ? ([AgentApiAction.FetchAgentTags] as const)
       : ([AgentApiAction.FetchAgentTags, canvasCategory] as const),
   detail: (agentId?: string) =>
     [AgentApiAction.FetchAgentDetail, agentId] as const,
+  inputForm: (agentId?: string, componentId?: string) =>
+    [AgentApiAction.FetchInputForm, agentId, componentId] as const,
   versionList: (agentId?: string) =>
     [AgentApiAction.FetchVersionList, agentId] as const,
   version: (agentId?: string, versionId?: string) =>
@@ -143,14 +165,14 @@ const buildAgentListParams = ({
   page,
   pageSize,
   keywords,
-  canvasCategoryIds,
+  canvasCategory,
   ownerIds,
   tags,
 }: {
   page: number;
   pageSize: number;
   keywords?: string;
-  canvasCategoryIds?: string[];
+  canvasCategory?: string;
   ownerIds?: string[];
   tags?: string[];
 }) => {
@@ -162,8 +184,8 @@ const buildAgentListParams = ({
   if (keywords) {
     params.keywords = keywords;
   }
-  if (Array.isArray(canvasCategoryIds) && canvasCategoryIds.length > 0) {
-    params.canvas_category = canvasCategoryIds.join(',');
+  if (canvasCategory) {
+    params.canvas_category = canvasCategory;
   }
   if (Array.isArray(ownerIds) && ownerIds.length > 0) {
     params.owner_ids = ownerIds.join(',');
@@ -175,16 +197,13 @@ const buildAgentListParams = ({
   return params;
 };
 
-export const useFetchAgentListByPage = () => {
+export const useFetchAgentListByPage = (canvasCategory?: string) => {
   const { searchString, setSearchString, handleInputChange } =
     useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, setFilterValue, handleFilterSubmit, checkValue } =
     useHandleFilterSubmit();
-  const canvasCategoryIds = Array.isArray(filterValue.canvasCategory)
-    ? (filterValue.canvasCategory as string[])
-    : undefined;
   const owner = filterValue.owner;
   const tags = Array.isArray(filterValue.tags) ? filterValue.tags : undefined;
 
@@ -192,7 +211,7 @@ export const useFetchAgentListByPage = () => {
     page: pagination.current,
     pageSize: pagination.pageSize,
     keywords: debouncedSearchString,
-    canvasCategoryIds,
+    canvasCategory,
     ownerIds: Array.isArray(owner) ? owner : undefined,
     tags,
   });
@@ -204,6 +223,7 @@ export const useFetchAgentListByPage = () => {
     queryKey: AgentKeys.list({
       debouncedSearchString,
       ...pagination,
+      canvasCategory,
       filterValue,
     }),
     placeholderData: (previousData) => {
@@ -237,6 +257,7 @@ export const useFetchAgentListByPage = () => {
     data: data?.canvas ?? [],
     loading,
     searchString,
+    debouncedSearchString,
     setSearchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total ?? 0 },
@@ -258,7 +279,7 @@ export const fetchAllAgents = async (): Promise<AgentListItem[]> => {
         params: buildAgentListParams({
           page,
           pageSize: 100,
-          canvasCategoryIds: [AgentCategory.AgentCanvas],
+          canvasCategory: AgentCategory.AgentCanvas,
         }),
       },
       true,
@@ -310,62 +331,6 @@ export const useUpdateAgentSetting = () => {
   });
 
   return { data, loading, updateAgentSetting: mutateAsync };
-};
-
-export const useDuplicateAgent = () => {
-  const queryClient = useQueryClient();
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [AgentApiAction.SetAgent, 'duplicate'],
-    mutationFn: async (agent: Pick<IFlow, 'id' | 'title'>) => {
-      try {
-        const { data: detail } = await agentService.getAgent(agent.id);
-        const source = detail?.data;
-        if (!source) {
-          message.error(i18n.t('message.requestError'));
-          return null;
-        }
-
-        const sourceTitle = agent.title ?? source.title ?? '';
-        const { data } = await agentService.createAgent({
-          title: i18n.t('flow.copyOfAgentName', {
-            name: sourceTitle,
-            defaultValue: `${sourceTitle} (Copy)`,
-          }),
-          dsl: source.dsl,
-          avatar: source.avatar,
-          description: source.description,
-          canvas_category: source.canvas_category,
-        });
-
-        if (data?.code === 0) {
-          message.success(i18n.t('message.created'));
-          queryClient.invalidateQueries({
-            queryKey: AgentKeys.list(),
-          });
-          queryClient.invalidateQueries({
-            queryKey: AgentKeys.filters(),
-          });
-          return data;
-        }
-
-        message.error(data?.message ?? i18n.t('message.requestError'));
-        return null;
-      } catch (error) {
-        console.error('useDuplicateAgent failed:', error);
-        message.error(
-          (error as { message?: string })?.message ??
-            i18n.t('message.requestError'),
-        );
-        return null;
-      }
-    },
-  });
-
-  return { data, loading, duplicateAgent: mutateAsync };
 };
 
 export const useDeleteAgent = () => {
@@ -510,9 +475,36 @@ export const useResetAgent = () => {
   return { data, loading, resetAgent: mutateAsync };
 };
 
-export const useSetAgent = (
+// Every create flow (blank, template, JSON import, built-in pipeline copy)
+// navigates to the new canvas on success, and the list-page queries refetch on
+// remount (gcTime: 0) — so creation intentionally invalidates nothing.
+export const useCreateAgent = (showMessage: boolean = true) => {
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [AgentApiAction.CreateAgent],
+    mutationFn: async (params: {
+      title?: string;
+      dsl?: DSL | Record<string, any>;
+      avatar?: string;
+      canvas_category?: string;
+    }) => {
+      const { data = {} } = await agentService.createAgent(params);
+      if (data.code === 0 && showMessage) {
+        message.success(i18n.t('message.created'));
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, createAgent: mutateAsync };
+};
+
+export const useSaveAgent = (
   showMessage: boolean = true,
-  skipInvalidation: boolean = false,
+  skipDetailRefresh: boolean = false,
 ) => {
   const { id } = useParams();
   const queryClient = useQueryClient();
@@ -521,51 +513,43 @@ export const useSetAgent = (
     isPending: loading,
     mutateAsync,
   } = useMutation({
-    mutationKey: [AgentApiAction.SetAgent],
+    mutationKey: [AgentApiAction.SaveAgent],
     mutationFn: async (params: {
       id?: string;
       title?: string;
-      dsl?: Record<string, any>;
-      avatar?: string;
-      canvas_category?: string;
+      dsl?: DSL | Record<string, any>;
+      avatar?: string | null;
       release?: string;
       description?: string | null;
       permission?: string;
+      autosave?: boolean;
+      alias?: string;
     }) => {
       const agentId = params.id ?? id;
-      const { data = {} } = agentId
-        ? await updateAgent(agentId, {
-            title: params.title,
-            dsl: params.dsl,
-            avatar: params.avatar,
-            description: params.description,
-            permission: params.permission,
-            release: params.release,
-          })
-        : await agentService.createAgent(params);
+      if (!agentId) {
+        return {};
+      }
+      const { data = {} } = await updateAgent(agentId, {
+        title: params.title,
+        dsl: params.dsl,
+        avatar: params.avatar,
+        description: params.description,
+        permission: params.permission,
+        release: params.release,
+        autosave: params.autosave,
+        alias: params.alias,
+      });
       if (data.code === 0) {
         if (showMessage) {
-          message.success(
-            i18n.t(`message.${agentId ? 'modified' : 'created'}`),
-          );
+          message.success(i18n.t('message.modified'));
         }
-        queryClient.invalidateQueries({
-          queryKey: AgentKeys.list(),
-        });
         // Every save can prune the oldest unpublished versions server-side,
         // so the version history list must refetch even when autosave skips
-        // detail invalidation.
-        if (agentId) {
-          queryClient.invalidateQueries({
-            queryKey: AgentKeys.versionList(agentId),
-          });
-        }
-        if (!agentId) {
-          queryClient.invalidateQueries({
-            queryKey: AgentKeys.filters(),
-          });
-        }
-        if (agentId && !skipInvalidation) {
+        // the detail refresh.
+        queryClient.invalidateQueries({
+          queryKey: AgentKeys.versionList(agentId),
+        });
+        if (!skipDetailRefresh) {
           queryClient.invalidateQueries({
             queryKey: AgentKeys.detail(agentId),
           });
@@ -575,7 +559,7 @@ export const useSetAgent = (
     },
   });
 
-  return { data, loading, setAgent: mutateAsync };
+  return { data, loading, saveAgent: mutateAsync };
 };
 
 // Only one file can be uploaded at a time
@@ -728,7 +712,14 @@ export const useTestDbConnect = () => {
     mutationFn: async (params: any) => {
       const ret = await agentService.testDbConnect(params);
       if (ret?.data?.code === 0) {
-        message.success(ret?.data?.data);
+        const successMessage = ret?.data?.message;
+        message.success(
+          typeof successMessage === 'string' &&
+            successMessage.trim() &&
+            successMessage.trim().toLowerCase() !== 'success'
+            ? successMessage
+            : i18n.t('setting.dataSourceTestSuccess'),
+        );
       }
       return ret;
     },
@@ -737,40 +728,11 @@ export const useTestDbConnect = () => {
   return { data, loading, testDbConnect: mutateAsync };
 };
 
-export const useDebugSingle = () => {
-  const { id } = useParams();
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [AgentApiAction.DebugSingle],
-    mutationFn: async (params: IDebugSingleRequestBody) => {
-      const ret = await agentService.debugSingle(
-        {
-          agentId: id as string,
-          componentId: params.component_id,
-          data: {
-            params: params.params,
-          },
-        },
-        true,
-      );
-      if (ret?.data?.code !== 0) {
-        message.error(ret?.data?.message);
-      }
-      return ret?.data?.data;
-    },
-  });
-
-  return { data, loading, debugSingle: mutateAsync };
-};
-
 export const useFetchInputForm = (componentId?: string) => {
   const { id } = useParams();
 
   const { data } = useQuery<Record<string, any>>({
-    queryKey: [AgentApiAction.FetchInputForm],
+    queryKey: AgentKeys.inputForm(id, componentId),
     initialData: {},
     enabled: !!id && !!componentId,
     queryFn: async () => {
@@ -789,7 +751,13 @@ export const useFetchInputForm = (componentId?: string) => {
 export const useFetchVersionList = () => {
   const { id } = useParams();
   const { data, isFetching: loading } = useQuery<
-    Array<{ created_at: string; title: string; id: string; release?: boolean }>
+    Array<{
+      created_at: string;
+      title: string;
+      id: string;
+      release?: boolean;
+      alias?: string;
+    }>
   >({
     queryKey: AgentKeys.versionList(id),
     initialData: [],
@@ -804,6 +772,203 @@ export const useFetchVersionList = () => {
   return { data, loading };
 };
 
+// Row shape of a published canvas version, newest-first (design section 7/E1),
+// including the free-text alias (A2/F1).
+export interface ICanvasVersionRow {
+  id: string;
+  title: string;
+  created_at: string;
+  release?: boolean;
+  alias?: string;
+}
+
+// Shared query key/options for a canvas's published version list. The raw
+// 'canvasVersionList' key predates the AgentKeys factory; both the single- and
+// multi-canvas hooks must keep using it verbatim so the version delete/alias
+// mutations below invalidate every observer.
+const canvasVersionListQuery = (canvasId: string) => ({
+  queryKey: ['canvasVersionList', canvasId] as const,
+  queryFn: async (): Promise<ICanvasVersionRow[]> => {
+    const { data } = await agentService.fetchVersionList(canvasId);
+    return data?.data ?? [];
+  },
+});
+
+// useFetchCanvasVersionList lists the published versions of an arbitrary canvas
+// (dataflow or agent) by id. Unlike useFetchVersionList it takes the canvas id
+// explicitly (not from route params) so the document pipeline dialog can load
+// versions for the currently selected dataflow canvas. It must not set
+// initialData: the key is shared with useFetchCanvasVersions, whose consumers
+// rely on isSuccess to tell "loaded and empty" from "still loading" — an
+// initialData [] would report success while the real fetch is in flight and a
+// pinned version would briefly look deleted.
+export const useFetchCanvasVersionList = (canvasId?: string) => {
+  const {
+    data,
+    isFetching: loading,
+    isError,
+  } = useQuery({
+    queryKey: ['canvasVersionList', canvasId],
+    gcTime: 0,
+    enabled: !!canvasId,
+    queryFn: async (): Promise<ICanvasVersionRow[]> => {
+      if (!canvasId) return [];
+      const { data } = await agentService.fetchVersionList(canvasId);
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, isError };
+};
+
+// useFetchCanvasVersions lazily loads the published versions of several
+// canvases at once (the parser tree select fetches a canvas's versions only
+// when the user expands it). `isSuccess` distinguishes "loaded and empty" from
+// "still loading" — kept truthful by neither version-list hook setting
+// initialData (see useFetchCanvasVersionList). The returned array aligns
+// index-by-index with `canvasIds`.
+export const useFetchCanvasVersions = (canvasIds: string[]) => {
+  return useQueries({
+    queries: canvasIds.map((canvasId) => ({
+      ...canvasVersionListQuery(canvasId),
+      gcTime: 0,
+    })),
+  });
+};
+
+// useDeleteVersion removes a single canvas version (design section 7/B2). The
+// backend still allows deletion when the version is referenced by a dataset or
+// file; the binding then enters a Missing (unparseable) state, so the UI shows a
+// confirmation that warns about breaking bound files (B2.1).
+export const useDeleteVersion = () => {
+  const queryClient = useQueryClient();
+  const {
+    isPending: loading,
+    isError,
+    mutateAsync,
+  } = useMutation({
+    mutationFn: async ({
+      canvasId,
+      versionId,
+    }: {
+      canvasId: string;
+      versionId: string;
+    }) => {
+      const { data } = await agentService.deleteVersion({
+        agentId: canvasId,
+        versionId,
+      });
+      return data?.code === 0;
+    },
+    onSuccess: (_result, variables) => {
+      // Invalidate both version-list caches so the deleted version disappears
+      // without a manual refresh: the version dialog reads
+      // AgentKeys.versionList (canvas id from route params) and the document
+      // pipeline dialog reads the canvasVersionList key.
+      queryClient.invalidateQueries({
+        queryKey: AgentKeys.versionList(variables.canvasId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['canvasVersionList', variables.canvasId],
+      });
+    },
+  });
+
+  return { loading, isError, deleteVersion: mutateAsync };
+};
+
+export const useApplyVersion = () => {
+  const queryClient = useQueryClient();
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationFn: async ({
+      canvasId,
+      versionId,
+    }: {
+      canvasId: string;
+      versionId: string;
+    }) => {
+      const { data } = await agentService.applyVersion({
+        agentId: canvasId,
+        versionId,
+      });
+      return data?.code === 0;
+    },
+    onSuccess: (ok, { canvasId }) => {
+      if (!ok) return;
+      queryClient.invalidateQueries({ queryKey: AgentKeys.list() });
+      queryClient.invalidateQueries({
+        queryKey: AgentKeys.versionList(canvasId),
+      });
+      queryClient.invalidateQueries({ queryKey: AgentKeys.detail(canvasId) });
+    },
+  });
+
+  return { loading, applyVersion: mutateAsync };
+};
+
+export const useUpdateVersion = () => {
+  const queryClient = useQueryClient();
+  const {
+    isPending: loading,
+    isError,
+    mutateAsync,
+  } = useMutation({
+    mutationFn: async ({
+      canvasId,
+      versionId,
+      alias,
+    }: {
+      canvasId: string;
+      versionId: string;
+      alias: string;
+    }) => {
+      const { data } = await updateVersion(canvasId, versionId, { alias });
+      return data?.code === 0;
+    },
+    onSuccess: (_result, variables) => {
+      // The alias edit does not create a version or change the DSL, but the
+      // version-list cache must reflect the new alias without a manual refresh
+      // (design G2/§4.4).
+      queryClient.invalidateQueries({
+        queryKey: AgentKeys.versionList(variables.canvasId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['canvasVersionList', variables.canvasId],
+      });
+    },
+  });
+
+  return { loading, isError, updateVersion: mutateAsync };
+};
+
+// Shared query options for a single canvas version's detail (IFlow, dsl
+// included). Both useFetchVersion (canvas version dialog) and
+// useFetchPipelineDslByPipelineId (operator tabs) must cache the same shape
+// under AgentKeys.version so they can share the entry safely.
+const canvasVersionQuery = (agentId?: string, versionId?: string) => ({
+  queryKey: AgentKeys.version(agentId, versionId),
+  gcTime: 0,
+  // A pruned version never recovers on retry, and each attempt would
+  // re-fire the error path.
+  retry: false,
+  queryFn: async (): Promise<IFlow | undefined> => {
+    if (!agentId || !versionId) return undefined;
+
+    // Consumers render their own error/empty state, so suppress the global
+    // notification whose "no permission" wording misleads here.
+    const { data } = await agentService.fetchVersion(
+      { agentId, versionId, skipGlobalErrorNotification: true },
+      true,
+    );
+
+    if (data?.code !== 0) {
+      throw new Error(data?.message);
+    }
+
+    return data?.data ?? undefined;
+  },
+});
+
 export const useFetchVersion = (
   version_id?: string,
 ): {
@@ -817,33 +982,8 @@ export const useFetchVersion = (
     isFetching: loading,
     isError,
   } = useQuery({
-    queryKey: AgentKeys.version(id, version_id),
-    initialData: undefined,
-    gcTime: 0,
-    // A pruned version never recovers on retry, and each attempt would
-    // re-fire the global error notification.
-    retry: false,
+    ...canvasVersionQuery(id, version_id),
     enabled: !!id && !!version_id,
-    queryFn: async () => {
-      if (!id || !version_id) return undefined;
-
-      // The dialog renders its own error state, so suppress the global
-      // notification whose "no permission" wording misleads here.
-      const { data } = await agentService.fetchVersion(
-        {
-          agentId: id,
-          versionId: version_id,
-          skipGlobalErrorNotification: true,
-        },
-        true,
-      );
-
-      if (data?.code !== 0) {
-        throw new Error(data?.message);
-      }
-
-      return data?.data ?? undefined;
-    },
   });
 
   return { data, loading, isError };
@@ -862,6 +1002,7 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
     queryFn: async () => {
       const { data } = await fetchAgentLogsByCanvasId(id as string, {
         ...searchParams,
+        include_reference: true,
       });
 
       return { total: data?.total ?? 0, sessions: data?.data ?? [] };
@@ -871,35 +1012,29 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
   return { data, loading, refetch };
 };
 
+export const AgentSessionKeys = {
+  all: [AgentApiAction.FetchSessionsByCanvasId] as const,
+  list: (canvasId?: string, tenantId?: string) =>
+    [...AgentSessionKeys.all, canvasId, tenantId] as const,
+};
+
 export const useFetchSessionsByCanvasId = () => {
   const { id: canvasId } = useParams();
   const { data: tenantInfo } = useFetchTenantInfo();
 
-  const { data, isFetching: loading } = useQuery<IAgentLogsResponse>({
-    queryKey: [AgentApiAction.FetchSessionsByCanvasId, canvasId],
-    initialData: { total: 0, sessions: [] } as IAgentLogsResponse,
-    gcTime: 0,
+  return useSessionList<IAgentLogResponse>({
+    queryKey: AgentSessionKeys.list(canvasId, tenantInfo.tenant_id),
     enabled: !!canvasId && !isEmpty(tenantInfo),
-    queryFn: async () => {
-      if (!canvasId) {
-        return { total: 0, sessions: [] };
-      }
-
-      const { data } = await fetchAgentLogsByCanvasId(canvasId, {
-        page: 1,
-        page_size: 100,
+    fetchPage: async (params) => {
+      const { data } = await fetchAgentLogsByCanvasId(canvasId!, {
+        ...params,
+        include_history: false,
         exp_user_id: tenantInfo.tenant_id,
       });
 
-      return { total: data?.total ?? 0, sessions: data?.data ?? [] };
+      return { total: data?.total ?? 0, items: data?.data ?? [] };
     },
   });
-
-  return {
-    data: data?.sessions ?? [],
-    loading,
-    total: data?.total ?? 0,
-  };
 };
 
 export const useFetchExternalAgentInputs = () => {
@@ -981,7 +1116,7 @@ export interface IAgentCategoryFilter {
   count: number;
 }
 
-export const useFetchAgentFilters = () => {
+export const useFetchAgentFilters = (canvasCategory?: string) => {
   const { data, isFetching: loading } = useQuery<{
     filter: {
       owner: IAgentOwnerFilter[];
@@ -989,12 +1124,17 @@ export const useFetchAgentFilters = () => {
     };
     total: number;
   }>({
-    queryKey: AgentKeys.filters(),
+    queryKey: AgentKeys.filters(canvasCategory),
     initialData: { filter: { owner: [], canvas_category: [] }, total: 0 },
     gcTime: 0,
     queryFn: async () => {
       const { data } = await agentService.listAgents(
-        { params: { type: 'filter' } },
+        {
+          params: {
+            type: 'filter',
+            ...(canvasCategory ? { canvas_category: canvasCategory } : {}),
+          },
+        },
         true,
       );
       return (
@@ -1016,15 +1156,14 @@ export const BuiltinPipelineKeys = {
     [AgentApiAction.FetchBuiltinPipelineDetail, id] as const,
 };
 
-export const useFetchBuiltinPipelines = (type = 'builtin', enabled = true) => {
+export const useFetchBuiltinPipelines = () => {
   const { data, isFetching: loading } = useQuery<IBuiltinPipelineListResponse>({
-    queryKey: BuiltinPipelineKeys.list(type),
+    queryKey: BuiltinPipelineKeys.list('builtin'),
     initialData: { canvas: [], total: 0 },
     gcTime: 0,
-    enabled,
     queryFn: async () => {
       const { data } = await agentService.listBuiltinPipelines(
-        { params: { type } },
+        { params: { type: 'builtin' } },
         true,
       );
       return data?.data ?? { canvas: [], total: 0 };
@@ -1195,6 +1334,42 @@ export const useFetchWebhookTrace = (autoStart: boolean = true) => {
   };
 };
 
+export function useCreateAgentWebhookCredential() {
+  const { id } = useParams();
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationKey: [AgentApiAction.CreateWebhookCredential],
+    mutationFn: async () => {
+      if (!id) throw new Error('Agent ID is required');
+
+      const { data } = await issueAgentWebhookCredential(id);
+      if (data?.code !== 0 || !data?.data?.webhook_url) {
+        throw new Error(data?.message || 'Failed to create webhook URL');
+      }
+
+      return data.data as IAgentWebhookCredential;
+    },
+  });
+
+  return { createWebhookCredential: mutateAsync, loading };
+}
+
+export function useRevokeAgentWebhookCredential() {
+  const { id } = useParams();
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationKey: [AgentApiAction.RevokeWebhookCredential],
+    mutationFn: async () => {
+      if (!id) throw new Error('Agent ID is required');
+
+      const { data } = await revokeAgentWebhookCredential(id);
+      if (data?.code !== 0) {
+        throw new Error(data?.message || 'Failed to revoke webhook URL');
+      }
+    },
+  });
+
+  return { revokeWebhookCredential: mutateAsync, loading };
+}
+
 export function useCreateAgentSession() {
   const queryClient = useQueryClient();
 
@@ -1209,7 +1384,7 @@ export function useCreateAgentSession() {
 
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchSessionsByCanvasId],
+          queryKey: AgentSessionKeys.all,
         });
         return data.data;
       }
@@ -1241,7 +1416,7 @@ export function useDeleteAgentSession() {
 
       if (data.code === 0) {
         queryClient.invalidateQueries({
-          queryKey: [AgentApiAction.FetchSessionsByCanvasId],
+          queryKey: AgentSessionKeys.all,
         });
       }
 
@@ -1266,7 +1441,10 @@ export function useFetchSessionManually() {
         return null;
       }
 
-      const { data } = await fetchAgentLogsById(canvasId, sessionId);
+      const { data } = await fetchAgentLogsById(canvasId, sessionId, {
+        include_reference: true,
+        include_prompt: true,
+      });
 
       return data?.data;
     },
@@ -1291,25 +1469,32 @@ export const useExportAgentLog = () => {
   return { exportLogs: mutateAsync, loading };
 };
 
+// useFetchPipelineDslByPipelineId loads the DSL that backs the pipeline
+// operator tabs. Builtin pipelines have no version concept and are fetched
+// directly; a dataflow pipeline is versioned, so its DSL comes from the
+// selected canvas version — without a version id nothing is fetched and the
+// tabs stay hidden.
 export const useFetchPipelineDslByPipelineId = (
   pipelineId?: string,
+  versionId?: string,
   isBuiltin = false,
 ) => {
-  const { data: dsl, isFetching: loading } = useQuery({
-    queryKey: isBuiltin
-      ? BuiltinPipelineKeys.detail(pipelineId!)
-      : [AgentApiAction.FetchPipelineNodes, pipelineId],
-    initialData: {},
+  const { data: builtinDsl, isFetching: builtinLoading } = useQuery({
+    queryKey: BuiltinPipelineKeys.detail(pipelineId!),
     gcTime: 0,
-    enabled: !!pipelineId,
-    queryFn: async () => {
-      const { data } = isBuiltin
-        ? await agentService.getBuiltinPipeline(pipelineId!)
-        : await agentService.getAgent(pipelineId!);
-      const flow = data?.data;
-      return flow?.dsl ?? {};
+    enabled: isBuiltin && !!pipelineId,
+    queryFn: async (): Promise<DSL | undefined> => {
+      const { data } = await agentService.getBuiltinPipeline(pipelineId!);
+      return data?.data?.dsl;
     },
   });
+  const { data: version, isFetching: versionLoading } = useQuery({
+    ...canvasVersionQuery(pipelineId, versionId),
+    enabled: !isBuiltin && !!pipelineId && !!versionId,
+  });
 
-  return { dsl, loading };
+  return {
+    dsl: isBuiltin ? builtinDsl : version?.dsl,
+    loading: isBuiltin ? builtinLoading : versionLoading,
+  };
 };
