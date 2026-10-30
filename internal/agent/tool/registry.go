@@ -506,22 +506,23 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 }
 
 func buildSearXNGTool(params map[string]any) (einotool.BaseTool, error) {
-	defaults := defaultSearXNGParams()
+	topN := defaultSearXNGTopN
 	if value, ok := params["top_n"]; ok {
-		topN, valid := parseSearXNGTopN(value)
-		if !valid || topN <= 0 {
+		parsed, valid := parseSearXNGTopN(value)
+		if !valid || parsed <= 0 {
 			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "searxng")
 		}
-		defaults.TopN = topN
+		topN = parsed
 	}
+	var searxngURL string
 	if value, ok := params["searxng_url"]; ok {
-		searxngURL, valid := value.(string)
+		str, valid := value.(string)
 		if !valid {
 			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param searxng_url", "searxng")
 		}
-		defaults.SearXNGURL = searxngURL
+		searxngURL = str
 	}
-	return newSearXNGToolWithDefaults(nil, defaults), nil
+	return newSearXNGTool(nil, searxngURL, topN), nil
 }
 
 func buildWencaiTool(params map[string]any) (einotool.BaseTool, error) {

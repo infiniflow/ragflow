@@ -78,10 +78,7 @@ func TestSearXNGInvokableRunPreservesRawResultsAndTopN(t *testing.T) {
 	}))
 	defer server.Close()
 
-	defaults := defaultSearXNGParams()
-	defaults.SearXNGURL = server.URL
-	defaults.TopN = 2
-	searchTool := newLocalSearXNGTool(t, defaults)
+	searchTool := newLocalSearXNGTool(t, server.URL, 2)
 	out, err := searchTool.InvokableRun(ctx, `{"query":"  ragflow search  ","searxng_url":"http://127.0.0.1:1"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
@@ -104,7 +101,7 @@ func TestSearXNGInvokableRunPreservesRawResultsAndTopN(t *testing.T) {
 	}
 }
 
-func TestSearXNGInfoMatchesPythonModelSchema(t *testing.T) {
+func TestSearXNGInfoExposesOnlyQuery(t *testing.T) {
 	ctx := t.Context()
 	t.Parallel()
 
@@ -127,13 +124,15 @@ func TestSearXNGInfoMatchesPythonModelSchema(t *testing.T) {
 		t.Fatalf("marshal schema: %v", err)
 	}
 	schemaText := string(raw)
-	for _, key := range []string{`"query"`, `"searxng_url"`, `"required":["query"]`} {
+	for _, key := range []string{`"query"`, `"required":["query"]`} {
 		if !strings.Contains(schemaText, key) {
 			t.Fatalf("schema missing %s: %s", key, schemaText)
 		}
 	}
-	if strings.Contains(schemaText, `"top_n"`) {
-		t.Fatalf("schema leaked node config top_n: %s", schemaText)
+	for _, key := range []string{`"searxng_url"`, `"top_n"`} {
+		if strings.Contains(schemaText, key) {
+			t.Fatalf("schema exposes %s: %s", key, schemaText)
+		}
 	}
 }
 
@@ -149,8 +148,7 @@ func TestSearXNGEmptyTryRunInputsSkipRequest(t *testing.T) {
 	}
 	for _, args := range []string{
 		`{"query":""}`,
-		`{"query":"   ","searxng_url":"https://example.com"}`,
-		`{"query":"ragflow"}`,
+		`{"query":"   "}`,
 	} {
 		out, err := searchTool.InvokableRun(ctx, args)
 		if err != nil {
@@ -160,6 +158,28 @@ func TestSearXNGEmptyTryRunInputsSkipRequest(t *testing.T) {
 		if err = json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 || envelope.Error != "" {
 			t.Fatalf("InvokableRun(%s) = %s, want empty results", args, out)
 		}
+	}
+	if resolves.Load() != 0 {
+		t.Fatalf("resolver calls = %d, want 0", resolves.Load())
+	}
+}
+
+func TestSearXNGUnconfiguredURLReturnsError(t *testing.T) {
+	ctx := t.Context()
+	t.Parallel()
+
+	searchTool := NewSearXNGTool()
+	var resolves atomic.Int32
+	searchTool.resolve = func(string) (string, net.IP, error) {
+		resolves.Add(1)
+		return "", nil, errors.New("must not resolve")
+	}
+	out, err := searchTool.InvokableRun(ctx, `{"query":"ragflow","searxng_url":"http://example.com"}`)
+	if !errors.Is(err, errSearXNGURLUnconfigured) {
+		t.Fatalf("err = %v, want errSearXNGURLUnconfigured", err)
+	}
+	if !strings.Contains(out, `"_ERROR"`) {
+		t.Fatalf("output = %s, want _ERROR envelope", out)
 	}
 	if resolves.Load() != 0 {
 		t.Fatalf("resolver calls = %d, want 0", resolves.Load())
@@ -181,8 +201,8 @@ func TestSearXNGBuildByNameAcceptsPythonNodeParams(t *testing.T) {
 	if !ok {
 		t.Fatalf("built type = %T, want *SearXNGTool", built)
 	}
-	if searchTool.defaults.TopN != 8 || searchTool.defaults.SearXNGURL != "https://searx.example.com" {
-		t.Fatalf("defaults = %+v", searchTool.defaults)
+	if searchTool.url != "https://searx.example.com" || searchTool.topN != 8 {
+		t.Fatalf("url = %q, topN = %d", searchTool.url, searchTool.topN)
 	}
 }
 
@@ -193,6 +213,7 @@ func TestSearXNGBuildByNameRejectsInvalidNodeParams(t *testing.T) {
 		{"top_n": "abc"},
 		{"top_n": 0},
 		{"top_n": 1.5},
+		{"searxng_url": 1},
 	}
 	for _, params := range invalid {
 		if _, err := BuildByName("searxng", params); err == nil {
@@ -290,9 +311,7 @@ func TestSearXNGDoesNotRetryFailedRequest(t *testing.T) {
 	}))
 	defer server.Close()
 
-	defaults := defaultSearXNGParams()
-	defaults.SearXNGURL = server.URL
-	searchTool := newLocalSearXNGTool(t, defaults)
+	searchTool := newLocalSearXNGTool(t, server.URL, 0)
 	if _, err := searchTool.InvokableRun(ctx, `{"query":"single attempt"}`); err == nil {
 		t.Fatal("InvokableRun succeeded, want upstream error")
 	}
@@ -301,25 +320,48 @@ func TestSearXNGDoesNotRetryFailedRequest(t *testing.T) {
 	}
 }
 
-func TestSearXNGSSRFGuardRejectsLoopback(t *testing.T) {
+func TestSearXNGConfiguredPrivateHostIsFetched(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
 
-	defaults := defaultSearXNGParams()
-	defaults.SearXNGURL = "http://127.0.0.1:4000"
-	searchTool := newSearXNGToolWithDefaults(nil, defaults)
-	out, err := searchTool.InvokableRun(ctx, `{"query":"metadata"}`)
-	if err == nil || !errors.Is(err, ErrSSRFBlocked) {
-		t.Fatalf("err = %v, want ErrSSRFBlocked", err)
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"title":"Local","url":"http://127.0.0.1/","content":"private instance"}]}`))
+	}))
+	defer server.Close()
+
+	searchTool := newSearXNGTool(nil, server.URL, 0)
+	out, err := searchTool.InvokableRun(ctx, `{"query":"private"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	var envelope searxngEnvelope
+	if err = json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 1 {
+		t.Fatalf("output = %s", out)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("request calls = %d, want 1", calls.Load())
+	}
+}
+
+func TestSearXNGConfiguredURLRejectsUnsupportedScheme(t *testing.T) {
+	t.Parallel()
+
+	searchTool := newSearXNGTool(nil, "ftp://example.com", 0)
+	out, err := searchTool.InvokableRun(t.Context(), `{"query":"scheme"}`)
+	if err == nil || !strings.Contains(err.Error(), "unsupported scheme") {
+		t.Fatalf("err = %v, want unsupported scheme error", err)
 	}
 	if !strings.Contains(out, `"_ERROR"`) {
 		t.Fatalf("output = %s, want _ERROR envelope", out)
 	}
 }
 
-func newLocalSearXNGTool(t *testing.T, defaults searxngParams) *SearXNGTool {
+func newLocalSearXNGTool(t *testing.T, searxngURL string, topN int) *SearXNGTool {
 	t.Helper()
-	searchTool := newSearXNGToolWithDefaults(nil, defaults)
+	searchTool := newSearXNGTool(nil, searxngURL, topN)
 	searchTool.resolve = func(rawURL string) (string, net.IP, error) {
 		parsed, err := url.Parse(rawURL)
 		if err != nil {

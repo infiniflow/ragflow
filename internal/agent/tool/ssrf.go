@@ -143,6 +143,32 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 	return host, firstSafe, nil
 }
 
+// ResolveConfiguredURL validates the scheme of a node-configured URL and
+// returns the address it resolves to. Configured endpoints may be private;
+// the returned IP is still dialed directly so DNS cannot rebind it.
+func ResolveConfiguredURL(rawURL string) (string, net.IP, error) {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", nil, fmt.Errorf("ssrf: parse url: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", nil, fmt.Errorf("ssrf: unsupported scheme %q", u.Scheme)
+	}
+	host := u.Hostname()
+	if host == "" {
+		return "", nil, fmt.Errorf("ssrf: empty host")
+	}
+	pinned, err := common.ResolveHostPin(host)
+	if err != nil {
+		return "", nil, fmt.Errorf("ssrf: resolve %s: %w", host, err)
+	}
+	ip := net.ParseIP(pinned)
+	if ip == nil {
+		return "", nil, fmt.Errorf("ssrf: could not parse resolved address %q for %s", pinned, host)
+	}
+	return host, ip, nil
+}
+
 // isNonGlobalIP applies the same special-use address policy as the shared
 // host guard without repeating its range list or performing another DNS lookup.
 func isNonGlobalIP(ip net.IP) bool {
