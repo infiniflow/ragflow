@@ -72,6 +72,7 @@ func NewModelProviderService() *ModelProviderService {
 		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
 		modelDAO:         dao.NewTenantModelDAO(),
 		tenantDAO:        dao.NewTenantDAO(),
+		userTenantDAO:    dao.NewUserTenantDAO(),
 		modelGroupDAO:    dao.NewTenantModelGroupDAO(),
 		modelGroupMapDAO: dao.NewTenantModelGroupMapDAO(),
 	}
@@ -82,6 +83,7 @@ type ModelProviderService struct {
 	modelInstanceDAO *dao.TenantModelInstanceDAO
 	modelDAO         *dao.TenantModelDAO
 	tenantDAO        *dao.TenantDAO
+	userTenantDAO    *dao.UserTenantDAO
 	modelGroupDAO    *dao.TenantModelGroupDAO
 	modelGroupMapDAO *dao.TenantModelGroupMapDAO
 }
@@ -218,13 +220,13 @@ func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context, userID
 	for _, provider := range listed {
 		providerIDs = append(providerIDs, provider.id)
 	}
-	instances, err := m.modelInstanceDAO.GetByProviderIDs(ctx, dao.DB, providerIDs)
+	providersWithInstances, err := m.modelInstanceDAO.ListProviderIDsWithInstances(ctx, dao.DB, providerIDs)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
 	hasInstance := make(map[string]bool, len(providerIDs))
-	for _, instance := range instances {
-		hasInstance[instance.ProviderID] = true
+	for _, providerID := range providersWithInstances {
+		hasInstance[providerID] = true
 	}
 	result := make([]map[string]interface{}, 0, len(listed))
 	for _, provider := range listed {
@@ -1872,31 +1874,10 @@ func (m *ModelProviderService) ShowTask(ctx context.Context, providerName, insta
 	return taskResponse, common.CodeSuccess, nil
 }
 
-// ListTenantAddedModels returns the list of models the tenant has "added"
-// across all of their provider instances. It is the Go port of Python's
-// models_api_service.list_tenant_added_models
-// (api/apps/services/models_api_service.py:300) and is the response
-// contract for GET /api/v1/models — the endpoint that
-// web/src/hooks/use-llm-request.tsx → useFetchAllAddedModels consumes.
-//
-// Per the Python algorithm, for each (provider × instance) we cross-reference the factory catalog (internal/entity/models/model.go
-// ProviderManager.Providers) with the per-tenant overrides in
-// tenant_model:
-//
-//	active_model_types   = tenant_model rows with status='active'
-//	inactive_model_types = tenant_model rows with status='inactive'
-//	factory_model_types  = provider.Models[i].ModelTypes
-//	model_types = (factory ∪ active) \ inactive
-//
-// The Go port never WRITES to tenant_model, so in practice every model
-// from the factory catalog is treated as added unless explicitly
-// disabled (which today can only happen via SQL — the Go port has no
-// enable/disable endpoint path that mutates tenant_model). This is
-// intentional: the previous Go contract mistakenly routed /api/v1/models
-// to UserTenantService.ListDefaultModels (which only enumerates the 6-7 default
-// tenant fields and returned `[]` for any tenant without defaults),
-// breaking the front-end's "View Models" list entirely.
-func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID, requestedTenantID, modelTypeFilter string) ([]map[string]interface{}, common.ErrorCode, error) {
+// ListModelsForUserInTenant returns models available to userID in the requested
+// tenant context, filtered by the user's resource permissions. Provider and
+// instance configuration comes from the tenant owner.
+func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, userID, requestedTenantID, modelTypeFilter string) ([]map[string]interface{}, common.ErrorCode, error) {
 	tenant, code, err := m.resolveModelListTenant(ctx, userID, requestedTenantID)
 	if err != nil {
 		return nil, code, err
@@ -1929,19 +1910,32 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 	}
 
 	checker := permission.NewDatabaseChecker(dao.DB)
-	providerScope, err := checker.QueryScope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
-		Kind:      permission.ResourceKindModelProvider,
-		Operation: permission.OperationRead,
-	})
+	tenantOwner, err := m.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("get tenant owner for model listing: %w", err)
+	}
+	providerCandidates, err := m.modelProviderDAO.ListByTenantIDAndUserID(ctx, dao.DB, tenantID, tenantOwner.UserID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	providerRefs := make([]permission.ResourceRef, 0, len(providerCandidates))
+	for _, provider := range providerCandidates {
+		providerRefs = append(providerRefs, permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID})
+	}
+	accessibleProviderRefs, err := checker.FilterResources(ctx, permission.Subject{UserID: userID}, providerRefs, permission.OperationRead)
 	if err != nil {
 		code, normalizedErr := normalizeModelPermissionError(err)
 		return nil, code, normalizedErr
 	}
-	var providers []*entity.TenantModelProvider
-	providerQuery := dao.DB.WithContext(ctx).Model(&entity.TenantModelProvider{}).
-		Where("tenant_model_provider.tenant_id = ?", tenantID)
-	if err := providerScope.Apply(providerQuery).Find(&providers).Error; err != nil {
-		return nil, common.CodeServerError, err
+	accessibleProviderIDs := make(map[string]struct{}, len(accessibleProviderRefs))
+	for _, ref := range accessibleProviderRefs {
+		accessibleProviderIDs[ref.ID] = struct{}{}
+	}
+	providers := make([]*entity.TenantModelProvider, 0, len(accessibleProviderRefs))
+	for _, provider := range providerCandidates {
+		if _, ok := accessibleProviderIDs[provider.ID]; ok {
+			providers = append(providers, provider)
+		}
 	}
 	if len(providers) == 0 {
 		return []map[string]interface{}{}, common.CodeSuccess, nil
@@ -1954,7 +1948,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 		providerInfoByID[p.ID] = p
 	}
 
-	instances, err := m.modelInstanceDAO.GetByProviderIDs(ctx, dao.DB, providerIDs)
+	instances, err := m.modelInstanceDAO.ListSummariesByProviderIDs(ctx, dao.DB, providerIDs)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1962,7 +1956,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 		return []map[string]interface{}{}, common.CodeSuccess, nil
 	}
 
-	instanceInfoByID := make(map[string]*entity.TenantModelInstance, len(instances))
+	instanceInfoByID := make(map[string]*dao.TenantModelInstanceSummary, len(instances))
 	for _, inst := range instances {
 		instanceInfoByID[inst.ID] = inst
 	}
@@ -1979,19 +1973,15 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 		code, normalizedErr := normalizeModelPermissionError(err)
 		return nil, code, normalizedErr
 	}
-	var modelRecords []*entity.TenantModel
-	query := dao.DB.WithContext(ctx).Model(&entity.TenantModel{}).
-		Joins("JOIN tenant_model_provider ON tenant_model_provider.id = tenant_model.provider_id").
-		Where("tenant_model_provider.tenant_id = ?", tenantID)
-	if err := modelScope.Apply(query).Find(&modelRecords).Error; err != nil {
+	modelRecords, err := m.modelDAO.ListByTenantIDAndModelType(ctx, dao.DB, tenantID, int(modelTypeFilterBin), modelScope.Apply)
+	if err != nil {
 		return nil, common.CodeServerError, err
 	}
 
-	// Repair records that have model_type == 0. Before the ModelTypeFromString
-	// fix that added "asr" support, models whose factory catalog used the
-	// canonical name "asr" (instead of the legacy "speech2text") were stored
-	// with model_type = 0. Re-derive the correct bitmask from the factory
-	// catalog and persist it so the model shows up in typed queries.
+	// Derive model types for legacy zero-type rows in this response. Before the
+	// ModelTypeFromString fix added "asr" support, models using the canonical
+	// catalog name were stored with model_type = 0. Keep this compatibility
+	// repair read-only; schema/data repair does not belong in a list request.
 	providerManager := dao.GetModelProviderManager()
 	for _, rec := range modelRecords {
 		if rec.ModelType != 0 {
@@ -2002,7 +1992,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 			continue
 		}
 		factoryModel, lookupErr := providerManager.GetModelByName(provInfo.ProviderName, rec.ModelName)
-		if lookupErr != nil || len(factoryModel.ModelTypes) == 0 {
+		if lookupErr != nil || factoryModel == nil || len(factoryModel.ModelTypes) == 0 {
 			continue
 		}
 		combinedType := entity.ModelType(0)
@@ -2011,9 +2001,6 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 		}
 		if combinedType != 0 {
 			rec.ModelType = int(combinedType)
-			if permissionErr := checkModelPermission(ctx, userID, permission.ResourceKindModel, rec.ID, permission.OperationUpdate); permissionErr == nil {
-				_ = m.modelDAO.UpdateByID(ctx, dao.DB, rec.ID, map[string]interface{}{"model_type": int(combinedType)})
-			}
 		}
 	}
 

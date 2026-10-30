@@ -756,13 +756,6 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 		if err := s.checkResourcePermission(ctx, userID, permission.ResourceKindModel, modelEntity.ID, permission.OperationUse); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model %q: %w", errModelConfigUnavailable, userID, modelRef, err)
 		}
-	} else if providerEntity.TenantID != tenantID {
-		return nil, fmt.Errorf(
-			"%w: tenant %s has no access to provider owned by tenant %s",
-			errModelConfigUnavailable,
-			tenantID,
-			providerEntity.TenantID,
-		)
 	}
 	instanceEntity, err := s.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
 	if err != nil {
