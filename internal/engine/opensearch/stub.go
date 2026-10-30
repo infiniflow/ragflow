@@ -20,59 +20,13 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/engine/types"
-
-	"gorm.io/gorm"
 )
 
 // Placeholder stubs satisfying engine.DocEngine during incremental milestones.
-// Each method will be replaced by concrete implementations in Commits 6-9.
+// Each method will be replaced by concrete implementations in Commits 7-9.
 
 func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	return nil, fmt.Errorf("Search pending Commits 7-8")
-}
-
-func (e *Engine) CreateMetadataStore(ctx context.Context, tenantID string) error {
-	return fmt.Errorf("CreateMetadataStore pending Commit 6")
-}
-
-func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
-	return nil, fmt.Errorf("InsertMetadata pending Commit 6")
-}
-
-func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
-	return fmt.Errorf("UpdateMetadata pending Commit 6")
-}
-
-func (e *Engine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
-	return 0, fmt.Errorf("DeleteMetadata pending Commit 6")
-}
-
-func (e *Engine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID string, keys []string, tenantID string) error {
-	return fmt.Errorf("DeleteMetadataKeys pending Commit 6")
-}
-
-func (e *Engine) DropMetadataStore(ctx context.Context, tenantID string) error {
-	return fmt.Errorf("DropMetadataStore pending Commit 6")
-}
-
-func (e *Engine) MetadataStoreExists(ctx context.Context, tenantID string) (bool, error) {
-	return false, fmt.Errorf("MetadataStoreExists pending Commit 6")
-}
-
-func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
-	return nil, fmt.Errorf("SearchMetadata pending Commit 6")
-}
-
-func (e *Engine) IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error {
-	return fmt.Errorf("IndexDocument pending Commit 6")
-}
-
-func (e *Engine) DeleteDocument(ctx context.Context, indexName, docID string) error {
-	return fmt.Errorf("DeleteDocument pending Commit 6")
-}
-
-func (e *Engine) BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error) {
-	return nil, fmt.Errorf("BulkIndex pending Commit 6")
 }
 
 func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
@@ -100,9 +54,5 @@ func (e *Engine) KNNScores(ctx context.Context, chunks []map[string]interface{},
 }
 
 func (e *Engine) GetScores(searchResult map[string]interface{}) map[string]float64 {
-	return nil
-}
-
-func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, db *gorm.DB, docIDs []string, conditions []map[string]interface{}, tenantID string) []string {
 	return nil
 }
