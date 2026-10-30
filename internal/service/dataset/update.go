@@ -443,7 +443,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 				effectiveParserConfig,
 				llmID,
 			)
-			DropUnscopedParserConfigKeys(effectiveParserConfig)
 			updates["parser_config"] = effectiveParserConfig
 		}
 

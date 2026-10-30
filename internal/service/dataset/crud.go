@@ -192,8 +192,6 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 
-	DropUnscopedParserConfigKeys(parserConfig)
-
 	// Preserve the public default shape without overriding pipeline delimiters
 	// unless the request explicitly configures parent_child.
 	parentChild := resolveParentChild(req.ParserConfig)

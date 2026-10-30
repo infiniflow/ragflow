@@ -17,7 +17,6 @@ package dataset
 
 import (
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	"ragflow/internal/service"
 	"strings"
 	"testing"
@@ -30,14 +29,7 @@ func TestSDKDatasetUnicodeCharacterLimit(t *testing.T) {
 			pushServiceDB(t, db)
 			insertCreateDatasetTenant(t, "tenant-1")
 			name := strings.Repeat("数", n)
-			result, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{Name: name, ParseType: new(1), ParserID: new("general")}, testDatasetSubject("tenant-1"))
-			if err == nil {
-				for key := range result["parser_config"].(entity.JSONMap) {
-					if !strings.Contains(key, ":") {
-						t.Errorf("unscoped parser parameter %s", key)
-					}
-				}
-			}
+			_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{Name: name, ParseType: new(1), ParserID: new("general")}, testDatasetSubject("tenant-1"))
 			if (err == nil) != (n == 128) {
 				t.Fatalf("create characters=%d code=%d err=%v", n, code, err)
 			}
