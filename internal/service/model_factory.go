@@ -591,21 +591,21 @@ func defaultModelRefs(membership *entity.UserTenant, modelType entity.ModelType)
 	}
 	switch modelType {
 	case entity.ModelTypeChat:
-		return membership.LLMID, stringValue(membership.TenantLLMID)
+		return membership.LLMID, ptrStringValue(membership.TenantLLMID)
 	case entity.ModelTypeEmbedding:
-		return membership.EmbdID, stringValue(membership.TenantEmbdID)
+		return membership.EmbdID, ptrStringValue(membership.TenantEmbdID)
 	case entity.ModelTypeRerank:
-		return membership.RerankID, stringValue(membership.TenantRerankID)
+		return membership.RerankID, ptrStringValue(membership.TenantRerankID)
 	case entity.ModelTypeSpeech2Text:
-		return membership.ASRID, stringValue(membership.TenantASRID)
+		return membership.ASRID, ptrStringValue(membership.TenantASRID)
 	case entity.ModelTypeImage2Text:
-		return membership.Img2TxtID, stringValue(membership.TenantImg2TxtID)
+		return membership.Img2TxtID, ptrStringValue(membership.TenantImg2TxtID)
 	case entity.ModelTypeTTS:
-		return stringValue(membership.TTSID), stringValue(membership.TenantTTSID)
+		return ptrStringValue(membership.TTSID), ptrStringValue(membership.TenantTTSID)
 	case entity.ModelTypeOCR:
-		return stringValue(membership.OCRID), stringValue(membership.TenantOCRID)
+		return ptrStringValue(membership.OCRID), ptrStringValue(membership.TenantOCRID)
 	case entity.ModelTypeDecision:
-		return stringValue(membership.DecisionID), stringValue(membership.TenantDecisionID)
+		return ptrStringValue(membership.DecisionID), ptrStringValue(membership.TenantDecisionID)
 	default:
 		return "", ""
 	}
@@ -750,10 +750,20 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 		)
 	}
 	if userID != "" {
-		if err := s.checkResourcePermission(ctx, userID, permission.ResourceKindModelProvider, providerEntity.ID, permission.OperationRead); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(
+			ctx,
+			permission.Subject{UserID: userID},
+			permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: providerEntity.ID},
+			permission.OperationRead,
+		); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot read model provider %q: %w", errModelConfigUnavailable, userID, providerEntity.ProviderName, err)
 		}
-		if err := s.checkResourcePermission(ctx, userID, permission.ResourceKindModel, modelEntity.ID, permission.OperationUse); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(
+			ctx,
+			permission.Subject{UserID: userID},
+			permission.ResourceRef{Kind: permission.ResourceKindModel, ID: modelEntity.ID},
+			permission.OperationUse,
+		); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model %q: %w", errModelConfigUnavailable, userID, modelRef, err)
 		}
 	}
@@ -768,7 +778,12 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 		return nil, fmt.Errorf("%w: instance id=%s does not belong to provider id=%s", errModelConfigUnavailable, modelEntity.InstanceID, providerEntity.ID)
 	}
 	if userID != "" {
-		if err := s.checkResourcePermission(ctx, userID, permission.ResourceKindModelInstance, instanceEntity.ID, permission.OperationUse); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(
+			ctx,
+			permission.Subject{UserID: userID},
+			permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instanceEntity.ID},
+			permission.OperationUse,
+		); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, userID, instanceEntity.InstanceName, err)
 		}
 	}
@@ -925,7 +940,12 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 		return nil, fmt.Errorf("%w: provider %q not found for model %q", errModelConfigUnavailable, providerName, modelRef)
 	}
 	if access.UserID != "" {
-		if err = s.checkResourcePermission(ctx, access.UserID, permission.ResourceKindModelProvider, provider.ID, permission.OperationRead); err != nil {
+		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+			ctx,
+			permission.Subject{UserID: access.UserID},
+			permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID},
+			permission.OperationRead,
+		); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot read model provider %q: %w", errModelConfigUnavailable, access.UserID, providerName, err)
 		}
 	}
@@ -940,7 +960,12 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 		return nil, fmt.Errorf("%w: instance %q not found for model %q", errModelConfigUnavailable, instanceName, modelRef)
 	}
 	if access.UserID != "" {
-		if err = s.checkResourcePermission(ctx, access.UserID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
+		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+			ctx,
+			permission.Subject{UserID: access.UserID},
+			permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
+			permission.OperationUse,
+		); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, access.UserID, instanceName, err)
 		}
 	}
@@ -984,7 +1009,12 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access 
 	providerInfo := dao.GetModelProviderManager().FindProvider(catalogName)
 	if modelEntity != nil {
 		if access.UserID != "" {
-			if err = s.checkResourcePermission(ctx, access.UserID, permission.ResourceKindModel, modelEntity.ID, permission.OperationUse); err != nil {
+			if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+				ctx,
+				permission.Subject{UserID: access.UserID},
+				permission.ResourceRef{Kind: permission.ResourceKindModel, ID: modelEntity.ID},
+				permission.OperationUse,
+			); err != nil {
 				return nil, fmt.Errorf("%w: user %s cannot use model %q: %w", errModelConfigUnavailable, access.UserID, modelRef, err)
 			}
 		}
@@ -1117,7 +1147,12 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, access Mod
 		return 0, fmt.Errorf("%w: provider %q not found for model %q", errModelConfigUnavailable, providerName, modelRef)
 	}
 	if access.UserID != "" {
-		if err = s.checkResourcePermission(ctx, access.UserID, permission.ResourceKindModelProvider, provider.ID, permission.OperationRead); err != nil {
+		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+			ctx,
+			permission.Subject{UserID: access.UserID},
+			permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID},
+			permission.OperationRead,
+		); err != nil {
 			return 0, fmt.Errorf("%w: user %s cannot read model provider %q: %w", errModelConfigUnavailable, access.UserID, providerName, err)
 		}
 	}
@@ -1132,7 +1167,12 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, access Mod
 		return 0, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceName)
 	}
 	if access.UserID != "" {
-		if err = s.checkResourcePermission(ctx, access.UserID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
+		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+			ctx,
+			permission.Subject{UserID: access.UserID},
+			permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
+			permission.OperationUse,
+		); err != nil {
 			return 0, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, access.UserID, instanceName, err)
 		}
 	}
@@ -1148,7 +1188,12 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, access Mod
 		}
 		if strings.EqualFold(model.Status, "active") {
 			if access.UserID != "" {
-				if err = s.checkResourcePermission(ctx, access.UserID, permission.ResourceKindModel, model.ID, permission.OperationUse); err != nil {
+				if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+					ctx,
+					permission.Subject{UserID: access.UserID},
+					permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID},
+					permission.OperationUse,
+				); err != nil {
 					return 0, fmt.Errorf("%w: user %s cannot use model %q: %w", errModelConfigUnavailable, access.UserID, modelRef, err)
 				}
 			}
@@ -1195,13 +1240,4 @@ func modelTypesFromBitmask(modelType entity.ModelType) []entity.ModelType {
 		}
 	}
 	return modelTypes
-}
-
-func (f *ModelFactory) checkResourcePermission(ctx context.Context, userID string, kind permission.ResourceKind, id string, operation permission.Operation) error {
-	return permission.NewDatabaseChecker(dao.DB).CheckResource(
-		ctx,
-		permission.Subject{UserID: userID},
-		permission.ResourceRef{Kind: kind, ID: id},
-		operation,
-	)
 }

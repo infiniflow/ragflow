@@ -113,12 +113,12 @@ type CheckConnectionRequest struct {
 func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerName, userID string) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
 	if err := checkFeatureAction(ctx, userID, "model_provider", permission.ActionEnable); err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}
 	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}
 
@@ -151,7 +151,7 @@ func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context, userID
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return []map[string]interface{}{}, common.CodeSuccess, nil
 		}
-		code, normalizedErr := normalizeModelPermissionError(err)
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
 	providerRows, err := m.modelProviderDAO.ListByTenantIDAndUserID(ctx, dao.DB, ownedTenantID, userID)
@@ -171,7 +171,7 @@ func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context, userID
 		permission.OperationRead,
 	)
 	if err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
 
@@ -252,7 +252,7 @@ func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, userID, 
 	provider, err := m.resolveProviderInTenant(ctx, userID, providerName, permission.OperationDelete)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
-			code, normalizedErr := normalizeModelPermissionError(err)
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
 		return common.CodeNotFound, fmt.Errorf("provider %s not found", providerName)
@@ -264,8 +264,13 @@ func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, userID, 
 		return common.CodeServerError, err
 	}
 	for _, instance := range instances {
-		if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationDelete); err != nil {
-			code, normalizedErr := normalizeModelPermissionError(err)
+		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+			ctx,
+			permission.Subject{UserID: userID},
+			permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
+			permission.OperationDelete,
+		); err != nil {
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
 		models, modelErr := m.modelDAO.GetModelsByInstanceID(ctx, dao.DB, instance.ID)
@@ -273,8 +278,13 @@ func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, userID, 
 			return common.CodeServerError, modelErr
 		}
 		for _, model := range models {
-			if err = checkModelPermission(ctx, userID, permission.ResourceKindModel, model.ID, permission.OperationDelete); err != nil {
-				code, normalizedErr := normalizeModelPermissionError(err)
+			if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+				ctx,
+				permission.Subject{UserID: userID},
+				permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID},
+				permission.OperationDelete,
+			); err != nil {
+				code, normalizedErr := permissionresponse.NormalizeHidden(err)
 				return code, normalizedErr
 			}
 		}
@@ -327,7 +337,7 @@ func (m *ModelProviderService) ResolveSavedProviderModelConfig(ctx context.Conte
 	provider, err := m.resolveProviderInTenant(ctx, userID, providerName, permission.OperationRead)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
-			_, normalizedErr := normalizeModelPermissionError(err)
+			_, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return SavedProviderModelConfig{}, normalizedErr
 		}
 		return SavedProviderModelConfig{}, err
@@ -348,11 +358,11 @@ func (m *ModelProviderService) ResolveSavedProviderModelConfig(ctx context.Conte
 		if err == nil {
 			err = permission.ErrPermissionDenied
 		}
-		_, normalizedErr := normalizeModelPermissionError(err)
+		_, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return SavedProviderModelConfig{}, normalizedErr
 	}
 	if access.Source != permission.AccessSourceOwner && hasSavedProviderInstanceOverrides(options.APIKeyConfig, options.BaseURL, options.Region) {
-		_, normalizedErr := normalizeModelPermissionError(permission.ErrPermissionDenied)
+		_, normalizedErr := permissionresponse.NormalizeHidden(permission.ErrPermissionDenied)
 		return SavedProviderModelConfig{}, normalizedErr
 	}
 
@@ -733,7 +743,12 @@ func (m *ModelProviderService) resolveProviderInTenant(ctx context.Context, user
 	if err != nil {
 		return nil, err
 	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelProvider, provider.ID, operation); err != nil {
+	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID},
+		operation,
+	); err != nil {
 		return nil, err
 	}
 	return provider, nil
@@ -797,7 +812,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	provider, err := m.resolveProviderInTenant(ctx, userID, providerIDOrName, permission.OperationCreate)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
-			code, normalizedErr := normalizeModelPermissionError(err)
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
 		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
@@ -915,7 +930,7 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 	provider, err := m.resolveProviderInTenant(ctx, userID, providerIDOrName, permission.OperationCreate)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
-			code, normalizedErr := normalizeModelPermissionError(err)
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
 		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
@@ -1005,7 +1020,7 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 			return []map[string]interface{}{}, common.CodeSuccess, nil
 		}
 		if permissionresponse.IsPermissionError(err) {
-			code, normalizedErr := normalizeModelPermissionError(err)
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return nil, code, normalizedErr
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1024,7 +1039,7 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 	checker := permission.NewDatabaseChecker(dao.DB)
 	instanceAccesses, err := checker.ResolveAccesses(ctx, permission.Subject{UserID: userID}, instanceRefs)
 	if err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
 
@@ -1073,11 +1088,11 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 	provider, err := m.resolveProviderInTenant(ctx, userID, providerName, permission.OperationRead)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
-			code, normalizedErr := normalizeModelPermissionError(err)
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return nil, code, normalizedErr
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			code, normalizedErr := normalizeModelPermissionError(permission.ErrResourceNotFound)
+			code, normalizedErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return nil, code, normalizedErr
 		}
 		return nil, common.CodeServerError, err
@@ -1098,7 +1113,7 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 		if err == nil {
 			err = permission.ErrPermissionDenied
 		}
-		code, normalizedErr := normalizeModelPermissionError(err)
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
 
@@ -1134,29 +1149,43 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 	return result, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ShowInstanceBalance(ctx context.Context, providerName, instanceName, userID string) (map[string]interface{}, common.ErrorCode, error) {
+// resolveAuthorizedInstance checks the provider route and the requested instance operation.
+func (m *ModelProviderService) resolveAuthorizedInstance(ctx context.Context, userID, providerName, instanceName string, operation permission.Operation) (*entity.TenantModelProvider, *entity.TenantModelInstance, common.ErrorCode, error) {
 	provider, err := m.resolveProviderInTenant(ctx, userID, providerName, permission.OperationRead)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
-			code, normalizedErr := normalizeModelPermissionError(err)
-			return nil, code, normalizedErr
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
+			return nil, nil, code, normalizedErr
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerName)
+			return nil, nil, common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerName)
 		}
-		return nil, common.CodeServerError, err
+		return nil, nil, common.CodeServerError, err
 	}
 
 	instance, err := m.resolveInstance(ctx, provider, instanceName)
 	if err != nil {
 		if errors.Is(err, errInstanceProviderMismatch) || errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeNotFound, instanceLookupError(provider, instanceName, err)
+			return nil, nil, common.CodeNotFound, instanceLookupError(provider, instanceName, err)
 		}
-		return nil, common.CodeServerError, err
+		return nil, nil, common.CodeServerError, err
 	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
-		return nil, code, normalizedErr
+	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
+		operation,
+	); err != nil {
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
+		return nil, nil, code, normalizedErr
+	}
+	return provider, instance, common.CodeSuccess, nil
+}
+
+func (m *ModelProviderService) ShowInstanceBalance(ctx context.Context, providerName, instanceName, userID string) (map[string]interface{}, common.ErrorCode, error) {
+	provider, instance, code, err := m.resolveAuthorizedInstance(ctx, userID, providerName, instanceName, permission.OperationUse)
+	if err != nil {
+		return nil, code, err
 	}
 	providerName = provider.ProviderName
 
@@ -1221,8 +1250,13 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		if !strings.EqualFold(provider.ProviderName, providerName) {
 			return common.CodeNotFound, errors.New("model instance not found")
 		}
-		if err = checkModelPermission(ctx, userID, permission.ResourceKindModelProvider, provider.ID, permission.OperationRead); err != nil {
-			code, normalizedErr := normalizeModelPermissionError(err)
+		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+			ctx,
+			permission.Subject{UserID: userID},
+			permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID},
+			permission.OperationRead,
+		); err != nil {
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
 		instanceAccess, err = permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
@@ -1233,7 +1267,7 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 			if err == nil {
 				err = permission.ErrPermissionDenied
 			}
-			code, normalizedErr := normalizeModelPermissionError(err)
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
 		savedInstance = instance
@@ -1257,7 +1291,7 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 				return common.CodeBadRequest, errors.New("saved credentials cannot be combined with submitted credentials")
 			}
 			if instanceAccess.Source != permission.AccessSourceOwner && (region != "" || baseURL != "" || hasSavedProviderAPIKeyConfig(req.APIKeyConfig)) {
-				code, normalizedErr := normalizeModelPermissionError(permission.ErrPermissionDenied)
+				code, normalizedErr := permissionresponse.NormalizeHidden(permission.ErrPermissionDenied)
 				return code, normalizedErr
 			}
 			apiKey = savedInstance.APIKey
@@ -1318,7 +1352,7 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 	if instanceID != "" && len(modelVerifyResult) > 0 {
 		if dbErr := m.updateModelVerifyResults(ctx, userID, providerName, instanceID, modelVerifyResult); dbErr != nil {
 			if permissionresponse.IsPermissionError(dbErr) {
-				code, normalizedErr := normalizeModelPermissionError(dbErr)
+				code, normalizedErr := permissionresponse.NormalizeHidden(dbErr)
 				return code, normalizedErr
 			}
 			common.Logger.Error("failed to persist model verify results", zap.Error(dbErr))
@@ -1341,7 +1375,12 @@ func (m *ModelProviderService) updateModelVerifyResults(ctx context.Context, use
 	if err != nil {
 		return fmt.Errorf("instance %s not found: %w", instanceID, err)
 	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUpdate); err != nil {
+	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
+		permission.OperationUpdate,
+	); err != nil {
 		return err
 	}
 	provider, err := m.modelProviderDAO.GetByID(ctx, dao.DB, instance.ProviderID)
@@ -1351,7 +1390,12 @@ func (m *ModelProviderService) updateModelVerifyResults(ctx context.Context, use
 	if !strings.EqualFold(provider.ProviderName, providerName) {
 		return permission.ErrResourceNotFound
 	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelProvider, provider.ID, permission.OperationRead); err != nil {
+	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID},
+		permission.OperationRead,
+	); err != nil {
 		return err
 	}
 
@@ -1365,7 +1409,12 @@ func (m *ModelProviderService) updateModelVerifyResults(ctx context.Context, use
 			}
 			return fmt.Errorf("failed to look up %s for verify update: %w", modelName, err)
 		}
-		if err = checkModelPermission(ctx, userID, permission.ResourceKindModel, modelObj.ID, permission.OperationUpdate); err != nil {
+		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+			ctx,
+			permission.Subject{UserID: userID},
+			permission.ResourceRef{Kind: permission.ResourceKindModel, ID: modelObj.ID},
+			permission.OperationUpdate,
+		); err != nil {
 			return err
 		}
 
@@ -1726,41 +1775,18 @@ func minimalPNG() []byte {
 	}
 }
 
-func (m *ModelProviderService) ListTasks(ctx context.Context, providerName, instanceName, userID string) ([]modelModule.ListTaskStatus, common.ErrorCode, error) {
-	provider, err := m.resolveProviderInTenant(ctx, userID, providerName, permission.OperationRead)
-	if err != nil {
-		if permissionresponse.IsPermissionError(err) {
-			code, normalizedErr := normalizeModelPermissionError(err)
-			return nil, code, normalizedErr
-		}
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerName)
-		}
-		return nil, common.CodeServerError, err
-	}
-
-	instance, err := m.resolveInstance(ctx, provider, instanceName)
-	if err != nil {
-		if errors.Is(err, errInstanceProviderMismatch) || errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeNotFound, instanceLookupError(provider, instanceName, err)
-		}
-		return nil, common.CodeServerError, err
-	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
-		return nil, code, normalizedErr
-	}
-	providerName = provider.ProviderName
+func taskDriverConfig(provider *entity.TenantModelProvider, instance *entity.TenantModelInstance) (modelModule.ModelDriver, *modelModule.APIConfig, error) {
+	providerName := provider.ProviderName
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 	if providerInfo == nil {
-		return nil, common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
+		return nil, nil, fmt.Errorf("provider %s not found", providerName)
 	}
 
 	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	err := json.Unmarshal([]byte(instance.Extra), &extra)
 	if err != nil {
-		return nil, common.CodeServerError, err
+		return nil, nil, err
 	}
 
 	apiConfig := &modelModule.APIConfig{
@@ -1776,10 +1802,22 @@ func (m *ModelProviderService) ListTasks(ctx context.Context, providerName, inst
 	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
 		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
 		if err != nil {
-			return nil, common.CodeServerError, err
+			return nil, nil, err
 		}
 	}
 
+	return driver, apiConfig, nil
+}
+
+func (m *ModelProviderService) ListTasks(ctx context.Context, providerName, instanceName, userID string) ([]modelModule.ListTaskStatus, common.ErrorCode, error) {
+	provider, instance, code, err := m.resolveAuthorizedInstance(ctx, userID, providerName, instanceName, permission.OperationUse)
+	if err != nil {
+		return nil, code, err
+	}
+	driver, apiConfig, err := taskDriverConfig(provider, instance)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
 	var listTaskResponse []modelModule.ListTaskStatus
 	listTaskResponse, err = driver.ListTasks(ctx, apiConfig)
 	if err != nil {
@@ -1789,59 +1827,14 @@ func (m *ModelProviderService) ListTasks(ctx context.Context, providerName, inst
 }
 
 func (m *ModelProviderService) ShowTask(ctx context.Context, providerName, instanceName, taskID, userID string) (*modelModule.TaskResponse, common.ErrorCode, error) {
-	provider, err := m.resolveProviderInTenant(ctx, userID, providerName, permission.OperationRead)
+	provider, instance, code, err := m.resolveAuthorizedInstance(ctx, userID, providerName, instanceName, permission.OperationUse)
 	if err != nil {
-		if permissionresponse.IsPermissionError(err) {
-			code, normalizedErr := normalizeModelPermissionError(err)
-			return nil, code, normalizedErr
-		}
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerName)
-		}
-		return nil, common.CodeServerError, err
+		return nil, code, err
 	}
-
-	instance, err := m.resolveInstance(ctx, provider, instanceName)
-	if err != nil {
-		if errors.Is(err, errInstanceProviderMismatch) || errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeNotFound, instanceLookupError(provider, instanceName, err)
-		}
-		return nil, common.CodeServerError, err
-	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
-		return nil, code, normalizedErr
-	}
-	providerName = provider.ProviderName
-
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
-	if providerInfo == nil {
-		return nil, common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
-	}
-
-	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	driver, apiConfig, err := taskDriverConfig(provider, instance)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-
-	apiConfig := &modelModule.APIConfig{
-		ApiKey: nil,
-		Region: nil,
-	}
-
-	region := extra["region"]
-	apiConfig.Region = &region
-	apiConfig.ApiKey = &instance.APIKey
-
-	driver := providerInfo.ModelDriver
-	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
-		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-	}
-
 	var taskResponse *modelModule.TaskResponse
 	taskResponse, err = driver.ShowTask(ctx, taskID, apiConfig)
 	if err != nil {
@@ -1890,28 +1883,18 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, us
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("get tenant owner for model listing: %w", err)
 	}
-	providerCandidates, err := m.modelProviderDAO.ListByTenantIDAndUserID(ctx, dao.DB, tenantID, tenantOwner.UserID)
+	providerScope, err := checker.QueryScope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
+		Kind:      permission.ResourceKindModelProvider,
+		Operation: permission.OperationRead,
+	})
 	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	providerRefs := make([]permission.ResourceRef, 0, len(providerCandidates))
-	for _, provider := range providerCandidates {
-		providerRefs = append(providerRefs, permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID})
-	}
-	accessibleProviderRefs, err := checker.FilterResources(ctx, permission.Subject{UserID: userID}, providerRefs, permission.OperationRead)
-	if err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
-	accessibleProviderIDs := make(map[string]struct{}, len(accessibleProviderRefs))
-	for _, ref := range accessibleProviderRefs {
-		accessibleProviderIDs[ref.ID] = struct{}{}
-	}
-	providers := make([]*entity.TenantModelProvider, 0, len(accessibleProviderRefs))
-	for _, provider := range providerCandidates {
-		if _, ok := accessibleProviderIDs[provider.ID]; ok {
-			providers = append(providers, provider)
-		}
+	providerQuery := providerScope.Apply(dao.DB.Model(&entity.TenantModelProvider{}))
+	providers, err := m.modelProviderDAO.ListByTenantIDAndUserID(ctx, providerQuery, tenantID, tenantOwner.UserID)
+	if err != nil {
+		return nil, common.CodeServerError, err
 	}
 	if len(providers) == 0 {
 		return []map[string]interface{}{}, common.CodeSuccess, nil
@@ -1946,7 +1929,7 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, us
 		Operation: permission.OperationRead,
 	})
 	if err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
 	modelRecords, err := m.modelDAO.ListByTenantIDAndModelType(ctx, dao.DB, tenantID, int(modelTypeFilterBin), modelScope.Apply)
@@ -2106,12 +2089,12 @@ func (m *ModelProviderService) resolveModelListTenant(ctx context.Context, userI
 			if errors.Is(err, permission.ErrMembershipNotFound) {
 				return nil, common.CodeSuccess, nil
 			}
-			code, normalizedErr := normalizeModelPermissionError(err)
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return nil, code, normalizedErr
 		}
 	} else {
 		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantMember); err != nil {
-			code, normalizedErr := normalizeModelPermissionError(err)
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return nil, code, normalizedErr
 		}
 	}
@@ -2338,7 +2321,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	provider, err := m.resolveProviderInTenant(ctx, userID, providerIDOrName, permission.OperationRead)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
-			code, normalizedErr := normalizeModelPermissionError(err)
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
 		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
@@ -2352,8 +2335,13 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		}
 		return common.CodeNotFound, fmt.Errorf("no instance found for provider '%s' and instance '%s'", providerName, instanceIDOrName)
 	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUpdate); err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
+	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
+		permission.OperationUpdate,
+	); err != nil {
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}
 
@@ -2379,8 +2367,13 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		if !submittedModelNames[name] {
 			operation = permission.OperationDelete
 		}
-		if err = checkModelPermission(ctx, userID, permission.ResourceKindModel, model.ID, operation); err != nil {
-			code, normalizedErr := normalizeModelPermissionError(err)
+		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+			ctx,
+			permission.Subject{UserID: userID},
+			permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID},
+			operation,
+		); err != nil {
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
 	}
@@ -2389,8 +2382,13 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 			continue
 		}
 		if _, exists := existingModelMap[model.ModelName]; !exists {
-			if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationCreate); err != nil {
-				code, normalizedErr := normalizeModelPermissionError(err)
+			if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+				ctx,
+				permission.Subject{UserID: userID},
+				permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
+				permission.OperationCreate,
+			); err != nil {
+				code, normalizedErr := permissionresponse.NormalizeHidden(err)
 				return code, normalizedErr
 			}
 			break
@@ -2512,7 +2510,7 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 	provider, err := m.resolveProviderInTenant(ctx, userID, providerIDOrName, permission.OperationRead)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
-			code, normalizedErr := normalizeModelPermissionError(err)
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -2539,8 +2537,13 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 			return common.CodeServerError, resolveErr
 		}
 		instanceIDs = append(instanceIDs, instance.ID)
-		if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationDelete); err != nil {
-			code, normalizedErr := normalizeModelPermissionError(err)
+		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+			ctx,
+			permission.Subject{UserID: userID},
+			permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
+			permission.OperationDelete,
+		); err != nil {
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
 		models, modelErr := m.modelDAO.GetModelsByInstanceID(ctx, dao.DB, instance.ID)
@@ -2548,8 +2551,13 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 			return common.CodeServerError, modelErr
 		}
 		for _, model := range models {
-			if err = checkModelPermission(ctx, userID, permission.ResourceKindModel, model.ID, permission.OperationDelete); err != nil {
-				code, normalizedErr := normalizeModelPermissionError(err)
+			if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+				ctx,
+				permission.Subject{UserID: userID},
+				permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID},
+				permission.OperationDelete,
+			); err != nil {
+				code, normalizedErr := permissionresponse.NormalizeHidden(err)
 				return code, normalizedErr
 			}
 		}
@@ -2585,7 +2593,7 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 	provider, err := m.resolveProviderInTenant(ctx, userID, providerIDOrName, permission.OperationRead)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
-			code, normalizedErr := normalizeModelPermissionError(err)
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
 		return common.CodeDataError, fmt.Errorf("no provider found for provider '%s'", providerIDOrName)
@@ -2598,8 +2606,13 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 		}
 		return common.CodeDataError, fmt.Errorf("no instance found for provider '%s' and instance '%s'", providerIDOrName, instanceIDOrName)
 	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationRead); err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
+	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
+		permission.OperationRead,
+	); err != nil {
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}
 
@@ -2632,8 +2645,13 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 	idsToDelete := make([]string, 0, len(modelNames))
 	for _, obj := range modelObjs {
 		if _, ok := requestedNames[obj.ModelName]; ok {
-			if err = checkModelPermission(ctx, userID, permission.ResourceKindModel, obj.ID, permission.OperationDelete); err != nil {
-				code, normalizedErr := normalizeModelPermissionError(err)
+			if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+				ctx,
+				permission.Subject{UserID: userID},
+				permission.ResourceRef{Kind: permission.ResourceKindModel, ID: obj.ID},
+				permission.OperationDelete,
+			); err != nil {
+				code, normalizedErr := permissionresponse.NormalizeHidden(err)
 				return code, normalizedErr
 			}
 			idsToDelete = append(idsToDelete, obj.ID)
@@ -2651,7 +2669,7 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 	provider, err := m.resolveProviderInTenant(ctx, userID, providerName, permission.OperationRead)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
-			_, normalizedErr := normalizeModelPermissionError(err)
+			_, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return nil, normalizedErr
 		}
 		return nil, err
@@ -2664,8 +2682,13 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 		}
 		return nil, err
 	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationRead); err != nil {
-		_, normalizedErr := normalizeModelPermissionError(err)
+	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
+		permission.OperationRead,
+	); err != nil {
+		_, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, normalizedErr
 	}
 
@@ -2680,7 +2703,7 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 	}
 	modelAccesses, err := permission.NewDatabaseChecker(dao.DB).ResolveAccesses(ctx, permission.Subject{UserID: userID}, modelRefs)
 	if err != nil {
-		_, normalizedErr := normalizeModelPermissionError(err)
+		_, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, normalizedErr
 	}
 
@@ -2756,7 +2779,7 @@ func (m *ModelProviderService) AlterModel(ctx context.Context, providerName, ins
 	provider, err := m.resolveProviderInTenant(ctx, userID, providerName, permission.OperationRead)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
-			code, normalizedErr := normalizeModelPermissionError(err)
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -2772,8 +2795,13 @@ func (m *ModelProviderService) AlterModel(ctx context.Context, providerName, ins
 		}
 		return common.CodeServerError, err
 	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationRead); err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
+	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
+		permission.OperationRead,
+	); err != nil {
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}
 
@@ -2801,8 +2829,13 @@ func (m *ModelProviderService) AlterModel(ctx context.Context, providerName, ins
 			return common.CodeNotFound, fmt.Errorf("model with ID %q does not belong to provider %q and instance %q", modelID, providerName, instanceName)
 		}
 	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModel, model.ID, permission.OperationUpdate); err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
+	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID},
+		permission.OperationUpdate,
+	); err != nil {
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}
 
@@ -2983,7 +3016,7 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 	provider, err := m.resolveProviderInTenant(ctx, userID, request.ProviderName, permission.OperationRead)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
-			code, normalizedErr := normalizeModelPermissionError(err)
+			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
 		return common.CodeDataError, fmt.Errorf("no provider found for provider '%s'", request.ProviderName)
@@ -2995,8 +3028,13 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 		}
 		return common.CodeDataError, fmt.Errorf("no instance found for provider '%s' and instance '%s'", request.ProviderName, request.InstanceName)
 	}
-	if err = checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instance.ID, permission.OperationCreate); err != nil {
-		code, normalizedErr := normalizeModelPermissionError(err)
+	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
+		permission.OperationCreate,
+	); err != nil {
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}
 
