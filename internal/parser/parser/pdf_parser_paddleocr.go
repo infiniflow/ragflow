@@ -23,14 +23,15 @@ func isStructuralOCRTextLayout(fields map[string]any) bool {
 	return false
 }
 
-// PaddleOCRPDFResult projects OCR regions onto the PDF's page geometry and
-// emits the structured items consumed by the existing PDF chunk pipeline.
-func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, response *models.OCRFileResponse) ParseResult {
+// OCRPDFResult projects the page blocks of an OCR provider onto the PDF's page
+// geometry and emits the structured items consumed by the existing PDF chunk
+// pipeline. provider names the OCR service in errors and warnings.
+func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, response *models.OCRFileResponse) ParseResult {
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
 	if response == nil || len(response.Pages) == 0 {
-		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR returned no page blocks")}
+		return ParseResult{Err: fmt.Errorf("parser: %s returned no page blocks", provider)}
 	}
 	sizes, pageCount, geometryErr := paddleOCRPageSizes(ctx, data, response.Pages)
 	if err := ctx.Err(); err != nil {
@@ -39,7 +40,7 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 	result := ParseResult{Warnings: append([]string(nil), response.Warnings...)}
 	hasPageCount := pageCount > 0
 	if geometryErr != nil {
-		result.Warnings = append(result.Warnings, "PaddleOCR PDF geometry unavailable: "+geometryErr.Error())
+		result.Warnings = append(result.Warnings, provider+" PDF geometry unavailable: "+geometryErr.Error())
 	}
 	markdown, err := NewMarkdownParser(GoMarkdown)
 	if err != nil {
@@ -52,7 +53,7 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 		}
 		size := sizes[page.Index]
 		if paddleOCRPositive(page.Width) && paddleOCRPositive(page.Height) && paddleOCRPositive(size[0]) && paddleOCRPositive(size[1]) && !paddleOCRAspectRatioMatches(page, size) {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("PaddleOCR page %d: OCR dimensions %gx%g do not match PDF aspect ratio %gx%g; coordinates omitted", page.Index+1, page.Width, page.Height, size[0], size[1]))
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s page %d: OCR dimensions %gx%g do not match PDF aspect ratio %gx%g; coordinates omitted", provider, page.Index+1, page.Width, page.Height, size[0], size[1]))
 			size = [2]float64{}
 		}
 		for _, block := range page.Blocks {
@@ -138,7 +139,7 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 		return ParseResult{Err: err}
 	}
 	if len(result.JSON) == 0 {
-		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR returned empty text")}
+		return ParseResult{Err: fmt.Errorf("parser: %s returned empty text", provider)}
 	}
 	result.File = pdfFileMeta(filename, pageCount)
 	return result

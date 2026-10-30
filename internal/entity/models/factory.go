@@ -175,6 +175,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewBedrockModel(baseURL, urlSuffix), nil
 	case "paddleocr.local":
 		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
+	case "minicpm-ocr":
+		return NewMiniCPMOCRModel(baseURL, urlSuffix), nil
 	case "orcarouter":
 		return NewOrcaRouterModel(baseURL, urlSuffix), nil
 	case "huaweicloud":
