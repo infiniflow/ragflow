@@ -2931,7 +2931,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
       retrievalDescription: `A component that retrieves information from specified datasets (datasets). Ensure that the datasets you select use the same embedding model.`,
       generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
-      categorizeDescription: `Uses a chat model (LLM) or a SystemOne decision model to classify the current input into one predefined category and route the workflow to its connected component. Specify a name, description, and examples for each category.`,
+      categorizeDescription: `Uses a chat model (LLM) or a SystemOne or Nace decision model to classify the current input into one predefined category and route the workflow to its connected component. Specify a name, description, and examples for each category.`,
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
       messageDescription:
         'This component returns the final data output of the workflow along with predefined message content. ',

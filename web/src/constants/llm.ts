@@ -122,6 +122,7 @@ export enum LLMFactory {
   Obscurify = 'Obscurify.ai',
   Cheapaimodel = 'cheapaimodel',
   SystemOne = 'SystemOne',
+  Nace = 'Nace',
   HostingerRouter = 'Hostinger Router',
 }
 
@@ -222,6 +223,7 @@ export const IconMap = {
   [LLMFactory.EmpirioLabs]: 'empiriolabs',
   [LLMFactory.AIStupidLevel]: 'aistupidlevel',
   [LLMFactory.Runcrate]: 'runcrate',
+  [LLMFactory.Nace]: 'nace',
   [LLMFactory.WorldRouter]: 'worldrouter',
   [LLMFactory.CloudGPU]: 'cloudgpu',
   [LLMFactory.Obscurify]: 'obscurify',
@@ -275,6 +277,7 @@ export const APIMapUrl = {
   [LLMFactory.AIStupidLevel]: 'https://aistupidlevel.info/router/keys',
   [LLMFactory.Runcrate]:
     'https://www.runcrate.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=directory&utm_campaign=gpu_pricing',
+  [LLMFactory.Nace]: 'https://console.nace.ai/dashboard/api-keys',
   [LLMFactory.WorldRouter]:
     'https://worldrouter.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=provider&utm_campaign=integration',
   [LLMFactory.CloudGPU]: 'https://cloudgpu.app/api/console',

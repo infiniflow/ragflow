@@ -2890,7 +2890,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       retrievalDescription: `Belirtilen datasets içinden bilgi alan bir bileşen.`,
       generateDescription: `LLM'yi yanıt üretmeye yönlendiren bir bileşen.`,
       categorizeDescription:
-        'Geçerli girdiyi önceden tanımlanmış kategorilerden birine sınıflandırmak ve iş akışını o kategoriye bağlı bileşene yönlendirmek için bir sohbet modeli (LLM) veya bir SystemOne karar modeli kullanır. Her kategori için bir ad, açıklama ve örnekler belirtin.',
+        'Geçerli girdiyi önceden tanımlanmış kategorilerden birine sınıflandırmak ve iş akışını o kategoriye bağlı bileşene yönlendirmek için bir sohbet modeli (LLM) veya bir SystemOne veya Nace karar modeli kullanır. Her kategori için bir ad, açıklama ve örnekler belirtin.',
       relevantDescription: `Yukarı akış çıktısının kullanıcının son sorgusuna uygun olup olmadığını değerlendirmek için LLM kullanan bir bileşen.`,
       rewriteQuestionDescription: `Önceki diyalogların bağlamına dayanarak Etkileşim bileşeninden bir kullanıcı sorgusunu yeniden yazan bir bileşen.`,
       messageDescription:
