@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 
 	"github.com/glebarez/sqlite"
@@ -120,6 +121,181 @@ func TestAutoMigrateRuntimeModelsAddsIngestionTaskFilterIndexes(t *testing.T) {
 		if !db.Migrator().HasIndex(&entity.IngestionTask{}, name) {
 			t.Errorf("missing task index %s after migration", name)
 		}
+	}
+}
+
+func prepareDuplicateIngestionTaskDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db := setupTaskTestDB(t)
+	if err := db.Migrator().DropIndex(&entity.IngestionTask{}, "idx_ingestion_task_document_id"); err != nil {
+		t.Fatalf("drop ingestion task unique index: %v", err)
+	}
+	if err := db.Exec("CREATE INDEX idx_ingestion_task_document_id ON ingestion_task(document_id)").Error; err != nil {
+		t.Fatalf("create legacy non-unique document index: %v", err)
+	}
+	return db
+}
+
+func seedDuplicateIngestionTasks(t *testing.T, db *gorm.DB, staleStatus string, stalePipelineLogID *string) {
+	t.Helper()
+
+	for _, task := range []*entity.IngestionTask{
+		{
+			ID:            "task-old",
+			UserID:        "user-1",
+			DocumentID:    "doc-duplicate",
+			DatasetID:     "kb-1",
+			Status:        staleStatus,
+			PipelineLogID: stalePipelineLogID,
+			BaseModel: entity.BaseModel{
+				CreateTime: int64Ptr(100),
+			},
+		},
+		{
+			ID:         "task-new",
+			UserID:     "user-1",
+			DocumentID: "doc-duplicate",
+			DatasetID:  "kb-1",
+			Status:     common.COMPLETED,
+			BaseModel: entity.BaseModel{
+				CreateTime: int64Ptr(200),
+			},
+		},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+}
+
+func TestRepairDuplicateIngestionTasksDeletesOnlyTerminalStaleRows(t *testing.T) {
+	db := prepareDuplicateIngestionTaskDB(t)
+	doneLogID := "run-done"
+	if err := db.Exec(`CREATE TABLE pipeline_operation_log (
+		id varchar(32) PRIMARY KEY,
+		document_id varchar(32) NOT NULL,
+		operation_status varchar(32) NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create pipeline operation log table: %v", err)
+	}
+	if err := db.Exec(
+		"INSERT INTO pipeline_operation_log (id, document_id, operation_status) VALUES (?, ?, ?)",
+		doneLogID, "doc-duplicate", string(entity.TaskStatusDone),
+	).Error; err != nil {
+		t.Fatalf("create completed pipeline operation log: %v", err)
+	}
+	seedDuplicateIngestionTasks(t, db, common.COMPLETED, &doneLogID)
+
+	if err := repairDuplicateIngestionTasks(t.Context(), db); err != nil {
+		t.Fatalf("repairDuplicateIngestionTasks: %v", err)
+	}
+	var ids []string
+	if err := db.Model(&entity.IngestionTask{}).
+		Where("document_id = ?", "doc-duplicate").
+		Pluck("id", &ids).Error; err != nil {
+		t.Fatalf("list remaining ingestion tasks: %v", err)
+	}
+	if !reflect.DeepEqual(ids, []string{"task-new"}) {
+		t.Fatalf("remaining task ids = %v, want [task-new]", ids)
+	}
+	if err := repairDuplicateIngestionTasks(t.Context(), db); err != nil {
+		t.Fatalf("second repairDuplicateIngestionTasks: %v", err)
+	}
+}
+
+func TestRepairDuplicateIngestionTasksRejectsNonTerminalStaleRows(t *testing.T) {
+	for _, status := range common.ActiveTaskStatuses {
+		t.Run(status, func(t *testing.T) {
+			db := prepareDuplicateIngestionTaskDB(t)
+			seedDuplicateIngestionTasks(t, db, status, nil)
+
+			err := repairDuplicateIngestionTasks(t.Context(), db)
+			for _, want := range []string{"doc-duplicate", "task-old", status} {
+				if err == nil || !strings.Contains(err.Error(), want) {
+					t.Fatalf("repair error = %v, want it to contain %q", err, want)
+				}
+			}
+			var count int64
+			if err := db.Model(&entity.IngestionTask{}).
+				Where("document_id = ?", "doc-duplicate").
+				Count(&count).Error; err != nil {
+				t.Fatalf("count ingestion tasks: %v", err)
+			}
+			if count != 2 {
+				t.Fatalf("ingestion task count = %d, want 2 after failed repair", count)
+			}
+		})
+	}
+}
+
+func TestRepairDuplicateIngestionTasksRejectsOpenBoundPipelineLog(t *testing.T) {
+	db := prepareDuplicateIngestionTaskDB(t)
+	openLogID := "run-open"
+	if err := db.Exec(`CREATE TABLE pipeline_operation_log (
+		id varchar(32) PRIMARY KEY,
+		document_id varchar(32) NOT NULL,
+		operation_status varchar(32) NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create pipeline operation log table: %v", err)
+	}
+	if err := db.Exec(
+		"INSERT INTO pipeline_operation_log (id, document_id, operation_status) VALUES (?, ?, ?)",
+		openLogID, "doc-duplicate", string(entity.TaskStatusRunning),
+	).Error; err != nil {
+		t.Fatalf("create open pipeline operation log: %v", err)
+	}
+	seedDuplicateIngestionTasks(t, db, common.FAILED, &openLogID)
+
+	err := repairDuplicateIngestionTasks(t.Context(), db)
+	for _, want := range []string{"doc-duplicate", "task-old", openLogID} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("repair error = %v, want it to contain %q", err, want)
+		}
+	}
+	var count int64
+	if err := db.Model(&entity.IngestionTask{}).
+		Where("document_id = ?", "doc-duplicate").
+		Count(&count).Error; err != nil {
+		t.Fatalf("count ingestion tasks: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("ingestion task count = %d, want 2 after failed repair", count)
+	}
+}
+
+func TestRepairDuplicateIngestionTasksSupportsLegacySchemaWithoutPipelineLogID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE ingestion_task (
+		id varchar(32) PRIMARY KEY,
+		user_id varchar(32) NOT NULL,
+		document_id varchar(32) NOT NULL,
+		dataset_id varchar(32) NOT NULL,
+		status varchar(32) NOT NULL,
+		create_time bigint NULL
+	)`).Error; err != nil {
+		t.Fatalf("create legacy ingestion_task table: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO ingestion_task
+		(id, user_id, document_id, dataset_id, status, create_time)
+		VALUES
+		('task-old', 'user-1', 'doc-duplicate', 'kb-1', 'COMPLETED', 100),
+		('task-new', 'user-1', 'doc-duplicate', 'kb-1', 'FAILED', 200)`).Error; err != nil {
+		t.Fatalf("seed legacy ingestion tasks: %v", err)
+	}
+
+	if err := repairDuplicateIngestionTasks(t.Context(), db); err != nil {
+		t.Fatalf("repairDuplicateIngestionTasks: %v", err)
+	}
+	var ids []string
+	if err := db.Table("ingestion_task").Pluck("id", &ids).Error; err != nil {
+		t.Fatalf("list remaining ingestion tasks: %v", err)
+	}
+	if !reflect.DeepEqual(ids, []string{"task-new"}) {
+		t.Fatalf("remaining task ids = %v, want [task-new]", ids)
 	}
 }
 

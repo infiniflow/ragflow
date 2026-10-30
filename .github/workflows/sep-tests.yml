@@ -204,25 +204,6 @@ jobs:
           echo "has_native_deepdoc_changes=${has_native_deepdoc}" >> $GITHUB_OUTPUT
           echo "Go: ${has_go}, Web: ${has_web}, Native DeepDoc: ${has_native_deepdoc}"
 
-  ragflow_python_sdk_unit:
-    name: ragflow_python_sdk_unit
-    if: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
-    runs-on: ubuntu-24.04
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v6
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
-      - name: Install Python SDK
-        run: |
-          uv venv --python 3.13
-          uv pip install -e sdk/python pytest
-
-      - name: Run Python SDK unit tests
-        run: .venv/bin/python -m pytest sdk/python/tests -q
-
   ragflow_tests_infinity:
     name: ragflow_tests_infinity
     needs: ragflow_preflight
@@ -698,6 +679,8 @@ jobs:
         # between `docker compose up -d` and this one) and it registers the
         # providers, instances and tenant default models itself (so no fixture
         # step has to run first). No priority filtering: run it all.
+        # Skip when only frontend (web) code changed: HAS_GO is false then.
+        if: ${{ env.HAS_GO == 'true' }}
         run: |
           set -euo pipefail
           export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
@@ -705,7 +688,31 @@ jobs:
             export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee: if tee fails (e.g. the
+          # artifacts dir is missing or NFS hiccups), the step must still reflect
+          # the real test outcome, not the tee failure.
+          set +eo pipefail
           ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/infinity_go_api_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
+
+      - name: Run Python SDK integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        env:
+          RAGFLOW_SDK_CI: "1"
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          uv pip install sdk/python
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee (see Go API step above).
+          set +eo pipefail
+          uv run --no-sync python -m pytest -s --tb=short --level=p2 test/testcases/test_sdk_api 2>&1 | tee "${ARTIFACTS_DIR}/infinity_sdk_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
@@ -1257,6 +1264,8 @@ jobs:
         # between `docker compose up -d` and this one) and it registers the
         # providers, instances and tenant default models itself (so no fixture
         # step has to run first). No priority filtering: run it all.
+        # Skip when only frontend (web) code changed: HAS_GO is false then.
+        if: ${{ env.HAS_GO == 'true' }}
         run: |
           set -euo pipefail
           export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
@@ -1264,7 +1273,31 @@ jobs:
             export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee: if tee fails (e.g. the
+          # artifacts dir is missing or NFS hiccups), the step must still reflect
+          # the real test outcome, not the tee failure.
+          set +eo pipefail
           ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/es_go_api_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
+
+      - name: Run Python SDK integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        env:
+          RAGFLOW_SDK_CI: "1"
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          uv pip install sdk/python
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee (see Go API step above).
+          set +eo pipefail
+          uv run --no-sync python -m pytest -s --tb=short --level=p2 test/testcases/test_sdk_api 2>&1 | tee "${ARTIFACTS_DIR}/es_sdk_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
 
       - name: Collect ragflow log Elasticsearch
         if: ${{ !cancelled() }}

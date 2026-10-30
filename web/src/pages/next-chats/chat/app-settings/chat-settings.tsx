@@ -16,6 +16,7 @@ import {
 import { IAgenticRagSettings } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
 import {
+  deriveModelPreset,
   removeUselessFieldsFromValues,
   setLLMSettingEnabledValues,
 } from '@/utils/form';
@@ -174,6 +175,12 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         ...data.prompt_config,
         // reset() skips undefined values, so fall back to '' to clear the field
         web_search_provider: getWebSearchProvider(data.prompt_config) ?? '',
+      },
+      llm_setting: {
+        ...data.llm_setting,
+        // The preset name is never persisted (removeUselessFieldsFromValues
+        // strips it on save); derive it from the stored sampling values.
+        parameter: deriveModelPreset(data.llm_setting),
       },
       ...llmSettingEnabledValues,
       keywords_similarity_weight: keywordsSimilarityWeight,

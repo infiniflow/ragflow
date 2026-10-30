@@ -1,6 +1,13 @@
 import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
 import { IngestionEventItem } from './ingestion';
 
+export interface IApplyDatasetParserConfigResult {
+  dataset_id: string;
+  total_documents: number;
+  updated_documents: number;
+  unchanged_documents: number;
+}
+
 export interface IDocumentInfo {
   // chunk_num: number;
   create_date: string;
@@ -15,6 +22,11 @@ export interface IDocumentInfo {
   // parser_id: string;
   pipeline_id: string;
   pipeline_name: string;
+  // Pinned dataflow canvas version; empty when the latest version is used
+  // (design section 5 sticky snapshot). Outdated/Missing flags come from the
+  // dataset/document read path (design section 6.2/6.3).
+  pipeline_version_id?: string;
+  pipeline_version_outdated?: boolean;
   process_begin_at?: string;
   process_duration: number;
   progress: number;

@@ -1,4 +1,4 @@
-import { ParserSelect } from '@/components/parser-select';
+import { ParserTreeSelect } from '@/components/parser-tree-select';
 import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
@@ -53,6 +53,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
         .trim(),
       parser_id: z.string().optional(),
       pipeline_id: z.string().optional(),
+      pipeline_version_id: z.string().optional(),
     })
     .superRefine((data, ctx) => {
       // When parse_type === BuiltIn, parser_id is required
@@ -80,6 +81,7 @@ export function InputForm({ onOk }: IModalProps<any>) {
       parse_type: ParseType.BuiltIn,
       parser_id: 'general',
       pipeline_id: '',
+      pipeline_version_id: '',
       embedding_model: defaultModelDictionary?.embd_id,
     },
   });
@@ -96,13 +98,17 @@ export function InputForm({ onOk }: IModalProps<any>) {
     control: form.control,
     name: 'pipeline_id',
   });
+  const pipelineVersionId = useWatch({
+    control: form.control,
+    name: 'pipeline_version_id',
+  });
 
   const handleParserSelect = useParserSelectHandler(form);
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     const nextData =
       parseType === ParseType.BuiltIn
-        ? omit(data, ['pipeline_id'])
+        ? omit(data, ['pipeline_id', 'pipeline_version_id'])
         : omit(data, ['parser_id']);
     onOk?.(nextData);
   }
@@ -147,11 +153,12 @@ export function InputForm({ onOk }: IModalProps<any>) {
           name={parseType === ParseType.BuiltIn ? 'parser_id' : 'pipeline_id'}
           render={() => (
             <FormItem>
-              <ParserSelect
+              <ParserTreeSelect
                 value={buildParserSelectValue({
                   parseType,
                   parserId,
                   pipelineId,
+                  pipelineVersionId,
                 })}
                 onChange={handleParserSelect}
               />

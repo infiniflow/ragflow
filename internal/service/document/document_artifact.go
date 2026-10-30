@@ -11,7 +11,9 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
@@ -317,17 +319,33 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID 
 // document via the office_oxide-backed DOCParser. The parser only emits JSON
 // payloads, so the preview text is flattened from the JSON items.
 func extractDOCPreviewText(ctx context.Context, filename string, data []byte) (string, error) {
-	res := parser.NewDOCParser().ParseWithResult(ctx, filename, data)
+	p, err := parser.GetTextOnlyParser(utility.FileTypeDOC)
+	if err != nil {
+		return "", err
+	}
+	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
 		return "", res.Err
 	}
+	return docPreviewText(res)
+}
+
+// docPreviewText flattens parser items for the legacy .doc preview. Table
+// items carry only TableData, so render them instead of dropping the table
+// content from the preview.
+func docPreviewText(res parser.ParseResult) (string, error) {
 	if len(res.JSON) == 0 {
 		return "", fmt.Errorf("doc preview: no content extracted")
 	}
 	parts := make([]string, 0, len(res.JSON))
 	for _, item := range res.JSON {
-		if text, ok := item.ToMap()["text"].(string); ok {
+		m := item.ToMap()
+		if text, ok := m["text"].(string); ok && text != "" {
 			parts = append(parts, text)
+			continue
+		}
+		if table, ok := m["table"].(*entity.TableData); ok && table != nil {
+			parts = append(parts, tableutil.RenderTableHTML(table))
 		}
 	}
 	return strings.Join(parts, "\n"), nil

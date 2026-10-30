@@ -111,7 +111,7 @@ type Environments struct {
 	TavilyAPIKey                      string `mapstructure:"tavily_api_key"`
 	QueritAPIKey                      string `mapstructure:"querit_api_key"`
 	KeenableAPIURL                    string `mapstructure:"keenable_api_url"`        // KEENABLE_API_URL
-	MCPAllowPrivateHosts              bool   `mapstructure:"mcp_allow_private_hosts"` // RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS
+	MCPAllowPrivateHosts              bool   `mapstructure:"mcp_allow_private_hosts"` // ALLOW_ANY_HOST
 }
 
 type DefaultSuperUser struct {
@@ -186,6 +186,8 @@ func (c *Config) GetEnvironments() error {
 		switch storageType {
 		case "minio", "s3", "oss", "gcs":
 			c.environments.StorageType = storageType
+		case "aws_s3":
+			c.environments.StorageType = "s3"
 		default:
 			return fmt.Errorf("invalid storage type: %s", storageType)
 		}
@@ -298,10 +300,7 @@ func (c *Config) GetEnvironments() error {
 		c.environments.HomePath = homePath
 	}
 
-	mcpAllowPrivateHosts := common.GetEnvSmall(common.EnvMCPAllowPrivateHosts)
-	if mcpAllowPrivateHosts != "" {
-		c.environments.MCPAllowPrivateHosts = mcpAllowPrivateHosts == "true" || mcpAllowPrivateHosts == "1" || mcpAllowPrivateHosts == "yes"
-	}
+	c.environments.MCPAllowPrivateHosts = common.AllowConfiguredPrivateHost()
 
 	userProfile := common.GetEnv(common.EnvUserProfile)
 	if userProfile != "" {

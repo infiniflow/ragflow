@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -120,6 +120,9 @@ class Session(Base):
                 except json.JSONDecodeError:
                     continue  # Skip lines that are not valid JSON
 
+                if json_data.get("code", 0) != 0:
+                    raise Exception(json_data.get("message", "Unknown API error"))
+
                 event = json_data.get("event", None)
                 if event:
                     if self.__session_type == "agent" and event not in {"message", "message_end"}:
@@ -144,6 +147,8 @@ class Session(Base):
                 json_data = res.json()
             except ValueError:
                 raise Exception(f"Invalid response {res}")
+            if json_data.get("code", 0) != 0:
+                raise Exception(json_data.get("message", "Unknown API error"))
             yield self._structure_answer(json_data["data"])
 
     def _structure_answer(self, json_data):

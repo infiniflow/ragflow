@@ -33,9 +33,7 @@ RAGFlow provides an end-to-end RAG platform that goes beyond basic document chun
 
 ### Where can I find the RAGFlow version, and how do I interpret it?
 
-You can find the RAGFlow version number on the **System** page of the UI:
-
-![Image](https://github.com/user-attachments/assets/20cf7213-2537-4e18-a88c-4dadf6228c6b)
+For self-hosted deployments, open **User settings** on a desktop-sized screen. The RAGFlow version number is displayed at the bottom-left of the settings page. It is hidden on narrow screens and is not displayed in RAGFlow Cloud (`cloud.ragflow.io`).
 
 If you build RAGFlow from source, the Go admin and ingestor log their versions at startup. The server also prints its version with `bin/ragflow_server --api --version`.
 
@@ -328,7 +326,7 @@ If your model is not currently supported but has APIs compatible with those of O
 
 The Go API limits non-multipart request bodies to 1 MiB by default. Set `MAX_JSON_CONTENT_LENGTH` to change that limit in bytes. Multipart upload requests share a 1 GiB default total-body limit; set `MAX_MULTIPART_CONTENT_LENGTH` to change it in bytes. Upload endpoints can enforce smaller per-file or per-request limits.
 
-The file-manager per-file limit follows `MAX_MULTIPART_CONTENT_LENGTH` (1 GiB by default). Dataset documents allow 128 MiB per file, and document-info uploads allow 100 MiB per file; increasing the shared multipart limit does not raise those per-file limits.
+The file-manager per-file limit follows `MAX_MULTIPART_CONTENT_LENGTH` (1 GiB by default). Dataset documents allow 128 MiB per file by default; set `MAX_DOCUMENT_UPLOAD_SIZE` to change that limit in bytes. The total multipart request limit must also be large enough for the file and multipart overhead. Document-info uploads allow 100 MiB per file, and increasing the shared multipart limit does not raise that limit.
 
 If you raise the multipart limit above 1 GiB, also increase `client_max_body_size` in **docker/nginx/nginx.conf**. The Go image contains its own copy of this file, so make the change effective by either rebuilding `RAGFLOW_IMAGE` or enabling the `./nginx/nginx.conf:/etc/nginx/nginx.conf` bind mount for the deployed service in **docker/docker-compose.yml**, then recreate that service.
 

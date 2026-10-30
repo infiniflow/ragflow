@@ -27,7 +27,9 @@ import (
 // docExtract is the native office_oxide extraction seam for the DOC family.
 var docExtract = deepdocoffice.OpenAndExtract
 
-type DOCParser struct{}
+type DOCParser struct {
+	textOnly bool
+}
 
 func NewDOCParser() *DOCParser {
 	return &DOCParser{}
@@ -60,13 +62,22 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 	// usable sections, so a document whose IR is empty/unusable still keeps its
 	// content (PlainText / ToMarkdown) rather than silently producing 0 chunks.
 	if strings.TrimSpace(irJSON) != "" {
-		budget := newEmbeddedMediaBudget()
-		if sections := buildDOCXJSONSections(irJSON, budget); len(sections) > 0 {
+		var sink *officeMediaSink
+		if !p.textOnly {
+			sink = newOfficeMediaSink(ctx, officeMediaFormatDOCX)
+		}
+		if sections := buildDOCXJSONSections(irJSON, sink); len(sections) > 0 {
+			if sink != nil && sink.err != nil {
+				return ParseResult{Err: sink.err}
+			}
 			return ParseResult{
 				File:     map[string]any{"name": filename, "format": "doc"},
 				JSON:     MapsToItems(sections),
-				Warnings: budget.warnings(),
+				Warnings: sink.warnings(),
 			}
+		}
+		if sink != nil && sink.err != nil {
+			return ParseResult{Err: sink.err}
 		}
 	}
 	if strings.TrimSpace(text) == "" {

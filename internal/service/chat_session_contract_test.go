@@ -38,6 +38,10 @@ func (emptyChatSessionScopeChecker) Scope(context.Context, permission.Subject, p
 	return permission.Scope{Mode: permission.ScopeNone}, nil
 }
 
+func (c emptyChatSessionScopeChecker) FilterResources(context.Context, permission.Subject, []permission.ResourceRef, permission.Operation) ([]permission.ResourceRef, error) {
+	return nil, c.checkErr
+}
+
 // ---------------------------------------------------------------------------
 // CreateSession contract — mirrors the assertions in
 // test_session_create_validation_and_deleted_chat_contract that exercise the
@@ -146,7 +150,7 @@ func TestListChatSessionsChecksChatPermissionWhenThereAreNoSessions(t *testing.T
 		permissionChecker: emptyChatSessionScopeChecker{checkErr: permission.ErrPermissionDenied},
 	}
 
-	result, err := svc.ListChatSessions(t.Context(), "outsider", "chat-1", "", "", nil, 1, 20)
+	result, err := svc.ListChatSessions(t.Context(), "outsider", "chat-1", "", "", "", nil, 1, 20)
 	if result != nil {
 		t.Fatalf("expected no response for unauthorized chat, got %+v", result)
 	}

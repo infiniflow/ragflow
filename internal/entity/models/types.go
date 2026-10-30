@@ -143,6 +143,7 @@ type OCRBlock struct {
 }
 
 type OCRFileResponse struct {
+	// Text is empty (but non-nil) when the response carries only media regions.
 	Text *string `json:"text"`
 	// Pages is optional structured output for internal parsing; nil means unavailable.
 	Pages []OCRPage `json:"-"`
@@ -369,7 +370,7 @@ type EmbeddingModel struct {
 	ModelName    *string
 	APIConfig    *APIConfig
 	MaxTokens    int  // Max input tokens for the embedding model, used for text truncation
-	MaxBatchSize *int // Max texts per Embed request; nil means "resolve from provider capability at use site"
+	MaxBatchSize *int // Max texts per driver request; Embed resolves nil from the provider capability
 	info         *ModelInfo
 }
 
@@ -401,7 +402,7 @@ func (m *EmbeddingModel) Info() *ModelInfo {
 	return cloneModelInfo(m.info)
 }
 
-// ResolveBatchSize returns the safe maximum texts per Embed request. The
+// ResolveBatchSize returns the safe maximum texts per driver request. The
 // effective limit cannot exceed either the model's declared maximum or the
 // provider/runtime batch capability; these values can differ (for example, a
 // provider model config can declare max_batch_size=32 while its driver only

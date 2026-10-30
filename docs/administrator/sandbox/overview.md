@@ -29,10 +29,13 @@ Choose the provider that matches where you want code to run and who should manag
 | [**E2B**](./configure_ssh_and_cloud_providers.md#configure-e2b) | E2B cloud sandboxes | You want an externally managed cloud sandbox without operating local Runner containers. |
 | [**Tenki**](./configure_ssh_and_cloud_providers.md#configure-tenki) | A disposable Tenki microVM created for each execution | You want each run to use an isolated, short-lived cloud microVM. |
 | [**UCloud Agent Sandbox**](./configure_ssh_and_cloud_providers.md#configure-ucloud-agent-sandbox) | A disposable UCloud Agent Sandbox | You want a managed cloud sandbox in a supported UCloud region. |
+| **Local** | Directly on the current host process | You want to execute code on the RAGFlow host rather than through a remote service or Runner container. |
 
 :::note Before choosing a cloud provider
 Confirm that your RAGFlow deployment can reach the provider's API, and that your account has valid credentials, sufficient quota, and access to the required region.
 :::
+
+To select **Local**, open **Admin > Sandbox**, choose the **Local** card, review its displayed settings, and click **Save** to make it active. Code executes on the current host; this option does not provide the container or microVM separation offered by other providers.
 
 ## Recommended path for private deployments
 

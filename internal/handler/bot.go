@@ -169,8 +169,10 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 			body.Release = &release
 		}
 	}
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
 	events, ec, err := h.botService.AgentbotCompletion(
-		c.Request.Context(), user.ID, agentID, body)
+		ctx, user.ID, agentID, body)
 	if err != nil {
 		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
@@ -220,8 +222,10 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 			return
 		}
 	}
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
 	frames, ec, err := h.botService.ChatbotCompletion(
-		c.Request.Context(), user.ID, dialogID, body)
+		ctx, user.ID, dialogID, body)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return

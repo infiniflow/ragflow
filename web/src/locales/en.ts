@@ -9,7 +9,8 @@ export default {
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete it ?',
       deleteThem: 'Are you sure to delete them ?',
-      removeModalTitle: 'Are you sure to remove it ?',
+      removeIt: 'Are you sure to remove it ?',
+      removeThem: 'Are you sure to remove them ?',
       ok: 'Ok',
       cancel: 'Cancel',
       yes: 'Yes',
@@ -58,7 +59,6 @@ export default {
       viewLess: 'View less',
       comingSoon: 'Coming soon',
       download: 'Download',
-      figure: 'Fig.',
       close: 'Close',
       preview: 'Preview',
       move: 'Move',
@@ -402,6 +402,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       continueUpload: 'Continue upload',
+      uploadPipelineDeletedTitle: 'Parsing pipeline unavailable',
+      uploadPipelineDeletedContent:
+        'The pipeline configured for this dataset has been deleted or has no published version, so uploaded files cannot be parsed automatically. Reconfigure a pipeline in the dataset settings, or upload now and configure parsing for each file individually.',
       reselectParser: 'Reselect parse method',
       goAddModel: 'Go add model',
       uploadMissingModelsTitle: 'Some files lack a required model',
@@ -690,6 +693,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       builtInPipelines: 'Built-in pipelines',
       parserSelectPlaceholder: 'Select a parser',
       parserOptionUnavailable: 'unavailable',
+      parserOptionUnavailableMessage:
+        'The selected parser or pipeline version is no longer available. Please select again.',
       randomSeedTip:
         'Seed is the starting point for a pseudo-random algorithm that ensures reproducibility of the same output across different runs.',
       datasetDescription: 'Describe your dataset',
@@ -772,8 +777,13 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       parsingMode: 'Parsing mode',
       manualSetup: 'Custom ingestion pipeline',
       builtIn: 'Built-in parsing template',
+      applyParserSettingsTitle: 'Apply parser settings to existing files?',
       parserSettingsChangeWarning:
-        'Updated parser settings apply only to newly uploaded files. To apply these settings to existing files, update their parser settings and re-parse them.',
+        'Updated parser settings apply only to newly uploaded files by default. Choose “Yes” to also apply them to all existing files in this dataset, replacing any file-specific parser settings. You’ll need to manually re-parse those files for the changes to affect their content. Choose “No” to keep existing files’ settings unchanged.',
+      parserSettingsApplied:
+        'Parser settings applied. Re-parse files manually to update their content.',
+      parserSettingsApplyFailed:
+        'Dataset settings saved, but existing files were not updated. Choose “Yes” to retry.',
       noConfigChunkerHint:
         'The built-in {{name}} parser handles chunking automatically, so no additional configuration is required.',
       titleDescription:
@@ -1075,7 +1085,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       messagePlaceholder: 'Type your message here...',
       exit: 'Exit',
       multipleModels: 'Multiple models',
-      applyModelConfigs: 'Apply model configs',
+      applyModelConfigs:
+        'Use this model and its settings in single-model Chat.',
       conversations: 'Conversations',
       chatApps: 'Chat apps',
       newConversation: 'New conversation',
@@ -1146,11 +1157,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       operation: 'Operation',
       model: 'Model',
       modelTip: 'Large language chat model',
-      tokensSpent: '{{total}} tokens ({{prompt}} in + {{completion}} out)',
+      tokensSpent: '{{total}} tokens ({{prompt}} input, {{completion}} output)',
       turnElapsed: '{{seconds}}s',
       decisionModel: 'Decision model',
       decisionModelTip:
-        'Judges whether a retrieved passage is worth showing the model. Leave empty to follow the default set in Settings.',
+        "Evaluates whether retrieved chunks are relevant to the user's query before passing them to the LLM. To enable this feature, configure a decision model under Settings → Model providers, then select it here. By default, no decision model is used.",
       modelMessage: 'Please select!',
       modelEnabledTools: 'Enabled tools',
       modelEnabledToolsTip:
@@ -1305,6 +1316,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       search1apiApiKeyTip:
         'When Search1API is selected, its web search results supplement dataset retrieval.',
       search1apiApiKeyMessage: 'Please enter your Search1API API Key',
+      searchapiApiKeyTip:
+        'When SearchApi is selected, its Google web search results supplement dataset retrieval.',
+      searchapiApiKeyMessage: 'Please enter your SearchApi API Key',
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',
@@ -2126,6 +2140,8 @@ Example: Virtual Hosted Style`,
       apiKey: 'API Key',
       apiKeyMessage: 'Please enter the API Key',
       apiKeyPlaceholder: 'Please enter the API Key',
+      credentialClearToRemove:
+        'Clear this field to remove the saved credential',
       apiKeyTip:
         'The API Key can be obtained by registering the corresponding LLM supplier.',
       aimlapiGetKey: 'Get API key',
@@ -2167,6 +2183,11 @@ Example: Virtual Hosted Style`,
       mineruApiserver: 'MinerU API Server',
       mineruApiserverMessage: 'Please input the MinerU API Server URL!',
       mineruApiserverPlaceholder: 'e.g. http://host.docker.internal:9987',
+      mineruApiToken: 'MinerU API token',
+      mineruApiTokenPlaceholder:
+        'Token from mineru.net API management (optional)',
+      mineruApiTokenTip:
+        'When set, RAGFlow uses the official precise API (/api/v4, including vlm). Leave empty to use the no-login agent API. Not required for a self-hosted MinerU server.',
       mineruOutputDir: 'MinerU Output Directory',
       mineruOutputDirMessage: 'Please input the MinerU output directory!',
       mineruOutputDirPlaceholder: '/tmp/mineru',
@@ -2200,7 +2221,7 @@ Example: Virtual Hosted Style`,
         'The model that judges whether a retrieved passage is worth showing the LLM. Leave unset to keep the retrieved text unfiltered.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check the Model providers page to see if your model provider supports this model.',
+        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check the Model providers page to see if your model provider supports this model.',
       img2txtModel: 'VLM',
       img2txtModelTip:
         'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.',
@@ -2450,6 +2471,7 @@ Example: Virtual Hosted Style`,
       batchAddModels: 'Add all models',
       batchRemoveModels: 'Remove all models',
       batchVerifyModels: 'Verify all models',
+      moreActions: 'More actions',
       editCustomModelTitle: 'Edit model',
       modelMaxTokens: 'Max context length',
       modelFeatures: 'Model features',
@@ -2613,6 +2635,8 @@ Example: Virtual Hosted Style`,
       modified: 'Modified',
       created: 'Created',
       deleted: 'Deleted',
+      deleteIncomplete:
+        'Could not confirm complete deletion. Check the remaining documents before retrying.',
       noLangfuseConfigToDelete: 'No Langfuse configuration to delete',
       renamed: 'Renamed',
       operated: 'Operated',
@@ -2682,7 +2706,7 @@ Example: Virtual Hosted Style`,
         sectionTitle: 'Section title',
       },
       tags: 'Tags',
-      canvasCategory: 'Canvas category',
+      agentCategory: 'Agent category',
       editTags: 'Edit tags',
       editTagsDescription:
         'Add tags to organize and filter your agents. Press Enter or comma to add.',
@@ -2780,7 +2804,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       comma: 'Comma',
       semicolon: 'Semicolon',
       period: 'Period',
-      lineBreak: 'Line break',
+      linebreak: 'Line break',
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
@@ -2836,20 +2860,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       toolTimeout: 'Tool timeout',
       toolTimeoutTip:
         'Timeout in seconds for a single tool call (including MCP tools). Increase it for long-running tools.',
-      maxSteps: 'Max steps',
-      headless: 'Headless',
-      enableDefaultExtensions: 'Enable default extensions',
-      enableDefaultExtensionsTip:
-        'Enable browser-use default extensions (uBlock, cookie handling, ClearURLs). Disable this to avoid runtime extension downloads.',
-      chromiumSandbox: 'Chromium sandbox',
-      chromiumSandboxTip:
-        'Whether to enable Chromium sandbox. In Docker root environments this is usually disabled; on regular hosts it is recommended to enable.',
-      persistSession: 'Persist session',
-      persistSessionTip:
-        'When enabled, this Browser node reuses its browser session to avoid repeated logins.',
-      uploadSources: 'Upload sources',
-      uploadSourcesTip:
-        'Supports file IDs, file URLs, or variables. You can separate multiple values with commas or use a JSON array format (for example ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Advanced settings',
       addTools: 'Add tools',
       sysPromptDefaultValue: `
@@ -2915,6 +2925,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       operation: 'operation',
       run: 'Run',
       save: 'Save',
+      saveDraft: 'Save draft',
       title: 'ID:',
       beginDescription: 'This is where the flow begins.',
       answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
@@ -3000,9 +3011,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'The absolute HTTP or HTTPS URL of the page to read. As an agent tool, the agent supplies the URL.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
-      browser: 'Browser',
-      browserDescription:
-        'Automate browser tasks. Supports model configuration and prompt-driven actions. Upload sources support file IDs and URLs, and downloaded files can be saved to a target folder.',
       subtitle: 'Subtitle',
       logoImage: 'Logo Image',
       logoPosition: 'Logo Position',
@@ -3364,6 +3372,15 @@ Best for: Documents with flowing, contextually connected content — such as boo
       optional: 'Optional',
       pasteFileLink: 'Paste file link',
       testRun: 'Test run',
+      captureModelInputs: 'Capture model inputs',
+      captureModelInputsHint:
+        'Test runs execute the agent and its tools. Expanding or copying captured inputs does not run them again.',
+      modelInputs: 'Model inputs',
+      modelInputSummary:
+        'Recorded entries: {{count}} · Omitted calls: {{omittedCount}}',
+      noModelInputs: 'No model calls were captured in this run.',
+      modelInputsUnavailable: 'Model inputs are unavailable for this run.',
+      testRunError: 'Test run failed ({{code}}): {{message}}',
       debugRunLimits:
         'A debug run verifies that the flow executes without errors: PDF parses only the first 2 pages (other formats parse all pages); if a chunker node is present, only the first 3 chunks are previewed; if a knowledge-compiler node is present, it runs locally only and does not trigger a dataset rebuild or notification.',
       template: 'Template',
@@ -3397,6 +3414,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       contentTip: 'content: Email content (Optional)',
       jsonUploadTypeErrorMessage: 'Please upload json file',
       jsonUploadContentErrorMessage: 'json file error',
+      jsonUploadCategoryMismatch:
+        'The JSON file type does not match the current tab. Please switch to the corresponding tab and import again.',
       nameExists: 'Name already exists',
       iteration: 'Iteration',
       iterationDescription: `A looping component that iterates over an input array and executes a defined logic for each item.`,
@@ -3444,6 +3463,27 @@ This delimiter is used to split the input text into several text pieces echo of 
         loadFailed: 'Failed to load the version; it may have been deleted',
         version: 'Version',
         select: 'No version selected',
+        label: 'Pipeline version',
+        latest: 'Latest version',
+        noPublished: 'No published versions',
+        filterByAlias: 'Filter by alias',
+        alias: 'Alias',
+        addAlias: 'Add alias',
+        editAlias: 'Edit alias',
+        editAliasDescription:
+          'Give this version a memorable alias so you can find it quickly later.',
+        outdated:
+          'The configured pipeline version is not the latest and will not be updated automatically.',
+        delete: 'Delete version',
+        deleteConfirmTitle: 'Delete this version?',
+        deleteConfirmContent:
+          'Deleting a version that a dataset or file is bound to will make that file unparseable. This cannot be undone.',
+        deleteAgentConfirmContent:
+          'If this agent is embedded in a website or serving external traffic, deleting its latest published version will roll back or interrupt the live service. Your current canvas is not affected. This cannot be undone.',
+        restore: 'Restore as current draft',
+        restoreConfirmTitle: 'Restore this version as the current agent?',
+        restoreConfirmContent:
+          'The current agent DSL will be replaced by this version. Save again to create a new version.',
       },
       setting: 'Settings',
       settings: {
@@ -3573,30 +3613,25 @@ This process aggregates variables from multiple branches into a single variable 
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
       frameworkPrompts: 'Framework',
       release: 'Publish',
-      production: 'Production',
-      productionTooltip:
-        'This version is published to production. Access it via the API or the embedded page.',
       confirmPublish: 'Confirm publish',
       publishIngestionPipeline:
         'You are about to publish this Ingestion pipeline.',
       publishAgent: 'You are about to publish this agent',
-      linkedDataset: 'Linked dataset:',
       lastPublished: 'Last published',
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
-      duplicate: 'Duplicate',
       copyOfAgentName: '{{name}} (copy)',
       ceateAgent: 'Workflow',
       createPipeline: 'Ingestion pipeline',
       createIngestionPipeline: 'Create ingestion pipeline',
       createWorkflow: 'Create workflow',
+      createCompilationOperator: 'Create compilation operator',
       tabList: {
         ingestionPipeline: 'Ingestion pipeline',
         compilationOperator: 'Compilation operator',
         workflow: 'Workflow',
       },
-      chooseAgentType: 'Choose agent type',
       parser: 'Parser',
       parserDescription:
         'Extracts raw text and structure from files for downstream processing.',
@@ -3630,9 +3665,9 @@ This process aggregates variables from multiple branches into a single variable 
       memoryUnavailable:
         'The selected memory is unavailable (deleted), please re-select',
       retrievalTemplateDatasetHint:
-        'This template contains {{num}} retrieval step(s) without a bound dataset. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+        'This template contains {{num}} retrieval step(s) without a bound dataset. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the agent after creation.',
       retrievalTemplateMemoryHint:
-        'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+        'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the agent after creation.',
       retrievalDatasetRequired: 'Please select a knowledge base first',
       retrievalMemoryRequired: 'Please select memories first',
       tokenizerDescription:
@@ -4082,10 +4117,10 @@ Important structured information may include: names, dates, locations, events, k
         share: 'Share',
       },
 
-      serviceStatus: 'Service status',
-      userManagement: 'User management',
-      sandboxSettings: 'Sandbox settings',
-      registrationWhitelist: 'Registration whitelist',
+      serviceStatus: 'Services',
+      userManagement: 'Users',
+      sandboxSettings: 'Sandbox',
+      registrationWhitelist: 'Whitelist',
       roles: 'Roles',
       monitoring: 'Monitoring',
 
@@ -4189,7 +4224,7 @@ Important structured information may include: names, dates, locations, events, k
       importWhitelist: 'Import whitelist (Excel)',
       importSelectExcelFile: 'Excel file (.xlsx)',
       importOverwriteExistingEmails: 'Overwrite existing emails',
-      importInvalidExcelFile: 'Please select a valid Excel file',
+      importValidExcelFile: 'Please select a valid Excel file',
       importFileRequired: 'Please select a file to import',
       importFileTips:
         'File must contain a single header column named <code>email</code>.',
@@ -4203,7 +4238,6 @@ Important structured information may include: names, dates, locations, events, k
       permission: 'Permission',
 
       agentTitle: 'Agent title',
-      canvasCategory: 'Canvas category',
 
       newRole: 'New role',
       addNewRole: 'Add new role',
@@ -4222,18 +4256,14 @@ Important structured information may include: names, dates, locations, events, k
     },
     explore: {
       title: 'Launch',
-      canvasList: 'Canvas List',
       sessions: 'Sessions',
       newSession: 'New Session',
       newSessionLabel: 'Start a new conversation',
       deleteSession: 'Delete Session',
-      searchCanvas: 'Search canvas...',
       searchSessions: 'Search sessions...',
-      noCanvasSelected: 'Please select a canvas',
       noSessionSelected: 'Please select a session or create a new one',
       noSessionsFound: 'No sessions found',
       createFirstSession: 'Create your first session',
-      noCanvasFound: 'No canvas found',
       deleteSelectedConfirm:
         'Are you sure you want to delete {{count}} session(s)?',
       batchDeleteSessions: 'Delete Sessions',
