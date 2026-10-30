@@ -899,11 +899,49 @@ func TestGeneralChunkerDOCXCustomDelimiterGroupsMultiParagraphRecords(t *testing
 	if len(texts) != 2 {
 		t.Fatalf("texts = %q, want two record chunks", texts)
 	}
-	if !strings.Contains(texts[0], "问：first question") || !strings.Contains(texts[0], "名　　称：item one") || !strings.Contains(texts[0], "答：first answer") {
+	// A custom delimiter is a split instruction, not content: the leading
+	// record prefix is dropped (Python naive_merge_docx/_build_cks parity).
+	if strings.Contains(texts[0], "问：") || !strings.Contains(texts[0], "first question") || !strings.Contains(texts[0], "名　　称：item one") || !strings.Contains(texts[0], "答：first answer") {
 		t.Fatalf("first record = %q", texts[0])
 	}
-	if !strings.Contains(texts[1], "问：second question") || !strings.Contains(texts[1], "答：second answer") {
+	if strings.Contains(texts[1], "问：") || !strings.Contains(texts[1], "second question") || !strings.Contains(texts[1], "答：second answer") {
 		t.Fatalf("second record = %q", texts[1])
+	}
+}
+
+func TestGeneralChunkerDOCXDropsCustomDelimiterRecordPrefix(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 512,
+		"delimiters":       []string{"`AAA`"},
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "first section", "doc_type_kwd": "text"},
+			{"text": "AAA", "doc_type_kwd": "text"},
+			{"text": "second section", "doc_type_kwd": "text"},
+			{"text": "AAA", "doc_type_kwd": "text"},
+			{"text": "before AAA after", "doc_type_kwd": "text"},
+			{"text": "AAA", "doc_type_kwd": "text"},
+			{"text": "third section", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	texts := outputTexts(t, out)
+	for _, text := range texts {
+		if strings.Contains(text, "AAA") {
+			t.Fatalf("custom delimiter survived: %q", text)
+		}
+	}
+	if !reflect.DeepEqual(texts, []string{"first section", "second section", "before", "after", "third section"}) {
+		t.Fatalf("texts = %q", texts)
 	}
 }
 
