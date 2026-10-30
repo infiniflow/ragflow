@@ -19,40 +19,11 @@ package opensearch
 import (
 	"context"
 	"fmt"
-	"ragflow/internal/engine/types"
 )
 
 // Placeholder stubs satisfying engine.DocEngine during incremental milestones.
-// Each method will be replaced by concrete implementations in Commits 7-9.
-
-func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
-	return nil, fmt.Errorf("Search pending Commits 7-8")
-}
-
-func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
-	return nil
-}
-
-func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{} {
-	return nil
-}
-
-func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
-	return nil
-}
+// RunSQL will be implemented in Commit 9.
 
 func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error) {
 	return nil, fmt.Errorf("RunSQL pending Commit 9")
-}
-
-func (e *Engine) GetChunkIDs(chunks []map[string]interface{}) []string {
-	return nil
-}
-
-func (e *Engine) KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("KNNScores pending Commit 8")
-}
-
-func (e *Engine) GetScores(searchResult map[string]interface{}) map[string]float64 {
-	return nil
 }
