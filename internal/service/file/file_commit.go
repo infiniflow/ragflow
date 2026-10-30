@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"sort"
 	"strings"
@@ -56,12 +57,22 @@ func NewFileCommitService() *FileCommitService {
 	}
 }
 
+// maxCommitFolderDepth bounds the ancestor walk that places a commit's file IDs
+// inside the commit folder. Folder chains are short; the bound only stops a
+// corrupted parent_id cycle.
+const maxCommitFolderDepth = 64
+
 // CreateCommit creates a new commit for a workspace folder
 func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
-	// 1. Get the latest commit for this folder
+	// 1. Authorize every file the commit names before anything is written.
+	if err := s.authorizeCommitFiles(ctx, folderID, changes); err != nil {
+		return nil, err
+	}
+
+	// 2. Get the latest commit for this folder
 	latestCommit, _ := s.commitDAO.GetLatestByFolderID(ctx, dao.DB, folderID)
 
-	// 2. Build tree state from latest commit
+	// 3. Build tree state from latest commit
 	treeState := make(map[string]interface{})
 	if latestCommit != nil && latestCommit.TreeState != nil {
 		if err := json.Unmarshal([]byte(*latestCommit.TreeState), &treeState); err != nil {
@@ -70,7 +81,7 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 		}
 	}
 
-	// 3. Create commit record
+	// 4. Create commit record
 	commitID := common.GenerateUUID()
 	nowMs := time.Now().UnixMilli()
 
@@ -237,6 +248,133 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 	commit.CreateTime = &nowMs
 
 	return commit, nil
+}
+
+// authorizeCommitFiles rejects commit changes whose file IDs fall outside the
+// commit folder. The route only proves the caller may use folderID, while every
+// files[].file_id is independent client input and the writes below address file
+// rows by ID alone, so an unchecked ID retargets another workspace or tenant
+// (IDOR, CWE-639). A change may record the deletion of a file that was already
+// removed, so an unknown ID is rejected only for operations that write the file
+// row.
+func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, folderID string, changes []entity.FileChange) error {
+	folder, err := s.fileDAO.GetByID(ctx, dao.DB, folderID)
+	if err != nil {
+		return fmt.Errorf("resolve commit folder %s: %w", folderID, err)
+	}
+	if folder.Type != FileTypeFolder {
+		return fmt.Errorf("%w: %s is not a folder", permission.ErrResourceNotFound, folderID)
+	}
+
+	operations := make(map[string][]string, len(changes))
+	ids := make([]string, 0, len(changes))
+	for _, change := range changes {
+		if change.FileID == "" {
+			return fmt.Errorf("%w: file_id is required", permission.ErrResourceNotFound)
+		}
+		if _, seen := operations[change.FileID]; !seen {
+			ids = append(ids, change.FileID)
+		}
+		operations[change.FileID] = append(operations[change.FileID], change.Operation)
+	}
+
+	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, ids)
+	if err != nil {
+		return fmt.Errorf("resolve commit files: %w", err)
+	}
+	existing := make(map[string]*entity.File, len(files))
+	for _, file := range files {
+		existing[file.ID] = file
+	}
+	for _, id := range ids {
+		if _, ok := existing[id]; ok {
+			continue
+		}
+		for _, operation := range operations[id] {
+			if operation != "delete" {
+				return fmt.Errorf("%w: file %s not found in folder %s", permission.ErrPermissionDenied, id, folderID)
+			}
+		}
+	}
+
+	return s.ensureFilesInFolder(ctx, folderID, existing)
+}
+
+// ensureFilesInFolder rejects files whose parent chain does not reach folderID.
+// Ancestors are resolved one folder level at a time, so a commit verifies all of
+// its files with one query per tree depth instead of one query per file.
+func (s *FileCommitService) ensureFilesInFolder(ctx context.Context, folderID string, files map[string]*entity.File) error {
+	if len(files) == 0 {
+		return nil
+	}
+	parentOf := make(map[string]string, len(files))
+	frontier := make([]string, 0, len(files))
+	for id, file := range files {
+		if id == folderID {
+			continue
+		}
+		parentOf[id] = file.ParentID
+		frontier = append(frontier, file.ParentID)
+	}
+
+	for depth := 0; depth < maxCommitFolderDepth && len(frontier) > 0; depth++ {
+		load := make([]string, 0, len(frontier))
+		queued := make(map[string]struct{}, len(frontier))
+		for _, id := range frontier {
+			if id == "" || id == folderID {
+				continue
+			}
+			if _, known := parentOf[id]; known {
+				continue
+			}
+			if _, dup := queued[id]; dup {
+				continue
+			}
+			queued[id] = struct{}{}
+			load = append(load, id)
+		}
+		if len(load) == 0 {
+			break
+		}
+		ancestors, err := s.fileDAO.GetByIDs(ctx, dao.DB, load)
+		if err != nil {
+			return fmt.Errorf("resolve commit file ancestors: %w", err)
+		}
+		for _, ancestor := range ancestors {
+			parentOf[ancestor.ID] = ancestor.ParentID
+		}
+		frontier = frontier[:0]
+		for _, id := range load {
+			parent, ok := parentOf[id]
+			if !ok {
+				// A missing ancestor terminates the chain for its descendants.
+				parentOf[id] = ""
+			}
+			frontier = append(frontier, parent)
+		}
+	}
+
+	for id := range files {
+		if !commitFileInFolder(id, folderID, parentOf) {
+			return fmt.Errorf("%w: file %s is outside folder %s", permission.ErrPermissionDenied, id, folderID)
+		}
+	}
+	return nil
+}
+
+func commitFileInFolder(fileID, folderID string, parentOf map[string]string) bool {
+	visited := make(map[string]struct{})
+	for current := fileID; current != ""; {
+		if current == folderID {
+			return true
+		}
+		if _, cycle := visited[current]; cycle {
+			return false
+		}
+		visited[current] = struct{}{}
+		current = parentOf[current]
+	}
+	return false
 }
 
 // PageEditCommitInput carries the data needed to record a single wiki/skill
