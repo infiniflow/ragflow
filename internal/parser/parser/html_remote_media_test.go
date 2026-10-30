@@ -17,22 +17,38 @@ package parser
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 )
 
-// allowLoopbackImages enables the loopback SSRF bypass for one test.
+// allowLoopbackImages lets one test reach a loopback httptest server through
+// the shared SSRF guard. Every other URL still goes through the production
+// guard, so a direct or redirected reference to a private address stays
+// rejected.
 func allowLoopbackImages(t *testing.T) {
 	t.Helper()
-	previous := ssrfAllowLoopback
-	ssrfAllowLoopback = true
-	t.Cleanup(func() { ssrfAllowLoopback = previous })
+	previous := common.AssertURLSafe
+	common.AssertURLSafe = func(rawURL string) (string, string, error) {
+		parsed, err := url.Parse(strings.TrimSpace(rawURL))
+		if err == nil {
+			if host := parsed.Hostname(); host != "" {
+				if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+					return host, ip.String(), nil
+				}
+			}
+		}
+		return previous(rawURL)
+	}
+	t.Cleanup(func() { common.AssertURLSafe = previous })
 }
 
 func imageTestServer(t *testing.T, body string, hits *atomic.Int32) *httptest.Server {
