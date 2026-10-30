@@ -39,14 +39,6 @@ if [ -n "$EXTRA_GO_TAGS" ]; then
     EXTRA_TAGS_COMMA=",$EXTRA_GO_TAGS"
     EXTRA_TAGS_SPACE=" $EXTRA_GO_TAGS"
 fi
-# This tree ships no enterprise sources, so the ee tag selects nothing: fail
-# loudly instead of building a binary without them.
-case ",$EXTRA_GO_TAGS," in
-    *",ee,"*)
-        echo "error: RAGFLOW_GO_TAGS contains 'ee', but this tree has no enterprise sources" >&2
-        exit 1
-        ;;
-esac
 
 # Native static library settings. These are the user-cache paths (~/ragflow-native-libs/).
 # If /opt/ragflow-native-libs/ exists (pre-seeded in CI runner image), it takes priority
