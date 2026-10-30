@@ -657,19 +657,11 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 			return nil, common.CodeDataError, fmt.Errorf("you don't own the document %s", docID)
 		}
 
-		tasks, err := dao.NewIngestionTaskDAO().ListByDocumentID(ctx, dao.DB, docID)
+		task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, dao.DB, docID)
 		if err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("list ingestion tasks for %s: %w", docID, err)
+			return nil, common.CodeServerError, fmt.Errorf("get ingestion task for %s: %w", docID, err)
 		}
-		active := false
-		for _, task := range tasks {
-			if common.IsActiveTaskStatus(task.Status) {
-				active = true
-				break
-			}
-		}
-		latestStopped := len(tasks) > 0 && tasks[0].Status == common.STOPPED
-		if !active && !latestStopped {
+		if task == nil || (task.Status != common.STOPPED && !common.IsActiveTaskStatus(task.Status)) {
 			return &service.StopParsingResponse{
 				Data: map[string]interface{}{"error_code": docStopParsingInvalidStateErrorCode},
 			}, common.CodeDataError, fmt.Errorf("%s", docStopParsingInvalidStateMessage)

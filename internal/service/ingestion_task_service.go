@@ -327,40 +327,58 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 // created. A numbered pipeline log is an immutable run ledger, so this must
 // record its cancellation rather than deleting the row with the task.
 func (s *IngestionTaskService) SupersedeUnstartedTask(ctx context.Context, taskID string) error {
+	_, err := s.supersedeUnstartedTask(ctx, taskID, "Task superseded by a new parse request.")
+	return err
+}
+
+func (s *IngestionTaskService) supersedeUnstartedTask(ctx context.Context, taskID, terminalMessage string) (*entity.IngestionTask, error) {
 	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	switch task.Status {
 	case common.CREATED, common.SCHEDULED:
 		stopped, err := s.transition(ctx, taskID, common.STOPPED)
 		if err != nil {
-			return err
+			return nil, err
 		}
-		s.advanceOpenLog(ctx, stopped, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
-		s.recordRunTerminal(ctx, stopped, "Task superseded by a new parse request.")
-		return nil
+		if err := s.settleStoppedTaskRun(ctx, stopped, terminalMessage); err != nil {
+			return nil, err
+		}
+		return stopped, nil
 	case common.RUNNING, common.STOPPING:
-		return fmt.Errorf("task %s is %s and cannot be superseded", taskID, task.Status)
+		return nil, fmt.Errorf("task %s is %s and cannot be superseded", taskID, task.Status)
 	default:
-		return nil
+		return task, nil
 	}
 }
 
-// PrepareDocumentTasksForCleanup freezes every unstarted task for a document
-// in one database transaction and rejects the cleanup if any task is already
-// RUNNING or STOPPING. The service settles the run ledgers of tasks frozen by
-// that transaction before returning their complete task set.
-func (s *IngestionTaskService) PrepareDocumentTasksForCleanup(ctx context.Context, documentID, terminalMessage string) ([]*entity.IngestionTask, error) {
-	batch, err := s.ingestionTaskDAO.FreezeForCleanup(ctx, dao.DB, documentID)
+// PrepareDocumentTaskForCleanup rejects an active task and freezes a queued
+// task before destructive document cleanup. The caller deletes the returned
+// terminal task after purging its run-scoped cache state.
+func (s *IngestionTaskService) PrepareDocumentTaskForCleanup(ctx context.Context, documentID, terminalMessage string) (*entity.IngestionTask, error) {
+	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, documentID)
 	if err != nil {
 		return nil, err
 	}
-	for _, task := range batch.Frozen {
-		s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
-		s.recordRunTerminal(ctx, task, terminalMessage)
+	if task == nil {
+		return nil, nil
 	}
-	return batch.Tasks, nil
+	switch task.Status {
+	case common.CREATED, common.SCHEDULED:
+		return s.supersedeUnstartedTask(ctx, task.ID, terminalMessage)
+	case common.RUNNING, common.STOPPING:
+		return nil, fmt.Errorf("document %s ingestion task %s is %s; stop it and wait for a terminal state before cleanup", documentID, task.ID, task.Status)
+	case common.STOPPED:
+		if err := s.settleStoppedTaskRun(ctx, task, terminalMessage); err != nil {
+			return nil, err
+		}
+		return task, nil
+	case common.COMPLETED, common.FAILED:
+		return task, nil
+	default:
+		return nil, fmt.Errorf("document %s ingestion task %s has unrecognized status %q", documentID, task.ID, task.Status)
+	}
 }
 
 func (s *IngestionTaskService) MarkCompleted(ctx context.Context, taskID string) error {
@@ -856,12 +874,17 @@ func isTerminalIngestionTask(status string) bool {
 	return status == common.COMPLETED || status == common.STOPPED || status == common.FAILED
 }
 
-// advanceOpenLog moves a task's already-bound row to operationStatus. It never
-// creates or adopts a row, so a worker cannot repair a missing identity or
-// affect a newer run.
+// advanceOpenLog performs a best-effort ledger advance for non-cleanup flows.
 func (s *IngestionTaskService) advanceOpenLog(ctx context.Context, task *entity.IngestionTask, fromStatuses []string, operationStatus string) {
+	_, _ = s.advanceOpenLogIfOpen(ctx, task, fromStatuses, operationStatus)
+}
+
+// advanceOpenLogIfOpen moves a task's already-bound row to operationStatus and
+// reports whether this call changed it. It never creates or adopts a row, so a
+// worker cannot repair a missing identity or affect a newer run.
+func (s *IngestionTaskService) advanceOpenLogIfOpen(ctx context.Context, task *entity.IngestionTask, fromStatuses []string, operationStatus string) (bool, error) {
 	if task == nil || task.DocumentID == "" || s.pipelineLogDAO == nil {
-		return
+		return false, nil
 	}
 	logID := ""
 	if task.PipelineLogID != nil {
@@ -869,11 +892,27 @@ func (s *IngestionTaskService) advanceOpenLog(ctx context.Context, task *entity.
 	}
 	if logID == "" {
 		common.Warn(fmt.Sprintf("advance open pipeline log for task %s: missing run identity", task.ID))
-		return
+		return false, nil
 	}
-	if err := s.pipelineLogDAO.AdvanceOpenLog(ctx, dao.DB, logID, fromStatuses, operationStatus); err != nil {
+	advanced, err := s.pipelineLogDAO.AdvanceOpenLog(ctx, dao.DB, logID, fromStatuses, operationStatus)
+	if err != nil {
 		common.Warn(fmt.Sprintf("advance open pipeline log for document %s to %s: %v", task.DocumentID, operationStatus, err))
 	}
+	return advanced, err
+}
+
+// settleStoppedTaskRun closes the open run ledger for a task that has already
+// reached STOPPED. A failed advance leaves the task row available so cleanup
+// can retry before deleting it.
+func (s *IngestionTaskService) settleStoppedTaskRun(ctx context.Context, task *entity.IngestionTask, terminalMessage string) error {
+	advanced, err := s.advanceOpenLogIfOpen(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
+	if err != nil {
+		return err
+	}
+	if advanced {
+		s.recordRunTerminal(ctx, task, terminalMessage)
+	}
+	return nil
 }
 
 func (s *IngestionTaskService) recordRunMessage(ctx context.Context, task *entity.IngestionTask, message string) {

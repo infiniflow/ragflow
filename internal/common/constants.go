@@ -42,9 +42,6 @@ const (
 // ActiveTaskStatuses contains all in-flight, non-terminal task statuses.
 var ActiveTaskStatuses = []string{CREATED, SCHEDULED, RUNNING, STOPPING}
 
-// TerminalTaskStatuses contains the completed task lifecycle states.
-var TerminalTaskStatuses = []string{COMPLETED, STOPPED, FAILED}
-
 // IsActiveTaskStatus returns true if the status represents an active (non-terminal) task:
 // CREATED, SCHEDULED, RUNNING, or STOPPING.
 func IsActiveTaskStatus(status string) bool {

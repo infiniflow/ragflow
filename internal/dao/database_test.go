@@ -123,6 +123,38 @@ func TestAutoMigrateRuntimeModelsAddsIngestionTaskFilterIndexes(t *testing.T) {
 	}
 }
 
+func TestRequireUniqueIngestionTaskDocumentIDsRejectsDuplicates(t *testing.T) {
+	db := setupTaskTestDB(t)
+	if err := db.Migrator().DropIndex(&entity.IngestionTask{}, "idx_ingestion_task_document_id"); err != nil {
+		t.Fatalf("drop ingestion task unique index: %v", err)
+	}
+	for _, task := range []*entity.IngestionTask{
+		{
+			ID:         "task-old",
+			UserID:     "user-1",
+			DocumentID: "doc-duplicate",
+			DatasetID:  "kb-1",
+			Status:     "COMPLETED",
+		},
+		{
+			ID:         "task-new",
+			UserID:     "user-1",
+			DocumentID: "doc-duplicate",
+			DatasetID:  "kb-1",
+			Status:     "RUNNING",
+		},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+
+	err := requireUniqueIngestionTaskDocumentIDs(t.Context(), db)
+	if err == nil || !strings.Contains(err.Error(), "duplicate document_id") {
+		t.Fatalf("migration error = %v, want duplicate document_id rejection", err)
+	}
+}
+
 // TestMigrateIngestionTaskPipelineLogID covers the upgrade path AutoMigrate
 // cannot handle on MySQL: an existing ingestion_task created before
 // pipeline_log_id existed must gain the column, and running the migration again

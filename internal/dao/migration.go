@@ -262,17 +262,8 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 		return nil
 	}
 
-	var duplicateCount int64
-	if err = db.WithContext(ctx).Raw(`
-		SELECT COUNT(*) FROM (
-			SELECT document_id FROM ingestion_task GROUP BY document_id HAVING COUNT(*) > 1
-		) AS duplicates
-	`).Scan(&duplicateCount).Error; err != nil {
+	if err = requireUniqueIngestionTaskDocumentIDs(ctx, db); err != nil {
 		return err
-	}
-	if duplicateCount > 0 {
-		common.Warn("Found duplicate document_id values in ingestion_task, cannot add unique index", zap.Int64("count", duplicateCount))
-		return nil
 	}
 
 	// A non-unique index under the same name would block the unique one.
@@ -281,6 +272,21 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 	}
 
 	return addUniqueIndex(ctx, db, "ingestion_task", indexName, columns)
+}
+
+func requireUniqueIngestionTaskDocumentIDs(ctx context.Context, db *gorm.DB) error {
+	var duplicateCount int64
+	if err := db.WithContext(ctx).Raw(`
+		SELECT COUNT(*) FROM (
+			SELECT document_id FROM ingestion_task GROUP BY document_id HAVING COUNT(*) > 1
+		) AS duplicates
+	`).Scan(&duplicateCount).Error; err != nil {
+		return err
+	}
+	if duplicateCount > 0 {
+		return fmt.Errorf("ingestion_task contains %d duplicate document_id values; resolve them before upgrading", duplicateCount)
+	}
+	return nil
 }
 
 // migrateIngestionTaskPipelineLogID adds ingestion_task.pipeline_log_id when

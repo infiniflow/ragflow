@@ -63,14 +63,16 @@ func lockDocumentParse(docID string) func() {
 	}
 }
 
-// purgeDocumentTaskStateForCleanup freezes every queued task, rejects the
-// cleanup if any task is RUNNING or STOPPING, and only then removes the
-// run-scoped cache state for the complete task set. The bounded context makes
+// prepareDocumentTaskForCleanup freezes a queued task or rejects an active
+// worker before removing its run-scoped cache state. The bounded context makes
 // Redis outages and hung clients observable before a destructive cleanup.
-func (s *DocumentService) purgeDocumentTaskStateForCleanup(ctx context.Context, docID, terminalMessage string) error {
-	tasks, err := s.ingestionTaskSvc.PrepareDocumentTasksForCleanup(ctx, docID, terminalMessage)
+func (s *DocumentService) prepareDocumentTaskForCleanup(ctx context.Context, docID, terminalMessage string) (*entity.IngestionTask, error) {
+	task, err := s.ingestionTaskSvc.PrepareDocumentTaskForCleanup(ctx, docID, terminalMessage)
 	if err != nil {
-		return fmt.Errorf("prepare ingestion tasks for document %s cleanup: %w", docID, err)
+		return nil, fmt.Errorf("prepare ingestion task for document %s cleanup: %w", docID, err)
+	}
+	if task == nil {
+		return nil, nil
 	}
 	purgeTaskState := s.purgeTaskState
 	if purgeTaskState == nil {
@@ -78,13 +80,24 @@ func (s *DocumentService) purgeDocumentTaskStateForCleanup(ctx context.Context, 
 	}
 	batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
 	defer cancel()
-	var errs []error
-	for _, task := range tasks {
-		if err := purgeTaskState(batchCtx, task.ID); err != nil {
-			errs = append(errs, fmt.Errorf("purge task state for document %s task %s: %w", docID, task.ID, err))
-		}
+	if err := purgeTaskState(batchCtx, task.ID); err != nil {
+		return nil, fmt.Errorf("purge task state for document %s task %s: %w", docID, task.ID, err)
 	}
-	return errors.Join(errs...)
+	return task, nil
+}
+
+func (s *DocumentService) deletePreparedDocumentTask(ctx context.Context, docID string, task *entity.IngestionTask) error {
+	if task == nil {
+		return nil
+	}
+	deleted, err := s.ingestionTaskDAO.DeleteIfTerminal(ctx, dao.DB, task.ID)
+	if err != nil {
+		return fmt.Errorf("delete ingestion task %s for document %s: %w", task.ID, docID, err)
+	}
+	if deleted != 1 {
+		return fmt.Errorf("document %s ingestion task %s started running; stop it before cleanup", docID, task.ID)
+	}
+	return nil
 }
 
 // StartParseDocuments starts parsing a document via the DSL ingestion
@@ -295,14 +308,12 @@ func resolveDatasetLLMID(parserConfig entity.JSONMap) string {
 // up front instead of partially cleaning some docs then failing.
 func (s *DocumentService) AssertIngestionTasksTerminal(ctx context.Context, docIDs []string) error {
 	for _, docID := range docIDs {
-		tasks, err := s.ingestionTaskDAO.ListByDocumentID(ctx, dao.DB, docID)
+		task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
 		if err != nil {
-			return fmt.Errorf("check ingestion tasks for %s: %w", docID, err)
+			return fmt.Errorf("check ingestion task for %s: %w", docID, err)
 		}
-		for _, task := range tasks {
-			if common.IsRunningOrStopping(task.Status) {
-				return fmt.Errorf("document %s ingestion task %s is %s; stop it and wait for a terminal state before re-parsing", docID, task.ID, task.Status)
-			}
+		if task != nil && common.IsRunningOrStopping(task.Status) {
+			return fmt.Errorf("document %s ingestion task %s is %s; stop it and wait for a terminal state before re-parsing", docID, task.ID, task.Status)
 		}
 	}
 	return nil
@@ -313,16 +324,16 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 		return fmt.Errorf("document is nil")
 	}
 
-	// Freeze queued work and reject any active worker before cache or result
-	// cleanup. The lookup covers every task for the document, including
-	// historical duplicate rows left by pre-index deployments.
-	if err := s.purgeDocumentTaskStateForCleanup(ctx, doc.ID, terminalMessage); err != nil {
+	// Freeze queued work and reject an active worker before cache or result
+	// cleanup.
+	task, err := s.prepareDocumentTaskForCleanup(ctx, doc.ID, terminalMessage)
+	if err != nil {
 		return err
 	}
 
-	// Re-check and delete every frozen task in one transaction. Any task that
-	// appeared after the freeze keeps the document and its results intact.
-	if _, err := s.ingestionTaskDAO.DeleteByDocumentIDIfTerminal(ctx, dao.DB, doc.ID); err != nil {
+	// Re-check and delete the prepared task atomically. A task that started
+	// running after preparation keeps the document and its results intact.
+	if err := s.deletePreparedDocumentTask(ctx, doc.ID, task); err != nil {
 		return err
 	}
 	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {
@@ -557,32 +568,29 @@ func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []st
 // endpoint-specific message (the Python /documents/ingest and /documents/stop messages differ).
 var errParseNotRunning = errors.New("parse task is not in running status")
 
-// CancelDocParse stops every active ingestion task for the document. Historical
-// duplicate rows must all reach STOPPING so no worker keeps writing after a
-// newer task has already finished. It returns errParseNotRunning when none is
-// active and the latest task is not already STOPPED.
+// CancelDocParse stops the document's active ingestion task. It returns
+// errParseNotRunning when the task is absent or already completed/failed.
 func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
-	tasks, err := s.ingestionTaskDAO.ListByDocumentID(ctx, dao.DB, doc.ID)
+	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
-		return fmt.Errorf("failed to list ingestion tasks for %s: %w", doc.ID, err)
+		return fmt.Errorf("failed to get ingestion task for %s: %w", doc.ID, err)
 	}
-	var active []*entity.IngestionTask
-	for _, task := range tasks {
-		if common.IsActiveTaskStatus(task.Status) {
-			active = append(active, task)
-		}
-	}
-	latestStopped := len(tasks) > 0 && tasks[0].Status == common.STOPPED
-	if len(active) == 0 && !latestStopped {
+	if task == nil {
 		return errParseNotRunning
 	}
-	var errs []error
-	for _, task := range active {
-		if _, stopErr := s.ingestionTaskSvc.RequestStop(ctx, task.ID); stopErr != nil {
-			errs = append(errs, fmt.Errorf("failed to stop ingestion task %s: %w", task.ID, stopErr))
+	switch {
+	case common.IsActiveTaskStatus(task.Status):
+		if _, err := s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
+			return fmt.Errorf("failed to stop ingestion task %s: %w", task.ID, err)
 		}
+		return nil
+	case task.Status == common.STOPPED:
+		return nil
+	case task.Status == common.COMPLETED || task.Status == common.FAILED:
+		return errParseNotRunning
+	default:
+		return fmt.Errorf("ingestion task %s has unrecognized status %q", task.ID, task.Status)
 	}
-	return errors.Join(errs...)
 }
 
 // deleteDocumentChunkImages removes source chunk image objects in bounded

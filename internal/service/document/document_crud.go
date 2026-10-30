@@ -283,12 +283,13 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 	unlock := lockDocumentParse(docID)
 	defer unlock()
 
-	// Freeze and purge every task before any row is deleted. A purge failure
+	// Freeze and purge the task before any row is deleted. A purge failure
 	// leaves the document in place so a retry can still find the cache state.
-	if err := s.purgeDocumentTaskStateForCleanup(ctx, docID, taskTerminalMessageDocumentDeleted); err != nil {
+	task, err := s.prepareDocumentTaskForCleanup(ctx, docID, taskTerminalMessageDocumentDeleted)
+	if err != nil {
 		return err
 	}
-	if _, err := s.ingestionTaskDAO.DeleteByDocumentIDIfTerminal(ctx, dao.DB, docID); err != nil {
+	if err := s.deletePreparedDocumentTask(ctx, docID, task); err != nil {
 		return err
 	}
 
@@ -332,12 +333,13 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
 	}
 
-	// Freeze and purge every task before any task or document row is touched.
+	// Freeze and purge the task before any task or document row is touched.
 	// Active workers must be stopped before this path can run.
-	if err := s.purgeDocumentTaskStateForCleanup(ctx, docID, taskTerminalMessageDocumentRemoved); err != nil {
+	task, err := s.prepareDocumentTaskForCleanup(ctx, docID, taskTerminalMessageDocumentRemoved)
+	if err != nil {
 		return err
 	}
-	if _, err := s.ingestionTaskDAO.DeleteByDocumentIDIfTerminal(ctx, dao.DB, docID); err != nil {
+	if err := s.deletePreparedDocumentTask(ctx, docID, task); err != nil {
 		return err
 	}
 	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {

@@ -337,108 +337,6 @@ func TestIngestionTaskDAOUpdateStatusIfCurrentRejectsMismatchedStatus(t *testing
 	}
 }
 
-func TestIngestionTaskDAOFreezeForCleanupRejectsAnyRunningTask(t *testing.T) {
-	db := setupTaskTestDB(t)
-	if err := db.Exec("DROP INDEX idx_ingestion_task_document_id").Error; err != nil {
-		t.Fatalf("drop ingestion task unique index: %v", err)
-	}
-	oldTime := int64(100)
-	newTime := int64(200)
-	for _, task := range []*entity.IngestionTask{
-		{
-			ID:         "task-running",
-			UserID:     "user-1",
-			DocumentID: "doc-cleanup",
-			DatasetID:  "kb-1",
-			Status:     common.RUNNING,
-			BaseModel:  entity.BaseModel{CreateTime: &oldTime},
-		},
-		{
-			ID:         "task-completed",
-			UserID:     "user-1",
-			DocumentID: "doc-cleanup",
-			DatasetID:  "kb-1",
-			Status:     common.COMPLETED,
-			BaseModel:  entity.BaseModel{CreateTime: &newTime},
-		},
-	} {
-		if err := db.Create(task).Error; err != nil {
-			t.Fatalf("create task %s: %v", task.ID, err)
-		}
-	}
-
-	_, err := NewIngestionTaskDAO().FreezeForCleanup(t.Context(), db, "doc-cleanup")
-	if !errors.Is(err, ErrActiveIngestionTask) {
-		t.Fatalf("FreezeForCleanup error = %v, want ErrActiveIngestionTask", err)
-	}
-	for _, taskID := range []string{"task-running", "task-completed"} {
-		if _, err := NewIngestionTaskDAO().GetByID(t.Context(), db, taskID); err != nil {
-			t.Fatalf("task %s changed after rejected freeze: %v", taskID, err)
-		}
-	}
-}
-
-func TestIngestionTaskDAOFreezeAndDeleteEveryTask(t *testing.T) {
-	db := setupTaskTestDB(t)
-	if err := db.Exec("DROP INDEX idx_ingestion_task_document_id").Error; err != nil {
-		t.Fatalf("drop ingestion task unique index: %v", err)
-	}
-	oldTime := int64(100)
-	newTime := int64(200)
-	for _, task := range []*entity.IngestionTask{
-		{
-			ID:         "task-queued",
-			UserID:     "user-1",
-			DocumentID: "doc-cleanup",
-			DatasetID:  "kb-1",
-			Status:     common.SCHEDULED,
-			BaseModel:  entity.BaseModel{CreateTime: &oldTime},
-		},
-		{
-			ID:         "task-failed",
-			UserID:     "user-1",
-			DocumentID: "doc-cleanup",
-			DatasetID:  "kb-1",
-			Status:     common.FAILED,
-			BaseModel:  entity.BaseModel{CreateTime: &newTime},
-		},
-	} {
-		if err := db.Create(task).Error; err != nil {
-			t.Fatalf("create task %s: %v", task.ID, err)
-		}
-	}
-
-	batch, err := NewIngestionTaskDAO().FreezeForCleanup(t.Context(), db, "doc-cleanup")
-	if err != nil {
-		t.Fatalf("FreezeForCleanup: %v", err)
-	}
-	if len(batch.Frozen) != 1 || batch.Frozen[0].ID != "task-queued" {
-		t.Fatalf("frozen tasks = %+v, want task-queued", batch.Frozen)
-	}
-	queued, err := NewIngestionTaskDAO().GetByID(t.Context(), db, "task-queued")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if queued.Status != common.STOPPED {
-		t.Fatalf("queued status = %s, want STOPPED", queued.Status)
-	}
-
-	deleted, err := NewIngestionTaskDAO().DeleteByDocumentIDIfTerminal(t.Context(), db, "doc-cleanup")
-	if err != nil {
-		t.Fatalf("DeleteByDocumentIDIfTerminal: %v", err)
-	}
-	if deleted != 2 {
-		t.Fatalf("deleted rows = %d, want 2", deleted)
-	}
-	tasks, err := NewIngestionTaskDAO().ListByDocumentID(t.Context(), db, "doc-cleanup")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(tasks) != 0 {
-		t.Fatalf("tasks after delete = %+v, want none", tasks)
-	}
-}
-
 func TestIngestionTaskDAOCountActiveByDatasetID(t *testing.T) {
 	db := setupTaskTestDB(t)
 	for _, task := range []*entity.IngestionTask{
@@ -475,6 +373,40 @@ func TestIngestionTaskDAOCountActiveByDatasetID(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("active count for unknown = %d, want 0", count)
+	}
+}
+
+func TestIngestionTaskDAODeleteIfTerminalRequiresMatchingTerminalTask(t *testing.T) {
+	db := setupTaskTestDB(t)
+	for _, task := range []*entity.IngestionTask{
+		{ID: "task-terminal", UserID: "user-1", DocumentID: "doc-terminal", DatasetID: "kb-1", Status: common.COMPLETED},
+		{ID: "task-running", UserID: "user-1", DocumentID: "doc-running", DatasetID: "kb-1", Status: common.RUNNING},
+		{ID: "task-queued", UserID: "user-1", DocumentID: "doc-queued", DatasetID: "kb-1", Status: common.SCHEDULED},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+
+	taskDAO := NewIngestionTaskDAO()
+	deleted, err := taskDAO.DeleteIfTerminal(t.Context(), db, "task-terminal")
+	if err != nil {
+		t.Fatalf("delete terminal task: %v", err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted terminal rows = %d, want 1", deleted)
+	}
+	for _, taskID := range []string{"task-running", "task-queued"} {
+		deleted, err := taskDAO.DeleteIfTerminal(t.Context(), db, taskID)
+		if err != nil {
+			t.Fatalf("delete %s: %v", taskID, err)
+		}
+		if deleted != 0 {
+			t.Fatalf("deleted %s rows = %d, want 0", taskID, deleted)
+		}
+		if _, err := taskDAO.GetByID(t.Context(), db, taskID); err != nil {
+			t.Fatalf("%s was removed despite non-terminal status: %v", taskID, err)
+		}
 	}
 }
 
@@ -601,72 +533,6 @@ func TestIngestionTaskDAOGetByDocumentIDUsesIDAsTieBreaker(t *testing.T) {
 	}
 	if task == nil || task.ID != "task-z" {
 		t.Fatalf("latest task = %+v, want task-z", task)
-	}
-}
-
-func TestIngestionTaskDAOListByDocumentIDReturnsEveryTaskNewestFirst(t *testing.T) {
-	db := setupTaskTestDB(t)
-	if err := db.Exec("DROP INDEX idx_ingestion_task_document_id").Error; err != nil {
-		t.Fatalf("drop ingestion task unique index: %v", err)
-	}
-
-	oldTaskTime := int64(100)
-	newTaskTime := int64(200)
-	sameTime := int64(300)
-	for _, task := range []*entity.IngestionTask{
-		{
-			ID:         "task-old",
-			UserID:     "user-1",
-			DocumentID: "doc-retried",
-			DatasetID:  "kb-1",
-			Status:     common.COMPLETED,
-			BaseModel:  entity.BaseModel{CreateTime: &oldTaskTime},
-		},
-		{
-			ID:         "task-new-a",
-			UserID:     "user-1",
-			DocumentID: "doc-retried",
-			DatasetID:  "kb-1",
-			Status:     common.FAILED,
-			BaseModel:  entity.BaseModel{CreateTime: &newTaskTime},
-		},
-		{
-			ID:         "task-new-z",
-			UserID:     "user-1",
-			DocumentID: "doc-retried",
-			DatasetID:  "kb-1",
-			Status:     common.STOPPED,
-			BaseModel:  entity.BaseModel{CreateTime: &sameTime},
-		},
-		{
-			ID:         "task-other",
-			UserID:     "user-1",
-			DocumentID: "doc-other",
-			DatasetID:  "kb-1",
-			Status:     common.COMPLETED,
-		},
-	} {
-		if err := db.Create(task).Error; err != nil {
-			t.Fatalf("create task %s: %v", task.ID, err)
-		}
-	}
-
-	tasks, err := NewIngestionTaskDAO().ListByDocumentID(t.Context(), db, "doc-retried")
-	if err != nil {
-		t.Fatalf("ListByDocumentID: %v", err)
-	}
-	var ids []string
-	for _, task := range tasks {
-		ids = append(ids, task.ID)
-	}
-	want := []string{"task-new-z", "task-new-a", "task-old"}
-	if len(ids) != len(want) {
-		t.Fatalf("tasks = %v, want %v", ids, want)
-	}
-	for i := range want {
-		if ids[i] != want[i] {
-			t.Fatalf("tasks = %v, want %v", ids, want)
-		}
 	}
 }
 

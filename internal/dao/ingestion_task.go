@@ -29,19 +29,6 @@ import (
 
 type IngestionTaskDAO struct{}
 
-// ErrActiveIngestionTask rejects destructive cleanup while any task for the
-// document may still own or resume run-scoped state.
-var ErrActiveIngestionTask = errors.New("active ingestion task")
-
-// CleanupTaskBatch is the locked task set prepared for document cleanup.
-// Tasks contains every row observed in the transaction; Frozen contains the
-// queued rows transitioned to STOPPED so the caller can settle their run
-// ledgers after the transaction commits.
-type CleanupTaskBatch struct {
-	Tasks  []*entity.IngestionTask
-	Frozen []*entity.IngestionTask
-}
-
 func NewIngestionTaskDAO() *IngestionTaskDAO {
 	return &IngestionTaskDAO{}
 }
@@ -259,107 +246,6 @@ func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, d
 	return tasks[0], nil
 }
 
-// ListByDocumentID returns every ingestion task for a document, newest first,
-// using the same ordering as GetByDocumentID. Cleanup paths use it to purge
-// all run manifests before deleting the document or its tasks.
-func (dao *IngestionTaskDAO) ListByDocumentID(ctx context.Context, db *gorm.DB, documentID string) ([]*entity.IngestionTask, error) {
-	var tasks []*entity.IngestionTask
-	err := db.WithContext(ctx).
-		Where("document_id = ?", documentID).
-		Order("COALESCE(create_time, 0) DESC").
-		Order("id DESC").
-		Find(&tasks).Error
-	return tasks, err
-}
-
-// FreezeForCleanup locks every ingestion task for a document and rejects the
-// cleanup if any worker is RUNNING or STOPPING. Queued tasks are atomically
-// moved to STOPPED before the transaction commits, so a concurrent worker
-// cannot claim them after the cleanup check.
-func (dao *IngestionTaskDAO) FreezeForCleanup(ctx context.Context, db *gorm.DB, documentID string) (*CleanupTaskBatch, error) {
-	batch := &CleanupTaskBatch{}
-	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("document_id = ?", documentID).
-			Order("COALESCE(create_time, 0) DESC").
-			Order("id DESC").
-			Find(&batch.Tasks).Error; err != nil {
-			return err
-		}
-		for _, task := range batch.Tasks {
-			if common.IsRunningOrStopping(task.Status) {
-				return fmt.Errorf("%w: task %s is %s", ErrActiveIngestionTask, task.ID, task.Status)
-			}
-		}
-		for _, task := range batch.Tasks {
-			if task.Status != common.CREATED && task.Status != common.SCHEDULED {
-				continue
-			}
-			result := tx.Model(&entity.IngestionTask{}).
-				Where("id = ? AND status IN ?", task.ID, []string{common.CREATED, common.SCHEDULED}).
-				Update("status", common.STOPPED)
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected != 1 {
-				return fmt.Errorf("task %s changed while freezing document cleanup", task.ID)
-			}
-			task.Status = common.STOPPED
-			batch.Frozen = append(batch.Frozen, task)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return batch, nil
-}
-
-// DeleteByDocumentIDIfTerminal atomically checks and deletes every ingestion
-// task for a document. The second status check covers tasks created after the
-// earlier freeze step; any non-terminal row aborts the delete without touching
-// the document.
-func (dao *IngestionTaskDAO) DeleteByDocumentIDIfTerminal(ctx context.Context, db *gorm.DB, documentID string) (int64, error) {
-	var deleted int64
-	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var tasks []*entity.IngestionTask
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("document_id = ?", documentID).
-			Find(&tasks).Error; err != nil {
-			return err
-		}
-		for _, task := range tasks {
-			if !common.IsTerminalTaskStatus(task.Status) {
-				return fmt.Errorf("%w: task %s is %s", ErrActiveIngestionTask, task.ID, task.Status)
-			}
-		}
-		if len(tasks) == 0 {
-			return nil
-		}
-		result := tx.Unscoped().
-			Where("document_id = ? AND status IN ?", documentID, common.TerminalTaskStatuses).
-			Delete(&entity.IngestionTask{})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected != int64(len(tasks)) {
-			return fmt.Errorf("%w: document %s cleanup found a task that started running", ErrActiveIngestionTask, documentID)
-		}
-		var active int64
-		if err := tx.Unscoped().Model(&entity.IngestionTask{}).
-			Where("document_id = ? AND status NOT IN ?", documentID, common.TerminalTaskStatuses).
-			Count(&active).Error; err != nil {
-			return err
-		}
-		if active != 0 {
-			return fmt.Errorf("%w: document %s gained a non-terminal task during cleanup", ErrActiveIngestionTask, documentID)
-		}
-		deleted = result.RowsAffected
-		return nil
-	})
-	return deleted, err
-}
-
 // GetLatestByDocumentIDs returns a map of documentID -> latest IngestionTask.
 func (dao *IngestionTaskDAO) GetLatestByDocumentIDs(ctx context.Context, db *gorm.DB, documentIDs []string) (map[string]*entity.IngestionTask, error) {
 	if len(documentIDs) == 0 {
@@ -406,4 +292,18 @@ func (dao *IngestionTaskDAO) CountActiveByDatasetID(ctx context.Context, db *gor
 			)`, datasetID, common.ActiveTaskStatuses).
 		Count(&count).Error
 	return count, err
+}
+
+// DeleteIfTerminal deletes one terminal ingestion task by ID. Cleanup freezes
+// CREATED and SCHEDULED tasks before calling this method; if another writer
+// moves the task back to a non-terminal state, the conditional delete leaves it
+// in place.
+func (dao *IngestionTaskDAO) DeleteIfTerminal(ctx context.Context, db *gorm.DB, taskID string) (int64, error) {
+	result := db.WithContext(ctx).
+		Where("id = ? AND status IN ?", taskID, []string{common.COMPLETED, common.STOPPED, common.FAILED}).
+		Delete(&entity.IngestionTask{})
+	if result.Error != nil {
+		return 0, result.Error
+	}
+	return result.RowsAffected, nil
 }
