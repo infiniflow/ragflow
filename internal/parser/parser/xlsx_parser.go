@@ -41,15 +41,6 @@ func NewXLSXParser(_ string) (*XLSXParser, error) {
 	}, nil
 }
 
-// NewXLSXTextParser extracts spreadsheet text without writing floating or
-// in-cell images to a run media cache. Non-ingestion callers use it for
-// previews, attachments and CLI parsing.
-func NewXLSXTextParser() *XLSXParser {
-	p, _ := NewXLSXParser("")
-	p.textOnly = true
-	return p
-}
-
 func (p *XLSXParser) String() string {
 	return "XLSXParser"
 }

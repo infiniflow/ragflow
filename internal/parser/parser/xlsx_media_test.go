@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/xuri/excelize/v2"
+	"ragflow/internal/utility"
 )
 
 func TestXLSXParserFailsWhenMediaCacheIsMissing(t *testing.T) {
@@ -55,7 +56,11 @@ func TestXLSXTextParserSkipsImagesWithoutCache(t *testing.T) {
 			t.Fatalf("AddPictureFromBytes: %v", err)
 		}
 	})
-	res := NewXLSXTextParser().ParseWithResult(context.Background(), "text.xlsx", data)
+	p, err := GetTextOnlyParser(utility.FileTypeXLSX)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := p.ParseWithResult(context.Background(), "text.xlsx", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}

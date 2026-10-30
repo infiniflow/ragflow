@@ -48,16 +48,6 @@ func NewXLSParser(_ string) (*XLSParser, error) {
 	}, nil
 }
 
-// NewXLSTextParser extracts legacy spreadsheet text without writing embedded
-// images to a run media cache. Non-ingestion callers use it for previews,
-// attachments and CLI parsing. BIFF8 image extraction is not implemented, so
-// only the XLSX-content fallback can carry images.
-func NewXLSTextParser() *XLSParser {
-	p, _ := NewXLSParser("")
-	p.textOnly = true
-	return p
-}
-
 func (p *XLSParser) String() string {
 	return "XLSParser"
 }

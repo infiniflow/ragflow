@@ -50,13 +50,6 @@ func NewPPTXParser() *PPTXParser {
 	return &PPTXParser{format: "pptx"}
 }
 
-// NewPPTXTextParser extracts presentation text without writing embedded
-// images to a run media cache. Non-ingestion callers use it for previews,
-// attachments and CLI parsing.
-func NewPPTXTextParser() *PPTXParser {
-	return &PPTXParser{format: "pptx", textOnly: true}
-}
-
 func (p *PPTXParser) String() string {
 	return "PPTXParser"
 }

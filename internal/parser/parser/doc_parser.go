@@ -35,12 +35,6 @@ func NewDOCParser() *DOCParser {
 	return &DOCParser{}
 }
 
-// NewDOCTextParser extracts DOC text without writing embedded images to a run
-// media cache. Legacy .doc previews and other non-ingestion callers use it.
-func NewDOCTextParser() *DOCParser {
-	return &DOCParser{textOnly: true}
-}
-
 func (p *DOCParser) String() string {
 	return "DOCParser"
 }

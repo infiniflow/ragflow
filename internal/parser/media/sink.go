@@ -35,6 +35,7 @@ type Sink struct {
 }
 
 // NewSink binds a parser invocation to its injected cache and shared budget.
+// Both ctx and budget must be non-nil.
 func NewSink(ctx context.Context, format string, budget *Budget) *Sink {
 	return &Sink{ctx: ctx, cache: CacheFromContext(ctx), format: format, budget: budget, refs: make(map[string]*entity.MediaRef)}
 }

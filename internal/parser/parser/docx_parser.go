@@ -45,13 +45,6 @@ func NewDOCXParser() *DOCXParser {
 	return &DOCXParser{}
 }
 
-// NewDOCXTextParser extracts DOCX text without writing embedded images to a
-// run media cache. File previews, attachments, CLI parsing and agent uploads
-// use it because they have no ingestion run and no media cache.
-func NewDOCXTextParser() *DOCXParser {
-	return &DOCXParser{textOnly: true}
-}
-
 // ConfigureFromSetup implements parserSetupConfigurer, receiving the
 // DSL "docx" family setup map.
 func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {

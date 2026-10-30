@@ -32,6 +32,7 @@ import (
 
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/media"
+	"ragflow/internal/utility"
 )
 
 // officeTestPNG returns a small deterministic PNG. Distinct seeds produce
@@ -372,7 +373,11 @@ func TestDOCXTextParserSkipsImagesWithoutCache(t *testing.T) {
 		return irJSON, "", "", nil, nil
 	}
 
-	res := NewDOCXTextParser().ParseWithResult(context.Background(), "text.docx", []byte("PK\x03\x04"))
+	p, err := GetTextOnlyParser(utility.FileTypeDOCX)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := p.ParseWithResult(context.Background(), "text.docx", []byte("PK\x03\x04"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -413,7 +418,11 @@ func TestPPTXTextParserSkipsImagesWithoutCache(t *testing.T) {
 		return irJSON, "", "", nil, nil
 	}
 
-	res := NewPPTXTextParser().ParseWithResult(context.Background(), "text.pptx", []byte("PK\x03\x04"))
+	p, err := GetTextOnlyParser(utility.FileTypePPTX)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := p.ParseWithResult(context.Background(), "text.pptx", []byte("PK\x03\x04"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
