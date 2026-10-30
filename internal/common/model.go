@@ -54,6 +54,7 @@ func (m *ModelUsage) String() string {
 type OperationLog struct {
 	EventTime     time.Time `json:"event_time"`
 	UserID        string    `json:"user_id"`
+	UserName      string    `json:"user_name"`
 	IPAddress     string    `json:"ip_address"`
 	Operation     string    `json:"operation"`
 	APIPath       string    `json:"api_path"`
