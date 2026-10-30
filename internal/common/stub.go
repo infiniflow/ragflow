@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
+	"time"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -47,7 +49,11 @@ func Audit(operationLog *OperationLog, fields ...zap.Field) {
 
 // ingestLogger receives the serialized ingest events. It defaults to a no-op so a
 // binary that never calls InitIngestLog emits nothing and never panics.
-var ingestLogger = zap.NewNop()
+var ingestLogger atomic.Pointer[zap.Logger]
+
+func init() {
+	ingestLogger.Store(zap.NewNop())
+}
 
 // InitIngestLog configures the sink for ingestion lifecycle events. It mirrors
 // InitLogger: output always goes to stdout, and an optional rotated file is added
@@ -104,21 +110,24 @@ func InitIngestLog(logType string, file FileOutput, serviceName string) error {
 		syncers = append(syncers, zapcore.AddSync(ljLogger))
 	}
 	core := zapcore.NewCore(zapcore.NewJSONEncoder(encoderConfig), zapcore.NewMultiWriteSyncer(syncers...), zapcore.InfoLevel)
-	ingestLogger = zap.New(core)
+	oldLogger := ingestLogger.Swap(zap.New(core))
+	if oldLogger != nil {
+		_ = oldLogger.Sync()
+	}
 	return nil
 }
 
 // SyncIngestLog flushes any buffered ingest output. Call it before process exit
 // so no events are lost.
 func SyncIngestLog() {
-	_ = ingestLogger.Sync()
+	_ = ingestLogger.Load().Sync()
 }
 
 // LogIngest transmits one structured ingestion lifecycle event as a single, flat
 // JSON object. It is best-effort: a nil/closed sink never panics or fails the
 // caller's pipeline.
 func LogIngest(log IngestLog) {
-	ingestLogger.With(log.zapFields()...).Info("ingest_log")
+	ingestLogger.Load().With(log.zapFields()...).Info("ingest_log")
 }
 
 // zapFields renders the event as flat zap fields (top-level keys, UTC times) so
@@ -135,15 +144,14 @@ func (l IngestLog) zapFields() []zap.Field {
 		zap.String("task_id", l.TaskID),
 		zap.String("event_type", l.EventType),
 		zap.String("status", l.Status),
-		zap.Int("code", l.Code),
 		zap.String("filename", l.Filename),
 		zap.String("file_type", l.FileType),
 		zap.Int64("file_size", l.FileSize),
 		zap.String("parser_id", l.ParserID),
-		zap.Time("upload_time", l.UploadTime.UTC()),
-		zap.Time("enqueue_time", l.EnqueueTime.UTC()),
-		zap.Time("begin_time", l.BeginTime.UTC()),
-		zap.Time("end_time", l.EndTime.UTC()),
+		skipZeroTime("upload_time", l.UploadTime),
+		skipZeroTime("enqueue_time", l.EnqueueTime),
+		skipZeroTime("begin_time", l.BeginTime),
+		skipZeroTime("end_time", l.EndTime),
 		zap.Int64("duration_ms", l.DurationMS),
 		zap.Float64("wait_duration_s", l.WaitDurationS),
 		zap.Float64("parse_duration_s", l.ParseDurationS),
@@ -157,4 +165,15 @@ func (l IngestLog) zapFields() []zap.Field {
 		fields = append(fields, zap.Any("operation", l.Operation))
 	}
 	return fields
+}
+
+// skipZeroTime omits a time field from the emitted JSON when it is the zero
+// value. Lifecycle events such as created/scheduled legitimately have no
+// begin/end/enqueue/upload time yet; emitting Go's zero time (0001-01-01)
+// breaks ClickHouse DateTime columns and misleads Grafana.
+func skipZeroTime(key string, t time.Time) zap.Field {
+	if t.IsZero() {
+		return zap.Skip()
+	}
+	return zap.Time(key, t.UTC())
 }

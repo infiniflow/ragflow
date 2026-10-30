@@ -100,7 +100,6 @@ type IngestLog struct {
 	// event
 	EventType string `json:"event_type"` // created|scheduled|running|completed|failed|stopped
 	Status    string `json:"status"`
-	Code      int    `json:"code"`
 	// ErrorInfo is the terminal reason as a plain string (not an error
 	// interface) so the event serializes cleanly and portably to external
 	// dashboards / ClickHouse.

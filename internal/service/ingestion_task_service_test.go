@@ -649,7 +649,7 @@ func TestIngestionTaskServiceMarkFailedUpdatesTaskStatus(t *testing.T) {
 	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.MarkFailed(ctx, "task-1"); err != nil {
+	if err := svc.MarkFailed(ctx, "task-1", ""); err != nil {
 		t.Fatalf("MarkFailed failed: %v", err)
 	}
 	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
@@ -1824,7 +1824,7 @@ func TestIngestionTaskServiceMarkFailedIdempotentOnAlreadyTerminal(t *testing.T)
 
 	svc := NewIngestionTaskService()
 	ctx := t.Context()
-	if err := svc.MarkFailed(ctx, "task-1"); err != nil {
+	if err := svc.MarkFailed(ctx, "task-1", ""); err != nil {
 		t.Fatalf("MarkFailed on already COMPLETED task should be idempotent, got: %v", err)
 	}
 }
@@ -2462,5 +2462,101 @@ func TestIngestionTaskServiceCleanupMissingRun(t *testing.T) {
 				t.Fatalf("orphan terminal events = %d", events)
 			}
 		})
+	}
+}
+
+// recordingIngestLogEmitter captures emitted lifecycle events for assertions.
+type recordingIngestLogEmitter struct {
+	mu   sync.Mutex
+	logs []common.IngestLog
+}
+
+func (e *recordingIngestLogEmitter) EmitIngestLog(_ context.Context, log common.IngestLog) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.logs = append(e.logs, log)
+}
+
+func (e *recordingIngestLogEmitter) last() common.IngestLog {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.logs) == 0 {
+		return common.IngestLog{}
+	}
+	return e.logs[len(e.logs)-1]
+}
+
+// TestIngestionTaskServiceMarkFailedCarriesReason verifies that the failure
+// reason supplied by the ingestor reaches the emitted lifecycle event's
+// ErrorInfo, instead of being dropped (the previous gap: the run ledger got the
+// message but the observability event carried an empty ErrorInfo).
+func TestIngestionTaskServiceMarkFailedCarriesReason(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", common.RUNNING).Error; err != nil {
+		t.Fatalf("set running status: %v", err)
+	}
+	ctx := t.Context()
+	emitter := &recordingIngestLogEmitter{}
+	svc := NewIngestionTaskService()
+	svc.SetEventEmitter(emitter)
+	const reason = "boom: nil deref"
+	if err := svc.MarkFailed(ctx, "task-1", reason); err != nil {
+		t.Fatalf("MarkFailed failed: %v", err)
+	}
+	got := emitter.last()
+	if got.ErrorInfo != reason {
+		t.Fatalf("emitted ErrorInfo = %q, want %q", got.ErrorInfo, reason)
+	}
+	if got.EventType != "failed" || got.Status != common.FAILED {
+		t.Fatalf("emitted event type/status = %q/%q, want failed/%q", got.EventType, got.Status, common.FAILED)
+	}
+}
+
+// TestIngestionTaskServicePersistProcessEndAtIdempotent verifies that
+// persistProcessEndAt records the end time on first settlement and leaves an
+// already-recorded value untouched on a later settlement (overlapping
+// failure/timeout terminal events must not rewrite the completion instant).
+func TestIngestionTaskServicePersistProcessEndAtIdempotent(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	runID := "run-idempotent-1"
+	begin := time.Now().Add(-time.Minute)
+	run := &entity.PipelineOperationLog{
+		ID:              runID,
+		DocumentID:      "doc-idem-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "parser-1",
+		DocumentName:    "doc",
+		DocumentSuffix:  ".pdf",
+		DocumentType:    "pdf",
+		SourceFrom:      "web",
+		OperationStatus: "RUNNING",
+		ProcessBeginAt:  &begin,
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	ctx := t.Context()
+	svc := NewIngestionTaskService()
+	svc.persistProcessEndAt(ctx, runID)
+	var first entity.PipelineOperationLog
+	if err := db.Where("id = ?", runID).First(&first).Error; err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if first.ProcessEndAt == nil {
+		t.Fatalf("process_end_at not persisted on first call")
+	}
+	firstEnd := *first.ProcessEndAt
+	// A second settlement must not overwrite the recorded end time.
+	svc.persistProcessEndAt(ctx, runID)
+	var second entity.PipelineOperationLog
+	if err := db.Where("id = ?", runID).First(&second).Error; err != nil {
+		t.Fatalf("load run again: %v", err)
+	}
+	if second.ProcessEndAt == nil || !second.ProcessEndAt.Equal(firstEnd) {
+		t.Fatalf("process_end_at changed on second call: first=%v second=%v", firstEnd, second.ProcessEndAt)
 	}
 }

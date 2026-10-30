@@ -56,14 +56,18 @@ func isBeginRelevant(eventType string) bool {
 	}
 }
 
-// claimTime returns the worker-claim time, preferring the run's own begin time
-// over the document's (which may belong to a previous run).
+// claimTime returns the worker-claim time. It prefers the document's own
+// ProcessBeginAt (set when the worker actually starts, in PrepareValidatedRun)
+// over the run row's ProcessBeginAt (set in CreateOpenLog at open time, before
+// the worker claims). This keeps wait_duration_s measuring real queue wait
+// rather than ~0. A retry's new run overwrites doc.ProcessBeginAt at its own
+// claim, so the current run never inherits a previous run's claim time here.
 func claimTime(doc *entity.Document, run *entity.PipelineOperationLog) *time.Time {
-	if run != nil && run.ProcessBeginAt != nil {
-		return run.ProcessBeginAt
-	}
 	if doc != nil && doc.ProcessBeginAt != nil {
 		return doc.ProcessBeginAt
+	}
+	if run != nil && run.ProcessBeginAt != nil {
+		return run.ProcessBeginAt
 	}
 	return nil
 }
@@ -123,5 +127,6 @@ func BuildIngestLog(task *entity.IngestionTask, doc *entity.Document, run *entit
 		}
 	}
 	ev.WaitDurationS, ev.ParseDurationS = ComputeDurations(ev.EnqueueTime, ev.BeginTime, ev.EndTime)
+	ev.DurationMS = int64(ev.ParseDurationS * 1000)
 	return ev
 }

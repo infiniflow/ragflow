@@ -16,22 +16,22 @@ import (
 
 // resetIngestLog restores the default no-op logger so tests are isolated.
 func resetIngestLog() {
-	ingestLogger = zap.NewNop()
+	ingestLogger.Store(zap.NewNop())
 }
 
 func TestIngestLogJSONShape(t *testing.T) {
 	log := IngestLog{
-		EventTime:      time.Now().UTC(),
-		TenantID:       "t1",
-		DatasetID:      "kb1",
-		DocID:          "d1",
-		UserID:         "u1",
-		UserName:       "alice",
-		Worker:         "w1",
-		TaskID:         "task1",
-		EventType:      "completed",
-		Status:         "COMPLETED",
-		Code:           0,
+		EventTime: time.Now().UTC(),
+		TenantID:  "t1",
+		DatasetID: "kb1",
+		DocID:     "d1",
+		UserID:    "u1",
+		UserName:  "alice",
+		Worker:    "w1",
+		TaskID:    "task1",
+		EventType: "completed",
+		Status:    "COMPLETED",
+
 		ErrorInfo:      "boom",
 		Filename:       "report.pdf",
 		FileType:       "pdf",
@@ -58,7 +58,7 @@ func TestIngestLogJSONShape(t *testing.T) {
 	}
 	for _, k := range []string{
 		"event_time", "tenant_id", "dataset_id", "doc_id", "user_id", "user_name",
-		"worker", "task_id", "event_type", "status", "code", "error_info",
+		"worker", "task_id", "event_type", "status", "error_info",
 		"filename", "file_type", "file_size", "parser_id", "upload_time",
 		"enqueue_time", "begin_time", "end_time", "duration_ms", "wait_duration_s",
 		"parse_duration_s", "progress", "run_count", "operation",
@@ -108,7 +108,7 @@ func TestLogIngestTransmitsOneFlatLine(t *testing.T) {
 
 func TestLogIngestDefaultIsNoop(t *testing.T) {
 	defer resetIngestLog()
-	ingestLogger = zap.NewNop()
+	ingestLogger.Store(zap.NewNop())
 	dir := t.TempDir()
 	func() {
 		defer func() {
@@ -212,4 +212,51 @@ func countLines(b []byte) int {
 		}
 	}
 	return n
+}
+
+func TestLogIngestOmitsZeroTimes(t *testing.T) {
+	defer resetIngestLog()
+	dir := t.TempDir()
+	if err := InitIngestLog("json", FileOutput{Path: dir, Filename: "ingest.log"}, "svc"); err != nil {
+		t.Fatalf("InitIngestLog: %v", err)
+	}
+	// Only EventTime is set; every other time field is the zero value.
+	LogIngest(IngestLog{EventTime: time.Now().UTC(), TaskID: "t1", EventType: "created", Status: "CREATED"})
+	SyncIngestLog()
+	raw, err := os.ReadFile(filepath.Join(dir, "ingest.log"))
+	if err != nil {
+		t.Fatalf("read sink: %v", err)
+	}
+	if bytes.Contains(raw, []byte("0001-01-01")) {
+		t.Errorf("emitted zero-time sentinel 0001-01-01: %s", raw)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("emitted line not JSON: %v (raw=%s)", err, raw)
+	}
+	for _, k := range []string{"begin_time", "end_time", "upload_time", "enqueue_time"} {
+		if _, ok := m[k]; ok {
+			t.Errorf("zero-time field %q must be omitted, got %v", k, m[k])
+		}
+	}
+	if _, ok := m["event_time"]; !ok {
+		t.Errorf("event_time must always be present")
+	}
+}
+
+func TestIngestLoggerConcurrentInitAndEmit(t *testing.T) {
+	defer resetIngestLog()
+	dir := t.TempDir()
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(n int) {
+			defer wg.Done()
+			_ = InitIngestLog("json", FileOutput{Path: dir, Filename: "ingest.log"}, "svc")
+			LogIngest(IngestLog{EventTime: time.Now().UTC(), TaskID: "t", EventType: "created"})
+			SyncIngestLog()
+		}(i)
+	}
+	wg.Wait()
+	resetIngestLog()
 }

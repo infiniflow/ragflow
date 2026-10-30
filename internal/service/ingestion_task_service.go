@@ -453,14 +453,18 @@ func (s *IngestionTaskService) MarkCompleted(ctx context.Context, taskID string)
 	return nil
 }
 
-func (s *IngestionTaskService) MarkFailed(ctx context.Context, taskID string) error {
-	return s.markFailed(ctx, taskID, "")
+// MarkFailed transitions a task to FAILED and emits a lifecycle event carrying
+// the terminal reason. This is the public entry point used by the ingestor,
+// which has the failure reason (timeout/panic/run-identity error) available at
+// the call site; passing it here is what populates the event's ErrorInfo.
+func (s *IngestionTaskService) MarkFailed(ctx context.Context, taskID, reason string) error {
+	return s.markFailed(ctx, taskID, reason)
 }
 
 // markFailed transitions a task to FAILED and emits a lifecycle event carrying
-// the terminal reason. The public MarkFailed omits the reason (callers such as
-// the worker recover it from the run terminal record), while internal paths
-// like settlePublishFailure pass an explicit reason.
+// the terminal reason. The public MarkFailed forwards the reason supplied by
+// the ingestor (timeout/panic/run-identity error); internal paths such as
+// settlePublishFailure pass an explicit reason too.
 func (s *IngestionTaskService) markFailed(ctx context.Context, taskID, reason string) error {
 	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
@@ -1111,6 +1115,24 @@ func (s *IngestionTaskService) RecordMessage(ctx context.Context, pipelineLogID,
 	return s.insertEvent(ctx, ingestionEventMessage, pipelineLogID, taskID, "", 0, message)
 }
 
+// persistProcessEndAt records the authoritative terminal end time for a run.
+// It is idempotent: if a real process_end_at is already persisted, the existing
+// value is left untouched, so a later terminal event cannot rewrite the recorded
+// completion instant. Best-effort: errors are logged, never returned, because a
+// failure here must not fail the terminal settlement.
+func (s *IngestionTaskService) persistProcessEndAt(ctx context.Context, pipelineLogID string) {
+	if dao.DB == nil {
+		return
+	}
+	if updErr := dao.DB.WithContext(ctx).
+		Model(&entity.PipelineOperationLog{}).
+		Where("id = ?", pipelineLogID).
+		Where("process_end_at IS NULL").
+		Update("process_end_at", time.Now()).Error; updErr != nil {
+		common.Warn(fmt.Sprintf("persist process_end_at for run %s: %v", pipelineLogID, updErr))
+	}
+}
+
 // RecordTerminal writes the terminal explanation associated with a run.
 func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string) error {
 	if err := s.ensureTerminalEvent(ctx, pipelineLogID, taskID, message); err != nil {
@@ -1118,15 +1140,10 @@ func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID
 	}
 	// Persist the authoritative terminal end time so ingestion observability
 	// events and any downstream duration query read a real value instead of
-	// falling back to the transition time. Best-effort: a failure here must not
-	// fail the terminal settlement.
-	if dao.DB != nil {
-		if updErr := dao.DB.Model(&entity.PipelineOperationLog{}).
-			Where("id = ?", pipelineLogID).
-			Update("process_end_at", time.Now()).Error; updErr != nil {
-			common.Warn(fmt.Sprintf("persist process_end_at for run %s: %v", pipelineLogID, updErr))
-		}
-	}
+	// falling back to the transition time. Idempotent: a run whose end time
+	// was already recorded keeps it, so a repeated terminal settlement (e.g.
+	// overlapping failure/timeout events) cannot rewrite the completion instant.
+	s.persistProcessEndAt(context.WithoutCancel(ctx), pipelineLogID)
 	foldContext := context.WithoutCancel(ctx)
 	foldStarted := time.Now()
 	foldResult, foldErr := s.foldIngestionRun(foldContext, pipelineLogID, s.logSettings.MaxRowsPerRun)

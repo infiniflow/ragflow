@@ -547,7 +547,7 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 			var identityErr *servicepkg.InvalidRunIdentityError
 			if errors.As(validateErr, &identityErr) {
 				common.Error(fmt.Sprintf("task %s has permanent run identity error: %s", task.ID, identityErr.Reason), validateErr)
-				if e.markFailed(e.ctx, task.ID) {
+				if e.markFailed(e.ctx, task.ID, fmt.Sprintf("Task rejected: invalid run identity (%s).", identityErr.Reason)) {
 					e.recordTerminalPipelineLog(e.ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task rejected: invalid run identity (%s).", identityErr.Reason))
 					e.ackHandle(hb, handle, taskMessage.TaskID)
 				} else {
@@ -820,10 +820,10 @@ func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 // The caller's context is detached before touching the DB (see markStopped):
 // failure paths usually carry an already-cancelled context, and losing the
 // FAILED write would turn a settled task into a redelivery loop.
-func (e *Ingestor) markFailed(ctx context.Context, taskID string) bool {
+func (e *Ingestor) markFailed(ctx context.Context, taskID, reason string) bool {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if uErr := e.ingestionTaskSvc.MarkFailed(ctx, taskID); uErr != nil {
+	if uErr := e.ingestionTaskSvc.MarkFailed(ctx, taskID, reason); uErr != nil {
 		common.Error(fmt.Sprintf("Failed to set task %s to FAILED", taskID), uErr)
 		return false
 	}
@@ -882,14 +882,14 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		if errors.Is(err, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
 			e.markTerminalProgress(task)
-			ok := e.markFailed(ctx, task.ID)
+			ok := e.markFailed(ctx, task.ID, "Task timed out.")
 			if ok {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), "Task timed out.")
 			}
 			return ok
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
-		ok := e.markFailed(ctx, task.ID)
+		ok := e.markFailed(ctx, task.ID, fmt.Sprintf("Task failed: %v", err))
 		if ok {
 			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task failed: %v", err))
 		}
@@ -1019,7 +1019,7 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 					}
 				}()
 				common.Error(fmt.Sprintf("task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
-				e.markFailed(ctx, taskID)
+				e.markFailed(ctx, taskID, fmt.Sprintf("Task panicked: %v", r))
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task panicked: %v", r))
 			}()
 			terminal = false
