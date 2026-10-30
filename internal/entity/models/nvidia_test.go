@@ -230,15 +230,15 @@ func TestNvidiaCatalogResourceRejectsMalformedDeprecation(t *testing.T) {
 
 func withNvidiaProviderManager(t *testing.T, models []*Model) {
 	t.Helper()
-	saved := providerManager
-	providerManager = &ProviderManager{
+	saved := GetProviderManager()
+	setProviderManager(&ProviderManager{
 		Providers: []Provider{{
 			Name:   "NVIDIA",
 			URL:    map[string]string{"default": "https://integrate.api.nvidia.com/v1"},
 			Models: models,
 		}},
-	}
-	t.Cleanup(func() { providerManager = saved })
+	})
+	t.Cleanup(func() { setProviderManager(saved) })
 }
 
 func TestNvidiaResolveEndpointUsesModelURL(t *testing.T) {
@@ -286,9 +286,9 @@ func TestNvidiaResolveEndpointFallsBackToAssembly(t *testing.T) {
 }
 
 func TestNvidiaResolveEndpointIgnoresManagerWhenNil(t *testing.T) {
-	saved := providerManager
-	providerManager = nil
-	defer func() { providerManager = saved }()
+	saved := GetProviderManager()
+	setProviderManager(nil)
+	defer setProviderManager(saved)
 
 	driver := NewNvidiaModel(
 		map[string]string{"default": "https://integrate.api.nvidia.com/v1"},
