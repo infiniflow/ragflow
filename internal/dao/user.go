@@ -153,7 +153,7 @@ type UserListOptions struct {
 	Limit   int
 }
 
-// List returns non-deleted users and their filtered total. Conditions on db are
+// List returns a page of users and their filtered total. Conditions on db are
 // applied before counting and pagination, so callers can add further filters.
 func (dao *UserDAO) List(ctx context.Context, db *gorm.DB, opts UserListOptions) ([]*entity.User, int64, error) {
 	order, err := userListOrder(opts.OrderBy, opts.Desc)
@@ -180,8 +180,7 @@ func (dao *UserDAO) List(ctx context.Context, db *gorm.DB, opts UserListOptions)
 }
 
 func userListQuery(ctx context.Context, db *gorm.DB, keyword string, active *bool) *gorm.DB {
-	query := db.WithContext(ctx).Model(&entity.User{}).
-		Where(clause.Neq{Column: clause.Column{Table: "user", Name: "status"}, Value: "0"})
+	query := db.WithContext(ctx).Model(&entity.User{})
 	if keyword != "" {
 		pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(keyword)) + "%"
 		query = query.Where("(LOWER(?) LIKE ? ESCAPE '!' OR LOWER(?) LIKE ? ESCAPE '!')",
@@ -221,8 +220,7 @@ func (dao *UserDAO) HardDelete(ctx context.Context, db *gorm.DB, id string) erro
 	return db.WithContext(ctx).Unscoped().Where("id = ?", id).Delete(&entity.User{}).Error
 }
 
-// ListByEmail list users by email (only active users with status != "0")
-// Returns all users matching the given email address
+// ListByEmail returns all users matching the given email address.
 func (dao *UserDAO) ListByEmail(ctx context.Context, db *gorm.DB, email string) ([]*entity.User, error) {
 	var users []*entity.User
 	err := db.WithContext(ctx).Where("email = ?", email).Find(&users).Error

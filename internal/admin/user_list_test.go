@@ -93,15 +93,17 @@ func TestListUsersFiltersAndOrdering(t *testing.T) {
 	if err := dao.DB.Model(&entity.User{}).Where("id = ?", "user-1").Update("last_login_time", lastLogin.Add(24*time.Hour)).Error; err != nil {
 		t.Fatal(err)
 	}
-	deleted := "0"
+	zeroStatus := "0"
 	for _, user := range []entity.User{
-		{ID: "user-2", Email: "second@example.com", Nickname: "USER Two", IsActive: "0", LastLoginTime: &lastLogin, BaseModel: entity.BaseModel{CreateTime: &secondCreatedAt, CreateDate: &created}},
+		{ID: "user-2", Email: "second@example.com", Nickname: "USER Two", IsActive: "0", Status: &zeroStatus, LastLoginTime: &lastLogin, BaseModel: entity.BaseModel{CreateTime: &secondCreatedAt, CreateDate: &created}},
 		{ID: "user-3", Email: "third@example.com", Nickname: "Other", IsActive: "1", LastLoginTime: &created, BaseModel: entity.BaseModel{CreateTime: &thirdCreatedAt, CreateDate: &created}},
-		{ID: "deleted", Email: "deleted@example.com", Nickname: "User Deleted", IsActive: "1", Status: &deleted},
 	} {
 		if err := dao.DB.Create(&user).Error; err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := dao.DB.Model(&entity.User{}).Where("id = ?", "user-3").UpdateColumn("status", nil).Error; err != nil {
+		t.Fatal(err)
 	}
 	for _, tt := range []struct {
 		name, keyword, status, direction, field string

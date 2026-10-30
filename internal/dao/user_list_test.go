@@ -46,10 +46,9 @@ func setupUserListDB(t *testing.T) *gorm.DB {
 	createdAt := created.UnixMilli()
 	role := int32(7)
 	users := []entity.User{
-		{ID: "a", Email: "alice@example.com", Nickname: "Reader", IsActive: "1", RoleID: &role},
+		{ID: "a", Email: "alice@example.com", Nickname: "Reader", IsActive: "1", RoleID: &role, Status: userListTestString("0")},
 		{ID: "b", Email: "bob@example.com", Nickname: "ALICE", IsActive: "0"},
 		{ID: "c", Email: "carol@example.com", Nickname: "100%_Ready!", IsActive: "1", RoleID: &role},
-		{ID: "d", Email: "deleted@example.com", Nickname: "Alice", Status: userListTestString("0")},
 	}
 	for i := range users {
 		users[i].CreateTime = &createdAt
@@ -57,6 +56,10 @@ func setupUserListDB(t *testing.T) *gorm.DB {
 		if err := db.Create(&users[i]).Error; err != nil {
 			t.Fatal(err)
 		}
+	}
+	// Write NULL explicitly because GORM fills omitted statuses with the model default.
+	if err := db.Model(&entity.User{}).Where("id = ?", "b").UpdateColumn("status", nil).Error; err != nil {
+		t.Fatal(err)
 	}
 	return db
 }
@@ -78,7 +81,7 @@ func TestUserListFiltersAndPagination(t *testing.T) {
 		ids   []string
 		total int64
 	}{
-		{name: "excludes deleted", ids: []string{"a", "b", "c"}, total: 3},
+		{name: "all record statuses", ids: []string{"a", "b", "c"}, total: 3},
 		{name: "email or nickname case insensitive", opts: UserListOptions{Keyword: "ALiCe"}, ids: []string{"a", "b"}, total: 2},
 		{name: "combined", opts: UserListOptions{Keyword: "alice", Active: &active}, ids: []string{"a"}, total: 1},
 		{name: "disabled account", opts: UserListOptions{Active: &inactive}, ids: []string{"b"}, total: 1},
@@ -164,10 +167,10 @@ func TestUserListQueryDryRun(t *testing.T) {
 	result := query.Find(&[]entity.User{})
 	sql := result.Statement.SQL.String()
 	if !strings.Contains(sql, "LOWER(`user`.`email`) LIKE ? ESCAPE '!' OR LOWER(`user`.`nickname`) LIKE ? ESCAPE '!'") ||
-		!strings.Contains(sql, "`user`.`is_active` = ?") || !strings.Contains(sql, "`user`.`status` <> ?") {
+		!strings.Contains(sql, "`user`.`is_active` = ?") || strings.Contains(sql, "`user`.`status`") {
 		t.Fatalf("unexpected SQL: %s", sql)
 	}
-	if !reflect.DeepEqual(result.Statement.Vars, []interface{}{7, "0", "%a!%!_%", "%a!%!_%", "0"}) {
+	if !reflect.DeepEqual(result.Statement.Vars, []interface{}{7, "%a!%!_%", "%a!%!_%", "0"}) {
 		t.Fatalf("unexpected bindings: %#v", result.Statement.Vars)
 	}
 }
