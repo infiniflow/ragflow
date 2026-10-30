@@ -24,6 +24,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -213,6 +214,46 @@ func TestHTMLParser_RemoteRedirectToPrivateAddressIsRejected(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(result.Warnings, "\n"), "could not be downloaded") {
 		t.Fatalf("missing redirect rejection warning: %v", result.Warnings)
+	}
+}
+
+func TestHTMLParser_BoundsRemoteImageFetchingPerDocument(t *testing.T) {
+	allowLoopbackImages(t)
+	previous := htmlImageProcessingBudget
+	htmlImageProcessingBudget = 50 * time.Millisecond
+	t.Cleanup(func() { htmlImageProcessingBudget = previous })
+
+	var hits atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		time.Sleep(200 * time.Millisecond)
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("slow-image"))
+	}))
+	defer server.Close()
+	ctx, _ := recordingMediaContext()
+
+	input := `<p>before</p><img src="` + server.URL + `/slow.png"><p>after</p>` +
+		`<img src="` + server.URL + `/second.png"><p>done</p>`
+	result := NewHTMLParser().ParseWithResult(ctx, "slow.html", []byte(input))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	if hits.Load() != 1 {
+		t.Fatalf("remote fetches = %d, want only the first image to reach the network", hits.Load())
+	}
+	texts := make([]string, 0, len(result.JSON))
+	for _, item := range result.JSON {
+		if text, ok := item.ToMap()["text"].(string); ok {
+			texts = append(texts, text)
+		}
+	}
+	joined := strings.Join(texts, "\n")
+	if !strings.Contains(joined, "after") || !strings.Contains(joined, "done") {
+		t.Fatalf("text after the timed-out image was lost: %q", joined)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "document time budget") {
+		t.Fatalf("missing document time-budget warning: %v", result.Warnings)
 	}
 }
 
