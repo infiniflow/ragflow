@@ -27,6 +27,22 @@ const (
 	defaultMediaMaxBytesPerRun  = int64(1 << 30)
 )
 
+// Limits is the run media quota snapshot shared by parser budgets.
+type Limits struct {
+	ImageMaxBytes   int64
+	MaxImagesPerRun int
+	MaxBytesPerRun  int64
+}
+
+// LoadLimits reads the configured media limits once for a parser run.
+func LoadLimits() Limits {
+	return Limits{
+		ImageMaxBytes:   int64(ImageMaxBytes()),
+		MaxImagesPerRun: MediaMaxImagesPerRun(),
+		MaxBytesPerRun:  MediaMaxBytesPerRun(),
+	}
+}
+
 // ImageMaxBytes is the single per-image limit shared by every media path:
 // data URI decoding, ZIP entry extraction, picture parsing, vision images and
 // the run media cache. Set RAGFLOW_MEDIA_IMAGE_MAX_BYTES to a positive byte

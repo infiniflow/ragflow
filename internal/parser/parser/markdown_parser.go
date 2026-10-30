@@ -96,7 +96,7 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 // the base64-encoded image payload. The legacy debug-print path has
 // been removed; callers consume ParseResult directly.
 func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	state := &htmlWalkState{}
+	state := &htmlWalkState{budget: media.NewBudget()}
 	result := p.parseWithState(ctx, filename, data, state)
 	result.Warnings = append(state.warnings(), result.Warnings...)
 	return result
@@ -156,10 +156,7 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 	doc := blockParser.Parse(nil)
 
 	var items []map[string]any
-	if state.mediaBudget == nil {
-		state.mediaBudget = newEmbeddedMediaBudget()
-	}
-	mediaBudget := state.mediaBudget
+	mediaBudget := state.budget
 	imageCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	unresolvedImages := walkMarkdownBlocksWithImages(imageCtx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, state)
@@ -170,7 +167,7 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	var warnings []string
-	if mediaBudget.items > 0 && imageCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
+	if mediaBudget.Count() > 0 && imageCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
 		warnings = append(warnings, "Markdown image processing reached the document time budget")
 	}
 	if unresolvedImages > 0 {
@@ -447,10 +444,7 @@ func markdownTableCells(line string) []string {
 // Tables are emitted through the HTML walker as structured items in source
 // order, with embedded images linked to their parent table.
 func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool, htmlState *htmlWalkState) int {
-	if htmlState.mediaBudget == nil {
-		htmlState.mediaBudget = newEmbeddedMediaBudget()
-	}
-	budget := htmlState.mediaBudget
+	budget := htmlState.budget
 	start := len(*out)
 	defer func() {
 		if flatten {
@@ -635,8 +629,12 @@ func findBlockImage(n ast.Node) (string, bool) {
 // resolveImageURL resolves one bounded Markdown image attempt. It returns
 // either normalized base64 or downloaded bytes, and distinguishes a budget
 // or timeout omission from an unresolved source. Local paths are never fetched.
-func resolveImageURL(ctx context.Context, imageURL string, budget *embeddedMediaBudget) (encoded string, raw []byte, omitted, resolved bool) {
-	if ctx.Err() != nil || !budget.reserveItem() {
+func resolveImageURL(ctx context.Context, imageURL string, budget *media.Budget) (encoded string, raw []byte, omitted, resolved bool) {
+	if ctx.Err() != nil {
+		return "", nil, true, false
+	}
+	reservation, admission := budget.ReserveOccurrence(media.UnknownSize)
+	if admission != media.Admitted {
 		return "", nil, true, false
 	}
 	var size int
@@ -661,7 +659,7 @@ func resolveImageURL(ctx context.Context, imageURL string, budget *embeddedMedia
 	} else {
 		return "", nil, false, false
 	}
-	if !budget.includeReservedSize(size) {
+	if !reservation.Commit(media.Size(size)) {
 		return "", nil, true, false
 	}
 	return encoded, raw, false, true

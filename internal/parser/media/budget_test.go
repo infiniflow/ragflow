@@ -15,40 +15,52 @@
 package media
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
 
-func testBudget(maxSources, maxImageBytes int, maxTotalBytes int64) *Budget {
-	return &Budget{
-		maxSources:    maxSources,
-		maxImageBytes: maxImageBytes,
-		maxTotalBytes: maxTotalBytes,
-		sources:       make(map[string]*budgetSource),
+func testBudget(maxSources int, maxImageBytes, maxTotalBytes int64) *Budget {
+	return NewBudgetWithLimits(Limits{
+		ImageMaxBytes:   maxImageBytes,
+		MaxImagesPerRun: maxSources,
+		MaxBytesPerRun:  maxTotalBytes,
+	})
+}
+
+func reserveAndCommit(t *testing.T, budget *Budget, source string, size Size) bool {
+	t.Helper()
+	reservation, admission := budget.Reserve(source, size)
+	if admission != Admitted {
+		return false
 	}
+	return reservation.Commit(size)
 }
 
 func TestNewBudgetUsesRunCaps(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_IMAGE_MAX_BYTES", "2048")
 	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "7")
 	t.Setenv("RAGFLOW_MEDIA_MAX_BYTES_PER_RUN", "1234")
 	budget := NewBudget()
-	if budget.maxSources != 7 || budget.maxTotalBytes != 1234 {
-		t.Fatalf("budget limits = %d sources / %d bytes, want 7 / 1234", budget.maxSources, budget.maxTotalBytes)
+	want := Limits{ImageMaxBytes: 2048, MaxImagesPerRun: 7, MaxBytesPerRun: 1234}
+	if budget.limits != want {
+		t.Fatalf("budget limits = %+v, want %+v", budget.limits, want)
 	}
 }
 
 func TestBudgetRepeatedSourceConsumesOneItem(t *testing.T) {
 	budget := testBudget(2, 16, 16)
 	for attempt := 0; attempt < 5; attempt++ {
-		if !budget.Reserve("same.png") {
-			t.Fatalf("Reserve #%d rejected an admitted source", attempt+1)
+		reservation, admission := budget.Reserve("same.png", 4)
+		if admission != Admitted {
+			t.Fatalf("Reserve #%d = %v, want admitted", attempt+1, admission)
 		}
-		if !budget.Include("same.png", 4) {
-			t.Fatalf("Include #%d rejected an admitted source", attempt+1)
+		if !reservation.Commit(4) {
+			t.Fatalf("Commit #%d rejected an admitted source", attempt+1)
 		}
 	}
-	if budget.sourcesUsed != 1 || budget.totalBytes != 4 {
-		t.Fatalf("sources=%d bytes=%d, want 1 source and 4 bytes", budget.sourcesUsed, budget.totalBytes)
+	if budget.Count() != 1 || budget.totalBytes != 4 {
+		t.Fatalf("sources=%d bytes=%d, want 1 source and 4 bytes", budget.Count(), budget.totalBytes)
 	}
 	if warnings := budget.Warnings(); len(warnings) != 0 {
 		t.Fatalf("warnings = %v, want none", warnings)
@@ -57,170 +69,171 @@ func TestBudgetRepeatedSourceConsumesOneItem(t *testing.T) {
 
 func TestBudgetSourceLimitExhaustion(t *testing.T) {
 	budget := testBudget(2, 16, 16)
-	if !budget.Reserve("a.png") || !budget.Reserve("b.png") {
-		t.Fatal("Reserve rejected a source under the limit")
+	for _, source := range []string{"a.png", "b.png"} {
+		reservation, admission := budget.Reserve(source, UnknownSize)
+		if admission != Admitted || !reservation.Commit(1) {
+			t.Fatalf("source %q was not admitted", source)
+		}
 	}
-	if budget.Reserve("c.png") {
-		t.Fatal("Reserve admitted a source past the count limit")
+	if _, admission := budget.Reserve("c.png", UnknownSize); admission != RejectedByCount {
+		t.Fatalf("third source admission = %v, want count rejection", admission)
 	}
-	if budget.Reserve("c.png") {
-		t.Fatal("Reserve admitted an exhausted source a second time")
-	}
-	if !budget.Reserve("a.png") {
-		t.Fatal("Reserve rejected an already admitted source after exhaustion")
+	if _, admission := budget.Reserve("a.png", UnknownSize); admission != Admitted {
+		t.Fatalf("already admitted source after exhaustion = %v, want admitted", admission)
 	}
 	if !strings.Contains(strings.Join(budget.Warnings(), "\n"), "2-item run limit") {
 		t.Fatalf("warnings = %v, want the source-count warning", budget.Warnings())
 	}
 }
 
-func TestBudgetPerImageLimitDoesNotRecount(t *testing.T) {
-	budget := testBudget(4, 4, 16)
-	if !budget.Reserve("big.png") {
-		t.Fatal("Reserve rejected the source")
+func TestBudgetDeclaredByteRejectionsDoNotConsumeSourceSlots(t *testing.T) {
+	budget := testBudget(1, 8, 5)
+	if _, admission := budget.Reserve("too-large-1.png", 9); admission != RejectedByBytes {
+		t.Fatalf("per-image rejection = %v, want byte rejection", admission)
 	}
-	if budget.Include("big.png", 5) {
-		t.Fatal("Include admitted an oversized payload")
+	if _, admission := budget.Reserve("too-large-2.png", 6); admission != RejectedByBytes {
+		t.Fatalf("total-byte rejection = %v, want byte rejection", admission)
+	}
+	if !reserveAndCommit(t, budget, "small.png", 1) {
+		t.Fatal("byte-rejected sources exhausted the source budget")
+	}
+	if budget.Count() != 1 || budget.totalBytes != 1 {
+		t.Fatalf("sources=%d bytes=%d, want 1 source and 1 byte", budget.Count(), budget.totalBytes)
+	}
+	if budget.oversizedImages != 1 || budget.totalOverflows != 1 {
+		t.Fatalf("oversized=%d overflows=%d, want 1 and 1", budget.oversizedImages, budget.totalOverflows)
+	}
+}
+
+func TestBudgetCommitRejectionsAreMemoized(t *testing.T) {
+	budget := testBudget(4, 4, 8)
+	reservation, admission := budget.Reserve("big.png", UnknownSize)
+	if admission != Admitted {
+		t.Fatalf("Reserve = %v, want admitted", admission)
 	}
 	for attempt := 0; attempt < 3; attempt++ {
-		if budget.Include("big.png", 5) {
-			t.Fatal("Include admitted the rejected source again")
+		if reservation.Commit(5) {
+			t.Fatal("Commit admitted an oversized payload")
 		}
+	}
+	if _, admission := budget.Reserve("big.png", 5); admission != RejectedByBytes {
+		t.Fatalf("repeated Reserve = %v, want byte rejection", admission)
 	}
 	if budget.oversizedImages != 1 || budget.totalBytes != 0 {
 		t.Fatalf("oversized=%d bytes=%d, want one oversized skip and no bytes", budget.oversizedImages, budget.totalBytes)
-	}
-	if !strings.Contains(strings.Join(budget.Warnings(), "\n"), "larger than the 4-byte per-image limit") {
-		t.Fatalf("warnings = %v", budget.Warnings())
 	}
 }
 
 func TestBudgetTotalByteLimitDoesNotRecount(t *testing.T) {
 	budget := testBudget(4, 8, 5)
-	if !budget.Reserve("a.png") || !budget.Reserve("b.png") {
-		t.Fatal("Reserve rejected a source")
+	if !reserveAndCommit(t, budget, "a.png", 3) {
+		t.Fatal("first payload should fit")
 	}
-	if !budget.Include("a.png", 3) {
-		t.Fatal("Include rejected a payload under the total limit")
+	reservation, admission := budget.Reserve("b.png", UnknownSize)
+	if admission != Admitted {
+		t.Fatalf("second source admission = %v, want admitted", admission)
 	}
-	if budget.Include("b.png", 3) {
-		t.Fatal("Include admitted a payload past the total byte limit")
+	if reservation.Commit(3) {
+		t.Fatal("Commit admitted a payload past the total byte limit")
 	}
-	if budget.Include("b.png", 3) {
-		t.Fatal("Include recounted the rejected source")
+	if reservation.Commit(3) {
+		t.Fatal("Commit recounted the rejected source")
 	}
 	if budget.totalOverflows != 1 || budget.totalBytes != 3 {
 		t.Fatalf("overflows=%d bytes=%d, want one overflow and 3 bytes", budget.totalOverflows, budget.totalBytes)
 	}
-	if !strings.Contains(strings.Join(budget.Warnings(), "\n"), "5-byte run image budget") {
-		t.Fatalf("warnings = %v", budget.Warnings())
+}
+
+func TestBudgetOccurrenceConsumesCountBeforeByteAdmission(t *testing.T) {
+	budget := testBudget(1, 8, 5)
+	if _, admission := budget.ReserveOccurrence(6); admission != RejectedByBytes {
+		t.Fatalf("byte rejection = %v, want rejected by bytes", admission)
+	}
+	if budget.Count() != 1 {
+		t.Fatalf("count = %d, want the rejected occurrence to consume one slot", budget.Count())
+	}
+	if _, admission := budget.ReserveOccurrence(UnknownSize); admission != RejectedByCount {
+		t.Fatalf("next occurrence = %v, want rejected by count", admission)
 	}
 }
 
-func TestBudgetReserveBytesChecksWithoutCharging(t *testing.T) {
-	budget := testBudget(4, 8, 5)
-	if !budget.Reserve("a.png") {
-		t.Fatal("Reserve rejected the source")
+func TestBudgetOccurrenceKeepsWalkingAfterByteRejection(t *testing.T) {
+	budget := testBudget(3, 4, 5)
+	reservation, admission := budget.ReserveOccurrence(UnknownSize)
+	if admission != Admitted || !reservation.Commit(3) {
+		t.Fatal("first occurrence should fit")
 	}
-	if !budget.ReserveBytes("a.png", 5) {
-		t.Fatal("ReserveBytes rejected a payload at the total limit")
+	reservation, admission = budget.ReserveOccurrence(UnknownSize)
+	if admission != Admitted {
+		t.Fatalf("second occurrence admission = %v, want admitted", admission)
 	}
-	if budget.totalBytes != 0 {
-		t.Fatalf("ReserveBytes charged %d bytes before Include", budget.totalBytes)
+	if reservation.Commit(3) {
+		t.Fatal("second occurrence exceeded the byte limit")
 	}
-	if !budget.Include("a.png", 5) {
-		t.Fatal("Include rejected the reserved payload")
+	reservation, admission = budget.ReserveOccurrence(UnknownSize)
+	if admission != Admitted {
+		t.Fatalf("third occurrence admission = %v, want admitted", admission)
 	}
-	if !budget.Include("a.png", 5) {
-		t.Fatal("Include rejected an already included source")
+	if !reservation.Commit(2) {
+		t.Fatal("third occurrence should fit after the byte rejection")
 	}
-	if budget.totalBytes != 5 {
-		t.Fatalf("total bytes = %d, want 5", budget.totalBytes)
-	}
-}
-
-func TestBudgetReserveBytesRejectsBeforeRead(t *testing.T) {
-	budget := testBudget(4, 8, 5)
-	if !budget.Reserve("big.png") {
-		t.Fatal("Reserve rejected the source")
-	}
-	if budget.ReserveBytes("big.png", 6) {
-		t.Fatal("ReserveBytes admitted an entry past the total limit")
-	}
-	if budget.ReserveBytes("big.png", 6) {
-		t.Fatal("ReserveBytes recounted a rejected entry")
-	}
-	if budget.totalOverflows != 1 || budget.totalBytes != 0 {
-		t.Fatalf("overflows=%d bytes=%d, want one overflow and no bytes", budget.totalOverflows, budget.totalBytes)
-	}
-	if !strings.Contains(strings.Join(budget.Warnings(), "\n"), "5-byte run image budget") {
-		t.Fatalf("warnings = %v", budget.Warnings())
+	if budget.Count() != 3 || budget.totalBytes != 5 {
+		t.Fatalf("count=%d bytes=%d, want 3 and 5", budget.Count(), budget.totalBytes)
 	}
 }
 
-func TestBudgetRejectedBytesDoNotConsumeSourceSlots(t *testing.T) {
+func TestBudgetExactByteLimits(t *testing.T) {
+	budget := testBudget(2, 4, 4)
+	if !reserveAndCommit(t, budget, "exact.png", 4) {
+		t.Fatal("exact-limit image should be admitted")
+	}
+	reservation, admission := budget.ReserveOccurrence(UnknownSize)
+	if admission != Admitted || reservation.Commit(1) {
+		t.Fatal("image after exact run limit should be omitted")
+	}
+}
+
+func TestBudgetIncludedSourceIsNotRejectedByLaterDeclaration(t *testing.T) {
 	budget := testBudget(2, 8, 5)
-	if budget.ReserveBytes("too-large-1.png", 6) {
-		t.Fatal("first oversized source was admitted")
-	}
-	if budget.ReserveBytes("too-large-2.png", 6) {
-		t.Fatal("second oversized source was admitted")
-	}
-	if !budget.ReserveBytes("small.png", 1) || !budget.Reserve("small.png") || !budget.Include("small.png", 1) {
-		t.Fatal("byte-rejected sources exhausted the source budget")
-	}
-	if budget.sourcesUsed != 1 || budget.totalBytes != 1 {
-		t.Fatalf("sources=%d bytes=%d, want 1 source and 1 byte", budget.sourcesUsed, budget.totalBytes)
-	}
-	if budget.totalOverflows != 2 {
-		t.Fatalf("total overflows = %d, want 2", budget.totalOverflows)
-	}
-}
-
-func TestBudgetReservePreservesExistingAdmissionState(t *testing.T) {
-	budget := testBudget(2, 8, 5)
-	if !budget.ReserveBytes("a.png", 3) {
-		t.Fatal("ReserveBytes rejected a valid source")
-	}
-	if !budget.Include("a.png", 3) {
+	if !reserveAndCommit(t, budget, "a.png", 3) {
 		t.Fatal("source was not admitted")
 	}
-	if !budget.Reserve("a.png") {
-		t.Fatal("second Reserve rejected an included source")
+	reservation, admission := budget.Reserve("a.png", 9)
+	if admission != Admitted || !reservation.Commit(3) {
+		t.Fatal("later declaration changed an included source's state")
 	}
-	if !budget.Include("a.png", 3) {
-		t.Fatal("Reserve overwrote the included state")
-	}
-	if budget.totalBytes != 3 || budget.sourcesUsed != 1 {
-		t.Fatalf("sources=%d bytes=%d, want 1 source and 3 bytes", budget.sourcesUsed, budget.totalBytes)
+	if budget.totalBytes != 3 || budget.Count() != 1 {
+		t.Fatalf("sources=%d bytes=%d, want 1 source and 3 bytes", budget.Count(), budget.totalBytes)
 	}
 }
 
-func TestBudgetNoteOversizedDoesNotConsumeItem(t *testing.T) {
-	budget := testBudget(2, 4, 16)
-	if !budget.Reserve("a.png") {
-		t.Fatal("Reserve rejected the first source")
+func TestBudgetInvalidSizes(t *testing.T) {
+	budget := testBudget(2, 8, 8)
+	if _, admission := budget.Reserve("invalid.png", -2); admission != RejectedInvalid {
+		t.Fatalf("invalid declared size = %v, want invalid rejection", admission)
 	}
-	budget.NoteOversized()
-	budget.NoteOversized()
-	if !budget.Reserve("b.png") {
-		t.Fatal("NoteOversized consumed the item budget")
+	reservation, admission := budget.Reserve("valid.png", UnknownSize)
+	if admission != Admitted {
+		t.Fatalf("valid reservation = %v, want admitted", admission)
 	}
-	if budget.Reserve("c.png") {
-		t.Fatal("Reserve admitted a third source past the two-item limit")
-	}
-	if budget.oversizedImages != 2 {
-		t.Fatalf("oversized = %d, want 2", budget.oversizedImages)
+	if reservation.Commit(-2) {
+		t.Fatal("Commit admitted an invalid actual size")
 	}
 }
 
-func TestBudgetNilReceiver(t *testing.T) {
-	var budget *Budget
-	if !budget.Reserve("a.png") || !budget.Include("a.png", 1) {
-		t.Fatal("nil budget rejected a source")
+func TestBudgetWarningsAreStable(t *testing.T) {
+	budget := testBudget(3, 4, 5)
+	_, _ = budget.Reserve("too-large.png", 5)
+	_, _ = budget.ReserveOccurrence(6)
+	_, _ = budget.Reserve("a.png", UnknownSize)
+	_, _ = budget.Reserve("b.png", UnknownSize)
+	_, _ = budget.Reserve("c.png", UnknownSize)
+	_, _ = budget.Reserve("d.png", UnknownSize)
+	want := []string{
+		"omitted 2 embedded image payload(s) larger than the 4-byte per-image limit",
+		"stopped extracting embedded images after the 3-item run limit",
 	}
-	budget.NoteOversized()
-	if warnings := budget.Warnings(); warnings != nil {
-		t.Fatalf("warnings = %v, want nil", warnings)
+	if got := budget.Warnings(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("warnings = %q, want %q", got, want)
 	}
 }

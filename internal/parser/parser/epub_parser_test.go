@@ -451,6 +451,7 @@ func TestHTMLWalkStateResolveMediaPrecedesResolveImageAndDataURI(t *testing.T) {
 		refOnly:     true,
 		ctx:         ctx,
 		mediaCache:  cache,
+		budget:      media.NewBudget(),
 		mediaFormat: "epub",
 		resolveMedia: func(src string) (*entity.MediaRef, bool) {
 			if src == "zip.png" || src == htmlMediaDataURI {
@@ -486,7 +487,7 @@ func TestHTMLWalkStateDataURIWriteUsesMediaFormat(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cache := recordingMediaContext()
-			state := &htmlWalkState{refOnly: true, ctx: ctx, mediaCache: cache, mediaFormat: tc.format}
+			state := &htmlWalkState{refOnly: true, ctx: ctx, mediaCache: cache, budget: media.NewBudget(), mediaFormat: tc.format}
 			_, ref, ok := state.imageSource(htmlMediaDataURI)
 			if !ok || ref == nil {
 				t.Fatalf("data URI image was not cached: ok=%v ref=%+v", ok, ref)

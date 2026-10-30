@@ -92,7 +92,7 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		refOnly:    true,
 		ctx:        ctx,
 		mediaCache: media.CacheFromContext(ctx),
-		runBudget:  media.NewBudget(),
+		budget:     media.NewBudget(),
 	}
 	if p.textOnly {
 		state.resolveImage = func(string) (string, bool) { return "", false }
@@ -134,10 +134,7 @@ type htmlWalkState struct {
 	skippedInlineImages int
 	unresolvedImages    int
 	mediaLimitSkips     int
-	mediaBudget         *embeddedMediaBudget
-	// runBudget bounds the ref-only media path by distinct source. The legacy
-	// inline path keeps mediaBudget instead; both report through warnings().
-	runBudget *media.Budget
+	budget              *media.Budget
 	// dataURIMemo and epubMediaMemo dedupe sources across one parse. A nil
 	// value means the source was already processed and skipped; a non-nil
 	// value is the reference every later occurrence reuses.
@@ -162,8 +159,7 @@ type htmlWalkState struct {
 
 func (s *htmlWalkState) warnings() []string {
 	var warnings []string
-	warnings = append(warnings, s.runBudget.Warnings()...)
-	warnings = append(warnings, s.mediaBudget.warnings()...)
+	warnings = append(warnings, s.budget.Warnings()...)
 	if s.mediaLimitSkips > 0 {
 		warnings = append(warnings, fmt.Sprintf("document parser skipped %d image(s) after the run media cache limit", s.mediaLimitSkips))
 	}
@@ -225,23 +221,20 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 			s.err = fmt.Errorf("%s media cache is not configured", s.cacheFormat())
 			return "", nil, false
 		}
-		if s.runBudget != nil {
-			// Repeated sources share one admission, so a document made of one
-			// repeated data URI stays bounded without capping its references.
-			if !s.runBudget.ReserveBytes(src, int(size)) ||
-				!s.runBudget.Reserve(src) ||
-				!s.runBudget.Include(src, int(size)) {
-				s.memoizeDataURI(src, nil)
-				return "", nil, false
-			}
-		} else if size > media.ImageMaxBytes() {
-			s.skippedInlineImages++
+		// Repeated sources share one reservation, so a document made of one
+		// repeated data URI stays bounded without capping its references.
+		reservation, admission := s.budget.Reserve(src, media.Size(size))
+		if admission != media.Admitted {
 			s.memoizeDataURI(src, nil)
 			return "", nil, false
 		}
 		mime, data, ok := media.DecodeDataImageSource(src)
 		if !ok {
 			s.skippedInlineImages++
+			s.memoizeDataURI(src, nil)
+			return "", nil, false
+		}
+		if !reservation.Commit(media.Size(len(data))) {
 			s.memoizeDataURI(src, nil)
 			return "", nil, false
 		}
@@ -258,10 +251,8 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 		s.memoizeDataURI(src, &ref)
 		return "", &ref, true
 	}
-	if s.mediaBudget == nil {
-		s.mediaBudget = newEmbeddedMediaBudget()
-	}
-	if !s.mediaBudget.reserveItem() {
+	reservation, admission := s.budget.ReserveOccurrence(media.UnknownSize)
+	if admission != media.Admitted {
 		return "", nil, false
 	}
 	normalized, size, _, ok := media.NormalizeDataImageSource(src)
@@ -269,7 +260,7 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 		s.skippedInlineImages++
 		return "", nil, false
 	}
-	if !s.mediaBudget.includeReservedSize(int(size)) {
+	if !reservation.Commit(media.Size(size)) {
 		return "", nil, false
 	}
 	return normalized, nil, true

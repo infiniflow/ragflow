@@ -141,17 +141,17 @@ func TestTableRegressionMarkdownRawHTMLImageBudget(t *testing.T) {
 	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "256")
 	source := "<table><tr><td>" + strings.Repeat("<img src=\"data:image/png;base64,aGVsbG8=\">", limit+1) + "</td></tr></table>\n\n"
 	doc := markdownNew().Parse([]byte(source))
-	budget := newEmbeddedMediaBudget()
+	budget := newMediaBudgetForTest()
 	var items []map[string]any
-	walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, &htmlWalkState{mediaBudget: budget})
+	walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, &htmlWalkState{budget: budget})
 	images := 0
 	for _, item := range items {
 		if item["doc_type_kwd"] == "image" && item["image"] != nil {
 			images++
 		}
 	}
-	t.Logf("retained images=%d budget attempts=%d run item limit=%d", images, budget.items, limit)
-	if images != limit || budget.items != limit || !strings.Contains(strings.Join(budget.warnings(), "\n"), "256-item run limit") {
+	t.Logf("retained images=%d budget attempts=%d run item limit=%d", images, budget.Count(), limit)
+	if images != limit || budget.Count() != limit || !strings.Contains(strings.Join(budget.Warnings(), "\n"), "256-item run limit") {
 		t.Errorf("raw HTML budget not enforced: retained=%d budget=%+v", images, budget)
 	}
 }

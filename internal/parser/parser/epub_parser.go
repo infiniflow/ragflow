@@ -292,7 +292,7 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 		refOnly:     true,
 		ctx:         ctx,
 		mediaCache:  media.CacheFromContext(ctx),
-		runBudget:   media.NewBudget(),
+		budget:      media.NewBudget(),
 		mediaFormat: "epub",
 		skipImages:  textOnly,
 	}
@@ -406,22 +406,14 @@ func epubMediaResolver(entries map[string]*zip.File, state *htmlWalkState, chapt
 // by multiple chapters performs the work and records warnings once.
 func (s *htmlWalkState) loadEPUBMedia(name, mime string, entry *zip.File) (*entity.MediaRef, bool) {
 	maxBytes := media.ImageMaxBytes()
-	if entry.UncompressedSize64 > uint64(maxBytes) {
-		// The declared size is enough to skip without reading, so the skip is
-		// reported without consuming an image item.
-		s.runBudget.NoteOversized()
-		s.memoizeEPUBMedia(name, nil)
-		return nil, false
+	declared := media.Size(maxBytes + 1)
+	if entry.UncompressedSize64 <= uint64(maxBytes) {
+		declared = media.Size(entry.UncompressedSize64)
 	}
-	// Check the declared uncompressed size against the total budget before
-	// decompressing. Byte-rejected entries do not consume a source slot.
-	if !s.runBudget.ReserveBytes(name, int(entry.UncompressedSize64)) {
-		s.memoizeEPUBMedia(name, nil)
-		return nil, false
-	}
-	// Reserve only for an actual ZIP read: entries skipped above need no bytes
-	// and must not exhaust the attempt budget.
-	if !s.runBudget.Reserve(name) {
+	// Check the declared uncompressed size against both byte limits before
+	// reserving a source slot or decompressing the entry.
+	reservation, admission := s.budget.Reserve(name, declared)
+	if admission != media.Admitted {
 		s.memoizeEPUBMedia(name, nil)
 		return nil, false
 	}
@@ -438,7 +430,7 @@ func (s *htmlWalkState) loadEPUBMedia(name, mime string, entry *zip.File) (*enti
 		s.memoizeEPUBMedia(name, nil)
 		return nil, false
 	}
-	if !s.runBudget.Include(name, len(data)) {
+	if !reservation.Commit(media.Size(len(data))) {
 		s.memoizeEPUBMedia(name, nil)
 		return nil, false
 	}

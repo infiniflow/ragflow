@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	deepdocoffice "ragflow/internal/deepdoc/parser/office"
+	"ragflow/internal/parser/media"
 )
 
 // docExtract is the native office_oxide extraction seam for the DOC family.
@@ -60,12 +61,12 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 	// usable sections, so a document whose IR is empty/unusable still keeps its
 	// content (PlainText / ToMarkdown) rather than silently producing 0 chunks.
 	if strings.TrimSpace(irJSON) != "" {
-		budget := newEmbeddedMediaBudget()
+		budget := media.NewBudget()
 		if sections := buildDOCXJSONSections(irJSON, budget); len(sections) > 0 {
 			return ParseResult{
 				File:     map[string]any{"name": filename, "format": "doc"},
 				JSON:     MapsToItems(sections),
-				Warnings: budget.warnings(),
+				Warnings: budget.Warnings(),
 			}
 		}
 	}

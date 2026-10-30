@@ -16,21 +16,34 @@ package media
 
 import "fmt"
 
-// Budget admits source-identified images into one parser run. Unlike a plain
-// item counter it dedupes by source: a document that repeats one icon a
-// thousand times stays bounded without charging the document for a thousand
-// images, while distinct sources keep the count and byte caps meaningful.
-//
-// Callers Reserve immediately before reading a source and Include after a
-// successful read. A source that fails to read keeps its reserved item until
-// the run ends, because the read attempt already cost the work the cap bounds.
-// The count and byte limits are the same run-level limits enforced by the
-// media cache; the parser applies them early so it does not decode or read
-// payloads the cache would reject.
+// Size is a declared or actual media payload size in bytes. UnknownSize lets a
+// caller reserve an occurrence before it knows how much data it will read.
+type Size int64
+
+const (
+	// UnknownSize defers the byte check until Reservation.Commit.
+	UnknownSize Size = -1
+)
+
+// Admission explains why a source or occurrence was accepted or rejected.
+type Admission uint8
+
+const (
+	// Admitted means the caller owns a reservation and may read the payload.
+	Admitted Admission = iota
+	// RejectedByCount means the run's distinct-image limit is exhausted.
+	RejectedByCount
+	// RejectedByBytes means the per-image or total-byte limit rejected it.
+	RejectedByBytes
+	// RejectedInvalid means the supplied size is invalid.
+	RejectedInvalid
+)
+
+// Budget enforces one parser run's image count and byte limits. Stable sources
+// are admitted once through Reserve; source-less payloads use
+// ReserveOccurrence so each occurrence consumes one item.
 type Budget struct {
-	maxSources    int
-	maxImageBytes int
-	maxTotalBytes int64
+	limits Limits
 
 	sources         map[string]*budgetSource
 	sourcesUsed     int
@@ -40,159 +53,158 @@ type Budget struct {
 	countExhausted  bool
 }
 
-// budgetSource records how one distinct source was charged. charged marks a
-// source rejected by the per-image or total-byte limit so repeated references
-// cannot inflate the warning counters.
 type budgetSource struct {
-	reserved bool
 	included bool
 	charged  bool
 }
 
-// NewBudget returns a run budget bounded by the same run-level count and byte
-// limits as the media cache, plus the shared per-image limit.
+// Reservation is one admitted source or occurrence. Commit applies the actual
+// payload size after the caller reads or decodes it.
+type Reservation struct {
+	budget *Budget
+	entry  *budgetSource
+}
+
+// NewBudget returns a run budget using the current configured limits.
 func NewBudget() *Budget {
+	return NewBudgetWithLimits(LoadLimits())
+}
+
+// NewBudgetWithLimits returns a run budget with an explicit limits snapshot.
+func NewBudgetWithLimits(limits Limits) *Budget {
 	return &Budget{
-		maxSources:    MediaMaxImagesPerRun(),
-		maxImageBytes: ImageMaxBytes(),
-		maxTotalBytes: MediaMaxBytesPerRun(),
-		sources:       make(map[string]*budgetSource),
+		limits:  limits,
+		sources: make(map[string]*budgetSource),
 	}
 }
 
-// Reserve admits one source before its bytes are read. A source already
-// admitted by this run returns true without consuming another item; exhausted
-// source counts set the warning state and reject every new source.
-func (b *Budget) Reserve(source string) bool {
-	if b == nil {
-		return true
+// Reserve admits a stable source before its bytes are read. Repeated references
+// to an included source reuse the same reservation. A declared size rejected
+// by a byte limit is memoized as charged without consuming a source slot.
+func (b *Budget) Reserve(source string, declared Size) (*Reservation, Admission) {
+	if declared != UnknownSize && declared < 0 {
+		return nil, RejectedInvalid
 	}
-	entry, ok := b.sources[source]
-	if ok {
+	if entry, ok := b.sources[source]; ok {
+		reservation := &Reservation{budget: b, entry: entry}
 		if entry.charged {
-			return false
+			return nil, RejectedByBytes
 		}
-		if entry.reserved {
-			return true
+		if entry.included {
+			return reservation, Admitted
 		}
+		if declared != UnknownSize && !b.admitBytes(entry, declared) {
+			return nil, RejectedByBytes
+		}
+		return reservation, Admitted
 	}
-	if b.countExhausted {
-		return false
+	if declared != UnknownSize && !b.canAdmitBytes(declared) {
+		b.sources[source] = &budgetSource{charged: true}
+		b.noteByteRejection(declared)
+		return nil, RejectedByBytes
 	}
-	if b.sourcesUsed >= b.maxSources {
+	if b.countExhausted || b.sourcesUsed >= b.limits.MaxImagesPerRun {
 		b.countExhausted = true
-		return false
+		return nil, RejectedByCount
 	}
-	if b.sources == nil {
-		b.sources = make(map[string]*budgetSource)
-	}
+	entry := &budgetSource{}
+	b.sources[source] = entry
 	b.sourcesUsed++
-	if entry == nil {
-		entry = &budgetSource{}
-		b.sources[source] = entry
-	}
-	entry.reserved = true
-	return true
+	return &Reservation{budget: b, entry: entry}, Admitted
 }
 
-// Include charges a successfully read source against the per-image and total
-// byte limits. Repeating an included source adds no bytes; a source already
-// rejected by a byte limit keeps returning false without being counted again.
-func (b *Budget) Include(source string, size int) bool {
-	if b == nil {
-		return true
+// ReserveOccurrence admits a source-less payload. The occurrence consumes one
+// item before its actual size is known, matching sequential Office and
+// Markdown extraction where byte-limit omissions must not stop later text.
+func (b *Budget) ReserveOccurrence(declared Size) (*Reservation, Admission) {
+	if declared != UnknownSize && declared < 0 {
+		return nil, RejectedInvalid
 	}
-	return b.admit(source, size, true)
+	if b.countExhausted || b.sourcesUsed >= b.limits.MaxImagesPerRun {
+		b.countExhausted = true
+		return nil, RejectedByCount
+	}
+	entry := &budgetSource{}
+	b.sourcesUsed++
+	if declared != UnknownSize && !b.admitBytes(entry, declared) {
+		return nil, RejectedByBytes
+	}
+	return &Reservation{budget: b, entry: entry}, Admitted
 }
 
-// ReserveBytes checks a declared size before the caller reads or decodes the
-// source. It uses the same per-image and total-byte limits as Include, but
-// charges nothing on success: Include still owns the actual bytes. A source
-// rejected here is marked charged so repeated references do not read it again
-// or inflate the warning counters. ZIP callers use this with the declared
-// uncompressed size to avoid reading a large entry that the total budget will
-// reject.
-func (b *Budget) ReserveBytes(source string, size int) bool {
-	if b == nil {
-		return true
-	}
-	return b.admit(source, size, false)
-}
-
-func (b *Budget) admit(source string, size int, charge bool) bool {
-	entry, ok := b.sources[source]
-	if !ok {
-		entry = &budgetSource{}
-		if b.sources == nil {
-			b.sources = make(map[string]*budgetSource)
-		}
-		b.sources[source] = entry
-	}
-	if entry.included {
-		return true
-	}
-	if !b.admitBytes(entry, size) {
+// Commit applies the actual payload size to a reservation. It is idempotent
+// for an included source and keeps byte-rejected reservations rejected.
+func (r *Reservation) Commit(actual Size) bool {
+	if r == nil || r.budget == nil || r.entry == nil {
 		return false
 	}
-	if charge {
-		entry.included = true
-		b.totalBytes += int64(size)
+	if r.entry.included {
+		return true
 	}
+	if r.entry.charged || actual < 0 {
+		return false
+	}
+	if !r.budget.admitBytes(r.entry, actual) {
+		return false
+	}
+	r.entry.included = true
+	r.budget.totalBytes += int64(actual)
 	return true
 }
 
-func (b *Budget) admitBytes(entry *budgetSource, size int) bool {
+// Count reports how many source or occurrence slots this run has reserved.
+func (b *Budget) Count() int {
+	return b.sourcesUsed
+}
+
+func (b *Budget) canAdmitBytes(size Size) bool {
+	if int64(size) > b.limits.ImageMaxBytes {
+		return false
+	}
+	return int64(size) <= b.limits.MaxBytesPerRun-b.totalBytes
+}
+
+func (b *Budget) admitBytes(entry *budgetSource, size Size) bool {
 	if entry.charged {
 		return false
 	}
-	if size > b.maxImageBytes {
-		entry.charged = true
-		b.oversizedImages++
-		return false
+	if b.canAdmitBytes(size) {
+		return true
 	}
-	if int64(size) > b.maxTotalBytes-b.totalBytes {
-		entry.charged = true
-		b.totalOverflows++
-		return false
-	}
-	return true
+	entry.charged = true
+	b.noteByteRejection(size)
+	return false
 }
 
-// NoteOversized records a source rejected before reading (for example a ZIP
-// entry whose declared size exceeds the per-image limit). It does not consume
-// an item: nothing was read, and a document full of huge entries must not
-// exhaust the image count.
-func (b *Budget) NoteOversized() {
-	if b == nil {
+func (b *Budget) noteByteRejection(size Size) {
+	if int64(size) > b.limits.ImageMaxBytes {
+		b.oversizedImages++
 		return
 	}
-	b.oversizedImages++
+	b.totalOverflows++
 }
 
 // Warnings reports the budget omissions accumulated by this run.
 func (b *Budget) Warnings() []string {
-	if b == nil {
-		return nil
-	}
 	var warnings []string
 	if b.oversizedImages > 0 {
 		warnings = append(warnings, fmt.Sprintf(
 			"omitted %d embedded image payload(s) larger than the %d-byte per-image limit",
 			b.oversizedImages,
-			b.maxImageBytes,
+			b.limits.ImageMaxBytes,
 		))
 	}
 	if b.totalOverflows > 0 {
 		warnings = append(warnings, fmt.Sprintf(
 			"omitted %d embedded image payload(s) after reaching the %d-byte run image budget",
 			b.totalOverflows,
-			b.maxTotalBytes,
+			b.limits.MaxBytesPerRun,
 		))
 	}
 	if b.countExhausted {
 		warnings = append(warnings, fmt.Sprintf(
 			"stopped extracting embedded images after the %d-item run limit",
-			b.maxSources,
+			b.limits.MaxImagesPerRun,
 		))
 	}
 	return warnings
