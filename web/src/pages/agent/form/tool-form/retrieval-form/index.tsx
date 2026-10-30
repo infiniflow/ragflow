@@ -6,7 +6,7 @@ import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
 import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 
-import { SwitchFormField } from '@/components/switch-fom-field';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
 import {

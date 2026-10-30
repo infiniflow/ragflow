@@ -14,7 +14,7 @@ import {
   rerankCandidatesCountSchema,
 } from '@/components/rerank-candidates-count-item';
 
-import { SwitchFormField } from '@/components/switch-fom-field';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
 import { Radio } from '@/components/ui/radio';
