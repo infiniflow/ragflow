@@ -8,7 +8,7 @@ import {
 import {
   AgentKeys,
   useFetchAgent,
-  useSetAgent,
+  useSaveAgent,
 } from '@/hooks/use-agent-request';
 import { IFlow } from '@/interfaces/database/agent';
 import { useQueryClient } from '@tanstack/react-query';
@@ -20,7 +20,7 @@ export function useCanvasBackground() {
   const { id } = useParams();
   const { data } = useFetchAgent();
   const { buildDslData } = useBuildDslData();
-  const { setAgent } = useSetAgent(false, true);
+  const { saveAgent } = useSaveAgent(false, true);
   const queryClient = useQueryClient();
   const pendingSave = useRef(Promise.resolve());
   const loaded = Boolean(data?.id);
@@ -67,7 +67,7 @@ export function useCanvasBackground() {
           }
         };
         try {
-          const response = await setAgent({ id, title: data.title, dsl });
+          const response = await saveAgent({ id, title: data.title, dsl });
           if (response?.code !== 0) restore();
         } catch (error) {
           restore();
@@ -81,7 +81,7 @@ export function useCanvasBackground() {
       );
       return task;
     },
-    [buildDslData, data?.title, id, queryClient, setAgent],
+    [buildDslData, data?.title, id, queryClient, saveAgent],
   );
 
   return { setting, update };
