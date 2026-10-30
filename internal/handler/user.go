@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
@@ -219,7 +220,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		adminStatus := local.GetAdminStatus()
 		common.ResponseWithCodeData(c, common.CodeAuthenticationError, "No", adminStatus.Reason)
 		operationLog.Code = int(common.CodeAuthenticationError)
-		operationLog.Error = fmt.Errorf(adminStatus.Reason)
+		operationLog.Error = errors.New(adminStatus.Reason)
 		return
 	}
 

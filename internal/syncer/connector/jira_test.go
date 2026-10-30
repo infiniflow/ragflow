@@ -271,12 +271,12 @@ func TestJiraSyncSessionDropsIssuesPastWindowEnd(t *testing.T) {
 		}})
 	})
 	mux.HandleFunc("/rest/api/3/issue/bulkfetch", func(w http.ResponseWriter, r *http.Request) {
-		inWindow := jiraFixtureIssue(server.URL, jiraFixtureUpdatedAt)
+		inWindow := jiraFixtureIssue(server.URL, "2026-01-03T10:00:00.000+0000")
 		inWindow["id"] = "10000"
 		inWindow["key"] = "RAG-7"
 		inWindow["fields"].(map[string]any)["attachment"] = []map[string]any{}
 
-		pastWindow := jiraFixtureIssue(server.URL, jiraFixtureUpdatedAt)
+		pastWindow := jiraFixtureIssue(server.URL, "2026-01-03T10:00:45.000+0000")
 		pastWindow["id"] = "10001"
 		pastWindow["key"] = "RAG-8"
 		pastWindow["fields"].(map[string]any)["attachment"] = []map[string]any{}
