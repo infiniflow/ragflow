@@ -25,3 +25,7 @@ import "testing"
 // the enterprise repository defines the same helper for its build.
 func grantServiceTestResource(_ *testing.T, _ string, _ string, _ string, _ string, _ int32) {
 }
+
+// permissionChangeLogTestModels adds no tables: the community edition has no
+// permission audit log. It lives here for the same reason as the helper above.
+func permissionChangeLogTestModels() []interface{} { return nil }
