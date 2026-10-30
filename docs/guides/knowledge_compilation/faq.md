@@ -24,13 +24,13 @@ Check the following items in sequence:
 - Whether Compiler has selected the correct knowledge compilation template.
 - Whether the knowledge compilation task executed successfully.
 - Whether the knowledge compilation template has been correctly configured and saved.
-- Whether the default extraction model can be used normally.
+- Whether the model selected under **Model** in **Compiler** can be used normally.
 
 If the task execution fails, use the task execution logs to further check the specific cause.
 
 ## 3. Why is the generated knowledge artifact incomplete or inconsistent with expectations?
 
-The generation result of a knowledge artifact is affected by factors such as the original document content, selected template, default extraction model, and template configuration.
+The generation result of a knowledge artifact is affected by factors such as the original document content, selected template, model selected under **Model** in **Compiler**, and template configuration.
 
 It is recommended to first check whether the parsing result of the original document is complete. Then adjust the global rules and the configuration parameters of the corresponding template based on the generated result, and execute knowledge compilation again.
 
@@ -40,17 +40,17 @@ No. After modifying template configuration, you need to use the updated template
 
 ## 5. Can I use different knowledge compilation templates for the same document?
 
-Yes. You can select different knowledge compilation templates based on actual usage scenarios to generate different types of knowledge artifacts, such as Graph, Tree, PageIndex, MindMap, or Timeline.
+Yes. You can select different knowledge compilation templates based on actual usage scenarios to generate different types of knowledge artifacts, such as Graph, Tree, PageIndex, Mindmap, or Timeline.
 
 Different templates have different knowledge organization methods and applicable scenarios. For details, refer to the template selection recommendations.
 
-## 6. What is the difference between "Re-Split Parser Output" and Chunker?
+## 6. What is the difference between "Re-chunk parser output" and Chunker?
 
-Re-Split Parser Output controls whether Compiler reorganizes and splits Parser output based on the processing requirements of the current template before knowledge compilation.
+**Re-chunk parser output** regroups source chunks before compilation for templates that expose this switch. Enabling it displays **Rechunking rules**. Tree uses **Re-chunk by tree leaves** instead, and Wiki does not show the shared switch.
 
 Chunker is used for document chunk processing in the Ingestion Pipeline.
 
-They act at different processing stages. Re-Split Parser Output does not replace Chunker.
+They act at different processing stages. Re-chunk parser output does not replace Chunker.
 
 ## 7. Why do results differ when the same document uses different models?
 
@@ -62,4 +62,4 @@ Different models may differ in understanding capability, context length, and gen
 
 It is recommended to first confirm whether the original document parsing result is correct.
 
-If the parsing result is normal, check and adjust the default extraction model, global rules, and specific configuration parameters of the current template in sequence. After adjustment, execute knowledge compilation again and compare whether the new knowledge artifact meets expectations.
+If the parsing result is normal, check and adjust the model selected under **Model** in **Compiler**, global rules, and specific configuration parameters of the current template in sequence. After adjustment, execute knowledge compilation again and compare whether the new knowledge artifact meets expectations.

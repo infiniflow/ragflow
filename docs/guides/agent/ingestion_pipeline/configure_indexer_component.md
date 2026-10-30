@@ -10,11 +10,13 @@ sidebar_custom_props: {
 
 # Configure the Indexer Component
 
-**Indexer** prepares chunk data for full-text and embedding search. Connect it after the Chunker or Transformer and use the pipeline with a knowledge base to index documents.
+**Indexer** prepares chunk data for full-text and embedding search. Connect it after the Chunker, Transformer, or Compiler and use the pipeline with a knowledge base to index documents.
+
+Click the Indexer node to open its panel. Review **Search method**, adjust **Filename embedding weight**, and select **Field** as described below.
 
 ## Search method
 
-The panel displays the configured methods as labels:
+The panel displays **Embedding** and **Full-text** as labels, rather than selectable checkboxes:
 
 - **Embedding**: Vector representations for semantic search.
 - **Full-text**: Tokenized text for keyword search.
@@ -38,3 +40,7 @@ For Questions or Augmented context, first enable the corresponding function in T
 ## Embedding model
 
 The model comes from the connected knowledge base, rather than an independent model selector in this panel. Knowledge bases searched together must use the same embedding model.
+
+## Apply and Validate
+
+Click **Save draft**, resolve any **Checklist** issues, and publish a version. [Apply it to a test Dataset](./connect_the_pipeline_to_a_knowledge_base.md), parse a sample document, and check both the stored chunks and retrieval results. If **Field** is Questions or Augmented context, also check that the upstream Transformer generated the corresponding content.

@@ -45,14 +45,13 @@ Click **Add file** and select **Upload file** to upload documents from the local
 
 ### Add Documents from an Associated Data Source
 
-If a dataset has already been associated with an external data source in configuration, documents in the data source can be added to the dataset from the document management page. After addition, the documents enter the dataset document list. They still need to complete parsing before generating chunks, metadata, and retrieval content.
+To import external content, link a configured data source to the target Dataset through **Configuration**. Synchronization brings source documents into the Dataset; parsing then generates the chunks used for retrieval.
 
-Operation steps:
-
-1. Go to the **Files** page of the target dataset.
-2. Click **Add file** and select the associated data source entry.
-3. Select the documents to add.
-4. Confirm the addition and view the document status in the document list.
+1. Open the target **Dataset** and select **Configuration**.
+2. Find the **Data source** section and click **Link data source**.
+3. Select the configured data source connection and click **Confirm**.
+4. Review the linked source and its parsing settings. For synchronization and updates, follow [Add a Data Source to a Knowledge Base and Synchronization and Updates](../data_source/add_to_knowledge_base_and_sync.md).
+5. Check synchronized documents and their parsing status on **Files**. Use **Logs > Data source** to inspect synchronization records.
 
 ### Add Documents from File
 
