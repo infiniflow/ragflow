@@ -931,11 +931,10 @@ setup_cgo_env() {
     #     closure is small. --dynamic-list exports just OrtGetApiBase (the only
     #     symbol dlopen needs) and leaves Go's runtime symbols untouched, unlike
     #     a "local: *" version script which breaks PIE absolute relocations.
-    #   macOS (ld64): no GNU ld flags exist, so pull the archives in with
-    #     -force_load and export them with -export_dynamic. This path is written
-    #     but NOT yet verified on real Apple-Silicon hardware — the dlopen(NULL)
-    #     resolution of OrtGetApiBase under -export_dynamic must be confirmed
-    #     there. (待 Mac 验证)
+    #   macOS (ld64): ld64 uses -u _OrtGetApiBase to pull the OrtGetApiBase
+    #     symbol from the static archive without -force_load (which would pull
+    #     all unused objects and missing transitive dependencies), and exports
+    #     it via -export_dynamic so runtime dlopen(NULL) resolves it.
     #
     # Seed the static ORT archives from the system pre-bake (/opt, laid down
     # by the CI runner image) into the user cache before the link check
@@ -964,20 +963,11 @@ setup_cgo_env() {
     done
 
     if [ "$TARGET_OS" = "darwin" ]; then
-        # ld64 has no --undefined / --dynamic-list spelled the GNU way.
-        # Force-load each archive so ORT's lazily-registered execution
-        # providers are pulled in, and export the symbols so the runtime
-        # dlopen(NULL) can resolve OrtGetApiBase.
-        #
-        # NOTE: the macOS link path is NOT yet verified on a real Apple
-        # Silicon machine — the dlopen(NULL) symbol resolution of
-        # OrtGetApiBase under -export_dynamic must be confirmed there.
-        # (待 Mac 验证)
-        local ort_force=""
-        for f in $ort_a_versioned; do
-            ort_force="$ort_force -Wl,-force_load,$f"
-        done
-        export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,-export_dynamic${ort_force} -lc++"
+        # ld64 uses -u _OrtGetApiBase (with leading underscore) to force-pull
+        # OrtGetApiBase without -force_load, avoiding dragging in unneeded
+        # objects from libonnxruntime.a. Export dynamic symbols so the runtime
+        # dlopen(NULL) resolves OrtGetApiBase.
+        export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,-export_dynamic -Wl,-u,_OrtGetApiBase $ort_a_versioned -lc++"
     else
         # Export exactly one symbol (OrtGetApiBase) for the binding's
         # dlopen(NULL)+dlsym lookup via --dynamic-list (NOT --version-script
@@ -1021,6 +1011,7 @@ setup_cgo_env() {
             export CGO_LDFLAGS="$CGO_LDFLAGS \
                 -framework CoreGraphics -framework CoreFoundation \
                 -framework Security -framework SystemConfiguration \
+                -framework Foundation \
                 -liconv -lresolv -lc++"
             ;;
     esac
