@@ -136,9 +136,12 @@ func buildSectionRasterPlan(positions []pdf.Position, decodedImages map[int]imag
 			right = math.Max(left+10, right)
 		}
 		firstPage := pos.PageNumbers[0]
+		// Bottom is local to the last page, so add the heights of the pages
+		// before it (Python: sum of page heights over pns[:-1]).
+		bottomPage := pos.PageNumbers[len(pos.PageNumbers)-1]
 		accumBottom := pos.Bottom * zoom
-		for _, pageNum := range pos.PageNumbers[1:] {
-			if pageNum != firstPage {
+		for _, pageNum := range pos.PageNumbers {
+			if pageNum != bottomPage {
 				accumBottom += float64(decodedImages[pageNum].Bounds().Dy())
 			}
 		}
@@ -307,9 +310,10 @@ func CropSectionByDLA(sec pdf.Section, dlaRegions []pdf.DLAPageRegions, pageImag
 		// Spanning height in pixels for this position across its pages,
 		// mirroring CropSectionImage's accumBottom computation.
 		pn0 := pos.PageNumbers[0]
+		bottomPage := pos.PageNumbers[len(pos.PageNumbers)-1]
 		accumBottom := pos.Bottom * scale
-		for _, pn := range pos.PageNumbers[1:] {
-			if pn == pn0 {
+		for _, pn := range pos.PageNumbers {
+			if pn == bottomPage {
 				continue
 			}
 			if img, ok := pageImages[pn]; ok {

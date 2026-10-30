@@ -69,12 +69,13 @@ var registry = map[string]Factory{
 	"sofya":                      buildSofyaTool,
 	"tavily":                     buildTavilyTool,
 	"tavily_extract":             buildTavilyExtractTool,
-	"tushare":                    noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
+	"tushare":                    buildTushareTool,
 	"wencai":                     buildWencaiTool,
 	"web_crawler":                noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
 	"wikipedia":                  buildWikipediaTool,
 	"wikipedia_search":           buildWikipediaTool,
 	"yahoo_finance":              buildYahooFinanceTool,
+	"youcom":                     buildYouComTool,
 }
 
 // canvasToolNames maps lower-cased Canvas component names to the canonical
@@ -93,6 +94,7 @@ var canvasToolNames = map[string]string{
 	"tavilyextract":    "tavily_extract",
 	"tavilysearch":     "tavily",
 	"yahoofinance":     "yahoo_finance",
+	"youcomsearch":     "youcom",
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
@@ -751,6 +753,37 @@ func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
 	return newKeenableTool(nil, nil, apiKey, defaults), nil
 }
 
+func buildYouComTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := youComDefaults{}
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "youcom")
+		}
+	}
+	if value, ok := params["freshness"]; ok {
+		freshness, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param freshness", "youcom")
+		}
+		normalized := strings.ToLower(strings.TrimSpace(freshness))
+		if !slices.Contains(youComFreshnessValues, normalized) {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported freshness %v", "youcom", value)
+		}
+		defaults.Freshness = normalized
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "youcom")
+		}
+		defaults.TopN = min(topN, youComMaxResults)
+	}
+	return newYouComTool(nil, apiKey, defaults), nil
+}
+
 func buildSofyaTool(params map[string]any) (einotool.BaseTool, error) {
 	defaults := sofyaDefaults{}
 	apiKey := ""
@@ -834,6 +867,20 @@ func buildSearch1APICrawlTool(params map[string]any) (einotool.BaseTool, error) 
 		}
 	}
 	return newSearch1APICrawlTool(nil, apiKey, defaultURL), nil
+}
+
+func buildTushareTool(params map[string]any) (einotool.BaseTool, error) {
+	var token string
+	if value, exists := params["token"]; exists {
+		var valid bool
+		token, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param token", tushareToolName)
+		}
+	}
+	// An empty token builds fine; InvokableRun reports it as a node
+	// configuration error, so the registry can still construct every tool.
+	return newTushareTool(nil, tushareParams{Token: strings.TrimSpace(token)}), nil
 }
 
 func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {

@@ -185,3 +185,65 @@ func TestNavigateTreeToolRequiresQuery(t *testing.T) {
 		t.Errorf("missing query must produce a <tool_error>, got:\n%s", out)
 	}
 }
+
+func TestNavigateTreeToolAppliesBoundDocumentScope(t *testing.T) {
+	var gotDocScope []string
+	installFakeNavService(t, fakeNavService{search: func(_ context.Context, _ string, _ string, _ string, _ []float32, docScope []string, _ int) ([]nav.NavHit, error) {
+		gotDocScope = docScope
+		return []nav.NavHit{{Type: nav.TypeNavDoc, DocID: "d1", Name: "Annual Report"}}, nil
+	}})
+
+	tool := NewNavigateTreeTool("tenant-1", []string{"kb1"})
+	ctx := withDocumentScope(context.Background(), []string{"d1"})
+	if _, err := tool.InvokableRun(ctx, `{"query":"q"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if len(gotDocScope) != 1 || gotDocScope[0] != "d1" {
+		t.Errorf("route doc scope = %v, want [d1]", gotDocScope)
+	}
+}
+
+func TestNavigateTreeToolRejectsDocumentOutsideBoundScope(t *testing.T) {
+	called := false
+	installFakeNavService(t, fakeNavService{search: func(_ context.Context, _ string, _ string, _ string, _ []float32, _ []string, _ int) ([]nav.NavHit, error) {
+		called = true
+		return nil, nil
+	}})
+
+	tool := NewNavigateTreeTool("tenant-1", []string{"kb1"})
+	ctx := withDocumentScope(context.Background(), []string{"d1"})
+	out, err := tool.InvokableRun(ctx, `{"query":"q","doc_scope":["d2"]}`)
+	if err != nil {
+		t.Fatalf("out-of-scope document must not abort the loop: %v", err)
+	}
+	if !strings.Contains(out, toolErrorMarker) || !strings.Contains(out, "outside the conversation") {
+		t.Errorf("expected a <tool_error> naming the bound scope, got:\n%s", out)
+	}
+	if called {
+		t.Error("the route must not run for an out-of-scope document")
+	}
+}
+
+func TestNavigateTreeToolWithEmptyDocumentScopeSkipsTheRoute(t *testing.T) {
+	called := false
+	installFakeNavService(t, fakeNavService{search: func(_ context.Context, _ string, _ string, _ string, _ []float32, _ []string, _ int) ([]nav.NavHit, error) {
+		called = true
+		return []nav.NavHit{{Type: nav.TypeNavDoc, DocID: "d1"}}, nil
+	}})
+
+	tool := NewNavigateTreeTool("tenant-1", []string{"kb1"})
+	ctx := WithConversationKey(withDocumentScope(context.Background(), []string{}), "test-nav-tree-empty-doc-scope")
+	out, err := tool.InvokableRun(ctx, `{"query":"q"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if called {
+		t.Error("an empty document scope must not reach the router")
+	}
+	if !strings.Contains(out, `<tree_navigation count="0"`) {
+		t.Errorf("empty document scope must render count=0, got:\n%s", out)
+	}
+	if !navToolEnabled(ctx, navigateTreeToolName) {
+		t.Error("an empty document scope must NOT disable navigate_tree")
+	}
+}

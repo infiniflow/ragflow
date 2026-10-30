@@ -326,13 +326,11 @@ If your model is not currently supported but has APIs compatible with those of O
 
 ### How do I change the file size limit?
 
-The Go file-manager upload endpoint allows up to 1 GiB per file by default. The dataset document upload path has a separate 128 MiB per-file limit. Check which upload endpoint rejected the file before changing deployment settings.
+The Go API limits non-multipart request bodies to 1 MiB by default. Set `MAX_JSON_CONTENT_LENGTH` to change that limit in bytes. Multipart upload requests share a 1 GiB default total-body limit; set `MAX_MULTIPART_CONTENT_LENGTH` to change it in bytes. Upload endpoints can enforce smaller per-file or per-request limits.
 
-To change the file-manager upload limit in a Go Compose deployment, set `MAX_CONTENT_LENGTH` in **docker/.env** to the desired number of bytes. The default 1 GiB value is `1073741824`.
+The file-manager per-file limit follows `MAX_MULTIPART_CONTENT_LENGTH` (1 GiB by default). Dataset documents allow 128 MiB per file by default; set `MAX_DOCUMENT_UPLOAD_SIZE` to change that limit in bytes. The total multipart request limit must also be large enough for the file and multipart overhead. Document-info uploads allow 100 MiB per file, and increasing the shared multipart limit does not raise that limit.
 
-If you raise the limit above 1 GiB, also increase `client_max_body_size` in **docker/nginx/nginx.conf**. The Go image contains its own copy of this file, so make the change effective by either rebuilding `RAGFLOW_IMAGE` or enabling the `./nginx/nginx.conf:/etc/nginx/nginx.conf` bind mount for the deployed service in **docker/docker-compose.yml**, then recreate that service. Lowering `MAX_CONTENT_LENGTH` below 1 GiB does not require changing the default Nginx limit.
-
-These settings do not raise the dataset document upload path's fixed 128 MiB limit.
+If you raise the multipart limit above 1 GiB, also increase `client_max_body_size` in **docker/nginx/nginx.conf**. The Go image contains its own copy of this file, so make the change effective by either rebuilding `RAGFLOW_IMAGE` or enabling the `./nginx/nginx.conf:/etc/nginx/nginx.conf` bind mount for the deployed service in **docker/docker-compose.yml**, then recreate that service.
 
 ---
 

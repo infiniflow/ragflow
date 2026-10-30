@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,9 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 )
 
@@ -100,6 +104,9 @@ func newProviderHandlerRequest(t *testing.T, body map[string]interface{}, params
 	ctx.Request = req
 	ctx.Params = params
 	ctx.Set("user_id", "user-1")
+	ctx.Request = ctx.Request.WithContext(permission.WithSubject(ctx.Request.Context(), permission.Subject{
+		UserID: "user-1", TenantID: "tenant-1",
+	}))
 	return ctx, recorder
 }
 
@@ -282,6 +289,79 @@ func TestProviderHandlerAlterModelRejectsMissingModelSelector(t *testing.T) {
 	}
 }
 
+type providerModelListProbe struct {
+	*modelModule.DummyModel
+	apiKey string
+	region string
+	calls  int
+}
+
+func (p *providerModelListProbe) ListModels(_ context.Context, config *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
+	p.calls++
+	if config.ApiKey != nil {
+		p.apiKey = *config.ApiKey
+	}
+	if config.Region != nil {
+		p.region = *config.Region
+	}
+	return []modelModule.ListModelResponse{{Name: "gpt-live-test", ModelTypes: []string{"chat"}}}, nil
+}
+
+func (p *providerModelListProbe) NewInstance(map[string]string) modelModule.ModelDriver {
+	return p
+}
+
+func TestListModelsSavedCredentialsUsesProviderCatalogMerge(t *testing.T) {
+	db := setupProviderHandlerTestDB(t)
+	useProviderHandlerTestDB(t, db)
+	seedProviderHandlerModel(t, db)
+
+	provider := dao.GetModelProviderManager().FindProvider("OpenAI")
+	if provider == nil {
+		t.Fatal("OpenAI provider is not configured")
+	}
+	probe := &providerModelListProbe{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	originalDriver := provider.ModelDriver
+	provider.ModelDriver = probe
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/providers/OpenAI/models?use_saved_credentials=true&instance_name=default", nil)
+	ctx.Params = gin.Params{{Key: "provider_id_or_name", Value: "OpenAI"}}
+	ctx.Set("user_id", "user-1")
+	ctx.Request = ctx.Request.WithContext(permission.WithSubject(ctx.Request.Context(), permission.Subject{
+		UserID: "user-1", TenantID: "tenant-1",
+	}))
+
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).ListModels(ctx)
+	body := decodeProviderHandlerResponse(t, recorder)
+	if common.ErrorCode(body["code"].(float64)) != common.CodeSuccess {
+		t.Fatalf("ListModels() response = %v, want success", body)
+	}
+	if probe.calls != 1 || probe.apiKey != "sk-test" || probe.region != "default" {
+		t.Fatalf("provider list calls=%d region=%q, want one call with saved key and default region", probe.calls, probe.region)
+	}
+
+	models, ok := body["data"].([]interface{})
+	if !ok {
+		t.Fatalf("ListModels() data = %T, want model list", body["data"])
+	}
+	modelNames := make(map[string]bool, len(models))
+	for _, item := range models {
+		model, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("model entry = %T, want object", item)
+		}
+		name, _ := model["name"].(string)
+		modelNames[name] = true
+	}
+	if !modelNames["gpt-live-test"] || !modelNames["gpt-5.6"] {
+		t.Fatalf("ListModels() names = %v, want live model and catalog model", modelNames)
+	}
+}
+
 func TestProviderHandlerAlterModelRejectsInvalidStatus(t *testing.T) {
 	ctx, recorder := newProviderHandlerRequest(
 		t,
@@ -306,6 +386,9 @@ func TestProviderHandlerAlterModelUpdatesStatus(t *testing.T) {
 	db := setupProviderHandlerTestDB(t)
 	useProviderHandlerTestDB(t, db)
 	seedProviderHandlerModel(t, db)
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1"); err != nil {
+		t.Fatalf("prepare provider permission fixture: %v", err)
+	}
 
 	ctx, recorder := newProviderHandlerRequest(
 		t,

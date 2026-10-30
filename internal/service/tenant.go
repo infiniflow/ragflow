@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service/billing"
 	"strings"
 
 	"gorm.io/gorm"
@@ -408,7 +409,7 @@ func (s *TenantService) GetDefaultModelName(ctx context.Context, tenantID string
 	return s.GetDefaultModelNameForTenant(ctx, tenantID, modelType)
 }
 
-// GetDefaultModelNameForUser returns a user's setting in their personal tenant.
+// GetDefaultModelNameForUser returns the user's setting in the current Tenant.
 func (s *TenantService) GetDefaultModelNameForUser(ctx context.Context, userID string, modelType entity.ModelType) (string, error) {
 	membership, _, err := s.currentUserTenant(ctx, userID)
 	if err != nil {
@@ -472,14 +473,6 @@ func isDefaultModelType(modelType entity.ModelType) bool {
 	default:
 		return false
 	}
-}
-
-func (s *TenantService) currentUserTenant(ctx context.Context, userID string) (*entity.UserTenant, string, error) {
-	membership, err := s.userTenantDAO.GetOwnerByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, "", err
-	}
-	return membership, membership.TenantID, nil
 }
 
 func (s *TenantService) defaultModelMembership(ctx context.Context, userID, tenantID string) (*entity.UserTenant, error) {
@@ -771,6 +764,21 @@ func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, mode
 	}).Error
 }
 
+func (s *TenantService) currentUserTenant(ctx context.Context, userID string) (*entity.UserTenant, string, error) {
+	membership, handled, err := resolveCurrentUserTenantEE(ctx, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	if handled {
+		return membership, membership.TenantID, nil
+	}
+	membership, err = s.userTenantDAO.GetOwnerByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	return membership, membership.TenantID, nil
+}
+
 // Tenant member role constants.
 const (
 	TenantRoleOwner  = "owner"
@@ -846,6 +854,16 @@ func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, 
 	}
 	if req == nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("request is required")
+	}
+	// Seat quota: inviting one member consumes one seat.
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		if quotaErr := billingService.CheckResources(ctx, tenantID, billing.ResourceDelta{Members: 1}); quotaErr != nil {
+			var insufficient *billing.InsufficientResourceError
+			if errors.As(quotaErr, &insufficient) {
+				return nil, common.CodeBillingSeatsInsufficient, quotaErr
+			}
+			return nil, common.CodeServerError, quotaErr
+		}
 	}
 	if strings.TrimSpace(req.Email) == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("email is required")
@@ -976,6 +994,17 @@ func (s *TenantService) RemoveMember(ctx context.Context, userID, tenantID, targ
 
 // AcceptInvite assigns the Tenant default role when a pending invitation is accepted.
 func (s *TenantService) AcceptInvite(ctx context.Context, userID, tenantID string) (common.ErrorCode, error) {
+	// Seat quota is enforced again at acceptance time: several pending
+	// invitations can each fit the remaining seat but not all of them.
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		if quotaErr := billingService.CheckResources(ctx, tenantID, billing.ResourceDelta{Members: 1}); quotaErr != nil {
+			if _, ok := quotaErr.(*billing.InsufficientResourceError); ok {
+				return common.CodeBillingSeatsInsufficient, quotaErr
+			}
+			return common.CodeServerError, quotaErr
+		}
+	}
+
 	if s.userTenantDAO == nil {
 		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
 	}

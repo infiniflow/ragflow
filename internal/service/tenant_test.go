@@ -38,7 +38,7 @@ func setupTenantPermissionTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.PermissionChangeLog{}); err != nil {
+	if err := db.AutoMigrate(append([]interface{}{&entity.UserTenant{}}, permissionChangeLogTestModels()...)...); err != nil {
 		t.Fatalf("migrate tenant permission table: %v", err)
 	}
 	originalDB := dao.DB
@@ -306,7 +306,7 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 	// 4. Run SetTenantDefaultModels
 	s := NewTenantService()
 	// Set chat model using modelID, explicitly passing "default" as instance name to bypass pre-existing checkModelAvailable panic
-	ctx := t.Context()
+	ctx := serviceTestContext(t, userID, tenantID)
 	err = s.SetTenantDefaultModels(ctx, userID, "", "default", "", "chat", modelID)
 	if err != nil {
 		t.Fatalf("SetTenantDefaultModels failed: %v", err)

@@ -198,7 +198,7 @@ func FilenameType(filename string) FileType {
 	}
 
 	visualExtensions := []string{
-		"jpg", "jpeg", "png", "tif", "gif", "bmp", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
+		"jpg", "jpeg", "png", "tif", "tiff", "gif", "bmp", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
 		"pcd", "dxf", "ufo", "eps", "ai", "raw", "wmf", "webp", "avif", "apng", "icon", "ico",
 	}
 	for _, ext := range visualExtensions {

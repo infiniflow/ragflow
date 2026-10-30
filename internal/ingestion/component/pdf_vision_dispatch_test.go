@@ -20,10 +20,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -219,7 +224,7 @@ func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
 		{"table", map[string]any{"type": "table", "table_body": "<table></table>"}, "table", "table"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mineruContentItemToJSON(tc.item)
+			got := mineruContentItemToJSON(tc.item, nil, nil)
 			if got == nil {
 				t.Fatal("item was dropped")
 			}
@@ -233,7 +238,7 @@ func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
 	}
 }
 
-func TestMinerUExtractJSONItemsKeepsImageTextAndPositionsWithoutPayload(t *testing.T) {
+func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	list, err := zw.Create("content_list.json")
@@ -254,7 +259,8 @@ func TestMinerUExtractJSONItemsKeepsImageTextAndPositionsWithoutPayload(t *testi
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes())
+	sizes := map[int][2]float64{0: {612, 792}, 1: {612, 792}}
+	items, err := mineruExtractJSONItems(buf.Bytes(), sizes)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -271,11 +277,11 @@ func TestMinerUExtractJSONItemsKeepsImageTextAndPositionsWithoutPayload(t *testi
 	if page, _ := pos[0][0].(int); page != 1 {
 		t.Fatalf("text page = %#v, want 1-based page 1", pos[0])
 	}
-	if left, _ := pos[0][1].(float64); left != 10 {
-		t.Fatalf("bbox left = %#v, want 10 (x0)", pos[0])
-	}
-	if right, _ := pos[0][2].(float64); right != 110 {
-		t.Fatalf("bbox right = %#v, want 110 (x1)", pos[0])
+	want := []float64{6.12, 67.32, 15.84, 31.68}
+	for i, w := range want {
+		if got, _ := pos[0][i+1].(float64); math.Abs(got-w) > 1e-6 {
+			t.Fatalf("bbox positions = %#v, want %v", pos[0], want)
+		}
 	}
 
 	imageItem := items[1]
@@ -285,11 +291,9 @@ func TestMinerUExtractJSONItemsKeepsImageTextAndPositionsWithoutPayload(t *testi
 	if imageItem["text"] != "A figure" {
 		t.Fatalf("image text = %#v", imageItem["text"])
 	}
-	// Non-markdown parse results never inline image payloads (issue #21213):
-	// the chunker crops the region on demand from the source PDF using the
-	// positions below.
-	if payload, ok := imageItem["image"]; ok {
-		t.Fatalf("image item unexpectedly carries an inlined payload: %v", payload)
+	uri, _ := imageItem["image"].(string)
+	if !strings.HasPrefix(uri, "data:image/png;base64,") {
+		t.Fatalf("image data URI = %q", uri)
 	}
 	imgPos, _ := imageItem["_pdf_positions"].([][]any)
 	if len(imgPos) != 1 {
@@ -297,6 +301,248 @@ func TestMinerUExtractJSONItemsKeepsImageTextAndPositionsWithoutPayload(t *testi
 	}
 	if page, _ := imgPos[0][0].(int); page != 2 {
 		t.Fatalf("image page = %#v, want 1-based page 2", imgPos[0])
+	}
+}
+
+func TestMinerUBBoxPositionScalesAndClamps(t *testing.T) {
+	sizes := map[int][2]float64{0: {600, 800}}
+	for _, tc := range []struct {
+		name    string
+		page    any
+		bbox    any
+		want    []float64
+		wantNil bool
+	}{
+		{
+			name: "normalized to points",
+			page: 0,
+			bbox: []any{100.0, 200.0, 300.0, 400.0},
+			want: []float64{1, 60, 180, 160, 320},
+		},
+		{
+			name: "inverted edges are ordered",
+			page: 0,
+			bbox: []any{300.0, 400.0, 100.0, 200.0},
+			want: []float64{1, 60, 180, 160, 320},
+		},
+		{
+			name: "edges clamped to the page box",
+			page: 0,
+			bbox: []any{-50.0, -20.0, 1100.0, 1200.0},
+			want: []float64{1, 0, 600, 0, 800},
+		},
+		{name: "unknown page size", page: 3, bbox: []any{1.0, 2.0, 3.0, 4.0}, wantNil: true},
+		{name: "negative page index", page: -1, bbox: []any{1.0, 2.0, 3.0, 4.0}, wantNil: true},
+		{name: "short bbox", page: 0, bbox: []any{1.0, 2.0}, wantNil: true},
+		{name: "zero width", page: 0, bbox: []any{10.0, 20.0, 10.0, 40.0}, wantNil: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mineruBBoxPosition(tc.page, tc.bbox, sizes)
+			if tc.wantNil {
+				if got != nil {
+					t.Fatalf("position = %#v, want nil", got)
+				}
+				return
+			}
+			if len(got) != 5 {
+				t.Fatalf("position = %#v, want 5 values", got)
+			}
+			if page, ok := got[0].(int); !ok || page != int(tc.want[0]) {
+				t.Fatalf("page = %#v, want %v", got[0], tc.want[0])
+			}
+			for i, w := range tc.want[1:] {
+				if v, _ := got[i+1].(float64); math.Abs(v-w) > 1e-6 {
+					t.Fatalf("position = %#v, want %v", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+// MinerU normalizes content_list bbox to 0..1000 against the page's point
+// size (pipeline _build_bbox / vlm mkcontent). With middle.json in the zip the
+// boxes must come back as PDF points: bbox/1000 * page_size.
+func TestMinerUExtractJSONItemsScalesBBoxToPoints(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("output/doc/content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = list.Write([]byte(`[
+		{"type":"text","text":"Scaled","page_idx":0,"bbox":[100,200,600,400]}
+	]`))
+	mid, err := zw.Create("output/doc/middle.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = mid.Write([]byte(`{"pdf_info":[
+		{"page_idx":0,"page_size":[500,1000],"preproc_blocks":[]},
+		{"page_idx":1,"page_size":[400,800],"preproc_blocks":[]}
+	]}`))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := mineruExtractJSONItems(buf.Bytes(), nil)
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items)=%d, want 1", len(items))
+	}
+	pos, ok := items[0]["_pdf_positions"].([][]any)
+	if !ok || len(pos) != 1 {
+		t.Fatalf("positions = %#v", items[0]["_pdf_positions"])
+	}
+	row := pos[0]
+	if page, _ := row[0].(int); page != 1 {
+		t.Fatalf("page = %#v, want 1", row[0])
+	}
+	want := []float64{50, 300, 200, 400}
+	for i, key := range []int{1, 2, 3, 4} {
+		v, _ := row[key].(float64)
+		if v != want[i] {
+			t.Fatalf("position[%d] = %v, want %v (row=%v)", key, row[key], want[i], row)
+		}
+	}
+}
+
+func TestMinerUExtractJSONItemsWithoutGeometryKeepsText(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = list.Write([]byte(`[{"type":"text","text":"Hello","page_idx":1,"bbox":[10,20,110,40]}]`))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := mineruExtractJSONItems(buf.Bytes(), nil)
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items)=%d, want 1", len(items))
+	}
+	if items[0]["text"] != "Hello" {
+		t.Errorf("text = %#v", items[0]["text"])
+	}
+	if items[0]["page_number"] != 2 {
+		t.Errorf("page_number = %#v, want 2", items[0]["page_number"])
+	}
+	if _, ok := items[0]["_pdf_positions"]; ok {
+		t.Errorf("_pdf_positions = %#v, want none", items[0]["_pdf_positions"])
+	}
+}
+
+// MinerU V1 accepts partial jobs and preserves the source page indices in
+// its artifacts, so middle.json pdf_info can be sparse (page_idx 5 and 6
+// only). Sizes must be keyed by page_idx, not entry order.
+func TestMinerUPageSizesKeysSparsePageIdx(t *testing.T) {
+	sizes := mineruPageSizesFromMiddleJSON([]byte(`{"pdf_info":[
+		{"page_idx":5,"page_size":[400,800]},
+		{"page_idx":6,"page_size":[600,900]}
+	]}`))
+	if len(sizes) != 2 {
+		t.Fatalf("len(sizes)=%d, want 2", len(sizes))
+	}
+	pos := mineruBBoxPosition(6, []any{500, 500, 1000, 1000}, sizes)
+	if pos == nil {
+		t.Fatal("expected a position, got nil")
+	}
+	want := []float64{300, 600, 450, 900}
+	for i, key := range []int{1, 2, 3, 4} {
+		v, _ := pos[key].(float64)
+		if v != want[i] {
+			t.Fatalf("position[%d] = %v, want %v (row=%v)", key, pos[key], want[i], pos)
+		}
+	}
+	if mineruBBoxPosition(4, []any{100, 100, 200, 200}, sizes) != nil {
+		t.Fatal("expected nil position for page missing from sparse sizes")
+	}
+}
+
+// Entries with no page_idx at all fall back to their position in pdf_info.
+func TestMinerUPageSizesFallsBackToEntryOrder(t *testing.T) {
+	sizes := mineruPageSizesFromMiddleJSON([]byte(`{"pdf_info":[
+		{"page_size":[500,1000]},
+		{"page_size":[400,800]}
+	]}`))
+	if got, ok := sizes[1]; !ok || got != [2]float64{400, 800} {
+		t.Fatalf("sizes[1] = %#v, want [400 800]", sizes)
+	}
+}
+
+func TestMinerUBBoxPositionWithoutPageSizesReturnsNil(t *testing.T) {
+	if mineruBBoxPosition(2, []any{188, 142, 875, 393}, nil) != nil {
+		t.Fatal("expected nil position without page sizes")
+	}
+}
+
+func TestMinerURealContentListPositionsStayInPage(t *testing.T) {
+	list, err := os.ReadFile(filepath.Join("..", "..", "..", "test", "fixtures", "mineru", "bmw_page_chrome_content_list.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	f, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.Write(list); err != nil {
+		t.Fatal(err)
+	}
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		pageWidth  = 595.0
+		pageHeight = 842.0
+	)
+	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {pageWidth, pageHeight}})
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
+	}
+	if len(items) == 0 {
+		t.Fatal("no items converted")
+	}
+	positioned := 0
+	for _, item := range items {
+		raw, ok := item["_pdf_positions"]
+		if !ok {
+			continue
+		}
+		positioned++
+		rows, ok := raw.([][]any)
+		if !ok || len(rows) != 1 {
+			t.Fatalf("_pdf_positions = %#v, want one row", raw)
+		}
+		row := rows[0]
+		left, right := row[1].(float64), row[2].(float64)
+		top, bottom := row[3].(float64), row[4].(float64)
+		if left < 0 || right > pageWidth || top < 0 || bottom > pageHeight || right <= left || bottom <= top {
+			t.Fatalf("position %v outside the %.0fx%.0f page", row, pageWidth, pageHeight)
+		}
+	}
+	if positioned == 0 {
+		t.Fatal("fixture produced no positions")
+	}
+}
+
+func TestAppendMineruGeometryWarningOnlyOnError(t *testing.T) {
+	res := parser.ParseResult{}
+	appendMineruGeometryWarning(&res, nil)
+	if len(res.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none on success", res.Warnings)
+	}
+	appendMineruGeometryWarning(&res, errors.New("no pdfium"))
+	if len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "MinerU PDF geometry unavailable: no pdfium") {
+		t.Fatalf("warnings = %v", res.Warnings)
 	}
 }
 
@@ -363,157 +609,218 @@ func TestDispatchPaddleOCRPDFAcceptsLocatedBlocksWithoutText(t *testing.T) {
 	}
 }
 
-func mineruTestZip(t *testing.T, files map[string][]byte) []byte {
-	t.Helper()
+func TestMineruExtractJSONItemsStructuredContent(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	for name, data := range files {
-		w, err := zw.Create(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := w.Write(data); err != nil {
-			t.Fatal(err)
-		}
+	entry, err := zw.Create("structured_content.json")
+	if err != nil {
+		t.Fatal(err)
 	}
+	_, _ = entry.Write([]byte(`{"pages":[{"page_idx":0,"blocks":[
+		{"type":"paragraph_title","content":"章节","bbox":[0.1,0.2,0.4,0.3]},
+		{"type":"header","content":"HEADER"},
+		{"type":"text","content":"正文"},
+		{"type":"table","content":"单元格","captions":[{"content":"表1"}]},
+		{"type":"image","content":"示意图","image_source":"images/a.png","captions":[{"content":"图1"}]}
+	]}]}`))
+	img, err := zw.Create("images/a.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = img.Write([]byte{0x89, 'P', 'N', 'G'})
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
-	return buf.Bytes()
-}
 
-func TestMinerUInlineMarkdownImagesBudgetsPayloads(t *testing.T) {
-	small := []byte("png-data")
-	oversized := make([]byte, parser.MaxImagePayloadBytes+1)
-	for i := range oversized {
-		oversized[i] = 'a'
+	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {1000, 1000}})
+	if err != nil {
+		t.Fatal(err)
 	}
-	zipBytes := mineruTestZip(t, map[string][]byte{
-		"images/small.png": small,
-		"images/huge.png":  oversized,
-	})
-	md := "Intro.\n\n![A small figure](images/small.png)\n\n![A huge figure](images/huge.png)\n\n![External](https://example.com/x.png)\n\n![Missing](images/absent.png)\n\nOutro."
-	inlined, warnings := mineruInlineMarkdownImages(md, zipBytes)
-
-	if !strings.Contains(inlined, "![A small figure](data:image/png;base64,") {
-		t.Fatalf("small image not inlined as data URI:\n%s", inlined)
+	if len(items) != 4 {
+		t.Fatalf("items = %d, want 4 (header skipped)", len(items))
 	}
-	if strings.Contains(inlined, "images/huge.png") || !strings.Contains(inlined, "A huge figure") {
-		t.Fatalf("oversized image must lose its link but keep its alt text:\n%s", inlined)
+	if items[0]["text"] != "章节" || items[0]["layout"] != "title" {
+		t.Fatalf("title item = %#v", items[0])
 	}
-	if !strings.Contains(inlined, "![External](https://example.com/x.png)") {
-		t.Fatalf("external reference must stay untouched:\n%s", inlined)
+	positions, _ := items[0]["_pdf_positions"].([][]any)
+	if len(positions) != 1 || positions[0][0] != 1 || positions[0][1] != float64(100) {
+		t.Fatalf("positions = %#v", items[0]["_pdf_positions"])
 	}
-	if !strings.Contains(inlined, "![Missing](images/absent.png)") {
-		t.Fatalf("unmatched reference must stay untouched:\n%s", inlined)
+	if items[2]["doc_type_kwd"] != "table" || !strings.Contains(items[2]["text"].(string), "表1") {
+		t.Fatalf("table item = %#v", items[2])
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "per-image limit") {
-		t.Fatalf("warnings = %#v, want one per-image-limit warning", warnings)
+	image, _ := items[3]["image"].(string)
+	if items[3]["doc_type_kwd"] != "image" || !strings.Contains(items[3]["text"].(string), "图1") || !strings.HasPrefix(image, "data:image/png;base64,") {
+		t.Fatalf("image item = %#v", items[3])
 	}
 }
 
-func TestMinerUInlineMarkdownImagesWithoutZipLeavesMarkdown(t *testing.T) {
-	md := "![A figure](images/figure.png)"
-	inlined, warnings := mineruInlineMarkdownImages(md, nil)
-	if inlined != md || len(warnings) != 0 {
-		t.Fatalf("no zip: inlined = %q warnings = %#v", inlined, warnings)
-	}
-}
-
-func buildMinerUTestZip(t *testing.T, members map[string]string) []byte {
-	t.Helper()
+func TestFinishMinerURemoteResultPrefersStructuredZip(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
-	for name, content := range members {
-		w, err := zw.Create(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := w.Write([]byte(content)); err != nil {
-			t.Fatal(err)
-		}
+	entry, err := zw.Create("structured_content.json")
+	if err != nil {
+		t.Fatal(err)
 	}
+	_, _ = entry.Write([]byte(`{"pages":[{"page_idx":0,"blocks":[
+		{"type":"paragraph_title","content":"章节","bbox":[0.1,0.2,0.4,0.3]},
+		{"type":"header","content":"HEADER"}
+	]}]}`))
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
-	return buf.Bytes()
-}
 
-func TestMinerUZipImagesAmbiguousBasenameResolvesNoWrongImage(t *testing.T) {
-	zipBytes := buildMinerUTestZip(t, map[string]string{
-		"page1/img.png":  "first-payload",
-		"page2/img.png":  "second-payload",
-		"page1/solo.png": "solo-payload",
-	})
-	images := mineruZipImages(zipBytes)
-
-	// The shared basename must not silently pick one member.
-	if f := mineruLookupZipImage(images, "img.png"); f != nil {
-		t.Fatalf("ambiguous basename resolved to %q, want nil", f.Name)
+	res, err := finishMinerURemoteResult(t.Context(), "sample.pdf", []byte("%PDF-1.4"), &modelModule.MinerUV1Result{
+		Markdown: "# markdown only",
+		Zip:      buf.Bytes(),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
 	}
-	// Full paths still resolve each member exactly.
-	if f := mineruLookupZipImage(images, "page1/img.png"); f == nil || f.Name != "page1/img.png" {
-		t.Fatalf("page1/img.png resolved to %v", f)
+	var text strings.Builder
+	for _, item := range parser.ItemsToMaps(res.JSON) {
+		value, _ := item["text"].(string)
+		text.WriteString(value)
+		text.WriteString("\n")
 	}
-	if f := mineruLookupZipImage(images, "page2/img.png"); f == nil || f.Name != "page2/img.png" {
-		t.Fatalf("page2/img.png resolved to %v", f)
-	}
-	// An unshared basename still resolves.
-	if f := mineruLookupZipImage(images, "solo.png"); f == nil || f.Name != "page1/solo.png" {
-		t.Fatalf("solo.png resolved to %v", f)
+	got := text.String()
+	if !strings.Contains(got, "章节") || strings.Contains(got, "HEADER") || strings.Contains(got, "markdown only") {
+		t.Fatalf("text = %q, want structured title without the header or markdown fallback", got)
 	}
 }
 
-func withMinerUInlineBudget(t *testing.T, maxImageBytes, maxTotalBytes, maxItems int) {
-	t.Helper()
-	original := newMinerUInlineBudget
-	newMinerUInlineBudget = func() *parser.EmbeddedMediaBudget {
-		return parser.NewEmbeddedMediaBudgetWithLimits(maxImageBytes, maxTotalBytes, maxItems)
+// A cancelled ingestion run must abort the MinerU 3.x /file_parse upload
+// instead of holding the worker and the remote server for the whole stream
+// budget.
+func TestDispatchPDFMinerUStreamHonoursCancellation(t *testing.T) {
+	withSSRFBypass(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
+			return
+		}
+		close(started)
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer func() {
+		close(release)
+		server.Close()
+	}()
+
+	apiKey := "mineru-secret"
+	baseURL := server.URL
+	original := resolveMinerUModelForDispatch
+	t.Cleanup(func() { resolveMinerUModelForDispatch = original })
+	resolveMinerUModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		return &mineruTestDriver{}, "vlm", &modelModule.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
 	}
-	t.Cleanup(func() { newMinerUInlineBudget = original })
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		_, err := dispatchMinerUPDF(ctx, nil, "scan.pdf", []byte("%PDF-1.4"), "tenant", nil, "")
+		done <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("MinerU /file_parse was never reached")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("dispatch error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("dispatch kept the /file_parse request open after cancellation")
+	}
 }
 
-func TestMinerUInlineMarkdownImagesDocumentByteBudgetExhaustion(t *testing.T) {
-	// Two 6-byte images against an 8-byte document budget: the second loses
-	// its link, keeps its alt text, and the omission surfaces as a warning.
-	withMinerUInlineBudget(t, 1024, 8, 16)
-	zipBytes := buildMinerUTestZip(t, map[string]string{
-		"images/a.png": "aaaaaa",
-		"images/b.png": "bbbbbb",
-	})
-	markdown := "![first](images/a.png)\ntext\n![second](images/b.png)"
-
-	out, warnings := mineruInlineMarkdownImages(markdown, zipBytes)
-	if !strings.Contains(out, "![first](data:image/png;base64,") {
-		t.Fatalf("first image not inlined: %q", out)
-	}
-	if strings.Contains(out, "![second](data:") || !strings.Contains(out, "second") {
-		t.Fatalf("second image should drop to its alt text: %q", out)
-	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "document image budget") {
-		t.Fatalf("warnings = %q, want one document-budget warning", warnings)
-	}
+// readSignalBody closes signal once the client has read body bytes, which
+// tells the test the response header was consumed and ReadAll is in progress.
+type readSignalBody struct {
+	io.ReadCloser
+	once   sync.Once
+	signal chan struct{}
 }
 
-func TestMinerUInlineMarkdownImagesItemBudgetExhaustion(t *testing.T) {
-	// A 2-item budget inlines two images and drops the third; once exhausted
-	// the walk stops charging further references.
-	withMinerUInlineBudget(t, 1024, 1<<20, 2)
-	zipBytes := buildMinerUTestZip(t, map[string]string{
-		"images/a.png": "aa",
-		"images/b.png": "bb",
-		"images/c.png": "cc",
-	})
-	markdown := "![one](images/a.png)\n![two](images/b.png)\n![three](images/c.png)"
+func (b *readSignalBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		b.once.Do(func() { close(b.signal) })
+	}
+	return n, err
+}
 
-	out, warnings := mineruInlineMarkdownImages(markdown, zipBytes)
-	if !strings.Contains(out, "![one](data:") || !strings.Contains(out, "![two](data:") {
-		t.Fatalf("first two images should inline: %q", out)
+type readSignalTransport struct {
+	base   http.RoundTripper
+	signal chan struct{}
+}
+
+func (t readSignalTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return nil, err
 	}
-	if strings.Contains(out, "![three](data:") || !strings.Contains(out, "three") {
-		t.Fatalf("third image should drop to its alt text: %q", out)
+	resp.Body = &readSignalBody{ReadCloser: resp.Body, signal: t.signal}
+	return resp, nil
+}
+
+// A run cancelled while a non-200 error body is still streaming must still
+// report context.Canceled; reporting the bare HTTP status hides the reason the
+// request ended.
+func TestMineruStreamKeepsCancellationWhileReadingErrorResponse(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"detail":"upstream`))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer func() {
+		close(release)
+		server.Close()
+	}()
+
+	bodyRead := make(chan struct{})
+	originalClient := http.DefaultClient
+	http.DefaultClient = &http.Client{Transport: readSignalTransport{base: http.DefaultTransport, signal: bodyRead}}
+	t.Cleanup(func() { http.DefaultClient = originalClient })
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		_, err := mineruStreamParse(ctx, server.URL+"/file_parse", "mineru-secret", []byte("%PDF-1.4"), "auto", "en", "", "", mineruExtractionOptions{})
+		done <- err
+	}()
+
+	select {
+	case <-bodyRead:
+	case <-time.After(5 * time.Second):
+		t.Fatal("MinerU never started reading the error response body")
 	}
-	if len(warnings) != 1 || !strings.Contains(warnings[0], "item document limit") {
-		t.Fatalf("warnings = %q, want one item-limit warning", warnings)
+	cancel()
+	select {
+	case err := <-done:
+		if !strings.Contains(err.Error(), "HTTP 502") {
+			t.Fatalf("stream error = %v, want the HTTP 502 error response path", err)
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("stream error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream kept reading the error response after cancellation")
 	}
 }

@@ -43,14 +43,6 @@ import (
 const maxSubAgentDepth = 8
 const defaultAgentDeferredTimeout = 10 * time.Minute
 
-// agentPatternless matches `<model>@<provider>` and
-// `<model>@<instance>@<provider>` (the trailing `@<provider>` is
-// always the last segment — the segment just before the last `@`
-// is treated as the bare model name for upstream API calls). The
-// browser component has the same idea at browser.go:88-92, but
-// keeps the regex greedy for its 2-part fixture; we keep both
-// behaviors here via the in-function split below.
-
 // agentProviderLastSegmentSplit takes a composite llm_id and
 // returns (bareModelName, providerName, true) — or ("", "", false)
 // when no `@<provider>` suffix exists. The bare model name is
@@ -101,7 +93,8 @@ type AgentParam struct {
 	// when it is itself called as a tool by a parent component. Mirrors
 	// Python's `meta: ToolMeta` field — describes the Agent's own
 	// inputs (user_prompt / reasoning / context) for callers.
-	Meta AgentMeta
+	Meta            AgentMeta
+	toolInvocations *toolInvocationRecorder
 	// Cite enables post-stream citation grounding. When true,
 	// the Agent reads the chunks recorded in
 	// state.Retrieval["chunks"] (populated by the Retrieval tool),
@@ -179,6 +172,10 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	if err != nil {
 		return nil, fmt.Errorf("build tools: %w", err)
 	}
+	tools = wrapReferenceRecordingTools(tools)
+	if p.toolInvocations != nil {
+		tools = wrapToolInvocationRecording(tools, p.toolInvocations)
+	}
 	input := buildAgentInputMessages(ctx, p)
 	// Eino's MaxStep counts graph nodes, not model calls. One ReAct round
 	// consists of a model decision, a tool node, and the following model
@@ -216,6 +213,9 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 
 	opt, future := react.WithMessageFuture()
 	ctx = setArtifactCollector(ctx, future)
+	// Nested agents inherit the context, but each run owns its tool history.
+	toolCalls := &toolCallCollector{}
+	ctx = context.WithValue(ctx, toolCallCollectorKey{}, toolCalls)
 	// Start the model-stream collector BEFORE agent.Stream. The checker
 	// (scanAllStreamForToolCall) must consume the whole round before the
 	// graph releases its output stream, so agent.Stream does not return
@@ -257,11 +257,14 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		return nil, emitErr
 	}
 	if len(chunks) == 0 {
-		return &schema.Message{Role: schema.Assistant}, nil
+		return &schema.Message{Role: schema.Assistant, ToolCalls: toolCalls.calls}, nil
 	}
 	msg, err := schema.ConcatMessages(chunks)
 	if err != nil {
 		return nil, err
+	}
+	if len(toolCalls.calls) > 0 {
+		msg.ToolCalls = toolCalls.calls
 	}
 	return msg, nil
 }
@@ -319,13 +322,22 @@ func (m *roundLimitedChatModel) roundInput(input []*schema.Message) []*schema.Me
 // runEinoReActAgent starts emitAgentModelStreams before agent.Stream to keep
 // thinking deltas streaming in real time while this function drains the
 // round.
-func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*schema.Message]) (bool, error) {
+func scanAllStreamForToolCall(ctx context.Context, stream *schema.StreamReader[*schema.Message]) (bool, error) {
 	defer stream.Close()
 
 	hasToolCall := false
+	var toolCallChunks []*schema.Message
 	for {
 		msg, err := stream.Recv()
 		if err == io.EOF {
+			if collector, ok := ctx.Value(toolCallCollectorKey{}).(*toolCallCollector); ok && len(toolCallChunks) > 0 {
+				// Indices restart each model turn; merge only this turn's deltas.
+				message, err := schema.ConcatMessages(toolCallChunks)
+				if err != nil {
+					return false, err
+				}
+				collector.calls = append(collector.calls, message.ToolCalls...)
+			}
 			return hasToolCall, nil
 		}
 		if err != nil {
@@ -333,6 +345,7 @@ func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*sc
 		}
 		if msg != nil && len(msg.ToolCalls) > 0 {
 			hasToolCall = true
+			toolCallChunks = append(toolCallChunks, msg)
 		}
 	}
 }
@@ -500,7 +513,9 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 // (e.g. "simple-0", "ck-1"). Used only to decide whether a grounding
 // response still has answer text after the markers are removed. The ID:
 // prefix is required so bare brackets like [2026] are not treated as markers.
-var citationGroundingMarkerRe = regexp.MustCompile(`\[ID:\s*[^\]]+\]`)
+// The id cannot contain "[", matching citationGroundingMarkerCaptureRe: an
+// unclosed [ID: must not be stripped together with the text up to a later ].
+var citationGroundingMarkerRe = regexp.MustCompile(`\[ID:\s*[^\[\]]+\]`)
 
 // citationGroundingHasSubstantiveText reports whether s contains any
 // non-whitespace text once citation markers are stripped. Marker-only
@@ -532,7 +547,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	if strings.TrimSpace(content) == "" {
 		return content, nil
 	}
-	systemPrompt, _ := prompts.CitationPlusPrompt(chunks)
+	systemPrompt, ids := prompts.CitationPlusPrompt(chunks)
 	inv := getDefaultChatInvoker()
 	req := ChatInvokeRequest{
 		Driver:    p.Driver,
@@ -548,9 +563,26 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	var resp *ChatInvokeResponse
 	var err error
 	emittedVisible := false
+	var leadingWhitespace strings.Builder
+	emitting := false
+	emitContent := func(text string) error {
+		if text == "" {
+			return nil
+		}
+		if !emitting {
+			leadingWhitespace.WriteString(text)
+			if strings.TrimSpace(leadingWhitespace.String()) == "" {
+				return nil
+			}
+			text = leadingWhitespace.String()
+			emitting = true
+		}
+		emittedVisible = true
+		runtime.EmitAgentMessage(ctx, text, "")
+		return nil
+	}
 	if streamer, ok := inv.(chat.StreamingInvoker); ok {
-		var leadingWhitespace strings.Builder
-		emitting := false
+		streamFilter := newCitationMarkerStreamFilter(ids)
 		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -558,18 +590,13 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 			if isThink || delta == "" {
 				return nil
 			}
-			if !emitting {
-				leadingWhitespace.WriteString(delta)
-				if strings.TrimSpace(leadingWhitespace.String()) == "" {
-					return nil
-				}
-				delta = leadingWhitespace.String()
-				emitting = true
-			}
-			emittedVisible = true
-			runtime.EmitAgentMessage(ctx, delta, "")
-			return nil
+			return emitContent(streamFilter.Push(delta))
 		})
+		if err == nil {
+			if flushErr := emitContent(streamFilter.Flush()); flushErr != nil {
+				err = flushErr
+			}
+		}
 	} else {
 		resp, err = inv.Invoke(ctx, db, req)
 	}
@@ -582,20 +609,21 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	if resp == nil {
 		return content, fmt.Errorf("citation grounding returned no response")
 	}
-	if strings.TrimSpace(resp.Content) == "" {
+	grounded := filterCitationMarkers(resp.Content, ids)
+	if strings.TrimSpace(grounded) == "" {
 		return content, nil
 	}
 	// Marker-only grounding must not silently replace the first-pass answer
 	// (#20613). Non-stream (or stream that never emitted) can fall back.
 	// Once invalid deltas have already been streamed, surface an error so the
 	// caller does not append the original answer after the bad markers.
-	if !citationGroundingHasSubstantiveText(resp.Content) {
+	if !citationGroundingHasSubstantiveText(grounded) {
 		if emittedVisible {
 			return content, fmt.Errorf("citation grounding returned markers without answer text")
 		}
 		return content, nil
 	}
-	return resp.Content, nil
+	return grounded, nil
 }
 
 // chunksFromState extracts the recorded retrieval chunks from
@@ -980,6 +1008,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	defer runtime.FinalizeAgentMessage(ctx)
 
 	p := mergeAgentParam(c.param, inputs)
+	p.toolInvocations = &toolInvocationRecorder{}
 	originalModelID := p.ModelID
 	hasRuntimeUserPrompt := false
 	if v, ok := stringFrom(inputs, "user_prompt"); ok {
@@ -1070,12 +1099,20 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		}
 	}
 	if err != nil {
+		invocations := p.toolInvocations.snapshot()
 		// Only step exhaustion is an _ERROR output. Model/tool failures must
 		// stop execution before downstream nodes read an absent content output.
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, compose.ErrExceedMaxSteps) {
+			if len(invocations) > 0 {
+				return map[string]any{"tool_invocations": invocations}, fmt.Errorf("component: Agent.Invoke: %w", err)
+			}
 			return nil, fmt.Errorf("component: Agent.Invoke: %w", err)
 		}
-		return map[string]any{"_ERROR": "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}, nil
+		out := map[string]any{"_ERROR": "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}
+		if len(invocations) > 0 {
+			out["tool_invocations"] = invocations
+		}
+		return out, nil
 	}
 	// Post-stream citation grounding. When Cite is enabled and
 	// the canvas state has recorded retrieval chunks (populated
@@ -1103,7 +1140,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 
 	var groundingStatus string
 	if p.Cite {
-		chunks := chunksFromState(ctx)
+		chunks := limitCitationSources(chunksFromState(ctx), citationGroundingSourceTokenBudget)
 		if len(chunks) == 0 {
 			groundingStatus = "no_chunks"
 		} else {
@@ -1126,6 +1163,9 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		"thinking":   thinking,
 		"tool_calls": extractToolCalls(msg),
 		"artifacts":  artifacts,
+	}
+	if invocations := p.toolInvocations.snapshot(); len(invocations) > 0 {
+		out["tool_invocations"] = invocations
 	}
 	if len(p.OutputStructure) > 0 {
 		if parsed, ok := matchOutputStructure(cleanFormattedAnswer(content), p.OutputStructure); ok {
@@ -1265,6 +1305,12 @@ type artifactEntry struct {
 // artifactCollectorKey is the context key used to share the
 // MessageFuture between Agent.Invoke and runEinoReActAgent.
 type artifactCollectorKey struct{}
+
+type toolCallCollectorKey struct{}
+
+type toolCallCollector struct {
+	calls []schema.ToolCall
+}
 
 type artifactCollector struct {
 	future    react.MessageFuture
@@ -1550,7 +1596,7 @@ func stringFromState(state *runtime.CanvasState, name string) (string, bool) {
 	if state == nil {
 		return "", false
 	}
-	v, ok := state.Sys[name].(string)
+	v, ok := state.GetSysString(name)
 	if !ok || strings.TrimSpace(v) == "" {
 		return "", false
 	}

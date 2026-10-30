@@ -501,9 +501,9 @@ func TestPaddleOCRPageMarkdownFallbackWhenBlocksHaveNoText(t *testing.T) {
 		{"only header", `[{"block_label":"header","block_content":"ignored header","block_bbox":[10,20,30,40]}]`, "page fallback", "[]"},
 		{"only page number", `[{"block_label":"number","block_content":"12"}]`, "page fallback", "[]"},
 		{"empty blocks", `[{"block_content":"  "}]`, "page fallback", "[]"},
-		{"markdown image", `[{"block_content":"![figure](https://example.invalid/a.png)","block_bbox":[10,20,30,40]}]`, "page fallback", "[]"},
-		{"parenthesized image destination", `[{"block_content":"![figure](https://example.invalid/a(1).png)","block_bbox":[10,20,30,40]}]`, "page fallback", "[]"},
-		{"html image", `[{"block_content":"<div><img src=\"a.png\"></div>"}]`, "page fallback", "[]"},
+		{"markdown image", `[{"block_content":"![figure](https://example.invalid/a.png)","block_bbox":[10,20,30,40]}]`, "![figure](https://example.invalid/a.png)\npage fallback", "[]"},
+		{"parenthesized image destination", `[{"block_content":"![figure](https://example.invalid/a(1).png)","block_bbox":[10,20,30,40]}]`, "![figure](https://example.invalid/a(1).png)\npage fallback", "[]"},
+		{"html image", `[{"block_content":"<div><img src=\"a.png\"></div>"}]`, "<div><img src=\"a.png\"></div>\npage fallback", "[]"},
 		{"text among images", `[{"block_content":"![figure](a.png)"},{"block_content":"positioned text","block_bbox":[10,20,30,40]}]`, "![figure](a.png)\npositioned text", "[10 20 30 40]"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -528,6 +528,64 @@ func TestPaddleOCRPageMarkdownFallbackWhenBlocksHaveNoText(t *testing.T) {
 				t.Fatalf("API text changed: %+v", response.Text)
 			}
 		})
+	}
+}
+
+func TestPaddleOCRPageFallbackKeepsMediaBlocks(t *testing.T) {
+	body := `{"result":{"layoutParsingResults":[{"markdown":{"text":"page fallback"},"prunedResult":{"page_index":0,"parsing_res_list":[{"block_label":"figure","block_content":"![figure](https://example.invalid/a.png)","block_bbox":[10,20,30,40]},{"block_label":"chart","block_content":"","block_bbox":[50,60,90,100]}]}}]}}`
+	response, err := parsePaddleOCRResultBody([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := response.Pages[0].Blocks
+	if len(blocks) != 3 {
+		t.Fatalf("blocks=%+v", blocks)
+	}
+	for i, want := range []struct{ label, box string }{{"figure", "[10 20 30 40]"}, {"chart", "[50 60 90 100]"}} {
+		if blocks[i].Label != want.label || fmt.Sprint(blocks[i].BBox) != want.box {
+			t.Fatalf("block %d = %+v", i, blocks[i])
+		}
+	}
+	if blocks[2].Text != "page fallback" || blocks[2].BBox != nil {
+		t.Fatalf("markdown block = %+v", blocks[2])
+	}
+}
+
+// TestPaddleOCRPageFallbackKeepsUnlabeledImageBlock covers providers that emit
+// image markup without a layout label: the region must survive the fallback so
+// the PDF projection can emit it as a media item with its bbox.
+func TestPaddleOCRPageFallbackKeepsUnlabeledImageBlock(t *testing.T) {
+	body := `{"result":{"layoutParsingResults":[{"markdown":{"text":"page fallback"},"prunedResult":{"page_index":0,"parsing_res_list":[{"block_content":"![figure](https://example.invalid/a.png)","block_bbox":[10,20,30,40]}]}}]}}`
+	response, err := parsePaddleOCRResultBody([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := response.Pages[0].Blocks
+	if len(blocks) != 2 {
+		t.Fatalf("blocks=%+v", blocks)
+	}
+	if blocks[0].Text != "![figure](https://example.invalid/a.png)" || fmt.Sprint(blocks[0].BBox) != "[10 20 30 40]" {
+		t.Fatalf("image block = %+v", blocks[0])
+	}
+	if blocks[1].Text != "page fallback" || blocks[1].BBox != nil {
+		t.Fatalf("markdown block = %+v", blocks[1])
+	}
+}
+
+// TestParsePaddleOCRResultBodyAcceptsMediaOnlyPage covers a page whose blocks
+// are media regions with no text and empty Markdown: Text is empty but non-nil,
+// and the page must still reach the PDF media path.
+func TestParsePaddleOCRResultBodyAcceptsMediaOnlyPage(t *testing.T) {
+	body := `{"result":{"layoutParsingResults":[{"markdown":{"text":""},"prunedResult":{"page_index":0,"parsing_res_list":[{"block_label":"figure","block_content":"","block_bbox":[10,20,30,40]}]}}]}}`
+	response, err := parsePaddleOCRResultBody([]byte(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Text == nil || *response.Text != "" {
+		t.Fatalf("text=%v, want non-nil empty", response.Text)
+	}
+	if len(response.Pages) != 1 || len(response.Pages[0].Blocks) != 1 || response.Pages[0].Blocks[0].Label != "figure" {
+		t.Fatalf("pages=%+v", response.Pages)
 	}
 }
 

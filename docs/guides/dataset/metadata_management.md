@@ -19,9 +19,15 @@ Metadata may come from system built-in fields, automatic generation during parsi
 
 In document management or document details, you can view and maintain metadata related to documents. Metadata is displayed in list form, including **Field**, **Type**, **Values**, and related operations.
 
+![Open document metadata](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_and_manage_documents.jpg)
+
+![View metadata fields, types, and values](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_and_manage_metadata.jpg)
+
 ## Add Metadata
 
 You can add metadata manually for documents. When adding metadata, you need to specify the field name, data type, and value. To improve subsequent filtering and retrieval, keep field names, data types, and value formats consistent.
+
+![Add a metadata field](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_metadata.jpg)
 
 ## Automatically Generate Metadata
 

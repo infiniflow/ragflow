@@ -23,6 +23,8 @@ import (
 	"strings"
 
 	"github.com/xuri/excelize/v2"
+
+	"ragflow/internal/parser/media"
 )
 
 type XLSXParser struct {
@@ -102,13 +104,13 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// for spreadsheet processing.
 	}
 
-	mediaBudget := newEmbeddedMediaBudget()
+	mediaBudget := media.NewBudget()
 	items, warnings, sheets, err := parseXLSXBytes(data, mediaBudget)
 	if err == nil {
 		if ctx.Err() != nil {
 			return ParseResult{Err: ctx.Err()}
 		}
-		warnings = append(warnings, mediaBudget.warnings()...)
+		warnings = append(warnings, mediaBudget.Warnings()...)
 		return xlsxParseResult(filename, items, warnings, sheets)
 	}
 	if ctx.Err() != nil {
@@ -124,7 +126,7 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 	// The first parse attempt is discarded, so its media reservations must not
 	// affect the normalized retry's output.
-	mediaBudget = newEmbeddedMediaBudget()
+	mediaBudget = media.NewBudget()
 	items, warnings, sheets, retryErr := parseXLSXBytes(normalized, mediaBudget)
 	if retryErr != nil {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}
@@ -133,11 +135,11 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: ctx.Err()}
 	}
 	warnings = append(normalizeWarnings, warnings...)
-	warnings = append(warnings, mediaBudget.warnings()...)
+	warnings = append(warnings, mediaBudget.Warnings()...)
 	return xlsxParseResult(filename, items, warnings, sheets)
 }
 
-func parseXLSXBytes(data []byte, mediaBudget *embeddedMediaBudget) ([]map[string]any, []string, int, error) {
+func parseXLSXBytes(data []byte, mediaBudget *media.Budget) ([]map[string]any, []string, int, error) {
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("open XLSX: %w", err)
@@ -148,7 +150,7 @@ func parseXLSXBytes(data []byte, mediaBudget *embeddedMediaBudget) ([]map[string
 	items := make([]map[string]any, 0)
 	warnings := make([]string, 0)
 	for sheetIdx, sheet := range sheets {
-		records, dataRows, headerRow, sheetWarnings, err := readSpreadsheetRecords(f, sheet)
+		records, dataRows, headerRow, ranges, sheetWarnings, err := readSpreadsheetRecords(f, sheet)
 		if err != nil {
 			return nil, warnings, len(sheets), err
 		}
@@ -162,7 +164,7 @@ func parseXLSXBytes(data []byte, mediaBudget *embeddedMediaBudget) ([]map[string
 		}
 		// One wire shape for every spreadsheet sheet: segmented HTML tables
 		// with row-aligned positions, images interleaved at their anchors.
-		items = append(items, buildSheetItems(records, sheet, sheetIdx+1, headerRow, dataRows, images)...)
+		items = append(items, buildSheetItems(records, sheet, sheetIdx+1, headerRow, dataRows, images, ranges)...)
 		warnings = append(warnings, imageWarnings...)
 	}
 	return items, warnings, len(sheets), nil

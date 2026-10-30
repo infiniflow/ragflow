@@ -20,7 +20,6 @@ package parser
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -31,7 +30,7 @@ func TestBuildDOCXJSONSections_Paragraphs(t *testing.T) {
 	ir := `{"sections":[{"title":"","elements":[
 		{"type":"paragraph","content":[{"type":"text","text":"Hello world"}],"style":"Normal"}
 	]}]}`
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, newMediaBudgetForTest())
 	if len(sections) != 1 {
 		t.Fatalf("got %d sections, want 1", len(sections))
 	}
@@ -48,7 +47,7 @@ func TestBuildDOCXJSONSections_Headings(t *testing.T) {
 	ir := `{"sections":[{"title":"","elements":[
 		{"type":"heading","level":1,"content":[{"type":"text","text":"Chapter 1"}]}
 	]}]}`
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, newMediaBudgetForTest())
 	if len(sections) != 1 {
 		t.Fatalf("got %d sections, want 1", len(sections))
 	}
@@ -69,7 +68,7 @@ func TestBuildDOCXJSONSections_Images(t *testing.T) {
 	ir := `{"sections":[{"title":"","elements":[
 		{"type":"image","data":"` + b64 + `"}
 	]}]}`
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, newMediaBudgetForTest())
 	if len(sections) != 1 {
 		t.Fatalf("got %d sections, want 1", len(sections))
 	}
@@ -92,7 +91,7 @@ func TestBuildDOCXJSONSections_Tables(t *testing.T) {
 			{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"A2"}]}]},{"content":[{"type":"paragraph","content":[{"type":"text","text":"B2"}]}]}]}
 		]}
 	]}]}`
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, newMediaBudgetForTest())
 	if len(sections) != 1 {
 		t.Fatalf("got %d sections, want 1", len(sections))
 	}
@@ -127,7 +126,7 @@ func TestBuildDOCXJSONSections_MixedContent(t *testing.T) {
 		{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"cell"}]}]}]}]},
 		{"type":"heading","level":2,"content":[{"type":"text","text":"Sub title"}]}
 	]}]}`
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, newMediaBudgetForTest())
 	if len(sections) != 4 {
 		t.Fatalf("got %d sections, want 4", len(sections))
 	}
@@ -160,7 +159,7 @@ func TestBuildDOCXJSONSections_List(t *testing.T) {
 			{"content":[{"type":"paragraph","content":[{"type":"text","text":"Item 3"}]}]}
 		],"level":0}
 	]}]}`
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, newMediaBudgetForTest())
 	if len(sections) != 3 {
 		t.Fatalf("got %d sections, want 3 (each list item should be a section)", len(sections))
 	}
@@ -178,7 +177,7 @@ func TestBuildDOCXJSONSections_TextBox(t *testing.T) {
 	ir := `{"sections":[{"title":"","elements":[
 		{"type":"text_box","content":[{"type":"paragraph","content":[{"type":"text","text":"Boxed paragraph"}]}],"width_emu":null}
 	]}]}`
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, newMediaBudgetForTest())
 	if len(sections) != 1 {
 		t.Fatalf("got %d sections, want 1 (text_box content should become a section)", len(sections))
 	}
@@ -199,7 +198,7 @@ func TestBuildDOCXJSONSections_MixedWithList(t *testing.T) {
 		],"level":0},
 		{"type":"paragraph","content":[{"type":"text","text":"Trailer"}],"style":"Normal"}
 	]}]}`
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, newMediaBudgetForTest())
 	if len(sections) != 4 {
 		t.Fatalf("got %d sections, want 4 (para + 2 list items + para)", len(sections))
 	}
@@ -217,61 +216,11 @@ func TestBuildDOCXJSONSections_EmptySkipped(t *testing.T) {
 		{"type":"paragraph","content":[{"type":"text","text":"Only this matters"}]},
 		{"type":"table","rows":[]}
 	]}]}`
-	sections := buildDOCXJSONSections(ir, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(ir, newMediaBudgetForTest())
 	if len(sections) != 1 {
 		t.Fatalf("got %d sections, want 1 (only non-empty paragraph)", len(sections))
 	}
 	if got, _ := sections[0]["text"].(string); got != "Only this matters" {
 		t.Errorf("text = %q, want %q", got, "Only this matters")
-	}
-}
-
-func TestDocxIRTableToHTML_Empty(t *testing.T) {
-	el := docxIRElement{Type: "table", Rows: []docxIRRow{}}
-	html := docxIRTableToHTML(el, "")
-	if html != "<table></table>" {
-		t.Errorf("empty table html = %q, want %q", html, "<table></table>")
-	}
-}
-
-func TestDocxIRTableToHTML_Single(t *testing.T) {
-	el := docxIRElement{
-		Type: "table",
-		Rows: []docxIRRow{{
-			Cells: []docxIRCell{{
-				Content: []docxIRElement{{
-					Type:    "paragraph",
-					Content: json.RawMessage(`[{"type":"text","text":"hello"}]`),
-				}},
-			}},
-		}},
-	}
-	html := docxIRTableToHTML(el, "")
-	want := "<table><tr><td>hello</td></tr></table>"
-	if html != want {
-		t.Errorf("single cell html = %q, want %q", html, want)
-	}
-}
-
-func TestDocxIRTableToHTML_MultiRowCol(t *testing.T) {
-	cell := func(text string) docxIRCell {
-		return docxIRCell{
-			Content: []docxIRElement{{
-				Type:    "paragraph",
-				Content: rawJSON([]docxIRRun{{Type: "text", Text: text}}),
-			}},
-		}
-	}
-	el := docxIRElement{
-		Type: "table",
-		Rows: []docxIRRow{
-			{Cells: []docxIRCell{cell("A1"), cell("B1")}},
-			{Cells: []docxIRCell{cell("A2"), cell("B2")}},
-		},
-	}
-	html := docxIRTableToHTML(el, "")
-	want := "<table><tr><td>A1</td><td>B1</td></tr><tr><td>A2</td><td>B2</td></tr></table>"
-	if html != want {
-		t.Errorf("multi cell html = %q, want %q", html, want)
 	}
 }

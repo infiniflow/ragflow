@@ -322,13 +322,15 @@ func TestXLSParser_ImagesDoNotRunOCR(t *testing.T) {
 }
 
 func TestXLSParser_CapsEmbeddedImageCount(t *testing.T) {
+	const limit = 256
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "256")
 	var imageData bytes.Buffer
 	if err := png.Encode(&imageData, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
 		t.Fatalf("encode fixture: %v", err)
 	}
 	f := excelize.NewFile()
 	defer f.Close()
-	for i := 0; i <= maxEmbeddedMediaItems; i++ {
+	for i := 0; i <= limit; i++ {
 		cell, err := excelize.CoordinatesToCellName(3, i+1)
 		if err != nil {
 			t.Fatalf("cell %d: %v", i, err)
@@ -361,10 +363,10 @@ func TestXLSParser_CapsEmbeddedImageCount(t *testing.T) {
 			imageCount++
 		}
 	}
-	if imageCount != maxEmbeddedMediaItems {
-		t.Fatalf("image items = %d, want %d", imageCount, maxEmbeddedMediaItems)
+	if imageCount != limit {
+		t.Fatalf("image items = %d, want %d", imageCount, limit)
 	}
-	if warnings := strings.Join(result.Warnings, "\n"); !strings.Contains(warnings, "stopped extracting embedded images after the 256-item document limit") {
+	if warnings := strings.Join(result.Warnings, "\n"); !strings.Contains(warnings, "stopped extracting embedded images after the 256-item run limit") {
 		t.Fatalf("warnings = %q, want image-count limit warning", warnings)
 	}
 }

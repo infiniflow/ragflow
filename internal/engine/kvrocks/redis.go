@@ -46,6 +46,7 @@ type Client struct {
 	client           *redis.Client
 	luaDeleteIfEqual *redis.Script
 	luaTokenBucket   *redis.Script
+	luaMediaPut      *redis.Script
 	luaAutoIncrement *redis.Script
 	config           config.KvrocksConfig
 }
@@ -104,6 +105,53 @@ const (
 
 		return {1, tokens}
 	`
+
+	luaMediaPutScript = `
+		local media_key  = KEYS[1]
+		local digest_key = KEYS[2]
+		local state_key  = KEYS[3]
+		local digest     = ARGV[1]
+		local value      = ARGV[2]
+		local max_images = tonumber(ARGV[3])
+		local max_bytes  = tonumber(ARGV[4])
+		local ttl        = tonumber(ARGV[5])
+		local manifest_key = ARGV[6]
+		local manifest_member = ARGV[7]
+
+		local function track_manifest()
+			if manifest_key ~= "" then
+				redis.call("SADD", manifest_key, manifest_member)
+				redis.call("EXPIRE", manifest_key, ttl)
+			end
+		end
+
+		if redis.call("SISMEMBER", digest_key, digest) == 1 then
+			if redis.call("EXISTS", media_key) == 0 then
+				redis.call("SET", media_key, value, "EX", ttl)
+				redis.call("EXPIRE", digest_key, ttl)
+				redis.call("EXPIRE", state_key, ttl)
+				track_manifest()
+			end
+			return {1, 0}
+		end
+
+		local images = redis.call("SCARD", digest_key)
+		local bytes  = tonumber(redis.call("HGET", state_key, "bytes") or "0")
+		if max_images > 0 and images >= max_images then
+			return {0, 0}
+		end
+		if max_bytes > 0 and #value > max_bytes - bytes then
+			return {0, 0}
+		end
+
+		redis.call("SET", media_key, value, "EX", ttl)
+		track_manifest()
+		redis.call("SADD", digest_key, digest)
+		redis.call("HINCRBY", state_key, "bytes", #value)
+		redis.call("EXPIRE", digest_key, ttl)
+		redis.call("EXPIRE", state_key, ttl)
+		return {2, 1}
+	`
 )
 
 // Init initializes the Kvrocks client. Kvrocks is the only supported cache/queue
@@ -139,6 +187,7 @@ func Init(ctx context.Context) error {
 			config:           kvrocksConfig,
 			luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
 			luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
+			luaMediaPut:      redis.NewScript(luaMediaPutScript),
 		}
 
 		common.Info("Kvrocks client initialized",
@@ -366,6 +415,65 @@ func (r *Client) Set(ctx context.Context, key string, value string, exp time.Dur
 		return false
 	}
 	return true
+}
+
+// MediaPut atomically writes one media payload, records it on the manifest,
+// and charges the run quota. accepted is false when a configured count or byte
+// cap rejects the payload. inserted is false for a digest already charged by
+// this scope; in that case a missing media value is restored without charging
+// the quota again.
+func (r *Client) MediaPut(
+	ctx context.Context,
+	mediaKey, digestKey, stateKey, digest, value string,
+	manifestKey, manifestMember string,
+	maxImages int,
+	maxBytes int64,
+	ttl time.Duration,
+) (accepted, inserted bool, err error) {
+	if r == nil || r.client == nil || r.luaMediaPut == nil {
+		return false, false, fmt.Errorf("redis: media cache is not initialised")
+	}
+	ttlSeconds := int64(math.Ceil(ttl.Seconds()))
+	if ttlSeconds <= 0 {
+		return false, false, fmt.Errorf("redis: media cache ttl must be positive")
+	}
+	result, err := r.luaMediaPut.Run(
+		ctx,
+		r.client,
+		[]string{mediaKey, digestKey, stateKey},
+		digest,
+		value,
+		maxImages,
+		maxBytes,
+		ttlSeconds,
+		manifestKey,
+		manifestMember,
+	).Result()
+	if err != nil {
+		return false, false, fmt.Errorf("media put: %w", err)
+	}
+	values, ok := result.([]interface{})
+	if !ok || len(values) != 2 {
+		return false, false, fmt.Errorf("media put: malformed reply")
+	}
+	status, ok := values[0].(int64)
+	if !ok {
+		return false, false, fmt.Errorf("media put: malformed status")
+	}
+	insertedValue, ok := values[1].(int64)
+	if !ok {
+		return false, false, fmt.Errorf("media put: malformed insert result")
+	}
+	switch status {
+	case 0:
+		return false, false, nil
+	case 1:
+		return true, insertedValue == 1, nil
+	case 2:
+		return true, true, nil
+	default:
+		return false, false, fmt.Errorf("media put: unknown status %d", status)
+	}
 }
 
 // SetNX sets value only if key does not exist.

@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"ragflow/internal/common"
 	"strings"
 
 	"ragflow/internal/dao"
@@ -56,7 +57,7 @@ func maybeDispatchTenantPDFParser(ctx context.Context, db *gorm.DB, filename str
 	modelName, instanceName, providerName := "", "", ""
 	if composite {
 		var err error
-		modelName, instanceName, providerName, err = parseCompositeModelName(selector)
+		modelName, instanceName, providerName, err = common.ParseCompositeModelName(selector)
 		engine = tenantPDFParserEngine(providerName)
 		if engine == "" {
 			return parser.ParseResult{}, false, nil

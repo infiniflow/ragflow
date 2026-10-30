@@ -610,7 +610,7 @@ export default {
         'LLM trò chuyện mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng.',
       embeddingModel: 'Mô hình nhúng',
       embeddingModelTip:
-        'Mô hình nhúng mặc định cho từng cơ sở tri thức mới được tạo. Nếu bạn không tìm thấy mô hình nhúng từ danh sách thả xuống, hãy kiểm tra xem bạn có đang sử dụng phiên bản RAGFlow slim (không bao gồm các mô hình nhúng) hay không, hoặc kiểm tra trang Nhà cung cấp mô hình để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
+        'Mô hình nhúng mặc định cho từng cơ sở tri thức mới được tạo. Nếu bạn không tìm thấy mô hình nhúng từ danh sách thả xuống, kiểm tra trang Nhà cung cấp mô hình để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
       img2txtModel: 'Mô hình img2txt',
       img2txtModelTip:
         'Mô hình img2txt mặc định cho mỗi cơ sở tri thức mới được tạo. Nó mô tả một bức tranh hoặc video. Nếu bạn không thể tìm thấy mô hình từ danh sách thả xuống, hãy kiểm tra trang Nhà cung cấp mô hình để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
@@ -1261,7 +1261,7 @@ export default {
         'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
       promptMessage: 'Nhắc nhở là bắt buộc',
       runningHintText: 'đang chạy...🕞',
-      canvasCategory: 'Danh mục canvas',
+      agentCategory: 'Danh mục canvas',
       tags: 'Thẻ',
       created: 'Đã tạo',
       id: 'ID',

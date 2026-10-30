@@ -41,7 +41,7 @@ type CallOptions struct {
 	HTTPClient *http.Client
 	// AllowPrivateHosts relaxes the public-routability requirement so
 	// self-hosted MCP servers on private/docker networks work. Callers source
-	// it from the deployment flag (RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS); scheme
+	// it from the deployment flag (ALLOW_ANY_HOST); scheme
 	// validation, DNS resolution, and IP pinning still apply.
 	AllowPrivateHosts bool
 }

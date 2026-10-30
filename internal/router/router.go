@@ -50,7 +50,6 @@ type Router struct {
 	difyRetrievalHandler *handler.DifyRetrievalHandler
 	pluginHandler        *handler.PluginHandler
 	modelHandler         *handler.ModelHandler
-	modelGroupHandler    *handler.ModelGroupHandler
 	fileCommitHandler    *handler.FileCommitHandler
 	botHandler           *handler.BotHandler
 	componentsHandler    *handler.ComponentsHandler
@@ -88,7 +87,6 @@ func NewRouter(
 	difyRetrievalHandler *handler.DifyRetrievalHandler,
 	pluginHandler *handler.PluginHandler,
 	modelHandler *handler.ModelHandler,
-	modelGroupHandler *handler.ModelGroupHandler,
 	fileCommitHandler *handler.FileCommitHandler,
 	openaiChatHandler *handler.OpenAIChatHandler,
 	botHandler *handler.BotHandler,
@@ -125,7 +123,6 @@ func NewRouter(
 		difyRetrievalHandler: difyRetrievalHandler,
 		pluginHandler:        pluginHandler,
 		modelHandler:         modelHandler,
-		modelGroupHandler:    modelGroupHandler,
 		fileCommitHandler:    fileCommitHandler,
 		botHandler:           botHandler,
 		componentsHandler:    componentsHandler,
@@ -139,6 +136,7 @@ func NewRouter(
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	engine.Use(requestBodyLimitMiddleware())
 	SetupEERouter(engine)
 
 	// Mark all responses from Go with a header for debugging.
@@ -194,7 +192,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
 
-		RegisterEENoAuthRouter(apiNoAuth, r)
+		RegisterPublicAgentWebhookRoutes(apiNoAuth.Group("/agents"), r.agentHandler)
+
+		RegisterEENoAuthRouter(engine, apiNoAuth, r)
 	}
 
 	// Beta-token routes. Mirrors python's
@@ -203,8 +203,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 	apiBetaAuth.Use(r.authHandler.BetaAuthMiddleware())
 	{
 		searchBotGroup := apiBetaAuth.Group("/searchbots")
-		searchBotGroup.POST("/related_questions", r.searchBotHandler.Handle)
-		searchBotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
+		searchBotGroup.POST("/related-questions", r.searchBotHandler.Handle)
+		searchBotGroup.POST("/retrieval", r.searchBotHandler.RetrievalTest)
 		searchBotGroup.POST("/ask", r.searchBotHandler.Ask)
 		searchBotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
 
@@ -241,6 +241,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	authorized := engine.Group("")
 	authorized.Use(r.authHandler.AuthMiddleware())
 	RegisterEEProtectedRouter(authorized, r)
+	RegisterEEAuthRouter(authorized, r)
 	{
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
@@ -285,10 +286,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Tenant routes (per-tenant resources)
 			tenant := v1.Group("/tenant")
 			{
-				tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)         // Internal API only for GO
-				tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)       // Internal API only for GO
-				tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)   // Internal API only for GO
-				tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore) // Internal API only for GO
+				tenant.POST("/chunk-store", r.tenantHandler.CreateChunkStore)         // Internal API only for GO
+				tenant.DELETE("/chunk-store", r.tenantHandler.DeleteChunkStore)       // Internal API only for GO
+				tenant.POST("/metadata-store", r.tenantHandler.CreateMetadataStore)   // Internal API only for GO
+				tenant.DELETE("/metadata-store", r.tenantHandler.DeleteMetadataStore) // Internal API only for GO
 			}
 
 			// Document routes
@@ -344,6 +345,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
+				datasets.POST("/:dataset_id/documents/apply-parser-config", r.documentHandler.ApplyDatasetParserConfig)
 				// Scheduler compile-status contract; replaces the retired
 				// RunIndex/TraceIndex/DeleteIndex /index routes.
 				datasets.GET("/:dataset_id/compilation/status", r.datasetsHandler.GetCompilationStatus)
@@ -556,7 +558,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// command is for CLI
 			command := v1
 			{
-				command.POST("/chat/to_model", r.providerHandler.ChatToModel)
+				command.POST("/chat/to-model", r.providerHandler.ChatToModel)
 				command.POST("/embeddings", r.providerHandler.EmbedText)
 				command.POST("/rerank", r.providerHandler.RerankDocument)
 				command.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
@@ -575,11 +577,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				model.GET("/default", r.tenantHandler.GetDefaultModels)
 				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
 
-				model.POST("/groups", r.modelGroupHandler.CreateModelGroup)
-				model.DELETE("/groups/:group_name", r.modelGroupHandler.DeleteModelGroup)
-				model.GET("/groups", r.modelGroupHandler.ShowModelGroup)                            // LIST and SHOW MODEL GROUP
-				model.POST("/groups/:group_name/model", r.modelGroupHandler.AddModelToGroup)        // ADD MODEL TO GROUP
-				model.DELETE("/groups/:group_name/model", r.modelGroupHandler.RemoveModelFromGroup) // REMOVE MODEL FROM GROUP
+				model.POST("/groups", r.providerHandler.CreateModelGroup)
+				model.DELETE("/groups/:group_name", r.providerHandler.DeleteModelGroup)
+				model.GET("/groups", r.providerHandler.ShowModelGroup)                            // LIST and SHOW MODEL GROUP
+				model.POST("/groups/:group_name/model", r.providerHandler.AddModelToGroup)        // ADD MODEL TO GROUP
+				model.DELETE("/groups/:group_name/model", r.providerHandler.RemoveModelFromGroup) // REMOVE MODEL FROM GROUP
 			}
 
 			allModels := v1.Group("/all-models", ToggleModel())
@@ -623,7 +625,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				connectors.GET("", r.connectorHandler.ListConnectors)
 				connectors.POST("", r.connectorHandler.CreateConnector)
-				connectors.GET("/sync_logs", r.connectorHandler.ListSyncLogs)
+				connectors.GET("/sync-logs", r.connectorHandler.ListSyncLogs)
 				connectors.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connectors.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
 				connectors.POST("/box/oauth/web/start", r.connectorHandler.StartBoxWebOAuth)
