@@ -16,8 +16,8 @@ Released on Oct 30, 2026.
 1.0.0-rc3 is the third and final release candidate before the official v1.0.0 release. It fixes several issues found in rc2 and introduces new features and enhancements.
 
 Key updates:
-1. Introduced the Decision model for decision making in agentic conversations and Categorize component in agents.
-2. Added support for multiple versions of ingestion pipelines DSL.
+1. Introduced the Decision Model for decision making in agentic conversations and Categorize component in agents.
+2. Added support for multiple versions of ingestion pipeline DSL.
 3. Chat history now stores and displays prompts, token usage, and execution time.
 4. Compatible with existing v1.0.0-rc2 schema, allowing a direct upgrade.
 
