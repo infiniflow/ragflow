@@ -575,7 +575,6 @@ func formalizedContentFallback(inputs map[string]any) string {
 	if text, _ := inputs["formalized_content"].(string); strings.TrimSpace(text) != "" {
 		return text
 	}
-
 	return ""
 }
 
