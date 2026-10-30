@@ -182,10 +182,9 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 					}
 				}
 
-				if err := tx.Model(&entity.File{}).Where("id = ?", change.FileID).Update("status", "0").Error; err != nil {
-					return fmt.Errorf("failed to soft-delete file: %w", err)
-				}
-
+				// The file table has no status column: a deleted file is one
+				// already removed from the live tree, so the commit only keeps
+				// the tombstone in tree_state for history and diffs.
 				if entry, ok := treeState[change.FileID]; ok {
 					if entryMap, ok := entry.(map[string]interface{}); ok {
 						entryMap["status"] = "0"
