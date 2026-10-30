@@ -3496,6 +3496,14 @@
             "url": "https://router.hostinger.com/v1"
         },
         {
+            "name": "cheapaimodel",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.cheapaimodel.ai/v1"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",

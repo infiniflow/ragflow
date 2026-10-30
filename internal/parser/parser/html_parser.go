@@ -19,6 +19,7 @@ package parser
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -91,6 +92,7 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		refOnly:    true,
 		ctx:        ctx,
 		mediaCache: media.CacheFromContext(ctx),
+		budget:     media.NewBudget(),
 	}
 	if p.textOnly {
 		state.resolveImage = func(string) (string, bool) { return "", false }
@@ -131,7 +133,13 @@ type htmlWalkState struct {
 	mediaOrder          int
 	skippedInlineImages int
 	unresolvedImages    int
-	mediaBudget         *embeddedMediaBudget
+	mediaLimitSkips     int
+	budget              *media.Budget
+	// dataURIMemo and epubMediaMemo dedupe sources across one parse. A nil
+	// value means the source was already processed and skipped; a non-nil
+	// value is the reference every later occurrence reuses.
+	dataURIMemo   map[string]*entity.MediaRef
+	epubMediaMemo map[string]*entity.MediaRef
 	// refOnly defers image bytes to content-addressed references instead of
 	// carrying the normalized data URI on the item. HTML and EPUB set it;
 	// formats that still inline image bytes leave it false.
@@ -150,7 +158,11 @@ type htmlWalkState struct {
 }
 
 func (s *htmlWalkState) warnings() []string {
-	warnings := s.mediaBudget.warnings()
+	var warnings []string
+	warnings = append(warnings, s.budget.Warnings()...)
+	if s.mediaLimitSkips > 0 {
+		warnings = append(warnings, fmt.Sprintf("document parser skipped %d image(s) after the run media cache limit", s.mediaLimitSkips))
+	}
 	if s.skippedInlineImages > 0 {
 		warnings = append(warnings, fmt.Sprintf("document parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages))
 	}
@@ -184,54 +196,88 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 		normalized, ok := s.resolveImage(src)
 		return normalized, nil, ok
 	}
-	if !media.IsHTMLDataImageSource(src) {
+	if !media.IsDataImageSource(src) {
 		return "", nil, false
 	}
 	if s.refOnly {
+		// A repeated source is decoded and written once; every reference still
+		// receives the same MediaRef. A nil memo value means it was already
+		// processed and skipped, so the warning counters are not inflated.
+		if ref, seen := s.dataURIMemo[src]; seen {
+			if ref == nil {
+				return "", nil, false
+			}
+			return "", ref, true
+		}
 		// Validate and size the payload without allocating so budget admission
-		// happens before the decode. Malformed sources are never charged
-		// against the item budget.
-		size, ok := media.HTMLImageDecodedSize(src)
-		if !ok || size > media.HTMLImageMaxBytes() {
+		// happens before the decode. Malformed sources never spend budget.
+		size, ok := media.DataImageDecodedSize(src)
+		if !ok {
+			s.skippedInlineImages++
+			s.memoizeDataURI(src, nil)
 			return "", nil, false
 		}
 		if s.mediaCache == nil {
 			s.err = fmt.Errorf("%s media cache is not configured", s.cacheFormat())
 			return "", nil, false
 		}
-		if s.mediaBudget != nil {
-			if !s.mediaBudget.reserveItem() {
-				return "", nil, false
-			}
-			if !s.mediaBudget.includeReservedSize(size) {
-				return "", nil, false
-			}
+		// Repeated sources share one reservation, so a document made of one
+		// repeated data URI stays bounded without capping its references.
+		reservation, admission := s.budget.Reserve(media.Size(size))
+		if admission != media.Admitted {
+			s.memoizeDataURI(src, nil)
+			return "", nil, false
 		}
-		mime, data, ok := media.DecodeHTMLImageSource(src)
+		mime, data, ok := media.DecodeDataImageSource(src)
 		if !ok {
+			s.skippedInlineImages++
+			s.memoizeDataURI(src, nil)
+			return "", nil, false
+		}
+		if !reservation.Commit(media.Size(len(data))) {
+			s.memoizeDataURI(src, nil)
 			return "", nil, false
 		}
 		ref, err := s.mediaCache.Put(s.ctx, s.cacheFormat(), mime, data)
 		if err != nil {
+			if errors.Is(err, media.ErrMediaLimitExceeded) {
+				s.mediaLimitSkips++
+				s.memoizeDataURI(src, nil)
+				return "", nil, false
+			}
 			s.err = fmt.Errorf("%s media cache write: %w", s.cacheFormat(), err)
 			return "", nil, false
 		}
+		s.memoizeDataURI(src, &ref)
 		return "", &ref, true
 	}
-	if s.mediaBudget == nil {
-		s.mediaBudget = newEmbeddedMediaBudget()
-	}
-	if !s.mediaBudget.reserveItem() {
+	reservation, admission := s.budget.ReserveOccurrence(media.UnknownSize)
+	if admission != media.Admitted {
 		return "", nil, false
 	}
-	normalized, size, _, ok := media.NormalizeHTMLImageSource(src)
+	normalized, size, _, ok := media.NormalizeDataImageSource(src)
 	if !ok {
+		s.skippedInlineImages++
 		return "", nil, false
 	}
-	if !s.mediaBudget.includeReservedSize(int(size)) {
+	if !reservation.Commit(media.Size(size)) {
 		return "", nil, false
 	}
 	return normalized, nil, true
+}
+
+func (s *htmlWalkState) memoizeDataURI(src string, ref *entity.MediaRef) {
+	if s.dataURIMemo == nil {
+		s.dataURIMemo = make(map[string]*entity.MediaRef)
+	}
+	s.dataURIMemo[src] = ref
+}
+
+func (s *htmlWalkState) memoizeEPUBMedia(name string, ref *entity.MediaRef) {
+	if s.epubMediaMemo == nil {
+		s.epubMediaMemo = make(map[string]*entity.MediaRef)
+	}
+	s.epubMediaMemo[name] = ref
 }
 
 // walkHTMLBlocksWithState emits normalized text and image items in document
@@ -497,8 +543,6 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 			if !ok {
 				if state.resolveImage != nil {
 					w.writeText(htmlAttribute(n, "alt"))
-				} else if media.IsHTMLDataImageSource(src) {
-					state.skippedInlineImages++
 				}
 				return
 			}
@@ -562,8 +606,7 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	if state.err != nil {
 		return
 	}
-	images, skippedInlineImages := htmlTableImages(n, state)
-	state.skippedInlineImages += skippedInlineImages
+	images := htmlTableImages(n, state)
 	markup := renderTableHTML(n)
 	if strings.TrimSpace(markup) == "" {
 		return
@@ -591,9 +634,8 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	}
 }
 
-func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, int) {
+func htmlTableImages(table *html.Node, state *htmlWalkState) []htmlTableImage {
 	var images []htmlTableImage
-	skippedInlineImages := 0
 	rowCount := 0
 	columnCounts := make(map[int]int)
 	var walk func(node *html.Node, row, column int)
@@ -626,8 +668,7 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, 
 							replacement = "![" + alt + "](" + src + ")"
 						}
 						node.Type, node.Data, node.Attr = html.TextNode, replacement, nil
-					} else if media.IsHTMLDataImageSource(src) {
-						skippedInlineImages++
+					} else if media.IsDataImageSource(src) {
 						removeHTMLImageSource(node)
 					}
 				} else {
@@ -653,7 +694,7 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, 
 		}
 	}
 	walk(table, 0, 0)
-	return images, skippedInlineImages
+	return images
 }
 
 func removeHTMLImageSource(n *html.Node) {

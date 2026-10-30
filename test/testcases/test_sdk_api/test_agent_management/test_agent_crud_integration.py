@@ -120,7 +120,6 @@ def test_agent_listing_pages(live_client, dsl):
     assert [row.update_time for row in rows] == sorted(row.update_time for row in rows)
 
 
-@pytest.mark.skip(reason="Go AgentService.mergeAgentsAndGroups sorts only update_time even when SDK orderby=create_time; remove when the requested column is respected")
 def test_agent_creation_order_after_update(live_client, dsl):
     first = create_agent(live_client, dsl)
     time.sleep(0.02)
@@ -161,7 +160,6 @@ def test_agent_session_creation_and_listing(live_client, dsl):
 
 
 @pytest.mark.parametrize("delete_all", [False, True])
-@pytest.mark.skip(reason="Go AgentHandler.DeleteAgentSession ignores documented JSON ids/delete_all sent by Agent.delete_sessions; it reads query parameters and silently deletes nothing")
 def test_agent_session_deletion_persists(live_client, dsl, delete_all):
     agent = create_agent(live_client, dsl)
     first = agent.create_session(name="delete")
@@ -174,7 +172,6 @@ def test_agent_session_deletion_persists(live_client, dsl, delete_all):
     assert {session.id for session in agent.list_sessions()} == expected
 
 
-@pytest.mark.skip(reason="Go CreateAgentSession serializes dialog_id instead of documented agent_id; SDK Session.__init__ cannot bind agent sessions for ask(); remove when response uses agent_id")
 def test_created_agent_session_binding(live_client, dsl):
     agent = create_agent(live_client, dsl)
     session = agent.create_session()

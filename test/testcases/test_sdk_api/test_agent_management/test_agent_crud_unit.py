@@ -132,7 +132,6 @@ def test_explicit_dsl_round_trip(client, dsl):
     assert result["graph"] == dsl["graph"]
 
 
-@pytest.mark.skip(reason="SDK Agent.Dsl.__init__ hardcodes missing Answer:China downstream; remove when the default graph has no dangling references")
 def test_default_dsl_references_existing_components(client):
     dsl = Agent.Dsl(client, {}).to_json()
     for component in dsl["components"].values():

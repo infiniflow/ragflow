@@ -989,19 +989,26 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	dslParam := c.Query("dsl")
 	includeDSL := dslParam != "false" && dslParam != "False"
 	ctx := c.Request.Context()
+	options, err := sessionHistoryQuery(c)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		return
+	}
 	resp, code, err := h.agentService.ListAgentSessions(ctx, user.ID, user.ID, canvasID, service.ListAgentSessionsRequest{
-		Page:       page,
-		PageSize:   pageSize,
-		Keywords:   keywords,
-		FromDate:   fromDate,
-		ToDate:     toDate,
-		OrderBy:    orderby,
-		Desc:       desc,
-		SessionID:  sessionID,
-		UserID:     queryUserID,
-		ExpUserID:  expUserID,
-		IncludeDSL: includeDSL,
-		NoHistory:  c.Query("include_history") == "false" || c.Query("include_history") == "False",
+		Page:             page,
+		PageSize:         pageSize,
+		Keywords:         keywords,
+		FromDate:         fromDate,
+		ToDate:           toDate,
+		OrderBy:          orderby,
+		Desc:             desc,
+		SessionID:        sessionID,
+		UserID:           queryUserID,
+		ExpUserID:        expUserID,
+		IncludeDSL:       includeDSL,
+		IncludeReference: options.IncludeReference,
+		IncludePrompt:    options.IncludePrompt,
+		NoHistory:        c.Query("include_history") == "false" || c.Query("include_history") == "False",
 	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
@@ -1039,7 +1046,10 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
-	common.SuccessWithData(c, row, "success")
+	common.SuccessWithData(c, struct {
+		*entity.API4Conversation
+		AgentID string `json:"agent_id"`
+	}{row, row.DialogID}, "success")
 }
 
 // GetAgentSession GET /api/v1/agents/:canvas_id/sessions/:session_id
@@ -1052,7 +1062,12 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
 	ctx := c.Request.Context()
-	row, code, err := h.agentService.GetAgentSession(ctx, user.ID, canvasID, sessionID)
+	options, err := sessionHistoryQuery(c)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		return
+	}
+	row, code, err := h.agentService.GetAgentSession(ctx, user.ID, canvasID, sessionID, options)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -1064,7 +1079,7 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 //
 // Path parameter disambiguation:
 //   - /sessions/:session_id   -> single item delete
-//   - /sessions?ids=a,b       -> batch delete (delete_all when ids is empty)
+//   - /sessions              -> JSON ids/delete_all, or query parameters without a body
 func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -1092,6 +1107,16 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 				ids = append(ids, id)
 			}
 		}
+	}
+	var body struct {
+		IDs       []string `json:"ids"`
+		DeleteAll bool     `json:"delete_all"`
+	}
+	if err := c.ShouldBindJSON(&body); err == nil {
+		ids, deleteAll = body.IDs, body.DeleteAll
+	} else if !errors.Is(err, io.EOF) {
+		common.ErrorWithCode(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		return
 	}
 	result, code, err := h.agentService.DeleteAgentSessions(ctx, user.ID, canvasID, ids, deleteAll)
 	if err != nil {
@@ -1520,7 +1545,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
-// TestDBConnection POST /api/v1/agents/test_db_connection
+// TestDBConnection POST /api/v1/agents/test-db-connection
 func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {

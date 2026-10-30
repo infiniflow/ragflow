@@ -36,6 +36,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -287,15 +288,11 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 	var items []map[string]any
 	var failures []string
 	read := 0
-	budget := newEmbeddedMediaBudget()
-	// mediacache.Put enforces the same per-image limit, so keep the parser
-	// budget aligned with it instead of the legacy fixed constant.
-	budget.maxImageBytes = media.HTMLImageMaxBytes()
 	state := &htmlWalkState{
 		refOnly:     true,
 		ctx:         ctx,
 		mediaCache:  media.CacheFromContext(ctx),
-		mediaBudget: budget,
+		budget:      media.NewBudget(),
 		mediaFormat: "epub",
 		skipImages:  textOnly,
 	}
@@ -357,15 +354,16 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 // the run media cache and the caller receives only the reference.
 //
 // A source that cannot be mapped to a readable manifest image is skipped and
-// counted in the shared warning. Cache failures fail the task.
+// counted in the shared warning. Cache failures fail the task; a run media
+// limit skips the image with a warning instead.
 func epubMediaResolver(entries map[string]*zip.File, state *htmlWalkState, chapterEntry string, images map[string]string) func(string) (*entity.MediaRef, bool) {
 	chapterDir := path.Dir(chapterEntry)
 	return func(src string) (*entity.MediaRef, bool) {
 		if state.err != nil {
 			return nil, false
 		}
-		// Inline data URIs keep the shared HTML data-URI path.
-		if media.IsHTMLDataImageSource(src) {
+		// Inline data URIs keep the shared data-URI path.
+		if media.IsDataImageSource(src) {
 			return nil, false
 		}
 		if state.mediaCache == nil {
@@ -377,49 +375,78 @@ func epubMediaResolver(entries map[string]*zip.File, state *htmlWalkState, chapt
 			state.unresolvedImages++
 			return nil, false
 		}
+		// The memo is shared by every chapter: one ZIP entry is read, hashed,
+		// and cached once per parse, even when different chapters reference it.
+		// A nil value records a source that was already rejected, so repeated
+		// references do not re-read it or inflate the warning counters.
+		if ref, seen := state.epubMediaMemo[name]; seen {
+			if ref == nil {
+				return nil, false
+			}
+			return ref, true
+		}
 		mime, ok := images[name]
 		if !ok {
 			state.unresolvedImages++
+			state.memoizeEPUBMedia(name, nil)
 			return nil, false
 		}
 		entry, ok := entries[name]
 		if !ok {
 			state.unresolvedImages++
+			state.memoizeEPUBMedia(name, nil)
 			return nil, false
 		}
-		maxBytes := state.mediaBudget.maxImageBytes
-		if entry.UncompressedSize64 > uint64(maxBytes) {
-			// Charge the per-image limit so the skip is reported through the
-			// shared budget warning instead of being silent.
-			state.mediaBudget.includeReservedSize(maxBytes + 1)
-			return nil, false
-		}
-		// Reserve only for an actual ZIP read: entries skipped above need no
-		// bytes and must not exhaust the attempt budget.
-		if !state.mediaBudget.reserveItem() {
-			return nil, false
-		}
-		f, err := entry.Open()
-		if err != nil {
-			state.unresolvedImages++
-			return nil, false
-		}
-		data, err := io.ReadAll(io.LimitReader(f, int64(maxBytes)+1))
-		f.Close()
-		if err != nil || len(data) == 0 {
-			state.unresolvedImages++
-			return nil, false
-		}
-		if !state.mediaBudget.includeReservedSize(len(data)) {
-			return nil, false
-		}
-		ref, err := state.mediaCache.Put(state.ctx, state.cacheFormat(), mime, data)
-		if err != nil {
-			state.err = fmt.Errorf("%s media cache write: %w", state.cacheFormat(), err)
-			return nil, false
-		}
-		return &ref, true
+		return state.loadEPUBMedia(name, mime, entry)
 	}
+}
+
+// loadEPUBMedia applies size admission, reads one ZIP entry, and writes it to
+// the run media cache. It memoizes both success and failure so a source shared
+// by multiple chapters performs the work and records warnings once.
+func (s *htmlWalkState) loadEPUBMedia(name, mime string, entry *zip.File) (*entity.MediaRef, bool) {
+	maxBytes := media.ImageMaxBytes()
+	declared := media.Size(maxBytes + 1)
+	if entry.UncompressedSize64 <= uint64(maxBytes) {
+		declared = media.Size(entry.UncompressedSize64)
+	}
+	// Check the declared uncompressed size against both byte limits before
+	// reserving an item slot or decompressing the entry.
+	reservation, admission := s.budget.Reserve(declared)
+	if admission != media.Admitted {
+		s.memoizeEPUBMedia(name, nil)
+		return nil, false
+	}
+	f, err := entry.Open()
+	if err != nil {
+		s.unresolvedImages++
+		s.memoizeEPUBMedia(name, nil)
+		return nil, false
+	}
+	data, err := io.ReadAll(io.LimitReader(f, int64(maxBytes)+1))
+	f.Close()
+	if err != nil || len(data) == 0 {
+		s.unresolvedImages++
+		s.memoizeEPUBMedia(name, nil)
+		return nil, false
+	}
+	if !reservation.Commit(media.Size(len(data))) {
+		s.memoizeEPUBMedia(name, nil)
+		return nil, false
+	}
+	ref, err := s.mediaCache.Put(s.ctx, s.cacheFormat(), mime, data)
+	if err != nil {
+		if errors.Is(err, media.ErrMediaLimitExceeded) {
+			s.mediaLimitSkips++
+			s.memoizeEPUBMedia(name, nil)
+			return nil, false
+		}
+		s.err = fmt.Errorf("%s media cache write: %w", s.cacheFormat(), err)
+		s.memoizeEPUBMedia(name, nil)
+		return nil, false
+	}
+	s.memoizeEPUBMedia(name, &ref)
+	return &ref, true
 }
 
 // appendEPUBChapter keeps continuous chapter prose together, splitting only

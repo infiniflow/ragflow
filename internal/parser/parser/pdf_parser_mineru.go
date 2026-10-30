@@ -115,9 +115,31 @@ func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID
 		timeout = minerUPollTimeout
 	}
 	deadline := time.Now().Add(timeout)
+	// Each status call can wait up to its own request timeout, which is longer
+	// than a short poll budget can be. Bound the call by the poll deadline too,
+	// otherwise a slow status response outlives the budget and its content is
+	// returned as if the poll had succeeded in time.
+	pollCtx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
 	var lastErr error
 	for {
-		task, err := driver.ShowTask(ctx, taskID, apiConfig)
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		task, err := driver.ShowTask(pollCtx, taskID, apiConfig)
+		if pollCtx.Err() != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return "", ctxErr
+			}
+			cause := lastErr
+			if cause == nil {
+				cause = err
+			}
+			if cause == nil {
+				cause = context.DeadlineExceeded
+			}
+			return "", fmt.Errorf("timed out after %s waiting for MinerU task %s: %w", timeout, taskID, cause)
+		}
 		if err == nil {
 			for _, segment := range task.Segments {
 				if strings.TrimSpace(segment.Content) != "" {
@@ -128,12 +150,22 @@ func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID
 		} else {
 			lastErr = err
 		}
-		if time.Now().After(deadline) {
-			if lastErr == nil {
-				lastErr = fmt.Errorf("timed out waiting for MinerU task %s", taskID)
-			}
-			return "", lastErr
+		// A cancelled run has to leave the poll at once. Sleeping the scan
+		// interval, let alone the remaining timeout, keeps an ingestion worker
+		// polling a server it will never accept a result from.
+		wait := time.Until(deadline)
+		if wait <= 0 {
+			return "", fmt.Errorf("timed out after %s waiting for MinerU task %s: %w", timeout, taskID, lastErr)
 		}
-		time.Sleep(minerUPollInterval)
+		if wait > minerUPollInterval {
+			wait = minerUPollInterval
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", ctx.Err()
+		case <-timer.C:
+		}
 	}
 }

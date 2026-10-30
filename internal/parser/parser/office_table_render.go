@@ -29,6 +29,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/tableutil"
 )
 
@@ -598,7 +599,7 @@ func deprecatedHTML4Excel(setup map[string]any, parserName string) {
 // worksheet as structured parser items. Excelize exposes both kinds through
 // GetPictureCells/GetPictures; walking the reported anchor cells avoids
 // scanning the worksheet's entire coordinate space.
-func extractXLSXImages(f *excelize.File, sheet string, budget *embeddedMediaBudget) ([]map[string]any, []string) {
+func extractXLSXImages(f *excelize.File, sheet string, budget *media.Budget) ([]map[string]any, []string) {
 	cells, err := f.GetPictureCells(sheet)
 	if err != nil {
 		return nil, []string{fmt.Sprintf("XLSX image discovery failed for sheet %q: %v", sheet, err)}
@@ -627,7 +628,9 @@ cellLoop:
 			}
 			included, keepWalking := true, true
 			if budget != nil {
-				included, keepWalking = budget.include(picture.File)
+				reservation, admission := budget.ReserveOccurrence(media.UnknownSize)
+				keepWalking = admission != media.RejectedByCount
+				included = admission == media.Admitted && reservation.Commit(media.Size(len(picture.File)))
 			}
 			if !keepWalking {
 				break cellLoop

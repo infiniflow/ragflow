@@ -186,7 +186,7 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/metadata_store [post]
+// @Router /v1/tenant/metadata-store [post]
 func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -214,7 +214,7 @@ func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/metadata_store [delete]
+// @Router /v1/tenant/metadata-store [delete]
 func (h *TenantHandler) DeleteMetadataStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -250,7 +250,7 @@ type CreateChunkTableRequest struct {
 // @Security ApiKeyAuth
 // @Param request body CreateChunkTableRequest true "create chunk store request"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/chunk_store [post]
+// @Router /v1/tenant/chunk-store [post]
 func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -298,7 +298,7 @@ type DeleteChunkTableRequest struct {
 // @Security ApiKeyAuth
 // @Param request body DeleteChunkTableRequest true "delete chunk store request"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/chunk_store [delete]
+// @Router /v1/tenant/chunk-store [delete]
 func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {

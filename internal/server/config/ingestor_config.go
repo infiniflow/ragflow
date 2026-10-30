@@ -28,6 +28,15 @@ import (
 	"github.com/spf13/viper"
 )
 
+type IngestLogConfig struct {
+	Type       string `mapstructure:"type"`        // file, database; default "file"
+	Format     string `mapstructure:"format"`      // json, text (reserved for future use); default "json"
+	Path       string `mapstructure:"path"`        // per-binary file override; empty = use cmd/* hardcoded default
+	MaxSize    int    `mapstructure:"max_size"`    // MB before rotation; default 1000
+	MaxBackups int    `mapstructure:"max_backups"` // retained rotated files; default 20
+	MaxAge     int    `mapstructure:"max_age"`     // days; default 60
+}
+
 type IngestorConfig struct {
 	// ConcurrentWorkers bounds how many ingestion tasks the ingestor runs in
 	// parallel — it is the NATS consumer worker count. Valid range [1, 256],
@@ -77,6 +86,8 @@ type IngestorConfig struct {
 	deepDocInferenceCPUCores int
 	// deepDocInferenceCPUCoresSet is true when inference_cpu_cores was present.
 	deepDocInferenceCPUCoresSet bool
+
+	logConfig IngestLogConfig
 }
 
 // Ingestor concurrency bounds, shared by the CLI/env/config resolver so the
@@ -148,6 +159,13 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 		}
 		c.ingestor.deepDocInferenceCPUCores = n
 		c.ingestor.deepDocInferenceCPUCoresSet = true
+	}
+
+	if sub.IsSet("log") {
+		err := c.ingestor.logConfig.ParseIngestLogConfig(sub.Sub("log"))
+		if err != nil {
+			return fmt.Errorf("invalid ingestor.log: %w", err)
+		}
 	}
 
 	return nil
@@ -286,4 +304,8 @@ func (c *Config) GetIngestorPageConcurrency(argValue *int) (int, error) {
 
 func (c *Config) GetIngestorConfig() *IngestorConfig {
 	return &c.ingestor
+}
+
+func (c *Config) GetIngestLogConfig() *IngestLogConfig {
+	return &c.ingestor.logConfig
 }

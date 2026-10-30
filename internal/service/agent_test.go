@@ -944,15 +944,47 @@ func createAgentSessionTestCanvas(t *testing.T, id, userID string) {
 	}
 }
 
+func TestMergedAgentsRespectRequestedTimestamp(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	items := []*AgentItem{
+		{ID: "old", CreateTime: new(int64(1)), UpdateTime: new(int64(20))},
+		{ID: "new", CreateTime: new(int64(2)), UpdateTime: new(int64(10))},
+	}
+	for _, tc := range []struct {
+		name  string
+		terms []dao.OrderTerm
+		first string
+	}{
+		{"created ascending", []dao.OrderTerm{{Column: "create_time"}}, "old"},
+		{"created descending", []dao.OrderTerm{{Column: "create_time", Desc: true}}, "new"},
+		{"updated ascending", []dao.OrderTerm{{Column: "update_time"}}, "new"},
+		{"updated descending", []dao.OrderTerm{{Column: "update_time", Desc: true}}, "old"},
+		{"default", nil, "new"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, code, err := NewAgentService().mergeAgentsAndGroups(t.Context(), "user-1", items, "", tc.terms, 1, 1)
+			if err != nil || code != common.CodeSuccess || resp.Total != 2 || len(resp.Canvas) != 1 {
+				t.Fatalf("merge: response=%+v code=%v err=%v", resp, code, err)
+			}
+			var first AgentItem
+			if err := json.Unmarshal(resp.Canvas[0], &first); err != nil {
+				t.Fatal(err)
+			}
+			if first.ID != tc.first {
+				t.Fatalf("first=%q, want %q", first.ID, tc.first)
+			}
+		})
+	}
+}
+
 func createAgentSessionTestConversation(t *testing.T, id, agentID, userID string, updateTime int64) {
 	t.Helper()
 	updateDate := time.UnixMilli(updateTime)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), dao.DB, &entity.API4Conversation{
-		ID:        id,
-		DialogID:  agentID,
-		UserID:    userID,
-		Message:   json.RawMessage(`[{"role":"assistant","content":"hello","prompt":"hidden"}]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       id,
+		DialogID: agentID,
+		UserID:   userID,
+		Message:  json.RawMessage(`[{"role":"assistant","content":"hello","prompt":"hidden"}]`),
 		BaseModel: entity.BaseModel{
 			CreateTime: ptr(updateTime),
 			CreateDate: &updateDate,
@@ -1061,7 +1093,15 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 	createAgentSessionTestConversation(t, "session-1", "canvas-1", "user-1", 1000)
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	session, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "canvas-1", "session-1")
+	if err := dao.NewAPI4ConversationDAO().UpdateHistory(ctx, dao.DB, "session-1", "canvas-1", "user-1", nil, dao.ConversationHistoryUpdate{
+		Message: map[string]interface{}{"role": "assistant", "content": "answer", "reference": map[string]interface{}{
+			"chunks":   []interface{}{map[string]interface{}{"chunk_id": "chunk", "doc_id": "document", "content_with_weight": "evidence"}},
+			"doc_aggs": []interface{}{},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "canvas-1", "session-1", dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil {
 		t.Fatalf("GetAgentSession failed: %v", err)
 	}
@@ -1077,6 +1117,27 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 	if session.DialogID != "canvas-1" {
 		t.Fatalf("expected dialog_id canvas-1, got %s", session.DialogID)
 	}
+	messages := parseMessages(session.Message)
+	reference, ok := messages[1]["reference"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("answer reference is not an object: %v", messages[1])
+	}
+	chunks := reference["chunks"].([]interface{})
+	if len(chunks) != 1 || chunks[0].(map[string]interface{})["document_id"] != "document" || chunks[0].(map[string]interface{})["id"] != "chunk" {
+		t.Fatalf("unexpected reference chunks: %v", chunks)
+	}
+	body, err := json.Marshal(session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := payload["reference"]; ok {
+		t.Fatalf("session contains reference array: %s", body)
+	}
+
 }
 
 // TestCreateAgentSessionLeavesVersionTitleNilWithVersions pins the
@@ -2434,7 +2495,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	if err := dao.DB.Create(&entity.UserCanvas{
 		ID: "canvas-1", UserID: "user-1", Title: sptr("Agent canvas"),
 		CanvasCategory: "agent_canvas",
-		BaseModel:      entity.BaseModel{UpdateTime: &canvasUpdate},
+		BaseModel:      entity.BaseModel{CreateTime: &canvasUpdate, UpdateTime: &canvasUpdate},
 	}).Error; err != nil {
 		t.Fatalf("failed to seed agent: %v", err)
 	}
