@@ -717,8 +717,8 @@ func TestProviderModelListingUsesOwnedTenant(t *testing.T) {
 	if _, err = service.ListInstanceModels(serviceTestContext(t, "user-1", "user-1"), "provider-2", "default", "user-1"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("ListInstanceModels() for another tenant's provider error = %v, want record not found", err)
 	}
-	if _, err = service.ListSupportedModels(serviceTestContext(t, "user-1", "user-1"), "provider-2", "default", "user-1", ListSupportedModelsOptions{}); !errors.Is(err, gorm.ErrRecordNotFound) {
-		t.Fatalf("ListSupportedModels() for another tenant's provider error = %v, want record not found", err)
+	if _, err = service.ResolveSavedProviderModelConfig(serviceTestContext(t, "user-1", "user-1"), "provider-2", "default", "user-1", SavedProviderModelOptions{}); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("ResolveSavedProviderModelConfig() for another tenant's provider error = %v, want record not found", err)
 	}
 }
 
@@ -836,7 +836,7 @@ func TestMergeProviderAPIKeyPreservesBlankCredentialsAndSupportsClear(t *testing
 	}
 }
 
-func TestListSupportedModelsUsePermissionCannotOverrideSavedEndpoint(t *testing.T) {
+func TestResolveSavedProviderModelConfigUsePermissionCannotOverrideSavedEndpoint(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
@@ -855,44 +855,27 @@ func TestListSupportedModelsUsePermissionCannotOverrideSavedEndpoint(t *testing.
 	}).Error; err != nil {
 		t.Fatalf("seed tenant member: %v", err)
 	}
-	provider := dao.GetModelProviderManager().FindProvider("OpenAI")
-	if provider == nil {
-		t.Fatal("OpenAI provider is not configured")
-	}
-	probe := &remoteModelProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
-	originalDriver := provider.ModelDriver
-	provider.ModelDriver = probe
-	t.Cleanup(func() { provider.ModelDriver = originalDriver })
-
 	service := NewModelProviderService()
 	ctx := serviceTestContext(t, "member-1", "tenant-1")
-	if _, err := service.ListSupportedModels(ctx, "OpenAI", "default", "member-1", ListSupportedModelsOptions{}); err != nil {
-		t.Fatalf("ListSupportedModels(use saved credentials) error = %v, want success", err)
+	config, err := service.ResolveSavedProviderModelConfig(ctx, "OpenAI", "default", "member-1", SavedProviderModelOptions{})
+	if err != nil {
+		t.Fatalf("ResolveSavedProviderModelConfig(use saved credentials) error = %v, want success", err)
 	}
-	if probe.listCalls != 1 || probe.listConfig == nil || probe.listConfig.ApiKey == nil || *probe.listConfig.ApiKey != "sk-owner-secret" {
-		t.Fatalf("saved-credential list config = %+v, calls %d; want stored key used once", probe.listConfig, probe.listCalls)
-	}
-	if probe.baseURLs["us-east-1"] != "https://stored.example" || probe.listConfig.Region == nil || *probe.listConfig.Region != "us-east-1" {
-		t.Fatalf("saved endpoint = driver URLs %v, config %+v; want persisted endpoint", probe.baseURLs, probe.listConfig)
+	if config.APIKey != "sk-owner-secret" || config.BaseURL != "https://stored.example" || config.Region != "us-east-1" {
+		t.Fatalf("saved model config = %+v, want stored credentials and endpoint", config)
 	}
 
 	attackerURL := "https://attacker.example"
-	_, err := service.ListSupportedModels(ctx, "OpenAI", "default", "member-1", ListSupportedModelsOptions{BaseURL: &attackerURL})
+	_, err = service.ResolveSavedProviderModelConfig(ctx, "OpenAI", "default", "member-1", SavedProviderModelOptions{BaseURL: &attackerURL})
 	if err == nil || !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("ListSupportedModels(use permission with endpoint override) error = %v, want hidden denial", err)
-	}
-	if probe.listCalls != 1 {
-		t.Fatalf("provider was called %d times after rejecting endpoint override, want 1", probe.listCalls)
+		t.Fatalf("ResolveSavedProviderModelConfig(use permission with endpoint override) error = %v, want hidden denial", err)
 	}
 
-	_, err = service.ListSupportedModels(ctx, "OpenAI", "default", "member-1", ListSupportedModelsOptions{
+	_, err = service.ResolveSavedProviderModelConfig(ctx, "OpenAI", "default", "member-1", SavedProviderModelOptions{
 		APIKeyConfig: json.RawMessage(`{"paddleocr_api_url":"https://attacker.example"}`),
 	})
 	if err == nil || !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("ListSupportedModels(use permission with provider endpoint override) error = %v, want hidden denial", err)
-	}
-	if probe.listCalls != 1 {
-		t.Fatalf("provider was called %d times after rejecting provider config override, want 1", probe.listCalls)
+		t.Fatalf("ResolveSavedProviderModelConfig(use permission with provider endpoint override) error = %v, want hidden denial", err)
 	}
 
 	ownerCtx := serviceTestContext(t, "user-1", "tenant-1")
@@ -901,11 +884,17 @@ func TestListSupportedModelsUsePermissionCannotOverrideSavedEndpoint(t *testing.
 		t.Fatalf("ShowProviderInstance(owner) = (%v, %v, %v), want owner metadata", ownerInstance, code, err)
 	}
 	ownerURL := "https://owner-override.example"
-	if _, err = service.ListSupportedModels(ownerCtx, "OpenAI", "default", "user-1", ListSupportedModelsOptions{BaseURL: &ownerURL}); err != nil {
-		t.Fatalf("ListSupportedModels(owner endpoint override) error = %v, want success", err)
+	ownerRegion := "eu-west-1"
+	ownerConfig, err := service.ResolveSavedProviderModelConfig(ownerCtx, "OpenAI", "default", "user-1", SavedProviderModelOptions{
+		APIKeyConfig: json.RawMessage(`{"group_id":"owner-group"}`),
+		BaseURL:      &ownerURL,
+		Region:       &ownerRegion,
+	})
+	if err != nil {
+		t.Fatalf("ResolveSavedProviderModelConfig(owner overrides) error = %v, want success", err)
 	}
-	if probe.listCalls != 2 || probe.listConfig == nil || probe.listConfig.BaseURL == nil || *probe.listConfig.BaseURL != ownerURL || probe.listConfig.ApiKey == nil || *probe.listConfig.ApiKey != "sk-owner-secret" {
-		t.Fatalf("owner override config = %+v, calls %d; want saved key sent only to owner endpoint", probe.listConfig, probe.listCalls)
+	if ownerConfig.BaseURL != ownerURL || ownerConfig.Region != ownerRegion || ownerConfig.APIKey != `{"api_key":"sk-owner-secret","group_id":"owner-group"}` {
+		t.Fatalf("owner override config = %+v; want stored key, owner config and endpoint overrides", ownerConfig)
 	}
 }
 

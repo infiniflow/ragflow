@@ -144,7 +144,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
-	operationLog.ResourceName = req.Username
+	operationLog.UserName = req.Username
 
 	user, code, err := h.userService.Login(ctx, &req)
 	if err != nil {
@@ -214,7 +214,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
-	operationLog.ResourceName = req.Email
+	operationLog.UserName = req.Email
 
 	if !local.IsAdminAvailable() {
 		adminStatus := local.GetAdminStatus()
@@ -344,6 +344,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	}
 	user := identity.User
 	operationLog.UserID = user.ID
+	operationLog.UserName = user.Email
 
 	// Logout user
 	code, err = h.userService.Logout(ctx, user)

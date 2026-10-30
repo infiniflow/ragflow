@@ -496,7 +496,9 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 		return
 	}
 
-	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput, nil)
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	events, err := h.chatRunner.RunAgent(ctx, user.ID, canvasID, sessionID, version, userInput, nil)
 	if err != nil {
 		ec, em := mapAgentError(err)
 		common.ResponseWithCodeData(c, ec, nil, em)
@@ -1347,7 +1349,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// req.Files is already normalized to the 1D file list by the
 	// agentFiles unmarshaler. A nil/empty list reaches RunAgent as-is so
 	// its `len(files) > 0` guard sees a file-less run.
-	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, req.Files)
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	events, err := h.chatRunner.RunAgent(ctx, user.ID, req.AgentID, req.SessionID, "", userInput, req.Files)
 	if err != nil {
 		common.Warn("agent chat completions: RunAgent failed",
 			append([]zap.Field{

@@ -9,7 +9,8 @@ export default {
       delete: '删除',
       deleteModalTitle: '确定删除吗?',
       deleteThem: '确定要删除吗？',
-      removeModalTitle: '确定移除吗？',
+      removeIt: '确定移除吗？',
+      removeThem: '确定移除吗？',
       ok: '确认',
       cancel: '取消',
       yes: '是',
@@ -1047,7 +1048,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       model: '模型',
       modelTip: '大语言聊天模型',
       tokensSpent:
-        '消耗 {{total}} tokens（输入 {{prompt}} + 输出 {{completion}}）',
+        '消耗 {{total}} tokens（输入 {{prompt}}, 输出 {{completion}}）',
       turnElapsed: '耗时 {{seconds}}s',
       decisionModel: '决策模型',
       decisionModelTip:
@@ -3457,6 +3458,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       arabic: '阿拉伯语',
       turkish: '土耳其语',
       dutch: '荷兰语',
+      slovak: '斯洛伐克语',
+      czech: '捷克语',
     },
     pagination: {
       total: '总共 {{total}} 条',

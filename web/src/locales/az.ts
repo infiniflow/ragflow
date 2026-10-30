@@ -9,7 +9,7 @@ export default {
       delete: 'Sil',
       deleteModalTitle: 'Bunu silmək istədiyinizə əminsiniz?',
       deleteThem: 'Bunları silmək istədiyinizə əminsiniz?',
-      removeModalTitle: 'Bunu çıxarmaq istədiyinizə əminsiniz?',
+      removeIt: 'Bunu çıxarmaq istədiyinizə əminsiniz?',
       ok: 'Oldu',
       cancel: 'Ləğv et',
       yes: 'Bəli',

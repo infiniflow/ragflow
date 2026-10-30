@@ -399,7 +399,7 @@ export function ModelsSection(props: ModelsSectionProps) {
               <ConfirmDeleteDialog
                 hidden={!allFilteredAdded}
                 onOk={handleBatchToggleModels}
-                title={t('common.removeModalTitle')}
+                title={t('common.removeThem')}
                 okButtonText={t('common.remove')}
               >
                 <Button
