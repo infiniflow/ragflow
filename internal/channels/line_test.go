@@ -21,6 +21,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -79,7 +80,7 @@ func TestLineWebhookRejectsBadSignature(t *testing.T) {
 }
 
 func TestLineWebhookDispatchesTextMessage(t *testing.T) {
-	body := `{"events":[{"type":"message","replyToken":"reply-1","source":{"type":"user","userId":"user-1"},"message":{"id":"message-1","type":"text","text":"hello"}}]}`
+	body := lineWebhookTestBody(t, "message-1", time.Now().UnixMilli())
 	ch := newLineChannel(lineAccount{AccountID: "account-1", ChannelSecret: "secret", ChannelAccessToken: "token"})
 	server := &lineWebhookServer{channels: map[string]*lineChannel{"account-1": ch}}
 
@@ -91,11 +92,7 @@ func TestLineWebhookDispatchesTextMessage(t *testing.T) {
 		return nil
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/line/account-1/webhook", strings.NewReader(body))
-	req.Header.Set("X-Line-Signature", lineSignature("secret", body))
-	rec := httptest.NewRecorder()
-
-	server.handleRequest(rec, req)
+	rec := postLineWebhook(t, server, body)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -114,6 +111,51 @@ func TestLineWebhookDispatchesTextMessage(t *testing.T) {
 	if token := ch.takeReplyToken("message-1"); token != "" {
 		t.Fatalf("reply token was not single-use: %q", token)
 	}
+}
+
+func TestLineWebhookIgnoresReplay(t *testing.T) {
+	body := lineWebhookTestBody(t, "message-1", time.Now().UnixMilli())
+	ch := newLineChannel(lineAccount{AccountID: "account-1", ChannelSecret: "secret", ChannelAccessToken: "token"})
+	server := &lineWebhookServer{channels: map[string]*lineChannel{"account-1": ch}}
+
+	handled := make(chan struct{}, 2)
+	ch.SetMessageHandler(func(context.Context, core.IncomingMessage) error {
+		handled <- struct{}{}
+		return nil
+	})
+
+	if rec := postLineWebhook(t, server, body); rec.Code != http.StatusOK {
+		t.Fatalf("first delivery status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	select {
+	case <-handled:
+	case <-time.After(time.Second):
+		t.Fatal("first delivery was not handled")
+	}
+	if rec := postLineWebhook(t, server, body); rec.Code != http.StatusOK {
+		t.Fatalf("replayed delivery status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	select {
+	case <-handled:
+		t.Fatal("replayed delivery was handled")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+// lineWebhookTestBody builds one text-message webhook payload carrying the
+// millisecond timestamp LINE puts in the signed body.
+func lineWebhookTestBody(t *testing.T, messageID string, timestamp int64) string {
+	t.Helper()
+	return fmt.Sprintf(`{"events":[{"type":"message","timestamp":%d,"replyToken":"reply-1","source":{"type":"user","userId":"user-1"},"message":{"id":%q,"type":"text","text":"hello"}}]}`, timestamp, messageID)
+}
+
+func postLineWebhook(t *testing.T, server *lineWebhookServer, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/line/account-1/webhook", strings.NewReader(body))
+	req.Header.Set("X-Line-Signature", lineSignature("secret", body))
+	rec := httptest.NewRecorder()
+	server.handleRequest(rec, req)
+	return rec
 }
 
 func TestLineEnqueueDoesNotMarkDroppedMessageSeen(t *testing.T) {

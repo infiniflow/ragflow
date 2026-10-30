@@ -50,6 +50,9 @@ const (
 	weComReconnectDelay     = 3 * time.Second
 	weComHeartbeatInterval  = 25 * time.Second
 	weComTokenSafetyMargin  = 60 * time.Second
+	weComQueueSize          = 64
+	weComWorkerIdle         = 5 * time.Minute
+	weComMessageTTL         = 10 * time.Minute
 )
 
 var (
@@ -80,15 +83,22 @@ type wecomChannel struct {
 
 	lifecycleMu sync.Mutex
 	mu          sync.Mutex
+	ctx         context.Context
 	handler     core.MessageHandler
 	cancel      context.CancelFunc
 	done        chan struct{}
 	ws          *websocket.Conn
 	server      *wecomWebhookServer
+	seen        map[string]time.Time
+	workers     map[string]*wecomWorker
 	wsWriteMu   sync.Mutex
 	tokenMu     sync.Mutex
 	accessToken string
 	tokenExpiry time.Time
+}
+
+type wecomWorker struct {
+	queue chan core.IncomingMessage
 }
 
 type wecomAPIResponse struct {
@@ -126,6 +136,9 @@ func newWeComChannel(account wecomAccount) (*wecomChannel, error) {
 
 	channel := &wecomChannel{
 		account: account,
+		ctx:     context.Background(),
+		seen:    map[string]time.Time{},
+		workers: map[string]*wecomWorker{},
 		client:  newSafeChannelHTTPClient(weComHTTPTimeout, channelURLPolicy{exactHosts: []string{"qyapi.weixin.qq.com"}}),
 	}
 	if account.ConnectionType == "webhook" {
@@ -236,15 +249,20 @@ func (c *wecomChannel) Start(ctx context.Context) error {
 	c.lifecycleMu.Lock()
 	defer c.lifecycleMu.Unlock()
 
-	if c.account.ConnectionType == "webhook" {
-		c.mu.Lock()
-		started := c.server != nil
+	c.mu.Lock()
+	if c.cancel != nil {
 		c.mu.Unlock()
-		if started {
-			return nil
-		}
+		return nil
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	c.ctx = runCtx
+	c.cancel = cancel
+	c.mu.Unlock()
+
+	if c.account.ConnectionType == "webhook" {
 		server, err := acquireWeComWebhookServer(c)
 		if err != nil {
+			c.stopRunContext(cancel)
 			return err
 		}
 		c.mu.Lock()
@@ -254,14 +272,8 @@ func (c *wecomChannel) Start(ctx context.Context) error {
 		return nil
 	}
 
-	c.mu.Lock()
-	if c.cancel != nil {
-		c.mu.Unlock()
-		return nil
-	}
-	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
-	c.cancel = cancel
+	c.mu.Lock()
 	c.done = done
 	c.mu.Unlock()
 
@@ -271,6 +283,7 @@ func (c *wecomChannel) Start(ctx context.Context) error {
 		c.mu.Lock()
 		if c.done == done {
 			c.cancel = nil
+			c.ctx = context.Background()
 			c.ws = nil
 		}
 		c.mu.Unlock()
@@ -278,33 +291,49 @@ func (c *wecomChannel) Start(ctx context.Context) error {
 	return nil
 }
 
+// stopRunContext cancels the run context and detaches it from the channel.
+func (c *wecomChannel) stopRunContext(cancel context.CancelFunc) {
+	cancel()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cancel = nil
+	c.ctx = context.Background()
+}
+
 // Stop releases the webhook listener or stops the WebSocket reconnect loop.
 func (c *wecomChannel) Stop(ctx context.Context) error {
 	c.lifecycleMu.Lock()
 	defer c.lifecycleMu.Unlock()
 
+	c.mu.Lock()
+	cancel := c.cancel
+	done := c.done
+	conn := c.ws
+	server := c.server
+
+	c.cancel = nil
+	c.ctx = context.Background()
+	c.done = nil
+	c.ws = nil
+	c.server = nil
+	c.seen = map[string]time.Time{}
+	c.workers = map[string]*wecomWorker{}
+	c.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
 	if c.account.ConnectionType == "webhook" {
-		c.mu.Lock()
-		server := c.server
-		c.server = nil
-		c.mu.Unlock()
 		if server != nil {
 			return releaseWeComWebhookServer(ctx, server, c.account.AccountID)
 		}
 		return nil
 	}
-
-	c.mu.Lock()
-	cancel := c.cancel
-	done := c.done
-	conn := c.ws
-	c.mu.Unlock()
-	if cancel == nil {
-		return nil
-	}
-	cancel()
 	if conn != nil {
 		_ = conn.Close()
+	}
+	if done == nil {
+		return nil
 	}
 	select {
 	case <-done:
@@ -392,7 +421,7 @@ func (c *wecomChannel) runWebSocketOnce(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		disconnect, err := c.handleWebSocketPayload(ctx, payload)
+		disconnect, err := c.handleWebSocketPayload(payload)
 		if err != nil {
 			common.Warn("wecom: invalid websocket payload", zap.String("account_id", c.account.AccountID), zap.Error(err))
 			continue
@@ -457,7 +486,7 @@ func (c *wecomChannel) runWebSocketHeartbeat(ctx context.Context, conn *websocke
 	}
 }
 
-func (c *wecomChannel) handleWebSocketPayload(ctx context.Context, payload []byte) (bool, error) {
+func (c *wecomChannel) handleWebSocketPayload(payload []byte) (bool, error) {
 	var object map[string]any
 	if err := json.Unmarshal(payload, &object); err != nil {
 		return false, err
@@ -465,7 +494,7 @@ func (c *wecomChannel) handleWebSocketPayload(ctx context.Context, payload []byt
 	cmd := weComRawStringValue(object["cmd"])
 	switch cmd {
 	case "aibot_msg_callback":
-		c.handleWebSocketMessage(ctx, object)
+		c.handleWebSocketMessage(object)
 	case "aibot_event_callback":
 		body := weComMapValue(object["body"])
 		event := weComMapValue(body["event"])
@@ -480,7 +509,7 @@ func (c *wecomChannel) handleWebSocketPayload(ctx context.Context, payload []byt
 	return false, nil
 }
 
-func (c *wecomChannel) handleWebSocketMessage(ctx context.Context, raw map[string]any) {
+func (c *wecomChannel) handleWebSocketMessage(raw map[string]any) {
 	headers := weComMapValue(raw["headers"])
 	body := weComMapValue(raw["body"])
 	if weComRawStringValue(body["msgtype"]) != "text" {
@@ -504,7 +533,16 @@ func (c *wecomChannel) handleWebSocketMessage(ctx context.Context, raw map[strin
 		chatType = "group"
 	}
 	text := weComRawStringValue(weComMapValue(body["text"])["content"])
-	c.handleTextMessage(ctx, chatID, senderID, messageID, text, chatType, raw)
+	c.enqueueIncoming(core.IncomingMessage{
+		Channel:   c.ChannelID(),
+		AccountID: c.account.AccountID,
+		ChatID:    chatID,
+		ChatType:  chatType,
+		MessageID: messageID,
+		SenderID:  senderID,
+		Text:      text,
+		Raw:       raw,
+	})
 }
 
 func (c *wecomChannel) sendWebSocketMessage(msg core.OutgoingMessage) error {
@@ -662,27 +700,120 @@ func redactURLError(err error) error {
 	return &url.Error{Op: urlErr.Op, URL: parsed.String(), Err: urlErr.Err}
 }
 
-func (c *wecomChannel) handleTextMessage(ctx context.Context, chatID, senderID, messageID, text, chatType string, raw map[string]any) {
-	if strings.TrimSpace(text) == "" {
-		return
+// enqueueIncoming schedules WeCom message handling and marks the message seen
+// after a successful handoff, the same way the other channels dispatch inbound
+// messages.
+func (c *wecomChannel) enqueueIncoming(incoming core.IncomingMessage) bool {
+	if strings.TrimSpace(incoming.Text) == "" {
+		return false
 	}
+
+	now := time.Now()
+	var worker *wecomWorker
+	startWorker := false
+	queueFull := false
+
+	c.mu.Lock()
+	c.pruneSeenLocked(now)
+	// Without a platform message id there is nothing to deduplicate against.
+	if incoming.MessageID != "" {
+		if _, ok := c.seen[incoming.MessageID]; ok {
+			c.mu.Unlock()
+			return false
+		}
+	}
+	if c.workers == nil {
+		c.workers = map[string]*wecomWorker{}
+	}
+	worker = c.workers[incoming.ChatID]
+	if worker == nil {
+		worker = &wecomWorker{queue: make(chan core.IncomingMessage, weComQueueSize)}
+		c.workers[incoming.ChatID] = worker
+		startWorker = true
+	}
+	ctx := c.ctx
+	select {
+	case worker.queue <- incoming:
+		if incoming.MessageID != "" {
+			c.seen[incoming.MessageID] = now
+		}
+		c.mu.Unlock()
+		if startWorker {
+			go c.runWorker(ctx, incoming.ChatID, worker)
+		}
+		return true
+	case <-ctx.Done():
+		c.mu.Unlock()
+	default:
+		queueFull = true
+		c.mu.Unlock()
+	}
+
+	if startWorker {
+		go c.runWorker(ctx, incoming.ChatID, worker)
+	}
+	if queueFull {
+		common.Warn("wecom: dropping message, queue is full", zap.String("account_id", c.account.AccountID), zap.String("message_id", incoming.MessageID), zap.String("chat_id", incoming.ChatID))
+	}
+	return false
+}
+
+// runWorker processes one WeCom chat's inbound messages sequentially.
+func (c *wecomChannel) runWorker(ctx context.Context, chatID string, worker *wecomWorker) {
+	idle := time.NewTimer(weComWorkerIdle)
+	defer idle.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg := <-worker.queue:
+			if ctx.Err() != nil {
+				return
+			}
+			c.handleIncoming(ctx, msg)
+			resetTimer(idle, weComWorkerIdle)
+		case <-idle.C:
+			if c.retireWorker(chatID, worker) {
+				return
+			}
+			resetTimer(idle, weComWorkerIdle)
+		}
+	}
+}
+
+// retireWorker drops an idle worker when it is still the current one and its queue is empty.
+func (c *wecomChannel) retireWorker(chatID string, worker *wecomWorker) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	current := c.workers[chatID]
+	if current != worker {
+		return true
+	}
+	if len(worker.queue) > 0 {
+		return false
+	}
+	delete(c.workers, chatID)
+	return true
+}
+
+// handleIncoming invokes the installed RAGFlow bridge for one queued message.
+func (c *wecomChannel) handleIncoming(ctx context.Context, incoming core.IncomingMessage) {
 	c.mu.Lock()
 	handler := c.handler
 	c.mu.Unlock()
 	if handler == nil {
 		return
 	}
-	if err := handler(ctx, core.IncomingMessage{
-		Channel:   c.ChannelID(),
-		AccountID: c.account.AccountID,
-		ChatID:    chatID,
-		ChatType:  chatType,
-		MessageID: messageID,
-		SenderID:  senderID,
-		Text:      text,
-		Raw:       raw,
-	}); err != nil {
+	if err := handler(ctx, incoming); err != nil {
 		common.Error("wecom: message handler error", err, zap.String("account_id", c.account.AccountID))
+	}
+}
+
+func (c *wecomChannel) pruneSeenLocked(now time.Time) {
+	for messageID, ts := range c.seen {
+		if now.Sub(ts) > weComMessageTTL {
+			delete(c.seen, messageID)
+		}
 	}
 }
 

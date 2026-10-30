@@ -40,6 +40,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"ragflow/internal/channels/core"
 	"ragflow/internal/common"
 )
 
@@ -47,6 +48,7 @@ const (
 	weComWebhookBodyLimit       = 1024 * 1024
 	weComWebhookShutdownTimeout = 5 * time.Second
 	weComPKCS7BlockSize         = 32
+	weComReplayWindow           = 5 * time.Minute
 )
 
 type wecomCrypto struct {
@@ -115,6 +117,14 @@ func (c *wecomCrypto) decrypt(signature, timestamp, nonce, encrypted string) ([]
 	if !c.hasValidSignature(signature, timestamp, nonce, encrypted) {
 		return nil, errors.New("invalid WeCom message signature")
 	}
+	sentAt, err := parseWeComTimestamp(timestamp)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if diff := now.Sub(sentAt); diff > weComReplayWindow || diff < -weComReplayWindow {
+		return nil, fmt.Errorf("stale WeCom timestamp: %s", timestamp)
+	}
 	ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
 	if err != nil {
 		return nil, fmt.Errorf("decode WeCom ciphertext: %w", err)
@@ -152,6 +162,14 @@ func (c *wecomCrypto) hasValidSignature(signature, timestamp, nonce, encrypted s
 	hash := sha1.Sum([]byte(strings.Join(parts, "")))
 	expected := hex.EncodeToString(hash[:])
 	return subtle.ConstantTimeCompare([]byte(strings.ToLower(signature)), []byte(expected)) == 1
+}
+
+func parseWeComTimestamp(value string) (time.Time, error) {
+	seconds, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid WeCom timestamp %q: %w", value, err)
+	}
+	return time.Unix(seconds, 0), nil
 }
 
 func removeWeComPKCS7Padding(payload []byte) ([]byte, error) {
@@ -259,6 +277,7 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 	if r.Method == http.MethodGet {
 		plaintext, err := channel.crypto.decrypt(signature, timestamp, nonce, query.Get("echostr"))
 		if err != nil {
+			common.Warn("wecom: webhook verification rejected", zap.String("account_id", accountID), zap.Error(err))
 			http.Error(w, "bad signature", http.StatusForbidden)
 			return
 		}
@@ -285,6 +304,7 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 	}
 	plaintext, err := channel.crypto.decrypt(signature, timestamp, nonce, envelope.Encrypt)
 	if err != nil {
+		common.Warn("wecom: callback rejected", zap.String("account_id", accountID), zap.Error(err))
 		http.Error(w, "bad signature", http.StatusForbidden)
 		return
 	}
@@ -295,14 +315,23 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if message.MsgType == "text" && message.FromUserName != "" {
-		channel.handleTextMessage(r.Context(), message.FromUserName, message.FromUserName, message.MsgID, message.Content, "p2p", map[string]any{
-			"to_user_name":   message.ToUserName,
-			"from_user_name": message.FromUserName,
-			"create_time":    message.CreateTime,
-			"msg_type":       message.MsgType,
-			"content":        message.Content,
-			"msg_id":         message.MsgID,
-			"xml":            string(plaintext),
+		channel.enqueueIncoming(core.IncomingMessage{
+			Channel:   channel.ChannelID(),
+			AccountID: channel.AccountID(),
+			ChatID:    message.FromUserName,
+			ChatType:  "p2p",
+			MessageID: message.MsgID,
+			SenderID:  message.FromUserName,
+			Text:      message.Content,
+			Raw: map[string]any{
+				"to_user_name":   message.ToUserName,
+				"from_user_name": message.FromUserName,
+				"create_time":    message.CreateTime,
+				"msg_type":       message.MsgType,
+				"content":        message.Content,
+				"msg_id":         message.MsgID,
+				"xml":            string(plaintext),
+			},
 		})
 	}
 	w.WriteHeader(http.StatusOK)
