@@ -21,6 +21,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
+	"ragflow/internal/engine/opensearch"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -31,11 +32,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// Requires ES_HOST (and optional ES_USERNAME/ES_PASSWORD), RAGFLOW_INFINITY_URI,
-// TEI_BASE_URL serving BAAI/bge-small-en-v1.5, and the usual tokenizer resources.
+// Requires ES_HOST (and optional ES_USERNAME/ES_PASSWORD), OS_HOSTS or OS_HOST
+// (and optional OS_USERNAME/OS_PASSWORD), RAGFLOW_INFINITY_URI, TEI_BASE_URL
+// serving BAAI/bge-small-en-v1.5, and the usual tokenizer resources.
 // Missing service configuration skips the affected backend; configured service
 // failures and retrieval assertion failures remain fatal.
-// All three tests cover both backends when their configuration is supplied.
+// All three tests cover all backends when their configuration is supplied.
 const retrievalIntegrationQuestion = "rocket propulsion engines exhaust thrust"
 
 type retrievalIntegrationFixture struct {
@@ -46,10 +48,10 @@ type retrievalIntegrationFixture struct {
 	engine  string
 }
 
-// Catches a disconnected dense leg, ignored weights, or an ES second-pass score
+// Catches a disconnected dense leg, ignored weights, or an ES/OpenSearch second-pass score
 // that no longer uses the caller's weight. No cross-engine score parity is assumed.
 func TestRetrievalModesAndWeightsIntegration(t *testing.T) {
-	for _, backend := range []string{"elasticsearch", "infinity"} {
+	for _, backend := range []string{"elasticsearch", "opensearch", "infinity"} {
 		t.Run(backend, func(t *testing.T) {
 			f := newRetrievalIntegrationFixture(t, backend)
 			t.Run("text", func(t *testing.T) {
@@ -73,7 +75,7 @@ func TestRetrievalModesAndWeightsIntegration(t *testing.T) {
 				if gap(high) <= gap(low)+1e-5 {
 					t.Fatalf("increasing vector weight must improve semantic relative to lexical candidate: gaps %g -> %g", gap(low), gap(high))
 				}
-				if backend == "elasticsearch" {
+				if backend == "elasticsearch" || backend == "opensearch" {
 					for _, tt := range []struct {
 						result *RetrievalResult
 						weight float64
@@ -95,7 +97,7 @@ func TestRetrievalModesAndWeightsIntegration(t *testing.T) {
 
 // Catches a missing final threshold or a total copied from unfiltered hits.
 func TestRetrievalThresholdIntegration(t *testing.T) {
-	for _, backend := range []string{"elasticsearch", "infinity"} {
+	for _, backend := range []string{"elasticsearch", "opensearch", "infinity"} {
 		t.Run(backend, func(t *testing.T) {
 			f := newRetrievalIntegrationFixture(t, backend, backend != "infinity")
 			low := f.scopedRequest(0)
@@ -113,7 +115,7 @@ func TestRetrievalThresholdIntegration(t *testing.T) {
 // Catches pagination before filtering, page-local totals/aggregations, and a
 // lost document scope. Literal IDs/counts keep the baseline from being an oracle.
 func TestRetrievalPaginationAndAggregationsIntegration(t *testing.T) {
-	for _, backend := range []string{"elasticsearch", "infinity"} {
+	for _, backend := range []string{"elasticsearch", "opensearch", "infinity"} {
 		t.Run(backend, func(t *testing.T) {
 			f := newRetrievalIntegrationFixture(t, backend, backend != "infinity")
 			full := f.retrieve(t, f.scopedRequest(f.threshold()))
@@ -164,6 +166,14 @@ func newRetrievalIntegrationFixture(t *testing.T, backend string, lexicalBoost .
 		if os.Getenv("ES_HOST") == "" {
 			t.Skip("set ES_HOST to run Elasticsearch retrieval integration tests")
 		}
+	case "opensearch":
+		hosts := os.Getenv("OS_HOSTS")
+		if hosts == "" {
+			hosts = os.Getenv("OS_HOST")
+		}
+		if hosts == "" {
+			t.Skip("set OS_HOSTS or OS_HOST to run OpenSearch retrieval integration tests")
+		}
 	case "infinity":
 		if os.Getenv("RAGFLOW_INFINITY_URI") == "" {
 			t.Skip("set RAGFLOW_INFINITY_URI to run Infinity retrieval integration tests")
@@ -205,7 +215,7 @@ func newRetrievalIntegrationFixture(t *testing.T, backend string, lexicalBoost .
 	}
 	decodeErr := json.NewDecoder(response.Body).Decode(&info)
 	closeErr := response.Body.Close()
-	if response.StatusCode != http.StatusOK || decodeErr != nil || closeErr != nil || info.ModelID != "BAAI/bge-small-en-v1.5" {
+	if response.StatusCode != http.StatusOK || decodeErr != nil || closeErr != nil || (info.ModelID != "BAAI/bge-small-en-v1.5" && !strings.HasSuffix(info.ModelID, "BAAI/bge-small-en-v1.5")) {
 		t.Fatalf("TEI must serve BAAI/bge-small-en-v1.5: status=%d model=%q decode=%v close=%v", response.StatusCode, info.ModelID, decodeErr, closeErr)
 	}
 	modelName := info.ModelID
@@ -236,6 +246,16 @@ func newRetrievalIntegrationFixture(t *testing.T, backend string, lexicalBoost .
 	switch backend {
 	case "elasticsearch":
 		de, err = elasticsearch.NewEngine(ctx, config.ElasticsearchConfig{Hosts: os.Getenv("ES_HOST"), Username: os.Getenv("ES_USERNAME"), Password: os.Getenv("ES_PASSWORD")})
+	case "opensearch":
+		hosts := os.Getenv("OS_HOSTS")
+		if hosts == "" {
+			hosts = os.Getenv("OS_HOST")
+		}
+		de, err = opensearch.NewEngine(ctx, config.OpenSearchConfig{
+			Hosts:    hosts,
+			Username: os.Getenv("OS_USERNAME"),
+			Password: os.Getenv("OS_PASSWORD"),
+		})
 	case "infinity":
 		de, err = infinity.NewEngine(ctx, config.InfinityConfig{URI: os.Getenv("RAGFLOW_INFINITY_URI"), DBName: "ragflow_retrieval_test", PostgresPort: 5432})
 	}
@@ -341,9 +361,9 @@ func (f *retrievalIntegrationFixture) scopedRequest(threshold float64) *Retrieva
 }
 
 func (f *retrievalIntegrationFixture) threshold() float64 {
-	// ES returns its clean kNN score on a different scale from Infinity's atan
+	// ES and OpenSearch return their clean kNN score on a different scale from Infinity's atan
 	// fusion. These are fixed cutoffs, not thresholds fitted to retrieved scores.
-	if f.engine == "elasticsearch" {
+	if f.engine == "elasticsearch" || f.engine == "opensearch" {
 		return 0.85
 	}
 	return 0.70

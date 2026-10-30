@@ -134,7 +134,11 @@ func newRerankIntegrationFixture(t *testing.T) (*retrievalIntegrationFixture, *m
 	if baseURL == "" {
 		baseURL = "https://api.siliconflow.cn/v1"
 	}
-	f := newRetrievalIntegrationFixture(t, "elasticsearch")
+	backend := "elasticsearch"
+	if os.Getenv("ES_HOST") == "" && (os.Getenv("OS_HOSTS") != "" || os.Getenv("OS_HOST") != "") {
+		backend = "opensearch"
+	}
+	f := newRetrievalIntegrationFixture(t, backend)
 	name := retrievalIntegrationReranker
 	driver := models.NewSiliconflowModel(map[string]string{"default": baseURL}, models.URLSuffix{Rerank: "rerank"})
 	recorder := &rerankIntegrationRecorder{ModelDriver: driver}
