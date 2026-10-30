@@ -54,6 +54,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/utility"
 )
 
@@ -140,6 +141,27 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		return nil, fmt.Errorf("Invoke: parse url: %w", err)
 	}
 
+	// Resolve the node's configured template variables against the
+	// merged run-time inputs. GET/DELETE requests carry them as URL
+	// query parameters (appended to any query already on the URL);
+	// POST/PUT requests carry them in the request body unless an
+	// explicit raw body was configured.
+	vars := resolveInvokeVariables(ctx, i.params, inputs)
+	if len(vars) > 0 && (method == http.MethodGet || method == http.MethodDelete) {
+		parsed, err := url.Parse(rawURL)
+		if err != nil {
+			return nil, fmt.Errorf("Invoke: parse url: %w", err)
+		}
+		query := parsed.Query()
+		for _, v := range vars {
+			for _, scalar := range invokeScalarStrings(v.value) {
+				query.Add(v.name, scalar)
+			}
+		}
+		parsed.RawQuery = query.Encode()
+		rawURL = parsed.String()
+	}
+
 	// Step 1: SSRF guard for the target URL. The validated
 	// hostname + resolved IP are reused for DNS pinning.
 	host, pinnedIP, err := validateInvokeURL(rawURL)
@@ -196,13 +218,51 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 
 	contentType, _ := inputs["content_type"].(string)
-	if contentType == "" && (method == http.MethodPost || method == http.MethodPut) {
-		contentType = defaultInvokeContentCT
+
+	var (
+		body       io.Reader
+		bodyIsForm bool
+	)
+	if s, ok := inputs["body"].(string); ok && s != "" {
+		// An explicit raw body always wins — raw-body-only requests
+		// keep working exactly as before.
+		body = bytes.NewReader([]byte(s))
+	} else if len(vars) > 0 && (method == http.MethodPost || method == http.MethodPut) {
+		// No raw body: serialize the configured variables into the
+		// request body according to the datatype.
+		switch strings.ToLower(strings.TrimSpace(stringParam(inputs["datatype"]))) {
+		case "form":
+			form := url.Values{}
+			for _, v := range vars {
+				for _, scalar := range invokeScalarStrings(v.value) {
+					form.Add(v.name, scalar)
+				}
+			}
+			body = strings.NewReader(form.Encode())
+			bodyIsForm = true
+		default:
+			// "json" (and anything unrecognized): one JSON object.
+			// Structured values keep their types instead of being
+			// stringified into opaque strings.
+			payload := make(map[string]any, len(vars))
+			for _, v := range vars {
+				payload[v.name] = invokeJSONValue(v.value)
+			}
+			encoded, err := json.Marshal(payload)
+			if err != nil {
+				return nil, fmt.Errorf("Invoke: encode variables to JSON body: %w", err)
+			}
+			body = bytes.NewReader(encoded)
+		}
 	}
 
-	var body io.Reader
-	if s, ok := inputs["body"].(string); ok != false && s != "" {
-		body = bytes.NewReader([]byte(s))
+	if contentType == "" {
+		switch {
+		case bodyIsForm:
+			contentType = "application/x-www-form-urlencoded"
+		case method == http.MethodPost || method == http.MethodPut:
+			contentType = defaultInvokeContentCT
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, body)
@@ -334,6 +394,166 @@ func (i *InvokeComponent) GetInputForm() map[string]any {
 	return form
 }
 
+// invokeVariable is one resolved Invoke template variable: the wire
+// name sent to the server and its resolved value.
+type invokeVariable struct {
+	name  string
+	value any
+}
+
+// resolveInvokeVariables resolves the node's configured variables
+// against the run-time inputs and the canvas state. A variable whose
+// ref names a present run-time input takes that input's value
+// (explicit debug inputs are overrides); otherwise the ref is resolved
+// from the canvas state, because normal canvas runs pass upstream
+// values through state rather than through inputs; otherwise the
+// variable falls back to its configured static value. Only absence
+// falls back — an explicitly set null stays null. Order follows the
+// configured variables list. Variables with a blank key are skipped.
+func resolveInvokeVariables(ctx context.Context, params map[string]any, inputs map[string]any) []invokeVariable {
+	raw, _ := params["variables"].([]any)
+	state, _ := runtime.GetStateFromContext(ctx)
+	vars := make([]invokeVariable, 0, len(raw))
+	for _, item := range raw {
+		variable, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := strings.TrimSpace(stringParam(variable["key"]))
+		if name == "" {
+			continue
+		}
+		ref := strings.TrimSpace(stringParam(variable["ref"]))
+		value, resolved := resolveInvokeVariableValue(state, inputs, ref)
+		if !resolved {
+			value = variable["value"]
+		}
+		vars = append(vars, invokeVariable{name: name, value: value})
+	}
+	return vars
+}
+
+// resolveInvokeVariableValue resolves one variable ref with presence
+// semantics: an explicit run-time input wins (debug override), then the
+// canvas state, and only when both are absent does the caller fall back
+// to the static value. A present-but-null value is returned as-is so an
+// explicit null is preserved instead of being replaced by the fallback.
+func resolveInvokeVariableValue(state *runtime.CanvasState, inputs map[string]any, ref string) (any, bool) {
+	if ref == "" {
+		return nil, false
+	}
+	if v, ok := inputs[ref]; ok {
+		return v, true
+	}
+	if state == nil {
+		return nil, false
+	}
+	return invokeStateLookup(state, ref)
+}
+
+// invokeStateLookup resolves a ref against the canvas state, reporting
+// whether the ref was present. Supported forms mirror
+// runtime.CanvasState.GetVar: "cpn_id@param" (plus dot-path tails),
+// "sys.x", "env.x", "item", "index". Anything else is not a state ref
+// and resolves to absent so the caller can fall back.
+func invokeStateLookup(state *runtime.CanvasState, ref string) (any, bool) {
+	switch ref {
+	case "item", "index":
+		_, _, globals := state.SnapshotNamespaces()
+		v, ok := globals["__"+ref+"__"]
+		return v, ok
+	}
+	if rest, ok := strings.CutPrefix(ref, "sys."); ok {
+		sys, _, _ := state.SnapshotNamespaces()
+		return invokeDotLookup(sys, rest)
+	}
+	if rest, ok := strings.CutPrefix(ref, "env."); ok {
+		_, env, _ := state.SnapshotNamespaces()
+		return invokeDotLookup(env, rest)
+	}
+	if idx := strings.Index(ref, "@"); idx >= 0 {
+		params, ok := state.Snapshot()[ref[:idx]]
+		if !ok {
+			return nil, false
+		}
+		return invokeDotLookup(params, ref[idx+1:])
+	}
+	return nil, false
+}
+
+// invokeDotLookup walks a dot-separated path through nested maps and
+// reports whether the full path was present (a present null counts).
+func invokeDotLookup(m map[string]any, path string) (any, bool) {
+	cur := any(m)
+	for _, part := range strings.Split(path, ".") {
+		mm, ok := cur.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		cur, ok = mm[part]
+		if !ok {
+			return nil, false
+		}
+	}
+	return cur, true
+}
+
+// invokeJSONValue converts a resolved variable value for the JSON
+// request body. Structured Go values pass through untouched. A
+// string that parses as a JSON array or object is embedded as the
+// structured value, so upstream JSON outputs keep their types
+// instead of becoming opaque strings; every other string is sent
+// as-is.
+func invokeJSONValue(value any) any {
+	s, ok := value.(string)
+	if !ok {
+		return value
+	}
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return s
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
+		return s
+	}
+	switch decoded.(type) {
+	case []any, map[string]any:
+		return decoded
+	default:
+		return s
+	}
+}
+
+// invokeScalarStrings renders a resolved variable value as one or
+// more scalar strings for URL query parameters and form fields.
+// Slices expand to repeated parameters; structured values are
+// JSON-encoded.
+func invokeScalarStrings(value any) []string {
+	switch v := value.(type) {
+	case nil:
+		return []string{""}
+	case string:
+		return []string{v}
+	case []string:
+		// Typed slices expand to repeated parameters instead of one
+		// JSON-encoded string.
+		out := make([]string, 0, len(v))
+		return append(out, v...)
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			out = append(out, invokeScalarStrings(item)...)
+		}
+		return out
+	default:
+		if encoded, err := json.Marshal(v); err == nil {
+			return []string{string(encoded)}
+		}
+		return []string{fmt.Sprintf("%v", v)}
+	}
+}
+
 func (i *InvokeComponent) mergeInputs(inputs map[string]any) map[string]any {
 	merged := cloneInvokeParams(i.params)
 	for key, value := range inputs {
@@ -456,8 +676,8 @@ func (i *InvokeComponent) Inputs() map[string]string {
 		"proxy":        "Optional proxy URL (e.g. http://host:3128).",
 		"content_type": "Optional Content-Type; default 'application/json' for POST/PUT.",
 		"clean_html":   "When true, strip HTML tags from the response body.",
-		"datatype":     "Expected response datatype: 'json', 'text', or 'html'. Default 'json'.",
-		"variables":    "Optional template variables for URL/body interpolation.",
+		"datatype":     "Expected response datatype: 'json' (default), 'text', or 'html'. Also selects the POST/PUT variable-body encoding when no raw body is set: 'form' sends variables as 'application/x-www-form-urlencoded', anything else sends them as a JSON object.",
+		"variables":    "Optional template variables: sent as URL query parameters for GET/DELETE, or as a JSON/form request body for POST/PUT (a raw body takes precedence).",
 	}
 }
 
