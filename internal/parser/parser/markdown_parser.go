@@ -31,6 +31,7 @@ import (
 	mdparser "github.com/gomarkdown/markdown/parser"
 	"golang.org/x/net/html"
 
+	"ragflow/internal/entity"
 	"ragflow/internal/parser/charset"
 	"ragflow/internal/parser/media"
 )
@@ -50,6 +51,13 @@ type MarkdownParser struct {
 	// downloaded. NewMarkdownParser enables it for direct Markdown parsing;
 	// callers normalizing untrusted backend responses may disable it.
 	FetchRemoteImages bool
+	// textOnly skips every image source: no download, no data-URI decode and
+	// no media reference. Preview, CLI and attachment paths use it.
+	textOnly bool
+	// mediaRefs stores image bytes in the run media cache and emits MediaRefs
+	// instead of inline payloads. newParser enables it for ingestion; callers
+	// normalizing backend Markdown keep inline payloads.
+	mediaRefs bool
 }
 
 func NewMarkdownParser(libType string) (*MarkdownParser, error) {
@@ -83,11 +91,19 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 // returns a structured JSON payload. Each top-level block
 // emits one item with `text` + `doc_type_kwd: "text"`. When the
 // block contains a Markdown image reference (![alt](src)), the image
-// data is resolved and the item carries `doc_type_kwd: "image"` with
-// the base64-encoded image payload. The legacy debug-print path has
+// source is resolved and the item carries `doc_type_kwd: "image"`.
+// Ingestion parsing stores the bytes in the run media cache and emits a
+// `media_ref`; direct callers that normalize backend Markdown keep the
+// base64-encoded payload on `image`. The legacy debug-print path has
 // been removed; callers consume ParseResult directly.
 func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	state := &htmlWalkState{budget: media.NewBudget()}
+	if p.mediaRefs {
+		state.refOnly = true
+		state.ctx = ctx
+		state.mediaCache = media.CacheFromContext(ctx)
+		state.mediaFormat = "markdown"
+	}
 	result := p.parseWithState(ctx, filename, data, state)
 	result.Warnings = append(state.warnings(), result.Warnings...)
 	return result
@@ -148,9 +164,21 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 
 	var items []map[string]any
 	mediaBudget := state.budget
-	imageCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-	unresolvedImages := walkMarkdownBlocksWithImages(imageCtx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, state)
+	walkCtx := ctx
+	if !state.skipImages {
+		var cancel context.CancelFunc
+		walkCtx, cancel = context.WithTimeout(ctx, 60*time.Second)
+		defer cancel()
+	}
+	previousMediaResolver := state.resolveMedia
+	if state.refOnly {
+		state.resolveMedia = markdownMediaResolver(state, walkCtx, p.FetchRemoteImages)
+		defer func() { state.resolveMedia = previousMediaResolver }()
+	}
+	unresolvedImages := walkMarkdownBlocksWithImages(walkCtx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, state)
+	if state.err != nil {
+		return ParseResult{Err: state.err}
+	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
@@ -158,7 +186,7 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	var warnings []string
-	if mediaBudget.Count() > 0 && imageCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
+	if !state.skipImages && mediaBudget.Count() > 0 && walkCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
 		warnings = append(warnings, "Markdown image processing reached the document time budget")
 	}
 	if unresolvedImages > 0 {
@@ -427,10 +455,11 @@ func markdownTableCells(line string) []string {
 // walkMarkdownBlocksWithImages emits one normalized item per
 // top-level block. Headings, paragraphs, lists, and code blocks are
 // emitted with their text. When a block contains a Markdown image
-// reference (![alt](src)), the image data is resolved via
+// reference (![alt](src)), the image source is resolved via
 // findBlockImage (per-block AST walk) and the item carries
-// `doc_type_kwd: "image"` together with the base64-encoded image
-// payload. When flatten is true, image items use doc_type_kwd="text".
+// `doc_type_kwd: "image"` together with either a run-cache reference
+// (refOnly), the base64-encoded payload (inline mode), or nothing when the
+// source was skipped. When flatten is true, image items use doc_type_kwd="text".
 //
 // Tables are emitted through the HTML walker as structured items in source
 // order, with embedded images linked to their parent table.
@@ -448,29 +477,34 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 	}()
 	unresolvedImages := 0
 	previousResolver := htmlState.resolveImage
-	htmlState.resolveImage = func(src string) (string, bool) {
-		remote := strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://")
-		if remote && !fetchRemoteImages {
-			return "", false
-		}
-		encoded, raw, omitted, resolved := resolveImageURL(ctx, src, budget)
-		if !resolved {
-			if !omitted {
-				unresolvedImages++
+	if !htmlState.refOnly && !htmlState.skipImages {
+		htmlState.resolveImage = func(src string) (string, bool) {
+			remote := strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://")
+			if remote && !fetchRemoteImages {
+				return "", false
 			}
-			return "", false
-		}
-		if raw != nil {
-			mime := http.DetectContentType(raw)
-			if !strings.HasPrefix(mime, "image/") {
-				mime = "image/octet-stream"
+			encoded, raw, omitted, resolved := resolveImageURL(ctx, src, budget)
+			if !resolved {
+				if !omitted {
+					unresolvedImages++
+				}
+				return "", false
 			}
-			return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(raw), true
+			if raw != nil {
+				mime := http.DetectContentType(raw)
+				if !strings.HasPrefix(mime, "image/") {
+					mime = "image/octet-stream"
+				}
+				return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(raw), true
+			}
+			return strings.ToLower(src[:strings.IndexByte(src, ',')+1]) + encoded, true
 		}
-		return strings.ToLower(src[:strings.IndexByte(src, ',')+1]) + encoded, true
+		defer func() { htmlState.resolveImage = previousResolver }()
 	}
-	defer func() { htmlState.resolveImage = previousResolver }()
 	for _, child := range doc.GetChildren() {
+		if htmlState.err != nil {
+			break
+		}
 		var layout string
 		var docTypeKwd string
 		var txt string
@@ -560,20 +594,31 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 		// every block as an image whenever any image was present. When
 		// flatten is true, keep doc_type_kwd="text" (Python
 		// parser.py:1034: flatten_media_to_text overrides image).
-		if imgURL, ok := findBlockImage(child); ok {
-			isRemote := strings.HasPrefix(imgURL, "http://") || strings.HasPrefix(imgURL, "https://")
-			if fetchRemoteImages || !isRemote {
-				encoded, raw, omitted, resolved := resolveImageURL(ctx, imgURL, budget)
-				if omitted {
-					item["media_omitted"] = true
-				} else if !resolved {
-					unresolvedImages++
-				} else {
-					if raw != nil {
-						encoded = base64.StdEncoding.EncodeToString(raw)
+		if !htmlState.skipImages {
+			if imgURL, ok := findBlockImage(child); ok {
+				if htmlState.refOnly {
+					// Media-ref mode stores the bytes in the run cache; the
+					// item carries only the reference.
+					if _, ref, ok := htmlState.imageSource(imgURL); ok && ref != nil {
+						item["media_ref"] = *ref
+						item["doc_type_kwd"] = "image"
 					}
-					item["image"] = encoded
-					item["doc_type_kwd"] = "image"
+				} else {
+					isRemote := strings.HasPrefix(imgURL, "http://") || strings.HasPrefix(imgURL, "https://")
+					if fetchRemoteImages || !isRemote {
+						encoded, raw, omitted, resolved := resolveImageURL(ctx, imgURL, budget)
+						if omitted {
+							item["media_omitted"] = true
+						} else if !resolved {
+							unresolvedImages++
+						} else {
+							if raw != nil {
+								encoded = base64.StdEncoding.EncodeToString(raw)
+							}
+							item["image"] = encoded
+							item["doc_type_kwd"] = "image"
+						}
+					}
 				}
 			}
 		}
@@ -581,6 +626,39 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 		*out = append(*out, item)
 	}
 	return unresolvedImages
+}
+
+// markdownMediaResolver resolves one Markdown image source against the run
+// media cache. A data URI is decoded and stored directly; an HTTP(S) source is
+// downloaded through the shared SSRF-guarded fetch when remote images are
+// enabled. Local paths and other schemes are never read: they are reported as
+// unresolved so the block text keeps the Markdown reference and the parser
+// warns about the skipped source.
+func markdownMediaResolver(state *htmlWalkState, walkCtx context.Context, fetchRemote bool) func(string) (*entity.MediaRef, bool) {
+	return func(src string) (*entity.MediaRef, bool) {
+		if state.err != nil {
+			return nil, false
+		}
+		src = strings.TrimSpace(src)
+		if src == "" {
+			return nil, false
+		}
+		if media.IsDataImageSource(src) {
+			ref, invalid := state.storeDataURIMedia(src, src)
+			if invalid {
+				state.unresolvedImages++
+			}
+			return ref, ref != nil
+		}
+		if isRemoteImageSource(src) {
+			if !fetchRemote {
+				return nil, false
+			}
+			return state.resolveRemoteMedia(walkCtx, src)
+		}
+		state.unresolvedImages++
+		return nil, false
+	}
 }
 
 // isTableHTML reports whether block text starts with a table element.
