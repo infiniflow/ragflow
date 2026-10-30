@@ -181,14 +181,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
 		apiNoAuth.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
 		apiNoAuth.GET("/connectors/box/oauth/web/callback", r.connectorHandler.BoxWebOAuthCallback)
-		// Forgot-password flow (fixes #15282).
-		// Routes are intentionally registered before any auth middleware:
-		// a user who has forgotten their password is, by definition,
-		// unauthenticated.
-		apiNoAuth.POST("/auth/password/forgot/captcha", r.userHandler.ForgotCaptcha)
-		apiNoAuth.POST("/auth/password/forgot/otp", r.userHandler.ForgotSendOTP)
-		apiNoAuth.POST("/auth/password/forgot/otp/verify", r.userHandler.ForgotVerifyOTP)
-		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 
 		apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
 
