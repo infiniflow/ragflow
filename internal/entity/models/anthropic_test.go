@@ -72,7 +72,11 @@ func TestAnthropicToolOptionalFields(t *testing.T) {
 		{"non-string description", map[string]any{"name": "clock", "parameters": map[string]any{"type": "object"}, "description": 42}, `{"input_schema":{"type":"object"},"name":"clock"}`, false},
 		{"null description", map[string]any{"name": "clock", "parameters": map[string]any{"type": "object"}, "description": nil}, `{"input_schema":{"type":"object"},"name":"clock"}`, false},
 		{"null parameters", map[string]any{"name": "clock", "parameters": nil}, "", true},
+		{"typed nil map parameters", map[string]any{"name": "clock", "parameters": (map[string]any)(nil)}, "", true},
 		{"non-object parameters", map[string]any{"name": "clock", "parameters": "invalid"}, "", true},
+		{"struct parameters", map[string]any{"name": "clock", "parameters": struct {
+			Type string `json:"type"`
+		}{Type: "object"}}, `{"input_schema":{"type":"object"},"name":"clock"}`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := make(map[string]any)
