@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/dao"
@@ -93,6 +94,81 @@ func TestCategorizeDecisionRegisteredRouting(t *testing.T) {
 				t.Errorf("instructions missing %q", want)
 			}
 		}
+	}
+}
+
+func TestCategorizeNaceDecisionRouting(t *testing.T) {
+	for _, ref := range []string{categorizeDecisionModelID, "4d2d824e7e5d11f1a845455b140cef91", "decision-model-preview@default@Nace", "decision-model-preview@Nace"} {
+		t.Run(ref, func(t *testing.T) {
+			calls := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.URL.Path != "/v1/systemone" || r.Header.Get("Authorization") != "Bearer test-key" {
+					t.Errorf("unexpected decision request: %s %s", r.Method, r.URL.Path)
+				}
+				var request struct {
+					Model string `json:"model"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Model != "decision-model-preview" {
+					t.Errorf("unexpected model request: %+v, %v", request, err)
+				}
+				_, _ = w.Write([]byte(`{"answers":{"category_0":{"type":"noul","noul":0.1},"category_1":{"type":"noul","noul":0.9}}}`))
+			}))
+			defer srv.Close()
+			db := setupCategorizeDecisionModel(t, srv.URL+"/v1")
+			if err := db.Model(&entity.TenantModelProvider{}).Where("id = ?", "decision-provider").Update("provider_name", "Nace").Error; err != nil {
+				t.Fatal(err)
+			}
+			const instanceID = "4d2d824e7e5d11f1a845455b140cef91"
+			if err := db.Model(&entity.TenantModelInstance{}).Where("id = ?", "decision-instance").Update("id", instanceID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Model(&entity.TenantModel{}).Where("id = ?", categorizeDecisionModelID).Updates(map[string]any{"instance_id": instanceID, "model_name": "decision-model-preview"}).Error; err != nil {
+				t.Fatal(err)
+			}
+			c := NewCategorizeComponent(CategorizeParam{ModelID: ref, APIKey: "test-key", Categories: []string{"sales", "support"}, CategoryRoutes: map[string]string{"support": "support-route"}})
+			out, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{"query": "Login is broken"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if calls != 1 || out["category"] != "support" || !reflect.DeepEqual(out["_next"], []string{"support-route"}) {
+				t.Fatalf("Invoke = %v; decision calls = %d", out, calls)
+			}
+		})
+	}
+}
+
+func TestCategorizeNaceCompositeRejectsUnavailableModels(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		update func(*gorm.DB) error
+	}{
+		{"disabled model", func(db *gorm.DB) error {
+			return db.Model(&entity.TenantModel{}).Where("id = ?", categorizeDecisionModelID).Update("status", "inactive").Error
+		}},
+		{"disabled instance", func(db *gorm.DB) error {
+			return db.Model(&entity.TenantModelInstance{}).Where("id = ?", "decision-instance").Update("status", "inactive").Error
+		}},
+		{"mismatched instance", func(db *gorm.DB) error {
+			return db.Model(&entity.TenantModelInstance{}).Where("id = ?", "decision-instance").Update("provider_id", "other-provider").Error
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; t.Error("unavailable model reached upstream") }))
+			defer srv.Close()
+			db := setupCategorizeDecisionModel(t, srv.URL)
+			if err := db.Model(&entity.TenantModelProvider{}).Where("id = ?", "decision-provider").Update("provider_name", "Nace").Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := tc.update(db); err != nil {
+				t.Fatal(err)
+			}
+			c := NewCategorizeComponent(CategorizeParam{ModelID: "decision-model-preview@default@Nace", Categories: []string{"sales", "support"}})
+			if _, err := c.Invoke(stateWithTenant("tenant-1"), db, nil); err == nil || calls != 0 {
+				t.Fatalf("Invoke error=%v; HTTP calls=%d", err, calls)
+			}
+		})
 	}
 }
 
@@ -242,5 +318,40 @@ func TestCategorizeDecisionCanceled(t *testing.T) {
 	c := NewCategorizeComponent(CategorizeParam{ModelID: categorizeDecisionModelID, Categories: []string{"a", "b"}})
 	if _, err := c.Invoke(ctx, db, nil); err == nil {
 		t.Fatal("canceled classification succeeded")
+	}
+}
+
+// An explicit decision-only driver with a model name the catalog does not know
+// has no resolvable type; it must still take the decision path.
+func TestCategorizeExplicitDecisionDriverUnknownModel(t *testing.T) {
+	for _, driver := range []string{"SystemOne", "Nace"} {
+		t.Run(driver, func(t *testing.T) {
+			calls := 0
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				if r.URL.Path != "/v1/systemone" {
+					t.Errorf("unexpected request path %s", r.URL.Path)
+				}
+				_, _ = w.Write([]byte(`{"answers":{"category_0":{"type":"noul","noul":0.1},"category_1":{"type":"noul","noul":0.9}}}`))
+			}))
+			defer srv.Close()
+			c := NewCategorizeComponent(CategorizeParam{
+				Driver: driver, ModelID: "not-in-any-catalog", APIKey: "k", BaseURL: srv.URL + "/v1",
+				Categories: []string{"sales", "support"},
+			})
+			out, err := c.Invoke(stateWithTenant("tenant-1"), setupComponentTestDB(t), map[string]any{"query": "Login is broken"})
+			if err != nil || calls != 1 || out["category"] != "support" {
+				t.Fatalf("Invoke = %v, %v; decision calls = %d", out, err, calls)
+			}
+		})
+	}
+}
+
+func TestCategorizeDecisionTimeout(t *testing.T) {
+	if got := categorizeDecisionTimeout("SystemOne"); got != 30*time.Second {
+		t.Errorf("SystemOne timeout = %v, want 30s", got)
+	}
+	if got := categorizeDecisionTimeout("Nace"); got < 60*time.Second {
+		t.Errorf("Nace timeout = %v, want at least 60s", got)
 	}
 }

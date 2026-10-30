@@ -2535,7 +2535,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       answerDescription: `该组件用作机器人与人类之间的接口。它接收用户的输入并显示机器人的计算结果。`,
       retrievalDescription: `此组件用于从知识库中检索相关信息。选择知识库。如果没有检索到任何内容，将返回“空响应”。`,
       generateDescription: `此组件用于调用 LLM 生成文本，请注意提示的设置。`,
-      categorizeDescription: `使用聊天模型（LLM）或 SystemOne 决策模型，将当前输入归入一个预定义类别，并将工作流路由到该类别连接的下游组件。请为每个类别指定名称、描述和示例。`,
+      categorizeDescription: `使用聊天模型（LLM）或 SystemOne 或 Nace 决策模型，将当前输入归入一个预定义类别，并将工作流路由到该类别连接的下游组件。请为每个类别指定名称、描述和示例。`,
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
       messageDescription:
         '该组件用来返回工作流最后产生的数据内容和原先设置的文本内容。',

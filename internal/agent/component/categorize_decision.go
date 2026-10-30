@@ -9,6 +9,16 @@ import (
 	"ragflow/internal/entity/models"
 )
 
+// categorizeDecisionTimeout bounds one classification. Nace holds a request up
+// to 55 s upstream and asks callers for 60 s or more, so it gets a longer cap
+// than SystemOne.
+func categorizeDecisionTimeout(driver string) time.Duration {
+	if strings.EqualFold(driver, "Nace") {
+		return 90 * time.Second
+	}
+	return 30 * time.Second
+}
+
 func categorizeWithDecision(ctx context.Context, p CategorizeParam, query string, history []categorizeHistoryMessage) (string, error) {
 	driver, err := models.GetPreconfiguredDriver(p.Driver, p.BaseURL)
 	if err != nil {
@@ -16,7 +26,7 @@ func categorizeWithDecision(ctx context.Context, p CategorizeParam, query string
 	}
 	// Bound the whole classification, including workflows with more categories
 	// than the endpoint accepts in one request.
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, categorizeDecisionTimeout(p.Driver))
 	defer cancel()
 	instructions := buildCategorizeDecisionInstructions(p)
 	state := map[string]string{"query": query, "conversation": buildCategorizePrompt(history)}
