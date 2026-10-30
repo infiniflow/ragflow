@@ -107,7 +107,7 @@ func (s *SkillSpaceService) getSkillsFolderID(ctx context.Context, tenantID stri
 	}
 
 	// Look for skills folder under root
-	files, _, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, rootFolder.ID, 0, 0, []dao.OrderTerm{{Column: "name"}}, "", false)
+	files, _, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, rootFolder.ID, 0, 0, []dao.OrderTerm{{Column: "name"}}, "")
 	if err != nil {
 		return "", fmt.Errorf("failed to list root folder contents: %w", err)
 	}

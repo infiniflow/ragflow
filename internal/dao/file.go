@@ -67,10 +67,10 @@ func (dao *FileDAO) GetByIDAndTenant(ctx context.Context, db *gorm.DB, id, tenan
 // When keywords is empty, only direct children of pfID are listed; when
 // keywords is non-empty, the search covers the whole subtree under pfID so
 // files and folders nested in sub-folders can be found too.
-func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, terms []OrderTerm, keywords string, excludeSkills bool, visibilityScopes ...func(*gorm.DB) *gorm.DB) ([]*entity.File, int64, error) {
+func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, terms []OrderTerm, keywords string, visibilityScopes ...func(*gorm.DB) *gorm.DB) ([]*entity.File, int64, error) {
 	var files []*entity.File
 	var total int64
-	query, err := dao.fileListQuery(ctx, db, tenantID, pfID, keywords, excludeSkills)
+	query, err := dao.fileListQuery(ctx, db, tenantID, pfID, keywords)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -109,7 +109,7 @@ func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID s
 	return files, total, nil
 }
 
-func (dao *FileDAO) fileListQuery(ctx context.Context, db *gorm.DB, tenantID, pfID, keywords string, excludeSkills bool) (*gorm.DB, error) {
+func (dao *FileDAO) fileListQuery(ctx context.Context, db *gorm.DB, tenantID, pfID, keywords string) (*gorm.DB, error) {
 	query := db.WithContext(ctx).Model(&entity.File{}).
 		Where("tenant_id = ? AND id != ?", tenantID, pfID)
 	if keywords != "" {
@@ -121,9 +121,6 @@ func (dao *FileDAO) fileListQuery(ctx context.Context, db *gorm.DB, tenantID, pf
 			Where("LOWER(name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
 	} else {
 		query = query.Where("parent_id = ?", pfID)
-	}
-	if excludeSkills {
-		query = query.Where("NOT (parent_id = ? AND name = ?)", pfID, SkillsFolderName)
 	}
 	return query, nil
 }

@@ -76,7 +76,7 @@ func TestFileDAO_GetByPfID_KeywordsSearchesSubtree(t *testing.T) {
 	d := NewFileDAO()
 	ctx := t.Context()
 
-	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "report", false)
+	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "report")
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestFileDAO_GetByPfID_KeywordsSearchesSubtree(t *testing.T) {
 	}
 
 	// Nested file two levels down must be found from the root folder.
-	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "notes", false)
+	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "notes")
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestFileDAO_GetByPfID_KeywordsSearchesSubtree(t *testing.T) {
 	}
 
 	// Folders themselves are searchable by name.
-	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "sub", false)
+	files, total, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "sub")
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestFileDAO_GetByPfID_KeywordsScopedToSubtree(t *testing.T) {
 	ctx := t.Context()
 
 	// Searching inside dirA must not match files outside that subtree.
-	files, total, err := d.GetByPfID(ctx, db, "t1", "dirA", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "report", false)
+	files, total, err := d.GetByPfID(ctx, db, "t1", "dirA", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "report")
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestFileDAO_GetByPfID_KeywordsScopedToSubtree(t *testing.T) {
 	}
 
 	// Tenant isolation still applies.
-	files, total, err = d.GetByPfID(ctx, db, "t2", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "report", false)
+	files, total, err = d.GetByPfID(ctx, db, "t2", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "report")
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestFileDAO_GetByPfID_NoKeywordsListsDirectChildren(t *testing.T) {
 	d := NewFileDAO()
 	ctx := t.Context()
 
-	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "", false)
+	files, total, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "create_time", Desc: true}}, "")
 	if err != nil {
 		t.Fatalf("GetByPfID failed: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestFileDAO_GetByPfID_OrderByExpressionFallsBack(t *testing.T) {
 
 	for _, orderBy := range fileOrderExpressions {
 		t.Run(orderBy, func(t *testing.T) {
-			rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: orderBy}}, "", false)
+			rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: orderBy}}, "")
 			if err != nil {
 				t.Fatalf("GetByPfID with orderby %q: %v", orderBy, err)
 			}
@@ -218,13 +218,13 @@ func TestFileDAO_GetByPfID_OrderByAllowedColumn(t *testing.T) {
 	ctx := t.Context()
 	d := NewFileDAO()
 
-	rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "name"}}, "", false)
+	rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "name"}}, "")
 	if err != nil {
 		t.Fatalf("GetByPfID ascending by name: %v", err)
 	}
 	assertFileOrder(t, rows, []string{"f-3", "f-2", "f-1"}, "name")
 
-	rows, _, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "name", Desc: true}}, "", false)
+	rows, _, err = d.GetByPfID(ctx, db, "t1", "root", 1, 15, []OrderTerm{{Column: "name", Desc: true}}, "")
 	if err != nil {
 		t.Fatalf("GetByPfID descending by name: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestFileDAO_GetByPfID_OrderBySeveralTerms(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.label, func(t *testing.T) {
-			rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, tc.terms, "", false)
+			rows, _, err := d.GetByPfID(ctx, db, "t1", "root", 1, 15, tc.terms, "")
 			if err != nil {
 				t.Fatalf("GetByPfID %s: %v", tc.label, err)
 			}
