@@ -399,6 +399,71 @@ func TestMarkdownParserIngestionFlattenKeepsImageAsText(t *testing.T) {
 	}
 }
 
+// TestMarkdownParserIngestionCountsInvalidDataURIOnce pins the shared source
+// key between the Markdown resolver and the walker's ref-only data-URI
+// fallback: one broken data URI must produce one warning, not an
+// invalid-payload warning plus an unresolved-source warning.
+func TestMarkdownParserIngestionCountsInvalidDataURIOnce(t *testing.T) {
+	ctx, cache := recordingMediaContext()
+	res := markdownIngestionParser(t).ParseWithResult(ctx, "bad.md", []byte("![broken](data:image/png;base64,!!!)\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(cache.puts) != 0 {
+		t.Fatalf("cache puts = %+v, want none", cache.puts)
+	}
+	warnings := strings.Join(res.Warnings, "\n")
+	if strings.Contains(warnings, "invalid or oversized inline image") {
+		t.Fatalf("broken data URI was resolved twice: %v", res.Warnings)
+	}
+	if got := strings.Count(warnings, "unresolved image reference"); got != 1 {
+		t.Fatalf("unresolved warnings = %d, want 1: %v", got, res.Warnings)
+	}
+	if len(res.Warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly one", res.Warnings)
+	}
+}
+
+// TestMarkdownParserIngestionCacheLimitCountedOnce pins that a data URI the
+// run cache rejects is attempted once and reported once.
+func TestMarkdownParserIngestionCacheLimitCountedOnce(t *testing.T) {
+	cache := &recordingMediaCache{putErr: fmt.Errorf("mediacache: run image count limit 1 exceeded: %w", media.ErrMediaLimitExceeded)}
+	ctx := media.WithCache(context.Background(), cache)
+
+	res := markdownIngestionParser(t).ParseWithResult(ctx, "limit.md", []byte("![one]("+markdownMediaDataURI+")\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if cache.putCalls != 1 {
+		t.Fatalf("cache Put calls = %d, want 1", cache.putCalls)
+	}
+	warnings := strings.Join(res.Warnings, "\n")
+	if !strings.Contains(warnings, "skipped 1 image(s) after the run media cache limit") {
+		t.Fatalf("cache-limit warning count is not 1: %v", res.Warnings)
+	}
+	if strings.Contains(warnings, "skipped 2 image(s)") {
+		t.Fatalf("cache-limit warning double counted: %v", res.Warnings)
+	}
+}
+
+// TestMarkdownParserIngestionBudgetRejectionCountedOnce pins that a data URI
+// rejected by the run byte budget is reserved once, not once per fallback.
+func TestMarkdownParserIngestionBudgetRejectionCountedOnce(t *testing.T) {
+	t.Setenv("RAGFLOW_MEDIA_MAX_BYTES_PER_RUN", "1")
+	ctx, cache := recordingMediaContext()
+	res := markdownIngestionParser(t).ParseWithResult(ctx, "budget.md", []byte("![one]("+markdownMediaDataURI+")\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(cache.puts) != 0 {
+		t.Fatalf("cache puts = %+v, want none", cache.puts)
+	}
+	warnings := strings.Join(res.Warnings, "\n")
+	if !strings.Contains(warnings, "omitted 1 embedded image payload(s) after reaching the 1-byte run image budget") {
+		t.Fatalf("budget warning count is not 1: %v", res.Warnings)
+	}
+}
+
 // TestMarkdownTextParserSkipsImages pins the text-only contract: preview, CLI
 // and attachment parsing must not download remote images, decode data URIs or
 // emit image payloads, while keeping the alt text and surrounding prose.
