@@ -736,7 +736,7 @@ func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, userID, keyword
 		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
 	}
 	total := int64(len(groups))
-	groups = slicePage(groups, page, pageSize)
+	groups = common.SlicePage(groups, page, pageSize)
 	raw := make([]json.RawMessage, 0, len(groups))
 	for _, g := range groups {
 		item, err := s.marshalMergeGroupItem(ctx, userID, g)
@@ -785,7 +785,7 @@ func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, 
 		return merged[i].time < merged[j].time
 	})
 	total := int64(len(merged))
-	merged = slicePage(merged, page, pageSize)
+	merged = common.SlicePage(merged, page, pageSize)
 	raw := make([]json.RawMessage, 0, len(merged))
 	for _, m := range merged {
 		if m.raw != nil {
@@ -916,26 +916,6 @@ func sliceContains[T comparable](s []T, v T) bool {
 		}
 	}
 	return false
-}
-
-// slicePage returns a shallow copy of s bounded to the requested page window.
-// A page <= 0 or pageSize <= 0 returns s unchanged (caller did not ask to page).
-// The page bound is checked arithmetically before computing the offset so an
-// unbounded positive page/page_size can never overflow to a negative start and
-// panic (review Critical).
-func slicePage[T any](s []T, page, pageSize int) []T {
-	if page <= 0 || pageSize <= 0 || len(s) == 0 {
-		return s
-	}
-	// page-1 must be <= (len(s)-1)/pageSize, i.e. start must be < len(s).
-	if page-1 > (len(s)-1)/pageSize {
-		return nil
-	}
-	start := (page - 1) * pageSize
-	if pageSize >= len(s)-start {
-		return s[start:]
-	}
-	return s[start : start+pageSize]
 }
 
 // intValuePtr dereferences a *int64 to a plain int64 (0 when nil), used for the

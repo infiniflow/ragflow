@@ -1568,15 +1568,12 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 }
 
 // ListAllModels list all models
-func (s *Service) ListAllModels(pageIndex, pageSize int) ([]map[string]interface{}, error) {
+func (s *Service) ListAllModels(page, pageSize int) ([]map[string]interface{}, error) {
 	models, err := dao.GetModelProviderManager().ListAllModels()
 	if err != nil {
 		return nil, err
 	}
-	if pageSize > 0 && pageIndex >= 0 && pageIndex*pageSize < len(models) {
-		return models[pageIndex*pageSize : (pageIndex+1)*pageSize], nil
-	}
-	return models, nil
+	return common.SlicePage(models, page, pageSize), nil
 }
 
 func (s *Service) GetModelByModelName(modelName string) (*modelModule.Model, error) {
