@@ -81,9 +81,6 @@ func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID
 	if err != nil {
 		return nil, err
 	}
-	if len(data) == 0 {
-		return nil, fmt.Errorf("this document is empty")
-	}
 
 	fileName := ""
 	if doc.Name != nil {

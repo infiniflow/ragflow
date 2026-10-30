@@ -141,13 +141,6 @@ def test_file_type_validation(add_dataset_func, generate_test_files, request):
 @pytest.mark.integration
 class TestDocumentDownload:
     @pytest.mark.p3
-    @pytest.mark.skip(
-        reason=(
-            "Go DocumentService.DownloadDocument rejects zero-byte blobs in "
-            "internal/service/document/document_crud.go; upload is supported "
-            "by test/api/document_api_test.go::TestRESTDocumentUploadPersistenceAndNames."
-        )
-    )
     def test_download_empty_uploaded_file(self, add_dataset_func):
         dataset = add_dataset_func
         documents = dataset.upload_documents([{"display_name": "empty.txt", "blob": b""}])
