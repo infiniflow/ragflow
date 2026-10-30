@@ -26,6 +26,8 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/common"
 )
 
 const qweatherToolName = "qweather"
@@ -39,13 +41,11 @@ var qweatherEndpoint = "https://devapi.qweather.com/v7/weather/now"
 
 // qweatherParams is the JSON shape the model sends into InvokableRun.
 //
-//   - APIKey (required): the QWeather API key (Console → Project → Credentials).
 //   - Location (required): the location code, e.g. "101010100" (Beijing)
 //     or a lat,lon string "39.904,116.405".
 //   - Lang (optional): language code for `text` and `windDir`. Defaults
 //     to "zh" per the inbox spec.
 type qweatherParams struct {
-	APIKey   string `json:"api_key"`
 	Location string `json:"location"`
 	Lang     string `json:"lang,omitempty"`
 }
@@ -77,7 +77,6 @@ type qweatherEnvelope struct {
 	Error     string `json:"_ERROR,omitempty"`
 }
 
-// QWeatherTool is the 和风天气
 // (QWeather) current-conditions tool (
 // batch 4). It performs a GET against devapi.qweather.com/v7/weather/now
 // and returns the parsed now.{temp, feelsLike, text, windDir, humidity}.
@@ -86,20 +85,29 @@ type qweatherEnvelope struct {
 // propagation.
 type QWeatherTool struct {
 	helper *HTTPHelper
+	apiKey string
 }
 
-// NewQWeatherTool returns a QWeatherTool using the default HTTPHelper.
+// NewQWeatherTool returns a QWeatherTool using the default HTTPHelper
+// and the QWEATHER_API_KEY env var for credential resolution.
 func NewQWeatherTool() *QWeatherTool {
-	return NewQWeatherToolWith(NewHTTPHelper())
+	return NewQWeatherToolWith(nil, "")
 }
 
-// NewQWeatherToolWith returns a QWeatherTool that uses the provided
-// HTTPHelper. Useful for tests.
-func NewQWeatherToolWith(h *HTTPHelper) *QWeatherTool {
+func NewQWeatherToolWith(h *HTTPHelper, apiKey string) *QWeatherTool {
 	if h == nil {
 		h = NewHTTPHelper()
 	}
-	return &QWeatherTool{helper: h}
+	return &QWeatherTool{helper: h, apiKey: strings.TrimSpace(apiKey)}
+}
+
+// resolveAPIKey returns the node-level credential, or QWEATHER_API_KEY
+// when the node does not carry one.
+func (q *QWeatherTool) resolveAPIKey() string {
+	if q.apiKey != "" {
+		return q.apiKey
+	}
+	return strings.TrimSpace(common.GetEnv(common.EnvQWeatherAPIKey))
 }
 
 // Info returns the tool's metadata for the chat model.
@@ -108,11 +116,6 @@ func (q *QWeatherTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		Name: qweatherToolName,
 		Desc: qweatherToolDescription,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"api_key": {
-				Type:     schema.String,
-				Desc:     "QWeather API key (Console → 项目 → 凭据).",
-				Required: true,
-			},
 			"location": {
 				Type:     schema.String,
 				Desc:     "Location code (e.g. 101010100 for Beijing) or \"lat,lon\" (e.g. \"39.904,116.405\").",
@@ -129,10 +132,10 @@ func (q *QWeatherTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 
 // buildQWeatherURL composes the devapi.qweather.com URL. Centralized
 // for testability.
-func buildQWeatherURL(p qweatherParams) string {
+func buildQWeatherURL(apiKey string, p qweatherParams) string {
 	q := url.Values{}
 	q.Set("location", p.Location)
-	q.Set("key", p.APIKey)
+	q.Set("key", apiKey)
 	if p.Lang == "" {
 		p.Lang = "zh"
 	}
@@ -147,16 +150,17 @@ func (q *QWeatherTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 		return qweatherErrJSON(fmt.Errorf("qweather: parse arguments: %w", err)),
 			fmt.Errorf("qweather: parse arguments: %w", err)
 	}
-	if p.APIKey == "" {
-		return qweatherErrJSON(fmt.Errorf("qweather: api_key is required")),
-			fmt.Errorf("qweather: api_key is required")
+	apiKey := q.resolveAPIKey()
+	if apiKey == "" {
+		return qweatherErrJSON(fmt.Errorf("qweather: api_key is not configured")),
+			fmt.Errorf("qweather: api_key is not configured (set the node-level api_key or QWEATHER_API_KEY)")
 	}
 	if p.Location == "" {
 		return qweatherErrJSON(fmt.Errorf("qweather: location is required")),
 			fmt.Errorf("qweather: location is required")
 	}
 
-	endpoint := buildQWeatherURL(p)
+	endpoint := buildQWeatherURL(apiKey, p)
 	headers := map[string]string{
 		"Accept": "application/json",
 	}
@@ -203,13 +207,4 @@ func qweatherJSON(env qweatherEnvelope) string {
 
 func qweatherErrJSON(err error) string {
 	return qweatherJSON(qweatherEnvelope{Error: err.Error()})
-}
-
-// formatQWeatherError joins a non-2xx status with the upstream code so
-// the model can see both signals. Exposed for testability.
-func formatQWeatherError(status int, upstreamCode string) string {
-	if strings.TrimSpace(upstreamCode) == "" {
-		return fmt.Sprintf("qweather: upstream returned %d", status)
-	}
-	return fmt.Sprintf("qweather: upstream returned %d (code=%s)", status, upstreamCode)
 }
