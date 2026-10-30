@@ -30,10 +30,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// A tenant model UUID picked as the PDF parser — the web UI stores it in
-// parse_method; layout_recognizer, when set, takes precedence — runs a
-// MiniCPM-OCR job and yields structured PDF items instead of falling through
-// to the image2text VLM path.
+// A tenant model UUID picked as the PDF parser runs a MiniCPM-OCR job and
+// yields structured PDF items instead of falling through to the image2text
+// VLM path. The model is found the way that path finds its own: parse_method
+// first, then layout_recognizer.
 func TestDispatch_PDFMiniCPMOCR_ModelUUID(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -69,10 +69,17 @@ func TestDispatch_PDFMiniCPMOCR_ModelUUID(t *testing.T) {
 		return driver, "MiniCPM-OCR-1.0", &modelModule.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
 	}
 
-	for _, field := range []string{"parse_method", "layout_recognizer"} {
-		t.Run(field, func(t *testing.T) {
+	for name, pdf := range map[string]map[string]string{
+		"parse_method":      {"parse_method": modelID},
+		"layout_recognizer": {"layout_recognizer": modelID},
+		"parse_method beside a built-in layout_recognizer":    {"parse_method": modelID, "layout_recognizer": "deepdoc"},
+		"parse_method beside another layout_recognizer model": {"parse_method": modelID, "layout_recognizer": "0f9e8d7c6b5a49382716051423324150"},
+	} {
+		t.Run(name, func(t *testing.T) {
 			setups := defaultSetups()
-			setups["pdf"][field] = modelID
+			for field, value := range pdf {
+				setups["pdf"][field] = value
+			}
 			c := &ParserComponent{setups: setups}
 			out, err := c.Invoke(t.Context(), nil, map[string]any{
 				"binary":    []byte("%PDF-1.4"),

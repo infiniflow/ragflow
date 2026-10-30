@@ -281,26 +281,18 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 		// parser path.
 	}
 
-	// MiniCPM-OCR dispatch: a tenant model UUID or model@instance@provider
-	// selector (layout takes precedence, then parse_method) that resolves to
-	// a MiniCPM-OCR model. The OCR-only model cannot serve the image2text VLM
-	// path below.
-	miniCPMOCRSelector := layout
-	if strings.TrimSpace(miniCPMOCRSelector) == "" {
-		miniCPMOCRSelector = method
+	modelID, useVision := resolvePDFVisionModelID(setup)
+	if !useVision {
+		return parser.ParseResult{}, false, nil
 	}
-	if strings.TrimSpace(miniCPMOCRSelector) != "" && !parser.IsPDFParseMethod(miniCPMOCRSelector) &&
-		isMiniCPMOCRModelSelector(ctx, db, tenantID, miniCPMOCRSelector) {
-		res, err := dispatchMiniCPMOCRPDF(ctx, db, filename, binary, tenantID, miniCPMOCRSelector)
+	// A MiniCPM-OCR model is OCR-only and cannot serve the image2text VLM path
+	// below, so its selector goes to its own parser instead.
+	if isMiniCPMOCRModelSelector(ctx, db, tenantID, modelID) {
+		res, err := dispatchMiniCPMOCRPDF(ctx, db, filename, binary, tenantID, modelID)
 		if err != nil {
 			return parser.ParseResult{}, true, err
 		}
 		return res, true, nil
-	}
-
-	modelID, useVision := resolvePDFVisionModelID(setup)
-	if !useVision {
-		return parser.ParseResult{}, false, nil
 	}
 	if tenantID == "" {
 		return parser.ParseResult{}, true, fmt.Errorf(

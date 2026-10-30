@@ -98,7 +98,9 @@ func TestMiniCPMOCRFileRunsJob(t *testing.T) {
 			}
 			file, header, err := r.FormFile("file")
 			if err != nil {
-				t.Fatalf("FormFile: %v", err)
+				t.Errorf("FormFile: %v", err)
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
 			}
 			data, _ := io.ReadAll(file)
 			if header.Filename != "document.pdf" || string(data) != "%PDF-1.7 test" {
@@ -372,6 +374,7 @@ func TestMiniCPMOCRFilePollFailures(t *testing.T) {
 		{name: "transient failure is retried", failures: 2, status: http.StatusServiceUnavailable},
 		{name: "persistent server errors give up", failures: 100, status: http.StatusBadGateway, wantErr: true, wantCancel: true},
 		{name: "client error gives up at once", failures: 1, status: http.StatusNotFound, wantErr: true, wantCancel: true},
+		{name: "reply without a known status gives up", failures: 1, status: http.StatusOK, wantErr: true, wantCancel: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var polls, cancels atomic.Int32

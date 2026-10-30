@@ -199,6 +199,7 @@ func (m *MiniCPMOCRModel) wait(ctx context.Context, jobURL string, job *miniCPMO
 			return nil, fmt.Errorf("job %s was cancelled", job.ID)
 		case "Running":
 		default:
+			m.cancel(ctx, jobURL, apiConfig)
 			return nil, fmt.Errorf("job %s returned unknown status %q", job.ID, job.Status)
 		}
 		select {
