@@ -352,7 +352,7 @@ const apiEndpoints = {
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   agentChatCompletion: `${restAPIv1}/agents/chat/completions`,
   resetAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
-  testDbConnect: `${restAPIv1}/agents/test_db_connection`,
+  testDbConnect: `${restAPIv1}/agents/test-db-connection`,
   getInputElements: `${webAPI}/canvas/input_elements`,
   debug: (agentId: string, componentId: string) =>
     `${restAPIv1}/agents/${agentId}/components/${componentId}/debug`,
@@ -448,8 +448,8 @@ const apiEndpoints = {
     `${restAPIv1}/searches/${params.search_id}`,
   askShare: `${restAPIv1}/searchbots/ask`,
   mindmapShare: `${restAPIv1}/searchbots/mindmap`,
-  getRelatedQuestionsShare: `${restAPIv1}/searchbots/related_questions`,
-  retrievalTestShare: `${restAPIv1}/searchbots/retrieval_test`,
+  getRelatedQuestionsShare: `${restAPIv1}/searchbots/related-questions`,
+  retrievalTestShare: `${restAPIv1}/searchbots/retrieval-test`,
 
   // memory
   createMemory: `${restAPIv1}/memories`,
