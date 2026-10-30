@@ -27,6 +27,8 @@ Use token-based chunking for text without reliable section structure. Click the 
 | Delimiters | Defaults to `\n`, `!`, `?`, `;`, `。`, `；`, `！`, and `？`. Each entry is a separate delimiter. Edit or remove entries, or click **Add** for another delimiter; check the **Splits at** preview. |
 | Child chunk are used for retrieval | Splits parent chunks into smaller retrieval chunks using **Child delimiters**, which appear after enabling the switch. Disabled by default. For line-based child chunks, enable it and add `\n`. |
 
+![Token Chunker delimiters and child chunk settings](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_token_chunker_delimiters.jpg)
+
 The output is `chunks`, an array of objects that downstream components can process.
 
 Click **Save draft** after configuring the node. [Publish and validate](./test_run.md) on a sample to check chunk boundaries, overlap, and child chunks.
@@ -44,5 +46,7 @@ Use Title Chunker for documents with clear headings, such as manuals and papers.
 | --- | --- |
 | Separate parent-heading content | Keeps content directly below a parent heading in a separate chunk. Disabled by default. |
 | Set first chunk as global context | Uses the first section as shared context across the heading hierarchy. Disabled by default. |
+
+![Title Chunker hierarchy, token cap, and heading rules](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_title_chunker_hierarchy_rules.jpg)
 
 For Markdown headings, add `^# ` for level 1 and `^## ` for level 2, then select level 2. In Hierarchy mode, check that each subsection retains its parent heading. Use the output `chunks` in downstream components.

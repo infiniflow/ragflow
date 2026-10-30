@@ -33,6 +33,8 @@ Expand **Advanced settings** below **Datasets**. It contains shared options foll
 
 The groups configure how each mode works. To choose the mode for a question, use the selector beside the message box; expanding a group in the settings panel does not switch the conversation's mode.
 
+![Chat advanced settings with shared options and Naive and Agentic groups](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_advanced_settings_groups.jpg)
+
 ### Shared Options
 
 | Setting | Purpose and operation |

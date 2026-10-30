@@ -52,6 +52,8 @@ Configured OCR and vision models depend on the pipeline owner's available provid
 
 To turn OCR off, enable vision enhancement first. The panel rejects a configuration with both disabled.
 
+![Parser image OCR settings and shared vision enhancement](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_parser_image_ocr.jpg)
+
 ## Other File Categories
 
 | Category | Configuration |
