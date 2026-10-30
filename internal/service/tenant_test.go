@@ -201,9 +201,9 @@ func TestTenantRoleConstants(t *testing.T) {
 	}
 }
 
-// TestSetDefaultModel_WithModelID verifies that SetDefaultModel resolves a model ID
-// to its canonical reference, validates ownership, and updates the membership.
-func TestSetDefaultModel_WithModelID(t *testing.T) {
+// TestSetModelSettings_WithModelID verifies that model IDs resolve to canonical references
+// and are persisted on the caller's active tenant membership.
+func TestSetModelSettings_WithModelID(t *testing.T) {
 	// 1. Setup SQLite in-memory DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
 		TranslateError: true,
@@ -294,12 +294,14 @@ func TestSetDefaultModel_WithModelID(t *testing.T) {
 		t.Fatalf("failed to create model: %v", err)
 	}
 
-	// 4. Run SetDefaultModel
+	// 4. Run the unified Tenant model settings path.
 	s := NewUserTenantService()
 	ctx := serviceTestContext(t, userID, tenantID)
-	err = s.SetDefaultModel(ctx, userID, "", "", "", "chat", modelID)
-	if err != nil {
-		t.Fatalf("SetDefaultModel failed: %v", err)
+	code, err := s.SetModelSettings(ctx, userID, &SetModelSettingsRequest{
+		DefaultModel: &DefaultModelSelection{ModelType: "chat", ModelID: modelID},
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("SetModelSettings() = (%v, %v), want success", code, err)
 	}
 
 	// Verify the default is stored on the user's owner membership.

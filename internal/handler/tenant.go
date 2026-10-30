@@ -82,7 +82,15 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 	}
 
 	ctx := c.Request.Context()
-	err := h.userTenantService.SetDefaultModel(ctx, user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType, req.ModelID)
+	_, err := h.userTenantService.SetModelSettings(ctx, user.ID, &service.SetModelSettingsRequest{
+		DefaultModel: &service.DefaultModelSelection{
+			ModelProvider: req.ModelProvider,
+			ModelInstance: req.ModelInstance,
+			ModelName:     req.ModelName,
+			ModelType:     req.ModelType,
+			ModelID:       req.ModelID,
+		},
+	})
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return

@@ -17,24 +17,36 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // SetModelSettingsRequest represents default model selections for a user in the current tenant.
 type SetModelSettingsRequest struct {
-	TenantID  *string                `json:"tenant_id"`
-	ASRID     *string                `json:"asr_id"`
-	EmbdID    *string                `json:"embd_id"`
-	Img2TxtID *string                `json:"img2txt_id"`
-	LLMID     *string                `json:"llm_id"`
-	RerankID  *string                `json:"rerank_id"`
-	TTSID     *string                `json:"tts_id"`
-	Raw       map[string]interface{} `json:"-"`
+	TenantID     *string                `json:"tenant_id"`
+	ASRID        *string                `json:"asr_id"`
+	EmbdID       *string                `json:"embd_id"`
+	Img2TxtID    *string                `json:"img2txt_id"`
+	LLMID        *string                `json:"llm_id"`
+	RerankID     *string                `json:"rerank_id"`
+	TTSID        *string                `json:"tts_id"`
+	Raw          map[string]interface{} `json:"-"`
+	DefaultModel *DefaultModelSelection `json:"-"`
+}
+
+// DefaultModelSelection is the single-model form used by the default-model endpoints.
+type DefaultModelSelection struct {
+	ModelProvider string
+	ModelInstance string
+	ModelName     string
+	ModelType     string
+	ModelID       string
 }
 
 // UserTenantService manages user settings scoped to a tenant membership.
@@ -120,12 +132,38 @@ func (s *UserTenantService) GetUserTenantRelationByUserIDWithContext(ctx context
 	return result, nil
 }
 
-// SetModelSettings updates default model references on the user's active tenant membership.
+var defaultModelTypeNames = [...]string{"chat", "embedding", "rerank", "asr", "vision", "tts", "ocr", "decision"}
+
+// SetModelSettings validates and updates default models on the user's active tenant membership.
 func (s *UserTenantService) SetModelSettings(ctx context.Context, userID string, req *SetModelSettingsRequest) (common.ErrorCode, error) {
-	if req == nil {
-		return common.CodeArgumentError, fmt.Errorf("model settings are required")
+	if req == nil || (req.Raw != nil && req.DefaultModel != nil) {
+		return common.CodeArgumentError, fmt.Errorf("provide either model settings or one default model selection")
 	}
-	updates, err := modelSettingUpdates(req.Raw)
+	raw := req.Raw
+	if selection := req.DefaultModel; selection != nil {
+		legacyField, idField, _, err := defaultModelFields(selection.ModelType)
+		if err != nil {
+			return common.CodeArgumentError, err
+		}
+		provider := strings.TrimSpace(selection.ModelProvider)
+		instance := strings.TrimSpace(selection.ModelInstance)
+		name := strings.TrimSpace(selection.ModelName)
+		modelID := strings.TrimSpace(selection.ModelID)
+		anyNameField := provider != "" || instance != "" || name != ""
+		if anyNameField && modelID == "" && (provider == "" || instance == "" || name == "") {
+			return common.CodeArgumentError, fmt.Errorf("model provider, instance and name must be specified together")
+		}
+		modelRef := ""
+		if anyNameField && provider != "" && instance != "" && name != "" {
+			modelRef = fmt.Sprintf("%s@%s@%s", name, instance, provider)
+		}
+		var modelIDValue interface{}
+		if modelID != "" {
+			modelIDValue = modelID
+		}
+		raw = map[string]interface{}{legacyField: modelRef, idField: modelIDValue}
+	}
+	updates, err := modelSettingUpdates(raw)
 	if err != nil {
 		return common.CodeArgumentError, err
 	}
@@ -136,16 +174,91 @@ func (s *UserTenantService) SetModelSettings(ctx context.Context, userID string,
 	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != "" && strings.TrimSpace(*req.TenantID) != tenantID {
 		return common.CodeForbidden, fmt.Errorf("tenant_id must match the active Tenant context")
 	}
+	if rawTenantID, ok := raw["tenant_id"].(string); ok && strings.TrimSpace(rawTenantID) != "" && strings.TrimSpace(rawTenantID) != tenantID {
+		return common.CodeForbidden, fmt.Errorf("tenant_id must match the active Tenant context")
+	}
+	if s == nil || s.userTenantDAO == nil || dao.DB == nil {
+		return common.CodeExceptionError, fmt.Errorf("User Tenant service is not initialized")
+	}
 	membership, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
 	if err != nil {
-		return common.CodeForbidden, err
-	}
-	if len(updates) > 0 {
-		if err := dao.DB.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", membership.ID).Updates(updates).Error; err != nil {
-			return common.CodeExceptionError, err
+		if dao.IsNotFoundErr(err) {
+			return common.CodeForbidden, err
 		}
+		return common.CodeExceptionError, err
+	}
+
+	factory := NewModelFactory()
+	modelUpdates := make(map[string]interface{}, len(updates))
+	for _, modelTypeName := range defaultModelTypeNames {
+		legacyField, idField, modelType, _ := defaultModelFields(modelTypeName)
+		legacyValue, hasLegacy := updates[legacyField]
+		idValue, hasID := updates[idField]
+		if !hasLegacy && !hasID {
+			continue
+		}
+		legacyRef, _ := legacyValue.(string)
+		idRef, _ := idValue.(string)
+		legacyRef = strings.TrimSpace(legacyRef)
+		idRef = strings.TrimSpace(idRef)
+		modelRef := idRef
+		if modelRef == "" {
+			modelRef = legacyRef
+		}
+		if modelRef == "" {
+			modelUpdates[legacyField] = ""
+			modelUpdates[idField] = nil
+			continue
+		}
+
+		info, err := factory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, modelType, modelRef)
+		if err != nil {
+			switch {
+			case errors.Is(err, permission.ErrPermissionDenied), errors.Is(err, permission.ErrResourceNotFound), errors.Is(err, permission.ErrMembershipNotFound):
+				return common.CodeForbidden, err
+			case errors.Is(err, errModelConfigUnavailable):
+				return common.CodeArgumentError, err
+			default:
+				return common.CodeExceptionError, err
+			}
+		}
+		if info == nil {
+			return common.CodeArgumentError, fmt.Errorf("model %q is unavailable", modelRef)
+		}
+		if info.InstanceName != "" {
+			modelUpdates[legacyField] = fmt.Sprintf("%s@%s@%s", info.Name, info.InstanceName, info.ProviderName)
+		} else if info.ProviderName != "" {
+			modelUpdates[legacyField] = fmt.Sprintf("%s@%s", info.Name, info.ProviderName)
+		} else {
+			modelUpdates[legacyField] = info.Name
+		}
+		var resolvedModelID interface{}
+		if info.ID != "" {
+			resolvedModelID = info.ID
+		}
+		modelUpdates[idField] = resolvedModelID
+	}
+	if len(modelUpdates) == 0 {
+		return common.CodeSuccess, nil
+	}
+	if err := dao.DB.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", membership.ID).Updates(modelUpdates).Error; err != nil {
+		return common.CodeExceptionError, err
 	}
 	return common.CodeSuccess, nil
+}
+
+func modelSettingField(key string) (string, string, bool) {
+	for _, modelType := range defaultModelTypeNames {
+		legacyField, idField, _, err := defaultModelFields(modelType)
+		if err != nil {
+			continue
+		}
+		if key == legacyField || key == idField {
+			nullable := key == idField || legacyField == "tts_id" || legacyField == "ocr_id" || legacyField == "decision_id"
+			return legacyField, idField, nullable
+		}
+	}
+	return "", "", false
 }
 
 func modelSettingUpdates(raw map[string]interface{}) (map[string]interface{}, error) {
@@ -157,13 +270,8 @@ func modelSettingUpdates(raw map[string]interface{}) (map[string]interface{}, er
 			}
 			continue
 		}
-		nullable := false
-		switch key {
-		case "llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id":
-		case "tenant_llm_id", "tenant_embd_id", "tenant_asr_id", "tenant_img2txt_id", "tenant_rerank_id",
-			"tts_id", "tenant_tts_id", "ocr_id", "tenant_ocr_id", "decision_id", "tenant_decision_id":
-			nullable = true
-		default:
+		legacyField, _, nullable := modelSettingField(key)
+		if legacyField == "" {
 			return nil, fmt.Errorf("unsupported model setting %q", key)
 		}
 		if value == nil {
@@ -278,49 +386,4 @@ func (s *UserTenantService) ListDefaultModels(ctx context.Context, userID string
 		})
 	}
 	return result, nil
-}
-
-// SetDefaultModel sets one model type on the user's current tenant membership.
-func (s *UserTenantService) SetDefaultModel(ctx context.Context, userID, modelProvider, modelInstance, modelName, modelType, modelID string) error {
-	tenantID, err := requireCurrentTenantID(ctx, userID)
-	if err != nil {
-		return err
-	}
-	membership, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
-	if err != nil {
-		return err
-	}
-	modelTypeID, tenantModelTypeID, modelTypeBit, err := defaultModelFields(modelType)
-	if err != nil {
-		return err
-	}
-
-	defaultModel := ""
-	var tenantModelID interface{}
-	if modelID != "" || modelProvider != "" || modelInstance != "" || modelName != "" {
-		modelRef := modelID
-		if modelRef == "" {
-			if modelProvider == "" || modelInstance == "" || modelName == "" {
-				return fmt.Errorf("model provider, instance and name must be specified together")
-			}
-			modelRef = fmt.Sprintf("%s@%s@%s", modelName, modelInstance, modelProvider)
-		}
-		info, err := NewModelFactory().ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, modelTypeBit, modelRef)
-		if err != nil {
-			return err
-		}
-		if info.InstanceName == "" {
-			defaultModel = fmt.Sprintf("%s@%s", info.Name, info.ProviderName)
-		} else {
-			defaultModel = fmt.Sprintf("%s@%s@%s", info.Name, info.InstanceName, info.ProviderName)
-		}
-		if info.ID != "" {
-			tenantModelID = info.ID
-		}
-	}
-
-	return dao.DB.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", membership.ID).Updates(map[string]interface{}{
-		modelTypeID:       defaultModel,
-		tenantModelTypeID: tenantModelID,
-	}).Error
 }
