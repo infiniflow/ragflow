@@ -127,9 +127,9 @@ ingestor:
   log:
     type: file              # file | database
     format: json            # text | json (reserved; text only today)
-    path: ingest_log.log     # empty/missing = binary default (server_main.log / admin_server.log / ingestion_server.log)
+    path: ingest_log.log    # empty/missing = binary default (server_main.log / admin_server.log / ingestion_server.log)
     max_size: 1000          # MB before rotation
-    max_backups: 20         # retained rotated files
+    max_backups: 10         # retained rotated files
     max_age: 30             # days
 file_syncer:
   max_concurrent_syncs: 5
@@ -148,8 +148,8 @@ audit:
   type: file              # file | database
   format: json            # text | json (reserved; text only today)
   path: audit_log.log     # empty/missing = binary default (server_main.log / admin_server.log / ingestion_server.log)
-  max_size: 1000          # MB before rotation
-  max_backups: 20         # retained rotated files
+  max_size: 100          # MB before rotation
+  max_backups: 10         # retained rotated files
   max_age: 30             # days
 # postgres:
 #   name: 'rag_flow'
