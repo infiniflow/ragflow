@@ -298,20 +298,27 @@ func newTokenizerComponent(params map[string]any, resolver EmbedderResolver) (ru
 		}
 		if v, ok := params["fields"]; ok {
 			// Replace (not append) so fields = ["summary"] does not
-			// silently embed the default "text" as well. An empty
-			// value keeps the default instead of embedding nothing.
+			// silently embed the default "text" as well. Blank names
+			// are dropped: an empty selection keeps the default
+			// instead of selecting no text at all.
 			var fields []string
 			switch t := v.(type) {
 			case string:
-				fields = []string{t}
+				if t != "" {
+					fields = []string{t}
+				}
 			case []any:
 				for _, x := range t {
-					if s, ok := x.(string); ok {
+					if s, ok := x.(string); ok && s != "" {
 						fields = append(fields, s)
 					}
 				}
 			case []string:
-				fields = append(fields, t...)
+				for _, s := range t {
+					if s != "" {
+						fields = append(fields, s)
+					}
+				}
 			}
 			if len(fields) > 0 {
 				p.Fields = fields
