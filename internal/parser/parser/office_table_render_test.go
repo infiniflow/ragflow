@@ -229,7 +229,8 @@ func TestXLSXParserImageAnchorsSplitSegments(t *testing.T) {
 			}
 		})
 		p, _ := NewXLSXParser("")
-		res := p.ParseWithResult(t.Context(), "anchors.xlsx", data)
+		ctx, _ := officeMediaTestContext()
+		res := p.ParseWithResult(ctx, "anchors.xlsx", data)
 		if res.Err != nil {
 			t.Fatalf("ParseWithResult: %v", res.Err)
 		}
@@ -244,6 +245,7 @@ func TestXLSXParserImageAnchorsSplitSegments(t *testing.T) {
 		if items[1]["doc_type_kwd"] != "image" || items[1]["row_start"] != 4 {
 			t.Fatalf("image item = %#v", items[1])
 		}
+		requireOfficeMediaRef(t, items[1])
 		for segIdx, want := range [][]string{wantFirst, wantSecond} {
 			item := items[segIdx*2]
 			text := tableItemHTML(t, item)
@@ -310,7 +312,8 @@ func TestXLSXParserImageAnchorDoesNotSplitMergedGroup(t *testing.T) {
 		}
 	})
 	p, _ := NewXLSXParser("")
-	res := p.ParseWithResult(t.Context(), "merge-anchor.xlsx", data)
+	ctx, _ := officeMediaTestContext()
+	res := p.ParseWithResult(ctx, "merge-anchor.xlsx", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -321,6 +324,7 @@ func TestXLSXParserImageAnchorDoesNotSplitMergedGroup(t *testing.T) {
 	if items[1]["doc_type_kwd"] != "image" {
 		t.Fatalf("middle item = %#v, want image", items[1])
 	}
+	requireOfficeMediaRef(t, items[1])
 	first := items[0]["table"].(*entity.TableData)
 	if len(first.Grid) != 3 {
 		t.Fatalf("first segment rows = %d, want header + two merged rows", len(first.Grid))
@@ -358,7 +362,8 @@ func TestXLSXParserImageAnchorAtLastMergedRow(t *testing.T) {
 		}
 	})
 	p, _ := NewXLSXParser("")
-	res := p.ParseWithResult(t.Context(), "merge-anchor-last.xlsx", data)
+	ctx, _ := officeMediaTestContext()
+	res := p.ParseWithResult(ctx, "merge-anchor-last.xlsx", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -485,7 +490,8 @@ func TestXLSXImageMIMEType(t *testing.T) {
 func TestExtractXLSXImagesWarningForInvalidSheet(t *testing.T) {
 	f := excelize.NewFile()
 	defer f.Close()
-	_, warnings := extractXLSXImages(f, "MissingSheet", nil)
+	sink, _ := officeMediaTestSink(t, officeMediaFormatXLSX)
+	_, warnings := extractXLSXImages(f, "MissingSheet", sink)
 	if len(warnings) != 1 || !strings.Contains(warnings[0], "image discovery failed") {
 		t.Fatalf("warnings = %v, want image discovery warning", warnings)
 	}
@@ -816,7 +822,8 @@ func TestXLSXParserHeaderSpanClampedPerSegment(t *testing.T) {
 		}
 	})
 	p, _ := NewXLSXParser("")
-	res := p.ParseWithResult(t.Context(), "header-span.xlsx", data)
+	ctx, _ := officeMediaTestContext()
+	res := p.ParseWithResult(ctx, "header-span.xlsx", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -824,6 +831,7 @@ func TestXLSXParserHeaderSpanClampedPerSegment(t *testing.T) {
 	if len(items) != 3 {
 		t.Fatalf("items = %d, want table, image, table", len(items))
 	}
+	requireOfficeMediaRef(t, items[1])
 	first := items[0]["table"].(*entity.TableData)
 	if first.Grid[0][1].RowSpan != 2 || !first.Grid[1][1].Covered {
 		t.Fatalf("first segment header span = %+v, want rowspan 2 with a covered row", first.Grid)
