@@ -21,12 +21,8 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io"
-	"net"
 	"net/http"
-	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	markdownlib "github.com/gomarkdown/markdown"
@@ -44,11 +40,6 @@ const dataURIPrefix = "data:image/"
 
 // GoMarkdown is the lib_type identifier for the pure-Go Markdown backend.
 const GoMarkdown = "go_markdown"
-
-// ssrfAllowLoopback lets tests exercise the HTTP image fetch path against a
-// loopback httptest server. It stays false in production so loopback
-// addresses are rejected (SSRF protection).
-var ssrfAllowLoopback bool
 
 type MarkdownParser struct {
 	libType            string
@@ -665,133 +656,7 @@ func resolveImageURL(ctx context.Context, imageURL string, budget *media.Budget)
 	return encoded, raw, false, true
 }
 
-// fetchImage fetches a bounded HTTP(S) image payload. Local/private addresses
-// and redirects to them are rejected (SSRF guard). Hostnames are resolved
-// once and the validated IP is pinned in a custom DialContext to prevent
-// DNS-rebinding TOCTOU attacks.
-func fetchImage(ctx context.Context, rawURL string) ([]byte, error) {
-	rawURL = strings.TrimSpace(rawURL)
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return nil, fmt.Errorf("markdown: invalid image URL: %w", err)
-	}
-
-	// pinned maps hostname (without port) → validated IP. The hostname
-	// is resolved once per host, and the transport dials the pinned IP
-	// directly instead of re-resolving DNS.
-	var pinnedMu sync.Mutex
-	pinned := make(map[string]net.IP)
-
-	pinHost := func(host string) error {
-		ip, err := resolveAndValidateHost(ctx, host)
-		if err != nil {
-			return err
-		}
-		h, _, _ := net.SplitHostPort(host)
-		if h == "" {
-			h = host
-		}
-		pinnedMu.Lock()
-		pinned[h] = ip
-		pinnedMu.Unlock()
-		return nil
-	}
-
-	if err := pinHost(parsed.Host); err != nil {
-		return nil, err
-	}
-
-	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			host, port, err := net.SplitHostPort(addr)
-			if err != nil {
-				return nil, err
-			}
-			pinnedMu.Lock()
-			ip, ok := pinned[host]
-			pinnedMu.Unlock()
-			if ok {
-				return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
-			}
-			return (&net.Dialer{}).DialContext(ctx, network, addr)
-		},
-	}
-
-	client := &http.Client{
-		Transport: transport,
-		Timeout:   30 * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return fmt.Errorf("markdown: too many redirects")
-			}
-			return pinHost(req.URL.Host)
-		},
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("markdown: create image request: %w", err)
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("markdown: fetch image %s: %w", rawURL, err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("markdown: fetch image %s: HTTP %d", rawURL, resp.StatusCode)
-	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(media.ImageMaxBytes())+1))
-	if err != nil {
-		return nil, fmt.Errorf("markdown: read image %s: %w", rawURL, err)
-	}
-	if len(body) > media.ImageMaxBytes() {
-		return nil, fmt.Errorf("markdown: image %s exceeds %d-byte limit", rawURL, media.ImageMaxBytes())
-	}
-	if len(body) == 0 {
-		return nil, fmt.Errorf("markdown: image %s is empty", rawURL)
-	}
-	return body, nil
-}
-
-// resolveAndValidateHost resolves a host (which may include a port),
-// validates none of its IPs are internal/private, and returns the
-// first public IP for connection pinning.
-func resolveAndValidateHost(ctx context.Context, host string) (net.IP, error) {
-	hostname := host
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		hostname = h
-	}
-
-	ip := net.ParseIP(hostname)
-	if ip != nil {
-		if (ip.IsLoopback() && !ssrfAllowLoopback) || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-			ip.IsPrivate() || ip.IsUnspecified() {
-			return nil, fmt.Errorf("markdown: rejected image URL to internal address: %s", host)
-		}
-		return ip, nil
-	}
-
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, hostname)
-	if err != nil {
-		return nil, fmt.Errorf("markdown: cannot resolve image host: %s", hostname)
-	}
-	for _, addr := range addrs {
-		ip = addr.IP
-		if (ip.IsLoopback() && !ssrfAllowLoopback) || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-			ip.IsPrivate() || ip.IsUnspecified() {
-			return nil, fmt.Errorf("markdown: rejected image URL resolving to internal address: %s (%s)", host, ip)
-		}
-	}
-	if len(addrs) == 0 {
-		return nil, fmt.Errorf("markdown: no addresses resolved for host: %s", hostname)
-	}
-	return addrs[0].IP, nil
-}
-
+// resolveImageURL resolves one bounded Markdown image attempt. It returns
 // headingText returns a canonical ATX heading (marker plus inline text).
 // Keeping the marker in the parser payload preserves the Markdown structure
 // for GeneralChunker and downstream LLM prompts; layout alone does not carry
