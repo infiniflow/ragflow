@@ -821,7 +821,10 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			searchSrc := make([]string, len(searchRequest.SelectFields))
 			copy(searchSrc, searchRequest.SelectFields)
 			driverType := s.docEngine.GetType()
-			if driverType == string(engine.EngineElasticsearch) || engine.IsOceanBaseFamily(driverType) || engine.IsVastbase(driverType) {
+			if driverType == string(engine.EngineElasticsearch) ||
+				driverType == string(engine.EngineOpenSearch) ||
+				engine.IsOceanBaseFamily(driverType) ||
+				engine.IsVastbase(driverType) {
 				searchSrc = append(searchSrc, matchDense.VectorColumnName)
 			}
 

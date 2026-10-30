@@ -184,6 +184,7 @@ func TestMCPConfigurationDoesNotLogKey(t *testing.T) {
 }
 
 func TestGetAllConfigsOpenSearchDocEngine(t *testing.T) {
+	t.Setenv("DOC_ENGINE", "")
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "service_conf.yaml")
 	content := `

@@ -956,7 +956,9 @@ func (s *ChatSessionService) updateChunkWeight(ctx context.Context, tenantID, ch
 	}
 
 	newValue := map[string]interface{}{common.PAGERANK_FLD: nextWeight}
-	if nextWeight <= 0 && strings.ToLower(docEngine.GetType()) == string(engine.EngineElasticsearch) {
+	engineType := strings.ToLower(docEngine.GetType())
+	if nextWeight <= 0 && (engineType == string(engine.EngineElasticsearch) ||
+		engineType == string(engine.EngineOpenSearch)) {
 		newValue = map[string]interface{}{"remove": common.PAGERANK_FLD}
 	}
 	if err := docEngine.UpdateChunks(ctx, map[string]interface{}{"id": chunkID}, newValue, indexName, kbID); err != nil {

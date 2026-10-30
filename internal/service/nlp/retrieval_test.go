@@ -1152,39 +1152,73 @@ func TestBuildRetrievalFusionExprMatchesPythonEngineWeights(t *testing.T) {
 	}
 }
 
-func TestSearchKeepsPythonFusionWeightForElasticsearch(t *testing.T) {
+func TestRetrievalSearch_ESAndOpenSearchFusionWeights(t *testing.T) {
 	if GetQueryBuilder() == nil {
 		globalQueryBuilder = NewQueryBuilder()
 	}
 
-	vectorWeight := 0.8
-	docEngine := &captureSearchDocEngine{engineType: string(engine.EngineElasticsearch)}
-	service := NewRetrievalService(docEngine, nil)
-
-	_, err := service.Search(t.Context(), &RetrievalSearchRequest{
-		Question:               "test question",
-		TenantIDs:              []string{"tenant-1"},
-		KbIDs:                  []string{"kb-1"},
-		Page:                   1,
-		PageSize:               10,
-		KNNTopK:                10,
-		RankFeature:            map[string]float64{},
-		EmbeddingModel:         &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
-		VectorSimilarityWeight: &vectorWeight,
-	})
-	if err != nil {
-		t.Fatalf("Search failed: %v", err)
+	tests := []struct {
+		name         string
+		engineType   string
+		expectVecCol bool
+	}{
+		{
+			name:         "Elasticsearch",
+			engineType:   string(engine.EngineElasticsearch),
+			expectVecCol: false,
+		},
+		{
+			name:         "OpenSearch",
+			engineType:   string(engine.EngineOpenSearch),
+			expectVecCol: true,
+		},
 	}
 
-	if docEngine.searchRequest == nil || len(docEngine.searchRequest.MatchExprs) != 3 {
-		t.Fatalf("expected three match expressions, got %#v", docEngine.searchRequest)
-	}
-	fusionExpr, ok := docEngine.searchRequest.MatchExprs[2].(*types.FusionExpr)
-	if !ok {
-		t.Fatalf("expected third match expression to be FusionExpr, got %T", docEngine.searchRequest.MatchExprs[2])
-	}
-	if got := fusionExpr.FusionParams["weights"]; got != esFusionWeights {
-		t.Fatalf("expected Elasticsearch weights=%s, got %v", esFusionWeights, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vectorWeight := 0.8
+			docEngine := &captureSearchDocEngine{engineType: tt.engineType}
+			service := NewRetrievalService(docEngine, nil)
+
+			_, err := service.Search(t.Context(), &RetrievalSearchRequest{
+				Question:               "test question",
+				TenantIDs:              []string{"tenant-1"},
+				KbIDs:                  []string{"kb-1"},
+				Page:                   1,
+				PageSize:               10,
+				KNNTopK:                10,
+				RankFeature:            map[string]float64{},
+				EmbeddingModel:         &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+				VectorSimilarityWeight: &vectorWeight,
+			})
+			if err != nil {
+				t.Fatalf("Search failed: %v", err)
+			}
+
+			if docEngine.searchRequest == nil || len(docEngine.searchRequest.MatchExprs) != 3 {
+				t.Fatalf("expected three match expressions, got %#v", docEngine.searchRequest)
+			}
+			fusionExpr, ok := docEngine.searchRequest.MatchExprs[2].(*types.FusionExpr)
+			if !ok {
+				t.Fatalf("expected third match expression to be FusionExpr, got %T", docEngine.searchRequest.MatchExprs[2])
+			}
+			if got := fusionExpr.FusionParams["weights"]; got != esFusionWeights {
+				t.Fatalf("expected weights=%s, got %v", esFusionWeights, got)
+			}
+
+			if tt.expectVecCol {
+				var foundVectorCol bool
+				for _, f := range docEngine.searchRequest.SelectFields {
+					if strings.HasSuffix(f, "_vec") {
+						foundVectorCol = true
+						break
+					}
+				}
+				if !foundVectorCol {
+					t.Fatalf("expected vector column in SelectFields, got %#v", docEngine.searchRequest.SelectFields)
+				}
+			}
+		})
 	}
 }
 

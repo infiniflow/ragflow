@@ -547,3 +547,22 @@ func TestProductFromChunkMapRejectsDirtyKwd(t *testing.T) {
 		t.Errorf("clean wiki_page row should satisfy VariantWiki query")
 	}
 }
+
+func TestWriterDatasetStructureSupported(t *testing.T) {
+	for _, tc := range []struct {
+		engineType string
+		want       bool
+	}{
+		{"elasticsearch", true},
+		{"opensearch", true},
+		{"infinity", true},
+		{"", true},
+		{"oceanbase", false},
+		{"seekdb", false},
+	} {
+		w := engineWriter{eng: &fakeEngine{engineType: tc.engineType}}
+		if got := w.datasetStructureSupported(); got != tc.want {
+			t.Errorf("datasetStructureSupported(%q) = %v, want %v", tc.engineType, got, tc.want)
+		}
+	}
+}
