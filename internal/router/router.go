@@ -204,7 +204,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 	{
 		searchBotGroup := apiBetaAuth.Group("/searchbots")
 		searchBotGroup.POST("/related-questions", r.searchBotHandler.Handle)
-		searchBotGroup.POST("/retrieval-test", r.searchBotHandler.RetrievalTest)
+		searchBotGroup.POST("/retrieval", r.searchBotHandler.RetrievalTest)
 		searchBotGroup.POST("/ask", r.searchBotHandler.Ask)
 		searchBotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
 
