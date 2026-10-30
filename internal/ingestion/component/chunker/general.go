@@ -283,6 +283,15 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		defer engine.Close()
 		chunks = cropImageChunks(ctx, engine, chunks)
 	}
+	// Context can make a media region worth cropping, but cannot replace a
+	// missing payload when the source or rendering is unavailable.
+	visible := chunks[:0]
+	for _, chunk := range chunks {
+		if strings.TrimSpace(chunk.Text) != "" || hasMediaPayload(chunk) {
+			visible = append(visible, chunk)
+		}
+	}
+	chunks = visible
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("GeneralChunker: %w", err)
 	}
@@ -1462,8 +1471,8 @@ func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Reg
 	visible := make([]schema.ChunkDoc, 0, len(chunks))
 	for _, chunk := range chunks {
 		chunk.Text = removeTag(chunk.Text)
-		// Keep media payloads even when their text is empty.
-		if strings.TrimSpace(chunk.Text) == "" && !hasMediaPayload(chunk) {
+		// Media context can supply retrievable text before a crop adds its payload.
+		if strings.TrimSpace(canonicalChunkText(chunk)) == "" && !hasMediaPayload(chunk) {
 			continue
 		}
 		visible = append(visible, chunk)

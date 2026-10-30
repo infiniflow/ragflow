@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"image/color"
 	"image/png"
 	"os"
 	"sync/atomic"
@@ -19,7 +20,8 @@ import (
 )
 
 func TestGeneralPDFChildren(t *testing.T) {
-	data, err := os.ReadFile("../../../deepdoc/parser/pdf/pdfium/testdata/page_sizes.pdf")
+	// Red, green and blue markers occupy the alpha, beta and gamma regions.
+	data, err := os.ReadFile("testdata/general_pdf_children.pdf")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,11 +106,24 @@ func TestGeneralPDFChildren(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				img, err := png.DecodeConfig(bytes.NewReader(preview))
+				img, err := png.Decode(bytes.NewReader(preview))
 				if err != nil {
 					t.Fatal(err)
 				}
-				heights[i] = img.Height
+				heights[i] = img.Bounds().Dy()
+				markers := []color.RGBA{{255, 0, 0, 255}, {0, 255, 0, 255}, {0, 0, 255, 255}}
+				found := make(map[color.RGBA]bool)
+				for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+					for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+						found[color.RGBAModel.Convert(img.At(x, y)).(color.RGBA)] = true
+					}
+				}
+				for marker, pixel := range markers {
+					want := len(tc.children) == 0 || marker == i
+					if found[pixel] != want {
+						t.Errorf("child %d undimmed marker %d present = %v, want %v", i, marker, found[pixel], want)
+					}
+				}
 			}
 			if objects := store.(*storage.MemoryStorage).Inspect(); len(objects) != len(tc.want)+1 {
 				t.Errorf("stored %d objects, want source PDF plus %d child previews", len(objects), len(tc.want))

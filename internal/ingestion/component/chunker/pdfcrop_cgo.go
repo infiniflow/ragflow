@@ -133,7 +133,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		// and every captionless image/table in a document would otherwise
 		// collapse onto the same canonical id (ChunkID(docID, "")), each
 		// overwrite the other's MinIO object. Skip the crop and upload
-		// entirely; the finalizer then drops the chunk, so no object is
+		// entirely; the caller's keep-filter drops the chunk, so no object is
 		// orphaned and no pdfium render / PNG encode / upload is wasted. This
 		// mirrors Python's token_chunker drop of empty-text media chunks.
 		// Text chunks are excluded: a text body always carries content, and the
