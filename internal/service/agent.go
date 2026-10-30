@@ -17,6 +17,7 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,7 @@ import (
 	"maps"
 	"ragflow/internal/service/file"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -749,8 +751,8 @@ func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, userID, keyword
 }
 
 // mergeAgentsAndGroups combines agents and the caller's compilation template
-// groups into a single list ordered by update_time, then pages in Go. This
-// mirrors Python's merged /agents response. A stable sort retains the original
+// groups into a single list ordered by the requested timestamp, then pages in Go.
+// A stable sort retains the original
 // agent-before-group order when timestamps are equal.
 func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, agentItems []*AgentItem, keywords string, terms []dao.OrderTerm, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
 	groups, err := s.compilationTemplateGroupDAO.ListSaved(ctx, dao.DB, userID, keywords, "", terms)
@@ -758,11 +760,16 @@ func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, 
 		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
 	}
 	merged := make([]mergeCanvasItem, 0, len(agentItems)+len(groups))
+	byCreation := len(terms) > 0 && terms[0].Column == "create_time"
 	for _, item := range agentItems {
 		item.Type = AgentItemTypeAgent
+		timestamp := item.UpdateTime
+		if byCreation {
+			timestamp = item.CreateTime
+		}
 		merged = append(merged, mergeCanvasItem{
 			item: item,
-			time: intValuePtr(item.UpdateTime),
+			time: intValuePtr(timestamp),
 		})
 	}
 	for _, g := range groups {
@@ -770,19 +777,21 @@ func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, 
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to build group item: %w", err)
 		}
+		timestamp := g.UpdateTime
+		if byCreation {
+			timestamp = g.CreateTime
+		}
 		merged = append(merged, mergeCanvasItem{
 			raw:  raw,
-			time: intValuePtr(g.UpdateTime),
+			time: intValuePtr(timestamp),
 		})
 	}
-	// The merge orders by update time whatever column was asked for, so it takes
-	// the direction from the first term the way the fallback clause does.
 	descending := len(terms) > 0 && terms[0].Desc
-	sort.SliceStable(merged, func(i, j int) bool {
+	slices.SortStableFunc(merged, func(a, b mergeCanvasItem) int {
 		if descending {
-			return merged[i].time > merged[j].time
+			return cmp.Compare(b.time, a.time)
 		}
-		return merged[i].time < merged[j].time
+		return cmp.Compare(a.time, b.time)
 	})
 	total := int64(len(merged))
 	merged = slicePage(merged, page, pageSize)
