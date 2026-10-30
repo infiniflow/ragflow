@@ -17,9 +17,9 @@ Released on Oct 30, 2026.
 
 Key updates:
 1. Introduced the Decision model for decision making in agentic conversations and Categorize component in agents.
-2. Added support for versioned ingestion pipelines.
+2. Added support for multiple versions of ingestion pipelines DSL.
 3. Chat history now stores and displays prompts, token usage, and execution time.
-4. Compatible with existing v1.0.0-rc2 data, allowing a direct upgrade.
+4. Compatible with existing v1.0.0-rc2 schema, allowing a direct upgrade.
 
 ## v1.0.0-rc2
 
