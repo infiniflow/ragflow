@@ -2037,6 +2037,11 @@ func chunksFromColumnData(columnData map[string][]interface{}) []map[string]inte
 func applyFieldMappings(chunks []map[string]interface{}) {
 	for _, chunk := range chunks {
 		decodeJSONFields(chunk)
+		// Search always projects tag_feas once a text or vector match exists,
+		// so a search hit carries the column's JSON text unless it is decoded
+		// here too. GetChunk decodes the same column, and the Elasticsearch
+		// backend returns it from _source as an object.
+		decodeVarcharJSONFields(chunk)
 		// docnm -> docnm_kwd, title_tks, title_sm_tks
 		if val, ok := chunk["docnm"].(string); ok {
 			chunk["docnm_kwd"] = val

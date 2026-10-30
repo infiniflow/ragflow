@@ -575,6 +575,34 @@ func TestDecodeVarcharJSONFieldsEmptyAndPreDecoded(t *testing.T) {
 	}
 }
 
+// TestTagFeasDecodesOnEveryReadPath pins the tag_kwd round-trip rule for
+// tag_feas: the write path json-encodes the weights into a varchar column, so
+// every read path must hand readers the map. GetChunk decodes it and GetFields
+// parses the _feas suffix itself; a search hit was left holding the encoded
+// text, so the same chunk changed type between the two endpoints and differed
+// from the Elasticsearch backend, whose rank_features source is an object.
+func TestTagFeasDecodesOnEveryReadPath(t *testing.T) {
+	stored := transformChunkFields(map[string]interface{}{"tag_feas": map[string]int{"物流查询": 7}}, nil)["tag_feas"]
+	if _, ok := stored.(string); !ok {
+		t.Fatalf("write path should store tag_feas as JSON text, got %#v", stored)
+	}
+	want := map[string]interface{}{"物流查询": float64(7)}
+
+	searched := []map[string]interface{}{{"id": "c1", "tag_feas": stored}}
+	applyFieldMappings(searched)
+	if got, ok := searched[0]["tag_feas"].(map[string]interface{}); !ok || !reflect.DeepEqual(got, want) {
+		t.Errorf("search tag_feas = %#v, want %#v", searched[0]["tag_feas"], want)
+	}
+
+	fields := (&Engine{}).GetFields(
+		[]map[string]interface{}{{"id": "c1", "tag_feas": stored}},
+		[]string{"tag_feas"},
+	)
+	if got, ok := fields["c1"]["tag_feas"].(map[string]interface{}); !ok || !reflect.DeepEqual(got, want) {
+		t.Errorf("get fields tag_feas = %#v, want %#v", fields["c1"]["tag_feas"], want)
+	}
+}
+
 // TestTransformChunkFieldsKeepsTitleColumn pins that title_kwd survives as its
 // own column. The compiled wiki/nav rows carry their label only in title_kwd and
 // nav keys every cluster update on it (title_kwd = <cluster name>); folding the
