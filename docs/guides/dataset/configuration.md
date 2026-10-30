@@ -265,7 +265,7 @@ For example, you can add fields for document type, department, author, subject, 
 
 #### Indexer Configuration
 
-Configure how chunks are indexed and written to the retrieval engine. You can use full-text search, vector search, or both, and specify which content field is indexed. The Indexer uses the embedding model configured for the knowledge base; you do not need to select one here.
+Indexer prepares chunks for the retrieval engine. **Search method** displays the methods configured for the selected parsing mode, such as **Embedding** and **Full-text**. Review these labels, then configure **Filename embedding weight** and **Field** below. The Indexer uses the embedding model configured for the Dataset; this panel has no separate embedding model selector.
 
 - **Search method:** Displays **Embedding** and **Full-text** as labels. These are not selectable checkboxes in the current panel.
   - **Embedding:** Creates vector representations and a vector index for semantic retrieval. A relevant chunk may be retrieved even when the query does not use the same words as the source text.
@@ -287,7 +287,7 @@ Create and publish the pipeline in **Agent > Ingestion pipeline** before applyin
 1. Configure the pipeline, click **Save draft**, and resolve any **Checklist** issues.
 2. Click **Publish** and confirm to create a version.
 3. Open the Dataset's **Configuration > Parsing mode**.
-4. Expand the custom pipeline and select the required published version within the same dropdown. There is no separate Version selector. **No published versions** means you must publish the pipeline first. Entries marked **Built in** can be selected directly.
+4. Expand the custom pipeline and select the published version you want to use within the same dropdown. There is no separate Version selector. **No published versions** means you must publish the pipeline first. Entries marked **Built in** can be selected directly.
 5. Click **Save**, then parse a sample document to validate the result.
 
 The Dataset retains its selected version when another version is published. To apply an update, select the new version in **Parsing mode**, save, and reparse the documents that need the updated processing. Existing chunks are not regenerated automatically.

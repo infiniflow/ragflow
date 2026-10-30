@@ -40,7 +40,7 @@ No. After modifying template configuration, you need to use the updated template
 
 ## 5. Can I use different knowledge compilation templates for the same document?
 
-Yes. You can select different knowledge compilation templates based on actual usage scenarios to generate different types of knowledge artifacts, such as Graph, Tree, PageIndex, MindMap, or Timeline.
+Yes. You can select different knowledge compilation templates based on actual usage scenarios to generate different types of knowledge artifacts, such as Graph, Tree, PageIndex, Mindmap, or Timeline.
 
 Different templates have different knowledge organization methods and applicable scenarios. For details, refer to the template selection recommendations.
 

@@ -56,7 +56,7 @@ The screenshot uses Querit as an example. Select your own provider and complete 
 
 The web search control is shown only when a provider is configured and its required key is present. If the control is missing, reopen **Advanced settings**, check the provider and its required fields, and save again. A visible control means the configuration is present; a failed search can still require checking the key, provider quota, or network access.
 
-Web search supplements the datasets selected for the Chat. Selecting a provider makes the feature available; users still choose whether to enable it when asking a question.
+Web search supplements the datasets selected for the Chat. Select a provider, complete its required fields, and save the configuration to make the web search control available. For providers that require an API key, the key must be nonblank. Users can then enable web search when asking a question.
 
 ## Naive Settings
 

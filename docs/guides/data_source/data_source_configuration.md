@@ -419,14 +419,14 @@ The Azure DevOps data source is used to synchronize Azure Repos source files and
 
 **Permission requirements**: The personal access token (PAT) must have the **Code (Read)** scope for the target organization.
 
-**Account version requirements**: Both Azure DevOps Services (`dev.azure.com`) and self-hosted Azure DevOps Server are supported. For a self-hosted server, provide the full collection URL as the organization, for example `https://tfs.contoso.com/DefaultCollection`. The URL must use HTTPS, because the personal access token is sent in the `Authorization` header.
+**Account version requirements**: Both Azure DevOps Services (`dev.azure.com`) and self-hosted Azure DevOps Server are supported. For a self-hosted server, provide its service or collection URL as described below. HTTP and HTTPS URLs are accepted; use HTTPS to protect the personal access token sent in the `Authorization` header.
 
 **Configuration parameters**:
 
 - **Name**: Customize the name in RAGFlow to identify this Azure DevOps connection.
 - **Azure DevOps personal access token**: The PAT used to access the organization.
-- **Base URL**: Enter the Azure DevOps service address, such as `https://dev.azure.com`.
-- **Azure DevOps organization**: The organization name, or the collection URL of a self-hosted server.
+- **Base URL**: For Azure DevOps Services, this is optional when an organization name is provided and defaults to `https://dev.azure.com`. For self-hosted Azure DevOps Server, provide the service URL here, or provide the full collection URL under **Azure DevOps organization**. If the organization field is empty, Base URL must include the collection path, for example `https://tfs.contoso.com/DefaultCollection`.
+- **Azure DevOps organization**: Enter the hosted organization name, the collection name to append to Base URL, or a full self-hosted collection URL. Leave it empty only when Base URL already includes the collection path. Explicit URLs must use `http://` or `https://`, include a valid host, and contain no query parameters, fragments, or embedded credentials. The same URL restrictions apply to Base URL.
 - **Index Mode**: Choose **Organization**, **Projects**, or **Repositories**. Organization indexes every repository visible to the token in the organization; the other modes show fields for narrowing the scope.
 - **Projects**: Comma separated team project names, used when indexing by project.
 - **Repositories**: Comma separated repositories, used when indexing by repository. Use `project/repo` to disambiguate repositories that share a name across projects.

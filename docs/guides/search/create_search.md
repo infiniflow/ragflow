@@ -11,7 +11,7 @@ sidebar_custom_props:
 
 Search provides retrieval capabilities for knowledge bases, helping users quickly find relevant content in parsed knowledge bases. Users can enter natural-language questions and narrow the search scope by configuring document filters, the number of results, and other options.
 
-Search also supports features such as AI Summary, Related Search, and Query Mind Map. These features summarize search results, generate related questions, and present the topic structure of the current query as a mind map, helping users further understand and explore knowledge content.
+Search also supports features such as AI Summary, Related Search, and Query Mindmap. These features summarize search results, generate related questions, and present the topic structure of the current query as a mind map, helping users further understand and explore knowledge content.
 
 The following sections describe how to create, configure, and use Search.
 

@@ -42,7 +42,7 @@ For a built-in parsing mode, configure automatic metadata through **Dataset > Co
 
 For metadata generated from document content, check that the Extractor's **Model** is available. See [Dataset configuration](./configuration.md) for the detailed settings.
 
-If the Dataset uses a custom ingestion pipeline, configure metadata in that pipeline's [Transformer](../agent/ingestion_pipeline/configure_transformer_component.md), publish the updated version, and select it under the Dataset's **Parsing mode**.
+If the Dataset uses a custom ingestion pipeline, configure metadata in that pipeline's [Transformer](../agent/ingestion_pipeline/configure_transformer_component.md), publish the updated version, then open **Dataset > Configuration > Parsing mode**, expand the pipeline, select the updated published version, and click **Save** to apply it.
 
 Changes to auto metadata configuration only affect newly parsed documents. If you need to apply new metadata rules to existing documents, parse the relevant documents again.
 
