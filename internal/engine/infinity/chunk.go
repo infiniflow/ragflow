@@ -19,6 +19,7 @@ package infinity
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"maps"
@@ -1085,6 +1086,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	}
 
 	orderBy := req.OrderBy
+	mergeMemoryOrder := isMemoryIndex && !hasTextMatch && !hasVectorMatch && orderBy != nil && len(orderBy.Fields) > 0
 	var rankFeature map[string]float64
 	if req.RankFeature != nil {
 		rankFeature = req.RankFeature
@@ -1198,8 +1200,11 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				}
 			}
 			tableOutputColumns := outputColumns
+			if mergeMemoryOrder {
+				tableOutputColumns = unionSortColumns(tableOutputColumns, orderBy)
+			}
 			if wildcardSelect {
-				tableOutputColumns = expandSelectWildcards(outputColumns, tableColumns)
+				tableOutputColumns = expandSelectWildcards(tableOutputColumns, tableColumns)
 			}
 			tableFilterParts := append([]string(nil), filterParts...)
 			if len(filterCopy) > 0 {
@@ -1387,9 +1392,13 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			}
 
 			// Set limit and offset
-			table = table.Limit(pageSize)
-			if offset > 0 {
-				table = table.Offset(offset)
+			if mergeMemoryOrder {
+				table = table.Limit(pageSize + offset)
+			} else {
+				table = table.Limit(pageSize)
+				if offset > 0 {
+					table = table.Offset(offset)
+				}
 			}
 
 			// Request total_hits_count from Infinity
@@ -1493,6 +1502,10 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		allResults = sortByScore(allResults, len(allResults))
 	}
 
+	if mergeMemoryOrder {
+		sortChunksByFields(allResults, orderBy)
+		allResults = allResults[min(offset, len(allResults)):]
+	}
 	if len(allResults) > pageSize {
 		allResults = allResults[:pageSize]
 	}
@@ -1848,6 +1861,12 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 	for _, tblName := range tableNames {
 		table, err := db.GetTable(tblName)
 		if err != nil {
+			if isMemoryIndexName(tableName) {
+				var infinityErr *infinity.InfinityException
+				if !errors.As(err, &infinityErr) || infinity.ErrorCode(infinityErr.ErrorCode) != infinity.ErrorCodeTableNotExist {
+					return nil, fmt.Errorf("failed to open message table: %w", err)
+				}
+			}
 			continue
 		}
 
@@ -1855,11 +1874,17 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 		filter := fmt.Sprintf("id = '%s'", chunkID)
 		result, err := table.Output([]string{"*"}).Filter(filter).ToResult()
 		if err != nil {
+			if isMemoryIndexName(tableName) {
+				return nil, fmt.Errorf("failed to read message: %w", err)
+			}
 			continue
 		}
 
 		qr, ok := result.(*infinity.QueryResult)
 		if !ok {
+			if isMemoryIndexName(tableName) {
+				return nil, fmt.Errorf("unexpected message query result %T", result)
+			}
 			continue
 		}
 
@@ -2176,6 +2201,12 @@ func mapMemoryMessageStorageFields(row map[string]interface{}) {
 // to the logical fields the memory service reads.
 func normalizeMemoryMessageRows(rows []map[string]interface{}) {
 	for _, row := range rows {
+		for field, value := range row {
+			if vectorColumnPattern.MatchString(field) {
+				row["content_embed"] = value
+				delete(row, field)
+			}
+		}
 		if val, ok := row["message_type_kwd"]; ok {
 			row["message_type"] = val
 			delete(row, "message_type_kwd")
@@ -3134,6 +3165,13 @@ func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns 
 			continue
 		}
 
+		if memIndex && k == "session_id_contains" {
+			if text, ok := v.(string); ok {
+				pattern := strings.NewReplacer("'", `\x27`, `"`, `\x22`).Replace(regexp.QuoteMeta(text))
+				cond = append(cond, infinity.RegexFilter("session_id", pattern))
+			}
+			continue
+		}
 		// Handle must_not specially
 		if k == "must_not" {
 			if m, ok := v.(map[string]interface{}); ok {

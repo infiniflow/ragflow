@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -62,6 +63,9 @@ func (e *Engine) queryRows(ctx context.Context, query string, args ...interface{
 
 func decodeLogicalRow(row map[string]interface{}, kind string) map[string]interface{} {
 	result := make(map[string]interface{}, len(row))
+	if kind == "memory" {
+		result["forget_at"] = nil
+	}
 	for rawColumn, value := range row {
 		column := rawColumn
 		if kind == "memory" {
@@ -73,6 +77,13 @@ func decodeLogicalRow(row map[string]interface{}, kind string) map[string]interf
 		}
 		if kind == "chunk" && column == "_order_id" {
 			column = "chunk_order_int"
+		}
+		if kind == "memory" && column == "message_id" {
+			if text, ok := value.(string); ok {
+				if id, err := strconv.ParseInt(text, 10, 64); err == nil {
+					value = id
+				}
+			}
 		}
 		if kind == "memory" && column == "status" {
 			switch status := value.(type) {
