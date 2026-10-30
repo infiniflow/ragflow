@@ -4,7 +4,8 @@
   "url_suffix": {
     "chat": "api/chat",
     "models": "api/tags",
-    "embedding": "api/embed"
+    "embedding": "api/embed",
+    "decision": "v1/systemone"
   },
   "url_hint": "http://host.docker.internal:11434",
   "class": "local"
