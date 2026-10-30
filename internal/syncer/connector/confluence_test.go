@@ -387,3 +387,23 @@ func TestConfluenceSemanticIdentifierAlwaysUsesFullPath(t *testing.T) {
 		t.Fatalf("untitled identifier = %q, want Space / Untitled", unnamed)
 	}
 }
+
+func TestConfluenceWindowKeepsWhatTheCQLAlreadyReturned(t *testing.T) {
+	// CQL accepts minute precision only, so pageCQL asks for everything from the
+	// start of the waterline minute. The previous run's upper bound is the same
+	// minute, so a page updated just before the waterline is covered by neither
+	// run unless filtering accepts the same lower bound the query sent.
+	start := mustTime(t, "2026-10-27T10:05:30Z")
+	end := mustTime(t, "2026-10-27T10:06:00Z")
+	if got := confluenceCQLTime(start); got != "2026-10-27 10:05" {
+		t.Fatalf("confluenceCQLTime(%v) = %q, want minute precision", start, got)
+	}
+	inside := mustTime(t, "2026-10-27T10:05:10Z")
+	if !inConfluenceWindow(inside, &start, end) {
+		t.Fatalf("page updated at %v was dropped although the CQL lower bound covers it", inside)
+	}
+	before := mustTime(t, "2026-10-27T10:04:59Z")
+	if inConfluenceWindow(before, &start, end) {
+		t.Fatalf("page updated at %v belongs to the previous window", before)
+	}
+}

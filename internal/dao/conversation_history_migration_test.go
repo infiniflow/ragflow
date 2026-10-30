@@ -116,7 +116,7 @@ func TestConversationMessageDetailsSchemaMigration(t *testing.T) {
 			if _, ok := model.(*entity.API4ConversationMessage); ok {
 				table, parent = apiConversationMessageTable, "api_4_conversation"
 			}
-			for _, column := range []string{"prompt", "usage", "elapsed_ms"} {
+			for _, column := range []string{"prompt", "usage", "elapsed_ms", "reference"} {
 				if err := db.Migrator().DropColumn(model, column); err != nil {
 					t.Fatal(err)
 				}
@@ -132,7 +132,7 @@ func TestConversationMessageDetailsSchemaMigration(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			for _, column := range []string{"prompt", "usage", "elapsed_ms"} {
+			for _, column := range []string{"prompt", "usage", "elapsed_ms", "reference"} {
 				if !db.Migrator().HasColumn(model, column) {
 					t.Fatalf("missing column %s", column)
 				}
@@ -141,7 +141,7 @@ func TestConversationMessageDetailsSchemaMigration(t *testing.T) {
 			if err := db.Table(table).Where("conversation_id = ?", "session-1").Take(&row).Error; err != nil {
 				t.Fatal(err)
 			}
-			if row.Content == nil || *row.Content != "old answer" || row.Prompt != nil || len(row.Usage) != 0 || row.ElapsedMs != nil {
+			if row.Content == nil || *row.Content != "old answer" || row.Prompt != nil || len(row.Usage) != 0 || row.ElapsedMs != nil || len(row.Reference) != 0 {
 				t.Fatalf("migration changed old answer: %+v", row)
 			}
 		})

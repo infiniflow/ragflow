@@ -116,11 +116,15 @@ export function ParserTreeSelect({
     [t],
   );
 
-  // The outdated icon is a pure hint: the tooltip trigger swallows its own
-  // click before it bubbles to the TreeSelect trigger, so clicking the icon
-  // neither toggles the dropdown nor triggers the lazy version fetches that
-  // follow. It is hidden while the value is already reported as missing — a
-  // deleted pin is the stronger signal.
+  // The outdated icon is a pure hint. The Radix tooltip trigger renders a
+  // raw <button> with no `type`, which inside the surrounding forms (dataset
+  // settings, document pipeline dialog) defaults to type="submit" — clicking
+  // the icon would submit the form, and stopPropagation alone cannot cancel
+  // that native default action. type="button" removes it, while the click
+  // handlers still swallow the event before it bubbles to the TreeSelect
+  // trigger, so the click neither toggles the dropdown nor triggers the lazy
+  // version fetches that follow. It is hidden while the value is already
+  // reported as missing — a deleted pin is the stronger signal.
   const stopHintClick = useCallback((e: React.SyntheticEvent) => {
     e.stopPropagation();
   }, []);
@@ -129,10 +133,11 @@ export function ParserTreeSelect({
     outdated && (loading || selectedLeafExists) ? (
       <RAGFlowTooltip
         tooltip={t('flow.version.outdated')}
+        type="button"
         onClick={stopHintClick}
         onPointerDown={stopHintClick}
       >
-        <AlertCircle className="size-4 flex-shrink-0" />
+        <AlertCircle className="size-4 flex-shrink-0 text-state-warning" />
       </RAGFlowTooltip>
     ) : undefined;
 

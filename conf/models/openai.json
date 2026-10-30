@@ -158,18 +158,6 @@
       }
     },
     {
-      "name": "gpt-5.1-chat-latest",
-      "context_length": 128000,
-      "max_output": 16384,
-      "model_types": [
-        "chat",
-        "vision"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
       "name": "gpt-5",
       "context_length": 400000,
       "max_output": 128000,
@@ -206,18 +194,6 @@
       }
     },
     {
-      "name": "gpt-5-chat-latest",
-      "context_length": 128000,
-      "max_output": 16384,
-      "model_types": [
-        "chat",
-        "vision"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
       "name": "gpt-4.1",
       "context_length": 1047576,
       "max_output": 32768,
@@ -242,29 +218,6 @@
       }
     },
     {
-      "name": "gpt-4.1-nano",
-      "context_length": 1047576,
-      "max_output": 32768,
-      "model_types": [
-        "chat",
-        "vision"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "gpt-4.5-preview",
-      "context_length": 128000,
-      "max_output": 16384,
-      "model_types": [
-        "chat"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
       "name": "gpt-4o-mini",
       "context_length": 128000,
       "max_output": 16384,
@@ -283,28 +236,6 @@
       "model_types": [
         "chat",
         "vision"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "gpt-3.5-turbo",
-      "context_length": 16385,
-      "max_output": 4096,
-      "model_types": [
-        "chat"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "gpt-3.5-turbo-16k-0613",
-      "context_length": 16385,
-      "max_output": 4096,
-      "model_types": [
-        "chat"
       ],
       "tools": {
         "support": true
@@ -340,40 +271,6 @@
       "model_types": [
         "asr"
       ]
-    },
-    {
-      "name": "gpt-4",
-      "context_length": 8192,
-      "max_output": 8192,
-      "model_types": [
-        "chat"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "gpt-4-turbo",
-      "context_length": 128000,
-      "max_output": 4096,
-      "model_types": [
-        "chat",
-        "vision"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "gpt-4-32k",
-      "context_length": 32768,
-      "max_output": 4096,
-      "model_types": [
-        "chat"
-      ],
-      "tools": {
-        "support": true
-      }
     },
     {
       "name": "tts-1",

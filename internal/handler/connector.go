@@ -247,7 +247,7 @@ func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 	common.SuccessWithData(c, gin.H{"total": total, "logs": logs}, "success")
 }
 
-// ListSyncLogs handles GET /api/v1/connectors/sync_logs.
+// ListSyncLogs handles GET /api/v1/connectors/sync-logs.
 // Lists sync logs for the current user; when dataset_id is provided, only
 // the logs of that dataset are returned.
 // @Summary list sync logs
@@ -256,7 +256,7 @@ func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/connectors/sync_logs [get]
+// @Router /api/v1/connectors/sync-logs [get]
 func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {

@@ -17,6 +17,7 @@
 package connector
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -87,6 +88,7 @@ const (
 	restAPIDefaultRequestDelay = 0.5
 	restAPIRequestTimeout      = 60 * time.Second
 	restAPIMaxRedirects        = 5
+	restAPIMaxResponseBytes    = int64(32 * 1024 * 1024)
 )
 
 const (
@@ -727,11 +729,14 @@ func (c *RestAPIConnector) handleResponse(resp *http.Response) (any, error) {
 		return nil, fmt.Errorf("REST API request failed with http %d", status)
 	}
 
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, restAPIMaxResponseBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	if int64(len(raw)) > restAPIMaxResponseBytes {
+		return nil, &ConnectorValidationError{Message: fmt.Sprintf("REST API response exceeds the %d byte limit", restAPIMaxResponseBytes)}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	var value any
 	if err := decoder.Decode(&value); err != nil {

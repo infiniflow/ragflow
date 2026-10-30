@@ -176,6 +176,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **AstraFlow** | Multi-provider aggregator |
 | **Avian** | Multi-provider aggregator |
 | **Baidu (Qianwen)** | Ernie + third-party models |
+| **cheapaimodel** | OpenAI-compatible gateway for open-weight models (DeepSeek, GLM, Kimi) plus Grok |
 | **CloudGPU** | GPU cloud with an OpenAI-compatible inference API for open models |
 | **CometAPI** | Multi-provider aggregator |
 | **DeepInfra** | Open-source model hosting |
@@ -184,6 +185,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **FuturMix** | Multi-provider aggregator |
 | **GiteeAI** | Chinese aggregator |
 | **GreenPT** | GLM-based models |
+| **Hostinger Router** | OpenAI-compatible router with EU/US regional model variants |
 | **Huawei Cloud** | Hosts GLM, Kimi, etc. |
 | **JieKouAI** | Multi-provider aggregator |
 | **LongCat** | Meituan's model platform |

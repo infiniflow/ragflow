@@ -31,8 +31,8 @@ import (
 // The flag is the development opt-in documented in docker/.env. It applies
 // to host-based database and connector dials (MySQL, PostgreSQL, IMAP,
 // test_db_connection, ExeSQL), including host.docker.internal, and configured
-// MCP servers. Other URL and Invoke guards do not call this. DNS pinning
-// remains enabled. Default is off.
+// MCP servers, and Invoke target and proxy URLs. Other URL guards do not
+// call this. DNS pinning remains enabled. Default is off.
 func AllowConfiguredPrivateHost() bool {
 	switch strings.ToLower(strings.TrimSpace(GetEnv(EnvAllowAnyHost))) {
 	case "1", "true", "yes", "on":
