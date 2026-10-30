@@ -36,6 +36,7 @@ const (
 	EngineSeekDB        EngineType = "seekdb"
 	EngineSereneDB      EngineType = "serenedb"
 	EngineVastbase      EngineType = "vastbase"
+	EngineOpenSearch    EngineType = "opensearch"
 )
 
 // DocEngine document storage engine interface

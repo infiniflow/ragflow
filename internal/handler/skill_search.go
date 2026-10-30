@@ -168,7 +168,8 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 		zap.String("engineType", h.docEngine.GetType()),
 		zap.Int("skillCount", len(req.Skills)))
 
-	if h.docEngine.GetType() == "elasticsearch" {
+	engineType := h.docEngine.GetType()
+	if engineType == "elasticsearch" || engineType == "opensearch" {
 		if err := h.indexerService.EnsureIndex(c.Request.Context(), req.SpaceID, h.docEngine, embdID); err != nil {
 			if respondPermissionErrorIf(c, err, true) {
 				return

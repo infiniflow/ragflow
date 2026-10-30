@@ -70,9 +70,10 @@ func NewSkillIndexerService() *SkillIndexerService {
 	}
 }
 
-// isElasticsearch checks if the engine is Elasticsearch
+// isElasticsearch checks if the engine is Elasticsearch or OpenSearch
 func isElasticsearch(docEngine engine.DocEngine) bool {
-	return docEngine.GetType() == "elasticsearch"
+	t := docEngine.GetType()
+	return t == "elasticsearch" || t == "opensearch"
 }
 
 // IndexSkill indexes a single skill
