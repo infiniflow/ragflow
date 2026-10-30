@@ -478,11 +478,28 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 // @Router /v1/user/set_tenant_info [post]
 func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	ctx := c.Request.Context()
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "set_tenant_info",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
+	operationLog.UserName = user.Email
 
 	requiredKeys := []string{"tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id"}
 	missingArgumentMessage := "required argument are missing: tenant_id,asr_id,embd_id,img2txt_id,llm_id; "
@@ -490,6 +507,8 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	var payload map[string]interface{}
 	if err := c.ShouldBindBodyWith(&payload, binding.JSON); err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, missingArgumentMessage)
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = err
 		return
 	}
 
@@ -501,6 +520,8 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	}
 	if len(missing) > 0 {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)))
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = errors.New(fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)))
 		return
 	}
 
@@ -530,6 +551,8 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	code, err := h.userService.SetTenantInfo(ctx, user.ID, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 
