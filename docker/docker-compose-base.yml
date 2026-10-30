@@ -41,7 +41,7 @@ services:
   opensearch01:
     profiles:
       - opensearch
-    image: opensearchproject/opensearch:2.19.1
+    image: opensearchproject/opensearch:${OPENSEARCH_VERSION:-2.19.7}
     volumes:
       - osdata01:/usr/share/opensearch/data
     ports:

@@ -36,12 +36,20 @@ import (
 func getOSTestConfig() config.OpenSearchConfig {
 	hosts := common.GetEnv("OS_HOSTS")
 	if hosts == "" {
+		hosts = common.GetEnv("OS_HOST")
+	}
+	if hosts == "" {
 		hosts = "http://localhost:1201"
+	}
+	user := common.GetEnv("OS_USERNAME")
+	pass := common.GetEnv("OS_PASSWORD")
+	if pass == "" && user != "" {
+		pass = "infini_rag_flow_OS_01"
 	}
 	return config.OpenSearchConfig{
 		Hosts:              hosts,
-		Username:           common.GetEnv("OS_USERNAME"),
-		Password:           common.GetEnv("OS_PASSWORD"),
+		Username:           user,
+		Password:           pass,
 		InsecureSkipVerify: true,
 	}
 }
