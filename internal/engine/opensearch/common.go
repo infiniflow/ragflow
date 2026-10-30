@@ -170,5 +170,3 @@ func extractErrorReason(bodyBytes []byte) string {
 
 	return ""
 }
-
-

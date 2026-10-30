@@ -43,6 +43,7 @@ type Engine struct {
 	apiClient       *opensearchapi.Client
 	httpTransport   *http.Transport
 	version         string
+	pipelineMgr     *pipelineManager
 }
 
 // parseAddresses validates and extracts addresses from a comma-separated hosts string.
@@ -144,11 +145,17 @@ func NewEngine(ctx context.Context, osConfig config.OpenSearchConfig) (*Engine, 
 	}
 	version := infoResp.Version.Number
 
+	pm, err := newPipelineManager(version)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize OpenSearch: %w", err)
+	}
+
 	engine := &Engine{
 		transportClient: apiClient.Client,
 		apiClient:       apiClient,
 		httpTransport:   transport,
 		version:         version,
+		pipelineMgr:     pm,
 	}
 
 	// 1. Template for chunk indices (ragflow_*) - priority 1
