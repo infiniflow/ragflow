@@ -882,7 +882,9 @@ func cellIsStyled(f *excelize.File, sheet string, row, col int) bool {
 	if st.Font != nil && st.Font.Bold {
 		return true
 	}
-	if st.Fill.Type != "" || len(st.Fill.Color) > 0 {
+	// excelize reports Fill.Type "pattern" even for the default no-fill style;
+	// only a non-zero pattern or an explicit color marks a real fill.
+	if st.Fill.Pattern > 0 || len(st.Fill.Color) > 0 {
 		return true
 	}
 	return false
@@ -901,6 +903,12 @@ func cellIsStyled(f *excelize.File, sheet string, row, col int) bool {
 //     candidate that looks like a data row (majority numeric) is skipped. The
 //     override only applies when the anchor is not already row 1, so the common
 //     header-on-row-1 sheet is left unchanged.
+//  3. Width-based recovery: when step 2 finds a styled/contrast row that is much
+//     narrower than the typical data row (likely a metadata label in a form-
+//     style sheet), remember it as a fallback and search a wider window for the
+//     first text-majority row whose width matches the data body. This only runs
+//     when a fallback candidate exists, so plain sheets without any styled
+//     metadata keep row 1 as the default.
 func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables []excelize.Table) int {
 	n := len(records)
 	if n == 0 {
@@ -933,6 +941,15 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 	if maxScan < 1 {
 		return 1
 	}
+
+	// Pre-compute the typical data-row width from sampled mid-sheet rows.
+	// A header candidate whose width is much narrower than the body is
+	// likely a title/metadata row in a form-style spreadsheet (e.g. Kros
+	// budget files where rows 1–5 are labels and the real column header
+	// starts at row 6).
+	medWidth := medianRowWidth(records)
+
+	bestCandidate := 0
 	for k := 0; k < maxScan; k++ {
 		row := records[k]
 		nc := len(row)
@@ -984,6 +1001,13 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 
 		if styled*2 >= nc || contrast >= 2 {
 			if k == 0 {
+				// Row 1 is subject to the same width validation as any other
+				// candidate: a narrow styled row at the top of a form sheet is
+				// a metadata label, not the column header.
+				if medWidth >= 4 && rowNonEmpty(row)*2 <= medWidth {
+					bestCandidate = 1
+					continue
+				}
 				return 1 // row 1 is already the header
 			}
 			below := records[k+1]
@@ -995,11 +1019,130 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 			// subtotal looks identical locally, but its label matches a
 			// subtotal keyword so it is still refused and row 1 is kept.
 			if rowHasTextCell(below) || (isPurelyNumeric(below) && !isSubtotalRow(row)) {
+				// Width validation: if this candidate has far fewer filled
+				// cells than the typical data row, it is probably a metadata
+				// title (e.g. "Stavba: DSP MILLHAUS") and not the real
+				// column header. Remember it as fallback and keep scanning.
+				// Use the same trimmed non-empty count as medianRowWidth so
+				// the two figures do not diverge on whitespace-only cells.
+				if medWidth >= 4 && rowNonEmpty(row)*2 <= medWidth {
+					if bestCandidate == 0 {
+						bestCandidate = k + 1
+					}
+					continue
+				}
 				return k + 1
 			}
 		}
 	}
+
+	// 3) Width-based scan: if the styled/contrast scan skipped a narrow
+	// candidate, search a wider window for the first text-majority row
+	// whose width is close to the data-row median. Only run when there is
+	// a fallback candidate; otherwise plain sheets with no styled metadata
+	// keep row 1 as the default.
+	if bestCandidate > 0 && medWidth >= 4 {
+		wideScan := 12
+		if wideScan > n-1 {
+			wideScan = n - 1
+		}
+		// Start after the deferred candidate: rows at or above it were already
+		// rejected by the styled/contrast scan, so matching them again can only
+		// promote a row that was previously refused (e.g. a wide title row).
+		for k := bestCandidate; k < wideScan; k++ {
+			row := records[k]
+			ne := rowNonEmpty(row)
+			// Accept rows within ±2 of the median data width, but reject rows
+			// that are half as wide (or narrower) — they are still metadata
+			// labels, not the real column header.
+			if ne < medWidth-2 || ne > medWidth+2 || ne*2 <= medWidth {
+				continue
+			}
+			// The recovered row must close a contiguous narrow metadata block:
+			// if a body-width row already sits between the deferred candidate
+			// and here, this row belongs to a later block (a repeated header
+			// or a section title mid-sheet), and the first candidate was the
+			// real header all along.
+			contiguous := true
+			for j := bestCandidate; j < k; j++ {
+				w := rowNonEmpty(records[j])
+				if w > 0 && w*2 > medWidth {
+					contiguous = false
+					break
+				}
+			}
+			if !contiguous {
+				break
+			}
+			// Reject numeric-majority rows (data, not a header).
+			numCells := 0
+			textCells := 0
+			for _, v := range row {
+				v = strings.TrimSpace(v)
+				if v == "" {
+					continue
+				}
+				if isNumericCell(v) {
+					numCells++
+				} else {
+					textCells++
+				}
+			}
+			if textCells < numCells {
+				continue
+			}
+			return k + 1
+		}
+	}
+
+	if bestCandidate > 0 {
+		return bestCandidate
+	}
 	return 1
+}
+
+// rowNonEmpty counts the non-empty cells in a row.
+func rowNonEmpty(row []string) int {
+	n := 0
+	for _, v := range row {
+		if strings.TrimSpace(v) != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// medianRowWidth samples rows from the bottom half of the sheet and returns
+// the median of their non-empty cell counts. Sampling the bottom half keeps
+// top-of-sheet metadata/title blocks out of the estimate; a middle-half window
+// can land entirely inside a long metadata block on short form sheets.
+func medianRowWidth(records [][]string) int {
+	n := len(records)
+	if n < 4 {
+		return 0
+	}
+	start := n / 2
+	end := n
+	span := end - start
+	if span < 3 {
+		return 0
+	}
+	step := span / 5
+	if step < 1 {
+		step = 1
+	}
+	var widths []int
+	for i := start; i < end && len(widths) < 5; i += step {
+		w := rowNonEmpty(records[i])
+		if w > 0 {
+			widths = append(widths, w)
+		}
+	}
+	if len(widths) == 0 {
+		return 0
+	}
+	sort.Ints(widths)
+	return widths[len(widths)/2]
 }
 
 // rowHasTextCell reports whether a row contains at least one non-empty,
