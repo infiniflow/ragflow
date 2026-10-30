@@ -17,11 +17,7 @@ on:
   # We use pull_request_target so that GITEE_TOKEN (and other repo secrets) are available when building
   # ragflow:nightly from a fork PR, while still running the full test suite on PRs labeled with `ci`.
   pull_request:
-    types: [synchronize, labeled]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - '*.mdx'
+    types: [opened, reopened, ready_for_review, synchronize, labeled]
   schedule:
     - cron: '0 16 * * *'  # This schedule runs every 16:00:00Z(00:00:00+08:00)
 
@@ -66,6 +62,13 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           allow-unsafe-pr-checkout: true
+
+      - name: Check added lines for non-ASCII characters
+        if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: go run ./tools/checkascii "$PR_BASE_SHA" "$PR_HEAD_SHA"
 
       - name: Check workflow duplication
         if: ${{ !cancelled() && !failure() }}
