@@ -157,6 +157,15 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		return "", err
 	}
 	args.UserID = resolvedUserID
+	// A memory search without a user filter would return every user's messages
+	// in the shared memory. Fall back to the authenticated run user and fail
+	// closed when neither the node nor the session names one.
+	if args.RetrievalFrom == "memory" && args.UserID == "" {
+		args.UserID = retrievalRunUserID(ctx)
+		if args.UserID == "" {
+			return "", fmt.Errorf("retrieval: memory search requires a user_id; set it on the node or run from an authenticated session")
+		}
+	}
 	common.Debug("agent retrieval tool: parsed arguments",
 		zap.String("query", args.Query),
 		zap.Strings("dataset_ids", args.DatasetIDs),
@@ -335,6 +344,17 @@ func cloneStringAnyMap(src map[string]any) map[string]any {
 		dst[key] = value
 	}
 	return dst
+}
+
+// retrievalRunUserID returns the authenticated user bound to the canvas run, or
+// an empty string when the call has no session state.
+func retrievalRunUserID(ctx context.Context) string {
+	state, err := runtime.GetStateFromContext(ctx)
+	if err != nil || state == nil {
+		return ""
+	}
+	userID, _ := state.GetSysString("user_id")
+	return strings.TrimSpace(userID)
 }
 
 func resolveRetrievalQuery(ctx context.Context, query string) (string, error) {
