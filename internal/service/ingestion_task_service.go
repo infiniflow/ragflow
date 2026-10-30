@@ -16,6 +16,7 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ingestionEventKind intentionally has an invalid zero value. The persisted
@@ -32,8 +33,10 @@ const (
 )
 
 const (
-	taskStateCleanupTimeout  = 5 * time.Second
-	taskStateCleanupCapacity = 1024
+	taskStateCleanupTimeout     = 5 * time.Second
+	taskStateCleanupCapacity    = 1024
+	taskTerminalMessageComplete = "Task completed."
+	taskTerminalMessageFailed   = "Task failed."
 )
 
 type taskStatePurgeRequest struct {
@@ -342,7 +345,7 @@ func (s *IngestionTaskService) supersedeUnstartedTask(ctx context.Context, taskI
 		if err != nil {
 			return nil, err
 		}
-		if err := s.settleStoppedTaskRun(ctx, stopped, terminalMessage); err != nil {
+		if err := s.settleTaskRun(ctx, stopped, entity.TaskStatusCancel, terminalMessage); err != nil {
 			return nil, err
 		}
 		return stopped, nil
@@ -370,11 +373,19 @@ func (s *IngestionTaskService) PrepareDocumentTaskForCleanup(ctx context.Context
 	case common.RUNNING, common.STOPPING:
 		return nil, fmt.Errorf("document %s ingestion task %s is %s; stop it and wait for a terminal state before cleanup", documentID, task.ID, task.Status)
 	case common.STOPPED:
-		if err := s.settleStoppedTaskRun(ctx, task, terminalMessage); err != nil {
+		if err := s.settleTaskRun(ctx, task, entity.TaskStatusCancel, terminalMessage); err != nil {
 			return nil, err
 		}
 		return task, nil
-	case common.COMPLETED, common.FAILED:
+	case common.COMPLETED:
+		if err := s.settleTaskRun(ctx, task, entity.TaskStatusDone, taskTerminalMessageComplete); err != nil {
+			return nil, err
+		}
+		return task, nil
+	case common.FAILED:
+		if err := s.settleTaskRun(ctx, task, entity.TaskStatusFail, taskTerminalMessageFailed); err != nil {
+			return nil, err
+		}
 		return task, nil
 	default:
 		return nil, fmt.Errorf("document %s ingestion task %s has unrecognized status %q", documentID, task.ID, task.Status)
@@ -452,7 +463,7 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 			return nil, runErr
 		}
 		if run.RunCount != nil && *run.RunCount > 0 {
-			if err := s.settleStoppedTaskRun(ctx, task, "Task superseded by a new parse request."); err != nil {
+			if err := s.settleTaskRun(ctx, task, entity.TaskStatusCancel, "Task superseded by a new parse request."); err != nil {
 				return nil, err
 			}
 		}
@@ -914,16 +925,18 @@ func (s *IngestionTaskService) advanceOpenLogIfOpen(ctx context.Context, task *e
 	return advanced, err
 }
 
-// settleStoppedTaskRun closes the open run ledger for a task that has already
-// reached STOPPED. A failed advance leaves the task row available so cleanup
-// can retry before deleting it.
-func (s *IngestionTaskService) settleStoppedTaskRun(ctx context.Context, task *entity.IngestionTask, terminalMessage string) error {
-	advanced, err := s.advanceOpenLogIfOpen(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
-	if err != nil {
+// settleTaskRun closes a terminal task's run ledger and ensures its terminal
+// event exists. The event write is retried even when a previous attempt already
+// advanced the operation row, so a partial settlement never becomes permanent.
+func (s *IngestionTaskService) settleTaskRun(ctx context.Context, task *entity.IngestionTask, operationStatus entity.TaskStatus, terminalMessage string) error {
+	if task == nil || task.PipelineLogID == nil || *task.PipelineLogID == "" {
+		return nil
+	}
+	if _, err := s.advanceOpenLogIfOpen(ctx, task, dao.OpenPipelineOperationStatuses(), string(operationStatus)); err != nil {
 		return err
 	}
-	if advanced {
-		s.recordRunTerminal(ctx, task, terminalMessage)
+	if err := s.RecordTerminal(ctx, *task.PipelineLogID, task.ID, terminalMessage); err != nil {
+		return fmt.Errorf("record terminal event for task %s run %s: %w", task.ID, *task.PipelineLogID, err)
 	}
 	return nil
 }
@@ -1031,7 +1044,7 @@ func (s *IngestionTaskService) RecordMessage(ctx context.Context, pipelineLogID,
 
 // RecordTerminal writes the terminal explanation associated with a run.
 func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string) error {
-	if err := s.insertEvent(ctx, ingestionEventTerminal, pipelineLogID, taskID, "", 0, message); err != nil {
+	if err := s.ensureTerminalEvent(ctx, pipelineLogID, taskID, message); err != nil {
 		return err
 	}
 	foldContext := context.WithoutCancel(ctx)
@@ -1056,6 +1069,32 @@ func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID
 	return nil
 }
 
+// ensureTerminalEvent serializes terminal writers on the run row and inserts
+// the terminal event only when one is not already present. This makes retrying
+// settlement safe after the operation status has already advanced.
+func (s *IngestionTaskService) ensureTerminalEvent(ctx context.Context, pipelineLogID, taskID, message string) error {
+	if dao.DB == nil {
+		return errors.New("ingestion task: nil database")
+	}
+	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var run entity.PipelineOperationLog
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Take(&run, "id = ?", pipelineLogID).Error; err != nil {
+			return err
+		}
+		var count int64
+		if err := tx.Model(&entity.IngestionTaskLog{}).
+			Where("pipeline_log_id = ? AND event_type = ?", pipelineLogID, dao.EventTypeTerminal).
+			Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return nil
+		}
+		return s.insertEventOnDB(ctx, tx, ingestionEventTerminal, pipelineLogID, taskID, "", 0, message)
+	})
+}
+
 func rejectIngestionEvent(reason, pipelineLogID, taskID string, err error) error {
 	common.Warn("ingestion_log_event_rejected",
 		zap.String("event", "ingestion_log_event_rejected"),
@@ -1067,11 +1106,18 @@ func rejectIngestionEvent(reason, pipelineLogID, taskID string, err error) error
 }
 
 func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message string) error {
+	return s.insertEventOnDB(ctx, dao.DB, kind, pipelineLogID, taskID, component, phase, message)
+}
+
+func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB, kind ingestionEventKind, pipelineLogID, taskID, component string, phase int, message string) error {
 	if pipelineLogID == "" {
 		return rejectIngestionEvent("missing_pipeline_log_id", pipelineLogID, taskID, errors.New("ingestion event requires a pipeline log id"))
 	}
 	if taskID == "" {
 		return rejectIngestionEvent("missing_task_id", pipelineLogID, taskID, errors.New("ingestion event requires a task id"))
+	}
+	if db == nil {
+		return errors.New("ingestion task: nil database")
 	}
 	eventType := 0
 	switch kind {
@@ -1095,7 +1141,7 @@ func (s *IngestionTaskService) insertEvent(ctx context.Context, kind ingestionEv
 	// EventTypeLifecycle is zero while the database default is the defensive
 	// legacy value. A map keeps the explicitly mapped protocol value intact;
 	// GORM otherwise substitutes a default-tag value for a zero struct field.
-	return dao.DB.WithContext(ctx).Model(&entity.IngestionTaskLog{}).Create(map[string]interface{}{
+	return db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).Create(map[string]interface{}{
 		"task_id":         taskID,
 		"pipeline_log_id": pipelineLogID,
 		"checkpoint":      entity.JSONMap{},

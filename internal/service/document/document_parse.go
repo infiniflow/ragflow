@@ -63,27 +63,34 @@ func lockDocumentParse(docID string) func() {
 	}
 }
 
-// prepareDocumentTaskForCleanup freezes a queued task or rejects an active
-// worker before removing its run-scoped cache state. The bounded context makes
-// Redis outages and hung clients observable before a destructive cleanup.
-func (s *DocumentService) prepareDocumentTaskForCleanup(ctx context.Context, docID, terminalMessage string) (*entity.IngestionTask, error) {
+// cleanupDocumentTask settles and conditionally deletes the document's task
+// before purging its run-scoped cache state. If the task starts running between
+// settlement and deletion, the conditional delete fails and no cache state is
+// removed for the new run.
+func (s *DocumentService) cleanupDocumentTask(ctx context.Context, docID, terminalMessage string) error {
 	task, err := s.ingestionTaskSvc.PrepareDocumentTaskForCleanup(ctx, docID, terminalMessage)
 	if err != nil {
-		return nil, fmt.Errorf("prepare ingestion task for document %s cleanup: %w", docID, err)
+		return fmt.Errorf("prepare ingestion task for document %s cleanup: %w", docID, err)
+	}
+	if err := s.deletePreparedDocumentTask(ctx, docID, task); err != nil {
+		return err
 	}
 	if task == nil {
-		return nil, nil
+		return nil
 	}
+
 	purgeTaskState := s.purgeTaskState
 	if purgeTaskState == nil {
 		purgeTaskState = ingestionpipeline.PurgeTaskState
 	}
-	batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+	// The task row is gone, so a request cancellation must not skip cleanup that
+	// is now retryable only through the 24-hour TTL.
+	batchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupBatchTimeout)
 	defer cancel()
 	if err := purgeTaskState(batchCtx, task.ID); err != nil {
-		return nil, fmt.Errorf("purge task state for document %s task %s: %w", docID, task.ID, err)
+		return fmt.Errorf("purge task state for document %s task %s: %w", docID, task.ID, err)
 	}
-	return task, nil
+	return nil
 }
 
 func (s *DocumentService) deletePreparedDocumentTask(ctx context.Context, docID string, task *entity.IngestionTask) error {
@@ -324,16 +331,10 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 		return fmt.Errorf("document is nil")
 	}
 
-	// Freeze queued work and reject an active worker before cache or result
-	// cleanup.
-	task, err := s.prepareDocumentTaskForCleanup(ctx, doc.ID, terminalMessage)
-	if err != nil {
-		return err
-	}
-
-	// Re-check and delete the prepared task atomically. A task that started
-	// running after preparation keeps the document and its results intact.
-	if err := s.deletePreparedDocumentTask(ctx, doc.ID, task); err != nil {
+	// Settle and conditionally delete the task before touching cache state or
+	// durable results. A task that starts running after preparation blocks the
+	// delete and leaves both the document and its results intact.
+	if err := s.cleanupDocumentTask(ctx, doc.ID, terminalMessage); err != nil {
 		return err
 	}
 	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {
@@ -501,7 +502,7 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 	successCount := 0
 	for _, doc := range docs {
 		if cancelErr := s.CancelDocParse(ctx, doc); cancelErr != nil {
-			if errors.Is(cancelErr, errParseNotRunning) {
+			if errors.Is(cancelErr, ErrParseNotRunning) {
 				// Mirror the Python /documents/stop endpoint's message.
 				errs = append(errs, "Can't stop parsing document that has not started or already completed")
 			} else {
@@ -563,20 +564,20 @@ func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []st
 	return docs, nil
 }
 
-// errParseNotRunning is returned by CancelDocParse when the document has no
+// ErrParseNotRunning is returned by CancelDocParse when the document has no
 // in-flight ingestion task and is not already stopped. Callers map it to their
 // endpoint-specific message (the Python /documents/ingest and /documents/stop messages differ).
-var errParseNotRunning = errors.New("parse task is not in running status")
+var ErrParseNotRunning = errors.New("parse task is not in running status")
 
 // CancelDocParse stops the document's active ingestion task. It returns
-// errParseNotRunning when the task is absent or already completed/failed.
+// ErrParseNotRunning when the task is absent or already completed/failed.
 func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get ingestion task for %s: %w", doc.ID, err)
 	}
 	if task == nil {
-		return errParseNotRunning
+		return ErrParseNotRunning
 	}
 	switch {
 	case common.IsActiveTaskStatus(task.Status):
@@ -587,7 +588,7 @@ func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Docume
 	case task.Status == common.STOPPED:
 		return nil
 	case task.Status == common.COMPLETED || task.Status == common.FAILED:
-		return errParseNotRunning
+		return ErrParseNotRunning
 	default:
 		return fmt.Errorf("ingestion task %s has unrecognized status %q", task.ID, task.Status)
 	}

@@ -886,7 +886,7 @@ func TestDeleteDocumentFull_Basic(t *testing.T) {
 	}
 }
 
-func TestDeleteDocumentFullPurgesTaskStateBeforeDeletingTask(t *testing.T) {
+func TestDeleteDocumentFullDeletesTaskBeforePurgingState(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -902,11 +902,11 @@ func TestDeleteDocumentFullPurgesTaskStateBeforeDeletingTask(t *testing.T) {
 	}
 	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
 		t.Fatalf("reload ingestion task: %v", err)
-	} else if task == nil {
-		t.Fatal("ingestion task was deleted despite resumable state cleanup failure")
+	} else if task != nil {
+		t.Fatal("ingestion task was not deleted before state cleanup")
 	}
 	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
-		t.Fatalf("document was deleted despite resumable state cleanup failure: %v", err)
+		t.Fatalf("document was deleted before state cleanup succeeded: %v", err)
 	}
 }
 
@@ -928,7 +928,7 @@ func TestDeleteDocumentFullKeepsDocumentWhenChunkDeletionFails(t *testing.T) {
 	}
 }
 
-func TestRemoveDocumentKeepFilePurgesTaskStateBeforeDeletingDocument(t *testing.T) {
+func TestRemoveDocumentKeepFileDeletesTaskBeforePurgingState(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -944,11 +944,11 @@ func TestRemoveDocumentKeepFilePurgesTaskStateBeforeDeletingDocument(t *testing.
 	}
 	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
 		t.Fatalf("reload ingestion task: %v", err)
-	} else if task == nil {
-		t.Fatal("ingestion task was deleted despite resumable state cleanup failure")
+	} else if task != nil {
+		t.Fatal("ingestion task was not deleted before state cleanup")
 	}
 	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
-		t.Fatalf("document was deleted despite resumable state cleanup failure: %v", err)
+		t.Fatalf("document was deleted before state cleanup succeeded: %v", err)
 	}
 }
 
@@ -3539,7 +3539,7 @@ func TestClearDocumentParseResultsDeletesSourceChunkImages(t *testing.T) {
 	}
 }
 
-func TestClearDocumentParseResultsPurgesTaskStateBeforeDeletingTask(t *testing.T) {
+func TestClearDocumentParseResultsDeletesTaskBeforePurgingState(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
@@ -3561,8 +3561,8 @@ func TestClearDocumentParseResultsPurgesTaskStateBeforeDeletingTask(t *testing.T
 	if err != nil {
 		t.Fatalf("reload ingestion task: %v", err)
 	}
-	if remaining == nil {
-		t.Fatal("task was deleted despite resumable state cleanup failure")
+	if remaining != nil {
+		t.Fatal("task was not deleted before state cleanup")
 	}
 }
 
@@ -3705,8 +3705,17 @@ func TestClearDocumentParseResultsDoesNotClearResultsWhenTaskStartsRunning(t *te
 	if err != nil {
 		t.Fatalf("get document: %v", err)
 	}
-	if err = testDocumentService(t).clearDocumentParseResults(ctx, doc, "tenant-1", taskTerminalMessageSuperseded); err == nil || !strings.Contains(err.Error(), "started running") {
+	purgeCalls := 0
+	svc := testDocumentService(t)
+	svc.purgeTaskState = func(context.Context, string) error {
+		purgeCalls++
+		return nil
+	}
+	if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1", taskTerminalMessageSuperseded); err == nil || !strings.Contains(err.Error(), "started running") {
 		t.Fatalf("expected reparse cleanup to reject a task that started running, got %v", err)
+	}
+	if purgeCalls != 0 {
+		t.Fatalf("purged task state %d time(s) after the conditional task delete failed", purgeCalls)
 	}
 	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
 	if err != nil {
