@@ -3,6 +3,7 @@ package tool
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -259,6 +260,42 @@ func TestDatasetNavigation_BlankRequestScopeFallsBackToDefaults(t *testing.T) {
 	}
 	if docs := decodeNavDocs(t, out); len(docs) != 1 || docs[0] != "d1" {
 		t.Errorf("docs = %v, want only the in-scope d1 (a blank request value must not disable the default scope)", docs)
+	}
+}
+
+// TestDatasetNavigation_MaxDocsCannotExceedCap pins the ceiling on the
+// doc-count budget: the model's argument JSON is not schema-validated, so a
+// max_docs above the cap must be clamped down to it, while a smaller value still
+// narrows the result.
+func TestDatasetNavigation_MaxDocsCannotExceedCap(t *testing.T) {
+	hits := make([]nav.NavHit, 0, 20)
+	for i := 0; i < 20; i++ {
+		hits = append(hits, nav.NavHit{Type: nav.TypeNavDoc, DocID: fmt.Sprintf("d%02d", i)})
+	}
+	cases := []struct {
+		name string
+		args string
+		want int
+	}{
+		{"above the cap", `{"topic":"X","dataset_ids":["kb1"],"max_docs":5000}`, datasetNavigationDefaultMaxDocs},
+		{"below the cap", `{"topic":"X","dataset_ids":["kb1"],"max_docs":2}`, 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &navRoutingFake{hits: hits}
+			prev := nav.GetNavService()
+			nav.SetNavService(fake)
+			defer func() { nav.SetNavService(prev) }()
+
+			tool := NewDatasetNavigationByTree()
+			out, err := tool.InvokableRun(navTestContext(t), tc.args)
+			if err != nil {
+				t.Fatalf("InvokableRun: %v", err)
+			}
+			if docs := decodeNavDocs(t, out); len(docs) != tc.want {
+				t.Errorf("docs = %d, want %d", len(docs), tc.want)
+			}
+		})
 	}
 }
 
