@@ -1,4 +1,5 @@
 import { AgentBackground } from '@/components/canvas/background';
+import { canvasBackgroundFromGlobals } from '@/components/canvas/canvas-background';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
@@ -228,6 +229,8 @@ export function VersionDialog({
     }
   }, [data, selectedId]);
 
+  const previewBackground = canvasBackgroundFromGlobals(agent?.dsl?.globals);
+
   return (
     <Dialog open onOpenChange={hideModal}>
       <DialogContent className="max-w-[900px]">
@@ -387,12 +390,16 @@ export function VersionDialog({
                           nodesConnectable={false}
                           elementsSelectable={false}
                         >
-                          <AgentBackground></AgentBackground>
+                          <AgentBackground
+                            setting={previewBackground}
+                          ></AgentBackground>
+                          {previewBackground.mode === 'default' ? (
                           <Spotlight
                             className="z-0"
                             opcity={0.7}
                             coverage={70}
                           />
+                          ) : null}
                         </ReactFlow>
                       </CanvasSnapshotContext.Provider>
                     </ReactFlowProvider>
