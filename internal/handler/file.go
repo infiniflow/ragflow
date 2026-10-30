@@ -244,6 +244,12 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	if strings.Contains(contentType, "multipart/form-data") {
+		defer func() {
+			if c.Request != nil && c.Request.MultipartForm != nil {
+				_ = c.Request.MultipartForm.RemoveAll()
+			}
+		}()
+
 		uploadLimit := file.DeploymentUploadMaxBytes()
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, uploadLimit)
 		if cl := c.Request.ContentLength; cl > uploadLimit {
