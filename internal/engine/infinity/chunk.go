@@ -2430,15 +2430,27 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 				continue
 			}
 
-			// _feas: JSON parse (Python lines 762-763)
+			// _feas: JSON parse (Python lines 762-763). Only text is parsed:
+			// Search decodes the column in place through applyFieldMappings and
+			// the retrieval path hands those same chunk maps to GetFields, so
+			// replacing every non-string with an empty map would wipe the map
+			// Search had just decoded and echo {} back to the caller.
 			if strings.HasSuffix(fieldLower, "_feas") {
-				if strVal, ok := val.(string); ok && strVal != "" {
-					var parsed interface{}
-					if err := json.Unmarshal([]byte(strVal), &parsed); err == nil {
-						chunk[field] = parsed
-					}
-				} else {
+				if val == nil {
 					chunk[field] = map[string]interface{}{}
+					continue
+				}
+				strVal, ok := val.(string)
+				if !ok {
+					continue
+				}
+				if strVal == "" {
+					chunk[field] = map[string]interface{}{}
+					continue
+				}
+				var parsed interface{}
+				if err := json.Unmarshal([]byte(strVal), &parsed); err == nil {
+					chunk[field] = parsed
 				}
 				continue
 			}

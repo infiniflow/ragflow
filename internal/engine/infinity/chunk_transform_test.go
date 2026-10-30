@@ -594,12 +594,15 @@ func TestTagFeasDecodesOnEveryReadPath(t *testing.T) {
 		t.Errorf("search tag_feas = %#v, want %#v", searched[0]["tag_feas"], want)
 	}
 
-	fields := (&Engine{}).GetFields(
-		[]map[string]interface{}{{"id": "c1", "tag_feas": stored}},
-		[]string{"tag_feas"},
-	)
+	// GetFields runs on the search hits themselves in the retrieval path
+	// (retrieval.go passes searchResult.Chunks), so it must keep the decoded
+	// map instead of overwriting it with an empty one.
+	fields := (&Engine{}).GetFields(searched, []string{"tag_feas"})
 	if got, ok := fields["c1"]["tag_feas"].(map[string]interface{}); !ok || !reflect.DeepEqual(got, want) {
 		t.Errorf("get fields tag_feas = %#v, want %#v", fields["c1"]["tag_feas"], want)
+	}
+	if got, ok := searched[0]["tag_feas"].(map[string]interface{}); !ok || !reflect.DeepEqual(got, want) {
+		t.Errorf("get fields rewrote search tag_feas = %#v, want %#v", searched[0]["tag_feas"], want)
 	}
 }
 
