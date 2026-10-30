@@ -16,7 +16,7 @@ Click **Agent** in the top navigation bar, then select **Workflow**. Each card r
 
 Select the category before creating an application. This chapter covers Workflow. For document processing, see [Create an Ingestion Pipeline](./ingestion_pipeline/create_ingestion_pipeline.md). For compilation templates, see [Knowledge Compilation](../knowledge_compilation/overview.md).
 
-## Create from Blank Agent
+## Create from Blank Workflow
 
 1. Open **Agent > Workflow**.
 2. Open the **+** creation menu in the upper-right corner and choose **Create from blank**. On an empty list, you can use the **Create from blank** entry directly.
@@ -43,7 +43,7 @@ Templates provide components and connections for common tasks. Select one that i
 4. Open the created workflow and check each component. In particular, reselect models, datasets, and tools that the template requires.
 5. Click **Save draft**, then **Run** and test with representative inputs.
 
-## Search, Copy and Delete Agent
+## Search, Copy and Delete Workflow
 
 - **Search**: Enter the workflow name in the list's search box.
 - **Copy**: Open the workflow, select **Management > Export**, then [import the JSON](./import_and_export_workflows.md#import-workflow) with a different name.
