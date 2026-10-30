@@ -945,6 +945,58 @@ func TestGeneralChunkerDOCXDropsCustomDelimiterRecordPrefix(t *testing.T) {
 	}
 }
 
+func TestGeneralChunkerDOCXDropsTrailingDelimiterOnlyRecord(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   512,
+		"overlapped_percent": 50,
+		"delimiters":         []string{"`AAA`"},
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "AAAfirst", "doc_type_kwd": "text"},
+			{"text": "AAA", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	// The delimiter-only record must not survive as an empty unit: overlap
+	// would otherwise synthesize a spurious chunk from the previous tail.
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"first"}) {
+		t.Fatalf("texts = %q, want [first]", texts)
+	}
+}
+
+func TestGeneralChunkerDOCXPrefersDelimiterMatchBeforeTrimming(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 512,
+		"delimiters":       []string{"`  A`", "`A123`"},
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "  A123hello", "doc_type_kwd": "text"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	// The delimiter that includes the leading whitespace matches the original
+	// text first, so "123" stays in the indexed content.
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"123hello"}) {
+		t.Fatalf("texts = %q, want [123hello]", texts)
+	}
+}
+
 func TestGroupDOCXUnitsByRecordBoundaryInactiveWithoutBoundary(t *testing.T) {
 	units := []schema.ChunkDoc{
 		{Text: "plain paragraph one", DocType: "text"},

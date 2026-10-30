@@ -1350,6 +1350,9 @@ func splitGeneralUnitsDroppingRecordPrefix(units []schema.ChunkDoc, pattern *reg
 		rest := dropLeadingRecordPrefix(unit.Text, recordPrefixes)
 		if pattern == nil || !pattern.MatchString(rest) {
 			unit.Text = strings.TrimSpace(rest)
+			if unit.Text == "" && !hasMediaPayload(unit) {
+				continue
+			}
 			unit.TKNums = intPtr(tokenizeStr(unit.Text))
 			result = append(result, unit)
 			continue
@@ -1371,8 +1374,16 @@ func splitGeneralUnitsDroppingRecordPrefix(units []schema.ChunkDoc, pattern *reg
 }
 
 // dropLeadingRecordPrefix removes the first matching custom-delimiter record
-// prefix from a grouped DOCX record, ignoring leading whitespace.
+// prefix from a grouped DOCX record. The original text is matched first so a
+// delimiter that includes leading whitespace wins over a shorter prefix found
+// only after trimming, mirroring the compiled pattern's earliest match. The
+// whitespace-trimmed text is a fallback for delimiters after indentation.
 func dropLeadingRecordPrefix(text string, prefixes []string) string {
+	for _, prefix := range prefixes {
+		if prefix != "" && strings.HasPrefix(text, prefix) {
+			return text[len(prefix):]
+		}
+	}
 	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
 	for _, prefix := range prefixes {
 		if prefix != "" && strings.HasPrefix(trimmed, prefix) {
