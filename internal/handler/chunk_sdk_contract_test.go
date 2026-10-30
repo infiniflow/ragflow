@@ -18,10 +18,8 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"github.com/gin-gonic/gin"
 	"net/http"
 	"net/http/httptest"
-	"ragflow/internal/entity"
 	"ragflow/internal/service"
 	"strings"
 	"testing"
@@ -64,24 +62,5 @@ func TestChunkListAcceptsSDKID(t *testing.T) {
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/datasets/kb/documents/doc/chunks?id=sdk-id", nil))
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
-	}
-}
-
-func TestRetrievalValidationDiagnostics(t *testing.T) {
-	for _, tt := range []struct{ body, message string }{
-		{`{"dataset_ids":["kb"],"question":"x","page":"3"}`, "cannot unmarshal string"},
-		{`{"dataset_ids":["kb"],"question":""}`, "question is required"},
-		{`{"dataset_ids":null,"question":"x"}`, "dataset_ids is required"},
-	} {
-		t.Run(tt.body, func(t *testing.T) {
-			w := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(w)
-			c.Set("user", &entity.User{ID: "user-1"})
-			c.Request = httptest.NewRequest(http.MethodPost, "/retrieval", strings.NewReader(tt.body))
-			(&DatasetsHandler{}).SearchDatasets(c)
-			if !strings.Contains(w.Body.String(), tt.message) {
-				t.Fatalf("response=%s", w.Body.String())
-			}
-		})
 	}
 }

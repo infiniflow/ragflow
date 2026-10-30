@@ -1,5 +1,5 @@
 #
-#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2024 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -229,7 +229,7 @@ class RAGFlow:
         vector_similarity_weight=0.3,
         top_k=1024,
         rerank_id: str | None = None,
-        keyword=False,
+        keyword: bool = False,
         cross_languages: list[str] | None = None,
         metadata_condition: dict | None = None,
         use_kg: bool = False,

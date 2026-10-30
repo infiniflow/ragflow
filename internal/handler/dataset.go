@@ -1128,7 +1128,7 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 	}
 
 	var req service.SearchDatasetsRequest
-	if err := json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
