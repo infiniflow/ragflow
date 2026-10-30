@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/engine/infinity"
 	"ragflow/internal/engine/nats"
 	"ragflow/internal/engine/oceanbase"
+	"ragflow/internal/engine/opensearch"
 	"ragflow/internal/engine/serenedb"
 	"ragflow/internal/engine/vastbase"
 	"ragflow/internal/server"
@@ -67,7 +68,7 @@ func InitDocEngine(ctx context.Context) error {
 		case "vastbase":
 			globalEngine, err = vastbase.NewEngine(globalConfig.GetVastbaseConfig())
 		case "opensearch":
-			err = fmt.Errorf("opensearch engine initialization pending driver implementation")
+			globalEngine, err = opensearch.NewEngine(ctx, globalConfig.GetOpenSearchConfig())
 		default:
 			err = fmt.Errorf("unsupported doc engine type: %s", engineType)
 		}
