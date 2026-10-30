@@ -39,11 +39,10 @@ func TestAgentRunSessionUpdateFailurePreventsSuccessEvents(t *testing.T) {
 	t.Cleanup(func() { dao.DB = originalDB })
 
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-update-failure",
-		DialogID:  "canvas-update-failure",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       "session-update-failure",
+		DialogID: "canvas-update-failure",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -128,11 +127,10 @@ func TestPersistAgentRunSessionPreservesThinking(t *testing.T) {
 	t.Cleanup(func() { dao.DB = originalDB })
 
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-think",
-		DialogID:  "canvas-think",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       "session-think",
+		DialogID: "canvas-think",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -145,7 +143,7 @@ func TestPersistAgentRunSessionPreservesThinking(t *testing.T) {
 		t.Fatalf("persist: %v", err)
 	}
 
-	conv, err := dao.NewAPI4ConversationDAO().GetByID(t.Context(), testDB, "session-think")
+	conv, err := dao.NewAPI4ConversationDAO().GetByID(t.Context(), testDB, "session-think", dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil {
 		t.Fatalf("reload session: %v", err)
 	}
@@ -222,13 +220,13 @@ func TestPersistAgentRunSessionPreservesThinking(t *testing.T) {
 			t.Fatalf("concurrent run: %v", err)
 		}
 	}
-	conv, err = dao.NewAPI4ConversationDAO().GetByID(ctx, testDB, "session-think")
+	conv, err = dao.NewAPI4ConversationDAO().GetByID(ctx, testDB, "session-think", dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	messages = parseMessages(conv.Message)
-	if len(messages) != 6 || len(parseReferenceList(conv.Reference)) != 3 {
-		t.Fatalf("concurrent turns were lost: messages=%s references=%s", conv.Message, conv.Reference)
+	if len(messages) != 6 || messages[1]["reference"] == nil || messages[3]["reference"] == nil || messages[5]["reference"] == nil {
+		t.Fatalf("concurrent turns were lost: messages=%s", conv.Message)
 	}
 	for _, index := range []int{2, 4} {
 		if messages[index]["role"] != "user" || messages[index+1]["role"] != "assistant" || messages[index]["id"] != messages[index+1]["id"] {

@@ -270,12 +270,53 @@ func TestMinerUMarkdownFromZip(t *testing.T) {
 	}
 }
 
+func TestMinerUMarkdownFromStructuredContentZip(t *testing.T) {
+	buf := minerUTestZip(t, "structured_content.json", `{"pages":[{"blocks":[
+		{"type":"header","content":"HEADER"},
+		{"type":"paragraph_title","content":"章节"},
+		{"type":"text","content":"正文"},
+		{"type":"table","content":"单元格","captions":[{"content":"表1"}]}
+	]}]}`)
+	md, err := minerUMarkdownFromZip(buf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(md, "章节") || !strings.Contains(md, "正文") || !strings.Contains(md, "表1") || strings.Contains(md, "HEADER") {
+		t.Fatalf("md = %q", md)
+	}
+}
+
+func TestMinerUMarkdownFromZipFallsThroughEmptyContentList(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = list.Write([]byte(`[{"type":"header"}]`))
+	structured, err := zw.Create("structured_content.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = structured.Write([]byte(`{"pages":[{"blocks":[{"type":"text","content":"正文"}]}]}`))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	md, err := minerUMarkdownFromZip(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if md != "正文" {
+		t.Fatalf("md = %q", md)
+	}
+}
+
 func TestMinerULocalCheckConnectionPrefersV1Health(t *testing.T) {
 	var paths []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
 		if r.URL.Path == "/v1/health" {
-			w.WriteHeader(http.StatusOK)
+			writeMinerUHealth(w)
 			return
 		}
 		http.NotFound(w, r)
@@ -318,5 +359,38 @@ func TestMinerUSameOrigin(t *testing.T) {
 	}
 	if strings.TrimSpace("") != "" {
 		t.Fatal("sanity")
+	}
+}
+
+type minerUErrBody struct{}
+
+func (minerUErrBody) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
+func (minerUErrBody) Close() error             { return nil }
+
+type minerUStatusTransport struct{ code int }
+
+func (t minerUStatusTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: t.code, Body: minerUErrBody{}, Header: make(http.Header)}, nil
+}
+
+type minerUFailTransport struct{}
+
+func (minerUFailTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, io.ErrUnexpectedEOF
+}
+
+func TestMinerUProbeGETKeepsStatusWhenBodyReadFails(t *testing.T) {
+	client := &http.Client{Transport: minerUStatusTransport{code: http.StatusOK}}
+	code, err := minerUProbeGET(context.Background(), client, "http://mineru.example/v1/health", "")
+	if err != nil {
+		t.Fatalf("probe error = %v, want nil when the status is already known", err)
+	}
+	if code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", code)
+	}
+
+	client = &http.Client{Transport: minerUFailTransport{}}
+	if _, err = minerUProbeGET(context.Background(), client, "http://mineru.example/v1/health", ""); err == nil {
+		t.Fatal("probe error = nil, want the transport error when no status was received")
 	}
 }

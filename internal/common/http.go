@@ -477,17 +477,9 @@ var LookupHost = net.LookupHost
 // talk to a local httptest server flip it on and reset it in
 // t.Cleanup.
 //
-// The previous form (env-var ALLOW_ANY_HOST) was a live runtime
-// toggle that any operator could flip to disable the SSRF guard
-// globally — including the DNS pinning that the Invoke component
-// relies on. PR review round 6, Major #3: this variable lives in
-// process memory only, so it cannot be enabled by an env var or
-// a deployment mistake. The explicit "_ForTest" suffix is the
-// signal that production code must never touch it.
-//
-// Host-based database and connector dials and configured MCP servers are a
-// separate opt-in. AllowConfiguredPrivateHost reads ALLOW_ANY_HOST for those
-// dials only. This function stays limited to the in-memory test hook.
+// Host-based database and connector dials, configured MCP servers, and Invoke
+// URLs have a separate ALLOW_ANY_HOST opt-in via AllowConfiguredPrivateHost.
+// AssertURLSafe and AssertHostSafe stay limited to the in-memory test hook.
 var AllowAnyHostForTest = false
 
 // allowAnyHost reads the test-only override. Kept as a private
@@ -500,8 +492,8 @@ func allowAnyHost() bool {
 // AssertURLSchemeSafe is a lenient SSRF guard for drivers that may legitimately
 // target private networks or loopback addresses (e.g. self-hosted Ollama, vLLM,
 // Xinference). It only rejects dangerous schemes and empty hosts; it does not
-// resolve DNS and does not require public routability. Use this ONLY for
-// local-inference model drivers — cloud-hosted drivers must use AssertURLSafe.
+// resolve DNS and does not require public routability. Use this only where
+// private hosts are explicitly permitted; cloud-hosted drivers must use AssertURLSafe.
 var AssertURLSchemeSafe = func(rawURL string) error {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {

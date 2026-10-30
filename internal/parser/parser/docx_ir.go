@@ -31,6 +31,7 @@ import (
 	"strings"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/tableutil"
 )
 
@@ -382,7 +383,7 @@ func docxHeadingLocationCaption(headings []docxHeading) string {
 // This is the caption-only (heading hierarchy) entry point. Use
 // buildDOCXJSONSectionsWithCaptions to also attach Caption-styled paragraph
 // text (a temporary stopgap; see docx_caption_scan.go).
-func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[string]any {
+func buildDOCXJSONSections(irJSON string, budget *media.Budget) []map[string]any {
 	return buildDOCXJSONSectionsCore(irJSON, budget, nil)
 }
 
@@ -392,7 +393,7 @@ func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[str
 //
 // TEMPORARY: remove once office_oxide emits paragraph styles
 // (yfedoseev/office_oxide#455).
-func buildDOCXJSONSectionsWithCaptions(irJSON string, budget *embeddedMediaBudget, tableCaptions []string) []map[string]any {
+func buildDOCXJSONSectionsWithCaptions(irJSON string, budget *media.Budget, tableCaptions []string) []map[string]any {
 	return buildDOCXJSONSectionsCore(irJSON, budget, tableCaptions)
 }
 
@@ -403,13 +404,13 @@ func buildDOCXJSONSectionsWithCaptions(irJSON string, budget *embeddedMediaBudge
 // between tableCaptions and the IR tables is approximate (document-body order
 // vs office_oxide IR order) and is a known limitation of the temporary
 // Caption-style stopgap in docx_caption_scan.go.
-func buildDOCXJSONSectionsCore(irJSON string, budget *embeddedMediaBudget, tableCaptions []string) []map[string]any {
+func buildDOCXJSONSectionsCore(irJSON string, budget *media.Budget, tableCaptions []string) []map[string]any {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil
 	}
 	if budget == nil {
-		budget = newEmbeddedMediaBudget()
+		budget = media.NewBudget()
 	}
 	var sections []map[string]any
 	tableSequence := 0
@@ -539,12 +540,14 @@ func buildDOCXJSONSectionsCore(irJSON string, budget *embeddedMediaBudget, table
 }
 
 // appendOfficeTableSections emits a table and its embedded images together.
-func appendOfficeTableSections(sections []map[string]any, el docxIRElement, caption, tableID string, budget *embeddedMediaBudget) []map[string]any {
+func appendOfficeTableSections(sections []map[string]any, el docxIRElement, caption, tableID string, budget *media.Budget) []map[string]any {
 	table := NewTableDataJSONItem(officeIRTableData(el, caption), "", nil).ToMap()
 
 	var tableImages []docxTableImage
 	forEachDOCXTableImage(el, func(tableImage docxTableImage) bool {
-		included, keepWalking := budget.include(tableImage.data)
+		reservation, admission := budget.ReserveOccurrence(media.UnknownSize)
+		keepWalking := admission != media.RejectedByCount
+		included := admission == media.Admitted && reservation.Commit(media.Size(len(tableImage.data)))
 		if included || keepWalking {
 			tableImage.included = included
 			tableImages = append(tableImages, tableImage)
@@ -572,7 +575,7 @@ func appendOfficeTableSections(sections []map[string]any, el docxIRElement, capt
 // order. A paragraph is not necessarily a single text unit: office_oxide can
 // place an image between two text runs, and dropping that run would make the
 // downstream DOCX chunker lose both media order and adjacency context.
-func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, heading bool, budget *embeddedMediaBudget) []map[string]any {
+func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, heading bool, budget *media.Budget) []map[string]any {
 	var text strings.Builder
 	flushText := func() {
 		value := strings.TrimSpace(text.String())
@@ -611,11 +614,13 @@ func appendDOCXParagraphSections(sections []map[string]any, el docxIRElement, he
 	return sections
 }
 
-func appendDOCXImageSection(sections []map[string]any, data []byte, budget *embeddedMediaBudget, metadata map[string]any) ([]map[string]any, bool) {
+func appendDOCXImageSection(sections []map[string]any, data []byte, budget *media.Budget, metadata map[string]any) ([]map[string]any, bool) {
 	if len(data) == 0 {
 		return sections, true
 	}
-	included, keepWalking := budget.include(data)
+	reservation, admission := budget.ReserveOccurrence(media.UnknownSize)
+	keepWalking := admission != media.RejectedByCount
+	included := admission == media.Admitted && reservation.Commit(media.Size(len(data)))
 	if !included && !keepWalking {
 		return sections, false
 	}
@@ -649,13 +654,13 @@ func appendDOCXImagePayload(sections []map[string]any, data []byte, included boo
 //
 // Reuses the IR already obtained from the doc handle in
 // ParseWithResult so the binary is not opened twice.
-func extractDOCXFiguresFromIR(irJSON string, budget *embeddedMediaBudget) []DOCXFigure {
+func extractDOCXFiguresFromIR(irJSON string, budget *media.Budget) []DOCXFigure {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil
 	}
 	if budget == nil {
-		budget = newEmbeddedMediaBudget()
+		budget = media.NewBudget()
 	}
 
 	var flat []flatBlock
@@ -668,7 +673,9 @@ func extractDOCXFiguresFromIR(irJSON string, budget *embeddedMediaBudget) []DOCX
 		if len(block.imageData) == 0 {
 			continue
 		}
-		included, keepWalking := budget.include(block.imageData)
+		reservation, admission := budget.ReserveOccurrence(media.UnknownSize)
+		keepWalking := admission != media.RejectedByCount
+		included := admission == media.Admitted && reservation.Commit(media.Size(len(block.imageData)))
 		if !included && !keepWalking {
 			break
 		}

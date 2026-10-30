@@ -307,10 +307,18 @@ export KVROCKS_PORT=6379
   In docker the Go services override these to `kvrocks:6379` automatically
   (see `docker-compose-go.yml`). If Kvrocks is unreachable at startup the
   process fails fast with `failed to connect to Kvrocks`.
-  HTML ingestion uses Kvrocks to hand inline images from the parser to the
-  chunker; the ingestor also validates the injected Kvrocks client at startup.
-  HTML image payloads default to a 32 MiB per-image limit; set
-  `RAGFLOW_HTML_IMAGE_MAX_BYTES` to a positive byte count to change it.
+  HTML and EPUB ingestion use Kvrocks to hand inline images from the parser to
+  the chunker; the ingestor also validates the injected Kvrocks client at startup.
+  Inline image payloads default to a 32 MiB per-image limit; set
+  `RAGFLOW_MEDIA_IMAGE_MAX_BYTES` to a positive byte count to change it.
+  The parser budget and media cache apply the same numeric run caps: 1024 items
+  and 1 GiB of decoded image bytes per run. The parser counts distinct source
+  references; the cache counts distinct SHA-256 payloads. Set
+  `RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN` and `RAGFLOW_MEDIA_MAX_BYTES_PER_RUN` to
+  positive values to change them. Quota state is keyed by ingestion task and
+  persists across retries of that task until cleanup or the 24-hour media TTL.
+  Debug previews use a temporary `pipeline_<document-id>` run scope and purge
+  their cache state when the preview finishes.
 
 
 - Start RAGFlow

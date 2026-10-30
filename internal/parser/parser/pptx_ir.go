@@ -22,18 +22,19 @@ import (
 	"strings"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/media"
 )
 
 // buildPPTXJSONSections emits text runs, tables and images in slide order.
 // Every item retains its slide number; a blank slide emits an empty text item.
 // Container elements are traversed recursively so grouped tables remain structured.
-func buildPPTXJSONSections(irJSON string, budget *embeddedMediaBudget) ([]map[string]any, error) {
+func buildPPTXJSONSections(irJSON string, budget *media.Budget) ([]map[string]any, error) {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil, fmt.Errorf("presentation ir-json decode: %w", err)
 	}
 	if budget == nil {
-		budget = newEmbeddedMediaBudget()
+		budget = media.NewBudget()
 	}
 	items := make([]map[string]any, 0, len(ir.Sections))
 	for i, sec := range ir.Sections {

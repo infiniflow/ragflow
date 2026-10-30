@@ -96,11 +96,11 @@ func TestMarkdownTableImageTimeoutDoesNotConsumeBudget(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	doc := markdownNew().Parse([]byte("| A | B |\n|---|---|\n| Logo | ![logo](http://127.0.0.1/logo.png) |\n"))
-	budget := newEmbeddedMediaBudget()
+	budget := newMediaBudgetForTest()
 	var items []map[string]any
-	unresolved := walkMarkdownBlocksWithImages(ctx, doc, &items, false, true, &htmlWalkState{mediaBudget: budget})
-	if budget.items != 0 || unresolved != 0 {
-		t.Fatalf("timed out image consumed budget: attempts=%d unresolved=%d", budget.items, unresolved)
+	unresolved := walkMarkdownBlocksWithImages(ctx, doc, &items, false, true, &htmlWalkState{budget: budget})
+	if budget.Count() != 0 || unresolved != 0 {
+		t.Fatalf("timed out image consumed budget: attempts=%d unresolved=%d", budget.Count(), unresolved)
 	}
 }
 
@@ -268,7 +268,7 @@ func TestOfficeTableRetainsDefaultHeaderCount(t *testing.T) {
 
 func TestOfficeTablePreservesLiteralCellText(t *testing.T) {
 	el := docxIRElement{Type: "table", Rows: []docxIRRow{{Cells: []docxIRCell{{Content: []docxIRElement{{Type: "paragraph", Content: json.RawMessage(`[{"type":"text","text":" <b>A & B</b>\nsecond line "}]`)}}}}}}}
-	items := appendOfficeTableSections(nil, el, " A & <B> ", "table-1", newEmbeddedMediaBudget())
+	items := appendOfficeTableSections(nil, el, " A & <B> ", "table-1", newMediaBudgetForTest())
 	if len(items) != 1 {
 		t.Fatalf("items=%#v", items)
 	}

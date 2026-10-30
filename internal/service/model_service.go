@@ -303,32 +303,42 @@ func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, userID, 
 	return common.CodeSuccess, nil
 }
 
-// ListSupportedModelsOptions contains owner-only overrides for a saved
+// SavedProviderModelOptions contains owner-only overrides for a saved
 // provider instance's endpoint and non-secret configuration.
-type ListSupportedModelsOptions struct {
+type SavedProviderModelOptions struct {
 	APIKeyConfig json.RawMessage
 	BaseURL      *string
 	Region       *string
 }
 
-func (m *ModelProviderService) ListSupportedModels(ctx context.Context, providerName, instanceName, userID string, options ListSupportedModelsOptions) ([]map[string]interface{}, error) {
+// SavedProviderModelConfig contains the credentials and endpoint to use when
+// discovering models through a saved provider instance.
+type SavedProviderModelConfig struct {
+	APIKey  string
+	BaseURL string
+	Region  string
+}
+
+// ResolveSavedProviderModelConfig validates access to a saved provider
+// instance and returns the credentials and endpoint for model discovery.
+func (m *ModelProviderService) ResolveSavedProviderModelConfig(ctx context.Context, providerName, instanceName, userID string, options SavedProviderModelOptions) (SavedProviderModelConfig, error) {
 	providerName = strings.TrimSpace(providerName)
 
 	provider, err := m.resolveProviderInTenant(ctx, userID, providerName, permission.OperationRead)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
 			_, normalizedErr := normalizeModelPermissionError(err)
-			return nil, normalizedErr
+			return SavedProviderModelConfig{}, normalizedErr
 		}
-		return nil, err
+		return SavedProviderModelConfig{}, err
 	}
 
 	instance, err := m.resolveInstance(ctx, provider, instanceName)
 	if err != nil {
 		if errors.Is(err, errInstanceProviderMismatch) {
-			return nil, instanceLookupError(provider, instanceName, err)
+			return SavedProviderModelConfig{}, instanceLookupError(provider, instanceName, err)
 		}
-		return nil, err
+		return SavedProviderModelConfig{}, err
 	}
 	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
 		Kind: permission.ResourceKindModelInstance,
@@ -339,30 +349,24 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 			err = permission.ErrPermissionDenied
 		}
 		_, normalizedErr := normalizeModelPermissionError(err)
-		return nil, normalizedErr
+		return SavedProviderModelConfig{}, normalizedErr
 	}
 	if access.Source != permission.AccessSourceOwner && hasSavedProviderInstanceOverrides(options.APIKeyConfig, options.BaseURL, options.Region) {
 		_, normalizedErr := normalizeModelPermissionError(permission.ErrPermissionDenied)
-		return nil, normalizedErr
-	}
-	providerName = provider.ProviderName
-
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
-	if providerInfo == nil {
-		return nil, fmt.Errorf("provider %s not found", providerName)
+		return SavedProviderModelConfig{}, normalizedErr
 	}
 
 	var extra map[string]string
 	err = json.Unmarshal([]byte(instance.Extra), &extra)
 	if err != nil {
-		return nil, err
+		return SavedProviderModelConfig{}, err
 	}
 
 	apiKey := instance.APIKey
 	if len(bytes.TrimSpace(options.APIKeyConfig)) > 0 && !bytes.Equal(bytes.TrimSpace(options.APIKeyConfig), []byte("null")) {
 		apiKey, err = mergeSavedProviderAPIKeyConfig(instance.APIKey, options.APIKeyConfig)
 		if err != nil {
-			return nil, err
+			return SavedProviderModelConfig{}, err
 		}
 	}
 	region := extra["region"]
@@ -376,43 +380,15 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 	if options.BaseURL != nil {
 		baseURL = strings.TrimSpace(*options.BaseURL)
 	}
-
-	apiConfig := &modelModule.APIConfig{
-		ApiKey: &apiKey,
-		Region: &region,
-	}
-	if options.BaseURL != nil {
-		apiConfig.BaseURL = &baseURL
+	if region == "" {
+		region = "default"
 	}
 
-	driver := providerInfo.ModelDriver
-
-	// For local deployed models
-	if baseURL != "" {
-		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	modelList, err := driver.ListModels(ctx, apiConfig)
-	if err != nil {
-		return nil, err
-	}
-	var result []map[string]interface{}
-	for _, model := range modelList {
-		result = append(result, map[string]interface{}{
-			"name":           model.Name,
-			"max_dimension":  model.MaxDimension,
-			"max_batch_size": model.MaxBatchSize,
-			"dimensions":     model.Dimensions,
-			"context_length": model.ContextLength,
-			"max_output":     model.MaxOutput,
-			"model_types":    model.ModelTypes,
-			"thinking":       model.Thinking,
-		})
-	}
-	return result, nil
+	return SavedProviderModelConfig{
+		APIKey:  apiKey,
+		BaseURL: baseURL,
+		Region:  region,
+	}, nil
 }
 
 type CreateInstanceModelInfo struct {

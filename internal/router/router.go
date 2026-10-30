@@ -203,8 +203,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 	apiBetaAuth.Use(r.authHandler.BetaAuthMiddleware())
 	{
 		searchBotGroup := apiBetaAuth.Group("/searchbots")
-		searchBotGroup.POST("/related_questions", r.searchBotHandler.Handle)
-		searchBotGroup.POST("/retrieval_test", r.searchBotHandler.RetrievalTest)
+		searchBotGroup.POST("/related-questions", r.searchBotHandler.Handle)
+		searchBotGroup.POST("/retrieval", r.searchBotHandler.RetrievalTest)
 		searchBotGroup.POST("/ask", r.searchBotHandler.Ask)
 		searchBotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
 
@@ -286,10 +286,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Tenant routes (per-tenant resources)
 			tenant := v1.Group("/tenant")
 			{
-				tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)         // Internal API only for GO
-				tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)       // Internal API only for GO
-				tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)   // Internal API only for GO
-				tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore) // Internal API only for GO
+				tenant.POST("/chunk-store", r.tenantHandler.CreateChunkStore)         // Internal API only for GO
+				tenant.DELETE("/chunk-store", r.tenantHandler.DeleteChunkStore)       // Internal API only for GO
+				tenant.POST("/metadata-store", r.tenantHandler.CreateMetadataStore)   // Internal API only for GO
+				tenant.DELETE("/metadata-store", r.tenantHandler.DeleteMetadataStore) // Internal API only for GO
 			}
 
 			// Document routes
@@ -558,7 +558,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// command is for CLI
 			command := v1
 			{
-				command.POST("/chat/to_model", r.providerHandler.ChatToModel)
+				command.POST("/chat/to-model", r.providerHandler.ChatToModel)
 				command.POST("/embeddings", r.providerHandler.EmbedText)
 				command.POST("/rerank", r.providerHandler.RerankDocument)
 				command.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
@@ -625,7 +625,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				connectors.GET("", r.connectorHandler.ListConnectors)
 				connectors.POST("", r.connectorHandler.CreateConnector)
-				connectors.GET("/sync_logs", r.connectorHandler.ListSyncLogs)
+				connectors.GET("/sync-logs", r.connectorHandler.ListSyncLogs)
 				connectors.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connectors.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
 				connectors.POST("/box/oauth/web/start", r.connectorHandler.StartBoxWebOAuth)

@@ -27,6 +27,37 @@ import (
 
 func strPtr(s string) *string { return &s }
 
+func TestProcessOutputPurgesRunStateOnSuccessfulNoOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		output map[string]any
+	}{
+		{name: "nil output", output: nil},
+		{name: "empty output", output: map[string]any{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			taskCtx := &TaskContext{
+				Doc:           entity.Document{ID: "doc-1"},
+				IngestionTask: &entity.IngestionTask{ID: "task-1"},
+			}
+			var purgedTaskID string
+			exec := &PipelineExecutor{
+				taskCtx: taskCtx,
+				purgeTaskState: func(ctx context.Context, taskID string) error {
+					purgedTaskID = taskID
+					return nil
+				},
+			}
+			if _, err := exec.processOutput(context.Background(), tc.output, time.Now()); err != nil {
+				t.Fatalf("processOutput: %v", err)
+			}
+			if purgedTaskID != "task-1" {
+				t.Fatalf("purged task id = %q, want task-1", purgedTaskID)
+			}
+		})
+	}
+}
+
 // TestMarkCompiledProductsHidden verifies the pipeline caller stages ONLY the
 // wiki variant's per-document rows as available_int=0 (they are intermediate
 // state for the consumer's merged pages). Tree / structure (page_index) /

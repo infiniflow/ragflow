@@ -1,17 +1,17 @@
 ---
 sidebar_position: 2
-title: Agent Overview
-sidebar_label: Agent Overview
+title: Workflow Overview
+sidebar_label: Workflow Overview
 slug: /agent_overview
 sidebar_custom_props: {
   categoryIcon: RagAiAgent
 }
 ---
 
-# Agent Overview
+# Workflow Overview
 
-## Purpose of Agent
-Use Agent to build automated workflows by connecting components on a visual canvas. Connections define the execution order; conditions, categories, and loops control which steps run.
+## Purpose of Workflow
+Open **Agent > Workflow** to build automated workflows by connecting components on a visual canvas. Connections define the execution order; conditions, categories, and loops control which steps run.
 
 Agents are commonly used in the following scenarios:
 - Answering user questions based on knowledge bases.

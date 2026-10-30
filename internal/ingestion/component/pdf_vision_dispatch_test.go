@@ -609,6 +609,86 @@ func TestDispatchPaddleOCRPDFAcceptsLocatedBlocksWithoutText(t *testing.T) {
 	}
 }
 
+func TestMineruExtractJSONItemsStructuredContent(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	entry, err := zw.Create("structured_content.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = entry.Write([]byte(`{"pages":[{"page_idx":0,"blocks":[
+		{"type":"paragraph_title","content":"章节","bbox":[0.1,0.2,0.4,0.3]},
+		{"type":"header","content":"HEADER"},
+		{"type":"text","content":"正文"},
+		{"type":"table","content":"单元格","captions":[{"content":"表1"}]},
+		{"type":"image","content":"示意图","image_source":"images/a.png","captions":[{"content":"图1"}]}
+	]}]}`))
+	img, err := zw.Create("images/a.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = img.Write([]byte{0x89, 'P', 'N', 'G'})
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {1000, 1000}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 4 {
+		t.Fatalf("items = %d, want 4 (header skipped)", len(items))
+	}
+	if items[0]["text"] != "章节" || items[0]["layout"] != "title" {
+		t.Fatalf("title item = %#v", items[0])
+	}
+	positions, _ := items[0]["_pdf_positions"].([][]any)
+	if len(positions) != 1 || positions[0][0] != 1 || positions[0][1] != float64(100) {
+		t.Fatalf("positions = %#v", items[0]["_pdf_positions"])
+	}
+	if items[2]["doc_type_kwd"] != "table" || !strings.Contains(items[2]["text"].(string), "表1") {
+		t.Fatalf("table item = %#v", items[2])
+	}
+	image, _ := items[3]["image"].(string)
+	if items[3]["doc_type_kwd"] != "image" || !strings.Contains(items[3]["text"].(string), "图1") || !strings.HasPrefix(image, "data:image/png;base64,") {
+		t.Fatalf("image item = %#v", items[3])
+	}
+}
+
+func TestFinishMinerURemoteResultPrefersStructuredZip(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	entry, err := zw.Create("structured_content.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = entry.Write([]byte(`{"pages":[{"page_idx":0,"blocks":[
+		{"type":"paragraph_title","content":"章节","bbox":[0.1,0.2,0.4,0.3]},
+		{"type":"header","content":"HEADER"}
+	]}]}`))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := finishMinerURemoteResult(t.Context(), "sample.pdf", []byte("%PDF-1.4"), &modelModule.MinerUV1Result{
+		Markdown: "# markdown only",
+		Zip:      buf.Bytes(),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var text strings.Builder
+	for _, item := range parser.ItemsToMaps(res.JSON) {
+		value, _ := item["text"].(string)
+		text.WriteString(value)
+		text.WriteString("\n")
+	}
+	got := text.String()
+	if !strings.Contains(got, "章节") || strings.Contains(got, "HEADER") || strings.Contains(got, "markdown only") {
+		t.Fatalf("text = %q, want structured title without the header or markdown fallback", got)
+	}
+}
+
 // A cancelled ingestion run must abort the MinerU 3.x /file_parse upload
 // instead of holding the worker and the remote server for the whole stream
 // budget.

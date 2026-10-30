@@ -3203,6 +3203,11 @@ curl --request GET \
 
 When `id` or `name` is provided, exact filtering takes precedence over `keywords`.
 
+- `include_reference`: (*Query parameter*) `boolean`, defaults to `false`.
+  Include reference objects in answer messages when history is included.
+- `include_prompt`: (*Query parameter*) `boolean`, defaults to `false`.
+  Include recorded prompt strings in answer messages when history is included.
+
 #### Response
 
 Success:
@@ -3490,7 +3495,6 @@ Success:
                 }
             ],
             "name": "new session",
-            "reference": [],
             "update_date": "Fri, 11 Oct 2024 08:46:43 GMT",
             "update_time": 1728636403974,
             "user_id": ""
@@ -3516,6 +3520,27 @@ Failure:
 
 Gets a specific session of a specified chat assistant, including its messages, references, and avatar.
 
+Completed assistant entries in `messages` include recorded `usage` (an object
+with `prompt_tokens`, `completion_tokens`, and `total_tokens`) and `elapsed_ms`
+(a number in milliseconds). Large answer fields are opt-in:
+
+- `include_reference`: boolean, defaults to `false`. Set to `true` to return a
+  `reference` object containing `chunks` and `doc_aggs` inside each answer.
+- `include_prompt`: boolean, defaults to `false`. Set to `true` to return the
+  recorded prompt string inside each answer.
+
+These query parameters apply only to chat and agent session list and detail
+endpoints. Fields omitted by these flags are excluded from SQL as well as the
+response. Invalid boolean values return an argument error on these read endpoints.
+Create, update, message deletion, and feedback endpoints ignore these query
+parameters and omit `reference` and `prompt` from their responses.
+There is no session-level reference array.
+
+The UI requests references for citations and source previews, and prompts for
+answer details. Older messages omit unavailable usage, timing, or prompt fields.
+Generation history SQL omits `reference`, `prompt`, `usage`, and `elapsed_ms`, and
+these fields are excluded from LLM input. Agentic answers have no recorded prompt.
+
 #### Request
 
 - Method: GET
@@ -3527,7 +3552,7 @@ Gets a specific session of a specified chat assistant, including its messages, r
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id} \
+     --url 'http://{address}/api/v1/chats/{chat_id}/sessions/{session_id}?include_reference=true&include_prompt=true' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -3554,9 +3579,19 @@ Success:
             {
                 "content": "Hi! I am your assistant, can I help you?",
                 "role": "assistant"
+            },
+            {
+                "id": "turn-1",
+                "role": "user",
+                "content": "What does the document say?"
+            },
+            {
+                "id": "turn-1",
+                "role": "assistant",
+                "content": "Here is the answer.",
+                "reference": {"chunks": [], "doc_aggs": []}
             }
-        ],
-        "reference": []
+        ]
     }
 }
 ```
@@ -3612,8 +3647,7 @@ Success: returns the updated session object.
     "data": {
         "chat_id": "2ca4b22e878011ef88fe0242ac120005",
         "id": "4606b4ec87ad11efbc4f0242ac120006",
-        "messages": [],
-        "reference": []
+        "messages": []
     }
 }
 ```

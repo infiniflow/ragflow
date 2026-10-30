@@ -25,7 +25,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
@@ -41,26 +40,48 @@ const (
 	TTL          = 24 * time.Hour
 )
 
-// Store is a run-scoped media cache backed by a chunkcache.Store.
+// Store is a run-scoped media cache backed by a Backend. It dedupes writes by
+// digest and bounds how many distinct images, and how many decoded bytes, one
+// run may keep in the backend.
 type Store struct {
-	backend chunkcache.Store
+	backend Backend
 	scope   string
 
-	mu sync.Mutex
+	maxImages int
+	maxBytes  int64
+}
+
+// Backend provides the cache lifecycle operations and atomic quota admission.
+// The quota, media value, and manifest update happen in one MediaPut operation
+// so separate Store instances and processes cannot each admit a full run
+// allowance.
+type Backend interface {
+	chunkcache.Store
+
+	MediaPut(
+		ctx context.Context,
+		mediaKey, digestKey, stateKey, digest, value string,
+		manifestKey, manifestMember string,
+		maxImages int,
+		maxBytes int64,
+		ttl time.Duration,
+	) (accepted, inserted bool, err error)
 }
 
 // New returns a cache bound to one ingestion run. A nil backend is a valid
 // value so callers can surface configured-cache failures only when media is
 // actually encountered.
-func New(backend chunkcache.Store, scope string) *Store {
+func New(backend Backend, scope string) *Store {
 	return &Store{
-		backend: backend,
-		scope:   strings.TrimSpace(scope),
+		backend:   backend,
+		scope:     strings.TrimSpace(scope),
+		maxImages: media.MediaMaxImagesPerRun(),
+		maxBytes:  media.MediaMaxBytesPerRun(),
 	}
 }
 
-// Put validates and stores one decoded image, then records the key on the
-// current task manifest. Any write or lifecycle failure is returned.
+// Put validates and atomically stores one decoded image with its manifest and
+// quota state. Any write or lifecycle failure is returned.
 func (s *Store) Put(ctx context.Context, format, mime string, data []byte) (entity.MediaRef, error) {
 	if s == nil || s.backend == nil {
 		return entity.MediaRef{}, errors.New("mediacache: cache is not configured")
@@ -77,8 +98,8 @@ func (s *Store) Put(ctx context.Context, format, mime string, data []byte) (enti
 	if strings.TrimSpace(mime) == "" {
 		return entity.MediaRef{}, errors.New("mediacache: media type is empty")
 	}
-	if len(data) == 0 || len(data) > media.HTMLImageMaxBytes() {
-		return entity.MediaRef{}, fmt.Errorf("mediacache: image size %d is outside the 1..%d-byte limit", len(data), media.HTMLImageMaxBytes())
+	if len(data) == 0 || len(data) > media.ImageMaxBytes() {
+		return entity.MediaRef{}, fmt.Errorf("mediacache: image size %d is outside the 1..%d-byte limit", len(data), media.ImageMaxBytes())
 	}
 
 	sum := sha256.Sum256(data)
@@ -92,18 +113,35 @@ func (s *Store) Put(ctx context.Context, format, mime string, data []byte) (enti
 		Size:   int64(len(data)),
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	key := s.key(digest)
-	if !s.backend.Set(ctx, key, string(data), TTL) {
-		return entity.MediaRef{}, fmt.Errorf("mediacache: write image %s", mediaShortDigest(digest))
+	mk := ""
+	if globals.TaskID(ctx) != "" {
+		mk = manifestKey(s.scope)
 	}
-	if err := s.track(ctx, key); err != nil {
-		if !s.backend.Delete(ctx, key) {
-			return entity.MediaRef{}, fmt.Errorf("mediacache: track image %s: %w (rollback failed)", mediaShortDigest(digest), err)
-		}
-		return entity.MediaRef{}, fmt.Errorf("mediacache: track image %s: %w", mediaShortDigest(digest), err)
+	digestKey, stateKey := quotaKeys(s.scope)
+	accepted, _, err := s.backend.MediaPut(
+		ctx,
+		key,
+		digestKey,
+		stateKey,
+		digest,
+		string(data),
+		mk,
+		key,
+		s.maxImages,
+		s.maxBytes,
+		TTL,
+	)
+	if err != nil {
+		return entity.MediaRef{}, fmt.Errorf("mediacache: write image %s: %w", mediaShortDigest(digest), err)
+	}
+	if !accepted {
+		return entity.MediaRef{}, fmt.Errorf(
+			"mediacache: run media limit exceeded (%d images / %d bytes): %w",
+			s.maxImages,
+			s.maxBytes,
+			media.ErrMediaLimitExceeded,
+		)
 	}
 	return ref, nil
 }
@@ -130,8 +168,8 @@ func (s *Store) Get(ctx context.Context, ref entity.MediaRef) ([]byte, error) {
 	if ref.Scope != s.scope {
 		return nil, fmt.Errorf("mediacache: reference scope %q does not match run scope %q", ref.Scope, s.scope)
 	}
-	if ref.Size > int64(media.HTMLImageMaxBytes()) {
-		return nil, fmt.Errorf("mediacache: image %s exceeds the %d-byte limit", mediaShortDigest(ref.SHA256), media.HTMLImageMaxBytes())
+	if ref.Size > int64(media.ImageMaxBytes()) {
+		return nil, fmt.Errorf("mediacache: image %s exceeds the %d-byte limit", mediaShortDigest(ref.SHA256), media.ImageMaxBytes())
 	}
 
 	value, err := s.backend.Get(ctx, s.key(ref.SHA256))
@@ -163,20 +201,10 @@ func manifestKey(scope string) string {
 	return fmt.Sprintf("%s:manifest:%x", keyNamespace, xxhash.Sum64String(scope))
 }
 
-func (s *Store) track(ctx context.Context, key string) error {
-	// Taskless preview runs have no persist-time cleanup and rely on TTL.
-	if globals.TaskID(ctx) == "" {
-		return nil
-	}
-	mk := manifestKey(s.scope)
-	if !s.backend.SAdd(ctx, mk, key) {
-		return fmt.Errorf("mediacache: record manifest %s", mk)
-	}
-	if !s.backend.Expire(ctx, mk, TTL) {
-		s.backend.Delete(ctx, mk)
-		return fmt.Errorf("mediacache: expire manifest %s", mk)
-	}
-	return nil
+func quotaKeys(scope string) (digestKey, stateKey string) {
+	hashedScope := xxhash.Sum64String(scope)
+	return fmt.Sprintf("%s:quota:%x:digests", keyNamespace, hashedScope),
+		fmt.Sprintf("%s:quota:%x:state", keyNamespace, hashedScope)
 }
 
 // PurgeTask removes media after durable persistence. Failed runs rely on TTL.
@@ -196,6 +224,12 @@ func PurgeTask(ctx context.Context, backend chunkcache.Store, taskID string) err
 	}
 	if !backend.Delete(ctx, mk) {
 		return fmt.Errorf("mediacache: delete manifest %s", mk)
+	}
+	digestKey, stateKey := quotaKeys(taskID)
+	for _, key := range []string{digestKey, stateKey} {
+		if !backend.Delete(ctx, key) {
+			return fmt.Errorf("mediacache: delete quota state %s", key)
+		}
 	}
 	return nil
 }

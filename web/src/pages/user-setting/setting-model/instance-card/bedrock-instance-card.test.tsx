@@ -92,7 +92,11 @@ jest.mock('@/hooks/logic-hooks/use-build-options', () => ({
 
 jest.mock('@/hooks/use-llm-request', () => {
   return {
+    useAddProviderInstance: () => ({ addProviderInstance: jest.fn() }),
+    useUpdateProviderInstance: () => ({ updateProviderInstance: jest.fn() }),
     useDeleteProviderInstance: () => ({ deleteProviderInstance: jest.fn() }),
+    useFetchAddedProviders: () => ({ data: [] }),
+    useFetchProviderInstances: () => ({ data: [], loading: false }),
     useFetchProviderInstance: (...args: unknown[]) =>
       mockFetchProviderInstance(...args),
     useVerifyProviderConnection: () => ({

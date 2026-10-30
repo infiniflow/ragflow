@@ -390,16 +390,24 @@ func isAttachmentPart(part *multipart.Part) bool {
 }
 
 // attachmentFilename extracts a filename from the part's
-// Content-Disposition or Content-Type headers.
+// Content-Disposition or Content-Type headers. Mail clients write a
+// non-ASCII name as RFC 2047 encoded-words inside the parameter, as in
+// filename="=?utf-8?B?...?=", and the mime package leaves them encoded. Such
+// a name has no file extension, so rechunkEmailAttachments skipped the
+// attachment; it is decoded here. The filename is decoded before
+// filepath.Base drops any directory from it, as part.FileName does, because a
+// base64 encoded-word can contain a "/".
 func attachmentFilename(part *multipart.Part) string {
-	if fn := part.FileName(); fn != "" {
-		return fn
+	if _, params, err := mime.ParseMediaType(part.Header.Get("Content-Disposition")); err == nil {
+		if fn := params["filename"]; fn != "" {
+			return filepath.Base(decodeHeaderWord(fn))
+		}
 	}
 	ct := part.Header.Get("Content-Type")
 	if ct != "" {
 		_, params, _ := mime.ParseMediaType(ct)
 		if name, ok := params["name"]; ok {
-			return name
+			return decodeHeaderWord(name)
 		}
 	}
 	return "attachment.bin"
@@ -685,6 +693,9 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			}
 			if ft == utility.FileTypeHTML {
 				np = NewHTMLTextParser()
+			}
+			if ft == utility.FileTypeEPUB {
+				np = NewEPUBTextParser()
 			}
 			res, panicked = recoverParse(func() ParseResult {
 				return np.ParseWithResult(ctx, fn, []byte(payload))

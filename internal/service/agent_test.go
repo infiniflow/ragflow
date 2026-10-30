@@ -693,7 +693,7 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 		"user-1",
 		"canvas-empty",
 		"test-session",
-		"", // no explicit version → use GetLatest, which returns ErrUserCanvasVersionNotFound
+		"", // no explicit version → draft DSL, which is empty here
 		"hi", nil)
 	if err != nil {
 		t.Fatalf("RunAgent should proceed with placeholder when no version published: %v", err)
@@ -944,15 +944,47 @@ func createAgentSessionTestCanvas(t *testing.T, id, userID string) {
 	}
 }
 
+func TestMergedAgentsRespectRequestedTimestamp(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	items := []*AgentItem{
+		{ID: "old", CreateTime: new(int64(1)), UpdateTime: new(int64(20))},
+		{ID: "new", CreateTime: new(int64(2)), UpdateTime: new(int64(10))},
+	}
+	for _, tc := range []struct {
+		name  string
+		terms []dao.OrderTerm
+		first string
+	}{
+		{"created ascending", []dao.OrderTerm{{Column: "create_time"}}, "old"},
+		{"created descending", []dao.OrderTerm{{Column: "create_time", Desc: true}}, "new"},
+		{"updated ascending", []dao.OrderTerm{{Column: "update_time"}}, "new"},
+		{"updated descending", []dao.OrderTerm{{Column: "update_time", Desc: true}}, "old"},
+		{"default", nil, "new"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, code, err := NewAgentService().mergeAgentsAndGroups(t.Context(), "user-1", items, "", tc.terms, 1, 1)
+			if err != nil || code != common.CodeSuccess || resp.Total != 2 || len(resp.Canvas) != 1 {
+				t.Fatalf("merge: response=%+v code=%v err=%v", resp, code, err)
+			}
+			var first AgentItem
+			if err := json.Unmarshal(resp.Canvas[0], &first); err != nil {
+				t.Fatal(err)
+			}
+			if first.ID != tc.first {
+				t.Fatalf("first=%q, want %q", first.ID, tc.first)
+			}
+		})
+	}
+}
+
 func createAgentSessionTestConversation(t *testing.T, id, agentID, userID string, updateTime int64) {
 	t.Helper()
 	updateDate := time.UnixMilli(updateTime)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), dao.DB, &entity.API4Conversation{
-		ID:        id,
-		DialogID:  agentID,
-		UserID:    userID,
-		Message:   json.RawMessage(`[{"role":"assistant","content":"hello","prompt":"hidden"}]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       id,
+		DialogID: agentID,
+		UserID:   userID,
+		Message:  json.RawMessage(`[{"role":"assistant","content":"hello","prompt":"hidden"}]`),
 		BaseModel: entity.BaseModel{
 			CreateTime: ptr(updateTime),
 			CreateDate: &updateDate,
@@ -1061,7 +1093,15 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 	createAgentSessionTestConversation(t, "session-1", "canvas-1", "user-1", 1000)
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	session, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "canvas-1", "session-1")
+	if err := dao.NewAPI4ConversationDAO().UpdateHistory(ctx, dao.DB, "session-1", "canvas-1", "user-1", nil, dao.ConversationHistoryUpdate{
+		Message: map[string]interface{}{"role": "assistant", "content": "answer", "reference": map[string]interface{}{
+			"chunks":   []interface{}{map[string]interface{}{"chunk_id": "chunk", "doc_id": "document", "content_with_weight": "evidence"}},
+			"doc_aggs": []interface{}{},
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	session, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "canvas-1", "session-1", dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil {
 		t.Fatalf("GetAgentSession failed: %v", err)
 	}
@@ -1077,9 +1117,35 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 	if session.DialogID != "canvas-1" {
 		t.Fatalf("expected dialog_id canvas-1, got %s", session.DialogID)
 	}
+	messages := parseMessages(session.Message)
+	reference, ok := messages[1]["reference"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("answer reference is not an object: %v", messages[1])
+	}
+	chunks := reference["chunks"].([]interface{})
+	if len(chunks) != 1 || chunks[0].(map[string]interface{})["document_id"] != "document" || chunks[0].(map[string]interface{})["id"] != "chunk" {
+		t.Fatalf("unexpected reference chunks: %v", chunks)
+	}
+	body, err := json.Marshal(session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]interface{}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := payload["reference"]; ok {
+		t.Fatalf("session contains reference array: %s", body)
+	}
+
 }
 
-func TestCreateAgentSessionWritesLatestVersionTitle(t *testing.T) {
+// TestCreateAgentSessionLeavesVersionTitleNilWithVersions pins the
+// log-truthfulness rule: a session created against the draft DSL must
+// not be stamped with a version title, even when version rows exist —
+// otherwise the agent log's Version column would name a version whose
+// DSL the session never ran.
+func TestCreateAgentSessionLeavesVersionTitleNilWithVersions(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
@@ -1121,25 +1187,22 @@ func TestCreateAgentSessionWritesLatestVersionTitle(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
 	}
-	if session.VersionTitle == nil {
-		t.Fatal("expected version_title to be set")
-	}
-	if *session.VersionTitle != "owner_Test Agent_newest" {
-		t.Fatalf("expected newest version title, got %q", *session.VersionTitle)
+	if session.VersionTitle != nil {
+		t.Fatalf("expected nil version_title for draft session, got %q", *session.VersionTitle)
 	}
 
 	stored, err := dao.NewAPI4ConversationDAO().GetMetadataBySessionID(ctx, dao.DB, session.ID, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to reload session: %v", err)
 	}
-	if stored == nil || stored.VersionTitle == nil {
-		t.Fatalf("expected persisted version_title, got %+v", stored)
+	if stored == nil {
+		t.Fatal("expected persisted session")
 	}
-	if *stored.VersionTitle != "owner_Test Agent_newest" {
-		t.Fatalf("expected persisted newest title, got %q", *stored.VersionTitle)
+	if stored.VersionTitle != nil {
+		t.Fatalf("expected persisted nil version_title, got %q", *stored.VersionTitle)
 	}
 
-	// The list surface used by the agent log page must expose it too.
+	// The list surface used by the agent log page must expose nil too.
 	resp, code, err := svc.ListAgentSessions(ctx, "user-1", "user-1", "canvas-1", ListAgentSessionsRequest{Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatalf("ListAgentSessions failed: %v", err)
@@ -1150,9 +1213,8 @@ func TestCreateAgentSessionWritesLatestVersionTitle(t *testing.T) {
 	if len(resp.Data) != 1 {
 		t.Fatalf("expected 1 session, got %d", len(resp.Data))
 	}
-	listed, _ := resp.Data[0]["version_title"].(*string)
-	if listed == nil || *listed != "owner_Test Agent_newest" {
-		t.Fatalf("expected list version_title newest, got %v", resp.Data[0]["version_title"])
+	if listed, _ := resp.Data[0]["version_title"].(*string); listed != nil {
+		t.Fatalf("expected list version_title nil, got %q", *listed)
 	}
 }
 
@@ -1256,31 +1318,6 @@ func TestAgentModelValidationUsesCanvasTenant(t *testing.T) {
 	}
 	if err := svc.UpdateAgent(ctx, tenantOwnerID, canvasRow.ID, map[string]any{"dsl": dsl}); err != nil {
 		t.Fatalf("UpdateAgent with tenant model: %v", err)
-	}
-}
-
-func TestCreateAgentSessionVersionLookupErrorReturnsServerError(t *testing.T) {
-	setupAgentSessionServiceTest(t)
-
-	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
-
-	if err := dao.DB.Exec("DROP TABLE user_canvas_version").Error; err != nil {
-		t.Fatalf("failed to drop user_canvas_version: %v", err)
-	}
-
-	ctx := serviceTestContext(t, "user-1", "user-1")
-	session, code, err := NewAgentService().CreateAgentSession(ctx, &CreateAgentSessionRequest{
-		UserID:  "user-1",
-		AgentID: "canvas-1",
-	})
-	if err == nil {
-		t.Fatal("expected version lookup error")
-	}
-	if code != common.CodeServerError {
-		t.Fatalf("expected code %d, got %d", common.CodeServerError, code)
-	}
-	if session != nil {
-		t.Fatalf("expected nil session, got %+v", session)
 	}
 }
 
@@ -2219,14 +2256,14 @@ func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
 	// second ("Renamed Agent") save by its title instead of relying on list order.
 	var latest *entity.UserCanvasVersion
 	for _, v := range versions {
-		if v.Title != nil && strings.HasPrefix(*v.Title, "owner_Renamed Agent_") {
+		if v.Title != nil && strings.HasPrefix(*v.Title, "Renamed Agent_") {
 			latest = v
 		}
 	}
 	if latest == nil {
 		t.Fatalf("could not find the renamed-agent version among %d versions", len(versions))
 	}
-	if latest.Title == nil || !strings.HasPrefix(*latest.Title, "owner_Renamed Agent_") {
+	if latest.Title == nil || !strings.HasPrefix(*latest.Title, "Renamed Agent_") {
 		t.Fatalf("unexpected version title: %v", latest.Title)
 	}
 	var release bool
@@ -2458,7 +2495,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	if err := dao.DB.Create(&entity.UserCanvas{
 		ID: "canvas-1", UserID: "user-1", Title: sptr("Agent canvas"),
 		CanvasCategory: "agent_canvas",
-		BaseModel:      entity.BaseModel{UpdateTime: &canvasUpdate},
+		BaseModel:      entity.BaseModel{CreateTime: &canvasUpdate, UpdateTime: &canvasUpdate},
 	}).Error; err != nil {
 		t.Fatalf("failed to seed agent: %v", err)
 	}
@@ -2638,7 +2675,7 @@ func TestPublishAgentUpdatesCanvasAndReleasedVersion(t *testing.T) {
 	if row.Description == nil || *row.Description != description {
 		t.Fatalf("published version description = %v", row.Description)
 	}
-	if row.Title == nil || !strings.HasPrefix(*row.Title, "owner_Published Agent_") {
+	if row.Title == nil || !strings.HasPrefix(*row.Title, "Published Agent_") {
 		t.Fatalf("unexpected published version title: %v", row.Title)
 	}
 

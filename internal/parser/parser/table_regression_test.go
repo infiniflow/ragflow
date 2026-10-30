@@ -105,8 +105,10 @@ func TestTableRegressionSoMarkTableImageIDs(t *testing.T) {
 }
 
 func TestTableRegressionSoMarkDocumentImageBudget(t *testing.T) {
+	const limit = 256
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "256")
 	markup := "| Field | Value |\n|---|---|\n| Logo | ![logo](data:image/png;base64,aGVsbG8=) |"
-	blocks := make([]any, maxEmbeddedMediaItems+1)
+	blocks := make([]any, limit+1)
 	for i := range blocks {
 		blocks[i] = map[string]any{"type": "table", "content": markup}
 	}
@@ -117,8 +119,8 @@ func TestTableRegressionSoMarkDocumentImageBudget(t *testing.T) {
 			images++
 		}
 	}
-	t.Logf("retained images=%d document item limit=%d", images, maxEmbeddedMediaItems)
-	if images != maxEmbeddedMediaItems || !strings.Contains(strings.Join(warnings, "\n"), "256-item") {
+	t.Logf("retained images=%d run item limit=%d", images, limit)
+	if images != limit || !strings.Contains(strings.Join(warnings, "\n"), "256-item") {
 		t.Errorf("retained=%d warnings=%v, want document-wide item limit", images, warnings)
 	}
 }
@@ -135,19 +137,21 @@ func TestTableRegressionHTMLTheadWithTDRetainsDefaultHeader(t *testing.T) {
 }
 
 func TestTableRegressionMarkdownRawHTMLImageBudget(t *testing.T) {
-	source := "<table><tr><td>" + strings.Repeat("<img src=\"data:image/png;base64,aGVsbG8=\">", maxEmbeddedMediaItems+1) + "</td></tr></table>\n\n"
+	const limit = 256
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "256")
+	source := "<table><tr><td>" + strings.Repeat("<img src=\"data:image/png;base64,aGVsbG8=\">", limit+1) + "</td></tr></table>\n\n"
 	doc := markdownNew().Parse([]byte(source))
-	budget := newEmbeddedMediaBudget()
+	budget := newMediaBudgetForTest()
 	var items []map[string]any
-	walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, &htmlWalkState{mediaBudget: budget})
+	walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, &htmlWalkState{budget: budget})
 	images := 0
 	for _, item := range items {
 		if item["doc_type_kwd"] == "image" && item["image"] != nil {
 			images++
 		}
 	}
-	t.Logf("retained images=%d budget attempts=%d document item limit=%d", images, budget.items, maxEmbeddedMediaItems)
-	if images != maxEmbeddedMediaItems || budget.items != maxEmbeddedMediaItems || !budget.countExhausted {
+	t.Logf("retained images=%d budget attempts=%d run item limit=%d", images, budget.Count(), limit)
+	if images != limit || budget.Count() != limit || !strings.Contains(strings.Join(budget.Warnings(), "\n"), "256-item run limit") {
 		t.Errorf("raw HTML budget not enforced: retained=%d budget=%+v", images, budget)
 	}
 }
