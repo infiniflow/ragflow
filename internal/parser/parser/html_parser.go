@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 
@@ -29,6 +30,10 @@ import (
 	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/tableutil"
 )
+
+// htmlImageProcessingBudget bounds the total time one HTML document may spend
+// downloading remote images. It is a variable so tests can shorten it.
+var htmlImageProcessingBudget = 60 * time.Second
 
 type HTMLParser struct {
 	RemoveHeaderFooter bool
@@ -98,6 +103,13 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		// Text-only callers have no run media cache and must not reach the
 		// network: every image source is dropped before resolution.
 		state.skipImages = true
+	} else {
+		// Remote downloads are bounded per document. The fetch deadline lives
+		// in its own context because state.ctx also scopes the media cache:
+		// expiring it would fail every later image write in the document.
+		fetchCtx, cancel := context.WithTimeout(ctx, htmlImageProcessingBudget)
+		defer cancel()
+		state.fetchCtx = fetchCtx
 	}
 	walkHTMLBlocksWithState(doc, &items, state)
 	if state.err != nil {
@@ -114,13 +126,18 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
+	warnings := state.warnings()
+	if state.fetchCtx != nil && state.budget.Count() > 0 &&
+		state.fetchCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
+		warnings = append(warnings, "HTML image processing reached the document time budget")
+	}
 	return ParseResult{
 		File: map[string]any{
 			"name":     filename,
 			"encoding": encName,
 		},
 		JSON:     MapsToItems(items),
-		Warnings: state.warnings(),
+		Warnings: warnings,
 	}
 }
 
@@ -143,11 +160,14 @@ type htmlWalkState struct {
 	// formats that still inline image bytes leave it false.
 	refOnly bool
 	// fetchRemoteImages downloads HTTP(S) image sources into the run media
-	// cache while refOnly is set. Ingestion enables it; text-only parsing sets
-	// skipImages instead so it never reaches the network.
+	// cache while refOnly is set. The HTML parser enables it; text-only
+	// parsing sets skipImages instead so it never reaches the network.
 	fetchRemoteImages bool
 	ctx               context.Context
-	mediaCache        media.Cache
+	// fetchCtx bounds remote image downloads for one document. A nil value
+	// falls back to ctx.
+	fetchCtx   context.Context
+	mediaCache media.Cache
 	// mediaFormat names the parser family recorded on cache writes. An empty
 	// value means the HTML parser.
 	mediaFormat string
@@ -204,7 +224,7 @@ func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool)
 	}
 	if !media.IsDataImageSource(src) {
 		if s.refOnly && s.fetchRemoteImages && isRemoteImageSource(src) {
-			if ref, ok := s.resolveRemoteMedia(s.ctx, src); ok {
+			if ref, ok := s.resolveRemoteMedia(s.remoteFetchContext(), src); ok {
 				return "", ref, true
 			}
 		}
@@ -265,6 +285,9 @@ func (s *htmlWalkState) storeDataURIMedia(key, src string) (*entity.MediaRef, bo
 // through the walk state.
 func (s *htmlWalkState) resolveRemoteMedia(fetchCtx context.Context, src string) (*entity.MediaRef, bool) {
 	src = strings.TrimSpace(src)
+	if fetchCtx.Err() != nil {
+		return nil, false
+	}
 	ref, err := s.mediaOutput().Resolve(src, media.UnknownSize, func() (string, []byte, bool) {
 		data, err := fetchImage(fetchCtx, src)
 		if err != nil {
@@ -281,7 +304,17 @@ func (s *htmlWalkState) resolveRemoteMedia(fetchCtx context.Context, src string)
 	return ref, ref != nil
 }
 
-// mediaOutput shares source admission and writes across data URIs and EPUB entries.
+// remoteFetchContext is the context that bounds remote downloads: the
+// document fetch budget when one is installed, otherwise the walk context.
+func (s *htmlWalkState) remoteFetchContext() context.Context {
+	if s.fetchCtx != nil {
+		return s.fetchCtx
+	}
+	return s.ctx
+}
+
+// mediaOutput shares source admission and writes across data URIs, remote
+// downloads and EPUB entries.
 func (s *htmlWalkState) mediaOutput() *media.Sink {
 	if s.mediaSink == nil {
 		s.mediaSink = media.NewSink(media.WithCache(s.ctx, s.mediaCache), s.cacheFormat(), s.budget)
