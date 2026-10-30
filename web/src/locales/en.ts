@@ -1153,7 +1153,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       operation: 'Operation',
       model: 'Model',
       modelTip: 'Large language chat model',
-      tokensSpent: '{{total}} tokens ({{prompt}} in + {{completion}} out)',
+      tokensSpent: '{{total}} tokens ({{prompt}} input, {{completion}} output)',
       turnElapsed: '{{seconds}}s',
       decisionModel: 'Decision model',
       decisionModelTip:

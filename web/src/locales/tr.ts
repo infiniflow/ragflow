@@ -1151,7 +1151,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       operation: 'İşlem',
       model: 'Model',
       modelTip: 'Büyük dil sohbet modeli',
-      tokensSpent: '{{total}} token ({{prompt}} giriş + {{completion}} çıkış)',
+      tokensSpent: '{{total}} token ({{prompt}} giriş, {{completion}} çıkış)',
       turnElapsed: '{{seconds}} sn',
       decisionModel: 'Karar modeli',
       decisionModelTip:
