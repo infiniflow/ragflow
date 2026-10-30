@@ -281,20 +281,28 @@ def test_session_stream_stops_before_trailing_messages(monkeypatch, session_type
 
 
 @pytest.mark.p2
-def test_chat_stream_preserves_runtime_error_answer(monkeypatch):
+def test_chat_stream_raises_api_error_with_answer(monkeypatch):
     session = Session(None, {"id": "session", "chat_id": "parent"})
     response = _DummyStreamResponse(['data:{"code":500,"message":"Session not found!","data":{"answer":"**ERROR**: Session not found!","reference":[]}}'])
     monkeypatch.setattr(session, "post", lambda *_args, **_kwargs: response)
+    with pytest.raises(Exception, match="^Session not found!$"):
+        list(session.ask("question", stream=True))
+
+
+@pytest.mark.p2
+def test_chat_stream_preserves_runtime_error_answer(monkeypatch):
+    session = Session(None, {"id": "session", "chat_id": "parent"})
+    response = _DummyStreamResponse(['data:{"code":0,"message":"success","data":{"answer":"**ERROR**: runtime failure","reference":[]}}'])
+    monkeypatch.setattr(session, "post", lambda *_args, **_kwargs: response)
     messages = list(session.ask("question", stream=True))
     assert len(messages) == 1
-    assert messages[0].content == "**ERROR**: Session not found!"
+    assert messages[0].content == "**ERROR**: runtime failure"
     assert messages[0].reference is None
 
 
 @pytest.mark.p2
 @pytest.mark.parametrize("session_type", ["chat", "agent"])
 @pytest.mark.parametrize("stream", [False, True])
-@pytest.mark.skip(reason="Python SDK Session.ask ignores nonzero response codes: Go validation errors lose their message in KeyError('data') instead of raising the API error")
 def test_session_ask_preserves_api_error_message(monkeypatch, session_type, stream):
     session = Session(None, {"id": "session", f"{session_type}_id": "parent"})
     error = {"code": 102, "message": "Session not found!"}
