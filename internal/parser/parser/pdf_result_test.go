@@ -46,9 +46,7 @@ func TestPDFNormalizeResultPositionsAndMetadata(t *testing.T) {
 }
 
 func TestPDFNormalizeResultMarkdownAndCancellation(t *testing.T) {
-	previous := ssrfAllowLoopback
-	ssrfAllowLoopback = true
-	t.Cleanup(func() { ssrfAllowLoopback = previous })
+	allowLoopbackImages(t)
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests++ }))
 	defer server.Close()
@@ -78,9 +76,7 @@ func TestPDFNormalizeResultMarkdownAndCancellation(t *testing.T) {
 
 func TestPDFMarkdownBackendDoesNotFetchRemoteImages(t *testing.T) {
 	withSSRFBypass(t)
-	previous := ssrfAllowLoopback
-	ssrfAllowLoopback = true
-	t.Cleanup(func() { ssrfAllowLoopback = previous })
+	allowLoopbackImages(t)
 	var requests atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { requests.Add(1); w.WriteHeader(http.StatusNotFound) }))
 	defer server.Close()
