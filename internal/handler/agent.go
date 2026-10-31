@@ -504,6 +504,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
+	clearResponseWriteDeadline(c)
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -1251,6 +1252,13 @@ func userInputMeta(userInput any) []zap.Field {
 	return fields
 }
 
+// AgentChatCompletions POST /api/v1/agents/chat/completions
+//
+// Runs one agent turn and answers either with JSON (`stream: false`) or with an
+// SSE stream of `data: {...}` frames terminated by `data:[DONE]`. The streaming
+// branch clears the server write deadline first: http.Server.WriteTimeout bounds
+// the whole response rather than idle time, so a long agent run would otherwise
+// be cut off mid-stream (issue #21649).
 func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -1372,6 +1380,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		// line — the front-end's use-send-message.ts parser feeds each
 		// `data:` line directly into JSON.parse and expects the event type
 		// in the JSON object's top-level `event` field.
+		clearResponseWriteDeadline(c)
 		c.Writer.Header().Set("Content-Type", "text/event-stream")
 		c.Writer.Header().Set("Cache-Control", "no-cache")
 		c.Writer.Header().Set("Connection", "keep-alive")
@@ -1435,6 +1444,13 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// Non-streaming: collect all canvas events, accumulate message
 	// content and reference, then return a plain JSON response matching
 	// Python's get_result(data=final_ans) contract (agent_api.py:1616-1676).
+	//
+	// This path computes the whole answer before its first — and only — write,
+	// so it is bounded by http.Server.WriteTimeout just like the stream branch.
+	// Clear the deadline here too, otherwise a long agent run loses its JSON
+	// response with "write tcp ... i/o timeout" (issue #21649). Same reasoning
+	// as the non-stream branch of chat_session.go.
+	clearResponseWriteDeadline(c)
 	var fullContent string
 	reference := map[string]any{}
 	structuredOutput := map[string]any{}
