@@ -8041,6 +8041,21 @@
             ]
         },
         {
+            "name": "Unlimited-OCR-2",
+            "logo": "",
+            "tags": "OCR",
+            "status": "1",
+            "url": "https://github.com/baidu/Unlimited-OCR",
+            "llm": [
+                {
+                    "llm_name": "Unlimited-OCR-2",
+                    "tags": "OCR",
+                    "max_tokens": 8192,
+                    "model_type": "ocr"
+                }
+            ]
+        },
+        {
             "name": "PaddleOCR",
             "logo": "",
             "tags": "OCR",

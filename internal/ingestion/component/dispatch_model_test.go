@@ -445,3 +445,25 @@ func TestResolveModelConfig_MaxTokensOverrideSetsContextWindowOnly(t *testing.T)
 		t.Fatalf("resolved context length %d equals the catalog max_output; the context window and the output cap are indistinguishable", contextLength)
 	}
 }
+
+func TestOCRProviderAliases(t *testing.T) {
+	tests := []struct {
+		provider string
+		want     []string
+	}{
+		{"PaddleOCR", []string{"PaddleOCR", "PaddleOCR.local"}},
+		{"PaddleOCR.local", []string{"PaddleOCR", "PaddleOCR.local"}},
+		{"MinerU", []string{"MinerU", "MinerU.Net"}},
+		{"MinerU.Net", []string{"MinerU", "MinerU.Net"}},
+		{"Unlimited-OCR-2", []string{"Unlimited-OCR-2", "Unlimited-OCR", "unlimited_ocr"}},
+		{"Unlimited-OCR", []string{"Unlimited-OCR-2", "Unlimited-OCR", "unlimited_ocr"}},
+		{"unlimited_ocr", []string{"Unlimited-OCR-2", "Unlimited-OCR", "unlimited_ocr"}},
+		{"Other", []string{"Other"}},
+	}
+	for _, tc := range tests {
+		got := ocrProviderAliases(tc.provider)
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("ocrProviderAliases(%q) = %v, want %v", tc.provider, got, tc.want)
+		}
+	}
+}

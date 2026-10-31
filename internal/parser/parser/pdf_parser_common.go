@@ -283,17 +283,20 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 // persists for its plain-text option (ParseDocumentType.PlainText), so they
 // are parse methods rather than model names.
 var pdfParseMethodSpellings = map[string]string{
-	"deepdoc":        "deepdoc",
-	"plain_text":     "plain_text",
-	"plaintext":      "plain_text",
-	"plain text":     "plain_text",
-	"mineru":         "mineru",
-	"monkeyocrv2":    "monkeyocrv2",
-	"docling":        "docling",
-	"opendataloader": "opendataloader",
-	"tcadp parser":   "tcadp",
-	"paddleocr":      "paddleocr",
-	"somark":         "somark",
+	"deepdoc":         "deepdoc",
+	"plain_text":      "plain_text",
+	"plaintext":       "plain_text",
+	"plain text":      "plain_text",
+	"mineru":          "mineru",
+	"monkeyocrv2":     "monkeyocrv2",
+	"unlimited_ocr":   "unlimited_ocr",
+	"unlimited-ocr-2": "unlimited_ocr",
+	"unlimited-ocr":   "unlimited_ocr",
+	"docling":         "docling",
+	"opendataloader":  "opendataloader",
+	"tcadp parser":    "tcadp",
+	"paddleocr":       "paddleocr",
+	"somark":          "somark",
 }
 
 // IsPDFParseMethod reports whether raw names a PDF parse method rather than

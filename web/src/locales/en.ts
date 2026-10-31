@@ -2183,6 +2183,10 @@ Example: Virtual Hosted Style`,
       mineruApiserver: 'MinerU API Server',
       mineruApiserverMessage: 'Please input the MinerU API Server URL!',
       mineruApiserverPlaceholder: 'e.g. http://host.docker.internal:9987',
+      unlimitedOcrServerUrl: 'Unlimited-OCR-2 Server URL',
+      unlimitedOcrServerUrlMessage:
+        'Please input the Unlimited-OCR-2 Server URL!',
+      unlimitedOcrServerUrlPlaceholder: 'e.g. http://127.0.0.1:18000',
       mineruApiToken: 'MinerU API token',
       mineruApiTokenPlaceholder:
         'Token from mineru.net API management (optional)',

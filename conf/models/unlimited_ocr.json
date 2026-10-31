@@ -1,0 +1,17 @@
+{
+  "name": "Unlimited-OCR-2",
+  "url_suffix": {
+    "doc_parse": "file_parse",
+    "task": "tasks"
+  },
+  "url_hint": "http://host.docker.internal:18000",
+  "class": "local",
+  "models": [
+    {
+      "name": "Unlimited-OCR-2",
+      "model_types": [
+        "ocr"
+      ]
+    }
+  ]
+}

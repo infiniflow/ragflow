@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -108,6 +109,8 @@ func maybeDispatchPDFVision(
 	return result, true, result.Err
 }
 
+// dispatchPDFBackend checks whether the configured parser setup matches a dedicated
+// OCR backend (such as Unlimited-OCR-2, MinerU, MonkeyOCRv2, or PaddleOCR) and routes parsing accordingly.
 func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup) (parser.ParseResult, bool, error) {
 	method := getStringOr(setup, "parse_method", "")
 	layout := getStringOr(setup, "layout_recognizer", "")
@@ -135,11 +138,48 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 		return res, true, err
 	}
 
+	methodLower := strings.ToLower(strings.TrimSpace(method))
+
+	// Unlimited-OCR-2 dispatch: parse_method "unlimited-ocr-2" or "unlimited_ocr",
+	// a layout_recognizer naming Unlimited-OCR-2, or a composite selector.
+	isUnlimitedOCRMatch := strings.EqualFold(strings.TrimSpace(method), "unlimited-ocr-2") ||
+		strings.EqualFold(strings.TrimSpace(method), "unlimited-ocr") ||
+		strings.EqualFold(strings.TrimSpace(method), "unlimited_ocr") ||
+		strings.Contains(layoutLower, "unlimited-ocr") ||
+		strings.Contains(layoutLower, "unlimited_ocr") ||
+		strings.Contains(layoutLower, "@unlimited-ocr-2") ||
+		strings.Contains(methodLower, "@unlimited-ocr-2") ||
+		strings.Contains(layoutLower, "@unlimited-ocr") ||
+		strings.Contains(methodLower, "@unlimited-ocr")
+	unlimitedOCRSelector := layout
+	if strings.TrimSpace(unlimitedOCRSelector) == "" {
+		unlimitedOCRSelector = method
+	}
+	isUnlimitedOCRByUUID := false
+	if !isUnlimitedOCRMatch && tenantID != "" && strings.TrimSpace(unlimitedOCRSelector) != "" &&
+		!parser.IsPDFParseMethod(unlimitedOCRSelector) {
+		isUnlimitedOCRByUUID = isUnlimitedOCRLayoutModelID(ctx, db, tenantID, unlimitedOCRSelector)
+	}
+	if isUnlimitedOCRMatch || isUnlimitedOCRByUUID {
+		common.Info("pdf vision dispatch: Unlimited-OCR-2 branch matched",
+			zap.String("parse_method", method),
+			zap.String("layout_recognizer", layout),
+			zap.String("tenant_id", tenantID))
+		dispatchModelID := ""
+		if isUnlimitedOCRByUUID || strings.Contains(unlimitedOCRSelector, "@") {
+			dispatchModelID = unlimitedOCRSelector
+		}
+		res, err := dispatchUnlimitedOCR2PDF(ctx, db, filename, binary, tenantID, setup, dispatchModelID)
+		if err != nil {
+			return parser.ParseResult{}, true, err
+		}
+		return res, true, nil
+	}
+
 	// MinerU dispatch: parse_method "mineru", a layout_recognizer naming
 	// MinerU, a composite model@instance@provider selector naming MinerU in
 	// either field, or a bare tenant model UUID (in either field) that
 	// resolves to a MinerU OCR model.
-	methodLower := strings.ToLower(strings.TrimSpace(method))
 	isMinerUMatch := methodLower == "mineru" ||
 		strings.HasPrefix(layoutLower, "mineru") ||
 		strings.Contains(layoutLower, "@mineru") ||
@@ -289,12 +329,174 @@ func normalizePDFMarkdown(ctx context.Context, filename, md string, setup schema
 
 var isMonkeyOCRv2LayoutModelID = defaultIsMonkeyOCRv2LayoutModelID
 
+// defaultIsMonkeyOCRv2LayoutModelID checks the database for a MonkeyOCRv2 model configuration.
 func defaultIsMonkeyOCRv2LayoutModelID(ctx context.Context, db *gorm.DB, tenantID, modelID string) bool {
 	if db == nil || strings.TrimSpace(modelID) == "" {
 		return false
 	}
 	resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 	return err == nil && strings.EqualFold(resolved.driver.Name(), "monkeyocrv2")
+}
+
+// isUnlimitedOCRLayoutModelID tests whether a model ID resolves to an Unlimited-OCR provider.
+var isUnlimitedOCRLayoutModelID = defaultIsUnlimitedOCRLayoutModelID
+
+// defaultIsUnlimitedOCRLayoutModelID checks the database for an Unlimited-OCR model configuration.
+func defaultIsUnlimitedOCRLayoutModelID(ctx context.Context, db *gorm.DB, tenantID, modelID string) bool {
+	if db == nil || strings.TrimSpace(modelID) == "" {
+		return false
+	}
+	resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+	return err == nil && (strings.EqualFold(resolved.driver.Name(), "unlimited_ocr") || strings.Contains(strings.ToLower(resolved.driver.Name()), "unlimited"))
+}
+
+// dispatchUnlimitedOCR2PDF routes PDF parsing to the Unlimited-OCR-2 inference engine.
+func dispatchUnlimitedOCR2PDF(
+	ctx context.Context,
+	db *gorm.DB,
+	filename string,
+	binary []byte,
+	tenantID string,
+	setup schema.ParserSetup,
+	modelRef string,
+) (parser.ParseResult, error) {
+	baseURL := strings.TrimRight(getStringOr(setup, "unlimited_ocr_server_url", os.Getenv(common.EnvUnlimitedOCRServerURL)), "/")
+	if baseURL == "" {
+		baseURL = strings.TrimRight(os.Getenv(common.EnvUnlimitedOCRAPIServer), "/")
+	}
+	timeout := 30 * time.Minute
+
+	var resolvedAPIConfig *modelModule.APIConfig
+	if tenantID != "" {
+		var apiConfig *modelModule.APIConfig
+		var err error
+		if modelRef != "" {
+			_, _, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
+		} else {
+			_, _, apiConfig, _, err = resolveTenantOCRModelByProvider(ctx, db, tenantID, "Unlimited-OCR-2")
+		}
+		if err != nil && modelRef != "" {
+			return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 model: %w", err)
+		}
+		if err == nil && apiConfig != nil {
+			resolvedAPIConfig = apiConfig
+			if apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
+				baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
+			} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "unlimited_ocr_server_url"); configuredURL != "" {
+				baseURL = strings.TrimRight(configuredURL, "/")
+			}
+		}
+	}
+	if baseURL == "" {
+		baseURL = "http://host.docker.internal:18000"
+	}
+
+	driver := modelModule.NewUnlimitedOCRModel(
+		map[string]string{"default": baseURL},
+		modelModule.URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
+	)
+	effectiveAPIConfig := &modelModule.APIConfig{
+		BaseURL: &baseURL,
+	}
+	if resolvedAPIConfig != nil && resolvedAPIConfig.ApiKey != nil {
+		effectiveAPIConfig.ApiKey = resolvedAPIConfig.ApiKey
+	}
+
+	cropMode := getStringOr(setup, "unlimited_ocr_crop_mode", "auto")
+	noRepeatNgram := getIntOr(setup, "unlimited_ocr_no_repeat_ngram_size", 35)
+	pageGuard := getBoolOr(setup, "unlimited_ocr_page_guard", true)
+
+	backend := "pipeline"
+	parseConfig := &modelModule.ParseFileConfig{
+		CropMode:          cropMode,
+		NoRepeatNgramSize: noRepeatNgram,
+		PageGuard:         &pageGuard,
+	}
+	task, err := driver.ParseFile(ctx, &backend, binary, nil, effectiveAPIConfig, parseConfig, nil)
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 submit: %w", err)
+	}
+	content, err := pollUnlimitedOCRTask(ctx, driver, task.TaskID, effectiveAPIConfig, timeout)
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 result: %w", err)
+	}
+	return normalizePDFMarkdown(ctx, filename, content, setup), nil
+}
+
+// pollUnlimitedOCRTask queries task status periodically until Markdown is ready or an error occurs.
+func pollUnlimitedOCRTask(ctx context.Context, driver *modelModule.UnlimitedOCRModel, taskID string, apiConfig *modelModule.APIConfig, timeout time.Duration) (string, error) {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		task, err := driver.ShowTask(ctx, taskID, apiConfig)
+		if err == nil {
+			for _, segment := range task.Segments {
+				if strings.TrimSpace(segment.Content) != "" {
+					return segment.Content, nil
+				}
+			}
+		} else {
+			if errors.Is(err, modelModule.ErrTaskAuthorization) {
+				return "", fmt.Errorf("Unlimited-OCR-2 task %s result: %w", taskID, err)
+			}
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			if lastErr != nil {
+				return "", fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s: last error: %w", taskID, lastErr)
+			}
+			return "", fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s", taskID)
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+// getIntOr safely extracts an integer from a parameter map with a fallback default.
+func getIntOr(m map[string]any, key string, def int) int {
+	if m == nil {
+		return def
+	}
+	v, ok := m[key]
+	if !ok || v == nil {
+		return def
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	case string:
+		if i, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
+			return i
+		}
+	}
+	return def
+}
+
+// getBoolOr safely extracts a boolean from a parameter map with a fallback default.
+func getBoolOr(m map[string]any, key string, def bool) bool {
+	if m == nil {
+		return def
+	}
+	v, ok := m[key]
+	if !ok || v == nil {
+		return def
+	}
+	switch val := v.(type) {
+	case bool:
+		return val
+	case string:
+		if b, err := strconv.ParseBool(strings.TrimSpace(val)); err == nil {
+			return b
+		}
+	}
+	return def
 }
 
 func monkeyOCRv2ParseRequest(ctx context.Context, apiURL, filename string, binary []byte, timeout time.Duration) ([]byte, error) {

@@ -1803,6 +1803,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       mineruApiserver: 'MinerU API 服务器',
       mineruApiserverMessage: '请输入 MinerU API 服务器地址！',
       mineruApiserverPlaceholder: '例如：http://host.docker.internal:9987',
+      unlimitedOcrServerUrl: 'Unlimited-OCR-2 服务地址',
+      unlimitedOcrServerUrlMessage: '请输入 Unlimited-OCR-2 服务地址！',
+      unlimitedOcrServerUrlPlaceholder: '例如：http://127.0.0.1:18000',
       mineruApiToken: 'MinerU API Token',
       mineruApiTokenPlaceholder: 'mineru.net API 管理页创建的 Token（可选）',
       mineruApiTokenTip:

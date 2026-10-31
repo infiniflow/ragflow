@@ -47,6 +47,36 @@ describe('parser FormSchema', () => {
     },
   );
 
+  it('retains and validates Unlimited-OCR-2 setup options', () => {
+    const valid = FormSchema.parse({
+      setups: [
+        {
+          fileFormat: FileType.PDF,
+          unlimited_ocr_crop_mode: 'gundam',
+          unlimited_ocr_no_repeat_ngram_size: 35,
+          unlimited_ocr_page_guard: true,
+        },
+      ],
+    });
+    expect(valid.setups[0]).toMatchObject({
+      unlimited_ocr_crop_mode: 'gundam',
+      unlimited_ocr_no_repeat_ngram_size: 35,
+      unlimited_ocr_page_guard: true,
+    });
+
+    for (const invalidNgram of [-1, 0, 1.5, '35']) {
+      const result = FormSchema.safeParse({
+        setups: [
+          {
+            fileFormat: FileType.PDF,
+            unlimited_ocr_no_repeat_ngram_size: invalidNgram,
+          },
+        ],
+      });
+      expect(result.success).toBe(false);
+    }
+  });
+
   it('keeps the explicit image OCR model through schema save/readback', () => {
     const values = {
       setups: [

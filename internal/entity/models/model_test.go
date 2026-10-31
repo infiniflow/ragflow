@@ -259,7 +259,7 @@ func TestBedrockConfigPreservesEmbeddingMaxTokens(t *testing.T) {
 }
 
 func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
-	dir, restore := setupProviderTestDir(t, "mineru_local.json", "monkeyocr.json", "monkeyocrv2.json", "paddleocr_local.json")
+	dir, restore := setupProviderTestDir(t, "mineru_local.json", "monkeyocr.json", "monkeyocrv2.json", "paddleocr_local.json", "unlimited_ocr.json")
 	defer restore()
 
 	err := InitProviderManager(dir)
@@ -268,6 +268,20 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	}
 
 	pm := GetProviderManager()
+
+	unlimitedOCR := pm.FindProvider("Unlimited-OCR-2")
+	if unlimitedOCR == nil {
+		t.Fatal("Unlimited-OCR-2 provider not found")
+	}
+	if _, ok := unlimitedOCR.ModelDriver.(*UnlimitedOCRModel); !ok {
+		t.Fatalf("Unlimited-OCR-2 ModelDriver=%T, want *models.UnlimitedOCRModel", unlimitedOCR.ModelDriver)
+	}
+	if unlimitedOCR.ModelDriver.Name() != "unlimited_ocr" {
+		t.Fatalf("Unlimited-OCR-2 Name()=%q, want unlimited_ocr", unlimitedOCR.ModelDriver.Name())
+	}
+	if unlimitedOCR.URLSuffix.DocumentParse != "file_parse" {
+		t.Errorf("Unlimited-OCR-2 doc_parse suffix=%q", unlimitedOCR.URLSuffix.DocumentParse)
+	}
 
 	minerU := pm.FindProvider("MinerU")
 	if minerU == nil {
