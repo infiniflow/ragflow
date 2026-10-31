@@ -200,6 +200,11 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 	ctx := c.Request.Context()
 	commit, err := h.commitService.CreateCommit(ctx, folderID, user.ID, req.Message, req.Files)
 	if err != nil {
+		// A file_id outside the folder tree is caller input, not a server
+		// fault: answer it like the other file writes instead of a 500.
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		jsonInternalError(c, err)
 		return
 	}
