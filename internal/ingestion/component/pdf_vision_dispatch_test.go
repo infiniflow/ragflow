@@ -221,7 +221,7 @@ func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
 		{"equation", map[string]any{"type": "equation", "text": "x=1"}, "equation", "text"},
 		{"unknown", map[string]any{"type": "footnote", "text": "x"}, "text", "text"},
 		{"image", map[string]any{"type": "image", "image_caption": []any{"cap"}}, "figure", "image"},
-		{"table", map[string]any{"type": "table", "table_body": "<table></table>"}, "table", "table"},
+		{"table", map[string]any{"type": "table", "table_body": "<table><tr><td>Cell</td></tr></table>"}, "table", "table"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := mineruContentItemToJSON(tc.item, nil, nil, true)

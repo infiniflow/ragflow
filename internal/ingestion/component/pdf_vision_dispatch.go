@@ -756,16 +756,15 @@ func resolveMinerUBaseURL(driver modelModule.ModelDriver, apiConfig *modelModule
 }
 
 // resolveMinerUOCRLanguage chooses the human-readable language name sent to
-// MinerU OCR. The UI defaults mineru_lang to English even when the knowledge
-// base language is Chinese (#17298), which misrecognizes table cells. When that
-// default conflicts with an explicit family lang, the family lang wins.
+// MinerU OCR. An explicit mineru_lang always wins, including English. An empty
+// mineru_lang follows the PDF family lang, then MinerU's own default. The form
+// used to display English for an empty field and persist that on save (#17298);
+// it now leaves the field empty so the family language is used.
 func resolveMinerUOCRLanguage(setup schema.ParserSetup) string {
-	mineruLang := strings.TrimSpace(getStringOr(setup, "mineru_lang", ""))
-	setupLang := strings.TrimSpace(getStringOr(setup, "lang", ""))
-	if strings.EqualFold(mineruLang, "English") && setupLang != "" && !strings.EqualFold(setupLang, "English") {
-		return setupLang
-	}
-	lang := firstNonEmpty(mineruLang, setupLang)
+	lang := firstNonEmpty(
+		strings.TrimSpace(getStringOr(setup, "mineru_lang", "")),
+		strings.TrimSpace(getStringOr(setup, "lang", "")),
+	)
 	if lang == "" {
 		lang = minerUDefaultLanguage
 	}
@@ -1250,15 +1249,13 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, p
 	}
 	if typ == "table" {
 		body, _ := item["table_body"].(string)
+		caption := strings.Join(stringSlice(item["table_caption"]), "\n")
 		footnotes := strings.Join(stringSlice(item["table_footnote"]), "\n")
 		if !tableEnable {
-			jsonItem["text"] = strings.TrimSpace(mineruPlainTextFromTableBody(body) + "\n" + footnotes)
-			jsonItem["doc_type_kwd"] = "text"
-			jsonItem["layout"] = "text"
+			mineruSetTableAsPlainText(jsonItem, body, caption, footnotes)
 			return jsonItem
 		}
 		if table, err := tableutil.ParseTableHTML(body); err == nil && table != nil && len(table.Grid) > 0 {
-			caption := strings.Join(stringSlice(item["table_caption"]), "\n")
 			if caption != "" && caption != table.Caption {
 				table.Caption = strings.TrimSpace(table.Caption + "\n" + caption)
 			}
@@ -1268,17 +1265,35 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, p
 			jsonItem["table"] = table
 			jsonItem["text"] = footnotes
 		} else {
-			// MinerU sometimes emits malformed or empty table HTML; index readable
-			// cell text and captions instead of raw markup (#17298).
-			caption := strings.Join(stringSlice(item["table_caption"]), "\n")
-			plain := mineruPlainTextFromTableBody(body)
-			jsonItem["text"] = strings.TrimSpace(strings.Join([]string{caption, plain, footnotes}, "\n"))
+			// MinerU sometimes emits malformed or empty table HTML. Index the
+			// caption and cell text as a text item instead of a table chunk
+			// whose body is raw markup (#17298).
+			mineruSetTableAsPlainText(jsonItem, body, caption, footnotes)
 		}
 	}
 	return jsonItem
 }
 
-var mineruHTMLTagPattern = regexp.MustCompile(`(?is)<[^>]+>`)
+func mineruSetTableAsPlainText(jsonItem map[string]any, body, caption, footnotes string) {
+	parts := make([]string, 0, 3)
+	for _, part := range []string{caption, mineruPlainTextFromTableBody(body), footnotes} {
+		if part = strings.TrimSpace(part); part != "" {
+			parts = append(parts, part)
+		}
+	}
+	jsonItem["text"] = strings.Join(parts, "\n")
+	jsonItem["doc_type_kwd"] = "text"
+	jsonItem["layout"] = "text"
+}
+
+var (
+	mineruHTMLTagPattern    = regexp.MustCompile(`(?is)<[^>]+>`)
+	mineruHTMLBreakPattern  = regexp.MustCompile(`(?is)<\s*br\s*/?\s*>`)
+	mineruHTMLBlockPattern  = regexp.MustCompile(`(?is)</\s*(p|div|li|tr|h[1-6]|table|caption)\s*>`)
+	mineruHTMLTrailingSpace = regexp.MustCompile(`[ \t]+\n`)
+	mineruHTMLBlankLines    = regexp.MustCompile(`\n{3,}`)
+	mineruHTMLMultiSpace    = regexp.MustCompile(`[ \t]{2,}`)
+)
 
 func mineruPlainTextFromTableBody(body string) string {
 	body = strings.TrimSpace(body)
@@ -1308,12 +1323,12 @@ func mineruStripHTMLTags(fragment string) string {
 		return ""
 	}
 	fragment = html.UnescapeString(fragment)
-	fragment = regexp.MustCompile(`(?is)<\s*br\s*/?\s*>`).ReplaceAllString(fragment, "\n")
-	fragment = regexp.MustCompile(`(?is)</\s*(p|div|li|tr|h[1-6]|table|caption)\s*>`).ReplaceAllString(fragment, "\n")
+	fragment = mineruHTMLBreakPattern.ReplaceAllString(fragment, "\n")
+	fragment = mineruHTMLBlockPattern.ReplaceAllString(fragment, "\n")
 	fragment = mineruHTMLTagPattern.ReplaceAllString(fragment, "")
-	fragment = regexp.MustCompile(`[ \t]+\n`).ReplaceAllString(fragment, "\n")
-	fragment = regexp.MustCompile(`\n{3,}`).ReplaceAllString(fragment, "\n\n")
-	fragment = regexp.MustCompile(`[ \t]{2,}`).ReplaceAllString(fragment, " ")
+	fragment = mineruHTMLTrailingSpace.ReplaceAllString(fragment, "\n")
+	fragment = mineruHTMLBlankLines.ReplaceAllString(fragment, "\n\n")
+	fragment = mineruHTMLMultiSpace.ReplaceAllString(fragment, " ")
 	return strings.TrimSpace(fragment)
 }
 

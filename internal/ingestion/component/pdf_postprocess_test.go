@@ -91,23 +91,41 @@ func TestMinerUTablePreservesEmbeddedCaption(t *testing.T) {
 
 func TestMinerUTablePlainTextWhenTableDisabled(t *testing.T) {
 	body := `<table><tr><td rowspan=1 colspan=1>部门</td><td rowspan=1 colspan=1>排名</td></tr><tr><td rowspan=1 colspan=1>研发</td><td rowspan=1 colspan=1>1</td></tr></table>`
-	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": body, "table_footnote": []any{"note"}}, nil, nil, false)
-	if item["doc_type_kwd"] != "text" {
-		t.Fatalf("doc_type = %v, want text", item["doc_type_kwd"])
+	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": body, "table_caption": []any{"表题"}, "table_footnote": []any{"note"}}, nil, nil, false)
+	if item["doc_type_kwd"] != "text" || item["layout"] != "text" {
+		t.Fatalf("doc_type/layout = %v/%v, want text/text", item["doc_type_kwd"], item["layout"])
 	}
 	text, _ := item["text"].(string)
 	if strings.Contains(text, "<table>") || strings.Contains(text, "<td>") {
 		t.Fatalf("expected plain text, got %q", text)
 	}
-	if !strings.Contains(text, "部门") || !strings.Contains(text, "研发") || !strings.Contains(text, "note") {
-		t.Fatalf("table cells or footnote missing: %q", text)
+	if !strings.Contains(text, "表题") || !strings.Contains(text, "部门") || !strings.Contains(text, "研发") || !strings.Contains(text, "note") {
+		t.Fatalf("caption, cells, or footnote missing: %q", text)
 	}
 }
 
-func TestResolveMinerUOCRLanguageEnglishDefaultConflict(t *testing.T) {
-	setup := schema.ParserSetup{"mineru_lang": "English", "lang": "Chinese"}
-	if got := resolveMinerUOCRLanguage(setup); got != "Chinese" {
-		t.Fatalf("resolveMinerUOCRLanguage() = %q, want Chinese", got)
+func TestMinerUMalformedTableBecomesPlainText(t *testing.T) {
+	item := mineruContentItemToJSON(map[string]any{
+		"type": "table", "table_body": "<td>部门</td>", "table_caption": []any{"表题"},
+	}, nil, nil, true)
+	if item["doc_type_kwd"] != "text" || item["layout"] != "text" {
+		t.Fatalf("doc_type/layout = %v/%v, want text/text", item["doc_type_kwd"], item["layout"])
+	}
+	if _, ok := item["table"]; ok {
+		t.Fatalf("malformed table must not keep structured table data: %#v", item)
+	}
+	text, _ := item["text"].(string)
+	if strings.Contains(text, "<table>") || strings.Contains(text, "<td>") || !strings.Contains(text, "表题") || !strings.Contains(text, "部门") {
+		t.Fatalf("expected caption and cell text without tags, got %q", text)
+	}
+}
+
+func TestResolveMinerUOCRLanguage(t *testing.T) {
+	if got := resolveMinerUOCRLanguage(schema.ParserSetup{"mineru_lang": "English", "lang": "Chinese"}); got != "English" {
+		t.Fatalf("explicit English = %q, want English", got)
+	}
+	if got := resolveMinerUOCRLanguage(schema.ParserSetup{"lang": "Chinese"}); got != "Chinese" {
+		t.Fatalf("empty mineru_lang = %q, want Chinese", got)
 	}
 }
 

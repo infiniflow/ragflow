@@ -1445,7 +1445,7 @@ func TestDispatch_PDFMinerU_LanguageChain(t *testing.T) {
 	}{
 		{name: "default setup lang maps to ch", overrides: nil, wantLang: "ch"},
 		{name: "mineru_lang English alone maps to en", overrides: map[string]any{"mineru_lang": "English"}, wantLang: "en"},
-		{name: "English mineru_lang yields to non-English setup lang", overrides: map[string]any{"mineru_lang": "English", "lang": "Chinese"}, wantLang: "ch"},
+		{name: "explicit English mineru_lang wins over setup lang", overrides: map[string]any{"mineru_lang": "English", "lang": "Chinese"}, wantLang: "en"},
 		{name: "setup lang used when mineru_lang unset", overrides: map[string]any{"lang": "Japanese"}, wantLang: "japan"},
 	}
 
