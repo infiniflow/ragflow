@@ -793,7 +793,6 @@ func stringPtrIfNotEmpty(s string) *string {
 	return &s
 }
 
-// extractDocIDs returns the document IDs from a slice of documents.
 // datasetIndexTaskIDs returns the deduplicated set of dataset-level index task
 // ids recorded on the KB (graphrag/raptor/mindmap legacy task fields). It is
 // used by deleteDataset to clear residual entity.Task rows when a KB is deleted.
@@ -809,6 +808,7 @@ func datasetIndexTaskIDs(kb *entity.Knowledgebase) []string {
 	return common.Deduplicate(taskIDs)
 }
 
+// extractDocIDs returns the document IDs from a slice of documents.
 func extractDocIDs(docs []entity.Document) []string {
 	ids := make([]string, 0, len(docs))
 	for _, doc := range docs {
