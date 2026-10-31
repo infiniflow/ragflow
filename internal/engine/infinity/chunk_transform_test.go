@@ -841,7 +841,10 @@ func TestTagKwdRoundTripsAsList(t *testing.T) {
 // TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys covers #20500: parser
 // keys that are not columns (__outline__) failed the whole batch. slide_number
 // is a declared mapping column since the #20500 fix, so it must reach the
-// insert like every other declared key.
+// insert like every other declared key. media_order is declared too, and the
+// PPTX parser writes it on the image rows, so the row below carries an image
+// through both production steps: a transform that dropped media_order would
+// otherwise not fail this regression test.
 func TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys(t *testing.T) {
 	outline := []map[string]interface{}{{"title": "Intro", "depth": 1}}
 	vector := []float64{0.1, 0.2}
@@ -849,6 +852,9 @@ func TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys(t *testing.T) {
 		transformChunkFields(map[string]interface{}{
 			"id": "c1", "content_with_weight": "slide text", "docnm_kwd": "deck.pptx",
 			"slide_number": 2, "q_1024_vec": vector, "legacy_col": "kept",
+		}, nil),
+		transformChunkFields(map[string]interface{}{
+			"id": "c3", "content_with_weight": "image text", "media_order": 3,
 		}, nil),
 		transformChunkFields(map[string]interface{}{
 			"id": "c2", "content_with_weight": "pdf text", "__outline__": outline,
@@ -866,6 +872,7 @@ func TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys(t *testing.T) {
 
 	want := []map[string]interface{}{
 		{"id": "c1", "content": "slide text", "docnm": "deck.pptx", "slide_number": 2, "q_1024_vec": vector, "legacy_col": "kept"},
+		{"id": "c3", "content": "image text", "media_order": 3},
 		{
 			"id": "c2", "content": "pdf text", "important_keywords": "a", "important_kwd_empty_count": 0,
 			"memory_id": "m1", "chunk_data": `{"k":"v"}`,
