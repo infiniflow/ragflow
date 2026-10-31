@@ -1436,10 +1436,7 @@ func TestDispatch_PDFMinerU_BareModelUUID_InParseMethod(t *testing.T) {
 	requireJSONText(t, out, "Cloud MinerU Title")
 }
 
-// TestDispatch_PDFMinerU_LanguageChain pins the lang_list chain
-// (mineru_lang → setup lang → "English"), mirroring Python's
-// mineru_parser.py:1181. The pdf setup's default lang ("Chinese") keeps the
-// unconfigured form value on Python's ch code.
+// TestDispatch_PDFMinerU_LanguageChain pins the lang_list chain sent to MinerU.
 func TestDispatch_PDFMinerU_LanguageChain(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -1447,7 +1444,8 @@ func TestDispatch_PDFMinerU_LanguageChain(t *testing.T) {
 		wantLang  string
 	}{
 		{name: "default setup lang maps to ch", overrides: nil, wantLang: "ch"},
-		{name: "mineru_lang wins over setup lang", overrides: map[string]any{"mineru_lang": "English"}, wantLang: "en"},
+		{name: "mineru_lang English alone maps to en", overrides: map[string]any{"mineru_lang": "English"}, wantLang: "en"},
+		{name: "explicit English mineru_lang wins over setup lang", overrides: map[string]any{"mineru_lang": "English", "lang": "Chinese"}, wantLang: "en"},
 		{name: "setup lang used when mineru_lang unset", overrides: map[string]any{"lang": "Japanese"}, wantLang: "japan"},
 	}
 

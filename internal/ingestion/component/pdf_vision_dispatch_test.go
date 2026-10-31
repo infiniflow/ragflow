@@ -221,10 +221,10 @@ func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
 		{"equation", map[string]any{"type": "equation", "text": "x=1"}, "equation", "text"},
 		{"unknown", map[string]any{"type": "footnote", "text": "x"}, "text", "text"},
 		{"image", map[string]any{"type": "image", "image_caption": []any{"cap"}}, "figure", "image"},
-		{"table", map[string]any{"type": "table", "table_body": "<table></table>"}, "table", "table"},
+		{"table", map[string]any{"type": "table", "table_body": "<table><tr><td>Cell</td></tr></table>"}, "table", "table"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mineruContentItemToJSON(tc.item, nil, nil)
+			got := mineruContentItemToJSON(tc.item, nil, nil, true)
 			if got == nil {
 				t.Fatal("item was dropped")
 			}
@@ -260,7 +260,7 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	}
 
 	sizes := map[int][2]float64{0: {612, 792}, 1: {612, 792}}
-	items, err := mineruExtractJSONItems(buf.Bytes(), sizes)
+	items, err := mineruExtractJSONItems(buf.Bytes(), sizes, true)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -384,7 +384,7 @@ func TestMinerUExtractJSONItemsScalesBBoxToPoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes(), nil)
+	items, err := mineruExtractJSONItems(buf.Bytes(), nil, true)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -420,7 +420,7 @@ func TestMinerUExtractJSONItemsWithoutGeometryKeepsText(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes(), nil)
+	items, err := mineruExtractJSONItems(buf.Bytes(), nil, true)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -504,7 +504,7 @@ func TestMinerURealContentListPositionsStayInPage(t *testing.T) {
 		pageWidth  = 595.0
 		pageHeight = 842.0
 	)
-	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {pageWidth, pageHeight}})
+	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {pageWidth, pageHeight}}, true)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -632,7 +632,7 @@ func TestMineruExtractJSONItemsStructuredContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {1000, 1000}})
+	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {1000, 1000}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
