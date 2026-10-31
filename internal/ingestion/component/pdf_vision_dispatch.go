@@ -416,43 +416,72 @@ func dispatchUnlimitedOCR2PDF(
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 submit: %w", err)
 	}
-	content, err := pollUnlimitedOCRTask(ctx, driver, task.TaskID, effectiveAPIConfig, timeout)
+	taskResult, err := pollUnlimitedOCRTaskResult(ctx, driver, task.TaskID, effectiveAPIConfig, timeout)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 result: %w", err)
 	}
-	return normalizePDFMarkdown(ctx, filename, content, setup), nil
+
+	if len(taskResult.ContentList) > 0 {
+		sizes, _ := mineruPageSizes(ctx, binary)
+		items := make([]map[string]any, 0, len(taskResult.ContentList))
+		for _, rawItem := range taskResult.ContentList {
+			if converted := mineruContentItemToJSON(rawItem, nil, sizes); converted != nil {
+				items = append(items, converted)
+			}
+		}
+		if len(items) > 0 {
+			return parser.ParseResult{
+				File: map[string]any{
+					"name":         filename,
+					"page_count":   mineruItemPageCount(items),
+					"outline":      []map[string]any{},
+					"parse_method": "unlimited_ocr",
+				},
+				JSON: parser.MapsToItems(items),
+			}, nil
+		}
+	}
+
+	return normalizePDFMarkdown(ctx, filename, taskResult.Markdown, setup), nil
 }
 
-// pollUnlimitedOCRTask queries task status periodically until Markdown is ready or an error occurs.
-func pollUnlimitedOCRTask(ctx context.Context, driver *modelModule.UnlimitedOCRModel, taskID string, apiConfig *modelModule.APIConfig, timeout time.Duration) (string, error) {
+// pollUnlimitedOCRTaskResult queries task status periodically until Markdown and/or content_list is ready.
+func pollUnlimitedOCRTaskResult(ctx context.Context, driver *modelModule.UnlimitedOCRModel, taskID string, apiConfig *modelModule.APIConfig, timeout time.Duration) (*modelModule.UnlimitedOCRTaskResult, error) {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for {
-		task, err := driver.ShowTask(ctx, taskID, apiConfig)
+		res, err := driver.ShowUnlimitedOCRTask(ctx, taskID, apiConfig)
 		if err == nil {
-			for _, segment := range task.Segments {
-				if strings.TrimSpace(segment.Content) != "" {
-					return segment.Content, nil
-				}
+			if strings.TrimSpace(res.Markdown) != "" || len(res.ContentList) > 0 {
+				return res, nil
 			}
 		} else {
 			if errors.Is(err, modelModule.ErrTaskAuthorization) {
-				return "", fmt.Errorf("Unlimited-OCR-2 task %s result: %w", taskID, err)
+				return nil, fmt.Errorf("Unlimited-OCR-2 task %s result: %w", taskID, err)
 			}
 			lastErr = err
 		}
 		if time.Now().After(deadline) {
 			if lastErr != nil {
-				return "", fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s: last error: %w", taskID, lastErr)
+				return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s: last error: %w", taskID, lastErr)
 			}
-			return "", fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s", taskID)
+			return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s", taskID)
 		}
 		select {
 		case <-ctx.Done():
-			return "", ctx.Err()
+			return nil, ctx.Err()
 		case <-time.After(2 * time.Second):
 		}
 	}
+}
+
+// pollUnlimitedOCRTask queries task status periodically until Markdown is ready or an error occurs.
+func pollUnlimitedOCRTask(ctx context.Context, driver *modelModule.UnlimitedOCRModel, taskID string, apiConfig *modelModule.APIConfig, timeout time.Duration) (string, error) {
+	res, err := pollUnlimitedOCRTaskResult(ctx, driver, taskID, apiConfig, timeout)
+	if err != nil {
+		return "", err
+	}
+	return res.Markdown, nil
 }
 
 // getIntOr safely extracts an integer from a parameter map with a fallback default.

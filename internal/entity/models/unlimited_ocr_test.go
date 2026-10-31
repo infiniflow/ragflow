@@ -289,3 +289,64 @@ func TestUnlimitedOCRModel_URLNormalization(t *testing.T) {
 		t.Fatalf("expected http:// prefix on normalized URL, got %q", baseURL)
 	}
 }
+
+func TestUnlimitedOCRModel_ShowUnlimitedOCRTask_ContentList(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/tasks/task_with_bbox/result" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{
+				"code": 0,
+				"state": "done",
+				"results": {
+					"paper.pdf": {
+						"md_content": "# Paper Title\n\nIntro text",
+						"content_list": [
+							{
+								"type": "title",
+								"text": "Paper Title",
+								"page_idx": 0,
+								"bbox": [50, 100, 500, 150]
+							},
+							{
+								"type": "text",
+								"text": "Intro text",
+								"page_idx": 0,
+								"bbox": [50, 160, 500, 300]
+							}
+						]
+					}
+				}
+			}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	driver := NewUnlimitedOCRModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
+	)
+	cfg := &APIConfig{BaseURL: &server.URL}
+	ctx := context.Background()
+
+	res, err := driver.ShowUnlimitedOCRTask(ctx, "task_with_bbox", cfg)
+	if err != nil {
+		t.Fatalf("ShowUnlimitedOCRTask failed: %v", err)
+	}
+	if !strings.Contains(res.Markdown, "Paper Title") {
+		t.Fatalf("expected markdown to contain 'Paper Title', got: %s", res.Markdown)
+	}
+	if len(res.ContentList) != 2 {
+		t.Fatalf("expected 2 content_list items, got %d", len(res.ContentList))
+	}
+	titleItem := res.ContentList[0]
+	if titleItem["type"] != "title" || titleItem["text"] != "Paper Title" {
+		t.Fatalf("unexpected title item: %#v", titleItem)
+	}
+	bbox, ok := titleItem["bbox"].([]interface{})
+	if !ok || len(bbox) != 4 {
+		t.Fatalf("expected 4-element bbox, got: %#v", titleItem["bbox"])
+	}
+}

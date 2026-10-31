@@ -228,8 +228,14 @@ func (m *UnlimitedOCRModel) CheckConnection(ctx context.Context, apiConfig *APIC
 	return fmt.Errorf("not an Unlimited-OCR-2 service: HTTP %d", code)
 }
 
-// ShowTask retrieves the processing status and extracted segments for an Unlimited-OCR-2 task.
-func (m *UnlimitedOCRModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+// UnlimitedOCRTaskResult holds the extracted markdown content and structured content_list blocks.
+type UnlimitedOCRTaskResult struct {
+	Markdown    string           `json:"markdown"`
+	ContentList []map[string]any `json:"content_list,omitempty"`
+}
+
+// ShowUnlimitedOCRTask retrieves the processing status, Markdown content, and structured content_list for an Unlimited-OCR-2 task.
+func (m *UnlimitedOCRModel) ShowUnlimitedOCRTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*UnlimitedOCRTaskResult, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -281,16 +287,27 @@ func (m *UnlimitedOCRModel) ShowTask(ctx context.Context, taskID string, apiConf
 	}
 
 	content := ""
+	var contentList []map[string]any
+
+	// 1. Try results[filename] map
 	if results, ok := result["results"].(map[string]interface{}); ok {
 		for _, fileObj := range results {
 			if fileMap, ok := fileObj.(map[string]interface{}); ok {
-				if md, ok := fileMap["md_content"].(string); ok && md != "" {
+				if md, ok := fileMap["md_content"].(string); ok && md != "" && content == "" {
 					content = md
-					break
+				}
+				if cl, ok := fileMap["content_list"].([]interface{}); ok && len(cl) > 0 && len(contentList) == 0 {
+					for _, item := range cl {
+						if m, ok := item.(map[string]interface{}); ok {
+							contentList = append(contentList, m)
+						}
+					}
 				}
 			}
 		}
 	}
+
+	// 2. Fallbacks for top-level keys
 	if content == "" {
 		if text, ok := result["content"].(string); ok && text != "" {
 			content = text
@@ -299,15 +316,37 @@ func (m *UnlimitedOCRModel) ShowTask(ctx context.Context, taskID string, apiConf
 		}
 	}
 
-	if content == "" {
-		return nil, fmt.Errorf("md_content not found in task result")
+	if len(contentList) == 0 {
+		if cl, ok := result["content_list"].([]interface{}); ok {
+			for _, item := range cl {
+				if m, ok := item.(map[string]interface{}); ok {
+					contentList = append(contentList, m)
+				}
+			}
+		}
 	}
 
+	if content == "" && len(contentList) == 0 {
+		return nil, fmt.Errorf("md_content or content_list not found in task result")
+	}
+
+	return &UnlimitedOCRTaskResult{
+		Markdown:    content,
+		ContentList: contentList,
+	}, nil
+}
+
+// ShowTask retrieves the processing status and extracted segments for an Unlimited-OCR-2 task.
+func (m *UnlimitedOCRModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	res, err := m.ShowUnlimitedOCRTask(ctx, taskID, apiConfig)
+	if err != nil {
+		return nil, err
+	}
 	return &TaskResponse{
 		Segments: []TaskSegment{
 			{
 				Index:   1,
-				Content: content,
+				Content: res.Markdown,
 			},
 		},
 	}, nil

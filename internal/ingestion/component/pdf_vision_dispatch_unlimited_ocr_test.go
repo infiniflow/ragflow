@@ -180,3 +180,104 @@ func TestDispatchUnlimitedOCR2PDF_AuthFailureStopsPolling(t *testing.T) {
 		t.Fatalf("ShowTask called %d times, expected immediate stop", callCount)
 	}
 }
+
+func TestDispatchUnlimitedOCR2PDF_WithContentListVisualGrounding(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/file_parse":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"msg":     "Task accepted",
+				"task_id": "task_grounding",
+				"data": map[string]any{
+					"task_id": "task_grounding",
+				},
+			})
+		case "/tasks/task_grounding/result":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":  0,
+				"msg":   "success",
+				"state": "done",
+				"results": map[string]any{
+					"grounding.pdf": map[string]any{
+						"md_content": "# Grounding Title\n\nGrounding paragraph.",
+						"content_list": []map[string]any{
+							{
+								"type":     "title",
+								"text":     "Grounding Title",
+								"page_idx": 0,
+								"bbox":     []float64{100, 100, 800, 200},
+							},
+							{
+								"type":     "text",
+								"text":     "Grounding paragraph.",
+								"page_idx": 0,
+								"bbox":     []float64{100, 220, 800, 400},
+							},
+							{
+								"type":       "table",
+								"table_body": "<table><tr><td>Col 1</td><td>Col 2</td></tr></table>",
+								"page_idx":   0,
+								"bbox":       []float64{100, 420, 800, 700},
+							},
+						},
+					},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer mockServer.Close()
+
+	setup := schema.ParserSetup{
+		"unlimited_ocr_server_url": mockServer.URL,
+	}
+
+	result, err := dispatchUnlimitedOCR2PDF(
+		context.Background(),
+		nil,
+		"grounding.pdf",
+		[]byte("%PDF-1.4 test"),
+		"",
+		setup,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("dispatchUnlimitedOCR2PDF with visual grounding: %v", err)
+	}
+	if result.Err != nil {
+		t.Fatalf("result error: %v", result.Err)
+	}
+	if len(result.JSON) < 3 {
+		t.Fatalf("expected at least 3 structured items, got %d", len(result.JSON))
+	}
+
+	titleFound := false
+	tableFound := false
+	for _, it := range result.JSON {
+		m := it.ToMap()
+		layout, _ := m["layout"].(string)
+		if layout == "title" {
+			titleFound = true
+			if text, _ := m["text"].(string); text != "Grounding Title" {
+				t.Errorf("expected title text 'Grounding Title', got %q", text)
+			}
+			if pageNo, _ := m["page_number"].(int); pageNo != 1 {
+				t.Errorf("expected page_number 1, got %v", pageNo)
+			}
+		}
+		if layout == "table" {
+			tableFound = true
+		}
+	}
+
+	if !titleFound {
+		t.Errorf("expected title item in parsed JSON")
+	}
+	if !tableFound {
+		t.Errorf("expected table item in parsed JSON")
+	}
+}
