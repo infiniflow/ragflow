@@ -17,6 +17,7 @@ package infinity
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"regexp"
@@ -908,7 +909,12 @@ func TestTagKwdRoundTripsAsList(t *testing.T) {
 }
 
 // TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys covers #20500: parser
-// keys that are not columns (slide_number, __outline__) failed the whole batch.
+// keys that are not columns (__outline__) failed the whole batch. slide_number
+// is a declared mapping column since the #20500 fix, so it must reach the
+// insert like every other declared key. media_order is declared too, and the
+// PPTX parser writes it on the image rows, so the row below carries an image
+// through both production steps: a transform that dropped media_order would
+// otherwise not fail this regression test.
 func TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys(t *testing.T) {
 	outline := []map[string]interface{}{{"title": "Intro", "depth": 1}}
 	vector := []float64{0.1, 0.2}
@@ -916,6 +922,9 @@ func TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys(t *testing.T) {
 		transformChunkFields(map[string]interface{}{
 			"id": "c1", "content_with_weight": "slide text", "docnm_kwd": "deck.pptx",
 			"slide_number": 2, "q_1024_vec": vector, "legacy_col": "kept",
+		}, nil),
+		transformChunkFields(map[string]interface{}{
+			"id": "c3", "content_with_weight": "image text", "media_order": 3,
 		}, nil),
 		transformChunkFields(map[string]interface{}{
 			"id": "c2", "content_with_weight": "pdf text", "__outline__": outline,
@@ -932,7 +941,8 @@ func TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys(t *testing.T) {
 	}
 
 	want := []map[string]interface{}{
-		{"id": "c1", "content": "slide text", "docnm": "deck.pptx", "q_1024_vec": vector, "legacy_col": "kept"},
+		{"id": "c1", "content": "slide text", "docnm": "deck.pptx", "slide_number": 2, "q_1024_vec": vector, "legacy_col": "kept"},
+		{"id": "c3", "content": "image text", "media_order": 3},
 		{
 			"id": "c2", "content": "pdf text", "important_keywords": "a", "important_kwd_empty_count": 0,
 			"memory_id": "m1", "chunk_data": `{"k":"v"}`,
@@ -1110,5 +1120,44 @@ func TestSortChunksByFieldsRanksUnsetKeyFirst(t *testing.T) {
 	}
 	if got := sorted([]map[string]interface{}{unset, withPage}); !reflect.DeepEqual(got, want) {
 		t.Errorf("sort(unset-first input) = %v, want %v", got, want)
+	}
+}
+
+// TestMediaOrdinalColumnsMatchMapping pins the legacy-table reconcile
+// definitions to conf/infinity_mapping.json: ensureMediaOrdinalColumns must
+// add exactly the columns — name, type, and default — that newly created
+// tables get from the mapping, or a legacy table would end up with a column
+// that diverges from fresh ones (#20500).
+func TestMediaOrdinalColumnsMatchMapping(t *testing.T) {
+	path, err := utility.FindConfFileInProject("infinity_mapping.json")
+	if err != nil || path == nil {
+		t.Fatalf("locate infinity_mapping.json: %v", err)
+	}
+	data, err := os.ReadFile(*path)
+	if err != nil {
+		t.Fatalf("read %s: %v", *path, err)
+	}
+	var columns map[string]struct {
+		Type    string      `json:"type"`
+		Default interface{} `json:"default"`
+	}
+	if err := json.Unmarshal(data, &columns); err != nil {
+		t.Fatalf("parse %s: %v", *path, err)
+	}
+
+	// ensureMediaOrdinalColumns draws its AddColumns entries from the shared
+	// mediaOrdinalColumns definitions; pin each one to the mapping so a
+	// legacy table ends up with exactly the columns fresh tables have.
+	for _, col := range mediaOrdinalColumns {
+		declared, ok := columns[col.Name]
+		if !ok {
+			t.Fatalf("%s is not declared in conf/infinity_mapping.json; the reconcile would add a column fresh tables do not have", col.Name)
+		}
+		if declared.Type != col.DataType {
+			t.Errorf("%s reconcile type = %q, mapping declares %q", col.Name, col.DataType, declared.Type)
+		}
+		if fmt.Sprint(declared.Default) != fmt.Sprint(col.Default) {
+			t.Errorf("%s reconcile default = %v, mapping declares %v", col.Name, col.Default, declared.Default)
+		}
 	}
 }
