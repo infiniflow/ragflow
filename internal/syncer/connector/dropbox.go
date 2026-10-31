@@ -503,11 +503,14 @@ func (f dropboxFileMetadata) downloadPath() string {
 	return f.ID
 }
 
+// updatedAt prefers server_modified, the last time the file was modified on
+// Dropbox. client_modified is whatever time the uploading client sent and can
+// be older than the upload, so it is only a fallback.
 func (f dropboxFileMetadata) updatedAt() time.Time {
-	if parsed := parseDropboxTime(f.ClientModified); !parsed.IsZero() {
+	if parsed := parseDropboxTime(f.ServerModified); !parsed.IsZero() {
 		return parsed
 	}
-	if parsed := parseDropboxTime(f.ServerModified); !parsed.IsZero() {
+	if parsed := parseDropboxTime(f.ClientModified); !parsed.IsZero() {
 		return parsed
 	}
 	return time.Unix(0, 0).UTC()

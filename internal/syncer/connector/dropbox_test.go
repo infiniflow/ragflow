@@ -209,6 +209,69 @@ func TestDropboxConnectorOpenSync(t *testing.T) {
 	}
 }
 
+func TestDropboxConnectorOpenSyncWindowUsesServerModified(t *testing.T) {
+	var downloadPaths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/2/files/list_folder":
+			writeDropboxTestListResponse(w, []map[string]any{
+				// Added to Dropbox inside the window, with its original, older modification time.
+				{".tag": "file", "id": "id:copied", "name": "copied.txt", "path_display": "/copied.txt", "client_modified": "2025-11-20T08:00:00Z", "server_modified": "2026-01-03T10:00:00Z", "size": 6},
+				// Unchanged on Dropbox since the window started.
+				{".tag": "file", "id": "id:unchanged", "name": "unchanged.txt", "path_display": "/unchanged.txt", "client_modified": "2025-12-30T08:00:00Z", "server_modified": "2025-12-30T08:00:05Z", "size": 9},
+			}, "", false)
+		case "/2/files/download":
+			var arg map[string]string
+			if err := json.Unmarshal([]byte(r.Header.Get("Dropbox-API-Arg")), &arg); err != nil {
+				t.Errorf("decode download arg: %v", err)
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			downloadPaths = append(downloadPaths, arg["path"])
+			_, _ = io.WriteString(w, "body:"+arg["path"])
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+	connector := newDropboxTestConnector(t, &dropboxTestServer{server: server}, false)
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	session, err := connector.OpenSync(context.Background(), SyncRequest{
+		WindowStart: &start,
+		WindowEnd:   time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+
+	var synced []SourceDocument
+	for {
+		batch, err := session.NextBatch(context.Background())
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("NextBatch failed: %v", err)
+		}
+		synced = append(synced, batch.Documents...)
+	}
+	sourceIDs := make([]string, 0, len(synced))
+	for _, document := range synced {
+		sourceIDs = append(sourceIDs, document.SourceID)
+	}
+	if strings.Join(sourceIDs, ",") != "dropbox:id:copied" {
+		t.Fatalf("synced documents = %q, want [dropbox:id:copied]", sourceIDs)
+	}
+	if want := time.Date(2026, 1, 3, 10, 0, 0, 0, time.UTC); !synced[0].UpdatedAt.Equal(want) {
+		t.Fatalf("UpdatedAt = %v, want server_modified %v", synced[0].UpdatedAt, want)
+	}
+	if strings.Join(downloadPaths, ",") != "/copied.txt" {
+		t.Fatalf("download paths = %#v", downloadPaths)
+	}
+}
+
 func TestDropboxConnectorOpenPruneAndResume(t *testing.T) {
 	fixture := newDropboxTestServer(t)
 	connector := newDropboxTestConnector(t, fixture, true)
