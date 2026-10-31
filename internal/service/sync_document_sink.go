@@ -28,7 +28,8 @@ const (
 	DocumentActionAdded = "added"
 	// DocumentActionUpdated means a document was changed.
 	DocumentActionUpdated = "updated"
-	// DocumentActionSkipped means a document was unchanged.
+	// DocumentActionSkipped means a document was left untouched: its
+	// fingerprint matched, or its fetch failed for that document only.
 	DocumentActionSkipped = "skipped"
 )
 

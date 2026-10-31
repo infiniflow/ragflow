@@ -1958,3 +1958,36 @@ func TestTaskExecutionDeadlineCapsConnectorTimeout(t *testing.T) {
 func testLockLease() ConnectorLockLease {
 	return ConnectorLockLease{ExpiresAt: time.Now().Add(connectorLockTTL)}
 }
+
+// TestFetchSkippedDocumentDoesNotFailSync verifies a connector that marks one
+// document as fetch-skipped still completes the task and processes the rest.
+func TestFetchSkippedDocumentDoesNotFailSync(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	connector := &connectormock.Connector{
+		SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{
+			{SourceID: "source-bad", FetchRef: &syncerconnector.FetchReference{Key: "bad"}, UpdatedAt: time.Now()},
+			{SourceID: "source-good", Blob: []byte("x"), UpdatedAt: time.Now()},
+		}}},
+		FetchErrs: map[string]error{"bad": fmt.Errorf("%w: 404 not found", syncerconnector.ErrDocumentSkipped)},
+	}
+	sink := &fakeSink{}
+	coordinator := newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
+	taskContext, _ := taskDAO.GetTaskContext(t.Context(), "task-1")
+	if _, err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if sink.callCount() != 1 {
+		t.Fatalf("sink calls = %d, want 1 (only the readable document)", sink.callCount())
+	}
+	var completed entity.SyncLogs
+	if err := db.First(&completed, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load completed task: %v", err)
+	}
+	if completed.Status != dao.SyncStatusDone {
+		t.Fatalf("task status = %q, want %q", completed.Status, dao.SyncStatusDone)
+	}
+}
