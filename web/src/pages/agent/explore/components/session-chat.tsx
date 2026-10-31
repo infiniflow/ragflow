@@ -8,12 +8,12 @@ import { MessageType } from '@/constants/chat';
 import { useUploadAgentFileWithProgress } from '@/hooks/use-agent-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IAgentLogResponse } from '@/interfaces/database/agent';
-import { IMessage, IReferenceObject } from '@/interfaces/database/chat';
+import { IMessage } from '@/interfaces/database/chat';
 import DebugContent from '@/pages/agent/debug-content';
 import { useAwaitComponentData } from '@/pages/agent/hooks/use-chat-logic';
 import { BeginQuery } from '@/pages/agent/interface';
 import { ParameterDialog } from '@/pages/agent/share/parameter-dialog';
-import { buildMessageUuidWithRole } from '@/utils/chat';
+import { buildMessageUuidWithRole, buildReferenceObject } from '@/utils/chat';
 import { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useExploreUrlParams } from '../hooks/use-explore-url-params';
@@ -181,10 +181,7 @@ export function SessionChat({ session }: SessionChatProps) {
                       avatarDialog={canvasInfo?.avatar || ''}
                       reference={
                         findReferenceByMessageId(message.id) ||
-                        (session?.reference?.[
-                          Math.floor((i - 1) / 2)
-                        ] as unknown as IReferenceObject) ||
-                        {}
+                        buildReferenceObject(message.reference)
                       }
                       clickDocumentButton={clickDocumentButton}
                       index={i}

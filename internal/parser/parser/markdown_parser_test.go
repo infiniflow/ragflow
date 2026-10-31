@@ -223,6 +223,9 @@ func TestMarkdownParser_ParseWithResult_ImageDataURI(t *testing.T) {
 	// Find the image item
 	found := false
 	for _, item := range ItemsToMaps(res.JSON) {
+		if text, _ := item["text"].(string); strings.Contains(text, pixelB64) {
+			t.Errorf("data URI payload leaked into text: %q", text)
+		}
 		if kd, _ := item["doc_type_kwd"].(string); kd == "image" {
 			found = true
 			if img, ok := item["image"].(string); !ok || img != pixelB64 {
@@ -233,6 +236,101 @@ func TestMarkdownParser_ParseWithResult_ImageDataURI(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("no item with doc_type_kwd == 'image' found")
+	}
+}
+
+func TestMarkdownParser_PreservesUnresolvedImageReferences(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := "Before\n\n![figure](images/fig-1.png)\n\n![](images/bare.png)\n\n" +
+		"| A | B |\n|---|---|\n| x | ![table](images/table.png) |\n"
+	res := p.ParseWithResult(t.Context(), "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	var textItems []string
+	var table *entity.TableData
+	for _, item := range ItemsToMaps(res.JSON) {
+		if td, ok := item["table"].(*entity.TableData); ok {
+			table = td
+			continue
+		}
+		if text, _ := item["text"].(string); text != "" {
+			textItems = append(textItems, text)
+		}
+	}
+	texts := strings.Join(textItems, "\n")
+	if !strings.Contains(texts, "![figure](images/fig-1.png)") {
+		t.Errorf("image path missing from text items: %q", texts)
+	}
+	if !strings.Contains(texts, "![](images/bare.png)") {
+		t.Errorf("alt-less image reference missing from text items: %q", texts)
+	}
+	if table == nil {
+		t.Fatal("table item missing")
+	}
+	if got := table.Grid[1][1].Text; got != "![table](images/table.png)" {
+		t.Errorf("table image cell = %q, want the Markdown reference", got)
+	}
+}
+
+func TestMarkdownParser_TableDataURIWithLeadingSpace(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	md := "| A | B |\n|---|---|\n| x | <img src=\" data:image/png;base64,aGVsbG8=\" alt=\"blob\"> |\n"
+	res := p.ParseWithResult(t.Context(), "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		if table, ok := item["table"].(*entity.TableData); ok {
+			if got := table.Grid[1][1].Text; got != "blob" {
+				t.Errorf("table data URI cell = %q, want alt text only", got)
+			}
+			if strings.Contains(table.Grid[1][1].Text, "aGVsbG8=") {
+				t.Errorf("encoded data URI payload leaked into table text: %q", table.Grid[1][1].Text)
+			}
+			return
+		}
+	}
+	t.Fatal("table item missing")
+}
+
+func TestMarkdownParser_ResolvedRemoteImageKeepsAltOnly(t *testing.T) {
+	previous := ssrfAllowLoopback
+	ssrfAllowLoopback = true
+	t.Cleanup(func() { ssrfAllowLoopback = previous })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("fake-png-data"))
+	}))
+	defer server.Close()
+
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res := p.ParseWithResult(t.Context(), "test.md", []byte("![remote]("+server.URL+"/image.png)\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	foundImage := false
+	for _, item := range ItemsToMaps(res.JSON) {
+		if text, _ := item["text"].(string); strings.Contains(text, server.URL) {
+			t.Errorf("resolved remote URL leaked into text: %q", text)
+		}
+		if kd, _ := item["doc_type_kwd"].(string); kd == "image" {
+			foundImage = true
+		}
+	}
+	if !foundImage {
+		t.Fatal("resolved remote image item missing")
 	}
 }
 
@@ -454,7 +552,7 @@ func TestMarkdownParser_FlattenMediaToText(t *testing.T) {
 
 func TestResolveImageURL_DataURI(t *testing.T) {
 	b64 := base64.StdEncoding.EncodeToString([]byte("fakeimage"))
-	budget := newEmbeddedMediaBudget()
+	budget := newLimitedMediaBudgetForTest(t, len("fakeimage"), int64(len("fakeimage")), 2)
 	result, raw, omitted, found := resolveImageURL(context.Background(), "data:image/png;base64,"+b64, budget)
 	if !found {
 		t.Fatal("expected image found for data URI")
@@ -462,14 +560,17 @@ func TestResolveImageURL_DataURI(t *testing.T) {
 	if result != b64 || raw != nil {
 		t.Fatalf("got %q, want %q", result, b64)
 	}
-	if omitted || budget.totalBytes != len("fakeimage") {
-		t.Errorf("charged bytes = %d, want %d", budget.totalBytes, len("fakeimage"))
+	if omitted || len(budget.Warnings()) != 0 {
+		t.Fatalf("first image omitted=%v warnings=%v", omitted, budget.Warnings())
+	}
+	if included, keepWalking := includeMediaForTest(budget, []byte("x")); included || !keepWalking {
+		t.Fatalf("payload after the exact byte cap = (%v, %v), want (false, true)", included, keepWalking)
 	}
 }
 
 func TestResolveImageURL_LocalPathNotFetched(t *testing.T) {
 	// Local / relative paths are not fetched (security); resolution fails.
-	if _, _, _, found := resolveImageURL(context.Background(), "./local/image.png", newEmbeddedMediaBudget()); found {
+	if _, _, _, found := resolveImageURL(context.Background(), "./local/image.png", newMediaBudgetForTest()); found {
 		t.Fatal("expected no image resolved for a local path")
 	}
 }
@@ -488,7 +589,7 @@ func TestResolveImageURL_HTTPImage(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	budget := newEmbeddedMediaBudget()
+	budget := newLimitedMediaBudgetForTest(t, len("fake-png-bytes"), int64(len("fake-png-bytes")), 2)
 	encoded, result, omitted, found := resolveImageURL(context.Background(), ts.URL+"/image.png", budget)
 	if !found {
 		t.Fatal("expected image found for HTTP URL")
@@ -496,8 +597,11 @@ func TestResolveImageURL_HTTPImage(t *testing.T) {
 	if encoded != "" || string(result) != "fake-png-bytes" {
 		t.Fatalf("got encoded=%q raw=%q, want raw image bytes", encoded, result)
 	}
-	if omitted || budget.totalBytes != len("fake-png-bytes") {
-		t.Errorf("charged bytes = %d, want %d", budget.totalBytes, len("fake-png-bytes"))
+	if omitted || len(budget.Warnings()) != 0 {
+		t.Fatalf("first image omitted=%v warnings=%v", omitted, budget.Warnings())
+	}
+	if included, keepWalking := includeMediaForTest(budget, []byte("x")); included || !keepWalking {
+		t.Fatalf("payload after the exact byte cap = (%v, %v), want (false, true)", included, keepWalking)
 	}
 }
 
@@ -518,9 +622,9 @@ func TestMarkdownImageBudgetSkipsFetchAfterCountLimit(t *testing.T) {
 		"![second](" + server.URL + "/2)\n\n" +
 		"![third](" + server.URL + "/3)\n"
 	doc := markdownNew().Parse([]byte(markdown))
-	budget := &embeddedMediaBudget{maxImageBytes: 4, maxTotalBytes: 4, maxItems: 2}
+	budget := newLimitedMediaBudgetForTest(t, 4, 4, 2)
 	var items []map[string]any
-	if unresolved := walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, &htmlWalkState{mediaBudget: budget}); unresolved != 0 {
+	if unresolved := walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, &htmlWalkState{budget: budget}); unresolved != 0 {
 		t.Fatalf("unresolved images = %d, want 0", unresolved)
 	}
 	if got := fetches.Load(); got != 2 {
@@ -534,10 +638,10 @@ func TestMarkdownImageBudgetSkipsFetchAfterCountLimit(t *testing.T) {
 			t.Fatalf("image %d = %+v, want omitted payload", index, items[index])
 		}
 	}
-	warnings := strings.Join(budget.warnings(), "\n")
-	if !strings.Contains(warnings, "omitted 1 embedded image payload(s) after reaching the 4-byte document image budget") ||
-		!strings.Contains(warnings, "stopped extracting embedded images after the 2-item document limit") {
-		t.Fatalf("warnings = %q, want document byte and item limit warnings", warnings)
+	warnings := strings.Join(budget.Warnings(), "\n")
+	if !strings.Contains(warnings, "omitted 1 embedded image payload(s) after reaching the 4-byte run image budget") ||
+		!strings.Contains(warnings, "stopped extracting embedded images after the 2-item run limit") {
+		t.Fatalf("warnings = %q, want run byte and item limit warnings", warnings)
 	}
 }
 

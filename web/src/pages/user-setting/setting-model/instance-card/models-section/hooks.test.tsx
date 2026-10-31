@@ -19,7 +19,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { useRef } from 'react';
 
 import { modelNameKey } from '@/utils/llm-util';
-import { useInstanceSaveState } from '../hooks';
+import { SAVED_CREDENTIAL_MASK, useInstanceSaveState } from '../hooks';
 import {
   DRAFT_INSTANCE_SENTINEL,
   useModelMutations,
@@ -179,11 +179,10 @@ describe('Bedrock model credentials', () => {
       provider_id: 'provider-id',
       region: 'default',
       status: 'active',
-      api_key: '',
     };
 
     const { result } = renderHook(() => {
-      const { resolveCreds } = useResolveCreds(instance, () => ({
+      const { resolveCreds } = useResolveCreds('Bedrock', instance, () => ({
         api_key: apiKey,
       }));
       const verify = useModelVerify({
@@ -218,6 +217,86 @@ describe('Bedrock model credentials', () => {
     await act(async () => result.current.mutations.handleBatchToggleModels());
     expect(mockUpdateProviderInstance).toHaveBeenCalledWith(
       expect.objectContaining({ api_key: apiKey, region: 'default' }),
+    );
+  });
+
+  it('uses the stored credential for an unchanged mask and clears it when emptied', async () => {
+    const model = {
+      name: 'anthropic.claude',
+      model_types: ['chat'],
+      max_tokens: 8192,
+      features: [],
+    };
+    const instance = {
+      id: 'instance-id',
+      instance_name: 'bedrock-instance',
+      provider_id: 'provider-id',
+      region: 'default',
+      status: 'active',
+      api_key_configured: true,
+      credential_status: { bedrock_api_key: true },
+    };
+    const formValues: Record<string, unknown> = {
+      auth_mode: 'bedrock_api_key',
+      bedrock_api_key: SAVED_CREDENTIAL_MASK,
+      bedrock_region: 'us-east-1',
+    };
+
+    const { result } = renderHook(() => {
+      const { resolveCreds } = useResolveCreds(
+        'Bedrock',
+        instance,
+        () => formValues,
+      );
+      const verify = useModelVerify({
+        providerName: 'Bedrock',
+        resolveCreds,
+        instanceModels: [],
+        instance,
+        getFormValues: () => formValues,
+        verifyTransform: (values) => ({
+          apiKey: {
+            auth_mode: values.auth_mode,
+            bedrock_api_key: values.bedrock_api_key,
+            bedrock_region: values.bedrock_region,
+          },
+          region: 'default',
+        }),
+      });
+      return { resolveCreds, verify };
+    });
+
+    expect(result.current.resolveCreds()).toMatchObject({
+      hasStoredCredentials: true,
+      credentialChanged: false,
+      apiKey: { auth_mode: 'bedrock_api_key', bedrock_region: 'us-east-1' },
+    });
+    await act(async () => result.current.verify.handleVerify(model));
+    expect(mockVerifyProviderConnection).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        instance_id: 'instance-id',
+        use_saved_credentials: true,
+      }),
+    );
+    expect(mockVerifyProviderConnection.mock.lastCall?.[0]).not.toHaveProperty(
+      'api_key',
+    );
+
+    formValues.bedrock_api_key = '';
+    expect(result.current.resolveCreds().credentialChanged).toBe(true);
+    await act(async () => result.current.verify.handleVerify(model));
+    expect(mockVerifyProviderConnection).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        api_key: {
+          auth_mode: 'bedrock_api_key',
+          bedrock_api_key: null,
+          bedrock_region: 'us-east-1',
+        },
+        instance_id: 'instance-id',
+      }),
+    );
+    expect(mockVerifyProviderConnection.mock.lastCall?.[0]).not.toHaveProperty(
+      'use_saved_credentials',
     );
   });
 });
@@ -293,10 +372,11 @@ describe('API-key-gated model listing (SystemOne / RAGcon)', () => {
     );
   });
 
-  it('auto-fetches a saved RAGcon instance once its stored api_key loads', async () => {
+  it('auto-fetches a saved RAGcon instance using server-stored credentials', async () => {
     let apiKey = '';
+    let hasStoredCredentials = false;
     const baseUrl = 'https://api.ragcon.ai/v1';
-    const resolveCreds = () => ({ apiKey, baseUrl });
+    const resolveCreds = () => ({ apiKey, baseUrl, hasStoredCredentials });
 
     const { rerender } = renderHook(
       ({ apiKeyValue, instanceDetailsLoaded }) =>
@@ -306,8 +386,10 @@ describe('API-key-gated model listing (SystemOne / RAGcon)', () => {
           hideActions: false,
           resolveCreds,
           instanceModels: undefined,
+          instance: { id: 'instance-id', is_owner: true } as any,
           apiKeyValue,
           baseUrlValue: baseUrl,
+          regionValue: undefined,
           instanceDetailsLoaded,
         }),
       { initialProps: { apiKeyValue: apiKey, instanceDetailsLoaded: false } },
@@ -315,17 +397,50 @@ describe('API-key-gated model listing (SystemOne / RAGcon)', () => {
 
     expect(mockListProviderModels).not.toHaveBeenCalled();
 
-    apiKey = 'saved-key';
+    hasStoredCredentials = true;
     rerender({ apiKeyValue: apiKey, instanceDetailsLoaded: true });
 
     await waitFor(() =>
       expect(mockListProviderModels).toHaveBeenCalledWith({
         provider_name: 'RAGcon',
-        api_key: apiKey,
-        base_url: baseUrl,
+        base_url: 'https://api.ragcon.ai/v1',
+        region: undefined,
+        use_saved_credentials: true,
         instance_name: 'ragcon-instance',
       }),
     );
+  });
+
+  it('does not send endpoint overrides with saved credentials for a non-owner', async () => {
+    const resolveCreds = () => ({
+      apiKey: '',
+      apiKeyConfig: { paddleocr_api_url: 'https://attacker.example' },
+      baseUrl: 'https://attacker.example',
+      hasStoredCredentials: true,
+    });
+
+    const { result } = renderHook(() =>
+      useModelsCatalog({
+        providerName: 'RAGcon',
+        instanceName: 'ragcon-instance',
+        hideActions: false,
+        resolveCreds,
+        instanceModels: undefined,
+        instance: { id: 'instance-id', is_owner: false } as any,
+        apiKeyValue: '',
+        baseUrlValue: 'https://attacker.example',
+        regionValue: 'region-override',
+        instanceDetailsLoaded: true,
+      }),
+    );
+
+    await waitFor(() => expect(mockListProviderModels).toHaveBeenCalled());
+    expect(mockListProviderModels).toHaveBeenCalledWith({
+      provider_name: 'RAGcon',
+      use_saved_credentials: true,
+      instance_name: 'ragcon-instance',
+    });
+    expect(result.current.hasFetched).toBe(true);
   });
 });
 

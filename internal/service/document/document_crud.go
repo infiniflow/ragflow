@@ -13,6 +13,7 @@ import (
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
+	"ragflow/internal/service/billing"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
@@ -79,9 +80,6 @@ func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID
 	data, err := storageImpl.Get(ctx, bucket, name)
 	if err != nil {
 		return nil, err
-	}
-	if len(data) == 0 {
-		return nil, fmt.Errorf("this document is empty")
 	}
 
 	fileName := ""
@@ -279,19 +277,19 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 	if err != nil {
 		return err
 	}
+	unlock := lockDocumentParse(docID)
+	defer unlock()
 
-	// Delete tasks from DB
-	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
-	if err != nil {
-		common.Error(fmt.Sprintf("failed to get ingestion task by doc:%s", doc.ID), err)
+	// Settle and delete the task before purging its cache state. A conditional
+	// delete failure leaves the document and the newly active run intact.
+	if err := s.cleanupDocumentTask(ctx, docID, taskTerminalMessageDocumentDeleted); err != nil {
 		return err
 	}
-	if ingestionTask != nil {
-		if err := s.purgeTaskStateForCleanup(ctx, ingestionTask.ID); err != nil {
-			return err
-		}
-		if _, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, &ingestionTask.UserID); err != nil {
-			return err
+
+	// Release an uncommitted parse hold before the document disappears.
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		if releaseErr := billingService.ReleaseDocumentHold(ctx, docID); releaseErr != nil {
+			common.Warn(fmt.Sprintf("failed to release billing hold for doc %s: %v", docID, releaseErr))
 		}
 	}
 
@@ -320,21 +318,18 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	if err != nil {
 		return err
 	}
+	unlock := lockDocumentParse(docID)
+	defer unlock()
+
 	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
 	if typeErr != nil {
 		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
 	}
-	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
-	if err != nil {
-		return fmt.Errorf("failed to get ingestion task for %s: %w", docID, err)
-	}
-	if ingestionTask != nil {
-		if err := s.purgeTaskStateForCleanup(ctx, ingestionTask.ID); err != nil {
-			return err
-		}
-		if _, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, nil); err != nil {
-			return fmt.Errorf("remove ingestion task for document %s: %w", docID, err)
-		}
+
+	// Settle and delete the task before purging its cache state. Active workers
+	// must be stopped before this path can run.
+	if err := s.cleanupDocumentTask(ctx, docID, taskTerminalMessageDocumentRemoved); err != nil {
+		return err
 	}
 	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
 		if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {

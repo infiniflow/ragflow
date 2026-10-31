@@ -75,7 +75,6 @@ function buildConversation(id: string) {
     update_date: '',
     update_time: 0,
     is_new: true as const,
-    reference: [],
     messages: [
       {
         id: 'old-message',

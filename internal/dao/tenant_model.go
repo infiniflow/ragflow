@@ -35,38 +35,8 @@ func (dao *TenantModelDAO) Create(ctx context.Context, db *gorm.DB, instance *en
 	return db.WithContext(ctx).Create(instance).Error
 }
 
-func (dao *TenantModelDAO) CreateBatch(ctx context.Context, db *gorm.DB, models []*entity.TenantModel) error {
-	if len(models) == 0 {
-		return nil
-	}
-
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, model := range models {
-			if err := tx.WithContext(ctx).Create(model).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-func (dao *TenantModelDAO) DeleteByModelID(ctx context.Context, db *gorm.DB, modelID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("id = ?", modelID).Delete(&entity.TenantModel{})
-	return result.RowsAffected, result.Error
-}
-
 func (dao *TenantModelDAO) DeleteByModelIDAndProviderIDAndInstanceID(ctx context.Context, db *gorm.DB, modelID, providerID, instanceID string) (int64, error) {
 	result := db.WithContext(ctx).Unscoped().Where("id = ? AND provider_id = ? AND instance_id = ?", modelID, providerID, instanceID).Delete(&entity.TenantModel{})
-	return result.RowsAffected, result.Error
-}
-
-func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceID(ctx context.Context, db *gorm.DB, provideID, instanceID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("provider_id = ? AND instance_id = ?", provideID, instanceID).Delete(&entity.TenantModel{})
-	return result.RowsAffected, result.Error
-}
-
-func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceIDAndModelName(ctx context.Context, db *gorm.DB, provideID, instanceID, modelName string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("provider_id = ? AND instance_id = ? AND model_name = ?", provideID, instanceID, modelName).Delete(&entity.TenantModel{})
 	return result.RowsAffected, result.Error
 }
 

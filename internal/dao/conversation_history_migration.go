@@ -25,6 +25,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 )
 
 // conversationHistoryTargetVersion is the database version a completed split
@@ -101,6 +102,9 @@ func migrateConversationHistory(ctx context.Context, db *gorm.DB) error {
 			zap.String("current_version", currentVersion),
 			zap.String("target_version", conversationHistoryTargetVersion))
 		return nil
+	}
+	if err := db.WithContext(ctx).AutoMigrate(&entity.ConversationReference{}, &entity.API4ConversationReference{}); err != nil {
+		return fmt.Errorf("prepare reference tables for history split: %w", err)
 	}
 	splits := []conversationHistorySplit{
 		{

@@ -479,6 +479,19 @@ func (s *BotService) streamChatbotTurn(
 		// no-delta fallback.
 		var rawAnswer, fullAnswer string
 		var finalRef map[string]any
+
+		sendFrame := func(frame ChatbotSSEFrame) bool {
+			if ctx.Err() != nil {
+				return false
+			}
+			select {
+			case out <- frame:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+
 		for res := range results {
 			if res.Final {
 				completedAt := float64(time.Now().UnixNano()) / 1e9
@@ -496,15 +509,16 @@ func (s *BotService) streamChatbotTurn(
 				}
 				errored := strings.HasPrefix(fullAnswer, "**ERROR**")
 				// Save the completed answer before delivering the final SSE frame.
-				// The question was saved before generation; failures leave it intact.
-				if !errored && ctx.Err() == nil {
+				if !errored {
 					persisted := rawAnswer
 					if persisted == "" {
 						persisted = fullAnswer
 					}
-					if pErr := s.persistChatbotTurn(ctx, session, question, persisted, messageID, finalRef, completedAt); pErr != nil {
+					saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					if pErr := s.persistChatbotTurn(saveCtx, session, question, persisted, messageID, finalRef, completedAt); pErr != nil {
 						common.Error("bot: ChatbotCompletion session update failed", pErr, zap.String("dialog_id", session.DialogID), zap.String("session_id", session.ID))
 					}
+					cancel()
 				}
 				finalData := ""
 				if rawAnswer == "" || errored {
@@ -515,11 +529,13 @@ func (s *BotService) streamChatbotTurn(
 					// client would see a silently truncated answer.
 					finalData = fullAnswer
 				}
-				out <- ChatbotSSEFrame{
+				if !sendFrame(ChatbotSSEFrame{
 					Data:      finalData,
 					Reference: referenceOrEmpty(finalRef),
 					SessionID: session.ID,
 					Final:     true,
+				}) {
+					return
 				}
 				continue
 			}
@@ -531,12 +547,14 @@ func (s *BotService) streamChatbotTurn(
 				} else {
 					rawAnswer += "</think>"
 				}
-				out <- ChatbotSSEFrame{
+				if !sendFrame(ChatbotSSEFrame{
 					Data:         "",
 					Reference:    map[string]any{},
 					SessionID:    session.ID,
 					StartToThink: res.StartToThink,
 					EndToThink:   res.EndToThink,
+				}) {
+					return
 				}
 				continue
 			}
@@ -568,14 +586,16 @@ func (s *BotService) streamChatbotTurn(
 				// carries the retrieval reference.
 				finalRef = res.Reference
 			}
-			out <- ChatbotSSEFrame{
+			if !sendFrame(ChatbotSSEFrame{
 				Data:      delta,
 				Reference: map[string]any{},
 				SessionID: session.ID,
+			}) {
+				return
 			}
 		}
 
-		out <- ChatbotSSEFrame{Done: true}
+		sendFrame(ChatbotSSEFrame{Done: true})
 	}()
 	return out
 }
@@ -604,7 +624,14 @@ func buildChatbotPipelineMessages(raw json.RawMessage, question, messageID strin
 		if role == "assistant" && len(msg) == 0 {
 			continue
 		}
-		msg = append(msg, m)
+		message := make(map[string]interface{}, len(m))
+		for key, value := range m {
+			if key == "prompt" || key == "usage" || key == "elapsed_ms" || key == "reference" {
+				continue
+			}
+			message[key] = value
+		}
+		msg = append(msg, message)
 	}
 	return msg
 }
@@ -638,7 +665,8 @@ func (s *BotService) persistChatbotTurn(
 		reference = map[string]any{"chunks": []any{}, "doc_aggs": []any{}}
 	}
 	message := map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": completedAt}
-	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, session.ID, session.DialogID, session.UserID, nil, dao.ConversationHistoryUpdate{Message: message, QuestionID: messageID, Reference: reference, AppendReference: true})
+	message["reference"] = reference
+	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, session.ID, session.DialogID, session.UserID, nil, dao.ConversationHistoryUpdate{Message: message, QuestionID: messageID})
 }
 
 // normalizeBotBoolFlag coerces the JSON-encoded reasoning / internet

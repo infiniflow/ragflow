@@ -160,6 +160,34 @@ func TestPDFNormalizeResultFlattenPreservesContentAndClearsMediaSubtype(t *testi
 	}
 }
 
+func TestPDFNormalizeResultFlattenKeepsCropOnlyMedia(t *testing.T) {
+	p := NewPDFParser()
+	p.FlattenMediaToText = true
+	result := p.NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems([]map[string]any{
+		{"doc_type_kwd": "image", "layout": "figure", "positions": [][]any{{1, 10, 30, 20, 40}}},
+		{"doc_type_kwd": "image", "layout": "figure", "text": "Figure 1", "positions": [][]any{{1, 10, 30, 50, 70}}},
+		{"doc_type_kwd": "image", "layout": "figure"},
+	})})
+	if result.Err != nil || len(result.JSON) != 3 {
+		t.Fatalf("unexpected result: %+v", result)
+	}
+	// A crop-only media item has no content to flatten; vision enhancement and
+	// the on-demand cropper still need its type and region.
+	cropOnly := result.JSON[0].ToMap()
+	if cropOnly["doc_type_kwd"] != "image" || !HasPDFCropRegion(cropOnly) {
+		t.Fatalf("crop-only media lost its type or region: %#v", cropOnly)
+	}
+	captioned := result.JSON[1].ToMap()
+	if captioned["doc_type_kwd"] != "text" || captioned["text"] != "Figure 1" {
+		t.Fatalf("captioned media not flattened: %#v", captioned)
+	}
+	// Without a region there is nothing to crop, so the empty item still
+	// flattens to text and is dropped downstream as before.
+	if bare := result.JSON[2].ToMap(); bare["doc_type_kwd"] != "text" {
+		t.Fatalf("regionless media kept a media type: %#v", bare)
+	}
+}
+
 func TestPDFNormalizeResultDowngradesUnstructuredTableSubtype(t *testing.T) {
 	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", ParseResult{JSON: MapsToItems([]map[string]any{{
 		"doc_type_kwd": "table", "layout": "table", "text": "Recognized text without cells",

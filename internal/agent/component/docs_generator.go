@@ -369,7 +369,7 @@ func storeAgentAttachment(ctx context.Context, docID string, payload []byte) (bo
 	if err != nil || state == nil {
 		return false, nil
 	}
-	tenantID, _ := state.Sys["tenant_id"].(string)
+	tenantID, _ := state.GetSysString("tenant_id")
 	tenantID = strings.TrimSpace(tenantID)
 	if tenantID == "" {
 		return false, nil

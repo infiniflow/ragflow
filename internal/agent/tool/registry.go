@@ -69,7 +69,7 @@ var registry = map[string]Factory{
 	"sofya":                      buildSofyaTool,
 	"tavily":                     buildTavilyTool,
 	"tavily_extract":             buildTavilyExtractTool,
-	"tushare":                    noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
+	"tushare":                    buildTushareTool,
 	"wencai":                     buildWencaiTool,
 	"web_crawler":                noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
 	"wikipedia":                  buildWikipediaTool,
@@ -867,6 +867,20 @@ func buildSearch1APICrawlTool(params map[string]any) (einotool.BaseTool, error) 
 		}
 	}
 	return newSearch1APICrawlTool(nil, apiKey, defaultURL), nil
+}
+
+func buildTushareTool(params map[string]any) (einotool.BaseTool, error) {
+	var token string
+	if value, exists := params["token"]; exists {
+		var valid bool
+		token, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param token", tushareToolName)
+		}
+	}
+	// An empty token builds fine; InvokableRun reports it as a node
+	// configuration error, so the registry can still construct every tool.
+	return newTushareTool(nil, tushareParams{Token: strings.TrimSpace(token)}), nil
 }
 
 func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {

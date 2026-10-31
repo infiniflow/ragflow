@@ -586,7 +586,7 @@ func stringFromStateSys(state *runtime.CanvasState, key string) string {
 	if state == nil {
 		return ""
 	}
-	if v, ok := state.Sys[key]; ok {
+	if v, ok := state.GetSys(key); ok {
 		if s, ok := v.(string); ok {
 			return s
 		}

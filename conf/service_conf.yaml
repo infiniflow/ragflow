@@ -98,10 +98,10 @@ otel:
 ingestor:
   mq_type: 'nats'
   # NATS consumer worker count (K). How many ingestion tasks run in parallel.
-  # Override with the env var RAGFLOW_INGESTOR_MAX_CONCURRENT_WORKERS, or the
-  # CLI flag --ingestor-max-concurrent-workers (highest precedence).
+  # Override with the env var RAGFLOW_INGESTOR_CONCURRENT_WORKERS, or the
+  # CLI flag --ingestor-concurrent-workers (highest precedence).
   # Valid range [1, 256]. Default 1.
-  max_concurrent_workers: 1
+  concurrent_workers: 1
   # Process-wide page concurrency (N). Total PDF pages parsed concurrently across
   # the whole process (shared by all ingestor workers). Override with the env var
   # RAGFLOW_INGESTOR_PAGE_CONCURRENCY, or the CLI flag --ingestor-page-concurrency
@@ -124,6 +124,13 @@ ingestor:
   # unset (recommended), N is derived from K so each Run stays single-threaded
   # by default (the prior behaviour); an explicit 0 opts into "all cores".
   # inference_cpu_cores: 0
+  log:
+    type: file              # file | database
+    format: json            # text | json (reserved; text only today)
+    path: ingest_log.log    # empty/missing = binary default (server_main.log / admin_server.log / ingestion_server.log)
+    max_size: 1000          # MB before rotation
+    max_backups: 10         # retained rotated files
+    max_age: 30             # days
 file_syncer:
   max_concurrent_syncs: 5
 user_default_llm:
@@ -137,6 +144,13 @@ gcs:
   bucket: '${GCS_BUCKET:-ragflow}'
   prefix_path: '${GCS_PREFIX_PATH:-}'
   endpoint_url: '${GCS_ENDPOINT:-}'
+audit:
+  type: file              # file | database
+  format: json            # text | json (reserved; text only today)
+  path: audit_log.log     # empty/missing = binary default (server_main.log / admin_server.log / ingestion_server.log)
+  max_size: 100          # MB before rotation
+  max_backups: 10         # retained rotated files
+  max_age: 30             # days
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'
@@ -192,29 +206,6 @@ gcs:
 #     asr_model:
 #       model: 'whisper-large-v3' # alias of name
 #     image2text_model: ''
-# oauth:
-#   oauth2:
-#     display_name: "OAuth2"
-#     client_id: "your_client_id"
-#     client_secret: "your_client_secret"
-#     authorization_url: "https://your-oauth-provider.com/oauth/authorize"
-#     token_url: "https://your-oauth-provider.com/oauth/token"
-#     userinfo_url: "https://your-oauth-provider.com/oauth/userinfo"
-#     redirect_uri: "https://your-app.com/api/v1/auth/oauth/oauth2/callback"
-#   oidc:
-#     display_name: "OIDC"
-#     client_id: "your_client_id"
-#     client_secret: "your_client_secret"
-#     issuer: "https://your-oauth-provider.com/oidc"
-#     scope: "openid email profile"
-#     redirect_uri: "https://your-app.com/api/v1/auth/oauth/oidc/callback"
-#   github:
-#     type: "github"
-#     icon: "github"
-#     display_name: "Github"
-#     client_id: "your_client_id"
-#     client_secret: "your_client_secret"
-#     redirect_uri: "https://your-app.com/api/v1/auth/oauth/github/callback"
 # authentication:
 #   client:
 #     switch: false

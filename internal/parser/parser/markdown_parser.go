@@ -34,6 +34,9 @@ import (
 	mdhtml "github.com/gomarkdown/markdown/html"
 	mdparser "github.com/gomarkdown/markdown/parser"
 	"golang.org/x/net/html"
+
+	"ragflow/internal/parser/charset"
+	"ragflow/internal/parser/media"
 )
 
 // dataURIPrefix is the MIME prefix for data URI images.
@@ -93,7 +96,7 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 // the base64-encoded image payload. The legacy debug-print path has
 // been removed; callers consume ParseResult directly.
 func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	state := &htmlWalkState{}
+	state := &htmlWalkState{budget: media.NewBudget()}
 	result := p.parseWithState(ctx, filename, data, state)
 	result.Warnings = append(state.warnings(), result.Warnings...)
 	return result
@@ -102,7 +105,7 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 // parseWithState keeps media identity and budget across fragments of one document.
 // Its warnings describe this fragment; the caller adds state.warnings once.
 func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, data []byte, state *htmlWalkState) ParseResult {
-	decoded, _ := DecodeToUTF8(data, "text/markdown")
+	decoded, _ := charset.DecodeToUTF8(data, "text/markdown")
 	// The final blank line also terminates a raw HTML block at EOF.
 	rawText := string(decoded) + "\n\n"
 	blockParser := markdownNew()
@@ -153,10 +156,7 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 	doc := blockParser.Parse(nil)
 
 	var items []map[string]any
-	if state.mediaBudget == nil {
-		state.mediaBudget = newEmbeddedMediaBudget()
-	}
-	mediaBudget := state.mediaBudget
+	mediaBudget := state.budget
 	imageCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 	unresolvedImages := walkMarkdownBlocksWithImages(imageCtx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, state)
@@ -167,7 +167,7 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	var warnings []string
-	if mediaBudget.items > 0 && imageCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
+	if mediaBudget.Count() > 0 && imageCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
 		warnings = append(warnings, "Markdown image processing reached the document time budget")
 	}
 	if unresolvedImages > 0 {
@@ -444,10 +444,7 @@ func markdownTableCells(line string) []string {
 // Tables are emitted through the HTML walker as structured items in source
 // order, with embedded images linked to their parent table.
 func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool, htmlState *htmlWalkState) int {
-	if htmlState.mediaBudget == nil {
-		htmlState.mediaBudget = newEmbeddedMediaBudget()
-	}
-	budget := htmlState.mediaBudget
+	budget := htmlState.budget
 	start := len(*out)
 	defer func() {
 		if flatten {
@@ -632,8 +629,12 @@ func findBlockImage(n ast.Node) (string, bool) {
 // resolveImageURL resolves one bounded Markdown image attempt. It returns
 // either normalized base64 or downloaded bytes, and distinguishes a budget
 // or timeout omission from an unresolved source. Local paths are never fetched.
-func resolveImageURL(ctx context.Context, imageURL string, budget *embeddedMediaBudget) (encoded string, raw []byte, omitted, resolved bool) {
-	if ctx.Err() != nil || !budget.reserveItem() {
+func resolveImageURL(ctx context.Context, imageURL string, budget *media.Budget) (encoded string, raw []byte, omitted, resolved bool) {
+	if ctx.Err() != nil {
+		return "", nil, true, false
+	}
+	reservation, admission := budget.ReserveOccurrence(media.UnknownSize)
+	if admission != media.Admitted {
 		return "", nil, true, false
 	}
 	var size int
@@ -643,7 +644,7 @@ func resolveImageURL(ctx context.Context, imageURL string, budget *embeddedMedia
 			return "", nil, false, false
 		}
 		var decodedSize int64
-		encoded, decodedSize, resolved = normalizeBase64ImagePayload(imageURL[idx+len("base64,"):], MaxImagePayloadBytes)
+		encoded, decodedSize, _, resolved = media.NormalizeBase64ImagePayload(imageURL[idx+len("base64,"):], media.ImageMaxBytes())
 		if !resolved {
 			return "", nil, false, false
 		}
@@ -658,7 +659,7 @@ func resolveImageURL(ctx context.Context, imageURL string, budget *embeddedMedia
 	} else {
 		return "", nil, false, false
 	}
-	if !budget.includeReservedSize(size) {
+	if !reservation.Commit(media.Size(size)) {
 		return "", nil, true, false
 	}
 	return encoded, raw, false, true
@@ -743,12 +744,12 @@ func fetchImage(ctx context.Context, rawURL string) ([]byte, error) {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("markdown: fetch image %s: HTTP %d", rawURL, resp.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxImagePayloadBytes+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(media.ImageMaxBytes())+1))
 	if err != nil {
 		return nil, fmt.Errorf("markdown: read image %s: %w", rawURL, err)
 	}
-	if len(body) > MaxImagePayloadBytes {
-		return nil, fmt.Errorf("markdown: image %s exceeds %d-byte limit", rawURL, MaxImagePayloadBytes)
+	if len(body) > media.ImageMaxBytes() {
+		return nil, fmt.Errorf("markdown: image %s exceeds %d-byte limit", rawURL, media.ImageMaxBytes())
 	}
 	if len(body) == 0 {
 		return nil, fmt.Errorf("markdown: image %s is empty", rawURL)
@@ -877,10 +878,37 @@ func writeListItems(list *ast.List, buf *bytes.Buffer) {
 	}
 }
 
+// shouldPreserveImageReference reports whether an image source should be kept
+// as a Markdown reference in text. Resolved remote images already carry an
+// image payload / img_id, and data URIs must stay out of text.
+func shouldPreserveImageReference(s string) bool {
+	s = strings.TrimSpace(s)
+	lower := strings.ToLower(s)
+	return !strings.HasPrefix(lower, "data:") &&
+		!strings.HasPrefix(lower, "http://") &&
+		!strings.HasPrefix(lower, "https://")
+}
+
 func walkLeaf(n ast.Node, buf *bytes.Buffer) {
 	switch t := n.(type) {
 	case *ast.Text:
 		buf.Write(t.Literal)
+	case *ast.Image:
+		// Preserve the source reference so an unresolved local path survives
+		// text extraction. Data URIs stay out of text to avoid indexing base64.
+		if !shouldPreserveImageReference(string(t.Destination)) {
+			for _, c := range t.GetChildren() {
+				walkLeaf(c, buf)
+			}
+			return
+		}
+		buf.WriteString("![")
+		for _, c := range t.GetChildren() {
+			walkLeaf(c, buf)
+		}
+		buf.WriteString("](")
+		buf.Write(t.Destination)
+		buf.WriteByte(')')
 	case *ast.Code:
 		buf.Write(t.Literal)
 	case *ast.CodeBlock:

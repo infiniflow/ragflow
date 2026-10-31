@@ -43,6 +43,22 @@ func TestRemoveContentsTable(t *testing.T) {
 			},
 		},
 		{
+			name: "multi-word Table of Contents heading + first TOC entry removed",
+			items: []map[string]any{
+				{"text": "Intro"},
+				{"text": "Table of  Contents"},
+				{"text": "Chapter 1 Overview"},
+				{"text": "Chapter 2 Method"},
+				{"text": "Body starts"},
+			},
+			eng: true,
+			want: []map[string]any{
+				{"text": "Intro"},
+				{"text": "Chapter 2 Method"},
+				{"text": "Body starts"},
+			},
+		},
+		{
 			name: "English Contents heading + first TOC entry removed",
 			items: []map[string]any{
 				{"text": "Intro"},

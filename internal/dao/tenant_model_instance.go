@@ -112,11 +112,6 @@ func (dao *TenantModelInstanceDAO) GetByID(ctx context.Context, db *gorm.DB, id 
 	return &instance, nil
 }
 
-func (dao *TenantModelInstanceDAO) DeleteByProviderIDAndInstanceName(ctx context.Context, db *gorm.DB, providerID, instanceName string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("provider_id = ? and instance_name = ?", providerID, instanceName).Delete(&entity.TenantModelInstance{})
-	return result.RowsAffected, result.Error
-}
-
 // UpdateByID updates a tenant model instance by primary key.
 // Mirrors Python's TenantModelInstanceService.update_by_id.
 func (dao *TenantModelInstanceDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {

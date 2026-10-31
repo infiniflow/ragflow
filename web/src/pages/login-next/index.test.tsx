@@ -13,8 +13,6 @@ jest.mock('@/hooks/auth-hooks', () => ({
 jest.mock('@/hooks/use-login-request', () => ({
   useLogin: () => ({ login: jest.fn(), loading: false }),
   useRegister: () => ({ register: jest.fn(), loading: false }),
-  useLoginChannels: () => ({ channels: [], loading: false }),
-  useLoginWithChannel: () => ({ login: jest.fn(), loading: false }),
 }));
 
 jest.mock('react-router', () => ({
@@ -26,7 +24,6 @@ jest.mock('react-i18next', () => ({
 }));
 
 jest.mock('@/utils', () => ({ rsaPsw: jest.fn() }));
-jest.mock('@/components/svg-icon', () => () => null);
 jest.mock('@/components/spotlight', () => () => null);
 jest.mock('./bg', () => ({ BgSvg: () => null }));
 jest.mock('./card', () => ({

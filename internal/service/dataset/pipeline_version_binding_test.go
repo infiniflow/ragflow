@@ -500,12 +500,12 @@ func TestUpdateDataset_VersionChangeResetsParserConfigToNewVersionDefault(t *tes
 	}
 }
 
-// T26/C3 regression: a version switch must STILL reset parser_config to the new
-// version DSL defaults when the client echoes the previous (edited) parser_config
-// back. The settings form keeps the user's manual edit (e.g. chunk size 757) until
-// the save, so the request carries the old parser_config. The C3 reset must take
-// precedence over the echoed value (design A3 整体重置).
-func TestUpdateDataset_VersionChangeWithEchoedParserConfigResets(t *testing.T) {
+// T26/C3: a version switch with a submitted parser_config keeps the submitted
+// values, reconciled against the NEW version's DSL by BuildParserConfig. The
+// settings form resets itself to the new version's defaults on a switch, so
+// the submitted config carries the user's edits of the new version — the
+// backend must not discard it with a full reset.
+func TestUpdateDataset_VersionChangeKeepsSubmittedParserConfig(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 
@@ -517,12 +517,12 @@ func TestUpdateDataset_VersionChangeWithEchoedParserConfigResets(t *testing.T) {
 	seedCanvasVersionDSL(t, db, canvas1, verNew, dslWithResetMarker("NEW_VER_DEFAULT"), 1000)
 	seedBoundKB(t, db, "kb-c3-echo", canvas1, verOld)
 
-	// The form still holds the user's manual edit (e.g. chunk size 757) as a real
-	// component param when the version is switched. Use the version DSL's own
-	// component so the override is recognized and survives BuildParserConfig.
-	echoed := entity.JSONMap{"Parser:ResetCpn": map[string]any{"c3_reset_marker": "ECHOED_757"}}
+	// The user's edit of the new version's defaults (e.g. chunk size 757) as a
+	// real component param. Use the version DSL's own component so the override
+	// is recognized by BuildParserConfig.
+	submitted := entity.JSONMap{"Parser:ResetCpn": map[string]any{"c3_reset_marker": "ECHOED_757"}}
 	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-c3-echo").
-		Update("parser_config", echoed).Error; err != nil {
+		Update("parser_config", entity.JSONMap{"Parser:ResetCpn": map[string]any{"c3_reset_marker": "OLD_VER_DEFAULT"}}).Error; err != nil {
 		t.Fatalf("seed parser_config: %v", err)
 	}
 
@@ -532,8 +532,8 @@ func TestUpdateDataset_VersionChangeWithEchoedParserConfigResets(t *testing.T) {
 		PipelineID:        &canvas1,
 		PipelineVersionID: &verNew,
 		ParseType:         &parseType,
-		// Echoed (edited) parser_config — must be discarded on version switch.
-		ParserConfig: echoed,
+		// Edited parser_config of the new version — must survive the switch.
+		ParserConfig: submitted,
 	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
@@ -546,24 +546,21 @@ func TestUpdateDataset_VersionChangeWithEchoedParserConfigResets(t *testing.T) {
 	if kb.PipelineVersionID == nil || *kb.PipelineVersionID != verNew {
 		t.Fatalf("PipelineVersionID = %v, want re-pinned %s", kb.PipelineVersionID, verNew)
 	}
-	// The echoed component override must NOT survive the version switch.
+	// The submitted override must survive the version switch, reconciled onto
+	// the NEW version's DSL (same component set, submitted value wins).
 	cpn, ok := kb.ParserConfig["Parser:ResetCpn"].(map[string]any)
 	if !ok {
 		t.Fatalf("Parser:ResetCpn missing after switch: %v", kb.ParserConfig)
 	}
-	if cpn["c3_reset_marker"] == "ECHOED_757" {
-		t.Fatalf("parser_config still holds echoed value; C3 reset did not take precedence: %v", kb.ParserConfig)
+	if cpn["c3_reset_marker"] != "ECHOED_757" {
+		t.Fatalf("parser_config lost the submitted edit on version switch: %v", kb.ParserConfig)
 	}
-	resolved, derr := service.ResolveComponentParamsDefaults(ctx, string(entity.ParserTypeNaive), &canvas1, &verNew)
-	if derr != nil {
-		t.Fatalf("resolve new-version defaults: %v", derr)
-	}
-	expected := service.ApplyComponentScopedParserConfig(resolved, "")
+	// The persisted component set comes from the NEW version's DSL: nothing
+	// beyond its components may survive.
+	expected := service.ApplyComponentScopedParserConfig(
+		entity.JSONMap{"Parser:ResetCpn": map[string]any{"c3_reset_marker": "ECHOED_757"}}, "")
 	if !reflect.DeepEqual(kb.ParserConfig, expected) {
-		t.Fatalf("parser_config = %v, want new-version default %v", kb.ParserConfig, expected)
-	}
-	if cpn["c3_reset_marker"] != "NEW_VER_DEFAULT" {
-		t.Fatalf("reset did not load the NEW version default: %v", kb.ParserConfig)
+		t.Fatalf("parser_config = %v, want submitted values on new-version DSL %v", kb.ParserConfig, expected)
 	}
 }
 

@@ -110,6 +110,69 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 	}
 }
 
+// A non-ASCII attachment name arrives as RFC 2047 encoded-words inside the
+// filename or name parameter, from Outlook, Gmail and Chinese mail clients
+// alike. Left encoded, the name had no extension and the attachment was not
+// parsed. 合同草稿.txt in base64 contains a "/".
+func TestEmailParser_EmlParsesAttachmentsWithEncodedNames(t *testing.T) {
+	b64 := func(charset string, raw []byte) string {
+		return "=?" + charset + "?B?" + base64.StdEncoding.EncodeToString(raw) + "?="
+	}
+	attachment := func(headers []string, text string) string {
+		return strings.Join(append(append([]string{"--b"}, headers...), "", text), "\r\n")
+	}
+	raw := strings.Join([]string{
+		"From: a@example.com",
+		"Subject: Attachments",
+		"MIME-Version: 1.0",
+		"Content-Type: multipart/mixed; boundary=b",
+		"",
+		"--b",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Body.",
+		attachment([]string{
+			"Content-Type: text/plain; charset=utf-8",
+			`Content-Disposition: attachment; filename="` + b64("utf-8", []byte("Übersicht.txt")) + `"`,
+		}, "First attachment text."),
+		attachment([]string{
+			"Content-Type: text/plain; charset=utf-8",
+			`Content-Disposition: attachment; filename="` + b64("gb2312", []byte{0xD4, 0xA4, 0xCB, 0xE3, 0xB1, 0xA8, 0xB8, 0xE6, '.', 't', 'x', 't'}) + `"`,
+		}, "Second attachment text."),
+		attachment([]string{
+			"Content-Type: text/plain; charset=utf-8",
+			`Content-Disposition: attachment; filename="` + b64("utf-8", []byte("合同草稿.txt")) + `"`,
+		}, "Third attachment text."),
+		attachment([]string{
+			"Content-Type: text/plain; charset=utf-8",
+			`Content-Disposition: attachment; filename="=?iso-8859-1?Q?R=E9sum=E9.txt?="`,
+		}, "Fourth attachment text."),
+		attachment([]string{
+			`Content-Type: text/plain; charset=utf-8; name="` + b64("utf-8", []byte("Notizen.txt")) + `"`,
+			"Content-Disposition: attachment",
+		}, "Fifth attachment text."),
+		"--b--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{"fields": []string{"body", "attachments"}})
+	result := p.ParseWithResult(t.Context(), "attachments.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	var texts []string
+	for _, item := range result.JSON {
+		text, _ := item.ToMap()["text"].(string)
+		texts = append(texts, text)
+	}
+	joined := strings.Join(texts, "\n")
+	for _, want := range []string{"First", "Second", "Third", "Fourth", "Fifth"} {
+		if !strings.Contains(joined, want+" attachment text.") {
+			t.Errorf("%s attachment was not parsed; items: %q", want, texts)
+		}
+	}
+}
+
 func TestEmailParser_InvalidEMLReturnsError(t *testing.T) {
 	p := NewEmailParser()
 	result := p.ParseWithResult(t.Context(), "broken.eml", []byte("not a valid RFC 5322 header"))
@@ -447,6 +510,43 @@ func TestEmailParser_Base64Attachment(t *testing.T) {
 	}
 	if fn, _ := atts[0]["filename"].(string); fn != "test.txt" {
 		t.Errorf("filename = %q, want test.txt", fn)
+	}
+}
+
+func TestEmailParser_HTMLAttachmentDoesNotCacheMedia(t *testing.T) {
+	const boundary = "html-media-boundary"
+	attachment := `<html><body><p>Embedded figure</p><img alt="attachment image" src="` +
+		htmlMediaDataURI + `"></body></html>`
+	raw := strings.Join([]string{
+		"From: sender@test.com",
+		"To: receiver@test.com",
+		"Subject: HTML attachment",
+		"Content-Type: multipart/mixed; boundary=" + boundary,
+		"",
+		"--" + boundary,
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Outer body.",
+		"--" + boundary,
+		"Content-Type: text/html; charset=utf-8; name=\"embedded.html\"",
+		"Content-Disposition: attachment; filename=\"embedded.html\"",
+		"Content-Transfer-Encoding: base64",
+		"",
+		base64.StdEncoding.EncodeToString([]byte(attachment)),
+		"--" + boundary + "--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{
+		"fields": []string{"from", "body", "attachments"},
+	})
+	ctx, cache := recordingMediaContext()
+	result := p.ParseWithResult(ctx, "message.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
+	if cache.putCalls != 0 {
+		t.Fatalf("unexpected media cache writes = %d", cache.putCalls)
 	}
 }
 
@@ -1395,5 +1495,34 @@ func TestEmailParserTextOutputRemoved(t *testing.T) {
 		if a["doc_type_kwd"] != b["doc_type_kwd"] {
 			t.Errorf("email item %d doc_type_kwd differs under produced=text: %v vs %v", i, a["doc_type_kwd"], b["doc_type_kwd"])
 		}
+	}
+}
+
+func TestEmailParser_HTMLAttachmentTextWithoutMediaCache(t *testing.T) {
+	const boundary = "embedded-html"
+	attachment := `<p>before figure</p><img src="data:image/png;base64,aGVsbG8="><p>after figure</p>`
+	raw := strings.Join([]string{
+		"From: sender@test.com", "To: receiver@test.com", "Subject: HTML attachment",
+		"Content-Type: multipart/mixed; boundary=" + boundary, "",
+		"--" + boundary, "Content-Type: text/plain; charset=utf-8", "", "Outer body.",
+		"--" + boundary, "Content-Type: text/html; charset=utf-8; name=\"embedded.html\"",
+		"Content-Disposition: attachment; filename=\"embedded.html\"", "Content-Transfer-Encoding: base64", "",
+		base64.StdEncoding.EncodeToString([]byte(attachment)), "--" + boundary + "--",
+	}, "\r\n")
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{"fields": []string{"from", "body", "attachments"}})
+	result := p.ParseWithResult(t.Context(), "message.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatal(result.Err)
+	}
+	var texts []string
+	for _, item := range result.JSON {
+		if text, ok := item.ToMap()["text"].(string); ok {
+			texts = append(texts, text)
+		}
+	}
+	joined := strings.Join(texts, "\n")
+	if !strings.Contains(joined, "before figure") || !strings.Contains(joined, "after figure") {
+		t.Fatalf("attachment text missing: %q", joined)
 	}
 }

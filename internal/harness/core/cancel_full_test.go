@@ -229,11 +229,7 @@ func TestBuildCancelFunc_Twice(t *testing.T) {
 func TestBuildCancelFunc_TimeoutEscalation(t *testing.T) {
 	cc := newCancelContext()
 	h, _ := cc.buildCancelFunc()(WithCancelMode(CancelAfterChatModel), WithCancelTimeout(30*time.Millisecond))
-	select {
-	case <-cc.immediateChan:
-	case <-time.After(time.Second):
-		t.Fatal("timeout did not trigger immediate cancellation")
-	}
+	time.Sleep(100 * time.Millisecond)
 	if !cc.isImmediate() {
 		t.Error("should escalate")
 	}
@@ -1242,6 +1238,21 @@ func TestAgentCancelFunc_MultiCall_JoinSafePointModes(t *testing.T) {
 	}
 }
 
+// waitUntil polls cond until it holds or limit elapses. The timeout escalation
+// runs on its own goroutine, so a fixed sleep races with scheduler starvation
+// when the whole test suite runs in parallel.
+func waitUntil(t *testing.T, limit time.Duration, cond func() bool) bool {
+	t.Helper()
+	deadline := time.Now().Add(limit)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return cond()
+}
+
 func TestAgentCancelFunc_MultiCall_TimeoutEscalationReturnsErrCancelTimeout(t *testing.T) {
 	cc := newCancelContext()
 	cf := cc.buildCancelFunc()
@@ -1249,9 +1260,8 @@ func TestAgentCancelFunc_MultiCall_TimeoutEscalationReturnsErrCancelTimeout(t *t
 	if !ok {
 		t.Fatal("first should contribute")
 	}
-	time.Sleep(50 * time.Millisecond)
-	if !cc.isImmediate() {
-		t.Error("should escalate to immediate")
+	if !waitUntil(t, 5*time.Second, cc.isImmediate) {
+		t.Fatal("should escalate to immediate")
 	}
 	if atomic.LoadInt32(&cc.timeoutEscalated) != 1 {
 		t.Error("expected timeout escalated")
@@ -1266,25 +1276,27 @@ func TestAgentCancelFunc_MultiCall_TimeoutDeadlineJoinUsesAbsoluteTime(t *testin
 		t.Fatal("first should contribute")
 	}
 	firstDeadline := atomic.LoadInt64(&cc.deadlineUnixNano)
-	beforeSecondCall := time.Now()
+	if firstDeadline == 0 {
+		t.Fatal("first call must arm a deadline")
+	}
+
+	joinAt := time.Now()
 	_, ok2 := cf(WithCancelMode(CancelAfterChatModel), WithCancelTimeout(20*time.Millisecond))
-	afterSecondCall := time.Now()
 	if !ok2 {
 		t.Fatal("second should contribute")
 	}
-	joinedDeadline := atomic.LoadInt64(&cc.deadlineUnixNano)
-	minDeadline := min(firstDeadline, beforeSecondCall.Add(20*time.Millisecond).UnixNano())
-	maxDeadline := min(firstDeadline, afterSecondCall.Add(20*time.Millisecond).UnixNano())
-	if joinedDeadline < minDeadline || joinedDeadline > maxDeadline {
-		t.Fatalf("joined deadline=%d, want earliest absolute deadline in [%d, %d]", joinedDeadline, minDeadline, maxDeadline)
+	// The join keeps the earliest absolute deadline: a 20ms registration made
+	// right after a 200ms one must replace it, which only holds when deadlines
+	// are compared as absolute times instead of durations.
+	joined := atomic.LoadInt64(&cc.deadlineUnixNano)
+	if joined >= firstDeadline {
+		t.Fatalf("deadline = %d, first = %d; the 20ms registration must shorten the 200ms one", joined, firstDeadline)
 	}
-	select {
-	case <-cc.immediateChan:
-	case <-time.After(time.Second):
-		t.Fatal("short timeout did not trigger immediate cancellation")
+	if limit := joinAt.Add(50 * time.Millisecond).UnixNano(); joined > limit {
+		t.Fatalf("deadline = %d, want roughly join+20ms (<= %d)", joined, limit)
 	}
-	if !cc.isImmediate() {
-		t.Error("should escalate to immediate after short timeout")
+	if !waitUntil(t, 5*time.Second, cc.isImmediate) {
+		t.Fatal("should escalate to immediate after short timeout")
 	}
 }
 

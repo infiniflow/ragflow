@@ -12,6 +12,27 @@ import (
 	"ragflow/internal/parser/parser"
 )
 
+// TestStampDatasetPagerank pins the index-time stamp: a configured dataset
+// pagerank lands on every chunk the run indexes, and zero leaves chunks
+// untouched (Python only stamps a truthy pagerank).
+func TestStampDatasetPagerank(t *testing.T) {
+	chunks := []map[string]any{{"id": "a"}, {"id": "b"}}
+
+	StampDatasetPagerank(chunks, 0)
+	for _, chunk := range chunks {
+		if _, ok := chunk[common.PAGERANK_FLD]; ok {
+			t.Fatalf("zero pagerank stamped a field: %#v", chunk)
+		}
+	}
+
+	StampDatasetPagerank(chunks, 7)
+	for _, chunk := range chunks {
+		if got := chunk[common.PAGERANK_FLD]; got != int64(7) {
+			t.Fatalf("pagerank_fea = %#v, want 7", got)
+		}
+	}
+}
+
 func TestProcessChunksForPipeline_PreservesTypedMetadata(t *testing.T) {
 	want := map[string]any{
 		"year": float64(2025), "verified": false, "scalar": map[string]any{"x": 1},
@@ -677,6 +698,7 @@ func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
 		// Every bookkeeping key the chunkers/parsers can leave on a chunk.
 		"tk_nums": 3, "layout": "text", "layout_type": "text",
 		"layoutno": "0", "image": "data:image/png;base64,AAAA",
+		"media_ref":     map[string]any{"format": "html"},
 		"context_above": "above", "context_below": "below", "page_number": 2,
 		"table_id": "t1", "sheet": "s1", "sheet_index": 0,
 		"headers": []string{"h"}, "cells": []string{"c"},

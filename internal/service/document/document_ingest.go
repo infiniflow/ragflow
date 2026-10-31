@@ -135,7 +135,7 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		if run == string(entity.TaskStatusCancel) {
 			if err = s.CancelDocParse(ctx, doc); err != nil {
 				common.Error(fmt.Sprintf("go side, start to process %s, run is cancel", doc.ID), err)
-				if errors.Is(err, errParseNotRunning) {
+				if errors.Is(err, ErrParseNotRunning) {
 					// Mirror the Python /documents/ingest endpoint's message.
 					return common.CodeDataError, errors.New("Cannot cancel a task that is not in RUNNING status")
 				}
@@ -150,19 +150,32 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 			continue
 		}
 
-		// Delete-only: user asked to remove prior parse results without
-		// starting a new parse. RUNNING already continued above.
+		if req.Delete {
+			// Delete-only: user asked to remove prior parse results without
+			// starting a new parse. Serialize the counter reset and cleanup with
+			// StartParseDocuments so a concurrent parse cannot reuse the task
+			// while its old cache state is being removed.
+			unlock := lockDocumentParse(doc.ID)
+			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+				"progress": 0,
+			}); err != nil {
+				unlock()
+				common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
+				return common.CodeExceptionError, err
+			}
+			if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID, taskTerminalMessageParseResultsDeleted); err != nil {
+				unlock()
+				return common.CodeExceptionError, err
+			}
+			unlock()
+			continue
+		}
+
 		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
 			"progress": 0,
 		}); err != nil {
 			common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
 			return common.CodeExceptionError, err
-		}
-
-		if req.Delete {
-			if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID); err != nil {
-				return common.CodeExceptionError, err
-			}
 		}
 	}
 

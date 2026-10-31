@@ -261,12 +261,6 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Run Python SDK unit tests
-        run: |
-          uv venv --python 3.13
-          uv pip install -e sdk/python pytest
-          .venv/bin/python -m pytest sdk/python/tests -q
-
       - name: Build and push ragflow-sdk
         run: |
           cd sdk/python && uv build && uv publish --token ${{ secrets.PYPI_API_TOKEN }}

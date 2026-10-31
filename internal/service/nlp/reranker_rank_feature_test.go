@@ -85,6 +85,41 @@ func TestApplyRankFeatureScores_PagerankOnly(t *testing.T) {
 	}
 }
 
+// TestApplyRankFeatureScores_StringifiedPagerank pins the engine field
+// projection: GetFields stringifies non-string values, so a chunk's pagerank
+// reaches the reranker as "7" and must still count (Python coerces it through
+// np.array(..., dtype=float)).
+func TestApplyRankFeatureScores_StringifiedPagerank(t *testing.T) {
+	chunks := []map[string]interface{}{
+		{common.PAGERANK_FLD: "7"},
+		{common.PAGERANK_FLD: 3},
+	}
+	got := applyRankFeatureScores(chunks, []float64{1, 1}, nil)
+	want := []float64{8, 4}
+	if !floatsClose(got, want, 1e-9) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+// TestApplyRankFeatureScoresForIDs_ProjectionShapes mirrors the ES field map as
+// the reranker actually receives it: numbers stringified and tag_feas rendered
+// as JSON.
+func TestApplyRankFeatureScoresForIDs_ProjectionShapes(t *testing.T) {
+	field := map[string]map[string]interface{}{
+		"a": {common.TAG_FLD: `{"tag_a":0.5}`, common.PAGERANK_FLD: "5"},
+		"b": {common.PAGERANK_FLD: "0"},
+	}
+	rankFeature := map[string]float64{"tag_a": 1}
+	got := applyRankFeatureScoresForIDs([]string{"a", "b"}, field, []float64{0.2, 0.2}, rankFeature)
+	want := []float64{
+		wantRankFeature(0.2, map[string]float64{"tag_a": 0.5}, 5, rankFeature),
+		0.2,
+	}
+	if !floatsClose(got, want, 1e-9) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
 func TestApplyRankFeatureScores_PagerankOnlyQueryNoDivZero(t *testing.T) {
 	chunks := []map[string]interface{}{{common.PAGERANK_FLD: 10}}
 	sim := []float64{0.5}

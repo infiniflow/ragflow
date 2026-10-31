@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -40,6 +41,10 @@ const (
 
 // sptr returns a pointer to the given string.
 func sptr(s string) *string { return &s }
+
+func isAccessDeniedOrHidden(err error) bool {
+	return errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrResourceNotFound)
+}
 
 // setupServiceTestDB initializes an in-memory SQLite database for service tests.
 func setupServiceTestDB(t *testing.T) *gorm.DB {

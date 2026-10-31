@@ -72,7 +72,7 @@ uv run tools/scripts/download_dev_deps.py   # local-dev one-stop: native .a + cl
 
 Install `uv` before running the downloaders; it installs each script's declared Python dependencies.
 
-`download_dev_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `deps/download_deps.py` provisions the same runtime resources plus the stagehand driver (installed into the SDK's cache, using the SDK version from `go.mod`) and skips the native `.a`; run it only when building the dependency image or in CI. Native archives are fetched per target platform (linux/darwin on amd64/arm64; override with `RAGFLOW_TARGET_OS` / `RAGFLOW_TARGET_ARCH`).
+`download_dev_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `deps/download_deps.py` provisions the same runtime resources and skips the native `.a`; run it only when building the dependency image or in CI. Native archives are fetched per target platform (linux/darwin on amd64/arm64; override with `RAGFLOW_TARGET_OS` / `RAGFLOW_TARGET_ARCH`).
 
 Build the Go resource image from `deps/` after preparing these files:
 
@@ -82,7 +82,7 @@ docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
 cd ..
 ```
 
-The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stagehand binaries. DeepDoc weights are prepared under `deps/huggingface.co/InfiniFlow/deepdoc/` for packaging and under `internal/rag/res/deepdoc/` for local use.
+The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. DeepDoc weights are prepared under `deps/huggingface.co/InfiniFlow/deepdoc/` for packaging and under `internal/rag/res/deepdoc/` for local use.
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
 > ```bash
@@ -300,14 +300,45 @@ docker compose -f docker/docker-compose-base.yml --profile infinity up -d
   deployment disables the Valkey/Redis service so there is no clash). Export these
   before running `./bin/ragflow_server ...` on the host, or load them from
   `docker/.env-go`:
-```bash
-export KVROCKS_HOST=127.0.0.1
-export KVROCKS_PORT=6379
-```
+  ```bash
+  export KVROCKS_HOST=127.0.0.1
+  export KVROCKS_PORT=6379
+  ```
   In docker the Go services override these to `kvrocks:6379` automatically
   (see `docker-compose-go.yml`). If Kvrocks is unreachable at startup the
   process fails fast with `failed to connect to Kvrocks`.
+  HTML, EPUB, DOCX, PPTX and XLSX ingestion use Kvrocks to hand embedded images
+  from the parser to the chunker; the ingestor also validates the injected
+  Kvrocks client at startup.
+  Image payloads share a default 32 MiB per-image limit across data URIs,
+  ZIP-entry extraction, picture parsing, vision encoding and media-cache writes.
+  Set `RAGFLOW_MEDIA_IMAGE_MAX_BYTES` to a positive byte count to change it.
+  Native PDF region cropping retains its separate page/raster limits.
+  The parser budget and media cache apply the same numeric run caps: 1024 items
+  and 1 GiB of decoded image bytes per run. The parser counts distinct source
+  references; the cache counts distinct SHA-256 payloads. Set
+  `RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN` and `RAGFLOW_MEDIA_MAX_BYTES_PER_RUN` to
+  positive values to change them. Quota state is keyed by ingestion task and
+  persists across retries of that task until cleanup or the 24-hour media TTL.
+  Office parsers deduplicate sources by payload digest. DOC/PPT share their
+  Office family path; BIFF8 XLS does not extract embedded pictures. Office IR
+  and Excelize expose already materialized image bytes, so these budgets bound
+  emitted/cached payloads, not native extraction or ZIP decoding peak memory.
+  DOC/DOCX and PPT/PPTX identify image MIME types from payload signatures;
+  XLSX-content spreadsheets use an extension allowlist, including EMZ/WMZ
+  which the byte-only Office detector does not recognize. Unsupported images
+  are skipped with warnings.
+  File text extraction and email attachment re-chunking use text-only parsers;
+  Office images skipped by limits produce warnings without placeholder items.
+  Debug previews use a temporary `pipeline_<document-id>` run scope and purge
+  their cache state when the preview finishes.
 
+  Validate Office media handoff against the services configured in
+  `conf/service_conf.yaml` (real MySQL, Kvrocks and MinIO):
+
+  ```bash
+  RAGFLOW_REAL_OFFICE_MEDIA_TEST=1 bash build.sh --test-integration-go ./internal/ingestion/pipeline -run '^TestOfficeMediaRealServices$' -v
+  ```
 
 - Start RAGFlow
 Note: Database migrations must complete before starting any server mode.

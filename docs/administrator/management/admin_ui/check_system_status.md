@@ -8,13 +8,11 @@ title: Check System Status
 
 ## Check Whether Services Are Running Normally
 
-After entering the Admin UI, open the **Service status** page to view the status reported by the Go services and their configured dependencies. Each row displays the service `Name`, `Service type`, `Host`, `Port`, and `Status`. Use **Actions** to view the `elapsed` diagnostic value and any status message.
+The Admin UI sidebar contains **Services**, **Users**, and **Sandbox**. Open **Services** to view the status reported by the Go services and their configured dependencies. Each row displays the service `Name`, `Service type`, `Host`, `Port`, and `Status`. The table does not display an ID column. Hover over a row to show its **Actions**: use the sliders icon for **Extra information**, or the clipboard icon to open service details.
 
 ![Check Whether Services Are Normal](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/check_whether_services_are_normal.jpg)
 
 For dependencies, `alive` means that the corresponding health check succeeded. `timeout`, `not available`, or another status indicates that the check failed or that the configured implementation is unavailable. For Go server processes, `alive` means that Admin received a heartbeat during the preceding 45 seconds; otherwise the status is `timeout`.
-
-![System Status](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/system_status.jpg)
 
 The open-source Go deployment reports the following entries:
 
@@ -25,23 +23,28 @@ The open-source Go deployment reports the following entries:
 | `storage_engine` | The configured object storage, such as MinIO                      | The server calls the active storage implementation's health check.      |
 | `cache`          | Kvrocks                                                           | The server checks the configured Kvrocks connection.                    |
 | `message_queue`  | NATS                                                              | The server reads the status of the active message queue implementation. |
-| `api_server`     | Each reporting API process                                        | Admin evaluates the process heartbeat.                                  |
+| `api`           | Each reporting API process                                        | Admin evaluates the process heartbeat.                                  |
 | `ingestor`       | Each reporting Ingestor process                                   | Admin evaluates the process heartbeat.                                  |
-| `file_syncer`    | Each reporting Syncer process                                     | Admin evaluates the process heartbeat.                                  |
+| `syncer`        | Each reporting Syncer process                                     | Admin evaluates the process heartbeat.                                  |
 
 Only processes that have reported a heartbeat to Admin appear in the process portion of the list. For dependency rows, `elapsed` records timing information from the corresponding status check; for API, Ingestor, and Syncer rows, it records the time since the latest heartbeat. The host is shown as `-` and the port as `0` when the configured document engine or storage implementation does not provide an endpoint for the status row.
 
 ## View Service Details
 
-On the **Service status** page, administrators can view the service `Name`, `Service type`, `Host`, `Port`, and `Status`.
+On the **Services** page, administrators can view the service `Name`, `Service type`, `Host`, `Port`, and `Status`.
 
-Opening a service from **Actions** displays the status record returned by the Go Admin service. Depending on the entry, it can include the service name, type, host, port, status, elapsed health-check time, and an error or status message. Use the database or container administration tools provided by your deployment environment when you need database process lists or container operations.
+1. Find the service on **Services**. Use the search box to filter by service name or type if needed.
+2. Hover over the service row and click the clipboard icon in **Actions**.
+3. Read the properties in the **Service … detail** dialog. For example, the MySQL detail shows `type`, `name`, `host`, `port`, `status`, `elapsed`, and `message` as a property list.
+4. Click **Close** to return to the list.
+
+The MySQL dialog displays the health-check record, not a database process list. Use your deployment's database administration tools if you need to inspect SQL sessions or processes.
 
 ![View Service Details](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_1.jpg)
 
 ![View Service Details](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_2.jpg)
 
-The **Extra information** dialog displays the elapsed value and message included in the same status record. A failed dependency check can place its error text in the message field.
+To view **Extra information**, hover over the service row and click the sliders icon in **Actions**. The dialog displays the elapsed value and message included in the status record. Click **Close** to return to the list. A failed dependency check can place its error text in the message field.
 
 ![View Service Details](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_3.jpg)
 

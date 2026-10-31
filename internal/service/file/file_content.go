@@ -217,7 +217,7 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 	content := string(data)
 	fileType := utility.GetFileType(filename)
 	if fileType != utility.FileTypeOTHER {
-		fp, err := parser.GetParser(fileType)
+		fp, err := parser.GetTextOnlyParser(fileType)
 		if err != nil {
 			return "", err
 		}
@@ -269,7 +269,7 @@ func parseFileContent(ctx context.Context, filename string, data []byte) string 
 	if fileType == utility.FileTypeOTHER {
 		return string(data)
 	}
-	fp, err := parser.GetParser(fileType)
+	fp, err := parser.GetTextOnlyParser(fileType)
 	if err != nil {
 		return string(data)
 	}

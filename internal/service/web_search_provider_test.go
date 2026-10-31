@@ -626,6 +626,7 @@ func TestResolveWebSearchProviderSelectsKeyedProviders(t *testing.T) {
 		{provider: "linkup", apiKeyName: "linkup_api_key", apiKey: "linkup-test"},
 		{provider: "parallel", apiKeyName: "parallel_api_key", apiKey: "parallel-test"},
 		{provider: "search1api", apiKeyName: "search1api_api_key", apiKey: "search1api-test"},
+		{provider: "searchapi", apiKeyName: "searchapi_api_key", apiKey: "searchapi-test"},
 	}
 
 	for _, tc := range cases {
@@ -938,6 +939,99 @@ func TestDecodeSearch1APIWebSearchResultsRejectsMalformedContainers(t *testing.T
 
 func TestDecodeSearch1APIWebSearchResultsAcceptsMissingResults(t *testing.T) {
 	results, err := decodeSearch1APIWebSearchResults([]byte(`{"searchParameters": {"query": "ragflow"}}`))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("results = %#v, want empty", results)
+	}
+}
+
+func TestRetrieveSearchAPIWebSearchSendsBearerKeyAndUsesSnippets(t *testing.T) {
+	var requestQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %q, want GET", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer searchapi-test" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer searchapi-test")
+		}
+		if got := r.Header.Get("User-Agent"); got == "" {
+			t.Error("User-Agent is empty")
+		}
+		requestQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"search_metadata": {"id": "search_test", "status": "Success"},
+			"search_parameters": {"engine": "google", "q": "What is RAGFlow?", "num": 6},
+			"search_information": {"query_displayed": "What is RAGFlow?"},
+			"organic_results": [
+				{"position": 1, "title": "No snippet", "link": "https://example.com/empty", "snippet": " \t\n"},
+				{"position": 2, "title": "RAGFlow", "link": "https://example.com/ragflow", "source": "RAGFlow", "domain": "example.com", "snippet": "An open-source RAG engine."}
+			],
+			"pagination": {"current": 1}
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := retrieveSearchAPIWebSearch(t.Context(), server.Client(), server.URL, "searchapi-test", "What is RAGFlow?")
+	if err != nil {
+		t.Fatalf("retrieve SearchApi web search: %v", err)
+	}
+	if got := requestQuery.Get("engine"); got != "google" {
+		t.Fatalf("engine = %q, want %q", got, "google")
+	}
+	if got := requestQuery.Get("q"); got != "What is RAGFlow?" {
+		t.Fatalf("q = %q, want %q", got, "What is RAGFlow?")
+	}
+	if got := requestQuery.Get("num"); got != "6" {
+		t.Fatalf("num = %q, want 6", got)
+	}
+	// The key travels in the header only; SearchApi also accepts it as a query
+	// parameter, which would put it in access logs.
+	if requestQuery.Has("api_key") {
+		t.Fatal("api_key must not be sent as a query parameter")
+	}
+	assertWebSearchChunk(t, result, "searchapi-https://example.com/ragflow", "RAGFlow", "An open-source RAG engine.")
+}
+
+func TestRetrieveSearchAPIWebSearchRejectsErrorStatuses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error": "Invalid API key."}`))
+	}))
+	defer server.Close()
+
+	if _, err := retrieveSearchAPIWebSearch(t.Context(), server.Client(), server.URL, "bad-key", "ragflow"); err == nil {
+		t.Fatal("error is nil")
+	}
+}
+
+func TestDecodeSearchAPIWebSearchResultsRejectsMalformedContainers(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "null response", body: `null`},
+		{name: "null results", body: `{"organic_results":null}`},
+		{name: "object results", body: `{"organic_results":{}}`},
+		{name: "string results", body: `{"organic_results":"nope"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := decodeSearchAPIWebSearchResults([]byte(tc.body)); err == nil {
+				t.Fatal("error is nil")
+			}
+		})
+	}
+}
+
+// A query with no organic hits still answers with the metadata sections, just
+// without organic_results.
+func TestDecodeSearchAPIWebSearchResultsAcceptsMissingResults(t *testing.T) {
+	results, err := decodeSearchAPIWebSearchResults([]byte(`{"search_metadata": {"status": "Success"}, "search_information": {"total_results": 0}}`))
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}

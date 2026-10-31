@@ -295,7 +295,7 @@ func TestUpdateDataset_ParseTypePipelineRejectsParserID(t *testing.T) {
 	}
 }
 
-func TestUpdateDataset_PipelineSwitchResetsParserConfigToDefaults(t *testing.T) {
+func TestUpdateDataset_PipelineSwitchKeepsSubmittedParserConfig(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
@@ -345,10 +345,12 @@ func TestUpdateDataset_PipelineSwitchResetsParserConfigToDefaults(t *testing.T) 
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
-	// C3 / A3 整体重置: a pipeline (canvas) switch forces a FULL reset of
-	// parser_config to the new canvas DSL defaults, discarding the submitted
-	// config (design section 5 + A3). The submitted remove_toc=true must NOT
-	// survive; the persisted value must be the new canvas DSL default (false).
+	// A pipeline (canvas) switch with a submitted parser_config keeps the
+	// submitted values, reconciled against the new canvas DSL by
+	// BuildParserConfig: the settings form resets itself to the new defaults
+	// on a switch, so the submitted config carries the user's edits of the new
+	// pipeline and must not be discarded. remove_toc=true must survive on top
+	// of the new canvas DSL default (false).
 	parserParams, ok := persisted.ParserConfig["Parser:CustomP"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("expected Parser:CustomP in parser_config, got %#v", persisted.ParserConfig)
@@ -357,8 +359,8 @@ func TestUpdateDataset_PipelineSwitchResetsParserConfigToDefaults(t *testing.T) 
 	if !ok {
 		t.Fatalf("expected pdf parser config, got %#v", parserParams)
 	}
-	if removeTOC, ok := pdfParams["remove_toc"].(bool); !ok || removeTOC {
-		t.Fatalf("remove_toc = %#v, want false (submitted value discarded on pipeline switch reset)", pdfParams["remove_toc"])
+	if removeTOC, ok := pdfParams["remove_toc"].(bool); !ok || !removeTOC {
+		t.Fatalf("remove_toc = %#v, want true (submitted value kept on pipeline switch)", pdfParams["remove_toc"])
 	}
 }
 

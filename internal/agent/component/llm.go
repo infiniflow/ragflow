@@ -811,7 +811,7 @@ func (c *LLMComponent) prepareChatRequest(
 	// so a per-model "max_tokens" override in tenant_model.extra is honored.
 	tenantID := ""
 	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
-		if tid, ok := state.Sys["tenant_id"].(string); ok {
+		if tid, ok := state.GetSysString("tenant_id"); ok {
 			tenantID = tid
 		}
 	}
@@ -1307,7 +1307,7 @@ func extractDataImages(values []string) []string {
 // and image data URIs. The caller is responsible for handling any
 // {sys.files} placeholder replacement in the prompts.
 func collectSysFiles(state *runtime.CanvasState) (textParts, imageURIs []string) {
-	files, ok := state.Sys["files"]
+	files, ok := state.GetSys("files")
 	if !ok {
 		return nil, nil
 	}

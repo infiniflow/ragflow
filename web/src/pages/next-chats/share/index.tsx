@@ -43,7 +43,7 @@ const ChatContainer = () => {
   const sendDisabled = useSendButtonDisabled(value);
   const { data: chatInfo } = useFetchExternalChatInfo();
 
-  const messageReferences = useMessageReferences(derivedMessages, undefined);
+  const messageReferences = useMessageReferences(derivedMessages);
 
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {

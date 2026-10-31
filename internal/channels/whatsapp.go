@@ -588,10 +588,10 @@ func (c *whatsappChannel) requestJSONWithClient(ctx context.Context, client *htt
 		return err
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("status: %d, response: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("WhatsApp gateway returned HTTP status %d", resp.StatusCode)
 	}
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	if out != nil && len(bytes.TrimSpace(respBody)) > 0 {
 		return json.Unmarshal(respBody, out)
 	}

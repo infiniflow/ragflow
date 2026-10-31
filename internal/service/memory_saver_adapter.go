@@ -52,8 +52,8 @@ func (a *memorySaverAdapter) Save(ctx context.Context, req component.MemorySaveR
 		if stateErr != nil || state == nil {
 			return fmt.Errorf("%w: canvas runtime state is required to use memory from an agent", permission.ErrInvalidPermission)
 		}
-		canvasID, _ := state.Sys["canvas_id"].(string)
-		userID, _ := state.Sys["user_id"].(string)
+		canvasID, _ := state.GetSysString("canvas_id")
+		userID, _ := state.GetSysString("user_id")
 		canvasID = strings.TrimSpace(canvasID)
 		userID = strings.TrimSpace(userID)
 		authorizationUserID = userID
