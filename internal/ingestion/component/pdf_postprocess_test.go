@@ -71,7 +71,7 @@ func TestPDFDispatchNormalizesBeforeOutputsAndEnhancement(t *testing.T) {
 }
 
 func TestMinerUTableRetainsCaptionAndFootnote(t *testing.T) {
-	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": "<table><tr><td>Cell</td></tr></table>", "table_caption": []any{"Caption"}, "table_footnote": []any{"Footnote"}, "page_idx": 1, "bbox": []any{10.0, 20.0, 30.0, 40.0}}, nil, nil)
+	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": "<table><tr><td>Cell</td></tr></table>", "table_caption": []any{"Caption"}, "table_footnote": []any{"Footnote"}, "page_idx": 1, "bbox": []any{10.0, 20.0, 30.0, 40.0}}, nil, nil, true)
 	table, ok := item["table"].(*entity.TableData)
 	if !ok || table == nil || table.Caption != "Caption" || len(table.CellTexts()) != 1 || len(table.CellTexts()[0]) != 1 || table.CellTexts()[0][0] != "Cell" || table.Page != 2 {
 		t.Fatalf("structured table missing: %#v", item)
@@ -82,10 +82,32 @@ func TestMinerUTableRetainsCaptionAndFootnote(t *testing.T) {
 }
 
 func TestMinerUTablePreservesEmbeddedCaption(t *testing.T) {
-	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": "<table><caption>Embedded caption</caption><tr><td>Cell</td></tr></table>"}, nil, nil)
+	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": "<table><caption>Embedded caption</caption><tr><td>Cell</td></tr></table>"}, nil, nil, true)
 	table, ok := item["table"].(*entity.TableData)
 	if !ok || table == nil || table.Caption != "Embedded caption" {
 		t.Fatalf("embedded caption lost: %#v", item)
+	}
+}
+
+func TestMinerUTablePlainTextWhenTableDisabled(t *testing.T) {
+	body := `<table><tr><td rowspan=1 colspan=1>部门</td><td rowspan=1 colspan=1>排名</td></tr><tr><td rowspan=1 colspan=1>研发</td><td rowspan=1 colspan=1>1</td></tr></table>`
+	item := mineruContentItemToJSON(map[string]any{"type": "table", "table_body": body, "table_footnote": []any{"note"}}, nil, nil, false)
+	if item["doc_type_kwd"] != "text" {
+		t.Fatalf("doc_type = %v, want text", item["doc_type_kwd"])
+	}
+	text, _ := item["text"].(string)
+	if strings.Contains(text, "<table>") || strings.Contains(text, "<td>") {
+		t.Fatalf("expected plain text, got %q", text)
+	}
+	if !strings.Contains(text, "部门") || !strings.Contains(text, "研发") || !strings.Contains(text, "note") {
+		t.Fatalf("table cells or footnote missing: %q", text)
+	}
+}
+
+func TestResolveMinerUOCRLanguageEnglishDefaultConflict(t *testing.T) {
+	setup := schema.ParserSetup{"mineru_lang": "English", "lang": "Chinese"}
+	if got := resolveMinerUOCRLanguage(setup); got != "Chinese" {
+		t.Fatalf("resolveMinerUOCRLanguage() = %q, want Chinese", got)
 	}
 }
 
@@ -111,7 +133,7 @@ func TestMinerUContentMarksBackendDescribedImages(t *testing.T) {
 		"type": "image", "image_caption": []any{"Caption"},
 		"vlm_description": "backend desc",
 		"page_idx":        0, "bbox": []any{0.0, 0.0, 10.0, 10.0},
-	}, nil, nil)
+	}, nil, nil, true)
 	if withDesc == nil {
 		t.Fatal("image item dropped")
 	}
@@ -124,7 +146,7 @@ func TestMinerUContentMarksBackendDescribedImages(t *testing.T) {
 	withoutDesc := mineruContentItemToJSON(map[string]any{
 		"type": "image", "image_caption": []any{"Caption"},
 		"page_idx": 0, "bbox": []any{0.0, 0.0, 10.0, 10.0},
-	}, nil, nil)
+	}, nil, nil, true)
 	if withoutDesc == nil {
 		t.Fatal("image item dropped")
 	}

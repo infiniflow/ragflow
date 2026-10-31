@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"math"
 	"mime"
@@ -552,16 +553,7 @@ func dispatchMinerUPDF(
 	}
 
 	parseMethod := mineruAPIParseMethod(getStringOr(setup, "mineru_parse_method", ""))
-	// MinerU's language is an OCR engine parameter, not the caption language:
-	// mineru_lang wins, then the family lang, then the engine's own default.
-	// That default used to arrive implicitly through defaultSetups() — which
-	// also fed captions, so a knowledge base that never chose a language got
-	// Chinese captions (issue #20727). Keeping it here confines it to the engine.
-	lang := firstNonEmpty(getStringOr(setup, "mineru_lang", ""), getStringOr(setup, "lang", ""))
-	if lang == "" {
-		lang = minerUDefaultLanguage
-	}
-	mineruLang := mineruLangCode(lang)
+	mineruLang := mineruLangCode(resolveMinerUOCRLanguage(setup))
 	backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "mineru_backend", ""), apiKeyRaw)
 	serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "mineru_server_url", ""), apiKeyRaw)
 
@@ -607,7 +599,7 @@ func dispatchMinerUPDF(
 	}
 
 	sizes, geometryErr := mineruPageSizes(ctx, binary)
-	items, err := mineruExtractJSONItems(zipBytes, sizes)
+	items, err := mineruExtractJSONItems(zipBytes, sizes, extraction.tableEnable)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
 	}
@@ -618,6 +610,10 @@ func dispatchMinerUPDF(
 }
 
 func finishMinerURemoteResult(ctx context.Context, filename string, binary []byte, result *modelModule.MinerUV1Result, setup schema.ParserSetup) (parser.ParseResult, error) {
+	extraction, err := readMinerUExtractionOptions(setup)
+	if err != nil {
+		return parser.ParseResult{}, err
+	}
 	markdown := ""
 	var zipBytes []byte
 	if result != nil {
@@ -629,7 +625,7 @@ func finishMinerURemoteResult(ctx context.Context, filename string, binary []byt
 	if len(zipBytes) > 0 {
 		sizes, geometryErr = mineruPageSizes(ctx, binary)
 	}
-	items, extractErr := mineruExtractJSONItems(zipBytes, sizes)
+	items, extractErr := mineruExtractJSONItems(zipBytes, sizes, extraction.tableEnable)
 	if extractErr == nil && len(items) > 0 {
 		res := mineruJSONParseResult(filename, items)
 		appendMineruGeometryWarning(&res, geometryErr)
@@ -757,6 +753,23 @@ func resolveMinerUBaseURL(driver modelModule.ModelDriver, apiConfig *modelModule
 		return g.GetBaseURL(apiConfig)
 	}
 	return "", fmt.Errorf("driver %q does not expose GetBaseURL", driver.Name())
+}
+
+// resolveMinerUOCRLanguage chooses the human-readable language name sent to
+// MinerU OCR. The UI defaults mineru_lang to English even when the knowledge
+// base language is Chinese (#17298), which misrecognizes table cells. When that
+// default conflicts with an explicit family lang, the family lang wins.
+func resolveMinerUOCRLanguage(setup schema.ParserSetup) string {
+	mineruLang := strings.TrimSpace(getStringOr(setup, "mineru_lang", ""))
+	setupLang := strings.TrimSpace(getStringOr(setup, "lang", ""))
+	if strings.EqualFold(mineruLang, "English") && setupLang != "" && !strings.EqualFold(setupLang, "English") {
+		return setupLang
+	}
+	lang := firstNonEmpty(mineruLang, setupLang)
+	if lang == "" {
+		lang = minerUDefaultLanguage
+	}
+	return lang
 }
 
 // mineruLangCode maps a human-readable language name to a MinerU lang code,
@@ -891,7 +904,7 @@ const mineruContentBBoxScale = 1000.0
 // pages. content_list bboxes are normalized to 0-1000, so positions require
 // a known page box in PDF points. Structured content boxes are 0-1 and are
 // scaled onto that same 0-1000 space before conversion.
-func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([]map[string]any, error) {
+func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64, tableEnable bool) ([]map[string]any, error) {
 	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
 		return nil, fmt.Errorf("open zip: %w", err)
@@ -945,7 +958,7 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 	pageSizes := mergeMineruPageSizes(pdfPageSizes, mineruPageSizesFromMiddleJSON(middleJSON))
 	out := make([]map[string]any, 0, len(rawItems))
 	for _, item := range rawItems {
-		converted := mineruContentItemToJSON(item, images, pageSizes)
+		converted := mineruContentItemToJSON(item, images, pageSizes, tableEnable)
 		if converted != nil {
 			out = append(out, converted)
 		}
@@ -1160,7 +1173,7 @@ func mergeMineruPageSizes(pdfSizes, middleSizes map[int][2]float64) map[int][2]f
 	return out
 }
 
-func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64) map[string]any {
+func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64, tableEnable bool) map[string]any {
 	typ, _ := item["type"].(string)
 	typ = strings.ToLower(strings.TrimSpace(typ))
 	switch typ {
@@ -1237,6 +1250,13 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, p
 	}
 	if typ == "table" {
 		body, _ := item["table_body"].(string)
+		footnotes := strings.Join(stringSlice(item["table_footnote"]), "\n")
+		if !tableEnable {
+			jsonItem["text"] = strings.TrimSpace(mineruPlainTextFromTableBody(body) + "\n" + footnotes)
+			jsonItem["doc_type_kwd"] = "text"
+			jsonItem["layout"] = "text"
+			return jsonItem
+		}
 		if table, err := tableutil.ParseTableHTML(body); err == nil && table != nil && len(table.Grid) > 0 {
 			caption := strings.Join(stringSlice(item["table_caption"]), "\n")
 			if caption != "" && caption != table.Caption {
@@ -1246,10 +1266,55 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, p
 				table.Page = page
 			}
 			jsonItem["table"] = table
-			jsonItem["text"] = strings.Join(stringSlice(item["table_footnote"]), "\n")
+			jsonItem["text"] = footnotes
+		} else {
+			// MinerU sometimes emits malformed or empty table HTML; index readable
+			// cell text and captions instead of raw markup (#17298).
+			caption := strings.Join(stringSlice(item["table_caption"]), "\n")
+			plain := mineruPlainTextFromTableBody(body)
+			jsonItem["text"] = strings.TrimSpace(strings.Join([]string{caption, plain, footnotes}, "\n"))
 		}
 	}
 	return jsonItem
+}
+
+var mineruHTMLTagPattern = regexp.MustCompile(`(?is)<[^>]+>`)
+
+func mineruPlainTextFromTableBody(body string) string {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return ""
+	}
+	if table, err := tableutil.ParseTableHTML(body); err == nil && table != nil && len(table.Grid) > 0 {
+		lines := make([]string, 0, len(table.Grid))
+		for _, row := range table.CellTexts() {
+			cells := make([]string, 0, len(row))
+			for _, cell := range row {
+				if cell = strings.TrimSpace(cell); cell != "" {
+					cells = append(cells, cell)
+				}
+			}
+			if len(cells) > 0 {
+				lines = append(lines, strings.Join(cells, "\t"))
+			}
+		}
+		return strings.TrimSpace(strings.Join(lines, "\n"))
+	}
+	return mineruStripHTMLTags(body)
+}
+
+func mineruStripHTMLTags(fragment string) string {
+	if fragment == "" {
+		return ""
+	}
+	fragment = html.UnescapeString(fragment)
+	fragment = regexp.MustCompile(`(?is)<\s*br\s*/?\s*>`).ReplaceAllString(fragment, "\n")
+	fragment = regexp.MustCompile(`(?is)</\s*(p|div|li|tr|h[1-6]|table|caption)\s*>`).ReplaceAllString(fragment, "\n")
+	fragment = mineruHTMLTagPattern.ReplaceAllString(fragment, "")
+	fragment = regexp.MustCompile(`[ \t]+\n`).ReplaceAllString(fragment, "\n")
+	fragment = regexp.MustCompile(`\n{3,}`).ReplaceAllString(fragment, "\n\n")
+	fragment = regexp.MustCompile(`[ \t]{2,}`).ReplaceAllString(fragment, " ")
+	return strings.TrimSpace(fragment)
 }
 
 func mineruItemText(item map[string]any, typ string) string {

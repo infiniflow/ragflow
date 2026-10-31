@@ -94,7 +94,7 @@ export function MinerUOptionsFormField({ namePrefix }: { namePrefix: string }) {
       >
         {(field) => (
           <SelectWithSearch
-            value={field.value || 'English'}
+            value={field.value || ''}
             onChange={field.onChange}
             options={LanguageOptions}
             placeholder={t('common.selectPlaceholder', 'Select value')}
