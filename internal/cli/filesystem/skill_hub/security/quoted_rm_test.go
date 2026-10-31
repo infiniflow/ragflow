@@ -34,6 +34,7 @@ func TestScanSkillDetectsRmQuotedExpansion(t *testing.T) {
 		`rm -rf "prefix; \"part$TARGET"`,
 		`rm -rf "a#b $T"`,
 		`rm -rf "a; $T"#note`,
+		`$(rm -rf "a; $T")`,
 	}
 
 	for _, line := range lines {
@@ -59,6 +60,9 @@ func TestScanSkillIgnoresRmQuotedExpansion(t *testing.T) {
 		`rm -rf "a; b" $T`,
 		`rm -rf "prefix; \$TARGET"`,
 		`rm -rf "a; b" # $T`,
+		`# rm -rf "a; $T"`,
+		`echo 'rm -rf "a; $T"'`,
+		`echo "rm -rf \"a; $T\""`,
 		`echo "rm -rf a; $T"`,
 		`rmdir "a; $T"`,
 		`rm -fd "a; $T"`,

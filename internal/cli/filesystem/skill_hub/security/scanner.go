@@ -125,7 +125,11 @@ func (s *Scanner) scanFile(filename, content string) []Finding {
 // does not end the quoted span. Return the operand that carries the hidden
 // expansion.
 func scanQuotedRmExpansion(line string) (string, bool) {
+	code := shellCodeMask(line)
 	for i := 0; i+2 <= len(line); i++ {
+		if !code[i] || !code[i+1] {
+			continue
+		}
 		if line[i:i+2] != "rm" || (i > 0 && isShellWordByte(line[i-1])) {
 			continue
 		}
@@ -175,6 +179,64 @@ func isRecursiveFlag(word string) bool {
 		}
 	}
 	return false
+}
+
+// shellCodeMask marks the characters that belong to unquoted code. A command
+// name inside a quoted string or after a comment is not a command.
+func shellCodeMask(line string) []bool {
+	mask := make([]bool, len(line))
+	inSingle, inDouble, escaped := false, false, false
+	atWordStart := true
+
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case escaped:
+			escaped = false
+			mask[i] = !inSingle && !inDouble
+			atWordStart = false
+		case inSingle:
+			if c == '\'' {
+				inSingle = false
+			}
+		case inDouble:
+			switch c {
+			case '\\':
+				escaped = true
+			case '"':
+				inDouble = false
+			}
+		default:
+			switch c {
+			case '\\':
+				escaped = true
+				mask[i] = true
+				atWordStart = false
+			case '\'':
+				inSingle = true
+				atWordStart = false
+			case '"':
+				inDouble = true
+				atWordStart = false
+			case '#':
+				if atWordStart {
+					return mask
+				}
+				mask[i] = true
+				atWordStart = false
+			case ' ', '\t':
+				mask[i] = true
+				atWordStart = true
+			case ';', '&', '|':
+				mask[i] = true
+				atWordStart = true
+			default:
+				mask[i] = true
+				atWordStart = false
+			}
+		}
+	}
+	return mask
 }
 
 // shellWords splits one simple command into words. Quoted spans are kept
