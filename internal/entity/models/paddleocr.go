@@ -165,7 +165,7 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 		_ = writer.WriteField("model", *modelName)
 		_ = writer.WriteField("optionalPayload", string(optBytes))
 
-		part, err := writer.CreateFormFile("file", paddleOCRUploadFilename(content))
+		part, err := writer.CreateFormFile("file", ocrUploadFilename(content))
 		if err != nil {
 			return nil, fmt.Errorf("failed to create form file: %w", err)
 		}
@@ -392,9 +392,9 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 	return response, nil
 }
 
-// paddleOCRUploadFilename preserves the content-derived format expected by the
+// ocrUploadFilename preserves the content-derived format expected by the
 // job API without trusting a user-supplied filename. Unknown data stays PDF.
-func paddleOCRUploadFilename(content []byte) string {
+func ocrUploadFilename(content []byte) string {
 	// net/http's sniffer does not recognize TIFF, which the image parser accepts.
 	if bytes.HasPrefix(content, []byte("II*\x00")) || bytes.HasPrefix(content, []byte("MM\x00*")) {
 		return "document.tiff"

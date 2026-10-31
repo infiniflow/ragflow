@@ -11,9 +11,9 @@ import (
 	"testing"
 )
 
-// TestPaddleOCRUploadFilename checks content-derived image extensions and the
+// TestOCRUploadFilename checks content-derived image extensions and the
 // unchanged PDF default, including both TIFF byte orders.
-func TestPaddleOCRUploadFilename(t *testing.T) {
+func TestOCRUploadFilename(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		data []byte
@@ -30,7 +30,7 @@ func TestPaddleOCRUploadFilename(t *testing.T) {
 		{"unrecognized", []byte("unknown"), "document.pdf"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := paddleOCRUploadFilename(tc.data); got != tc.want {
+			if got := ocrUploadFilename(tc.data); got != tc.want {
 				t.Fatalf("filename=%q, want %q", got, tc.want)
 			}
 		})

@@ -40,7 +40,7 @@ func TestPaddleOCRPDFResultDropsUnlocatedMedia(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Text: "keep me", Label: "text", BBox: []float64{10, 20, 30, 40}}, {Text: "![figure](https://example.invalid/a(1).png)", Label: "image"}}}}}
-	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 	if result.Err != nil || len(result.JSON) != 1 {
 		t.Fatalf("result=%+v", result)
 	}
@@ -58,7 +58,7 @@ func TestPaddleOCRPDFResultKeepsUnstructuredTableText(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{{Text: "Item: 42", Label: "table", BBox: []float64{20, 40, 100, 120}}}}}}
-	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 	if result.Err != nil || len(result.JSON) != 1 {
 		t.Fatalf("result=%+v", result)
 	}
@@ -74,7 +74,7 @@ func TestPaddleOCRMarkdownTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{{Label: "table", Text: "| Item | Value |\n| --- | --- |\n| A | 42 |", BBox: []float64{10, 20, 100, 200}}}}}}
-	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -91,7 +91,7 @@ func TestPaddleOCRCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{{Label: "text", Text: "body", BBox: []float64{10, 20, 100, 200}}}}}}
-	result := PaddleOCRPDFResult(ctx, "sample.pdf", data, response)
+	result := OCRPDFResult(ctx, "PaddleOCR", "sample.pdf", data, response)
 	if result.Err == nil {
 		t.Fatal("canceled parse returned success")
 	}
@@ -111,7 +111,7 @@ func TestPaddleOCRTitleLabels(t *testing.T) {
 	} {
 		t.Run(tc.label+tc.text, func(t *testing.T) {
 			response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Text: tc.text, Label: tc.label}}}}}
-			result := PaddleOCRPDFResult(t.Context(), "title.pdf", data, response)
+			result := OCRPDFResult(t.Context(), "PaddleOCR", "title.pdf", data, response)
 			if result.Err != nil {
 				t.Fatal(result.Err)
 			}
@@ -141,7 +141,7 @@ func TestPaddleOCRBlocksPreserveMarkdownLayout(t *testing.T) {
 			// normalization. It must not overwrite a structural block kind,
 			// including inside a title-labelled block.
 			response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Text: tc.text, Label: tc.label}}}}}
-			result := PaddleOCRPDFResult(t.Context(), "layout.pdf", data, response)
+			result := OCRPDFResult(t.Context(), "PaddleOCR", "layout.pdf", data, response)
 			if result.Err != nil {
 				t.Fatal(result.Err)
 			}
@@ -163,12 +163,12 @@ func TestPaddleOCRPDFResultRejectsRenderedEmptyText(t *testing.T) {
 	for _, label := range []string{"text", "doc_title", "paragraph_title"} {
 		t.Run(label, func(t *testing.T) {
 			response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Blocks: []models.OCRBlock{{Label: label, Text: "---"}}}}}
-			result := PaddleOCRPDFResult(t.Context(), "separator.pdf", nil, response)
+			result := OCRPDFResult(t.Context(), "PaddleOCR", "separator.pdf", nil, response)
 			if result.Err == nil || !strings.Contains(result.Err.Error(), "empty text") {
 				t.Fatalf("rendered-empty document accepted: %+v", result)
 			}
 			response.Pages[0].Blocks = append(response.Pages[0].Blocks, models.OCRBlock{Text: "body"})
-			result = PaddleOCRPDFResult(t.Context(), "mixed.pdf", nil, response)
+			result = OCRPDFResult(t.Context(), "PaddleOCR", "mixed.pdf", nil, response)
 			if result.Err != nil || len(result.JSON) != 1 || result.JSON[0].ToMap()["text"] != "body" {
 				t.Fatalf("empty placeholder survived beside body: %+v", result)
 			}
