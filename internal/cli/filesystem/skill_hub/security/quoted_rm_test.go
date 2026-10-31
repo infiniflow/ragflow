@@ -32,6 +32,8 @@ func TestScanSkillDetectsRmQuotedExpansion(t *testing.T) {
 		`rm -rf -v "a; $T"`,
 		`rm -rf "prefix; "$TARGET`,
 		`rm -rf "prefix; \"part$TARGET"`,
+		`rm -rf "a\;$TARGET"`,
+		`rm -rf "a\&$T"`,
 		`rm -rf "a#b $T"`,
 		`rm -rf "a; $T"#note`,
 		`$(rm -rf "a; $T")`,

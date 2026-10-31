@@ -316,6 +316,16 @@ func shellWords(s string) []string {
 	return words
 }
 
+// isDoubleQuoteEscapable reports whether a backslash gives the next byte
+// special meaning inside double quotes.
+func isDoubleQuoteEscapable(c byte) bool {
+	switch c {
+	case '$', '`', '"', '\\', '\n':
+		return true
+	}
+	return false
+}
+
 // operandHidesExpansion reports whether a word holds a separator inside a
 // double-quoted span before an expansion anywhere later in the same word. A
 // single-quoted or escaped `$` expands nothing.
@@ -335,7 +345,13 @@ func operandHidesExpansion(operand string) bool {
 		case inDouble:
 			switch c {
 			case '\\':
-				escaped = true
+				// Inside double quotes a backslash only escapes $, `, ", \
+				// and newline; before anything else it stays literal and the
+				// next byte keeps its meaning, so `a\;$T` still holds a
+				// separator ahead of the expansion.
+				if i+1 < len(operand) && isDoubleQuoteEscapable(operand[i+1]) {
+					escaped = true
+				}
 			case '"':
 				inDouble = false
 			case '$':
