@@ -45,6 +45,7 @@ func TestScanSkillDetectsRecursiveRmOfExpandedTarget(t *testing.T) {
 		{"hash glued to an expansion", `rm -rf "my#$TARGET"`},
 		{"long option before the recursive flag", `rm --preserve-root -r "$TARGET"`},
 		{"apostrophe before an expansion", `rm -rf "user's data $TARGET"`},
+		{"separator inside a quoted operand", `rm -rf "prefix; $TARGET" "$HOME"`},
 	}
 
 	for _, tt := range tests {
@@ -74,6 +75,7 @@ func TestScanSkillDetectsRecursiveRmOfHome(t *testing.T) {
 		{"rmdir", "rmdir $HOME/tmp"},
 		{"long option before the recursive flag", `rm --force --recursive "$HOME"`},
 		{"apostrophe before an expansion", `rm -rf "it's $HOME"`},
+		{"separator inside a quoted operand", `rm -rf "prefix; $TARGET" "$HOME"`},
 	}
 
 	for _, tt := range tests {
@@ -127,6 +129,7 @@ func TestScanSkillIgnoresExpansionAfterRemovalCommand(t *testing.T) {
 		`rm -rf build # $USER`,
 		`rm -rf build #$USER`,
 		`rm -rf build #note $USER`,
+		`rm -rf "a; b"`,
 	}
 
 	for _, line := range lines {
