@@ -17,12 +17,18 @@
 package models
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
 	"net/url"
 	"ragflow/internal/common"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // UnlimitedOCRModel wraps MinerULocalModel for Baidu's Unlimited-OCR-2 engine.
@@ -117,12 +123,148 @@ func (m *UnlimitedOCRModel) CheckConnection(ctx context.Context, apiConfig *APIC
 	return fmt.Errorf("not an Unlimited-OCR-2 service: HTTP %d", code)
 }
 
-// OCRFile exercises CheckConnection for provider model verification.
+// ParseFile submits a document to Unlimited-OCR-2, forwarding crop_mode, no_repeat_ngram_size,
+// and page_guard options in the multipart request.
+func (m *UnlimitedOCRModel) ParseFile(ctx context.Context, modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	if len(content) == 0 {
+		return nil, fmt.Errorf("Unlimited-OCR-2 API requires file content byte array, but content is empty")
+	}
+
+	resolvedBaseURL, err := m.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	apiURL := joinURL(resolvedBaseURL, m.baseModel.URLSuffix.DocumentParse)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("files", "upload_document.pdf")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multipart file field: %w", err)
+	}
+	if _, err = part.Write(content); err != nil {
+		return nil, fmt.Errorf("failed to write file content: %w", err)
+	}
+
+	backend := "pipeline"
+	if modelName != nil && strings.TrimSpace(*modelName) != "" {
+		backend = strings.TrimSpace(*modelName)
+	} else if parseFileConfig != nil && strings.TrimSpace(parseFileConfig.Backend) != "" {
+		backend = strings.TrimSpace(parseFileConfig.Backend)
+	}
+	_ = writer.WriteField("backend", backend)
+
+	if parseFileConfig != nil {
+		if crop := strings.TrimSpace(parseFileConfig.CropMode); crop != "" {
+			_ = writer.WriteField("crop_mode", crop)
+		}
+		if ngram := parseFileConfig.NoRepeatNgramSize; ngram > 0 {
+			_ = writer.WriteField("no_repeat_ngram_size", strconv.Itoa(ngram))
+		}
+		if pg := parseFileConfig.PageGuard; pg != nil {
+			_ = writer.WriteField("page_guard", strconv.FormatBool(*pg))
+		}
+	}
+
+	if err = writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, &body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		if token := MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+	}
+
+	resp, err := m.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		return nil, fmt.Errorf("Unlimited-OCR-2 API failed with status %d: %s (URL: %s)", resp.StatusCode, string(respBody), apiURL)
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response JSON: %w, body: %s", err, string(respBody))
+	}
+
+	var taskID string
+	if dataMap, ok := result["data"].(map[string]interface{}); ok {
+		if tid, ok := dataMap["task_id"].(string); ok {
+			taskID = tid
+		}
+	} else if tid, ok := result["task_id"].(string); ok {
+		taskID = tid
+	}
+
+	if taskID == "" {
+		return nil, fmt.Errorf("failed to extract task_id from Unlimited-OCR-2 response: %s", string(respBody))
+	}
+
+	return &ParseFileResponse{
+		TaskID: taskID,
+	}, nil
+}
+
+// OCRFile exercises CheckConnection for verification probes, or parses content and returns text for actual OCR requests.
 func (m *UnlimitedOCRModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	if err := m.CheckConnection(ctx, apiConfig); err != nil {
 		return nil, err
 	}
-	return &OCRFileResponse{}, nil
+	// Fast path for verification probe (empty content or 1x1 test image)
+	if len(content) == 0 || (len(content) < 100 && bytes.HasPrefix(content, []byte{0x89, 0x50, 0x4E, 0x47})) {
+		return &OCRFileResponse{}, nil
+	}
+
+	backend := "pipeline"
+	task, err := m.ParseFile(ctx, &backend, content, url, apiConfig, &ParseFileConfig{}, modelUsage)
+	if err != nil {
+		return nil, err
+	}
+
+	deadline := time.Now().Add(longOpCallTimeout)
+	for {
+		taskResult, err := m.ShowTask(ctx, task.TaskID, apiConfig)
+		if err == nil {
+			for _, segment := range taskResult.Segments {
+				if strings.TrimSpace(segment.Content) != "" {
+					text := segment.Content
+					return &OCRFileResponse{Text: &text}, nil
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s", task.TaskID)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // ListModels returns the catalogued OCR models for this provider instance.

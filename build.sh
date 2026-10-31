@@ -886,7 +886,7 @@ setup_cgo_env() {
         /usr/local/lib \
         /opt/homebrew/lib; do
         if [ -f "${candidate_dir}/libpcre2-8.so" ] || [ -f "${candidate_dir}/libpcre2-8.a" ]; then
-            export CGO_LDFLAGS="$CGO_LDFLAGS -L${candidate_dir}"
+            export CGO_LDFLAGS="$CGO_LDFLAGS -L${candidate_dir} -Wl,-rpath,${candidate_dir}"
             break
         fi
     done

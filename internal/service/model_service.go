@@ -2213,7 +2213,7 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 func (m *ModelProviderService) ensureUnlimitedOCRFromEnv(ctx context.Context, userID, tenantID string) error {
 	config := collectEnvConfig(unlimitedOCREnvKeys, unlimitedOCRDefaultConfig)
 	if config == nil {
-		config = unlimitedOCRDefaultConfig
+		return nil
 	}
 	return m.ensureOCRProviderFromEnv(ctx, userID, tenantID, "Unlimited-OCR-2", "unlimited-ocr-2-from-env", config)
 }

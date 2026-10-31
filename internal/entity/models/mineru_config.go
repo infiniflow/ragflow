@@ -126,6 +126,9 @@ func MinerUProviderConfigFromAPIKey(apiKey string) MinerUProviderAPIKeyConfig {
 	if token == "" {
 		token = get("access_token")
 	}
+	if token == "" {
+		token = get("unlimited_ocr_api_key")
+	}
 	return MinerUProviderAPIKeyConfig{
 		IsProviderJSON: true,
 		APIServer:      get("mineru_apiserver"),

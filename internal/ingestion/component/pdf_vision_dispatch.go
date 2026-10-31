@@ -140,11 +140,14 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 	// Unlimited-OCR-2 dispatch: parse_method "unlimited-ocr-2" or "unlimited_ocr",
 	// a layout_recognizer naming Unlimited-OCR-2, or a composite selector.
 	isUnlimitedOCRMatch := strings.EqualFold(strings.TrimSpace(method), "unlimited-ocr-2") ||
+		strings.EqualFold(strings.TrimSpace(method), "unlimited-ocr") ||
 		strings.EqualFold(strings.TrimSpace(method), "unlimited_ocr") ||
 		strings.Contains(layoutLower, "unlimited-ocr") ||
 		strings.Contains(layoutLower, "unlimited_ocr") ||
 		strings.Contains(layoutLower, "@unlimited-ocr-2") ||
-		strings.Contains(methodLower, "@unlimited-ocr-2")
+		strings.Contains(methodLower, "@unlimited-ocr-2") ||
+		strings.Contains(layoutLower, "@unlimited-ocr") ||
+		strings.Contains(methodLower, "@unlimited-ocr")
 	unlimitedOCRSelector := layout
 	if strings.TrimSpace(unlimitedOCRSelector) == "" {
 		unlimitedOCRSelector = method
@@ -356,6 +359,7 @@ func dispatchUnlimitedOCR2PDF(
 	}
 	timeout := 30 * time.Minute
 
+	var resolvedAPIConfig *modelModule.APIConfig
 	if tenantID != "" {
 		var apiConfig *modelModule.APIConfig
 		var err error
@@ -364,8 +368,9 @@ func dispatchUnlimitedOCR2PDF(
 		} else {
 			_, _, apiConfig, _, err = resolveTenantOCRModelByProvider(ctx, db, tenantID, "Unlimited-OCR-2")
 		}
-		if err == nil {
-			if apiConfig != nil && apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
+		if err == nil && apiConfig != nil {
+			resolvedAPIConfig = apiConfig
+			if apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
 				baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
 			} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "unlimited_ocr_server_url"); configuredURL != "" {
 				baseURL = strings.TrimRight(configuredURL, "/")
@@ -380,15 +385,28 @@ func dispatchUnlimitedOCR2PDF(
 		map[string]string{"default": baseURL},
 		modelModule.URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
 	)
-	apiConfig := &modelModule.APIConfig{
+	effectiveAPIConfig := &modelModule.APIConfig{
 		BaseURL: &baseURL,
 	}
+	if resolvedAPIConfig != nil && resolvedAPIConfig.ApiKey != nil {
+		effectiveAPIConfig.ApiKey = resolvedAPIConfig.ApiKey
+	}
+
+	cropMode := getStringOr(setup, "unlimited_ocr_crop_mode", "auto")
+	noRepeatNgram := getIntOr(setup, "unlimited_ocr_no_repeat_ngram_size", 35)
+	pageGuard := getBoolOr(setup, "unlimited_ocr_page_guard", true)
+
 	backend := "pipeline"
-	task, err := driver.ParseFile(ctx, &backend, binary, nil, apiConfig, &modelModule.ParseFileConfig{}, nil)
+	parseConfig := &modelModule.ParseFileConfig{
+		CropMode:          cropMode,
+		NoRepeatNgramSize: noRepeatNgram,
+		PageGuard:         &pageGuard,
+	}
+	task, err := driver.ParseFile(ctx, &backend, binary, nil, effectiveAPIConfig, parseConfig, nil)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 submit: %w", err)
 	}
-	content, err := pollUnlimitedOCRTask(ctx, driver, task.TaskID, apiConfig, timeout)
+	content, err := pollUnlimitedOCRTask(ctx, driver, task.TaskID, effectiveAPIConfig, timeout)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 result: %w", err)
 	}
@@ -397,6 +415,7 @@ func dispatchUnlimitedOCR2PDF(
 
 func pollUnlimitedOCRTask(ctx context.Context, driver *modelModule.UnlimitedOCRModel, taskID string, apiConfig *modelModule.APIConfig, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
+	var lastErr error
 	for {
 		task, err := driver.ShowTask(ctx, taskID, apiConfig)
 		if err == nil {
@@ -405,8 +424,13 @@ func pollUnlimitedOCRTask(ctx context.Context, driver *modelModule.UnlimitedOCRM
 					return segment.Content, nil
 				}
 			}
+		} else {
+			lastErr = err
 		}
 		if time.Now().After(deadline) {
+			if lastErr != nil {
+				return "", fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s: last error: %w", taskID, lastErr)
+			}
 			return "", fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s", taskID)
 		}
 		select {
@@ -415,6 +439,48 @@ func pollUnlimitedOCRTask(ctx context.Context, driver *modelModule.UnlimitedOCRM
 		case <-time.After(2 * time.Second):
 		}
 	}
+}
+
+func getIntOr(m map[string]any, key string, def int) int {
+	if m == nil {
+		return def
+	}
+	v, ok := m[key]
+	if !ok || v == nil {
+		return def
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	case string:
+		if i, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
+			return i
+		}
+	}
+	return def
+}
+
+func getBoolOr(m map[string]any, key string, def bool) bool {
+	if m == nil {
+		return def
+	}
+	v, ok := m[key]
+	if !ok || v == nil {
+		return def
+	}
+	switch val := v.(type) {
+	case bool:
+		return val
+	case string:
+		if b, err := strconv.ParseBool(strings.TrimSpace(val)); err == nil {
+			return b
+		}
+	}
+	return def
 }
 
 func monkeyOCRv2ParseRequest(ctx context.Context, apiURL, filename string, binary []byte, timeout time.Duration) ([]byte, error) {
