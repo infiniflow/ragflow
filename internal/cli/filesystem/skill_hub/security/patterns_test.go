@@ -40,6 +40,7 @@ func TestScanSkillDetectsRecursiveRmOfExpandedTarget(t *testing.T) {
 		{"short flag", "rm -r $TARGET"},
 		{"bundled flags", "rm -rf ${TARGET}"},
 		{"long flag", "rm --recursive $TARGET"},
+		{"abbreviated long flag", "rm --rec $TARGET"},
 		{"recursive flag after another option", `rm -f -r "$TARGET"`},
 		{"hash inside a quoted target", `rm -rf "my #dir" $TARGET`},
 		{"hash glued to an expansion", `rm -rf "my#$TARGET"`},
@@ -71,6 +72,7 @@ func TestScanSkillDetectsRecursiveRmOfHome(t *testing.T) {
 		{"short flag", "rm -r $HOME"},
 		{"bundled flags", "rm -rf $HOME"},
 		{"long flag", "rm --recursive $HOME"},
+		{"abbreviated long flag", "rm --rec $HOME"},
 		{"quoted target", `rm -rf "$HOME/Downloads"`},
 		{"rmdir", "rmdir $HOME/tmp"},
 		{"long option before the recursive flag", `rm --force --recursive "$HOME"`},
@@ -102,6 +104,7 @@ func TestScanSkillIgnoresHomeExpansionAfterRemovalCommand(t *testing.T) {
 		`rm -rf build # $HOME`,
 		`rm -rf build #note $HOME`,
 		`rmdir build ; echo $HOME`,
+		`transform -rf "$HOME"`,
 	}
 
 	for _, line := range lines {
@@ -122,7 +125,8 @@ func TestScanSkillIgnoresHomeExpansionAfterRemovalCommand(t *testing.T) {
 // variable expanded by a later command in the same line reads as an expanded
 // removal target and blocks an otherwise safe skill. An unquoted `#` that
 // starts a word opens a comment, so an expansion in the comment text must not
-// count as the removal target either.
+// count as the removal target either. The command name itself needs a word
+// boundary, so a benign command whose name ends in `rm` is not a removal.
 func TestScanSkillIgnoresExpansionAfterRemovalCommand(t *testing.T) {
 	lines := []string{
 		`rm -rf build && echo "$USER"`,
@@ -130,6 +134,7 @@ func TestScanSkillIgnoresExpansionAfterRemovalCommand(t *testing.T) {
 		`rm -rf build #$USER`,
 		`rm -rf build #note $USER`,
 		`rm -rf "a; b"`,
+		`transform -rf "$TARGET"`,
 	}
 
 	for _, line := range lines {
