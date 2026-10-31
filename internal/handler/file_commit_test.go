@@ -19,6 +19,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -29,6 +30,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/permission/testsupport"
+	"ragflow/internal/service/file"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -273,6 +275,31 @@ func TestFileCommit_CreateCommit_Success(t *testing.T) {
 	}
 	if data["message"] != "initial commit" {
 		t.Errorf("expected 'initial commit', got %v", data["message"])
+	}
+}
+
+func TestFileCommit_CreateCommit_DeleteLiveFileIsBadRequest(t *testing.T) {
+	r, mock := setupFileCommitTest("user-1")
+	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+		return nil, fmt.Errorf("%w: f1", file.ErrDeleteLiveFile)
+	}
+
+	body := `{"message": "remove", "files": [{"file_id": "f1", "file_name": "test.txt", "operation": "delete"}]}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/folders/folder-1/commits", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	// A rejected deletion is caller input, not a server error.
+	if code, _ := resp["code"].(float64); code != float64(common.CodeBadRequest) {
+		t.Errorf("expected bad request, got code %v", code)
 	}
 }
 

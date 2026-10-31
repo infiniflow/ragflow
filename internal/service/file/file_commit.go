@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -54,6 +55,37 @@ func NewFileCommitService() *FileCommitService {
 		fileDAO:       dao.NewFileDAO(),
 		kbDAO:         dao.NewKnowledgebaseDAO(),
 	}
+}
+
+// ErrDeleteLiveFile rejects a delete change for a file that still exists in the
+// commit folder. Recording the tombstone would hide the live file from
+// GetUncommittedChanges, which skips every committed tombstone and marks the
+// entry as processed, so later edits would never be reported.
+var ErrDeleteLiveFile = errors.New("cannot commit the deletion of a file that is still in the folder")
+
+// fileTreeContains reports whether fileID, or one of its ancestors, is folderID.
+// It walks from the file upwards rather than scanning the folder, and treats an
+// unknown ID as outside: a deletion is only valid for a file that is already
+// gone. The seen set stops a corrupted parent_id cycle.
+func (s *FileCommitService) fileTreeContains(ctx context.Context, tx *gorm.DB, folderID, fileID string) (bool, error) {
+	seen := make(map[string]bool)
+	current := fileID
+	for current != "" && !seen[current] {
+		seen[current] = true
+		if current == folderID {
+			return true, nil
+		}
+		var file entity.File
+		err := tx.WithContext(ctx).Select("id", "parent_id").Where("id = ?", current).First(&file).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		if err != nil {
+			return false, fmt.Errorf("resolve file %s: %w", fileID, err)
+		}
+		current = file.ParentID
+	}
+	return false, nil
 }
 
 // CreateCommit creates a new commit for a workspace folder
@@ -182,8 +214,19 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 					}
 				}
 
-				if err := tx.Model(&entity.File{}).Where("id = ?", change.FileID).Update("status", "0").Error; err != nil {
-					return fmt.Errorf("failed to soft-delete file: %w", err)
+				// The file table has no status column: a deleted file is one
+				// already removed from the live tree, so the commit only keeps
+				// the tombstone in tree_state for history and diffs. A file
+				// that is still live would otherwise be hidden from
+				// GetUncommittedChanges for good: that scan marks every
+				// committed entry as processed and skips tombstones, so the
+				// live row is reported as neither deleted nor added.
+				liveInFolder, err := s.fileTreeContains(ctx, tx, folderID, change.FileID)
+				if err != nil {
+					return err
+				}
+				if liveInFolder {
+					return fmt.Errorf("%w: %s", ErrDeleteLiveFile, change.FileID)
 				}
 
 				if entry, ok := treeState[change.FileID]; ok {
