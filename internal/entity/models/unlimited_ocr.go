@@ -65,29 +65,45 @@ func (m *UnlimitedOCRModel) Name() string {
 	return "unlimited_ocr"
 }
 
+// normalizeServerURL ensures the URL string has a valid scheme and no trailing slash.
+func normalizeServerURL(raw string) string {
+	u := strings.TrimRight(strings.TrimSpace(raw), "/")
+	if u == "" {
+		return ""
+	}
+	if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
+		return "http://" + u
+	}
+	return u
+}
+
 // ResolveUnlimitedOCRServerURL extracts the server address from apiConfig or environment variables.
 func ResolveUnlimitedOCRServerURL(apiConfig *APIConfig) string {
 	if apiConfig != nil && apiConfig.BaseURL != nil {
-		if u := strings.TrimRight(strings.TrimSpace(*apiConfig.BaseURL), "/"); u != "" {
+		if u := normalizeServerURL(*apiConfig.BaseURL); u != "" {
 			return u
 		}
 	}
 	if apiConfig != nil && apiConfig.ApiKey != nil {
 		var cfg map[string]interface{}
 		if err := json.Unmarshal([]byte(*apiConfig.ApiKey), &cfg); err == nil {
-			if u, ok := cfg["unlimited_ocr_server_url"].(string); ok && strings.TrimSpace(u) != "" {
-				return strings.TrimRight(strings.TrimSpace(u), "/")
+			if u, ok := cfg["unlimited_ocr_server_url"].(string); ok {
+				if norm := normalizeServerURL(u); norm != "" {
+					return norm
+				}
 			}
-			if u, ok := cfg["unlimited_ocr_apiserver"].(string); ok && strings.TrimSpace(u) != "" {
-				return strings.TrimRight(strings.TrimSpace(u), "/")
+			if u, ok := cfg["unlimited_ocr_apiserver"].(string); ok {
+				if norm := normalizeServerURL(u); norm != "" {
+					return norm
+				}
 			}
 		}
 	}
-	if u := strings.TrimSpace(common.GetEnv(common.EnvUnlimitedOCRServerURL)); u != "" {
-		return strings.TrimRight(u, "/")
+	if u := normalizeServerURL(common.GetEnv(common.EnvUnlimitedOCRServerURL)); u != "" {
+		return u
 	}
-	if u := strings.TrimSpace(common.GetEnv(common.EnvUnlimitedOCRAPIServer)); u != "" {
-		return strings.TrimRight(u, "/")
+	if u := normalizeServerURL(common.GetEnv(common.EnvUnlimitedOCRAPIServer)); u != "" {
+		return u
 	}
 	return "http://127.0.0.1:18000"
 }
@@ -112,16 +128,21 @@ func ResolveUnlimitedOCRBearerToken(apiConfig *APIConfig) string {
 		if v, ok := cfg["api_key"].(string); ok && strings.TrimSpace(v) != "" {
 			return strings.TrimSpace(v)
 		}
+		return ""
 	}
 	return raw
 }
 
-// GetBaseURL resolves the effective server endpoint for Unlimited-OCR-2.
+// GetBaseURL resolves the effective server endpoint for Unlimited-OCR-2 with a normalized scheme.
 func (m *UnlimitedOCRModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 	if u := ResolveUnlimitedOCRServerURL(apiConfig); u != "" {
 		return u, nil
 	}
-	return m.baseModel.GetBaseURL(apiConfig)
+	base, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", err
+	}
+	return normalizeServerURL(base), nil
 }
 
 // unlimitedOCRGET performs an HTTP GET request with optional Bearer token authentication.
@@ -170,9 +191,6 @@ func (m *UnlimitedOCRModel) CheckConnection(ctx context.Context, apiConfig *APIC
 	resolvedBaseURL, err := m.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
-	}
-	if !strings.HasPrefix(resolvedBaseURL, "http://") && !strings.HasPrefix(resolvedBaseURL, "https://") {
-		resolvedBaseURL = "http://" + resolvedBaseURL
 	}
 	u, err := url.Parse(resolvedBaseURL)
 	if err != nil {

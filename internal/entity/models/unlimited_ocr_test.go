@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -252,5 +253,39 @@ func TestUnlimitedOCRModel_OCRFile_AuthFailureStopsPolling(t *testing.T) {
 	}
 	if callCount > 2 {
 		t.Fatalf("ShowTask called %d times, expected immediate stop", callCount)
+	}
+}
+
+func TestResolveUnlimitedOCRBearerToken(t *testing.T) {
+	urlOnlyJSON := `{"unlimited_ocr_server_url":"http://127.0.0.1:18000"}`
+	cfg1 := &APIConfig{ApiKey: &urlOnlyJSON}
+	if tok := ResolveUnlimitedOCRBearerToken(cfg1); tok != "" {
+		t.Fatalf("expected empty token for URL-only JSON, got %q", tok)
+	}
+
+	tokenJSON := `{"unlimited_ocr_api_key":"secret-token"}`
+	cfg2 := &APIConfig{ApiKey: &tokenJSON}
+	if tok := ResolveUnlimitedOCRBearerToken(cfg2); tok != "secret-token" {
+		t.Fatalf("expected 'secret-token', got %q", tok)
+	}
+
+	rawTok := "bearer-token-123"
+	cfg3 := &APIConfig{ApiKey: &rawTok}
+	if tok := ResolveUnlimitedOCRBearerToken(cfg3); tok != "bearer-token-123" {
+		t.Fatalf("expected 'bearer-token-123', got %q", tok)
+	}
+}
+
+func TestUnlimitedOCRModel_URLNormalization(t *testing.T) {
+	driver := NewUnlimitedOCRModel(
+		map[string]string{"default": "localhost:18000"},
+		URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
+	)
+	baseURL, err := driver.GetBaseURL(nil)
+	if err != nil {
+		t.Fatalf("GetBaseURL failed: %v", err)
+	}
+	if baseURL != "http://localhost:18000" && !strings.HasPrefix(baseURL, "http://") {
+		t.Fatalf("expected http:// prefix on normalized URL, got %q", baseURL)
 	}
 }
