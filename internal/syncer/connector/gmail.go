@@ -210,7 +210,9 @@ func (c *GmailConnector) loadThread(ctx context.Context, userEmail, threadID str
 	if err != nil {
 		return gmailThread{}, err
 	}
-	query := url.Values{"fields": {"id,messages(id,labelIds,payload(headers,parts(body(data),mimeType)))"}}
+	// Keep the complete MIME subtree: bodies may live at the root or at any
+	// nesting depth, and a shallow fields projection silently removes them.
+	query := url.Values{"fields": {"id,messages(id,labelIds,payload)"}}
 	var thread gmailThread
 	err = c.getJSON(ctx, client, "https://gmail.googleapis.com/gmail/v1/users/"+url.PathEscape(userEmail)+"/threads/"+url.PathEscape(threadID)+"?"+query.Encode(), &thread)
 	return thread, err
