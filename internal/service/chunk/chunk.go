@@ -523,7 +523,7 @@ func hydrateChunkVectors(ctx context.Context, engine engine.DocEngine, chunks []
 	var missingIDs []string
 	missingIdx := make(map[string]int)
 	for i, ck := range chunks {
-		id, _ := ck["id"].(string)
+		id := nlp.ChunkVectorID(ck)
 		if id == "" {
 			continue
 		}

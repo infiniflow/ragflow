@@ -1094,7 +1094,6 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 	}
 
 	// Fetch parent chunks and aggregate
-	vectorSize := 1024
 	for key, childList := range momChunks {
 		momID := key.momID
 		parentResult, err := docEngine.Search(ctx, &types.SearchRequest{
@@ -1174,23 +1173,10 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 			"similarity":          avgSim,
 			"vector_similarity":   avgSim,
 			"term_similarity":     avgSim,
-			"vector":              make([]float64, vectorSize),
+			"vector":              childList[0].chunk["vector"],
+			"vector_chunk_id":     ChunkVectorID(childList[0].chunk),
 			"positions":           parentMap["position_int"],
 			"doc_type_kwd":        docTypeKwd,
-		}
-
-		// Get vector from first child if available
-	childVecLoop:
-		for _, c := range childList {
-			for k := range c.chunk {
-				if strings.HasSuffix(k, "_vec") {
-					if vec, ok := c.chunk[k].([]float64); ok {
-						aggregated["vector"] = vec
-						vectorSize = len(vec)
-						break childVecLoop
-					}
-				}
-			}
 		}
 
 		remainingChunks = append(remainingChunks, aggregated)
@@ -1209,6 +1195,17 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 
 	common.Info("RetrievalByChildren finished", zap.Int("momChunks", len(momChunks)), zap.Int("resultChunks", len(remainingChunks)))
 	return remainingChunks
+}
+
+// ChunkVectorID identifies the indexed source of a projected chunk's vector.
+// Parent expansion changes the content identity to a hidden, unembedded row;
+// deferred hydration must still fetch the representative child's embedding.
+func ChunkVectorID(chunk map[string]interface{}) string {
+	if id, _ := chunk["vector_chunk_id"].(string); id != "" {
+		return id
+	}
+	id, _ := chunk["chunk_id"].(string)
+	return id
 }
 
 // PruneDeletedChunks removes chunks whose documents no longer exist
