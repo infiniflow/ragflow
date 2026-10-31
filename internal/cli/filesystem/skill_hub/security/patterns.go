@@ -145,18 +145,6 @@ var ThreatPatterns = []ThreatPattern{
 		Category:    "destructive",
 		Description: "recursive rm with suspicious target",
 	},
-	// The rule above walks unquoted operands and stops at a separator, so a
-	// separator inside a double-quoted operand hides an expansion that follows
-	// it. Detect that case as its own rule: inside quotes a separator is
-	// literal, and making the operand alternation above stop before the `$`
-	// would also let a quoted span swallow the separator that ends the operand.
-	{
-		Pattern:     `\brm\s+(?:--?[a-zA-Z][a-zA-Z-]*(?:=\S+)?\s+|--\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--rec[a-zA-Z]*)\s+(?:[^\s;&|\n#]+|"[^"\n]*"|'[^'\n]*'|\s)*"[^"\n]*[;&|#][^"\n]*\$`,
-		PatternID:   "rm_quoted_expansion",
-		Severity:    "high",
-		Category:    "destructive",
-		Description: "recursive rm of a quoted operand with a separator before an expansion",
-	},
 
 	// ========== Persistence ==========
 	{

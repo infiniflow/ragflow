@@ -16,23 +16,7 @@
 
 package security
 
-import (
-	"regexp"
-	"testing"
-)
-
-func TestRmQuotedExpansionCompiles(t *testing.T) {
-	for _, pattern := range ThreatPatterns {
-		if pattern.PatternID != "rm_quoted_expansion" {
-			continue
-		}
-		if _, err := regexp.Compile("(?i:" + pattern.Pattern + ")"); err != nil {
-			t.Fatalf("rm_quoted_expansion does not compile: %v", err)
-		}
-		return
-	}
-	t.Fatal("rm_quoted_expansion is not registered")
-}
+import "testing"
 
 func TestScanSkillDetectsRmQuotedExpansion(t *testing.T) {
 	lines := []string{
@@ -45,16 +29,18 @@ func TestScanSkillDetectsRmQuotedExpansion(t *testing.T) {
 		`rm -rf -- "a; $T"`,
 		`rm --rec "a; $T"`,
 		`/bin/rm -rf "a; $T"`,
+		`rm -rf -v "a; $T"`,
+		`rm -rf "prefix; "$TARGET`,
+		`rm -rf "prefix; \"part$TARGET"`,
+		`rm -rf "a#b $T"`,
+		`rm -rf "a; $T"#note`,
 	}
 
 	for _, line := range lines {
 		t.Run(line, func(t *testing.T) {
-			for _, finding := range scanLine(line) {
-				if finding.PatternID == "rm_quoted_expansion" {
-					return
-				}
+			if !hasPattern(scanLine(line), "rm_quoted_expansion") {
+				t.Fatalf("%q did not raise rm_quoted_expansion: %v", line, scanLine(line))
 			}
-			t.Fatalf("%q did not raise rm_quoted_expansion: %v", line, scanLine(line))
 		})
 	}
 }
@@ -67,10 +53,15 @@ func TestScanSkillIgnoresRmQuotedExpansion(t *testing.T) {
 		`rm -rf "a; b" && echo $USER`,
 		`transform -rf "a; $T"`,
 		`rm -rf 'a; $T'`,
+		`rm -rf 'a; ' $T`,
 		`rm -rf "$TARGET"`,
 		`rm -rf "a $T"`,
+		`rm -rf "a; b" $T`,
+		`rm -rf "prefix; \$TARGET"`,
+		`rm -rf "a; b" # $T`,
 		`echo "rm -rf a; $T"`,
 		`rmdir "a; $T"`,
+		`rm -fd "a; $T"`,
 	}
 
 	for _, line := range lines {
@@ -82,6 +73,15 @@ func TestScanSkillIgnoresRmQuotedExpansion(t *testing.T) {
 			}
 		})
 	}
+}
+
+func hasPattern(findings []Finding, id string) bool {
+	for _, finding := range findings {
+		if finding.PatternID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func scanLine(line string) []Finding {
