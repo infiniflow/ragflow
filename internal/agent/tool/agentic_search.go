@@ -54,11 +54,13 @@ type agenticSearchResult struct {
 }
 
 // AgenticSearchTool is the hybrid/vector/bm25 retrieval tool. The search mode
-// selects the vector-similarity weight used by the underlying retrieval service:
+// selects the keyword share of the fusion weight used by the underlying
+// retrieval service (RetrievalRequest.KeywordsSimilarityWeight; the vector
+// share is its complement):
 //
-//	hybrid: 0.3 (hybrid of keyword + vector)
-//	vector: 1.0 (vector-only)
-//	bm25:   0.0 (keyword-only)
+//	hybrid: 0.7 (hybrid of keyword + vector)
+//	vector: 0.0 (vector-only)
+//	bm25:   1.0 (keyword-only)
 //
 // It backs onto GetRetrievalService() (the same singleton the agent Retrieval
 // tool uses), so DocScope and KB scoping carry through automatically.
@@ -70,12 +72,12 @@ type AgenticSearchTool struct {
 
 // NewAgenticSearchTool returns the retrieval tool for the given mode.
 func NewAgenticSearchTool(mode string) *AgenticSearchTool {
-	weight := 0.3
+	weight := 0.7
 	switch mode {
 	case toolVectorSearch:
-		weight = 1.0
-	case toolBM25Search:
 		weight = 0.0
+	case toolBM25Search:
+		weight = 1.0
 	}
 	return &AgenticSearchTool{mode: mode, weight: weight, defaults: hybridSearchArgs{TopN: 12}}
 }
