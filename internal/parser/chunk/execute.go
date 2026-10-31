@@ -67,7 +67,8 @@ func Run(text string, opts ChunkOptions) (*ChunkContext, error) {
 			"min_length": float64(opts.FilterMinLength),
 		}
 	}
-	if len(postCfg) > 0 {
+	hasPostprocess := len(postCfg) > 0
+	if hasPostprocess {
 		post, err := NewPostprocessOperator(postCfg)
 		if err != nil {
 			return nil, fmt.Errorf("chunk: build postprocess: %w", err)
@@ -87,7 +88,11 @@ func Run(text string, opts ChunkOptions) (*ChunkContext, error) {
 			return ctx, fmt.Errorf("%s: finish: %w", stageNames[i], err)
 		}
 	}
-	if len(ctx.ResultChunks) == 0 && len(ctx.SplitChunks) > 0 {
+	// Only a pipeline without a postprocess stage leaves the split output as
+	// the result. Once postprocess ran, an empty result is what it computed:
+	// the filter legitimately dropped every chunk, and copying the split
+	// chunks back would re-emit exactly the chunks the caller asked to discard.
+	if !hasPostprocess && len(ctx.ResultChunks) == 0 && len(ctx.SplitChunks) > 0 {
 		ctx.ResultChunks = ctx.SplitChunks
 	}
 	return ctx, nil
