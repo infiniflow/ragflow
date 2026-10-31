@@ -40,6 +40,24 @@ type APIKeyResponse struct {
 	UpdateDate *time.Time `json:"update_date,omitempty"`
 }
 
+// maskAPIToken renders an API token safe for list responses: a visible
+// prefix/suffix pair so an operator can still tell keys apart, never the
+// middle, per #20555: "" stays "" (a no-record field must remain
+// distinguishable from a masked one), tokens that would not survive a 4+4
+// split collapse to a constant so a short secret is never partially echoed —
+// an eight-character token under 4+4 would reveal its entire body — and
+// longer tokens keep 4 + 4 visible characters, enough to recognize
+// `ragf`-prefixed ragflow tokens.
+func maskAPIToken(token string) string {
+	if token == "" {
+		return ""
+	}
+	if len(token) <= 8 {
+		return "***"
+	}
+	return token[:4] + "***" + token[len(token)-4:]
+}
+
 // ListAPIKeys list all API keys for a tenant
 func (s *SystemService) ListAPIKeys(ctx context.Context, tenantID string) ([]*APIKeyResponse, error) {
 	APITokenDAO := dao.NewAPITokenDAO()
@@ -65,9 +83,14 @@ func (s *SystemService) ListAPIKeys(ctx context.Context, tenantID string) ([]*AP
 		}
 
 		responses[i] = &APIKeyResponse{
-			UserID:     apiTokenUserID(key.UserID),
-			TenantID:   key.TenantID,
-			Token:      key.Token,
+			UserID:   apiTokenUserID(key.UserID),
+			TenantID: key.TenantID,
+			// The full token is returned exactly once, by CreateAPIKey, so
+			// the user can copy it. A GET response travels through proxies,
+			// browser history, and dev-tool network panels, so the list path
+			// must never echo the credential back (same class of leak the
+			// user-profile fix #20277 closed).
+			Token:      maskAPIToken(key.Token),
 			DialogID:   key.DialogID,
 			Source:     key.Source,
 			Beta:       beta,
