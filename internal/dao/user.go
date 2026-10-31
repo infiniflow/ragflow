@@ -18,9 +18,12 @@ package dao
 
 import (
 	"context"
+	"fmt"
 	"ragflow/internal/entity"
+	"strings"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // UserDAO user data access object
@@ -132,25 +135,79 @@ func (dao *UserDAO) UpdateAccessToken(ctx context.Context, db *gorm.DB, user *en
 	return db.WithContext(ctx).Model(user).Update("access_token", token).Error
 }
 
-// List users (only active users with status != "0")
-func (dao *UserDAO) List(ctx context.Context, db *gorm.DB, offset, limit int, name, status, sort, orderBy string) ([]*entity.User, int64, error) {
-	var users []*entity.User
-	var total int64
+// UserListOrder identifies a supported database ordering for user lists.
+type UserListOrder uint8
 
-	// Only count users with status != "0" (not deleted)
-	if err := db.WithContext(ctx).Model(&entity.User{}).Count(&total).Error; err != nil {
+const (
+	UserListByCreateTime UserListOrder = iota
+	UserListByLastLoginTime
+)
+
+// UserListOptions contains resolved filters, ordering, and pagination.
+type UserListOptions struct {
+	Keyword string
+	Active  *bool // nil includes both active and inactive users.
+	OrderBy UserListOrder
+	Desc    bool
+	Offset  int
+	Limit   int
+}
+
+// List returns a page of users and their filtered total. Conditions on db are
+// applied before counting and pagination, so callers can add further filters.
+func (dao *UserDAO) List(ctx context.Context, db *gorm.DB, opts UserListOptions) ([]*entity.User, int64, error) {
+	order, err := userListOrder(opts.OrderBy, opts.Desc)
+	if err != nil {
+		return nil, 0, err
+	}
+	query := userListQuery(ctx, db, opts.Keyword, opts.Active)
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	query := db.WithContext(ctx).Model(&entity.User{})
-	if offset > 0 {
-		query = query.Offset(offset)
+	query = query.Order(order).
+		Order(clause.OrderByColumn{Column: clause.Column{Table: "user", Name: "id"}})
+	if opts.Offset > 0 {
+		query = query.Offset(opts.Offset)
 	}
-	if limit > 0 {
-		query = query.Limit(limit)
+	if opts.Limit > 0 {
+		query = query.Limit(opts.Limit)
 	}
-	err := query.Find(&users).Error
+	users := make([]*entity.User, 0)
+	err = query.Select("user.*").Find(&users).Error
 	return users, total, err
+}
+
+func userListQuery(ctx context.Context, db *gorm.DB, keyword string, active *bool) *gorm.DB {
+	query := db.WithContext(ctx).Model(&entity.User{})
+	if keyword != "" {
+		pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(strings.ToLower(keyword)) + "%"
+		query = query.Where("(LOWER(?) LIKE ? ESCAPE '!' OR LOWER(?) LIKE ? ESCAPE '!')",
+			clause.Column{Table: "user", Name: "email"}, pattern,
+			clause.Column{Table: "user", Name: "nickname"}, pattern)
+	}
+	if active != nil {
+		value := "0"
+		if *active {
+			value = "1"
+		}
+		query = query.Where(clause.Eq{Column: clause.Column{Table: "user", Name: "is_active"}, Value: value})
+	}
+	return query
+}
+
+func userListOrder(order UserListOrder, desc bool) (clause.OrderByColumn, error) {
+	var field string
+	switch order {
+	case UserListByCreateTime:
+		field = "create_time"
+	case UserListByLastLoginTime:
+		field = "last_login_time"
+	default:
+		return clause.OrderByColumn{}, fmt.Errorf("unsupported user list order: %d", order)
+	}
+	return clause.OrderByColumn{Column: clause.Column{Table: "user", Name: field}, Desc: desc}, nil
 }
 
 // Delete delete user
@@ -163,8 +220,7 @@ func (dao *UserDAO) HardDelete(ctx context.Context, db *gorm.DB, id string) erro
 	return db.WithContext(ctx).Unscoped().Where("id = ?", id).Delete(&entity.User{}).Error
 }
 
-// ListByEmail list users by email (only active users with status != "0")
-// Returns all users matching the given email address
+// ListByEmail returns all users matching the given email address.
 func (dao *UserDAO) ListByEmail(ctx context.Context, db *gorm.DB, email string) ([]*entity.User, error) {
 	var users []*entity.User
 	err := db.WithContext(ctx).Where("email = ?", email).Find(&users).Error
