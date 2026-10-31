@@ -2,7 +2,6 @@ package parser
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"strings"
@@ -111,7 +110,6 @@ func minerUMarkdownResult(ctx context.Context, filename string, parsed *models.M
 	return pdfMarkdownToResult(ctx, filename, content, 1)
 }
 
-// pollMinerUTask polls the MinerU local status endpoint until the document parse result is ready.
 func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID string, apiConfig *models.APIConfig, timeout time.Duration) (string, error) {
 	if timeout <= 0 {
 		timeout = minerUPollTimeout
@@ -150,9 +148,6 @@ func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID
 			}
 			lastErr = fmt.Errorf("empty MinerU task content")
 		} else {
-			if errors.Is(err, models.ErrTaskAuthorization) {
-				return "", fmt.Errorf("MinerU task %s result: %w", taskID, err)
-			}
 			lastErr = err
 		}
 		// A cancelled run has to leave the poll at once. Sleeping the scan

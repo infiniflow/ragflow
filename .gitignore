@@ -302,7 +302,3 @@ gomod_cache
 parity/
 # downloaded Go native deps (fetched by ragflow_deps/download_go_deps.py)
 ragflow_deps/
-conf/service_conf.local.yaml
-logs/
-bin/start_native.sh
-bin/stop_native.sh

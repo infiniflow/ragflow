@@ -32,16 +32,27 @@ import (
 	"time"
 )
 
-// UnlimitedOCRModel wraps MinerULocalModel for Baidu's Unlimited-OCR-2 engine.
+// ErrTaskAuthorization indicates that the task result status endpoint rejected
+// access due to invalid, expired, or missing credentials (HTTP 401/403).
+var ErrTaskAuthorization = errors.New("task result authorization failed")
+
+// UnlimitedOCRModel represents Baidu's Unlimited-OCR-2 inference engine driver.
 // It speaks the high-performance /file_parse and /tasks result extraction protocol
 // returning clean Markdown directly into RAGFlow's ingestion pipeline.
 type UnlimitedOCRModel struct {
-	*MinerULocalModel
+	baseModel BaseModel
 }
 
 // NewUnlimitedOCRModel constructs a new Unlimited-OCR-2 driver instance.
 func NewUnlimitedOCRModel(baseURL map[string]string, urlSuffix URLSuffix) *UnlimitedOCRModel {
-	return &UnlimitedOCRModel{MinerULocalModel: NewMinerLocalUModel(baseURL, urlSuffix)}
+	return &UnlimitedOCRModel{
+		baseModel: BaseModel{
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
+			httpClient:       common.GetSchemeSafeHTTPClient(),
+		},
+	}
 }
 
 // NewInstance returns a new UnlimitedOCRModel instance configured with the specified base URLs.
@@ -81,12 +92,77 @@ func ResolveUnlimitedOCRServerURL(apiConfig *APIConfig) string {
 	return "http://127.0.0.1:18000"
 }
 
+// ResolveUnlimitedOCRBearerToken extracts the authentication token from apiConfig.
+func ResolveUnlimitedOCRBearerToken(apiConfig *APIConfig) string {
+	if apiConfig == nil || apiConfig.ApiKey == nil {
+		return ""
+	}
+	raw := strings.TrimSpace(*apiConfig.ApiKey)
+	if raw == "" {
+		return ""
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(raw), &cfg); err == nil && cfg != nil {
+		if v, ok := cfg["unlimited_ocr_api_key"].(string); ok && strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+		if v, ok := cfg["token"].(string); ok && strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+		if v, ok := cfg["api_key"].(string); ok && strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return raw
+}
+
 // GetBaseURL resolves the effective server endpoint for Unlimited-OCR-2.
 func (m *UnlimitedOCRModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 	if u := ResolveUnlimitedOCRServerURL(apiConfig); u != "" {
 		return u, nil
 	}
 	return m.baseModel.GetBaseURL(apiConfig)
+}
+
+// unlimitedOCRGET performs an HTTP GET request with optional Bearer token authentication.
+func unlimitedOCRGET(ctx context.Context, client *http.Client, targetURL, token string) (int, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, targetURL, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return resp.StatusCode, nil, err
+	}
+	return resp.StatusCode, body, nil
+}
+
+// unlimitedOCRHealthOK inspects the HTTP response body and status code to confirm health status.
+func unlimitedOCRHealthOK(code int, body []byte) bool {
+	if code != http.StatusOK {
+		return false
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return false
+	}
+	status, _ := payload["status"].(string)
+	engine, _ := payload["engine"].(string)
+	if strings.EqualFold(status, "ok") || strings.EqualFold(status, "ready") {
+		return true
+	}
+	if strings.Contains(strings.ToLower(engine), "unlimited") {
+		return true
+	}
+	return false
 }
 
 // CheckConnection probes /v1/health and /health to verify service reachability.
@@ -102,26 +178,23 @@ func (m *UnlimitedOCRModel) CheckConnection(ctx context.Context, apiConfig *APIC
 	if err != nil {
 		return fmt.Errorf("invalid base URL: %w", err)
 	}
-	token := ""
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		token = MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey)
-	}
+	token := ResolveUnlimitedOCRBearerToken(apiConfig)
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	v1URL := *u
 	v1URL.Path = "/v1/health"
-	v1Code, v1Body, v1Err := minerUGET(ctx, m.baseModel.httpClient, v1URL.String(), token)
+	v1Code, v1Body, v1Err := unlimitedOCRGET(ctx, m.baseModel.httpClient, v1URL.String(), token)
 	if v1Err == nil && (v1Code == http.StatusUnauthorized || v1Code == http.StatusForbidden) {
 		return fmt.Errorf("authentication failed (HTTP %d)", v1Code)
 	}
-	if v1Err == nil && minerUHealthOK(v1Code, v1Body) {
+	if v1Err == nil && unlimitedOCRHealthOK(v1Code, v1Body) {
 		return nil
 	}
 
 	legacy := *u
 	legacy.Path = "/health"
-	code, body, err := minerUGET(ctx, m.baseModel.httpClient, legacy.String(), token)
+	code, body, err := unlimitedOCRGET(ctx, m.baseModel.httpClient, legacy.String(), token)
 	if err != nil {
 		if v1Err != nil {
 			return fmt.Errorf("connection failed: %w", v1Err)
@@ -131,10 +204,95 @@ func (m *UnlimitedOCRModel) CheckConnection(ctx context.Context, apiConfig *APIC
 	if code == http.StatusUnauthorized || code == http.StatusForbidden {
 		return fmt.Errorf("authentication failed (HTTP %d)", code)
 	}
-	if minerUHealthOK(code, body) {
+	if unlimitedOCRHealthOK(code, body) {
 		return nil
 	}
 	return fmt.Errorf("not an Unlimited-OCR-2 service: HTTP %d", code)
+}
+
+// ShowTask retrieves the processing status and extracted segments for an Unlimited-OCR-2 task.
+func (m *UnlimitedOCRModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	if strings.TrimSpace(taskID) == "" {
+		return nil, fmt.Errorf("taskID is empty")
+	}
+
+	baseURL, err := m.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	taskURL := joinURL(baseURL, m.baseModel.URLSuffix.Task)
+	url := strings.TrimRight(taskURL, "/") + "/" + taskID + "/result"
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create status request: %w", err)
+	}
+
+	if token := ResolveUnlimitedOCRBearerToken(apiConfig); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := m.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send status request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read status response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return nil, fmt.Errorf("%w: Unlimited-OCR-2 status API failed with status %d: %s", ErrTaskAuthorization, resp.StatusCode, string(body))
+		}
+		return nil, fmt.Errorf("Unlimited-OCR-2 status API failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
+
+	content := ""
+	if results, ok := result["results"].(map[string]interface{}); ok {
+		for _, fileObj := range results {
+			if fileMap, ok := fileObj.(map[string]interface{}); ok {
+				if md, ok := fileMap["md_content"].(string); ok && md != "" {
+					content = md
+					break
+				}
+			}
+		}
+	}
+	if content == "" {
+		if text, ok := result["content"].(string); ok && text != "" {
+			content = text
+		} else if md, ok := result["markdown"].(string); ok && md != "" {
+			content = md
+		}
+	}
+
+	if content == "" {
+		return nil, fmt.Errorf("md_content not found in task result")
+	}
+
+	return &TaskResponse{
+		Segments: []TaskSegment{
+			{
+				Index:   1,
+				Content: content,
+			},
+		},
+	}, nil
 }
 
 // ParseFile submits a document to Unlimited-OCR-2, forwarding crop_mode, no_repeat_ngram_size,
@@ -199,10 +357,8 @@ func (m *UnlimitedOCRModel) ParseFile(ctx context.Context, modelName *string, co
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		if token := MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey); token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
-		}
+	if token := ResolveUnlimitedOCRBearerToken(apiConfig); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := m.baseModel.httpClient.Do(req)
@@ -303,4 +459,59 @@ func (m *UnlimitedOCRModel) ListModels(ctx context.Context, apiConfig *APIConfig
 		Name:       "Unlimited-OCR-2",
 		ModelTypes: []string{"ocr"},
 	}}, nil
+}
+
+// Balance reports unsupported operation for this provider.
+func (m *UnlimitedOCRModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s no such method", m.Name())
+}
+
+// ListTasks reports unsupported operation for this provider.
+func (m *UnlimitedOCRModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s no such method", m.Name())
+}
+
+// ChatWithMessages reports unsupported operation for this provider.
+func (m *UnlimitedOCRModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	return nil, fmt.Errorf("%s no such method", m.Name())
+}
+
+// ChatStreamlyWithSender reports unsupported operation for this provider.
+func (m *UnlimitedOCRModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s no such method", m.Name())
+}
+
+// Embed reports unsupported operation for this provider.
+func (m *UnlimitedOCRModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	return nil, fmt.Errorf("%s no such method", m.Name())
+}
+
+// Rerank reports unsupported operation for this provider.
+func (m *UnlimitedOCRModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s no such method", m.Name())
+}
+
+// TranscribeAudio reports unsupported operation for this provider.
+func (m *UnlimitedOCRModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s no such method", m.Name())
+}
+
+// TranscribeAudioWithSender reports unsupported operation for this provider.
+func (m *UnlimitedOCRModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s no such method", m.Name())
+}
+
+// AudioSpeech reports unsupported operation for this provider.
+func (m *UnlimitedOCRModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s no such method", m.Name())
+}
+
+// AudioSpeechWithSender reports unsupported operation for this provider.
+func (m *UnlimitedOCRModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s no such method", m.Name())
+}
+
+// Decide reports unsupported operation for this provider.
+func (m *UnlimitedOCRModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s no such method", m.Name())
 }

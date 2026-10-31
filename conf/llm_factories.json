@@ -8037,7 +8037,7 @@
             "logo": "",
             "tags": "OCR",
             "status": "1",
-            "url": "https://github.com/PaddlePaddle/PaddleOCR",
+            "url": "https://github.com/baidu/Unlimited-OCR",
             "llm": [
                 {
                     "llm_name": "Unlimited-OCR-2",

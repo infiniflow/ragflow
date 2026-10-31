@@ -274,13 +274,7 @@ check_pcre2() {
     #   openSUSE/RHEL  -> /usr/lib64
     #   generic Linux  -> /usr/lib, /usr/local/lib
     #   macOS Homebrew -> /opt/homebrew/lib (Apple Silicon), /usr/local/lib (Intel)
-    local real_home
-    real_home="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6)"
     for p in \
-        ${real_home:+$real_home/.local/lib/libpcre2-8.a} \
-        ${real_home:+$real_home/.local/lib/libpcre2-8.so} \
-        "${HOME}/.local/lib/libpcre2-8.a" \
-        "${HOME}/.local/lib/libpcre2-8.so" \
         /usr/lib/x86_64-linux-gnu/libpcre2-8.a \
         /usr/lib/x86_64-linux-gnu/libpcre2-8.so \
         /usr/lib64/libpcre2-8.a \
@@ -859,37 +853,7 @@ setup_cgo_env() {
         "${versioned_lib_dir}/liboffice_oxide.a"
 
     export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
-    export CGO_LDFLAGS="${CGO_LDFLAGS:+$CGO_LDFLAGS }${versioned_lib_dir}/liboffice_oxide.a"
-
-    local real_home
-    real_home="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6)"
-    for candidate_pkg in \
-        ${real_home:+$real_home/.local/lib/pkgconfig} \
-        "${HOME}/.local/lib/pkgconfig" \
-        /usr/local/lib/pkgconfig; do
-        if [ -d "$candidate_pkg" ]; then
-            export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:+$PKG_CONFIG_PATH:}$candidate_pkg"
-        fi
-    done
-
-    if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists libpcre2-8; then
-        local pcre2_libdir
-        pcre2_libdir="$(pkg-config --libs-only-L libpcre2-8 2>/dev/null)"
-        if [ -n "$pcre2_libdir" ]; then
-            export CGO_LDFLAGS="$CGO_LDFLAGS $pcre2_libdir"
-        fi
-    fi
-
-    for candidate_dir in \
-        ${real_home:+$real_home/.local/lib} \
-        "${HOME}/.local/lib" \
-        /usr/local/lib \
-        /opt/homebrew/lib; do
-        if [ -f "${candidate_dir}/libpcre2-8.so" ] || [ -f "${candidate_dir}/libpcre2-8.a" ]; then
-            export CGO_LDFLAGS="$CGO_LDFLAGS -L${candidate_dir} -Wl,-rpath,${candidate_dir}"
-            break
-        fi
-    done
+    export CGO_LDFLAGS="${versioned_lib_dir}/liboffice_oxide.a"
 
     # ── pdfium ────────────────────────────────────────────────────────
     check_pdfium_deps || return 1
