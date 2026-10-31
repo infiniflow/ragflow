@@ -40,6 +40,7 @@ func TestScanSkillDetectsRecursiveRmOfExpandedTarget(t *testing.T) {
 		{"short flag", "rm -r $TARGET"},
 		{"bundled flags", "rm -rf ${TARGET}"},
 		{"long flag", "rm --recursive $TARGET"},
+		{"recursive flag after another option", `rm -f -r "$TARGET"`},
 	}
 
 	for _, tt := range tests {
@@ -54,5 +55,20 @@ func TestScanSkillDetectsRecursiveRmOfExpandedTarget(t *testing.T) {
 			}
 			t.Fatalf("%q did not raise rm_recursive_dangerous: %v", tt.line, result.Findings)
 		})
+	}
+}
+
+// The removal target must end at a shell command separator, otherwise a
+// variable expanded by a later command in the same line reads as an expanded
+// removal target and blocks an otherwise safe skill.
+func TestScanSkillIgnoresExpansionAfterRemovalCommand(t *testing.T) {
+	line := `rm -rf build && echo "$USER"`
+	result := NewScanner().ScanSkill("skill", "github", "community", map[string][]byte{
+		"install.sh": []byte("#!/bin/sh\n" + line + "\n"),
+	})
+	for _, finding := range result.Findings {
+		if finding.PatternID == "rm_recursive_dangerous" {
+			t.Fatalf("%q raised rm_recursive_dangerous: %v", line, finding)
+		}
 	}
 }
