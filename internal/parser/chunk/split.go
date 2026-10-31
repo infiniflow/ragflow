@@ -188,10 +188,16 @@ func (o *SplitOperator) splitByChar(text string) []ChunkData {
 	var chunks []ChunkData
 	for len(text) > 0 {
 		r, size := utf8.DecodeRuneInString(text)
+		content := string(r)
 		chunks = append(chunks, ChunkData{
-			Content:  string(r),
-			Index:    len(chunks),
-			Metadata: map[string]interface{}{"language": DetectLanguage(text)},
+			Content: content,
+			Index:   len(chunks),
+			// Detect the language of the chunk itself, as every other
+			// strategy does. Passing the not-yet-consumed text made the
+			// metadata describe the document suffix instead of the chunk,
+			// and rescanned that suffix on every iteration (quadratic in
+			// the number of runes).
+			Metadata: map[string]interface{}{"language": DetectLanguage(content)},
 		})
 		text = text[size:]
 	}
