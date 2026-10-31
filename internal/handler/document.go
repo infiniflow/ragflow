@@ -1892,7 +1892,7 @@ func parseMetadataUpdates(raw interface{}) ([]document.MetadataUpdate, string) {
 			return nil, "Each update requires key and value."
 		}
 		value := m["value"]
-		updates = append(updates, document.MetadataUpdate{Key: key, Value: value})
+		updates = append(updates, document.MetadataUpdate{Key: key, Value: value, Match: m["match"]})
 	}
 	return updates, ""
 }
@@ -1915,7 +1915,7 @@ func parseMetadataDeletes(raw interface{}) ([]document.MetadataDelete, string) {
 		if key == "" {
 			return nil, "Each delete requires key."
 		}
-		deletes = append(deletes, document.MetadataDelete{Key: key})
+		deletes = append(deletes, document.MetadataDelete{Key: key, Value: m["value"]})
 	}
 	return deletes, ""
 }
