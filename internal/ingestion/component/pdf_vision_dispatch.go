@@ -335,8 +335,10 @@ func defaultIsMonkeyOCRv2LayoutModelID(ctx context.Context, db *gorm.DB, tenantI
 	return err == nil && strings.EqualFold(resolved.driver.Name(), "monkeyocrv2")
 }
 
+// isUnlimitedOCRLayoutModelID tests whether a model ID resolves to an Unlimited-OCR provider.
 var isUnlimitedOCRLayoutModelID = defaultIsUnlimitedOCRLayoutModelID
 
+// defaultIsUnlimitedOCRLayoutModelID checks the database for an Unlimited-OCR model configuration.
 func defaultIsUnlimitedOCRLayoutModelID(ctx context.Context, db *gorm.DB, tenantID, modelID string) bool {
 	if db == nil || strings.TrimSpace(modelID) == "" {
 		return false
@@ -345,6 +347,7 @@ func defaultIsUnlimitedOCRLayoutModelID(ctx context.Context, db *gorm.DB, tenant
 	return err == nil && (strings.EqualFold(resolved.driver.Name(), "unlimited_ocr") || strings.Contains(strings.ToLower(resolved.driver.Name()), "unlimited"))
 }
 
+// dispatchUnlimitedOCR2PDF routes PDF parsing to the Unlimited-OCR-2 inference engine.
 func dispatchUnlimitedOCR2PDF(
 	ctx context.Context,
 	db *gorm.DB,
@@ -417,6 +420,7 @@ func dispatchUnlimitedOCR2PDF(
 	return normalizePDFMarkdown(ctx, filename, content, setup), nil
 }
 
+// pollUnlimitedOCRTask queries task status periodically until Markdown is ready or an error occurs.
 func pollUnlimitedOCRTask(ctx context.Context, driver *modelModule.UnlimitedOCRModel, taskID string, apiConfig *modelModule.APIConfig, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
@@ -448,6 +452,7 @@ func pollUnlimitedOCRTask(ctx context.Context, driver *modelModule.UnlimitedOCRM
 	}
 }
 
+// getIntOr safely extracts an integer from a parameter map with a fallback default.
 func getIntOr(m map[string]any, key string, def int) int {
 	if m == nil {
 		return def
@@ -471,6 +476,7 @@ func getIntOr(m map[string]any, key string, def int) int {
 	return def
 }
 
+// getBoolOr safely extracts a boolean from a parameter map with a fallback default.
 func getBoolOr(m map[string]any, key string, def bool) bool {
 	if m == nil {
 		return def

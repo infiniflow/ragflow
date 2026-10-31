@@ -39,14 +39,17 @@ type UnlimitedOCRModel struct {
 	*MinerULocalModel
 }
 
+// NewUnlimitedOCRModel constructs a new Unlimited-OCR-2 driver instance.
 func NewUnlimitedOCRModel(baseURL map[string]string, urlSuffix URLSuffix) *UnlimitedOCRModel {
 	return &UnlimitedOCRModel{MinerULocalModel: NewMinerLocalUModel(baseURL, urlSuffix)}
 }
 
+// NewInstance returns a new UnlimitedOCRModel instance configured with the specified base URLs.
 func (m *UnlimitedOCRModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewUnlimitedOCRModel(baseURL, m.baseModel.URLSuffix)
 }
 
+// Name returns the provider identifier string.
 func (m *UnlimitedOCRModel) Name() string {
 	return "unlimited_ocr"
 }
