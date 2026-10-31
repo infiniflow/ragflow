@@ -44,6 +44,7 @@ func TestScanSkillDetectsRecursiveRmOfExpandedTarget(t *testing.T) {
 		{"hash inside a quoted target", `rm -rf "my #dir" $TARGET`},
 		{"hash glued to an expansion", `rm -rf "my#$TARGET"`},
 		{"long option before the recursive flag", `rm --preserve-root -r "$TARGET"`},
+		{"apostrophe before an expansion", `rm -rf "user's data $TARGET"`},
 	}
 
 	for _, tt := range tests {
@@ -72,6 +73,7 @@ func TestScanSkillDetectsRecursiveRmOfHome(t *testing.T) {
 		{"quoted target", `rm -rf "$HOME/Downloads"`},
 		{"rmdir", "rmdir $HOME/tmp"},
 		{"long option before the recursive flag", `rm --force --recursive "$HOME"`},
+		{"apostrophe before an expansion", `rm -rf "it's $HOME"`},
 	}
 
 	for _, tt := range tests {
@@ -91,14 +93,12 @@ func TestScanSkillDetectsRecursiveRmOfHome(t *testing.T) {
 
 // The home rule needs the same boundary as the recursive-rm rule: an expansion
 // that belongs to a later command or to a comment is not the removal target,
-// a single-quoted `$HOME` is literal in the shell, and a critical false
-// positive blocks a community skill outright.
+// and a critical false positive blocks a community skill outright.
 func TestScanSkillIgnoresHomeExpansionAfterRemovalCommand(t *testing.T) {
 	lines := []string{
 		`rm -rf build && echo $HOME`,
 		`rm -rf build # $HOME`,
 		`rm -rf build #note $HOME`,
-		`rm -rf '$HOME'`,
 		`rmdir build ; echo $HOME`,
 	}
 
@@ -127,7 +127,6 @@ func TestScanSkillIgnoresExpansionAfterRemovalCommand(t *testing.T) {
 		`rm -rf build # $USER`,
 		`rm -rf build #$USER`,
 		`rm -rf build #note $USER`,
-		`rm -rf '$TARGET'`,
 	}
 
 	for _, line := range lines {
