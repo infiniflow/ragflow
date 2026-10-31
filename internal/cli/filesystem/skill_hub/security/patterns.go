@@ -111,7 +111,7 @@ var ThreatPatterns = []ThreatPattern{
 		Description: "recursive delete from root",
 	},
 	{
-		Pattern:     `rm\s+(-[^\s]*)?r.*\$HOME|\brmdir\s+.*\$HOME`,
+		Pattern:     `rm\s+(?:-[a-zA-Z]+\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive)\s+(?:[^;&|\n#]|#[^;&|\n\s])*\$HOME|\brmdir\s+(?:[^;&|\n#]|#[^;&|\n\s])*\$HOME`,
 		PatternID:   "destructive_home_rm",
 		Severity:    "critical",
 		Category:    "destructive",

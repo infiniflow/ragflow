@@ -59,6 +59,57 @@ func TestScanSkillDetectsRecursiveRmOfExpandedTarget(t *testing.T) {
 	}
 }
 
+func TestScanSkillDetectsRecursiveRmOfHome(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+	}{
+		{"short flag", "rm -r $HOME"},
+		{"bundled flags", "rm -rf $HOME"},
+		{"long flag", "rm --recursive $HOME"},
+		{"quoted target", `rm -rf "$HOME/Downloads"`},
+		{"rmdir", "rmdir $HOME/tmp"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := NewScanner().ScanSkill("skill", "github", "community", map[string][]byte{
+				"install.sh": []byte("#!/bin/sh\n" + tt.line + "\n"),
+			})
+			for _, finding := range result.Findings {
+				if finding.PatternID == "destructive_home_rm" {
+					return
+				}
+			}
+			t.Fatalf("%q did not raise destructive_home_rm: %v", tt.line, result.Findings)
+		})
+	}
+}
+
+// The home rule needs the same boundary as the recursive-rm rule: an expansion
+// that belongs to a later command or to a comment is not the removal target,
+// and a critical false positive blocks a community skill outright.
+func TestScanSkillIgnoresHomeExpansionAfterRemovalCommand(t *testing.T) {
+	lines := []string{
+		`rm -rf build && echo $HOME`,
+		`rm -rf build # $HOME`,
+		`rmdir build ; echo $HOME`,
+	}
+
+	for _, line := range lines {
+		t.Run(line, func(t *testing.T) {
+			result := NewScanner().ScanSkill("skill", "github", "community", map[string][]byte{
+				"install.sh": []byte("#!/bin/sh\n" + line + "\n"),
+			})
+			for _, finding := range result.Findings {
+				if finding.PatternID == "destructive_home_rm" {
+					t.Fatalf("%q raised destructive_home_rm: %v", line, finding)
+				}
+			}
+		})
+	}
+}
+
 // The removal target must end at a shell command separator, otherwise a
 // variable expanded by a later command in the same line reads as an expanded
 // removal target and blocks an otherwise safe skill. An unquoted `#` that
