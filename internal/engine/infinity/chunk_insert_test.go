@@ -17,6 +17,9 @@ package infinity
 import (
 	"encoding/json"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"strings"
 	"testing"
@@ -235,5 +238,124 @@ func TestBatchNeedsMediaOrdinalColumns(t *testing.T) {
 				t.Fatalf("batchNeedsMediaOrdinalColumns() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// insertChunksWriteOrder reports where InsertChunks guards the media ordinal
+// reconcile relative to the delete of the rows with the same ids, and whether
+// the reconcile error aborts the write. The offsets are byte positions in
+// chunk.go; a zero offset means the construct was not found.
+func insertChunksWriteOrder(t *testing.T) (reconcileOffset, deleteOffset int, abortsOnError bool) {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "chunk.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse chunk.go: %v", err)
+	}
+
+	var insert *ast.FuncDecl
+	for _, decl := range file.Decls {
+		fn, ok := decl.(*ast.FuncDecl)
+		if ok && fn.Name.Name == "InsertChunks" {
+			insert = fn
+			break
+		}
+	}
+	if insert == nil {
+		t.Fatal("chunk.go does not declare InsertChunks")
+	}
+
+	ast.Inspect(insert.Body, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.IfStmt:
+			if !callsMethod(node, "reconcileMediaOrdinalColumns") {
+				return true
+			}
+			reconcileOffset = fset.Position(node.Pos()).Offset
+			for _, stmt := range node.Body.List {
+				ret, ok := stmt.(*ast.ReturnStmt)
+				if !ok {
+					continue
+				}
+				for _, res := range ret.Results {
+					if ident, ok := res.(*ast.Ident); ok && ident.Name == "err" {
+						abortsOnError = true
+					}
+				}
+			}
+		case *ast.AssignStmt:
+			if callsTableDelete(node) {
+				deleteOffset = fset.Position(node.Pos()).Offset
+			}
+		}
+		return true
+	})
+	return reconcileOffset, deleteOffset, abortsOnError
+}
+
+// callsTableDelete reports whether the node contains a call to table.Delete.
+func callsTableDelete(node ast.Node) bool {
+	found := false
+	ast.Inspect(node, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Delete" {
+			return true
+		}
+		if recv, ok := sel.X.(*ast.Ident); ok && recv.Name == "table" {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// callsMethod reports whether the node contains a call to the named method.
+func callsMethod(node ast.Node, method string) bool {
+	found := false
+	ast.Inspect(node, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == method {
+			found = true
+		}
+		return true
+	})
+	return found
+}
+
+// TestInsertChunksReconcilesBeforeDeleting is the caller-level regression
+// test for the insert path: the media ordinal reconcile must run before the
+// delete of the rows with the same ids, and its error must abort the write.
+//
+// The insert path holds a real *infinity.Table from db.GetTable, so an
+// AddColumns failure cannot be produced without a live Infinity instance.
+// This test reads chunk.go instead and pins the two properties the caller
+// depends on: a change that ignores the reconcile error, or that moves the
+// delete ahead of the reconcile, fails here.
+//
+// The order matters because of what a failed reconcile means: the batch still
+// names an undeclared ordinal column, so the insert below fails anyway —
+// after the delete has already dropped the matching rows (#20500).
+func TestInsertChunksReconcilesBeforeDeleting(t *testing.T) {
+	reconcileOffset, deleteOffset, abortsOnError := insertChunksWriteOrder(t)
+
+	if reconcileOffset == 0 {
+		t.Fatal("InsertChunks does not guard the media ordinal reconcile with an if statement")
+	}
+	if !abortsOnError {
+		t.Error("InsertChunks must return the reconcile error instead of continuing")
+	}
+	if deleteOffset == 0 {
+		t.Fatal("InsertChunks does not delete the rows with the same ids")
+	}
+	if reconcileOffset > deleteOffset {
+		t.Errorf("the media ordinal reconcile (offset %d) must run before the delete (offset %d): a failed reconcile leaves the batch naming an undeclared column, so the insert would fail after the delete already dropped the matching rows (#20500)",
+			reconcileOffset, deleteOffset)
 	}
 }
