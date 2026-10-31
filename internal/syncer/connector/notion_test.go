@@ -196,6 +196,85 @@ func TestNotionConnectorIncrementalSearchContinuesPastTooNewPages(t *testing.T) 
 	}
 }
 
+func TestNotionConnectorIncrementalSyncKeepsPagesEditedInWindowStartMinute(t *testing.T) {
+	// Notion rounds last_edited_time down to the minute, so pages edited after
+	// the previous sync started at 10:05:30, within that minute, report 10:05:00.
+	connector := newTestNotionConnector(t)
+	connector.searchPages = func(ctx context.Context, request notionSearchRequest) (notionSearchResponse, error) {
+		switch request.StartCursor {
+		case "":
+			return notionSearchResponse{
+				Results:    []notionPage{notionTestPage("edited", "Edited", "2026-01-02T10:05:00.000Z")},
+				NextCursor: "cursor-2",
+				HasMore:    true,
+			}, nil
+		case "cursor-2":
+			return notionSearchResponse{Results: []notionPage{
+				notionTestPage("edited-too", "Edited too", "2026-01-02T10:05:00.000Z"),
+				notionTestPage("old", "Old", "2026-01-02T10:04:00.000Z"),
+			}}, nil
+		default:
+			return notionSearchResponse{}, nil
+		}
+	}
+	connector.fetchChildBlocks = func(ctx context.Context, blockID, cursor string) (notionBlockPage, error) {
+		return notionBlockPage{Results: []notionBlock{notionTestTextBlock(blockID+"-block", "paragraph", blockID+" body")}}, nil
+	}
+	start := mustTime(t, "2026-01-02T10:05:30Z")
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
+		WindowStart: &start,
+		WindowEnd:   mustTime(t, "2026-01-02T11:00:00Z"),
+	})
+	if err != nil {
+		t.Fatalf("OpenSync: %v", err)
+	}
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch: %v", err)
+	}
+	if len(batch.Documents) != 2 || batch.Documents[0].SourceID != "edited" || batch.Documents[1].SourceID != "edited-too" {
+		t.Fatalf("documents = %+v", batch.Documents)
+	}
+}
+
+func TestNotionConnectorPageFingerprintChangesWithSameMinuteEdit(t *testing.T) {
+	title, body := "Page", "first draft"
+	connector := newTestNotionConnector(t)
+	connector.searchPages = func(ctx context.Context, request notionSearchRequest) (notionSearchResponse, error) {
+		return notionSearchResponse{Results: []notionPage{notionTestPage("page-1", title, "2026-01-02T10:05:00.000Z")}}, nil
+	}
+	connector.fetchChildBlocks = func(ctx context.Context, blockID, cursor string) (notionBlockPage, error) {
+		return notionBlockPage{Results: []notionBlock{notionTestTextBlock("block-1", "paragraph", body)}}, nil
+	}
+	fingerprint := func() string {
+		t.Helper()
+		session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+		if err != nil {
+			t.Fatalf("OpenSync: %v", err)
+		}
+		batch, err := session.NextBatch(context.Background())
+		if err != nil || len(batch.Documents) != 1 {
+			t.Fatalf("NextBatch = %+v, %v", batch.Documents, err)
+		}
+		return batch.Documents[0].Fingerprint
+	}
+
+	first := fingerprint()
+	if again := fingerprint(); again != first {
+		t.Fatalf("fingerprint changed without an edit: %s, then %s", first, again)
+	}
+	body = "second draft"
+	edited := fingerprint()
+	if edited == first {
+		t.Fatalf("fingerprint unchanged after an edit in the same minute: %s", edited)
+	}
+	// The page text holds only the blocks, so a rename shows up through the title.
+	title = "Renamed page"
+	if renamed := fingerprint(); renamed == edited {
+		t.Fatalf("fingerprint unchanged after a rename in the same minute: %s", renamed)
+	}
+}
+
 func TestNotionConnectorFileRejectsOversizedBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, "12345")
