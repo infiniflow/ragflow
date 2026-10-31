@@ -793,6 +793,8 @@ The WebDAV data source is used to connect to a WebDAV server and synchronize fil
 - **Custom CA Certificate Path**: Optional. Fill in the path to a custom CA certificate when required, for example, `/etc/ssl/certs/webdav-ca.pem`.
 - **Sync deleted files**: After this is enabled, files deleted from the external system are removed from the knowledge base index.
 
+By default, WebDAV URLs must resolve to public addresses. For a self-hosted WebDAV server on a private network, the deployment operator can set `RAGFLOW_WEBDAV_PRIVATE_HOSTS=webdav=172.18.0.0/16` in `docker/.env` and restart RAGFlow. Replace `webdav` with the exact hostname in the WebDAV URL and the CIDR with the network that hostname resolves to. Separate multiple `hostname=CIDR` entries with commas. A loopback server needs an explicit entry such as `127.0.0.1=127.0.0.1/32`. Every address returned for the hostname must be in one of its listed networks; redirects are checked again. This setting affects only WebDAV connections and should include only endpoints the operator trusts.
+
 
 ## Airtable
 

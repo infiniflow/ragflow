@@ -141,7 +141,7 @@ func (c *WebDAVConnector) Validate(ctx context.Context) error {
 	if c.baseURL == "" {
 		return fmt.Errorf("WebDAV base URL is required")
 	}
-	if err := validateConnectorURL(c.baseURL); err != nil {
+	if err := validateWebDAVURL(c.baseURL); err != nil {
 		return err
 	}
 	if c.username == "" || c.password == "" {
@@ -413,12 +413,13 @@ func (c *webdavClient) propfind(ctx context.Context, target string) ([]webdavFil
 		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.password)
 	}
 	resp, err := connectorRequest(ctx, connectorRequestOptions{
-		Method:  "PROPFIND",
-		RawURL:  resolved,
-		Body:    []byte(webdavPropfindBody),
-		Headers: headers,
-		Timeout: webdavRequestTimeout,
-		Base:    c.httpClient,
+		Method:   "PROPFIND",
+		RawURL:   resolved,
+		Validate: assertWebDAVURLSafe,
+		Body:     []byte(webdavPropfindBody),
+		Headers:  headers,
+		Timeout:  webdavRequestTimeout,
+		Base:     c.httpClient,
 	})
 	if err != nil {
 		return nil, err
@@ -441,11 +442,12 @@ func (c *webdavClient) download(ctx context.Context, fileURL string) ([]byte, er
 		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.password)
 	}
 	resp, err := connectorRequest(ctx, connectorRequestOptions{
-		Method:  http.MethodGet,
-		RawURL:  fileURL,
-		Headers: headers,
-		Timeout: webdavRequestTimeout,
-		Base:    c.httpClient,
+		Method:   http.MethodGet,
+		RawURL:   fileURL,
+		Validate: assertWebDAVURLSafe,
+		Headers:  headers,
+		Timeout:  webdavRequestTimeout,
+		Base:     c.httpClient,
 	})
 	if err != nil {
 		return nil, err
