@@ -15,6 +15,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { useMemo } from 'react';
 import { z, ZodIssueCode } from 'zod';
 import { missingWebSearchApiKeyField } from '../web-search-api-key';
+import { ontologyBindingIssues } from './ontology-binding';
 import { chatPromptKbIssues } from './validate-chat-prompt';
 
 // Pure builder so the schema can be unit-tested without rendering a form.
@@ -65,6 +66,20 @@ export function buildChatSettingFormSchema(t: (key: string) => string) {
       .optional()
       .or(z.literal('')),
     reasoning: z.boolean().optional(),
+    // null is a value here, not a stand-in for "absent": the server merges the
+    // patch into the stored prompt_config key by key, so clearing the
+    // assistant's knowledge-layer override takes an explicit null. The shape is
+    // declared even when the key is unset so the resolver does not strip what
+    // the panel wrote.
+    ontology: z
+      .object({
+        enabled: z.boolean().optional(),
+        model_id: z.string().optional(),
+        model_version: z.number().optional(),
+        knowledge_dataset_ids: z.array(z.string()).optional(),
+      })
+      .nullable()
+      .optional(),
     cross_languages: z.array(z.string()).optional(),
     // The per-chat agentic template override lives here; without this
     // declaration zod strips the key at parse time and the full-replace PUT
@@ -108,6 +123,18 @@ export function buildChatSettingFormSchema(t: (key: string) => string) {
     })
     .superRefine((value, ctx) => {
       for (const issue of chatPromptKbIssues(value, t)) {
+        ctx.addIssue({
+          code: ZodIssueCode.custom,
+          path: issue.path,
+          message: issue.message,
+        });
+      }
+
+      // A half-written knowledge-layer binding resolves to no binding at all,
+      // server-side and in silence — a model with no scope has nowhere to look.
+      // Refusing the save is the only place that person finds out before asking
+      // a question and getting an answer that quietly read nothing.
+      for (const issue of ontologyBindingIssues(value, t)) {
         ctx.addIssue({
           code: ZodIssueCode.custom,
           path: issue.path,

@@ -10,6 +10,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -910,5 +911,847 @@ func TestGroupedDeduperTracksNameAfterSemanticMerge(t *testing.T) {
 	}
 	if ids := metaStrings(got[0].Meta, "source_chunk_ids"); len(ids) != 3 {
 		t.Fatalf("semantic and exact-name merges lost provenance: %v", ids)
+	}
+}
+
+// ---- ontology domain / range enforcement ----
+
+func ontologyParserConfig() map[string]any {
+	return map[string]any{
+		"kind": "ontology",
+		"entity": map[string]any{
+			"fields": []any{
+				map[string]any{"type": "agent", "description": "anything bearing a role"},
+				map[string]any{"type": "person", "parent": "agent", "description": "a person"},
+				map[string]any{"type": "place", "description": "a place"},
+			},
+			"output_fields": []any{
+				map[string]any{"name": "attributes", "shape": `{"<attribute>": <value>}`},
+			},
+		},
+		"relation": map[string]any{"fields": []any{
+			map[string]any{
+				"type": "born_in", "kind": "object",
+				"domain": "person", "range": "place",
+				"description": "a person was born in a place",
+			},
+			map[string]any{
+				"type": "alias", "kind": "datatype",
+				"domain": "agent", "datatype": "list",
+				"description": "alternative names",
+			},
+			map[string]any{
+				"type": "birth_date", "kind": "datatype",
+				"domain": "person", "datatype": "date",
+				"description": "the date of birth",
+			},
+		}},
+	}
+}
+
+func relationRow(prop, fromType, toType string) common.Product {
+	meta := map[string]any{"kind": "relation", "relation_type": prop}
+	if fromType != "" {
+		meta["from_type"] = fromType
+	}
+	if toType != "" {
+		meta["to_type"] = toType
+	}
+	return common.Product{Meta: meta}
+}
+
+// A contradicting endpoint class is the one case the projection drops; an
+// unknown class or an undeclared property must survive, because neither
+// contradicts the declaration and both are reported elsewhere (the model graph's
+// unattributed count and its "observed, not declared" class).
+func TestFilterOutOfOntologyRelations(t *testing.T) {
+	cfg := ontologyParserConfig()
+	rows := []common.Product{
+		relationRow("born_in", "person", "place"),               // matches the declaration
+		relationRow("born_in", "place", "person"),               // reversed => drop
+		relationRow("born_in", "person", "person"),              // wrong range => drop
+		relationRow("born_in", "person", ""),                    // class unknown => keep
+		relationRow("invented", "place", "place"),               // undeclared => keep
+		{Meta: map[string]any{"kind": "entity", "name": "Ada"}}, // not a relation
+	}
+	got, _ := filterOutOfOntologyRelations(rows, cfg)
+	if len(got) != 4 {
+		t.Fatalf("rows = %d, want 4 (only the two contradicting endpoints dropped)", len(got))
+	}
+	// Order is preserved, so the survivors are rows 0, 3, 4 and 5.
+	wantProp := []string{"born_in", "born_in", "invented", ""}
+	wantFrom := []string{"person", "person", "place", ""}
+	for i := range got {
+		prop, _ := got[i].Meta["relation_type"].(string)
+		from, _ := got[i].Meta["from_type"].(string)
+		if prop != wantProp[i] || from != wantFrom[i] {
+			t.Fatalf("survivor %d = (%q, from %q), want (%q, from %q)",
+				i, prop, from, wantProp[i], wantFrom[i])
+		}
+	}
+}
+
+// A subclass instance satisfies a property declared on its superclass: person is
+// declared as a child of agent, so an assertion typed (person, place) must
+// survive a property whose domain is agent. The model graph expands inheritance
+// the same way (ancestorChain), and a writer that did not would drop rows the
+// view then claims exist — ontology.md §8 (20).
+func TestFilterOutOfOntologyRelationsKeepsSubclassEndpoints(t *testing.T) {
+	cfg := ontologyParserConfig()
+	rel := cfg["relation"].(map[string]any)
+	rel["fields"] = append(rel["fields"].([]any), map[string]any{
+		"type": "leads", "kind": "object", "domain": "agent", "range": "place",
+	})
+	rows := []common.Product{
+		relationRow("leads", "person", "place"), // person is a declared child of agent => keep
+		relationRow("leads", "agent", "place"),  // the declared class itself => keep
+		relationRow("leads", "place", "place"),  // unrelated class => the domain rejects it
+	}
+	kept, rejected := filterOutOfOntologyRelations(rows, cfg)
+	if len(kept) != 2 {
+		t.Fatalf("kept = %d, want 2 (the subclass and the declared class itself)", len(kept))
+	}
+	if len(rejected) != 1 {
+		t.Fatalf("rejected = %d, want 1", len(rejected))
+	}
+}
+
+// A rejected assertion is handed back as a row instead of vanishing: it keeps
+// the property and both endpoint classes so the quality panel can list it, and
+// the reason rides in the content (no column of its own). A rejection nobody
+// wrote down cannot drive the feedback loop — ontology.md §2.7 (1).
+func TestFilterOutOfOntologyRelationsReportsRejected(t *testing.T) {
+	rows := []common.Product{relationRow("born_in", "place", "person")} // reversed => domain rejects
+	kept, rejected := filterOutOfOntologyRelations(rows, ontologyParserConfig())
+	if len(kept) != 0 || len(rejected) != 1 {
+		t.Fatalf("kept = %d rejected = %d, want 0 / 1", len(kept), len(rejected))
+	}
+	got := rejected[0]
+	if kind, _ := got.Meta["kind"].(string); kind != "dropped_relation" {
+		t.Fatalf("kind = %q, want dropped_relation", kind)
+	}
+	if side, _ := got.Meta["drop_side"].(string); side != "domain" {
+		t.Fatalf("drop_side = %q, want domain", side)
+	}
+	if prop, _ := got.Meta["relation_type"].(string); prop != "born_in" {
+		t.Fatalf("prop = %q, want born_in", prop)
+	}
+	if from, _ := got.Meta["from_type"].(string); from != "place" {
+		t.Fatalf("from_type = %q, want the observed class kept for the panel", from)
+	}
+	if !strings.Contains(got.Content, "person") {
+		t.Fatalf("content %q must name the declared class", got.Content)
+	}
+}
+
+// A template that declares no domain / range (every non-ontology template, and
+// knowledge_graph.yaml specifically) must see its relations untouched — the
+// enforcement cannot silently change existing behaviour.
+func TestFilterOutOfOntologyRelationsLeavesPlainGraphAlone(t *testing.T) {
+	rows := []common.Product{
+		relationRow("linked", "letter", "letter"),
+		relationRow("linked", "anything", "whatever"),
+	}
+	got, _ := filterOutOfOntologyRelations(rows, graphParserConfig())
+	if len(got) != len(rows) {
+		t.Fatalf("rows = %d, want %d untouched", len(got), len(rows))
+	}
+}
+
+// A subclass carries its parent's attributes: `alias` is declared on agent but
+// belongs to person too. Own attributes come first, then inherited ones, so a
+// subclass overrides its parent for the same name (the dedup keeps the first
+// occurrence).
+func TestDatatypePropertiesByClassInherits(t *testing.T) {
+	byClass := datatypePropertiesByClass(ontologyParserConfig())
+	want := map[string][]string{
+		"agent":  {"alias"},
+		"person": {"birth_date", "alias"},
+	}
+	for class, wantAttrs := range want {
+		got := byClass[class]
+		if len(got) != len(wantAttrs) {
+			t.Fatalf("%s attributes = %v, want %v", class, got, wantAttrs)
+		}
+		for i := range wantAttrs {
+			if got[i] != wantAttrs[i] {
+				t.Fatalf("%s attributes = %v, want %v", class, got, wantAttrs)
+			}
+		}
+	}
+	if _, present := byClass["place"]; present {
+		t.Fatalf("a class with no attributes must not appear: %v", byClass)
+	}
+}
+
+// A class may name several superclasses (`|`-separated `parent`). Every one of
+// them contributes its attributes, nearest first — the same breadth-first order
+// ontologyClassAncestors uses — and an ancestor reached through two parents (the
+// diamond here: `agent` via both person and organization) is reported once.
+func TestDatatypePropertiesByClassInheritsFromEveryParent(t *testing.T) {
+	cfg := map[string]any{
+		"kind": "ontology",
+		"entity": map[string]any{"fields": []any{
+			map[string]any{"type": "agent", "description": "anything bearing a role"},
+			map[string]any{"type": "person", "parent": "agent", "description": "a person"},
+			map[string]any{"type": "organization", "parent": "agent", "description": "a company"},
+			map[string]any{"type": "employee", "parent": "person | organization", "description": "an employed person"},
+		}},
+		"relation": map[string]any{"fields": []any{
+			map[string]any{"type": "alias", "kind": "datatype", "domain": "agent", "datatype": "list"},
+			map[string]any{"type": "birth_date", "kind": "datatype", "domain": "person", "datatype": "date"},
+			map[string]any{"type": "founded_on", "kind": "datatype", "domain": "organization", "datatype": "date"},
+			map[string]any{"type": "employee_id", "kind": "datatype", "domain": "employee", "datatype": "string"},
+		}},
+	}
+	byClass := datatypePropertiesByClass(cfg)
+	want := map[string][]string{
+		"employee":     {"employee_id", "birth_date", "founded_on", "alias"},
+		"person":       {"birth_date", "alias"},
+		"organization": {"founded_on", "alias"},
+	}
+	for class, wantAttrs := range want {
+		got := byClass[class]
+		if len(got) != len(wantAttrs) {
+			t.Fatalf("%s attributes = %v, want %v", class, got, wantAttrs)
+		}
+		for i := range wantAttrs {
+			if got[i] != wantAttrs[i] {
+				t.Fatalf("%s attributes = %v, want %v", class, got, wantAttrs)
+			}
+		}
+	}
+}
+
+func TestOntologyAttributes(t *testing.T) {
+	cfg := ontologyParserConfig()
+
+	// Flat payload keys, plus the inherited `alias`.
+	flat, rejected := ontologyAttributes(map[string]any{
+		"type": "person", "alias": []any{"Ada Augusta Byron"}, "birth_date": "1815-12-10",
+	}, "person", cfg)
+	if rejected != 0 || len(flat) != 2 || flat["birth_date"] != "1815-12-10" {
+		t.Fatalf("flat attributes = %v (rejected %d), want alias + birth_date", flat, rejected)
+	}
+
+	// The nested shape object the entity output_fields ask for. The invented key
+	// must not reach the filterable column.
+	nested, _ := ontologyAttributes(map[string]any{
+		"type":       "person",
+		"attributes": map[string]any{"birth_date": "1815-12-10", "invented": "x"},
+	}, "person", cfg)
+	if len(nested) != 1 || nested["birth_date"] != "1815-12-10" {
+		t.Fatalf("nested attributes = %v, want only birth_date", nested)
+	}
+
+	// Values that carry nothing must not bloat the column.
+	if got, _ := ontologyAttributes(map[string]any{
+		"type": "person", "birth_date": "   ", "alias": []any{},
+	}, "person", cfg); got != nil {
+		t.Fatalf("empty attribute values must yield no attr, got %v", got)
+	}
+
+	// A template declaring no datatype properties yields nothing, so every
+	// non-ontology template is unaffected.
+	if got, _ := ontologyAttributes(map[string]any{"type": "letter", "x": "y"}, "letter", graphParserConfig()); got != nil {
+		t.Fatalf("plain graph template must yield no attr, got %v", got)
+	}
+}
+
+// A declared datatype is a promise about the stored value, and `attr` is the only
+// place a value is ever range-filtered: an integer kept as "328" and a date kept
+// as "3 May 1937" answer zero rows forever. Every value is therefore coerced, and
+// a value that fits nothing is counted instead of stored.
+func TestOntologyAttributesNormalizeDatatypes(t *testing.T) {
+	cfg := map[string]any{
+		"kind": "ontology",
+		"entity": map[string]any{
+			"fields": []any{map[string]any{"type": "work", "description": "a work"}},
+		},
+		"relation": map[string]any{"fields": []any{
+			map[string]any{"type": "published_date", "kind": "datatype", "domain": "work", "datatype": "date"},
+			map[string]any{"type": "pages", "kind": "datatype", "domain": "work", "datatype": "int"},
+			map[string]any{"type": "genre", "kind": "datatype", "domain": "work", "datatype": "list",
+				"enum": []any{"novel", "poem"}},
+			map[string]any{"type": "is_open", "kind": "datatype", "domain": "work", "datatype": "bool"},
+			map[string]any{"type": "note", "kind": "datatype", "domain": "work"},
+		}},
+	}
+
+	got, rejected := ontologyAttributes(map[string]any{
+		"type":           "work",
+		"published_date": "3 May 1937",
+		"pages":          "328",
+		"genre":          []any{"novel", "treatise"},
+		"is_open":        "true",
+		"note":           " kept verbatim ",
+	}, "work", cfg)
+	if rejected != 0 {
+		t.Fatalf("rejected = %d, want 0 (attrs %v)", rejected, got)
+	}
+	if got["published_date"] != "1937-05-03" {
+		t.Errorf("published_date = %v, want 1937-05-03", got["published_date"])
+	}
+	if got["pages"] != int64(328) {
+		t.Errorf("pages = %v, want int64(328)", got["pages"])
+	}
+	// The value set keeps what it recognises and drops the rest, so a stray
+	// category never reaches a filter.
+	if genres, ok := got["genre"].([]string); !ok || len(genres) != 1 || genres[0] != "novel" {
+		t.Errorf("genre = %v, want [novel]", got["genre"])
+	}
+	if got["is_open"] != true {
+		t.Errorf("is_open = %v, want true", got["is_open"])
+	}
+	// No declared datatype means no coercion: the template never said what the
+	// value is, so trimming is the only safe change.
+	if got["note"] != "kept verbatim" {
+		t.Errorf("note = %v, want trimmed string", got["note"])
+	}
+
+	// A value that fits no declared type is dropped and counted, not stored as if
+	// it were valid.
+	bad, rejected := ontologyAttributes(map[string]any{
+		"type": "work", "published_date": "sometime in spring", "pages": "many",
+	}, "work", cfg)
+	if rejected != 2 || len(bad) != 0 {
+		t.Fatalf("bad values = %v (rejected %d), want nothing kept and 2 counted", bad, rejected)
+	}
+}
+
+// The projection stamps a row with the canonical class, so a model that answers
+// with a declared alias does not create a second spelling of the same class.
+// An undeclared name keeps its own spelling, because drift must stay visible.
+func TestOntologyTermIndexResolvesDeclaredAliases(t *testing.T) {
+	cfg := map[string]any{
+		"kind": "ontology",
+		"entity": map[string]any{"fields": []any{
+			map[string]any{"type": "organization", "aliases": []any{"company", "firm"}},
+			map[string]any{"type": "person"},
+		}},
+		"relation": map[string]any{"fields": []any{
+			map[string]any{"type": "born_in", "kind": "object", "domain": "person", "range": "organization",
+				"aliases": []any{"place_of_birth"}},
+			map[string]any{"type": "works_for", "kind": "object", "domain": "person", "range": "organization"},
+		}},
+	}
+	classes, props := ontologyTermIndex(cfg)
+
+	if got := resolveDeclaredType(classes, "Company"); got != "organization" {
+		t.Errorf("class alias Company = %q, want organization", got)
+	}
+	if got := resolveDeclaredType(classes, "PERSON"); got != "person" {
+		t.Errorf("declared name must resolve case-insensitively, got %q", got)
+	}
+	if got := resolveDeclaredType(classes, "startup"); got != "startup" {
+		t.Errorf("undeclared class = %q, want it kept as observed", got)
+	}
+	if got := resolveDeclaredType(props, "place_of_birth"); got != "born_in" {
+		t.Errorf("property alias = %q, want born_in", got)
+	}
+	if got := resolveDeclaredType(props, "works_for"); got != "works_for" {
+		t.Errorf("declared property = %q, want works_for", got)
+	}
+	if got := resolveDeclaredType(props, "invented"); got != "invented" {
+		t.Errorf("undeclared property = %q, want it kept as observed", got)
+	}
+}
+
+// The projection — not just the prompt — honours a declared alias, so choosing the
+// alternative name does not create a second spelling of the same class. That
+// matters downstream: `entity_type` is what the model graph counts, what
+// type-scoped retrieval filters on, and what the quality ledger would otherwise
+// report as vocabulary drift.
+func TestBuildRowsResolvesDeclaredAliases(t *testing.T) {
+	cfg := ontologyParserConfig()
+	cfg["entity"].(map[string]any)["fields"].([]any)[1].(map[string]any)["aliases"] =
+		[]any{"human", "individual"}
+	cfg["relation"].(map[string]any)["fields"].([]any)[0].(map[string]any)["aliases"] =
+		[]any{"place_of_birth"}
+
+	rows, err := buildRows(context.Background(), common.Deps{Embed: hashEmbedder{dim: 4}}, CompileConfig{
+		TenantID:     "t1",
+		DocID:        "d1",
+		Type:         TypeHypergraph,
+		ParserConfig: cfg,
+	},
+		[]map[string]any{{"type": "Human", "name": "Ada"}},
+		[]map[string]any{{"type": "place_of_birth", "source": "Ada", "target": "London"}},
+		[]string{"c1"},
+	)
+	if err != nil {
+		t.Fatalf("buildRows: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want entity + relation", len(rows))
+	}
+	for _, row := range rows {
+		switch kind, _ := row.Meta["kind"].(string); kind {
+		case "entity":
+			if got := row.Meta["entity_type"]; got != "person" {
+				t.Errorf("entity_type = %v, want the declared class person", got)
+			}
+		case "relation":
+			if got := row.Meta["relation_type"]; got != "born_in" {
+				t.Errorf("relation_type = %v, want the declared property born_in", got)
+			}
+		}
+	}
+}
+
+// A declared alias and a closed value set are generative facts: they stop the
+// model proposing a second name for a class it already has, and stop it inventing
+// a category. `required` is an acceptance rule and must not be stated, because a
+// model told an attribute is mandatory will supply one rather than leave a gap.
+func TestOntologyPromptStatesAliasesAndEnumsButNotRequired(t *testing.T) {
+	cfg := map[string]any{
+		"kind": "ontology",
+		"entity": map[string]any{"fields": []any{
+			map[string]any{"type": "organization", "description": "an organisation",
+				"aliases": []any{"company", "firm"}},
+		}},
+		"relation": map[string]any{"fields": []any{
+			map[string]any{"type": "works_for", "kind": "object", "domain": "organization",
+				"range": "organization", "aliases": []any{"employed_by"}},
+			map[string]any{"type": "genre", "kind": "datatype", "domain": "organization",
+				"datatype": "string", "enum": []any{"novel", "poem"}, "required": true},
+		}},
+	}
+
+	node, edge := HypergraphPrompts(cfg, "en")
+
+	if !strings.Contains(node, "  aliases: company, firm") {
+		t.Errorf("entity prompt must state class aliases\n---\n%s", node)
+	}
+	for _, want := range []string{"  aliases: employed_by", "  enum: novel | poem"} {
+		if !strings.Contains(edge, want) {
+			t.Errorf("relation prompt missing %q\n---\n%s", want, edge)
+		}
+	}
+	for _, prompt := range []string{node, edge} {
+		if strings.Contains(prompt, "  required:") {
+			t.Errorf("required must never reach the extraction prompt\n---\n%s", prompt)
+		}
+	}
+}
+
+// The entity stage must state each class's datatype attributes — inheritance
+// included — because that list is what makes the model emit them at all, and the
+// relation stage must state the standard model's structure (kind / domain /
+// range / datatype) so it can honour domain and range.
+func TestOntologyPromptsCarryTheStandardModel(t *testing.T) {
+	node, edge := HypergraphPrompts(ontologyParserConfig(), "en")
+
+	for _, want := range []string{
+		"  parent: agent",
+		"  attributes: birth_date (date), alias (list)",
+	} {
+		if !strings.Contains(node, want) {
+			t.Errorf("entity prompt missing %q\n---\n%s", want, node)
+		}
+	}
+	for _, want := range []string{
+		"  kind: object",
+		"  kind: datatype",
+		"  domain: person",
+		"  range: place",
+		"  datatype: date",
+	} {
+		if !strings.Contains(edge, want) {
+			t.Errorf("relation prompt missing %q\n---\n%s", want, edge)
+		}
+	}
+}
+
+// ---- the hypernode / hyperedge layer ----
+
+func entityRow(name, class string, attrs map[string]any, chunks ...string) common.Product {
+	meta := map[string]any{"kind": "entity", "name": name, "entity_type": class}
+	if len(attrs) > 0 {
+		meta["attr"] = attrs
+	}
+	if len(chunks) > 0 {
+		meta["source_chunk_ids"] = chunks
+	} else {
+		meta["source_chunk_ids"] = []string{"c1"}
+	}
+	return common.Product{Meta: meta}
+}
+
+func TestNLKeyIsTheMechanicalPathPhrased(t *testing.T) {
+	got := nlKey("crop:has_growing_zones.crop_growing_zone:name")
+	if want := "crop has growing zones crop growing zone name"; got != want {
+		t.Fatalf("nlKey = %q, want %q", got, want)
+	}
+}
+
+// A list-valued attribute contributes one fact per item: joining them would
+// silently drop the extra values from the value side of the index.
+func TestFlattenValues(t *testing.T) {
+	if got := flattenValues([]any{"A", "B"}); len(got) != 2 {
+		t.Fatalf("list = %v, want 2 items", got)
+	}
+	if got := flattenValues("  x  "); len(got) != 1 || got[0] != "x" {
+		t.Fatalf("scalar = %v, want [x]", got)
+	}
+	if got := flattenValues([]any{}); len(got) != 0 {
+		t.Fatalf("empty list = %v, want nothing", got)
+	}
+	if got := flattenValues("   "); len(got) != 0 {
+		t.Fatalf("blank = %v, want nothing", got)
+	}
+}
+
+func adaAndLondon() []common.Product {
+	return []common.Product{
+		entityRow("Ada Lovelace", "person", map[string]any{
+			"birth_date": "1815-12-10",
+			"alias":      []any{"Ada Augusta Byron"},
+		}, "c1"),
+		entityRow("London", "place", nil, "c2"),
+		{Meta: map[string]any{
+			"kind": "relation", "from": "Ada Lovelace", "to": "London",
+			"relation_type": "born_in",
+		}},
+	}
+}
+
+// The layer is the whole input of OG-RAG's Algorithm 1: one hyperedge per
+// flattened block (the dictionary payload RAG_QUERY_PROMPT asks for), and two
+// rows per unique (path, value) so the key leg and the value leg each have their
+// own vector.
+func TestBuildHypergraphMaterializesFacts(t *testing.T) {
+	cfg := CompileConfig{DocID: "d1", TenantID: "t1", TemplateID: "tpl", ParserConfig: ontologyParserConfig()}
+	rows, err := buildHypergraph(context.Background(), common.Deps{Embed: hashEmbedder{dim: 8}}, cfg, adaAndLondon())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var edges, keyRows, valueRows []common.Product
+	for _, r := range rows {
+		switch kind, _ := r.Meta["kind"].(string); kind {
+		case "hyperedge":
+			edges = append(edges, r)
+		case "hypernode":
+			if role, _ := r.Meta["node_role"].(string); role == "key" {
+				keyRows = append(keyRows, r)
+			} else {
+				valueRows = append(valueRows, r)
+			}
+		default:
+			t.Fatalf("unexpected row kind %q", kind)
+		}
+	}
+	// Ada is the only root (London is targeted), so: Ada's own block plus the
+	// block extended through born_in.
+	if len(edges) != 2 {
+		t.Fatalf("hyperedges = %d, want 2", len(edges))
+	}
+	// 3 facts on Ada (name, birth_date, alias) + 1 on London = 4 unique pairs.
+	if len(keyRows) != 4 || len(valueRows) != 4 {
+		t.Fatalf("hypernode rows = %d key / %d value, want 4 / 4", len(keyRows), len(valueRows))
+	}
+
+	// The deepest block is the dictionary OG-RAG hands to the model.
+	deep := parsePayload(edges[1].Content)
+	for wantKey, wantVal := range map[string]string{
+		"person name":               "Ada Lovelace",
+		"person birth date":         "1815-12-10",
+		"person alias":              "Ada Augusta Byron",
+		"person born in place name": "London",
+	} {
+		if got, _ := deep[wantKey].(string); got != wantVal {
+			t.Errorf("deep block[%q] = %q, want %q", wantKey, got, wantVal)
+		}
+	}
+
+	// The root's own pair belongs to BOTH blocks; the nested pair to one. This
+	// many-to-many membership is why hyperedge_ids is an array column.
+	rootEdgeIDs := metaStrings(edges[0].Meta, "id")
+	_ = rootEdgeIDs
+	for _, r := range keyRows {
+		path, _ := r.Meta["path"].(string)
+		ids := metaStrings(r.Meta, "hyperedge_ids")
+		switch path {
+		case "person:name":
+			if len(ids) != 2 {
+				t.Errorf("person:name belongs to %d hyperedges, want 2 (both blocks)", len(ids))
+			}
+		case "person:born_in.place:name":
+			if len(ids) != 1 {
+				t.Errorf("nested fact belongs to %d hyperedges, want 1", len(ids))
+			}
+		}
+		if prop, _ := r.Meta["prop"].(string); prop == "" {
+			t.Errorf("hypernode %q carries no prop", path)
+		}
+	}
+
+	// Each half carries only its own key so PayloadDescription cannot mix them.
+	for _, r := range keyRows {
+		p := parsePayload(r.Content)
+		if _, ok := p["key"]; !ok || len(p) != 1 {
+			t.Errorf("key row payload = %v, want exactly {key}", p)
+		}
+	}
+	for _, r := range valueRows {
+		p := parsePayload(r.Content)
+		if _, ok := p["value"]; !ok || len(p) != 1 {
+			t.Errorf("value row payload = %v, want exactly {value}", p)
+		}
+	}
+
+	// The two halves of one hypernode share the hash and differ by the suffix.
+	if !strings.HasSuffix(keyRows[0].ID, ":k") || !strings.HasSuffix(valueRows[0].ID, ":v") {
+		t.Fatalf("ids = %q / %q, want :k / :v suffixes", keyRows[0].ID, valueRows[0].ID)
+	}
+	if strings.TrimSuffix(keyRows[0].ID, ":k") != strings.TrimSuffix(valueRows[0].ID, ":v") {
+		t.Fatalf("the two halves must share hypernode_hash: %q vs %q", keyRows[0].ID, valueRows[0].ID)
+	}
+}
+
+// The same (path, value) reached from two different roots must collapse into ONE
+// hypernode whose hyperedge_ids names both blocks. That is what keeps the value
+// side of the index small, and why membership is an array column rather than a
+// single parent pointer.
+func TestBuildHypergraphHypernodeIsSharedAcrossRoots(t *testing.T) {
+	cfg := CompileConfig{DocID: "d1", TenantID: "t1", TemplateID: "tpl", ParserConfig: ontologyParserConfig()}
+	prods := []common.Product{
+		entityRow("Ada Lovelace", "person", nil, "c1"),
+		entityRow("Grace Hopper", "person", nil, "c2"),
+		entityRow("London", "place", nil, "c3"),
+		{Meta: map[string]any{"kind": "relation", "from": "Ada Lovelace", "to": "London", "relation_type": "born_in"}},
+		{Meta: map[string]any{"kind": "relation", "from": "Grace Hopper", "to": "London", "relation_type": "born_in"}},
+	}
+	rows, err := buildHypergraph(context.Background(), common.Deps{Embed: hashEmbedder{dim: 8}}, cfg, prods)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// London is reached from both roots, so this pair is produced twice.
+	const shared = "person:born_in.place:name"
+	found := 0
+	for _, r := range rows {
+		if kind, _ := r.Meta["kind"].(string); kind != "hypernode" {
+			continue
+		}
+		if role, _ := r.Meta["node_role"].(string); role != "key" {
+			continue
+		}
+		if path, _ := r.Meta["path"].(string); path != shared {
+			continue
+		}
+		found++
+		if ids := metaStrings(r.Meta, "hyperedge_ids"); len(ids) != 2 {
+			t.Errorf("shared hypernode belongs to %d hyperedges, want 2", len(ids))
+		}
+	}
+	if found != 1 {
+		t.Fatalf("the shared (path, value) produced %d hypernode rows, want 1", found)
+	}
+
+	// Both roots still produced their own block, so the two memberships are two
+	// distinct hyperedges rather than one block counted twice.
+	edges := 0
+	for _, r := range rows {
+		if kind, _ := r.Meta["kind"].(string); kind == "hyperedge" {
+			edges++
+		}
+	}
+	if edges != 4 {
+		t.Fatalf("hyperedges = %d, want 4 (two roots x two blocks each)", edges)
+	}
+}
+
+// Membership is what ONE document can compute: the hyperedge ids a row carries
+// are the blocks that document produced. Two documents stating the same
+// (path, value) must therefore get two rows — with a document-free id they
+// share one, and because the writer replaces whole rows the later document's
+// membership would be the only one left, silently dropping the earlier
+// document's slots from the layer (hypergraph_retrieval.md §3 P0-1).
+func TestBuildHypergraphHypernodeIsDocumentScoped(t *testing.T) {
+	prods := adaAndLondon()
+	ids := map[string]string{}
+	for _, docID := range []string{"d1", "d2"} {
+		cfg := CompileConfig{DocID: docID, TenantID: "t1", TemplateID: "tpl", ParserConfig: ontologyParserConfig()}
+		rows, err := buildHypergraph(context.Background(), common.Deps{Embed: hashEmbedder{dim: 8}}, cfg, prods)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, r := range rows {
+			kind, _ := r.Meta["kind"].(string)
+			if kind != "hypernode" {
+				continue
+			}
+			path, _ := r.Meta["path"].(string)
+			if path != "person:name" {
+				continue
+			}
+			if role, _ := r.Meta["node_role"].(string); role != "key" {
+				continue
+			}
+			if prev, ok := ids[docID]; ok {
+				t.Fatalf("document %s produced two person:name key rows (%s, %s)", docID, prev, r.ID)
+			}
+			ids[docID] = r.ID
+		}
+	}
+	if ids["d1"] == "" || ids["d2"] == "" {
+		t.Fatalf("missing hypernode rows: %v", ids)
+	}
+	if ids["d1"] == ids["d2"] {
+		t.Fatalf("the same (path, value) in two documents shares row id %q; "+
+			"the second document would overwrite the first one's membership", ids["d1"])
+	}
+}
+
+// node_value is the slot's value in exact spelling on BOTH halves: a key row's
+// payload holds the attribute path, so without the column a key row cannot be
+// joined to its value row and an entity's name node can only be found by full
+// text.
+func TestBuildHypergraphHypernodeCarriesNodeValue(t *testing.T) {
+	cfg := CompileConfig{DocID: "d1", TenantID: "t1", TemplateID: "tpl", ParserConfig: ontologyParserConfig()}
+	rows, err := buildHypergraph(context.Background(), common.Deps{Embed: hashEmbedder{dim: 8}}, cfg, adaAndLondon())
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for _, r := range rows {
+		if kind, _ := r.Meta["kind"].(string); kind != "hypernode" {
+			continue
+		}
+		path, _ := r.Meta["path"].(string)
+		role, _ := r.Meta["node_role"].(string)
+		value, _ := r.Meta["node_value"].(string)
+		if value == "" {
+			t.Fatalf("%s %s row carries no node_value", path, role)
+		}
+		seen[path+"|"+role] = value
+	}
+	for _, want := range []string{
+		"person:name|key", "person:name|value",
+		"person:birth_date|key", "person:birth_date|value",
+	} {
+		if seen[want] == "" {
+			t.Errorf("no node_value for %s", want)
+		}
+	}
+	if seen["person:name|key"] != "Ada Lovelace" || seen["person:name|value"] != "Ada Lovelace" {
+		t.Errorf("both halves must state the same value, got key=%q value=%q",
+			seen["person:name|key"], seen["person:name|value"])
+	}
+}
+
+// A template with no declared object properties writes no extra rows, so every
+// other variant's row count is untouched.
+func TestBuildHypergraphSkippedWithoutOntology(t *testing.T) {
+	for name, pc := range map[string]map[string]any{
+		"plain graph": graphParserConfig(),
+		"ontology without object properties": func() map[string]any {
+			c := ontologyParserConfig()
+			c["relation"] = map[string]any{"fields": []any{
+				map[string]any{"type": "alias", "kind": "datatype", "domain": "person", "datatype": "list", "description": "a"},
+			}}
+			return c
+		}(),
+	} {
+		cfg := CompileConfig{DocID: "d1", ParserConfig: pc}
+		rows, err := buildHypergraph(context.Background(), common.Deps{Embed: hashEmbedder{dim: 8}}, cfg, adaAndLondon())
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(rows) != 0 {
+			t.Fatalf("%s: wrote %d rows, want 0", name, len(rows))
+		}
+	}
+}
+
+// The draft budget is shared by the whole document, so an earlier root that
+// spends it stops the descent before the later roots are walked at all. A
+// per-root budget would multiply with the root count and bound nothing.
+func TestFlattenSharesBudgetAcrossRoots(t *testing.T) {
+	idx := buildHypergraphIndex([]common.Product{
+		entityRow("Ada Lovelace", "person", nil),
+		entityRow("Grace Hopper", "person", nil),
+		entityRow("London", "place", nil),
+		entityRow("Paris", "place", nil),
+		{Meta: map[string]any{"kind": "relation", "from": "Ada Lovelace", "to": "London", "relation_type": "born_in"}},
+		{Meta: map[string]any{"kind": "relation", "from": "Grace Hopper", "to": "Paris", "relation_type": "born_in"}},
+	}, ontologyParserConfig())
+	if idx == nil {
+		t.Fatal("no hypergraph index for the ontology template")
+	}
+
+	tr := idx.flattenDrafts(2)
+	if len(tr.drafts) != 2 || !tr.truncated {
+		t.Fatalf("drafts = %d truncated = %v, want 2 / true", len(tr.drafts), tr.truncated)
+	}
+	for _, d := range tr.drafts {
+		if d.rootName == "Grace Hopper" {
+			t.Fatalf("the second root was walked after the budget was spent: %v", tr.drafts)
+		}
+	}
+
+	// Under a budget wide enough for the whole document nothing is reported as
+	// cut: the flag must not fire merely because a root reached the limit exactly.
+	full := idx.flattenDrafts(hyperedgeMaxDrafts)
+	if full.truncated {
+		t.Fatalf("small graph reported as truncated (%d drafts)", len(full.drafts))
+	}
+	if len(full.drafts) != 4 {
+		t.Fatalf("drafts = %d, want 4 (two roots x two blocks each)", len(full.drafts))
+	}
+}
+
+// A cut traversal is announced on the progress channel: an operator who sees a
+// partial hypergraph with no message has no way to tell it from a complete one.
+func TestBuildHypergraphReportsBudgetTruncation(t *testing.T) {
+	// One root with more targets than the budget allows, so the cut is reached
+	// inside a single root's descent.
+	const targets = hyperedgeMaxDrafts + 1
+	prods := make([]common.Product, 0, targets+1)
+	prods = append(prods, entityRow("Ada Lovelace", "person", nil))
+	for i := 0; i < targets; i++ {
+		name := fmt.Sprintf("Place %d", i)
+		prods = append(prods, entityRow(name, "place", nil))
+		prods = append(prods, common.Product{Meta: map[string]any{
+			"kind": "relation", "from": "Ada Lovelace", "to": name, "relation_type": "born_in",
+		}})
+	}
+
+	var messages []string
+	ctx := runtime.WithProgressMessageCallback(context.Background(), func(component, message string) {
+		if component != "Compiler" {
+			t.Errorf("progress component = %q, want Compiler", component)
+		}
+		messages = append(messages, message)
+	})
+	cfg := CompileConfig{DocID: "d1", TenantID: "t1", TemplateID: "tpl", ParserConfig: ontologyParserConfig()}
+	rows, err := buildHypergraph(ctx, common.Deps{Embed: hashEmbedder{dim: 8}}, cfg, prods)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hyperedges := 0
+	for _, r := range rows {
+		if kind, _ := r.Meta["kind"].(string); kind == "hyperedge" {
+			hyperedges++
+		}
+	}
+	if hyperedges != hyperedgeMaxDrafts {
+		t.Fatalf("hyperedges = %d, want the %d-block budget", hyperedges, hyperedgeMaxDrafts)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("progress messages = %v, want exactly one truncation notice", messages)
+	}
+	for _, want := range []string{
+		fmt.Sprintf("%d blocks", hyperedgeMaxDrafts),
+		"d1",
+		fmt.Sprintf("%d-block budget", hyperedgeMaxDrafts),
+		"not walked",
+	} {
+		if !strings.Contains(messages[0], want) {
+			t.Errorf("truncation notice %q missing %q", messages[0], want)
+		}
 	}
 }

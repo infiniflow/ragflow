@@ -91,6 +91,111 @@ func TestMergeStructureDataset_GroupsByName(t *testing.T) {
 	}
 }
 
+// TestMergeStructureDataset_SplitsSameNameDifferentClasses covers the fold key
+// carrying the class: a name shared by two classes must produce one dataset row
+// per class, because a row states a single entity_type_kwd and folding them
+// would make a class filter answer with one class's instances while dropping the
+// other's (ontology2.md §3.2, 同名不同义).
+func TestMergeStructureDataset_SplitsSameNameDifferentClasses(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	entity := func(docID, typ, chunk string) kccommon.Product {
+		return kccommon.Product{
+			Variant: kccommon.VariantStructure, DocID: docID, Content: "Apple desc " + typ,
+			Meta: map[string]any{"name": "Apple", "entity_type": typ, "source_chunk_ids": []string{chunk}},
+		}
+	}
+	products := []kccommon.Product{entity("d1", "fruit", "c1"), entity("d2", "company", "c2")}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 2 {
+		t.Fatalf("want one bucket per class, got %d: %+v", len(fw.buckets), fw.buckets)
+	}
+	byType := map[string]StructureBucket{}
+	for _, b := range fw.buckets {
+		byType[b.Type] = b
+	}
+	for _, want := range []struct{ typ, doc string }{{"fruit", "d1"}, {"company", "d2"}} {
+		b, ok := byType[want.typ]
+		if !ok {
+			t.Fatalf("missing class %q in %+v", want.typ, fw.buckets)
+		}
+		if len(b.SourceDocIDs) != 1 || b.SourceDocIDs[0] != want.doc {
+			t.Errorf("class %q sources = %v, want [%s]", want.typ, b.SourceDocIDs, want.doc)
+		}
+	}
+}
+
+// TestMergeStructureDataset_ResolvesTheUnclassifiedFallback covers the flip side:
+// "other" is the model's way of saying it could not classify, so when a name has
+// exactly one class in the batch, that instance belongs to it — and when the name
+// has two, the unclassified row stays its own row instead of being guessed into
+// one class.
+func TestMergeStructureDataset_ResolvesTheUnclassifiedFallback(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	entity := func(docID, typ string) kccommon.Product {
+		return kccommon.Product{
+			Variant: kccommon.VariantStructure, DocID: docID, Content: "Engine desc " + typ,
+			Meta: map[string]any{"name": "Engine", "entity_type": typ},
+		}
+	}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", []kccommon.Product{entity("d1", "component"), entity("d2", "other")}); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 1 || fw.buckets[0].Type != "component" {
+		t.Fatalf("unclassified instance should join the name's only class: %+v", fw.buckets)
+	}
+	if len(fw.buckets[0].SourceDocIDs) != 2 {
+		t.Errorf("sources = %v, want both documents", fw.buckets[0].SourceDocIDs)
+	}
+
+	c = &Consumer{writer: &fakeWriter{}}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", []kccommon.Product{
+		entity("d1", "component"), entity("d2", "pump"), entity("d3", "other"),
+	}); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw = c.writer.(*fakeWriter)
+	if len(fw.buckets) != 3 {
+		t.Fatalf("ambiguous names must keep the unclassified row: got %d buckets: %+v", len(fw.buckets), fw.buckets)
+	}
+	for _, b := range fw.buckets {
+		if len(b.SourceDocIDs) != 1 {
+			t.Errorf("class %q absorbed another class's sources: %v", b.Type, b.SourceDocIDs)
+		}
+	}
+}
+
+// TestMergeStructureDataset_KeepsTheNewestModelVersion covers the version stamp
+// on a folded dataset bucket: a publish does not recompile the corpus, so one
+// bucket can fold rows extracted by different model versions. It reports the
+// newest, which is the version its latest rows come from.
+func TestMergeStructureDataset_KeepsTheNewestModelVersion(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	entity := func(docID string, version int) kccommon.Product {
+		return kccommon.Product{
+			Variant: kccommon.VariantStructure, DocID: docID, Content: "Engine desc",
+			Meta: map[string]any{
+				"name": "Engine", "entity_type": "component",
+				"compilation_template_version": version,
+			},
+		}
+	}
+	products := []kccommon.Product{entity("d1", 2), entity("d2", 5), entity("d3", 3)}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 1 {
+		t.Fatalf("want 1 bucket, got %d", len(fw.buckets))
+	}
+	if fw.buckets[0].TemplateVersion != 5 {
+		t.Errorf("TemplateVersion = %d, want the newest 5", fw.buckets[0].TemplateVersion)
+	}
+}
+
 func TestMergeStructureDataset_IsolatesTemplates(t *testing.T) {
 	c := &Consumer{writer: &fakeWriter{}}
 	products := []kccommon.Product{
@@ -251,6 +356,100 @@ func TestMergeStructureDataset_DescriptionFallbacks(t *testing.T) {
 	}
 }
 
+// TestMergeStructureDataset_DescriptionFallbackAppliedOnce covers the repeated
+// -name bug: the searchable fallback text is a BUCKET-level value, so a bucket
+// whose rows state no description must carry the name once — folding it per row
+// repeated the same name as many times as the bucket had rows ("korean war\n
+// korean war\nkorean war…"), which is what the instance view then rendered.
+func TestMergeStructureDataset_DescriptionFallbackAppliedOnce(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	entity := func(docID string, attrs map[string]any) kccommon.Product {
+		return kccommon.Product{
+			Variant: kccommon.VariantStructure, DocID: docID,
+			Content: `{"name":"Korean War","type":"event"}`,
+			Meta: map[string]any{"kind": "entity", "name": "Korean War", "entity_type": "event",
+				"source_chunk_ids": []string{"c-" + docID}, "attr": attrs},
+		}
+	}
+	products := []kccommon.Product{entity("d1", nil), entity("d2", nil), entity("d3", nil)}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 1 {
+		t.Fatalf("want 1 bucket, got %d", len(fw.buckets))
+	}
+	if got := fw.buckets[0].Description; got != "Korean War" {
+		t.Errorf("fallback description = %q, want exactly the name once", got)
+	}
+}
+
+// TestMergeStructureDataset_DescriptionKeepsRealTextOnly covers the mixed case:
+// the name fallback must not be folded in next to a description a document
+// actually stated, so the folded description stays the plain text of the rows
+// that had one.
+func TestMergeStructureDataset_DescriptionKeepsRealTextOnly(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	withDesc := kccommon.Product{
+		Variant: kccommon.VariantStructure, DocID: "d1",
+		Content: `{"description":"Eisenhower ended the fighting in 1953.","name":"Korean War","type":"event"}`,
+		Meta:    map[string]any{"kind": "entity", "name": "Korean War", "entity_type": "event"},
+	}
+	withoutDesc := kccommon.Product{
+		Variant: kccommon.VariantStructure, DocID: "d2",
+		Content: `{"name":"Korean War","type":"event"}`,
+		Meta:    map[string]any{"kind": "entity", "name": "Korean War", "entity_type": "event"},
+	}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1",
+		[]kccommon.Product{withoutDesc, withDesc, withoutDesc}); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 1 {
+		t.Fatalf("want 1 bucket, got %d", len(fw.buckets))
+	}
+	if got, want := fw.buckets[0].Description, "Eisenhower ended the fighting in 1953."; got != want {
+		t.Errorf("description = %q, want %q", got, want)
+	}
+}
+
+// TestMergeStructureDataset_FoldsAttributes covers the dataset row carrying the
+// declared datatype attributes: without the fold the merged row has no `attr` at
+// all, so the instance views (which read dataset scope by default) showed every
+// class with no attribute values.
+func TestMergeStructureDataset_FoldsAttributes(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	entity := func(docID string, attrs map[string]any) kccommon.Product {
+		return kccommon.Product{
+			Variant: kccommon.VariantStructure, DocID: docID,
+			Content: `{"description":"desc","name":"Virginia Woolf","type":"person"}`,
+			Meta: map[string]any{"kind": "entity", "name": "Virginia Woolf", "entity_type": "person",
+				"source_chunk_ids": []string{"c-" + docID}, "attr": attrs},
+		}
+	}
+	products := []kccommon.Product{
+		entity("d1", map[string]any{"occupation": []any{"writer"}, "birth_date": "1882-01-25"}),
+		// A list unions its items; a scalar keeps the first value the corpus
+		// stated, so a second document cannot overwrite it.
+		entity("d2", map[string]any{"occupation": []any{"writer", "publisher"}, "birth_date": "1900-01-01"}),
+	}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 1 {
+		t.Fatalf("want 1 bucket, got %d", len(fw.buckets))
+	}
+	attrs := fw.buckets[0].Attr
+	occupations, _ := bucketAttrList(attrs["occupation"])
+	if len(occupations) != 2 || occupations[0] != "writer" || occupations[1] != "publisher" {
+		t.Errorf("occupation = %v, want [writer publisher]", attrs["occupation"])
+	}
+	if got := attrs["birth_date"]; got != "1882-01-25" {
+		t.Errorf("birth_date = %v, want the first stated value", got)
+	}
+}
+
 // TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind covers the
 // Dataset rows retain the producing compilation kind, independent of extraction shape.
 func TestMergeStructureDataset_CompileKwdIsCanonicalKind(t *testing.T) {
@@ -300,26 +499,36 @@ func TestMergeStructureDataset_CompileKwdIsCanonicalKind(t *testing.T) {
 // TestDatasetLevelStructureID_StableAndCaseInsensitive covers G1: the id is
 // deterministic and case-insensitive on name so merges hit the same row.
 func TestDatasetLevelStructureID_StableAndCaseInsensitive(t *testing.T) {
-	a := datasetLevelStructureID("t1", "kb1", "tpl1", "Engine", "component", "timeline", "")
-	b := datasetLevelStructureID("t1", "kb1", "tpl1", "engine", "component", "timeline", "")
+	entity := func(name, typ, ckwd string) StructureBucket {
+		return StructureBucket{Name: name, Type: typ, CompileKwd: ckwd}
+	}
+	relation := func(name, relType, fromType, toType string) StructureBucket {
+		return StructureBucket{Name: name, Type: "relation", RelationType: relType, CompileKwd: "graph", FromType: fromType, ToType: toType}
+	}
+	a := datasetLevelStructureID("t1", "kb1", "tpl1", entity("Engine", "component", "timeline"))
+	b := datasetLevelStructureID("t1", "kb1", "tpl1", entity("engine", "component", "timeline"))
 	if a != b {
 		t.Errorf("structure id should be case-insensitive on name: %q vs %q", a, b)
 	}
-	if a == datasetLevelStructureID("t1", "kb1", "tpl1", "Fuel", "component", "timeline", "") {
+	if a == datasetLevelStructureID("t1", "kb1", "tpl1", entity("Fuel", "component", "timeline")) {
 		t.Errorf("different names must yield different ids")
 	}
-	if a == datasetLevelStructureID("t1", "kb1", "tpl1", "Engine", "component", "mindmap", "") {
+	if a == datasetLevelStructureID("t1", "kb1", "tpl1", entity("Engine", "component", "mindmap")) {
 		t.Errorf("different compile kinds must yield different ids")
 	}
-	if a != datasetLevelStructureID("t1", "kb1", "tpl1", "Engine", "other", "timeline", "") {
-		t.Errorf("entity type must not change the dataset-level identity")
+	if a == datasetLevelStructureID("t1", "kb1", "tpl1", entity("Engine", "other", "timeline")) {
+		t.Errorf("different entity types must yield different ids: one row states one class")
 	}
-	if a == datasetLevelStructureID("t1", "kb1", "tpl2", "Engine", "component", "timeline", "") {
+	if a == datasetLevelStructureID("t1", "kb1", "tpl2", entity("Engine", "component", "timeline")) {
 		t.Errorf("different templates must yield different ids")
 	}
-	if datasetLevelStructureID("t1", "kb1", "tpl1", "A -> B", "relation", "graph", "causes") ==
-		datasetLevelStructureID("t1", "kb1", "tpl1", "A -> B", "relation", "graph", "contradicts") {
+	if datasetLevelStructureID("t1", "kb1", "tpl1", relation("A -> B", "causes", "part", "part")) ==
+		datasetLevelStructureID("t1", "kb1", "tpl1", relation("A -> B", "contradicts", "part", "part")) {
 		t.Errorf("different relation types between the same endpoints must yield different ids")
+	}
+	if datasetLevelStructureID("t1", "kb1", "tpl1", relation("A -> B", "causes", "component", "part")) ==
+		datasetLevelStructureID("t1", "kb1", "tpl1", relation("A -> B", "causes", "fault", "part")) {
+		t.Errorf("different endpoint classes must yield different ids")
 	}
 }
 
@@ -401,6 +610,70 @@ func TestProductFromChunkMap_RestoresStructureTreeKind(t *testing.T) {
 	}
 	if kind, _ := tp.Meta["kind"].(string); kind != "root" {
 		t.Errorf("tree Meta.kind = %q, want root (so nav dispatch can pick it)", kind)
+	}
+}
+
+// TestProductFromChunkMap_RestoresAttributes covers the doc→dataset round-trip
+// of the `attr` json column: the dataset-level fold reads attributes off the
+// reconstructed product, so a reader that drops the column leaves every merged
+// row without attribute values.
+func TestProductFromChunkMap_RestoresAttributes(t *testing.T) {
+	row := map[string]interface{}{
+		"id": "entity-acme", "doc_id": "d1", "compile_kwd": "ontology",
+		"content_with_weight": `{"name":"Acme","type":"organization"}`,
+		"type_kwd":            "entity",
+		"name_kwd":            "acme",
+		"attr":                map[string]interface{}{"industry": []interface{}{"aerospace"}},
+	}
+	p, ok := productFromChunkMap(row, "t1", kccommon.VariantStructure)
+	if !ok {
+		t.Fatal("row should reconstruct")
+	}
+	attrs := chunkJSONObject(p.Meta["attr"])
+	if got, _ := bucketAttrList(attrs["industry"]); len(got) != 1 || got[0] != "aerospace" {
+		t.Errorf("Meta.attr = %v, want industry [aerospace]", p.Meta["attr"])
+	}
+
+	// Infinity hands a json column back as its JSON text on some paths; both
+	// shapes must round-trip.
+	row["attr"] = `{"industry":["aerospace"]}`
+	p, ok = productFromChunkMap(row, "t1", kccommon.VariantStructure)
+	if !ok {
+		t.Fatal("row with a string attr should reconstruct")
+	}
+	if attrs := chunkJSONObject(p.Meta["attr"]); attrs["industry"] == nil {
+		t.Errorf("Meta.attr = %v, want the decoded industry list", p.Meta["attr"])
+	}
+}
+
+// TestProductFromChunkMap_RestoresModelVersion covers the doc→dataset
+// round-trip: without it the dataset row cannot say which published model
+// version extracted it, and a stale assertion looks exactly like a current one.
+func TestProductFromChunkMap_RestoresModelVersion(t *testing.T) {
+	row := map[string]interface{}{
+		"id": "entity-acme", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+		"content_with_weight":              `{"name":"Acme Corp","type":"organization"}`,
+		"type_kwd":                         "entity",
+		"name_kwd":                         "acme corp",
+		"compilation_template_version_int": int64(4),
+	}
+	p, ok := productFromChunkMap(row, "t1", kccommon.VariantStructure)
+	if !ok {
+		t.Fatal("row should reconstruct")
+	}
+	if v, _ := metaInt(p.Meta, "compilation_template_version"); v != 4 {
+		t.Errorf("Meta.compilation_template_version = %v, want 4", p.Meta["compilation_template_version"])
+	}
+	// An unversioned row (never published, or written before the column existed)
+	// must not look like version 0 was published.
+	bare, _ := productFromChunkMap(map[string]interface{}{
+		"id": "entity-beta", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+		"content_with_weight": `{"name":"Beta Ltd","type":"organization"}`,
+		"type_kwd":            "entity",
+		"name_kwd":            "beta ltd",
+	}, "t1", kccommon.VariantStructure)
+	if _, present := bare.Meta["compilation_template_version"]; present {
+		t.Errorf("unversioned row carries a version: %v", bare.Meta)
 	}
 }
 

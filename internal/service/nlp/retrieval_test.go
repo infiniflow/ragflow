@@ -194,6 +194,69 @@ func TestRetrievalPreservesCompilationKindWhenPresent(t *testing.T) {
 	}
 }
 
+// TestRetrievalReturnsProjectedAssertionColumns pins the pass-through the ABox
+// digest depends on: the row view mirrors the Python response shape, so columns a
+// caller explicitly projected have to survive it. The L1 retrieval projects
+// type_kwd/name_kwd/prop_kwd/attr/source_chunk_ids and reads them back to build
+// the digest; dropping them here emptied every assertion and every citation count.
+func TestRetrievalReturnsProjectedAssertionColumns(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
+		{
+			"id": "assertion", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9,
+			"type_kwd": "entity", "name_kwd": "virginia woolf", "entity_type_kwd": "person",
+			"attr":               map[string]interface{}{"occupation": "writer"},
+			"source_chunk_ids":   []string{"chunk-1"},
+			"unprojected_column": "not requested, so not returned",
+		},
+	}}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	threshold := 0.0
+	vectorWeight := 1.0
+	aggs := false
+	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1,
+		PageSize:               1,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+		SelectFields: []string{
+			"content_ltks", "content_with_weight", "type_kwd", "name_kwd",
+			"entity_type_kwd", "attr", "source_chunk_ids",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Retrieval failed: %v", err)
+	}
+	if len(result.Chunks) != 1 {
+		t.Fatalf("chunks = %#v, want the assertion row", result.Chunks)
+	}
+	chunk := result.Chunks[0]
+	if got := chunk["type_kwd"]; got != "entity" {
+		t.Fatalf("type_kwd = %#v, want entity", got)
+	}
+	if got := chunk["name_kwd"]; got != "virginia woolf" {
+		t.Fatalf("name_kwd = %#v, want virginia woolf", got)
+	}
+	if got := chunk["entity_type_kwd"]; got != "person" {
+		t.Fatalf("entity_type_kwd = %#v, want person", got)
+	}
+	if got, want := fmt.Sprintf("%v", chunk["attr"]), "map[occupation:writer]"; got != want {
+		t.Fatalf("attr = %s, want %s", got, want)
+	}
+	if got, want := fmt.Sprintf("%v", chunk["source_chunk_ids"]), "[chunk-1]"; got != want {
+		t.Fatalf("source_chunk_ids = %s, want %s", got, want)
+	}
+	if _, ok := chunk["unprojected_column"]; ok {
+		t.Fatalf("column the caller did not project leaked into the result: %#v", chunk)
+	}
+}
+
 // TestRetrievalProjectsRankFeatureFields pins the source projection. The
 // reranker reads pagerank_fea and tag_feas off Field, and Field is the engine's
 // projection of exactly SelectFields, so both must be requested.

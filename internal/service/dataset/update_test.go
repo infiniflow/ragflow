@@ -212,6 +212,46 @@ func TestUpdateDatasetPreservesParentChildChunkerRuntimeConfig(t *testing.T) {
 	}
 }
 
+// This path writes parser_config itself instead of going through the
+// knowledgebase DAO, so it has to re-index the compilation-model references on
+// its own. A stale index would leave the model library counting a dataset that
+// no longer compiles against the model, and a publish trial sampling it.
+func TestUpdateDatasetReindexesCompilationModelRefs(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	// The dataset was compiled against two models. The config this update
+	// writes names none of them, so both references have to go: leaving one
+	// behind would keep the model library counting a dataset that no longer
+	// compiles against the model, and a publish trial sampling it.
+	refs := []*entity.DatasetModelRef{
+		{ID: "ref-1", TenantID: "tenant-1", DatasetID: "kb-1", RefType: "group", ModelRef: "group-1"},
+		{ID: "ref-2", TenantID: "tenant-1", DatasetID: "kb-1", RefType: "template", ModelRef: "tpl-1"},
+	}
+	if err := db.Create(&refs).Error; err != nil {
+		t.Fatalf("seed refs: %v", err)
+	}
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"GeneralChunker:SixApplesFall": map[string]interface{}{"chunk_token_size": float64(256)},
+		},
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset err=%v code=%d", err, code)
+	}
+
+	var remaining int64
+	if err := db.Model(&entity.DatasetModelRef{}).Where("dataset_id = ?", "kb-1").
+		Count(&remaining).Error; err != nil {
+		t.Fatalf("count refs: %v", err)
+	}
+	if remaining != 0 {
+		t.Fatalf("refs = %d, want the references of a config that names no model", remaining)
+	}
+}
+
 func TestUpdateDataset_RejectsSimultaneousParserIDAndPipelineID(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)

@@ -101,10 +101,25 @@ type StructureBucket struct {
 	SourceDocIDs   []string // union of source doc ids
 	SourceChunkIDs []string // union of source chunk ids
 	Vector         []float32
-	VecCount       int    // number of vectors folded into Vector (for true mean)
-	FromEntity     string // relation only
-	ToEntity       string // relation only
-	// CompileKwd is the canonical knowledge compilation kind for this bucket.
+	VecCount       int // number of vectors folded into Vector (for true mean)
+	// Attr is the union of the rows' declared datatype attributes, keyed by
+	// attribute name, written to the row's `attr` json column (entity buckets
+	// only). A dataset row IS the folded instance, so a reader asking at dataset
+	// scope — the default scope of the instance views — must still see the
+	// values the doc rows hold; without the fold the dataset row carries no
+	// attributes at all and the class panel shows an empty attribute set.
+	Attr       map[string]any
+	FromEntity string // relation only
+	ToEntity   string // relation only
+	// FromType / ToType are the endpoint classes of a relation (from_type_kwd /
+	// to_type_kwd). They are what the class-level ontology graph is drawn and
+	// counted from, so a relation row without them cannot be placed on it.
+	FromType string // relation only
+	ToType   string // relation only
+	// CompileKwd is the canonical knowledge compilation kind for this bucket:
+	// structureCompileKind normalizes it through types.CanonicalCompilationKind,
+	// so distinct spellings of one structure never collide in a dataset
+	// namespace (plan §1.1).
 	CompileKwd string
 	// TemplateID is the compilation template id (compilation_template_ids[0]) that
 	// produced this bucket. Stamped on the dataset row so read/delete paths can
@@ -112,6 +127,10 @@ type StructureBucket struct {
 	TemplateID string
 	// TemplateKind identifies the producing template and determines CompileKwd.
 	TemplateKind string
+	// TemplateVersion is the published model version that extracted the folded
+	// rows (0 when the template was never published). It is what lets a reader
+	// see that a dataset row predates the model version now in force.
+	TemplateVersion int
 	// RelationType is the relation type (Python default "related"), persisted as
 	// relation_type_kwd and part of the relation bucket/ID identity.
 	RelationType string
@@ -512,7 +531,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 		}
 		desc := strings.TrimSpace(b.Description)
 		template := structureTemplateIdentity(b.TemplateID, b.TemplateKind)
-		bid := datasetLevelStructureID(tenant, kb, template, b.Name, b.Type, b.CompileKwd, b.RelationType)
+		bid := datasetLevelStructureID(tenant, kb, template, b)
 		ckwd := b.CompileKwd
 		if ckwd == "" {
 			ckwd = compileKwdStructure
@@ -572,17 +591,42 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 		if b.TemplateID != "" {
 			row["compilation_template_ids"] = []string{b.TemplateID}
 		}
+		if b.TemplateVersion > 0 {
+			row["compilation_template_version_int"] = b.TemplateVersion
+		}
 		if b.FromEntity != "" || b.ToEntity != "" {
 			// relation row: carries from/to entities; kind=relation, no name_kwd.
 			row["type_kwd"] = "relation"
 			row["from_entity_kwd"] = b.FromEntity
 			row["to_entity_kwd"] = b.ToEntity
+			// prop_kwd / from_type_kwd / to_type_kwd are the ontology view's
+			// input: the property name and the endpoint classes. They are values
+			// here, never column names, so the template vocabulary is free to
+			// change without a schema change.
+			if b.RelationType != "" {
+				// Written verbatim (not through structureRelationType): the doc
+				// rows carry the model's own spelling and the ontology view keys
+				// its counts by it, so both levels must agree on the raw value.
+				// Normalisation stays where it belongs — in the bucket identity.
+				row["prop_kwd"] = b.RelationType
+			}
+			if b.FromType != "" {
+				row["from_type_kwd"] = b.FromType
+			}
+			if b.ToType != "" {
+				row["to_type_kwd"] = b.ToType
+			}
 		} else {
 			row["type_kwd"] = "entity"
 			row["name_kwd"] = strings.ToLower(b.Name)
 			row["entity_type_kwd"] = b.Type
 			if b.MentionCount > 0 {
 				row["mention_count_int"] = b.MentionCount
+			}
+			// The folded datatype attributes: the same json column the doc
+			// rows carry, so both scopes decode through one reader.
+			if len(b.Attr) > 0 {
+				row["attr"] = b.Attr
 			}
 		}
 		if len(b.Vector) > 0 {
@@ -649,9 +693,21 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 
 func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, baseName, tenant, kb string, buckets []StructureBucket) ([]string, error) {
 	byIdentity := make(map[string]int, len(buckets))
+	// Class-agnostic lookup for existing rows that carry no class (see
+	// structureBucketNameIdentity). It is only usable when one bucket owns the
+	// name: with several classes there is no way to tell which one such a row
+	// belonged to, and guessing would file its sources under the wrong class.
+	byNameIdentity := make(map[string]int, len(buckets))
+	nameIdentityAmbiguous := make(map[string]bool, 4)
 	compileKinds := make([]string, 0, len(buckets))
 	for i := range buckets {
 		byIdentity[structureBucketIdentity(buckets[i])] = i
+		nameIdentity := structureBucketNameIdentity(buckets[i])
+		if _, seen := byNameIdentity[nameIdentity]; seen {
+			nameIdentityAmbiguous[nameIdentity] = true
+		} else {
+			byNameIdentity[nameIdentity] = i
+		}
 		compileKinds = appendUnique(compileKinds, []string{structureCompileKind(buckets[i].CompileKwd)})
 	}
 	if len(byIdentity) == 0 {
@@ -667,7 +723,12 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 			SelectFields: []string{
 				"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
 				"type_kwd", "knowledge_graph_kwd", "name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
-				"content_with_weight", "source_doc_ids", "source_chunk_ids",
+				"prop_kwd", "from_type_kwd", "to_type_kwd",
+				"content_with_weight", "kc_payload", "source_doc_ids", "source_chunk_ids",
+				// The stored attributes are folded in below: a batch that
+				// recompiles one document still has to keep the attribute values
+				// the other documents contributed to the same instance.
+				"attr",
 			},
 			Filter: map[string]interface{}{
 				"kb_id":               kb,
@@ -685,6 +746,19 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 			identity := structureRowIdentity(row)
 			idx, ok := byIdentity[identity]
 			if !ok {
+				// The name-level fallback covers the two directions a class can be
+				// missing: the stored row carries none (written before classes were
+				// part of the identity) or this batch could not resolve one
+				// (its endpoint entity was compiled in an earlier pass). Both mean
+				// one side has no class to disagree about; a row and a bucket that
+				// each state a different class must never be folded together.
+				nameIdentity := structureRowNameIdentity(row)
+				if candidate, seen := byNameIdentity[nameIdentity]; seen && !nameIdentityAmbiguous[nameIdentity] &&
+					(structureRowClassless(row) || structureBucketClassless(buckets[candidate])) {
+					idx, ok = candidate, true
+				}
+			}
+			if !ok {
 				continue
 			}
 			bucket := &buckets[idx]
@@ -693,6 +767,7 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 			}
 			bucket.SourceDocIDs = appendUnique(bucket.SourceDocIDs, firstStringSlice(row["source_doc_ids"]))
 			bucket.SourceChunkIDs = appendUnique(bucket.SourceChunkIDs, firstStringSlice(row["source_chunk_ids"]))
+			bucket.Attr = mergeBucketAttrs(bucket.Attr, chunkJSONObject(row["attr"]))
 			payload := structureRowPayload(row)
 			if bucket.FromEntity == "" && bucket.ToEntity == "" {
 				existingType := structureString(row["entity_type_kwd"])
@@ -700,9 +775,20 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 					existingType = structureString(payload["type"])
 				}
 				bucket.Type = preferredStructureEntityType(existingType, bucket.Type)
+			} else {
+				// Relation bucket: keep the endpoint classes already stored when
+				// this batch could not resolve them (its endpoint entity was
+				// compiled in an earlier pass), so a partial rewrite never drops
+				// a relation off the ontology graph.
+				if bucket.FromType == "" {
+					bucket.FromType = structureString(row["from_type_kwd"])
+				}
+				if bucket.ToType == "" {
+					bucket.ToType = structureString(row["to_type_kwd"])
+				}
 			}
 			id := structureString(row["id"])
-			newID := datasetLevelStructureID(tenant, kb, structureTemplateIdentity(bucket.TemplateID, bucket.TemplateKind), bucket.Name, bucket.Type, bucket.CompileKwd, bucket.RelationType)
+			newID := datasetLevelStructureID(tenant, kb, structureTemplateIdentity(bucket.TemplateID, bucket.TemplateKind), *bucket)
 			if id != "" && id != newID {
 				stale[id] = true
 			}
@@ -742,12 +828,66 @@ func structureBucketIdentity(bucket StructureBucket) string {
 	template := structureTemplateIdentity(bucket.TemplateID, bucket.TemplateKind)
 	compileKwd := structureCompileKind(bucket.CompileKwd)
 	if bucket.FromEntity != "" || bucket.ToEntity != "" {
+		return "relation\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(bucket.FromEntity) + "\x00" + structureEntityTypeKey(bucket.FromType) + "\x00" + structureRelationType(bucket.RelationType) + "\x00" + normalizedStructureEntityName(bucket.ToEntity) + "\x00" + structureEntityTypeKey(bucket.ToType)
+	}
+	return "entity\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(bucket.Name) + "\x00" + structureEntityTypeKey(bucket.Type)
+}
+
+func structureRowIdentity(row map[string]interface{}) string {
+	templateID := ""
+	if ids := firstStringSlice(row["compilation_template_ids"]); len(ids) > 0 {
+		templateID = ids[0]
+	}
+	template := structureTemplateIdentity(templateID, types.CompilationKind(row))
+	compileKwd := structureCompileKind(types.CompilationKind(row))
+	payload := structureRowPayload(row)
+	if strings.EqualFold(structureRowType(row), "relation") {
+		from := structureString(row["from_entity_kwd"])
+		to := structureString(row["to_entity_kwd"])
+		if from == "" {
+			from = structureString(payload["from"])
+		}
+		if to == "" {
+			to = structureString(payload["to"])
+		}
+		return "relation\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(from) + "\x00" + structureEntityTypeKey(structureRowEndpointType(row, "from")) + "\x00" + structureRelationType(structureString(payload["type"])) + "\x00" + normalizedStructureEntityName(to) + "\x00" + structureEntityTypeKey(structureRowEndpointType(row, "to"))
+	}
+	name := structureString(row["name_kwd"])
+	if name == "" {
+		name = structureString(payload["name"])
+	}
+	typ := structureString(row["entity_type_kwd"])
+	if typ == "" {
+		typ = structureString(payload["type"])
+	}
+	return "entity\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(name) + "\x00" + structureEntityTypeKey(typ)
+}
+
+// structureRowEndpointType reads one endpoint class off a relation row, falling
+// back to the payload the same way the other structure fields do.
+func structureRowEndpointType(row map[string]interface{}, side string) string {
+	if value := structureString(row[side+"_type_kwd"]); value != "" {
+		return value
+	}
+	return structureString(structureRowPayload(row)[side+"_type"])
+}
+
+// structureBucketNameIdentity is structureBucketIdentity with the classes left
+// out. It is the fallback lookup for rows whose class columns are empty: before
+// classes were part of the identity, an instance the model could not classify
+// ("other") was folded into the same row as its classified namesake, so those
+// rows must still find that bucket instead of being deleted as superseded.
+func structureBucketNameIdentity(bucket StructureBucket) string {
+	template := structureTemplateIdentity(bucket.TemplateID, bucket.TemplateKind)
+	compileKwd := structureCompileKind(bucket.CompileKwd)
+	if bucket.FromEntity != "" || bucket.ToEntity != "" {
 		return "relation\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(bucket.FromEntity) + "\x00" + structureRelationType(bucket.RelationType) + "\x00" + normalizedStructureEntityName(bucket.ToEntity)
 	}
 	return "entity\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(bucket.Name)
 }
 
-func structureRowIdentity(row map[string]interface{}) string {
+// structureRowNameIdentity is structureRowIdentity with the classes left out.
+func structureRowNameIdentity(row map[string]interface{}) string {
 	templateID := ""
 	if ids := firstStringSlice(row["compilation_template_ids"]); len(ids) > 0 {
 		templateID = ids[0]
@@ -771,6 +911,31 @@ func structureRowIdentity(row map[string]interface{}) string {
 		name = structureString(payload["name"])
 	}
 	return "entity\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(name)
+}
+
+// structureBucketClassless reports whether an incoming bucket states no class at
+// all. Only such a bucket may adopt a stored row that does state one: the classes
+// the row carries are then copied into the bucket (see the endpoint-class copy in
+// mergeExistingStructureBuckets), so the row that replaces it keeps them.
+func structureBucketClassless(bucket StructureBucket) bool {
+	if bucket.FromEntity != "" || bucket.ToEntity != "" {
+		return structureEntityTypeKey(bucket.FromType) == "" && structureEntityTypeKey(bucket.ToType) == ""
+	}
+	return structureEntityTypeKey(bucket.Type) == ""
+}
+
+// structureRowClassless reports whether a stored row carries no class at all.
+// Only such a row may fall back to the name-level lookup: a row that states a
+// class must never be merged into a bucket of another class.
+func structureRowClassless(row map[string]interface{}) bool {
+	if strings.EqualFold(structureRowType(row), "relation") {
+		return structureEntityTypeKey(structureRowEndpointType(row, "from")) == "" && structureEntityTypeKey(structureRowEndpointType(row, "to")) == ""
+	}
+	typ := structureString(row["entity_type_kwd"])
+	if typ == "" {
+		typ = structureString(structureRowPayload(row)["type"])
+	}
+	return structureEntityTypeKey(typ) == ""
 }
 
 func structureRowType(row map[string]interface{}) string {
@@ -930,16 +1095,21 @@ func (w engineWriter) DeleteStructureForDocs(ctx context.Context, tenant, kb str
 }
 
 // datasetLevelStructureID builds the stable dataset-level id for a structure
-// bucket, keyed on template, name, compile kind, and relation type. It must be
-// deterministic so an incremental merge read-modify-writes the same row (and a
-// rebuild clean removes it). Including the raw compile kind keeps
-// timeline/graph/mindmap buckets from colliding in the same dataset namespace;
-// including the relation type keeps two relation types between the same endpoints
-// (e.g. "causes" vs "contradicts") from colliding into one id (review fix).
-func datasetLevelStructureID(tenant, kb, template, name, typ, compileKwd, relationType string) string {
-	identity := template + "\x00" + normalizedStructureEntityName(name) + "\x00" + structureCompileKind(compileKwd)
-	if relationType != "" {
-		identity += "\x00" + typ + "\x00" + structureRelationType(relationType)
+// bucket, keyed on template, name, class, compile kind, and relation type (plus
+// the endpoint classes for relations). It must be deterministic so an
+// incremental merge read-modify-writes the same row (and a rebuild clean removes
+// it). Including the raw compile kind keeps timeline/graph/mindmap buckets from
+// colliding in the same dataset namespace; including the relation type keeps two
+// relation types between the same endpoints (e.g. "causes" vs "contradicts")
+// from colliding into one id (review fix).
+//
+// The classes are part of the id for the same reason they are part of the fold
+// key: a dataset row states one class, so two classes sharing a name must be two
+// rows rather than one row that answers a class filter incorrectly.
+func datasetLevelStructureID(tenant, kb, template string, b StructureBucket) string {
+	identity := template + "\x00" + normalizedStructureEntityName(b.Name) + "\x00" + structureEntityTypeKey(b.Type) + "\x00" + structureCompileKind(b.CompileKwd)
+	if b.RelationType != "" {
+		identity += "\x00" + structureRelationType(b.RelationType) + "\x00" + structureEntityTypeKey(b.FromType) + "\x00" + structureEntityTypeKey(b.ToType)
 	}
 	return "dataset_structure_" + hashStr(tenant+"\x00"+kb+"\x00"+identity)
 }

@@ -48,11 +48,38 @@ type Template struct {
 	// model-default runs proved noisier than the exploration its sampling
 	// buys. An undeclared template leaves the field unset: the model's own
 	// default applies.
-	Temperature   *float64 `json:"temperature" yaml:"temperature"`
-	Tools         []string `json:"tools" yaml:"tools"`
-	Content       string   `json:"content" yaml:"content"`
-	strictTools   bool
+	Temperature *float64 `json:"temperature" yaml:"temperature"`
+	Tools       []string `json:"tools" yaml:"tools"`
+	Content     string   `json:"content" yaml:"content"`
+	// Ontology is the template-level fallback for the knowledge-layer model
+	// and scope. It sits between the per-request kwarg and the assistant's
+	// persisted setting: a request that names a model wins, then this, then
+	// the assistant. A template that declares nothing runs without the
+	// knowledge layer, which is what keeps an unconfigured deployment
+	// byte-identical to one without this feature.
+	Ontology *TemplateOntology `json:"ontology" yaml:"ontology"`
+	// strictTools marks a template whose tool list is complete: it opts out of
+	// the compiled-knowledge injection, so the set the file names is the set the
+	// model sees.
+	strictTools bool
+	// customContent marks a template whose content came from an override rather
+	// than from the shipped file, so a caller can tell an operator-edited prompt
+	// from the built-in one.
 	customContent bool
+}
+
+// TemplateOntology is a template's declared knowledge-layer binding.
+type TemplateOntology struct {
+	// ModelID names the published ontology (compilation) model. It is an id,
+	// never a name: a rename must not silently repoint retrieval.
+	ModelID string `json:"model_id" yaml:"model_id"`
+	// ModelVersion pins a snapshot; zero means the model's current published
+	// version.
+	ModelVersion int `json:"model_version" yaml:"model_version"`
+	// KnowledgeDatasetIDs is the knowledge scope. It is a different set from
+	// the conversation's document datasets, and it is what makes the
+	// knowledge layer its own governance boundary.
+	KnowledgeDatasetIDs []string `json:"knowledge_dataset_ids" yaml:"knowledge_dataset_ids"`
 }
 
 // configFile is the on-disk shape: a plain list of templates. Which template
@@ -103,6 +130,21 @@ func toolRegistry() map[string]toolFactory {
 		// query-focused TOC the model feeds to list_chunks. Registered always; a
 		// template that omits it never offers it to the model.
 		"navigate_structure": func(t string, d []string) tool.BaseTool { return NewNavigateStructureTool(t, d) },
+		// The knowledge layer's own tool. Its binding (unreached from here: it
+		// carries the model and knowledge scope, which only the run knows) is
+		// taken from the run's context, never from a parameter: the model
+		// chooses WHAT to look at, not WHICH model to look under. One tool
+		// serves both the drill-down and, in the direct-answer mode, the
+		// primary lookup - which of the two a call is, is decided by its
+		// arguments (typed constraints narrow, none retrieve), not by a mode
+		// flag.
+		"search_ontology": func(_ string, _ []string) tool.BaseTool { return NewSearchOntologyTool() },
+		// The typed walk. Registered beside the lookup because the two answer
+		// different shapes of question: the lookup ranks assertions against the
+		// question's words, the walk follows declared properties out to the entity
+		// the question never names. Binding comes from the run's context for the
+		// same reason: the model chooses where to walk, not under which model.
+		"traverse_ontology": func(_ string, _ []string) tool.BaseTool { return NewTraverseOntologyTool() },
 	}
 }
 
@@ -219,6 +261,24 @@ func TemplateTemperature(templateID string) *float64 {
 	}
 	t := *tmpl.Temperature
 	return &t
+}
+
+// TemplateOntologyFor resolves a template's declared knowledge-layer binding.
+//
+// It returns nil when the template declares none, which is the default: an
+// unconfigured deployment must not acquire a knowledge scope by accident. The
+// template's declaration is a deployment default, so a request or an assistant
+// setting that names its own binding wins over it.
+func TemplateOntologyFor(templateID string) *OntologyRunConfig {
+	tmpl, err := resolveTemplateFor(templateID)
+	if err != nil || tmpl.Ontology == nil {
+		return nil
+	}
+	return &OntologyRunConfig{
+		ModelID:             strings.TrimSpace(tmpl.Ontology.ModelID),
+		ModelVersion:        tmpl.Ontology.ModelVersion,
+		KnowledgeDatasetIDs: tmpl.Ontology.KnowledgeDatasetIDs,
+	}
 }
 
 // toolsFor uses explicit tools or builds them from the template, falling back

@@ -70,8 +70,21 @@ type Input struct {
 	// the session created in the UI). It is injected into the retrieval tools so
 	// they search the right index without a canvas runtime.
 	TenantID string
-	// UserID identifies whose per-Tenant default models apply to this run.
+	// UserID is the caller. It identifies whose per-Tenant default models apply
+	// to this run, and it is the subject of the knowledge-layer access check:
+	// the knowledge scope is a separate set of datasets from the conversation's,
+	// so it gets its own authorization — a caller who may use the conversation's
+	// documents is not thereby allowed to read another library's compiled rows.
 	UserID string
+	// Ontology binds the knowledge layer for this turn: which published model
+	// to read, and which datasets hold its compiled rows. Nil (or an
+	// incomplete binding) leaves the turn exactly as it would run without the
+	// feature.
+	//
+	// Which of the two modes the binding runs in is not a field: it follows
+	// from DatasetIDs. With a document corpus the knowledge layer guides the
+	// reading; with none it is the answer surface (see ontology_run.go).
+	Ontology *OntologyRunConfig
 	// DatasetIDs is the conversation's bound dataset scope, decided by the
 	// session created in the UI. It is injected into the retrieval tools.
 	DatasetIDs []string
@@ -311,9 +324,29 @@ func (t *instrumentedTool) InvokableRun(ctx context.Context, args string, opts .
 	return out, err
 }
 
+// RunOutput is what one Run ships back to its caller.
+//
+// The answer alone is not enough to render a turn: the knowledge layer this run
+// read is a retrieval receipt the caller must report (which model version, which
+// assertions, how many citations resolved), and it is produced inside the run —
+// the prefetch happens before the loop, on state the caller does not hold. It
+// travels as a value rather than through the context so the receipt cannot
+// outlive the turn that produced it.
+type RunOutput struct {
+	// Answer is the final assistant content: the single deliverable this run
+	// decided to ship, already synthesized when the loop ended abnormally.
+	Answer string
+	// Digest is the knowledge layer's retrieval for this turn, or nil when the
+	// turn ran without the knowledge layer (unbound, or the prefetch failed).
+	// Nil is meaningful to the receipt: "no knowledge layer" and "an empty one"
+	// must not render the same way.
+	Digest *OntologyDigest
+}
+
 // Run executes a smart-reasoning (ReAct) turn against the given model and
-// returns the final assistant message content, streaming incremental deltas
-// through in.OnDelta (or runtime.EmitAgentMessage when OnDelta is nil).
+// returns the turn's output (the final assistant message content plus the
+// knowledge-layer receipt), streaming incremental deltas through in.OnDelta
+// (or runtime.EmitAgentMessage when OnDelta is nil).
 //
 // One call answers ONE user turn: the caller's stored conversation comes in
 // through in.Messages and the next user input arrives as the NEXT call
@@ -325,9 +358,9 @@ func (t *instrumentedTool) InvokableRun(ctx context.Context, args string, opts .
 // It uses eino ADK's adk.ChatModelAgent (NOT flow/agent/react, and never
 // adk/react.go directly), which provides the ReAct loop plus robustness
 // (retry/failover/cancel monitoring) and recoverability (checkpoint/resume).
-func Run(ctx context.Context, in Input) (string, error) {
+func Run(ctx context.Context, in Input) (RunOutput, error) {
 	if in.Model == nil {
-		return "", errNilModel
+		return RunOutput{}, errNilModel
 	}
 	if in.DocIDs != nil {
 		ctx = withDocumentScope(ctx, in.DocIDs)
@@ -361,6 +394,10 @@ func Run(ctx context.Context, in Input) (string, error) {
 		defer forgetConversation(convKey)
 	}
 
+	// The caller may resolve the template once and share it with model setup
+	// (Input.Template); otherwise the run resolves it itself. The run still
+	// resolves rather than requiring it: a nil Template must not turn a
+	// misconfigured caller into a nil-dereference inside the loop.
 	var tmpl Template
 	if in.Template != nil {
 		tmpl = *in.Template
@@ -369,7 +406,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 		tmpl, err = ResolveTemplate(in.TemplateID, nil)
 		if err != nil {
 			common.ErrorCtx(ctx, "agentic_rag: resolve template", err)
-			return "", err
+			return RunOutput{}, err
 		}
 	}
 
@@ -379,12 +416,48 @@ func Run(ctx context.Context, in Input) (string, error) {
 		in.ToolCallDurations = &durationAccumulator{dur: make(map[string]time.Duration)}
 	}
 
-	// With no explicit tools, use the requested template. The config reloads
-	// when its mtime changes so operators can change the tool list and prompt.
+	// The knowledge layer runs before the loop rather than as a tool the model
+	// has to remember to call: a knowledge layer consulted at the model's
+	// discretion is one that is sometimes not consulted, and the miss leaves no
+	// trace in the answer. Which mode it runs in follows from whether this turn
+	// has a document corpus at all (see resolveOntologyMode).
+	mode := resolveOntologyMode(in)
+	registry := evidenceRegistryFrom(ctx)
+	instruction := tmpl.Content
+	var digest *OntologyDigest
+	if mode != ontologyModeOff {
+		binding := ontologyBinding{
+			UserID:   in.UserID,
+			TenantID: in.TenantID,
+			Config:   *in.Ontology,
+			// The document scope is for counting which quotations may be
+			// cited, not for narrowing the knowledge search itself.
+			DocumentScope: in.DocIDs,
+			Direct:        mode == ontologyModeDirect,
+		}
+		ctx = WithOntologyBinding(ctx, binding)
+		digest = ontologyPrefetch(ctx, mode, in, binding)
+		instruction = ontologyInstruction(tmpl.Content, mode, digest, registry)
+	}
+
+	// Template tools plus the injected compiled-knowledge set (toolsForRun owns
+	// both decisions and their logging). The knowledge-layer tool is added here
+	// because it is a property of this run's ontology mode, not of the template.
 	tools := toolsForRun(ctx, tmpl, in, engine.Get())
-	agentModel, err := modelForTools(ctx, in.Model, tools, in.DatasetIDs)
+	tools = ontologyToolsFor(ctx, tools, mode)
+
+	// The forced-retrieval gate. In the direct-answer mode the corpus tools are
+	// gone, so what must not be skipped is the knowledge layer itself — but it
+	// is forced only when the prefetch came back empty. When it returned
+	// assertions the material is already in the instruction, and forcing a call
+	// would spend a step re-fetching what the model can already read.
+	var extraRequired []string
+	if mode == ontologyModeDirect && (digest == nil || len(digest.Assertions) == 0) {
+		extraRequired = append(extraRequired, searchOntologyToolName)
+	}
+	agentModel, err := modelForTools(ctx, in.Model, tools, in.DatasetIDs, extraRequired...)
 	if err != nil {
-		return "", err
+		return RunOutput{}, err
 	}
 
 	maxIter := agenticMaxIterations(in.MaxIterations)
@@ -426,7 +499,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 					zap.Int("handles", claimHandleCount(answer)),
 					zap.Int("answer_bytes", len(answer)))
 				emit(ctx, in.OnDelta, answer, "")
-				return answer, nil
+				return RunOutput{Answer: answer, Digest: digest}, nil
 			default:
 				// The claims were judged (or proved) not to answer the question:
 				// the loop retrieves what the claims could not supply.
@@ -484,8 +557,13 @@ func Run(ctx context.Context, in Input) (string, error) {
 	)
 
 	cfg := &adk.ChatModelAgentConfig{
-		Name:          "smart-reasoning",
-		Instruction:   tmpl.Content,
+		Name: "smart-reasoning",
+		// The instruction is the template's prompt with the knowledge-layer
+		// digest appended when one was retrieved. It goes here and not into the
+		// conversation because the conversation is persisted: a digest that
+		// became a message would still be present next turn, steering an answer
+		// it has nothing to do with.
+		Instruction:   instruction,
 		Model:         agentModel,
 		MaxIterations: maxIter,
 		// Retry transient provider failures (MiniMax 529 overload, 429, 5xx,
@@ -520,7 +598,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 
 	explorerAgent, err := adk.NewChatModelAgent(ctx, cfg)
 	if err != nil {
-		return "", err
+		return RunOutput{}, err
 	}
 
 	// The explorer is driven as a MANAGED SESSION. Seed the request-scoped
@@ -618,7 +696,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// went out live as thinking, so the user watched the work without being
 	// handed several competing answers.
 	emit(ctx, in.OnDelta, final, "")
-	return final, runErr
+	return RunOutput{Answer: final, Digest: digest}, runErr
 }
 
 var modelFailureRe = regexp.MustCompile(`exceeds max retries|failed on every model|short-circuited by failover cooldown|overloaded_error|status 529|insufficient balance`)

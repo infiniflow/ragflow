@@ -15,6 +15,7 @@ export enum ViewMode {
   Graph = 'graph',
   MindMap = 'mindmap',
   Timeline = 'timeline',
+  Ontology = 'ontology',
 }
 
 export const VisibleViewModes = Object.values(ViewMode).filter(
@@ -28,6 +29,7 @@ export enum LeftPanelTab {
 
 export const StructureKinds = [
   ViewMode.Graph,
+  ViewMode.Ontology,
   ViewMode.MindMap,
   ViewMode.Timeline,
 ] as const;
@@ -41,6 +43,7 @@ export const ViewModeLabelKeyMap: Record<ViewMode, string> = {
   [ViewMode.Graph]: 'knowledgeCompilation.graph',
   [ViewMode.MindMap]: 'knowledgeCompilation.structureMindmap',
   [ViewMode.Timeline]: 'knowledgeCompilation.structureTimeline',
+  [ViewMode.Ontology]: 'knowledgeCompilation.ontology',
 };
 
 export type GenerableViewMode = Exclude<ViewMode, ViewMode.Tree>;
@@ -75,4 +78,7 @@ export const ViewModeGenerateTypeMap: Record<GenerableViewMode, GenerateType> =
     [ViewMode.Graph]: GenerateType.KnowledgeGraph,
     [ViewMode.MindMap]: GenerateType.MindMap,
     [ViewMode.Timeline]: GenerateType.Timeline,
+    // An ontology template compiles through the graph pipeline, so it shares
+    // the graph trace and the graph generate action.
+    [ViewMode.Ontology]: GenerateType.KnowledgeGraph,
   };

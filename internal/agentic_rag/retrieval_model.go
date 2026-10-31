@@ -35,7 +35,15 @@ type retrievalModel struct {
 	requiredTools []string
 }
 
-func modelForTools(ctx context.Context, chatModel *models.EinoChatModel, tools []tool.BaseTool, datasetIDs []string) (model.ToolCallingChatModel, error) {
+// modelForTools wraps the chat model so each configured source is used at least
+// once before an answer is allowed.
+//
+// extraRequired names tools the caller needs called before the answer for a
+// reason the corpus rule cannot express — the knowledge layer in the direct-
+// answer mode, where there is no corpus to require. A name that is not in the
+// tool set is ignored rather than forced: forcing a tool the model cannot call
+// would hang the loop on an impossible choice.
+func modelForTools(ctx context.Context, chatModel *models.EinoChatModel, tools []tool.BaseTool, datasetIDs []string, extraRequired ...string) (model.ToolCallingChatModel, error) {
 	names := make(map[string]bool, len(tools))
 	for _, t := range tools {
 		info, err := t.Info(ctx)
@@ -56,6 +64,11 @@ func modelForTools(ctx context.Context, chatModel *models.EinoChatModel, tools [
 		}
 		if len(required) == 0 {
 			return nil, fmt.Errorf("agentic_rag: datasets configured but no corpus search tool is enabled")
+		}
+	}
+	for _, name := range extraRequired {
+		if names[name] {
+			required = append(required, name)
 		}
 	}
 	if names[webSearchToolName] {

@@ -49,6 +49,18 @@ func runBatches(ctx context.Context, jobs []func() error) error {
 	return nil
 }
 
+// reportEvidenceSamples emits the sampled rejections of one stage as its own
+// message. It stays separate from the summary line so the counts remain one
+// short line and a document with no rejections pays nothing.
+func reportEvidenceSamples(ctx context.Context, compileType Type, batch, batches int, stage string, stats EvidenceGateStats) {
+	detail := stats.SampleDetail()
+	if detail == "" {
+		return
+	}
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+		"%s-template: batch %d/%d %s evidence rejects: %s", compileType, batch, batches, stage, detail))
+}
+
 // structureInputBudget mirrors _build_chunk_batches' default mode:
 // input_budget = max(int(max_length * INPUT_UTILIZATION) - prompt_overhead, 1024)
 // with INPUT_UTILIZATION = 0.5 (rag/prompts/generator.py) and prompt_overhead
@@ -143,6 +155,13 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// The progress callback is supplied by the caller and is not required to be
 	// goroutine-safe; pool workers report out of order, so serialise it.
 	var progressMu sync.Mutex
+	// Evidence-gate accounting for the whole document. The gate removes quotes it
+	// cannot locate, and in soft mode it keeps the payload without the field — so
+	// a document that ends up with no evidence anywhere is explained only by what
+	// arrived versus what survived. Without these totals the two causes ("the
+	// model emitted no quotes" / "every quote was rejected") are identical in the
+	// output. Guarded by progressMu: batch workers run concurrently.
+	var nodeEvidenceTotal, edgeEvidenceTotal EvidenceGateStats
 	// LLM extraction owns 80%; the four subsequent phases share the remainder.
 	mapWindow := deps.Progress
 	mapWindow.Span *= 0.8
@@ -171,10 +190,16 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			// surviving payload. Relations are gated only when the template
 			// asked them to carry evidence.
 			textByID := batchTextByID(batch)
-			if len(textByID) > 0 {
-				nodes, _, _ = ValidatePayloadEvidence(nodes, textByID, gateMode)
-				if len(edges) > 0 && RelationExpectsEvidence(parserConfig) {
-					edges, _, _ = ValidatePayloadEvidence(edges, textByID, gateMode)
+			var nodeEvidence, edgeEvidence EvidenceGateStats
+			nodes, nodeEvidence = GateEvidence(nodes, textByID, gateMode)
+			if len(edges) > 0 {
+				if RelationExpectsEvidence(parserConfig) {
+					edges, edgeEvidence = GateEvidence(edges, textByID, gateMode)
+				} else {
+					// Not gated: count what arrived anyway, so the log still
+					// separates "this template never asked for quotes" from
+					// "the model produced none".
+					edgeEvidence = EvidenceArrived(edges)
 				}
 			}
 			// Keep embedding out of the compiler-pool worker. buildRows calls
@@ -182,9 +207,19 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			// the serial loop after runBatches owns it.
 			extracted[i] = extractedBatch{nodes: nodes, edges: edges, batchIDs: batchIDs}
 			progressMu.Lock()
+			nodeEvidenceTotal = nodeEvidenceTotal.Merge(nodeEvidence)
+			edgeEvidenceTotal = edgeEvidenceTotal.Merge(edgeEvidence)
 			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 				"%s-template: batch %d/%d done: %d entities, %d relations",
 				compileType, i+1, len(batches), len(nodes), len(edges)))
+			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+				"%s-template: batch %d/%d evidence (gate=%s): entity %s | relation %s",
+				compileType, i+1, len(batches), gateMode, nodeEvidence.Summary(), edgeEvidence.Summary()))
+			// "How many quotes failed" and "why they failed" are different
+			// questions, so the samples get their own message. A document with
+			// no rejections emits nothing extra.
+			reportEvidenceSamples(ctx, compileType, i+1, len(batches), "entity", nodeEvidence)
+			reportEvidenceSamples(ctx, compileType, i+1, len(batches), "relation", edgeEvidence)
 			progressMu.Unlock()
 			mapDone()
 			return nil
@@ -196,6 +231,14 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	if err := runBatches(ctx, jobs); err != nil {
 		return common.Outputs{}, err
 	}
+	// One line per document, whatever the batch count: this is the message that
+	// answers "why did the compiled output carry no evidence?" — the declared
+	// flags say what the prompt asked for, the counts say what came back and how
+	// much of it survived the gate.
+	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+		"%s-template: evidence totals (gate=%s, declared entity=%t relation=%t): entity %s | relation %s",
+		compileType, gateMode, EntityExpectsEvidence(parserConfig), RelationExpectsEvidence(parserConfig),
+		nodeEvidenceTotal.Summary(), edgeEvidenceTotal.Summary()))
 	mapWindow.Report(ctx, 1)
 	// Embed each extracted batch serially after all MAP jobs have returned.
 	// This avoids nesting Embed.Encode (and its batch jobs) inside a worker
@@ -240,6 +283,35 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	remainingWindow.Sub(2, 4).Report(ctx, 1)
 	stats := deduper.Stats()
 	prods := filterSelfLoopRelations(deduper.Rows())
+	// Relations carry their endpoint classes so the ontology model graph can be
+	// drawn and counted from relation rows alone. Run after dedup so aliases and
+	// merges have settled; see stampRelationEndpointTypes.
+	stampRelationEndpointTypes(prods)
+	// Then enforce the declared domain / range. Must run after stamping, which is
+	// what resolves each endpoint to its class. A template that declares no
+	// domain / range (every non-ontology template, and knowledge_graph.yaml)
+	// yields no object properties here, so nothing is dropped for them.
+	// Rejected assertions come back as rows of their own (kind
+	// "dropped_relation") instead of disappearing. The feedback loop has to see
+	// what was rejected before it can act on it, and a later re-projection after
+	// widening a declaration cannot recover an assertion that was never written
+	// down (ontology.md §2.7 (1) / §8 (18)).
+	prods, rejectedRelations := filterOutOfOntologyRelations(prods, parserConfig)
+	if len(rejectedRelations) > 0 {
+		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+			"%s-template: %d relation(s) rejected by the declared domain/range, kept as dropped_relation rows",
+			compileType, len(rejectedRelations)))
+	}
+	prods = append(prods, rejectedRelations...)
+	// Then materialize the hypernode / hyperedge layer OG-RAG's retrieval
+	// consumes (ontology.md §5 step ④⑤). Runs on the final rows — after dedup,
+	// stamping and filtering — because the descent needs settled names and
+	// endpoint classes. Returns nothing unless the template is an ontology.
+	hyperRows, err := buildHypergraph(ctx, deps, cfg, prods)
+	if err != nil {
+		return common.Outputs{}, err
+	}
+	prods = append(prods, hyperRows...)
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 		"%s-template: dedup done: %d row(s), %d duplicate(s) dropped",
 		compileType, len(prods), stats.DuplicatesDropped))

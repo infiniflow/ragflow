@@ -16,10 +16,17 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/ingestion/task/indexdoc"
+	"ragflow/internal/tokenizer"
 
 	"gorm.io/gorm"
 )
+
+// variantTokenizer is the tokenizer applyVariantColumns expects: the language
+// travels with the call because compiled rows share the dataset's chunk table
+// and tokenize like the parsed chunks. English is the dataset default.
+func variantTokenizer() tokenizer.Tokenizer { return tokenizer.New("English") }
 
 func TestWikiActiveStateValuesAreCheckpointSafe(t *testing.T) {
 	values := wikiActiveStateValues([]common.WikiMapActiveState{{
@@ -712,6 +719,100 @@ func TestKnowledgeCompiler_TemplateIDsAndProvenance(t *testing.T) {
 		}
 	}
 
+}
+
+// TestKnowledgeCompiler_StampsModelVersion pins the compiled row's model
+// version: the published version the template was resolved from is stamped so a
+// reader can tell an assertion the current model supports from one it no longer
+// does. A template that was never published (version 0) writes no column at all
+// — "unversioned" must stay one state, not "absent" plus "zero".
+func TestKnowledgeCompiler_StampsModelVersion(t *testing.T) {
+	installMockDeps(t)
+	installVersionedTemplateResolvers(t, map[string]int{"tpl-structure": 7, "tpl-unpublished": 0})
+
+	run := func(templateID string) map[string]any {
+		t.Helper()
+		c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
+			"compilation_template_id": templateID,
+			"llm_id":                  "llm1",
+			"embedding_model":         "emb1",
+		})
+		if err != nil {
+			t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
+		}
+		out, err := c.Invoke(context.Background(), nil, map[string]any{
+			"chunks": []any{
+				map[string]any{"id": "c1", "text": "Alpha is a Beta"},
+			},
+			"doc_id":        "d1",
+			"tenant_id":     "t1",
+			"parser_config": graphParserConfig(),
+		})
+		if err != nil {
+			t.Fatalf("Invoke(%s): %v", templateID, err)
+		}
+		return out
+	}
+
+	checked := 0
+	for _, r := range run("tpl-structure")["chunks"].([]any) {
+		cm := r.(map[string]any)
+		if ck, _ := cm["compile_kwd"].(string); ck != "graph" {
+			continue
+		}
+		checked++
+		if v := numberValue(t, cm["compilation_template_version_int"]); v != 7 {
+			t.Fatalf("compiled chunk %v: compilation_template_version_int = %v, want 7", cm["id"], cm["compilation_template_version_int"])
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no compiled chunks inspected; assertion was vacuous")
+	}
+
+	for _, r := range run("tpl-unpublished")["chunks"].([]any) {
+		cm := r.(map[string]any)
+		if ck, _ := cm["compile_kwd"].(string); ck != "graph" {
+			continue
+		}
+		if v, ok := cm["compilation_template_version_int"]; ok {
+			t.Fatalf("unpublished template chunk %v: version = %v, want no column", cm["id"], v)
+		}
+	}
+}
+
+// installVersionedTemplateResolvers registers synthetic template ids whose
+// resolver reports a published version, standing in for the DB-backed resolver
+// that resolves a published snapshot (knowledge_compiler_wiring.go). All ids go
+// in one call: the resolver is a single package-level slot, so a second
+// installation would drop the first one's ids back to the package stub.
+func installVersionedTemplateResolvers(t *testing.T, versions map[string]int) {
+	t.Helper()
+	prev := testTemplateResolver
+	common.SetTemplateResolver(func(ctx context.Context, db *gorm.DB, tenantID, id string) (common.TemplateInfo, error) {
+		if version, ok := versions[id]; ok {
+			return common.TemplateInfo{ID: id, Kind: "structure", Config: map[string]any{}, Version: version}, nil
+		}
+		return prev(ctx, db, tenantID, id)
+	})
+	t.Cleanup(func() { common.SetTemplateResolver(testTemplateResolver) })
+}
+
+// numberValue reads an integer column out of a chunk map. Extra values round
+// trip through JSON, so the same write comes back as float64 here.
+func numberValue(t *testing.T, v any) int64 {
+	t.Helper()
+	switch x := v.(type) {
+	case int:
+		return int64(x)
+	case int64:
+		return x
+	case float64:
+		return int64(x)
+	case nil:
+		t.Fatal("value is absent")
+	}
+	t.Fatalf("value %v (%T) is not a number", v, v)
+	return 0
 }
 
 // constEmbedder returns one fixed vector for every input text. It is used to
@@ -1526,6 +1627,121 @@ func TestProductsToChunkDocs_WikiPageAndSectionRoles(t *testing.T) {
 	}
 	if sectionBody != section.Content {
 		t.Errorf("section content_with_weight = %q, want %q", sectionBody, section.Content)
+	}
+}
+
+// The hypernode / hyperedge rows go through the same column applier as the
+// entity / relation rows, so their two branches are pinned here: a mistyped key
+// would not fail anything else — it would just leave the layer unqueryable.
+func TestApplyStructureGraphColumnsWritesHypergraphRows(t *testing.T) {
+	cases := []struct {
+		name   string
+		meta   map[string]any
+		want   map[string]any
+		absent []string
+	}{
+		{
+			name: "hyperedge identifies its root",
+			meta: map[string]any{
+				"kind": "hyperedge", "name": "Ada Lovelace",
+				"entity_type": "person", "depth": 1,
+			},
+			want: map[string]any{
+				"type_kwd": "hyperedge",
+				// Lowercased, so it joins the entity rows' name_kwd.
+				"name_kwd":        "ada lovelace",
+				"entity_type_kwd": "person",
+				"depth_int":       1,
+			},
+		},
+		{
+			name: "hypernode carries its role, path and membership",
+			meta: map[string]any{
+				"kind": "hypernode", "node_role": "key",
+				"path": "person:born_in.place:name", "prop": "name",
+				"hyperedge_ids": []string{"e1", "e2"}, "depth": 1,
+			},
+			want: map[string]any{
+				"type_kwd":      "hypernode",
+				"node_role_kwd": "key",
+				"path_kwd":      "person:born_in.place:name",
+				"prop_kwd":      "name",
+				"depth_int":     1,
+			},
+			// A hypernode is keyed on (path, value) alone and can be shared by
+			// several roots, so one root's name would be wrong, not merely
+			// redundant.
+			absent: []string{"name_kwd", "entity_type_kwd"},
+		},
+	}
+	for _, tc := range cases {
+		doc := &schema.ChunkDoc{}
+		if err := applyVariantColumns(doc, common.Product{
+			Variant: common.VariantStructure,
+			Meta:    tc.meta,
+		}, variantTokenizer()); err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		out := doc.ToMap()
+		for key, want := range tc.want {
+			if got := out[key]; fmt.Sprint(got) != fmt.Sprint(want) {
+				t.Errorf("%s: %s = %v, want %v", tc.name, key, got, want)
+			}
+		}
+		for _, key := range tc.absent {
+			if _, ok := out[key]; ok {
+				t.Errorf("%s: %s must not be written", tc.name, key)
+			}
+		}
+	}
+}
+
+// hyperedge_ids is the membership relation (E(n) in the paper). It has to survive
+// as a list: a single value would make a shared hypernode look like it belongs to
+// exactly one block. A string list arrives as []string (decodeExtraValue tries the
+// string-slice shape before the generic one), which is the shape the engines'
+// filter layer takes for a list-valued column.
+func TestHyperedgeIDsAreWrittenAsAList(t *testing.T) {
+	doc := &schema.ChunkDoc{}
+	if err := applyVariantColumns(doc, common.Product{
+		Variant: common.VariantStructure,
+		Meta: map[string]any{
+			"kind": "hypernode", "node_role": "value",
+			"hyperedge_ids": []string{"e1", "e2", "e3"},
+		},
+	}, variantTokenizer()); err != nil {
+		t.Fatal(err)
+	}
+	ids, ok := doc.ToMap()["hyperedge_ids"].([]string)
+	if !ok {
+		t.Fatalf("hyperedge_ids = %#v, want a string list", doc.ToMap()["hyperedge_ids"])
+	}
+	if len(ids) != 3 {
+		t.Fatalf("hyperedge_ids = %v, want 3 members", ids)
+	}
+}
+
+// An entity row must not grow the hypergraph columns: the two layers are
+// separate, and a leaked key would make an entity filter match a hypernode.
+func TestEntityRowsDoNotCarryHypergraphColumns(t *testing.T) {
+	doc := &schema.ChunkDoc{}
+	if err := applyVariantColumns(doc, common.Product{
+		Variant: common.VariantStructure,
+		Meta: map[string]any{
+			"kind": "entity", "name": "Ada Lovelace", "entity_type": "person",
+			"node_role": "key", "hyperedge_ids": []string{"e1"},
+		},
+	}, variantTokenizer()); err != nil {
+		t.Fatal(err)
+	}
+	out := doc.ToMap()
+	for _, key := range []string{"node_role_kwd", "hyperedge_ids", "path_kwd"} {
+		if _, ok := out[key]; ok {
+			t.Errorf("entity row carries %s", key)
+		}
+	}
+	if out["name_kwd"] != "ada lovelace" || out["entity_type_kwd"] != "person" {
+		t.Errorf("entity row = %v", out)
 	}
 }
 

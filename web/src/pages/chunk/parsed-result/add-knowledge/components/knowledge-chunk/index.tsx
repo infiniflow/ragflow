@@ -29,6 +29,10 @@ import {
   type EvidencePanelState,
   NodeDetailPanel,
 } from '@/pages/chunk/representation/components/claim-list';
+import {
+  OntologyDetailPanel,
+  type OntologyDetailPanelState,
+} from '@/components/structure-graph/ontology-model-graph/detail-panel';
 import { useGetDocumentUrl } from '@/components/document-preview/hooks';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -60,6 +64,15 @@ function Chunk() {
   const [evidencePanel, setEvidencePanel] = useState<EvidencePanelState | null>(
     null,
   );
+  // The ontology graph publishes its selected class the same way: the panel is a
+  // real column of this page, so the column divider obeys it instead of cutting
+  // through it.
+  const [ontologyPanel, setOntologyPanel] =
+    useState<OntologyDetailPanelState | null>(null);
+  // The ontology view does not read the raw chunk list, so while it is on screen
+  // that column is not rendered at all: it would only take width away from the
+  // graph and the panel the data arrives in.
+  const [ontologyView, setOntologyView] = useState(false);
   const { removeChunk } = useDeleteChunkByIds();
   const {
     data: { documentInfo, data = [], total },
@@ -200,9 +213,11 @@ function Chunk() {
     ? selectedChunk.positions
     : [];
 
-  // Two columns until the artifact tree opens a claims / evidence panel: the
-  // middle column only exists while there is something to show in it.
-  const showArtifactDetail = Boolean(claimsPanel || evidencePanel);
+  // Two columns until the artifact tree opens a claims / evidence / ontology
+  // panel: the middle column only exists while there is something to show in it.
+  const showArtifactDetail = Boolean(
+    claimsPanel || evidencePanel || ontologyPanel,
+  );
 
   const fileType = useMemo(() => {
     const name = documentInfo?.name || '';
@@ -259,7 +274,13 @@ function Chunk() {
               defaultSize={40}
               minSize={20}
             >
-              <article className="h-full flex flex-col">
+              {/* `min-w-0 overflow-hidden` on the column itself: the row must
+                  never be widened by a child (a canvas whose intrinsic width is
+                  its last measured one), because an overflowing artifact column
+                  pushes the detail column out and paints over it. The canvas
+                  clips its own content too — this is the second line of
+                  defence. */}
+              <article className="h-full min-w-0 overflow-hidden flex flex-col">
                 <DocumentViewSwitch
                   documentInfo={documentInfo}
                   fileType={fileType}
@@ -270,14 +291,21 @@ function Chunk() {
                   onChunkIdsChange={handleChunkIdsChange}
                   onClaimsPanelChange={handleClaimsPanelChange}
                   onEvidencePanelChange={handleEvidencePanelChange}
+                  onOntologyPanelChange={setOntologyPanel}
+                  onOntologyViewChange={setOntologyView}
                 />
               </article>
             </ResizablePanel>
 
-            <ResizableHandle
-              withHandle
-              className="bg-border-button w-[0.5px]"
-            />
+            {/* A handle needs a panel on both sides: in the ontology view the
+                chunk list below is not rendered, so this one only survives while
+                there is still a detail column to separate the artifact from. */}
+            {(showArtifactDetail || !ontologyView) && (
+              <ResizableHandle
+                withHandle
+                className="bg-border-button w-[0.5px]"
+              />
+            )}
 
             {/* Separate conditionals rather than a fragment: PanelGroup pairs
                 each handle with the panels adjacent to it in registration
@@ -300,17 +328,30 @@ function Chunk() {
                       <NodeDetailPanel {...evidencePanel} />
                     </div>
                   )}
+                  {ontologyPanel && (
+                    // `relative` keeps the panel in the positioned layer, so
+                    // nothing from the canvas column can paint over it.
+                    <div className="relative flex-1 min-h-0">
+                      <OntologyDetailPanel {...ontologyPanel} />
+                    </div>
+                  )}
                 </article>
               </ResizablePanel>
             )}
 
-            {showArtifactDetail && (
+            {showArtifactDetail && !ontologyView && (
               <ResizableHandle
                 withHandle
                 className="bg-border-button w-[0.5px]"
               />
             )}
 
+            {/* Not rendered at all while the ontology view is on screen (see the
+                comment on `ontologyView`). A separate conditional rather than a
+                wrapper fragment: PanelGroup pairs each handle with the panels
+                adjacent to it in registration order, and a fragment would hide
+                these children from it. */}
+            {!ontologyView && (
             <ResizablePanel
               id="chunk-list"
               order={showArtifactDetail ? 3 : 2}
@@ -384,6 +425,7 @@ function Chunk() {
                 </Spin>
               </article>
             </ResizablePanel>
+            )}
           </ResizablePanelGroup>
         </CardContent>
       </Card>

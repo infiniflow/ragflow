@@ -100,9 +100,38 @@ func (s *ChatPipelineService) agenticRag(
 	// wins and is still validated strictly, so a bad id from a direct API
 	// caller fails loudly rather than silently running a different agent.
 	//
-	// AsyncChat only dispatches here with a non-empty KB scope, so the
-	// citation lookup below is always kb_id-bounded.
+	// AsyncChat dispatches here with a KB scope or, for a dialog with none, with
+	// a bound knowledge layer. The citation lookup is kb_id-bounded in both
+	// cases: the conversation's own datasets when it has any, the binding's
+	// knowledge datasets otherwise (see referenceDatasets below). An
+	// unconfigured turn is never dispatched here, so the lookup is never left
+	// without a scope.
+	// The template was resolved once above and travels into the run, so the id
+	// that selects the knowledge binding is the same id the run executes.
 	mode := tmpl.ID
+	// The knowledge layer's binding for this turn, resolved once from the three
+	// layers that may declare it (request → assistant → template). Nil means the
+	// turn runs exactly as it would without the feature.
+	ontology := OntologyBindingFor(kwargs, chat.PromptConfig, mode)
+	// The datasets this answer's citations are looked up in. It starts as the
+	// conversation's own datasets. Only when the dialog has none — an
+	// ontology-only turn, which answers from a knowledge library — does the
+	// binding's knowledge scope take its place, so an assertion's cited chunks
+	// still resolve against the dataset they were compiled from.
+	//
+	// The binding says the turn may use a knowledge library; it does not say this
+	// user may read it. Each fallback id therefore has to pass the same
+	// dataset-access check the retrieval path applies before it can scope a
+	// citation lookup: an id the caller cannot read is dropped here, so its
+	// chunks cannot be fetched into the reference payload.
+	//
+	// The two scopes are never merged: references resolve by chunk id, so a
+	// lookup spanning both would let a knowledge-library chunk answer a citation
+	// the conversation's own documents were supposed to explain (and the reverse).
+	referenceDatasets := chatDatasetIDs(chat)
+	if len(referenceDatasets) == 0 && ontology != nil {
+		referenceDatasets = filterAuthorizedDatasetIDs(ctx, CheckDatasetAccess, userID, ontology.KnowledgeDatasetIDs)
+	}
 
 	go func() {
 		defer close(out)
@@ -231,14 +260,20 @@ func (s *ChatPipelineService) agenticRag(
 		// agent's final answer arrives.
 		thinking := false
 		var reasoning strings.Builder
-		final, runErr := agentic_rag.Run(runCtx, agentic_rag.Input{
-			Model:           model,
-			SynthModel:      synth,
-			Messages:        agentMessages,
-			TemplateID:      mode,
-			Template:        &tmpl,
-			TenantID:        chat.TenantID,
-			UserID:          userID,
+		turn, runErr := agentic_rag.Run(runCtx, agentic_rag.Input{
+			Model:      model,
+			SynthModel: synth,
+			Messages:   agentMessages,
+			TemplateID: mode,
+			// The same resolved template the turn's model setup used: resolving
+			// twice would let an override applied between the two reads produce a
+			// prompt and a tool set from different revisions.
+			Template: &tmpl,
+			TenantID: chat.TenantID,
+			UserID:   userID,
+			// An empty document scope is what puts the turn in the direct-answer
+			// mode: the knowledge layer is then the only thing there is to read.
+			Ontology:        ontology,
 			DatasetIDs:      chatDatasetIDs(chat),
 			DocIDs:          docIDs,
 			ConversationKey: chat.ID,
@@ -276,6 +311,12 @@ func (s *ChatPipelineService) agenticRag(
 				}
 			},
 		})
+		// The turn's two deliverables: the answer the stream ships, and the
+		// knowledge layer it read. The digest is rendered into the receipt below
+		// so a caller can see which model version and which assertions steered
+		// this answer — nil when the turn ran without the knowledge layer.
+		final := turn.Answer
+		digest := turn.Digest
 		if thinking {
 			emitResult(AsyncChatResult{Final: false, EndToThink: true})
 		}
@@ -314,9 +355,18 @@ func (s *ChatPipelineService) agenticRag(
 		}
 		reference := map[string]interface{}{}
 		if quote {
-			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), answer, registry)
+			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, referenceDatasets, answer, registry)
 		} else if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
 			common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
+		}
+		// The retrieval receipt travels with the answer it explains. It is
+		// attached here rather than stored on the message because the same
+		// answer can be rendered from a stored message that never had one, and
+		// a receipt that appeared only sometimes would be read as "nothing to
+		// report" the rest of the time.
+		if receipt := OntologyDigestReceipt(digest); receipt != nil {
+			receipt["assertions"] = OntologyAssertionsReceipt(digest)
+			reference["ontology"] = receipt
 		}
 		// What the turn cost, on the wire for the same reason the log line
 		// exists: nothing else tells the client. The chat page renders it under
@@ -341,6 +391,24 @@ func (s *ChatPipelineService) agenticRag(
 	}()
 
 	return out, nil
+}
+
+// agenticTemplateIDFor resolves which agent template a turn runs.
+//
+// An explicit agent_mode wins and is validated later by the agent itself, so a
+// bad id still fails loudly. A turn selected by reasoning level names no
+// template — the level is a retrieval strategy, not a config id — so it lands
+// on the one agent this build ships.
+//
+// Both the dispatch decision and the run resolve the template through this
+// function: two copies of the rule would let a turn be dispatched as agentic and
+// then run a template whose defaults were never consulted.
+func agenticTemplateIDFor(kwargs map[string]interface{}) string {
+	mode, _ := kwargs["agent_mode"].(string)
+	if mode == "" {
+		return defaultAgenticTemplateID
+	}
+	return mode
 }
 
 // agenticUsageFields renders a turn's LLM cost as structured log fields.

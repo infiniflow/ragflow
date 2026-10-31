@@ -48,6 +48,43 @@ export interface ICreateCompilationTemplateRequestBody {
 export type IUpdateCompilationTemplateRequestBody =
   Partial<ICreateCompilationTemplateRequestBody>;
 
+/**
+ * One edit the compile-quality ledger can apply to an ontology template. The
+ * vocabulary is closed on purpose: the panel proposes one of these, the service
+ * decides whether the template can take it.
+ */
+export interface IOntologyFixRequestBody {
+  /** "widen" admits a class into an existing declaration; "declare" adds one. */
+  op: 'widen' | 'declare';
+  property: string;
+  /** Which endpoint a widened declaration changes. */
+  side?: 'domain' | 'range';
+  /** The class a widened declaration must admit. */
+  class?: string;
+  domain?: string;
+  range?: string;
+  datatype?: string;
+}
+
+/**
+ * What an ontology edit comes back as. The service unwraps the axios response,
+ * so this is the envelope itself — the same shape every other call in this file
+ * reaches through `.data`.
+ */
+export interface IOntologyFixResponse {
+  code: number;
+  message?: string;
+}
+
+/**
+ * A batch of ledger edits, applied as one write. The batch exists because the
+ * expensive step is the re-compile that follows it, not the edit itself: a
+ * reader selects several lines and compiles once.
+ */
+export interface IOntologyFixBatchRequestBody {
+  fixes: IOntologyFixRequestBody[];
+}
+
 export interface ICreateCompilationTemplateGroupRequestBody {
   name: string;
   description?: string;

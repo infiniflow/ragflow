@@ -213,6 +213,14 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		// from these tables at runtime, so the Go side must guarantee they exist.
 		&entity.CompilationTemplate{},
 		&entity.CompilationTemplateGroup{},
+		// Published model snapshots. Compilation reads the snapshot named by
+		// compilation_template.version, so the table has to exist before the
+		// first publish and not only when a model is restored.
+		&entity.CompilationTemplateVersion{},
+		// Which compilation models each dataset compiles against. The model
+		// library answers "what breaks if I change this" from this table, so it
+		// is created here and backfilled once from parser_config.
+		&entity.DatasetModelRef{},
 	}
 	dataModels = append(dataModels, permissionDataModelsEE()...)
 	dataModels = append(dataModels, billingDataModelsEE()...)
@@ -258,6 +266,11 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 
 		if err = migrateTenantModelMaxTokens(ctx, DB); err != nil {
 			return fmt.Errorf("failed to backfill tenant model max_tokens: %w", err)
+		}
+		// Index the compilation models every dataset compiles against. It runs
+		// after AutoMigrate, which creates the table it writes to.
+		if err = migrateDatasetModelRefs(ctx, DB); err != nil {
+			return fmt.Errorf("failed to backfill dataset model references: %w", err)
 		}
 		if err = migratePermissions(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate permissions: %w", err)
@@ -396,6 +409,19 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		&entity.KnowledgeCompileInflight{},
 		&entity.ConversationMessage{},
 		&entity.API4ConversationMessage{},
+		// The reference tables are dropped by migrateConversationReferences once
+		// their rows are folded into the message rows; recreating them here would
+		// undo that migration on the next server start.
+		// The knowledge-compile tables are written and read by a running
+		// server, not only by the --migrate action: a dataset write records its
+		// model references, and the compiler resolves templates at compile
+		// time. Leaving them to dataModels alone means a server started without
+		// --migrate answers every one of those queries with Error 1146.
+		&entity.DatasetModelRef{},
+		&entity.CompilationTemplate{},
+		&entity.CompilationTemplateGroup{},
+		&entity.CompilationTemplateVersion{},
+		&entity.KnowledgeCompileDataset{},
 	}
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {

@@ -57,7 +57,9 @@ type Router struct {
 
 	compilationTemplateHandler      *handler.CompilationTemplateHandler
 	compilationTemplateGroupHandler *handler.CompilationTemplateGroupHandler
+	compilationModelHandler         *handler.CompilationModelHandler
 	datasetArtifactHandler          *handler.DatasetArtifactHandler
+	ontologyABoxRetrievalHandler    *handler.OntologyABoxRetrievalHandler
 }
 
 // NewRouter create router
@@ -94,7 +96,9 @@ func NewRouter(
 	pipelineHandler *handler.PipelineHandler,
 	compilationTemplateHandler *handler.CompilationTemplateHandler,
 	compilationTemplateGroupHandler *handler.CompilationTemplateGroupHandler,
+	compilationModelHandler *handler.CompilationModelHandler,
 	datasetArtifactHandler *handler.DatasetArtifactHandler,
+	ontologyABoxRetrievalHandler *handler.OntologyABoxRetrievalHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -130,7 +134,9 @@ func NewRouter(
 
 		compilationTemplateHandler:      compilationTemplateHandler,
 		compilationTemplateGroupHandler: compilationTemplateGroupHandler,
+		compilationModelHandler:         compilationModelHandler,
 		datasetArtifactHandler:          datasetArtifactHandler,
+		ontologyABoxRetrievalHandler:    ontologyABoxRetrievalHandler,
 	}
 }
 
@@ -319,6 +325,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 			v1.POST("/openai/:chat_id/chat/completions", ToggleChat(), r.openaiChatHandler.OpenAIChatCompletions)
 			v1.POST("/retrieval", r.datasetsHandler.SearchDatasets)
+			// Compiled-rows (ABox) retrieval with an explicitly stated structure, kept
+			// out of the main pipeline on purpose (ontology.md §6.6 B).
+			v1.POST("/retrieval/ontology", r.ontologyABoxRetrievalHandler.Retrieve)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets", ToggleDataset())
@@ -399,6 +408,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/documents/:document_id/structure/graph", r.datasetArtifactHandler.GetDocumentGraph)
 				datasets.GET("/:dataset_id/documents/:document_id/structure/claims", r.datasetArtifactHandler.GetDocumentClaims)
 				datasets.DELETE("/:dataset_id/documents/:document_id/structure/graph", r.datasetArtifactHandler.DeleteDocumentGraph)
+				// Ontology model graph drill-down: the graph is a skeleton
+				// (classes / object properties / inheritance) and these two
+				// pages turn one of its nodes or edges into rows.
+				datasets.GET("/:dataset_id/ontology/classes/:class/entities", r.datasetArtifactHandler.GetOntologyClassEntities)
+				datasets.GET("/:dataset_id/ontology/properties/:property/relations", r.datasetArtifactHandler.GetOntologyPropertyRelations)
 				datasets.POST("/:dataset_id/metadata/update", r.documentHandler.MetadataBatchUpdate)
 				datasets.PATCH("/:dataset_id/documents/metadatas", r.documentHandler.UpdateDocumentMetadatas)
 			}
@@ -607,6 +621,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Compilation template routes
 			v1.GET("/compilation-templates/builtins", r.compilationTemplateHandler.ListBuiltins)
 			v1.GET("/compilation-templates/wiki-presets", r.compilationTemplateHandler.ListWikiPresets)
+			// One confirmed edit from the compile-quality ledger. Served by the
+			// group handler because the write path (and its validation) is the
+			// group's.
+			v1.POST("/compilation-templates/:template_id/ontology-fix", r.compilationTemplateGroupHandler.ApplyOntologyFix)
 
 			// Compilation template group routes
 			v1.GET("/compilation-template-groups", r.compilationTemplateGroupHandler.List)
@@ -614,6 +632,27 @@ func (r *Router) Setup(engine *gin.Engine) {
 			v1.GET("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Get)
 			v1.PUT("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Update)
 			v1.DELETE("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Delete)
+
+			// Model lifecycle routes. These answer "which version of this model
+			// is in force and who put it there", which is a different question
+			// from the template palette above — and the one that has to survive
+			// an edit.
+			v1.GET("/compilation-models", r.compilationModelHandler.List)
+			v1.GET("/compilation-models/:template_id/check", r.compilationModelHandler.Check)
+			v1.POST("/compilation-models/:template_id/review", r.compilationModelHandler.SubmitForReview)
+			v1.POST("/compilation-models/:template_id/publish", r.compilationModelHandler.Publish)
+			v1.POST("/compilation-models/:template_id/reject", r.compilationModelHandler.Reject)
+			v1.POST("/compilation-models/:template_id/retire", r.compilationModelHandler.Retire)
+			v1.GET("/compilation-models/:template_id/versions", r.compilationModelHandler.ListVersions)
+			v1.GET("/compilation-models/:template_id/versions/diff", r.compilationModelHandler.VersionDiff)
+			v1.GET("/compilation-models/:template_id/datasets", r.compilationModelHandler.Impact)
+			v1.GET("/compilation-models/:template_id/instances", r.compilationModelHandler.Instances)
+			v1.POST("/compilation-models/:template_id/trial", r.compilationModelHandler.Trial)
+			// Assertion review: the actions behind the read-only Inspect panel.
+			// Same scope as Inspect (one model, many datasets), because the
+			// question is "what has this model produced that nobody checked".
+			v1.GET("/compilation-models/:template_id/assertions/review", r.compilationModelHandler.AssertionReviewQueue)
+			v1.POST("/compilation-models/:template_id/assertions/review", r.compilationModelHandler.DecideAssertions)
 
 			connectors := v1.Group("/connectors")
 			{

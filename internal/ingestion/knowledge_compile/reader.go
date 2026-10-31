@@ -105,6 +105,17 @@ type engineReader struct {
 	db *gorm.DB
 }
 
+// NewEngineReader returns a Reader backed by the document engine, where the
+// compiled rows live.
+//
+// Offline callers — the publish trial that compares a draft model against what
+// the corpus already holds — need the same reconstruction the ingestion
+// consumer uses. Reading the engine themselves would mean a second copy of the
+// column-to-Meta mapping, and the two would drift.
+func NewEngineReader(eng engine.DocEngine) Reader {
+	return engineReader{eng: eng}
+}
+
 // compiledSelectFields are the columns needed to reconstruct a Product. Every
 // name must exist in the target engine schema (Infinity rejects a SELECT of an
 // unknown column); payload = content_with_weight, kind = compile_kwd.
@@ -115,6 +126,12 @@ var compiledSelectFields = []string{
 	"source_chunk_ids", "source_doc_ids",
 	"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
 	"slug_kwd",
+	// attr round-trips an entity's declared datatype attributes (the ontology
+	// template's `kind: datatype` properties) so the dataset-level fold can
+	// carry them onto the merged row. Without the column the fold sees no
+	// attributes at all — the doc rows keep them and the dataset rows, which is
+	// what the instance views read by default, lose every value.
+	"attr",
 	"create_timestamp_flt", "create_time",
 	"compilation_template_kind_kwd", "compilation_template_ids",
 	// The product kind discriminator for structure/tree: the component stores it
@@ -126,6 +143,9 @@ var compiledSelectFields = []string{
 	// (relation type lives in the content_with_weight payload, matching Python —
 	// there is NO relation_type_kwd column.)
 	"mention_count_int",
+	// compilation_template_version_int round-trips the published model version
+	// that extracted the row, so the dataset-level merged row can name it.
+	"compilation_template_version_int",
 }
 
 // wikiSelectFields are the additional columns a wiki page carries (beyond
@@ -387,6 +407,9 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 		}
 		meta["entity_type"] = v
 	}
+	if attrs := chunkJSONObject(c["attr"]); len(attrs) > 0 {
+		meta["attr"] = attrs
+	}
 	if v, ok := c["from_entity_kwd"].(string); ok && v != "" {
 		meta["from"] = v
 		meta["kind"] = "relation"
@@ -402,6 +425,11 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	}
 	if v, ok := metaInt(c, "mention_count_int"); ok {
 		meta["mention_count"] = v
+	}
+	// The model version survives the doc→dataset round-trip, so a dataset row
+	// can say which published version extracted it.
+	if v, ok := metaInt(c, "compilation_template_version_int"); ok && v > 0 {
+		meta["compilation_template_version"] = v
 	}
 	if v, ok := c["slug_kwd"].(string); ok && v != "" {
 		// slug_kwd is the full "<page_type>/<slug>" form (Python writer
@@ -509,6 +537,28 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 		Meta:       meta,
 		Merged:     merged,
 	}, true
+}
+
+// chunkJSONObject reads an object-valued json column off a row. Both engines
+// hand `attr` back as a decoded map, but a string is accepted too (an older row,
+// or an engine that returns the column's JSON text), so the round-trip cannot
+// depend on which shape a deployment produces.
+func chunkJSONObject(value interface{}) map[string]any {
+	switch v := value.(type) {
+	case map[string]any:
+		return v
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return nil
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(v), &m); err != nil {
+			return nil
+		}
+		return m
+	default:
+		return nil
+	}
 }
 
 // SearchSimilar runs a dense KNN over the existing merged rows (available_int=1,

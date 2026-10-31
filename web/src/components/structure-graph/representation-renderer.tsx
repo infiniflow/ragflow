@@ -35,6 +35,8 @@ import {
   adaptTreeToTreeData,
 } from './adapters';
 import MindMapG6Graph from './mindmap-g6-graph';
+import OntologyModelGraph from './ontology-model-graph';
+import type { OntologyDetailPanelState } from './ontology-model-graph/detail-panel';
 import TimelineX6Graph from './timeline-x6-graph';
 
 export interface ClickableNode {
@@ -58,6 +60,26 @@ interface RepresentationRendererProps {
   highlightNodeId?: string | null;
   totalEntities?: number;
   returnedEntities?: number;
+  /**
+   * Scope for the ontology model graph's drill-down (only that representation
+   * queries the index directly). Without it the graph still renders, but its
+   * class and property panels do not offer the drill-down.
+   */
+  datasetId?: string;
+  /**
+   * The document the page is showing, when it is a document page. Passed through
+   * so the ontology drill-down counts and lists the SAME scope the graph's
+   * numbers came from.
+   */
+  documentId?: string;
+  templateId?: string;
+  /**
+   * Publishes the class the ontology graph has selected, for the host to render
+   * in its own column — the graph must not draw the panel itself, because it
+   * sits in a resizable column whose divider does not know about a panel nested
+   * inside it.
+   */
+  onOntologyDetailChange?: (state: OntologyDetailPanelState | null) => void;
 }
 
 function UnsupportedPlaceholder({ kind }: { kind: StructureTemplateKind }) {
@@ -79,6 +101,10 @@ export function RepresentationRenderer({
   highlightNodeId,
   totalEntities,
   returnedEntities,
+  datasetId,
+  documentId,
+  templateId,
+  onOntologyDetailChange,
 }: RepresentationRendererProps) {
   const handleTreeItemClick = useCallback(
     (item: TreeDataItem | undefined) => {
@@ -192,6 +218,22 @@ export function RepresentationRenderer({
             highlightNodeId={highlightNodeId}
             totalEntities={totalEntities}
             returnedEntities={returnedEntities}
+          />
+        </div>
+      );
+    case CompilationTemplateKind.Ontology:
+      // Class-level model graph: classes are the nodes and properties are the
+      // domain -> range edges, so it is deliberately not routed through
+      // ArtifactForceGraph (which draws the instance graph).
+      return (
+        <div className="mt-6 flex-1 min-h-0">
+          <OntologyModelGraph
+            graph={template.ontology}
+            highlightClass={highlightNodeId ?? null}
+            datasetId={datasetId}
+            documentId={documentId}
+            templateId={templateId}
+            onClassDetailChange={onOntologyDetailChange}
           />
         </div>
       );

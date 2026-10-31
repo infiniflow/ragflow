@@ -73,9 +73,40 @@ type RetrievalRequest struct {
 	// bridge a wording gap the query's own words cannot cross; the scoring pass
 	// then uses the engine's kNN score directly instead of re-scoring tokens.
 	VectorOnly bool
+	// SelectFields adds columns to the engine's _source projection, on top of the
+	// defaults the search builds for itself. It EXTENDS rather than replaces: the
+	// default list carries what the rerank pass and the result projection read
+	// (content_with_weight, content_ltks, docnm_kwd, ...), so a replacement would
+	// blank the text a caller displays and re-score every candidate as if no term
+	// had matched. Callers use it for columns their own reader reads off the
+	// returned chunk maps — e.g. the ontology digest's compiled-row columns,
+	// which the default projection does not carry.
+	SelectFields []string
 	// Language is the dataset language ("" = English); diacritic-folding
 	// languages (Slovak, Czech) fold the query so its tokens match index tokens.
 	Language string
+}
+
+// appendSelectFields returns base plus the extra columns, keeping base's order
+// and dropping duplicates: the engine receives this list as its _source filter,
+// where a repeated column only inflates the request.
+func appendSelectFields(base, extra []string) []string {
+	if len(extra) == 0 {
+		return base
+	}
+	seen := make(map[string]struct{}, len(base)+len(extra))
+	out := make([]string, 0, len(base)+len(extra))
+	for _, name := range append(append([]string{}, base...), extra...) {
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	return out
 }
 
 // RetrievalResult result from retrieval search
@@ -181,6 +212,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		AllowDenseFallback:     req.AllowDenseFallback,
 		VectorOnly:             req.VectorOnly,
 		Filter:                 req.Filter,
+		SelectFields:           req.SelectFields,
 		Language:               req.Language,
 	}
 	searchResult, err := s.Search(ctx, searchReq)
@@ -380,6 +412,21 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		if searchResult.Highlight != nil {
 			if highlightText, ok := searchResult.Highlight[chunkID]; ok {
 				resultChunk["highlight"] = highlightText
+			}
+		}
+		// A caller that projected extra columns asked the engine for them and must
+		// get them back. The field-by-field view above mirrors the Python response
+		// shape, so it would otherwise silently drop columns the engine did return:
+		// the ABox digest reads type_kwd, name_kwd, prop_kwd, attr and
+		// source_chunk_ids out of these rows, and losing them there empties the
+		// digest's assertions and its citation counts. Only columns the caller
+		// projected are passed through, so the default view is unchanged.
+		for _, field := range req.SelectFields {
+			if _, present := resultChunk[field]; present {
+				continue
+			}
+			if v, ok := chunk[field]; ok {
+				resultChunk[field] = v
 			}
 		}
 		filteredChunks = append(filteredChunks, resultChunk)
@@ -622,6 +669,9 @@ type RetrievalSearchRequest struct {
 	EmbeddingModel         *models.EmbeddingModel
 	VectorSimilarityWeight *float64
 	AllowDenseFallback     *bool
+	// SelectFields extends the engine's _source projection; see
+	// RetrievalRequest.SelectFields for the contract.
+	SelectFields []string
 	// Language is the dataset language ("" = English).
 	Language string
 }
@@ -744,6 +794,9 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		common.PAGERANK_FLD, common.TAG_FLD,
 		"_score",
 	}
+	// Caller-requested columns ride along with the defaults; see
+	// RetrievalRequest.SelectFields for why this extends rather than replaces.
+	src = appendSelectFields(src, req.SelectFields)
 
 	kwds := make(map[string]struct{})
 
