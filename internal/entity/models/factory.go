@@ -163,6 +163,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 	case "monkeyocr":
 		// MonkeyOCR's RAGFlow adapter uses the same /file_parse ZIP protocol as MinerU.
 		return NewMonkeyOCRModel(baseURL, urlSuffix), nil
+	case "unlimited_ocr", "unlimited-ocr-2":
+		return NewUnlimitedOCRModel(baseURL, urlSuffix), nil
 	case "futurmix":
 		return NewFuturMixModel(baseURL, urlSuffix), nil
 	case "perplexity":

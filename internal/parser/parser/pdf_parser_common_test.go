@@ -411,7 +411,7 @@ func TestIsPDFParseMethodLayoutSuffixes(t *testing.T) {
 // dispatcher-handled OCR methods remain recognized by the selector vocabulary.
 func TestPDFParseMethodTablesAgree(t *testing.T) {
 	const unsetSentinel = ""
-	dispatcherHandled := map[string]bool{"monkeyocrv2": true, "paddleocr": true}
+	dispatcherHandled := map[string]bool{"monkeyocrv2": true, "paddleocr": true, "unlimited_ocr": true}
 	reachable := make(map[string]bool, len(pdfParseMethodSpellings))
 	for spelling, canonical := range pdfParseMethodSpellings {
 		if canonical == unsetSentinel {

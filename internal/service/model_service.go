@@ -465,6 +465,8 @@ var providerAPIKeyConfigFields = map[string]struct{}{
 	"paddleocr_algorithm":      {},
 	"paddleocr_api_url":        {},
 	"provider_order":           {},
+	"unlimited_ocr_apiserver":  {},
+	"unlimited_ocr_server_url": {},
 }
 
 var safeProviderAPIKeyConfigFields = map[string]struct{}{
@@ -484,6 +486,8 @@ var safeProviderAPIKeyConfigFields = map[string]struct{}{
 	"paddleocr_algorithm":      {},
 	"paddleocr_api_url":        {},
 	"provider_order":           {},
+	"unlimited_ocr_apiserver":  {},
+	"unlimited_ocr_server_url": {},
 }
 
 func hasSavedProviderAPIKeyConfig(raw json.RawMessage) bool {
@@ -1926,6 +1930,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 	// Mirror Python's ensure_*_from_env calls.
 	if permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantOwner) == nil {
 		_ = m.ensureMineruFromEnv(ctx, userID, tenantID)
+		_ = m.ensureUnlimitedOCRFromEnv(ctx, userID, tenantID)
 		_ = m.ensureMonkeyOCRv2FromEnv(ctx, userID, tenantID)
 		_ = m.ensureMonkeyOCRFromEnv(ctx, userID, tenantID)
 		_ = m.ensurePaddleOCREnabledFromEnv(ctx, userID, tenantID)
@@ -2204,6 +2209,15 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 	return m.ensureOCRProviderFromEnv(ctx, userID, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
+// ensureUnlimitedOCRFromEnv registers the local Unlimited-OCR-2 provider with zero friction.
+func (m *ModelProviderService) ensureUnlimitedOCRFromEnv(ctx context.Context, userID, tenantID string) error {
+	config := collectEnvConfig(unlimitedOCREnvKeys, unlimitedOCRDefaultConfig)
+	if config == nil {
+		config = unlimitedOCRDefaultConfig
+	}
+	return m.ensureOCRProviderFromEnv(ctx, userID, tenantID, "Unlimited-OCR-2", "unlimited-ocr-2-from-env", config)
+}
+
 // ensureMonkeyOCRv2FromEnv mirrors Python's ensure_monkeyocrv2_from_env.
 func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, userID, tenantID string) error {
 	config := collectEnvConfig(monkeyOCRv2EnvKeys, monkeyOCRv2DefaultConfig)
@@ -2278,6 +2292,16 @@ var (
 		common.EnvMonkeyOCRServerURL:    "",
 		common.EnvMonkeyOCRBackend:      "vlm-engine",
 		common.EnvMonkeyOCRDeleteOutput: 1,
+	}
+	unlimitedOCREnvKeys = []string{
+		common.EnvUnlimitedOCRServerURL,
+		common.EnvUnlimitedOCRAPIServer,
+		common.EnvUnlimitedOCRTimeout,
+	}
+	unlimitedOCRDefaultConfig = map[string]interface{}{
+		common.EnvUnlimitedOCRServerURL: "http://host.docker.internal:18000",
+		common.EnvUnlimitedOCRAPIServer: "http://host.docker.internal:18000",
+		common.EnvUnlimitedOCRTimeout:   600,
 	}
 )
 
