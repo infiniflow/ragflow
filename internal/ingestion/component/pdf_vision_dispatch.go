@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/rag/prompts"
@@ -607,13 +608,14 @@ func dispatchMinerUPDF(
 	}
 
 	sizes, geometryErr := mineruPageSizes(ctx, binary)
-	items, err := mineruExtractJSONItems(zipBytes, sizes)
+	items, mediaWarnings, err := mineruExtractJSONItems(zipBytes, sizes)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
 	}
 
 	res := mineruJSONParseResult(filename, items)
 	appendMineruGeometryWarning(&res, geometryErr)
+	res.Warnings = append(res.Warnings, mediaWarnings...)
 	return res, nil
 }
 
@@ -629,10 +631,11 @@ func finishMinerURemoteResult(ctx context.Context, filename string, binary []byt
 	if len(zipBytes) > 0 {
 		sizes, geometryErr = mineruPageSizes(ctx, binary)
 	}
-	items, extractErr := mineruExtractJSONItems(zipBytes, sizes)
+	items, mediaWarnings, extractErr := mineruExtractJSONItems(zipBytes, sizes)
 	if extractErr == nil && len(items) > 0 {
 		res := mineruJSONParseResult(filename, items)
 		appendMineruGeometryWarning(&res, geometryErr)
+		res.Warnings = append(res.Warnings, mediaWarnings...)
 		return res, nil
 	}
 	if markdown != "" {
@@ -872,7 +875,6 @@ func mineruStreamParse(ctx context.Context, apiURL string, apiKey string, binary
 }
 
 const (
-	mineruMaxImageBytes = 20 << 20
 	// mineruMaxMiddleBytes bounds middle.json, which carries the full
 	// layout/span payload and can legitimately reach tens of megabytes on
 	// long documents, while still refusing a zip-bomb-sized member.
@@ -885,17 +887,16 @@ const mineruContentBBoxScale = 1000.0
 
 // mineruExtractJSONItems reads MinerU content_list.json, or MinerU 4
 // structured_content.json when the zip has no content list, and emits JSON
-// parser items with captions, embedded zip images, and 1-indexed
-// _pdf_positions so jump-to-source works like DeepDoc. pdfPageSizes comes
-// from the source PDF (pdfium); middle.json in the zip fills any missing
-// pages. content_list bboxes are normalized to 0-1000, so positions require
-// a known page box in PDF points. Structured content boxes are 0-1 and are
-// scaled onto that same 0-1000 space before conversion.
-func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([]map[string]any, error) {
+// parser items with captions and 1-indexed _pdf_positions so jump-to-source
+// works like DeepDoc. Zip figure bytes are not inlined here; the chunker crops
+// from the source PDF using positions. pdfPageSizes comes from the source PDF
+// (pdfium); middle.json in the zip fills any missing pages.
+func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([]map[string]any, []string, error) {
 	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
-		return nil, fmt.Errorf("open zip: %w", err)
+		return nil, nil, fmt.Errorf("open zip: %w", err)
 	}
+	budget := media.NewBudget()
 
 	images := make(map[string]*zip.File)
 	var contentList, middleJSON, structured []byte
@@ -908,7 +909,7 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 			structured, err = mineruReadZipFile(f)
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		// middle.json is optional: it only carries page_size, which lets
 		// positions be converted to points. A zip without it keeps the
@@ -921,9 +922,12 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 		}
 		if strings.HasPrefix(strings.ToLower(mime.TypeByExtension(path.Ext(name))), "image/") {
 			clean := strings.TrimPrefix(path.Clean(name), "./")
-			images[path.Base(name)] = f
 			images[clean] = f
 			images[name] = f
+			base := path.Base(name)
+			if existing, ok := images[base]; !ok || existing.Name == f.Name {
+				images[base] = f
+			}
 		}
 	}
 
@@ -931,29 +935,29 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 	switch {
 	case len(contentList) > 0:
 		if err = json.Unmarshal(contentList, &rawItems); err != nil {
-			return nil, fmt.Errorf("parse content_list.json: %w", err)
+			return nil, nil, fmt.Errorf("parse content_list.json: %w", err)
 		}
 	case len(structured) > 0:
 		rawItems, err = mineruItemsFromStructuredContent(structured)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	default:
-		return nil, fmt.Errorf("content_list.json not found in MinerU zip")
+		return nil, nil, fmt.Errorf("content_list.json not found in MinerU zip")
 	}
 
 	pageSizes := mergeMineruPageSizes(pdfPageSizes, mineruPageSizesFromMiddleJSON(middleJSON))
 	out := make([]map[string]any, 0, len(rawItems))
 	for _, item := range rawItems {
-		converted := mineruContentItemToJSON(item, images, pageSizes)
+		converted := mineruContentItemToJSONBudget(item, images, pageSizes, budget)
 		if converted != nil {
 			out = append(out, converted)
 		}
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("MinerU zip contained no usable content_list items")
+		return nil, nil, fmt.Errorf("MinerU zip contained no usable content_list items")
 	}
-	return out, nil
+	return out, budget.Warnings(), nil
 }
 
 func mineruReadZipFile(f *zip.File) ([]byte, error) {
@@ -1161,6 +1165,14 @@ func mergeMineruPageSizes(pdfSizes, middleSizes map[int][2]float64) map[int][2]f
 }
 
 func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64) map[string]any {
+	return mineruContentItemToJSONBudget(item, images, pageSizes, nil)
+}
+
+// mineruContentItemToJSONBudget converts one content_list item. Figure bytes
+// from the MinerU zip are not inlined on this JSON path; when budget is set
+// (extract path) structured data-URI payloads are checked against the shared
+// media limits and omitted with warnings instead of being copied into items.
+func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64, budget *media.Budget) map[string]any {
 	typ, _ := item["type"].(string)
 	typ = strings.ToLower(strings.TrimSpace(typ))
 	switch typ {
@@ -1169,7 +1181,7 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, p
 	}
 
 	text := mineruItemText(item, typ)
-	imageURI := ""
+	hasImageFile := false
 	docType := "text"
 	// External MinerU labels are mapped explicitly. Unknown labels must not
 	// acquire parser block-kind semantics implicitly; list/code are real
@@ -1188,14 +1200,14 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, p
 		docType = "image"
 		layout = "figure"
 		if imgPath, _ := item["img_path"].(string); imgPath != "" {
-			imageURI = mineruZipImageDataURI(images, imgPath)
+			hasImageFile = mineruZipImageFile(images, imgPath) != nil
 		}
-		if imageURI == "" {
-			if dataURI, _ := item["image_data_uri"].(string); strings.HasPrefix(dataURI, "data:") {
-				imageURI = dataURI
+		if dataURI, _ := item["image_data_uri"].(string); strings.HasPrefix(dataURI, "data:") {
+			if budget != nil {
+				mineruAccountStructuredDataURI(budget, dataURI)
 			}
 		}
-		if text == "" && imageURI == "" {
+		if text == "" && !hasImageFile {
 			return nil
 		}
 	case "table":
@@ -1222,9 +1234,6 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, p
 		if desc, _ := item["vlm_description"].(string); strings.TrimSpace(desc) != "" {
 			jsonItem[backendDescribedKey] = true
 		}
-	}
-	if imageURI != "" {
-		jsonItem["image"] = imageURI
 	}
 	// Page identity does not depend on geometry: it drives table placement and
 	// page_count even when positions cannot be produced.
@@ -1420,21 +1429,61 @@ func mineruReadBounded(f *zip.File, limit int64) ([]byte, bool) {
 	return data, true
 }
 
-func mineruZipImageDataURI(images map[string]*zip.File, imgPath string) string {
+func mineruZipImageFile(images map[string]*zip.File, imgPath string) *zip.File {
 	imgPath = strings.TrimSpace(strings.ReplaceAll(imgPath, "\\", "/"))
 	if imgPath == "" {
-		return ""
+		return nil
 	}
 	candidates := []string{imgPath, path.Base(imgPath), strings.TrimPrefix(path.Clean(imgPath), "./")}
-	var file *zip.File
 	for _, key := range candidates {
 		if f, ok := images[key]; ok {
-			file = f
-			break
+			return f
 		}
 	}
-	data, ok := mineruReadBounded(file, mineruMaxImageBytes)
+	return nil
+}
+
+func mineruAccountStructuredDataURI(budget *media.Budget, dataURI string) {
+	if budget == nil {
+		return
+	}
+	idx := strings.Index(strings.ToLower(dataURI), "base64,")
+	if idx < 0 {
+		return
+	}
+	_, decodedSize, _, ok := media.NormalizeBase64ImagePayload(dataURI[idx+len("base64,"):], media.ImageMaxBytes())
 	if !ok {
+		return
+	}
+	reservation, admission := budget.ReserveOccurrence(media.UnknownSize)
+	if admission != media.Admitted {
+		return
+	}
+	_ = reservation.Commit(media.Size(decodedSize))
+}
+
+// mineruZipImageDataURI inlines a zip image as a data URI. Production MinerU
+// JSON extraction does not call this; it is used by unit tests and keeps the
+// shared media.Budget semantics when budget is non-nil.
+func mineruZipImageDataURI(images map[string]*zip.File, imgPath string, budget *media.Budget) string {
+	file := mineruZipImageFile(images, imgPath)
+	limit := int64(media.ImageMaxBytes())
+	if file == nil || file.UncompressedSize64 > uint64(limit) {
+		return ""
+	}
+	var reservation *media.Reservation
+	if budget != nil {
+		var admission media.Admission
+		reservation, admission = budget.ReserveOccurrence(media.UnknownSize)
+		if admission != media.Admitted {
+			return ""
+		}
+	}
+	data, ok := mineruReadBounded(file, limit)
+	if !ok {
+		return ""
+	}
+	if budget != nil && !reservation.Commit(media.Size(len(data))) {
 		return ""
 	}
 	mediaType := mime.TypeByExtension(path.Ext(file.Name))
