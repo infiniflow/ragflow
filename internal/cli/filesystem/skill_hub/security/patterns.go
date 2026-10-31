@@ -110,8 +110,11 @@ var ThreatPatterns = []ThreatPattern{
 		Category:    "destructive",
 		Description: "recursive delete from root",
 	},
+	// A word-initial `#` opens a shell comment, so the operand stops there; a
+	// `#` glued to the previous word stays literal. Double-quoted segments keep
+	// their `#` but stop before `$` so the expansion anchor still matches.
 	{
-		Pattern:     `rm\s+(?:-[a-zA-Z]+\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive)\s+(?:[^;&|\n#]|#[^;&|\n\s])*\$HOME|\brmdir\s+(?:[^;&|\n#]|#[^;&|\n\s])*\$HOME`,
+		Pattern:     `rm\s+(?:-[a-zA-Z]+\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive)\s+(?:[^;&|\n#]|"[^"\n$]*"|'[^'\n]*'|[^;&|\n\s#]#)*\$HOME|\brmdir\s+(?:[^;&|\n#]|"[^"\n$]*"|'[^'\n]*'|[^;&|\n\s#]#)*\$HOME`,
 		PatternID:   "destructive_home_rm",
 		Severity:    "critical",
 		Category:    "destructive",
@@ -139,7 +142,7 @@ var ThreatPatterns = []ThreatPattern{
 		Description: "Python rmtree on absolute or root-relative path",
 	},
 	{
-		Pattern:     `rm\s+(?:-[a-zA-Z]+\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive)\s+(?:[^;&|\n#]|#[^;&|\n\s])*\$`,
+		Pattern:     `rm\s+(?:-[a-zA-Z]+\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--recursive)\s+(?:[^;&|\n#]|"[^"\n$]*"|'[^'\n]*'|[^;&|\n\s#]#)*\$`,
 		PatternID:   "rm_recursive_dangerous",
 		Severity:    "high",
 		Category:    "destructive",

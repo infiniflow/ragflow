@@ -42,6 +42,7 @@ func TestScanSkillDetectsRecursiveRmOfExpandedTarget(t *testing.T) {
 		{"long flag", "rm --recursive $TARGET"},
 		{"recursive flag after another option", `rm -f -r "$TARGET"`},
 		{"hash inside a quoted target", `rm -rf "my #dir" $TARGET`},
+		{"hash glued to an expansion", `rm -rf "my#$TARGET"`},
 	}
 
 	for _, tt := range tests {
@@ -93,6 +94,7 @@ func TestScanSkillIgnoresHomeExpansionAfterRemovalCommand(t *testing.T) {
 	lines := []string{
 		`rm -rf build && echo $HOME`,
 		`rm -rf build # $HOME`,
+		`rm -rf build #note $HOME`,
 		`rmdir build ; echo $HOME`,
 	}
 
@@ -120,6 +122,7 @@ func TestScanSkillIgnoresExpansionAfterRemovalCommand(t *testing.T) {
 		`rm -rf build && echo "$USER"`,
 		`rm -rf build # $USER`,
 		`rm -rf build #$USER`,
+		`rm -rf build #note $USER`,
 	}
 
 	for _, line := range lines {
