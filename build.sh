@@ -25,8 +25,10 @@ RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 # Strip symbols from Go binaries (set via --strip / -s)
 STRIP_SYMBOLS=""
 
-# Extra Go build tags appended to every build (comma separated). This tree has
-# no enterprise edition, so 'ee' is rejected below rather than forwarded.
+# Extra Go build tags appended to every build (comma separated). This tree
+# carries the enterprise sources, so RAGFLOW_GO_TAGS=ee selects them through the
+# //go:build ee constraints; without it the same command lines build the
+# community edition.
 EXTRA_GO_TAGS="${RAGFLOW_GO_TAGS:-}"
 GO_BUILD_TAGS="cgo,static,sonic"
 [ -n "$EXTRA_GO_TAGS" ] && GO_BUILD_TAGS="$GO_BUILD_TAGS,$EXTRA_GO_TAGS"
