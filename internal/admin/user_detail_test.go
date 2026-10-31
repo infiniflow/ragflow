@@ -88,6 +88,40 @@ func TestListUsersReturnsTotalForEachPage(t *testing.T) {
 	}
 }
 
+// The admin UI requests the user list without page/page_size and slices it
+// client-side, so an omitted page_size must keep returning every user.
+func TestListUsersWithoutPaginationReturnsEveryUser(t *testing.T) {
+	handler := setupAdminUserDetailTest(t)
+	for i := 0; i < 11; i++ {
+		user := entity.User{
+			ID:       fmt.Sprintf("user-%02d", i),
+			Email:    fmt.Sprintf("user-%02d@example.com", i),
+			Nickname: "User",
+			IsActive: "1",
+		}
+		if err := dao.DB.Create(&user).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
+	handler.ListUsers(ctx)
+
+	var response adminTestResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	var users []map[string]interface{}
+	if err := json.Unmarshal(response.Data, &users); err != nil {
+		t.Fatal(err)
+	}
+	if response.Total == nil || *response.Total != 12 || len(users) != 12 {
+		t.Fatalf("unpaged list returned %d users (total %v), want 12; body = %s", len(users), response.Total, recorder.Body.String())
+	}
+}
+
 func setupAdminUserDetailTest(t *testing.T) *Handler {
 	t.Helper()
 	db := testutil.SetupTestDB(t,
