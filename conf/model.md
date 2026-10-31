@@ -199,6 +199,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **Replicate** | Open-source model hosting |
 | **Runcrate** | GPU cloud with an OpenAI-compatible inference API for open models |
 | **SiliconFlow** | Chinese aggregator |
+| **Synap** | Linkrra's OpenAI-compatible router for open-weight models served on self-operated GPUs |
 | **TogetherAI** | Open-source model hosting |
 | **TokenHub** | Multi-provider aggregator |
 | **TrustedRouter** | OpenAI-compatible router |

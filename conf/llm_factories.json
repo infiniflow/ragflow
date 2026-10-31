@@ -3512,6 +3512,14 @@
             "url": "https://inference.runanywhere.ai/v1"
         },
         {
+            "name": "Synap",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://pool.linkrra.com/v1"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",

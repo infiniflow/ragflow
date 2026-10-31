@@ -215,6 +215,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewHostingerRouterModel(baseURL, urlSuffix), nil
 	case "wally":
 		return NewWallyModel(baseURL, urlSuffix), nil
+	case "synap":
+		return NewSynapModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
