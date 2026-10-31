@@ -141,7 +141,7 @@ func TestHTMLParser_EmitsMediaRefsInDocumentOrder(t *testing.T) {
 }
 
 func TestHTMLParser_EmitsTableCellImagesWithParentAndCellOrder(t *testing.T) {
-	input := `<table><tr><td>A<img alt="first" src="` + htmlMediaDataURI + `"></td><td><img src="https://example.com/second.png"></td></tr></table>`
+	input := `<table><tr><td>A<img alt="first" src="` + htmlMediaDataURI + `"></td><td><img src="second.png"></td></tr></table>`
 	ctx, _ := recordingMediaContext()
 	result := NewHTMLParser().ParseWithResult(ctx, "table.html", []byte(input))
 	if result.Err != nil {

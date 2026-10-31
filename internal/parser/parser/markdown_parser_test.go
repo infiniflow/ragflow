@@ -302,9 +302,7 @@ func TestMarkdownParser_TableDataURIWithLeadingSpace(t *testing.T) {
 }
 
 func TestMarkdownParser_ResolvedRemoteImageKeepsAltOnly(t *testing.T) {
-	previous := ssrfAllowLoopback
-	ssrfAllowLoopback = true
-	t.Cleanup(func() { ssrfAllowLoopback = previous })
+	allowLoopbackImages(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -578,10 +576,8 @@ func TestResolveImageURL_LocalPathNotFetched(t *testing.T) {
 func TestResolveImageURL_HTTPImage(t *testing.T) {
 	// httptest servers bind loopback, which the SSRF guard rejects by
 	// default. Allow loopback for this test so the HTTP fetch path is
-	// exercised (production keeps ssrfAllowLoopback == false).
-	prev := ssrfAllowLoopback
-	ssrfAllowLoopback = true
-	defer func() { ssrfAllowLoopback = prev }()
+	// exercised (production keeps the loopback rejection).
+	allowLoopbackImages(t)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -606,9 +602,7 @@ func TestResolveImageURL_HTTPImage(t *testing.T) {
 }
 
 func TestMarkdownImageBudgetSkipsFetchAfterCountLimit(t *testing.T) {
-	previous := ssrfAllowLoopback
-	ssrfAllowLoopback = true
-	t.Cleanup(func() { ssrfAllowLoopback = previous })
+	allowLoopbackImages(t)
 
 	var fetches atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
