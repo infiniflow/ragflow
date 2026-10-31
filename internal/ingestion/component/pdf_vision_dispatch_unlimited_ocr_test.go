@@ -20,8 +20,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -236,11 +239,17 @@ func TestDispatchUnlimitedOCR2PDF_WithContentListVisualGrounding(t *testing.T) {
 		"unlimited_ocr_server_url": mockServer.URL,
 	}
 
+	pdfPath := filepath.Join("..", "..", "deepdoc", "parser", "pdf", "pdfium", "testdata", "page_sizes.pdf")
+	pdfBinary, err := os.ReadFile(pdfPath)
+	if err != nil {
+		pdfBinary = []byte("%PDF-1.4 test")
+	}
+
 	result, err := dispatchUnlimitedOCR2PDF(
 		context.Background(),
 		nil,
 		"grounding.pdf",
-		[]byte("%PDF-1.4 test"),
+		pdfBinary,
 		"",
 		setup,
 		"",
@@ -255,6 +264,7 @@ func TestDispatchUnlimitedOCR2PDF_WithContentListVisualGrounding(t *testing.T) {
 		t.Fatalf("expected at least 3 structured items, got %d", len(result.JSON))
 	}
 
+	sizes, pageSizesErr := mineruPageSizes(context.Background(), pdfBinary)
 	titleFound := false
 	tableFound := false
 	for _, it := range result.JSON {
@@ -267,6 +277,31 @@ func TestDispatchUnlimitedOCR2PDF_WithContentListVisualGrounding(t *testing.T) {
 			}
 			if pageNo, _ := m["page_number"].(int); pageNo != 1 {
 				t.Errorf("expected page_number 1, got %v", pageNo)
+			}
+			if pageSizesErr == nil && len(sizes) > 0 {
+				posRaw, ok := m["positions"].([][]any)
+				if !ok || len(posRaw) == 0 {
+					t.Fatalf("expected positions in title under CGO, got %#v", m["positions"])
+				}
+				row := posRaw[0]
+				if len(row) != 5 {
+					t.Fatalf("expected 5-element position row, got %#v", row)
+				}
+				if page, _ := row[0].(int); page != 1 {
+					t.Errorf("expected position page 1, got %v", page)
+				}
+				left, _ := row[1].(float64)
+				right, _ := row[2].(float64)
+				top, _ := row[3].(float64)
+				bottom, _ := row[4].(float64)
+				if math.Abs(left-59.55) > 1e-2 || math.Abs(right-476.4) > 1e-2 || math.Abs(top-84.2) > 1e-2 || math.Abs(bottom-168.4) > 1e-2 {
+					t.Errorf("unexpected visual grounding positions: %v, want approx [1 59.55 476.4 84.2 168.4]", row)
+				}
+			} else {
+				// Non-CGO environment: verify positions are cleanly omitted without failure
+				if _, ok := m["positions"]; ok {
+					t.Errorf("expected no positions without CGO page sizes, got %#v", m["positions"])
+				}
 			}
 		}
 		if layout == "table" {

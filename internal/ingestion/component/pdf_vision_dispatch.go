@@ -475,15 +475,6 @@ func pollUnlimitedOCRTaskResult(ctx context.Context, driver *modelModule.Unlimit
 	}
 }
 
-// pollUnlimitedOCRTask queries task status periodically until Markdown is ready or an error occurs.
-func pollUnlimitedOCRTask(ctx context.Context, driver *modelModule.UnlimitedOCRModel, taskID string, apiConfig *modelModule.APIConfig, timeout time.Duration) (string, error) {
-	res, err := pollUnlimitedOCRTaskResult(ctx, driver, taskID, apiConfig, timeout)
-	if err != nil {
-		return "", err
-	}
-	return res.Markdown, nil
-}
-
 // getIntOr safely extracts an integer from a parameter map with a fallback default.
 func getIntOr(m map[string]any, key string, def int) int {
 	if m == nil {

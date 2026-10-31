@@ -350,3 +350,66 @@ func TestUnlimitedOCRModel_ShowUnlimitedOCRTask_ContentList(t *testing.T) {
 		t.Fatalf("expected 4-element bbox, got: %#v", titleItem["bbox"])
 	}
 }
+
+func TestUnlimitedOCRModel_OCRFile_ContentListFallback(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health", "/v1/health":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{"status":"ok","version":"4.0.12","engine":"Unlimited-OCR-2"}`)
+		case "/file_parse":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{"code":0,"task_id":"task_cl_only"}`)
+		case "/tasks/task_cl_only/result":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{
+				"code": 0,
+				"state": "done",
+				"results": {
+					"image.png": {
+						"md_content": "",
+						"content_list": [
+							{
+								"type": "title",
+								"text": "Only Content List Title",
+								"page_idx": 0
+							},
+							{
+								"type": "text",
+								"text": "Only Content List Paragraph",
+								"page_idx": 0
+							}
+						]
+					}
+				}
+			}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	driver := NewUnlimitedOCRModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
+	)
+	cfg := &APIConfig{BaseURL: &server.URL}
+	content := []byte("%PDF-1.4 test document content that exceeds 100 bytes of data for real testing")
+
+	resp, err := driver.OCRFile(context.Background(), nil, content, nil, cfg, nil, nil)
+	if err != nil {
+		t.Fatalf("OCRFile failed: %v", err)
+	}
+	if resp == nil || resp.Text == nil {
+		t.Fatalf("expected non-nil OCRFile response text")
+	}
+	if !strings.Contains(*resp.Text, "Only Content List Title") {
+		t.Errorf("expected text to contain 'Only Content List Title', got: %q", *resp.Text)
+	}
+	if !strings.Contains(*resp.Text, "Only Content List Paragraph") {
+		t.Errorf("expected text to contain 'Only Content List Paragraph', got: %q", *resp.Text)
+	}
+}

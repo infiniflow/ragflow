@@ -478,11 +478,14 @@ func (m *UnlimitedOCRModel) OCRFile(ctx context.Context, modelName *string, cont
 	deadline := time.Now().Add(longOpCallTimeout)
 	var lastErr error
 	for {
-		taskResult, err := m.ShowTask(ctx, task.TaskID, apiConfig)
+		taskResult, err := m.ShowUnlimitedOCRTask(ctx, task.TaskID, apiConfig)
 		if err == nil {
-			for _, segment := range taskResult.Segments {
-				if strings.TrimSpace(segment.Content) != "" {
-					text := segment.Content
+			if strings.TrimSpace(taskResult.Markdown) != "" {
+				text := taskResult.Markdown
+				return &OCRFileResponse{Text: &text}, nil
+			}
+			if len(taskResult.ContentList) > 0 {
+				if text := extractTextFromContentList(taskResult.ContentList); strings.TrimSpace(text) != "" {
 					return &OCRFileResponse{Text: &text}, nil
 				}
 			}
@@ -505,6 +508,64 @@ func (m *UnlimitedOCRModel) OCRFile(ctx context.Context, modelName *string, cont
 		case <-time.After(2 * time.Second):
 		}
 	}
+}
+
+// extractTextFromContentList concatenates text-bearing content from structured ContentList items.
+func extractTextFromContentList(contentList []map[string]any) string {
+	var parts []string
+	for _, item := range contentList {
+		if item == nil {
+			continue
+		}
+		typ, _ := item["type"].(string)
+		typ = strings.ToLower(strings.TrimSpace(typ))
+		switch typ {
+		case "header", "footer", "page_number", "page-header", "page-footer", "discarded":
+			continue
+		}
+
+		if text, ok := item["text"].(string); ok && strings.TrimSpace(text) != "" {
+			parts = append(parts, strings.TrimSpace(text))
+			continue
+		}
+		if tb, ok := item["table_body"].(string); ok && strings.TrimSpace(tb) != "" {
+			parts = append(parts, strings.TrimSpace(tb))
+			continue
+		}
+		if body, ok := item["code_body"].(string); ok && strings.TrimSpace(body) != "" {
+			parts = append(parts, strings.TrimSpace(body))
+			continue
+		}
+		if body, ok := item["body"].(string); ok && strings.TrimSpace(body) != "" {
+			parts = append(parts, strings.TrimSpace(body))
+			continue
+		}
+		if latex, ok := item["latex"].(string); ok && strings.TrimSpace(latex) != "" {
+			parts = append(parts, strings.TrimSpace(latex))
+			continue
+		}
+		if items, ok := item["list_items"].([]any); ok {
+			for _, it := range items {
+				if s, ok := it.(string); ok && strings.TrimSpace(s) != "" {
+					parts = append(parts, strings.TrimSpace(s))
+				}
+			}
+			continue
+		}
+		if items, ok := item["list_items"].([]string); ok {
+			for _, s := range items {
+				if strings.TrimSpace(s) != "" {
+					parts = append(parts, strings.TrimSpace(s))
+				}
+			}
+			continue
+		}
+		if desc, ok := item["vlm_description"].(string); ok && strings.TrimSpace(desc) != "" {
+			parts = append(parts, strings.TrimSpace(desc))
+			continue
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // ListModels returns the catalogued OCR models for this provider instance.
