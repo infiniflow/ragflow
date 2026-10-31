@@ -1348,8 +1348,8 @@ func defaultIsSoMarkLayoutModelID(ctx context.Context, db *gorm.DB, tenantID, se
 // configuration, so instance-driven parsing yields the same structured
 // result (titles, tables, figures with layout) as the env-driven path.
 // handled reports whether the dispatch consumed the request: resolution
-// failures return handled=false so the caller falls through to the regular
-// setup/env-driven parser path.
+// failures for an explicit model selector are handled errors; when no tenant
+// model was selected, the caller falls through to the setup/env-driven path.
 func dispatchSoMarkPDF(
 	ctx context.Context,
 	db *gorm.DB,
@@ -1361,6 +1361,9 @@ func dispatchSoMarkPDF(
 ) (parser.ParseResult, bool, error) {
 	driver, _, apiConfig, err := resolveSoMarkModelForDispatch(ctx, db, tenantID, modelID)
 	if err != nil {
+		if strings.TrimSpace(modelID) != "" {
+			return parser.ParseResult{}, true, fmt.Errorf("parser: resolve selected SoMark model %q: %w", modelID, err)
+		}
 		// No tenant SoMark instance (or unresolvable selector): let the
 		// setup/env-driven parser path handle the request.
 		return parser.ParseResult{}, false, nil
@@ -1373,10 +1376,14 @@ func dispatchSoMarkPDF(
 	p := parser.NewPDFParser()
 	p.ConfigureFromSetup(setup)
 	p.ParseMethod = "somark"
-	if apiConfig != nil {
-		if apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
-			p.SoMarkBaseURL = strings.TrimRight(strings.TrimSpace(*apiConfig.BaseURL), "/")
+	if somarkDriver, ok := driver.(interface {
+		GetBaseURL(*modelModule.APIConfig) (string, error)
+	}); ok {
+		if baseURL, err := somarkDriver.GetBaseURL(apiConfig); err == nil && strings.TrimSpace(baseURL) != "" {
+			p.SoMarkBaseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 		}
+	}
+	if apiConfig != nil {
 		if apiConfig.ApiKey != nil && strings.TrimSpace(*apiConfig.ApiKey) != "" {
 			p.SoMarkAPIKey = strings.TrimSpace(*apiConfig.ApiKey)
 		}

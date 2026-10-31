@@ -67,6 +67,11 @@ func (s *SoMarkModel) Name() string {
 	return "somark"
 }
 
+// GetBaseURL resolves the configured region when an instance has no custom URL.
+func (s *SoMarkModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
+	return s.baseModel.GetBaseURL(apiConfig)
+}
+
 func (s *SoMarkModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", s.Name())
 }
@@ -347,7 +352,7 @@ func (s *SoMarkModel) OCRFile(ctx context.Context, modelName *string, content []
 	}
 
 	apiKey := ""
-	if apiConfig.ApiKey != nil {
+	if apiConfig != nil && apiConfig.ApiKey != nil {
 		apiKey = *apiConfig.ApiKey
 	}
 
@@ -365,9 +370,13 @@ func (s *SoMarkModel) OCRFile(ctx context.Context, modelName *string, content []
 		return nil, err
 	}
 
+	modelNameValue := ""
+	if modelName != nil {
+		modelNameValue = *modelName
+	}
 	common.Info("somark submit: sending task",
 		zap.String("driver", s.Name()),
-		zap.String("model", *modelName),
+		zap.String("model", modelNameValue),
 		zap.Int("content_bytes", len(content)))
 
 	taskID, err := s.soMarkSubmit(ctx, submitURL, content, apiKey)
