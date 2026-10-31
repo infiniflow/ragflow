@@ -305,20 +305,17 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	// Get chat model for cross_languages and keyword_extraction
 	var llmModelName string
 	if len(req.CrossLanguages) > 0 || (req.Keyword != nil && *req.Keyword) {
-		tenantSvc := service.NewTenantService()
 		var err error
-		llmModelName, err = tenantSvc.GetDefaultModelNameForTenant(ctx, tenantIDs[0], entity.ModelTypeChat)
-		if err != nil || llmModelName == "" {
+		chatModel, err = modelFactory.NewDefaultChatModel(ctx, service.ModelAccess{TenantID: tenantIDs[0]})
+		if err != nil {
 			common.Warn("Failed to get default chat model name for LLM transformations", zap.Error(err))
 		} else {
-			chatModel, err = modelFactory.NewChatModel(ctx, service.ModelAccess{TenantID: tenantIDs[0]}, llmModelName)
-			if err != nil {
-				common.Warn("Failed to get chat model for LLM transformations", zap.Error(err))
-			} else {
-				common.Info("Fetched chat model (tenant default) for cross_languages/keyword_extraction",
-					zap.String("tenantID", tenantIDs[0]),
-					zap.String("modelName", llmModelName))
+			if info := chatModel.Info(); info != nil {
+				llmModelName = service.ModelReference(info)
 			}
+			common.Info("Fetched chat model (tenant default) for cross_languages/keyword_extraction",
+				zap.String("tenantID", tenantIDs[0]),
+				zap.String("modelName", llmModelName))
 		}
 	}
 

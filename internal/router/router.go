@@ -554,9 +554,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			model := v1.Group("/models", ToggleModel())
 			{
-				// GET /models returns the tenant's added models across
-				// all instances. Front-end useFetchAllAddedModels consumes this.
-				model.GET("", r.providerHandler.ListTenantAddedModels)
+				// GET /models returns models available to the authenticated user
+				// in the selected tenant context.
+				model.GET("", r.providerHandler.ListModelsForUserInTenant)
 				model.PATCH("", r.tenantHandler.SetModels)
 				// Tenant default-model selection (used by the agent page's useFetchDefaultModels hook)
 				model.GET("/default", r.tenantHandler.GetDefaultModels)

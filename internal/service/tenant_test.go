@@ -201,9 +201,9 @@ func TestTenantRoleConstants(t *testing.T) {
 	}
 }
 
-// TestSetTenantDefaultModels_WithModelID verifies that SetTenantDefaultModels
-// correctly resolves a modelID to composite name, validates ownership, and updates the tenant.
-func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
+// TestSetModelSettings_WithModelID verifies that model IDs resolve to canonical references
+// and are persisted on the caller's active tenant membership.
+func TestSetModelSettings_WithModelID(t *testing.T) {
 	// 1. Setup SQLite in-memory DB
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
 		TranslateError: true,
@@ -263,20 +263,11 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 	err = db.Create(&entity.TenantModelProvider{
 		ID:           providerID,
 		TenantID:     tenantID,
+		UserID:       userID,
 		ProviderName: "OpenAI",
 	}).Error
 	if err != nil {
 		t.Fatalf("failed to create provider: %v", err)
-	}
-
-	// Insert Real Instance (for checkModelAvailable lookup)
-	err = db.Create(&entity.TenantModelInstance{
-		ID:           "instance-real",
-		ProviderID:   providerID,
-		InstanceName: "default",
-	}).Error
-	if err != nil {
-		t.Fatalf("failed to create real instance: %v", err)
 	}
 
 	// Insert Dummy Instance (associated with the model record)
@@ -303,13 +294,14 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 		t.Fatalf("failed to create model: %v", err)
 	}
 
-	// 4. Run SetTenantDefaultModels
-	s := NewTenantService()
-	// Set chat model using modelID, explicitly passing "default" as instance name to bypass pre-existing checkModelAvailable panic
+	// 4. Run the unified Tenant model settings path.
+	s := NewUserTenantService()
 	ctx := serviceTestContext(t, userID, tenantID)
-	err = s.SetTenantDefaultModels(ctx, userID, "", "default", "", "chat", modelID)
-	if err != nil {
-		t.Fatalf("SetTenantDefaultModels failed: %v", err)
+	code, err := s.SetModelSettings(ctx, userID, &SetModelSettingsRequest{
+		DefaultModel: &DefaultModelSelection{ModelType: "chat", ModelID: modelID},
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("SetModelSettings() = (%v, %v), want success", code, err)
 	}
 
 	// Verify the default is stored on the user's owner membership.

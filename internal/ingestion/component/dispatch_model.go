@@ -114,8 +114,7 @@ var resolveTenantOCRModelByProvider = defaultResolveTenantOCRModelByProvider
 // model is resolved by ID; its resolution error is returned rather than trying
 // another model.
 func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	providerDAO := dao.NewTenantModelProviderDAO()
-	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
+	provider, err := getTenantModelProviderByName(ctx, db, tenantID, providerName)
 	if err != nil {
 		// Some OCR capabilities are registered under sibling provider names
 		// (cloud vs. local). Tolerate the alternate spelling before giving up
@@ -124,7 +123,7 @@ func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, te
 			if alias == providerName {
 				continue
 			}
-			if p, aerr := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, alias); aerr == nil {
+			if p, aerr := getTenantModelProviderByName(ctx, db, tenantID, alias); aerr == nil {
 				provider, err = p, nil
 				break
 			}
@@ -240,8 +239,12 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 
 	// Scope the lookup itself so missing and foreign models are indistinguishable
 	// before exposing status, type, instance configuration, or driver details.
+	ownerUserID, err := tenantOwnerUserID(ctx, db, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve tenant owner for model lookup: %w", err)
+	}
 	providers := db.Session(&gorm.Session{}).Model(&entity.TenantModelProvider{}).
-		Select("id").Where("tenant_id = ?", tenantID)
+		Select("id").Where("tenant_id = ? AND user_id = ?", tenantID, ownerUserID)
 	scopedDB := db.Session(&gorm.Session{}).Where("provider_id IN (?)", providers)
 	modelObj, err := modelDAO.GetByID(ctx, scopedDB, modelID)
 	if err != nil {
@@ -323,11 +326,10 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 	}
 	catalogName := modelModule.CatalogProviderName(providerName)
 
-	providerDAO := dao.NewTenantModelProviderDAO()
 	instanceDAO := dao.NewTenantModelInstanceDAO()
 	modelDAO := dao.NewTenantModelDAO()
 
-	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
+	provider, err := getTenantModelProviderByName(ctx, db, tenantID, providerName)
 	if err != nil {
 		return nil, "", nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, err)
 	}
@@ -436,4 +438,26 @@ func newModelDriverForBaseURLLocal(driver modelModule.ModelDriver, providerName,
 
 func errorsIsRecordNotFound(err error) bool {
 	return err != nil && (errors.Is(err, gorm.ErrRecordNotFound) || strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()))
+}
+
+func tenantOwnerUserID(ctx context.Context, db *gorm.DB, tenantID string) (string, error) {
+	owner, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tenantID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return tenantID, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if owner == nil {
+		return tenantID, nil
+	}
+	return owner.UserID, nil
+}
+
+func getTenantModelProviderByName(ctx context.Context, db *gorm.DB, tenantID, providerName string) (*entity.TenantModelProvider, error) {
+	ownerUserID, err := tenantOwnerUserID(ctx, db, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return dao.NewTenantModelProviderDAO().GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, ownerUserID, providerName)
 }

@@ -106,6 +106,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 
 	// Initialize service layer
 	userService := service.NewUserService()
+	userTenantService := service.NewUserTenantService()
 	documentService := document.NewDocumentService()
 	datasetsService := dataset.NewDatasetService()
 	metadataService := service.NewMetadataService()
@@ -120,13 +121,12 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	statsService := service.NewStatsService()
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
-	searchService.SetTenantService(tenantService)
 	fileService := file.NewFileService(documentService)
 	memoryService := service.NewMemoryService(dao.DB, engine.Get(), service.WithMemoryKvrocks(kvrocks.Get()), service.WithMemoryMQEngine(engine.GetMessageQueueEngine()))
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
 	modelFactory := service.NewModelFactory()
-	modelCallService := service.NewModelCallServiceWithProviderService(modelProviderService, modelFactory)
+	modelCallService := service.NewModelCallService()
 
 	// Wire the real MemorySaver so the Message component can persist
 	// conversation turns to memory stores declared in the canvas DSL.
@@ -202,8 +202,8 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
-	userHandler := handler.NewUserHandler(userService)
-	tenantHandler := handler.NewTenantHandler(tenantService, userService, datasetsService)
+	userHandler := handler.NewUserHandler(userService, userTenantService)
+	tenantHandler := handler.NewTenantHandler(tenantService, userTenantService, datasetsService)
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService, fileService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
 	systemHandler := handler.NewSystemHandler(systemService)

@@ -35,13 +35,15 @@ import (
 
 // UserHandler user handler
 type UserHandler struct {
-	userService *service.UserService
+	userService       *service.UserService
+	userTenantService *service.UserTenantService
 }
 
 // NewUserHandler create user handler
-func NewUserHandler(userService *service.UserService) *UserHandler {
+func NewUserHandler(userService *service.UserService, userTenantService *service.UserTenantService) *UserHandler {
 	return &UserHandler{
-		userService: userService,
+		userService:       userService,
+		userTenantService: userTenantService,
 	}
 }
 
@@ -473,7 +475,7 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 // @Description Update tenant model configuration
 // @Tags users
 // @Security ApiKeyAuth
-// @Param request body service.SetTenantInfoRequest true "tenant info"
+// @Param request body service.SetModelSettingsRequest true "tenant model settings"
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/set_tenant_info [post]
 func (h *UserHandler) SetTenantInfo(c *gin.Context) {
@@ -525,7 +527,7 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		return
 	}
 
-	req := service.SetTenantInfoRequest{Raw: payload}
+	req := service.SetModelSettingsRequest{Raw: payload}
 	if value, ok := payload["tenant_id"].(string); ok {
 		req.TenantID = &value
 	}
@@ -548,7 +550,7 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		req.TTSID = &value
 	}
 
-	code, err := h.userService.SetTenantInfo(ctx, user.ID, &req)
+	code, err := h.userTenantService.SetModelSettings(ctx, user.ID, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		operationLog.Code = int(code)

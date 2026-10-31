@@ -17,6 +17,7 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"ragflow/internal/common"
@@ -86,7 +87,14 @@ func maybeDispatchTenantPDFParser(ctx context.Context, db *gorm.DB, filename str
 	var instance *entity.TenantModelInstance
 	var err error
 	if composite {
-		provider, err = providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
+		ownerUserID := tenantID
+		owner, ownerErr := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tenantID)
+		if ownerErr == nil {
+			ownerUserID = owner.UserID
+		} else if !errors.Is(ownerErr, gorm.ErrRecordNotFound) {
+			return parser.ParseResult{}, true, fmt.Errorf("parser: tenant owner lookup: %w", ownerErr)
+		}
+		provider, err = providerDAO.GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, ownerUserID, providerName)
 		if err == nil {
 			instance, err = instanceDAO.GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
 		}

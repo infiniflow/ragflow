@@ -123,7 +123,15 @@ func resolveTenantModelInstanceCredentials(ctx context.Context, db *gorm.DB, tid
 		zap.String("model", modelName),
 		zap.String("instance", instanceName))
 
-	provider, err := dao.NewTenantModelProviderDAO().GetByTenantIDAndProviderName(ctx, db, tid, providerName)
+	ownerUserID := tid
+	owner, ownerErr := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tid)
+	if ownerErr == nil {
+		ownerUserID = owner.UserID
+	} else if !errors.Is(ownerErr, gorm.ErrRecordNotFound) {
+		common.Debug("llm credentials: new-table fallback: tenant owner lookup failed", zap.String("tenant", tid), zap.Error(ownerErr))
+		return "", baseURL, false
+	}
+	provider, err := dao.NewTenantModelProviderDAO().GetByTenantIDAndUserIDAndProviderName(ctx, db, tid, ownerUserID, providerName)
 	if err != nil || provider == nil {
 		common.Debug("llm credentials: new-table fallback: provider not found", zap.String("provider", providerName), zap.Error(err))
 		return "", baseURL, false

@@ -1225,13 +1225,19 @@ func (s *ChatSessionService) ChatCompletions(
 		dialog.LLMID = llmID
 		dialog.LLMSetting = genConfig
 	} else if dialog.LLMID == "" {
-		membership, err := NewTenantService().defaultModelMembership(ctx, userID, dialog.TenantID)
-		if err != nil || membership.LLMID == "" {
+		modelInfo, err := NewModelFactory().ResolveDefaultInfo(ctx, ModelAccess{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat)
+		if err != nil {
 			return fail(errors.New("no default chat model for tenant"))
 		}
-		dialog.LLMID = membership.LLMID
-		if membership.TenantLLMID != nil && *membership.TenantLLMID != "" {
-			dialog.TenantLLMID = membership.TenantLLMID
+		if modelInfo.InstanceName == "" {
+			dialog.LLMID = fmt.Sprintf("%s@%s", modelInfo.Name, modelInfo.ProviderName)
+		} else {
+			dialog.LLMID = fmt.Sprintf("%s@%s@%s", modelInfo.Name, modelInfo.InstanceName, modelInfo.ProviderName)
+		}
+		dialog.TenantLLMID = nil
+		if modelInfo.ID != "" {
+			modelID := modelInfo.ID
+			dialog.TenantLLMID = &modelID
 		}
 		if dialog.LLMSetting == nil {
 			dialog.LLMSetting = entity.JSONMap{}

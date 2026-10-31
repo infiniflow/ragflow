@@ -45,8 +45,12 @@ func fillConfigDefaultLLM(ctx context.Context, config entity.JSONMap, tenantID *
 	if _, ok := config["llm_id"]; ok {
 		return config
 	}
-	_, modelID, err := NewTenantService().GetDefaultModelRefsForTenant(ctx, *tenantID, entity.ModelTypeChat)
-	if err != nil || modelID == "" {
+	info, err := NewModelFactory().ResolveDefaultInfo(ctx, ModelAccess{TenantID: *tenantID}, entity.ModelTypeChat)
+	if err != nil {
+		return config
+	}
+	modelID := ModelReference(info)
+	if modelID == "" {
 		return config
 	}
 	out := make(entity.JSONMap, len(config)+1)
