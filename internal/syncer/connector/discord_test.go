@@ -24,7 +24,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -73,7 +75,10 @@ func newDiscordFixture() *discordFixture {
 		},
 		archived: map[string][]map[string]any{
 			"ch-1": {
-				{"id": "thread-b", "name": "Archived Thread", "type": 11, "guild_id": "1001", "parent_id": "ch-1"},
+				{
+					"id": "thread-b", "name": "Archived Thread", "type": 11, "guild_id": "1001", "parent_id": "ch-1",
+					"thread_metadata": map[string]any{"archived": true, "archive_timestamp": "2026-08-14T09:00:00.000000+00:00"},
+				},
 			},
 		},
 		messages: map[string][]map[string]any{},
@@ -118,19 +123,28 @@ func (f *discordFixture) handler() http.Handler {
 				http.Error(w, "server error", http.StatusInternalServerError)
 				return
 			}
-			all := f.archived[channelID]
-			threads := all
-			start := 0
-			if before := query.Get("before"); before != "" {
-				for i, thread := range all {
-					if thread["id"] == before {
-						start = i + 1
-						break
+			// As Discord documents for these endpoints, `before` is an ISO8601
+			// timestamp and only threads archived before it are returned.
+			threads := f.archived[channelID]
+			if raw := query.Get("before"); raw != "" {
+				before, err := time.Parse(time.RFC3339Nano, raw)
+				if err != nil {
+					http.Error(w, "before must be an ISO8601 timestamp", http.StatusBadRequest)
+					return
+				}
+				var older []map[string]any
+				for _, thread := range threads {
+					if fixtureArchiveTimestamp(thread).Before(before) {
+						older = append(older, thread)
 					}
 				}
-				threads = threads[start:]
+				threads = older
 			}
-			json.NewEncoder(w).Encode(map[string]any{"threads": threads, "has_more": len(all) > start+len(threads)})
+			hasMore := false
+			if limit, err := strconv.Atoi(query.Get("limit")); err == nil && limit > 0 && len(threads) > limit {
+				threads, hasMore = threads[:limit], true
+			}
+			json.NewEncoder(w).Encode(map[string]any{"threads": threads, "has_more": hasMore})
 			return
 		case strings.HasPrefix(path, "/channels/") && strings.HasSuffix(path, "/messages"):
 			if f.rateLimitOnce.CompareAndSwap(false, true) {
@@ -176,6 +190,56 @@ func fixtureMessage(id, content, author string, ts time.Time) map[string]any {
 		"edited_timestamp": nil,
 		"author":           map[string]any{"id": "u-" + id, "username": author, "bot": false},
 	}
+}
+
+// fixtureArchivedThread builds an archived thread of parentID with the
+// archive_timestamp Discord orders and pages archived threads by.
+func fixtureArchivedThread(id, parentID string, archivedAt time.Time) map[string]any {
+	return map[string]any{
+		"id":        id,
+		"name":      "Archived " + id,
+		"type":      11,
+		"parent_id": parentID,
+		"thread_metadata": map[string]any{
+			"archived":          true,
+			"archive_timestamp": archivedAt.Format("2006-01-02T15:04:05.000000+00:00"),
+		},
+	}
+}
+
+// fixtureArchiveTimestamp returns a fixture thread's archive time, or the zero
+// time when it has none.
+func fixtureArchiveTimestamp(thread map[string]any) time.Time {
+	metadata, _ := thread["thread_metadata"].(map[string]any)
+	raw, _ := metadata["archive_timestamp"].(string)
+	archivedAt, _ := time.Parse(time.RFC3339Nano, raw)
+	return archivedAt
+}
+
+// fixtureArchivedThreads builds count archived threads of parentID, one minute
+// apart and newest first, as the archived-threads endpoints return them.
+func fixtureArchivedThreads(t *testing.T, parentID string, count int) []map[string]any {
+	t.Helper()
+	newest := mustTime(t, "2026-08-14T09:00:00Z")
+	threads := make([]map[string]any, 0, count)
+	for i := 0; i < count; i++ {
+		threads = append(threads, fixtureArchivedThread(fmt.Sprintf("thread-%03d", i), parentID, newest.Add(-time.Duration(i)*time.Minute)))
+	}
+	return threads
+}
+
+// capArchivedRequests counts public archived-thread requests and answers any
+// after the first limit with an error, so a listing that stops advancing fails
+// at once instead of paging forever.
+func capArchivedRequests(handler http.Handler, limit int32) (http.Handler, *atomic.Int32) {
+	requests := new(atomic.Int32)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/threads/archived/public") && requests.Add(1) > limit {
+			http.Error(w, "archived threads requested again after the listing stalled", http.StatusTeapot)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}), requests
 }
 
 func newDiscordTestConnector(t *testing.T, config map[string]any) *DiscordConnector {
@@ -486,6 +550,126 @@ func TestDiscordThreadListErrorsPropagate(t *testing.T) {
 				t.Fatalf("OpenPrune: want error, got nil")
 			}
 		})
+	}
+}
+
+// TestDiscordArchivedThreadsPageByArchiveTimestamp lists a channel with more
+// archived threads than one page holds: the next page is requested with the
+// archive_timestamp of the last thread, which is what `before` expects.
+func TestDiscordArchivedThreadsPageByArchiveTimestamp(t *testing.T) {
+	fixture := newDiscordFixture()
+	fixture.forbidPrivateArchived = true
+	threads := fixtureArchivedThreads(t, "ch-1", 150)
+	fixture.archived["ch-1"] = threads
+
+	var mu sync.Mutex
+	var befores []string
+	handler := fixture.handler()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/threads/archived/public") {
+			mu.Lock()
+			befores = append(befores, r.URL.Query().Get("before"))
+			mu.Unlock()
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
+	connector := newDiscordTestConnector(t, map[string]any{
+		"server_ids":  []any{"1001"},
+		"channels":    []any{"general"},
+		"credentials": map[string]any{"discord_bot_token": "token"},
+	})
+	connector.baseURL = server.URL
+
+	targets, err := connector.listTargets(t.Context())
+	mu.Lock()
+	gotBefores := befores
+	mu.Unlock()
+	// thread-099, archived at 07:21, is the last thread of the first page.
+	wantBefore := "2026-08-14T07:21:00.000000+00:00"
+	if len(gotBefores) != 2 || gotBefores[0] != "" || gotBefores[1] != wantBefore {
+		t.Errorf("archived thread requests sent before = %q, want [\"\" %q]", gotBefores, wantBefore)
+	}
+	if err != nil {
+		t.Fatalf("listTargets: %v", err)
+	}
+
+	want := []string{"ch-1"}
+	for _, thread := range threads {
+		want = append(want, thread["id"].(string))
+	}
+	want = append(want, "thread-a")
+	if len(targets) != len(want) {
+		t.Fatalf("targets = %d, want %d", len(targets), len(want))
+	}
+	for i, target := range targets {
+		if target.channelID != want[i] {
+			t.Fatalf("target %d = %q, want %q", i, target.channelID, want[i])
+		}
+	}
+}
+
+// TestDiscordArchivedThreadsMissingArchiveTimestamp stops with an error when a
+// page that has more after it ends in a thread without archive_timestamp,
+// instead of requesting the first page again.
+func TestDiscordArchivedThreadsMissingArchiveTimestamp(t *testing.T) {
+	fixture := newDiscordFixture()
+	fixture.forbidPrivateArchived = true
+	threads := fixtureArchivedThreads(t, "ch-1", 250)
+	// thread-199 is the last thread of the second page.
+	delete(threads[199], "thread_metadata")
+	fixture.archived["ch-1"] = threads
+	handler, requests := capArchivedRequests(fixture.handler(), 3)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	connector := newDiscordTestConnector(t, map[string]any{
+		"server_ids":  []any{"1001"},
+		"channels":    []any{"general"},
+		"credentials": map[string]any{"discord_bot_token": "token"},
+	})
+	connector.baseURL = server.URL
+
+	if _, err := connector.listTargets(t.Context()); err == nil || !strings.Contains(err.Error(), "did not advance") {
+		t.Fatalf("listTargets err = %v, want stalled pagination error", err)
+	}
+	if got := requests.Load(); got != 2 {
+		t.Errorf("archived thread requests = %d, want 2", got)
+	}
+}
+
+// TestDiscordArchivedThreadsArchiveTimestampMustAdvance stops with an error when
+// a page ends on the archive_timestamp that was just sent as `before`, instead
+// of requesting that page again.
+func TestDiscordArchivedThreadsArchiveTimestampMustAdvance(t *testing.T) {
+	fixture := newDiscordFixture()
+	fixture.forbidPrivateArchived = true
+	fixture.archived["ch-1"] = fixtureArchivedThreads(t, "ch-1", 150)
+	handler := fixture.handler()
+	// A server that ignores `before` answers every request with the first page.
+	ignoreBefore := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query()
+		query.Del("before")
+		r.URL.RawQuery = query.Encode()
+		handler.ServeHTTP(w, r)
+	})
+	capped, requests := capArchivedRequests(ignoreBefore, 3)
+	server := httptest.NewServer(capped)
+	defer server.Close()
+
+	connector := newDiscordTestConnector(t, map[string]any{
+		"server_ids":  []any{"1001"},
+		"channels":    []any{"general"},
+		"credentials": map[string]any{"discord_bot_token": "token"},
+	})
+	connector.baseURL = server.URL
+
+	if _, err := connector.listTargets(t.Context()); err == nil || !strings.Contains(err.Error(), "did not advance") {
+		t.Fatalf("listTargets err = %v, want stalled pagination error", err)
+	}
+	if got := requests.Load(); got != 2 {
+		t.Errorf("archived thread requests = %d, want 2", got)
 	}
 }
 
