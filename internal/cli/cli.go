@@ -830,7 +830,7 @@ Commands (User Mode):
   SET KEY 'api_key';                                     - Set and validate API key
   SHOW KEY;                                              - Show current API key
   SHOW PROVIDER 'name';                                  - Show provider details
-  SHOW CURRENT MODEL;                                    - Show current model settings
+  SHOW CURRENT;                                          - Show current model settings
   RESET KEY;                                             - Remove current API key
   ALTER PROVIDER 'name' INSTANCE 'instance' NAME 'new_name';
                                                          - Rename a provider instance

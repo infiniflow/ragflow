@@ -125,7 +125,8 @@ func TestHelpListsAcceptedCommands(t *testing.T) {
 				continue
 			}
 			for ; p.curToken.Type != TokenEOF; p.nextToken() {
-				if p.curToken.Type == TokenQuotedString {
+				if p.curToken.Type == TokenQuotedString ||
+					(strings.HasPrefix(stmt, "SHOW CURRENT") && isKeyword(p.curToken.Type)) {
 					t.Errorf("%s: argument %q is ignored", stmt, p.curToken.Value)
 					break
 				}
