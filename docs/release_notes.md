@@ -21,21 +21,6 @@ Key updates:
 3. Chat history now stores and displays prompts, token usage, and execution time.
 4. Compatible with existing v1.0.0-rc2 schema, allowing a direct upgrade.
 
-## v1.0.0-rc2
-
-Released on Oct 16, 2026.
-
-1.0.0-rc2 is the second release candidate for v1.0.0. This release fixes several issues in rc1 and introduces new features and expanded support.
-
-### Highlights
-1. Introduced Agentic mode for chat, replacing the Low, Medium, High, and Ultra thinking levels.
-2. Preserved compatibility with existing v1.0.0-rc1 data, allowing direct upgrades.
-3. Added support for Team/Me sharing.
-4. Added support for model providers DemonRoute and Opper, web search tools Firecrawl and Search1API, and the MinerU 4 model.
-5. Added retrieval support for Czech and Slovak.
-6. Unified the 12 built-in document parsers with the Pipeline parsers.
-7. Added Docker images for the arm64 architecture.
-
 ## v1.0.0-rc1
 
 Released on Sep 29, 2026.
