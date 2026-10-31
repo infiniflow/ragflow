@@ -64,12 +64,13 @@ var (
 )
 
 // maybeDispatchPDFVision handles selected tenant PDF/OCR parsers before generic
-// VLM parsing. A handled result, including an error, must not fall back to the
-// ordinary PDF parser.
+// VLM parsing. A handled PDF result, including an error, must not fall back to
+// the ordinary PDF parser.
 //
-// When the knowledge base configures MinerU on the PDF family, DOCX uploads are
-// routed through the same MinerU pipeline so table layout matches PDF parsing
-// (infiniflow/ragflow#16923).
+// When the knowledge base configures MinerU on the PDF family, DOCX uploads
+// are routed through the same MinerU pipeline so table layout matches PDF
+// parsing (infiniflow/ragflow#16923). A DOCX MinerU failure falls back to the
+// built-in Word parser.
 func maybeDispatchPDFVision(
 	ctx context.Context,
 	db *gorm.DB,
@@ -92,22 +93,29 @@ func maybeDispatchPDFVision(
 		if tenantID == "" {
 			return parser.ParseResult{}, true, fmt.Errorf("parser: MinerU requires tenant_id")
 		}
-		flatten, _ := setups["docx"]["flatten_media_to_text"].(bool)
-		if !flatten {
-			if v, ok := pdfSetup["flatten_media_to_text"].(bool); ok {
-				flatten = v
-			}
-		}
+		flatten := docxFlattenMedia(setups["docx"], pdfSetup)
 		normalize := func(result parser.ParseResult) parser.ParseResult {
 			pdf := parser.PDFParser{FlattenMediaToText: flatten}
 			return pdf.NormalizeResult(ctx, filename, result)
 		}
 		res, err := dispatchMinerUPDF(ctx, db, filename, binary, tenantID, pdfSetup, dispatchModelID)
-		if err != nil {
-			return parser.ParseResult{}, true, err
+		if err != nil || res.Err != nil {
+			// Word still has a built-in parser. A MinerU outage or a server
+			// that rejects DOCX must not fail the upload.
+			if err == nil {
+				err = res.Err
+			}
+			common.Warn("docx MinerU parse failed; using the built-in DOCX parser",
+				zap.String("filename", filename), zap.Error(err))
+			return parser.ParseResult{}, false, nil
 		}
 		res = normalize(res)
-		return res, true, res.Err
+		if res.Err != nil {
+			common.Warn("docx MinerU parse failed; using the built-in DOCX parser",
+				zap.String("filename", filename), zap.Error(res.Err))
+			return parser.ParseResult{}, false, nil
+		}
+		return res, true, nil
 	}
 	if fileType != utility.FileTypePDF {
 		return parser.ParseResult{}, false, nil
@@ -169,6 +177,19 @@ func minerUSelectionFromSetup(ctx context.Context, db *gorm.DB, tenantID string,
 		dispatchModelID = minerUSelector
 	}
 	return dispatchModelID, true
+}
+
+// docxFlattenMedia keeps an explicit DOCX flatten_media_to_text, including
+// false. The PDF value applies only when the DOCX setup does not carry the key.
+func docxFlattenMedia(docx, pdf schema.ParserSetup) bool {
+	if docx != nil {
+		if raw, ok := docx["flatten_media_to_text"]; ok {
+			flatten, _ := raw.(bool)
+			return flatten
+		}
+	}
+	flatten, _ := pdf["flatten_media_to_text"].(bool)
+	return flatten
 }
 
 func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup) (parser.ParseResult, bool, error) {
@@ -633,12 +654,12 @@ func dispatchMinerUPDF(
 	}
 
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
-	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction)
+	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, filename, binary, parseMethod, mineruLang, backend, serverURL, extraction)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
 	}
 
-	sizes, geometryErr := mineruPageSizes(ctx, binary)
+	sizes, geometryErr := mineruPDFPageSizes(ctx, filename, binary)
 	items, err := mineruExtractJSONItems(zipBytes, sizes, extraction.tableEnable)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
@@ -663,7 +684,7 @@ func finishMinerURemoteResult(ctx context.Context, filename string, binary []byt
 	var sizes map[int][2]float64
 	var geometryErr error
 	if len(zipBytes) > 0 {
-		sizes, geometryErr = mineruPageSizes(ctx, binary)
+		sizes, geometryErr = mineruPDFPageSizes(ctx, filename, binary)
 	}
 	items, extractErr := mineruExtractJSONItems(zipBytes, sizes, extraction.tableEnable)
 	if extractErr == nil && len(items) > 0 {
@@ -851,14 +872,34 @@ func mineruAPIParseMethod(raw string) string {
 // MinerU 4 V1 parse budget so both API generations give up at the same point.
 const mineruStreamTimeout = 30 * time.Minute
 
-// mineruStreamParse POSTs the PDF binary to the MinerU /file_parse
+// mineruStreamUploadName is the multipart filename MinerU uses to pick a
+// parser. DOCX bytes named document.pdf are parsed as PDF and rejected.
+func mineruStreamUploadName(filename string) string {
+	base := path.Base(strings.TrimSpace(filename))
+	if base == "" || base == "." || base == "/" || path.Ext(base) == "" {
+		return "document.pdf"
+	}
+	return base
+}
+
+// mineruPDFPageSizes reads page boxes only for PDF bytes. DOCX and other
+// office payloads are not PDF, and running them through pdfium only adds a
+// geometry warning. MinerU middle.json still supplies page sizes when present.
+func mineruPDFPageSizes(ctx context.Context, filename string, binary []byte) (map[int][2]float64, error) {
+	if !bytes.HasPrefix(binary, []byte("%PDF")) && !strings.EqualFold(path.Ext(filename), ".pdf") {
+		return nil, nil
+	}
+	return mineruPageSizes(ctx, binary)
+}
+
+// mineruStreamParse POSTs the document to the MinerU /file_parse
 // endpoint with streaming and returns the zip response body.
 // Mirrors Python's mineru_parser.py._run_mineru_api with stream=True.
-func mineruStreamParse(ctx context.Context, apiURL string, apiKey string, binary []byte, parseMethod, lang, backend, serverURL string, extraction mineruExtractionOptions) ([]byte, error) {
+func mineruStreamParse(ctx context.Context, apiURL string, apiKey string, filename string, binary []byte, parseMethod, lang, backend, serverURL string, extraction mineruExtractionOptions) ([]byte, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
-	part, err := writer.CreateFormFile("files", "document.pdf")
+	part, err := writer.CreateFormFile("files", mineruStreamUploadName(filename))
 	if err != nil {
 		return nil, fmt.Errorf("create form file: %w", err)
 	}

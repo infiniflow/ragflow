@@ -434,6 +434,9 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 		overlapSep = "\n"
 	}
 	units = applyGeneralOverlap(units, c.param.OverlappedPercent, overlapSep)
+	// MinerU DOCX items carry structured tables with an empty body. Fill Text
+	// the same way the PDF chunker does so the chunk is stored and displayed.
+	materializeTableText(units)
 	units = finalizeGeneralChunks(units, childrenPattern)
 	if len(units) == 0 {
 		return emptyOutputs(), nil
