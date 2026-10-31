@@ -190,3 +190,33 @@ func TestPollMinerUTask_StopsWhenCancelledDuringStatusCall(t *testing.T) {
 		t.Fatalf("status requests = %d, want 1: the poll must cancel the call in flight instead of starting another", calls.Load())
 	}
 }
+
+func TestPollMinerUTask_StopsImmediatelyOnAuthFailure(t *testing.T) {
+	withSSRFBypass(t)
+	var calls atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"code":401,"msg":"unauthorized"}`))
+	}))
+	defer server.Close()
+	driver := models.NewMinerLocalUModel(
+		map[string]string{"default": server.URL},
+		models.URLSuffix{Task: "tasks"},
+	)
+
+	start := time.Now()
+	_, err := pollMinerUTask(t.Context(), driver, "task-auth-fail", &models.APIConfig{}, 30*time.Second)
+	elapsed := time.Since(start)
+
+	if !errors.Is(err, models.ErrTaskAuthorization) {
+		t.Fatalf("error = %v, want models.ErrTaskAuthorization", err)
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("poll returned after %s, want it to stop immediately on 401", elapsed)
+	}
+	if calls.Load() > 2 {
+		t.Fatalf("status requests = %d, want <= 2", calls.Load())
+	}
+}

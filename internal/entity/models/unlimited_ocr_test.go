@@ -18,10 +18,12 @@ package models
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestResolveUnlimitedOCRServerURL(t *testing.T) {
@@ -203,4 +205,52 @@ func TestUnlimitedOCRModel_ParseFile_TaskID_Fallback(t *testing.T) {
 			t.Fatalf("expected top_999, got %s", resp.TaskID)
 		}
 	})
+}
+
+func TestUnlimitedOCRModel_OCRFile_AuthFailureStopsPolling(t *testing.T) {
+	ctx := context.Background()
+	callCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health", "/v1/health":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{"status":"ok","version":"4.0.12","engine":"Unlimited-OCR-2"}`)
+		case "/file_parse":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{"code":0,"task_id":"task_auth_fail"}`)
+		case "/tasks/task_auth_fail/result":
+			callCount++
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = fmt.Fprint(w, `{"code":401,"message":"unauthorized token"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	driver := NewUnlimitedOCRModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
+	)
+	cfg := &APIConfig{BaseURL: &server.URL}
+	content := []byte("%PDF-1.4 test document content that exceeds 100 bytes of data for real testing")
+	start := time.Now()
+	_, err := driver.OCRFile(ctx, nil, content, nil, cfg, nil, nil)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !errors.Is(err, ErrTaskAuthorization) {
+		t.Fatalf("expected ErrTaskAuthorization, got: %v", err)
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("polling took %s, expected immediate return on 401", elapsed)
+	}
+	if callCount > 2 {
+		t.Fatalf("ShowTask called %d times, expected immediate stop", callCount)
+	}
 }

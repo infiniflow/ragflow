@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -28,6 +29,10 @@ import (
 	"ragflow/internal/common"
 	"strings"
 )
+
+// ErrTaskAuthorization indicates that the task result status endpoint rejected
+// access due to invalid, expired, or missing credentials (HTTP 401/403).
+var ErrTaskAuthorization = errors.New("task result authorization failed")
 
 type MinerULocalModel struct {
 	baseModel BaseModel
@@ -381,6 +386,9 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 	}
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != 202 {
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+			return nil, fmt.Errorf("%w: MinerU local status API failed with status %d: %s", ErrTaskAuthorization, resp.StatusCode, string(body))
+		}
 		return nil, fmt.Errorf("MinerU local status API failed with status %d: %s", resp.StatusCode, string(body))
 	}
 

@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"strings"
@@ -148,6 +149,9 @@ func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID
 			}
 			lastErr = fmt.Errorf("empty MinerU task content")
 		} else {
+			if errors.Is(err, models.ErrTaskAuthorization) {
+				return "", fmt.Errorf("MinerU task %s result: %w", taskID, err)
+			}
 			lastErr = err
 		}
 		// A cancelled run has to leave the poll at once. Sleeping the scan

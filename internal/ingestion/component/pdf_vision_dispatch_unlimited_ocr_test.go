@@ -18,11 +18,13 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -124,5 +126,57 @@ func TestDispatchUnlimitedOCR2PDF_ExplicitModelRefError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "Unlimited-OCR-2 model") {
 		t.Fatalf("expected 'Unlimited-OCR-2 model' error, got: %v", err)
+	}
+}
+
+func TestDispatchUnlimitedOCR2PDF_AuthFailureStopsPolling(t *testing.T) {
+	callCount := 0
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/file_parse":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"msg":     "Task accepted",
+				"task_id": "test_auth_fail",
+			})
+		case "/tasks/test_auth_fail/result":
+			callCount++
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"code":401,"msg":"unauthorized"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer mockServer.Close()
+
+	setup := schema.ParserSetup{
+		"unlimited_ocr_server_url": mockServer.URL,
+	}
+
+	start := time.Now()
+	_, err := dispatchUnlimitedOCR2PDF(
+		context.Background(),
+		nil,
+		"test.pdf",
+		[]byte("%PDF-1.4 test"),
+		"",
+		setup,
+		"",
+	)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected error on 401, got nil")
+	}
+	if !errors.Is(err, modelModule.ErrTaskAuthorization) {
+		t.Fatalf("expected ErrTaskAuthorization, got: %v", err)
+	}
+	if elapsed > 3*time.Second {
+		t.Fatalf("polling took %s, expected immediate return on 401", elapsed)
+	}
+	if callCount > 2 {
+		t.Fatalf("ShowTask called %d times, expected immediate stop", callCount)
 	}
 }

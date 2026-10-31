@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -271,6 +272,9 @@ func (m *UnlimitedOCRModel) OCRFile(ctx context.Context, modelName *string, cont
 			}
 		}
 		if err != nil {
+			if errors.Is(err, ErrTaskAuthorization) {
+				return nil, fmt.Errorf("Unlimited-OCR-2 task %s result: %w", task.TaskID, err)
+			}
 			lastErr = err
 		}
 		if time.Now().After(deadline) {

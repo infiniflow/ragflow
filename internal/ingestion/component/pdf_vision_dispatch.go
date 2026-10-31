@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -428,6 +429,9 @@ func pollUnlimitedOCRTask(ctx context.Context, driver *modelModule.UnlimitedOCRM
 				}
 			}
 		} else {
+			if errors.Is(err, modelModule.ErrTaskAuthorization) {
+				return "", fmt.Errorf("Unlimited-OCR-2 task %s result: %w", taskID, err)
+			}
 			lastErr = err
 		}
 		if time.Now().After(deadline) {
