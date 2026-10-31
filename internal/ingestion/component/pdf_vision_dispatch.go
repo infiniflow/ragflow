@@ -109,6 +109,8 @@ func maybeDispatchPDFVision(
 	return result, true, result.Err
 }
 
+// dispatchPDFBackend checks whether the configured parser setup matches a dedicated
+// OCR backend (such as Unlimited-OCR-2, MinerU, MonkeyOCRv2, or PaddleOCR) and routes parsing accordingly.
 func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup) (parser.ParseResult, bool, error) {
 	method := getStringOr(setup, "parse_method", "")
 	layout := getStringOr(setup, "layout_recognizer", "")
@@ -327,6 +329,7 @@ func normalizePDFMarkdown(ctx context.Context, filename, md string, setup schema
 
 var isMonkeyOCRv2LayoutModelID = defaultIsMonkeyOCRv2LayoutModelID
 
+// defaultIsMonkeyOCRv2LayoutModelID checks the database for a MonkeyOCRv2 model configuration.
 func defaultIsMonkeyOCRv2LayoutModelID(ctx context.Context, db *gorm.DB, tenantID, modelID string) bool {
 	if db == nil || strings.TrimSpace(modelID) == "" {
 		return false

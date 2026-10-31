@@ -346,6 +346,7 @@ func (m *MinerULocalModel) ListTasks(ctx context.Context, apiConfig *APIConfig) 
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
 
+// ShowTask retrieves the processing status and extracted segments for a MinerU task.
 func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err

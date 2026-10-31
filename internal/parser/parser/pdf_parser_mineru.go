@@ -111,6 +111,7 @@ func minerUMarkdownResult(ctx context.Context, filename string, parsed *models.M
 	return pdfMarkdownToResult(ctx, filename, content, 1)
 }
 
+// pollMinerUTask polls the MinerU local status endpoint until the document parse result is ready.
 func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID string, apiConfig *models.APIConfig, timeout time.Duration) (string, error) {
 	if timeout <= 0 {
 		timeout = minerUPollTimeout
