@@ -114,3 +114,93 @@ func TestUnlimitedOCRModel_CheckConnection(t *testing.T) {
 		t.Fatalf("unexpected OCR text: %q", *ocrResp.Text)
 	}
 }
+
+func TestUnlimitedOCRModel_CheckConnection_Auth(t *testing.T) {
+	const validToken = "secret-token-123"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if auth != "Bearer "+validToken {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = fmt.Fprint(w, `{"error":"unauthorized"}`)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `{"status":"ok","version":"4.0.12","engine":"Unlimited-OCR-2"}`)
+	}))
+	defer server.Close()
+
+	driver := NewUnlimitedOCRModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
+	)
+	ctx := context.Background()
+
+	// Without API key -> 401 failure
+	noKeyCfg := &APIConfig{BaseURL: &server.URL}
+	if err := driver.CheckConnection(ctx, noKeyCfg); err == nil {
+		t.Fatal("expected authentication error, got nil")
+	}
+
+	// With plain token API key -> success
+	tok := validToken
+	validCfg := &APIConfig{BaseURL: &server.URL, ApiKey: &tok}
+	if err := driver.CheckConnection(ctx, validCfg); err != nil {
+		t.Fatalf("expected success with valid token, got: %v", err)
+	}
+
+	// With JSON API key -> success
+	jsonKey := fmt.Sprintf(`{"unlimited_ocr_api_key":"%s"}`, validToken)
+	jsonCfg := &APIConfig{BaseURL: &server.URL, ApiKey: &jsonKey}
+	if err := driver.CheckConnection(ctx, jsonCfg); err != nil {
+		t.Fatalf("expected success with JSON token, got: %v", err)
+	}
+}
+
+func TestUnlimitedOCRModel_ParseFile_TaskID_Fallback(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("nested task_id in data", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{"code":0,"data":{"task_id":"nested_123"},"task_id":"top_999"}`)
+		}))
+		defer server.Close()
+
+		driver := NewUnlimitedOCRModel(
+			map[string]string{"default": server.URL},
+			URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
+		)
+		cfg := &APIConfig{BaseURL: &server.URL}
+		resp, err := driver.ParseFile(ctx, nil, []byte("dummy"), nil, cfg, nil, nil)
+		if err != nil {
+			t.Fatalf("ParseFile failed: %v", err)
+		}
+		if resp.TaskID != "nested_123" {
+			t.Fatalf("expected nested_123, got %s", resp.TaskID)
+		}
+	})
+
+	t.Run("top-level task_id when data is object without task_id", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = fmt.Fprint(w, `{"code":0,"data":{"status":"queued"},"task_id":"top_999"}`)
+		}))
+		defer server.Close()
+
+		driver := NewUnlimitedOCRModel(
+			map[string]string{"default": server.URL},
+			URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
+		)
+		cfg := &APIConfig{BaseURL: &server.URL}
+		resp, err := driver.ParseFile(ctx, nil, []byte("dummy"), nil, cfg, nil, nil)
+		if err != nil {
+			t.Fatalf("ParseFile failed: %v", err)
+		}
+		if resp.TaskID != "top_999" {
+			t.Fatalf("expected top_999, got %s", resp.TaskID)
+		}
+	})
+}

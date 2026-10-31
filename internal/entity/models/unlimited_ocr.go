@@ -98,27 +98,37 @@ func (m *UnlimitedOCRModel) CheckConnection(ctx context.Context, apiConfig *APIC
 	if err != nil {
 		return fmt.Errorf("invalid base URL: %w", err)
 	}
+	token := ""
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		token = MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey)
+	}
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	v1URL := *u
 	v1URL.Path = "/v1/health"
-	v1Code, v1Body, v1Err := minerUGET(ctx, m.baseModel.httpClient, v1URL.String(), "")
+	v1Code, v1Body, v1Err := minerUGET(ctx, m.baseModel.httpClient, v1URL.String(), token)
+	if v1Err == nil && (v1Code == http.StatusUnauthorized || v1Code == http.StatusForbidden) {
+		return fmt.Errorf("authentication failed (HTTP %d)", v1Code)
+	}
 	if v1Err == nil && minerUHealthOK(v1Code, v1Body) {
 		return nil
 	}
 
 	legacy := *u
 	legacy.Path = "/health"
-	code, body, err := minerUGET(ctx, m.baseModel.httpClient, legacy.String(), "")
-	if err == nil && minerUHealthOK(code, body) {
-		return nil
-	}
+	code, body, err := minerUGET(ctx, m.baseModel.httpClient, legacy.String(), token)
 	if err != nil {
 		if v1Err != nil {
 			return fmt.Errorf("connection failed: %w", v1Err)
 		}
 		return fmt.Errorf("connection failed: %w", err)
+	}
+	if code == http.StatusUnauthorized || code == http.StatusForbidden {
+		return fmt.Errorf("authentication failed (HTTP %d)", code)
+	}
+	if minerUHealthOK(code, body) {
+		return nil
 	}
 	return fmt.Errorf("not an Unlimited-OCR-2 service: HTTP %d", code)
 }
@@ -216,8 +226,11 @@ func (m *UnlimitedOCRModel) ParseFile(ctx context.Context, modelName *string, co
 		if tid, ok := dataMap["task_id"].(string); ok {
 			taskID = tid
 		}
-	} else if tid, ok := result["task_id"].(string); ok {
-		taskID = tid
+	}
+	if taskID == "" {
+		if tid, ok := result["task_id"].(string); ok {
+			taskID = tid
+		}
 	}
 
 	if taskID == "" {

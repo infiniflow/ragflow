@@ -368,6 +368,9 @@ func dispatchUnlimitedOCR2PDF(
 		} else {
 			_, _, apiConfig, _, err = resolveTenantOCRModelByProvider(ctx, db, tenantID, "Unlimited-OCR-2")
 		}
+		if err != nil && modelRef != "" {
+			return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 model: %w", err)
+		}
 		if err == nil && apiConfig != nil {
 			resolvedAPIConfig = apiConfig
 			if apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {

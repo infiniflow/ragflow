@@ -18,6 +18,7 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,7 +26,11 @@ import (
 	"testing"
 	"time"
 
+	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+
+	"gorm.io/gorm"
 )
 
 func TestDispatchUnlimitedOCR2PDFEndToEnd(t *testing.T) {
@@ -152,5 +157,34 @@ func TestDispatchUnlimitedOCR2PDF_LiveService(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected parsed items to contain 'Purpose of RAGFlow', got items: %#v", result.JSON)
+	}
+}
+
+func TestDispatchUnlimitedOCR2PDF_ExplicitModelRefError(t *testing.T) {
+	origResolver := resolveModelConfig
+	t.Cleanup(func() { resolveModelConfig = origResolver })
+
+	resolveModelConfig = func(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType, _ string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return nil, "", nil, 0, fmt.Errorf("model disabled or not found")
+	}
+
+	setup := schema.ParserSetup{
+		"unlimited_ocr_server_url": "http://127.0.0.1:18000",
+	}
+
+	_, err := dispatchUnlimitedOCR2PDF(
+		context.Background(),
+		nil,
+		"test.pdf",
+		[]byte("%PDF-1.4 test"),
+		"tenant-1",
+		setup,
+		"explicit-model-id",
+	)
+	if err == nil {
+		t.Fatal("expected error when explicit modelRef fails resolution, got nil")
+	}
+	if !strings.Contains(err.Error(), "Unlimited-OCR-2 model") {
+		t.Fatalf("expected 'Unlimited-OCR-2 model' error, got: %v", err)
 	}
 }
