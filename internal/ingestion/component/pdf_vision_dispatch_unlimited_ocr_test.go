@@ -29,6 +29,8 @@ import (
 	"testing"
 	"time"
 
+	"ragflow/internal/common"
+
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -314,5 +316,93 @@ func TestDispatchUnlimitedOCR2PDF_WithContentListVisualGrounding(t *testing.T) {
 	}
 	if !tableFound {
 		t.Errorf("expected table item in parsed JSON")
+	}
+}
+
+func TestDispatchUnlimitedOCR2PDF_TenantCredential_NoCallerOverride(t *testing.T) {
+	callerHit := false
+	callerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callerHit = true
+		http.Error(w, "should not be called", http.StatusForbidden)
+	}))
+	defer callerServer.Close()
+
+	envHit := false
+	envServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		envHit = true
+		switch r.URL.Path {
+		case "/file_parse":
+			auth := r.Header.Get("Authorization")
+			if auth != "Bearer secret-tenant-token" {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"msg":     "success",
+				"task_id": "env_task_123",
+			})
+		case "/tasks/env_task_123/result":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":  0,
+				"msg":   "success",
+				"state": "done",
+				"results": map[string]any{
+					"test.pdf": map[string]any{
+						"md_content": "# Clean Secure Content",
+					},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer envServer.Close()
+
+	origEnv := os.Getenv(common.EnvUnlimitedOCRServerURL)
+	t.Setenv(common.EnvUnlimitedOCRServerURL, envServer.URL)
+	defer os.Setenv(common.EnvUnlimitedOCRServerURL, origEnv)
+
+	origResolver := resolveTenantOCRModelByProvider
+	t.Cleanup(func() { resolveTenantOCRModelByProvider = origResolver })
+
+	token := "secret-tenant-token"
+	resolveTenantOCRModelByProvider = func(ctx context.Context, db *gorm.DB, tenantID, providerName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		driver := modelModule.NewUnlimitedOCRModel(
+			map[string]string{"default": envServer.URL},
+			modelModule.URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
+		)
+		return driver, "Unlimited-OCR-2", &modelModule.APIConfig{
+			ApiKey: &token,
+		}, 0, nil
+	}
+
+	setup := schema.ParserSetup{
+		"unlimited_ocr_server_url": callerServer.URL,
+	}
+
+	result, err := dispatchUnlimitedOCR2PDF(
+		context.Background(),
+		nil,
+		"test.pdf",
+		[]byte("%PDF-1.4 test"),
+		"tenant-sec-1",
+		setup,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("dispatchUnlimitedOCR2PDF unexpected error: %v", err)
+	}
+	if result.Err != nil {
+		t.Fatalf("result error: %v", result.Err)
+	}
+
+	if callerHit {
+		t.Errorf("security violation: caller-supplied server was contacted with tenant credential")
+	}
+	if !envHit {
+		t.Errorf("expected deployment environment server to be contacted")
 	}
 }

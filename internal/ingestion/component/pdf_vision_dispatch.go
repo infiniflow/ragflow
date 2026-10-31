@@ -360,10 +360,11 @@ func dispatchUnlimitedOCR2PDF(
 	setup schema.ParserSetup,
 	modelRef string,
 ) (parser.ParseResult, error) {
-	baseURL := strings.TrimRight(getStringOr(setup, "unlimited_ocr_server_url", os.Getenv(common.EnvUnlimitedOCRServerURL)), "/")
-	if baseURL == "" {
-		baseURL = strings.TrimRight(os.Getenv(common.EnvUnlimitedOCRAPIServer), "/")
+	environmentURL := strings.TrimRight(os.Getenv(common.EnvUnlimitedOCRServerURL), "/")
+	if environmentURL == "" {
+		environmentURL = strings.TrimRight(os.Getenv(common.EnvUnlimitedOCRAPIServer), "/")
 	}
+	baseURL := strings.TrimRight(getStringOr(setup, "unlimited_ocr_server_url", environmentURL), "/")
 	timeout := 30 * time.Minute
 
 	var resolvedAPIConfig *modelModule.APIConfig
@@ -384,6 +385,8 @@ func dispatchUnlimitedOCR2PDF(
 				baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
 			} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "unlimited_ocr_server_url"); configuredURL != "" {
 				baseURL = strings.TrimRight(configuredURL, "/")
+			} else if modelModule.ResolveUnlimitedOCRBearerToken(apiConfig) != "" {
+				baseURL = environmentURL
 			}
 		}
 	}
