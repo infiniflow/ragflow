@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -38,10 +39,20 @@ import (
 
 func setupRealNatsCluster(t *testing.T) (host string, port int) {
 	t.Helper()
+	// JetStream can still write consumer state while the store is being removed,
+	// which surfaced as "directory not empty" from t.TempDir's cleanup and
+	// failed the test after it had passed. Own the directory and retry the
+	// removal instead.
+	storeDir, err := os.MkdirTemp("", "ragflow-nats-store-")
+	if err != nil {
+		t.Fatalf("create JetStream store dir: %v", err)
+	}
+	// Registered before the server cleanup so it runs after it.
+	t.Cleanup(func() { removeStoreDir(t, storeDir) })
 	opts := &server.Options{
 		Port:      -1,
 		JetStream: true,
-		StoreDir:  t.TempDir(),
+		StoreDir:  storeDir,
 		NoLog:     true,
 		NoSigs:    true,
 	}
@@ -52,6 +63,7 @@ func setupRealNatsCluster(t *testing.T) (host string, port int) {
 	ns.Start()
 	if !ns.ReadyForConnections(10 * time.Second) {
 		ns.Shutdown()
+		ns.WaitForShutdown()
 		t.Fatal("embedded NATS server did not become ready within 10s")
 	}
 	t.Cleanup(func() {
@@ -60,6 +72,18 @@ func setupRealNatsCluster(t *testing.T) (host string, port int) {
 	})
 	addr := ns.Addr().(*net.TCPAddr)
 	return "127.0.0.1", addr.Port
+}
+
+func removeStoreDir(t *testing.T, dir string) {
+	t.Helper()
+	var err error
+	for attempt := 0; attempt < 20; attempt++ {
+		if err = os.RemoveAll(dir); err == nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Errorf("remove JetStream store dir %s: %v", dir, err)
 }
 
 // TestIntegration_MultiInstanceSharedConsumerNoOverExecution verifies TaskRP.md §6.2:
