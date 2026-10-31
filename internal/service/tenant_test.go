@@ -18,7 +18,6 @@ package service
 
 import (
 	"testing"
-	_ "unsafe"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -28,9 +27,6 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 )
-
-//go:linkname daoModelProviderManager ragflow/internal/dao.modelProviderManager
-var daoModelProviderManager *models.ProviderManager
 
 func setupTenantPermissionTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -216,7 +212,6 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to init provider manager: %v", err)
 	}
-	daoModelProviderManager = models.GetProviderManager()
 
 	// 2. Migrate tables
 	err = db.AutoMigrate(

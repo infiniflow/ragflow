@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"ragflow/internal/tokenizer"
@@ -1013,4 +1014,45 @@ func sortedKeys(set map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// TestProviderManagerPublishIsVisibleToConcurrentReaders pins the publication
+// contract: InitProviderManager hands the catalog to an atomic pointer, so a
+// reader running while a publish is in flight observes a complete catalog
+// instead of racing on the field. Run with -race to catch a regression back to
+// a plain package variable.
+func TestProviderManagerPublishIsVisibleToConcurrentReaders(t *testing.T) {
+	saved := GetProviderManager()
+	published := &ProviderManager{Providers: []Provider{{Name: "atomic-fixture"}}}
+	setProviderManager(published)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				setProviderManager(published)
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		close(stop)
+		wg.Wait()
+		setProviderManager(saved)
+	})
+
+	for i := 0; i < 1000; i++ {
+		got := GetProviderManager()
+		if got == nil {
+			t.Fatal("GetProviderManager returned nil while a catalog was published")
+		}
+		if len(got.Providers) != 1 || got.Providers[0].Name != "atomic-fixture" {
+			t.Fatalf("reader observed a catalog that was never published: %+v", got)
+		}
+	}
 }

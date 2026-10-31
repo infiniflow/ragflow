@@ -334,7 +334,6 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		common.Fatal("Failed to load model providers", zap.Error(err))
 	}
 
-	modelProviderManager = models.GetProviderManager()
 	common.Info("Model providers loaded successfully")
 
 	return nil
