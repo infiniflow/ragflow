@@ -172,7 +172,8 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 	if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
 		return "", err
 	}
-	nextTaskID, err := r.taskService.CompleteSync(ctx, taskContext, checkpointState.WindowEnd, stats)
+	waterline := commitWaterline(session, checkpointState.WindowEnd, &stats)
+	nextTaskID, err := r.taskService.CompleteSync(ctx, taskContext, waterline, stats)
 	if err != nil {
 		return "", err
 	}
@@ -182,6 +183,27 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 		common.Info("delete sync checkpoint completed", zap.String("task_id", taskContext.Task.ID))
 	}
 	return nextTaskID, nil
+}
+
+// commitWaterline returns the waterline the sync should commit. When the
+// session reports failed fetches, the failures are counted in the task stats
+// and the waterline is held just before the earliest failed document's
+// modification time, so the strict half-open selection window (start, end]
+// covers it again on the next run instead of dropping it silently.
+func commitWaterline(session syncerconnector.SyncSession, windowEnd time.Time, stats *service.SyncStats) time.Time {
+	reporter, ok := session.(syncerconnector.SyncFailureReporter)
+	if !ok {
+		return windowEnd
+	}
+	failures := reporter.SyncFailures()
+	if len(failures) == 0 {
+		return windowEnd
+	}
+	stats.Add(service.SyncStats{
+		ErrorCount: int64(len(failures)),
+		ErrorMsg:   fmt.Sprintf("%d source document(s) failed to download and will be retried", len(failures)),
+	})
+	return syncerconnector.HoldWaterline(windowEnd, failures)
 }
 
 func (r *SyncRunner) openSyncSession(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, fingerprints map[string]string, checkpointState *syncerconnector.SyncCheckpointState, connector syncerconnector.Connector) (syncerconnector.SyncSession, error) {

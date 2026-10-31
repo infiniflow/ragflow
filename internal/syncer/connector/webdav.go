@@ -197,6 +197,7 @@ func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 
 	nameCounts := webdavBasenameCounts(files)
 	documents := make([]SourceDocument, 0, len(files))
+	var failures []SyncFailure
 	for _, file := range files {
 		if !file.hasModified {
 			file.modified = end
@@ -209,13 +210,23 @@ func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 		}
 		blob, err := c.downloadFile(ctx, file.url)
 		if err != nil || len(blob) == 0 {
+			// A failed fetch must not look like an unchanged document: record
+			// it so the runner can hold the waterline behind it and count it.
+			// Files without a Last-Modified get no hold time here because they
+			// take the window end as their modification time on every run and
+			// are therefore re-selected anyway.
+			failure := SyncFailure{SourceID: c.sourceID(file.url)}
+			if file.hasModified {
+				failure.UpdatedAt = file.modified
+			}
+			failures = append(failures, failure)
 			continue
 		}
 		documents = append(documents, c.buildDocument(file, blob, nameCounts))
 	}
 	sort.Slice(documents, func(i, j int) bool { return documents[i].SourceID < documents[j].SourceID })
 
-	session := &webdavSyncSession{documents: documents, batchSize: c.batchSize}
+	session := &webdavSyncSession{documents: documents, failures: failures, batchSize: c.batchSize}
 	if err := session.applyResume(request.Resume); err != nil {
 		return nil, err
 	}
@@ -273,6 +284,7 @@ func (c *WebDAVConnector) isAcceptedExtension(file webdavFile) bool {
 
 type webdavSyncSession struct {
 	documents []SourceDocument
+	failures  []SyncFailure
 	batchSize int
 	index     int
 }
@@ -290,6 +302,12 @@ func (s *webdavSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	batch := SyncBatch{Documents: batchDocuments, Checkpoint: webdavSyncCheckpoint(batchDocuments[len(batchDocuments)-1])}
 	s.index = end
 	return batch, nil
+}
+
+// SyncFailures reports the source documents whose download failed while the
+// session was opened.
+func (s *webdavSyncSession) SyncFailures() []SyncFailure {
+	return s.failures
 }
 
 // Close closes the WebDAV sync session.

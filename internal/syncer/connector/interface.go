@@ -31,6 +31,16 @@ type SyncSession interface {
 	Close() error
 }
 
+// SyncFailureReporter is an optional interface a SyncSession can implement to
+// report source documents whose fetch failed during the session. The runner
+// holds the committed waterline behind the earliest failure so the next sync
+// window covers the failed documents again, instead of silently advancing
+// past them.
+type SyncFailureReporter interface {
+	// SyncFailures returns one entry per source document whose fetch failed.
+	SyncFailures() []SyncFailure
+}
+
 // Fetcher lazily downloads a source document body.
 type Fetcher interface {
 	// Fetch downloads a delayed source document body.
