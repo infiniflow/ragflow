@@ -329,6 +329,8 @@ func (e rssEntry) renderText() string {
 type rssRoot struct {
 	XMLName xml.Name
 	Channel rssChannel `xml:"channel"`
+	// RSS 0.90 and 1.0 (RDF) put each <item> beside <channel>, not inside it.
+	Items []rssXMLItem `xml:"item"`
 }
 
 type rssChannel struct {
@@ -344,6 +346,7 @@ type rssXMLItem struct {
 	PubDate     string        `xml:"pubDate"`
 	Published   string        `xml:"published"`
 	Updated     string        `xml:"updated"`
+	Date        string        `xml:"date"`
 	Description string        `xml:"description"`
 	Summary     string        `xml:"summary"`
 	Encoded     string        `xml:"encoded"`
@@ -390,7 +393,7 @@ type atomCategory struct {
 	Label string `xml:"label,attr"`
 }
 
-// parseRSSFeed parses RSS 2.0 and Atom payloads.
+// parseRSSFeed parses RSS 0.90, 1.0 and 2.0 and Atom payloads.
 func parseRSSFeed(data []byte) ([]rssEntry, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	for {
@@ -417,8 +420,9 @@ func parseRSSXML(data []byte) ([]rssEntry, error) {
 	if err := xml.Unmarshal(data, &root); err != nil {
 		return nil, fmt.Errorf("failed to parse RSS feed: %w", err)
 	}
-	entries := make([]rssEntry, 0, len(root.Channel.Items))
-	for _, item := range root.Channel.Items {
+	items := append(root.Channel.Items, root.Items...)
+	entries := make([]rssEntry, 0, len(items))
+	for _, item := range items {
 		entry := rssEntry{
 			id:         strings.TrimSpace(item.GUID),
 			link:       strings.TrimSpace(item.Link),
@@ -427,7 +431,7 @@ func parseRSSXML(data []byte) ([]rssEntry, error) {
 			categories: rssCategories(item.Categories),
 			content:    firstNonEmpty(item.Encoded, item.Description),
 			summary:    firstNonEmpty(item.Summary, item.Description),
-			updatedAt:  parseFeedTime(firstNonEmpty(item.Updated, item.Published, item.PubDate)),
+			updatedAt:  parseFeedTime(firstNonEmpty(item.Updated, item.Published, item.PubDate, item.Date)),
 		}
 		entries = append(entries, entry.withDefaults())
 	}
@@ -535,6 +539,9 @@ func parseFeedTime(value string) time.Time {
 		"Mon, 02 Jan 2006 15:04:05 -0700",
 		"Mon, 2 Jan 2006 15:04:05 -0700",
 		"2006-01-02 15:04:05",
+		// W3C-DTF forms used by dc:date in RSS 1.0 feeds.
+		"2006-01-02T15:04Z07:00",
+		"2006-01-02",
 	}
 	for _, layout := range layouts {
 		if parsed, err := time.Parse(layout, value); err == nil {
