@@ -29,6 +29,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 )
@@ -442,6 +443,22 @@ func TestMWSErrorResponseIsReturned(t *testing.T) {
 	if !strings.Contains(statusErr.Body, "MWS unavailable") {
 		t.Fatalf("error body was not retained for internal diagnostics: %q", statusErr.Body)
 	}
+}
+
+func TestMWSTransportHonoursProviderHeaderTimeout(t *testing.T) {
+	t.Run("default", func(t *testing.T) {
+		t.Setenv(common.EnvLLMHTTPResponseHeaderTimeout, "")
+		if got := newMWSTransport().ResponseHeaderTimeout; got != 20*time.Minute {
+			t.Fatalf("response header timeout = %v, want 20m", got)
+		}
+	})
+
+	t.Run("override", func(t *testing.T) {
+		t.Setenv(common.EnvLLMHTTPResponseHeaderTimeout, "45s")
+		if got := newMWSTransport().ResponseHeaderTimeout; got != 45*time.Second {
+			t.Fatalf("response header timeout = %v, want 45s", got)
+		}
+	})
 }
 
 func TestMWSFactoryRegistration(t *testing.T) {

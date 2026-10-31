@@ -527,12 +527,11 @@ const (
 // EnvLLMHTTPResponseHeaderTimeout bounds how long an outbound provider call may
 // wait for response headers. An endpoint that accepts the connection and then
 // never answers otherwise blocks each retry attempt for the full client default
-// (20m on both shared clients), so retries consume wall time instead of
-// retrying. One override covers both shared clients because a hung endpoint is
-// indistinguishable to the caller; each client keeps its own default while the
-// override is unset.
-// The value is a Go duration ("45s", "5m"), read once when a client is first
-// built. Unset, malformed, or non-positive keeps the client default.
+// (20m), so retries consume wall time instead of retrying. One override covers
+// every provider client because a hung endpoint is indistinguishable to the
+// caller; each client keeps its own default while the override is unset.
+// The value is a Go duration ("45s", "5m"), read when a client is built.
+// Unset, malformed, or non-positive keeps the client default.
 const EnvLLMHTTPResponseHeaderTimeout = "LLM_HTTP_RESPONSE_HEADER_TIMEOUT"
 
 // DeepDocModelFiles is the single source of truth for the weights the
