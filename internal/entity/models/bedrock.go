@@ -623,7 +623,7 @@ func (b *BedrockModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, err
 	}
 
-	body, err := buildConverseRequest(messages, chatModelConfig)
+	body, err := buildConverseRequest(messages, withClaudeSamplingPolicy(modelName, chatModelConfig))
 	if err != nil {
 		return nil, err
 	}
@@ -711,7 +711,7 @@ func (b *BedrockModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return err
 	}
 
-	body, err := buildConverseRequest(messages, chatModelConfig)
+	body, err := buildConverseRequest(messages, withClaudeSamplingPolicy(modelName, chatModelConfig))
 	if err != nil {
 		return err
 	}

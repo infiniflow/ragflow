@@ -211,7 +211,7 @@ func TestAnthropicChatMapsSystemConfigAndImages(t *testing.T) {
 	stop := []string{"END"}
 	_, err := newAnthropicForTest(srv.URL).ChatWithMessages(
 		ctx,
-		"claude-opus-4-5-20251101",
+		"claude-sonnet-4-20250514", // Claude 4.0 still accepts temperature and top_p together.
 		[]Message{
 			{Role: "system", Content: "be concise"},
 			{Role: "user", Content: []interface{}{
