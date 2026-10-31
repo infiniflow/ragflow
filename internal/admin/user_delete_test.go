@@ -117,11 +117,13 @@ func (s *deletionStorage) BucketExistsWithError(_ context.Context, bucket string
 
 func setupUserDeletionDB(t *testing.T) *gorm.DB {
 	t.Helper()
+	// The reference tables are dropped by the rc3.dev7 migration, so deletion
+	// runs against a database that no longer has them.
 	db := testutil.SetupTestDB(t,
 		&entity.User{}, &entity.Tenant{}, &entity.UserTenant{},
 		&entity.Knowledgebase{}, &entity.Document{}, &entity.Task{}, &entity.File{}, &entity.File2Document{},
-		&entity.Chat{}, &entity.ChatSession{}, &entity.ConversationMessage{}, &entity.ConversationReference{},
-		&entity.API4Conversation{}, &entity.API4ConversationMessage{}, &entity.API4ConversationReference{},
+		&entity.Chat{}, &entity.ChatSession{}, &entity.ConversationMessage{},
+		&entity.API4Conversation{}, &entity.API4ConversationMessage{},
 		&entity.ChatChannel{}, &entity.UserCanvas{}, &entity.UserCanvasVersion{},
 		&entity.Search{}, &entity.Memory{}, &entity.MemoryTask{}, &entity.MCPServer{},
 		&entity.SkillSearchConfig{},
@@ -173,10 +175,8 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	insert("INSERT INTO conversation (id, dialog_id, user_id) VALUES (?, ?, ?)", "joined-conversation", "team-chat", "user-1")
 	insert("INSERT INTO conversation (id, dialog_id, user_id) VALUES (?, ?, ?)", "other-conversation", "team-chat", "user-2")
 	insert("INSERT INTO conversation_message (conversation_id, position, metadata) VALUES (?, ?, ?)", "own-conversation", 0, "{}")
-	insert("INSERT INTO conversation_reference (conversation_id, position, reference) VALUES (?, ?, ?)", "own-conversation", 0, "{}")
 	insert("INSERT INTO api_4_conversation (id, dialog_id, user_id) VALUES (?, ?, ?)", "own-api-conversation", "own-chat", "user-1")
 	insert("INSERT INTO api_4_conversation_message (conversation_id, position, metadata) VALUES (?, ?, ?)", "own-api-conversation", 0, "{}")
-	insert("INSERT INTO api_4_conversation_reference (conversation_id, position, reference) VALUES (?, ?, ?)", "own-api-conversation", 0, "{}")
 	insert("INSERT INTO user_canvas (id, user_id, tags, canvas_category) VALUES (?, ?, ?, ?)", "agent", "user-1", "", "agent_canvas")
 	insert("INSERT INTO user_canvas_version (id, user_canvas_id) VALUES (?, ?)", "agent-version", "agent")
 	insert("INSERT INTO api_4_conversation (id, dialog_id, user_id) VALUES (?, ?, ?)", "agent-conversation", "agent", "external-user")
@@ -223,7 +223,7 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 			t.Fatalf("%s retained deleted resource %s", item[0], item[1])
 		}
 	}
-	for _, table := range []string{"conversation_message", "conversation_reference", "api_4_conversation_message", "api_4_conversation_reference", "file2document"} {
+	for _, table := range []string{"conversation_message", "api_4_conversation_message", "file2document"} {
 		var count int64
 		want := int64(0)
 		if table == "file2document" {
