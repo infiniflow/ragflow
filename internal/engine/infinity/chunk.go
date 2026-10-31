@@ -181,13 +181,22 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 		if schemaDeclaresMediaOrdinals(&schema) {
 			slideNumberExists, slideCheckErr := e.columnExists(table, "slide_number")
 			if slideCheckErr != nil {
+				if isConnectionLevelError(slideCheckErr) {
+					e.client.dropConnectionFor(db, "CreateChunkStore")
+				}
 				return fmt.Errorf("failed to check slide_number column: %w", slideCheckErr)
 			}
 			mediaOrderExists, mediaCheckErr := e.columnExists(table, "media_order")
 			if mediaCheckErr != nil {
+				if isConnectionLevelError(mediaCheckErr) {
+					e.client.dropConnectionFor(db, "CreateChunkStore")
+				}
 				return fmt.Errorf("failed to check media_order column: %w", mediaCheckErr)
 			}
 			if err := e.ensureMediaOrdinalColumns(table, slideNumberExists, mediaOrderExists); err != nil {
+				if isConnectionLevelError(err) {
+					e.client.dropConnectionFor(db, "CreateChunkStore")
+				}
 				return err
 			}
 		}
@@ -541,6 +550,9 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	// still names an undeclared ordinal column, so the insert below would
 	// fail anyway — after the delete has already dropped the matching rows.
 	if err := e.reconcileMediaOrdinalColumns(table, chunks, columns["slide_number"], columns["media_order"]); err != nil {
+		if isConnectionLevelError(err) {
+			e.client.dropConnectionFor(db, "InsertChunks")
+		}
 		return nil, err
 	}
 

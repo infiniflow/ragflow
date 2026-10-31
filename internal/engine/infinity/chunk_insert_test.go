@@ -97,6 +97,53 @@ func TestReconcileMediaOrdinalColumnsAbortsOnFailure(t *testing.T) {
 	}
 }
 
+// TestEnsureMediaOrdinalColumnsClassifiesTransportFailures pins the decision
+// the connection eviction keys on. A reconcile that failed at the transport
+// level leaves the socket with an incomplete Thrift exchange, so the caller
+// must be able to tell that from the error the reconcile returns and drop the
+// pooled connection. An ordinary schema failure must not be classified as a
+// transport failure: the connection is still healthy and must survive it.
+func TestEnsureMediaOrdinalColumnsClassifiesTransportFailures(t *testing.T) {
+	tests := []struct {
+		name        string
+		addErr      error
+		wantConnErr bool
+	}{
+		{
+			name:        "infinity EOF",
+			addErr:      errors.New("InfinityException(7018, Failed to execute query: EOF)"),
+			wantConnErr: true,
+		},
+		{
+			name:        "thrift transport failure",
+			addErr:      errors.New("TProtocolException: transport is not open"),
+			wantConnErr: true,
+		},
+		{
+			name:        "schema rejection",
+			addErr:      errors.New("add columns failed"),
+			wantConnErr: false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			adder := &fakeColumnAdder{failErr: tc.addErr}
+			chunks := []map[string]interface{}{{"id": "c1", "slide_number": 1}}
+
+			err := (&Engine{}).reconcileMediaOrdinalColumns(adder, chunks, false, false)
+			if err == nil {
+				t.Fatal("a failed reconcile must return the AddColumns error")
+			}
+			if !strings.Contains(err.Error(), tc.addErr.Error()) {
+				t.Fatalf("error %q must wrap the AddColumns failure", err)
+			}
+			if got := isConnectionLevelError(err); got != tc.wantConnErr {
+				t.Fatalf("isConnectionLevelError(%q) = %v, want %v", err, got, tc.wantConnErr)
+			}
+		})
+	}
+}
+
 // TestReconcileMediaOrdinalColumnsSkipsBatchesWithoutOrdinals pins that only a
 // batch carrying slide_number/media_order reconciles the columns onto the
 // table.
