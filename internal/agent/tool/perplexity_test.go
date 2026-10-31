@@ -18,7 +18,9 @@ package tool
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -166,8 +168,8 @@ func TestPerplexity_DefaultsOmitOptionalFields(t *testing.T) {
 	if sent["search_type"] != "web" {
 		t.Errorf("search_type = %v, want web", sent["search_type"])
 	}
-	if sent["max_results"] != float64(perplexityDefaultTopN) {
-		t.Errorf("max_results = %v, want %d", sent["max_results"], perplexityDefaultTopN)
+	if sent["max_results"] != float64(10) {
+		t.Errorf("max_results = %v, want 10", sent["max_results"])
 	}
 	// "any" recency and empty filters must not be forwarded.
 	for _, key := range []string{"search_recency_filter", "search_domain_filter", "country"} {
@@ -233,9 +235,13 @@ func TestPerplexity_DomainFilterArg(t *testing.T) {
 			t.Errorf("mixed filter %v: err = %v, want a not-both error", mixed, err)
 		}
 	}
-	tooMany := strings.Repeat("a.com,", perplexityMaxDomainFilters+1)
+	atLimit := strings.Repeat("a.com,", 20)
+	if got, err := perplexityDomainFilterArg(atLimit); err != nil || len(got) != 20 {
+		t.Errorf("20-domain filter = %v, %v; want 20 entries", got, err)
+	}
+	tooMany := strings.Repeat("a.com,", 21)
 	if _, err := perplexityDomainFilterArg(tooMany); err == nil {
-		t.Error("more than 20 domains accepted")
+		t.Error("21 domains accepted")
 	}
 }
 
@@ -244,13 +250,17 @@ func TestPerplexity_RejectsUnknownRecency(t *testing.T) {
 	helper, _, _, calls := perplexityTestServer(t, http.StatusOK, `{"results":[]}`)
 	tool := newPerplexityTool(helper, "key", perplexityDefaults{})
 
-	out, err := tool.InvokableRun(t.Context(), `{"query":"q","search_recency_filter":"decade"}`)
+	const rejected = "https://example.invalid/private-query"
+	out, err := tool.InvokableRun(t.Context(), `{"query":"q","search_recency_filter":"`+rejected+`"}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
+	if strings.Contains(out, rejected) {
+		t.Fatalf("tool output echoes the rejected value: %s", out)
+	}
 	env := decodePerplexityEnvelope(t, out)
-	if !strings.Contains(env.Error, "search_recency_filter") {
-		t.Fatalf("_ERROR = %q, want a recency error", env.Error)
+	if env.Error != `perplexity: search_recency_filter must be one of [any hour day week month year]` {
+		t.Fatalf("_ERROR = %q, want the fixed recency error", env.Error)
 	}
 	if calls.Load() != 0 {
 		t.Errorf("upstream calls = %d, want 0", calls.Load())
@@ -293,8 +303,7 @@ func TestPerplexity_MissingKeyIsEnvelopeError(t *testing.T) {
 }
 
 func TestPerplexity_UpstreamErrorBecomesEnvelope(t *testing.T) {
-	// Not parallel: it captures the process-wide log output to prove that
-	// neither the key nor the upstream body is written anywhere.
+	// Not parallel: log.SetOutput changes the process-wide standard logger.
 	const keyMarker = "pplx-SECRET-KEY-MARKER-7f3a"
 	const bodyMarker = "BODY-TEXT-MARKER-91c2"
 	var logs bytes.Buffer
@@ -308,11 +317,11 @@ func TestPerplexity_UpstreamErrorBecomesEnvelope(t *testing.T) {
 		body   string
 		want   string
 	}{
-		{"unauthorized", http.StatusUnauthorized, `{"error":{"message":"` + bodyMarker + ` for key ` + keyMarker + `","type":"unauthorized","code":401}}`, "perplexity: upstream returned 401 (invalid API key)"},
+		{"unauthorized", http.StatusUnauthorized, `{"error":{"message":"` + bodyMarker + ` for key ` + keyMarker + `","type":"unauthorized","code":401}}`, "perplexity: authentication failed (401); update the node's api_key"},
 		{"validation", http.StatusUnprocessableEntity, `{"detail":[{"loc":["body","max_results"],"msg":"` + bodyMarker + `","type":"value_error"}]}`, "perplexity: upstream returned 422 (request rejected, check search_domain_filter, country and max_results)"},
 		{"rate limited", http.StatusTooManyRequests, `{"error":{"message":"` + bodyMarker + `"}}`, "perplexity: upstream returned 429 (rate limited, retry later)"},
-		{"server error", http.StatusInternalServerError, bodyMarker + " " + keyMarker, "perplexity: upstream returned 500"},
-		{"other", http.StatusBadGateway, `<html>` + bodyMarker + `</html>`, "perplexity: upstream returned 502"},
+		{"server error", http.StatusInternalServerError, bodyMarker + " " + keyMarker, "perplexity: request failed (HTTP 500); check the API status and node settings before retrying"},
+		{"other", http.StatusBadGateway, `<html>` + bodyMarker + `</html>`, "perplexity: request failed (HTTP 502); check the API status and node settings before retrying"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -497,12 +506,17 @@ func TestBuildPerplexityTool_Params(t *testing.T) {
 			t.Errorf("buildPerplexityTool(%v) accepted invalid params", params)
 		}
 	}
+
+	const rejected = "https://example.invalid/private-setting"
+	for _, field := range []string{"search_type", "search_recency_filter"} {
+		_, err := buildPerplexityTool(map[string]any{field: rejected})
+		if err == nil || strings.Contains(err.Error(), rejected) || !strings.Contains(err.Error(), field) {
+			t.Errorf("buildPerplexityTool(%s=<url>) = %v, want a fixed error naming the field only", field, err)
+		}
+	}
 }
 
-// TestBuildPerplexityTool_CanvasFixtureParams builds the same params the
-// PerplexitySearch component fixture in
-// internal/agent/component/tool_component_test.go uses, including the
-// "outputs" key the Canvas factory forwards, so the two fixtures cannot drift.
+// Verify that the builder accepts Canvas output declarations alongside search settings.
 func TestBuildPerplexityTool_CanvasFixtureParams(t *testing.T) {
 	t.Parallel()
 	built, err := buildPerplexityTool(map[string]any{
@@ -526,5 +540,43 @@ func TestBuildPerplexityTool_CanvasFixtureParams(t *testing.T) {
 	}
 	if got := tool.defaults.SearchDomainFilter; len(got) != 2 || got[0] != "ragflow.io" || got[1] != "docs.perplexity.ai" {
 		t.Errorf("domain filter = %v", got)
+	}
+}
+
+type perplexityFailingTransport struct{ err error }
+
+func (t perplexityFailingTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, t.err
+}
+
+func TestPerplexity_TransportErrorsAreFixedMessages(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"dial", errors.New("dial tcp: connection refused to https://api.perplexity.ai/search"), "perplexity: search request failed; check network access and retry"},
+		{"canceled", context.Canceled, "perplexity: search canceled; run the query again to retry"},
+		{"deadline", context.DeadlineExceeded, "perplexity: search timed out; retry"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			helper := NewHTTPHelper().WithClient(&http.Client{Transport: perplexityFailingTransport{err: tc.err}})
+			tool := newPerplexityTool(helper, "pplx-key-marker", perplexityDefaults{})
+			out, err := tool.InvokableRun(t.Context(), `{"query":"q"}`)
+			if err != nil {
+				t.Fatalf("InvokableRun: %v", err)
+			}
+			env := decodePerplexityEnvelope(t, out)
+			if env.Error != tc.want {
+				t.Fatalf("_ERROR = %q, want %q", env.Error, tc.want)
+			}
+			for _, forbidden := range []string{perplexityEndpoint, "pplx-key-marker", "dial tcp"} {
+				if strings.Contains(out, forbidden) {
+					t.Errorf("tool output contains %q: %s", forbidden, out)
+				}
+			}
+		})
 	}
 }

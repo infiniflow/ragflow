@@ -19,6 +19,7 @@ package tool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,15 +30,11 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
-
-	"ragflow/internal/tokenizer"
 )
 
 const perplexityToolName = "perplexity_search"
 
-const perplexityToolDescription = `Perplexity Search API is a web search API. It returns ranked pages with a title, URL, snippet and, when known, a publication date. When searching:
-   - Use a focused query of the most important terms (and synonyms).
-   - Optionally restrict results by how recently they were published.`
+const perplexityToolDescription = `Search the web with a focused query. Results include titles, URLs, snippets, and optional publication dates. Use search_recency_filter to restrict publication time.`
 
 const perplexityEndpoint = "https://api.perplexity.ai/search"
 
@@ -52,9 +49,7 @@ const perplexityPromptMaxTokens = 200000
 // perplexityMaxDomainFilters is the API's limit on search_domain_filter entries.
 const perplexityMaxDomainFilters = 20
 
-// perplexityMaxResponseBytes caps how much of the response body is read: twenty
-// hits of JSON is a few KiB, so 4 MiB is far above any legitimate answer while
-// still bounding what a misbehaving upstream can make us allocate.
+// Reject responses larger than 4 MiB to bound memory use.
 const perplexityMaxResponseBytes = 4 << 20
 
 const (
@@ -75,7 +70,6 @@ type perplexityArgs struct {
 	MaxResults          any    `json:"max_results"`
 }
 
-// perplexityDefaults holds the node-level configuration.
 type perplexityDefaults struct {
 	SearchType          string
 	SearchRecencyFilter string
@@ -93,9 +87,7 @@ type perplexityRequestBody struct {
 	Country             string   `json:"country,omitempty"`
 }
 
-// perplexityResponse preserves every upstream result field (title, url,
-// snippet, date, last_updated) because the Canvas json output exposes the
-// result list unchanged.
+// Keep result fields for the Canvas json output; InvokableRun limits the result count.
 type perplexityResponse struct {
 	Results []map[string]any `json:"results"`
 }
@@ -105,9 +97,7 @@ type perplexityEnvelope struct {
 	Error   string           `json:"_ERROR,omitempty"`
 }
 
-// PerplexityTool is the Perplexity Search API tool. It POSTs a search to
-// https://api.perplexity.ai/search and returns the upstream `results` array.
-// The API key is node configuration only and never model-visible.
+// PerplexityTool keeps its API key in node configuration, outside the model's argument schema.
 type PerplexityTool struct {
 	helper   *HTTPHelper
 	apiKey   string
@@ -146,7 +136,6 @@ func newPerplexityTool(h *HTTPHelper, apiKey string, defaults perplexityDefaults
 	return &PerplexityTool{helper: h, apiKey: strings.TrimSpace(apiKey), defaults: defaults}
 }
 
-// Info returns the tool's metadata for the chat model.
 func (p *PerplexityTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: perplexityToolName,
@@ -154,12 +143,12 @@ func (p *PerplexityTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"query": {
 				Type:     schema.String,
-				Desc:     "The search keywords to execute with the Perplexity Search API. The most important words/terms (and synonyms) from the original request.",
+				Desc:     "Search query.",
 				Required: true,
 			},
 			"search_recency_filter": {
 				Type:     schema.String,
-				Desc:     `Restrict results by recency: "hour", "day", "week", "month", "year", or "any" (default) for no limit.`,
+				Desc:     `Restrict results by publication time: "hour", "day", "week", "month", "year", or "any" for no limit. Omit to use the node's recency setting.`,
 				Enum:     perplexityRecencyValues,
 				Required: false,
 			},
@@ -172,8 +161,6 @@ func (p *PerplexityTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	}, nil
 }
 
-// InvokableRun performs the Perplexity search.
-//
 // Recoverable errors (bad arguments, missing API key, API or network failures)
 // are returned as a JSON envelope with an _ERROR field and a nil Go error, so
 // the ReAct agent feeds them back to the model instead of failing the run,
@@ -224,7 +211,7 @@ func (p *PerplexityTool) InvokableRun(ctx context.Context, argsJSON string, _ ..
 		},
 	)
 	if err != nil {
-		return perplexityErrJSON(fmt.Errorf("perplexity: %w", err)), nil
+		return perplexityErrJSON(perplexityTransportError(err)), nil
 	}
 	defer resp.Body.Close()
 
@@ -234,7 +221,7 @@ func (p *PerplexityTool) InvokableRun(ctx context.Context, argsJSON string, _ ..
 
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, perplexityMaxResponseBytes+1))
 	if err != nil {
-		return perplexityErrJSON(fmt.Errorf("perplexity: read response: %w", err)), nil
+		return perplexityErrJSON(fmt.Errorf("perplexity: could not read the search response; retry")), nil
 	}
 	if len(raw) > perplexityMaxResponseBytes {
 		return perplexityErrJSON(fmt.Errorf("perplexity: response body exceeds %d bytes", perplexityMaxResponseBytes)), nil
@@ -261,17 +248,28 @@ func (p *PerplexityTool) InvokableRun(ctx context.Context, argsJSON string, _ ..
 func perplexityStatusError(resp *http.Response) error {
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
-		return fmt.Errorf("perplexity: upstream returned 401 (invalid API key)")
+		return fmt.Errorf("perplexity: authentication failed (401); update the node's api_key")
 	case http.StatusUnprocessableEntity:
 		return fmt.Errorf("perplexity: upstream returned 422 (request rejected, check search_domain_filter, country and max_results)")
 	case http.StatusTooManyRequests:
 		return fmt.Errorf("perplexity: upstream returned 429 (rate limited, retry later)")
 	}
-	return fmt.Errorf("perplexity: upstream returned %d", resp.StatusCode)
+	return fmt.Errorf("perplexity: request failed (HTTP %d); check the API status and node settings before retrying", resp.StatusCode)
 }
 
-// perplexityKeyIsWellFormed reports whether the key can be placed in an HTTP
-// header: printable, no control characters (CR, LF, NUL, tabs and friends).
+// perplexityTransportError maps a failed HTTP round trip to a fixed message
+// that never includes the endpoint or the transport error text.
+func perplexityTransportError(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf("perplexity: search canceled; run the query again to retry")
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("perplexity: search timed out; retry")
+	}
+	return fmt.Errorf("perplexity: search request failed; check network access and retry")
+}
+
+// Reject ASCII control characters U+0000 to U+001F and U+007F.
 func perplexityKeyIsWellFormed(key string) bool {
 	for _, r := range key {
 		if r < 0x20 || r == 0x7f {
@@ -281,9 +279,7 @@ func perplexityKeyIsWellFormed(key string) bool {
 	return true
 }
 
-// perplexityEnumArg normalizes a model-supplied enum value. Blank means the
-// default; anything else must be a known value, because it is forwarded to
-// Perplexity as-is.
+// Normalize case and whitespace; blank values use fallback.
 func perplexityEnumArg(name, value string, allowed []string, fallback string) (string, error) {
 	v := strings.ToLower(strings.TrimSpace(value))
 	if v == "" {
@@ -292,7 +288,7 @@ func perplexityEnumArg(name, value string, allowed []string, fallback string) (s
 	if slices.Contains(allowed, v) {
 		return v, nil
 	}
-	return "", fmt.Errorf("perplexity: %s %q is not supported, it should be one of %v", name, value, allowed)
+	return "", fmt.Errorf("perplexity: %s must be one of %v", name, allowed)
 }
 
 // perplexityMaxResultsArg returns the model's result count if it gave a usable
@@ -310,10 +306,8 @@ func perplexityMaxResultsArg(value any, topN int) int {
 	return min(max(n, 1), perplexityMaxResults)
 }
 
-// perplexityDomainFilterArg normalizes the node-level domain filter. It accepts
-// a comma or newline separated string or a list of strings, trims each entry,
-// drops blanks and keeps the API's maximum of 20 entries. A leading "-"
-// excludes a domain, as documented by the API, and is passed through.
+// Parse comma/newline-separated strings or string lists. Trim entries and drop
+// blanks; reject more than 20 domains or mixed include/exclude modes.
 func perplexityDomainFilterArg(value any) ([]string, error) {
 	var entries []string
 	switch v := value.(type) {
@@ -362,11 +356,10 @@ func perplexityDomainFilterArg(value any) ([]string, error) {
 	return domains, nil
 }
 
-// ComponentSpec returns the PerplexitySearch Canvas surface.
 func (p *PerplexityTool) ComponentSpec() ComponentSpec {
 	return ComponentSpec{
 		Inputs: map[string]string{
-			"query":                 "The search keywords to execute with the Perplexity Search API.",
+			"query":                 "Search query.",
 			"search_recency_filter": `Recency limit: "hour", "day", "week", "month", "year" or "any".`,
 		},
 		Outputs: map[string]string{
@@ -399,7 +392,7 @@ func (p *PerplexityTool) BuildComponentOutputs(envelope map[string]any) map[stri
 	results := envelopeSlice(envelope, "results")
 	chunks, _ := buildPerplexityReferences(envelope)
 	return map[string]any{
-		"formalized_content": renderPerplexityReferences(chunks, perplexityPromptMaxTokens),
+		"formalized_content": renderSearchReferences(chunks, perplexityPromptMaxTokens),
 		"json":               results,
 	}
 }
@@ -416,12 +409,12 @@ func buildPerplexityReferences(envelope map[string]any) ([]map[string]any, []map
 		if !ok {
 			continue
 		}
-		content := truncatePerplexityRunes(strings.Join(strings.Fields(perplexityText(result["snippet"])), " "), 10000)
+		content := truncatePerplexityRunes(strings.Join(strings.Fields(searchReferenceText(result["snippet"])), " "), 10000)
 		if content == "" {
 			continue
 		}
-		title := perplexityText(result["title"])
-		resultURL := perplexityText(result["url"])
+		title := searchReferenceText(result["title"])
+		resultURL := searchReferenceText(result["url"])
 		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
@@ -445,35 +438,6 @@ func buildPerplexityReferences(envelope map[string]any) ([]map[string]any, []map
 	return chunks, docAggs
 }
 
-func renderPerplexityReferences(chunks []map[string]any, maxTokens int) string {
-	usedTokens := 0
-	blocks := make([]string, 0, len(chunks))
-	for _, chunk := range chunks {
-		content := perplexityText(chunk["content"])
-		usedTokens += tokenizer.NumTokensFromString(content)
-		blocks = append(blocks, strings.Join([]string{
-			"\nID: " + perplexityText(chunk["id"]),
-			"├── Title: " + strings.Join(strings.Fields(perplexityText(chunk["document_name"])), " "),
-			"├── URL: " + perplexityText(chunk["url"]),
-			"└── Content:\n" + content,
-		}, "\n"))
-		if maxTokens > 0 && float64(maxTokens)*0.97 < float64(usedTokens) {
-			break
-		}
-	}
-	return strings.Join(blocks, "\n")
-}
-
-func perplexityText(value any) string {
-	if value == nil {
-		return ""
-	}
-	if text, ok := value.(string); ok {
-		return strings.TrimSpace(text)
-	}
-	return strings.TrimSpace(fmt.Sprint(value))
-}
-
 func truncatePerplexityRunes(value string, limit int) string {
 	if utf8.RuneCountInString(value) <= limit {
 		return value
@@ -482,10 +446,7 @@ func truncatePerplexityRunes(value string, limit int) string {
 }
 
 func perplexityJSON(env perplexityEnvelope) string {
-	b, err := json.Marshal(env)
-	if err != nil {
-		return fmt.Sprintf(`{"_ERROR":"perplexity: marshal result: %s"}`, err)
-	}
+	b, _ := json.Marshal(env)
 	return string(b)
 }
 

@@ -34,8 +34,6 @@ const PerplexitySearchTypeLabelKeys: Record<PerplexitySearchType, string> = {
   [PerplexitySearchType.Fast]: 'perplexitySearchTypeFast',
 };
 
-// Recency is a user-facing word, so each option carries its own key rather
-// than deriving an English label from the enum value.
 const PerplexityRecencyLabelKeys: Record<PerplexityRecency, string> = {
   [PerplexityRecency.Any]: 'perplexityRecencyAny',
   [PerplexityRecency.Hour]: 'perplexityRecencyHour',

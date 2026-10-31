@@ -920,7 +920,7 @@ func buildPerplexityTool(params map[string]any) (einotool.BaseTool, error) {
 		searchType, valid := value.(string)
 		normalized := strings.ToLower(strings.TrimSpace(searchType))
 		if !valid || (normalized != "" && !slices.Contains(perplexitySearchTypes, normalized)) {
-			return nil, fmt.Errorf("agent tool: tool %q has unsupported search_type %v", "perplexity", value)
+			return nil, fmt.Errorf("agent tool: tool %q requires search_type to be web, fast, or blank for the default", "perplexity")
 		}
 		defaults.SearchType = normalized
 	}
@@ -928,7 +928,7 @@ func buildPerplexityTool(params map[string]any) (einotool.BaseTool, error) {
 		recency, valid := value.(string)
 		normalized := strings.ToLower(strings.TrimSpace(recency))
 		if !valid || (normalized != "" && !slices.Contains(perplexityRecencyValues, normalized)) {
-			return nil, fmt.Errorf("agent tool: tool %q has unsupported search_recency_filter %v", "perplexity", value)
+			return nil, fmt.Errorf("agent tool: tool %q requires search_recency_filter to be any, hour, day, week, month, year, or blank for the default", "perplexity")
 		}
 		defaults.SearchRecencyFilter = normalized
 	}

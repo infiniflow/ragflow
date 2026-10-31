@@ -2660,8 +2660,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       perplexitySearchDescription:
         '由 Perplexity Search API 驱动的网页搜索组件。每条结果包含标题、URL、摘要，以及（如已知）发布日期。需要 API Key。',
       perplexitySearchType: '搜索类型',
-      perplexitySearchTypeTip:
-        'Web 返回最高质量的排序结果；Fast 以略低的排序质量换取更低的延迟。',
+      perplexitySearchTypeTip: 'Web 是默认搜索类型。Fast 优先降低延迟。',
       perplexitySearchTypeWeb: 'Web',
       perplexitySearchTypeFast: 'Fast',
       perplexityRecency: '时间范围',

@@ -29,6 +29,7 @@ import { FormSchema as ExeSQLFormSchema } from '../form/exesql-form/use-submit-f
 import { FormSchema as ParserFormSchema } from '../form/parser-form/schema';
 import { FormSchema as VariableAssignerFormSchema } from '../form/variable-assigner-form/schema';
 import { isEmptyMessageContent } from '../utils';
+import { embeddedToolName, isPerplexityOperator } from './perplexity-tool-name';
 
 /**
  * Canvas checklist issue collection. Pure functions fed by `useCanvasChecklist`:
@@ -106,37 +107,11 @@ const ApiKeyRequiredOperators: string[] = [
   Operator.Search1APISearch,
 ];
 
-// Perplexity is also reachable under its backend registry name and canvas
-// alias (`perplexity`, `perplexitysearch`, `perplexity_search`), and the
-// backend trims component names before resolving them, so match the trimmed,
-// normalized spelling rather than the canonical operator alone.
 function isApiKeyRequiredOperator(value: unknown): boolean {
   if (typeof value !== 'string') {
     return false;
   }
-  if (ApiKeyRequiredOperators.includes(value)) {
-    return true;
-  }
-  return ['perplexity', 'perplexitysearch'].includes(
-    value.trim().replace(/_/g, '').toLowerCase(),
-  );
-}
-
-// Mirrors agentToolObject on the backend: an embedded tool record is named by
-// component_name, then tool_name, then name, and a blank value falls through
-// to the next field.
-function embeddedToolName(tool: unknown): string | undefined {
-  if (!tool || typeof tool !== 'object') {
-    return undefined;
-  }
-  const record = tool as Record<string, unknown>;
-  for (const field of ['component_name', 'tool_name', 'name']) {
-    const candidate = record[field];
-    if (typeof candidate === 'string' && candidate.trim()) {
-      return candidate.trim();
-    }
-  }
-  return undefined;
+  return ApiKeyRequiredOperators.includes(value) || isPerplexityOperator(value);
 }
 
 function collectStrings(value: unknown): string[] {

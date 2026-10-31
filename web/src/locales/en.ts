@@ -3067,7 +3067,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'A web search component powered by the Perplexity Search API. Each result carries a title, URL, snippet and, when known, a publication date. Requires an API Key.',
       perplexitySearchType: 'Search type',
       perplexitySearchTypeTip:
-        'Web returns the highest quality ranking. Fast trades some ranking quality for lower latency.',
+        'Web is the default search type. Fast prioritizes lower latency.',
       perplexitySearchTypeWeb: 'Web',
       perplexitySearchTypeFast: 'Fast',
       perplexityRecency: 'Recency',

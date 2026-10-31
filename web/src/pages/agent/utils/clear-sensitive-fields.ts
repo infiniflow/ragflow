@@ -1,5 +1,6 @@
 import { Operator } from '@/constants/agent';
 import { cloneDeepWith, get, isPlainObject } from 'lodash';
+import { embeddedToolName, isPerplexityOperator } from './perplexity-tool-name';
 
 const apiKeyOperators = [
   Operator.TavilySearch,
@@ -46,34 +47,6 @@ function isSearch1APIOperator(value: unknown) {
   return ['search1api', 'search1apisearch', 'search1apicrawl'].includes(
     value.replace(/_/g, '').toLowerCase(),
   );
-}
-
-// The backend registers the tool as `perplexity` with the canvas alias
-// `perplexitysearch`, and the model-facing name is `perplexity_search`, so
-// every spelling has to be scrubbed, not only the canonical operator. The
-// backend also trims component names before resolving them, so padded
-// spellings import fine and must be scrubbed too.
-function isPerplexityOperator(value: unknown) {
-  if (typeof value !== 'string') {
-    return false;
-  }
-
-  return ['perplexity', 'perplexitysearch'].includes(
-    value.trim().replace(/_/g, '').toLowerCase(),
-  );
-}
-
-// Mirrors agentToolObject on the backend: an embedded tool record is named by
-// component_name, then tool_name, then name, and a blank value falls through
-// to the next field. Imported DSL can use any of them.
-function embeddedToolName(value: Record<string, unknown>) {
-  for (const field of ['component_name', 'tool_name', 'name']) {
-    const candidate = value[field];
-    if (typeof candidate === 'string' && candidate.trim()) {
-      return candidate.trim();
-    }
-  }
-  return undefined;
 }
 
 function isNodeLabelApiKeyOperator(value: unknown) {

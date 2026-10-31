@@ -347,11 +347,11 @@ Perplexity searches the web through the Perplexity Search API and returns ranked
 | --- | --- | --- | --- | --- |
 | query | string | Yes | `{sys.query}` | Search keywords. |
 | api_key | string | Yes | Empty | Perplexity API key. |
-| search_type | string | No | web | `web` for the highest ranking quality, or `fast` for lower latency. |
+| search_type | string | No | web | `web` is the default; `fast` prioritizes lower latency. |
 | search_recency_filter | string | No | any | Limit results by publication time: `hour`, `day`, `week`, `month`, `year`, or `any`. The Agent can override the node value. |
 | search_domain_filter | string | No | Empty | Up to 20 domains, comma separated. Use one mode per request: either only the domains to search, or only the domains to exclude with a `-` prefix. Mixing the two is rejected. |
 | country | string | No | Empty | ISO 3166-1 alpha-2 country code, such as `US`, to prefer results from that country. |
-| top_n | integer | No | 10 | Default number of results, from 1 to 20 (default 10). The model can override it with max_results, clamped to 1 to 20. |
+| top_n | integer | No | 10 | Default number of results, from 1 to 20. The model can override it with max_results, clamped to 1 to 20. |
 
 #### Supported Parameter Values
 
@@ -375,7 +375,7 @@ Perplexity searches the web through the Perplexity Search API and returns ranked
 
 #### Output Result
 
-The output contains titles, links, snippets, and publication dates returned by Perplexity. `formalized_content` is commonly used as Agent context, while `json` preserves the raw result list.
+`json` contains the returned result objects, including optional `date` and `last_updated` fields. `formalized_content` contains citation IDs, titles, URLs, and snippets for downstream prompts.
 
 ### Wikipedia
 The Wikipedia component searches encyclopedia entries and extracts entry summaries. It is suitable for querying clear entities, concepts, and historical events. Query terms should be as close as possible to the entry title.
