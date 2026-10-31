@@ -38,6 +38,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -822,5 +823,24 @@ func TestMineruStreamKeepsCancellationWhileReadingErrorResponse(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("stream kept reading the error response after cancellation")
+	}
+}
+
+func TestDocxMinerUVisionDispatchNotHandledWithoutPDFMinerU(t *testing.T) {
+	_, handled, err := maybeDispatchPDFVision(t.Context(), nil, utility.FileTypeDOCX, "sample.docx", []byte("PK\x03\x04"),
+		nil, map[string]schema.ParserSetup{
+			"pdf":  {"parse_method": "DeepDOC"},
+			"docx": {"preprocess": []any{"main_content"}},
+		})
+	if err != nil || handled {
+		t.Fatalf("handled=%v err=%v, want unhandled when PDF uses DeepDOC", handled, err)
+	}
+}
+
+func TestDocxMinerUVisionDispatchRequiresTenant(t *testing.T) {
+	_, handled, err := maybeDispatchPDFVision(t.Context(), nil, utility.FileTypeDOCX, "sample.docx", []byte("PK\x03\x04"),
+		nil, map[string]schema.ParserSetup{"pdf": {"parse_method": "mineru", "mineru_apiserver": "http://127.0.0.1:9"}})
+	if !handled || err == nil || !strings.Contains(err.Error(), "tenant_id") {
+		t.Fatalf("handled=%v err=%v, want handled with missing tenant_id", handled, err)
 	}
 }

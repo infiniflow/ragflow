@@ -66,6 +66,10 @@ var (
 // maybeDispatchPDFVision handles selected tenant PDF/OCR parsers before generic
 // VLM parsing. A handled result, including an error, must not fall back to the
 // ordinary PDF parser.
+//
+// When the knowledge base configures MinerU on the PDF family, DOCX uploads are
+// routed through the same MinerU pipeline so table layout matches PDF parsing
+// (infiniflow/ragflow#16923).
 func maybeDispatchPDFVision(
 	ctx context.Context,
 	db *gorm.DB,
@@ -75,6 +79,36 @@ func maybeDispatchPDFVision(
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
 ) (parser.ParseResult, bool, error) {
+	tenantID := getStringOr(inputs, "tenant_id", "")
+	if fileType == utility.FileTypeDOCX {
+		pdfSetup, ok := setups["pdf"]
+		if !ok {
+			return parser.ParseResult{}, false, nil
+		}
+		dispatchModelID, selected := minerUSelectionFromSetup(ctx, db, tenantID, pdfSetup)
+		if !selected {
+			return parser.ParseResult{}, false, nil
+		}
+		if tenantID == "" {
+			return parser.ParseResult{}, true, fmt.Errorf("parser: MinerU requires tenant_id")
+		}
+		flatten, _ := setups["docx"]["flatten_media_to_text"].(bool)
+		if !flatten {
+			if v, ok := pdfSetup["flatten_media_to_text"].(bool); ok {
+				flatten = v
+			}
+		}
+		normalize := func(result parser.ParseResult) parser.ParseResult {
+			pdf := parser.PDFParser{FlattenMediaToText: flatten}
+			return pdf.NormalizeResult(ctx, filename, result)
+		}
+		res, err := dispatchMinerUPDF(ctx, db, filename, binary, tenantID, pdfSetup, dispatchModelID)
+		if err != nil {
+			return parser.ParseResult{}, true, err
+		}
+		res = normalize(res)
+		return res, true, res.Err
+	}
 	if fileType != utility.FileTypePDF {
 		return parser.ParseResult{}, false, nil
 	}
@@ -82,7 +116,6 @@ func maybeDispatchPDFVision(
 	if !ok {
 		return parser.ParseResult{}, false, nil
 	}
-	tenantID := getStringOr(inputs, "tenant_id", "")
 	// The tenant-selected parser and the built-in backends share one
 	// normalization boundary so a future normalization fix cannot miss one
 	// of the two paths. PDF markdown engines (MonkeyOCRv2, MinerU V1
@@ -107,6 +140,35 @@ func maybeDispatchPDFVision(
 	}
 	result = normalize(result)
 	return result, true, result.Err
+}
+
+// minerUSelectionFromSetup reports whether the PDF-family setup selects MinerU
+// and returns the tenant model reference to dispatch when applicable.
+func minerUSelectionFromSetup(ctx context.Context, db *gorm.DB, tenantID string, setup schema.ParserSetup) (dispatchModelID string, selected bool) {
+	method := getStringOr(setup, "parse_method", "")
+	layout := getStringOr(setup, "layout_recognizer", "")
+	layoutLower := strings.ToLower(strings.TrimSpace(layout))
+	methodLower := strings.ToLower(strings.TrimSpace(method))
+	isMinerUMatch := methodLower == "mineru" ||
+		strings.HasPrefix(layoutLower, "mineru") ||
+		strings.Contains(layoutLower, "@mineru") ||
+		strings.Contains(methodLower, "@mineru")
+	minerUSelector := layout
+	if strings.TrimSpace(minerUSelector) == "" {
+		minerUSelector = method
+	}
+	isMinerUByUUID := false
+	if !isMinerUMatch && strings.TrimSpace(minerUSelector) != "" &&
+		!parser.IsPDFParseMethod(minerUSelector) {
+		isMinerUByUUID = isMinerULayoutModelID(ctx, db, tenantID, minerUSelector)
+	}
+	if !(isMinerUMatch || isMinerUByUUID) {
+		return "", false
+	}
+	if isMinerUByUUID || strings.Contains(minerUSelector, "@") {
+		dispatchModelID = minerUSelector
+	}
+	return dispatchModelID, true
 }
 
 func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup) (parser.ParseResult, bool, error) {
@@ -136,25 +198,7 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 		return res, true, err
 	}
 
-	// MinerU dispatch: parse_method "mineru", a layout_recognizer naming
-	// MinerU, a composite model@instance@provider selector naming MinerU in
-	// either field, or a bare tenant model UUID (in either field) that
-	// resolves to a MinerU OCR model.
-	methodLower := strings.ToLower(strings.TrimSpace(method))
-	isMinerUMatch := methodLower == "mineru" ||
-		strings.HasPrefix(layoutLower, "mineru") ||
-		strings.Contains(layoutLower, "@mineru") ||
-		strings.Contains(methodLower, "@mineru")
-	minerUSelector := layout
-	if strings.TrimSpace(minerUSelector) == "" {
-		minerUSelector = method
-	}
-	isMinerUByUUID := false
-	if !isMinerUMatch && strings.TrimSpace(minerUSelector) != "" &&
-		!parser.IsPDFParseMethod(minerUSelector) {
-		isMinerUByUUID = isMinerULayoutModelID(ctx, db, tenantID, minerUSelector)
-	}
-	if isMinerUMatch || isMinerUByUUID {
+	if dispatchModelID, selected := minerUSelectionFromSetup(ctx, db, tenantID, setup); selected {
 		common.Info("pdf vision dispatch: MinerU branch matched",
 			zap.String("parse_method", method),
 			zap.String("layout_recognizer", layout),
@@ -162,10 +206,6 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 		if tenantID == "" {
 			return parser.ParseResult{}, true,
 				fmt.Errorf("parser: MinerU requires tenant_id")
-		}
-		dispatchModelID := ""
-		if isMinerUByUUID || strings.Contains(minerUSelector, "@") {
-			dispatchModelID = minerUSelector
 		}
 		res, err := dispatchMinerUPDF(ctx, db, filename, binary, tenantID, setup, dispatchModelID)
 		if err != nil {
