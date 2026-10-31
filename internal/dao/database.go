@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -26,11 +27,19 @@ import (
 	"time"
 
 	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 
 	"go.uber.org/zap"
+
+	// The vastbase metadata connection speaks lib/pq (DriverName "postgres"),
+	// matching the document engine's client; the import registers the
+	// database/sql driver regardless of which engines the binary links in,
+	// and autoMigrateSafely classifies its error type.
+	"github.com/lib/pq"
 	gormLogger "gorm.io/gorm/logger"
 
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/migrator"
 	"gorm.io/gorm/schema"
@@ -109,53 +118,132 @@ func (m namedIndexMigrator) MigrateColumnUnique(dst interface{}, field *schema.F
 	return m.Migrator.MigrateColumnUnique(dst, field, columnType)
 }
 
-// InitDB initialize database connection
-func InitDB(ctx context.Context, migrateDB bool) error {
-	globalConfig := server.GetConfig()
-	databaseConfig := globalConfig.GetMySQLConfig()
+// vastbaseDialector hands out a vastbaseMigrator instead of the stock one.
+// B mode reports the named unique indexes the manual migrations create as
+// single-column UNIQUE constraints, so the stock migrator derives the
+// matching uni_<table>_<column> name and drops a constraint no code path
+// ever created; the PostgreSQL wire answers 42704 and aborts --migrate on
+// the first affected model (user.email, then ingestion_task.document_id).
+type vastbaseDialector struct {
+	*postgres.Dialector
+}
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-		databaseConfig.User,
-		databaseConfig.Password,
-		databaseConfig.Host,
-		databaseConfig.Port,
-		databaseConfig.DatabaseName,
-		databaseConfig.Charset,
-	)
+// The capabilities gorm discovers by type assertion on db.Dialector.
+var (
+	_ gorm.Dialector                     = vastbaseDialector{}
+	_ gorm.ErrorTranslator               = vastbaseDialector{}
+	_ gorm.SavePointerDialectorInterface = vastbaseDialector{}
+)
 
-	// Set log level
-	var gormLogLevel gormLogger.LogLevel
-	if globalConfig.GetMode() == "debug" {
-		gormLogLevel = gormLogger.Info
-	} else {
-		gormLogLevel = gormLogger.Silent
+func (d vastbaseDialector) Migrator(db *gorm.DB) gorm.Migrator {
+	migrator, ok := d.Dialector.Migrator(db).(postgres.Migrator)
+	if !ok {
+		// An unsupported driver shape degrades to the stock behaviour rather
+		// than panicking, mirroring newMigrationAwareDialector.
+		return d.Dialector.Migrator(db)
 	}
+	return vastbaseMigrator{Migrator: migrator}
+}
 
-	// Connect to database
-	var err error
-	DB, err = gorm.Open(newMigrationAwareDialector(dsn), &gorm.Config{
-		Logger: gormLogger.Default.LogMode(gormLogLevel),
-		NowFunc: func() time.Time {
-			return time.Now().Local()
-		},
-		TranslateError: true,
+// vastbaseMigrator is the postgres counterpart of namedIndexMigrator: the
+// same phantom unique-constraint drop, guarded by the same predicate.
+type vastbaseMigrator struct {
+	postgres.Migrator
+}
+
+var _ migrator.BuildIndexOptionsInterface = vastbaseMigrator{}
+
+func (m vastbaseMigrator) MigrateColumnUnique(dst interface{}, field *schema.Field, columnType gorm.ColumnType) error {
+	if phantomUniqueDrop(field, columnType) {
+		return nil
+	}
+	return m.Migrator.MigrateColumnUnique(dst, field, columnType)
+}
+
+// isVastbaseMetaDB reports whether db runs on the vastbase dialector. Guarding
+// by the wrapper type rather than Dialector.Name() keeps a future genuine
+// PostgreSQL dialector out of the skip: instead of silently skipping schema
+// alignment, it fails loudly at the MySQL-flavored catalog probes.
+func isVastbaseMetaDB(db *gorm.DB) bool {
+	_, ok := db.Dialector.(vastbaseDialector)
+	return ok
+}
+
+// newVastbaseDialector builds the metadata-database dialector. lib/pq is the
+// driver (DriverName "postgres"), matching the document engine's connection to
+// the same instance; WithoutReturning is the peewee returning_clause=False
+// escape hatch, off by default because plain RETURNING is how GORM reads back
+// auto-increment ids.
+//
+// The metadata database must run in B (MySQL) compatibility mode — created
+// that way by docker/vastbase/init/01_init.sh, with the catalog emulation
+// enabled by 02_bcompat.sh (lower_case_table_names=1): without it unquoted
+// identifiers keep their written case and the uppercase INFORMATION_SCHEMA
+// views the migrations probe do not resolve. B mode parses MySQL syntax over
+// the PostgreSQL wire protocol, so hand-written DML, DDL and catalog SQL all
+// stay verbatim MySQL; no dialect branching is needed.
+func newVastbaseDialector(cfg config.VastbaseMetaConfig) gorm.Dialector {
+	base := postgres.New(postgres.Config{
+		DriverName:       "postgres",
+		DSN:              buildVastbaseMetaDSN(cfg),
+		WithoutReturning: cfg.DisableReturning,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to connect database: %w", err)
+	if dialector, ok := base.(*postgres.Dialector); ok {
+		return vastbaseDialector{Dialector: dialector}
 	}
+	return base
+}
 
-	// Get general database object sql.DB
-	sqlDB, err := DB.DB()
-	if err != nil {
-		return fmt.Errorf("failed to get database instance: %w", err)
+// isLocalMetaDBHost reports whether the metadata host is loopback or a
+// unix-socket path — the only addresses allowed to default to plaintext.
+func isLocalMetaDBHost(host string) bool {
+	switch strings.ToLower(strings.TrimSpace(host)) {
+	case "localhost", "127.0.0.1", "::1", "[::1]":
+		return true
 	}
+	return strings.HasPrefix(host, "/")
+}
 
-	// Set connection pool
-	sqlDB.SetMaxIdleConns(databaseConfig.MaxConnections)
-	sqlDB.SetMaxOpenConns(databaseConfig.MaxConnections)
-	sqlDB.SetConnMaxLifetime(time.Duration(databaseConfig.StaleTimeout) * time.Second)
+// quoteMetaDSNValue wraps a lib/pq keyword-DSN value in single quotes so
+// hosts/users/passwords with special characters cannot break the DSN.
+func quoteMetaDSNValue(v string) string {
+	r := strings.ReplaceAll(v, `\`, `\\`)
+	r = strings.ReplaceAll(r, `'`, `\'`)
+	return "'" + r + "'"
+}
 
-	// Auto migrate all dataModels
+// buildVastbaseMetaDSN builds the lib/pq keyword DSN for the Vastbase metadata
+// database, mirroring the document engine's DSN contract: quoted values, an
+// empty ssl_mode resolved by host (disable on loopback, verify-full on every
+// other TCP host) and the same connect/statement timeouts. lib/pq forwards
+// unrecognized keywords as startup parameters, which is how statement_timeout
+// reaches the server.
+func buildVastbaseMetaDSN(cfg config.VastbaseMetaConfig) string {
+	sslMode := cfg.SSLMode
+	if sslMode == "" {
+		if isLocalMetaDBHost(cfg.Host) {
+			sslMode = "disable"
+		} else {
+			sslMode = "verify-full"
+		}
+	}
+	parts := []string{
+		fmt.Sprintf("host=%s", quoteMetaDSNValue(cfg.Host)),
+		fmt.Sprintf("port=%d", cfg.Port),
+		fmt.Sprintf("user=%s", quoteMetaDSNValue(cfg.User)),
+		fmt.Sprintf("dbname=%s", quoteMetaDSNValue(cfg.DatabaseName)),
+		fmt.Sprintf("sslmode=%s", quoteMetaDSNValue(sslMode)),
+	}
+	if cfg.Password != "" {
+		parts = append(parts, fmt.Sprintf("password=%s", quoteMetaDSNValue(cfg.Password)))
+	}
+	parts = append(parts, "connect_timeout=30", "statement_timeout=300000")
+	return strings.Join(parts, " ")
+}
+
+// autoMigrateModels lists every entity AutoMigrate converges, as one source
+// for InitDB and the dialect shape tests.
+func autoMigrateModels() []interface{} {
 	dataModels := []interface{}{
 		&entity.User{},
 		&entity.Tenant{},
@@ -216,6 +304,72 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	}
 	dataModels = append(dataModels, permissionDataModelsEE()...)
 	dataModels = append(dataModels, billingDataModelsEE()...)
+	return dataModels
+}
+
+// InitDB initialize database connection
+func InitDB(ctx context.Context, migrateDB bool) error {
+	globalConfig := server.GetConfig()
+
+	// The metadata database dialect: mysql/oceanbase share the MySQL wire
+	// path, vastbase speaks PostgreSQL.
+	var dialector gorm.Dialector
+	var maxConnections, staleTimeout int
+	switch globalConfig.DatabaseType() {
+	case "vastbase":
+		vastbaseConfig := globalConfig.GetVastbaseMetaConfig()
+		dialector = newVastbaseDialector(vastbaseConfig)
+		maxConnections = vastbaseConfig.MaxConnections
+		staleTimeout = vastbaseConfig.StaleTimeout
+	default:
+		databaseConfig := globalConfig.GetMySQLConfig()
+		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
+			databaseConfig.User,
+			databaseConfig.Password,
+			databaseConfig.Host,
+			databaseConfig.Port,
+			databaseConfig.DatabaseName,
+			databaseConfig.Charset,
+		)
+		dialector = newMigrationAwareDialector(dsn)
+		maxConnections = databaseConfig.MaxConnections
+		staleTimeout = databaseConfig.StaleTimeout
+	}
+
+	// Set log level
+	var gormLogLevel gormLogger.LogLevel
+	if globalConfig.GetMode() == "debug" {
+		gormLogLevel = gormLogger.Info
+	} else {
+		gormLogLevel = gormLogger.Silent
+	}
+
+	// Connect to database
+	var err error
+	DB, err = gorm.Open(dialector, &gorm.Config{
+		Logger: gormLogger.Default.LogMode(gormLogLevel),
+		NowFunc: func() time.Time {
+			return time.Now().Local()
+		},
+		TranslateError: true,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to connect database: %w", err)
+	}
+
+	// Get general database object sql.DB
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return fmt.Errorf("failed to get database instance: %w", err)
+	}
+
+	// Set connection pool
+	sqlDB.SetMaxIdleConns(maxConnections)
+	sqlDB.SetMaxOpenConns(maxConnections)
+	sqlDB.SetConnMaxLifetime(time.Duration(staleTimeout) * time.Second)
+
+	// Auto migrate all dataModels
+	dataModels := autoMigrateModels()
 
 	if migrateDB {
 		// Mirror the Python flow, where tools/scripts/run_migrations.sh runs before
@@ -381,7 +535,39 @@ func autoMigrateSafely(ctx context.Context, db *gorm.DB, model interface{}) erro
 		return nil
 	}
 
+	// PostgreSQL/Vastbase: the same converging conditions surface as lib/pq
+	// errors carrying SQLSTATE 42P07 (relation), 42701 (column) and 42710
+	// (constraint/object). Matching the typed SQLSTATE rather than an
+	// "already exists" text fragment keeps unrelated failures that merely
+	// phrase themselves that way from being read as convergence. Verifying
+	// that the named object belongs to the model being migrated is not
+	// feasible: a re-created index reports the index name, not its table. A
+	// blanket "does not exist" match is deliberately absent: it would also
+	// hide a bad type name, which is a schema bug, not convergence.
+	if isPostgresDuplicateObjectErr(err) {
+		common.Warn("Schema object already exists, skipping", zap.String("error", errStr))
+		return nil
+	}
+
 	return err
+}
+
+// isPostgresDuplicateObjectErr reports whether err is one of the
+// PostgreSQL-wire SQLSTATEs that mean "the schema object AutoMigrate tried
+// to create already exists": 42P07 (relation), 42701 (column) and 42710
+// (constraint/object). The metadata connection speaks lib/pq, and gorm's
+// postgres error translator maps only 23505/23503/42703, so these driver
+// errors reach this check intact.
+func isPostgresDuplicateObjectErr(err error) bool {
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) {
+		return false
+	}
+	switch pqErr.Code {
+	case "42P07", "42701", "42710":
+		return true
+	}
+	return false
 }
 
 // autoMigrateRuntimeModels ensures the Go-exclusive runtime tables exist. The

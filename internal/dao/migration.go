@@ -489,12 +489,17 @@ func createIngestionLogIndexIfMissing(migrator ingestionLogSchemaMigrator, model
 	return nil
 }
 
+// isDuplicateColumnError reports whether err means the column is already
+// there: MySQL's Error 1060 on the MySQL wire, or the duplicate-object
+// SQLSTATEs on the Vastbase connection. A bare "already exists" text match is
+// deliberately absent — unrelated failures phrase themselves that way too.
 func isDuplicateColumnError(err error) bool {
 	if err == nil {
 		return false
 	}
 	text := err.Error()
-	return strings.Contains(text, "Error 1060") && strings.Contains(text, "Duplicate column name")
+	return (strings.Contains(text, "Error 1060") && strings.Contains(text, "Duplicate column name")) ||
+		isPostgresDuplicateObjectErr(err)
 }
 
 // migrateKnowledgebaseNameUnique adds a case-insensitive unique constraint on
@@ -732,6 +737,18 @@ func dropRemovedParserConfigKeys(config map[string]interface{}) bool {
 // entities, so AutoMigrate converges on the same definition and the two paths
 // cannot fight over the column.
 func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
+	// The specs carry MySQL type names (int, longtext, datetime) compared
+	// against COLUMN_TYPE to keep the shared schema aligned with the Python
+	// models. On Vastbase the columns are created by AutoMigrate's postgres
+	// mapping, whose reported type names (integer, bigint, timestamp) never
+	// compare equal to the specs, so every startup would re-issue the MODIFY
+	// and AutoMigrate would flip the column back — an ALTER loop measured on
+	// a live instance (spec int NOT NULL vs stored bigint YES). The columns
+	// are already correct there; there is nothing to align.
+	if isVastbaseMetaDB(db) {
+		return nil
+	}
+
 	specs := []columnSpec{
 		// dialog.top_k mirrors Python's IntegerField(default=1024).
 		{
