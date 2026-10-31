@@ -213,6 +213,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewNewAPIModel(baseURL, urlSuffix), nil
 	case "hostinger router":
 		return NewHostingerRouterModel(baseURL, urlSuffix), nil
+	case "wally":
+		return NewWallyModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}
