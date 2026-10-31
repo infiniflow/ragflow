@@ -260,7 +260,7 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	}
 
 	sizes := map[int][2]float64{0: {612, 792}, 1: {612, 792}}
-	items, err := mineruExtractJSONItems(buf.Bytes(), sizes)
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), sizes)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -291,9 +291,8 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	if imageItem["text"] != "A figure" {
 		t.Fatalf("image text = %#v", imageItem["text"])
 	}
-	uri, _ := imageItem["image"].(string)
-	if !strings.HasPrefix(uri, "data:image/png;base64,") {
-		t.Fatalf("image data URI = %q", uri)
+	if _, ok := imageItem["image"]; ok {
+		t.Fatalf("zip figures must not be inlined on the MinerU JSON path, got image=%q", imageItem["image"])
 	}
 	imgPos, _ := imageItem["_pdf_positions"].([][]any)
 	if len(imgPos) != 1 {
@@ -384,7 +383,7 @@ func TestMinerUExtractJSONItemsScalesBBoxToPoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes(), nil)
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), nil)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -420,7 +419,7 @@ func TestMinerUExtractJSONItemsWithoutGeometryKeepsText(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes(), nil)
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), nil)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -504,7 +503,7 @@ func TestMinerURealContentListPositionsStayInPage(t *testing.T) {
 		pageWidth  = 595.0
 		pageHeight = 842.0
 	)
-	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {pageWidth, pageHeight}})
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {pageWidth, pageHeight}})
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -632,7 +631,7 @@ func TestMineruExtractJSONItemsStructuredContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {1000, 1000}})
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {1000, 1000}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -649,9 +648,11 @@ func TestMineruExtractJSONItemsStructuredContent(t *testing.T) {
 	if items[2]["doc_type_kwd"] != "table" || !strings.Contains(items[2]["text"].(string), "表1") {
 		t.Fatalf("table item = %#v", items[2])
 	}
-	image, _ := items[3]["image"].(string)
-	if items[3]["doc_type_kwd"] != "image" || !strings.Contains(items[3]["text"].(string), "图1") || !strings.HasPrefix(image, "data:image/png;base64,") {
+	if items[3]["doc_type_kwd"] != "image" || !strings.Contains(items[3]["text"].(string), "图1") {
 		t.Fatalf("image item = %#v", items[3])
+	}
+	if _, ok := items[3]["image"]; ok {
+		t.Fatalf("structured zip image must not be inlined: %#v", items[3])
 	}
 }
 
