@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/ingestion/testutil"
@@ -15,7 +17,7 @@ import (
 // the memory-extraction path (HandleSaveToMemoryTask) is recovered by
 // executeMemoryTask. Before the fix, executeMemoryTask had no recover guard
 // (unlike the ingestion path's settleMessage), so a panic crashed the worker
-// goroutine. With max_concurrent_workers defaults that can be as low as 1, a
+// goroutine. With concurrent_workers defaults that can be as low as 1, a
 // single panicking memory task permanently removed the only worker, after which
 // every normal document parse (PDF etc.) stalled in the queue — exactly the
 // "parsing works at first, then breaks after some memory tasks" symptom.
@@ -28,10 +30,10 @@ import (
 func TestExecuteMemoryTask_PanicDoesNotPropagate(t *testing.T) {
 	_ = testutil.SetupTestDB(t) // ensure DB helpers are initialized; not exercised here
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor := NewIngestor("test", 1, []string{"pdf"}, nil)
 	// Real (non-nil) memory service so executeMemoryTask reaches the
 	// runMemoryTask dispatch path instead of early-Acking on nil service.
-	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService()))
+	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService(dao.DB, engine.Get())))
 	// Inject a panicking memory runner through the same seam used in production
 	// (defaultRunMemoryTask calls memorySvc.HandleSaveToMemoryTask).
 	ingestor.runMemoryTask = func(_ context.Context, _, _ string) (servicepkg.MemoryTaskDisposition, error) {
@@ -68,8 +70,8 @@ func TestHandleAndExecute_SurvivesMemoryPanicAndKeepsServing(t *testing.T) {
 
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
-	ingestor := NewIngestor("test", 1, []string{"pdf"})
-	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService()))
+	ingestor := NewIngestor("test", 1, []string{"pdf"}, nil)
+	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService(dao.DB, engine.Get())))
 	ingestor.runMemoryTask = func(_ context.Context, _, _ string) (servicepkg.MemoryTaskDisposition, error) {
 		panic("simulated memory extraction panic")
 	}

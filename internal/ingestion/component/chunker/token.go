@@ -86,7 +86,6 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
-	"ragflow/internal/parser/tableutil"
 
 	"ragflow/internal/parser/chunk"
 )
@@ -144,6 +143,9 @@ type TokenChunkerComponent struct {
 // Errors here surface as canvas compile failures (mirrors the
 // python check() phase).
 func NewTokenChunker(params map[string]any) (runtime.Component, error) {
+	if err := schema.ValidateDelimiterEntries(params, false); err != nil {
+		return nil, runtime.NewUserFacingError(fmt.Sprintf("TokenChunker: %s", err))
+	}
 	p := defaultsToken(tokenChunkerParam{})
 	p.Update(params)
 	if err := p.TokenChunkerParam.Validate(); err != nil {
@@ -190,15 +192,11 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 	}
 	upstream, err := decodeChunkerFromUpstream(decInputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return inputErrorOutput(err), nil
 	}
 
 	delimPattern := compileDelimPattern(c.param.Delimiters)
-	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
+	childrenPattern := compileDelimPattern(c.param.ChildrenDelimiters)
 
 	switch upstream.OutputFormat {
 	case schema.PayloadFormatMarkdown:
@@ -249,9 +247,9 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstream, error) {
 	var out schema.ChunkerFromUpstream
 	// Fast path: the parser emits typed []parser.DocItem. Convert it to
-	// []ChunkDoc directly via schema.ChunkDocsFromDocItem (which reads the
-	// item's typed fields and never calls DocItem.ToMap), then let the JSON
-	// marshal below serialize the already-typed ChunkDoc. This keeps the
+	// []ChunkDoc directly via schema.ChunkDocsFromDocItem (which projects each
+	// item through its canonical ToMap wire shape), then let the JSON marshal
+	// below serialize the already-typed ChunkDoc. This keeps the
 	// chunker free of the historical map intermediate for the in-memory
 	// Parser -> Chunker leg. When inputs["json"] is already []map[string]any
 	// (legacy fixtures, round-tripped JSON, or absent), the original path runs.
@@ -273,21 +271,28 @@ func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstrea
 	if err := out.Validate(); err != nil {
 		return out, err
 	}
-	// A structured table (e.g. the office/xlsx producer) carries no Text of its
-	// own. Derive its HTML <table> rendering on Text so every chunker that
-	// consumes it (token/group/hierarchy/one/page/qa) stores and displays a real
-	// table, and the chunk id (a hash of Text) matches the stored content.
-	for i := range out.JSONResult {
-		if out.JSONResult[i].TableData != nil && out.JSONResult[i].Text == "" {
-			out.JSONResult[i].Text = tableutil.RenderTableHTML(out.JSONResult[i].TableData)
-		}
+	if err := validateUpstreamMediaRefs(out.JSONResult); err != nil {
+		return out, err
 	}
-	for i := range out.Chunks {
-		if out.Chunks[i].TableData != nil && out.Chunks[i].Text == "" {
-			out.Chunks[i].Text = tableutil.RenderTableHTML(out.Chunks[i].TableData)
-		}
+	if err := validateUpstreamMediaRefs(out.Chunks); err != nil {
+		return out, err
 	}
+	materializeTableText(out.JSONResult)
+	materializeTableText(out.Chunks)
 	return out, nil
+}
+
+// validateUpstreamMediaRefs rejects any present but unusable reference at the
+// chunker input boundary. Chunkers merge items and keep only the first media
+// attachment, so validating when an item is consumed would make the failure
+// depend on input order; every present reference must be checked first.
+func validateUpstreamMediaRefs(items []schema.ChunkDoc) error {
+	for i := range items {
+		if ref := items[i].MediaRef; ref != nil && !ref.Valid() {
+			return fmt.Errorf("chunker: item %d has an invalid media_ref", i)
+		}
+	}
+	return nil
 }
 
 func stripChunkerRuntimeTimestamps(inputs map[string]any) map[string]any {
@@ -303,41 +308,38 @@ func stripChunkerRuntimeTimestamps(inputs map[string]any) map[string]any {
 
 // cropTitleChunks crops image/table/text previews for chunks produced by
 // the Title/Group/Hierarchy chunkers, mirroring the TokenChunker JSON path
-// (cropImageChunks at token.go:513). A nil engine — or an
-// empty chunk list — leaves chunks unchanged (best-effort, matching the
-// on-demand PDF crop contract used by the TokenChunker path).
+// (cropImageChunks at token.go:513). A nil engine (or an undecodable payload)
+// skips cropping, but the returned maps are still normalized so retired
+// chunker-internal structural layout never leaves the component.
 func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks []map[string]any) []map[string]any {
-	if engine == nil || len(chunks) == 0 {
+	if len(chunks) == 0 {
+		return chunks
+	}
+	if engine == nil {
+		normalizeTitleChunkMaps(chunks)
 		return chunks
 	}
 	docs, _, err := schema.ChunkDocsFromAny(chunks)
 	if err != nil || len(docs) == 0 {
+		normalizeTitleChunkMaps(chunks)
 		return chunks
 	}
-	// The Title/Group/Hierarchy chunkers emit doc_type_kwd but not the
-	// ck_type field that cropImageChunks' needsCrop consults
-	// (pdfcrop_cgo.go:151). Derive ck_type from doc_type_kwd so the crop
-	// decision matches the TokenChunker path. The derived ck_type is
-	// stripped from the returned maps so the downstream chunk shape is
-	// unchanged (setting ck_type in the real output would also change
-	// how a downstream TokenChunker merges these chunks — a separate
-	// concern, out of scope here).
-	for i := range docs {
-		if docs[i].CKType == "" {
-			switch docs[i].DocType {
-			case "image", "table":
-				docs[i].CKType = docs[i].DocType
-			default:
-				docs[i].CKType = "text"
-			}
+	cropped := cropImageChunks(ctx, engine, docs)
+	for i := range cropped {
+		clearStructuralLayout(&cropped[i])
+	}
+	return schema.ChunkDocsToMaps(cropped)
+}
+
+// normalizeTitleChunkMaps keeps the Title-family output shape independent of
+// whether a PDF engine is available: chunker-internal structural layout
+// never leaves the component.
+func normalizeTitleChunkMaps(chunks []map[string]any) {
+	for _, chunk := range chunks {
+		if layout, _ := chunk["layout"].(string); isStructuralLayout(layout) {
+			delete(chunk, "layout")
 		}
 	}
-	cropped := cropImageChunks(ctx, engine, docs)
-	out := schema.ChunkDocsToMaps(cropped)
-	for _, m := range out {
-		delete(m, "ck_type")
-	}
-	return out
 }
 
 // invokeTextPayload handles plain-text input (output_format in
@@ -387,10 +389,9 @@ func (c *TokenChunkerComponent) chunkPerSegment(text string, delimPattern, child
 	}
 	textDocs := make([]schema.ChunkDoc, 0, len(cleaned))
 	for _, s := range cleaned {
-		// Python's unstructured text path emits only text here. Keep CKType for
-		// Go's downstream crop dispatch, but do not synthesize structured-input
-		// metadata such as doc_type_kwd.
-		textDocs = append(textDocs, schema.ChunkDoc{Text: s, CKType: "text"})
+		// Python's unstructured text path emits only text here. Do not
+		// synthesize structured-input metadata such as doc_type_kwd.
+		textDocs = append(textDocs, schema.ChunkDoc{Text: s})
 	}
 	// A backtick children delimiter is also custom and is dropped; a bare
 	// children delimiter (e.g. "。") is retained losslessly like the main
@@ -501,7 +502,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 			if sub == "" {
 				continue
 			}
-			units = append(units, schema.ChunkDoc{Text: sub, TKNums: intPtr(tokenizeStr(sub)), CKType: "text"})
+			units = append(units, schema.ChunkDoc{Text: sub, TKNums: intPtr(tokenizeStr(sub))})
 		}
 	} else {
 		sections := []string{text}
@@ -513,7 +514,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 			t := "\n" + sec
 			tk := tokenizeStr(t)
 			if tk <= target {
-				units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tk), CKType: "text"})
+				units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tk)})
 				continue
 			}
 			// Oversized section: split on production sentence delimiters into
@@ -532,10 +533,10 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 				}
 				hadPart = true
 				seg := "\n" + part
-				units = append(units, schema.ChunkDoc{Text: seg, TKNums: intPtr(tokenizeStr(seg)), CKType: "text"})
+				units = append(units, schema.ChunkDoc{Text: seg, TKNums: intPtr(tokenizeStr(seg))})
 			}
 			if !hadPart {
-				units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tokenizeStr(t)), CKType: "text"})
+				units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tokenizeStr(t))})
 			}
 		}
 	}
@@ -682,8 +683,10 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// context_below) then .strip() — so a context that carries nothing but
 		// a position tag counts as empty. The context is folded into Text once,
 		// at chunkOutputs, so the decision is made on that merged text here
-		// without duplicating the fold.
-		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" {
+		// without duplicating the fold. Inline bytes, an uploaded ID or a
+		// deferred reference also make the chunk retrievable; dropping it here
+		// would lose the image before the materializer can resolve or reject it.
+		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" && !hasMediaPayload(m) {
 			continue
 		}
 		materialized = append(materialized, materializeMediaContext(m))
@@ -747,17 +750,17 @@ func separateItemBoundaries(perItem [][]schema.ChunkDoc) {
 			continue
 		}
 		firstIndex, lastIndex := 0, len(units)-1
-		for firstIndex <= lastIndex && units[firstIndex].CKType == "text" && units[firstIndex].Text == "" {
+		for firstIndex <= lastIndex && itemDocType(units[firstIndex]) == "text" && units[firstIndex].Text == "" {
 			firstIndex++
 		}
-		for lastIndex >= firstIndex && units[lastIndex].CKType == "text" && units[lastIndex].Text == "" {
+		for lastIndex >= firstIndex && itemDocType(units[lastIndex]) == "text" && units[lastIndex].Text == "" {
 			lastIndex--
 		}
 		if firstIndex > lastIndex {
 			continue
 		}
 		first := &units[firstIndex]
-		if previous != nil && previous.CKType == "text" && first.CKType == "text" &&
+		if previous != nil && itemDocType(*previous) == "text" && itemDocType(*first) == "text" &&
 			strings.TrimRightFunc(previous.Text, unicode.IsSpace) == previous.Text &&
 			strings.TrimLeftFunc(first.Text, unicode.IsSpace) == first.Text {
 			first.Text = "\n" + first.Text
@@ -820,7 +823,7 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bo
 
 // buildChunkMap constructs the python-compatible chunk payload.
 //
-// The chunker output carries the basic text+doc_type_kwd+ck_type
+// The chunker output carries the basic text+doc_type_kwd
 // fields plus the per-chunk meta fields the python
 // rag/flow/chunker/token_chunker.py emits:
 //
@@ -841,7 +844,6 @@ func buildChunkDoc(it schema.ChunkDoc, ckType, text, ctxAbove, ctxBelow string) 
 	out := schema.ChunkDoc{
 		Text:         text,
 		DocType:      ckType,
-		CKType:       ckType,
 		TKNums:       intPtr(tokenizeStr(text)),
 		Mom:          it.Mom,
 		ImgID:        it.ImgID,
@@ -849,11 +851,15 @@ func buildChunkDoc(it schema.ChunkDoc, ckType, text, ctxAbove, ctxBelow string) 
 		PDFPositions: it.PDFPositions,
 		Positions:    it.Positions,
 		Image:        it.Image,
+		MediaRef:     it.MediaRef,
 		PageNumber:   it.PageNumber,
 		Sheet:        it.Sheet,
 		SheetIndex:   it.SheetIndex,
 		Extra:        cloneExtra(it.Extra),
 	}
+	// buildChunkDoc rewrites every unit to its content type, so the parser's
+	// block-kind assertion no longer applies to the emitted chunk.
+	clearStructuralLayout(&out)
 	if ctxAbove != "" {
 		out.ContextAbove = ctxAbove
 	}
@@ -901,12 +907,12 @@ func attachMediaContext(chunks []schema.ChunkDoc, tableCtx, imageCtx int) []sche
 		return chunks
 	}
 	for i, ck := range chunks {
-		ckType := ck.CKType
-		if ckType != "table" && ckType != "image" {
+		docType := itemDocType(ck)
+		if docType != "table" && docType != "image" {
 			continue
 		}
 		ctx := imageCtx
-		if ckType == "table" {
+		if docType == "table" {
 			ctx = tableCtx
 		}
 		if ctx <= 0 {
@@ -930,7 +936,7 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 	if above {
 		pos = i - 1
 		for pos >= 0 && remain > 0 {
-			if chunks[pos].CKType == "text" {
+			if itemDocType(chunks[pos]) == "text" {
 				tk := intValue(chunks[pos].TKNums)
 				txt := chunks[pos].Text
 				if tk >= remain {
@@ -946,7 +952,7 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 	} else {
 		pos = i + 1
 		for pos < len(chunks) && remain > 0 {
-			if chunks[pos].CKType == "text" {
+			if itemDocType(chunks[pos]) == "text" {
 				tk := intValue(chunks[pos].TKNums)
 				txt := chunks[pos].Text
 				if tk >= remain {
@@ -1105,7 +1111,7 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep
 	prevIdx := -1
 	for i := range units {
 		ck := units[i]
-		if ck.CKType != "text" {
+		if itemDocType(ck) != "text" {
 			merged = append(merged, cloneChunkDoc(ck))
 			mergedItems = append(mergedItems, nil)
 			prevIdx = -1
@@ -1241,7 +1247,7 @@ func expandOversizedUnits(units []schema.ChunkDoc, target int) []schema.ChunkDoc
 	}
 	out := make([]schema.ChunkDoc, 0, len(units))
 	for _, ck := range units {
-		if ck.CKType != "text" {
+		if itemDocType(ck) != "text" {
 			out = append(out, ck)
 			continue
 		}
@@ -1303,7 +1309,7 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 			wsPending += part
 			continue
 		}
-		p := schema.ChunkDoc{Text: wsPending + part, DocType: ck.DocType, CKType: "text"}
+		p := schema.ChunkDoc{Text: wsPending + part, DocType: ck.DocType}
 		wsPending = ""
 		if n := tokenizeStr(p.Text); n > target {
 			pieces = append(pieces, hardSplitPiece(p.Text, ck.DocType, target)...)
@@ -1329,7 +1335,7 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 			if n := tokenizeStr(wsPending); n > target {
 				pieces = append(pieces, hardSplitPiece(wsPending, ck.DocType, target)...)
 			} else {
-				pieces = append(pieces, schema.ChunkDoc{Text: wsPending, DocType: ck.DocType, TKNums: intPtr(n), CKType: "text"})
+				pieces = append(pieces, schema.ChunkDoc{Text: wsPending, DocType: ck.DocType, TKNums: intPtr(n)})
 			}
 		}
 	}
@@ -1362,7 +1368,7 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 		inherited := cloneChunkDoc(ck)
 		inherited.Text = p.Text
 		inherited.TKNums = p.TKNums
-		inherited.CKType = "text"
+		clearStructuralLayout(&inherited)
 		inherited.PDFPositions = pdfSliced[i]
 		inherited.Positions = posSliced[i]
 		pieces[i] = inherited
@@ -1421,7 +1427,7 @@ func hardSplitPiece(text string, docType string, target int) []schema.ChunkDoc {
 	if target <= 0 || len(tokens) <= target {
 		// target <= 0 is unreachable from validated configs; the byte loop
 		// would emit the whole text as one piece, so mirror that here.
-		return []schema.ChunkDoc{{Text: text, DocType: docType, TKNums: intPtr(tokenizeStr(text)), CKType: "text"}}
+		return []schema.ChunkDoc{{Text: text, DocType: docType, TKNums: intPtr(tokenizeStr(text))}}
 	}
 
 	// offsets[i] = byte length of the first i tokens decoded. Token ids repeat
@@ -1502,7 +1508,7 @@ func hardSplitPiece(text string, docType string, target int) []schema.ChunkDoc {
 			q = p + 1 // never stall (defensive; unreachable above)
 		}
 		piece := text[offsets[p]:offsets[q]]
-		out = append(out, schema.ChunkDoc{Text: piece, DocType: docType, TKNums: intPtr(tokenizeStr(piece)), CKType: "text"})
+		out = append(out, schema.ChunkDoc{Text: piece, DocType: docType, TKNums: intPtr(tokenizeStr(piece))})
 		p = q
 	}
 	return out
@@ -1544,17 +1550,17 @@ func hardSplitPieceByteLoop(text string, docType string, target int) []schema.Ch
 			// Safety: never stall. An empty cut or a whole-text cut means no
 			// progress is possible; emit the remaining text as the last piece.
 			if rest != "" {
-				out = append(out, schema.ChunkDoc{Text: rest, DocType: docType, TKNums: intPtr(tokenizeStr(rest)), CKType: "text"})
+				out = append(out, schema.ChunkDoc{Text: rest, DocType: docType, TKNums: intPtr(tokenizeStr(rest))})
 			}
 			rest = ""
 			break
 		}
 		head = rest[:cut]
-		out = append(out, schema.ChunkDoc{Text: head, DocType: docType, TKNums: intPtr(tokenizeStr(head)), CKType: "text"})
+		out = append(out, schema.ChunkDoc{Text: head, DocType: docType, TKNums: intPtr(tokenizeStr(head))})
 		rest = rest[cut:]
 	}
 	if rest != "" {
-		out = append(out, schema.ChunkDoc{Text: rest, DocType: docType, TKNums: intPtr(tokenizeStr(rest)), CKType: "text"})
+		out = append(out, schema.ChunkDoc{Text: rest, DocType: docType, TKNums: intPtr(tokenizeStr(rest))})
 	}
 	return out
 }
@@ -1837,61 +1843,12 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp, keep
 				text = leading + text
 				leading = ""
 			}
-			child := schema.ChunkDoc{CKType: d.CKType, Mom: mom}
+			child := schema.ChunkDoc{DocType: d.DocType, Layout: d.Layout, Mom: mom}
 			setChunkText(&child, text)
 			out = append(out, child)
 		}
 	}
 	return out
-}
-
-// compileChildrenPattern is the children_delimiters version of
-// compileDelimPattern. Returns nil when no delimiters exist.
-// compileChildrenPattern builds the children-split regex from a
-// `children_delimiters` list. Every non-empty entry is active (including bare
-// ones), and backtick-wrapped entries contribute their inner content — see
-// chunk.CompileDelimiterPatternList. Delegating keeps children splitting
-// consistent with the main delimiter list (backtick stripping + rune-descending
-// order) instead of re-implementing a divergent copy.
-func compileChildrenPattern(delims []string) *regexp.Regexp {
-	return chunk.CompileDelimiterPatternList(delims, true)
-}
-
-// stringFromInputs returns the string value at the first matching key
-// in `keys`, or ("", false) when none is set.
-func stringFromInputs(inputs map[string]any, keys ...string) (string, bool) {
-	for _, k := range keys {
-		if v, ok := inputs[k].(string); ok {
-			return v, true
-		}
-	}
-	return "", false
-}
-
-// chunksFromInputs returns the chunk list from inputs as a uniform
-// []map[string]any, or nil when absent. Both []map[string]any (the
-// JSON-decoded form) and []any (the slice-of-mixed form) are handled.
-//
-// Two upstream keys are accepted, in priority order:
-//
-//   - "chunks" — canonical post-chunker shape (chunker → chunker
-//     re-entry, test fixtures, downstream stages).
-//   - "json"   — the parser-structured-output key (Parser
-//     component emits under "json"; we accept it
-//     so a token-chunker can run directly after
-//     a parser without an intermediate reshape).
-func chunksFromInputs(inputs map[string]any) []schema.ChunkDoc {
-	for _, key := range []string{"chunks", "json"} {
-		v, ok := inputs[key]
-		if !ok {
-			continue
-		}
-		chunks, found, err := schema.ChunkDocsFromAny(v)
-		if err == nil && found {
-			return chunks
-		}
-	}
-	return nil
 }
 
 func intValue(v *int) int {

@@ -21,16 +21,12 @@
 //
 // Unlike TokenChunker (which merges slides into a single chunk) or
 // OneChunker (which collapses many slides into one), PageChunker
-// keeps each slide as the unit of chunking. The upstream parser produces
-// one record per slide with text and slide_number; this chunker passes
-// each through unchanged. Note that the PPTX/PPT path does not emit image
-// or position information (unlike the PDF path), so slide chunks carry no
-// image and no bbox-based preview positioning.
+// preserves the upstream slide records, including structured tables and
+// images. Every record retains its slide_number for source-page identity.
 package chunker
 
 import (
 	"context"
-	"fmt"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
@@ -74,17 +70,14 @@ func (c *PageChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	return c.invoke(ctx, inputs)
 }
 
+// invoke emits one chunk per decoded upstream item (slide or page).
 func (c *PageChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return inputErrorOutput(err), nil
 	}
 
 	// The Page chunker preserves one incoming JSON item per output chunk.

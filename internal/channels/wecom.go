@@ -126,7 +126,7 @@ func newWeComChannel(account wecomAccount) (*wecomChannel, error) {
 
 	channel := &wecomChannel{
 		account: account,
-		client:  &http.Client{Timeout: weComHTTPTimeout},
+		client:  newSafeChannelHTTPClient(weComHTTPTimeout, channelURLPolicy{exactHosts: []string{"qyapi.weixin.qq.com"}}),
 	}
 	if account.ConnectionType == "webhook" {
 		crypto, err := newWeComCrypto(account.Token, account.AESKey, account.CorpID)
@@ -348,9 +348,9 @@ func (c *wecomChannel) runWebSocket(ctx context.Context) {
 }
 
 func (c *wecomChannel) runWebSocketOnce(ctx context.Context) error {
-	dialer := *websocket.DefaultDialer
-	dialer.HandshakeTimeout = weComWSHandshakeTimeout
-	conn, _, err := dialer.DialContext(ctx, c.account.WSURL, nil)
+	conn, _, err := dialSafeChannelWebSocket(ctx, c.account.WSURL, nil, weComWSHandshakeTimeout, channelURLPolicy{
+		exactHosts: []string{"openws.work.weixin.qq.com"},
+	})
 	if err != nil {
 		return err
 	}

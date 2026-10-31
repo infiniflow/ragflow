@@ -40,6 +40,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
+	"ragflow/internal/service/billing"
 	"ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 )
@@ -74,6 +75,7 @@ type documentServiceIface interface {
 	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error)
 	DownloadDocument(ctx context.Context, datasetID, docID string) (*document.DownloadDocumentResp, error)
 	UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error)
+	ApplyDatasetParserConfig(ctx context.Context, userID, datasetID string) (*document.ApplyDatasetParserConfigResponse, common.ErrorCode, error)
 	BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.MetadataSelector, updates []document.MetadataUpdate, deletes []document.MetadataDelete) (*document.BatchUpdateMetadatasResponse, common.ErrorCode, error)
 	ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
 	IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
@@ -126,29 +128,23 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 
 	id := c.Param("id")
 	if id == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid document id",
-		})
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "invalid document id")
 		return
 	}
 
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "document not found",
-		})
+		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "document not found")
 		return
 	}
 
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationRead); err != nil {
-		respondHTTPPermissionError(c, err, false)
+	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: user.ID}, doc.ID, doc.KbID, permission.OperationRead); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"data": doc,
-	})
+	common.SuccessWithData(c, doc, "")
 }
 
 // GetThumbnail Get thumbnails for documents.
@@ -376,7 +372,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found!")
 		return
 	}
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: user.ID}, doc.ID, doc.KbID, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -431,7 +427,7 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found!")
 		return
 	}
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationDeleteContent); err != nil {
+	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: user.ID}, doc.ID, doc.KbID, permission.OperationDeleteContent); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1025,6 +1021,15 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		return
 	}
 	files := form.File["file"]
+	var totalSize int64
+	for _, fh := range files {
+		if fh != nil {
+			totalSize += fh.Size
+		}
+	}
+	if !billingEnforceStorage(c, tenantID, totalSize) {
+		return
+	}
 	for _, fh := range files {
 		if fh == nil || fh.Filename == "" {
 			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
@@ -1072,7 +1077,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 			common.ResponseWithCodeData(c, common.CodeServerError, data, strings.Join(errMsgs, "\n"))
 			return
 		}
-		common.SuccessNoMessage(c, data)
+		common.SuccessWithData(c, data, "success")
 		return
 	}
 	mapped := make([]map[string]interface{}, len(data))
@@ -1083,7 +1088,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		common.ResponseWithCodeData(c, common.CodeServerError, mapped, strings.Join(errMsgs, "\n"))
 		return
 	}
-	common.SuccessNoMessage(c, mapped)
+	common.SuccessWithData(c, mapped, "success")
 }
 
 func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
@@ -1112,7 +1117,7 @@ func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowled
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
-	common.SuccessNoMessage(c, mapDocKeysWithRunStatus(data))
+	common.SuccessWithData(c, mapDocKeysWithRunStatus(data), "success")
 }
 
 func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
@@ -1140,7 +1145,7 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
-	common.SuccessNoMessage(c, mapDocKeysWithRunStatus(data))
+	common.SuccessWithData(c, mapDocKeysWithRunStatus(data), "success")
 }
 
 // mapDocKeysWithRunStatus renames a freshly-created document's raw keys to the
@@ -1196,8 +1201,23 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	// Authorize the caller before serving file bytes. Answer exactly like the
-	// missing-document case so dataset existence is not leaked.
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+	// missing-document case so document existence is not leaked.
+	doc, err := h.documentService.GetDocumentByID(ctx, docID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			common.ErrorWithCode(c, common.CodeNotFound, "Resource not found")
+			return
+		}
+		common.Error("DownloadDocument failed to load document", err,
+			zap.String("dataset_id", datasetID), zap.String("document_id", docID), zap.String("user_id", user.ID))
+		common.ErrorWithCode(c, common.CodeServerError, "Failed to download document")
+		return
+	}
+	if doc == nil || doc.KbID != datasetID {
+		common.ErrorWithCode(c, common.CodeNotFound, "Resource not found")
+		return
+	}
+	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: user.ID}, doc.ID, doc.KbID, permission.OperationRead); err != nil {
 		respondPermissionError(c, err, true)
 		return
 	}
@@ -1253,6 +1273,7 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"parser_id":              doc.ParserID,
 		"chunk_method":           doc.ParserID,
 		"pipeline_id":            stringValue(doc.PipelineID),
+		"pipeline_version_id":    stringValue(doc.PipelineVersionID),
 		"pipeline_name":          stringValue(doc.PipelineName),
 		"nickname":               stringValue(doc.Nickname),
 		"parser_config":          decodeJSONMap(string(doc.ParserConfig)),
@@ -1555,7 +1576,7 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
-		respondPermissionFailure(c, err, false)
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -1651,7 +1672,7 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoMessage(c, data)
+	common.SuccessWithData(c, data, "success")
 }
 
 func (h *DocumentHandler) UploadInfo(c *gin.Context) {
@@ -1683,6 +1704,33 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+
+	// Storage quota: reject the whole upload before any file is persisted.
+	if len(fileHeaders) > 0 {
+		var totalSize int64
+		for _, header := range fileHeaders {
+			totalSize += header.Size
+		}
+		if totalSize > 0 {
+			if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+				if quotaErr := billingService.CheckResources(ctx, user.ID, billing.ResourceDelta{Storage: totalSize}); quotaErr != nil {
+					var insufficient *billing.InsufficientResourceError
+					if errors.As(quotaErr, &insufficient) {
+						common.ResponseWithDetail(c, common.CodeBillingStorageInsufficient, quotaErr.Error(), gin.H{
+							"resource": "storage",
+							"current":  insufficient.Current,
+							"limit":    insufficient.Limit,
+							"filename": fileHeaders[0].Filename,
+						})
+						return
+					}
+					common.ErrorWithCode(c, common.CodeServerError, quotaErr.Error())
+					return
+				}
+			}
+		}
+	}
+
 	if rawURL != "" {
 		data, code, err := h.fileService.UploadDocumentInfoByURL(ctx, user.ID, rawURL)
 		if err != nil {

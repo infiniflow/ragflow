@@ -41,8 +41,8 @@ import (
 func TestApplyChildrenDelimText_NoCrossParentFold(t *testing.T) {
 	pattern := regexp.MustCompile("\n")
 	docs := []schema.ChunkDoc{
-		{Text: "\nA", CKType: "text"},
-		{Text: "\nA", CKType: "text"},
+		{Text: "\nA"},
+		{Text: "\nA"},
 	}
 	out := applyChildrenDelimText(docs, pattern, true)
 	if len(out) != 2 {
@@ -73,7 +73,7 @@ func TestChunkFromItem_RetainsWhitespacePieces(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			it := schema.ChunkDoc{Text: c.text, CKType: "text"}
+			it := schema.ChunkDoc{Text: c.text}
 			out := chunkFromItem(it, pattern, true)
 			got := make([]string, 0, len(out))
 			for _, d := range out {
@@ -92,7 +92,7 @@ func TestChunkFromItem_RetainsWhitespacePieces(t *testing.T) {
 func TestChunkFromItem_LosslessWhitespaceReconstruct(t *testing.T) {
 	pattern := regexp.MustCompile("\n")
 	src := "alpha\n\nbeta\n\ngamma"
-	it := schema.ChunkDoc{Text: src, CKType: "text"}
+	it := schema.ChunkDoc{Text: src}
 	out := chunkFromItem(it, pattern, true)
 	var recon string
 	for _, d := range out {

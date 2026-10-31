@@ -49,7 +49,6 @@ jobs:
       contents: read
     runs-on: [ "self-hosted", "ragflow-test" ]
     outputs:
-      http_api_test_level: ${{ steps.test_level.outputs.http_api_test_level }}
       has_go_changes: ${{ steps.detect_changes.outputs.has_go_changes }}
       has_web_changes: ${{ steps.detect_changes.outputs.has_web_changes }}
       has_native_deepdoc_changes: ${{ steps.detect_changes.outputs.has_native_deepdoc_changes }}
@@ -146,18 +145,6 @@ jobs:
             lefthook run web-checks --files-from-stdin --no-auto-install < "$changed_files"
           fi
 
-      - name: Set test level
-        id: test_level
-        run: |
-          set -euo pipefail
-          if [[ ${GITHUB_EVENT_NAME} == "schedule" ]]; then
-            export HTTP_API_TEST_LEVEL=p3
-          else
-            export HTTP_API_TEST_LEVEL=p2
-          fi
-          echo "HTTP_API_TEST_LEVEL=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_ENV}
-          echo "http_api_test_level=${HTTP_API_TEST_LEVEL}" >> ${GITHUB_OUTPUT}
-
       - name: Detect changed file types
         id: detect_changes
         run: |
@@ -225,7 +212,6 @@ jobs:
     env:
       DOC_ENGINE: infinity
       RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-infinity
-      HTTP_API_TEST_LEVEL: ${{ needs.ragflow_preflight.outputs.http_api_test_level }}
       HAS_GO: ${{ needs.ragflow_preflight.outputs.has_go_changes }}
       HAS_WEB: ${{ needs.ragflow_preflight.outputs.has_web_changes }}
     steps:
@@ -295,7 +281,7 @@ jobs:
           set -euo pipefail
 
           # Provide the cl100k BPE table for the offline tokenizer loader.
-          # The loader reads <repo>/ragflow_deps/cl100k_base.tiktoken (or
+          # The loader reads <repo>/deps/cl100k_base.tiktoken (or
           # TIKTOKEN_CACHE_DIR). Try to fetch it directly from the upstream
           # openai blob first (small ~1.6MB, reachable from the CI runner — the
           # pre-PR code downloaded it on the fly, so the network path is known
@@ -306,36 +292,36 @@ jobs:
           # neither source works, the loader still fails loudly (no silent
           # 0-token degradation).
           # tiktoken is already installed in runner
-          mkdir -p ragflow_deps
-          cp /opt/ragflow_deps/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken || true
-          if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
-            mkdir -p ragflow_deps
+          mkdir -p deps
+          cp /opt/ragflow_deps/cl100k_base.tiktoken deps/cl100k_base.tiktoken || true
+          if [ ! -f deps/cl100k_base.tiktoken ]; then
+            mkdir -p deps
             if command -v curl >/dev/null 2>&1; then
-              if curl -fsSL -o ragflow_deps/cl100k_base.tiktoken \
+              if curl -fsSL -o deps/cl100k_base.tiktoken \
                 https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken; then
                 echo "tiktoken: cl100k table fetched via curl from openai blob"
               else
                 echo "tiktoken: curl fetch failed (network/GFW); will try cached image"
               fi
             fi
-            if [ ! -f ragflow_deps/cl100k_base.tiktoken ] && docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
+            if [ ! -f deps/cl100k_base.tiktoken ] && docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
               CID=$(docker create infiniflow/ragflow_deps:latest true) || true
               if [ -n "${CID:-}" ]; then
-                if docker cp "$CID":/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken 2>/dev/null; then
+                if docker cp "$CID":/cl100k_base.tiktoken deps/cl100k_base.tiktoken 2>/dev/null; then
                   echo "tiktoken: cl100k table copied from cached infiniflow/ragflow_deps image"
                 fi
                 docker rm -f "$CID" >/dev/null 2>&1 || true
               fi
             fi
           fi
-          if [ -f ragflow_deps/cl100k_base.tiktoken ]; then
-            echo "tiktoken: cl100k table provisioned ($(wc -c < ragflow_deps/cl100k_base.tiktoken) bytes)"
+          if [ -f deps/cl100k_base.tiktoken ]; then
+            echo "tiktoken: cl100k table provisioned ($(wc -c < deps/cl100k_base.tiktoken) bytes)"
           else
             echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
           fi
 
           # Provide the tokenizer assets the four non-cl100k counters load
-          # (ragflow_deps/huggingface.co/<repo>/<file>). Their only no-network source
+          # (deps/huggingface.co/<repo>/<file>). Their only no-network source
           # is the infiniflow/ragflow_deps image — the runtime images read them from
           # exactly the same path — so this is the same "if the image is already
           # cached" fallback the table above uses (again, no `docker pull`). Without
@@ -351,7 +337,7 @@ jobs:
             CID=$(docker create infiniflow/ragflow_deps:latest true) || true
             if [ -n "${CID:-}" ]; then
               for asset in "${TOKENIZER_ASSET_PATHS[@]}"; do
-                target="ragflow_deps/huggingface.co/$asset"
+                target="deps/huggingface.co/$asset"
                 if [ -f "$target" ]; then
                   continue
                 fi
@@ -687,24 +673,46 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
 
-      - name: Run New RESTFUL api tests against Infinity
+      - name: Run Go API tests against Infinity
+        # test/api/config.go prepares everything this suite needs: it retries the
+        # session bootstrap for up to 5 minutes (so no readiness step is needed
+        # between `docker compose up -d` and this one) and it registers the
+        # providers, instances and tenant default models itself (so no fixture
+        # step has to run first). No priority filtering: run it all.
+        # Skip when only frontend (web) code changed: HAS_GO is false then.
+        if: ${{ env.HAS_GO == 'true' }}
         run: |
-          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          svc_ready=0
-          for i in $(seq 1 60); do
-            if sudo docker exec ${RAGFLOW_CONTAINER} curl -sf --connect-timeout 5 "${HOST_ADDRESS}/api/v1/system/ping" > /dev/null 2>&1; then
-              svc_ready=1
-              break
-            fi
-            echo "Waiting for service to be available... ($i/60)"
-            sleep 5
-          done
-          if [ "$svc_ready" -ne 1 ]; then
-            echo "Service did not become ready after 5 minutes. Docker logs:"
-            sudo docker logs ${RAGFLOW_CONTAINER}
-            exit 1
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api 2>&1 | tee infinity_restful_api_test.log
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee: if tee fails (e.g. the
+          # artifacts dir is missing or NFS hiccups), the step must still reflect
+          # the real test outcome, not the tee failure.
+          set +eo pipefail
+          ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/infinity_go_api_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
+
+      - name: Run Python SDK integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        env:
+          RAGFLOW_SDK_CI: "1"
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          uv pip install sdk/python
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee (see Go API step above).
+          set +eo pipefail
+          uv run --no-sync python -m pytest -s --tb=short --level=p2 test/testcases/test_sdk_api 2>&1 | tee "${ARTIFACTS_DIR}/infinity_sdk_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
@@ -776,7 +784,6 @@ jobs:
     env:
       DOC_ENGINE: elasticsearch
       RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-elasticsearch
-      HTTP_API_TEST_LEVEL: ${{ needs.ragflow_preflight.outputs.http_api_test_level }}
       HAS_GO: ${{ needs.ragflow_preflight.outputs.has_go_changes }}
       HAS_WEB: ${{ needs.ragflow_preflight.outputs.has_web_changes }}
     steps:
@@ -846,7 +853,7 @@ jobs:
           set -euo pipefail
 
           # Provide the cl100k BPE table for the offline tokenizer loader.
-          # The loader reads <repo>/ragflow_deps/cl100k_base.tiktoken (or
+          # The loader reads <repo>/deps/cl100k_base.tiktoken (or
           # TIKTOKEN_CACHE_DIR). Try to fetch it directly from the upstream
           # openai blob first (small ~1.6MB, reachable from the CI runner — the
           # pre-PR code downloaded it on the fly, so the network path is known
@@ -857,36 +864,36 @@ jobs:
           # neither source works, the loader still fails loudly (no silent
           # 0-token degradation).
           # tiktoken is already installed in runner
-          mkdir -p ragflow_deps
-          cp /opt/ragflow_deps/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken || true
-          if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
-            mkdir -p ragflow_deps
+          mkdir -p deps
+          cp /opt/ragflow_deps/cl100k_base.tiktoken deps/cl100k_base.tiktoken || true
+          if [ ! -f deps/cl100k_base.tiktoken ]; then
+            mkdir -p deps
             if command -v curl >/dev/null 2>&1; then
-              if curl -fsSL -o ragflow_deps/cl100k_base.tiktoken \
+              if curl -fsSL -o deps/cl100k_base.tiktoken \
                 https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken; then
                 echo "tiktoken: cl100k table fetched via curl from openai blob"
               else
                 echo "tiktoken: curl fetch failed (network/GFW); will try cached image"
               fi
             fi
-            if [ ! -f ragflow_deps/cl100k_base.tiktoken ] && docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
+            if [ ! -f deps/cl100k_base.tiktoken ] && docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
               CID=$(docker create infiniflow/ragflow_deps:latest true) || true
               if [ -n "${CID:-}" ]; then
-                if docker cp "$CID":/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken 2>/dev/null; then
+                if docker cp "$CID":/cl100k_base.tiktoken deps/cl100k_base.tiktoken 2>/dev/null; then
                   echo "tiktoken: cl100k table copied from cached infiniflow/ragflow_deps image"
                 fi
                 docker rm -f "$CID" >/dev/null 2>&1 || true
               fi
             fi
           fi
-          if [ -f ragflow_deps/cl100k_base.tiktoken ]; then
-            echo "tiktoken: cl100k table provisioned ($(wc -c < ragflow_deps/cl100k_base.tiktoken) bytes)"
+          if [ -f deps/cl100k_base.tiktoken ]; then
+            echo "tiktoken: cl100k table provisioned ($(wc -c < deps/cl100k_base.tiktoken) bytes)"
           else
             echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
           fi
 
           # Provide the tokenizer assets the four non-cl100k counters load
-          # (ragflow_deps/huggingface.co/<repo>/<file>). Their only no-network source
+          # (deps/huggingface.co/<repo>/<file>). Their only no-network source
           # is the infiniflow/ragflow_deps image — the runtime images read them from
           # exactly the same path — so this is the same "if the image is already
           # cached" fallback the table above uses (again, no `docker pull`). Without
@@ -902,7 +909,7 @@ jobs:
             CID=$(docker create infiniflow/ragflow_deps:latest true) || true
             if [ -n "${CID:-}" ]; then
               for asset in "${TOKENIZER_ASSET_PATHS[@]}"; do
-                target="ragflow_deps/huggingface.co/$asset"
+                target="deps/huggingface.co/$asset"
                 if [ -f "$target" ]; then
                   continue
                 fi
@@ -937,7 +944,7 @@ jobs:
             ./build.sh --test -- $PKGS
           fi
 
-      - name: Run ragflow_deps regression guards
+      - name: Run deps regression guards
         # Local, needs no API keys or model downloads; guards (a) the native
         # archive / ONNX Runtime extraction logic the in-process (Go) DeepDoc
         # backend build depends on (notably the version-bump path), and (b) the
@@ -1251,24 +1258,46 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
 
-      - name: Run New RESTFUL api tests against Elasticsearch
+      - name: Run Go API tests against Elasticsearch
+        # test/api/config.go prepares everything this suite needs: it retries the
+        # session bootstrap for up to 5 minutes (so no readiness step is needed
+        # between `docker compose up -d` and this one) and it registers the
+        # providers, instances and tenant default models itself (so no fixture
+        # step has to run first). No priority filtering: run it all.
+        # Skip when only frontend (web) code changed: HAS_GO is false then.
+        if: ${{ env.HAS_GO == 'true' }}
         run: |
-          export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-          svc_ready=0
-          for i in $(seq 1 60); do
-            if sudo docker exec ${RAGFLOW_CONTAINER} curl -sf --connect-timeout 5 "${HOST_ADDRESS}/api/v1/system/ping" > /dev/null 2>&1; then
-              svc_ready=1
-              break
-            fi
-            echo "Waiting for service to be available... ($i/60)"
-            sleep 5
-          done
-          if [ "$svc_ready" -ne 1 ]; then
-            echo "Service did not become ready after 5 minutes. Docker logs:"
-            sudo docker logs ${RAGFLOW_CONTAINER}
-            exit 1
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
-          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api 2>&1 | tee es_restful_api_test.log
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee: if tee fails (e.g. the
+          # artifacts dir is missing or NFS hiccups), the step must still reflect
+          # the real test outcome, not the tee failure.
+          set +eo pipefail
+          ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/es_go_api_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
+
+      - name: Run Python SDK integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        env:
+          RAGFLOW_SDK_CI: "1"
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          uv pip install sdk/python
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee (see Go API step above).
+          set +eo pipefail
+          uv run --no-sync python -m pytest -s --tb=short --level=p2 test/testcases/test_sdk_api 2>&1 | tee "${ARTIFACTS_DIR}/es_sdk_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
 
       - name: Collect ragflow log Elasticsearch
         if: ${{ !cancelled() }}
@@ -1325,7 +1354,7 @@ jobs:
   ragflow_native_backend:
     name: ragflow_native_backend
     # Runs AFTER both per-engine go jobs (which contain the doc-engine-specific
-    # server build + Python RESTFUL correctness runs). The DeepDoc native
+    # server build + Go API and Python search correctness runs). The DeepDoc native
     # backend is doc-engine-independent, so running it ONCE here — instead of
     # duplicated (and memory-competing) inside each go job — removes the
     # redundant second -race pass and the concurrent -race OOM risk. Running it
@@ -1817,15 +1846,15 @@ jobs:
         # (e.g. a non-standard runner). Mirrors the ragflow_native_backend job.
         run: |
           set -euo pipefail
-          mkdir -p ragflow_deps
-          cp /opt/ragflow_deps/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken || true
-          if [ ! -f ragflow_deps/cl100k_base.tiktoken ] && command -v curl >/dev/null 2>&1; then
-            curl -fsSL -o ragflow_deps/cl100k_base.tiktoken \
+          mkdir -p deps
+          cp /opt/ragflow_deps/cl100k_base.tiktoken deps/cl100k_base.tiktoken || true
+          if [ ! -f deps/cl100k_base.tiktoken ] && command -v curl >/dev/null 2>&1; then
+            curl -fsSL -o deps/cl100k_base.tiktoken \
               https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken || \
               echo "tiktoken: curl fetch failed; offline loader will fail loudly"
           fi
-          if [ -f ragflow_deps/cl100k_base.tiktoken ]; then
-            echo "tiktoken: cl100k table provisioned ($(wc -c < ragflow_deps/cl100k_base.tiktoken) bytes)"
+          if [ -f deps/cl100k_base.tiktoken ]; then
+            echo "tiktoken: cl100k table provisioned ($(wc -c < deps/cl100k_base.tiktoken) bytes)"
           else
             echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
           fi

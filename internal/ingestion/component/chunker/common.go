@@ -17,14 +17,19 @@
 package chunker
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
+	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/tokenizer"
 )
 
@@ -213,16 +218,28 @@ func itemDocType(it schema.ChunkDoc) string {
 	return "text"
 }
 
-// isMediaChunk reports whether a chunk is an image or table region. It checks
-// CKType first (general/token paths set it) and falls back to DocType
-// (group/hierarchy forward parser output that carries only doc_type_kwd), so
-// it classifies media regardless of which chunker produced the chunk.
+// isMediaChunk reports whether a chunk is an image or table region. The
+// content type lives on doc_type_kwd; layout never describes media.
 func isMediaChunk(ck schema.ChunkDoc) bool {
-	typ := strings.ToLower(strings.TrimSpace(ck.CKType))
-	if typ == "" {
-		typ = strings.ToLower(strings.TrimSpace(ck.DocType))
+	return isMediaDocType(ck.DocType)
+}
+
+// isMediaDocType reports whether a doc_type_kwd value denotes a media region.
+func isMediaDocType(docType string) bool {
+	switch strings.ToLower(strings.TrimSpace(docType)) {
+	case "image", "table":
+		return true
 	}
-	return typ == "image" || typ == "table"
+	return false
+}
+
+// hasMediaPayload reports whether a chunk still carries retrievable media:
+// inline bytes, an uploaded reference, or a deferred media_ref that the
+// upload pass will materialize. A present but unusable reference counts:
+// dropping the item here would silently lose the image instead of letting
+// the materializer reject it.
+func hasMediaPayload(ck schema.ChunkDoc) bool {
+	return ck.Image != "" || ck.ImgID != "" || ck.MediaRef != nil
 }
 
 // itemTextOrFallback returns the item's preferred text, or "".
@@ -231,6 +248,20 @@ func itemTextOrFallback(it schema.ChunkDoc) string {
 		return t
 	}
 	return ""
+}
+
+// materializeTableText fills Text with the HTML rendering of a structured
+// TableData when the item carries no text of its own — the shape every parser
+// emits for tables. Every consumer then works on a real table it can store and
+// display, and the chunk id (a hash of Text) matches the stored content.
+// RenderTableHTML marks the leading HeaderRows rows as <th>. Idempotent: an
+// item that already carries text is left untouched.
+func materializeTableText(docs []schema.ChunkDoc) {
+	for i := range docs {
+		if docs[i].TableData != nil && docs[i].Text == "" {
+			docs[i].Text = tableutil.RenderTableHTML(docs[i].TableData)
+		}
+	}
 }
 
 // tokenizeStr is the shared NumTokensFromString wrapper used by
@@ -268,6 +299,16 @@ func emptyOutputs() map[string]any {
 	}
 }
 
+// inputErrorOutput is the canonical short-circuit for an undecodable upstream
+// payload, shared by every chunker variant's decode step.
+func inputErrorOutput(err error) map[string]any {
+	return map[string]any{
+		"output_format": "chunks",
+		"chunks":        []map[string]any{},
+		"_ERROR":        fmt.Sprintf("Input error: %v", err),
+	}
+}
+
 // chunkOutputs builds the canonical chunker output (output_format="chunks" +
 // chunks). The Go runtime passes only this explicit output to the next node,
 // so the run-level metadata that downstream components still need (e.g.
@@ -283,6 +324,11 @@ func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
 	materialized := make([]schema.ChunkDoc, len(chunks))
 	for i := range chunks {
 		materialized[i] = materializeMediaContext(chunks[i])
+		// Structural layout is chunker-internal: it is consumed by merge,
+		// split, and crop, and must not cross the output boundary. PDF model
+		// layouts (title/figure/equation/...) are not structural and pass
+		// through unchanged.
+		clearStructuralLayout(&materialized[i])
 	}
 	return map[string]any{
 		"output_format": "chunks",
@@ -303,17 +349,100 @@ func canonicalChunkText(ck schema.ChunkDoc) string {
 	return removeTag(materializeMediaContext(ck).Text)
 }
 
+// mediaChunkIDPrefix marks a media-specific identity source. The NUL byte
+// keeps the source from colliding with ordinary chunk text.
+const mediaChunkIDPrefix = "\x00media:"
+
 // canonicalChunkID returns the deterministic chunk id: the single identity
 // used both as the MinIO object key and as ck["id"]. The id formula (ChunkID
-// over canonicalChunkText) is centralized here, so the text normalization
-// that feeds the hash lives in exactly one place. The decorator in
-// register.go re-derives ck["id"] from the same already-finalized text as a
-// fallback for chunks that bypassed the streamed crop-upload path; the two
-// routes cannot disagree because a chunk is either stamped by crop-upload
-// (and the decorator reuses that id) or computed by the decorator fallback —
-// never both — and both hash the normalized chunk body.
+// over chunkIDSource) is centralized here, so the identity that feeds the
+// hash lives in exactly one place. The decorator in register.go re-derives
+// ck["id"] from the same already-finalized text as a fallback for chunks that
+// bypassed the streamed crop-upload path; the two routes cannot disagree
+// because a chunk is either stamped by crop-upload (and the decorator reuses
+// that id) or computed by the decorator fallback — never both. Position-only
+// title media instead reuses the coordinate-and-text id finalized after headings
+// are applied.
 func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
-	return common.ChunkID(docID, canonicalChunkText(ck))
+	// Title-family position-only media is stamped with both coordinates and
+	// finalized heading text. Keep that identity through crop uploads,
+	// including failed-upload retries.
+	if isMediaChunk(ck) && ck.ID != "" {
+		return ck.ID
+	}
+	return common.ChunkID(docID, chunkIDSource(ck))
+}
+
+// chunkIDSource returns the identity string hashed into a chunk id. For a
+// media chunk whose canonical text is empty — a captionless image — hashing
+// the text alone would give every such chunk in a document the same id
+// (ChunkID(docID, "")), silently overwriting images in MinIO and merging
+// index entries, so a stable per-image identity is folded in instead.
+// Non-empty media text also folds its region in: two figures can share a
+// caption ("Figure", "图"), and their previews must not collapse onto one id.
+// Text chunks hash their text unchanged.
+func chunkIDSource(ck schema.ChunkDoc) string {
+	text := canonicalChunkText(ck)
+	if text == "" {
+		return mediaChunkIdentity(ck.Image, ck.ImgID, ck.MediaRef)
+	}
+	return mediaTextIdentity(text, isMediaChunk(ck), mergePositionMatrix(ck.PDFPositions, ck.Positions))
+}
+
+// mediaTextIdentity appends a region digest to a media chunk's text identity.
+// Non-media chunks and media without a region keep their text-only id.
+func mediaTextIdentity(text string, isMedia bool, matrix [][]any) string {
+	if !isMedia || len(matrix) == 0 {
+		return text
+	}
+	sum := sha256.Sum256(positionMatrixBytes(matrix))
+	return text + mediaChunkIDPrefix + "region:" + hex.EncodeToString(sum[:16])
+}
+
+// positionMatrixBytes renders a position matrix deterministically for hashing.
+// mergePositionMatrix already sorts the rows, so equal regions always encode
+// identically.
+func positionMatrixBytes(matrix [][]any) []byte {
+	raw, err := json.Marshal(matrix)
+	if err != nil {
+		return nil
+	}
+	return raw
+}
+
+// chunkPositionMatrix decodes the position rows of a chunk map for identity
+// computation, using the same decoder as the crop path.
+func chunkPositionMatrix(ck map[string]any) [][]any {
+	var sources []json.RawMessage
+	for _, key := range []string{"_pdf_positions", "positions"} {
+		value, ok := ck[key]
+		if !ok || value == nil {
+			continue
+		}
+		if raw, err := json.Marshal(value); err == nil {
+			sources = append(sources, raw)
+		}
+	}
+	return mergePositionMatrix(sources...)
+}
+
+// mediaChunkIdentity returns the stable identity of a text-less media chunk:
+// a digest of the image payload when present (identical images collapse onto
+// one id, which is harmless — they carry identical bytes), else the
+// content-addressed media reference, else the uploaded image id. Empty when
+// the chunk has none of them, leaving the id the plain empty-text hash.
+func mediaChunkIdentity(image, imgID string, ref *entity.MediaRef) string {
+	if image != "" {
+		sum := sha256.Sum256([]byte(image))
+		return mediaChunkIDPrefix + hex.EncodeToString(sum[:])
+	}
+	if ref.Valid() {
+		return mediaChunkIDPrefix + "sha256:" + ref.SHA256
+	}
+	if imgID != "" {
+		return mediaChunkIDPrefix + imgID
+	}
+	return ""
 }
 
 // materializeMediaContext folds a media chunk's surrounding context into its

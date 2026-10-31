@@ -46,8 +46,19 @@ func TestSpreadsheetChunkersPreserveSheetIdentityThroughIndexing(t *testing.T) {
 		}
 		for _, tc := range []struct {
 			name    string
+			params  map[string]any
 			factory func(map[string]any) (runtime.Component, error)
-		}{{"QA", NewQAChunker}, {"Token", NewTokenChunker}, {"One", NewOneChunker}} {
+		}{
+			{"QA", nil, NewQAChunker},
+			{"Token", nil, NewTokenChunker},
+			{"One", nil, NewOneChunker},
+			// The title-family chunkers share extractLineRecords; a
+			// spreadsheet item must keep its sheet identity there too, or its
+			// selections would be decoded as PDF boxes.
+			{"Group", map[string]any{"levels": [][]string{{`^# `}}}, NewGroupTitleChunker},
+			{"Hierarchy", map[string]any{"hierarchy": 1, "levels": [][]string{{`^# `}}}, NewHierarchyTitleChunker},
+			{"Manual", map[string]any{"levels": [][]string{{`^# `}}}, NewManualChunker},
+		} {
 			t.Run(source.name+"/"+tc.name, func(t *testing.T) {
 				batches := [][]map[string]any{parser.ItemsToMaps(source.result.JSON)}
 				// One preserves positions only for a single source item.
@@ -58,11 +69,11 @@ func TestSpreadsheetChunkersPreserveSheetIdentityThroughIndexing(t *testing.T) {
 					}
 				}
 				for _, items := range batches {
-					comp, err := tc.factory(nil)
+					comp, err := tc.factory(tc.params)
 					if err != nil {
 						t.Fatal(err)
 					}
-					out, err := comp.Invoke(t.Context(), nil, map[string]any{"name": source.name, "output_format": source.result.OutputFormat, "json": items})
+					out, err := comp.Invoke(t.Context(), nil, map[string]any{"name": source.name, "output_format": "json", "json": items})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -154,7 +165,7 @@ func TestQAChunkerSheetNameOnlyPreservesSourceRows(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := comp.Invoke(t.Context(), nil, map[string]any{"name": "rows.xlsx", "output_format": parsed.OutputFormat, "json": parsed.JSON})
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{"name": "rows.xlsx", "output_format": "json", "json": parsed.JSON})
 	if err != nil {
 		t.Fatal(err)
 	}

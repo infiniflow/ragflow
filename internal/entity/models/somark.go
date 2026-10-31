@@ -88,6 +88,10 @@ func (s *SoMarkModel) Rerank(ctx context.Context, modelName *string, request Rer
 	return nil, fmt.Errorf("%s, no such method", s.Name())
 }
 
+func (s *SoMarkModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", s.Name())
+}
+
 func (s *SoMarkModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", s.Name())
 }
@@ -190,7 +194,7 @@ func (s *SoMarkModel) soMarkSubmit(ctx context.Context, submitURL string, conten
 		return "", fmt.Errorf("SoMark read submit: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("SoMark submit failed with status %d: %s", resp.StatusCode, logBody(raw))
+		return "", fmt.Errorf("SoMark submit failed with status %d: %s", resp.StatusCode, soMarkErrorBody(raw))
 	}
 	var payload soMarkSubmitResponse
 	if err = json.Unmarshal(raw, &payload); err != nil {
@@ -233,7 +237,7 @@ func (s *SoMarkModel) soMarkPoll(ctx context.Context, pollURL, taskID, apiKey st
 			return nil, fmt.Errorf("SoMark read poll: %w", readErr)
 		}
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("SoMark poll failed with status %d: %s", resp.StatusCode, logBody(raw))
+			return nil, fmt.Errorf("SoMark poll failed with status %d: %s", resp.StatusCode, soMarkErrorBody(raw))
 		}
 		var payload soMarkPollResponse
 		if err = json.Unmarshal(raw, &payload); err != nil {
@@ -270,6 +274,14 @@ func (s *SoMarkModel) soMarkPoll(ctx context.Context, pollURL, taskID, apiKey st
 		}
 		pollInterval = min(time.Duration(float64(pollInterval)*pollMultiplier), maxPollInterval)
 	}
+}
+
+func soMarkErrorBody(raw []byte) string {
+	const maxErrorBodyBytes = 1024
+	if len(raw) > maxErrorBodyBytes {
+		return string(raw[:maxErrorBodyBytes]) + "..."
+	}
+	return string(raw)
 }
 
 // soMarkMarkdown flattens the parsed block structure into markdown: titles

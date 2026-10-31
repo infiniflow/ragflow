@@ -52,7 +52,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 		//admin.POST("/ingestion/tasks", r.handler.StartIngestionTask)
 		//admin.DELETE("/ingestion", r.handler.CancelIngestionTask) // cancel ingestion
-		//admin.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
 
 		// Protected routes
 		protected := admin.Group("")
@@ -74,7 +73,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			// Service management
 			protected.GET("/services", r.handler.GetServices)
-			protected.GET("/service_types/:service_type", r.handler.GetServicesByType)
+			protected.GET("/service-types/:service_type", r.handler.GetServicesByType)
 			protected.GET("/services/:service_name", r.handler.GetService)
 			protected.DELETE("/services/:service_name", r.handler.ShutdownService)
 			protected.PUT("/services/:service_name", r.handler.RestartService)
@@ -122,11 +121,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			protected.GET("/all-models", r.handler.ListAllModels)
 			protected.GET("/all-models/:model_name", r.handler.ShowModel)
-
-			// Ingestion tasks
-			protected.DELETE("/ingestion/tasks", r.handler.RemoveIngestionTasks)
-			protected.PUT("/ingestion/tasks", r.handler.StopIngestionTasks)
-			protected.GET("/ingestion/tasks", r.handler.ListIngestionTasks)
 
 			RegisterEERouter(protected, r)
 		}

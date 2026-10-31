@@ -17,6 +17,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 	"ragflow/internal/service/document"
 	"ragflow/internal/storage"
@@ -179,7 +180,7 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 		documentDAO: dao.NewDocumentDAO(),
 	}
 
-	ctx := t.Context()
+	ctx := chunkTestContext(t, userID, userID)
 	_, code, err := svc.Parse(ctx, userID, datasetID, &service.ParseFileRequest{
 		DocumentIDs: []string{"doc-1", "missing-doc", "doc-2"},
 	})
@@ -292,7 +293,7 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 	insertChunkTestIngestionTask(t, "task-1", userID, "doc-1", datasetID, common.RUNNING)
 
 	svc := newParseTestService(t)
-	ctx := t.Context()
+	ctx := chunkTestContext(t, userID, userID)
 	_, code, err := svc.Parse(ctx, userID, datasetID, &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected parse to fail")
@@ -300,7 +301,7 @@ func TestParseRejectsRunningDocument(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected CodeDataError, got %v", code)
 	}
-	if !strings.Contains(err.Error(), "ingestion task is RUNNING") {
+	if !strings.Contains(err.Error(), "ingestion task task-1 is RUNNING") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -324,7 +325,7 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 		documentDAO: dao.NewDocumentDAO(),
 	}
 
-	ctx := t.Context()
+	ctx := chunkTestContext(t, userID, tenantID)
 	page := 1
 	size := 30
 	resp, err := svc.List(ctx, &service.ListChunksRequest{
@@ -402,7 +403,7 @@ func TestListReportsChunkAvailability(t *testing.T) {
 
 	page := 1
 	size := 30
-	resp, err := svc.List(t.Context(), &service.ListChunksRequest{
+	resp, err := svc.List(chunkTestContext(t, userID, tenantID), &service.ListChunksRequest{
 		DatasetID: datasetID,
 		DocID:     documentID,
 		Page:      &page,
@@ -454,7 +455,7 @@ func TestListScopesSearchToDocumentDataset(t *testing.T) {
 		documentDAO: dao.NewDocumentDAO(),
 	}
 
-	ctx := t.Context()
+	ctx := chunkTestContext(t, userID, tenantID)
 	page := 1
 	size := 30
 	if _, err := svc.List(ctx, &service.ListChunksRequest{
@@ -505,7 +506,7 @@ func TestGetScopesChunkLookupToDocumentDataset(t *testing.T) {
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
-	resp, err := svc.Get(t.Context(), &service.GetChunkRequest{
+	resp, err := svc.Get(chunkTestContext(t, userID, tenantID), &service.GetChunkRequest{
 		DatasetID:  datasetID,
 		DocumentID: documentID,
 		ChunkID:    "chunk-1",
@@ -567,7 +568,7 @@ func TestGetRejectsChunkOfAnotherDocument(t *testing.T) {
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
-	_, err := svc.Get(t.Context(), &service.GetChunkRequest{
+	_, err := svc.Get(chunkTestContext(t, userID, tenantID), &service.GetChunkRequest{
 		DatasetID:  datasetID,
 		DocumentID: documentID,
 		ChunkID:    "chunk-1",
@@ -602,7 +603,7 @@ func TestGetRequiresDocumentInRouteDataset(t *testing.T) {
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
-	_, err := svc.Get(t.Context(), &service.GetChunkRequest{
+	_, err := svc.Get(chunkTestContext(t, userID, tenantID), &service.GetChunkRequest{
 		DatasetID:  datasetID,
 		DocumentID: "doc-missing",
 		ChunkID:    "chunk-1",
@@ -611,7 +612,7 @@ func TestGetRequiresDocumentInRouteDataset(t *testing.T) {
 		t.Fatalf("Get() error = %v, want document not found", err)
 	}
 
-	_, err = svc.Get(t.Context(), &service.GetChunkRequest{
+	_, err = svc.Get(chunkTestContext(t, userID, tenantID), &service.GetChunkRequest{
 		DatasetID:  datasetID,
 		DocumentID: "doc-2",
 		ChunkID:    "chunk-1",
@@ -682,7 +683,7 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 		kbDAO:       dao.NewKnowledgebaseDAO(),
 		documentDAO: dao.NewDocumentDAO(),
 	}
-	ctx := t.Context()
+	ctx := chunkTestContext(t, userID, tenantID)
 
 	page := 2
 	size := 5
@@ -768,7 +769,7 @@ func TestUpdateChunkRejectsChunkFromAnotherDocument(t *testing.T) {
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
-	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+	err := svc.UpdateChunk(chunkTestContext(t, "user-1", "tenant-1"), &service.UpdateChunkRequest{
 		DatasetID:  "kb-1",
 		DocumentID: "doc-a",
 		ChunkID:    "chunk-1",
@@ -803,7 +804,7 @@ func TestUpdateChunkUpdatesSameDocumentWithDocumentCondition(t *testing.T) {
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
-	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+	err := svc.UpdateChunk(chunkTestContext(t, "user-1", "tenant-1"), &service.UpdateChunkRequest{
 		DatasetID:  "kb-1",
 		DocumentID: "doc-a",
 		ChunkID:    "chunk-1",
@@ -857,7 +858,7 @@ func TestUpdateChunkStoresTagKwdOnlyWhenSent(t *testing.T) {
 				kbDAO:     dao.NewKnowledgebaseDAO(),
 			}
 
-			err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+			err := svc.UpdateChunk(chunkTestContext(t, "user-1", "tenant-1"), &service.UpdateChunkRequest{
 				DatasetID:  "kb-1",
 				DocumentID: "doc-a",
 				ChunkID:    "chunk-1",
@@ -915,7 +916,7 @@ func TestUpdateChunkStoresImageAndFlagsImageChunk(t *testing.T) {
 			}
 
 			imageBase64 := base64.StdEncoding.EncodeToString([]byte("image-bytes"))
-			err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+			err := svc.UpdateChunk(chunkTestContext(t, "user-1", "tenant-1"), &service.UpdateChunkRequest{
 				DatasetID:       "kb-1",
 				DocumentID:      "doc-a",
 				ChunkID:         "chunk-1",
@@ -981,7 +982,7 @@ func TestUpdateChunkRemoveModeClearsImageAfterIndexUpdate(t *testing.T) {
 	}
 
 	removeMode := imageUpdateModeRemove
-	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+	err := svc.UpdateChunk(chunkTestContext(t, "user-1", "tenant-1"), &service.UpdateChunkRequest{
 		DatasetID:       "kb-1",
 		DocumentID:      "doc-a",
 		ChunkID:         "chunk-1",
@@ -1036,7 +1037,7 @@ func TestUpdateChunkMarksWikiDirtyWhenImageRemovalFails(t *testing.T) {
 
 	removeMode := imageUpdateModeRemove
 	content := "updated content"
-	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+	err := svc.UpdateChunk(chunkTestContext(t, "user-1", "tenant-1"), &service.UpdateChunkRequest{
 		DatasetID:       "kb-1",
 		DocumentID:      "doc-a",
 		ChunkID:         "chunk-1",
@@ -1091,7 +1092,7 @@ func TestUpdateChunkRejectsInvalidImageInput(t *testing.T) {
 				},
 			}
 
-			err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+			err := svc.UpdateChunk(chunkTestContext(t, "user-1", "tenant-1"), &service.UpdateChunkRequest{
 				DatasetID:       "kb-1",
 				DocumentID:      "doc-a",
 				ChunkID:         "chunk-1",
@@ -1158,7 +1159,7 @@ func TestAddChunkSuccess(t *testing.T) {
 			return permission.ErrPermissionDenied
 		},
 		getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
-			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1", Language: &language}, nil
+			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1", Language: &language, Pagerank: 7}, nil
 		},
 		getEmbeddingModelFunc: func(string, string) (*models.EmbeddingModel, error) {
 			driver := &stubEmbeddingDriver{
@@ -1208,6 +1209,12 @@ func TestAddChunkSuccess(t *testing.T) {
 	}
 	if resp.Chunk["content"] != "chunk body" {
 		t.Fatalf("content = %v, want chunk body", resp.Chunk["content"])
+	}
+	if len(engine.insertedChunks) != 1 {
+		t.Fatalf("inserted chunks = %d, want 1", len(engine.insertedChunks))
+	}
+	if got := engine.insertedChunks[0][common.PAGERANK_FLD]; got != int64(7) {
+		t.Fatalf("pagerank_fea = %v, want the dataset's 7", got)
 	}
 	if resp.Chunk["document"] != "doc-1.txt" {
 		t.Fatalf("document = %v, want doc-1.txt", resp.Chunk["document"])
@@ -1794,7 +1801,7 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 		docEngine: engine,
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
-	ctx := t.Context()
+	ctx := chunkTestContext(t, "user-1", "tenant-1")
 	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
 		DatasetID: "kb-1",
 		DocID:     "doc-1",
@@ -1859,7 +1866,7 @@ func TestRemoveChunksSkipsStatsWhenNothingDeleted(t *testing.T) {
 			return nil
 		},
 	}
-	ctx := t.Context()
+	ctx := chunkTestContext(t, "user-1", "tenant-1")
 	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
 		DatasetID: "kb-1",
 		DocID:     "doc-1",
@@ -1893,7 +1900,7 @@ func TestRemoveChunksReturnsStatsError(t *testing.T) {
 			return errors.New("stats update failed")
 		},
 	}
-	ctx := t.Context()
+	ctx := chunkTestContext(t, "user-1", "tenant-1")
 	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
 		DatasetID: "kb-1",
 		DocID:     "doc-1",
@@ -1990,6 +1997,15 @@ func pushChunkTestDB(t *testing.T, testDB *gorm.DB) {
 	t.Cleanup(func() {
 		dao.DB = orig
 	})
+}
+
+func chunkTestContext(t *testing.T, userID, tenantID string, memberIDs ...string) context.Context {
+	t.Helper()
+	members := append([]string{userID}, memberIDs...)
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, members...); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
+	return permission.WithSubject(t.Context(), permission.Subject{UserID: userID, TenantID: tenantID})
 }
 
 func newParseTestService(t *testing.T) *ChunkService {
@@ -2439,6 +2455,9 @@ func (d *stubEmbeddingDriver) ListTasks(context.Context, *models.APIConfig) ([]m
 func (d *stubEmbeddingDriver) ShowTask(context.Context, string, *models.APIConfig) (*models.TaskResponse, error) {
 	return nil, nil
 }
+func (d *stubEmbeddingDriver) Decide(ctx context.Context, modelName *string, request *models.DecideRequest, apiConfig *models.APIConfig, modelUsage *common.ModelUsage) (*models.DecideResponse, error) {
+	return nil, nil
+}
 
 func strPtr(v string) *string {
 	return &v
@@ -2523,7 +2542,7 @@ func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
-	ctx := t.Context()
+	ctx := chunkTestContext(t, "user-1", "tenant-1")
 	if err = svc.SwitchChunks(ctx, "user-1", "kb-1", "doc-1", 0, []string{"chunk-1", "chunk-2"}); err != nil {
 		t.Fatalf("SwitchChunks() error = %v", err)
 	}
@@ -2712,7 +2731,7 @@ func TestChunkServiceParse_ReturnsPartialSuccessForDuplicateDocumentIDs(t *testi
 		return nil
 	}
 
-	ctx := t.Context()
+	ctx := chunkTestContext(t, userID, userID)
 	result, code, err := svc.Parse(ctx, userID, datasetID, &service.ParseFileRequest{
 		DocumentIDs: []string{"doc-1", "doc-1"},
 	})
@@ -2736,8 +2755,6 @@ func TestStopParsing_CallsCancelIngestionTask(t *testing.T) {
 	pushChunkTestDB(t, db)
 	insertChunkTestKB(t, "kb-1", "user-1") // owner = user-1, Accessible passes
 	insertChunkTestDoc(t, "doc-1", "kb-1")
-	// StopParsing checks the IngestionTask status.
-	insertChunkTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
 
 	svc := newParseTestService(t)
 	var calledDocID string
@@ -2745,7 +2762,7 @@ func TestStopParsing_CallsCancelIngestionTask(t *testing.T) {
 		calledDocID = doc.ID
 		return nil
 	}
-	ctx := t.Context()
+	ctx := chunkTestContext(t, "user-1", "user-1")
 	_, _, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
 	if err != nil {
 		t.Fatalf("StopParsing: %v", err)
@@ -2764,8 +2781,11 @@ func TestStopParsing_RejectsDocumentWithoutIngestionTask(t *testing.T) {
 
 	svc := newParseTestService(t)
 	var called bool
-	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error { called = true; return nil }
-	ctx := t.Context()
+	svc.cancelIngestionTaskFunc = func(ctx context.Context, doc *entity.Document) error {
+		called = true
+		return document.ErrParseNotRunning
+	}
+	ctx := chunkTestContext(t, "user-1", "user-1")
 	_, code, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected error for document without ingestion task")
@@ -2773,8 +2793,8 @@ func TestStopParsing_RejectsDocumentWithoutIngestionTask(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected CodeDataError, got %v", code)
 	}
-	if called {
-		t.Fatal("cancel should not be called for doc without ingestion task")
+	if !called {
+		t.Fatal("StopParsing must delegate task-state validation to CancelDocParse")
 	}
 }
 
@@ -2800,7 +2820,7 @@ func TestStopParsing_DoesNotDeleteChunksOrResetCountersAfterCancel(t *testing.T)
 	}
 	engine := &parseTestDocEngine{chunkStoreExists: true}
 	svc.docEngine = engine
-	ctx := t.Context()
+	ctx := chunkTestContext(t, "user-1", "user-1")
 	_, _, err := svc.StopParsing(ctx, "user-1", "kb-1", service.StopParsingRequest{DocumentIDs: []string{"doc-1"}})
 	if err != nil {
 		t.Fatalf("StopParsing: %v", err)

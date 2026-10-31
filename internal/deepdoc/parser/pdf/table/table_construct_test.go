@@ -5,7 +5,31 @@ import (
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/entity"
+	"ragflow/internal/parser/tableutil"
 )
+
+// cellTextAt returns the cell text at (r,c), or "" when out of range.
+func cellTextAt(td *entity.TableData, r, c int) string {
+	if td == nil || r < 0 || r >= len(td.Grid) || c < 0 || c >= len(td.Grid[r]) {
+		return ""
+	}
+	return td.Grid[r][c].Text
+}
+
+// constructTableData runs ConstructTable and parses its canonical HTML back to
+// TableData — exactly what the production pipeline (projectPDFTable) does — so
+// the assembly can be asserted on the structured contract rather than on HTML
+// serialization details.
+func constructTableData(t *testing.T, cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, item *pdf.TableItem) *entity.TableData {
+	t.Helper()
+	html := ConstructTable(cells, boxes, caption, item)
+	td, err := tableutil.ParseTableHTML(html)
+	if err != nil {
+		t.Fatalf("ParseTableHTML(%q): %v", html, err)
+	}
+	return td
+}
 
 func TestCellTexts(t *testing.T) {
 	cells := []pdf.TSRCell{
@@ -29,23 +53,27 @@ func TestConstructTable_Simple3x2(t *testing.T) {
 		{X0: 201, Y0: 51, X1: 300, Y1: 100, Text: "F", Label: "table row"},
 	}
 	boxes := []pdf.TextBox{}
-	html := ConstructTable(cells, boxes, "", nil)
-	if !strings.Contains(html, "<table>") {
-		t.Error("expected <table> tag")
+	td := constructTableData(t, cells, boxes, "", nil)
+	if td == nil {
+		t.Fatal("expected non-nil TableData")
 	}
-	if !strings.Contains(html, "A") || !strings.Contains(html, "B") || !strings.Contains(html, "C") {
-		t.Error("expected cell texts A, B, C in HTML")
+	if len(td.Grid) != 2 {
+		t.Fatalf("rows=%d want 2", len(td.Grid))
 	}
-	// Should have 2 <tr> elements
-	trCount := strings.Count(html, "<tr>")
-	if trCount != 2 {
-		t.Errorf("expected 2 <tr> rows, got %d", trCount)
+	// No cell carries a header block type, so the canonical render/parse round
+	// trip must still default HeaderRows to 1 (leading row assumed header) —
+	// the same default the removed RowsToHTML path produced.
+	if td.HeaderRows != 1 {
+		t.Errorf("HeaderRows=%d want 1 (default when no header detected)", td.HeaderRows)
 	}
-	tdCount := strings.Count(html, "<td ")
-	if tdCount != 6 {
-		t.Errorf("expected 6 <td > cells, got %d", tdCount)
+	for _, w := range []struct {
+		r, c int
+		s    string
+	}{{0, 0, "A"}, {0, 1, "B"}, {0, 2, "C"}, {1, 0, "D"}, {1, 1, "E"}, {1, 2, "F"}} {
+		if got := cellTextAt(td, w.r, w.c); got != w.s {
+			t.Errorf("cell[%d][%d]=%q want %q", w.r, w.c, got, w.s)
+		}
 	}
-	t.Logf("HTML:\n%s", html)
 }
 
 // TestConstructTable_DropsAllEmptyRow pins Python parity: when the
@@ -91,30 +119,33 @@ func TestConstructTable_DropsAllEmptyRow(t *testing.T) {
 }
 
 func TestConstructTable_EmptyCells(t *testing.T) {
-	html := ConstructTable(nil, nil, "", nil)
-	if html != "" {
+	if html := ConstructTable(nil, nil, "", nil); html != "" {
 		t.Errorf("expected empty string for empty cells, got %q", html)
 	}
-	html = ConstructTable([]pdf.TSRCell{}, []pdf.TextBox{}, "", nil)
-	if html != "" {
+	if html := ConstructTable([]pdf.TSRCell{}, []pdf.TextBox{}, "", nil); html != "" {
 		t.Errorf("expected empty string for empty cells slice, got %q", html)
 	}
 }
 
 func TestConstructTable_NoMatchingBox(t *testing.T) {
-	// Cell has no overlapping text box → empty <td >
+	// Cell has no overlapping text box → empty cell
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "Has text", Label: "table row"},
 		{X0: 101, Y0: 0, X1: 200, Y1: 50, Label: "table row"},
 	}
 	boxes := []pdf.TextBox{}
-	html := ConstructTable(cells, boxes, "", nil)
-	if !strings.Contains(html, "Has text") {
-		t.Error("expected first cell text")
+	td := constructTableData(t, cells, boxes, "", nil)
+	if td == nil {
+		t.Fatal("expected non-nil TableData")
 	}
-	// Should still have 2 <td > cells
-	if strings.Count(html, "<td ") != 2 {
-		t.Errorf("expected 2 <td > cells, got %d. HTML:\n%s", strings.Count(html, "<td "), html)
+	if len(td.Grid) != 1 || len(td.Grid[0]) != 2 {
+		t.Fatalf("expected 1x2 grid, got %v", td.Grid)
+	}
+	if cellTextAt(td, 0, 0) != "Has text" {
+		t.Errorf("expected first cell text 'Has text', got %q", cellTextAt(td, 0, 0))
+	}
+	if cellTextAt(td, 0, 1) != "" {
+		t.Errorf("expected empty second cell, got %q", cellTextAt(td, 0, 1))
 	}
 }
 
@@ -122,11 +153,13 @@ func TestConstructTable_WithCaption(t *testing.T) {
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "X", Label: "table row"},
 	}
-	html := ConstructTable(cells, nil, "表1：测试标题", nil)
-	if !strings.Contains(html, "<caption>表1：测试标题</caption>") {
-		t.Errorf("expected caption, got:\n%s", html)
+	td := constructTableData(t, cells, nil, "表1：测试标题", nil)
+	if td == nil {
+		t.Fatal("expected non-nil TableData")
 	}
-	t.Logf("HTML:\n%s", html)
+	if td.Caption != "表1：测试标题" {
+		t.Errorf("expected caption, got %q", td.Caption)
+	}
 }
 
 func TestConstructTable_SingleRow(t *testing.T) {
@@ -134,12 +167,15 @@ func TestConstructTable_SingleRow(t *testing.T) {
 		{X0: 0, Y0: 0, X1: 50, Y1: 40, Text: "Col1", Label: "table row"},
 		{X0: 51, Y0: 0, X1: 100, Y1: 40, Text: "Col2", Label: "table row"},
 	}
-	html := ConstructTable(cells, nil, "", nil)
-	if strings.Count(html, "<tr>") != 1 {
-		t.Errorf("expected 1 row, got %d", strings.Count(html, "<tr>"))
+	td := constructTableData(t, cells, nil, "", nil)
+	if td == nil {
+		t.Fatal("expected non-nil TableData")
 	}
-	if strings.Count(html, "<td ") != 2 {
-		t.Errorf("expected 2 cells, got %d", strings.Count(html, "<td "))
+	if len(td.Grid) != 1 {
+		t.Errorf("expected 1 row, got %d", len(td.Grid))
+	}
+	if len(td.Grid[0]) != 2 {
+		t.Errorf("expected 2 cells, got %d", len(td.Grid[0]))
 	}
 }
 
@@ -172,12 +208,16 @@ func TestConstructTable_YBasedFallback(t *testing.T) {
 		{X0: 51, Y0: 0, X1: 100, Y1: 30, Text: "R1C2", Label: "table"},
 		{X0: 0, Y0: 31, X1: 50, Y1: 60, Text: "R2C1", Label: "table"},
 	}
-	html := ConstructTable(cells, nil, "", nil)
-	if strings.Count(html, "<tr>") != 2 {
-		t.Errorf("expected 2 rows from Y-fallback, got %d", strings.Count(html, "<tr>"))
+	td := constructTableData(t, cells, nil, "", nil)
+	if td == nil {
+		t.Fatal("expected non-nil TableData")
 	}
-	if strings.Count(html, "<td ") != 3 { // 2 in row0, 1 in row1 (no padding in basic grouping)
-		t.Errorf("expected 3 cells, got %d", strings.Count(html, "<td "))
+	if len(td.Grid) != 2 {
+		t.Fatalf("expected 2 rows from Y-fallback, got %d", len(td.Grid))
+	}
+	// 2 cells in row0, 1 cell in row1 (no padding in basic grouping).
+	if len(td.Grid[0]) != 2 || len(td.Grid[1]) != 1 {
+		t.Errorf("expected 2+1 cells, got %d+%d", len(td.Grid[0]), len(td.Grid[1]))
 	}
 }
 
@@ -259,26 +299,25 @@ func TestConstructTable_FromBoxesRC(t *testing.T) {
 	// constructTable should build HTML directly from boxes by R/C grouping,
 	// ignoring cell text (matching Python's construct_table).
 	item := &pdf.TableItem{}
-	html := ConstructTable(nil, boxes, "", item)
+	td := constructTableData(t, nil, boxes, "", item)
 
-	if !strings.Contains(html, "姓名") || !strings.Contains(html, "张三") {
-		t.Errorf("HTML missing box text: %s", html)
+	if cellTextAt(td, 0, 0) != "姓名" || cellTextAt(td, 1, 0) != "张三" {
+		t.Errorf("TableData missing box text: 姓名/张三, got %v", td)
 	}
 	// 2 rows, 2 cols
-	if strings.Count(html, "<tr>") != 2 {
-		t.Errorf("expected 2 rows, got %d. HTML: %s", strings.Count(html, "<tr>"), html)
+	if len(td.Grid) != 2 {
+		t.Errorf("expected 2 rows, got %d", len(td.Grid))
 	}
-	if strings.Count(html, "<td ") != 4 {
-		t.Errorf("expected 4 cells, got %d. HTML: %s", strings.Count(html, "<td "), html)
+	if len(td.Grid[0]) != 2 {
+		t.Errorf("expected 2 cols, got %d", len(td.Grid[0]))
 	}
-	// Verify Rows output
+	// Verify Rows output (side effect)
 	if len(item.Rows) != 2 || len(item.Rows[0]) != 2 {
 		t.Errorf("Rows: expected 2x2, got %dx%d", len(item.Rows), len(item.Rows[0]))
 	}
 	if item.Rows[0][0] != "姓名" {
 		t.Errorf("Rows[0][0] = %q, want %q", item.Rows[0][0], "姓名")
 	}
-	t.Logf("HTML: %s", html)
 }
 
 func TestFillCellTextFromBoxes_RCAnnotations(t *testing.T) {
@@ -349,9 +388,9 @@ func TestConstructTable_SingleRowMultiCol(t *testing.T) {
 		{X0: 201, X1: 300, Top: 0, Bottom: 30, Text: "性别", R: 0, C: 2},
 	}
 	item := &pdf.TableItem{}
-	html := ConstructTable(nil, boxes, "", item)
-	if strings.Count(html, "<td ") != 3 {
-		t.Errorf("expected 3 cells, got %d. HTML: %s", strings.Count(html, "<td "), html)
+	td := constructTableData(t, nil, boxes, "", item)
+	if len(td.Grid[0]) != 3 {
+		t.Errorf("expected 3 cells, got %d", len(td.Grid[0]))
 	}
 	if item.Rows[0][0] != "姓名" || item.Rows[0][1] != "年龄" || item.Rows[0][2] != "性别" {
 		t.Errorf("wrong row text: %v", item.Rows[0])
@@ -365,9 +404,9 @@ func TestConstructTable_MultiRowSingleCol(t *testing.T) {
 		{X0: 0, X1: 100, Top: 70, Bottom: 100, Text: "第三行", R: 2, C: 0},
 	}
 	item := &pdf.TableItem{}
-	html := ConstructTable(nil, boxes, "", item)
-	if strings.Count(html, "<tr>") != 3 {
-		t.Errorf("expected 3 rows, got %d. HTML: %s", strings.Count(html, "<tr>"), html)
+	td := constructTableData(t, nil, boxes, "", item)
+	if len(td.Grid) != 3 {
+		t.Errorf("expected 3 rows, got %d", len(td.Grid))
 	}
 	if item.Rows[0][0] != "第一行" || item.Rows[1][0] != "第二行" || item.Rows[2][0] != "第三行" {
 		t.Errorf("wrong text: row0=%q row1=%q row2=%q", item.Rows[0][0], item.Rows[1][0], item.Rows[2][0])
@@ -384,12 +423,12 @@ func TestConstructTable_RCAfterMerge(t *testing.T) {
 		{X0: 355, X1: 500, Top: 35, Bottom: 65, Text: "经济舱位", R: 1, C: 1},
 	}
 	item := &pdf.TableItem{}
-	html := ConstructTable(nil, postMerge, "", item)
-	if !strings.Contains(html, "公司级领导") {
-		t.Errorf("missing merged text: %s", html)
+	td := constructTableData(t, nil, postMerge, "", item)
+	if !strings.Contains(cellTextAt(td, 0, 0), "公司级领导") {
+		t.Errorf("missing merged text: %q", cellTextAt(td, 0, 0))
 	}
-	if strings.Count(html, "<tr>") != 2 {
-		t.Errorf("expected 2 rows, got %d", strings.Count(html, "<tr>"))
+	if len(td.Grid) != 2 {
+		t.Errorf("expected 2 rows, got %d", len(td.Grid))
 	}
 	if item.Rows[0][0] != "公司级领导人员（含公司董事、总监）" {
 		t.Errorf("row 0 col 0 = %q", item.Rows[0][0])
@@ -606,16 +645,19 @@ func TestConstructTable_StripsCaptionFromCells(t *testing.T) {
 		{X0: 0, Y0: 0, X1: 100, Y1: 50, Text: "表1：标题"},
 		{X0: 100, Y0: 0, X1: 200, Y1: 50, Text: "数据"},
 	}
-	html := ConstructTable(cells, nil, "", nil)
-	// "表1：标题" should NOT appear in the HTML (stripped as caption).
-	if strings.Contains(html, "表1") {
-		t.Errorf("caption text '表1：标题' should be stripped: %s", html)
+	td := constructTableData(t, cells, nil, "", nil)
+	// "表1：标题" should NOT survive as a cell (stripped as caption).
+	for r := range td.Grid {
+		for c := range td.Grid[r] {
+			if strings.Contains(td.Grid[r][c].Text, "表1") {
+				t.Errorf("caption text '表1：标题' should be stripped, found in cell[%d][%d]: %q", r, c, td.Grid[r][c].Text)
+			}
+		}
 	}
 	// "数据" should still be there.
-	if !strings.Contains(html, "数据") {
-		t.Errorf("data text '数据' should be preserved: %s", html)
+	if cellTextAt(td, 0, 1) != "数据" {
+		t.Errorf("data text '数据' should be preserved, got %q", cellTextAt(td, 0, 1))
 	}
-	t.Logf("HTML: %s", html)
 }
 
 func TestExtractTableAndReplace(t *testing.T) {

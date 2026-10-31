@@ -19,6 +19,7 @@ package file
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"ragflow/internal/common"
@@ -40,7 +41,7 @@ func (f failingObjectCheckStorage) ObjectExists(context.Context, string, string)
 
 func TestDeleteFolderLeavesNonemptyBucket(t *testing.T) {
 	db := setupFolderTestDB(t)
-	folder, err := testFileService().fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "folder", FileTypeFolder)
+	folder, err := testFileService().fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "tenant-1", "folder", FileTypeFolder)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +85,7 @@ func TestDeleteFolderLeavesNonemptyBucket(t *testing.T) {
 
 func TestDeleteFolderStopsOnStorageCheckError(t *testing.T) {
 	db := setupFolderTestDB(t)
-	folder, err := testFileService().fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "folder", FileTypeFolder)
+	folder, err := testFileService().fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "tenant-1", "folder", FileTypeFolder)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +105,7 @@ func TestDeleteFolderStopsOnStorageCheckError(t *testing.T) {
 func TestDeleteFolderContinuesWhenStorageIsMissing(t *testing.T) {
 	db := setupFolderTestDB(t)
 	service := testFileService()
-	folder, err := service.fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "folder", FileTypeFolder)
+	folder, err := service.fileDAO.CreateFolder(t.Context(), db, "root", "tenant-1", "tenant-1", "folder", FileTypeFolder)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,20 +126,45 @@ func TestDeleteFilesAuthorizesEveryDescendantBeforeDeleting(t *testing.T) {
 	db := setupFolderTestDB(t)
 	for _, file := range []*entity.File{
 		{ID: "folder", ParentID: "root", TenantID: "user-1", Name: "folder", Type: FileTypeFolder},
-		{ID: "foreign-child", ParentID: "folder", TenantID: "user-2", Name: "private.pdf", Type: "pdf"},
+		{ID: "child-folder", ParentID: "folder", TenantID: "user-1", CreatedBy: "user-1", Name: "child", Type: FileTypeFolder},
+		{ID: "foreign-child", ParentID: "child-folder", TenantID: "user-2", Name: "private.pdf", Type: "pdf"},
 	} {
 		if err := db.Create(file).Error; err != nil {
 			t.Fatalf("seed %s: %v", file.ID, err)
 		}
 	}
 
-	err := testFileService().DeleteFiles(t.Context(), "user-1", []string{"folder"})
+	err := testFileService().DeleteFiles(fileTestContext(t, "user-1", "user-1"), "user-1", []string{"folder"})
 	if !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("DeleteFiles error = %v, want permission denied", err)
 	}
-	for _, id := range []string{"folder", "foreign-child"} {
+	for _, id := range []string{"folder", "child-folder", "foreign-child"} {
 		if _, err := dao.NewFileDAO().GetByID(t.Context(), db, id); err != nil {
 			t.Fatalf("file %q was removed before authorization completed: %v", id, err)
 		}
+	}
+}
+
+func TestFileService_CheckFileTreeAccessBatchesWideSubtrees(t *testing.T) {
+	db := setupFolderTestDB(t)
+	entries := make([]entity.File, 0, 1+2*510)
+	entries = append(entries,
+		entity.File{ID: "tenant-root", ParentID: "tenant-root", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "/", Type: FileTypeFolder},
+		entity.File{ID: "tree-root", ParentID: "tenant-root", TenantID: "tenant-1", CreatedBy: "owner", Name: "tree", Type: FileTypeFolder},
+	)
+	for i := 0; i < 510; i++ {
+		folderID := fmt.Sprintf("folder-%04d", i)
+		entries = append(entries,
+			entity.File{ID: folderID, ParentID: "tree-root", TenantID: "tenant-1", CreatedBy: "owner", Name: folderID, Type: FileTypeFolder},
+			entity.File{ID: fmt.Sprintf("file-%04d", i), ParentID: folderID, TenantID: "tenant-1", CreatedBy: "owner", Name: "child.txt", Type: "doc"},
+		)
+	}
+	if err := db.CreateInBatches(&entries, 100).Error; err != nil {
+		t.Fatalf("seed wide file tree: %v", err)
+	}
+
+	root := &entity.File{ID: "tree-root", ParentID: "tree-root", TenantID: "tenant-1", CreatedBy: "owner", Name: "/", Type: FileTypeFolder}
+	if err := testFileService().checkFileTreeAccess(fileTestContext(t, "owner", "tenant-1"), "owner", root, permission.OperationDelete); err != nil {
+		t.Fatalf("check permissions for wide subtree: %v", err)
 	}
 }

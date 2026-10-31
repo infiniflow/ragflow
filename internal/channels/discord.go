@@ -145,7 +145,7 @@ func newDiscordChannel(account discordAccount) *discordChannel {
 	}
 	return &discordChannel{
 		account: account,
-		client:  &http.Client{Timeout: account.Timeout},
+		client:  newSafeChannelHTTPClient(account.Timeout, channelURLPolicy{exactHosts: []string{"discord.com"}}),
 		seen:    map[string]time.Time{},
 		workers: map[string]*discordChatWorker{},
 	}
@@ -305,10 +305,10 @@ func (c *discordChannel) runGateway(ctx context.Context) error {
 
 	// set websocket connection
 	header := http.Header{}
-	dialer := *websocket.DefaultDialer
-	dialer.HandshakeTimeout = discordHandshakeTimeout
-
-	conn, _, err := dialer.DialContext(ctx, wsURL, header)
+	conn, _, err := dialSafeChannelWebSocket(ctx, wsURL, header, discordHandshakeTimeout, channelURLPolicy{
+		exactHosts:   []string{"gateway.discord.gg"},
+		hostSuffixes: []string{"discord.gg"},
+	})
 	if err != nil {
 		return err
 	}
@@ -521,18 +521,12 @@ func (c *discordChannel) enqueueIncoming(ctx context.Context, incoming core.Inco
 			go c.runChatWorker(ctx, incoming.ChatID, worker)
 		}
 		return true
-	case <-ctx.Done():
-		c.mu.Unlock()
 	default:
 		queueFull = true
 		c.mu.Unlock()
 	}
 
-	if startWorker {
-		go c.runChatWorker(ctx, incoming.ChatID, worker)
-	}
-
-	if queueFull {
+	if queueFull && ctx.Err() == nil {
 		common.Warn("discord: dropping message, queue is full", zap.String("account_id", c.account.AccountID), zap.String("message_id", incoming.MessageID), zap.String("chat_id", incoming.ChatID))
 	}
 

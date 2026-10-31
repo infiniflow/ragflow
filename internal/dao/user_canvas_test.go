@@ -135,6 +135,70 @@ func TestUserCanvasDAOUpdateDSLNoMatch(t *testing.T) {
 	}
 }
 
+func TestUserCanvasDAOCreatePersistsOwnerAndTenant(t *testing.T) {
+	db := setupUserCanvasTestDB(t)
+	dao := NewUserCanvasDAO()
+	ctx := t.Context()
+
+	ownerID := "canvas-owner"
+	tenantID := "tenant-team"
+	canvases := []*entity.UserCanvas{
+		{ID: "canvas-with-tenant", UserID: ownerID, TenantID: &tenantID},
+		{ID: "canvas-default-tenant", UserID: ownerID},
+	}
+	for _, canvas := range canvases {
+		if err := dao.Create(ctx, db, canvas); err != nil {
+			t.Fatalf("create canvas %q: %v", canvas.ID, err)
+		}
+	}
+
+	for _, test := range []struct {
+		id           string
+		wantOwnerID  string
+		wantTenantID string
+	}{
+		{id: "canvas-with-tenant", wantOwnerID: ownerID, wantTenantID: tenantID},
+		{id: "canvas-default-tenant", wantOwnerID: ownerID, wantTenantID: ownerID},
+	} {
+		persisted, err := dao.GetByID(ctx, db, test.id)
+		if err != nil {
+			t.Fatalf("load canvas %q: %v", test.id, err)
+		}
+		if persisted.UserID != test.wantOwnerID {
+			t.Errorf("canvas %q user_id = %q, want %q", test.id, persisted.UserID, test.wantOwnerID)
+		}
+		if got := persisted.EffectiveTenantID(); got != test.wantTenantID {
+			t.Errorf("canvas %q tenant_id = %q, want %q", test.id, got, test.wantTenantID)
+		}
+	}
+}
+
+func TestUserCanvasDAOListByIDsReturnsStoredTenantID(t *testing.T) {
+	db := setupUserCanvasTestDB(t)
+	ctx := t.Context()
+	if err := db.AutoMigrate(&entity.User{}); err != nil {
+		t.Fatalf("migrate user table: %v", err)
+	}
+	if err := db.Create(&entity.User{ID: "canvas-owner", Email: "owner@example.test", Nickname: "Owner"}).Error; err != nil {
+		t.Fatalf("create canvas owner: %v", err)
+	}
+	tenantID := "tenant-team"
+	if err := db.Create(&entity.UserCanvas{ID: "canvas-1", UserID: "canvas-owner", TenantID: &tenantID}).Error; err != nil {
+		t.Fatalf("create canvas: %v", err)
+	}
+
+	items, _, err := NewUserCanvasDAO().ListByIDs(ctx, db, []string{"canvas-1"}, nil, 1, 10, nil, "", nil, "", nil)
+	if err != nil {
+		t.Fatalf("list canvas: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("canvas list length = %d, want 1", len(items))
+	}
+	if items[0].UserID != "canvas-owner" || items[0].TenantID != tenantID {
+		t.Fatalf("listed owner/tenant = %q/%q, want canvas-owner/%q", items[0].UserID, items[0].TenantID, tenantID)
+	}
+}
+
 func TestUserCanvasDAOListTagsIncludesPipelineWhenCategoryIsEmpty(t *testing.T) {
 	db := setupUserCanvasTestDB(t)
 	pushDB(t, db)
@@ -226,7 +290,7 @@ func TestUserCanvasDAOOwnerAndCategoryFilters(t *testing.T) {
 	}
 
 	visibleCanvasIDs := []string{"c1", "c2", "c3"}
-	owners, err := d.GetOwnerFilterByCanvasIDs(ctx, db, visibleCanvasIDs)
+	owners, err := d.GetOwnerFilterByCanvasIDs(ctx, db, visibleCanvasIDs, "")
 	if err != nil {
 		t.Fatalf("GetOwnerFilterByCanvasIDs failed: %v", err)
 	}
@@ -262,6 +326,18 @@ func TestUserCanvasDAOOwnerAndCategoryFilters(t *testing.T) {
 	}
 	if catByID["dataflow_canvas"] != 1 {
 		t.Fatalf("dataflow_canvas count = %d, want 1", catByID["dataflow_canvas"])
+	}
+
+	// Scoped to dataflow_canvas, only c2 remains visible to the aggregation.
+	scopedOwners, err := d.GetOwnerFilterByCanvasIDs(ctx, db, visibleCanvasIDs, "dataflow_canvas")
+	if err != nil {
+		t.Fatalf("GetOwnerFilterByCanvasIDs with category failed: %v", err)
+	}
+	if len(scopedOwners) != 1 {
+		t.Fatalf("scoped owner filter rows = %d, want 1", len(scopedOwners))
+	}
+	if scopedOwners[0].ID != "user-1" || scopedOwners[0].Count != 1 {
+		t.Fatalf("scoped owner = %+v, want user-1 with count 1", scopedOwners[0])
 	}
 }
 

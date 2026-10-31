@@ -383,3 +383,7 @@ func (x *XAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListT
 func (x *XAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", x.Name())
 }
+
+func (x *XAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}

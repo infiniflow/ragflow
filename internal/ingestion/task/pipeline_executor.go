@@ -30,14 +30,17 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion"
 	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/ingestion/mediacache"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -73,11 +76,13 @@ type PipelineExecutor struct {
 	taskCtx     *TaskContext
 	canvasID    string
 	docBulkSize int
+	deps        *ingestion.Deps
 
 	indexWriter      *chunkIndexWriter
 	deleteChunksFunc DeleteChunksFunc
 	loadDSLFunc      func(ctx context.Context, canvasID string) (string, string, error)
 	runPipelineFunc  func(ctx context.Context, dsl string) (map[string]any, string, error)
+	purgeTaskState   func(ctx context.Context, taskID string) error
 	progressSink     pipelinepkg.ProgressSink
 }
 
@@ -137,10 +142,14 @@ func insertFinalChunksForIngestion(eng engine.DocEngine, language string) Insert
 	}
 }
 
+// NewPipelineExecutor builds the executor for one document run. deps carries
+// the process-wide singletons (doc engine, database handle) resolved at the
+// server assembly point; the executor never resolves them itself.
 func NewPipelineExecutor(
 	taskCtx *TaskContext,
 	canvasID string,
 	docBulkSize int,
+	deps *ingestion.Deps,
 ) (*PipelineExecutor, error) {
 	if err := validateTaskContext(taskCtx); err != nil {
 		return nil, err
@@ -148,22 +157,35 @@ func NewPipelineExecutor(
 	if strings.TrimSpace(canvasID) == "" {
 		return nil, fmt.Errorf("pipeline executor: empty canvas id")
 	}
+	if deps == nil {
+		return nil, fmt.Errorf("pipeline executor: nil dependency bundle")
+	}
 	svc := &PipelineExecutor{
 		taskCtx:     taskCtx,
 		canvasID:    canvasID,
 		docBulkSize: docBulkSize,
+		deps:        deps,
 		indexWriter: newChunkIndexWriter(
-			insertChunksForIngestion(engine.Get(), datasetLanguage(taskCtx)),
+			insertChunksForIngestion(deps.Engine, datasetLanguage(taskCtx)),
 			fmt.Sprintf("ragflow_%s", taskCtx.Tenant.ID),
 			taskCtx.Doc.KbID,
 			docBulkSize,
-		).withFinalInsertFunc(insertFinalChunksForIngestion(engine.Get(), datasetLanguage(taskCtx))),
+		).withFinalInsertFunc(insertFinalChunksForIngestion(deps.Engine, datasetLanguage(taskCtx))),
 		deleteChunksFunc: func(ctx context.Context, condition map[string]any, baseName, datasetID string) (int64, error) {
-			return engine.Get().DeleteChunks(ctx, condition, baseName, datasetID)
+			return deps.Engine.DeleteChunks(ctx, condition, baseName, datasetID)
 		},
 	}
 	svc.loadDSLFunc = svc.loadDSLFromCanvas
 	svc.runPipelineFunc = svc.runPipelineWithDSL
+	svc.purgeTaskState = func(ctx context.Context, taskID string) error {
+		if deps.KV == nil {
+			return nil
+		}
+		return errors.Join(
+			chunkcache.PurgeTask(ctx, deps.KV, taskID),
+			mediacache.PurgeTask(ctx, deps.KV, taskID),
+		)
+	}
 	return svc, nil
 }
 
@@ -246,7 +268,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 			d := s.terminalDuration(start)
 			terminalDuration = &d
 		}
-		s.recordPipelineLog(context.WithoutCancel(ctx), dao.DB, s.taskCtx.Doc.ID, pipelineDSL, string(entity.TaskStatusDone), terminalDuration)
+		s.recordPipelineLog(context.WithoutCancel(ctx), s.deps.DB, s.taskCtx.Doc.ID, pipelineDSL, string(entity.TaskStatusDone), terminalDuration)
 	}
 
 	return result, nil
@@ -255,8 +277,10 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 // collectDebugOutput builds a PipelineResult for a debug (dry-run) run.
 // It surfaces the pipeline's chunks so a debug endpoint can render them, but
 // performs no DB/index writes — the embedding vectors already computed by the
-// pipeline run are left on the chunks. This keeps debug runs side-effect free.
+// pipeline run are left on the chunks. Run-scoped cache state is purged before
+// the preview is returned.
 func (s *PipelineExecutor) collectDebugOutput(ctx context.Context, pipelineOutput map[string]any, start time.Time) (*PipelineResult, error) {
+	s.purgeRunState(ctx)
 	chunks := indexdoc.NormalizeChunks(pipelineOutput)
 	return &PipelineResult{
 		DocID:            s.taskCtx.Doc.ID,
@@ -270,6 +294,7 @@ func (s *PipelineExecutor) collectDebugOutput(ctx context.Context, pipelineOutpu
 
 func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map[string]any, start time.Time) (*PipelineResult, error) {
 	if pipelineOutput == nil {
+		s.purgeRunState(ctx)
 		return nil, nil
 	}
 	if err := ctx.Err(); err != nil {
@@ -278,6 +303,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 
 	chunks := indexdoc.NormalizeChunks(pipelineOutput)
 	if len(chunks) == 0 {
+		s.purgeRunState(ctx)
 		return nil, nil
 	}
 
@@ -313,8 +339,8 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// Reload status immediately before write: LoadFromIngestionTask copied a
 	// snapshot that may be stale if BatchUpdateDocumentStatus ran mid-pipeline.
 	docStatus := s.taskCtx.Doc.Status
-	if dao.DB != nil {
-		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, s.taskCtx.Doc.ID); err == nil && persisted != nil {
+	if s.deps.DB != nil {
+		if persisted, err := dao.NewDocumentDAO().GetByID(ctx, s.deps.DB, s.taskCtx.Doc.ID); err == nil && persisted != nil {
 			docStatus = persisted.Status
 			s.taskCtx.Doc.Status = persisted.Status
 		} else if err != nil {
@@ -328,6 +354,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 	indexChunks := append(chunks, parentChunks...)
+	indexdoc.StampDatasetPagerank(indexChunks, s.taskCtx.KB.Pagerank)
 	if err := s.indexWriter.Write(ctx, indexChunks); err != nil {
 		if cleanupErr := s.compensateFailedIndexWrite(ctx, indexChunks); cleanupErr != nil {
 			return nil, fmt.Errorf("write chunks: %w; compensate partial index write: %v", err, cleanupErr)
@@ -341,7 +368,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	if err != nil {
 		return nil, err
 	}
-	if err := putWikiActiveStates(ctx, engine.Get(), activeStates); err != nil {
+	if err := putWikiActiveStates(ctx, s.deps.Engine, activeStates); err != nil {
 		return nil, fmt.Errorf("persist Wiki active MAP state: %w", err)
 	}
 
@@ -363,15 +390,10 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 
 	// Persist is now fully durable: every failure-capable step above
 	// (index write, compiled-product reconcile, Wiki active-MAP state) has
-	// succeeded. Only now drop the per-chunk cache entries this task produced,
-	// so a failure in any of those steps leaves the cache intact for the retry —
-	// the retry resumes after the Parser checkpoint and would otherwise have to
-	// re-pay every embedding/LLM call, which is exactly the cost this cache
-	// exists to absorb. PurgeTask is best-effort and silent when no manifest
-	// exists (e.g. a Redis-less run, where chunkcache.Client() is nil).
-	if s.taskCtx.IngestionTask != nil && s.taskCtx.IngestionTask.ID != "" {
-		chunkcache.PurgeTask(ctx, chunkcache.Client(), s.taskCtx.IngestionTask.ID)
-	}
+	// succeeded. Only now drop the run-scoped cache entries this task produced,
+	// so a failure in any of those steps leaves chunk results and parser media
+	// intact for retry.
+	s.purgeRunState(ctx)
 
 	return &PipelineResult{
 		DocID:                 s.taskCtx.Doc.ID,
@@ -386,6 +408,30 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		CompiledVariants:      eventVariants,
 		CompiledTaskTypes:     eventTaskTypes,
 	}, nil
+}
+
+func (s *PipelineExecutor) purgeRunState(ctx context.Context) {
+	if s == nil || s.taskCtx == nil || s.purgeTaskState == nil {
+		return
+	}
+	taskID := ""
+	if s.taskCtx.IngestionTask != nil {
+		taskID = s.taskCtx.IngestionTask.ID
+	}
+	if taskID == "" && s.taskCtx.IsDebug() {
+		taskID = "pipeline_" + s.taskCtx.Doc.ID
+	}
+	if taskID == "" {
+		return
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), runStateCleanupTimeout)
+	defer cancel()
+	if err := s.purgeTaskState(cleanupCtx, taskID); err != nil {
+		common.Warn("failed to purge task run state",
+			zap.String("task_id", taskID),
+			zap.Error(err),
+		)
+	}
 }
 
 func (s *PipelineExecutor) compensateFailedIndexWrite(ctx context.Context, chunks []map[string]any) error {
@@ -515,10 +561,10 @@ func markCompiledProductsHidden(chunks []map[string]any) {
 // compiler generation before the new pipeline output is written. Reading first
 // avoids relying on immediate search visibility after a bulk index write.
 func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]string, []string, []string, error) {
-	docEngine := engine.Get()
-	if docEngine == nil || s == nil || s.taskCtx == nil {
+	if s == nil || s.taskCtx == nil || s.deps == nil || s.deps.Engine == nil {
 		return nil, nil, nil, nil
 	}
+	docEngine := s.deps.Engine
 	const pageSize = 1000
 	indexName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
 	oldIDs := make([]string, 0)
@@ -560,10 +606,10 @@ func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]str
 // the last usable document Wiki; this method removes rows absent from the new
 // successful generation immediately before the dataset completion event.
 func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context, oldIDs []string, chunks []map[string]any) error {
-	docEngine := engine.Get()
-	if docEngine == nil || s == nil || s.taskCtx == nil {
+	if s == nil || s.taskCtx == nil || s.deps == nil || s.deps.Engine == nil {
 		return nil
 	}
+	docEngine := s.deps.Engine
 	newIDs := make(map[string]struct{})
 	for _, chunk := range chunks {
 		if strings.TrimSpace(asCompiledKwd(chunk)) == "" {
@@ -832,6 +878,13 @@ type PipelineLogInput struct {
 // outcome without the run row that owns it.
 var ErrMissingRunIdentity = errors.New("pipeline log id is required")
 
+// ErrPipelineVersionMissing is the single multi-version Missing sentinel. It is
+// defined once in the dao package (dao.ErrPipelineVersionMissing) and re-exported
+// here so the service and task layers share one identity (review: merge the
+// duplicate service/task sentinels into one implementation). The wrapped message
+// still carries the user-facing hint "pipeline 版本不存在，请重新选择版本".
+var ErrPipelineVersionMissing = dao.ErrPipelineVersionMissing
+
 // RecordPipelineLog persists a pipeline operation log without requiring
 // executor setup. Callers should pass the status in Status.
 //
@@ -1014,7 +1067,7 @@ func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID strin
 	if canvasID == "" {
 		return "", "", fmt.Errorf("pipeline executor: empty canvas id")
 	}
-	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, canvasID)
+	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, s.deps.DB, canvasID)
 	if err != nil {
 		return "", "", fmt.Errorf("load canvas %s: %w", canvasID, err)
 	}
@@ -1025,6 +1078,24 @@ func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID strin
 	}
 	common.Info(fmt.Sprintf("load canvas %s, name %s", canvasID, canvasTitle))
 
+	// dataflow canvases are versioned (design section 6.2). An explicit pin
+	// resolves that exact version; an empty pin resolves the latest version.
+	// A missing or mis-owned version maps to ErrPipelineVersionMissing so the
+	// parse task fails and the file enters an unparseable Missing state (C4).
+	if canvas.CanvasCategory == "dataflow_canvas" {
+		// Dataflow canvases are versioned (design section 6.2). An explicit pin
+		// resolves that exact version; an empty pin resolves the latest published
+		// version. A missing or mis-owned version returns ErrPipelineVersionMissing
+		// so the parse task fails and the file enters an unparseable Missing state.
+		raw, verr := dao.LoadCanvasVersionDSL(ctx, s.deps.DB, canvasID, s.taskCtx.PipelineVersionID)
+		if verr != nil {
+			return "", "", verr
+		}
+		return string(raw), canvasID, nil
+	}
+
+	// Agent / non-versioned canvases: read the live draft column (out of scope
+	// for multi-version; mirrors the agent read path in the service layer).
 	raw, err := json.Marshal(canvas.DSL)
 	if err != nil {
 		return "", "", fmt.Errorf("marshal canvas dsl %s: %w", canvasID, err)
@@ -1106,7 +1177,8 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	}
 	pipe, err := pipelinepkg.NewPipelineFromDSL([]byte(dsl), pipelineID,
 		pipelinepkg.WithProgressSink(s.progressSink),
-		pipelinepkg.WithDocumentID(s.taskCtx.Doc.ID))
+		pipelinepkg.WithDocumentID(s.taskCtx.Doc.ID),
+		pipelinepkg.WithKV(s.deps.KV))
 	if err != nil {
 		return nil, dsl, fmt.Errorf("compile pipeline dsl: %w", err)
 	}
@@ -1253,6 +1325,8 @@ func (s *PipelineExecutor) buildLogDSL(dsl string, output map[string]any) string
 // inclusive range [1, debugPageCapPages], matching the production
 // ParserConfig[cpnID][filetype]["pages"] shape (see NormalizeParserConfigPages).
 const debugPageCapPages = 2
+
+const runStateCleanupTimeout = 5 * time.Second
 
 // injectDebugChunkCap sets the canvas-debug chunk cap on the run inputs when
 // not already present. The cap is read by the chunker decorator (via

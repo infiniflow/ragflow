@@ -545,6 +545,62 @@ func TestElasticsearchGetFieldsFiltersAndUsesIDFallback(t *testing.T) {
 	}
 }
 
+// TestBuildRankFeatureQueryUsesTopLevelPagerank pins the field naming: tag
+// weights address keys inside the tag_feas map, while pagerank addresses the
+// top-level pagerank_fea rank_feature field.
+func TestBuildRankFeatureQueryUsesTopLevelPagerank(t *testing.T) {
+	queries := buildRankFeatureQuery(map[string]float64{
+		common.PAGERANK_FLD: 10,
+		"tag_a":             0.8,
+	})
+	if len(queries) != 2 {
+		t.Fatalf("queries = %d, want 2", len(queries))
+	}
+	byField := make(map[string]map[string]interface{}, len(queries))
+	for _, q := range queries {
+		clause, ok := q["rank_feature"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("not a rank_feature clause: %#v", q)
+		}
+		field, _ := clause["field"].(string)
+		byField[field] = clause
+	}
+	pagerank, ok := byField[common.PAGERANK_FLD]
+	if !ok {
+		t.Fatalf("pagerank clause missing, got fields %#v", byField)
+	}
+	if got := pagerank["boost"]; got != float64(10) {
+		t.Fatalf("pagerank boost = %v, want 10", got)
+	}
+	tagField := common.TAG_FLD + ".tag_a"
+	if _, ok := byField[tagField]; !ok {
+		t.Fatalf("tag clause %q missing, got fields %#v", tagField, byField)
+	}
+}
+
+// TestElasticsearchGetFieldsEncodesNestedObjects covers the rank-feature
+// fields: tag_feas is a "rank_features" object in _source, so the projection
+// has to render it as JSON (the reranker parses JSON, not Go's "%v" map form),
+// while numeric fields keep the stringified form the rest of the projection uses.
+func TestElasticsearchGetFieldsEncodesNestedObjects(t *testing.T) {
+	engine := &Engine{}
+	chunks := []map[string]interface{}{
+		{
+			"id":                  "chunk-1",
+			"tag_feas":            map[string]interface{}{"tag_a": float64(0.5)},
+			"pagerank_fea":        float64(7),
+			"content_with_weight": "body",
+		},
+	}
+
+	fieldMap, ok := engine.GetFields(chunks, []string{"id", "tag_feas", "pagerank_fea"})["chunk-1"]
+	if !ok {
+		t.Fatalf("GetFields lost chunk-1")
+	}
+	assertEqual(t, fieldMap["tag_feas"], `{"tag_a":0.5}`)
+	assertEqual(t, fieldMap["pagerank_fea"], "7")
+}
+
 func TestElasticsearchGetFieldsEmptyAndSkippedIDs(t *testing.T) {
 	engine := &Engine{}
 
@@ -760,6 +816,187 @@ func TestMapMemoryMessageToESDoc(t *testing.T) {
 	}
 }
 
+// TestSearchKeepsRankFeatureOutOfKNNFilter pins the body-level split: the
+// rank_feature clauses belong to the scored query, while knn.filter is a snapshot
+// of the bool taken when the kNN clause is built and must keep only the scope and
+// lexical predicates.
+func TestSearchKeepsRankFeatureOutOfKNNFilter(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	var searchQuery map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
+			t.Errorf("decode search query: %v", err)
+		}
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"hits":{"total":{"value":0},"hits":[]}}`))
+	}))
+	defer server.Close()
+
+	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+	if err != nil {
+		t.Fatalf("new elasticsearch client: %v", err)
+	}
+	engine := &Engine{client: client}
+	_, err = engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{"ragflow_tenant"},
+		KbIDs:      []string{"kb-1"},
+		Limit:      10,
+		Filter:     map[string]interface{}{"available_int": 1},
+		MatchExprs: []interface{}{
+			&types.MatchTextExpr{MatchingText: "alpha", Fields: []string{"content_ltks"}, TopN: 10},
+			&types.MatchDenseExpr{VectorColumnName: "q_2_vec", EmbeddingData: []float64{0.1, 0.2}, TopN: 128},
+			&types.FusionExpr{Method: "weighted_sum", TopN: 10, FusionParams: map[string]interface{}{"weights": "0.7,0.3"}},
+		},
+		RankFeature: map[string]float64{"pagerank_fea": 10},
+	})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+
+	queryJSON, err := json.Marshal(searchQuery["query"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(queryJSON), "rank_feature") || !strings.Contains(string(queryJSON), "pagerank_fea") {
+		t.Fatalf("scored query lost its rank_feature clause: %s", queryJSON)
+	}
+
+	knn, ok := searchQuery["knn"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("KNN query missing from %#v", searchQuery)
+	}
+	filterJSON, err := json.Marshal(knn["filter"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(filterJSON), "rank_feature") {
+		t.Fatalf("knn.filter carries rank_feature clauses: %s", filterJSON)
+	}
+	// The snapshot must still be the scope + lexical predicate, not an empty one.
+	if !strings.Contains(string(filterJSON), "query_string") {
+		t.Fatalf("knn.filter lost the lexical predicate: %s", filterJSON)
+	}
+}
+
+// TestSearchKeepsEveryRankFeatureClause covers the multi-feature case: appending
+// to the pre-loop should header used to keep only the last clause.
+func TestSearchKeepsEveryRankFeatureClause(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	var searchQuery map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
+			t.Errorf("decode search query: %v", err)
+		}
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"hits":{"total":{"value":0},"hits":[]}}`))
+	}))
+	defer server.Close()
+
+	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+	if err != nil {
+		t.Fatalf("new elasticsearch client: %v", err)
+	}
+	engine := &Engine{client: client}
+	_, err = engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{"ragflow_tenant"},
+		KbIDs:      []string{"kb-1"},
+		Limit:      10,
+		Filter:     map[string]interface{}{"available_int": 1},
+		MatchExprs: []interface{}{
+			&types.MatchTextExpr{MatchingText: "alpha", Fields: []string{"content_ltks"}, TopN: 10},
+			&types.MatchDenseExpr{VectorColumnName: "q_2_vec", EmbeddingData: []float64{0.1, 0.2}, TopN: 128},
+			&types.FusionExpr{Method: "weighted_sum", TopN: 10, FusionParams: map[string]interface{}{"weights": "0.7,0.3"}},
+		},
+		RankFeature: map[string]float64{"tag_1": 0.8, "tag_2": 0.5},
+	})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+
+	query, ok := searchQuery["query"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query missing from %#v", searchQuery)
+	}
+	boolMap, ok := query["bool"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("bool query missing from %#v", query)
+	}
+	should, _ := boolMap["should"].([]interface{})
+	var fields []string
+	for _, clause := range should {
+		clauseMap, ok := clause.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		rankFeature, ok := clauseMap["rank_feature"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if field, ok := rankFeature["field"].(string); ok {
+			fields = append(fields, field)
+		}
+	}
+	if len(fields) != 2 {
+		t.Fatalf("rank_feature clauses = %v, want both tag fields", fields)
+	}
+	joined := strings.Join(fields, ",")
+	if !strings.Contains(joined, "tag_feas.tag_1") || !strings.Contains(joined, "tag_feas.tag_2") {
+		t.Fatalf("rank_feature fields = %v, want tag_feas.tag_1 and tag_feas.tag_2", fields)
+	}
+}
+
+// TestSearchDoesNotAddPageRankToHitScore pins the hybrid score contract: _score is
+// the ES hit score and nothing else. pagerank already reaches the hit score
+// through the rank_feature clause and the final similarity through the reranker;
+// folding it in here again would count it twice.
+func TestSearchDoesNotAddPageRankToHitScore(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"hits":{"total":{"value":1},"hits":[{"_id":"chunk-1","_index":"ragflow_tenant","_score":0.87,"_source":{"content_with_weight":"alpha","pagerank_fea":69,"tag_feas":{"tag_1":0.5}}}]}}`))
+	}))
+	defer server.Close()
+
+	client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+	if err != nil {
+		t.Fatalf("new elasticsearch client: %v", err)
+	}
+	engine := &Engine{client: client}
+	res, err := engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{"ragflow_tenant"},
+		KbIDs:      []string{"kb-1"},
+		Limit:      10,
+		Filter:     map[string]interface{}{"available_int": 1},
+		MatchExprs: []interface{}{
+			&types.MatchTextExpr{MatchingText: "alpha", Fields: []string{"content_ltks"}, TopN: 10},
+			&types.MatchDenseExpr{VectorColumnName: "q_2_vec", EmbeddingData: []float64{0.1, 0.2}, TopN: 128},
+			&types.FusionExpr{Method: "weighted_sum", TopN: 10, FusionParams: map[string]interface{}{"weights": "0.7,0.3"}},
+		},
+		RankFeature: map[string]float64{"pagerank_fea": 10},
+	})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(res.Chunks) != 1 {
+		t.Fatalf("Search returned %d chunks, want 1", len(res.Chunks))
+	}
+	if got, ok := res.Chunks[0]["_score"].(float64); !ok || got != 0.87 {
+		t.Fatalf("_score = %#v, want the hit score 0.87 (pagerank must not be folded in)", res.Chunks[0]["_score"])
+	}
+	if got, ok := res.Chunks[0]["pagerank_fea"].(float64); !ok || got != 69 {
+		t.Fatalf("pagerank_fea = %#v, want 69 preserved for the reranker", res.Chunks[0]["pagerank_fea"])
+	}
+}
+
 // TestMapMemoryMessageESUpdateFieldsRefreshesTokens: writing content via
 // the update path recomputes tokenized_content_ltks before write, same
 // as the Python update path.
@@ -775,4 +1012,51 @@ func TestMapMemoryMessageESUpdateFieldsRefreshesTokens(t *testing.T) {
 		t.Fatalf("tokenized_content_ltks = %#v, want refreshed tokenized string", doc["tokenized_content_ltks"])
 	}
 	assertEqual(t, doc["status_int"], 0)
+}
+
+func TestCloneFilterSnapshotIsolatesLaterShouldAppends(t *testing.T) {
+	boolMap := map[string]interface{}{
+		"must":   []interface{}{map[string]interface{}{"term": map[string]interface{}{"kb_id": "kb-1"}}},
+		"should": []interface{}{map[string]interface{}{"match_all": map[string]interface{}{}}},
+	}
+	boolQuery := map[string]interface{}{"bool": boolMap}
+
+	snapshot := cloneFilterSnapshot(boolQuery)
+
+	// Mirror what the rank_feature block does after the kNN clause is built: it
+	// appends to the scored query's bool/should.
+	boolMap["should"] = append(
+		boolMap["should"].([]interface{}),
+		map[string]interface{}{"rank_feature": map[string]interface{}{"field": "pagerank_fea", "boost": 10.0}},
+	)
+
+	if got := len(boolMap["should"].([]interface{})); got != 2 {
+		t.Fatalf("original should has %d clauses, want 2", got)
+	}
+	snapshotBool, ok := snapshot["bool"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("snapshot bool missing from %#v", snapshot)
+	}
+	if got := len(snapshotBool["should"].([]interface{})); got != 1 {
+		t.Fatalf("snapshot should has %d clauses, want 1 (rank_feature must stay out of knn.filter)", got)
+	}
+	if got := len(snapshotBool["must"].([]interface{})); got != 1 {
+		t.Fatalf("snapshot must has %d clauses, want 1", got)
+	}
+}
+
+func TestCloneFilterSnapshotNil(t *testing.T) {
+	if got := cloneFilterSnapshot(nil); got != nil {
+		t.Fatalf("cloneFilterSnapshot(nil) = %#v, want nil", got)
+	}
+}
+
+func TestCloneFilterSnapshotNonBoolQuery(t *testing.T) {
+	query := map[string]interface{}{
+		"query_string": map[string]interface{}{"query": "alpha"},
+	}
+	snapshot := cloneFilterSnapshot(query)
+	if snapshot["query_string"] == nil {
+		t.Fatalf("snapshot = %#v, want the query_string clause preserved", snapshot)
+	}
 }

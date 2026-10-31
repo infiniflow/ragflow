@@ -1,0 +1,11 @@
+{
+  "label": "Upgrade and Migration",
+  "position": 4,
+  "link": {
+    "type": "doc",
+    "id": "administrator/upgrade_and_migration/start_here"
+  },
+  "customProps": {
+    "categoryIcon": "LucideArrowBigUpDash"
+  }
+}

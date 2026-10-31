@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -44,6 +44,7 @@ class Document(Base):
         self.progress_msg = ""
         self.process_begin_at = None
         self.process_duration = 0.0
+        self.ingestion_status = ""
         self.run = "0"
         self.status = "1"
         self.meta_fields = {}

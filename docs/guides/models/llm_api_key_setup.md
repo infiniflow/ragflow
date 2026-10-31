@@ -44,7 +44,7 @@ To configure a model provider:
 5. Verify models individually, or click **Verify all models** to verify every model currently shown by the active search and type filters.
 6. Save the instance.
 
-![Create instance](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_instance.jpeg)
+![Create instance](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_instance.jpg)
 
 :::caution
 Do not expose your API Key. An incorrect Base URL causes model verification or model calls to fail. When using a compatible API, confirm whether the path must include `/v1`.
@@ -86,15 +86,20 @@ To add a custom model:
 6. Click **Confirm** to add the model.
 
 
-![Add custom model1](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_custom_model_1.png)
+![Add custom model1](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_custom_model_1.jpg)
 
-![Add custom model2](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_custom_model_2.png)
+![Add custom model2](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_custom_model_2.jpg)
 
 ### Verify Models
 
-After adding models, verify them individually, or click **Verify all models** to verify every model currently shown by the active search and type filters. Verification checks each model together with the current instance credentials and endpoint. If verification fails, check the authentication information, Base URL, network connection, account quota, model name, and model availability.
+Verify the models you plan to use with the instance's current credentials and endpoint.
 
-![Verify models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/verify_connection.png)
+1. Open **User settings > Model providers**, select a provider, and open the instance you want to check.
+2. Complete the required connection fields, such as **API Key** and **Base URL**, and make sure the required models are in the instance's model list.
+3. To check one model, click the circular-arrow verification icon on its row. The button is identified as **Verify** followed by the model name.
+4. To check multiple models, use the model search and type tabs to narrow the list, then click **Verify all models**. This checks the models displayed by the active filters. Clear the search and select **All models** if you want to check the full list.
+5. Wait for the row indicators: a spinner means verification is in progress, a green check means success, and a warning symbol means failure. For a failed model, check the reported error and correct the credentials, endpoint, model name, service availability, or account quota, then verify it again.
+6. Click **Save** to save the instance configuration. Verification does not replace saving.
 
 ## Set Default Models
 
@@ -105,9 +110,19 @@ At minimum, set the following defaults:
 1. Default LLM.
 2. Default embedding model.
 
-If you have configured a rerank model, it is also recommended to set a default rerank model. Configure VLM, ASR, TTS, and OCR defaults as required by your business.
+If you have configured a rerank model, it is also recommended to set a default rerank model. Configure VLM, ASR, and TTS defaults as required by your business.
 
-![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpeg)
+![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpg)
+
+### Decision Model
+
+**Decision model** selects the default model used to judge whether retrieved passages are relevant enough to pass to the LLM. It is separate from the LLM that generates the answer and from the rerank model that scores and orders candidates. Leave it unset if you do not need this filtering.
+
+1. Add and verify a model that supports the **Decision** type under **User settings > Model providers**.
+2. Open **Set default models** and select the model in **Decision model**.
+3. Check that the selected model and provider instance are displayed in the field.
+
+For a particular Chat, you can select its decision model under **Chat setting > Advanced settings > Agentic > Decision model** and save the Chat settings. See [Chat Configuration](../chat/chat_configuration.md#agentic-settings).
 
 ## Model Types and Usage
 
@@ -119,6 +134,7 @@ If you have configured a rerank model, it is also recommended to set a default r
 | VLM | Vision-Language Model | Understands images and the text, objects, and scene information in them | Images, text, or images with text | Text | Image Q&A, chart understanding, and visual content analysis |
 | ASR | Automatic Speech Recognition model | Converts speech into text | Audio | Text | Speech transcription, meeting records, and real-time captions |
 | TTS | Text-to-Speech model | Converts text into speech | Text | Audio | Voice playback, audio content, and voice interaction |
+| Decision | Decision model | Judges the relevance of retrieved passages before they are passed to the LLM | Query and retrieved content | Relevance decision | Filtering retrieval evidence |
 | OCR | Optical Character Recognition model | Recognizes text in images or scanned documents | Images or scanned documents | Recognized text | Scanned document recognition and receipt recognition |
 
 The following model types serve different parts of retrieval, generation, and multimodal workflows:

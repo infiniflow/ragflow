@@ -100,6 +100,12 @@ type AsyncChatResult struct {
 	// the think-block sentence), forwarded so a client can render steps —
 	// tool, status, counts, sources, duration — instead of paragraphs.
 	ThinkEvent *ThinkEvent `json:"think_event,omitempty"`
+	// Usage and ElapsedMs are this turn's cost, emitted on the final chunk so a
+	// client can show what the answer cost. They are the same numbers the
+	// Langfuse generation below records; without them a UI has to parse the
+	// human-readable prompt text to learn anything about cost.
+	Usage     *ChatTurnUsage `json:"usage,omitempty"`
+	ElapsedMs float64        `json:"elapsed_ms,omitempty"`
 	// Internal-only: set when Answer is the run's authoritative full text —
 	// <think> stretch included, citation handles already compacted against the
 	// shipped reference — so the session writer must persist it instead of the
@@ -107,6 +113,15 @@ type AsyncChatResult struct {
 	AnswerIsAuthoritative bool
 	// Internal-only: accumulated answer for building the decorated final result.
 	accumulatedAnswer string
+}
+
+// ChatTurnUsage is one turn's token cost. CompletionTokens is an estimate (the
+// answer has no tokenizer on this path), which is why it is reported separately
+// rather than folded into a single "tokens" number a reader would trust.
+type ChatTurnUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 // ThinkEvent is one structured agentic reasoning step as it goes over the
@@ -183,7 +198,7 @@ type ThinkEvent struct {
 //	│         → sufficiencyCheck → multiQueriesGen → recurse│
 //	│   NO  → Standard vector retrieval                     │
 //	│         vector/hybrid search → rerank →               │
-//	│         TOC enhance → child chunk retrieval →         │
+//	│         child chunk retrieval →                       │
 //	│         Web search → KG retrieval (prepend)           │
 //	│                                                       │
 //	│    enrichChunksWithMetadata (doc metadata)            │
@@ -221,9 +236,15 @@ func (s *ChatPipelineService) AsyncChat(
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("AsyncChat: messages is empty")
 	}
+	if err := validateUserMessageContent(messages); err != nil {
+		return nil, common.NewCodedError(common.CodeArgumentError, err.Error())
+	}
 	lastMsg := messages[len(messages)-1]
 	if role, _ := lastMsg["role"].(string); role != "user" {
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
+	}
+	if err := validateChatDatasetAccess(ctx, userID, chat.KBIDs); err != nil {
+		return nil, err
 	}
 
 	// Resolve what this conversation can reach BEFORE dispatching: whether it
@@ -291,15 +312,27 @@ func (s *ChatPipelineService) AsyncChat(
 		timer := common.NewTimer()
 		timer.Start()
 
+		sendResult := func(res AsyncChatResult) bool {
+			if ctx.Err() != nil {
+				return false
+			}
+			select {
+			case out <- res:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+
 		// === Phase 2: Resolve LLM Model Config + max_tokens ===
 		common.Info("Phase 2: Resolve LLM Model Config + max_tokens")
 		timer.Enter(common.PhaseCheckLLM)
 		llmModelConfig, _, _, _, err := s.getLLMModelConfig(ctx, chat)
 		if err != nil {
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 				Final:  true,
-			}
+			})
 			return
 		}
 		modelMaxTokens := 8192
@@ -337,10 +370,10 @@ func (s *ChatPipelineService) AsyncChat(
 		timer.Enter(common.PhaseBindModels)
 		kbs, embModel, rerankModel, chatModel, ttsModel, err := s.getModels(ctx, chat)
 		if err != nil {
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 				Final:  true,
-			}
+			})
 			return
 		}
 
@@ -359,11 +392,11 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// === Phase 5: Extract Questions, doc_ids, Attachments ===
 		common.Info("Phase 5: Extract questions, doc_ids, attachments")
-		// Retrieve the last 3 user questions.
+		// Entry validation guarantees the final user content normalizes to a question.
 		var questions []string
 		for _, m := range messages {
 			if role, _ := m["role"].(string); role == "user" {
-				if content, ok := m["content"].(string); ok {
+				if content, err := NormalizeOpenAIMessageContent(m["content"]); err == nil {
 					questions = append(questions, content)
 				}
 			}
@@ -510,11 +543,11 @@ func (s *ChatPipelineService) AsyncChat(
 					s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 				}
 
-				out <- AsyncChatResult{
+				sendResult(AsyncChatResult{
 					Answer:    ansStr,
 					Reference: ans["reference"].(map[string]interface{}),
 					Final:     true,
-				}
+				})
 				return
 			}
 			common.Info("SQL retrieval: no valid result, falling back to vector search")
@@ -587,10 +620,10 @@ func (s *ChatPipelineService) AsyncChat(
 				optional, _ := pMap["optional"].(bool)
 				if !optional {
 					// Required parameter missing => fail fast
-					out <- AsyncChatResult{
+					sendResult(AsyncChatResult{
 						Answer: fmt.Sprintf("**ERROR**: Miss parameter: %s", key),
 						Final:  true,
-					}
+					})
 					return
 				}
 				// Optional parameter missing => erase placeholder from system prompt
@@ -691,7 +724,6 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 
 		// When hasKnowledgeParam is true, runs standard retrieval, then:
-		//   - TOC enhancement (if toc_enhance is enabled).
 		//   - Child chunk retrieval.
 		//   - Web search provider (if internet is enabled).
 		//   - Knowledge graph retrieval (if use_kg is enabled).
@@ -699,7 +731,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// When false, the entire block is skipped.
 		if hasKnowledgeParam {
 			// Regular RAG mirroring Python's async_chat — native docStore
-			// retrieval, then the TOC / child chunk / web search / KG
+			// retrieval, then the child chunk / web search / KG
 			// enhancements below.
 			searchQuestion := strings.Join(questions, " ")
 			if embModel != nil {
@@ -762,28 +794,11 @@ func (s *ChatPipelineService) AsyncChat(
 				}
 				if err != nil {
 					common.Warn("Retrieval failed", zap.Error(err))
-					out <- AsyncChatResult{
+					sendResult(AsyncChatResult{
 						Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 						Final:  true,
-					}
+					})
 					return
-				}
-			}
-
-			// TOC enhancement
-			if useTOC, _ := chat.PromptConfig["toc_enhance"].(bool); useTOC && chatModel != nil && len(kbs) > 0 {
-				enhancer := NewTOCEnhancer(
-					engine.Get(),
-					chatModel,
-					kbTenantIDStrings(kbs),
-					kbIDStrings(kbs),
-					searchQuestion,
-					int(chat.TopN),
-				)
-				if added, err := enhancer.Enhance(ctx, kbinfos); err != nil {
-					common.Warn("TOC enhance failed", zap.Error(err))
-				} else if added > 0 {
-					common.Debug("TOC enhance added chunks", zap.Int("added", added))
 				}
 			}
 
@@ -853,6 +868,15 @@ func (s *ChatPipelineService) AsyncChat(
 		// Sub-steps: empty_response check → formatPrompt → citationPrompt →
 		// messageFitIn (95% token budget) → multimodal conversion → adjust max_tokens.
 		// If no knowledges and empty_response is configured, yield it and return.
+		// Compiled-serve: swap/extend the retrieved chunk text with knowledge-compiled
+		// products when enabled. Mirrors the agentic locate exit for the standard
+		// (reasoning level 1-4) retrieval path. No-op when inactive or no products
+		// were found for the recalled chunks.
+		if rawChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok && len(rawChunks) > 0 {
+			if served := agentic_rag.CompiledServeChunks(ctx, chat.TenantID, rawChunks, kbIDStrings(kbs)); served != nil {
+				kbinfos["chunks"] = served
+			}
+		}
 		knowledges = s.kbPrompt(kbinfos, modelMaxTokens)
 		common.Info("Phase 10: Build LLM Request")
 		common.Debug("Knowledge prompt",
@@ -887,17 +911,19 @@ func (s *ChatPipelineService) AsyncChat(
 				if !quote {
 					finalReference = map[string]interface{}{}
 				}
-				out <- AsyncChatResult{
+				if !sendResult(AsyncChatResult{
 					Answer:    emptyResp,
 					Reference: map[string]interface{}{},
+				}) {
+					return
 				}
-				out <- AsyncChatResult{
+				sendResult(AsyncChatResult{
 					Answer:      emptyResp,
 					Reference:   finalReference,
 					AudioBinary: s.synthesizeTTS(ctx, ttsModel, emptyResp),
 					Prompt:      fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " ")),
 					Final:       true,
-				}
+				})
 				return
 			}
 		}
@@ -1018,10 +1044,10 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 
 		if len(llmMessages) < 2 {
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer: "**ERROR**: message_fit_in has bug",
 				Final:  true,
-			}
+			})
 			return
 		}
 
@@ -1041,10 +1067,10 @@ func (s *ChatPipelineService) AsyncChat(
 			citationTokens = graph.NumTokensFromString(prompt4citation)
 		}
 		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount+citationTokens); err != nil {
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 				Final:  true,
-			}
+			})
 			return
 		} else if ok {
 			common.Debug("Adjusted max_tokens", zap.Int("max_tokens in chat", adjusted))
@@ -1060,10 +1086,10 @@ func (s *ChatPipelineService) AsyncChat(
 		timer.Enter(common.PhaseGenerateAnswer)
 		chatDriver := s.buildChatDriver(ctx, chat, chatModel)
 		if chatDriver == nil {
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer: "**ERROR**: No chat model available for this chat.",
 				Final:  true,
-			}
+			})
 			return
 		}
 		chatMessages := s.buildChatMessages(prompt+prompt4citation, llmMessages[1:])
@@ -1110,32 +1136,36 @@ func (s *ChatPipelineService) AsyncChat(
 			var fullAnswer string
 			thinkState := &ThinkStreamState{}
 			var answerFilter, reasoningFilter citationStreamFilter
-			emit := func(result AsyncChatResult) {
+			emit := func(result AsyncChatResult) bool {
 				if !result.Final && result.Answer != "" {
 					result.AudioBinary = s.synthesizeTTS(ctx, ttsModel, result.Answer)
 				}
-				out <- result
+				return sendResult(result)
 			}
-			send := func(result AsyncChatResult) {
+			send := func(result AsyncChatResult) bool {
 				if !quote {
 					// Flush before a boundary so buffered text stays in its section.
 					if result.StartToThink || result.EndToThink || result.Final {
 						if text := reasoningFilter.flush(); text != "" {
-							emit(AsyncChatResult{Reasoning: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+							if !emit(AsyncChatResult{Reasoning: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())}) {
+								return false
+							}
 						}
 						if text := answerFilter.flush(); text != "" {
-							emit(AsyncChatResult{Answer: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+							if !emit(AsyncChatResult{Answer: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())}) {
+								return false
+							}
 						}
 					}
 					if !result.Final && (result.Answer != "" || result.Reasoning != "") {
 						result.Answer = answerFilter.write(result.Answer)
 						result.Reasoning = reasoningFilter.write(result.Reasoning)
 						if result.Answer == "" && result.Reasoning == "" {
-							return
+							return true
 						}
 					}
 				}
-				emit(result)
+				return emit(result)
 			}
 
 			// Tool routing: use tool-loop method when tools are bound.
@@ -1155,47 +1185,55 @@ func (s *ChatPipelineService) AsyncChat(
 
 						if text == "<think>" {
 							inThink = true
-							send(AsyncChatResult{
+							if !send(AsyncChatResult{
 								Answer:       "",
 								Reference:    map[string]interface{}{},
 								AudioBinary:  nil,
 								CreatedAt:    float64(time.Now().Unix()),
 								Final:        false,
 								StartToThink: true,
-							})
+							}) {
+								return ctx.Err()
+							}
 							return nil
 						}
 						if text == "</think>" {
 							inThink = false
-							send(AsyncChatResult{
+							if !send(AsyncChatResult{
 								Answer:      "",
 								Reference:   map[string]interface{}{},
 								AudioBinary: nil,
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
 								EndToThink:  true,
-							})
+							}) {
+								return ctx.Err()
+							}
 							return nil
 						}
 						if inThink {
 							// Reasoning text — route to Reasoning field so
 							// the SSE handler maps it to
 							// `delta.reasoning_content`.
-							send(AsyncChatResult{
+							if !send(AsyncChatResult{
 								Reasoning:   text,
 								Reference:   map[string]interface{}{},
 								AudioBinary: nil,
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
-							})
+							}) {
+								return ctx.Err()
+							}
 						} else {
 							// Regular answer content
-							send(AsyncChatResult{
+							if !send(AsyncChatResult{
 								Answer:    text,
 								Reference: map[string]interface{}{},
 								CreatedAt: float64(time.Now().Unix()),
 								Final:     false,
-							})
+							}) {
+								return ctx.Err()
+							}
 						}
 						return nil
 					})
@@ -1205,25 +1243,29 @@ func (s *ChatPipelineService) AsyncChat(
 					func(answer *string, reason *string) error {
 						if reason != nil && *reason != "" {
 							if thinkState.EnterReasoning() {
-								send(AsyncChatResult{
+								if !send(AsyncChatResult{
 									Answer:       "",
 									Reference:    map[string]interface{}{},
 									AudioBinary:  nil,
 									CreatedAt:    float64(time.Now().Unix()),
 									Final:        false,
 									StartToThink: true,
-								})
+								}) {
+									return ctx.Err()
+								}
 							}
 							deltas := NextThinkDelta(thinkState, *reason, 16)
 							for _, d := range deltas {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
 									fullAnswer += d.Value
-									send(AsyncChatResult{
+									if !send(AsyncChatResult{
 										Answer:    d.Value,
 										Reference: map[string]interface{}{},
 										CreatedAt: float64(time.Now().Unix()),
 										Final:     false,
-									})
+									}) {
+										return ctx.Err()
+									}
 								}
 							}
 						}
@@ -1232,33 +1274,39 @@ func (s *ChatPipelineService) AsyncChat(
 								for _, d := range FlushRemaining(thinkState) {
 									if d.Kind == ThinkDeltaText && d.Value != "" {
 										fullAnswer += d.Value
-										send(AsyncChatResult{
+										if !send(AsyncChatResult{
 											Answer:    d.Value,
 											Reference: map[string]interface{}{},
 											CreatedAt: float64(time.Now().Unix()),
 											Final:     false,
-										})
+										}) {
+											return ctx.Err()
+										}
 									}
 								}
-								send(AsyncChatResult{
+								if !send(AsyncChatResult{
 									Answer:      "",
 									Reference:   map[string]interface{}{},
 									AudioBinary: nil,
 									CreatedAt:   float64(time.Now().Unix()),
 									Final:       false,
 									EndToThink:  true,
-								})
+								}) {
+									return ctx.Err()
+								}
 							}
 							fullAnswer += *answer
 							deltas := BufferAnswerDelta(thinkState, *answer, 16)
 							for _, d := range deltas {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
-									send(AsyncChatResult{
+									if !send(AsyncChatResult{
 										Answer:    d.Value,
 										Reference: map[string]interface{}{},
 										CreatedAt: float64(time.Now().Unix()),
 										Final:     false,
-									})
+									}) {
+										return ctx.Err()
+									}
 								}
 							}
 						}
@@ -1267,10 +1315,17 @@ func (s *ChatPipelineService) AsyncChat(
 				)
 			}
 			if driverErr != nil {
+				if ctx.Err() != nil {
+					return
+				}
 				send(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", driverErr.Error()),
 					Final:  true,
 				})
+				return
+			}
+			timer.Exit(common.PhaseGenerateAnswer)
+			if ctx.Err() != nil {
 				return
 			}
 
@@ -1281,35 +1336,41 @@ func (s *ChatPipelineService) AsyncChat(
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
 					hadThinkClose = true
-					send(AsyncChatResult{
+					if !send(AsyncChatResult{
 						Answer:      "",
 						Reference:   map[string]interface{}{},
 						AudioBinary: nil,
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 						EndToThink:  true,
-					})
+					}) {
+						return
+					}
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
-					send(AsyncChatResult{
+					if !send(AsyncChatResult{
 						Answer:    d.Value,
 						Reference: map[string]interface{}{},
 						CreatedAt: float64(time.Now().Unix()),
 						Final:     false,
-					})
+					}) {
+						return
+					}
 				}
 			}
 			// Close reasoning if the stream ended while still in reasoning mode
 			// (e.g. model returned only reasoning chunks with no content delta).
 			// Skip when FlushRemaining already emitted a </think> marker.
 			if !hadThinkClose && thinkState.ExitReasoning() {
-				send(AsyncChatResult{
+				if !send(AsyncChatResult{
 					Answer:      "",
 					Reference:   map[string]interface{}{},
 					AudioBinary: nil,
 					CreatedAt:   float64(time.Now().Unix()),
 					Final:       false,
 					EndToThink:  true,
-				})
+				}) {
+					return
+				}
 			}
 
 			// Decorate and yield the final answer.
@@ -1321,7 +1382,6 @@ func (s *ChatPipelineService) AsyncChat(
 			final := s.decorateAnswer(ctx, visibleAnswer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, nil, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
 			final.Final = true
 			final.AudioBinary = nil
-			timer.Exit(common.PhaseGenerateAnswer)
 			send(final)
 		} else {
 			// Non-streaming: get the answer synchronously.
@@ -1338,12 +1398,13 @@ func (s *ChatPipelineService) AsyncChat(
 					answer = *resp.Answer
 				}
 			}
+			timer.Exit(common.PhaseGenerateAnswer)
 
 			if err != nil {
-				out <- AsyncChatResult{
+				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 					Final:  true,
-				}
+				})
 				return
 			}
 
@@ -1359,13 +1420,29 @@ func (s *ChatPipelineService) AsyncChat(
 			// Synthesize TTS for the full answer (non-stream, one-shot).
 			final := s.decorateAnswer(ctx, answer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, ttsModel, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
 			final.Final = true
-			timer.Exit(common.PhaseGenerateAnswer)
-			out <- final
+			sendResult(final)
 		}
 		common.Info("AsyncChat completed", zap.String("chat_id", chat.ID))
 	}()
 
 	return out, nil
+}
+
+func validateUserMessageContent(messages []map[string]interface{}) error {
+	for i, message := range messages {
+		role, _ := message["role"].(string)
+		if role != "user" {
+			continue
+		}
+		content, ok := message["content"]
+		if !ok || content == nil {
+			return fmt.Errorf("messages[%d].content is required for user messages", i)
+		}
+		if _, err := NormalizeOpenAIMessageContent(content); err != nil {
+			return fmt.Errorf("messages[%d].content is invalid: %w", i, err)
+		}
+	}
+	return nil
 }
 
 // deepResearchProgressCallback builds the progress callback handed to
@@ -1413,6 +1490,18 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		// Timer brackets the LLM call; other phases are N/A in solo mode.
 		timer := common.NewTimer()
 		timer.Start()
+
+		sendResult := func(res AsyncChatResult) bool {
+			if ctx.Err() != nil {
+				return false
+			}
+			select {
+			case out <- res:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
 
 		// 1. Resolve system prompt.
 		promptConfig := chat.PromptConfig
@@ -1491,10 +1580,10 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			chatModel, err = s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
 		}
 		if err != nil {
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 				Final:  true,
-			}
+			})
 			return
 		}
 
@@ -1549,25 +1638,29 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				func(answer *string, reason *string) error {
 					if reason != nil && *reason != "" {
 						if thinkState.EnterReasoning() {
-							out <- AsyncChatResult{
+							if !sendResult(AsyncChatResult{
 								Answer:       "",
 								Reference:    map[string]interface{}{},
 								AudioBinary:  nil,
 								CreatedAt:    float64(time.Now().Unix()),
 								Final:        false,
 								StartToThink: true,
+							}) {
+								return ctx.Err()
 							}
 						}
 						deltas := NextThinkDelta(thinkState, *reason, 16)
 						for _, d := range deltas {
 							if d.Kind == ThinkDeltaText && d.Value != "" {
 								fullAnswer += d.Value
-								out <- AsyncChatResult{
+								if !sendResult(AsyncChatResult{
 									Answer:      d.Value,
 									Reference:   map[string]interface{}{},
 									AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 									CreatedAt:   float64(time.Now().Unix()),
 									Final:       false,
+								}) {
+									return ctx.Err()
 								}
 							}
 						}
@@ -1577,34 +1670,40 @@ func (s *ChatPipelineService) AsyncChatSolo(
 							for _, d := range FlushRemaining(thinkState) {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
 									fullAnswer += d.Value
-									out <- AsyncChatResult{
+									if !sendResult(AsyncChatResult{
 										Answer:      d.Value,
 										Reference:   map[string]interface{}{},
 										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 										CreatedAt:   float64(time.Now().Unix()),
 										Final:       false,
+									}) {
+										return ctx.Err()
 									}
 								}
 							}
-							out <- AsyncChatResult{
+							if !sendResult(AsyncChatResult{
 								Answer:      "",
 								Reference:   map[string]interface{}{},
 								AudioBinary: nil,
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
 								EndToThink:  true,
+							}) {
+								return ctx.Err()
 							}
 						}
 						fullAnswer += *answer
 						deltas := BufferAnswerDelta(thinkState, *answer, 16)
 						for _, d := range deltas {
 							if d.Kind == ThinkDeltaText && d.Value != "" {
-								out <- AsyncChatResult{
+								if !sendResult(AsyncChatResult{
 									Answer:      d.Value,
 									Reference:   map[string]interface{}{},
 									AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 									CreatedAt:   float64(time.Now().Unix()),
 									Final:       false,
+								}) {
+									return ctx.Err()
 								}
 							}
 						}
@@ -1613,10 +1712,16 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				},
 			)
 			if driverErr != nil {
-				out <- AsyncChatResult{
+				if ctx.Err() != nil {
+					return
+				}
+				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", driverErr.Error()),
 					Final:  true,
-				}
+				})
+				return
+			}
+			if ctx.Err() != nil {
 				return
 			}
 			timer.Exit(common.PhaseGenerateAnswer)
@@ -1624,21 +1729,25 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
 					hadThinkClose = true
-					out <- AsyncChatResult{
+					if !sendResult(AsyncChatResult{
 						Answer:      "",
 						Reference:   map[string]interface{}{},
 						AudioBinary: nil,
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 						EndToThink:  true,
+					}) {
+						return
 					}
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
-					out <- AsyncChatResult{
+					if !sendResult(AsyncChatResult{
 						Answer:      d.Value,
 						Reference:   map[string]interface{}{},
 						AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
+					}) {
+						return
 					}
 				}
 			}
@@ -1646,26 +1755,28 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			// (e.g. model returned only reasoning chunks with no content delta).
 			// Skip when FlushRemaining already emitted a </think> marker.
 			if !hadThinkClose && thinkState.ExitReasoning() {
-				out <- AsyncChatResult{
+				if !sendResult(AsyncChatResult{
 					Answer:      "",
 					Reference:   map[string]interface{}{},
 					AudioBinary: nil,
 					CreatedAt:   float64(time.Now().Unix()),
 					Final:       false,
 					EndToThink:  true,
+				}) {
+					return
 				}
 			}
 			finalAnswer := ExtractVisibleAnswer(thinkState.fullText)
 			if finalAnswer == "" {
 				finalAnswer = fullAnswer
 			}
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer:      finalAnswer,
 				Reference:   map[string]interface{}{},
 				AudioBinary: nil,
 				CreatedAt:   float64(time.Now().Unix()),
 				Final:       true,
-			}
+			})
 		} else {
 			// Non-streaming: one-shot call.
 			chatCfg := BuildChatConfig(chat, config)
@@ -1673,10 +1784,10 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			resp, err := chatModel.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
 			timer.Exit(common.PhaseGenerateAnswer)
 			if err != nil {
-				out <- AsyncChatResult{
+				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 					Final:  true,
-				}
+				})
 				return
 			}
 			answer := ""
@@ -1693,13 +1804,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			common.Debug("User: " + userContent + "|Assistant: " + answer)
 
 			// Raw answer with full TTS, no decorate_answer. Caller handles decoration.
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer:      answer,
 				Reference:   map[string]interface{}{},
 				AudioBinary: s.synthesizeTTS(ctx, ttsModel, answer),
 				CreatedAt:   float64(time.Now().Unix()),
 				Final:       true,
-			}
+			})
 		}
 	}()
 
@@ -2500,8 +2611,13 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 		cnt += drawNode("Title", getMapString(ck, "docnm_kwd", "document_name"))
 		cnt += drawNode("URL", getMapString(ck, "url"))
 		if meta, ok := ck["document_metadata"].(map[string]interface{}); ok {
-			for k, v := range meta {
-				cnt += drawNode(k, v)
+			keys := make([]string, 0, len(meta))
+			for k := range meta {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				cnt += drawNode(k, meta[k])
 			}
 		}
 		cnt += "\n└── Content:\n"
@@ -3037,7 +3153,7 @@ func (s *ChatPipelineService) decorateAnswer(
 	finishChatTs := time.Now()
 
 	// Build timing stats.
-	// P1: emit Timer.Markdown() (6 phase lines + Total) and then the
+	// P1: emit Timer.Markdown() (phase lines, Other, and Total) and then the
 	// token-count / token-speed lines that the existing OpenAI endpoint
 	// already exposes. Total wall-clock is rounded to ms.
 	totalMs := timer.Total().Seconds() * 1000
@@ -3098,6 +3214,14 @@ func (s *ChatPipelineService) decorateAnswer(
 		Prompt:    strings.ReplaceAll(timeStats, "\n", "  \n"),
 		CreatedAt: float64(finishChatTs.Unix()),
 		Final:     false, // caller sets Final = true
+		// Same numbers the Langfuse generation above records, on the wire so a
+		// client does not have to parse the human-readable prompt to learn them.
+		Usage: &ChatTurnUsage{
+			PromptTokens:     usedTokenCount,
+			CompletionTokens: tkNum,
+			TotalTokens:      usedTokenCount + tkNum,
+		},
+		ElapsedMs: totalMs,
 	}
 }
 
@@ -4440,7 +4564,7 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 
 func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool, error) {
 	if usedTokenCount >= modelMaxTokens {
-		return 0, false, fmt.Errorf("prompt uses %d tokens, leaving no completion capacity for model max_tokens %d", usedTokenCount, modelMaxTokens)
+		return 0, false, fmt.Errorf("prompt uses %d tokens, leaving no completion capacity for model max context length %d", usedTokenCount, modelMaxTokens)
 	}
 	if cfg == nil || cfg.MaxTokens == nil {
 		return 0, false, nil

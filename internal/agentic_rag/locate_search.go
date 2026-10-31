@@ -148,7 +148,9 @@ func runLocateSearch(ctx context.Context, spec locateSearchSpec) (string, error)
 			DocScope:                 docScope,
 			TenantID:                 tenantID,
 			VectorOnly:               spec.vectorOnly,
-			SelectFields:             grepChunksSelectFields,
+			// Agentic, so no dense-only rescue.
+			AllowDenseFallback: new(false),
+			SelectFields:       grepChunksSelectFields,
 			// Same "only ordinary prose" filter as grep_chunks: exclude
 			// compiled products so the model reads original document text, not
 			// derived graph content.

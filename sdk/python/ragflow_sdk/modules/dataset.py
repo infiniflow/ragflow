@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -34,7 +34,9 @@ class DataSet(Base):
         self.permission = "me"
         self.document_count = 0
         self.chunk_count = 0
-        self.chunk_method = "naive"
+        self.parser_id = ""
+        self.pipeline_id = None
+        self.language = None
         self.parser_config = None
         self.pagerank = 0
         for k in list(res_dict.keys()):
@@ -42,13 +44,24 @@ class DataSet(Base):
                 res_dict.pop(k)
         super().__init__(rag, res_dict)
 
+    @property
+    def parse_type(self) -> int:
+        """1 when parsed by a builtin parser, 2 when parsed by an ingestion pipeline."""
+        return 2 if self.pipeline_id else 1
+
     def update(self, update_message: dict):
+        if "chunk_method" in update_message:
+            raise ValueError("chunk_method is not supported by RAGFlow 1.0; use parse_type with parser_id or pipeline_id")
         res = self.put(f"/datasets/{self.id}", update_message)
         res = res.json()
         if res.get("code") != 0:
             raise Exception(res["message"])
 
-        self._update_from_dict(self.rag, res.get("data", {}))
+        data = res.get("data", {})
+        # BuiltIn datasets omit pipeline_id from the response; clear the previous
+        # mode before merging so a Pipeline -> BuiltIn update cannot leave stale state.
+        self.pipeline_id = data.get("pipeline_id") or None
+        self._update_from_dict(self.rag, data)
         return self
 
     def upload_documents(self, document_list: list[dict]):
@@ -114,6 +127,7 @@ class DataSet(Base):
         import time
 
         terminal_states = {"DONE", "FAIL", "CANCEL"}
+        ingestion_terminal_states = {"COMPLETED": "DONE", "FAILED": "FAIL", "STOPPED": "CANCEL"}
         interval_sec = 1
         pending = set(document_ids)
         finished = []
@@ -123,7 +137,11 @@ class DataSet(Base):
                 if not docs:
                     raise RuntimeError(f"Document {doc_id} not found while waiting for parsing to finish")
                 doc = docs[0]
-                if isinstance(doc.run, str) and doc.run.upper() in terminal_states:
+                status = ingestion_terminal_states.get(doc.ingestion_status)
+                if status:
+                    finished.append((doc_id, status, doc.chunk_count, doc.token_count))
+                    pending.discard(doc_id)
+                elif isinstance(doc.run, str) and doc.run.upper() in terminal_states:
                     finished.append((doc_id, doc.run, doc.chunk_count, doc.token_count))
                     pending.discard(doc_id)
                 elif float(doc.progress or 0.0) >= 1.0:

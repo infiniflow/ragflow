@@ -1,4 +1,5 @@
 import { Modal } from '@/components/ui/modal/modal';
+import { FileType } from '@/constants/file';
 import {
   UseRowSelectionType,
   useSelectedIds,
@@ -9,6 +10,7 @@ import {
   useSetDocumentStatus,
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
+import { omit } from 'lodash';
 import {
   LucideCircleX,
   LucideCylinder,
@@ -21,7 +23,7 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
-import { DocumentType } from './constant';
+import { DocumentType, ParserGapReason } from './constant';
 import { buildParserGapModalContent } from './parser-gap-content';
 import { useParserGapValidation } from './use-parser-gap-validation';
 import { isDocumentProcessing } from './utils';
@@ -72,14 +74,26 @@ export function useBulkOperateDataset({
             .map((x) => x.id);
 
           if (validIds.length === 0) {
+            // Pure-video selections have no parser that can process them, so
+            // offering anything that implies a fix would mislead. Acknowledge
+            // instead, mirroring the single-document run path. The reason
+            // check keeps this narrow: a future gap kind on a parseable file
+            // must keep the actionable dialog.
+            const videoOnly =
+              gaps.length > 0 &&
+              gaps.every(
+                (gap) =>
+                  gap.fileType === FileType.Video &&
+                  gap.reason === ParserGapReason.UnsupportedType,
+              );
             Modal.error({
               title: t('knowledgeDetails.parseBlockedTitle'),
               content: buildParserGapModalContent(t, gaps, {
                 missingModel: 'knowledgeDetails.addModelToParseHint',
                 unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
               }),
-              showCancel: false,
-              okText: t('common.cancel'),
+              showCancel: !videoOnly,
+              okText: t(videoOnly ? 'common.ok' : 'common.cancel'),
               closable: false,
             });
             return;
@@ -148,8 +162,19 @@ export function useBulkOperateDataset({
     onChangeStatus(false);
   }, [onChangeStatus]);
 
-  const handleDelete = useCallback(() => {
-    const deletedKeys = selectedRowKeys.filter(
+  const handleDelete = useCallback(async () => {
+    const currentKeys = selectedRowKeys.filter((id) =>
+      documents.some((doc) => doc.id === id),
+    );
+    setRowSelection((prev) =>
+      omit(
+        prev,
+        selectedRowKeys.filter((id) => !currentKeys.includes(id)),
+      ),
+    );
+    if (currentKeys.length === 0) return;
+
+    const deletedKeys = currentKeys.filter(
       (x) => !documents.filter(isDocumentProcessing).some((y) => y.id === x),
     );
     if (deletedKeys.length === 0) {
@@ -159,8 +184,17 @@ export function useBulkOperateDataset({
       return;
     }
 
-    return removeDocument(deletedKeys);
-  }, [selectedRowKeys, removeDocument, documents, t]);
+    if (deletedKeys.length < currentKeys.length) {
+      toast.warning(
+        t('knowledgeConfiguration.theDocumentBeingParsedCannotBeDeleted'),
+      );
+    }
+
+    const code = await removeDocument(deletedKeys);
+    if (code === 0) {
+      setRowSelection((prev) => omit(prev, deletedKeys));
+    }
+  }, [selectedRowKeys, removeDocument, documents, t, setRowSelection]);
 
   const list = [
     {
@@ -197,12 +231,7 @@ export function useBulkOperateDataset({
       id: 'delete',
       label: t('common.delete'),
       icon: <LucideTrash2 />,
-      onClick: async () => {
-        const code = await handleDelete();
-        if (code === 0) {
-          setRowSelection({});
-        }
-      },
+      onClick: handleDelete,
     },
   ];
 

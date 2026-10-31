@@ -27,25 +27,28 @@ DATASET_NAME_LIMIT = 128
 
 def create_dataset(auth, payload=None):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}"
-    res = requests.post(url=url, headers={"Content-Type": "application/json"}, auth=auth, json=payload)
+    body = {"parse_type": 1, **(payload or {})}
+    if body["parse_type"] == 1 and body.get("parser_id") is None:
+        body["parser_id"] = "general"
+    res = requests.post(url=url, headers={"Content-Type": "application/json", "Authorization": auth}, json=body)
     return res.json()
 
 
 def list_dataset(auth, params=None):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}"
-    res = requests.get(url=url, headers={"Content-Type": "application/json"}, auth=auth, params=params)
+    res = requests.get(url=url, headers={"Content-Type": "application/json", "Authorization": auth}, params=params)
     return res.json()
 
 
 def rm_dataset(auth, dataset_ids):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}"
-    res = requests.delete(url=url, headers={"Content-Type": "application/json"}, auth=auth, json={"ids": dataset_ids})
+    res = requests.delete(url=url, headers={"Content-Type": "application/json", "Authorization": auth}, json={"ids": dataset_ids})
     return res.json()
 
 
 def update_dataset(auth, dataset_id, payload=None):
     url = f"{HOST_ADDRESS}{DATASETS_API_URL}/{dataset_id}"
-    res = requests.put(url=url, headers={"Content-Type": "application/json"}, auth=auth, json=payload)
+    res = requests.put(url=url, headers={"Content-Type": "application/json", "Authorization": auth}, json=payload)
     return res.json()
 
 

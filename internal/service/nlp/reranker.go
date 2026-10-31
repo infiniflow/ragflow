@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -134,19 +135,10 @@ func RerankByModel(
 			}
 		}
 
-		contentLtks := extractContentTokens(chunk, cfield)
-		titleTks := extractTitleTokens(chunk)
-		importantKwd := extractImportantKeywords(chunk)
-		questionTks := extractQuestionTokens(chunk)
-
 		// Unlike RerankStandard/RerankWithKNN, the fields are not repeated here:
 		// these tokens are joined back into `docs` for a cross-encoder, where
 		// duplicating a field would distort the model's own scoring.
-		tks := make([]string, 0, len(contentLtks)+len(titleTks)+len(importantKwd)+len(questionTks))
-		tks = append(tks, contentLtks...)
-		tks = append(tks, titleTks...)
-		tks = append(tks, importantKwd...)
-		tks = append(tks, questionTks...)
+		tks := buildRerankTokens(chunk, cfield, 1, 1, 1)
 		insTw = append(insTw, tks)
 
 		// Feed the reranker the natural chunk text (markup preserved), not the
@@ -309,25 +301,8 @@ func RerankStandard(
 		chunkVector := extractVector(chunk, vectorColumn, zeroVector)
 		insEmbd = append(insEmbd, chunkVector)
 
-		// Extract tokens
-		contentLtks := extractContentTokens(chunk, cfield)
-		titleTks := extractTitleTokens(chunk)
-		questionTks := extractQuestionTokens(chunk)
-		importantKwd := extractImportantKeywords(chunk)
-
-		// Combine tokens with weights: content + title*2 + important_kwd*5 + question_tks*6
-		tks := make([]string, 0, len(contentLtks)+len(titleTks)*2+len(importantKwd)*5+len(questionTks)*6)
-		tks = append(tks, contentLtks...)
-		for i := 0; i < 2; i++ {
-			tks = append(tks, titleTks...)
-		}
-		for i := 0; i < 5; i++ {
-			tks = append(tks, importantKwd...)
-		}
-		for i := 0; i < 6; i++ {
-			tks = append(tks, questionTks...)
-		}
-		insTw = append(insTw, tks)
+		insTw = append(insTw, buildRerankTokens(
+			chunk, cfield, titleRepeat, importantRepeat, questionRepeat))
 	}
 
 	if len(insEmbd) == 0 {
@@ -399,7 +374,7 @@ func HybridSimilarity(
 	}
 
 	if allZero {
-		return tsim, tsim, vsim
+		return slices.Clone(tsim), tsim, vsim
 	}
 
 	// Combine similarities
@@ -627,6 +602,44 @@ func extractImportantKeywords(fields map[string]interface{}) []string {
 	}
 }
 
+// Field repetition multipliers for the token-based rerank paths. RerankByModel
+// passes 1 for all three: it joins the tokens into natural text for a
+// cross-encoder, where duplication would distort the model's own score.
+const (
+	titleRepeat     = 2
+	importantRepeat = 5
+	questionRepeat  = 6
+)
+
+// buildRerankTokens assembles content + title*titleRepeat +
+// important*importantRepeat + question*questionRepeat, in that order.
+// The returned slice is never nil.
+func buildRerankTokens(
+	chunk map[string]interface{},
+	cfield string,
+	titleRepeat, importantRepeat, questionRepeat int,
+) []string {
+	content := extractContentTokens(chunk, cfield)
+	title := extractTitleTokens(chunk)
+	important := extractImportantKeywords(chunk)
+	question := extractQuestionTokens(chunk)
+
+	tks := make([]string, 0,
+		len(content)+len(title)*titleRepeat+
+			len(important)*importantRepeat+len(question)*questionRepeat)
+	tks = append(tks, content...)
+	for i := 0; i < titleRepeat; i++ {
+		tks = append(tks, title...)
+	}
+	for i := 0; i < importantRepeat; i++ {
+		tks = append(tks, important...)
+	}
+	for i := 0; i < questionRepeat; i++ {
+		tks = append(tks, question...)
+	}
+	return tks
+}
+
 // cosineSimilarity calculates cosine similarity between two vectors.
 // Three parallel pairwise sums (dot, ||a||², ||b||²) keep precision
 // comparable to numpy's float64 reductions.
@@ -663,6 +676,17 @@ func parseFloat(s string) (float64, error) {
 // Formula: tag_score * 10 + pagerank (per document)
 func applyRankFeatureScores(chunks []map[string]interface{}, sim []float64, rankFeature map[string]float64) []float64 {
 	if len(chunks) == 0 || len(sim) == 0 {
+		return sim
+	}
+	// Only the overlapping prefix carries chunk-level rank features; scores
+	// beyond the chunk list keep their input value. A length mismatch is an
+	// upstream bug, so log it instead of silently scoring part of the list.
+	if len(sim) != len(chunks) {
+		common.Warn("rank feature: sim/chunks length mismatch, applying rank features to the overlapping prefix only",
+			zap.Int("simLen", len(sim)), zap.Int("chunkLen", len(chunks)))
+	}
+	if len(sim) > len(chunks) {
+		applyRankFeatureScores(chunks, sim[:len(chunks)], rankFeature)
 		return sim
 	}
 
@@ -766,6 +790,17 @@ func applyRankFeatureScores(chunks []map[string]interface{}, sim []float64, rank
 // This is used when we have the field map from search results
 func applyRankFeatureScoresForIDs(ids []string, field map[string]map[string]interface{}, sim []float64, rankFeature map[string]float64) []float64 {
 	if len(ids) == 0 || len(sim) == 0 {
+		return sim
+	}
+	// Only the overlapping prefix carries chunk-level rank features; scores
+	// beyond the id list keep their input value. A length mismatch is an
+	// upstream bug, so log it instead of silently scoring part of the list.
+	if len(sim) != len(ids) {
+		common.Warn("rank feature: sim/ids length mismatch, applying rank features to the overlapping prefix only",
+			zap.Int("simLen", len(sim)), zap.Int("idLen", len(ids)))
+	}
+	if len(sim) > len(ids) {
+		applyRankFeatureScoresForIDs(ids, field, sim[:len(ids)], rankFeature)
 		return sim
 	}
 
@@ -970,25 +1005,8 @@ func RerankWithKNN(
 		}
 
 		// Normalize text content - split, dedupe while preserving order (OrderedDict effect)
-		contentLtks := extractContentTokens(chunk, cfield)
-		titleTks := extractTitleTokens(chunk)
-		questionTks := extractQuestionTokens(chunk)
-		importantKwd := extractImportantKeywords(chunk)
-
-		// Combine tokens with weights: content + title*2 + important_kwd*5 + question_tks*6
-		// This matches Python: tks = content_ltks + title_tks * 2 + important_kwd * 5 + question_tks * 6
-		tks := make([]string, 0, len(contentLtks)+len(titleTks)*2+len(importantKwd)*5+len(questionTks)*6)
-		tks = append(tks, contentLtks...)
-		for i := 0; i < 2; i++ {
-			tks = append(tks, titleTks...)
-		}
-		for i := 0; i < 5; i++ {
-			tks = append(tks, importantKwd...)
-		}
-		for i := 0; i < 6; i++ {
-			tks = append(tks, questionTks...)
-		}
-		insTw = append(insTw, tks)
+		insTw = append(insTw, buildRerankTokens(
+			chunk, cfield, titleRepeat, importantRepeat, questionRepeat))
 	}
 
 	// Calculate token similarity
@@ -1037,6 +1055,12 @@ func toFloat64(v interface{}) (float64, bool) {
 		return float64(val), true
 	case int32:
 		return float64(val), true
+	case string:
+		// The engine's field projection stringifies non-string values
+		// (pagerank_fea arrives as "7"), and Python's rerank coerces the same
+		// string through np.array(..., dtype=float).
+		f, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
+		return f, err == nil
 	default:
 		return 0, false
 	}

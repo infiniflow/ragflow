@@ -9,9 +9,11 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	models "ragflow/internal/entity/models"
 )
 
-func TestPDFParser_ParseWithResult_MinerUMarkdownIntegration(t *testing.T) {
+func TestPDFParser_ParseWithResult_MinerUJSONIntegration(t *testing.T) {
 	withSSRFBypass(t)
 	var submitCalled atomic.Bool
 	var resultCalled atomic.Bool
@@ -76,7 +78,6 @@ func TestPDFParser_ParseWithResult_MinerUMarkdownIntegration(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":     "MinerU",
-		"output_format":    "markdown",
 		"mineru_apiserver": server.URL,
 		"mineru_api_key":   "secret",
 		"mineru_backend":   "pipeline",
@@ -90,53 +91,20 @@ func TestPDFParser_ParseWithResult_MinerUMarkdownIntegration(t *testing.T) {
 	if !submitCalled.Load() || !resultCalled.Load() {
 		t.Fatalf("submit/result called = %v/%v, want true/true", submitCalled.Load(), resultCalled.Load())
 	}
-	if got, want := res.OutputFormat, "markdown"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
-	if got, want := res.Markdown, "# Title\n\nBody paragraph.\n"; got != want {
-		t.Fatalf("Markdown = %q, want %q", got, want)
+	var text strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		value, _ := item["text"].(string)
+		text.WriteString(value)
+		text.WriteString("\n")
+	}
+	if !strings.Contains(text.String(), "Title") || !strings.Contains(text.String(), "Body paragraph.") {
+		t.Fatalf("JSON text = %q, want title and body", text.String())
 	}
 	if got, want := res.File["name"], "sample.pdf"; got != want {
 		t.Fatalf("File.name = %v, want %v", got, want)
-	}
-}
-
-func TestPDFParser_ParseWithResult_MinerUJSONIntegration(t *testing.T) {
-	withSSRFBypass(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/file_parse":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"task_id":"task-2"}}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/tasks/task-2/result":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"results":{"doc":{"md_content":"# Title\n\nBody paragraph.\n"}}}`))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	pdf := NewPDFParser()
-	pdf.ConfigureFromSetup(map[string]any{
-		"parse_method":     "MinerU",
-		"output_format":    "json",
-		"mineru_apiserver": server.URL,
-	})
-
-	ctx := t.Context()
-	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
-	}
-	if len(res.JSON) == 0 {
-		t.Fatal("JSON is empty; want markdown-normalized items")
-	}
-	if got := res.JSON[0].ToMap()["text"]; got == nil {
-		t.Fatal("JSON[0].text missing")
 	}
 }
 
@@ -206,7 +174,6 @@ func TestPDFParser_ParseWithResult_MinerUSendsServerURLForHTTPClientBackend(t *t
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":      "MinerU",
-		"output_format":     "markdown",
 		"mineru_apiserver":  server.URL,
 		"mineru_backend":    "vlm-http-client",
 		"mineru_server_url": "http://vllm-host:30000",
@@ -267,7 +234,6 @@ func TestPDFParser_ParseWithResult_MinerUReadsBackendFromProviderJSONApiKey(t *t
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":   "MinerU",
-		"output_format":  "markdown",
 		"mineru_api_key": apiKeyJSON,
 	})
 	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
@@ -317,5 +283,77 @@ func TestPDFParser_ParseWithResult_MinerURejectsInvalidBackend(t *testing.T) {
 	}
 	if !strings.Contains(res.Err.Error(), "invalid backend") {
 		t.Fatalf("error = %q, want invalid backend context", res.Err.Error())
+	}
+}
+
+func TestPDFParser_ParseWithResult_MinerUV1ReturnsMarkdown(t *testing.T) {
+	withSSRFBypass(t)
+	var fileParseCalled atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","version":"4.0.12"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"markdown":{"file_id":"out-md"}}}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
+			_, _ = w.Write([]byte("# From V1\n\nParagraph.\n"))
+		case r.URL.Path == "/file_parse":
+			fileParseCalled.Store(true)
+			http.Error(w, "file_parse", http.StatusBadRequest)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":     "MinerU",
+		"mineru_apiserver": server.URL,
+		"mineru_backend":   "pipeline",
+	})
+	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if fileParseCalled.Load() {
+		t.Fatal("V1 endpoint must not call /file_parse")
+	}
+	var text strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		value, _ := item["text"].(string)
+		text.WriteString(value)
+		text.WriteString("\n")
+	}
+	if !strings.Contains(text.String(), "From V1") || !strings.Contains(text.String(), "Paragraph.") {
+		t.Fatalf("JSON text = %q, want V1 markdown", text.String())
+	}
+}
+
+func TestMinerUMarkdownResultUsesMarkdownAndRejectsEmpty(t *testing.T) {
+	res := minerUMarkdownResult(t.Context(), "sample.pdf", &models.MinerUV1Result{
+		Markdown: "# Cloud title\n",
+		Zip:      []byte("not-a-zip"),
+	})
+	if res.Err != nil {
+		t.Fatalf("markdown result: %v", res.Err)
+	}
+	var text strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		value, _ := item["text"].(string)
+		text.WriteString(value)
+	}
+	if !strings.Contains(text.String(), "Cloud title") {
+		t.Fatalf("JSON text = %q, want markdown text", text.String())
+	}
+
+	empty := minerUMarkdownResult(t.Context(), "sample.pdf", &models.MinerUV1Result{Zip: []byte("zip-bytes")})
+	if empty.Err == nil || !strings.Contains(empty.Err.Error(), "empty") {
+		t.Fatalf("empty result error = %v", empty.Err)
 	}
 }

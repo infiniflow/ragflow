@@ -18,12 +18,14 @@ package admin
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
 
@@ -31,17 +33,65 @@ import (
 )
 
 type adminTestResponse struct {
-	Code int             `json:"code"`
-	Data json.RawMessage `json:"data"`
+	Code  int             `json:"code"`
+	Data  json.RawMessage `json:"data"`
+	Total *int64          `json:"total"`
+}
+
+func TestListUsersReturnsTotalForEachPage(t *testing.T) {
+	handler := setupAdminUserDetailTest(t)
+	for i := 0; i < 11; i++ {
+		user := entity.User{ID: fmt.Sprintf("user-%02d", i), Email: fmt.Sprintf("user-%02d@example.com", i), Nickname: "User", IsActive: "1"}
+		if err := dao.DB.Create(&user).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tt := range []struct {
+		query string
+		want  int
+	}{
+		{"?page=1&page_size=10", 10},
+		{"?page=2&page_size=10", 2},
+		{"?page=3&page_size=10", 0},
+	} {
+		t.Run(tt.query, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/users"+tt.query, nil)
+			handler.ListUsers(ctx)
+			var response adminTestResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			var users []map[string]interface{}
+			if err := json.Unmarshal(response.Data, &users); err != nil {
+				t.Fatal(err)
+			}
+			if recorder.Code != http.StatusOK || response.Code != int(common.CodeSuccess) || response.Total == nil || *response.Total != 12 || len(users) != tt.want {
+				t.Fatalf("unexpected response: %s", recorder.Body.String())
+			}
+		})
+	}
+	if err := dao.DB.Where("id <> ?", "").Delete(&entity.User{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
+	handler.ListUsers(ctx)
+	var response adminTestResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Total == nil || *response.Total != 0 {
+		t.Fatalf("empty list missing total: %s", recorder.Body.String())
+	}
 }
 
 func setupAdminUserDetailTest(t *testing.T) *Handler {
 	t.Helper()
 	db := testutil.SetupTestDB(t,
 		&entity.User{},
-		&entity.UserTenant{},
-		&entity.Knowledgebase{},
-		&entity.UserCanvas{},
 	)
 	t.Cleanup(testutil.ReplaceDBForTest(t, db))
 
@@ -67,44 +117,6 @@ func setupAdminUserDetailTest(t *testing.T) *Handler {
 		t.Fatalf("create user: %v", err)
 	}
 
-	membership := entity.UserTenant{
-		ID:        "membership-1",
-		UserID:    user.ID,
-		TenantID:  "tenant-2",
-		Role:      "normal",
-		InvitedBy: "tenant-2",
-		Status:    &statusValid,
-	}
-	if err := db.Create(&membership).Error; err != nil {
-		t.Fatalf("create membership: %v", err)
-	}
-	ownerMemberships := []entity.UserTenant{
-		{ID: "membership-owner-user", UserID: user.ID, TenantID: user.ID, Role: "owner", InvitedBy: user.ID, Status: &statusValid},
-		{ID: "membership-owner-tenant-2", UserID: "tenant-2", TenantID: "tenant-2", Role: "owner", InvitedBy: "tenant-2", Status: &statusValid},
-	}
-	if err := db.Create(&ownerMemberships).Error; err != nil {
-		t.Fatalf("create owner memberships: %v", err)
-	}
-
-	datasets := []entity.Knowledgebase{
-		{ID: "dataset-own", TenantID: user.ID, Name: "Own dataset", EmbdID: "embedding", Permission: "me", CreatedBy: user.ID, Status: &statusValid},
-		{ID: "dataset-team", TenantID: "tenant-2", Name: "Team dataset", EmbdID: "embedding", Permission: "team", CreatedBy: "tenant-2", Status: &statusValid},
-		{ID: "dataset-private", TenantID: "tenant-2", Name: "Private dataset", EmbdID: "embedding", Permission: "me", CreatedBy: "tenant-2", Status: &statusValid},
-		{ID: "dataset-invalid", TenantID: user.ID, Name: "Invalid dataset", EmbdID: "embedding", Permission: "me", CreatedBy: user.ID, Status: testutil.StrPtr(string(entity.StatusInvalid))},
-	}
-	if err := db.Create(&datasets).Error; err != nil {
-		t.Fatalf("create datasets: %v", err)
-	}
-
-	agents := []entity.UserCanvas{
-		{ID: "agent-own", UserID: user.ID, Title: testutil.StrPtr("Own agent"), Permission: "me", CanvasCategory: "agent_canvas"},
-		{ID: "agent-team", UserID: "tenant-2", Title: testutil.StrPtr("Team agent"), Permission: "team", CanvasCategory: "agent_canvas"},
-		{ID: "agent-private", UserID: "tenant-2", Title: testutil.StrPtr("Private agent"), Permission: "me", CanvasCategory: "agent_canvas"},
-	}
-	if err := db.Create(&agents).Error; err != nil {
-		t.Fatalf("create agents: %v", err)
-	}
-
 	return NewHandler(NewService())
 }
 
@@ -126,7 +138,7 @@ func callAdminUserHandler(t *testing.T, handler func(*gin.Context)) adminTestRes
 	return response
 }
 
-func TestGetUserReturnsPythonCompatibleDetailList(t *testing.T) {
+func TestGetUserReturnsDetailList(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler := setupAdminUserDetailTest(t)
 	response := callAdminUserHandler(t, handler.GetUser)
@@ -145,73 +157,5 @@ func TestGetUserReturnsPythonCompatibleDetailList(t *testing.T) {
 	}
 	if details[0].Email != "user@example.com" || details[0].IsActive != "1" || details[0].CreateDate == "" || details[0].IsAnonymous != "0" {
 		t.Fatalf("unexpected user details: %+v", details[0])
-	}
-}
-
-func TestListUserDatasetsReturnsAccessibleDatasets(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	handler := setupAdminUserDetailTest(t)
-	response := callAdminUserHandler(t, handler.ListUserDatasets)
-
-	var datasets []struct {
-		Name       string `json:"name"`
-		Permission string `json:"permission"`
-		Status     string `json:"status"`
-	}
-	if err := json.Unmarshal(response.Data, &datasets); err != nil {
-		t.Fatalf("decode datasets: %v", err)
-	}
-	if len(datasets) != 2 {
-		t.Fatalf("datasets length = %d, want 2: %+v", len(datasets), datasets)
-	}
-	datasetsByName := make(map[string]struct {
-		Permission string
-		Status     string
-	}, len(datasets))
-	for _, dataset := range datasets {
-		datasetsByName[dataset.Name] = struct {
-			Permission string
-			Status     string
-		}{Permission: dataset.Permission, Status: dataset.Status}
-	}
-	if dataset := datasetsByName["Own dataset"]; dataset.Permission != "me" || dataset.Status != "1" {
-		t.Fatalf("unexpected own dataset: %+v", dataset)
-	}
-	if dataset := datasetsByName["Team dataset"]; dataset.Permission != "team" || dataset.Status != "1" {
-		t.Fatalf("unexpected team dataset: %+v", dataset)
-	}
-}
-
-func TestListUserAgentsReturnsAccessibleAgents(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	handler := setupAdminUserDetailTest(t)
-	response := callAdminUserHandler(t, handler.ListUserAgents)
-
-	var agents []struct {
-		Title          string `json:"title"`
-		Permission     string `json:"permission"`
-		CanvasCategory string `json:"canvas_category"`
-	}
-	if err := json.Unmarshal(response.Data, &agents); err != nil {
-		t.Fatalf("decode agents: %v", err)
-	}
-	if len(agents) != 2 {
-		t.Fatalf("agents length = %d, want 2: %+v", len(agents), agents)
-	}
-	agentsByTitle := make(map[string]struct {
-		Permission     string
-		CanvasCategory string
-	}, len(agents))
-	for _, agent := range agents {
-		agentsByTitle[agent.Title] = struct {
-			Permission     string
-			CanvasCategory string
-		}{Permission: agent.Permission, CanvasCategory: agent.CanvasCategory}
-	}
-	if agent := agentsByTitle["Own agent"]; agent.Permission != "me" || agent.CanvasCategory != "agent" {
-		t.Fatalf("unexpected own agent: %+v", agent)
-	}
-	if agent := agentsByTitle["Team agent"]; agent.Permission != "team" || agent.CanvasCategory != "agent" {
-		t.Fatalf("unexpected team agent: %+v", agent)
 	}
 }

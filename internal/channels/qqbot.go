@@ -58,7 +58,6 @@ type qqBotAccount struct {
 type qqBotChannel struct {
 	account qqBotAccount
 	client  *http.Client
-	dialer  *websocket.Dialer
 
 	mu        sync.Mutex
 	writeMu   sync.Mutex
@@ -89,8 +88,7 @@ func newQQBotChannel(account qqBotAccount) *qqBotChannel {
 	}
 	return &qqBotChannel{
 		account: account,
-		client:  &http.Client{Timeout: qqBotRequestTimeout},
-		dialer:  websocket.DefaultDialer,
+		client:  newSafeChannelHTTPClient(qqBotRequestTimeout, channelURLPolicy{exactHosts: []string{"api.sgroup.qq.com", "bots.qq.com"}}),
 	}
 }
 
@@ -220,7 +218,9 @@ func (c *qqBotChannel) run(ctx context.Context) {
 }
 
 func (c *qqBotChannel) runGatewaySession(ctx context.Context, gatewayURL string, token string) error {
-	conn, _, err := c.dialer.DialContext(ctx, gatewayURL, nil)
+	conn, _, err := dialSafeChannelWebSocket(ctx, gatewayURL, nil, qqBotRequestTimeout, channelURLPolicy{
+		hostSuffixes: []string{"qq.com"},
+	})
 	if err != nil {
 		return err
 	}

@@ -96,7 +96,7 @@ export default {
       webCrawl: 'Rastreo web',
       chunkNumber: 'Número de fragmentos',
       uploadDate: 'Fecha de carga',
-      chunkMethod: 'Método de fragmentación',
+      parsingMode: 'Modo de análisis',
       enabled: 'Habilitar',
       disabled: 'Deshabilitar',
       action: 'Acción',
@@ -169,6 +169,7 @@ export default {
     },
 
     knowledgeConfiguration: {
+      parsingMode: 'Modo de análisis',
       builtInSuffix: ' (built in)',
       paddleocrOptions: 'Opciones de PaddleOCR',
       paddleocrApiUrl: 'URL de API de PaddleOCR',
@@ -391,7 +392,7 @@ export default {
         'El modelo LLM de chat predeterminado que todas las nuevas bases de conocimiento utilizarán.',
       embeddingModel: 'Modelo de embeddings',
       embeddingModelTip:
-        'El modelo de incrustación predeterminado para cada nueva base de conocimiento creada. Si no puedes encontrar un modelo de incrustación en el menú desplegable, verifica si estás utilizando la edición slim de RAGFlow (que no incluye modelos de incrustación) o consulta la página Proveedores de modelos para comprobar si tu proveedor de modelos admite este modelo.',
+        'El modelo de incrustación predeterminado para cada nueva base de conocimiento creada. Si no puedes encontrar un modelo de incrustación en el menú desplegable, consulta la página Proveedores de modelos para comprobar si tu proveedor de modelos admite este modelo.',
       img2txtModel: 'Modelo de img2txt',
       img2txtModelTip:
         'El modelo predeterminado img2txt para cada base de conocimiento recién creada. Describe una imagen o video. Si no puedes encontrar un modelo en el menú desplegable, consulta la página Proveedores de modelos para ver si tu proveedor de modelos admite este modelo.',
@@ -944,7 +945,7 @@ export default {
       invalidUrl:
         'Debe ser una URL válida o una URL con marcadores de posición de variables en el formato {nombre_variable} o {componente@variable}',
       tags: 'Etiquetas',
-      canvasCategory: 'Categoría de canvas',
+      agentCategory: 'Categoría de canvas',
       created: 'Creado',
       id: 'ID',
       logTitle: 'Título',

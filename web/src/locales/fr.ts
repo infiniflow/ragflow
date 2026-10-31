@@ -384,7 +384,7 @@ export default {
       webCrawl: 'Exploration Web',
       chunkNumber: 'Nombre de segments',
       uploadDate: 'Date de téléversement',
-      chunkMethod: 'Méthode de segmentation',
+      parsingMode: "Mode d'analyse",
       enabled: 'Activé',
       disabled: 'Désactivé',
       action: 'Action',
@@ -613,8 +613,6 @@ export default {
         "Si défini sur 'Équipe', tous les membres de votre équipe pourront gérer cette base.",
       chunkTokenNumberTip:
         "Définit un seuil de tokens pour créer un segment. Les textes courts sont regroupés jusqu'à dépasser ce seuil, sauf si un délimiteur est détecté.",
-      chunkMethod: 'Méthode de découpage',
-      chunkMethodTip: 'Voir les conseils à droite.',
       upload: 'Téléverser',
       english: 'Anglais',
       chinese: 'Chinois',
@@ -767,7 +765,7 @@ export default {
       dataFlowPlaceholder: 'Veuillez sélectionner un pipeline.',
       buildItFromScratch: 'Créer depuis zéro',
       dataFlow: 'Pipeline',
-      parseType: "Type d'analyse",
+      parsingMode: "Mode d'analyse",
       manualSetup: 'Pipeline',
       builtIn: 'Intégré',
       tableColumnMode: 'Mode colonne',
@@ -1124,8 +1122,6 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       },
       cancel: 'Annuler',
       chatSetting: 'Paramètres du chat',
-      tocEnhance: 'IndexPage',
-      tocEnhanceTip: `Lors de l'analyse du document, des informations de table des matières ont été générées (voir l'option 'Activer l'extraction de la table des matières' dans la méthode Général). Cela permet au grand modèle de retourner les éléments de table des matières pertinents à la requête de l'utilisateur, d'utiliser ces éléments pour récupérer les segments associés et d'appliquer une pondération lors du tri.`,
       batchDeleteSessions: 'Suppression en masse',
       deleteSelectedConfirm:
         'Supprimer les {{count}} session(s) sélectionnée(s) ?',
@@ -1270,7 +1266,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
         'Le modèle de chat par défaut pour chaque base de connaissances nouvellement créée.',
       embeddingModel: "Modèle d'embedding",
       embeddingModelTip:
-        "Le modèle d'embedding par défaut pour chaque base de connaissances nouvellement créée. Si vous ne trouvez pas de modèle d'embedding dans la liste déroulante, vérifiez si vous utilisez l'édition RAGFlow slim (qui n'inclut pas les modèles d'embedding) ou consultez la page Fournisseurs de modèles pour voir si votre fournisseur de modèle supporte ce modèle.",
+        "Le modèle d'embedding par défaut pour chaque base de connaissances nouvellement créée. Si vous ne trouvez pas de modèle d'embedding dans la liste déroulante, consultez la page Fournisseurs de modèles pour voir si votre fournisseur de modèle supporte ce modèle.",
       img2txtModel: 'Modèle Img2txt',
       img2txtModelTip:
         'Le modèle img2txt par défaut pour chaque base de connaissances nouvellement créée. Il décrit une image ou une vidéo. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez la page Fournisseurs de modèles pour voir si votre fournisseur le supporte.',
@@ -1834,6 +1830,7 @@ Exemple : Virtual Hosted Style`,
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Afficher le contenu',
       hideToc: 'Masquer le contenu',
@@ -2579,20 +2576,6 @@ Idéal pour : les documents avec un contenu fluide et contextuellement lié — 
       maxRounds: 'Nombre maximum de cycles de réflexion',
       delayAfterError: 'Délai après une erreur',
       maxRetries: 'Nombre maximum de tentatives',
-      maxSteps: "Nombre maximum d'étapes",
-      headless: 'Mode sans interface',
-      enableDefaultExtensions: 'Activer les extensions par défaut',
-      enableDefaultExtensionsTip:
-        "Active les extensions par défaut de browser-use (uBlock, gestion des cookies, ClearURLs). Désactivez cette option pour éviter les téléchargements d'extensions au moment de l'exécution.",
-      chromiumSandbox: 'Bac à sable Chromium',
-      chromiumSandboxTip:
-        "Indique si le bac à sable Chromium doit être activé. Dans les environnements Docker root, il est généralement désactivé ; sur les hôtes normaux, il est recommandé de l'activer.",
-      persistSession: 'Conserver la session',
-      persistSessionTip:
-        'Lorsque cette option est activée, ce nœud Browser réutilise sa session de navigateur pour éviter les connexions répétées.',
-      uploadSources: 'Sources de téléversement',
-      uploadSourcesTip:
-        'Prend en charge les IDs de fichiers, les URLs de fichiers ou des variables. Vous pouvez séparer plusieurs valeurs par des virgules ou utiliser un tableau JSON (par exemple ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Paramètres avancés',
       addTools: 'Ajouter des outils',
       sysPromptDefaultValue: `
@@ -2927,9 +2910,6 @@ Les informations structurées importantes peuvent inclure : noms, dates, lieux, 
       variableAggregatorDescription: `
 Ce processus agrège des variables de plusieurs branches en une seule variable pour obtenir une configuration unifiée pour les nœuds en aval.`,
       userFillUpDescription: `Met en pause le workflow et attend le message de l'utilisateur avant de continuer.`,
-      browser: 'Navigateur',
-      browserDescription:
-        'Automatise les tâches de navigation. Prend en charge la configuration du modèle et les actions pilotées par invite. Les sources de téléversement acceptent les IDs de fichiers et les URLs, et les fichiers téléchargés peuvent être enregistrés dans un dossier cible.',
       channel: 'Canal',
       channelTip:
         "Effectuer une recherche textuelle ou une recherche d'actualités sur l'entrée du composant",
@@ -2937,7 +2917,7 @@ Ce processus agrège des variables de plusieurs branches en une seule variable p
       text: 'Texte',
       userId: 'ID utilisateur',
       tags: 'Étiquettes',
-      canvasCategory: 'Catégorie de canvas',
+      agentCategory: 'Catégorie de canvas',
     },
     llmTools: {
       bad_calculator: {
@@ -3142,10 +3122,10 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
         share: 'Partage',
       },
 
-      serviceStatus: 'État des services',
-      userManagement: 'Gestion des utilisateurs',
-      sandboxSettings: 'Paramètres du bac à sable',
-      registrationWhitelist: "Liste blanche d'inscription",
+      serviceStatus: 'Services',
+      userManagement: 'Utilisateurs',
+      sandboxSettings: 'Bac à sable',
+      registrationWhitelist: 'Liste blanche',
       roles: 'Rôles',
       monitoring: 'Surveillance',
 
@@ -3252,7 +3232,7 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
       importWhitelist: 'Importer la liste blanche (Excel)',
       importSelectExcelFile: 'Fichier Excel (.xlsx)',
       importOverwriteExistingEmails: 'Écraser les e-mails existants',
-      importInvalidExcelFile: 'Veuillez sélectionner un fichier Excel valide',
+      importValidExcelFile: 'Veuillez sélectionner un fichier Excel valide',
       importFileRequired: 'Veuillez sélectionner un fichier à importer',
       importFileTips:
         "Le fichier doit contenir une seule colonne d'en-tête nommée <code>email</code>.",
@@ -3266,7 +3246,6 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
       permission: 'Permission',
 
       agentTitle: "Titre de l'agent",
-      canvasCategory: 'Catégorie du canvas',
 
       newRole: 'Nouveau rôle',
       addNewRole: 'Ajouter un rôle',
@@ -3285,19 +3264,15 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
     },
     explore: {
       title: 'Lancer',
-      canvasList: 'Liste des canvas',
       sessions: 'Sessions',
       newSession: 'Nouvelle session',
       newSessionLabel: 'Démarrer une nouvelle conversation',
       deleteSession: 'Supprimer la session',
-      searchCanvas: 'Rechercher un canvas...',
       searchSessions: 'Rechercher des sessions...',
-      noCanvasSelected: 'Veuillez sélectionner un canvas',
       noSessionSelected:
         'Veuillez sélectionner une session ou en créer une nouvelle',
       noSessionsFound: 'Aucune session trouvée',
       createFirstSession: 'Créez votre première session',
-      noCanvasFound: 'Aucun canvas trouvé',
       deleteSelectedConfirm:
         'Êtes-vous sûr de vouloir supprimer {{count}} session(s) ?',
       batchDeleteSessions: 'Supprimer les sessions',

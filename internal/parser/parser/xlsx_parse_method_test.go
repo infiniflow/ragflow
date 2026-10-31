@@ -74,8 +74,8 @@ func TestXLSXParser_DeepDocParseMethod(t *testing.T) {
 			if res.Err != nil {
 				t.Fatalf("ParseWithResult(%s): %v", tc.method, res.Err)
 			}
-			if got, want := res.OutputFormat, "json"; got != want {
-				t.Fatalf("OutputFormat = %q, want %q", got, want)
+			if got, want := res.Produced(), true; got != want {
+				t.Fatalf("produced = %t, want %t", got, want)
 			}
 			if len(res.JSON) != 1 {
 				t.Fatalf("JSON item count = %d, want header-only result", len(res.JSON))
@@ -106,7 +106,8 @@ func TestXLSXParser_ExtractsFloatingImages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewXLSXParser: %v", err)
 	}
-	res := p.ParseWithResult(t.Context(), "with-image.xlsx", data)
+	ctx, cache := officeMediaTestContext()
+	res := p.ParseWithResult(ctx, "with-image.xlsx", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -117,11 +118,18 @@ func TestXLSXParser_ExtractsFloatingImages(t *testing.T) {
 	if image["text"] != "sheet image" || image["doc_type_kwd"] != "image" {
 		t.Fatalf("unexpected image item: %#v", image)
 	}
-	if image["image"] != "data:image/png;base64,"+pngBase64 {
-		t.Fatalf("image data = %v, want data URL", image["image"])
+	ref := requireOfficeMediaRef(t, image)
+	if ref.Format != officeMediaFormatXLSX || ref.MIME != "image/png" {
+		t.Fatalf("media_ref = %+v, want xlsx image/png", ref)
+	}
+	if len(cache.puts) != 1 || string(cache.puts[0].data) != string(mustDecodeBase64(t, pngBase64)) {
+		t.Fatalf("cache writes = %+v, want the picture bytes", cache.puts)
 	}
 	if image["sheet_index"] != 1 || image["row_start"] != 3 || image["row_end"] != 3 || image["col_start"] != 3 || image["col_end"] != 3 {
 		t.Fatalf("image coordinates = %#v, want Sheet1!C3", image)
+	}
+	if image["sheet"] != "Sheet1" || image["cell"] != "C3" {
+		t.Fatalf("image identity = %#v, want Sheet1!C3", image)
 	}
 }
 
@@ -141,13 +149,15 @@ func TestXLSXParser_ImageWithoutAltTextUsesAnchorCell(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewXLSXParser: %v", err)
 	}
-	res := p.ParseWithResult(t.Context(), "without-alt.xlsx", data)
+	ctx, _ := officeMediaTestContext()
+	res := p.ParseWithResult(ctx, "without-alt.xlsx", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	if len(res.JSON) != 1 || res.JSON[0].ToMap()["text"] != "C3" {
 		t.Fatalf("image item = %#v, want anchor-cell text C3", res.JSON)
 	}
+	requireOfficeMediaRef(t, res.JSON[0].ToMap())
 }
 
 func mustDecodeBase64(t *testing.T, encoded string) []byte {
@@ -171,13 +181,13 @@ func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult(deepdoc): %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON items = %d, want one HTML table item", len(res.JSON))
 	}
-	if res.JSON[0].ToMap()["ck_type"] != "table" {
+	if res.JSON[0].ToMap()["doc_type_kwd"] != "table" {
 		t.Fatalf("JSON item = %#v, want a table item", res.JSON[0])
 	}
 }

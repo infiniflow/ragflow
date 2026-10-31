@@ -14,19 +14,15 @@
 //  limitations under the License.
 //
 
-// bot_completion.go is the SSE envelope writer + ChatbotCompletion
-// service path for /api/v1/chatbots/<dialog_id>/completions. The wire
-// shape is dictated by the existing python
-// `api/db/services/conversation_service.py::async_iframe_completion`
-// — JS widgets reading the iframe SDK expect this exact envelope, so
-// any change to the frame keys is a wire-contract change.
+// bot_completion.go contains the SSE envelope writer and ChatbotCompletion
+// service path for /api/v1/chatbots/<dialog_id>/completions.
 //
 // Frame shape (one JSON object per `data:` line):
 //
-//	{"code":0,"message":"","data":{"answer":"...","reference":{...},
+//	{"code":0,"message":"success","data":{"answer":"...","reference":{...},
 //	 "audio_binary":null,"id":"...","session_id":"..."}, ...}
 //
-// The final completion marker is `data: {"code":0,"message":"",
+// The final completion marker is `data: {"code":0,"message":"success",
 // "data":true}` followed by the OpenAI-style `data: [DONE]` line
 // that the existing Go SSE writers emit on the production
 // /agents/chat/completions path.
@@ -84,10 +80,8 @@ type ChatbotSSEFrame struct {
 	EndToThink   bool `json:"-"`
 }
 
-// WriteChatbotFrame emits one python-style SSE frame and flushes the
-// underlying http.ResponseWriter. The frame is `data: <json>\n\n`
-// and is byte-equivalent to the python side so the iframe SDK and
-// existing JS widgets keep working.
+// WriteChatbotFrame emits one SSE frame and flushes the underlying
+// http.ResponseWriter. The frame is `data: <json>\n\n`.
 //
 // Error frames sanitize the message — internal errors (gorm stack
 // frames, SQL details, storage paths) MUST NOT be echoed to the
@@ -135,7 +129,7 @@ func WriteChatbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
 		}
 		payload = map[string]any{
 			"code":    0,
-			"message": "",
+			"message": "success",
 			"data":    data,
 		}
 	}
@@ -161,12 +155,12 @@ func WriteChatbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
 	return nil
 }
 
-// WriteDoneFrame emits the python completion marker
-// `data: {"code":0,"message":"","data":true}\n\n` followed by the
+// WriteDoneFrame emits the completion marker
+// `data: {"code":0,"message":"success","data":true}\n\n` followed by the
 // OpenAI-style `data: [DONE]\n\n` terminator. Used by both bot
 // completion paths.
 func WriteDoneFrame(w http.ResponseWriter) error {
-	if _, err := w.Write([]byte(`data: {"code":0,"message":"","data":true}` + "\n\n")); err != nil {
+	if _, err := w.Write([]byte(`data: {"code":0,"message":"success","data":true}` + "\n\n")); err != nil {
 		return err
 	}
 	if _, err := w.Write([]byte("data: [DONE]\n\n")); err != nil {
@@ -485,6 +479,19 @@ func (s *BotService) streamChatbotTurn(
 		// no-delta fallback.
 		var rawAnswer, fullAnswer string
 		var finalRef map[string]any
+
+		sendFrame := func(frame ChatbotSSEFrame) bool {
+			if ctx.Err() != nil {
+				return false
+			}
+			select {
+			case out <- frame:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+
 		for res := range results {
 			if res.Final {
 				completedAt := float64(time.Now().UnixNano()) / 1e9
@@ -502,15 +509,16 @@ func (s *BotService) streamChatbotTurn(
 				}
 				errored := strings.HasPrefix(fullAnswer, "**ERROR**")
 				// Save the completed answer before delivering the final SSE frame.
-				// The question was saved before generation; failures leave it intact.
-				if !errored && ctx.Err() == nil {
+				if !errored {
 					persisted := rawAnswer
 					if persisted == "" {
 						persisted = fullAnswer
 					}
-					if pErr := s.persistChatbotTurn(ctx, session, question, persisted, messageID, finalRef, completedAt); pErr != nil {
+					saveCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					if pErr := s.persistChatbotTurn(saveCtx, session, question, persisted, messageID, finalRef, completedAt); pErr != nil {
 						common.Error("bot: ChatbotCompletion session update failed", pErr, zap.String("dialog_id", session.DialogID), zap.String("session_id", session.ID))
 					}
+					cancel()
 				}
 				finalData := ""
 				if rawAnswer == "" || errored {
@@ -521,11 +529,13 @@ func (s *BotService) streamChatbotTurn(
 					// client would see a silently truncated answer.
 					finalData = fullAnswer
 				}
-				out <- ChatbotSSEFrame{
+				if !sendFrame(ChatbotSSEFrame{
 					Data:      finalData,
 					Reference: referenceOrEmpty(finalRef),
 					SessionID: session.ID,
 					Final:     true,
+				}) {
+					return
 				}
 				continue
 			}
@@ -537,12 +547,14 @@ func (s *BotService) streamChatbotTurn(
 				} else {
 					rawAnswer += "</think>"
 				}
-				out <- ChatbotSSEFrame{
+				if !sendFrame(ChatbotSSEFrame{
 					Data:         "",
 					Reference:    map[string]any{},
 					SessionID:    session.ID,
 					StartToThink: res.StartToThink,
 					EndToThink:   res.EndToThink,
+				}) {
+					return
 				}
 				continue
 			}
@@ -574,14 +586,16 @@ func (s *BotService) streamChatbotTurn(
 				// carries the retrieval reference.
 				finalRef = res.Reference
 			}
-			out <- ChatbotSSEFrame{
+			if !sendFrame(ChatbotSSEFrame{
 				Data:      delta,
 				Reference: map[string]any{},
 				SessionID: session.ID,
+			}) {
+				return
 			}
 		}
 
-		out <- ChatbotSSEFrame{Done: true}
+		sendFrame(ChatbotSSEFrame{Done: true})
 	}()
 	return out
 }
@@ -610,7 +624,14 @@ func buildChatbotPipelineMessages(raw json.RawMessage, question, messageID strin
 		if role == "assistant" && len(msg) == 0 {
 			continue
 		}
-		msg = append(msg, m)
+		message := make(map[string]interface{}, len(m))
+		for key, value := range m {
+			if key == "prompt" || key == "usage" || key == "elapsed_ms" || key == "reference" {
+				continue
+			}
+			message[key] = value
+		}
+		msg = append(msg, message)
 	}
 	return msg
 }
@@ -644,7 +665,8 @@ func (s *BotService) persistChatbotTurn(
 		reference = map[string]any{"chunks": []any{}, "doc_aggs": []any{}}
 	}
 	message := map[string]interface{}{"role": "assistant", "content": answer, "id": messageID, "created_at": completedAt}
-	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, session.ID, session.DialogID, session.UserID, nil, dao.ConversationHistoryUpdate{Message: message, QuestionID: messageID, Reference: reference, AppendReference: true})
+	message["reference"] = reference
+	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, session.ID, session.DialogID, session.UserID, nil, dao.ConversationHistoryUpdate{Message: message, QuestionID: messageID})
 }
 
 // normalizeBotBoolFlag coerces the JSON-encoded reasoning / internet

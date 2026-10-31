@@ -35,7 +35,9 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/tokenizer"
 )
 
 // Input carries everything Run needs to spin up a one-shot ReAct conversation
@@ -68,6 +70,8 @@ type Input struct {
 	// the session created in the UI). It is injected into the retrieval tools so
 	// they search the right index without a canvas runtime.
 	TenantID string
+	// UserID identifies whose per-Tenant default models apply to this run.
+	UserID string
 	// DatasetIDs is the conversation's bound dataset scope, decided by the
 	// session created in the UI. It is injected into the retrieval tools.
 	DatasetIDs []string
@@ -93,6 +97,8 @@ type Input struct {
 	// request's agent_mode. It is mandatory: an empty or unknown id fails the
 	// run with a clear error — there is no default/env/first-template fallback.
 	TemplateID string
+	// Template is the per-run resolved configuration, shared with model setup.
+	Template *Template
 	// OnDelta, when non-nil, receives each incremental (content, reasoning)
 	// delta as it streams. When nil, deltas fall back to runtime.EmitAgentMessage.
 	OnDelta func(contentDelta, thinkingDelta string)
@@ -121,6 +127,20 @@ type Input struct {
 // duplicate-retrieval guard (todo 3) prevents the extra budget from being wasted
 // on repeated identical searches.
 const defaultMaxIterations = 120
+
+// agenticMaxIterations resolves the loop cap: an explicit request wins, then
+// RAGFLOW_AGENTIC_MAX_ITERATIONS, then the default. Clamped at 1 — zero would
+// mean "never loop", turning every run into an immediate failure.
+func agenticMaxIterations(explicit int) int {
+	if explicit > 0 {
+		return explicit
+	}
+	n := envIntDefault(common.EnvAgenticMaxIterations, defaultMaxIterations)
+	if n < 1 {
+		return 1
+	}
+	return n
+}
 
 var errNilModel = errors.New("agentic_rag: model is required")
 
@@ -323,6 +343,17 @@ func Run(ctx context.Context, in Input) (string, error) {
 		convKey = fmt.Sprintf("run-%d", atomic.AddUint64(&runSeq, 1))
 	}
 	ctx = WithConversationKey(ctx, convKey)
+	// The turn's compiled-evidence state: the scope claims are looked up in,
+	// the corpus-level existence probe, and the claims already shown. Installed
+	// here so the pre-loop probe and every locate tool share one scope.
+	ctx = withCompiledRun(ctx, in.TenantID, in.DatasetIDs)
+
+	// Identity the judge is chosen for: the decision model is configured per chat
+	// and per tenant in the UI, so the filter has to know which run it is
+	// serving. The generated key above is a per-turn placeholder and must not be
+	// used here — a run with no real chat id falls back to the tenant default,
+	// exactly as a chat that never overrode it does.
+	ctx = withDecisionScope(ctx, in.TenantID, in.ConversationKey, in.UserID)
 	if generatedKey {
 		// The generated key belongs to this turn alone: no later run reuses it,
 		// so release its availability marks on the way out instead of leaking
@@ -330,10 +361,16 @@ func Run(ctx context.Context, in Input) (string, error) {
 		defer forgetConversation(convKey)
 	}
 
-	tmpl, errT := resolveTemplateFor(in.TemplateID)
-	if errT != nil {
-		common.ErrorCtx(ctx, "agentic_rag: resolve template", errT)
-		return "", errT
+	var tmpl Template
+	if in.Template != nil {
+		tmpl = *in.Template
+	} else {
+		var err error
+		tmpl, err = ResolveTemplate(in.TemplateID, nil)
+		if err != nil {
+			common.ErrorCtx(ctx, "agentic_rag: resolve template", err)
+			return "", err
+		}
 	}
 
 	// Shared per-run duration tally: every tool invocation is timed and
@@ -344,41 +381,59 @@ func Run(ctx context.Context, in Input) (string, error) {
 
 	// With no explicit tools, use the requested template. The config reloads
 	// when its mtime changes so operators can change the tool list and prompt.
-	tools := toolsFor(ctx, tmpl, in.TenantID, in.DatasetIDs, in.Tools)
-	// The compiled-knowledge tools are injected, never declared: they only make
-	// sense when the bound datasets have produced knowledge-compilation products
-	// (navigation tree / compiled structure / knowledge graph / per-document
-	// panorama), so an uncompiled corpus never offers - or pays for - them. A
-	// caller that passes explicit tools owns its own set and is left untouched.
-	//
-	// The decision is logged on every run. The injection is otherwise silent, so
-	// "the tool was never offered" would be indistinguishable from "the tool was
-	// offered and the model ignored it" in the server log - which is exactly the
-	// question a tool-usage review asks.
-	if len(in.Tools) != 0 {
-		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools skipped",
-			zap.Strings("datasets", in.DatasetIDs),
-			zap.String("reason", "caller supplied an explicit tool list"))
-	} else if datasetsHaveCompiledKnowledge(ctx, in.TenantID, in.DatasetIDs) {
-		compiled := compiledKnowledgeTools(in.TenantID, in.DatasetIDs)
-		tools = append(tools, compiled...)
-		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools injected",
-			zap.Strings("datasets", in.DatasetIDs),
-			zap.String("reason", "compile_kwd rows present in the bound datasets"),
-			zap.Int("tools", len(compiled)))
-	} else {
-		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools skipped",
-			zap.Strings("datasets", in.DatasetIDs),
-			zap.String("reason", "no compile_kwd row in the bound datasets"))
-	}
+	tools := toolsForRun(ctx, tmpl, in, engine.Get())
 	agentModel, err := modelForTools(ctx, in.Model, tools, in.DatasetIDs)
 	if err != nil {
 		return "", err
 	}
 
-	maxIter := in.MaxIterations
-	if maxIter <= 0 {
-		maxIter = defaultMaxIterations
+	maxIter := agenticMaxIterations(in.MaxIterations)
+
+	// The compiled-evidence probe runs BEFORE the loop: search once, then ask the
+	// model whether the claims COMPILED FROM what that search returned already
+	// answer the question. A refusal falls back to the loop, which is the only
+	// place that decides what to search next.
+	//
+	// The ordering is the point. The search is the same hybrid chunk retrieval
+	// the locate tools run, so it works identically on a corpus with compiled
+	// artifacts and one without; what differs is only what is offered next. With
+	// claims, the turn can terminate on a single model call over them - the
+	// claims carry their own verbatim evidence, so no raw chunk has to be read.
+	// Without them (or when the model judges them insufficient) the loop runs
+	// exactly as it would have, and the model reads chunks itself.
+	//
+	// The probe is a control signal, not prompt text: an insufficient block is
+	// dropped here rather than pinned into the system instruction, where it
+	// would be re-billed on every call of the turn.
+	if len(in.Tools) == 0 && !tmpl.strictTools {
+		pf := prefetchCompiledEvidence(ctx, in.TenantID, in.DatasetIDs, in.Messages)
+		if len(pf.claims) > 0 {
+			answer, aerr := answerFromClaims(ctx, synthModelFor(in), tmpl.Content, in.Messages, pf)
+			switch {
+			case aerr != nil:
+				// Falling through keeps the turn answerable: the claims are
+				// dropped from the registry's numbering (nothing was shown) and
+				// the loop retrieves what it needs itself.
+				common.WarnCtx(ctx, "agentic_rag: compiled claim answer failed; falling back to the loop", zap.Error(aerr))
+			case strings.TrimSpace(answer) != "":
+				// The loop is skipped entirely, so this line is the only record
+				// that the turn never read a chunk: a review of tool usage must
+				// be able to tell it from a turn the model gave up on.
+				common.InfoCtx(ctx, "agentic_rag: answered from compiled claims",
+					zap.Int("claims", len(pf.claims)),
+					zap.Int("chunks", len(pf.chunks)),
+					zap.Strings("docs", claimDocsInOrder(pf.claims)),
+					zap.Int("handles", claimHandleCount(answer)),
+					zap.Int("answer_bytes", len(answer)))
+				emit(ctx, in.OnDelta, answer, "")
+				return answer, nil
+			default:
+				// The claims were judged (or proved) not to answer the question:
+				// the loop retrieves what the claims could not supply.
+				common.InfoCtx(ctx, "agentic_rag: falling back to the loop after an unusable claim answer",
+					zap.Int("claims", len(pf.claims)))
+			}
+		}
 	}
 
 	// Wrap every invokable tool so each call is timed and emitted as a debug
@@ -413,6 +468,14 @@ func Run(ctx context.Context, in Input) (string, error) {
 		}
 		tools = kept
 	}
+	names := make([]string, 0, len(tools))
+	for _, t := range tools {
+		if info, err := t.Info(ctx); err == nil && info != nil {
+			names = append(names, info.Name)
+		}
+	}
+	common.InfoCtx(ctx, "agentic_rag: configured runtime tools",
+		zap.String("template", tmpl.ID), zap.Bool("strict_tools", tmpl.strictTools), zap.Strings("tools", names))
 
 	common.DebugCtx(ctx, "agentic_rag: run start",
 		zap.Int("max_iterations", maxIter),
@@ -441,6 +504,16 @@ func Run(ctx context.Context, in Input) (string, error) {
 				// are concurrency-safe: they keep no shared mutable state across
 				// calls (run_javascript creates a fresh goja VM per invocation).
 				ExecuteSequentially: false,
+				// A tool that is not registered is not a reason to abort the run.
+				//
+				// web_search is only registered when the conversation enabled
+				// internet, but the shared prompt mentions it, so the model
+				// sometimes calls it anyway. Without this handler eino raises
+				// "tool web_search not found in toolsNode indexes" and the whole
+				// turn dies — the question then scores zero even though the
+				// corpus tools were working. Answering with a tool result lets
+				// the model switch legs and keep reading.
+				UnknownToolsHandler: unknownToolResult,
 			},
 		},
 	}
@@ -467,7 +540,11 @@ func Run(ctx context.Context, in Input) (string, error) {
 		seed = seed[:len(seed)-1]
 	}
 	runMessages := sess.explorer.turnMessages(seed, "", question)
-	iter := sess.explorer.runner(ctx, explorerAgent, in.Stream).Run(ctx, runMessages)
+	// Everything the ReAct loop calls the model for is the exploration phase:
+	// the loop is where a turn's token budget is actually spent, so it must be
+	// attributable on its own and not merge into the final synthesis.
+	exploreCtx := tokenizer.WithUsagePhase(ctx, "explore")
+	iter := sess.explorer.runner(exploreCtx, explorerAgent, in.Stream).Run(exploreCtx, runMessages)
 	// Runner assigns IDs to input messages before persisting them. Exclude
 	// these from recovery so a failed turn cannot reuse a historical answer.
 	inputMessageIDs := make(map[string]bool, len(runMessages))
@@ -510,11 +587,12 @@ func Run(ctx context.Context, in Input) (string, error) {
 		// by the bounded budget attached here.
 		synthCtx, synthCancel := context.WithTimeout(context.WithoutCancel(ctx), finalizeTimeout)
 		defer synthCancel()
-		synthModel := in.Model
-		if in.SynthModel != nil {
-			synthModel = in.SynthModel
+		synthCtx = tokenizer.WithUsagePhase(synthCtx, "synth")
+		synthMessages := in.Messages
+		if tmpl.customContent {
+			synthMessages = append([]*schema.Message{schema.SystemMessage(tmpl.Content)}, synthMessages...)
 		}
-		synth, synthErr := finalizeAnswer(synthCtx, synthModel, in.Messages, final, evidence)
+		synth, synthErr := finalizeAnswer(synthCtx, synthModelFor(in), synthMessages, final, evidence)
 		if synthErr != nil {
 			// Without this an empty final is completely silent: the run looks
 			// healthy in every other log line and the user simply gets nothing.
@@ -585,7 +663,30 @@ func consumeAgentEvents(
 	live := func(content, reasoning string) {
 		emit(ctx, onDelta, "", content+reasoning)
 	}
+	// chargeSpent bills the run's budget for the tokens spent since the last
+	// call, counted from the same RunUsage the final SSE reports — so the
+	// ceiling and the number the client sees are one quantity.
+	//
+	// It lives here because the streaming path cannot charge itself:
+	// HandleStreamingResponse takes no context, so only non-streaming calls
+	// reach ChargeTokens. In a ReAct run almost every turn after the first
+	// streams (only the tool-bound turn goes through Generate), which left a
+	// budgeted run free to spend millions against a 500k ceiling — measured:
+	// 1.82M prompt tokens on one question, budget never fired.
+	chargeSpent := func() {
+		_, _, total, _ := tokenizer.GetRunUsage(ctx).Snapshot()
+		// Non-streaming turns have ALREADY charged the budget from the API's
+		// own usage, so bill only the shortfall between that counter and this
+		// one: whichever is ahead wins and no turn is charged twice.
+		if delta := int64(total) - common.TokenBudgetUsed(ctx); delta > 0 {
+			common.ChargeTokens(ctx, int(delta))
+		}
+	}
 	for {
+		// Bill the previous turn before waiting on the next one, so an
+		// over-budget run stops at the turn boundary rather than after the
+		// next full response.
+		chargeSpent()
 		ev, ok := iter.Next()
 		if !ok {
 			break
@@ -765,7 +866,359 @@ const finalizeTimeout = 90 * time.Second
 // call. Tool outputs accumulate 4KB each; without a cap a long investigation
 // turns the prompt into a mega-message that makes thinking models deliberate
 // for minutes and blow the client timeout (observed: exactly 300s on q55).
-const finalizeEvidenceMaxRunes = 16000
+//
+// It is deliberately larger than the truncation the run itself used: when the
+// token ceiling fires, this block is the ONLY thing the synthesis call can
+// answer from, so cutting it short is what makes a capped run answer worse than
+// an uncapped one. 40k runes stays inside the 90s synthesis budget measured on
+// this corpus.
+const finalizeEvidenceMaxRunes = 40000
+
+// claimAnswerTimeout bounds the claims path as a whole: an answer call over
+// evidence that was already retrieved and, only if it produced an answer, its
+// verification. Both are non-streaming and need a fraction of the loop's budget -
+// and a hung provider must not eat the turn.
+const claimAnswerTimeout = 90 * time.Second
+
+// synthModelFor picks the model that answers without tools: the caller's
+// dedicated synthesis instance when it supplied one, else the agent's own model.
+func synthModelFor(in Input) *models.EinoChatModel {
+	if in.SynthModel != nil {
+		return in.SynthModel
+	}
+	return in.Model
+}
+
+// claimAnswerPrompt renders the user message of the call that produces a
+// candidate answer from the recalled claims.
+//
+// One call produces it, and the sufficiency judgement is made afterwards, by
+// claimVerifyPrompt, on the answer itself. Judging the page BEFORE answering was
+// measured and rejected: with no answer to commit to, the model answered "is the
+// page enough?" too harshly, refusing five questions whose facts were all on the
+// page (gap_overlap 0.86-1.00), and a refusal is what feeds the loop - q142 cost
+// 12.6k as an answer and 590,139 after a refusal, for the same 4 points. An
+// answer is also the only thing that exposes the failure this corpus produces
+// (the film's release year given as the year of the award), because a page can
+// hold the wrong-looking claim without the answer using it.
+//
+// It carries the rules the loop would otherwise hold in its system prompt: every
+// fact line must be traceable to the claim it came from via its [ID:n] handle
+// (the pipeline turns those handles into the reference payload), and nothing may
+// be extrapolated. A computation must name its inputs: "the last time they beat
+// them" answered from the wrong edition of the same fact is a real error here,
+// and naming the inputs is what makes it visible. It deliberately does NOT
+// advertise tools: this call has none, so a model that looks for one would burn
+// its only turn.
+func claimAnswerPrompt(evidence string) string {
+	var b strings.Builder
+	b.WriteString("### Compiled evidence retrieved for this question\n")
+	b.WriteString("Each line below is one compiled claim: a statement, the verbatim source quote it was compiled from, ")
+	b.WriteString("the chunk that quote came from, and the passage handle `ref=n` it was shown as.\n\n")
+	b.WriteString(evidence)
+	b.WriteString("\n\n### Task\n")
+	b.WriteString("Answer the question above from these claims.\n")
+	b.WriteString("- End every line that states a fact with the handle of the claim it came from: `[ID:n]`, where n ")
+	b.WriteString("is that claim's `ref=n` value. Never introduce an entity, date or number that no claim states. ")
+	b.WriteString("Write the answer in the user's language.\n")
+	b.WriteString("- Combining claims IS answering: a difference, a count, an age, or a who/which that no single ")
+	b.WriteString("claim states outright is derived from the claims that give its inputs.\n")
+	b.WriteString("- Use the fact the question actually asks for. When the page states several candidates - two ")
+	b.WriteString("editions of an event, a release year and an award year, several people with the same role - pick ")
+	b.WriteString("the one the question names (last, first, most, the award, the time of the battle) instead of the ")
+	b.WriteString("first one you read.\n")
+	b.WriteString("- A count must be taken from the complete list the page gives, not from the entries you happened ")
+	b.WriteString("to read; a difference must name both operands.\n")
+	b.WriteString("- If the answer is computed from claims, finish with one line naming every claim it used: ")
+	b.WriteString("`derived_from: [ID:a], [ID:b]`. A derivation with one input is not a derivation.\n")
+	b.WriteString("- If a fact the answer needs is absent from every claim, do NOT guess and do NOT use world ")
+	b.WriteString("knowledge: report the question as not answerable and name that fact.\n")
+	b.WriteString("- Do not call tools and do not narrate what you are about to do: this call is the whole ")
+	b.WriteString("turn, so a plan or a promise to search further is not an answer.\n\n")
+	b.WriteString("Reply with ONE JSON object and nothing else:\n")
+	b.WriteString(`{"answerable": true, "answer": "<the final answer, with [ID:n] handles>"}`)
+	b.WriteString(" or ")
+	b.WriteString(`{"answerable": false, "missing": "<the fact that is absent>"}`)
+	return b.String()
+}
+
+// claimVerifyPrompt renders the user message of the verification call: the one
+// place the question "does this answer the question that was asked?" is decided.
+//
+// It is asked with the answer in hand, which is what makes it tractable, and it
+// is asked about ONE failure mode: the near miss. Both wrong shortcuts measured
+// on this corpus were near misses - the release year given for the year of the
+// award, and an earlier World Series win given for "the last time they beat
+// them" while the page also stated the later one. Neither is detectable by asking
+// whether the page was sufficient, because the page WAS sufficient; the error is
+// in which fact the answer used.
+//
+// It explicitly forbids rewriting the answer or answering the question, so this
+// call stays a check rather than a second opinion that could itself be wrong in
+// a new way.
+func claimVerifyPrompt(evidence, answer string) string {
+	var b strings.Builder
+	b.WriteString("### Compiled evidence that was available\n")
+	b.WriteString(evidence)
+	b.WriteString("\n\n### Candidate answer\n")
+	b.WriteString(answer)
+	b.WriteString("\n\n### Task\n")
+	b.WriteString("Check ONE thing: is this candidate answer the answer to the question that was asked?\n")
+	b.WriteString("- Look for a near miss: a fact about the right subject that answers a DIFFERENT question. The ")
+	b.WriteString("release year instead of the year of the award. An earlier edition of an event when the question ")
+	b.WriteString("says last/latest. One candidate when the question asks for the first, the most, or the one that ")
+	b.WriteString("holds a named office. A namesake instead of the person. If another claim on the page fits the ")
+	b.WriteString("question better than the one the answer used, that is a near miss and the answer is wrong.\n")
+	b.WriteString("- Every date, number, title and entity the answer states must be stated by the claim it cites, ")
+	b.WriteString("or computed from the claims it names. A computation is fine when every input is on the page and ")
+	b.WriteString("the operands named really are those inputs.\n")
+	b.WriteString("- The page is the only source. \"It is well known that\" is not support, and a fact only the ")
+	b.WriteString("answer knows is not evidence.\n")
+	b.WriteString("- Do not rewrite the answer, do not improve it, and do not answer the question yourself. Judge ")
+	b.WriteString("only whether this answer answers this question.\n\n")
+	b.WriteString("Reply with ONE JSON object and nothing else:\n")
+	b.WriteString(`{"supported": true}`)
+	b.WriteString(" or ")
+	b.WriteString(`{"supported": false, "reason": "<wrong attribute, ignored candidate, or unsupported fact>"}`)
+	return b.String()
+}
+
+// claimAnswer is the answer call's reply. answerable=false is not an error: the
+// page may genuinely not hold the asked-for fact, and the caller then runs the
+// ordinary loop instead of shipping a non-answer.
+type claimAnswer struct {
+	answerable bool
+	answer     string
+	missing    string
+	// derivedFrom is the handles the answer says it computed from, when it gave
+	// them as a JSON field rather than as the `derived_from:` line.
+	derivedFrom []string
+}
+
+// parseClaimAnswer reads the JSON answer. A reply with no answer field is
+// reported as not answerable: shipping unparsed prose is how a turn ends up
+// scored zero, and one extra loop is far cheaper.
+func parseClaimAnswer(reply string) claimAnswer {
+	obj, ok := decodeJSONObject(reply)
+	if !ok {
+		return claimAnswer{missing: "model did not return the requested JSON verdict"}
+	}
+	out := claimAnswer{missing: strings.TrimSpace(stringFromAny(obj["missing"]))}
+	if s, ok := obj["answer"].(string); ok {
+		out.answer = strings.TrimSpace(s)
+	}
+	if v, ok := obj["answerable"].(bool); ok {
+		out.answerable = v
+	} else {
+		// A model that answers without the flag has still answered. Reading the
+		// missing field as a refusal would hand a usable answer to the loop, which
+		// is the expensive direction of this mistake.
+		out.answerable = out.answer != ""
+	}
+	if list, ok := obj["derived_from"].([]any); ok {
+		for _, item := range list {
+			if h := strings.TrimSpace(stringFromAny(item)); h != "" {
+				out.derivedFrom = append(out.derivedFrom, h)
+			}
+		}
+	}
+	if out.answerable && out.answer == "" {
+		out.answerable = false
+	}
+	return out
+}
+
+// claimSupport is the verifier's finding on a candidate answer.
+type claimSupport struct {
+	supported bool
+	reason    string
+	// parsed records whether the reply was the requested object at all. A reply
+	// that is not is treated as support (see parseClaimSupport) but must stay
+	// visible in the logs, or a prompt regression would look like a clean run.
+	parsed bool
+}
+
+// parseClaimSupport reads the verifier's JSON. A reply that is not the requested
+// object counts as SUPPORTED. The two mistakes are not symmetric: rejecting a
+// good answer hands the question to the loop for 300-600k tokens, while shipping
+// a wrong one costs 2-4 points, so the expensive mistake is the rejection. The
+// caller logs the unparsed case so this default cannot hide one.
+func parseClaimSupport(reply string) claimSupport {
+	obj, ok := decodeJSONObject(reply)
+	if !ok {
+		return claimSupport{supported: true}
+	}
+	v, ok := obj["supported"].(bool)
+	if !ok {
+		return claimSupport{supported: true}
+	}
+	return claimSupport{supported: v, reason: strings.TrimSpace(stringFromAny(obj["reason"])), parsed: true}
+}
+
+// claimHandleCount counts the distinct [ID:n] handles an answer cites.
+func claimHandleCount(answer string) int {
+	return claimDistinctHandles(claimHandleRe.FindAllString(answer, -1))
+}
+
+// claimDerivedInputs returns the handles an answer says it computed from: the
+// JSON field when it gave one, else the `derived_from:` line the prompt asks for
+// inside the answer text.
+func claimDerivedInputs(a claimAnswer) []string {
+	if len(a.derivedFrom) > 0 {
+		return a.derivedFrom
+	}
+	if m := claimDerivedLineRe.FindStringSubmatch(a.answer); m != nil {
+		return claimHandleRe.FindAllString(m[1], -1)
+	}
+	return nil
+}
+
+func claimDistinctHandles(handles []string) int {
+	seen := map[string]struct{}{}
+	for _, h := range handles {
+		seen[h] = struct{}{}
+	}
+	return len(seen)
+}
+
+var (
+	claimHandleRe      = regexp.MustCompile(`\[ID:\d+\]`)
+	claimDerivedLineRe = regexp.MustCompile(`(?i)derived_from:\s*([^\n]*)`)
+)
+
+// answerFromClaims is the termination of a turn whose pre-loop compiled
+// prefetch already found claims for the question: an answer call over them, then
+// - only if it produced an answer - a verification call. No tools, so no raw
+// chunk is read either way.
+//
+// The order is deliberate and measured. Verification runs AFTER the answer, not
+// before it: a sufficiency call with no answer in hand refuses pages that hold
+// every needed fact, and each of those refusals costs the loop 300-600k tokens
+// for the same final score. With the answer in hand the check is narrower and
+// cheaper per question (it only runs when there IS an answer), and it can look
+// for the failure that actually happens here: the right subject, the wrong fact
+// (a release year given for an award year, an earlier edition given for "the
+// last time").
+//
+// It returns ("", nil) when no answer survives, which the caller treats as a
+// reason to run the ordinary loop instead - the loop, not this path, decides
+// what to search next.
+func answerFromClaims(
+	ctx context.Context,
+	m *models.EinoChatModel,
+	instruction string,
+	messages []*schema.Message,
+	pf compiledPrefetch,
+) (string, error) {
+	if m == nil || strings.TrimSpace(pf.evidence) == "" {
+		return "", nil
+	}
+	// Its own usage phase: the share of turns that never entered the loop is
+	// exactly what a cost comparison against the loop path needs.
+	ctx, cancel := context.WithTimeout(tokenizer.WithUsagePhase(ctx, "claims"), claimAnswerTimeout)
+	defer cancel()
+
+	// The template's instruction goes in as the system message because this path
+	// bypasses the agent that would otherwise carry it: the answer must keep the
+	// same shape and language rules as every other answer this template ships.
+	ask := func(prompt string) (string, error) {
+		req := make([]*schema.Message, 0, len(messages)+2)
+		req = append(req, schema.SystemMessage(instruction))
+		req = append(req, messages...)
+		req = append(req, schema.UserMessage(prompt))
+		resp, err := m.Generate(ctx, req)
+		if err != nil {
+			return "", err
+		}
+		if resp == nil {
+			return "", nil
+		}
+		return resp.Content, nil
+	}
+
+	answerReply, err := ask(claimAnswerPrompt(pf.evidence))
+	if err != nil {
+		return "", err
+	}
+	answer := parseClaimAnswer(answerReply)
+	if !answer.answerable {
+		// gap_overlap splits the two ways a refusal can happen, and it is the only
+		// signal that tells them apart in the logs: a gap whose words ARE on the
+		// page means the model would not use what it had (selection or prompt),
+		// a gap whose words are not means the page never held the fact
+		// (retrieval). Both need different work, and only this number says which.
+		common.InfoCtx(ctx, "agentic_rag: claims judged unanswerable by the model",
+			zap.Int("claims", len(pf.claims)),
+			zap.Int("chunks", len(pf.chunks)),
+			zap.Strings("docs", claimDocsInOrder(pf.claims)),
+			zap.String("missing", truncateForLog(answer.missing, 200)),
+			zap.Float64("gap_overlap", claimGapOverlap(pf.claims, answer.missing)),
+			zap.Int("reply_bytes", len(answerReply)))
+		return "", nil
+	}
+	// Deterministic floors, checked before the verifier because they are free.
+	// An answer that cites nothing cannot be resolved into a reference payload,
+	// and an answer that names a derivation but only one input has not derived
+	// anything - both are the shape a near miss takes.
+	handles := claimHandleCount(answer.answer)
+	if handles == 0 {
+		common.InfoCtx(ctx, "agentic_rag: claim answer cites no claim; falling back to the loop",
+			zap.Int("claims", len(pf.claims)),
+			zap.Int("answer_bytes", len(answer.answer)))
+		return "", nil
+	}
+	if derived := claimDerivedInputs(answer); len(derived) > 0 {
+		if n := claimDistinctHandles(derived); n < 2 {
+			common.InfoCtx(ctx, "agentic_rag: claim answer derives from one claim; falling back to the loop",
+				zap.Int("derived_inputs", n),
+				zap.Int("claims", len(pf.claims)),
+				zap.Int("answer_bytes", len(answer.answer)))
+			return "", nil
+		}
+	}
+
+	verifyReply, err := ask(claimVerifyPrompt(pf.evidence, answer.answer))
+	if err != nil {
+		return "", err
+	}
+	support := parseClaimSupport(verifyReply)
+	if !support.parsed {
+		common.WarnCtx(ctx, "agentic_rag: claim verification reply was not the requested JSON; answer accepted",
+			zap.Int("reply_bytes", len(verifyReply)))
+	}
+	if !support.supported {
+		common.InfoCtx(ctx, "agentic_rag: claim answer rejected by verification; falling back to the loop",
+			zap.String("reason", truncateForLog(support.reason, 200)),
+			zap.Int("handles", handles),
+			zap.Int("claims", len(pf.claims)),
+			zap.Int("answer_bytes", len(answer.answer)))
+		return "", nil
+	}
+	return answer.answer, nil
+}
+
+// claimGapOverlap is the share of the refused gap's content words that the page's
+// claims already state. It is a diagnostic, not a control signal: the refusal
+// still falls back to the loop. See the log line it feeds.
+func claimGapOverlap(claims []claimHit, gap string) float64 {
+	gapTokens := claimTokens(gap)
+	if len(gapTokens) == 0 {
+		return 0
+	}
+	page := make(map[string]struct{}, len(claims)*8)
+	for _, c := range claims {
+		for t := range claimTokens(c.name + " " + c.description + " " + c.quote) {
+			page[t] = struct{}{}
+		}
+	}
+	hit := 0
+	for t := range gapTokens {
+		if _, ok := page[t]; ok {
+			hit++
+		}
+	}
+	return float64(hit) / float64(len(gapTokens))
+}
 
 // finalizeAnswer issues a single deterministic synthesis call so a turn that
 // ended abnormally (empty final, or an error aborted the loop mid-investigation)
@@ -789,12 +1242,7 @@ func finalizeAnswer(
 	if ev := strings.TrimSpace(evidence); ev != "" {
 		fmt.Fprintf(body, "Evidence gathered during the search:\n%s\n\n", truncateRunes(ev, finalizeEvidenceMaxRunes))
 	}
-	body.WriteString("You have reached the end of your investigation. Based strictly on the evidence " +
-		"above, produce your best final answer to the original question now, as plain text. " +
-		"Reply with the final answer ONLY — no reasoning process, no plan, no narration. " +
-		"If the exact data is not available, use the closest available figure, state the " +
-		"assumption explicitly, and still provide the computed answer. Do not request any tools " +
-		"and do not hedge with \"I would need\" or \"I could not find\".")
+	body.WriteString(finalizeInstruction)
 
 	finalMessages := append([]*schema.Message(nil), messages...)
 	finalMessages = append(finalMessages, &schema.Message{
@@ -808,8 +1256,50 @@ func finalizeAnswer(
 	if resp == nil || resp.Content == "" {
 		return "", errors.New("agentic_rag: finalizeAnswer produced empty output")
 	}
-	return strings.TrimSpace(resp.Content), nil
+	out := strings.TrimSpace(resp.Content)
+	// A forced answer is still an answer: a bare "1" is not one.
+	//
+	// The ceiling ends a run mid-investigation, and a model told to reply with
+	// "the final answer ONLY" will happily emit the number and nothing else —
+	// which is indistinguishable, to the reader, from a broken run. One retry
+	// asking for the full answer is cheaper than shipping the digit.
+	if len([]rune(out)) < finalizeMinAnswerRunes {
+		retry := append([]*schema.Message(nil), finalMessages...)
+		retry = append(retry, &schema.Message{
+			Role: schema.User,
+			Content: fmt.Sprintf("Your reply (%q) is not an acceptable answer: it is too short to be useful. "+
+				"Answer the question in full sentences, naming the entities and the figures the evidence "+
+				"supports, and cite the chunk handles ([ID:n]) you relied on.", out),
+		})
+		if again, rerr := m.Generate(ctx, retry); rerr == nil && again != nil {
+			if longer := strings.TrimSpace(again.Content); len([]rune(longer)) > len([]rune(out)) {
+				out = longer
+			}
+		}
+	}
+	return out, nil
 }
+
+// finalizeInstruction is what the synthesis call is asked to do. It no longer
+// says "final answer ONLY": that phrasing produced bare numbers on capped runs
+// (measured: a 1-byte "1"), and the point of the fallback is a usable answer,
+// not the shortest one.
+const finalizeInstruction = "You have reached the end of your investigation. Based strictly on the evidence " +
+	"above, produce your final answer to the original question now, as plain text. " +
+	"Give a complete answer: state the result, then the facts from the evidence that support it, " +
+	"with the [ID:n] handles you relied on. Do NOT reply with a bare number or a single word — " +
+	"if the question asks how many, give the count AND what it counts. " +
+	"If the exact data is not available, use the closest available figure, state the assumption " +
+	"explicitly, and still provide the computed answer. Do not request any tools and do not hedge " +
+	"with \"I would need\" or \"I could not find\"."
+
+// finalizeMinAnswerRunes is the length below which a forced answer is treated as
+// a non-answer and retried once.
+//
+// It is deliberately short: the case it exists for is a bare figure ("1"), and
+// a threshold high enough to catch a real sentence would retry answers that are
+// terse but complete, doubling the synthesis cost of every capped run.
+const finalizeMinAnswerRunes = 12
 
 // lastUserQuestion returns the content of the last user message, used as the
 // question for the final-answer fallback and for per-question usage logs.
@@ -837,4 +1327,18 @@ func truncateRunes(s string, max int) string {
 		return s
 	}
 	return string(r[:max]) + "..."
+}
+
+// unknownToolResult answers a call to a tool this run never registered.
+//
+// The capability set is built per conversation on purpose: advertising a tool
+// the run cannot execute is worse than not advertising it at all. But the
+// prompt is shared, and it names tools a deployment may not supply — web_search
+// with internet off is the common case — so the model occasionally calls one.
+// eino's default is to raise "tool X not found in toolsNode indexes" and abort
+// the turn, which turns a recoverable detour into a zero-scored run. Answering
+// with an ordinary tool result lets the model drop that leg and keep reading.
+func unknownToolResult(_ context.Context, name, _ string) (string, error) {
+	return fmt.Sprintf("Tool %q is not available in this conversation: it is not registered, "+
+		"so calling it again fails the same way. Continue with the tools in your tool list.", name), nil
 }

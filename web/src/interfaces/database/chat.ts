@@ -8,6 +8,30 @@ export interface IDocumentDownloadInfo {
   size?: number;
 }
 
+export interface AgenticRagOverride {
+  content?: string;
+  tools?: string[];
+}
+
+export interface AgenticRagTemplate {
+  id: string;
+  name: string;
+  description: string;
+  temperature?: number | null;
+  tools: string[];
+  content: string;
+}
+
+// Response of GET /api/v1/chats/:chat_id/agentic-rag
+export interface IAgenticRagSettings {
+  base_template: string;
+  defaults: AgenticRagTemplate;
+  override: AgenticRagOverride | null;
+  effective: AgenticRagTemplate;
+  available_tools: Array<{ name: string; description: string }>;
+  using_defaults: boolean;
+}
+
 export interface PromptConfig {
   empty_response: string;
   parameters: Parameter[];
@@ -20,6 +44,7 @@ export interface PromptConfig {
   use_kg: boolean;
   reasoning?: boolean;
   cross_languages?: Array<string>;
+  agentic_rag?: AgenticRagOverride | null;
   brave_api_key?: string;
   exa_api_key?: string;
   firecrawl_api_key?: string;
@@ -27,11 +52,11 @@ export interface PromptConfig {
   parallel_api_key?: string;
   querit_api_key?: string;
   search1api_api_key?: string;
+  searchapi_api_key?: string;
   serply_api_key?: string;
   tavily_api_key?: string;
   youcom_api_key?: string;
   web_search_provider?: WebSearchProvider;
-  toc_enhance?: boolean;
 }
 
 export interface Parameter {
@@ -106,7 +131,6 @@ export interface IConversation {
   id: string;
   avatar: string;
   messages: Message[];
-  reference: IReference[];
   name: string;
   update_date: string;
   update_time: number;
@@ -118,6 +142,7 @@ export interface Message {
   role: MessageType;
   doc_ids?: string[];
   prompt?: string;
+  reference?: IReference;
   id?: string;
   audio_binary?: string;
   data?: any;
@@ -125,9 +150,12 @@ export interface Message {
   chatBoxId?: string;
   attachment?: IAttachment;
   downloads?: IDocumentDownloadInfo[];
+  usage?: ITurnUsage;
+  elapsed_ms?: number;
 }
 
 export interface IReferenceChunk {
+  citation_id?: string;
   id: string;
   content: null;
   document_id: string;
@@ -152,6 +180,13 @@ export interface IReferenceObject {
   doc_aggs: Record<string, Docagg>;
 }
 
+/** One turn's token cost, reported by a final response or a history message. */
+export interface ITurnUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
 export interface IAnswer {
   answer: string;
   attachment?: IAttachment;
@@ -163,6 +198,9 @@ export interface IAnswer {
   audio_binary?: string;
   data?: any;
   chatBoxId?: string;
+  /** Present when the final response reports token usage. */
+  usage?: ITurnUsage;
+  elapsed_ms?: number;
 }
 
 export interface Docagg {
@@ -217,7 +255,6 @@ export interface IExternalChatInfo {
 export interface IMessage extends Message {
   id: string;
   awaitingServerId?: boolean;
-  reference?: IReference; // the latest news has reference
   conversationId?: string; // To distinguish which conversation the message belongs to
 }
 

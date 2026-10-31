@@ -430,3 +430,7 @@ func (g *GroqModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]List
 func (g *GroqModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
+
+func (g *GroqModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}

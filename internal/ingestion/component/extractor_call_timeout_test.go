@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 )
 
@@ -71,7 +72,7 @@ func keywordsOnlyExtractor() *ExtractorComponent {
 // TestExtractorChatTimeoutSkipsSlowChunk: one hung chunk must not fail the
 // document. The healthy chunk keeps its extraction, the hung one is skipped.
 func TestExtractorChatTimeoutSkipsSlowChunk(t *testing.T) {
-	t.Setenv("EXTRACTOR_CHAT_TIMEOUT", "1")
+	t.Setenv(common.EnvExtractorChatTimeout, "1")
 	stub := withRouteStubChatInvoker(t)
 
 	c := keywordsOnlyExtractor()
@@ -84,7 +85,7 @@ func TestExtractorChatTimeoutSkipsSlowChunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 2 {
 		t.Fatalf("chunks = %d, want 2", len(chunks))
 	}
@@ -102,7 +103,7 @@ func TestExtractorChatTimeoutSkipsSlowChunk(t *testing.T) {
 // TestExtractorChatTimeoutAllHangFails: every chunk hung means the model is
 // down — the run must fail loudly, not silently produce empty extractions.
 func TestExtractorChatTimeoutAllHangFails(t *testing.T) {
-	t.Setenv("EXTRACTOR_CHAT_TIMEOUT", "1")
+	t.Setenv(common.EnvExtractorChatTimeout, "1")
 	withRouteStubChatInvoker(t)
 
 	c := keywordsOnlyExtractor()
@@ -123,7 +124,7 @@ func TestExtractorChatTimeoutAllHangFails(t *testing.T) {
 // TestExtractorParentCancelPropagates: task stop must still fail fast, never
 // degrade into per-chunk skips.
 func TestExtractorParentCancelPropagates(t *testing.T) {
-	t.Setenv("EXTRACTOR_CHAT_TIMEOUT", "1")
+	t.Setenv(common.EnvExtractorChatTimeout, "1")
 	withRouteStubChatInvoker(t)
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -150,12 +151,19 @@ func TestExtractorChatTimeoutEnv(t *testing.T) {
 	}{
 		{name: "unset falls back to default", value: "", want: defaultExtractorChatTimeout},
 		{name: "override wins", value: "1", want: time.Second},
+		{name: "whitespace falls back", value: " \t", want: defaultExtractorChatTimeout},
+		{name: "trimmed override wins", value: " 240 ", want: 240 * time.Second},
+		{name: "duration suffix falls back", value: "180s", want: defaultExtractorChatTimeout},
+		{name: "fractional seconds fall back", value: "1.5", want: defaultExtractorChatTimeout},
+		{name: "maximum duration seconds", value: "9223372036", want: 9223372036 * time.Second},
+		{name: "duration overflow falls back", value: "9223372037", want: defaultExtractorChatTimeout},
+		{name: "integer overflow falls back", value: "9223372036854775808", want: defaultExtractorChatTimeout},
 		{name: "zero falls back", value: "0", want: defaultExtractorChatTimeout},
 		{name: "negative falls back", value: "-5", want: defaultExtractorChatTimeout},
 		{name: "non-numeric falls back", value: "abc", want: defaultExtractorChatTimeout},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("EXTRACTOR_CHAT_TIMEOUT", tt.value)
+			t.Setenv(common.EnvExtractorChatTimeout, tt.value)
 			if got := extractorChatTimeout(); got != tt.want {
 				t.Errorf("extractorChatTimeout() = %v, want %v", got, tt.want)
 			}
@@ -197,7 +205,7 @@ func withSummaryHangStub(t *testing.T) {
 // summaries hang for every chunk. The phase must succeed and keep the
 // questions instead of failing as all-timed-out.
 func TestExtractorPartialTimeoutKeepsCompleted(t *testing.T) {
-	t.Setenv("EXTRACTOR_CHAT_TIMEOUT", "1")
+	t.Setenv(common.EnvExtractorChatTimeout, "1")
 	withSummaryHangStub(t)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
@@ -214,7 +222,7 @@ func TestExtractorPartialTimeoutKeepsCompleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 2 {
 		t.Fatalf("chunks = %d, want 2", len(chunks))
 	}

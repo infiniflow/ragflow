@@ -32,33 +32,29 @@ import (
 
 	"github.com/AkmalOt/gomsg"
 	"go.uber.org/zap"
-	"golang.org/x/net/html"
 	"golang.org/x/text/transform"
 
 	"ragflow/internal/common"
+	charsetlib "ragflow/internal/parser/charset"
 	"ragflow/internal/utility"
 )
 
 // EmailParser parses .eml (RFC 5322 email) and .msg (Outlook OLE2) files
-// into structured JSON or plain-text output. Mirrors Python's _email()
-// method in rag/flow/parser/parser.py, whose .msg branch uses extract_msg.
+// into structured JSON output. Mirrors Python's _email() method in
+// rag/flow/parser/parser.py, whose .msg branch uses extract_msg.
 type EmailParser struct {
-	fields       []string
-	outputFormat string
+	fields []string
 }
 
+var defaultEmailFields = []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"}
+
 func NewEmailParser() *EmailParser {
-	return &EmailParser{
-		outputFormat: "json",
-	}
+	return &EmailParser{fields: append([]string(nil), defaultEmailFields...)}
 }
 
 func (p *EmailParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.outputFormat = v
 	}
 	if raw, ok := setup["fields"]; ok {
 		switch list := raw.(type) {
@@ -74,7 +70,7 @@ func (p *EmailParser) ConfigureFromSetup(setup map[string]any) {
 		}
 	}
 	if len(p.fields) == 0 {
-		p.fields = []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"}
+		p.fields = append([]string(nil), defaultEmailFields...)
 	}
 }
 
@@ -120,81 +116,17 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 		}
 	}
 
-	outputFormat := p.outputFormat
-	if outputFormat == "" {
-		outputFormat = "json"
-	}
-
 	// Re-chunk attachments so their content becomes retrievable within the
 	// same document (user-oriented; mirrors Python legacy rag/app/email.py
 	// naive_chunk). Each attachment is re-parsed by its file extension via
 	// the shared parser registry; a single unparseable/skipped attachment
 	// never breaks the whole email.
-	extraItems, attachmentText := p.rechunkEmailAttachments(ctx, content, depth)
+	extraItems := p.rechunkEmailAttachments(ctx, content, depth)
 
 	// Attachments have been consumed by rechunkEmailAttachments, which
 	// re-parses each one by extension into a searchable item. Keeping their
 	// raw payloads in the parent item would only bloat the parser result.
 	delete(content, "attachments")
-
-	// Text representation: flatten fields into a single string for explicit
-	// text output and callers that need a display representation.
-	var sb strings.Builder
-	for k, v := range content {
-		// The metadata map (every non-basic header: Received chains,
-		// DKIM/ARC signatures, …) stays available in the JSON output, but
-		// flattening it into chunkable text buries the message under
-		// transport noise, so it is excluded from the text output.
-		if k == "metadata" {
-			continue
-		}
-		switch val := v.(type) {
-		case string:
-			if k == "text_html" {
-				// Text output feeds the chunker directly; emit the
-				// visible text of the HTML part instead of raw markup,
-				// which otherwise lands in chunks as tag soup.
-				val = htmlBodyToText(val)
-			}
-			sb.WriteString(k)
-			sb.WriteString(":")
-			sb.WriteString(val)
-			sb.WriteString("\n")
-		case map[string]any:
-			sb.WriteString(k)
-			sb.WriteString(":{")
-			for mk, mv := range val {
-				if ms, ok := mv.(string); ok {
-					sb.WriteString(mk)
-					sb.WriteString(":")
-					sb.WriteString(ms)
-					sb.WriteString(", ")
-				}
-			}
-			sb.WriteString("}\n")
-		case []string:
-			sb.WriteString(strings.Join(val, "\n"))
-		}
-	}
-	// Attachment text (re-parsed by extension) replaces the old crude
-	// "filename:payload" flatten, so binary attachments no longer leak
-	// mojibake into the searchable (indexed) text. The raw attachment
-	// payloads themselves are dropped after rechunk (see parseEmail), so the
-	// JSON output path carries only the re-parsed attachment text, never the
-	// original payload bytes.
-	if attachmentText != "" {
-		sb.WriteString(attachmentText)
-		sb.WriteString("\n")
-	}
-	text := sb.String()
-
-	if outputFormat == "text" {
-		return ParseResult{
-			OutputFormat: "text",
-			File:         map[string]any{"name": filename},
-			Text:         text,
-		}
-	}
 
 	content["doc_type_kwd"] = "text"
 	items := []map[string]any{content}
@@ -203,9 +135,8 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 	}
 	items = append(items, extraItems...)
 	return ParseResult{
-		OutputFormat: "json",
-		File:         map[string]any{"name": filename},
-		JSON:         MapsToItems(items),
+		File: map[string]any{"name": filename},
+		JSON: MapsToItems(items),
 	}
 }
 
@@ -244,7 +175,7 @@ func targetFieldsSet(fields []string) map[string]bool {
 // the non-UTF-8 charsets via charsetEncoding.
 var rfc2047Decoder = &mime.WordDecoder{
 	CharsetReader: func(charset string, input io.Reader) (io.Reader, error) {
-		if enc, ok := charsetEncoding(charset); ok {
+		if enc, ok := charsetlib.CharsetEncoding(charset); ok {
 			return transform.NewReader(input, enc.NewDecoder()), nil
 		}
 		return nil, fmt.Errorf("email: unsupported header charset %q", charset)
@@ -459,86 +390,27 @@ func isAttachmentPart(part *multipart.Part) bool {
 }
 
 // attachmentFilename extracts a filename from the part's
-// Content-Disposition or Content-Type headers.
+// Content-Disposition or Content-Type headers. Mail clients write a
+// non-ASCII name as RFC 2047 encoded-words inside the parameter, as in
+// filename="=?utf-8?B?...?=", and the mime package leaves them encoded. Such
+// a name has no file extension, so rechunkEmailAttachments skipped the
+// attachment; it is decoded here. The filename is decoded before
+// filepath.Base drops any directory from it, as part.FileName does, because a
+// base64 encoded-word can contain a "/".
 func attachmentFilename(part *multipart.Part) string {
-	if fn := part.FileName(); fn != "" {
-		return fn
+	if _, params, err := mime.ParseMediaType(part.Header.Get("Content-Disposition")); err == nil {
+		if fn := params["filename"]; fn != "" {
+			return filepath.Base(decodeHeaderWord(fn))
+		}
 	}
 	ct := part.Header.Get("Content-Type")
 	if ct != "" {
 		_, params, _ := mime.ParseMediaType(ct)
 		if name, ok := params["name"]; ok {
-			return name
+			return decodeHeaderWord(name)
 		}
 	}
 	return "attachment.bin"
-}
-
-// -- HTML body → visible text (text output only) --
-
-// htmlBodyToText flattens an email HTML body to its visible text. Unlike the
-// structured HTML parser (which keeps table markup for the dedicated HTML
-// chunk method), email bodies use tables for layout, so this walker descends
-// into tables and emits cell text instead. <head>/<script>/<style> subtrees
-// are skipped; whitespace folding is shared with the standalone HTML parser
-// via leafWriter.
-func htmlBodyToText(body string) string {
-	if strings.TrimSpace(body) == "" {
-		return ""
-	}
-	doc, err := html.Parse(strings.NewReader(body))
-	if err != nil {
-		return body
-	}
-	var b bytes.Buffer
-	w := &leafWriter{b: &b, lineStart: true}
-	walkHTMLBodyText(doc, w)
-	return strings.TrimSpace(b.String())
-}
-
-// isEmailBlockTag reports whether tag delimits a line in flattened email
-// body text: the standard block tags plus table tags, since email uses
-// tables for layout and their cells/rows must not fuse either.
-func isEmailBlockTag(tag string) bool {
-	return isBlockTag(tag) || tag == "table" || tag == "td" || tag == "th"
-}
-
-func walkHTMLBodyText(n *html.Node, w *leafWriter) {
-	switch n.Type {
-	case html.TextNode:
-		w.writeText(n.Data)
-	case html.DocumentNode:
-		// html.Parse always wraps the fragment in a Document node holding an
-		// <html><body> skeleton; the walker relies on descending through those
-		// transparent containers (head/script/style subtrees are skipped by the
-		// ElementNode case), so without descending here the whole body would
-		// be dropped.
-		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			walkHTMLBodyText(child, w)
-		}
-	case html.ElementNode:
-		switch n.Data {
-		case "head", "script", "style", "noscript":
-			return
-		case "br":
-			w.hardBreak()
-			return
-		}
-		// A nested block starts on a new line when text already precedes
-		// it, so outer text and inner block text stay separate
-		// ("<div>a<p>b</p></div>" flattens to "a\nb", not "ab").
-		if isEmailBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
-			w.hardBreak()
-		}
-		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			walkHTMLBodyText(child, w)
-		}
-		// Block-level tags and table cells/rows end the current line so
-		// adjacent block/cell text does not fuse together.
-		if isEmailBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
-			w.hardBreak()
-		}
-	}
 }
 
 // decodeMailPayload attempts charset decoding using the unified DecodeToUTF8 helper.
@@ -546,7 +418,7 @@ func decodeMailPayload(payload []byte, charset string) string {
 	if len(payload) == 0 {
 		return ""
 	}
-	decoded, _ := DecodeToUTF8(payload, charset)
+	decoded, _ := charsetlib.DecodeToUTF8(payload, charset)
 	return string(decoded)
 }
 
@@ -733,15 +605,16 @@ func recoverParse(fn func() ParseResult) (res ParseResult, panicked bool) {
 // attachment via naive_chunk and merges the resulting chunks into the same
 // document.
 //
-// KNOWN LIMITATION: re-chunk uses the default-config parser returned by
-// GetParser(ft) (and, for a nested email, only the top-level p.fields — no
-// tenant/setup language, parse_method, or OCR/VLM model). The extracted
-// attachment text may therefore differ from ingesting the same file as a
-// standalone document through the pipeline's tenant/setup-configured
-// parser. This is a deliberate, best-effort approximation for making
-// attachment content retrievable (the same simplification Python's
-// email.py naive_chunk makes), not a correctness bug; threading the full
-// tenant/setup config into re-chunk is intentionally out of scope here.
+// KNOWN LIMITATION: re-chunk uses the text-only, default-config parser
+// returned by GetTextOnlyParser(ft) (and, for a nested email, only the
+// top-level p.fields — no tenant/setup language, parse_method, or OCR/VLM
+// model). The extracted attachment text may therefore differ from ingesting
+// the same file as a standalone document through the pipeline's
+// tenant/setup-configured parser. This is a deliberate, best-effort
+// approximation for making attachment content retrievable (the same
+// simplification Python's email.py naive_chunk makes), not a correctness
+// bug; threading the full tenant/setup config into re-chunk is intentionally
+// out of scope here.
 //
 // Attachments whose extension has no text-oriented parser (images, audio,
 // video) are skipped: they carry no plain text in this pipeline and would
@@ -750,33 +623,30 @@ func recoverParse(fn func() ParseResult) (res ParseResult, panicked bool) {
 // without failing the whole email (mirrors email.py's per-attachment
 // try/except).
 //
-// The function returns both forms the caller needs:
-//   - extraItems: structured JSON items (one per non-empty text segment),
-//     each carrying only "text" and "doc_type_kwd", for the JSON output path.
-//   - text:       the concatenated attachment text, for the text output path.
+// The function returns structured JSON items (one per non-empty text
+// segment), each carrying only "text" and "doc_type_kwd".
 //
 // Re-chunking stops at one level of nesting: a nested email is parsed (so its
 // body becomes retrievable) but its own attachments are not re-chunked, to
 // avoid unbounded recursion through attachments-of-attachments.
 const maxRechunkPayloadBytes = 32 << 20 // 32 MiB
 
-func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[string]any, depth int) ([]map[string]any, string) {
+func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[string]any, depth int) []map[string]any {
 	if depth > 0 {
-		return nil, ""
+		return nil
 	}
 	// Honor task cancellation so a long attachment list does not keep
 	// re-parsing after the ingestion task has been stopped/aborted.
 	if ctx.Err() != nil {
-		return nil, ""
+		return nil
 	}
 
 	raw, ok := content["attachments"].([]map[string]any)
 	if !ok || len(raw) == 0 {
-		return nil, ""
+		return nil
 	}
 
 	var extra []map[string]any
-	var sb strings.Builder
 	for _, att := range raw {
 		fn, _ := att["filename"].(string)
 		payload, _ := att["payload"].(string)
@@ -811,19 +681,14 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			// Reuse the top-level field configuration (including "body") so a
 			// nested .eml/.msg is parsed for its body instead of with a fresh,
 			// unconfigured parser that would only emit metadata and index
-			// garbage. We always request JSON output for the nested parse so
-			// the extracted "text" field is returned clean (the text output
-			// path would otherwise also flatten metadata into the result).
+			// garbage.
 			ep := NewEmailParser()
-			ep.ConfigureFromSetup(map[string]any{
-				"fields":        p.fields,
-				"output_format": "json",
-			})
+			ep.ConfigureFromSetup(map[string]any{"fields": p.fields})
 			res, panicked = recoverParse(func() ParseResult {
 				return ep.parseEmail(ctx, fn, []byte(payload), depth+1)
 			})
 		} else {
-			np, err := GetParser(ft)
+			np, err := GetTextOnlyParser(ft)
 			if err != nil {
 				continue
 			}
@@ -843,17 +708,13 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 		}
 
 		var texts []string
-		if res.OutputFormat == "json" && len(res.JSON) > 0 {
+		if len(res.JSON) > 0 {
 			for _, it := range res.JSON {
 				if t, ok := it.ToMap()["text"].(string); ok {
 					if t = strings.TrimSpace(t); t != "" {
 						texts = append(texts, t)
 					}
 				}
-			}
-		} else if res.Text != "" {
-			if t := strings.TrimSpace(res.Text); t != "" {
-				texts = append(texts, t)
 			}
 		}
 
@@ -862,11 +723,7 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 				"text":         t,
 				"doc_type_kwd": "text",
 			})
-			if sb.Len() > 0 {
-				sb.WriteString("\n")
-			}
-			sb.WriteString(t)
 		}
 	}
-	return extra, sb.String()
+	return extra
 }

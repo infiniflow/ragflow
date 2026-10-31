@@ -24,15 +24,19 @@ import {
 } from '@/hooks/use-document-request';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import {
-  currentReg,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  resolveCitationChunk,
   showImage,
 } from '@/utils/chat';
-import { citationMarkerReg } from '@/utils/citation-utils';
+import {
+  CitationKey,
+  citationMarkerReg,
+  citationWholeMarkerReg,
+} from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
 import { supportsSourceLocate } from '@/utils/source-locate';
 import { getDirAttribute } from '@/utils/text-direction';
@@ -62,8 +66,7 @@ import { Button } from './ui/button';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from './ui/hover-card';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
-const getChunkIndex = (match: string) =>
-  parseCitationIndex(match.replace(/\[|\]/g, ''));
+const getChunkKey = (match: string) => parseCitationIndex(match);
 
 const FloatingChatWidgetMarkdown = ({
   reference,
@@ -144,13 +147,8 @@ const FloatingChatWidgetMarkdown = ({
   };
 
   const getReferenceInfo = useCallback(
-    (chunkIndex: number) => {
-      let chunkItem = reference?.chunks?.[chunkIndex];
-      if (!chunkItem) {
-        chunkItem = reference?.chunks?.find(
-          (x: any) => x?.chunk_id === chunkIndex,
-        ) as IReferenceChunk;
-      }
+    (chunkKey: CitationKey) => {
+      const chunkItem = resolveCitationChunk(reference?.chunks, chunkKey);
       if (!chunkItem) return null;
       const docAggsArray = Array.isArray(reference?.doc_aggs)
         ? reference.doc_aggs
@@ -179,8 +177,8 @@ const FloatingChatWidgetMarkdown = ({
   );
 
   const getPopoverContent = useCallback(
-    (chunkIndex: number) => {
-      const info = getReferenceInfo(chunkIndex);
+    (chunkKey: CitationKey) => {
+      const info = getReferenceInfo(chunkKey);
 
       if (!info) {
         return (
@@ -280,9 +278,9 @@ const FloatingChatWidgetMarkdown = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      return reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match) as number;
-        const info = getReferenceInfo(chunkIndex);
+      return reactStringReplace(text, citationWholeMarkerReg, (match, i) => {
+        const chunkKey = getChunkKey(match);
+        const info = getReferenceInfo(chunkKey);
 
         if (!info) {
           return (
@@ -327,7 +325,7 @@ const FloatingChatWidgetMarkdown = ({
                 collisionPadding={8}
                 className="max-h-[var(--radix-hover-card-content-available-height)]"
               >
-                {getPopoverContent(chunkIndex)}
+                {getPopoverContent(chunkKey)}
               </HoverCardContent>
             </HoverCardPrimitive.Portal>
           </HoverCard>

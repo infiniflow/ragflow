@@ -10,32 +10,39 @@ sidebar_custom_props: {
 
 # Configure the Indexer Component
 
-The **Indexer** component indexes data for optimal retrieval. It is the final step, writing processed data into the configured document engine.
+**Indexer** prepares chunk data for full-text and embedding search. Connect it after the Chunker, Transformer, or Compiler and use the pipeline with a knowledge base to index documents.
 
-Key configurations:
+Click the Indexer node to open its panel. Review **Search method**, adjust **Filename embedding weight**, and select **Field** as described below.
 
-Search method:
+## Search method
 
-- **Full-text**: Keyword search for exact matches, such as code and names.
-- **Embedding**: Semantic search using vector similarity.
-- **Hybrid** (recommended): Combines both methods for the best recall.
+The panel displays **Embedding** and **Full-text** as labels, rather than selectable checkboxes:
 
-Retrieval strategy:
+- **Embedding**: Vector representations for semantic search.
+- **Full-text**: Tokenized text for keyword search.
 
-- **Processed text** (default): Indexes chunked text.
-- **Questions**: Indexes generated questions. This usually produces higher similarity matches than text-to-text matching.
-- **Enhanced context**: Indexes summaries instead of raw text. Suitable for broad topic matching.
+Using both supports hybrid retrieval. **Hybrid** is not a separate option in this panel.
 
-Filename weight:
+## Filename embedding weight
 
-- A slider for including the document filename as semantic information in retrieval.
+Controls the contribution of the document filename to chunk embeddings. Defaults to `0.1`; the UI slider ranges from `0` to `0.5`.
 
-Embedding model:
+## Field
 
-- Automatically uses the model set when creating the knowledge base.
+Select the content to embed:
 
-:::caution IMPORTANT
-To search across multiple knowledge bases at the same time, all selected knowledge bases must use the same embedding model.
-:::
+- **Processed text** (default): Chunk text.
+- **Questions**: Questions generated for the chunk.
+- **Augmented context**: The generated summary.
 
-![Configure The Indexer Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_indexer_component.jpg)
+For Questions or Augmented context, first enable the corresponding function in Transformer. This setting selects embedding content; it does not replace the configured search methods.
+
+![Indexer search methods, filename embedding weight, and Field options](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_indexer_embedding_field.jpg)
+
+## Embedding model
+
+The model comes from the connected knowledge base, rather than an independent model selector in this panel. Knowledge bases searched together must use the same embedding model.
+
+## Apply and Validate
+
+Click **Save draft**, resolve any **Checklist** issues, and publish a version. [Apply it to a test Dataset](./connect_the_pipeline_to_a_knowledge_base.md), parse a sample document, and check both the stored chunks and retrieval results. If **Field** is Questions or Augmented context, also check that the upstream Transformer generated the corresponding content.
