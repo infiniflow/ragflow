@@ -13,6 +13,7 @@ func TestPDFParser_ParseWithResult_SoMarkJSONIntegration(t *testing.T) {
 	withSSRFBypass(t)
 	var submitSeen bool
 	var pollSeen bool
+	pollCount := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/parse/async":
@@ -46,9 +47,14 @@ func TestPDFParser_ParseWithResult_SoMarkJSONIntegration(t *testing.T) {
 			_, _ = w.Write([]byte(`{"code":0,"data":{"task_id":"task-1"}}`))
 		case "/parse/async_check":
 			pollSeen = true
+			pollCount++
 			body, _ := io.ReadAll(r.Body)
 			if !strings.Contains(string(body), "task_id=task-1") {
 				t.Errorf("poll body = %q, want task_id", string(body))
+				return
+			}
+			if pollCount == 1 {
+				_, _ = w.Write([]byte(`{"code":0,"data":{"status":"QUEUING"}}`))
 				return
 			}
 			_, _ = w.Write([]byte(`{"code":0,"data":{"status":"SUCCESS","result":{"outputs":{"json":{"pages":[{"blocks":[{"type":"title","content":"SoMark Title","title_level":2},{"type":"figure","content":"Figure caption"},{"type":"table","content":"<table><tr><td>x</td></tr></table>"}]}]}}}}}`))
@@ -70,8 +76,8 @@ func TestPDFParser_ParseWithResult_SoMarkJSONIntegration(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !submitSeen || !pollSeen {
-		t.Fatalf("submit/poll seen = %v/%v, want true/true", submitSeen, pollSeen)
+	if !submitSeen || !pollSeen || pollCount < 2 {
+		t.Fatalf("submit/poll seen = %v/%v (%d checks), want submit and at least two poll checks", submitSeen, pollSeen, pollCount)
 	}
 	if len(res.JSON) < 3 {
 		t.Fatalf("JSON len = %d, want >=3", len(res.JSON))

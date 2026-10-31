@@ -11,7 +11,11 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"strings"
+	"time"
 )
+
+const soMarkPollTimeout = 30 * time.Minute
+const soMarkPollInterval = 2 * time.Second
 
 func parsePDFWithSoMark(filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
@@ -111,23 +115,47 @@ func soMarkSubmit(baseURL, filename string, data []byte, parser *PDFParser, apiK
 }
 
 func soMarkPoll(baseURL, taskID, apiKey string) (map[string]any, error) {
+	deadline := time.Now().Add(soMarkPollTimeout)
+	for {
+		result, status, err := soMarkCheck(baseURL, taskID, apiKey)
+		if err != nil {
+			return nil, err
+		}
+		switch strings.ToUpper(status) {
+		case "SUCCESS":
+			if result == nil {
+				return nil, fmt.Errorf("parser: SoMark SUCCESS without result")
+			}
+			return result, nil
+		case "QUEUING", "PENDING", "RUNNING", "PROCESSING":
+			if time.Now().After(deadline) {
+				return nil, fmt.Errorf("parser: timed out waiting for SoMark task %s; last status=%s", taskID, status)
+			}
+			time.Sleep(soMarkPollInterval)
+		default:
+			return nil, fmt.Errorf("parser: SoMark task %s status=%s", taskID, status)
+		}
+	}
+}
+
+func soMarkCheck(baseURL, taskID, apiKey string) (map[string]any, string, error) {
 	form := url.Values{"task_id": {taskID}}
 	if apiKey != "" {
 		form.Set("api_key", apiKey)
 	}
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf("parser: SoMark poll request: %w", err)
+		return nil, "", fmt.Errorf("parser: SoMark poll request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	resp, err := common.GetSSRFHTTPClient().Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("parser: SoMark poll: %w", err)
+		return nil, "", fmt.Errorf("parser: SoMark poll: %w", err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("parser: SoMark read poll: %w", err)
+		return nil, "", fmt.Errorf("parser: SoMark read poll: %w", err)
 	}
 	var payload struct {
 		Code    int            `json:"code"`
@@ -135,20 +163,14 @@ func soMarkPoll(baseURL, taskID, apiKey string) (map[string]any, error) {
 		Data    map[string]any `json:"data"`
 	}
 	if err = json.Unmarshal(raw, &payload); err != nil {
-		return nil, fmt.Errorf("parser: SoMark decode poll: %w", err)
+		return nil, "", fmt.Errorf("parser: SoMark decode poll: %w", err)
 	}
 	if payload.Code != 0 {
-		return nil, fmt.Errorf("parser: SoMark poll business error code=%d message=%s", payload.Code, payload.Message)
+		return nil, "", fmt.Errorf("parser: SoMark poll business error code=%d message=%s", payload.Code, payload.Message)
 	}
 	status, _ := payload.Data["status"].(string)
-	if status != "SUCCESS" {
-		return nil, fmt.Errorf("parser: SoMark task %s status=%s", taskID, status)
-	}
 	result, _ := payload.Data["result"].(map[string]any)
-	if result == nil {
-		return nil, fmt.Errorf("parser: SoMark SUCCESS without result")
-	}
-	return result, nil
+	return result, status, nil
 }
 
 func soMarkItems(result map[string]any, keepHeaderFooter bool) ([]map[string]any, int) {
