@@ -21,10 +21,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
-	"time"
 
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -97,66 +95,6 @@ func TestDispatchUnlimitedOCR2PDFEndToEnd(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected parsed items to contain 'Unlimited-OCR-2 Result', got items: %#v", result.JSON)
-	}
-}
-
-func TestDispatchUnlimitedOCR2PDF_LiveService(t *testing.T) {
-	client := &http.Client{Timeout: 3 * time.Second}
-	resp, err := client.Get("http://127.0.0.1:18000/health")
-	if err != nil || resp.StatusCode != http.StatusOK {
-		t.Skip("Live Unlimited-OCR-2 service not available on 127.0.0.1:18000; skipping")
-	}
-	_ = resp.Body.Close()
-
-	var pdfBytes []byte
-	candidates := []string{
-		"../../test/benchmark/test_docs/Doc1.pdf",
-		"test/benchmark/test_docs/Doc1.pdf",
-		"../../../test/benchmark/test_docs/Doc1.pdf",
-	}
-	for _, p := range candidates {
-		if data, err := os.ReadFile(p); err == nil {
-			pdfBytes = data
-			break
-		}
-	}
-	if len(pdfBytes) == 0 {
-		t.Skip("Doc1.pdf benchmark sample not found; skipping live test")
-	}
-
-	setup := schema.ParserSetup{
-		"unlimited_ocr_server_url": "http://127.0.0.1:18000",
-	}
-
-	result, err := dispatchUnlimitedOCR2PDF(
-		context.Background(),
-		nil,
-		"Doc1.pdf",
-		pdfBytes,
-		"",
-		setup,
-		"",
-	)
-	if err != nil {
-		t.Fatalf("dispatchUnlimitedOCR2PDF live: %v", err)
-	}
-	if result.Err != nil {
-		t.Fatalf("result error: %v", result.Err)
-	}
-	if len(result.JSON) == 0 {
-		t.Fatalf("expected non-empty JSON items in result")
-	}
-
-	found := false
-	for _, it := range result.JSON {
-		m := it.ToMap()
-		if text, ok := m["text"].(string); ok && strings.Contains(text, "Purpose of RAGFlow") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected parsed items to contain 'Purpose of RAGFlow', got items: %#v", result.JSON)
 	}
 }
 

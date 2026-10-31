@@ -259,6 +259,7 @@ func (m *UnlimitedOCRModel) OCRFile(ctx context.Context, modelName *string, cont
 	}
 
 	deadline := time.Now().Add(longOpCallTimeout)
+	var lastErr error
 	for {
 		taskResult, err := m.ShowTask(ctx, task.TaskID, apiConfig)
 		if err == nil {
@@ -269,7 +270,13 @@ func (m *UnlimitedOCRModel) OCRFile(ctx context.Context, modelName *string, cont
 				}
 			}
 		}
+		if err != nil {
+			lastErr = err
+		}
 		if time.Now().After(deadline) {
+			if lastErr != nil {
+				return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s: last error: %w", task.TaskID, lastErr)
+			}
 			return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s", task.TaskID)
 		}
 		select {

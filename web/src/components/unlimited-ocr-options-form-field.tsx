@@ -66,7 +66,15 @@ export function UnlimitedOCROptionsFormField({
             type="number"
             {...field}
             value={field.value ?? 35}
-            onChange={(e) => field.onChange(Number(e.target.value))}
+            onChange={(e) => {
+              const val = e.target.value.trim();
+              if (val === '') {
+                field.onChange(undefined);
+              } else {
+                const parsed = Number(val);
+                field.onChange(Number.isNaN(parsed) ? undefined : parsed);
+              }
+            }}
             placeholder="35"
           />
         )}
