@@ -279,6 +279,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		defer engine.Close()
 		chunks = cropImageChunks(ctx, engine, chunks)
 	}
+	materializeTableText(chunks)
 	chunks = finalizeGeneralChunks(chunks, childrenPattern)
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("GeneralChunker: %w", err)
@@ -433,6 +434,9 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 		overlapSep = "\n"
 	}
 	units = applyGeneralOverlap(units, c.param.OverlappedPercent, overlapSep)
+	// MinerU DOCX items carry structured tables with an empty body. Fill Text
+	// the same way the PDF chunker does so the chunk is stored and displayed.
+	materializeTableText(units)
 	units = finalizeGeneralChunks(units, childrenPattern)
 	if len(units) == 0 {
 		return emptyOutputs(), nil

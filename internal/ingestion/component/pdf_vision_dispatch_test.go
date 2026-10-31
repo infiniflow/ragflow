@@ -38,6 +38,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -221,10 +222,10 @@ func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
 		{"equation", map[string]any{"type": "equation", "text": "x=1"}, "equation", "text"},
 		{"unknown", map[string]any{"type": "footnote", "text": "x"}, "text", "text"},
 		{"image", map[string]any{"type": "image", "image_caption": []any{"cap"}}, "figure", "image"},
-		{"table", map[string]any{"type": "table", "table_body": "<table></table>"}, "table", "table"},
+		{"table", map[string]any{"type": "table", "table_body": "<table><tr><td>Cell</td></tr></table>"}, "table", "table"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mineruContentItemToJSON(tc.item, nil, nil)
+			got := mineruContentItemToJSON(tc.item, nil, nil, true)
 			if got == nil {
 				t.Fatal("item was dropped")
 			}
@@ -260,7 +261,7 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	}
 
 	sizes := map[int][2]float64{0: {612, 792}, 1: {612, 792}}
-	items, err := mineruExtractJSONItems(buf.Bytes(), sizes)
+	items, err := mineruExtractJSONItems(buf.Bytes(), sizes, true)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -384,7 +385,7 @@ func TestMinerUExtractJSONItemsScalesBBoxToPoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes(), nil)
+	items, err := mineruExtractJSONItems(buf.Bytes(), nil, true)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -420,7 +421,7 @@ func TestMinerUExtractJSONItemsWithoutGeometryKeepsText(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes(), nil)
+	items, err := mineruExtractJSONItems(buf.Bytes(), nil, true)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -504,7 +505,7 @@ func TestMinerURealContentListPositionsStayInPage(t *testing.T) {
 		pageWidth  = 595.0
 		pageHeight = 842.0
 	)
-	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {pageWidth, pageHeight}})
+	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {pageWidth, pageHeight}}, true)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -632,7 +633,7 @@ func TestMineruExtractJSONItemsStructuredContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {1000, 1000}})
+	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {1000, 1000}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -802,7 +803,7 @@ func TestMineruStreamKeepsCancellationWhileReadingErrorResponse(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() {
-		_, err := mineruStreamParse(ctx, server.URL+"/file_parse", "mineru-secret", []byte("%PDF-1.4"), "auto", "en", "", "", mineruExtractionOptions{})
+		_, err := mineruStreamParse(ctx, server.URL+"/file_parse", "mineru-secret", "scan.pdf", []byte("%PDF-1.4"), "auto", "en", "", "", mineruExtractionOptions{})
 		done <- err
 	}()
 
@@ -822,5 +823,117 @@ func TestMineruStreamKeepsCancellationWhileReadingErrorResponse(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("stream kept reading the error response after cancellation")
+	}
+}
+
+func TestDocxMinerUVisionDispatchNotHandledWithoutPDFMinerU(t *testing.T) {
+	_, handled, err := maybeDispatchPDFVision(t.Context(), nil, utility.FileTypeDOCX, "sample.docx", []byte("PK\x03\x04"),
+		nil, map[string]schema.ParserSetup{
+			"pdf":  {"parse_method": "DeepDOC"},
+			"docx": {"preprocess": []any{"main_content"}},
+		})
+	if err != nil || handled {
+		t.Fatalf("handled=%v err=%v, want unhandled when PDF uses DeepDOC", handled, err)
+	}
+}
+
+func TestDocxMinerUVisionDispatchRequiresTenant(t *testing.T) {
+	_, handled, err := maybeDispatchPDFVision(t.Context(), nil, utility.FileTypeDOCX, "sample.docx", []byte("PK\x03\x04"),
+		nil, map[string]schema.ParserSetup{"pdf": {"parse_method": "mineru", "mineru_apiserver": "http://127.0.0.1:9"}})
+	if !handled || err == nil || !strings.Contains(err.Error(), "tenant_id") {
+		t.Fatalf("handled=%v err=%v, want handled with missing tenant_id", handled, err)
+	}
+}
+
+func TestDocxFlattenMediaKeepsExplicitFalse(t *testing.T) {
+	docx := schema.ParserSetup{"flatten_media_to_text": false}
+	pdf := schema.ParserSetup{"flatten_media_to_text": true}
+	if docxFlattenMedia(docx, pdf) {
+		t.Fatal("explicit DOCX false must not inherit the PDF true")
+	}
+	if !docxFlattenMedia(nil, pdf) {
+		t.Fatal("missing DOCX setup should inherit the PDF value")
+	}
+}
+
+func TestDocxMinerUVisionDispatchFallsBackWhenMinerUFails(t *testing.T) {
+	orig := resolveMinerUModelForDispatch
+	t.Cleanup(func() { resolveMinerUModelForDispatch = orig })
+	resolveMinerUModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		return nil, "", nil, errors.New("mineru unavailable")
+	}
+	_, handled, err := maybeDispatchPDFVision(t.Context(), nil, utility.FileTypeDOCX, "sample.docx", []byte("PK\x03\x04"),
+		map[string]any{"tenant_id": "tenant"},
+		map[string]schema.ParserSetup{"pdf": {"parse_method": "mineru"}})
+	if err != nil || handled {
+		t.Fatalf("handled=%v err=%v, want built-in DOCX fallback", handled, err)
+	}
+}
+
+func TestDocxMinerUStreamUsesDocxFilename(t *testing.T) {
+	withSSRFBypass(t)
+	var uploaded string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/health" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("multipart: %v", err)
+			http.Error(w, "bad multipart", http.StatusBadRequest)
+			return
+		}
+		defer r.MultipartForm.RemoveAll()
+		file, header, err := r.FormFile("files")
+		if err != nil {
+			t.Errorf("form file: %v", err)
+			http.Error(w, "missing file", http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		uploaded = header.Filename
+		var buf bytes.Buffer
+		zw := zip.NewWriter(&buf)
+		list, err := zw.Create("content_list.json")
+		if err != nil {
+			t.Errorf("zip: %v", err)
+			http.Error(w, "zip", http.StatusInternalServerError)
+			return
+		}
+		_, _ = list.Write([]byte(`[{"type":"table","table_body":"<table><tr><td>Fee</td></tr></table>","page_idx":0}]`))
+		_ = zw.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(buf.Bytes())
+	}))
+	defer server.Close()
+
+	apiKey := "mineru-secret"
+	baseURL := server.URL
+	orig := resolveMinerUModelForDispatch
+	t.Cleanup(func() { resolveMinerUModelForDispatch = orig })
+	resolveMinerUModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		return &mineruTestDriver{}, "mineru", &modelModule.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	res, handled, err := maybeDispatchPDFVision(t.Context(), nil, utility.FileTypeDOCX, "contract.docx", []byte("PK\x03\x04docx"),
+		map[string]any{"tenant_id": "tenant"},
+		map[string]schema.ParserSetup{"pdf": {"parse_method": "mineru"}})
+	if err != nil || !handled || res.Err != nil {
+		t.Fatalf("dispatch failed: handled=%v err=%v result=%v", handled, err, res.Err)
+	}
+	if uploaded != "contract.docx" {
+		t.Fatalf("uploaded filename = %q, want contract.docx", uploaded)
+	}
+	if len(res.JSON) != 1 || res.JSON[0].ToMap()["table"] == nil {
+		t.Fatalf("items = %#v, want one table item", res.JSON)
+	}
+	for _, warning := range res.Warnings {
+		if strings.Contains(warning, "geometry") {
+			t.Fatalf("DOCX parse warned about PDF geometry: %v", res.Warnings)
+		}
 	}
 }
