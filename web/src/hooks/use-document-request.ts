@@ -14,8 +14,6 @@
  *  limitations under the License.
  */
 
-import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
-
 import message from '@/components/ui/message';
 import { IngestionTaskStatus } from '@/constants/knowledge';
 import { ResponseType } from '@/interfaces/database/base';
@@ -86,6 +84,7 @@ import {
 } from './route-hook';
 import { KnowledgeApiAction } from './use-knowledge-request';
 import { DocumentApiAction, DocumentKeys } from './document-query-keys';
+import { useDocumentListState } from './use-document-list-state';
 
 export { DocumentApiAction, DocumentKeys } from './document-query-keys';
 
@@ -187,15 +186,31 @@ export const useUploadDocument = () => {
   return { uploadDocument: upload, loading, data };
 };
 
+/** Use restored preferences for the first query; debounce edits within a dataset visit. */
 export const useFetchDocumentList = (loop = true) => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
-  const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { id } = useParams();
+  const datasetId = knowledgeId || id || '';
+  const {
+    searchString,
+    initialSearch,
+    handleInputChange,
+    filterValue,
+    handleFilterSubmit,
+    checkValue,
+  } = useDocumentListState(datasetId);
   const queryClient = useQueryClient();
-  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, handleFilterSubmit, checkValue } =
-    useHandleFilterSubmit();
+  const search = useMemo(
+    () => ({ initialSearch, value: searchString }),
+    [initialSearch, searchString],
+  );
+  const debouncedSearch = useDebounce(search, { wait: 500 });
+  // A rapid return must not reuse the previous visit's debounced search.
+  const debouncedSearchString =
+    debouncedSearch.initialSearch === initialSearch
+      ? debouncedSearch.value
+      : initialSearch.value;
 
   const {
     data,
@@ -206,7 +221,12 @@ export const useFetchDocumentList = (loop = true) => {
     total: number;
     has_active_tasks?: boolean;
   }>({
-    queryKey: DocumentKeys.list(debouncedSearchString, pagination, filterValue),
+    queryKey: DocumentKeys.list(
+      debouncedSearchString,
+      pagination,
+      filterValue,
+      datasetId,
+    ),
     initialData: { docs: [], total: 0, has_active_tasks: false },
     refetchInterval: (query) => {
       if (!loop) return false;
@@ -268,14 +288,6 @@ export const useFetchDocumentList = (loop = true) => {
       };
     },
   });
-  const onInputChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(
-    (e) => {
-      setPagination({ page: 1 });
-      handleInputChange(e);
-    },
-    [handleInputChange, setPagination],
-  );
-
   useEffect(() => {
     queryClient.invalidateQueries({
       queryKey: [KnowledgeApiAction.FetchKnowledgeDetail],
@@ -316,7 +328,7 @@ export const useFetchDocumentList = (loop = true) => {
     searchString,
     documents: data.docs,
     pagination: { ...pagination, total: data?.total },
-    handleInputChange: onInputChange,
+    handleInputChange,
     setPagination,
     filterValue,
     handleFilterSubmit,
@@ -367,9 +379,10 @@ export const useFetchDocumentsByIds = (
   return { documents: data.docs, loading };
 };
 
-// get document filter
+/** Distinguish loading/errors from successful empty catalogs before pruning saved filters. */
 export const useGetDocumentFilter = (): {
   filter: IDocumentInfoFilter;
+  filterLoaded: boolean;
   onOpenChange: (open: boolean) => void;
 } => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
@@ -378,8 +391,8 @@ export const useGetDocumentFilter = (): {
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const [open, setOpen] = useState<number>(0);
   const datasetId = knowledgeId || id;
-  const { data } = useQuery({
-    queryKey: DocumentKeys.filter(debouncedSearchString, knowledgeId),
+  const { data, isSuccess } = useQuery({
+    queryKey: DocumentKeys.filter(debouncedSearchString, datasetId),
     queryFn: async () => {
       if (!datasetId) {
         return;
@@ -397,6 +410,7 @@ export const useGetDocumentFilter = (): {
     }
   };
   return {
+    filterLoaded: isSuccess && Boolean(data?.filter),
     filter: data?.filter
       ? adaptDocumentFilter(data.filter)
       : {

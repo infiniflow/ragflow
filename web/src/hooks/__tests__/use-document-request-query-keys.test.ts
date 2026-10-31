@@ -23,6 +23,7 @@ describe('DocumentKeys', () => {
       'keyword',
       { current: 1, pageSize: 30 },
       { run: ['1'] },
+      'dataset-id',
     );
 
     expect(partialMatchKey(actual, DocumentKeys.all())).toBe(true);
@@ -32,5 +33,11 @@ describe('DocumentKeys', () => {
     const actual = DocumentKeys.filter('keyword', 'dataset-id');
 
     expect(partialMatchKey(actual, DocumentKeys.allFilters())).toBe(true);
+  });
+
+  it('separates document list caches for different datasets', () => {
+    expect(DocumentKeys.list('', {}, {}, 'dataset-a')).not.toEqual(
+      DocumentKeys.list('', {}, {}, 'dataset-b'),
+    );
   });
 });
