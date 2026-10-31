@@ -303,19 +303,23 @@ func (s *dropboxSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	batchSize := positiveDropboxBatchSize(s.batchSize)
 	documents := make([]SourceDocument, 0, batchSize)
 	var lastAccepted dropboxFileMetadata
-	for attempts := 0; attempts < batchSize && s.index < len(s.files); attempts++ {
-		file := s.files[s.index]
-		s.index++
+	nextIndex := s.index
+	for attempts := 0; attempts < batchSize && nextIndex < len(s.files); attempts++ {
+		file := s.files[nextIndex]
+		nextIndex++
 		lastAccepted = file
 		blob, err := s.connector.downloadFile(ctx, file.downloadPath())
-		if err != nil || len(blob) == 0 {
+		if err != nil {
+			// Do not commit any part of this batch: the runner ignores a
+			// batch returned with an error and retains its previous checkpoint.
+			return SyncBatch{}, fmt.Errorf("download Dropbox file %q: %w", file.sourceID(), err)
+		}
+		if len(blob) == 0 {
 			continue
 		}
 		documents = append(documents, s.connector.buildDocument(file, blob, s.nameCounts))
 	}
-	if len(documents) == 0 {
-		return SyncBatch{Checkpoint: dropboxSyncCheckpoint(lastAccepted)}, nil
-	}
+	s.index = nextIndex
 	return SyncBatch{Documents: documents, Checkpoint: dropboxSyncCheckpoint(lastAccepted)}, nil
 }
 
