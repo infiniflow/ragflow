@@ -444,6 +444,9 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	// Hydrate: ES returns zero vectors; replace with real vectors from FetchChunkVectors.
 	// Infinity/OceanBase chunks already carry real vectors and are left unchanged.
 	hydrateChunkVectors(ctx, s.docEngine, filteredChunks, req.Datasets, tenantIDs)
+	for _, ck := range filteredChunks {
+		delete(ck, "vector_chunk_id")
+	}
 
 	common.Info("RetrievalTest completed", zap.String("userID", userID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question), zap.Int64("chunkCount", int64(len(filteredChunks))))
 

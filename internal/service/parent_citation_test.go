@@ -68,6 +68,13 @@ func TestParentExpansionAutomaticCitation(t *testing.T) {
 			if chunks[0]["chunk_id"] != "parent" {
 				t.Fatal("citation content identity changed")
 			}
+			formatted := chunksFormat(chunks)
+			if formatted[0]["id"] != "parent" || formatted[0]["document_id"] != "doc" {
+				t.Fatalf("public citation lost parent identity: %#v", formatted)
+			}
+			if _, present := formatted[0]["vector_chunk_id"]; present {
+				t.Fatal("public citation contains internal vector provenance")
+			}
 		})
 	}
 }
