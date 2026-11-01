@@ -354,4 +354,13 @@ func TestCategorizeDecisionTimeout(t *testing.T) {
 	if got := categorizeDecisionTimeout("Nace"); got < 60*time.Second {
 		t.Errorf("Nace timeout = %v, want at least 60s", got)
 	}
+	if got := categorizeDecisionBudget("Nace", 33); got != 3*categorizeDecisionTimeout("Nace") {
+		t.Errorf("Nace budget for 33 categories = %v, want three request budgets", got)
+	}
+	if got := categorizeDecisionBudget("Nace", 200); got != 5*time.Minute {
+		t.Errorf("Nace budget for 200 categories = %v, want the 5m cap", got)
+	}
+	if got := categorizeDecisionBudget("SystemOne", 33); got != 30*time.Second {
+		t.Errorf("SystemOne budget = %v, want 30s", got)
+	}
 }
