@@ -160,30 +160,25 @@ type CreateSearchRequest struct {
 }
 
 func (h *SearchHandler) CreateSearch(c *gin.Context) {
-	quotaUser, ok := billingQuotaUser(c)
-	if !ok {
+	user, errorCode, err := billingQuotaUser(c)
+	if err != nil {
+		common.ErrorWithCode(c, errorCode, err.Error())
 		return
 	}
-	if !billingEnforceApps(c, quotaUser.ID) {
+	if !billingEnforceApps(c, user.ID) {
 		return
 	}
 
-	// Get current user from context (same as Python current_user)
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 	userID := user.ID
 
 	// Parse request body (same as Python get_request_json())
 	var req CreateSearchRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err = c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
-	if err := common.ValidateName(req.Name); err != nil {
+	if err = common.ValidateName(req.Name); err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}

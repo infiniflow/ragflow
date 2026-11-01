@@ -29,13 +29,12 @@ import (
 )
 
 // billingQuotaUser resolves the caller that the plan quota applies to.
-func billingQuotaUser(c *gin.Context) (*entity.User, bool) {
+func billingQuotaUser(c *gin.Context) (*entity.User, common.ErrorCode, error) {
 	user, code, message := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ErrorWithCode(c, code, message)
-		return nil, false
+		return nil, code, errors.New(message)
 	}
-	return user, true
+	return user, code, nil
 }
 
 // billingEnforceApps admits every new application: the community edition has
