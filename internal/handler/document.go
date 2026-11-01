@@ -446,20 +446,40 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 
 // DeleteDocuments handles DELETE /api/v1/datasets/:dataset_id/documents
 func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "delete_dataset_documents",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_id is required")
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = errors.New("dataset_id is required")
 		return
 	}
 
-	bodyBytes, _, ok := parseJSONRequestObject(c)
-	if !ok {
+	bodyBytes, _, err := parseJSONRequestObject(c)
+	if err != nil {
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = err
 		return
 	}
 
@@ -467,8 +487,10 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 		IDs       *[]string `json:"ids"`
 		DeleteAll bool      `json:"delete_all,omitempty"`
 	}
-	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+	if err = json.Unmarshal(bodyBytes, &req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = err
 		return
 	}
 
@@ -484,6 +506,8 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 		}
 		if len(duplicates) > 0 {
 			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Field: <ids> - Message: <Duplicate ids: '%s'> - Value: <%s>", strings.Join(duplicates, ", "), string(bodyBytes)))
+			operationLog.Code = int(common.CodeArgumentError)
+			operationLog.Error = fmt.Errorf("Field: <ids> - Message: <Duplicate ids: '%s'> - Value: <%s>", strings.Join(duplicates, ", "), string(bodyBytes))
 			return
 		}
 	}
@@ -494,11 +518,18 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 	}
 	if len(ids) > 0 && req.DeleteAll {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "should not provide both ids and delete_all")
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = errors.New("should not provide both ids and delete_all")
 		return
 	}
 	if len(ids) == 0 && !req.DeleteAll {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "should either provide doc ids or set delete_all(true)")
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = errors.New("should either provide doc ids or set delete_all(true)")
 		return
+	}
+	operationLog.Resources = map[string]any{
+		"document_ids": ids,
 	}
 
 	userID := c.GetString("user_id")
@@ -506,9 +537,13 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 	deleted, err := h.documentService.DeleteDocuments(ctx, ids, req.DeleteAll, datasetID, userID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
+			operationLog.Code = int(common.CodePermissionError)
+			operationLog.Error = err
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = err
 		return
 	}
 
