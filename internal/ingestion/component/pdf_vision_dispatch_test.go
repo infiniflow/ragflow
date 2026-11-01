@@ -89,6 +89,73 @@ func TestMonkeyOCRv2RequestTimeoutUsesSetupAndAPIConfig(t *testing.T) {
 	}
 }
 
+func TestMinerURequestTimeout(t *testing.T) {
+	// 1. Default fallback
+	if got := mineruRequestTimeout(nil, nil); got != 30*time.Minute {
+		t.Fatalf("default timeout=%v, want 30m", got)
+	}
+
+	// 2. Setup mineru_timeout (int seconds)
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": 1200}, nil); got != 1200*time.Second {
+		t.Fatalf("setup mineru_timeout=%v, want 1200s", got)
+	}
+
+	// 3. Setup mineru_timeout_seconds (int and float)
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout_seconds": 3600}, nil); got != 3600*time.Second {
+		t.Fatalf("setup mineru_timeout_seconds=%v, want 3600s", got)
+	}
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout_seconds": 1800.0}, nil); got != 1800*time.Second {
+		t.Fatalf("setup mineru_timeout_seconds float=%v, want 1800s", got)
+	}
+
+	// 4. Setup duration strings
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "45m"}, nil); got != 45*time.Minute {
+		t.Fatalf("setup mineru_timeout 45m=%v, want 45m", got)
+	}
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "2h"}, nil); got != 2*time.Hour {
+		t.Fatalf("setup mineru_timeout 2h=%v, want 2h", got)
+	}
+
+	// 5. APIConfig JSON
+	apiKey := `{"mineru_timeout":"2400"}`
+	if got := mineruRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKey}); got != 2400*time.Second {
+		t.Fatalf("API config timeout=%v, want 2400s", got)
+	}
+	apiKeyEnv := `{"MINERU_TIMEOUT":"5000"}`
+	if got := mineruRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKeyEnv}); got != 5000*time.Second {
+		t.Fatalf("API config env key timeout=%v, want 5000s", got)
+	}
+
+	// 6. Environment variable
+	t.Setenv(common.EnvMineruTimeout, "7200")
+	if got := mineruRequestTimeout(nil, nil); got != 7200*time.Second {
+		t.Fatalf("env MINERU_TIMEOUT=%v, want 7200s", got)
+	}
+	t.Setenv(common.EnvMineruTimeout, "")
+	t.Setenv("MINERU_TIMEOUT_SECONDS", "3000")
+	if got := mineruRequestTimeout(nil, nil); got != 3000*time.Second {
+		t.Fatalf("env MINERU_TIMEOUT_SECONDS=%v, want 3000s", got)
+	}
+
+	// 7. Precedence: Setup > APIConfig > Env
+	t.Setenv(common.EnvMineruTimeout, "9999")
+	apiKeyPrecedence := `{"mineru_timeout":"600"}`
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": 300}, &modelModule.APIConfig{ApiKey: &apiKeyPrecedence}); got != 300*time.Second {
+		t.Fatalf("precedence setup over apiConfig=%v, want 300s", got)
+	}
+	if got := mineruRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKeyPrecedence}); got != 600*time.Second {
+		t.Fatalf("precedence apiConfig over env=%v, want 600s", got)
+	}
+
+	// 8. Invalid values fallback
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": -10}, nil); got != 30*time.Minute {
+		t.Fatalf("negative timeout fallback=%v, want 30m", got)
+	}
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "invalid"}, nil); got != 30*time.Minute {
+		t.Fatalf("invalid string timeout fallback=%v, want 30m", got)
+	}
+}
+
 func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		if request.URL.Path != "/parse" {
@@ -802,7 +869,7 @@ func TestMineruStreamKeepsCancellationWhileReadingErrorResponse(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() {
-		_, err := mineruStreamParse(ctx, server.URL+"/file_parse", "mineru-secret", []byte("%PDF-1.4"), "auto", "en", "", "", mineruExtractionOptions{})
+		_, err := mineruStreamParse(ctx, server.URL+"/file_parse", "mineru-secret", []byte("%PDF-1.4"), "auto", "en", "", "", mineruExtractionOptions{}, 0)
 		done <- err
 	}()
 
