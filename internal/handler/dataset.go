@@ -279,8 +279,8 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 
 	var req service.CreateDatasetRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
-		operationLog.Code = int(common.CodeArgumentError)
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		operationLog.Code = int(common.CodeDataError)
 		operationLog.Error = err
 		return
 	}
@@ -290,8 +290,8 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 
 	if req.Name == "" || (len(bodyBytes) > 0 && jsonNullValue(bodyBytes, "name")) {
 		err := fmt.Errorf("field validation for 'name' failed on the 'required' tag")
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
-		operationLog.Code = int(common.CodeArgumentError)
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		operationLog.Code = int(common.CodeDataError)
 		operationLog.Error = err
 		return
 	}
