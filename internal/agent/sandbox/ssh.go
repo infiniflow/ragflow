@@ -670,20 +670,19 @@ func (p *SSHProvider) remoteReadFile(ctx context.Context, client *ssh.Client, re
 	return stdout, nil
 }
 
-// remoteListDir lists a remote directory's entries. The format
-// is `name<TAB>size<TAB>mode` per line, sorted lexically by the
-// remote `find` call. We use `find` rather than `ls -la` because
-// its output is unambiguous across distros (no header rows).
+// remoteListDir lists a remote directory's entries. The format is
+// `path<TAB>size<TAB>mode<TAB>type` per line, sorted lexically by the remote
+// `find` call. We use `find` rather than `ls -la` because its output is
+// unambiguous across distros (no header rows).
 func (p *SSHProvider) remoteListDir(ctx context.Context, client *ssh.Client, remotePath string) ([]remoteEntry, error) {
-	// -mindepth 1 / -maxdepth 1: only direct children, not
-	// the dir itself. -printf 'P\t%s\t%m\n' is the GNU find
-	// format; the leading P is a literal path placeholder
-	// filled in below. -print0 + IFS split is more robust
-	// but adds complexity; for the artifact collection use
-	// case filenames don't contain newlines, so the simpler
+	// -mindepth 1 / -maxdepth 1: only direct children, not the dir itself.
+	// %m is the permission bits alone (e.g. "644"), so the entry kind has to
+	// come from %y; masking %m for S_IFDIR/S_IFREG never matches anything.
+	// -print0 + IFS split is more robust but adds complexity; for the artifact
+	// collection use case filenames don't contain newlines, so the simpler
 	// format is fine.
 	cmd := fmt.Sprintf(
-		"find %s -mindepth 1 -maxdepth 1 -printf '%%p\\t%%s\\t%%m\\n'",
+		"find %s -mindepth 1 -maxdepth 1 -printf '%%p\\t%%s\\t%%m\\t%%y\\n'",
 		shq(remotePath),
 	)
 	stdout, stderr, exitCode, err := p.runRemoteCommand(ctx, client, cmd, p.timeout)
@@ -698,29 +697,41 @@ func (p *SSHProvider) remoteListDir(ctx context.Context, client *ssh.Client, rem
 		}
 		return nil, fmt.Errorf("find %s: exit=%d stderr=%q", remotePath, exitCode, stderr)
 	}
+	return parseRemoteEntries(stdout, remotePath), nil
+}
+
+// parseRemoteEntries turns `find -printf '%p\t%s\t%m\t%y'` output into entries,
+// stripping root from each path. Lines without all four fields are skipped.
+func parseRemoteEntries(stdout, root string) []remoteEntry {
 	var out []remoteEntry
 	for _, line := range strings.Split(strings.TrimSpace(stdout), "\n") {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "\t", 3)
-		if len(parts) != 3 {
+		parts := strings.SplitN(line, "\t", 4)
+		if len(parts) != 4 {
 			continue
 		}
 		size, _ := strconv.ParseInt(parts[1], 10, 64)
-		mode, _ := strconv.ParseInt(parts[2], 8, 32) // octal mode
-		name := strings.TrimPrefix(parts[0], remotePath+"/")
-		out = append(out, remoteEntry{Name: name, Size: size, Mode: mode})
+		out = append(out, remoteEntry{
+			Name: strings.TrimPrefix(parts[0], root+"/"),
+			Size: size,
+			Type: parts[3],
+		})
 	}
-	return out, nil
+	return out
 }
 
-// remoteEntry is one row from remoteListDir.
+// remoteEntry is one row from remoteListDir. Type is find's %y: "f" for a
+// regular file, "d" for a directory, anything else for symlinks and specials.
 type remoteEntry struct {
 	Name string
 	Size int64
-	Mode int64
+	Type string
 }
+
+func (e remoteEntry) isDir() bool  { return e.Type == "d" }
+func (e remoteEntry) isFile() bool { return e.Type == "f" }
 
 // collectArtifacts walks the remote artifacts/ dir and returns
 // the list of files as {name, content_b64, mime_type, size}.
@@ -733,8 +744,7 @@ func (p *SSHProvider) collectArtifacts(ctx context.Context, client *ssh.Client, 
 	var out []map[string]any
 	for _, e := range entries {
 		remote := path.Join(root, e.Name)
-		// Mode bits: S_ISDIR = 0o040000, S_ISREG = 0o100000.
-		if e.Mode&0o170000 == 0o040000 {
+		if e.isDir() {
 			sub, err := p.collectArtifacts(ctx, client, remote)
 			if err != nil {
 				return nil, err
@@ -742,8 +752,8 @@ func (p *SSHProvider) collectArtifacts(ctx context.Context, client *ssh.Client, 
 			out = append(out, sub...)
 			continue
 		}
-		if e.Mode&0o170000 != 0o100000 {
-			return nil, fmt.Errorf("unsupported artifact entry: %s", e.Name)
+		if !e.isFile() {
+			return nil, fmt.Errorf("unsupported artifact entry: %s (find type %q)", e.Name, e.Type)
 		}
 		if len(out) >= p.maxArtifacts {
 			return nil, fmt.Errorf("ssh execution produced more than %d artifacts", p.maxArtifacts)
