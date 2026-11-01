@@ -394,11 +394,11 @@ export function VersionDialog({
                             setting={previewBackground}
                           ></AgentBackground>
                           {previewBackground.mode === 'default' ? (
-                          <Spotlight
-                            className="z-0"
-                            opcity={0.7}
-                            coverage={70}
-                          />
+                            <Spotlight
+                              className="z-0"
+                              opcity={0.7}
+                              coverage={70}
+                            />
                           ) : null}
                         </ReactFlow>
                       </CanvasSnapshotContext.Provider>
