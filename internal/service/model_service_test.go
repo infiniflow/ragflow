@@ -93,6 +93,28 @@ func TestEnsureUnlimitedOCRFromEnvSkipsBlankServerURL(t *testing.T) {
 	}
 }
 
+func TestEnsureUnlimitedOCRFromEnvMapsLowercaseKeys(t *testing.T) {
+	t.Setenv(common.EnvUnlimitedOCRServerURL, "http://127.0.0.1:18000")
+	t.Setenv(common.EnvUnlimitedOCRAPIServer, "http://127.0.0.1:18000")
+	t.Setenv(common.EnvUnlimitedOCRTimeout, "900")
+
+	config := collectEnvConfig(unlimitedOCREnvKeys, unlimitedOCRDefaultConfig)
+	if config == nil {
+		t.Fatal("expected config to be non-nil")
+	}
+	providerConfig := map[string]interface{}{
+		"unlimited_ocr_server_url": config[common.EnvUnlimitedOCRServerURL],
+		"unlimited_ocr_apiserver":  config[common.EnvUnlimitedOCRAPIServer],
+		"unlimited_ocr_timeout":    config[common.EnvUnlimitedOCRTimeout],
+	}
+	if providerConfig["unlimited_ocr_server_url"] != "http://127.0.0.1:18000" {
+		t.Fatalf("unlimited_ocr_server_url = %v", providerConfig["unlimited_ocr_server_url"])
+	}
+	if providerConfig["unlimited_ocr_timeout"] != "900" {
+		t.Fatalf("unlimited_ocr_timeout = %v", providerConfig["unlimited_ocr_timeout"])
+	}
+}
+
 func TestMonkeyOCRv2EnvConfig(t *testing.T) {
 	t.Setenv(common.EnvMonkeyOCRv2ServerURL, "http://monkeyocrv2:8000")
 	t.Setenv(common.EnvMonkeyOCRv2Timeout, "120")

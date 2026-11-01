@@ -2220,7 +2220,12 @@ func (m *ModelProviderService) ensureUnlimitedOCRFromEnv(ctx context.Context, us
 	if strings.TrimSpace(serverURL) == "" && strings.TrimSpace(apiServer) == "" {
 		return nil
 	}
-	return m.ensureOCRProviderFromEnv(ctx, userID, tenantID, "Unlimited-OCR-2", "unlimited-ocr-2-from-env", config)
+	providerConfig := map[string]interface{}{
+		"unlimited_ocr_server_url": config[common.EnvUnlimitedOCRServerURL],
+		"unlimited_ocr_apiserver":  config[common.EnvUnlimitedOCRAPIServer],
+		"unlimited_ocr_timeout":    config[common.EnvUnlimitedOCRTimeout],
+	}
+	return m.ensureOCRProviderFromEnv(ctx, userID, tenantID, "Unlimited-OCR-2", "unlimited-ocr-2-from-env", providerConfig)
 }
 
 // ensureMonkeyOCRv2FromEnv mirrors Python's ensure_monkeyocrv2_from_env.
