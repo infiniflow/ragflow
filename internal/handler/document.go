@@ -505,9 +505,9 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 			}
 		}
 		if len(duplicates) > 0 {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Field: <ids> - Message: <Duplicate ids: '%s'> - Value: <%s>", strings.Join(duplicates, ", "), string(bodyBytes)))
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("field: <ids> - message: <duplicate ids: '%s'> - value: <%s>", strings.Join(duplicates, ", "), string(bodyBytes)))
 			operationLog.Code = int(common.CodeArgumentError)
-			operationLog.Error = fmt.Errorf("Field: <ids> - Message: <Duplicate ids: '%s'> - Value: <%s>", strings.Join(duplicates, ", "), string(bodyBytes))
+			operationLog.Error = fmt.Errorf("field: <ids> - message: <duplicate ids: '%s'> - value: <%s>", strings.Join(duplicates, ", "), string(bodyBytes))
 			return
 		}
 	}

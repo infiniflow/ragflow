@@ -199,7 +199,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 			}
 		}
 		if len(duplicates) > 0 {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Duplicate ids: '%s'", strings.Join(duplicates, ", ")))
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("duplicate ids: '%s'", strings.Join(duplicates, ", ")))
 			return
 		}
 	}
