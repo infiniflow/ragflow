@@ -18,6 +18,7 @@ package sandbox
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -70,7 +71,8 @@ func TestCollectArtifactsKeepsRelativePaths(t *testing.T) {
 	p := &SSHProvider{maxArtifacts: 10, maxArtifactBytes: 1 << 20}
 
 	var out []map[string]any
-	if err := p.collectArtifactsInto(context.Background(), "/w/artifacts", "", &out, f.list, f.read); err != nil {
+	listings := 0
+	if err := p.collectArtifactsInto(context.Background(), "/w/artifacts", "", 0, &listings, &out, f.list, f.read); err != nil {
 		t.Fatalf("collectArtifactsInto: %v", err)
 	}
 
@@ -102,7 +104,8 @@ func TestCollectArtifactsAppliesCapAcrossSubtrees(t *testing.T) {
 	p := &SSHProvider{maxArtifacts: 2, maxArtifactBytes: 1 << 20}
 
 	var out []map[string]any
-	err := p.collectArtifactsInto(context.Background(), "/w/artifacts", "", &out, f.list, f.read)
+	listings := 0
+	err := p.collectArtifactsInto(context.Background(), "/w/artifacts", "", 0, &listings, &out, f.list, f.read)
 	if err == nil || !strings.Contains(err.Error(), "more than 2 artifacts") {
 		t.Fatalf("expected the global artifact cap to trip, got err=%v, artifacts=%d", err, len(out))
 	}
@@ -120,8 +123,50 @@ func TestCollectArtifactsRejectsNonRegularEntries(t *testing.T) {
 	p := &SSHProvider{maxArtifacts: 10, maxArtifactBytes: 1 << 20}
 
 	var out []map[string]any
-	err := p.collectArtifactsInto(context.Background(), "/w/artifacts", "", &out, f.list, f.read)
+	listings := 0
+	err := p.collectArtifactsInto(context.Background(), "/w/artifacts", "", 0, &listings, &out, f.list, f.read)
 	if err == nil || !strings.Contains(err.Error(), "unsupported artifact entry") {
 		t.Fatalf("expected symlink rejection, got %v", err)
+	}
+}
+
+// Directories produce no artifacts, so maxArtifacts does not bound the walk.
+// A wide tree of empty directories must stop at the listing budget instead of
+// issuing one remote find per directory.
+func TestCollectArtifactsBoundsWideDirectoryWalk(t *testing.T) {
+	root := make([]remoteEntry, 0, sshMaxArtifactListings+10)
+	for i := 0; i < sshMaxArtifactListings+10; i++ {
+		root = append(root, dirEntry("d"+strconv.Itoa(i)))
+	}
+	f := &artifactFixture{dirs: map[string][]remoteEntry{"/w/artifacts": root}}
+	p := &SSHProvider{maxArtifacts: 20, maxArtifactBytes: 1 << 20}
+
+	var out []map[string]any
+	listings := 0
+	err := p.collectArtifactsInto(context.Background(), "/w/artifacts", "", 0, &listings, &out, f.list, f.read)
+	if err == nil || !strings.Contains(err.Error(), "listings") {
+		t.Fatalf("expected the listing budget to trip, got %v", err)
+	}
+	if len(f.listed) > sshMaxArtifactListings+1 {
+		t.Fatalf("walked %d directories, want at most %d", len(f.listed), sshMaxArtifactListings+1)
+	}
+}
+
+func TestCollectArtifactsBoundsNestingDepth(t *testing.T) {
+	dirs := map[string][]remoteEntry{}
+	dir := "/w/artifacts"
+	for i := 0; i <= sshMaxArtifactDepth+2; i++ {
+		next := dir + "/n"
+		dirs[dir] = []remoteEntry{dirEntry("n")}
+		dir = next
+	}
+	f := &artifactFixture{dirs: dirs}
+	p := &SSHProvider{maxArtifacts: 20, maxArtifactBytes: 1 << 20}
+
+	var out []map[string]any
+	listings := 0
+	err := p.collectArtifactsInto(context.Background(), "/w/artifacts", "", 0, &listings, &out, f.list, f.read)
+	if err == nil || !strings.Contains(err.Error(), "nesting exceeds") {
+		t.Fatalf("expected the depth limit to trip, got %v", err)
 	}
 }

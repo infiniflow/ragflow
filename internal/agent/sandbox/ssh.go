@@ -70,6 +70,13 @@ const (
 	sshDefaultPort         = 22
 	sshDefaultMaxOutput    = 1 << 20
 	sshDefaultMaxArtifacts = 20
+	// The artifact walk issues one remote `find` per directory, and directories
+	// produce no artifacts of their own, so maxArtifacts cannot bound the walk.
+	// Match the depth limit the tenki/ucloud providers use and cap the total
+	// number of remote listings as well so a wide or deep tree cannot turn one
+	// execution into unbounded SSH round trips.
+	sshMaxArtifactDepth    = 16
+	sshMaxArtifactListings = 256
 	sshDefaultMaxArtifact  = 10 << 20
 	sshDefaultPythonBin    = "python3"
 	sshDefaultNodeBin      = "node"
@@ -745,7 +752,8 @@ type artifactReader func(ctx context.Context, path string) (string, error)
 // relative to the artifacts root, matching LocalProvider.collectArtifacts.
 func (p *SSHProvider) collectArtifacts(ctx context.Context, client *ssh.Client, root string) ([]map[string]any, error) {
 	var out []map[string]any
-	err := p.collectArtifactsInto(ctx, root, "", &out,
+	listings := 0
+	err := p.collectArtifactsInto(ctx, root, "", 0, &listings, &out,
 		func(ctx context.Context, dir string) ([]remoteEntry, error) {
 			return p.remoteListDir(ctx, client, dir)
 		},
@@ -765,10 +773,19 @@ func (p *SSHProvider) collectArtifacts(ctx context.Context, client *ssh.Client, 
 func (p *SSHProvider) collectArtifactsInto(
 	ctx context.Context,
 	dir, relativeDir string,
+	depth int,
+	listings *int,
 	out *[]map[string]any,
 	list artifactLister,
 	read artifactReader,
 ) error {
+	if depth > sshMaxArtifactDepth {
+		return fmt.Errorf("artifact directory nesting exceeds %d levels: %s", sshMaxArtifactDepth, relativeDir)
+	}
+	*listings++
+	if *listings > sshMaxArtifactListings {
+		return fmt.Errorf("artifact directory walk exceeds %d listings", sshMaxArtifactListings)
+	}
 	entries, err := list(ctx, dir)
 	if err != nil {
 		return err
@@ -777,7 +794,7 @@ func (p *SSHProvider) collectArtifactsInto(
 		remote := path.Join(dir, e.Name)
 		relativePath := path.Join(relativeDir, e.Name)
 		if e.isDir() {
-			if err := p.collectArtifactsInto(ctx, remote, relativePath, out, list, read); err != nil {
+			if err := p.collectArtifactsInto(ctx, remote, relativePath, depth+1, listings, out, list, read); err != nil {
 				return err
 			}
 			continue
