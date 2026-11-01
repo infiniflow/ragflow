@@ -19,6 +19,8 @@
 package common
 
 import (
+	"time"
+
 	"go.uber.org/zap"
 )
 
@@ -36,6 +38,20 @@ func InitAudit(logType string, file FileOutput, serviceName string) error {
 	return nil
 }
 
+type OperationLog struct {
+	EventTime     time.Time      `json:"event_time"`
+	UserID        string         `json:"user_id"`
+	IPAddress     string         `json:"ip_address"`
+	Operation     string         `json:"operation"`
+	APIPath       string         `json:"api_path"`
+	HTTPMethod    string         `json:"http_method"`
+	RequestParams string         `json:"request_params"`
+	Resources     map[string]any `json:"resources"`
+	Code          int            `json:"code"`
+	Error         error          `json:"error"`
+	DurationMS    int64          `json:"duration_ms"`
+}
+
 func Audit(operationLog *OperationLog, fields ...zap.Field) {
 }
 
@@ -43,6 +59,19 @@ func InitIngestLog(logType string, file FileOutput, serviceName string) error {
 	return nil
 }
 
-func LogIngest(fields ...zap.Field) {
-
+type IngestionLog struct {
+	EventTime  time.Time      `json:"event_time"`
+	UserID     string         `json:"user_id"`
+	UserName   string         `json:"user_name"`
+	DocumentID string         `json:"document_id"`
+	Worker     string         `json:"worker"`
+	TaskID     string         `json:"task_id"`
+	TaskType   string         `json:"task_type"`
+	Filename   string         `json:"filename"`
+	Code       int            `json:"code"`
+	Error      error          `json:"error"`
+	DurationMS int64          `json:"duration_ms"`
+	Operation  map[string]any `json:"operation"`
 }
+
+func LogIngest(log *IngestionLog, fields ...zap.Field) {}

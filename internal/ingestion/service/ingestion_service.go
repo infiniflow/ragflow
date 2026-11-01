@@ -359,7 +359,7 @@ func (e *Ingestor) consumeLoop() {
 				zap.Duration("handoff_duration", handoffDuration),
 			)
 		case <-e.dispatchCtx.Done():
-			if err := handle.Nack(); err != nil {
+			if err = handle.Nack(); err != nil {
 				common.Error("nack task after shutdown interrupted handoff", err)
 			}
 			return
