@@ -51,23 +51,6 @@ func (m *ModelUsage) String() string {
 	return fmt.Sprintf("%#v", m)
 }
 
-type OperationLog struct {
-	EventTime     time.Time `json:"event_time"`
-	UserID        string    `json:"user_id"`
-	UserName      string    `json:"user_name"`
-	IPAddress     string    `json:"ip_address"`
-	Operation     string    `json:"operation"`
-	APIPath       string    `json:"api_path"`
-	HTTPMethod    string    `json:"http_method"`
-	ResourceType  string    `json:"resource_type"`
-	ResourceID    string    `json:"resource_id"`
-	ResourceName  string    `json:"resource_name"`
-	RequestParams string    `json:"request_params"`
-	Code          int       `json:"code"`
-	Error         error     `json:"error"`
-	DurationMS    int64     `json:"duration_ms"`
-}
-
 func ParseCompositeModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
 	parts := strings.Split(compositeName, "@")
 	switch len(parts) {
@@ -85,17 +68,4 @@ func ParseCompositeModelName(compositeName string) (modelName, instanceName, pro
 	// or assigned to the instance/provider fields.
 	n := len(parts)
 	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
-}
-
-type IngestLog struct {
-	EventTime  time.Time      `json:"event_time"`
-	UserID     string         `json:"user_id"`
-	UserName   string         `json:"user_name"`
-	Worker     string         `json:"worker"`
-	TaskID     string         `json:"task_id"`
-	Filename   string         `json:"filename"`
-	Code       int            `json:"code"`
-	Error      error          `json:"error"`
-	DurationMS int64          `json:"duration_ms"`
-	Operation  map[string]any `json:"operation"`
 }
