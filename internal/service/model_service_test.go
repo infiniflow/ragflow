@@ -82,6 +82,17 @@ func TestEnsureMonkeyOCRFromEnvSkipsBlankAPIServer(t *testing.T) {
 	}
 }
 
+func TestEnsureUnlimitedOCRFromEnvSkipsBlankServerURL(t *testing.T) {
+	t.Setenv(common.EnvUnlimitedOCRTimeout, "1800")
+	t.Setenv(common.EnvUnlimitedOCRServerURL, "")
+	t.Setenv(common.EnvUnlimitedOCRAPIServer, "")
+
+	svc := &ModelProviderService{}
+	if err := svc.ensureUnlimitedOCRFromEnv(context.Background(), "user-id", "tenant-id"); err != nil {
+		t.Fatalf("ensureUnlimitedOCRFromEnv: %v", err)
+	}
+}
+
 func TestMonkeyOCRv2EnvConfig(t *testing.T) {
 	t.Setenv(common.EnvMonkeyOCRv2ServerURL, "http://monkeyocrv2:8000")
 	t.Setenv(common.EnvMonkeyOCRv2Timeout, "120")

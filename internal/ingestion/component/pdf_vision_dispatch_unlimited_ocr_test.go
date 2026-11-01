@@ -456,3 +456,30 @@ func TestDispatchUnlimitedOCR2PDF_TenantCredentialFailsClosedWithoutURL(t *testi
 		t.Errorf("security violation: caller-supplied server was contacted")
 	}
 }
+
+func TestUnlimitedOCR2RequestTimeout(t *testing.T) {
+	// 1. Default fallback is 30 minutes
+	t.Setenv(common.EnvUnlimitedOCRTimeout, "")
+	if got := unlimitedOCR2RequestTimeout(schema.ParserSetup{}, nil); got != 30*time.Minute {
+		t.Fatalf("expected default 30m, got %v", got)
+	}
+
+	// 2. Environment variable override
+	t.Setenv(common.EnvUnlimitedOCRTimeout, "900")
+	if got := unlimitedOCR2RequestTimeout(schema.ParserSetup{}, nil); got != 15*time.Minute {
+		t.Fatalf("expected 15m from env, got %v", got)
+	}
+
+	// 3. APIConfig override takes precedence over environment variable
+	apiKeyJSON := `{"unlimited_ocr_timeout": 600}`
+	apiConfig := &modelModule.APIConfig{ApiKey: &apiKeyJSON}
+	if got := unlimitedOCR2RequestTimeout(schema.ParserSetup{}, apiConfig); got != 10*time.Minute {
+		t.Fatalf("expected 10m from apiConfig, got %v", got)
+	}
+
+	// 4. Setup parameter takes precedence over APIConfig and environment variable
+	setup := schema.ParserSetup{"unlimited_ocr_timeout": 120}
+	if got := unlimitedOCR2RequestTimeout(setup, apiConfig); got != 2*time.Minute {
+		t.Fatalf("expected 2m from setup, got %v", got)
+	}
+}

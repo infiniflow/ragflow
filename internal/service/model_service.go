@@ -2215,6 +2215,11 @@ func (m *ModelProviderService) ensureUnlimitedOCRFromEnv(ctx context.Context, us
 	if config == nil {
 		return nil
 	}
+	serverURL, _ := config[common.EnvUnlimitedOCRServerURL].(string)
+	apiServer, _ := config[common.EnvUnlimitedOCRAPIServer].(string)
+	if strings.TrimSpace(serverURL) == "" && strings.TrimSpace(apiServer) == "" {
+		return nil
+	}
 	return m.ensureOCRProviderFromEnv(ctx, userID, tenantID, "Unlimited-OCR-2", "unlimited-ocr-2-from-env", config)
 }
 
@@ -2299,8 +2304,8 @@ var (
 		common.EnvUnlimitedOCRTimeout,
 	}
 	unlimitedOCRDefaultConfig = map[string]interface{}{
-		common.EnvUnlimitedOCRServerURL: "http://host.docker.internal:18000",
-		common.EnvUnlimitedOCRAPIServer: "http://host.docker.internal:18000",
+		common.EnvUnlimitedOCRServerURL: "",
+		common.EnvUnlimitedOCRAPIServer: "",
 		common.EnvUnlimitedOCRTimeout:   600,
 	}
 )

@@ -365,7 +365,6 @@ func dispatchUnlimitedOCR2PDF(
 		environmentURL = strings.TrimRight(os.Getenv(common.EnvUnlimitedOCRAPIServer), "/")
 	}
 	baseURL := strings.TrimRight(getStringOr(setup, "unlimited_ocr_server_url", environmentURL), "/")
-	timeout := 30 * time.Minute
 
 	var resolvedAPIConfig *modelModule.APIConfig
 	if tenantID != "" {
@@ -396,6 +395,7 @@ func dispatchUnlimitedOCR2PDF(
 	if baseURL == "" {
 		baseURL = "http://host.docker.internal:18000"
 	}
+	timeout := unlimitedOCR2RequestTimeout(setup, resolvedAPIConfig)
 
 	driver := modelModule.NewUnlimitedOCRModel(
 		map[string]string{"default": baseURL},
@@ -479,6 +479,26 @@ func pollUnlimitedOCRTaskResult(ctx context.Context, driver *modelModule.Unlimit
 		case <-time.After(2 * time.Second):
 		}
 	}
+}
+
+// unlimitedOCR2RequestTimeout resolves the polling timeout for Unlimited-OCR-2,
+// checking setup parameters, model instance configuration, and environment variables.
+func unlimitedOCR2RequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) time.Duration {
+	value := ""
+	if raw, ok := setup["unlimited_ocr_timeout"]; ok {
+		value = strings.TrimSpace(fmt.Sprint(raw))
+	}
+	if value == "" {
+		value = modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "unlimited_ocr_timeout", common.EnvUnlimitedOCRTimeout)
+	}
+	if value == "" {
+		value = os.Getenv(common.EnvUnlimitedOCRTimeout)
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds <= 0 {
+		return 30 * time.Minute
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 // getIntOr safely extracts an integer from a parameter map with a fallback default.
