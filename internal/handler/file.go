@@ -253,6 +253,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 	contentType := c.ContentType()
 	ctx := c.Request.Context()
 
+	operationLog.Resources = make(map[string]any)
 	if strings.Contains(contentType, "multipart/form-data") {
 		operationLog.Operation = "upload_files"
 		uploadLimit := file.DeploymentUploadMaxBytes()

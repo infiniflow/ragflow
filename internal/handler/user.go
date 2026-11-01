@@ -162,6 +162,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
+	operationLog.Resources = make(map[string]any)
 	operationLog.Resources["user_name"] = req.Username
 
 	user, code, err := h.userService.Login(ctx, &req)
@@ -232,6 +233,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
+	operationLog.Resources = make(map[string]any)
 	operationLog.Resources["user_name"] = req.Email
 
 	if !local.IsAdminAvailable() {
