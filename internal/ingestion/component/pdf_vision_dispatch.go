@@ -386,6 +386,9 @@ func dispatchUnlimitedOCR2PDF(
 			} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "unlimited_ocr_server_url"); configuredURL != "" {
 				baseURL = strings.TrimRight(configuredURL, "/")
 			} else if modelModule.ResolveUnlimitedOCRBearerToken(apiConfig) != "" {
+				if environmentURL == "" {
+					return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 tenant credential requires a server URL on the model or %s", common.EnvUnlimitedOCRServerURL)
+				}
 				baseURL = environmentURL
 			}
 		}

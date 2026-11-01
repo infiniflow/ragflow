@@ -406,3 +406,53 @@ func TestDispatchUnlimitedOCR2PDF_TenantCredential_NoCallerOverride(t *testing.T
 		t.Errorf("expected deployment environment server to be contacted")
 	}
 }
+
+func TestDispatchUnlimitedOCR2PDF_TenantCredentialFailsClosedWithoutURL(t *testing.T) {
+	callerHit := false
+	callerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callerHit = true
+		http.Error(w, "should not be reached", http.StatusInternalServerError)
+	}))
+	defer callerServer.Close()
+
+	t.Setenv(common.EnvUnlimitedOCRServerURL, "")
+	t.Setenv(common.EnvUnlimitedOCRAPIServer, "")
+
+	origResolver := resolveTenantOCRModelByProvider
+	t.Cleanup(func() { resolveTenantOCRModelByProvider = origResolver })
+
+	token := "secret-tenant-token"
+	resolveTenantOCRModelByProvider = func(ctx context.Context, db *gorm.DB, tenantID, providerName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		driver := modelModule.NewUnlimitedOCRModel(
+			map[string]string{"default": "http://placeholder"},
+			modelModule.URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
+		)
+		return driver, "Unlimited-OCR-2", &modelModule.APIConfig{
+			ApiKey: &token,
+		}, 0, nil
+	}
+
+	setup := schema.ParserSetup{
+		"unlimited_ocr_server_url": callerServer.URL,
+	}
+
+	_, err := dispatchUnlimitedOCR2PDF(
+		context.Background(),
+		nil,
+		"test.pdf",
+		[]byte("%PDF-1.4 test"),
+		"tenant-sec-fail-closed",
+		setup,
+		"",
+	)
+	if err == nil {
+		t.Fatalf("expected error when tenant credential has no model URL and environmentURL is empty, got nil")
+	}
+	expectedMsg := "Unlimited-OCR-2 tenant credential requires a server URL on the model or " + common.EnvUnlimitedOCRServerURL
+	if !strings.Contains(err.Error(), expectedMsg) {
+		t.Fatalf("expected error containing %q, got: %v", expectedMsg, err)
+	}
+	if callerHit {
+		t.Errorf("security violation: caller-supplied server was contacted")
+	}
+}
