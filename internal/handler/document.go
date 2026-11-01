@@ -528,8 +528,16 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 		operationLog.Error = errors.New("should either provide doc ids or set delete_all(true)")
 		return
 	}
-	operationLog.Resources = map[string]any{
-		"document_ids": ids,
+	operationLog.Resources = make(map[string]any)
+	if len(ids) > 0 {
+		operationLog.Resources = map[string]any{
+			"document_ids": ids,
+		}
+	}
+	if req.DeleteAll {
+		operationLog.Resources = map[string]any{
+			"delete_all": req.DeleteAll,
+		}
 	}
 
 	userID := c.GetString("user_id")
