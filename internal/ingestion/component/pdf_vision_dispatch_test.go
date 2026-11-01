@@ -90,6 +90,9 @@ func TestMonkeyOCRv2RequestTimeoutUsesSetupAndAPIConfig(t *testing.T) {
 }
 
 func TestMinerURequestTimeout(t *testing.T) {
+	t.Setenv(common.EnvMineruTimeout, "")
+	t.Setenv("MINERU_TIMEOUT_SECONDS", "")
+
 	// 1. Default fallback
 	if got := mineruRequestTimeout(nil, nil); got != 30*time.Minute {
 		t.Fatalf("default timeout=%v, want 30m", got)

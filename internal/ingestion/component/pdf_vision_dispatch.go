@@ -573,7 +573,9 @@ func dispatchMinerUPDF(
 		if err := modelModule.ValidateMinerUConfigForAPI(backend, serverURL, true); err != nil {
 			return parser.ParseResult{}, err
 		}
-		result, err := modelModule.ParseMinerUCloud(ctx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, mineruLang)
+		cloudCtx, cloudCancel := context.WithTimeout(ctx, timeout)
+		defer cloudCancel()
+		result, err := modelModule.ParseMinerUCloud(cloudCtx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, mineruLang)
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU cloud: %w", err)
 		}
