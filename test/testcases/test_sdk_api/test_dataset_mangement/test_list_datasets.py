@@ -265,5 +265,5 @@ class TestDatasetsList:
     @pytest.mark.p2
     def test_ids_duplicates(self, client, add_datasets):
         dataset_id = add_datasets[0].id
-        with pytest.raises(Exception, match="Duplicate ids:"):
+        with pytest.raises(Exception, match="duplicate ids:"):
             client.list_datasets(ids=[dataset_id, dataset_id])

@@ -68,8 +68,6 @@ type ChatMindMapRequest struct {
 // @Summary List Chats
 // @Description Get list of chats (dialogs) for the current user
 // @Tags chat
-// @Accept json
-// @Produce json
 // @Success 200 {object} service.ListChatsResponse
 // @Router /api/v1/chats [get]
 func (h *ChatHandler) ListChats(c *gin.Context) {
@@ -107,12 +105,12 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	// `sort` supersedes the older pair, so a request it can order is not rejected
 	// for the spelling of an `orderby` that will not be read.
 	sortTerms := sortTermsFromQuery(c)
-	orderby := c.DefaultQuery("orderby", "create_time")
+	orderBy := c.DefaultQuery("orderby", "create_time")
 	if len(sortTerms) == 0 {
-		switch orderby {
+		switch orderBy {
 		case "create_time", "update_time", "name":
 		default:
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderBy))
 			return
 		}
 	}
@@ -121,7 +119,7 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	if descStr := c.Query("desc"); descStr != "" {
 		desc = !strings.EqualFold(descStr, "false")
 	}
-	terms := orderTerms(sortTerms, orderby, desc)
+	terms := orderTerms(sortTerms, orderBy, desc)
 
 	ownerIDs := getOwnerIDs(c)
 	ctx := c.Request.Context()
@@ -143,17 +141,16 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 // @Summary Create Chat
 // @Description Create a chat, aligned with Python POST /api/v1/chats.
 // @Tags chat
-// @Accept json
-// @Produce json
 // @Param request body service.CreateChatRequest true "chat configuration"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chats [post]
 func (h *ChatHandler) Create(c *gin.Context) {
-	quotaUser, ok := billingQuotaUser(c)
-	if !ok {
+	user, errorCode, err := billingQuotaUser(c)
+	if err != nil {
+		common.ErrorWithCode(c, errorCode, err.Error())
 		return
 	}
-	if !billingEnforceApps(c, quotaUser.ID) {
+	if !billingEnforceApps(c, user.ID) {
 		return
 	}
 
@@ -166,7 +163,7 @@ func (h *ChatHandler) Create(c *gin.Context) {
 	var req map[string]interface{}
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.UseNumber()
-	if err := decoder.Decode(&req); err != nil {
+	if err = decoder.Decode(&req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
@@ -188,8 +185,6 @@ func (h *ChatHandler) Create(c *gin.Context) {
 // @Summary Generate Chat Mind Map
 // @Description Retrieves related chunks and asks the configured chat model to summarize them into a mind map.
 // @Tags chat
-// @Accept json
-// @Produce json
 // @Param request body ChatMindMapRequest true "Mind map parameters"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chat/mindmap [post]
@@ -341,8 +336,6 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 // @Summary Get Chat Detail
 // @Description Get detail of a chat by ID
 // @Tags chat
-// @Accept json
-// @Produce json
 // @Param chat_id path string true "chat ID"
 // @Success 200 {object} service.GetChatResponse
 // @Router /api/v1/chats/{chat_id} [get]
