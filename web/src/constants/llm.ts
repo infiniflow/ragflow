@@ -123,6 +123,7 @@ export enum LLMFactory {
   Cheapaimodel = 'cheapaimodel',
   SystemOne = 'SystemOne',
   HostingerRouter = 'Hostinger Router',
+  Wally = 'Wally',
 }
 
 // Please lowercase the file name
@@ -227,6 +228,7 @@ export const IconMap = {
   [LLMFactory.Obscurify]: 'obscurify',
   [LLMFactory.HostingerRouter]: 'hostinger-router',
   [LLMFactory.Cheapaimodel]: 'cheapaimodel',
+  [LLMFactory.Wally]: 'wally',
 };
 
 /**
@@ -282,6 +284,7 @@ export const APIMapUrl = {
   [LLMFactory.HostingerRouter]: 'https://hpanel.hostinger.com/ai-router',
   [LLMFactory.Cheapaimodel]:
     'https://console.cheapaimodel.ai/keys?utm_source=ragflow',
+  [LLMFactory.Wally]: 'https://console.runanywhere.ai',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

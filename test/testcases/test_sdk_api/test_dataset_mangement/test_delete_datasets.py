@@ -106,7 +106,7 @@ class TestDatasetsDelete:
     @pytest.mark.p2
     def test_ids_duplicate(self, client, add_datasets_func):
         ids = [dataset.id for dataset in add_datasets_func]
-        with pytest.raises(Exception, match="Duplicate ids:"):
+        with pytest.raises(Exception, match="duplicate ids:"):
             client.delete_datasets(ids=ids + ids)
         assert {dataset.id for dataset in client.list_datasets()} == set(ids)
 
