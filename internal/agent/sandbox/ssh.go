@@ -733,50 +733,80 @@ type remoteEntry struct {
 func (e remoteEntry) isDir() bool  { return e.Type == "d" }
 func (e remoteEntry) isFile() bool { return e.Type == "f" }
 
+// artifactLister lists one remote directory; artifactReader reads one remote
+// file. They are parameters so the traversal can be exercised without SSH.
+type artifactLister func(ctx context.Context, dir string) ([]remoteEntry, error)
+type artifactReader func(ctx context.Context, path string) (string, error)
+
 // collectArtifacts walks the remote artifacts/ dir and returns
 // the list of files as {name, content_b64, mime_type, size}.
-// Enforces the same limits the local provider does.
+// Enforces the same limits the local provider does: max count across the whole
+// tree, max per-file size, allowlist of extensions, no symlinks. Names are
+// relative to the artifacts root, matching LocalProvider.collectArtifacts.
 func (p *SSHProvider) collectArtifacts(ctx context.Context, client *ssh.Client, root string) ([]map[string]any, error) {
-	entries, err := p.remoteListDir(ctx, client, root)
+	var out []map[string]any
+	err := p.collectArtifactsInto(ctx, root, "", &out,
+		func(ctx context.Context, dir string) ([]remoteEntry, error) {
+			return p.remoteListDir(ctx, client, dir)
+		},
+		func(ctx context.Context, path string) (string, error) {
+			return p.remoteReadFile(ctx, client, path)
+		},
+	)
 	if err != nil {
 		return nil, err
 	}
-	var out []map[string]any
+	return out, nil
+}
+
+// collectArtifactsInto appends the artifacts under dir to out. relativeDir is
+// the path of dir relative to the artifacts root, and out is shared by every
+// recursive call so maxArtifacts bounds the whole tree instead of each subtree.
+func (p *SSHProvider) collectArtifactsInto(
+	ctx context.Context,
+	dir, relativeDir string,
+	out *[]map[string]any,
+	list artifactLister,
+	read artifactReader,
+) error {
+	entries, err := list(ctx, dir)
+	if err != nil {
+		return err
+	}
 	for _, e := range entries {
-		remote := path.Join(root, e.Name)
+		remote := path.Join(dir, e.Name)
+		relativePath := path.Join(relativeDir, e.Name)
 		if e.isDir() {
-			sub, err := p.collectArtifacts(ctx, client, remote)
-			if err != nil {
-				return nil, err
+			if err := p.collectArtifactsInto(ctx, remote, relativePath, out, list, read); err != nil {
+				return err
 			}
-			out = append(out, sub...)
 			continue
 		}
 		if !e.isFile() {
-			return nil, fmt.Errorf("unsupported artifact entry: %s (find type %q)", e.Name, e.Type)
+			return fmt.Errorf("unsupported artifact entry: %s (find type %q)", relativePath, e.Type)
 		}
-		if len(out) >= p.maxArtifacts {
-			return nil, fmt.Errorf("ssh execution produced more than %d artifacts", p.maxArtifacts)
+		if len(*out) >= p.maxArtifacts {
+			return fmt.Errorf("ssh execution produced more than %d artifacts", p.maxArtifacts)
 		}
 		if e.Size > int64(p.maxArtifactBytes) {
-			return nil, fmt.Errorf("artifact exceeds %d bytes: %s", p.maxArtifactBytes, e.Name)
+			return fmt.Errorf("artifact exceeds %d bytes: %s", p.maxArtifactBytes, relativePath)
 		}
 		ext := strings.ToLower(path.Ext(e.Name))
 		if _, ok := allowedArtifactExts[ext]; !ok {
-			return nil, fmt.Errorf("unsupported artifact type: %s", e.Name)
+			return fmt.Errorf("unsupported artifact type: %s", relativePath)
 		}
-		body, err := p.remoteReadFile(ctx, client, remote)
+		body, err := read(ctx, remote)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		out = append(out, map[string]any{
-			"name":        e.Name,
+		*out = append(*out, map[string]any{
+			"name":        relativePath,
 			"content_b64": base64.StdEncoding.EncodeToString([]byte(body)),
 			"mime_type":   mime.TypeByExtension(ext),
 			"size":        e.Size,
 		})
 	}
-	return out, nil
+	return nil
 }
 
 // shq single-quotes a string for POSIX shell inclusion. Embedded
