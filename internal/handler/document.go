@@ -1400,6 +1400,19 @@ type StartParseDocumentsRequest struct {
 }
 
 func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "start_ingestion_task",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	datasetID := c.Param("dataset_id")
 
 	var req StartParseDocumentsRequest
@@ -1422,6 +1435,8 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 			return
 		}
 	}
+
+	operationLog.UserID = userID
 
 	ctx := c.Request.Context()
 	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun); err != nil {

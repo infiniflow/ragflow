@@ -39,20 +39,17 @@ func InitAudit(logType string, file FileOutput, serviceName string) error {
 }
 
 type OperationLog struct {
-	EventTime     time.Time `json:"event_time"`
-	UserID        string    `json:"user_id"`
-	UserName      string    `json:"user_name"`
-	IPAddress     string    `json:"ip_address"`
-	Operation     string    `json:"operation"`
-	APIPath       string    `json:"api_path"`
-	HTTPMethod    string    `json:"http_method"`
-	ResourceType  string    `json:"resource_type"`
-	ResourceID    string    `json:"resource_id"`
-	ResourceName  string    `json:"resource_name"`
-	RequestParams string    `json:"request_params"`
-	Code          int       `json:"code"`
-	Error         error     `json:"error"`
-	DurationMS    int64     `json:"duration_ms"`
+	EventTime     time.Time      `json:"event_time"`
+	UserID        string         `json:"user_id"`
+	IPAddress     string         `json:"ip_address"`
+	Operation     string         `json:"operation"`
+	APIPath       string         `json:"api_path"`
+	HTTPMethod    string         `json:"http_method"`
+	RequestParams string         `json:"request_params"`
+	Resources     map[string]any `json:"resources"`
+	Code          int            `json:"code"`
+	Error         error          `json:"error"`
+	DurationMS    int64          `json:"duration_ms"`
 }
 
 func Audit(operationLog *OperationLog, fields ...zap.Field) {

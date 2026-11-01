@@ -255,7 +255,6 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	bodyBytes, raw, ok := parseJSONRequestObject(c)
 	if !ok {
@@ -748,11 +747,10 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		operationLog.Code = int(errorCode)
-		operationLog.Error = fmt.Errorf(errorMessage)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	bodyBytes, rawPayload, ok := parseJSONRequestObject(c)
 	if !ok {

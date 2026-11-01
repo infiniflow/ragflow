@@ -229,7 +229,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 	startAt := time.Now()
 	operationLog := &common.OperationLog{
 		EventTime:  startAt,
-		Operation:  "upload_file",
+		Operation:  "upload_files_or_create_directory",
 		APIPath:    c.FullPath(),
 		HTTPMethod: c.Request.Method,
 		IPAddress:  c.ClientIP(),
@@ -247,7 +247,6 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	userID := user.ID
 
@@ -255,6 +254,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	if strings.Contains(contentType, "multipart/form-data") {
+		operationLog.Operation = "upload_files"
 		uploadLimit := file.DeploymentUploadMaxBytes()
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, uploadLimit)
 		if cl := c.Request.ContentLength; cl > uploadLimit {
@@ -317,6 +317,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 				operationLog.Error = errors.New("no file selected")
 				return
 			}
+			operationLog.Resources[fileHeader.Filename] = fileHeader.Size
 		}
 
 		result, err := h.fileService.UploadFile(ctx, userID, parentID, files, uploadLimit)
@@ -335,6 +336,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 	}
 
 	if strings.Contains(contentType, "application/json") {
+		operationLog.Operation = "create_directory"
 		var req CreateFolderRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
@@ -356,6 +358,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			}
 			parentID = rootFolder["id"].(string)
 		}
+		operationLog.Resources["directory_name"] = req.Name
 
 		result, err := h.fileService.CreateFolder(ctx, userID, req.Name, parentID, req.Type)
 		if err != nil {
@@ -411,7 +414,6 @@ func (h *FileHandler) DeleteFiles(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	var req DeleteFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -473,7 +475,6 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	var req MoveFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -542,7 +543,6 @@ func (h *FileHandler) Download(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	fileID := c.Param("id")
 	if fileID == "" {
@@ -652,7 +652,6 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	var req document.LinkToDatasetsRequest
 	// Tolerate bind errors: a malformed or empty body simply leaves the fields
