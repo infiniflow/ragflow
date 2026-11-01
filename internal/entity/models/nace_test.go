@@ -22,6 +22,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"ragflow/internal/common"
+	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -281,6 +283,69 @@ func TestSameOrigin(t *testing.T) {
 	} {
 		if got := SameOrigin(tc.a, tc.b); got != tc.want {
 			t.Errorf("SameOrigin(%q, %q)=%t, want %t", tc.a, tc.b, got, tc.want)
+		}
+	}
+}
+
+// TestNaceClientHeader checks that decide and model discovery identify RAGFlow
+// to Nace as "ragflow/<version>", and that the plain SystemOne driver does not
+// send the header.
+func TestNaceClientHeader(t *testing.T) {
+	withSSRFBypass(t)
+	want := naceClientValue()
+	if !regexp.MustCompile(`^ragflow/[A-Za-z0-9 ._@+-]+$`).MatchString(want) || len(want) > 64 {
+		t.Fatalf("header value %q is not name/version within 64 chars", want)
+	}
+	seen := map[string]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen[r.Method+" "+r.URL.Path] = r.Header.Get("X-Nace-Client")
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"models":[]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"model":"drex-max","answers":{"category_0":{"type":"noul","noul":0.5}}}`))
+	}))
+	defer srv.Close()
+
+	decide := func(driver interface {
+		Decide(context.Context, *string, *DecideRequest, *APIConfig, *common.ModelUsage) (*DecideResponse, error)
+	}) {
+		name := "drex-max"
+		_, err := driver.Decide(t.Context(), &name, &DecideRequest{
+			State:     map[string]string{"query": "q"},
+			Questions: map[string]Question{"category_0": Noul{Instructions: "Is it?"}},
+		}, &APIConfig{ApiKey: &testAPIKey}, &common.ModelUsage{})
+		if err != nil {
+			t.Fatalf("Decide: %v", err)
+		}
+	}
+	nace := newNaceForTest(srv.URL + "/v1")
+	decide(nace)
+	if _, err := nace.ListModels(t.Context(), &APIConfig{ApiKey: &testAPIKey}); err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if seen["POST /v1/systemone"] != want || seen["GET /v1/models"] != want {
+		t.Errorf("Nace headers=%v, want %q on both", seen, want)
+	}
+
+	clear(seen)
+	decide(newSystemOneForTest(srv.URL + "/v1"))
+	if got := seen["POST /v1/systemone"]; got != "" {
+		t.Errorf("SystemOne sent X-Nace-Client=%q", got)
+	}
+}
+
+func TestNaceClientValueFor(t *testing.T) {
+	long := strings.Repeat("a", 100)
+	for version, want := range map[string]string{
+		"v0.27.1-14-gabc123": "ragflow/v0.27.1-14-gabc123",
+		"v1.0 beta/x:y":      "ragflow/v1.0 beta-x-y",
+		"":                   "ragflow/unknown",
+		"  \n":               "ragflow/unknown",
+		long:                 ("ragflow/" + long)[:64],
+	} {
+		if got := naceClientValueFor(version); got != want {
+			t.Errorf("naceClientValueFor(%q)=%q, want %q", version, got, want)
 		}
 	}
 }

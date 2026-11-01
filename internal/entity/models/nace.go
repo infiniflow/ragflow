@@ -23,8 +23,48 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"ragflow/internal/common"
+	"regexp"
 	"strings"
 )
+
+// naceClientHeader identifies the integration host to Nace for usage
+// attribution. It carries the product name and version only.
+const naceClientHeader = "X-Nace-Client"
+
+var naceClientDisallowed = regexp.MustCompile(`[^A-Za-z0-9 ._@+-]`)
+
+// naceClientValue returns "ragflow/<version>" limited to the characters and
+// length Nace accepts.
+func naceClientValue() string {
+	return naceClientValueFor(common.GetRAGFlowVersion())
+}
+
+// naceClientValueFor builds the header value from a version string, falling
+// back to "unknown" when nothing usable is left after cleaning.
+func naceClientValueFor(version string) string {
+	version = naceClientDisallowed.ReplaceAllString(strings.TrimSpace(version), "-")
+	if version == "" {
+		version = "unknown"
+	}
+	value := "ragflow/" + version
+	if len(value) > 64 {
+		value = value[:64]
+	}
+	return value
+}
+
+// naceClientTransport adds the attribution header to every request this driver
+// sends to Nace (decide, model discovery and connection checks).
+type naceClientTransport struct {
+	base http.RoundTripper
+}
+
+func (t naceClientTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Set(naceClientHeader, naceClientValue())
+	return t.base.RoundTrip(req)
+}
 
 // NaceModel drives Nace (https://console.nace.ai/v1), which serves the Drex
 // decision models (drex-max, drex-v2.0) over the TypeSafe System One protocol.
@@ -41,6 +81,11 @@ func NewNaceModel(baseURL map[string]string, urlSuffix URLSuffix) *NaceModel {
 	m := &NaceModel{SystemOneModel: NewSystemOneModel(baseURL, urlSuffix)}
 	client := *m.baseModel.httpClient
 	client.CheckRedirect = refuseCrossOriginRedirect
+	base := client.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	client.Transport = naceClientTransport{base: base}
 	m.baseModel.httpClient = &client
 	return m
 }
