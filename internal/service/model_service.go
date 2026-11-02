@@ -2209,6 +2209,17 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 	return m.ensureOCRProviderFromEnv(ctx, userID, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
+func buildUnlimitedOCRProviderConfig(config map[string]any) map[string]interface{} {
+	if config == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"unlimited_ocr_server_url": config[common.EnvUnlimitedOCRServerURL],
+		"unlimited_ocr_apiserver":  config[common.EnvUnlimitedOCRAPIServer],
+		"unlimited_ocr_timeout":    config[common.EnvUnlimitedOCRTimeout],
+	}
+}
+
 // ensureUnlimitedOCRFromEnv registers the local Unlimited-OCR-2 provider with zero friction.
 func (m *ModelProviderService) ensureUnlimitedOCRFromEnv(ctx context.Context, userID, tenantID string) error {
 	config := collectEnvConfig(unlimitedOCREnvKeys, unlimitedOCRDefaultConfig)
@@ -2220,11 +2231,7 @@ func (m *ModelProviderService) ensureUnlimitedOCRFromEnv(ctx context.Context, us
 	if strings.TrimSpace(serverURL) == "" && strings.TrimSpace(apiServer) == "" {
 		return nil
 	}
-	providerConfig := map[string]interface{}{
-		"unlimited_ocr_server_url": config[common.EnvUnlimitedOCRServerURL],
-		"unlimited_ocr_apiserver":  config[common.EnvUnlimitedOCRAPIServer],
-		"unlimited_ocr_timeout":    config[common.EnvUnlimitedOCRTimeout],
-	}
+	providerConfig := buildUnlimitedOCRProviderConfig(config)
 	return m.ensureOCRProviderFromEnv(ctx, userID, tenantID, "Unlimited-OCR-2", "unlimited-ocr-2-from-env", providerConfig)
 }
 

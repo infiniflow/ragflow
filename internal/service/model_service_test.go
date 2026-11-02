@@ -102,13 +102,12 @@ func TestEnsureUnlimitedOCRFromEnvMapsLowercaseKeys(t *testing.T) {
 	if config == nil {
 		t.Fatal("expected config to be non-nil")
 	}
-	providerConfig := map[string]interface{}{
-		"unlimited_ocr_server_url": config[common.EnvUnlimitedOCRServerURL],
-		"unlimited_ocr_apiserver":  config[common.EnvUnlimitedOCRAPIServer],
-		"unlimited_ocr_timeout":    config[common.EnvUnlimitedOCRTimeout],
-	}
+	providerConfig := buildUnlimitedOCRProviderConfig(config)
 	if providerConfig["unlimited_ocr_server_url"] != "http://127.0.0.1:18000" {
 		t.Fatalf("unlimited_ocr_server_url = %v", providerConfig["unlimited_ocr_server_url"])
+	}
+	if providerConfig["unlimited_ocr_apiserver"] != "http://127.0.0.1:18000" {
+		t.Fatalf("unlimited_ocr_apiserver = %v", providerConfig["unlimited_ocr_apiserver"])
 	}
 	if providerConfig["unlimited_ocr_timeout"] != "900" {
 		t.Fatalf("unlimited_ocr_timeout = %v", providerConfig["unlimited_ocr_timeout"])
