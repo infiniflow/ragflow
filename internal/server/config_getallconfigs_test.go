@@ -46,7 +46,7 @@ backends:
   - password: ""
   - password: null
 password_policy: strict
-disable_password_login: true
+enable_register: true
 max_token: 64
 `)); err != nil {
 		t.Fatal(err)
@@ -80,10 +80,10 @@ max_token: 64
 			map[string]any{"password": "******"},
 			map[string]any{"password": "******"},
 		},
-		"credentials":            wantCredentials,
-		"password_policy":        "strict",
-		"disable_password_login": true,
-		"max_token":              int64(64),
+		"credentials":     wantCredentials,
+		"password_policy": "strict",
+		"enable_register": true,
+		"max_token":       int64(64),
 	}
 	if !reflect.DeepEqual(settings, want) {
 		t.Fatalf("logged settings = %#v, want %#v", settings, want)

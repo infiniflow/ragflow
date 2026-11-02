@@ -25,7 +25,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"strings"
 )
 
 // StepFunModel implements ModelDriver for StepFun (阶跃星辰).
@@ -62,12 +61,10 @@ func (s *StepFunModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, s.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	body, err := s.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
@@ -92,12 +89,10 @@ func (s *StepFunModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, s.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]interface{}{
 		"include_usage": true,
@@ -119,12 +114,10 @@ func (s *StepFunModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		return nil, err
 	}
 
-	baseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, s.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -203,11 +196,10 @@ func (s *StepFunModel) AudioSpeech(ctx context.Context, modelName *string, audio
 		return nil, fmt.Errorf("audio content is empty")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -264,11 +256,10 @@ func (s *StepFunModel) AudioSpeechWithSender(ctx context.Context, modelName *str
 		return fmt.Errorf("audio content is empty")
 	}
 
-	resolvedBaseURL, err := s.baseModel.GetBaseURL(apiConfig)
+	url, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, s.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model":         *modelName,
@@ -351,5 +342,9 @@ func (s *StepFunModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]L
 }
 
 func (s *StepFunModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", s.Name())
+}
+
+func (s *StepFunModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", s.Name())
 }

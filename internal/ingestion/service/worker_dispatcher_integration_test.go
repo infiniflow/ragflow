@@ -122,23 +122,26 @@ func TestIntegration_MultiInstanceSharedConsumerNoOverExecution(t *testing.T) {
 		return nil
 	}
 
-	ingestor1 := newUnitIngestor("instance-1", 2, []string{"pdf"})
-	ingestor1.runDocumentTask = runner
-
-	ingestor2 := newUnitIngestor("instance-2", 2, []string{"pdf"})
-	ingestor2.runDocumentTask = runner
-
-	// Point global MQ engine to engine1 then start ingestor1, then engine2 and start ingestor2
+	// Point the global MQ engine to engine1 then construct ingestor1, then to
+	// engine2 and construct ingestor2. newUnitIngestor snapshots the global MQ
+	// engine at construction time and Start reads the injected deps.MQ, so the
+	// engine must be set on the global before each ingestor is built (not after).
 	previousEngine := engine.GetMessageQueueEngine()
 	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
 
 	engine.SetMessageQueueEngine(engine1)
+	ingestor1 := newUnitIngestor("instance-1", 2, []string{"pdf"})
+	ingestor1.runDocumentTask = runner
+
+	engine.SetMessageQueueEngine(engine2)
+	ingestor2 := newUnitIngestor("instance-2", 2, []string{"pdf"})
+	ingestor2.runDocumentTask = runner
+
 	if err := ingestor1.Start(); err != nil {
 		t.Fatalf("ingestor1.Start: %v", err)
 	}
 	t.Cleanup(func() { ingestor1.Stop(context.Background()) })
 
-	engine.SetMessageQueueEngine(engine2)
 	if err := ingestor2.Start(); err != nil {
 		t.Fatalf("ingestor2.Start: %v", err)
 	}
@@ -202,6 +205,12 @@ func TestIntegration_SlowTaskHeartbeatPreventsPrematureRedelivery(t *testing.T) 
 		t.Fatalf("schedule task %s: %v", taskID, err)
 	}
 
+	// Set the global MQ engine before constructing the ingestor: newUnitIngestor
+	// snapshots the global at construction and Start reads the injected deps.MQ.
+	previousEngine := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(mq)
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
+
 	ingestor := newUnitIngestor("slow-task-ingestor", 1, []string{"pdf"})
 	ingestor.heartbeatInterval = 1 * time.Second // comfortably below BackOff[0] = 5s
 
@@ -219,10 +228,6 @@ func TestIntegration_SlowTaskHeartbeatPreventsPrematureRedelivery(t *testing.T) 
 			return ctx.Err()
 		}
 	}
-
-	previousEngine := engine.GetMessageQueueEngine()
-	engine.SetMessageQueueEngine(mq)
-	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
 
 	if err := ingestor.Start(); err != nil {
 		t.Fatalf("ingestor.Start: %v", err)
@@ -283,8 +288,13 @@ func TestIntegration_SlowTaskHeartbeatPreventsPrematureRedelivery(t *testing.T) 
 //     and are redelivered by the broker to a successor ingestor and completed.
 func TestIntegration_ShutdownRedeliveryRecovery(t *testing.T) {
 	db := testutil.SetupTestDB(t)
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get test database: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	cleanup := testutil.ReplaceDBForTest(t, db)
-	defer cleanup()
+	t.Cleanup(cleanup)
 
 	host, port := setupRealNatsCluster(t)
 	mq := natsengine.NewNatsEngine(host, port)
@@ -315,6 +325,8 @@ func TestIntegration_ShutdownRedeliveryRecovery(t *testing.T) {
 	ingestor1.heartbeatInterval = 500 * time.Millisecond
 
 	taskBStarted := make(chan struct{})
+	releaseTaskB := make(chan struct{})
+	var releaseTaskBOnce sync.Once
 	var (
 		taskAExecutions atomic.Int32
 		taskBExecutions atomic.Int32
@@ -328,13 +340,10 @@ func TestIntegration_ShutdownRedeliveryRecovery(t *testing.T) {
 		if task.ID == taskIDB {
 			taskBExecutions.Add(1)
 			close(taskBStarted)
-			// Simulate long-running task interrupted by shutdown
-			select {
-			case <-time.After(30 * time.Second):
-				return nil
-			case <-ctx.Done():
-				return ctx.Err()
-			}
+			// Keep the worker in flight until Stop has abandoned its lease,
+			// as with a native parser that cannot honor cancellation immediately.
+			<-releaseTaskB
+			return ctx.Err()
 		}
 		return nil
 	}
@@ -342,6 +351,15 @@ func TestIntegration_ShutdownRedeliveryRecovery(t *testing.T) {
 	if err := ingestor1.Start(); err != nil {
 		t.Fatalf("ingestor1.Start: %v", err)
 	}
+	t.Cleanup(func() {
+		releaseTaskBOnce.Do(func() { close(releaseTaskB) })
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		ingestor1.Stop(stopCtx)
+		if stopCtx.Err() != nil {
+			t.Error("ingestor1 workers did not exit during cleanup")
+		}
+	})
 
 	// Publish taskA and taskB
 	for _, id := range []string{taskIDA, taskIDB} {
@@ -358,20 +376,48 @@ func TestIntegration_ShutdownRedeliveryRecovery(t *testing.T) {
 	}
 
 	// Wait for taskB to start execution and taskA to complete
-	<-taskBStarted
+	select {
+	case <-taskBStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("taskB execution did not start")
+	}
 	deadlineA := time.Now().Add(5 * time.Second)
+	taskACompleted := false
 	for time.Now().Before(deadlineA) {
 		var taskA entity.IngestionTask
 		if err := db.Where("id = ?", taskIDA).First(&taskA).Error; err == nil && taskA.Status == common.COMPLETED {
+			taskACompleted = true
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+	if !taskACompleted {
+		t.Fatal("taskA did not complete before shutdown")
 	}
 
 	// Simulate SIGTERM with 200ms graceful shutdown timeout (which will time out for taskB)
 	stopCtx, stopCancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer stopCancel()
 	ingestor1.Stop(stopCtx)
+	if !ingestor1.stopLeases.Load() {
+		t.Fatal("shutdown did not abandon the in-flight broker lease")
+	}
+	// Join the abandoned worker before starting its successor. It must leave
+	// taskB RUNNING and unacknowledged so that the broker can redeliver it.
+	releaseTaskBOnce.Do(func() { close(releaseTaskB) })
+	joinCtx, joinCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ingestor1.Stop(joinCtx)
+	joinCancel()
+	if joinCtx.Err() == context.DeadlineExceeded {
+		t.Fatal("abandoned ingestor1 worker did not exit")
+	}
+	var interruptedTask entity.IngestionTask
+	if err := db.Where("id = ?", taskIDB).First(&interruptedTask).Error; err != nil {
+		t.Fatalf("read interrupted taskB: %v", err)
+	}
+	if interruptedTask.Status != common.RUNNING {
+		t.Fatalf("interrupted taskB status = %s, want %s", interruptedTask.Status, common.RUNNING)
+	}
 
 	// Ingestor1 timed out and cancelled taskB, calling stopActiveLeases().
 	// Now start ingestor2 to recover un-acked tasks from the shared consumer.
@@ -412,10 +458,16 @@ func TestIntegration_ShutdownRedeliveryRecovery(t *testing.T) {
 	}
 
 	if !taskBCompleted {
-		t.Fatalf("taskB was not redelivered and completed after ingestor1 shutdown")
+		var taskB entity.IngestionTask
+		_ = db.Where("id = ?", taskIDB).First(&taskB).Error
+		t.Fatalf("taskB was not redelivered and completed after ingestor1 shutdown: status=%s, original executions=%d, recovery executions=%d",
+			taskB.Status, taskBExecutions.Load(), taskBExec2.Load())
 	}
 
 	// Assertions:
+	if taskAExecutions.Load() != 1 || taskBExecutions.Load() != 1 {
+		t.Fatalf("original executions: taskA=%d taskB=%d, want one each", taskAExecutions.Load(), taskBExecutions.Load())
+	}
 	// 1. taskA was settled by ingestor1 and NEVER executed by ingestor2 (no duplicate delivery)
 	if taskAExec2.Load() != 0 {
 		t.Fatalf("taskA was redelivered to ingestor2 (%d times), but it was already completed and Acked", taskAExec2.Load())

@@ -22,7 +22,6 @@ export const enum DocumentApiAction {
   RemoveDocument = 'removeDocument',
   SaveDocumentName = 'saveDocumentName',
   SetDocumentParser = 'setDocumentParser',
-  SetDocumentMeta = 'setDocumentMeta',
   FetchDocumentFilter = 'fetchDocumentFilter',
   CreateDocument = 'createDocument',
   FetchDocumentThumbnails = 'fetchDocumentThumbnails',

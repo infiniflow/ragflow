@@ -97,7 +97,8 @@ func (a *Analyzer) SetEnablePosition(enablePosition bool) {
 }
 
 // SetLanguage configures the Snowball stemmer for the given language (e.g. "English", "Dutch").
-// Falls back to the English Porter stemmer for unmapped languages.
+// Diacritic-folding languages ("Slovak", "Czech") disable stemming and
+// lemmatization instead; other unmapped languages keep the previous stemmer.
 func (a *Analyzer) SetLanguage(language string) {
 	if a.handle == nil {
 		return

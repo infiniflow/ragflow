@@ -269,7 +269,7 @@ func (s *CompilationTemplateGroupService) buildGroupItem(ctx context.Context, te
 			Name:        c.Name,
 			Description: derefString(c.Description),
 			Kind:        c.Kind,
-			Config:      fillConfigDefaultLLM(ctx, s.tenantDAO, c.Config, c.TenantID),
+			Config:      fillConfigDefaultLLM(ctx, c.Config, c.TenantID),
 			CreateTime:  timeStr(c.CreateTime),
 			UpdateTime:  timeStr(c.UpdateTime),
 		})
@@ -392,7 +392,7 @@ func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db
 			}
 		}
 		desc := child.Description
-		config := fillConfigDefaultLLM(ctx, s.tenantDAO, child.Config, &tenantID)
+		config := fillConfigDefaultLLM(ctx, child.Config, &tenantID)
 		if config == nil {
 			config = entity.JSONMap{}
 		}
@@ -496,7 +496,7 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 
 	// Pass 3: apply updates and inserts.
 	for _, item := range resolved {
-		config := fillConfigDefaultLLM(ctx, s.tenantDAO, item.child.Config, &tenantID)
+		config := fillConfigDefaultLLM(ctx, item.child.Config, &tenantID)
 		if config == nil {
 			config = entity.JSONMap{}
 		}

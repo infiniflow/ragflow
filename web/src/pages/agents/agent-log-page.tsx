@@ -50,6 +50,11 @@ const getEndOfToday = (): Date => {
 const AgentLogPage: React.FC = () => {
   const { t } = useTranslation();
   const { navigateToAgents, navigateToAgent } = useNavigatePage();
+  // Zero-arg wrapper: passing navigateToAgents straight to onClick would feed
+  // the click event into its canvasCategory parameter.
+  const handleBackToAgents = useCallback(() => {
+    navigateToAgents();
+  }, [navigateToAgents]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
   const { id: canvasId } = useParams();
   const init = {
@@ -252,7 +257,7 @@ const AgentLogPage: React.FC = () => {
         <Breadcrumb>
           <BreadcrumbList>
             <BreadcrumbItem>
-              <BreadcrumbLink onClick={navigateToAgents}>
+              <BreadcrumbLink onClick={handleBackToAgents}>
                 {t('flow.agent')}
               </BreadcrumbLink>
             </BreadcrumbItem>

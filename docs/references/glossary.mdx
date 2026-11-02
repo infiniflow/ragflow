@@ -31,7 +31,7 @@ Agentic Retrieval is a retrieval approach designed for complex questions.
 
 Unlike one-time retrieval, it incorporates model reasoning to analyze user queries and, when necessary, perform steps such as question decomposition, retrieval, and evidence checking to obtain more comprehensive context for answer generation.
 
-In Chat, different Thinking levels can be used to control the processing depth of Agentic Retrieval.
+In Chat, select **Agentic** from the Thinking menu to use Agentic Retrieval. The **Naive** mode performs retrieval without complex analysis.
 
 **Auto keyword**
 
@@ -442,11 +442,12 @@ Temperature is a parameter that controls randomness in model generation.
 
 Lower values generally make outputs more stable and deterministic, while higher values increase diversity and randomness. The exact effect depends on the model being used.
 
-**Thinking level**
+**Thinking mode**
 
-Thinking level controls the depth of retrieval and reasoning used by Chat when processing a question.
+Thinking mode determines how Chat investigates available data before answering. Select **Naive** or **Agentic** from the Thinking menu near the message box.
 
-RAGFlow provides different Thinking levels. Higher levels can perform deeper question analysis and retrieval processing and are suitable for complex questions that require multi-step analysis or more comprehensive supporting evidence, but they generally require more processing time and model invocations.
+- **Naive**: Performs retrieval without complex analysis and is suitable for straightforward factual questions. It generally responds faster.
+- **Agentic**: Uses a retrieval agent to search the corpus, read documents in depth, and combine evidence across documents before answering. It is suitable for comparisons and multi-step research, but generally takes longer and invokes the model more often.
 
 **Timeline**
 

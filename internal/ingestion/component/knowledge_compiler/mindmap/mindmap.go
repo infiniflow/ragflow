@@ -70,6 +70,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	batches := packMindmapBatches(inputs.Chunks, deps.Tokenizer)
 	results := make([]mindmapBatchResult, len(batches))
 	jobs := make([]func() error, 0, len(batches))
+	generated := deps.Progress.Sub(0, 3).Counter(ctx, len(batches))
 	for i, batch := range batches {
 		i, batch := i, batch
 		jobs = append(jobs, func() error {
@@ -91,6 +92,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 				// Distinct slice index per batch → no cross-goroutine contention.
 				if tree, parseErr := parseJSONTreeWithError(resp.Content, batch.ids); parseErr == nil {
 					results[i].tree = tree
+					generated()
 					return nil
 				} else {
 					lastParseErr = parseErr
@@ -99,6 +101,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 				"[ERROR] Mindmap batch %d/%d JSON parsing failed after %d attempts: %s",
 				i+1, len(batches), mindmapJSONRetryMax, common.CompactError(lastParseErr)))
+			generated()
 			return nil
 		})
 	}
@@ -109,12 +112,14 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		return common.Outputs{}, err
 	}
 
+	deps.Progress.Sub(0, 3).Report(ctx, 1)
 	// Merge every successfully parsed JSON tree. A failed batch is skipped after
 	// its user-facing error is reported and must not erase other batches.
 	root := mergeMindmapBatchResults(results)
 
 	products := treeToProducts(tenantID, docID, root, mindmapSourceChunkIDs(inputs.Chunks))
 
+	deps.Progress.Sub(1, 3).Report(ctx, 1)
 	// Batched embedding of each node's content for downstream vector search.
 	if len(products) > 0 && deps.Embed != nil {
 		texts := make([]string, len(products))

@@ -102,9 +102,11 @@ func (s *MetadataService) SearchMetadata(ctx context.Context, kbID, tenantID str
 		Offset:   0,
 		Limit:    size,
 		Filter: map[string]interface{}{
-			"id":    docIDs,
 			"kb_id": kbID,
 		},
+	}
+	if len(docIDs) > 0 {
+		searchReq.Filter["id"] = docIDs
 	}
 
 	searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)

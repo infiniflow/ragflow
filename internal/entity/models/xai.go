@@ -72,12 +72,10 @@ func (x *XAIModel) ChatWithMessages(ctx context.Context, modelName string, messa
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	body, err := x.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
@@ -98,12 +96,10 @@ func (x *XAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string,
 		return fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]interface{}{
 		"include_usage": true,
@@ -126,16 +122,14 @@ func (x *XAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]List
 		return nil, err
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return nil, err
-	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
 	modelsSuffix := strings.Trim(strings.TrimSpace(x.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
 		return nil, fmt.Errorf("xai: models URL suffix is not configured")
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), modelsSuffix)
+	url, err := x.baseModel.EndpointURL(apiConfig, modelsSuffix)
+	if err != nil {
+		return nil, err
+	}
 
 	body, err := x.baseModel.doGetRequest(ctx, url, apiConfig, nonStreamCallTimeout)
 	if err != nil {
@@ -183,11 +177,10 @@ func (x *XAIModel) TranscribeAudio(ctx context.Context, modelName *string, file 
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -317,11 +310,10 @@ func (x *XAIModel) AudioSpeech(ctx context.Context, modelName *string, audioCont
 		return nil, fmt.Errorf("text content is missing")
 	}
 
-	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"text":     *audioContent,
@@ -389,5 +381,9 @@ func (x *XAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListT
 }
 
 func (x *XAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", x.Name())
 }

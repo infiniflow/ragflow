@@ -31,6 +31,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 	"unicode/utf8"
 
@@ -51,7 +52,7 @@ var jsonIterator = sonic.Config{
 var memoryMessageVectorFieldRE = regexp.MustCompile(`^q_\d+_vec$`)
 
 // CreateChunkStore creates an index
-func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
+func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	if baseName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
@@ -158,8 +159,8 @@ func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID strin
 // chunks straight back (the chunk APIs, the debug endpoints) sees them right
 // away. Ingestion must use InsertChunksNoRefresh instead - see that method for
 // why the wait is the wrong trade there.
-func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
-	return e.insertChunks(ctx, chunks, baseName, datasetID, "wait_for")
+func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error) {
+	return e.insertChunks(ctx, chunks, baseName, datasetID, language, "wait_for")
 }
 
 // InsertChunksNoRefresh inserts chunks without waiting for an index refresh:
@@ -171,13 +172,16 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 // This is the ingestion path's contract, and it matches Python's: the Python
 // ingestion inserts chunks with refresh=False (rag/svr/task_executor_refactor/
 // chunk_service.py:386 and :423), while its API default stays "wait_for".
-func (e *Engine) InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
-	return e.insertChunks(ctx, chunks, baseName, datasetID, "")
+func (e *Engine) InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error) {
+	return e.insertChunks(ctx, chunks, baseName, datasetID, language, "")
 }
 
 // insertChunks is the shared bulk-insert body. An empty refresh omits the
 // parameter, which leaves the decision to the index (no forced refresh).
-func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, refresh string) ([]string, error) {
+// language is the dataset language, which only engines whose fulltext analyzer
+// is fixed at index creation need; Elasticsearch analyses client-side and
+// ignores it.
+func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string, refresh string) ([]string, error) {
 	common.Info("ElasticsearchConnection.InsertChunks called", zap.String("index_name", baseName), zap.Int("chunkCount", len(chunks)))
 
 	if len(chunks) == 0 {
@@ -302,6 +306,9 @@ func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface
 		// Document line: work with a copy to avoid mutating the original
 		docCopy := copyFields(doc)
 		docCopy["kb_id"] = datasetID
+		if !isMemoryIndex && docCopy["available_int"] == nil {
+			docCopy["available_int"] = 1
+		}
 		if raw, ok := formatOrderedTagFeas(docCopy["tag_feas"]); ok {
 			docCopy["tag_feas"] = raw
 		}
@@ -1312,7 +1319,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			"k":              k,
 			"num_candidates": numCandidates,
 			"similarity":     similarity,
-			"filter":         boolQuery,
+			"filter":         cloneFilterSnapshot(boolQuery),
 		}
 
 		queryBody["knn"] = knnQuery
@@ -1339,17 +1346,13 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		if rankFeatureQuery != nil {
 			if boolQuery, ok := queryBody["query"].(map[string]interface{}); ok {
 				if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
-					if should, ok := boolMap["should"].([]interface{}); ok {
-						for _, q := range rankFeatureQuery {
-							boolMap["should"] = append(should, q)
-						}
-					} else {
-						interfaceSlice := make([]interface{}, len(rankFeatureQuery))
-						for i, q := range rankFeatureQuery {
-							interfaceSlice[i] = q
-						}
-						boolMap["should"] = interfaceSlice
+					// Accumulate into a local slice first: re-appending to the
+					// pre-loop header keeps only the last rank_feature clause.
+					should, _ := boolMap["should"].([]interface{})
+					for _, q := range rankFeatureQuery {
+						should = append(should, q)
 					}
+					boolMap["should"] = should
 				}
 			}
 		}
@@ -1359,6 +1362,18 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
 		sort := parseOrderByExpr(req.OrderBy)
 		if len(sort) > 0 {
+			// A single-index request can resolve the sortable form of `id`
+			// for its target: indices created before the `id` keyword
+			// dynamic template map `id` as `text` with an `id.keyword`
+			// sub-field, where a direct `id` sort fails with a fielddata
+			// error. Rewrite those entries to `id.keyword` (#19649).
+			// Multi-index requests cannot pick one form consistently and
+			// keep the direct field. The resolved body flows into the
+			// search_after path unchanged, so every pagination page reuses
+			// the same sortable field.
+			if len(req.IndexNames) == 1 {
+				sort = rewriteIDSortEntries(sort, e.idSortFieldFor(ctx, req.IndexNames[0]))
+			}
 			queryBody["sort"] = sort
 		}
 	}
@@ -1491,15 +1506,10 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		// back empty here, which flattened every hybrid chunk's score to 0.
 		scoreColumn := "_score"
 
-		pagerankField := common.PAGERANK_FLD
-		if isSkillIndex {
-			pagerankField = ""
-		}
-		if isMemoryIndex {
-			pagerankField = ""
-		}
-
-		allResults = calculateScores(allResults, scoreColumn, pagerankField)
+		// pagerank reaches the ES hit score only through the rank_feature query
+		// built above, and reaches the final similarity in the reranker. Adding
+		// it to _score here as well would count it twice.
+		allResults = calculateScores(allResults, scoreColumn, "")
 		allResults = sortByScore(allResults, limit)
 	}
 
@@ -2143,6 +2153,35 @@ func memoryMessageStatusBool(value interface{}) bool {
 	}
 }
 
+// cloneFilterSnapshot freezes the bool query's shape at the point the kNN clause
+// is built. The reference does the same by passing bool_query.to_dict() as the
+// kNN filter; the rank_feature clauses are appended to the same bool afterwards
+// and belong to the scored query only.
+func cloneFilterSnapshot(q map[string]interface{}) map[string]interface{} {
+	if q == nil {
+		return nil
+	}
+	clone := make(map[string]interface{}, len(q))
+	for k, v := range q {
+		clone[k] = v
+	}
+	inner, ok := q["bool"].(map[string]interface{})
+	if !ok {
+		return clone
+	}
+	innerClone := make(map[string]interface{}, len(inner))
+	for k, v := range inner {
+		innerClone[k] = v
+	}
+	for _, key := range []string{"must", "should", "filter", "must_not"} {
+		if clauses, ok := inner[key].([]interface{}); ok {
+			innerClone[key] = slices.Clone(clauses)
+		}
+	}
+	clone["bool"] = innerClone
+	return clone
+}
+
 // buildBoolQueryFromCondition builds an ES bool query from condition map.
 // Skill indexes use status, regular chunk indexes use kb_id, and memory
 // message indexes use memory_id plus message-specific storage fields.
@@ -2154,7 +2193,6 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 	var mustClauses []interface{}
 	var mustNotClauses []interface{}
 	var filterClauses []interface{}
-	var shouldClauses []interface{}
 
 	// Memory message indexes use memory_id, regular chunk indexes use kb_id.
 	if kbIDs != nil && len(kbIDs) > 0 {
@@ -2277,36 +2315,26 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 			continue
 		}
 		if k == "id" {
-			if v == nil || v == "" {
-				continue
-			}
-			if listVal, ok := v.([]interface{}); ok && len(listVal) > 0 {
-				shouldClauses = append(shouldClauses,
-					map[string]interface{}{"terms": map[string]interface{}{"id": listVal}},
-					map[string]interface{}{"terms": map[string]interface{}{"_id": listVal}},
-				)
-			} else if strListVal, ok := v.([]string); ok && len(strListVal) > 0 {
-				// A typed []string MUST be handled here: the generic loop
-				// below skips the "id" key, so without this branch a caller
-				// passing map[string]interface{}{"id": []string{...}} builds a
-				// query with NO id filter and the scoped read silently
-				// degenerates into "fetch up to Limit chunks of the document"
-				// (observed via list_chunks: an 11-chunk window returned 3.8MB
-				// because the whole 4171-chunk document was fetched instead).
-				shouldClauses = append(shouldClauses,
-					map[string]interface{}{"terms": map[string]interface{}{"id": strListVal}},
-					map[string]interface{}{"terms": map[string]interface{}{"_id": strListVal}},
-				)
-			} else if strVal, ok := v.(string); ok && strVal != "" {
-				shouldClauses = append(shouldClauses,
-					map[string]interface{}{"term": map[string]interface{}{"id": strVal}},
-					map[string]interface{}{"term": map[string]interface{}{"_id": strVal}},
-				)
-			} else if intVal, ok := v.(int); ok && intVal != 0 {
-				shouldClauses = append(shouldClauses,
-					map[string]interface{}{"term": map[string]interface{}{"id": intVal}},
-					map[string]interface{}{"term": map[string]interface{}{"_id": intVal}},
-				)
+			// id is a scope restriction, never a scoring hint. It has to be a
+			// mandatory clause: encoding it in bool.should relied on
+			// minimum_should_match to make it binding, and Search() appends
+			// rank_feature clauses to that same top-level should list — every
+			// document carrying the rank feature then satisfied the id scope,
+			// so a chunk-id-scoped read silently returned unrelated chunks.
+			//
+			// The generic loop below skips the "id" key, so a value shape this
+			// helper does not understand leaves the query without any id
+			// filter: list_chunks then degenerates into "fetch up to Limit
+			// chunks of the document" (an 11-chunk window returned 3.8MB
+			// instead of ~17KB). idTermClauses therefore accepts every list
+			// flavour, not only []interface{}.
+			if idClauses := idTermClauses(v); len(idClauses) > 0 {
+				filterClauses = append(filterClauses, map[string]interface{}{
+					"bool": map[string]interface{}{
+						"should":               idClauses,
+						"minimum_should_match": 1,
+					},
+				})
 			}
 			continue
 		}
@@ -2359,16 +2387,49 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 	if len(filterClauses) > 0 {
 		boolQuery["filter"] = filterClauses
 	}
-	if len(shouldClauses) > 0 {
-		boolQuery["should"] = shouldClauses
-		boolQuery["minimum_should_match"] = 1
-	}
 
 	if len(boolQuery) == 0 {
 		return nil
 	}
 
 	return map[string]interface{}{"bool": boolQuery}
+}
+
+// idTermClauses renders one id condition as id/_id alternatives, so a caller
+// matches whichever field it addressed: the stored id field or the
+// Elasticsearch _id. The caller makes the result mandatory.
+//
+// The query shapes mirror the Python reference (rag/utils/es_conn.py): a
+// scalar id is a term, a list of ids is a terms query.
+func idTermClauses(value interface{}) []interface{} {
+	switch val := value.(type) {
+	case nil:
+		return nil
+	case string:
+		if val == "" {
+			return nil
+		}
+		return []interface{}{
+			map[string]interface{}{"term": map[string]interface{}{"id": val}},
+			map[string]interface{}{"term": map[string]interface{}{"_id": val}},
+		}
+	case int:
+		if val == 0 {
+			return nil
+		}
+		return []interface{}{
+			map[string]interface{}{"term": map[string]interface{}{"id": val}},
+			map[string]interface{}{"term": map[string]interface{}{"_id": val}},
+		}
+	}
+	items, ok := conditionTermsList(value)
+	if !ok || len(items) == 0 {
+		return nil
+	}
+	return []interface{}{
+		map[string]interface{}{"terms": map[string]interface{}{"id": items}},
+		map[string]interface{}{"terms": map[string]interface{}{"_id": items}},
+	}
 }
 
 // buildQueryStringQuery builds a query_string query from MatchTextExpr
@@ -2468,14 +2529,16 @@ func buildRankFeatureQuery(rankFeature map[string]float64) []map[string]interfac
 
 	var queries []map[string]interface{}
 	for _, fld := range keys {
-		if fld == common.PAGERANK_FLD {
-			continue
-		}
 		sc := rankFeature[fld]
-		tagField := fmt.Sprintf("%s.%s", common.TAG_FLD, fld)
+		field := fmt.Sprintf("%s.%s", common.TAG_FLD, fld)
+		if fld == common.PAGERANK_FLD {
+			// pagerank_fea is a top-level rank_feature field (the "*_fea" dynamic
+			// template), not one key inside the tag_feas map.
+			field = common.PAGERANK_FLD
+		}
 		queries = append(queries, map[string]interface{}{
 			"rank_feature": map[string]interface{}{
-				"field":  tagField,
+				"field":  field,
 				"linear": map[string]interface{}{},
 				"boost":  sc,
 			},
@@ -2638,6 +2701,17 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 
 			if val == nil {
 				continue
+			}
+
+			if mapVal, ok := val.(map[string]interface{}); ok {
+				// Nested objects (tag_feas is a "rank_features" object) cannot
+				// take the string conversion below: "%v" renders map[k:v], which
+				// no rank-feature parser accepts. JSON is the string form the
+				// reranker parses.
+				if raw, err := json.Marshal(mapVal); err == nil {
+					m[field] = string(raw)
+					continue
+				}
 			}
 
 			if listVal, ok := val.([]interface{}); ok {
@@ -3488,6 +3562,13 @@ func parseOrderByExpr(orderBy *types.OrderByExpr) []map[string]interface{} {
 		// knowledge_compile Reader use for search_after pagination, and
 		// paged scans past index.max_result_window returned empty pages
 		// (#19649). Emit a sort entry for `id` like any other keyword field.
+		//
+		// Indices created before the keyword dynamic template covered `id`
+		// (commit efe6d23d61) still map `id` as `text` with an `id.keyword`
+		// sub-field, where a direct `id` sort fails with a fielddata error.
+		// Those indices are handled upstream of this parser: Search resolves
+		// the sortable form per target index (idSortFieldFor) and rewrites
+		// the emitted entry to `id.keyword`.
 
 		// Special handling for page_num_int and top_int
 		if field.Field == "page_num_int" || field.Field == "top_int" {
@@ -3523,6 +3604,132 @@ func parseOrderByExpr(orderBy *types.OrderByExpr) []map[string]interface{} {
 	}
 
 	return result
+}
+
+// idSortFieldCache memoizes the sortable form of the `id` field per index.
+// Mappings are static for the life of an index (the keyword dynamic template
+// lands at creation), so an entry stays valid until the index is dropped:
+// dropIndex deletes the entry, because an index reusing the name later can map
+// `id` differently. Other server processes keep their own entries until they
+// restart. Failed lookups are not cached so a transient cluster blip cannot pin
+// the wrong field.
+var idSortFieldCache sync.Map
+
+// Sort field values returned by the id-mapping resolvers below.
+const (
+	idSortDirect      = "id"
+	idSortSubField    = "id.keyword"
+	idKeywordSubField = "keyword"
+)
+
+// idSortFieldFromMapping picks the sortable form of the `id` field from an
+// index mapping's `properties` object. Current mappings declare `id` as
+// `keyword`; indices created before the keyword dynamic template covered `id`
+// map it as `text` with an `id.keyword` sub-field — sorting directly on a
+// `text` field fails with a fielddata error, so those indices must sort on
+// the sub-field. Anything unrecognized falls back to the direct field.
+func idSortFieldFromMapping(properties map[string]interface{}) string {
+	field, ok := properties["id"].(map[string]interface{})
+	if !ok {
+		return idSortDirect
+	}
+	switch t, _ := field["type"].(string); t {
+	case "keyword":
+		return idSortDirect
+	case "text":
+		if sub, ok := field["fields"].(map[string]interface{}); ok {
+			if kw, ok := sub[idKeywordSubField].(map[string]interface{}); ok {
+				if kt, _ := kw["type"].(string); kt == "keyword" {
+					return idSortSubField
+				}
+			}
+		}
+	}
+	return idSortDirect
+}
+
+// idSortFieldFor resolves the field an `id` sort must target on indexName,
+// consulting (and populating) idSortFieldCache. Any lookup failure — index
+// not created yet, cluster unreachable, malformed response — returns the
+// direct `id` field (the behavior for all current mappings) without caching,
+// so the next request retries the mapping read.
+func (e *Engine) idSortFieldFor(ctx context.Context, indexName string) string {
+	if cached, ok := idSortFieldCache.Load(indexName); ok {
+		if field, ok := cached.(string); ok {
+			return field
+		}
+	}
+
+	properties, ok := e.fetchIndexIDMapping(ctx, indexName)
+	if !ok {
+		return idSortDirect
+	}
+	field := idSortFieldFromMapping(properties)
+	idSortFieldCache.Store(indexName, field)
+	return field
+}
+
+// fetchIndexIDMapping reads the index mapping and returns its `properties`
+// object. ok is false when the mapping cannot be read for any reason.
+func (e *Engine) fetchIndexIDMapping(ctx context.Context, indexName string) (map[string]interface{}, bool) {
+	req := esapi.IndicesGetMappingRequest{
+		Index: []string{indexName},
+	}
+	res, err := req.Do(ctx, e.client)
+	if err != nil {
+		common.Warn("Elasticsearch id-sort mapping lookup failed",
+			zap.String("index", indexName), zap.Error(err))
+		return nil, false
+	}
+	defer closeESBody(res)
+
+	if res.StatusCode == http.StatusNotFound {
+		// No physical index yet (a tenant without indexed documents) —
+		// nothing to resolve, and nothing worth caching.
+		return nil, false
+	}
+	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		common.Warn("Elasticsearch id-sort mapping lookup rejected",
+			zap.String("index", indexName), zap.String("body", string(bodyBytes)))
+		return nil, false
+	}
+
+	var mappings map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&mappings); err != nil {
+		common.Warn("Elasticsearch id-sort mapping decode failed",
+			zap.String("index", indexName), zap.Error(err))
+		return nil, false
+	}
+	indexMapping, ok := mappings[indexName].(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	mapping, ok := indexMapping["mappings"].(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	properties, ok := mapping["properties"].(map[string]interface{})
+	if !ok {
+		return nil, false
+	}
+	return properties, true
+}
+
+// rewriteIDSortEntries rewrites sort entries that target the `id` field so
+// they sort on sortField instead, preserving each entry's order spec. Entries
+// for other fields pass through untouched. sortField == "id" is a no-op.
+func rewriteIDSortEntries(sort []map[string]interface{}, sortField string) []map[string]interface{} {
+	if sortField == "" || sortField == idSortDirect {
+		return sort
+	}
+	for _, entry := range sort {
+		if spec, ok := entry[idSortDirect]; ok {
+			delete(entry, idSortDirect)
+			entry[sortField] = spec
+		}
+	}
+	return sort
 }
 
 // calculateScores calculates _score for chunks

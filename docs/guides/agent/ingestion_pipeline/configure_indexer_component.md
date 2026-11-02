@@ -10,32 +10,31 @@ sidebar_custom_props: {
 
 # Configure the Indexer Component
 
-The **Indexer** component indexes data for optimal retrieval. It is the final step, writing processed data into the configured document engine.
+**Indexer** prepares chunk data for full-text and embedding search. Connect it after the Chunker or Transformer and use the pipeline with a knowledge base to index documents.
 
-Key configurations:
+## Search method
 
-Search method:
+The panel displays the configured methods as labels:
 
-- **Full-text**: Keyword search for exact matches, such as code and names.
-- **Embedding**: Semantic search using vector similarity.
-- **Hybrid** (recommended): Combines both methods for the best recall.
+- **Embedding**: Vector representations for semantic search.
+- **Full-text**: Tokenized text for keyword search.
 
-Retrieval strategy:
+Using both supports hybrid retrieval. **Hybrid** is not a separate option in this panel.
 
-- **Processed text** (default): Indexes chunked text.
-- **Questions**: Indexes generated questions. This usually produces higher similarity matches than text-to-text matching.
-- **Enhanced context**: Indexes summaries instead of raw text. Suitable for broad topic matching.
+## Filename embedding weight
 
-Filename weight:
+Controls the contribution of the document filename to chunk embeddings. Defaults to `0.1`; the UI slider ranges from `0` to `0.5`.
 
-- A slider for including the document filename as semantic information in retrieval.
+## Field
 
-Embedding model:
+Select the content to embed:
 
-- Automatically uses the model set when creating the knowledge base.
+- **Processed text** (default): Chunk text.
+- **Questions**: Questions generated for the chunk.
+- **Augmented context**: The generated summary.
 
-:::caution IMPORTANT
-To search across multiple knowledge bases at the same time, all selected knowledge bases must use the same embedding model.
-:::
+For Questions or Augmented context, first enable the corresponding function in Transformer. This setting selects embedding content; it does not replace the configured search methods.
 
-![Configure The Indexer Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_indexer_component.jpg)
+## Embedding model
+
+The model comes from the connected knowledge base, rather than an independent model selector in this panel. Knowledge bases searched together must use the same embedding model.

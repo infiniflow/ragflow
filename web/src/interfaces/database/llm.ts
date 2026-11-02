@@ -85,6 +85,8 @@ export interface IProviderInstance {
 }
 export interface IAddedModel {
   model_id: string;
+  status?: string;
+  instance_status?: string;
   model_type: string[];
   name: string;
   provider_id: string;

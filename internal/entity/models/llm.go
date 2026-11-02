@@ -409,13 +409,6 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	if err != nil {
 		return nil, err
 	}
-	// eino's ChatModelAgent binds tools via the per-call model.WithTools option
-	// (not by calling WithTools). Merge those into the config so the model
-	// actually emits tool_calls; otherwise the ReAct loop would have no tools.
-	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
-	if err != nil {
-		return nil, err
-	}
 	// Once a tool result is in context the model must be free to answer in
 	// prose. Code-exec agents pin tool_choice to "required"/execute_code, and
 	// keeping that pin on the follow-up turn would loop forever instead of
@@ -424,6 +417,11 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 		choice := "auto"
 		chatCfg.ToolChoice = &choice
 		chatCfg.ToolChoiceValue = nil
+	}
+	// Per-call options override defaults, including the release after tool results.
+	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
+	if err != nil {
+		return nil, err
 	}
 	common.Debug("models: eino generate request",
 		zap.String("model", *cm.ModelName),
@@ -618,6 +616,7 @@ func (m *EinoChatModel) chatConfigWithOptsTools(base *ChatConfig, opts []model.O
 			choice = "auto"
 		case schema.ToolChoiceForbidden:
 			choice = "none"
+			cfg.Tools = nil
 		case schema.ToolChoiceForced:
 			choice = "required"
 			if len(co.AllowedToolNames) == 1 {
@@ -817,12 +816,6 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	if err != nil {
 		return nil, err
 	}
-	// Same tool-binding fix as Generate: honor the per-call model.WithTools
-	// option so the ReAct loop's model requests actually carry tool definitions.
-	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
-	if err != nil {
-		return nil, err
-	}
 	// Same tool_choice release as generateOnce: a turn carrying tool results
 	// must be able to produce the final text instead of being forced to call
 	// a tool again, unless an explicit per-call choice requires it.
@@ -830,6 +823,11 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 		choice := "auto"
 		chatCfg.ToolChoice = &choice
 		chatCfg.ToolChoiceValue = nil
+	}
+	// Per-call options override defaults, including the release after tool results.
+	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
+	if err != nil {
+		return nil, err
 	}
 	common.Debug("models: eino stream request",
 		zap.String("model", modelNameOf(m.chain[0])),

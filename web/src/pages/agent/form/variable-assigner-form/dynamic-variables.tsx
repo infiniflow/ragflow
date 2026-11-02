@@ -22,6 +22,7 @@ import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-quer
 import { getArrayElementType } from '../../utils';
 import { DynamicFormHeader } from '../components/dynamic-fom-header';
 import { QueryVariable } from '../components/query-variable';
+import { ParameterlessOperators } from './schema';
 import { useBuildLogicalOptions } from './use-build-logical-options';
 
 loader.config({ paths: { vs: '/vs' } });
@@ -43,31 +44,28 @@ type RadioButtonProps = Partial<
   }
 >;
 
-function RadioButton({ value, onChange }: RadioButtonProps) {
-  return (
-    <RadioGroup
-      defaultValue="yes"
-      className="flex"
-      value={value}
-      onValueChange={onChange}
-    >
-      <div className="flex items-center gap-3">
-        <RadioGroupItem value="yes" id="r1" />
-        <Label htmlFor="r1">Yes</Label>
-      </div>
-      <div className="flex items-center gap-3">
-        <RadioGroupItem value="no" id="r2" />
-        <Label htmlFor="r2">No</Label>
-      </div>
-    </RadioGroup>
-  );
-}
-
-const EmptyFields = [
-  VariableAssignerLogicalOperator.Clear,
-  VariableAssignerLogicalArrayOperator.RemoveFirst,
-  VariableAssignerLogicalArrayOperator.RemoveLast,
-];
+const RadioButton = forwardRef<HTMLDivElement, RadioButtonProps>(
+  function RadioButton({ value, onChange }, ref) {
+    return (
+      <RadioGroup
+        ref={ref}
+        defaultValue="yes"
+        className="flex"
+        value={value}
+        onValueChange={onChange}
+      >
+        <div className="flex items-center gap-3">
+          <RadioGroupItem value="yes" id="r1" />
+          <Label htmlFor="r1">Yes</Label>
+        </div>
+        <div className="flex items-center gap-3">
+          <RadioGroupItem value="no" id="r2" />
+          <Label htmlFor="r2">No</Label>
+        </div>
+      </RadioGroup>
+    );
+  },
+);
 
 const EmptyValueMap = {
   [JsonSchemaDataType.String]: '',
@@ -139,7 +137,7 @@ export function DynamicVariables({
       const logicalOperator = form.getValues(operatorFieldName);
       const type = getVariableType(keyFieldName);
 
-      if (EmptyFields.includes(logicalOperator)) {
+      if (ParameterlessOperators.includes(logicalOperator)) {
         return null;
       } else if (
         logicalOperator === VariableAssignerLogicalOperator.Overwrite ||
@@ -176,7 +174,10 @@ export function DynamicVariables({
         const subType = getArrayElementType(type);
         return (
           <QueryVariable
-            types={[subType as JsonSchemaDataType]}
+            // A bare `array` type carries no element type; filtering by the
+            // empty string would hide every option. The backend accepts any
+            // element for an empty list, so leave the options unfiltered.
+            types={subType ? [subType as JsonSchemaDataType] : []}
             hideLabel
             pureQuery
           ></QueryVariable>
@@ -210,7 +211,15 @@ export function DynamicVariables({
 
       let parameter = EmptyValueMap[type as keyof typeof EmptyValueMap];
 
-      if (value === VariableAssignerLogicalOperator.Overwrite) {
+      // Overwrite, Extend, and Append all render a QueryVariable (a
+      // string-valued reference select), so the parameter must be reset to a
+      // string — passing EmptyValueMap's [] for array-typed variables would
+      // crash cmdk, which calls .trim() on its controlled value.
+      if (
+        value === VariableAssignerLogicalOperator.Overwrite ||
+        value === VariableAssignerLogicalArrayOperator.Extend ||
+        value === VariableAssignerLogicalArrayOperator.Append
+      ) {
         parameter = '';
       }
 
@@ -219,6 +228,13 @@ export function DynamicVariables({
           shouldDirty: true,
           shouldValidate: true,
         });
+      }
+
+      // The parameter input is hidden for these operators and its value is
+      // ignored at run time, so nothing re-validates the field — drop any
+      // stale error left over from the previous operator explicitly.
+      if (ParameterlessOperators.includes(value)) {
+        form.clearErrors(valueFieldAlias);
       }
     },
     [form, getVariableType],
@@ -241,7 +257,7 @@ export function DynamicVariables({
           return (
             <section key={field.id} className="flex gap-2">
               <div className="flex-1 space-y-3 min-w-0">
-                <div className="flex items-center">
+                <div className="flex items-start">
                   <QueryVariable
                     name={keyFieldAlias}
                     hideLabel
@@ -252,7 +268,13 @@ export function DynamicVariables({
                     )}
                   ></QueryVariable>
 
-                  <Separator className="w-2" />
+                  {/* h-8 matches the default Button height both select
+                      triggers render at; with items-start above, an error
+                      message under either select no longer pushes the dash
+                      or the operator select out of alignment. */}
+                  <div className="flex h-8 items-center">
+                    <Separator className="w-2" />
+                  </div>
 
                   <RAGFlowFormItem name={operatorFieldAlias} className="w-1/3">
                     {({ onChange, value }) => (

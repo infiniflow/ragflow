@@ -10,22 +10,36 @@ sidebar_custom_props: {
 
 # Configure the Chunker Component
 
-The Chunker component intelligently splits text. Its goal is to prevent overflow of the AI context window and improve semantic accuracy in hybrid search.
+After **Parser**, choose **Token Chunker** or **Title Chunker** through the outgoing connection point. After Token Chunker, add **Transformer** or **Compiler** to enrich the chunks, or **Indexer** to index them.
 
-There are two core methods, which can be used sequentially:
+## Token Chunker
 
-Token-based chunking (default):
+Use token-based chunking for text without reliable section structure.
 
-- **Chunk size**: Defaults to 512 tokens, balancing retrieval quality and model compatibility.
-- **Overlap**: Set the overlap percentage to copy the end of one chunk to the beginning of the next chunk, improving semantic continuity.
-- **Delimiter**: Uses `\n` (line break) by default to split first at natural paragraph boundaries and avoid cutting in the middle of sentences.
+| Setting | Description |
+| --- | --- |
+| Delimiters / One | Choose delimiter-based splitting or keep the content as one chunk. |
+| Recommended chunk size | Target chunk length in tokens. Defaults to `512` in Delimiters mode. |
+| Overlapped percent (%) | Adds overlapping text between adjacent chunks. Defaults to `0`. |
+| Image & table context window | Number of tokens taken before and after an image or table as context. Defaults to `0`; the slider ranges from `0` to `256`. |
+| Delimiters | Defaults to `\n`, `!`, `?`, `;`, `。`, `；`, `！`, and `？`. Add or remove entries as needed. |
+| Child chunk are used for retrieval | Splits parent chunks into smaller retrieval chunks using **Child delimiters**. Disabled by default. For line-based child chunks, enable it and add `\n`. |
 
-Title-based chunking (hierarchical):
+The output is `chunks`, an array of objects that downstream components can process.
 
-- Best suited for structured documents such as manuals, papers and legal contracts.
-- The system splits documents by chapter and section structure.
-- Each chunk represents a complete structural unit.
+## Title Chunker
 
-:::caution IMPORTANT
-In the current design, if both token-based and title-based methods are used, connect the **Token Chunker** component first, and then connect the **Title Chunker** component. Connecting the **Title Chunker** directly to the **Parser** may cause formatting errors for emails, images, spreadsheets and text files.
-:::
+Use Title Chunker for documents with clear headings, such as manuals and papers. Check that the resulting chunks keep each heading with its content.
+
+
+1. Choose **Hierarchy** to retain the heading path in each chunk, or **Group** to split at a selected heading level and group adjacent sections.
+2. Select the heading level and configure the matching rules. Use **Add Rule** for another heading pattern and **Add regular expressions** for additional levels within a rule.
+3. Set **Chunk token cap**. It defaults to `512`; the slider supports `128`–`8000`. Content exceeding the cap is split further at sentence boundaries.
+4. In Hierarchy mode, adjust these options as needed:
+
+| Setting | Description |
+| --- | --- |
+| Separate parent-heading content | Keeps content directly below a parent heading in a separate chunk. Disabled by default. |
+| Set first chunk as global context | Uses the first section as shared context across the heading hierarchy. Disabled by default. |
+
+For Markdown headings, add `^# ` for level 1 and `^## ` for level 2, then select level 2. In Hierarchy mode, check that each subsection retains its parent heading. Use the output `chunks` in downstream components.

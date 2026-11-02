@@ -1,13 +1,8 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
@@ -179,52 +174,27 @@ function ConditionCards({
               )}
             >
               <section className="p-2 bg-bg-card flex justify-between items-center gap-2">
-                <FormField
-                  control={form.control}
+                <RAGFlowFormItem
                   name={`${name}.${index}.cpn_id`}
-                  render={() => (
-                    <FormItem className="flex-1 min-w-0">
-                      <FormControl>
-                        <VariableWithPath name={`${name}.${index}.cpn_id`} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                  className="flex-1 min-w-0"
+                >
+                  {() => <VariableWithPath name={`${name}.${index}.cpn_id`} />}
+                </RAGFlowFormItem>
                 <div className="flex items-center">
                   <Separator orientation="vertical" className="h-2.5" />
-                  <FormField
-                    control={form.control}
-                    name={`${name}.${index}.operator`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <SelectWithSearch
-                            {...field}
-                            options={switchOperatorOptions}
-                            onlyShowSelectedIcon
-                            triggerClassName="w-30 bg-transparent border-none"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <RAGFlowFormItem name={`${name}.${index}.operator`}>
+                    <SelectWithSearch
+                      options={switchOperatorOptions}
+                      onlyShowSelectedIcon
+                      triggerClassName="w-30 bg-transparent border-none"
+                    />
+                  </RAGFlowFormItem>
                 </div>
               </section>
               <CardContent className="p-4 ">
-                <FormField
-                  control={form.control}
-                  name={`${name}.${index}.value`}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <Textarea {...field} className="bg-transparent" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <RAGFlowFormItem name={`${name}.${index}.value`}>
+                  <Textarea className="bg-transparent" />
+                </RAGFlowFormItem>
               </CardContent>
             </Card>
             <Button variant={'ghost'} onClick={handleRemove(index)}>
@@ -314,21 +284,11 @@ function SwitchForm({ node }: IOperatorForm) {
                 {conditionLength > 1 && (
                   <section className="flex flex-col w-[72px]">
                     <div className="relative  w-1 flex-1 before:absolute before:w-[1px]  before:bg-input-border before:top-20 before:bottom-0 before:left-10"></div>
-                    <FormField
-                      control={form.control}
+                    <RAGFlowFormItem
                       name={`${ConditionKey}.${index}.logical_operator`}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormControl>
-                            <SelectWithSearch
-                              {...field}
-                              options={switchLogicOperatorOptions}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    >
+                      <SelectWithSearch options={switchLogicOperatorOptions} />
+                    </RAGFlowFormItem>
                     <div className="relative  w-1 flex-1 before:absolute before:w-[1px]  before:bg-input-border before:top-0 before:bottom-36 before:left-10"></div>
                   </section>
                 )}

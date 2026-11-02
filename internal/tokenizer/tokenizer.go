@@ -18,6 +18,7 @@ package tokenizer
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"runtime"
@@ -53,15 +54,23 @@ type poolInstance struct {
 	lastUsedAt time.Time
 }
 
-// analyzerPool is the elastic pool for analyzer instances
+// analyzerPool is the elastic pool for analyzer instances.
+//
+// stateMu guards the lifecycle state: initialized, baseAnalyzer, and the
+// instances channel. acquire/release/shrink hold it for read across their whole
+// body; Close takes it for write to close the channel and destroy the
+// analyzers. currentSize is atomic and sits outside that pair so the hot paths
+// keep their existing read-modify-write.
 type analyzerPool struct {
 	config       PoolConfig
-	baseAnalyzer *rag.Analyzer      // Original analyzer used as template for copying
-	instances    chan *poolInstance // Channel-based pool for available instances
-	currentSize  int32              // Current number of instances (atomic)
-	initialized  bool
-	mu           sync.RWMutex
-	stopCh       chan struct{}
+	baseAnalyzer *rag.Analyzer      // guarded by stateMu
+	instances    chan *poolInstance // send/recv and close guarded by stateMu
+	currentSize  int32              // atomic
+	initialized  bool               // guarded by stateMu
+	stateMu      sync.RWMutex
+	stopCh       chan struct{} // closed once by stopOnce to wake waiters
+	stopOnce     sync.Once
+	borrowers    sync.WaitGroup // checked-out instances not yet released
 	wg           sync.WaitGroup
 }
 
@@ -71,110 +80,159 @@ type analyzerPool struct {
 // language override.
 const defaultLanguage = "English"
 
+// initMu serializes Init so a single pool is built and published at a time.
+// globalPool carries only fully constructed pools. The hot path loads it once
+// and pins that pointer for the whole acquire/release pair, so a concurrent
+// Init can never make a caller borrow from one pool and return to another.
 var (
-	globalPool    *analyzerPool
-	poolOnce      sync.Once
-	poolInitError error
+	initMu     sync.Mutex
+	globalPool atomic.Pointer[analyzerPool]
 )
 
-// Init initializes the elastic analyzer pool with the given configuration
-// Can be called multiple times if the pool was previously closed
-func Init(cfg *PoolConfig) error {
-	// Check if we need to reset poolOnce (for testing or re-initialization)
-	if globalPool != nil && !globalPool.initialized {
-		// Pool was closed, reset poolOnce for re-initialization
-		poolOnce = sync.Once{}
-	}
+// errPoolClosed is returned by acquire when Close is in progress and the pool
+// can no longer hand out instances.
+var errPoolClosed = errors.New("analyzer pool closed")
 
-	poolOnce.Do(func() {
-		if cfg == nil {
-			cfg = &PoolConfig{}
-		}
-
-		// Set default values
-		if cfg.DictPath == "" {
-			if env := common.GetEnv(common.EnvRAGFlowDictPath); env != "" {
-				cfg.DictPath = env
-			} else {
-				cfg.DictPath = "/usr/share/infinity/resource"
-			}
-		}
-		if cfg.MinSize <= 0 {
-			cfg.MinSize = runtime.NumCPU() * 2
-		}
-		if cfg.MaxSize <= 0 {
-			cfg.MaxSize = runtime.NumCPU() * 16
-		}
-		if cfg.MinSize > cfg.MaxSize {
-			cfg.MinSize = cfg.MaxSize
-		}
-		if cfg.IdleTimeout <= 0 {
-			cfg.IdleTimeout = 5 * time.Minute
-		}
-		if cfg.AcquireTimeout <= 0 {
-			cfg.AcquireTimeout = 10 * time.Second
-		}
-
-		// The dictionaries are reloaded below, so stale lookups must not survive.
-		resetTermLookupCaches()
-
-		common.Info("Initializing analyzer pool",
-			zap.String("dict_path", cfg.DictPath),
-			zap.Int("min_size", cfg.MinSize),
-			zap.Int("max_size", cfg.MaxSize),
-			zap.Duration("idle_timeout", cfg.IdleTimeout),
-			zap.Duration("acquire_timeout", cfg.AcquireTimeout))
-
-		globalPool = &analyzerPool{
-			config:    *cfg,
-			instances: make(chan *poolInstance, cfg.MaxSize),
-			stopCh:    make(chan struct{}),
-		}
-
-		// Create the base analyzer as template
-		baseAnalyzer, err := rag.NewAnalyzer(cfg.DictPath)
-		if err != nil {
-			poolInitError = fmt.Errorf("failed to create base analyzer: %w", err)
-			common.Error("Failed to create base analyzer", poolInitError)
-			return
-		}
-
-		if err = baseAnalyzer.Load(); err != nil {
-			poolInitError = fmt.Errorf("failed to load base analyzer: %w", err)
-			common.Error("Failed to load base analyzer", poolInitError)
-			baseAnalyzer.Close()
-			return
-		}
-
-		globalPool.baseAnalyzer = baseAnalyzer
-
-		// Pre-warm minSize instances
-		for i := 0; i < cfg.MinSize; i++ {
-			instance, err := globalPool.createInstance()
-			if err != nil {
-				poolInitError = fmt.Errorf("failed to create instance %d: %w", i, err)
-				common.Error("Failed to create pool instance", poolInitError)
-				globalPool.Close()
-				return
-			}
-			globalPool.instances <- instance
-			atomic.AddInt32(&globalPool.currentSize, 1)
-		}
-
-		globalPool.initialized = true
-		common.Info("Analyzer pool initialized successfully",
-			zap.Int("pre_warmed", cfg.MinSize),
-			zap.Int32("current_size", atomic.LoadInt32(&globalPool.currentSize)))
-
-		// Start the shrink loop for idle instance cleanup
-		globalPool.wg.Add(1)
-		go globalPool.shrinkLoop()
-	})
-
-	return poolInitError
+// isInitialized reports the live state under the same lock Close uses to clear
+// it.
+func (p *analyzerPool) isInitialized() bool {
+	p.stateMu.RLock()
+	defer p.stateMu.RUnlock()
+	return p.initialized
 }
 
-// createInstance creates a new analyzer instance by copying the base analyzer
+// Init initializes the elastic analyzer pool with the given configuration. It
+// is idempotent while a pool is live and builds a fresh pool after Close.
+func Init(cfg *PoolConfig) error {
+	initMu.Lock()
+	defer initMu.Unlock()
+
+	if current := globalPool.Load(); current != nil && current.isInitialized() {
+		return nil
+	}
+
+	if cfg == nil {
+		cfg = &PoolConfig{}
+	}
+
+	// Set default values
+	if cfg.DictPath == "" {
+		if env := common.GetEnv(common.EnvRAGFlowDictPath); env != "" {
+			cfg.DictPath = env
+		} else {
+			cfg.DictPath = "/usr/share/infinity/resource"
+		}
+	}
+	if cfg.MinSize <= 0 {
+		cfg.MinSize = runtime.NumCPU() * 2
+	}
+	if cfg.MaxSize <= 0 {
+		cfg.MaxSize = runtime.NumCPU() * 16
+	}
+	if cfg.MinSize > cfg.MaxSize {
+		cfg.MinSize = cfg.MaxSize
+	}
+	if cfg.IdleTimeout <= 0 {
+		cfg.IdleTimeout = 5 * time.Minute
+	}
+	if cfg.AcquireTimeout <= 0 {
+		cfg.AcquireTimeout = 10 * time.Second
+	}
+
+	// The dictionaries are reloaded below, so stale lookups must not survive.
+	resetTermLookupCaches()
+
+	common.Info("Initializing analyzer pool",
+		zap.String("dict_path", cfg.DictPath),
+		zap.Int("min_size", cfg.MinSize),
+		zap.Int("max_size", cfg.MaxSize),
+		zap.Duration("idle_timeout", cfg.IdleTimeout),
+		zap.Duration("acquire_timeout", cfg.AcquireTimeout))
+
+	p := &analyzerPool{
+		config:    *cfg,
+		instances: make(chan *poolInstance, cfg.MaxSize),
+		stopCh:    make(chan struct{}),
+	}
+
+	// Create the base analyzer as template
+	baseAnalyzer, err := rag.NewAnalyzer(cfg.DictPath)
+	if err != nil {
+		wrapped := fmt.Errorf("failed to create base analyzer: %w", err)
+		common.Error("Failed to create base analyzer", wrapped)
+		return wrapped
+	}
+
+	if err = baseAnalyzer.Load(); err != nil {
+		wrapped := fmt.Errorf("failed to load base analyzer: %w", err)
+		common.Error("Failed to load base analyzer", wrapped)
+		baseAnalyzer.Close()
+		return wrapped
+	}
+
+	p.baseAnalyzer = baseAnalyzer
+
+	// Pre-warm minSize instances
+	for i := 0; i < cfg.MinSize; i++ {
+		instance, err := p.createInstance()
+		if err != nil {
+			wrapped := fmt.Errorf("failed to create instance %d: %w", i, err)
+			common.Error("Failed to create pool instance", wrapped)
+			p.discardUnpublished()
+			return wrapped
+		}
+		p.instances <- instance
+		atomic.AddInt32(&p.currentSize, 1)
+	}
+
+	p.initialized = true
+
+	// Start the shrink loop before publishing, so no observer can see a pool
+	// without its shrinker.
+	p.wg.Add(1)
+	go p.shrinkLoop()
+
+	// Publish only a fully constructed pool.
+	globalPool.Store(p)
+
+	common.Info("Analyzer pool initialized successfully",
+		zap.Int("pre_warmed", cfg.MinSize),
+		zap.Int32("current_size", atomic.LoadInt32(&p.currentSize)))
+
+	return nil
+}
+
+// discardUnpublished releases the analyzers of a pool whose Init failed before
+// the pool was ever published. initialized is still false on this path, so
+// Close's idempotency guard would return before freeing anything.
+func (p *analyzerPool) discardUnpublished() {
+	p.drainInstances()
+	if p.baseAnalyzer != nil {
+		p.baseAnalyzer.Close()
+		p.baseAnalyzer = nil
+	}
+}
+
+// drainInstances closes every analyzer currently resting in the channel. It
+// drains without blocking, so it is safe whether or not the channel is closed.
+func (p *analyzerPool) drainInstances() {
+	for {
+		select {
+		case instance, ok := <-p.instances:
+			if !ok {
+				return
+			}
+			if instance != nil && instance.analyzer != nil {
+				instance.analyzer.Close()
+			}
+		default:
+			return
+		}
+	}
+}
+
+// createInstance creates a new analyzer instance by copying the base analyzer.
+// Callers must hold stateMu for read, or be the sole initializer (Init).
 func (p *analyzerPool) createInstance() (*poolInstance, error) {
 	if p.baseAnalyzer == nil {
 		return nil, fmt.Errorf("base analyzer is nil")
@@ -195,6 +253,12 @@ func (p *analyzerPool) createInstance() (*poolInstance, error) {
 // acquire gets an analyzer instance from the pool
 // If pool is empty and below max size, creates a new instance dynamically
 func (p *analyzerPool) acquire() (*poolInstance, error) {
+	// The whole body runs under the read lock: the initialized check, the
+	// channel receive, and the dynamic expansion must not interleave with
+	// Close's write section, which flips initialized and closes the channel.
+	p.stateMu.RLock()
+	defer p.stateMu.RUnlock()
+
 	if !p.initialized {
 		return nil, fmt.Errorf("pool not initialized")
 	}
@@ -203,6 +267,7 @@ func (p *analyzerPool) acquire() (*poolInstance, error) {
 	select {
 	case instance := <-p.instances:
 		instance.lastUsedAt = time.Now()
+		p.borrowers.Add(1)
 		return instance, nil
 	default:
 	}
@@ -222,6 +287,7 @@ func (p *analyzerPool) acquire() (*poolInstance, error) {
 				zap.Int32("previous_size", current),
 				zap.Int32("new_size", current+1),
 				zap.Int("max_size", p.config.MaxSize))
+			p.borrowers.Add(1)
 			return instance, nil
 		}
 		// CAS failed, another goroutine created an instance, fall through to wait
@@ -234,18 +300,27 @@ func (p *analyzerPool) acquire() (*poolInstance, error) {
 	select {
 	case instance := <-p.instances:
 		instance.lastUsedAt = time.Now()
+		p.borrowers.Add(1)
 		return instance, nil
+	case <-p.stopCh:
+		return nil, errPoolClosed
 	case <-ctx.Done():
 		return nil, fmt.Errorf("timeout waiting for analyzer instance (current_size=%d, max=%d)",
 			atomic.LoadInt32(&p.currentSize), p.config.MaxSize)
 	}
 }
 
-// release returns an analyzer instance to the pool
+// release returns an analyzer instance to the pool.
 func (p *analyzerPool) release(instance *poolInstance) {
 	if instance == nil || instance.analyzer == nil {
 		return
 	}
+	defer p.borrowers.Done()
+
+	// The initialized check and the channel send share one critical section:
+	// otherwise Close could close the channel between them.
+	p.stateMu.RLock()
+	defer p.stateMu.RUnlock()
 
 	if !p.initialized {
 		instance.analyzer.Close()
@@ -284,6 +359,9 @@ func (p *analyzerPool) shrinkLoop() {
 // shrink removes idle instances that have exceeded the idle timeout
 // while keeping at least MinSize instances
 func (p *analyzerPool) shrink() {
+	p.stateMu.RLock()
+	defer p.stateMu.RUnlock()
+
 	if !p.initialized {
 		return
 	}
@@ -336,78 +414,102 @@ func (p *analyzerPool) shrink() {
 	}
 }
 
-// Close closes the pool and releases all resources
+// Close closes the pool and releases all resources. It is idempotent and safe
+// to call concurrently with acquire/release.
 func (p *analyzerPool) Close() {
 	if p == nil {
 		return
 	}
 
-	p.mu.Lock()
+	// Wake blocked acquirers before requesting the write lock. Once a writer is
+	// queued, RWMutex blocks new readers, so an acquire parked on <-p.instances
+	// could never be fed by a release and would hold its read lock until the
+	// acquire timeout. Closing stopCh makes those waiters return immediately.
+	p.stopOnce.Do(func() { close(p.stopCh) })
+
+	// Phase 1: flip initialized under the write lock. acquire/release/shrink
+	// hold the read lock across their whole body, so after this no caller can
+	// observe the pool as open or touch the channel.
+	p.stateMu.Lock()
 	if !p.initialized {
-		p.mu.Unlock()
+		p.stateMu.Unlock()
 		return
 	}
 	p.initialized = false
-	p.mu.Unlock()
+	p.stateMu.Unlock()
 
-	// Signal shrink loop to stop
-	close(p.stopCh)
+	// shrinkLoop takes stateMu.RLock inside shrink, so this wait stays outside
+	// the lock; stopCh is already closed, so it returns promptly.
 	p.wg.Wait()
 
-	// Close all instances in pool
-	close(p.instances)
-	for instance := range p.instances {
-		if instance != nil && instance.analyzer != nil {
-			instance.analyzer.Close()
-		}
-	}
+	// A copied analyzer references the base analyzer's loaded dictionaries
+	// (RAGAnalyzer_Copy shares trie_/pos_table_/wordnet_lemma_ and does not own
+	// them), so the base must outlive every checked-out instance. Wait for the
+	// borrowers to return before destroying it.
+	p.borrowers.Wait()
 
-	// Close base analyzer
+	// Phase 2: close the channel and release the analyzers. The read lock keeps
+	// a late release from sending here; such a release sees initialized == false
+	// and closes its own instance instead. drainInstances then collects whatever
+	// is still buffered.
+	p.stateMu.Lock()
+	close(p.instances)
+	p.drainInstances()
 	if p.baseAnalyzer != nil {
 		p.baseAnalyzer.Close()
 		p.baseAnalyzer = nil
 	}
+	p.stateMu.Unlock()
 
 	common.Info(fmt.Sprintf("Analyzer pool closed, final_size: %d", atomic.LoadInt32(&p.currentSize)))
 }
 
 // GetPoolStats returns current pool statistics
 func GetPoolStats() map[string]interface{} {
-	if globalPool == nil {
+	p := globalPool.Load()
+	if p == nil {
 		return map[string]interface{}{
 			"initialized": false,
 		}
 	}
 
+	p.stateMu.RLock()
+	initialized := p.initialized
+	available := len(p.instances)
+	p.stateMu.RUnlock()
+
 	return map[string]interface{}{
-		"initialized":         globalPool.initialized,
-		"current_size":        atomic.LoadInt32(&globalPool.currentSize),
-		"min_size":            globalPool.config.MinSize,
-		"max_size":            globalPool.config.MaxSize,
-		"idle_timeout":        globalPool.config.IdleTimeout.String(),
-		"instances_available": len(globalPool.instances),
+		"initialized":         initialized,
+		"current_size":        atomic.LoadInt32(&p.currentSize),
+		"min_size":            p.config.MinSize,
+		"max_size":            p.config.MaxSize,
+		"idle_timeout":        p.config.IdleTimeout.String(),
+		"instances_available": available,
 	}
 }
 
 // Close closes the global pool
 func Close() {
-	if globalPool != nil {
-		globalPool.Close()
+	if p := globalPool.Load(); p != nil {
+		p.Close()
 	}
 }
 
 // withAnalyzer acquires an analyzer instance, applies the given language
 // (with "" mapping to defaultLanguage), and executes fn.
 func withAnalyzer(lang string, fn func(*rag.Analyzer) error) error {
-	if globalPool == nil {
+	// Load the pool once and use that pointer for both acquire and release, so a
+	// concurrent Init cannot swap the global pool between the two.
+	pool := globalPool.Load()
+	if pool == nil {
 		return fmt.Errorf("tokenizer pool not initialized")
 	}
 
-	instance, err := globalPool.acquire()
+	instance, err := pool.acquire()
 	if err != nil {
 		return err
 	}
-	defer globalPool.release(instance)
+	defer pool.release(instance)
 
 	if lang == "" {
 		lang = defaultLanguage
@@ -420,15 +522,16 @@ func withAnalyzer(lang string, fn func(*rag.Analyzer) error) error {
 // withAnalyzerResult is the result-returning variant of withAnalyzer.
 func withAnalyzerResult[T any](lang string, fn func(*rag.Analyzer) (T, error)) (T, error) {
 	var result T
-	if globalPool == nil {
+	pool := globalPool.Load()
+	if pool == nil {
 		return result, fmt.Errorf("tokenizer pool not initialized")
 	}
 
-	instance, err := globalPool.acquire()
+	instance, err := pool.acquire()
 	if err != nil {
 		return result, err
 	}
-	defer globalPool.release(instance)
+	defer pool.release(instance)
 
 	if lang == "" {
 		lang = defaultLanguage
@@ -529,7 +632,8 @@ func SetEnablePosition(enablePosition bool) {
 
 // IsInitialized checks whether the tokenizer pool has been initialized
 func IsInitialized() bool {
-	return globalPool != nil && globalPool.initialized
+	p := globalPool.Load()
+	return p != nil && p.isInitialized()
 }
 
 // termLookupCacheMax caps each memo below. Reaching it rotates the memo instead

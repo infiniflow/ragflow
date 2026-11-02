@@ -105,6 +105,21 @@ func ProcessChunksForPipeline(
 	return metadata, nil
 }
 
+// StampDatasetPagerank writes the dataset's pagerank onto every chunk a run is
+// about to index. Python's index-time doc template carries it
+// (`if task["pagerank"]: doc[PAGERANK_FLD] = int(...)`), which is what makes a
+// pagerank configured before parsing apply to the chunks it produces. Without
+// it only the chunks that already existed when the setting was saved carry the
+// value, since the dataset-level update rewrites rows rather than future ones.
+func StampDatasetPagerank(chunks []map[string]any, pagerank int64) {
+	if pagerank == 0 {
+		return
+	}
+	for _, chunk := range chunks {
+		chunk[common.PAGERANK_FLD] = pagerank
+	}
+}
+
 // requireStringText enforces the pre-index wire contract: every chunk must
 // carry a string "text" field before chunk-id generation or persistence mapping.
 func requireStringText(ck map[string]any) (string, error) {
@@ -144,20 +159,21 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 }
 
 // pipelineOnlyFields are the parser/chunker BOOKKEEPING keys: each one is
-// consumed inside the pipeline (ck_type drives chunk merging and the image-crop
-// decision, tk_nums carries the chunker's token count into the Tokenizer,
-// layout*/image/context_* describe the media block, and page_number/table_id/
-// sheet/headers/cells describe the table or spreadsheet block) and NONE of them
-// is a chunk-store column.
+// consumed inside the pipeline (layout drives block-kind decisions, tk_nums
+// carries the chunker's token count into the Tokenizer, layout*/image/context_*
+// describe the media block, and page_number/table_id/sheet/headers/cells
+// describe the table or spreadsheet block) and NONE of them is a chunk-store
+// column.
 //
 // The Python index doc carries none of them — its chunk builder emits only the
 // persist fields — but Go's chunker hands them on, and the write boundary is
-// strict about unknown columns: Infinity rejects the whole insert with
-// "Column ck_type not found in table" (InfinityException 3013). Elasticsearch
-// merely swallowed them, because a dynamic mapping accepts any field.
+// where they stop: Elasticsearch and Vastbase would add a field for each key,
+// and Infinity would drop each key at insert with a warning. media_ref is the
+// deferred-image reference consumed by the upload pass; a chunk that still
+// carries one must not reach the index.
 var pipelineOnlyFields = []string{
-	"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",
-	"context_above", "context_below", "page_number",
+	"tk_nums", "layout", "layout_type", "layoutno", "image", "media_ref",
+	"context_above", "context_below", "page_number", "_preserve_order",
 	"table_id", "sheet", "sheet_index", "headers", "cells",
 	"row_start", "row_end", "col_start", "col_end",
 }
@@ -230,6 +246,23 @@ func processChunkPositions(ck map[string]any, spreadsheet bool) {
 			flat = append(flat, group...)
 		}
 		storePositions(ck, flat, spreadsheet)
+	case [][]any:
+		if flat, ok := flattenMixedPositions(v); ok {
+			storePositions(ck, flat, spreadsheet)
+		} else {
+			common.Warn(fmt.Sprintf("chunk positions %T contained no usable rows; discarding", poss))
+		}
+	case []any:
+		rows, ok := positionRowsFromAny(v)
+		if !ok {
+			common.Warn(fmt.Sprintf("chunk positions %T contained no usable rows; discarding", poss))
+			break
+		}
+		if flat, ok := flattenMixedPositions(rows); ok {
+			storePositions(ck, flat, spreadsheet)
+		} else {
+			common.Warn("chunk positions contained no usable rows; discarding")
+		}
 	default:
 		common.Warn(fmt.Sprintf("chunk positions unexpected type %T; discarding", poss))
 	}

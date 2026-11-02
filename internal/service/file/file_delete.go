@@ -2,59 +2,60 @@ package file
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 
 	"go.uber.org/zap"
 )
 
-// DeleteFiles deletes files by IDs
-// Returns (success, message) where success is true if all files were deleted
-func (s *FileService) DeleteFiles(ctx context.Context, uid string, fileIDs []string) (bool, string) {
+// DeleteFiles deletes files and folders by ID after authorizing every entry in
+// each selected folder tree.
+func (s *FileService) DeleteFiles(ctx context.Context, userID string, fileIDs []string) error {
+	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, fileIDs)
+	if err != nil {
+		return err
+	}
+	filesByID := make(map[string]*entity.File, len(files))
+	for _, file := range files {
+		filesByID[file.ID] = file
+	}
+
 	for _, fileID := range fileIDs {
-		// 1. Get file
-		file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
-		if err != nil || file == nil {
-			return false, "File or Folder not found!"
+		file, ok := filesByID[fileID]
+		if !ok {
+			return errors.New("File or Folder not found!")
 		}
-
-		// 2. Check tenant_id
 		if file.TenantID == "" {
-			return false, "Tenant not found!"
+			return errors.New("Tenant not found!")
 		}
-
-		// Block root-folder deletion (root folders have parent_id == id)
 		if file.ParentID == file.ID {
-			return false, "Root folder cannot be deleted."
+			return errors.New("Root folder cannot be deleted.")
 		}
-
-		// 3. Permission check
-		if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
-			return false, "no authorization"
-		}
-
-		// 4. Skip dataset source files
-		if file.SourceType == FileSourceDataset {
-			continue
-		}
-
-		// 5. Delete based on type
-		if file.Type == FileTypeFolder {
-			if err = s.deleteFolderRecursive(ctx, file, uid); err != nil {
-				return false, fmt.Sprintf("Failed to delete folder: %v", err)
-			}
-		} else {
-			if err = s.deleteSingleFile(ctx, file); err != nil {
-				return false, fmt.Sprintf("Failed to delete file: %v", err)
-			}
+		if err := s.checkFileTreeAccess(ctx, userID, file, permission.OperationDelete); err != nil {
+			return err
 		}
 	}
 
-	return true, ""
+	for _, fileID := range fileIDs {
+		file := filesByID[fileID]
+		if file.SourceType == FileSourceDataset {
+			continue
+		}
+		if file.Type == FileTypeFolder {
+			if err := s.deleteFolderRecursive(ctx, file); err != nil {
+				return fmt.Errorf("Failed to delete folder: %w", err)
+			}
+		} else if err := s.deleteSingleFile(ctx, file); err != nil {
+			return fmt.Errorf("Failed to delete file: %w", err)
+		}
+	}
+	return nil
 }
 
 // deleteSingleFile deletes a single file (not folder)
@@ -124,7 +125,7 @@ func (s *FileService) deleteSingleFileRecords(ctx context.Context, file *entity.
 
 // deleteFolderRecursive recursively deletes a folder and its contents
 // Matches Python's _delete_folder_recursive function
-func (s *FileService) deleteFolderRecursive(ctx context.Context, folder *entity.File, uid string) error {
+func (s *FileService) deleteFolderRecursive(ctx context.Context, folder *entity.File) error {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return fmt.Errorf("storage is not configured for folder %s", folder.ID)

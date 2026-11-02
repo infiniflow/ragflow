@@ -727,3 +727,7 @@ func (g *GoogleModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 func (g *GoogleModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
+
+func (g *GoogleModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}

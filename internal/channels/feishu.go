@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
@@ -84,17 +85,24 @@ func newFeishuChannel(account feishuAccount) *feishuChannel {
 		seen:    map[string]time.Time{},
 		workers: map[string]*feishuWorker{},
 	}
+	transportPolicy := channelURLPolicy{exactHosts: []string{"open.feishu.cn", "open.larksuite.com"}}
+	safeClient := newSafeChannelHTTPClient(account.Timeout, transportPolicy)
 	ch.rest = lark.NewClient(
 		account.AppID,
 		account.AppSecret,
 		lark.WithOpenBaseUrl(feishuBaseURL(account.Domain)),
+		lark.WithHttpClient(safeClient),
 		lark.WithLogLevel(larkcore.LogLevelInfo),
 		lark.WithReqTimeout(account.Timeout),
 	)
+	wsDialer := *websocket.DefaultDialer
+	wsDialer.HandshakeTimeout = account.Timeout
 	ch.wsClient = larkws.NewClient(
 		account.AppID,
 		account.AppSecret,
 		larkws.WithDomain(feishuBaseURL(account.Domain)),
+		larkws.WithHttpClient(safeClient),
+		larkws.WithWebSocketDialer(newChannelSDKWebSocketDialer(&wsDialer)),
 		larkws.WithEventHandler(ch.eventDispatcher()),
 		larkws.WithLogLevel(larkcore.LogLevelInfo),
 	)

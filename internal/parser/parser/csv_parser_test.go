@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 func TestCSVParser_EmitsSpreadsheetRows(t *testing.T) {
@@ -18,17 +20,17 @@ func TestCSVParser_EmitsSpreadsheetRows(t *testing.T) {
 	}
 
 	// Default output format is "json"
-	if res.OutputFormat != "json" {
-		t.Fatalf("res.OutputFormat = %q, want %q", res.OutputFormat, "json")
+	if !res.Produced() {
+		t.Fatalf("res.produced = %t, want true", res.Produced())
 	}
 
 	// One wire shape: the whole sheet is one segmented HTML table item.
 	if len(res.JSON) != 1 {
 		t.Fatalf("len(res.JSON) = %d, want one HTML table item", len(res.JSON))
 	}
-	item := res.JSON[0]
-	if item["ck_type"] != "table" || item["doc_type_kwd"] != "table" {
-		t.Fatalf("item types = %v/%v, want table/table", item["ck_type"], item["doc_type_kwd"])
+	item := res.JSON[0].ToMap()
+	if item["doc_type_kwd"] != "table" {
+		t.Fatalf("item doc_type_kwd = %v, want table", item["doc_type_kwd"])
 	}
 	wantText := "<table><caption>Data</caption>\n" +
 		"<tr><th>Name</th><th>Age</th><th>City</th></tr>\n" +
@@ -69,7 +71,7 @@ func TestCSVParser_UTF8BOM(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %#v, want one table item", res.JSON)
 	}
-	text := tableItemHTML(t, res.JSON[0])
+	text := tableItemHTML(t, res.JSON[0].ToMap())
 	if !strings.Contains(text, "<tr><th>Name</th><th>Age</th></tr>") {
 		t.Errorf("header row = %q", text)
 	}
@@ -91,7 +93,7 @@ func TestCSVParserHTML4ExcelIsIgnored(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult failed: %v", res.Err)
 	}
-	if len(res.JSON) != 1 || res.JSON[0]["ck_type"] != "table" {
+	if len(res.JSON) != 1 || res.JSON[0].ToMap()["doc_type_kwd"] != "table" {
 		t.Fatalf("items = %#v, want one table item", res.JSON)
 	}
 	if !reflect.DeepEqual(res.JSON, plainRes.JSON) {
@@ -99,45 +101,39 @@ func TestCSVParserHTML4ExcelIsIgnored(t *testing.T) {
 	}
 }
 
-func TestCSVParser_ConfigureOutputFormatJSON(t *testing.T) {
+func TestCSVParser_ConfigureproducedJSON(t *testing.T) {
 	csvData := []byte("col1,col2\nval1,val2\n")
 	p := NewCSVParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-	})
 
 	res := p.ParseWithResult(context.Background(), "test.csv", csvData)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult failed: %v", res.Err)
 	}
 
-	if res.OutputFormat != "json" {
-		t.Fatalf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("res.produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("len(res.JSON) = %d, want one HTML table item", len(res.JSON))
 	}
-	if res.JSON[0]["ck_type"] != "table" {
-		t.Fatalf("ck_type = %v, want table", res.JSON[0]["ck_type"])
+	if res.JSON[0].ToMap()["doc_type_kwd"] != "table" {
+		t.Fatalf("doc_type_kwd = %v, want table", res.JSON[0].ToMap()["doc_type_kwd"])
 	}
-	if positions := res.JSON[0]["positions"].([][]float64); len(positions) != 2 {
+	if positions := res.JSON[0].ToMap()["positions"].([][]float64); len(positions) != 2 {
 		t.Fatalf("len(positions) = %d, want one tuple per <tr>", len(positions))
 	}
 }
 
 func TestCSVParser_EmptyContent(t *testing.T) {
 	p := NewCSVParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-	})
 
 	res := p.ParseWithResult(context.Background(), "empty.csv", []byte("   \n\n  "))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult failed: %v", res.Err)
 	}
 
-	if res.OutputFormat != "json" {
-		t.Fatalf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("res.produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) != 0 {
 		t.Fatalf("len(res.JSON) = %d, want 0", len(res.JSON))
@@ -156,7 +152,7 @@ func TestCSVParser_PreservesEveryDataRow(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("len(res.JSON) = %d, want one HTML table item", len(res.JSON))
 	}
-	positions := res.JSON[0]["positions"].([][]float64)
+	positions := res.JSON[0].ToMap()["positions"].([][]float64)
 	if len(positions) != 5 {
 		t.Fatalf("len(positions) = %d, want one tuple per <tr> (header plus four rows)", len(positions))
 	}
@@ -177,12 +173,12 @@ func TestCSVParserKeepsVariableRowWidths(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one HTML table item", len(res.JSON))
 	}
-	text := tableItemHTML(t, res.JSON[0])
+	text := tableItemHTML(t, res.JSON[0].ToMap())
 	if !strings.Contains(text, "<tr><td>Q1</td><td>A1</td></tr>") ||
 		!strings.Contains(text, "<tr><td>Q2</td><td>A2</td><td>extra</td></tr>") {
 		t.Fatalf("row widths not preserved in markup: %q", text)
 	}
-	positions := res.JSON[0]["positions"].([][]float64)
+	positions := res.JSON[0].ToMap()["positions"].([][]float64)
 	// Per-row column ranges: Q1 row spans cols 1-2, Q2 row spans 1-3.
 	if len(positions) != 3 || positions[1][4] != 2 || positions[2][4] != 3 {
 		t.Fatalf("position matrix lost per-row widths: %v", positions)
@@ -201,7 +197,7 @@ func TestCSVParser_ReadsTheSeparatorTheFileWasWrittenWith(t *testing.T) {
 		if len(res.JSON) != 1 {
 			t.Fatalf("separator %q: items = %d, want one HTML table item", sep, len(res.JSON))
 		}
-		text := tableItemHTML(t, res.JSON[0])
+		text := tableItemHTML(t, res.JSON[0].ToMap())
 		if !strings.Contains(text, "<tr><th>Name</th><th>Region</th><th>Units</th></tr>") ||
 			!strings.Contains(text, "<tr><td>Widget</td><td>EU</td><td>12</td></tr>") {
 			t.Errorf("separator %q: row not split into three columns: %q", sep, text)
@@ -272,8 +268,64 @@ func TestCSVParser_KeepsAnEmptyTabSeparatedField(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one HTML table item", len(res.JSON))
 	}
-	text := tableItemHTML(t, res.JSON[0])
+	text := tableItemHTML(t, res.JSON[0].ToMap())
 	if !strings.Contains(text, "<tr><td>Widget</td><td></td><td>12</td></tr>") {
 		t.Errorf("empty tab-separated field not kept: %q", text)
+	}
+}
+
+// TestCSVParser_PreservesInternalJoiners asserts format characters that are
+// meaningful inside a word survive CSV parsing end to end: U+200D in an
+// emoji ZWJ sequence and U+200C as the Persian half-space.
+func TestCSVParser_PreservesInternalJoiners(t *testing.T) {
+	emoji := "\U0001F469\u200d\U0001F4BB" // woman technologist
+	persian := "\u0645\u06cc\u200c\u0631\u0648\u0645"
+	data := []byte("Name,Note\nA," + emoji + "\nB," + persian + "\n")
+	res := NewCSVParser().ParseWithResult(context.Background(), "t.csv", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult failed: %v", res.Err)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("items = %d, want one HTML table item", len(res.JSON))
+	}
+	text := tableItemHTML(t, res.JSON[0].ToMap())
+	if !strings.Contains(text, "<td>"+emoji+"</td>") {
+		t.Errorf("emoji ZWJ sequence broken: %q", text)
+	}
+	if !strings.Contains(text, "<td>"+persian+"</td>") {
+		t.Errorf("Persian half-space lost: %q", text)
+	}
+}
+
+func TestCSVParser_GBK(t *testing.T) {
+	csvText := "产品,分类,价格,备注\n笔记本电脑,电子,6999.00,\"特价销售，送鼠标\"\n无线耳机,配件,399.00,\"热销\"\n"
+	gbkBytes, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte(csvText))
+	if err != nil {
+		t.Fatalf("GBK encode: %v", err)
+	}
+
+	p := NewCSVParser()
+	res := p.ParseWithResult(context.Background(), "products.csv", gbkBytes)
+	if res.Err != nil {
+		t.Fatalf("CSVParser.ParseWithResult failed: %v", res.Err)
+	}
+	if len(res.JSON) == 0 {
+		t.Fatalf("CSVParser returned no JSON items")
+	}
+	var rowText strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		text := tableItemHTML(t, item)
+		rowText.WriteString(text)
+	}
+	if strings.ContainsRune(rowText.String(), '\ufffd') {
+		t.Errorf("CSV output contains replacement runes: %s", rowText.String())
+	}
+	for _, want := range []string{"笔记本电脑", "电子", "特价销售，送鼠标", "无线耳机"} {
+		if !strings.Contains(rowText.String(), want) {
+			t.Errorf("CSV output missing expected substring %q; got: %s", want, rowText.String())
+		}
+	}
+	if enc, _ := res.File["encoding"].(string); enc != "gb18030" && enc != "gbk" && enc != "gb2312" {
+		t.Errorf("CSV File.encoding = %q, want gbk/gb2312/gb18030", enc)
 	}
 }

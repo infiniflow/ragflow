@@ -420,3 +420,36 @@ func TestAskService_LLMErrorValueIsRealError(t *testing.T) {
 		t.Errorf("expected real sync error surfaced, got %q", deltas[0].Value)
 	}
 }
+
+func TestToFloat64Slice(t *testing.T) {
+	tests := []struct {
+		name   string
+		v      interface{}
+		want   []float64
+		wantOk bool
+	}{
+		{"valid", []interface{}{1.0, 2.5, 3.0}, []float64{1.0, 2.5, 3.0}, true},
+		{"empty", []interface{}{}, []float64{}, true},
+		{"wrong type", "not a slice", nil, false},
+		{"non-float element", []interface{}{1.0, "x"}, nil, false},
+		{"nil", nil, nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := toFloat64Slice(tt.v)
+			if (got != nil) != tt.wantOk {
+				t.Errorf("toFloat64Slice() ok = %v, want %v", got != nil, tt.wantOk)
+				return
+			}
+			if len(got) != len(tt.want) {
+				t.Errorf("toFloat64Slice() len = %d, want %d", len(got), len(tt.want))
+				return
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("toFloat64Slice()[%d] = %v, want %v", i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}

@@ -27,6 +27,7 @@ import (
 
 	"ragflow/internal/common"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/rag/prompts"
 
 	"go.uber.org/zap"
 )
@@ -65,7 +66,7 @@ func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, co
 	}
 
 	// Load keyword prompt template from file
-	keywordPromptTemplate, err := LoadPrompt("keyword_prompt")
+	keywordPromptTemplate, err := (prompts.EmbeddedPromptLoader{}).Load("keyword_prompt")
 	if err != nil {
 		return "", fmt.Errorf("failed to load keyword prompt: %w", err)
 	}
@@ -150,13 +151,13 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	}
 
 	// Load system prompt from embedded file
-	systemPrompt, err := LoadPrompt("cross_languages_sys_prompt")
+	systemPrompt, err := (prompts.EmbeddedPromptLoader{}).Load("cross_languages_sys_prompt")
 	if err != nil {
 		return query, fmt.Errorf("failed to load system prompt: %w", err)
 	}
 
-	// Load user prompt template from file
-	userPromptTemplate, err := LoadPrompt("cross_languages_user_prompt")
+	// Load user prompt template
+	userPromptTemplate, err := (prompts.EmbeddedPromptLoader{}).Load("cross_languages_user_prompt")
 	if err != nil {
 		return query, fmt.Errorf("failed to load user prompt: %w", err)
 	}
@@ -217,9 +218,8 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	return query, nil
 }
 
-// fullQuestionTmpl mirrors the Python Jinja2 template
-// rag/prompts/full_question_prompt.md. The rendered output is used as the
-// system message; the user message is just "Output: ".
+// fullQuestionTmpl is rendered as the system message; the user message is
+// just "Output: ".
 var fullQuestionTmpl = template.Must(template.New("full_question").Parse(`## Role
 A helpful assistant.
 
@@ -293,8 +293,6 @@ var errorMarkerRE = regexp.MustCompile(`\*\*ERROR\*\*`)
 // The prompt structure mirrors Python's full_question():
 //   - System: fullQuestionTmpl (instructions, examples, conversation)
 //   - User: "Output: "
-//
-// This matches rag/prompts/full_question_prompt.md rendered via Jinja2.
 func FullQuestion(
 	ctx context.Context,
 	chatModel *modelModule.ChatModel,

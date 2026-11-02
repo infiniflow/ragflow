@@ -88,7 +88,7 @@ func TestInsertChunksRunsDeleteThenInsertInOneTransaction(t *testing.T) {
 
 	inserted, err := engine.InsertChunks(context.Background(), []map[string]interface{}{{
 		"id": "c1", "content_ltks": "hello", "q_3_vec": []interface{}{0.1, 0.2, 0.3},
-	}}, "t1", "kb-1")
+	}}, "t1", "kb-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestInsertChunksReturnsEncodeErrorForMalformedVector(t *testing.T) {
 
 	_, err = engine.InsertChunks(context.Background(), []map[string]interface{}{{
 		"id": "c1", "q_3_vec": "oops",
-	}}, "t1", "kb-1")
+	}}, "t1", "kb-1", "")
 	if err == nil || !strings.Contains(err.Error(), "encode q_3_vec") {
 		t.Fatalf("err = %v", err)
 	}
@@ -161,7 +161,7 @@ func TestInsertChunksRequiresVectorSizeForNewStore(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta(tableCountQuery())).WithArgs("t1").
 		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
 	if _, err := engine.InsertChunks(context.Background(),
-		[]map[string]interface{}{{"id": "c1", "content_ltks": "x"}}, "t1", "kb-1"); err == nil {
+		[]map[string]interface{}{{"id": "c1", "content_ltks": "x"}}, "t1", "kb-1", ""); err == nil {
 		t.Fatal("creating a new store without an inferable vector dimension must fail")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -225,7 +225,7 @@ func TestInsertChunksVectorlessBatchOnTableWithFailedFullTextIndex(t *testing.T)
 
 	if _, err := engine.InsertChunks(context.Background(), []map[string]interface{}{
 		{"id": "c3", "kb_id": "kb-1", "content_ltks": "third"},
-	}, "t1", "kb-1"); err != nil {
+	}, "t1", "kb-1", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

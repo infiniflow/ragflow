@@ -62,7 +62,7 @@ curl -s --request GET \
 
 # 3. Update a chunk
 echo -e "\n-- Update a chunk"
-curl -s --request PUT \
+curl -s --request PATCH \
      --url "${HOST_ADDRESS}/api/v1/datasets/${DATASET_ID}/documents/${DOC_ID}/chunks/${CHUNK_ID}" \
      --header 'Content-Type: application/json' \
      --header "Authorization: Bearer ${API_KEY}" \

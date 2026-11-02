@@ -20,11 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/rag/prompts"
 	"regexp"
 
 	"strconv"
@@ -91,44 +91,9 @@ type ManualValueResolver func(map[string]interface{}) map[string]interface{}
 // NoMatchDocIDSentinel forces retrieval to return no documents when filters match nothing.
 const NoMatchDocIDSentinel = "-999"
 
-// metaFilterTemplateCache caches the template content
-var metaFilterTemplateCache string
-
-// getMetaFilterTemplate loads and caches the meta_filter.md template
-func getMetaFilterTemplate() (string, error) {
-	if metaFilterTemplateCache != "" {
-		return metaFilterTemplateCache, nil
-	}
-
-	// Try to find meta_filter.md relative to the rag module
-	// Look for it in rag/prompts/ directory
-	possiblePaths := []string{
-		"rag/prompts/meta_filter.md",
-		"../rag/prompts/meta_filter.md",
-		"../../rag/prompts/meta_filter.md",
-	}
-
-	var templateContent string
-	for _, path := range possiblePaths {
-		content, err := os.ReadFile(path)
-		if err == nil {
-			templateContent = string(content)
-			break
-		}
-	}
-
-	if templateContent == "" {
-		// Fallback: return error
-		return "", fmt.Errorf("could not find meta_filter.md template")
-	}
-
-	metaFilterTemplateCache = templateContent
-	return templateContent, nil
-}
-
 // renderMetaFilterTemplate renders the Jinja2-like template from meta_filter.md
 func renderMetaFilterTemplate(currentDate, metadataKeys, question, constraints string) (string, error) {
-	templateContent, err := getMetaFilterTemplate()
+	templateContent, err := (prompts.EmbeddedPromptLoader{}).Load("meta_filter")
 	if err != nil {
 		return "", err
 	}
@@ -269,7 +234,7 @@ func ApplyMetaFilter(metaData common.MetaData, filters []MetaFilterCondition, lo
 }
 
 // convertToMetaCondition converts a MetaFilterCondition to common.MetaCondition,
-// normalizing operator symbols and value types for compatibility with common.MetaFilter.
+// normalizing operator symbols and value types for common.MetaFilter.
 //
 // Operator normalization:
 //   - "==" = "="    "!=" = "≠"
@@ -278,8 +243,10 @@ func ApplyMetaFilter(metaData common.MetaData, filters []MetaFilterCondition, lo
 //     (see common.metadata_utils.operatorMapping for the full list)
 //
 // Value conversion:
-//   - "in" / "not in": comma-separated string → []interface{} (as expected by common.MetaFilter)
-//   - all other operators: passed through as-is (string)
+//   - "in" / "not in": comma-separated strings become []interface{};
+//     arrays are preserved only when every member is a string. Arrays with
+//     non-string members become nil so the condition matches no documents.
+//   - all other operators: passed through as-is.
 func convertToMetaCondition(f MetaFilterCondition) common.MetaCondition {
 	mc := common.MetaCondition{
 		Key:      f.Key,
@@ -288,7 +255,19 @@ func convertToMetaCondition(f MetaFilterCondition) common.MetaCondition {
 	}
 	switch f.Op {
 	case "in", "not in":
-		strVal, _ := f.Value.(string)
+		if values, ok := f.Value.([]interface{}); ok {
+			for _, value := range values {
+				if _, ok := value.(string); !ok {
+					mc.Value = nil
+					return mc
+				}
+			}
+			return mc
+		}
+		strVal, ok := f.Value.(string)
+		if !ok {
+			return mc
+		}
 		parts := strings.Split(strVal, ",")
 		arr := make([]interface{}, 0, len(parts))
 		for _, p := range parts {
@@ -601,7 +580,8 @@ func MetadataConditionToDocIDs(metaData common.MetaData, metadataCondition map[s
 	return strings.Join(filtered, ",")
 }
 
-// ApplyMetaDataFilter applies metadata filtering rules and returns filtered doc_ids
+// ApplyMetaDataFilter applies metadata filtering rules and returns the document
+// scope retrieval must be constrained to.
 // Supports three modes:
 // - auto: generate filter conditions via LLM
 // - semi_auto: generate conditions using selected metadata keys only via LLM
@@ -610,6 +590,21 @@ func MetadataConditionToDocIDs(metaData common.MetaData, metadataCondition map[s
 // When kbIDs is supplied, metadata filters are pushed down to the doc metadata
 // index (ES/Infinity) via FilterDocIdsByMetaPushdown instead of being evaluated
 // in-memory. The in-memory meta_filter path remains the fallback.
+//
+// The return value carries three distinct outcomes:
+//
+//   - nil -- no metadata narrowing: the generated filter produced no
+//     conditions, or conditions that selected nothing. Callers keep their own
+//     document scope and search it unfiltered; a filter that fails to narrow is
+//     recoverable, one that narrows to the wrong documents is not.
+//   - []string{NoMatchDocIDSentinel} -- manual conditions that match no document.
+//     Only manual mode produces the sentinel, and it means zero results on
+//     purpose: the user asked for those exact conditions.
+//   - any other slice -- the documents the filter selected.
+//
+// nil must never be turned into the sentinel: that would answer "the metadata
+// was unusable" with "no documents exist", which is the one outcome the user
+// did not ask for.
 func ApplyMetaDataFilter(
 	ctx context.Context,
 	metaDataFilter map[string]interface{},
@@ -619,9 +614,9 @@ func ApplyMetaDataFilter(
 	baseDocIDs []string,
 	kbIDs []string,
 	manualValueResolver ...ManualValueResolver,
-) ([]string, bool) {
+) []string {
 	if metaDataFilter == nil {
-		return baseDocIDs, false
+		return baseDocIDs
 	}
 
 	method, _ := metaDataFilter["method"].(string)
@@ -666,14 +661,16 @@ func ApplyMetaDataFilter(
 		filters, err := GenMetaFilter(ctx, chatModel, metaData, question, nil)
 		if err != nil {
 			common.Warn("Failed to generate meta filter", zap.Error(err))
-			return baseDocIDs, false
+			return baseDocIDs
 		}
 		filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
 		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(docIDs) == 0 {
-			return nil, true // Return nil to indicate auto filter returned empty
+			// No conditions, or conditions that selected nothing: the model was
+			// not able to narrow the search, so it stays unnarrowed.
+			return nil
 		}
-		return docIDs, false
+		return docIDs
 
 	case "semi_auto":
 		selectedKeys := []string{}
@@ -708,14 +705,14 @@ func ApplyMetaDataFilter(
 				filters, err := GenMetaFilter(ctx, chatModel, filteredMeta, question, constraints)
 				if err != nil {
 					common.Warn("Failed to generate meta filter", zap.Error(err))
-					return baseDocIDs, false
+					return baseDocIDs
 				}
 				filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
 				docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 				if len(docIDs) == 0 {
-					return nil, true
+					return nil
 				}
-				return docIDs, false
+				return docIDs
 			}
 		}
 
@@ -726,7 +723,7 @@ func ApplyMetaDataFilter(
 			logic = logicVal
 		}
 		if len(manualFilters) == 0 {
-			return baseDocIDs, false
+			return baseDocIDs
 		}
 
 		// Apply manual_value_resolver callback if provided
@@ -761,12 +758,13 @@ func ApplyMetaDataFilter(
 		filteredIDs := runMetadataFilter(conditions, logic)
 		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(manualFilters) > 0 && len(docIDs) == 0 {
-			return []string{NoMatchDocIDSentinel}, false
+			// The user named these conditions, so no match is the answer.
+			return []string{NoMatchDocIDSentinel}
 		}
-		return docIDs, false
+		return docIDs
 	}
 
-	return baseDocIDs, false
+	return baseDocIDs
 }
 
 // chatMetadataDocIDs is shared by standard retrieval and the agent's corpus tools.
@@ -783,11 +781,7 @@ func (s *ChatPipelineService) chatMetadataDocIDs(ctx context.Context, chat *enti
 		common.Warn("loadMetaData failed; skipping meta_data_filter", zap.Error(err))
 		return docIDs
 	}
-	filtered, empty := ApplyMetaDataFilter(ctx, *chat.MetaDataFilter, meta, question, model, docIDs, kbIDs)
-	if empty {
-		return []string{NoMatchDocIDSentinel}
-	}
-	if filtered != nil {
+	if filtered := ApplyMetaDataFilter(ctx, *chat.MetaDataFilter, meta, question, model, docIDs, kbIDs); filtered != nil {
 		common.Debug("meta_data_filter applied", zap.Int("filtered_count", len(filtered)), zap.Int("pre_filter_count", len(docIDs)))
 		return filtered
 	}

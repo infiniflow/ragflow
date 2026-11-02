@@ -142,14 +142,16 @@ const FileLogsPage: FC = () => {
       {
         field: 'operation_status',
         label: t('knowledgeDetails.status'),
-        list: Object.values(RunningStatusOld).map((value) => {
-          // const value = key as RunningStatus;
-          return {
-            id: value,
-            // label: RunningStatusMap[value].label,
-            label: RunningStatusMap[value],
-          };
-        }),
+        list: Object.values(RunningStatusOld)
+          .filter((value) => value !== RunningStatusOld.UNSTART)
+          .map((value) => {
+            // const value = key as RunningStatus;
+            return {
+              id: value,
+              // label: RunningStatusMap[value].label,
+              label: RunningStatusMap[value],
+            };
+          }),
       },
       // {
       //   field: 'types',

@@ -27,10 +27,14 @@ package chunker
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
 )
@@ -58,7 +62,7 @@ func MustRegisterChunker(name string) {
 
 // imageUploadDecorator wraps a chunker component. Before upload it writes
 // ck["id"] (the single source of chunk identity) for every chunk; then it runs
-// uploadChunkImages which reads ck["id"] and uploads any raw image bytes.
+// uploadChunkMedia which reads ck["id"] and uploads raw or deferred images.
 type imageUploadDecorator struct {
 	inner runtime.Component
 }
@@ -68,8 +72,33 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	if err != nil {
 		return nil, err
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
-	if !ok || len(chunks) == 0 {
+	// Chunkers report input-shape failures through _ERROR instead of a Go
+	// error (the legacy flow contract). This decorator is the pipeline-facing
+	// component, so promote that envelope to a real error: otherwise the run
+	// continues with an empty chunk list and a malformed input looks like an
+	// empty document.
+	if msg, _ := out["_ERROR"].(string); strings.TrimSpace(msg) != "" {
+		return nil, errors.New(msg)
+	}
+	// Accept the legacy []map[string]any carrier verbatim (no round-trip, so
+	// the id-stamp/upload logic below sees the exact maps the chunker emitted).
+	// The typed []ChunkDoc carrier is normalized via GetChunks, which also
+	// bridges []any-of-map, so this choke point no longer silently skips the
+	// whole id-stamp/upload pass on a carrier-type mismatch.
+	var chunks []map[string]any
+	switch v := out["chunks"].(type) {
+	case []map[string]any:
+		chunks = v
+	default:
+		if typed, ok := schema.GetChunks(out); ok {
+			chunks = schema.ChunkDocsToMaps(typed)
+			// Write the normalized carrier back so the in-place id-stamp and
+			// image-drop mutations below propagate to the emitted envelope
+			// (the legacy []map[string]any path shares the reference already).
+			out["chunks"] = chunks
+		}
+	}
+	if len(chunks) == 0 {
 		return out, nil
 	}
 
@@ -94,12 +123,14 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	// lives in canonicalChunkID (common.go); this loop only re-derives it as
 	// a fallback for chunks whose id was not already stamped upstream.
 	//
-	// A chunk id may already be stamped (e.g. by the streamed crop-upload
-	// path, which keys MinIO by the canonical id). Reuse it so the id is
-	// computed exactly once; both routes normalize the text through
-	// canonicalChunkText, so the crop-time key and this id are identical
-	// and cannot diverge. For chunks that bypassed crop, fall back to
-	// deriving it here from the already-finalized text.
+	// A chunk id may already be stamped (by the streamed crop-upload path,
+	// or from title-family media positions and finalized headings). Reuse it so
+	// the identity is not re-derived after upload; both routes derive it through
+	// the shared helpers, so the crop-time key and this id are identical and
+	// cannot diverge. For chunks that bypassed crop, fall back to deriving
+	// it here from the already-finalized text — a captionless image folds
+	// its payload identity in (mediaChunkIdentity), so distinct images in
+	// one document never share an id.
 	for _, ck := range chunks {
 		if id, ok := ck["id"]; ok && id != "" {
 			continue
@@ -107,6 +138,11 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 		text, err := requireChunkText(ck)
 		if err != nil {
 			return nil, err
+		}
+		if text == "" {
+			image, _ := ck["image"].(string)
+			imgID, _ := ck["img_id"].(string)
+			text = mediaChunkIdentity(image, imgID, entity.MediaRefFromAny(ck["media_ref"]))
 		}
 		ck["id"] = common.ChunkID(docID, text)
 	}
@@ -117,12 +153,13 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	// persist run); in debug we drop the raw bytes so they are not held in
 	// memory until a persist stage that will never run.
 	if kbID != "" {
-		if err := uploadChunkImages(ctx, chunks, ChunkImageUploader, kbID); err != nil {
+		if _, err := uploadChunkMedia(ctx, chunks, ChunkImageUploader, kbID, docID); err != nil {
 			return nil, err
 		}
 	} else {
 		for _, ck := range chunks {
 			delete(ck, "image")
+			delete(ck, "media_ref")
 		}
 	}
 	return out, nil
@@ -132,7 +169,6 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 // by all chunker variants.
 var ChunkerInputs = map[string]string{
 	"text":          "Plain-text input. The chunker slices this into downstream chunks.",
-	"content":       "Alias for \"text\".",
 	"chunks":        "Optional upstream chunk list (structured JSON form).",
 	"name":          "Source document name. Not required on the payload: when absent it is read from the workflow-wide globals bag (CanvasState.Globals) via globals.GlobalOrInput.",
 	"file_type":     "Canonical parser routing extension used by GeneralChunker.",

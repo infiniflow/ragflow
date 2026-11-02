@@ -749,6 +749,48 @@ func TestConsolidateFigures_OnlyDataSource(t *testing.T) {
 	}
 }
 
+// TestConsolidateFigures_AppliesFigureBounds pins the crop contract: every
+// surviving figure box is pinned to its DLA region, including a single-member
+// group whose bounds the layout stages stretched (NaiveVerticalMerge's
+// empty-box branch sets prev.Bottom = curr.Bottom) and a merged group whose
+// union differs from the region.
+func TestConsolidateFigures_AppliesFigureBounds(t *testing.T) {
+	boxes := []pdf.TextBox{
+		// Single-member geometry group stretched past its region's bottom.
+		{
+			LayoutType: pdf.LayoutTypeFigure, PageNumber: 0, LayoutNo: "figure-0",
+			X0: 10, X1: 200, Top: 10, Bottom: 55,
+			FigureBounds: &pdf.Position{Left: 10, Right: 200, Top: 10, Bottom: 50},
+		},
+		// Merged group: the caption's union is narrower than the region.
+		{
+			Text: "caption", LayoutType: pdf.LayoutTypeFigure, PageNumber: 0, LayoutNo: "figure-1",
+			X0: 10, X1: 100, Top: 100, Bottom: 120,
+		},
+		{
+			LayoutType: pdf.LayoutTypeFigure, PageNumber: 0, LayoutNo: "figure-1",
+			X0: 10, X1: 200, Top: 100, Bottom: 160,
+			FigureBounds: &pdf.Position{Left: 10, Right: 200, Top: 100, Bottom: 160},
+		},
+	}
+
+	result := ConsolidateFigures(boxes)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 figures, got %d: %+v", len(result), result)
+	}
+	if got := result[0]; got.X0 != 10 || got.X1 != 200 || got.Top != 10 || got.Bottom != 50 {
+		t.Errorf("single-member figure not pinned to its region: got (%v,%v,%v,%v)",
+			got.X0, got.Top, got.X1, got.Bottom)
+	}
+	if got := result[1]; got.X0 != 10 || got.X1 != 200 || got.Top != 100 || got.Bottom != 160 {
+		t.Errorf("merged figure not pinned to its region: got (%v,%v,%v,%v)",
+			got.X0, got.Top, got.X1, got.Bottom)
+	}
+	if result[1].Text != "caption" {
+		t.Errorf("merged figure lost its text: %q", result[1].Text)
+	}
+}
+
 func TestExtractTableAndReplace_MergeTablesAcrossPages(t *testing.T) {
 	// Regression test: ExtractTableAndReplace must correctly replace an
 	// ALREADY-merged cross-page table (merged upstream by Parser.buildLayout at

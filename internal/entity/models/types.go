@@ -73,6 +73,8 @@ type ModelDriver interface {
 	ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error)
 
 	ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error)
+
+	Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error)
 }
 
 type ChatResponse struct {
@@ -122,8 +124,30 @@ type TTSResponse struct {
 	MediaType string `json:"media_type,omitempty"`
 }
 
+// OCRPage retains the source image dimensions and reading-order blocks.
+// Index is the zero-based source PDF page index, including blank pages.
+type OCRPage struct {
+	Index  int        `json:"index"`
+	Width  float64    `json:"width"`
+	Height float64    `json:"height"`
+	Blocks []OCRBlock `json:"blocks"`
+}
+
+// OCRBlock carries a layout region in source-image pixels. BBox is
+// [left, top, right, bottom]; an absent box is unlocated. Drivers normalize
+// provider coordinates to this rectangle before returning blocks.
+type OCRBlock struct {
+	Text  string    `json:"text"`
+	Label string    `json:"label,omitempty"`
+	BBox  []float64 `json:"bbox,omitempty"`
+}
+
 type OCRFileResponse struct {
 	Text *string `json:"text"`
+	// Pages is optional structured output for internal parsing; nil means unavailable.
+	Pages []OCRPage `json:"-"`
+	// Warnings reports partial failures internally; the public response stays text-only.
+	Warnings []string `json:"-"`
 }
 
 type ListModelResponse struct {
@@ -155,6 +179,72 @@ type TaskResponse struct {
 	Segments []TaskSegment `json:"segments"`
 }
 
+type Question interface {
+	isQuestion()
+}
+
+type Noul struct {
+	Instructions any           `json:"instructions"`
+	Criteria     *NoulCriteria `json:"criteria,omitempty"`
+}
+
+func (Noul) isQuestion() {}
+
+func (q Noul) MarshalJSON() ([]byte, error) {
+	type question Noul
+	return json.Marshal(struct {
+		Type string `json:"type"`
+		question
+	}{Type: "noul", question: question(q)})
+}
+
+type NoulCriteria struct {
+	True  any `json:"true,omitzero"`
+	False any `json:"false,omitzero"`
+}
+
+type Choice struct {
+	Instructions any
+	Criteria     any
+}
+
+func (Choice) isQuestion() {}
+
+type Score struct {
+	Instructions any
+	Criteria     any
+}
+
+func (Score) isQuestion() {}
+
+type Box struct {
+	Instructions any
+}
+
+func (Box) isQuestion() {}
+
+type DecideRequest struct {
+	State     any                 `json:"state"`
+	Questions map[string]Question `json:"questions"`
+}
+
+// MaxDecisionQuestions is the System One endpoint's per-request question limit.
+const MaxDecisionQuestions = 16
+
+type DecisionAnswer struct {
+	Type string   `json:"type"`
+	Noul *float64 `json:"noul"`
+}
+
+type DecideResponse struct {
+	ID      string                    `json:"id"`
+	Answers map[string]DecisionAnswer `json:"answers"`
+	Usage   struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
+}
+
 type ModelListItem struct {
 	ID            string `json:"id"`
 	ContextLength *int   `json:"context_length"`
@@ -169,14 +259,17 @@ type ModelList struct {
 
 // URLSuffix represents the URL suffixes for different API endpoints
 type URLSuffix struct {
-	Chat          string `json:"chat"`
-	AsyncChat     string `json:"async_chat"`
-	AsyncResult   string `json:"async_result"`
-	Embedding     string `json:"embedding"`
-	Rerank        string `json:"rerank"`
-	TTS           string `json:"tts"`
-	ASR           string `json:"asr"`
-	OCR           string `json:"ocr"`
+	Chat        string `json:"chat"`
+	AsyncChat   string `json:"async_chat"`
+	AsyncResult string `json:"async_result"`
+	Embedding   string `json:"embedding"`
+	Rerank      string `json:"rerank"`
+	TTS         string `json:"tts"`
+	ASR         string `json:"asr"`
+	OCR         string `json:"ocr"`
+	// Decision is the TypeSafe System One path: a separate endpoint from chat
+	// because it takes one request carrying many questions, not a message list.
+	Decision      string `json:"decision"`
 	DocumentParse string `json:"doc_parse"`
 	Models        string `json:"models"`
 	Balance       string `json:"balance"`
@@ -258,6 +351,10 @@ type TTSConfig struct {
 
 type OCRConfig struct {
 	Algorithm string
+	// Pages restricts OCR to these 1-indexed inclusive [from, to] ranges, the
+	// parser setup's "pages" shape. Empty means the whole document. Drivers
+	// whose backend cannot select pages ignore it.
+	Pages [][]int
 }
 
 type ParseFileConfig struct {
@@ -272,7 +369,7 @@ type EmbeddingModel struct {
 	ModelName    *string
 	APIConfig    *APIConfig
 	MaxTokens    int  // Max input tokens for the embedding model, used for text truncation
-	MaxBatchSize *int // Max texts per Embed request; nil means "resolve from provider capability at use site"
+	MaxBatchSize *int // Max texts per driver request; Embed resolves nil from the provider capability
 	info         *ModelInfo
 }
 
@@ -304,7 +401,7 @@ func (m *EmbeddingModel) Info() *ModelInfo {
 	return cloneModelInfo(m.info)
 }
 
-// ResolveBatchSize returns the safe maximum texts per Embed request. The
+// ResolveBatchSize returns the safe maximum texts per driver request. The
 // effective limit cannot exceed either the model's declared maximum or the
 // provider/runtime batch capability; these values can differ (for example, a
 // provider model config can declare max_batch_size=32 while its driver only

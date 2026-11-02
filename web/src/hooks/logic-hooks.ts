@@ -217,8 +217,11 @@ export const useGetPagination = (options?: { pageSize?: number }) => {
   const { t } = useTranslate('common');
 
   const onPageChange: Pagination['onChange'] = useCallback(
-    (pageNumber: number, pageSize: number) => {
-      setPagination({ page: pageNumber, pageSize });
+    (pageNumber: number, pageSize?: number) => {
+      setPagination((pre) => ({
+        page: pageNumber,
+        pageSize: pageSize ?? pre.pageSize,
+      }));
     },
     [],
   );

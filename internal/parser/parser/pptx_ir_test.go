@@ -10,6 +10,7 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 		name      string
 		irJSON    string
 		wantTexts []string // one entry per expected slide item
+		wantRows  [][]string
 		wantErr   bool
 	}{
 		{
@@ -55,7 +56,7 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 					]}
 				]}
 			]}]}`,
-			wantTexts: []string{"H1\nH2\na\nb"},
+			wantRows: [][]string{{"H1", "H2"}, {"a", "b"}},
 		},
 		{
 			name: "hard line break keeps newline",
@@ -116,7 +117,7 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 					]}
 				]}
 			]}]}]}`,
-			wantTexts: []string{"Q1\nA1"},
+			wantRows: [][]string{{"Q1", "A1"}},
 		},
 		{
 			// Same flattening path with a list inside the text_box: the
@@ -156,7 +157,7 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 					]}
 				]}
 			]}]}]}`,
-			wantTexts: []string{"head\nli1\nli2"},
+			wantRows: [][]string{{"head\nli1\nli2"}},
 		},
 		{
 			name:    "invalid JSON",
@@ -180,6 +181,16 @@ func TestBuildPPTXJSONSections(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatalf("buildPPTXJSONSections: %v", err)
+			}
+			if tt.wantRows != nil {
+				if len(items) != 1 {
+					t.Fatalf("items=%#v", items)
+				}
+				requireTableRows(t, items[0], tt.wantRows)
+				if items[0]["slide_number"] != 1 {
+					t.Fatalf("slide lost: %#v", items[0])
+				}
+				return
 			}
 			if len(items) != len(tt.wantTexts) {
 				t.Fatalf("items = %d, want %d: %+v", len(items), len(tt.wantTexts), items)
@@ -219,8 +230,8 @@ func TestBuildPPTXJSONSections_ExtractsSlideImagesInOrder(t *testing.T) {
 	}{
 		{docType: "text", text: "slide text", slide: 1},
 		{docType: "image", image: "aGVsbG8=", slide: 1, order: 1},
+		{docType: "table", slide: 1},
 		{docType: "image", image: "aW1hZ2U=", slide: 1, order: 2},
-		{docType: "text", slide: 2},
 		{docType: "image", image: "c2Vjb25k", slide: 2, order: 1},
 	}
 	if len(items) != len(want) {

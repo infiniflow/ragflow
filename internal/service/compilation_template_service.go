@@ -36,24 +36,24 @@ import (
 
 // fillConfigDefaultLLM mirrors Python CompilationTemplateService.
 // fill_config_default_llm: when the config has no explicit llm_id it lazily
-// fills the tenant's default chat model id (read-side only; the DB row is left
+// fills the current member's default chat model id (read-side only; the DB row is left
 // untouched).
-func fillConfigDefaultLLM(ctx context.Context, tenantDAO *dao.TenantDAO, config entity.JSONMap, tenantID *string) entity.JSONMap {
+func fillConfigDefaultLLM(ctx context.Context, config entity.JSONMap, tenantID *string) entity.JSONMap {
 	if len(config) == 0 || tenantID == nil || *tenantID == "" {
 		return config
 	}
 	if _, ok := config["llm_id"]; ok {
 		return config
 	}
-	tenant, err := tenantDAO.GetByID(ctx, dao.DB, *tenantID)
-	if err != nil || tenant == nil || tenant.TenantLLMID == nil {
+	_, modelID, err := NewTenantService().GetDefaultModelRefsForTenant(ctx, *tenantID, entity.ModelTypeChat)
+	if err != nil || modelID == "" {
 		return config
 	}
 	out := make(entity.JSONMap, len(config)+1)
 	for k, v := range config {
 		out[k] = v
 	}
-	out["llm_id"] = *tenant.TenantLLMID
+	out["llm_id"] = modelID
 	return out
 }
 
@@ -121,7 +121,7 @@ func (s *CompilationTemplateService) ListBuiltins(ctx context.Context, tenantID 
 	}
 	tenantPtr := &tenantID
 	for _, template := range templates {
-		template.Config = fillConfigDefaultLLM(ctx, s.tenantDAO, template.Config, tenantPtr)
+		template.Config = fillConfigDefaultLLM(ctx, template.Config, tenantPtr)
 	}
 	return s.sortBuiltins(templates), nil
 }

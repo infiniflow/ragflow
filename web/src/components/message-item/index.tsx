@@ -36,6 +36,7 @@ import SvgIcon from '../svg-icon';
 import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.module.less';
+import { TurnUsage } from './turn-usage';
 
 interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   item: IMessage;
@@ -174,6 +175,14 @@ const MessageItem = ({
                     clickDocumentButton={clickDocumentButton}
                     disableMath={isUser}
                   ></MarkdownContent>
+                )}
+                {/* What the turn cost. Under the answer, and only for the turn
+                    that reported it — see TurnUsage. */}
+                {isAssistant && (
+                  <TurnUsage
+                    usage={item.usage}
+                    elapsedMs={item.elapsed_ms}
+                  ></TurnUsage>
                 )}
               </div>
             )}

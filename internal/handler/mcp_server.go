@@ -119,7 +119,7 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 func mcpListDatasets(ctx context.Context, ds *dataset.DatasetService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
 	data, total, _, err := ds.ListDatasets(ctx,
 		"", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}},
-		"", nil, "", userID, nil,
+		"", nil, "", userID, nil, "",
 	)
 	return data, total, err
 }

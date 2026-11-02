@@ -17,12 +17,16 @@ function Harness() {
     handleInvalidSubmit,
     modelSettingOpen,
     advancedSettingOpen,
+    naiveSettingOpen,
+    agenticSettingOpen,
   } = useRevealSubmitErrors();
 
   return (
     <form ref={formContainerRef}>
       <span data-testid="model-open">{String(modelSettingOpen)}</span>
       <span data-testid="advanced-open">{String(advancedSettingOpen)}</span>
+      <span data-testid="naive-open">{String(naiveSettingOpen)}</span>
+      <span data-testid="agentic-open">{String(agenticSettingOpen)}</span>
       <button type="button" onClick={handleInvalidSubmit}>
         save
       </button>
@@ -32,20 +36,24 @@ function Harness() {
 }
 
 describe('useRevealSubmitErrors', () => {
-  it('keeps both sections collapsed initially', () => {
+  it('keeps all sections collapsed initially', () => {
     render(<Harness />);
 
     expect(screen.getByTestId('model-open')).toHaveTextContent('false');
     expect(screen.getByTestId('advanced-open')).toHaveTextContent('false');
+    expect(screen.getByTestId('naive-open')).toHaveTextContent('false');
+    expect(screen.getByTestId('agentic-open')).toHaveTextContent('false');
   });
 
-  it('expands both sections and scrolls to the first error on invalid submit', () => {
+  it('expands all sections and scrolls to the first error on invalid submit', () => {
     render(<Harness />);
 
     fireEvent.click(screen.getByText('save'));
 
     expect(screen.getByTestId('model-open')).toHaveTextContent('true');
     expect(screen.getByTestId('advanced-open')).toHaveTextContent('true');
+    expect(screen.getByTestId('naive-open')).toHaveTextContent('true');
+    expect(screen.getByTestId('agentic-open')).toHaveTextContent('true');
     expect(scrollIntoViewMock).toHaveBeenCalledTimes(1);
     expect(scrollIntoViewMock).toHaveBeenCalledWith({
       behavior: 'smooth',

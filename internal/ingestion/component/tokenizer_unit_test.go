@@ -174,7 +174,10 @@ func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
+	if !ok {
+		t.Fatalf("chunks carrier missing or invalid: %v", out["chunks"])
+	}
 	if len(chunks) != 0 {
 		t.Errorf("chunks len = %d, want 0", len(chunks))
 	}
@@ -201,7 +204,10 @@ func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
+	if !ok {
+		t.Fatalf("chunks carrier missing or invalid: %v", out["chunks"])
+	}
 	if len(chunks) != 0 {
 		t.Errorf("chunks len = %d, want 0", len(chunks))
 	}
@@ -225,7 +231,7 @@ func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(got) != 1 {
 		t.Fatalf("chunks len = %d, want 1", len(got))
 	}
@@ -264,7 +270,7 @@ func TestTokenizerComponent_FullTextIncludesMediaContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if got := chunks[0]["content_ltks"]; got != "above table body below" {
 		t.Fatalf("content_ltks = %q, want contextual text", got)
 	}
@@ -436,7 +442,7 @@ func TestValidateTokenizerOutputs_SymbolOnlyContentLtksIsEmptyFails(t *testing.T
 func TestChunkDocsToMaps_PreservesPDFPositions(t *testing.T) {
 	pos := json.RawMessage(`[[1,10,20,30,40],[2,15,25,35,45]]`)
 	chunks := []schema.ChunkDoc{
-		{Text: "PDF paragraph", DocType: "text", CKType: "text",
+		{Text: "PDF paragraph", DocType: "text",
 			Positions: pos, PDFPositions: pos},
 	}
 	maps := schema.ChunkDocsToMaps(chunks)
@@ -555,7 +561,7 @@ func TestChunkOrderInt_EmbeddingOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 2 {
 		t.Fatalf("want 2 chunks, got %d", len(chunks))
 	}
@@ -598,7 +604,7 @@ func TestChunksFromTokenizerUpstream_FiltersPhantomChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("want 1 chunk (5 phantoms filtered), got %d: %#v", len(chunks), chunks)
 	}
@@ -628,7 +634,7 @@ func TestTokenizerComponent_KeepsContextOnlyMediaChunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("chunks = %#v, want context-bearing media chunk retained", chunks)
 	}
@@ -689,7 +695,7 @@ func TestChunkOrderInt_AllPathsUnconditional(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
-			chunks := out["chunks"].([]map[string]any)
+			chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 			if len(chunks) != tc.wantChunks {
 				t.Fatalf("want %d chunks, got %d: %#v", tc.wantChunks, len(chunks), chunks)
 			}
@@ -742,7 +748,7 @@ func TestChunkOrderInt_A5FilterKeepsSequenceContiguous(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 2 {
 		t.Fatalf("want 2 surviving chunks, got %d: %#v", len(chunks), chunks)
 	}
@@ -790,7 +796,7 @@ func TestTokenizerComponent_ImportantKwd_CommaOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, ok := out["chunks"].([]map[string]any)
+	got, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(got) != 1 {
 		t.Fatalf("chunks = %v, want 1 chunk", out["chunks"])
 	}
@@ -843,7 +849,7 @@ func TestTokenizerComponent_ImportantKwd_PreservesEmptyElements(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, ok := out["chunks"].([]map[string]any)
+	got, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(got) != 1 {
 		t.Fatalf("chunks = %v, want 1 chunk", out["chunks"])
 	}
@@ -874,7 +880,7 @@ func TestTokenizerComponent_ImportantKwd_PreservesEmptyElements(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke(empty keywords): %v", err)
 	}
-	gotEmpty, ok := outEmpty["chunks"].([]map[string]any)
+	gotEmpty, ok := schema.ChunkCarrierToMaps(outEmpty["chunks"])
 	if !ok || len(gotEmpty) != 1 {
 		t.Fatalf("empty chunks = %v, want 1 chunk", outEmpty["chunks"])
 	}
@@ -958,7 +964,7 @@ func TestTokenizerComponent_ImportantKwd_Bounded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, ok := out["chunks"].([]map[string]any)
+	got, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(got) != 1 {
 		t.Fatalf("chunks = %v, want 1 chunk", out["chunks"])
 	}

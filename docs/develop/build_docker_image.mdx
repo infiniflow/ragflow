@@ -10,63 +10,103 @@ sidebar_custom_props: {
 
 # Build RAGFlow Docker Image
 
-Build the Go backend and web frontend into a local Docker image for development and testing. The image uses external LLM and embedding services at runtime.
+Build RAGFlow from source into a local Docker image for development and testing. The image uses external LLM and embedding services at runtime.
 
 ## Prerequisites
 
 - A recommended starting configuration of 4 CPU cores, 16 GB RAM, and 50 GB free disk space. Actual requirements depend on the selected document engine, local models, build concurrency, and data volume.
-- Docker &ge; 24.0.0 with Docker Compose &ge; v2.26.1 and BuildKit
-- Access to the `infiniflow/ragflow_deps:latest` and `infiniflow/github_action_runner:latest` images during the build
+- Docker &ge; 24.0.0 with Docker Compose &ge; v2.26.1 and BuildKit.
+- Access to `infiniflow/ragflow_deps:latest` and the build image for your target architecture: `infiniflow/github_action_runner:latest` for x86-64 or `infiniflow/github_action_runner:latest-arm64` for ARM64.
+- Internet access during the build to download system packages, fonts, tokenizer resources, npm dependencies, and Go modules. Pulling the dependency images in advance is not sufficient for an offline build.
 
-The documented Go image target is `linux/amd64`. macOS is temporarily not supported by the Go backend; use a Linux x86_64 host (or a Linux x86_64 virtual machine) to run the Go services.
+RAGFlow provides prebuilt Docker images for Linux x86-64 and ARM64 starting with v1.0.0-rc2. To deploy a published image, follow the [Quickstart](../quickstart.mdx). The instructions below cover building a Docker image from source on a Linux host matching the target architecture.
+
+For the default Elasticsearch document engine on Linux, set `vm.max_map_count` to at least 262144 on the Docker host.
+
+```bash
+sysctl vm.max_map_count
+# Run this only if the current value is below 262144.
+sudo sysctl -w vm.max_map_count=262144
+```
+
+This change is temporary. To preserve it after a reboot, add or update `vm.max_map_count=262144` in `/etc/sysctl.conf`. This step is usually unnecessary with Infinity.
 
 ## Platform support
 
-- **Linux x86-64:** This is the only supported Docker build target. In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
-- **macOS:** Temporarily not supported by the Go backend. The server depends on native libraries published only for Linux x86-64, so the `linux/amd64` image cannot be built or run reliably on macOS (including through Docker Desktop emulation). Use a Linux x86-64 host or a Linux x86-64 virtual machine.
-- **Linux ARM64:** A native Go Docker build is not currently supported. The Go image depends on native libraries that are published for Linux x86-64. Use a Linux x86-64 host for a supported native build.
+- **Linux x86-64:** Native Docker builds targeting `linux/amd64` are supported. In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
+- **macOS:** macOS is not currently supported by the Go backend. Use a Linux host for this workflow.
+- **Linux ARM64:** Native Docker builds targeting `linux/arm64` are supported. Build on a Linux ARM64 host using the ARM64 build image and native dependencies.
 - **Document engines:** Elasticsearch is the default engine in the Compose example. Infinity and other supported engines may have different CPU, GPU, and architecture requirements; verify the selected engine before deployment.
 
-Before starting the stack, make sure the host ports used by the selected Compose profile are available. At minimum, check the web, metadata database, cache, object storage, and NATS monitoring ports. For the Go deployment, change the corresponding values in `docker/.env`; use `docker/.env` only when a separate command explicitly loads that file.
+Before starting the stack, make sure the host ports used by the selected Compose profile are available. At minimum, check the web, metadata database, cache, object storage, and NATS monitoring ports. Change the corresponding host-published port values in `docker/.env`. The startup commands below run from `docker/`, where Compose automatically reads `.env`; the RAGFlow service also loads it through `env_file`.
 
-## Build the Go image
+## Build the RAGFlow Docker image
 
 Run the build from the repository root. Keep the `.git` directory in the build context: `Dockerfile` uses it to stamp the image version.
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow
-docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
+git checkout v1.0.0-rc2
 ```
 
-`Dockerfile` builds the Go server and web frontend. `infiniflow/ragflow_deps:latest` supplies document models and tokenizer assets; `infiniflow/github_action_runner:latest` supplies the build toolchain and prebuilt ONNX Runtime libraries. You do not need to build either dependency image separately for this command.
+Use the same release tag as the README deployment instructions so the image and local Compose files match. For development, check out the branch or commit you intend to test instead, and keep its Docker deployment files with the built image.
+
+On a Linux x86-64 host:
+
+```bash
+docker build --platform linux/amd64 -f Dockerfile -t ragflow:local .
+```
+
+On a Linux ARM64 host:
+
+```bash
+docker build --platform linux/arm64 -f Dockerfile -t ragflow:local .
+```
+
+`Dockerfile` builds the RAGFlow server and web frontend. `infiniflow/ragflow_deps:latest` supplies document models and tokenizer assets. The build stages use `infiniflow/github_action_runner:latest` for x86-64 or `infiniflow/github_action_runner:latest-arm64` for ARM64 to provide the toolchain and native dependencies, including ONNX Runtime libraries. These images must be accessible during the build; you do not need to build them separately.
 
 ## Start the service
 
-For the default Elasticsearch document engine on Linux, set `vm.max_map_count` to at least 262144 on the Docker host.
-
-```bash
-sudo sysctl -w vm.max_map_count=262144
-```
-
-Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env`. That file also controls the document engine, CPU or GPU selection, ports, and dependency credentials. Change the default passwords before making the service accessible over a network.
+Set `RAGFLOW_IMAGE=ragflow:local` in `docker/.env` and keep `DEVICE=cpu` for this deployment. The Compose file defines the RAGFlow service under the `cpu` profile; setting `DEVICE=gpu` does not start that service. The `.env` file also controls the document engine, ports, and dependency credentials. Change the default passwords before making the service accessible over a network.
 
 ```bash
 cd docker
 docker compose -f docker-compose.yml up -d
 ```
 
-The Compose deployment starts the `ragflow-cpu` service. The open-source 1.0 Go DeepDoc backend uses CPU inference.
+The Compose deployment starts the `ragflow-cpu` service and its selected dependencies. With the default MySQL configuration, the image entrypoint runs database migrations before starting Admin, Syncer, Ingestor, API, and other services. The open-source 1.0 Go DeepDoc backend uses CPU inference.
 
 ## Verify the service
 
+Run the following commands from `docker/`. Check the dependency services first:
+
 ```bash
 docker ps
-docker logs --tail 50 ragflow-cpu
+```
+
+After the dependencies show `healthy` and the RAGFlow container remains running, check the HTTP endpoint. The RAGFlow container itself does not define a Compose healthcheck.
+
+```bash
 curl -f http://localhost/api/v1/system/healthz
 ```
 
-A healthy API returns HTTP 200. If you changed `SVR_WEB_HTTP_PORT` in `.env`, use that port in the health-check URL and when opening the web interface in a browser.
+If initialization is still in progress, wait and retry. If startup fails, inspect the service logs:
 
-For a development checkout, a database version error may require `RAGFLOW_DEV_MODE=true` in `.env`. Use this only for local development; keep it `false` for production.
+```bash
+docker logs --tail 50 ragflow-cpu
+```
 
+If startup is blocked because a development branch reports a code version older than the database migration version, consider setting `RAGFLOW_DEV_MODE=true` in `.env` for local development only. Keep it `false` for production. After changing `.env`, apply the setting by running:
+
+```bash
+docker compose -f docker-compose.yml up -d
+```
+
+After receiving HTTP 200, open `http://IP_OF_YOUR_MACHINE` in a browser and log in. If you changed `SVR_WEB_HTTP_PORT` in `.env`, use that port in both the health-check URL and the web interface URL.
+
+After signing in, add an LLM, embedding, and reranker on the model provider page, including the model name, service address, and API key. See [Configure model API keys](https://ragflow.io/docs/dev/llm_api_key_setup) for details.
+
+## Docker configuration and adjustment
+
+Docker deployment uses `docker/.env` and `docker/docker-compose.yml`. See the [Docker configuration guide](../../docker/README.md) for configuring the RAGFlow image, ports, passwords, document engine, and embedding service image, as well as restarting services and retaining or removing existing data.

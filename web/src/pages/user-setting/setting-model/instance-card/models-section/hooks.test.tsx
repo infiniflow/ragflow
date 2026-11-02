@@ -58,7 +58,11 @@ jest.mock('@/hooks/use-llm-request', () => ({
   }),
 }));
 
-jest.mock('@/components/dynamic-form', () => ({}));
+// The module chain under test (instance-card/hooks -> provider-schema field
+// configs) reads `FormFieldType` at import time, so the stub must expose it.
+jest.mock('@/components/dynamic-form', () => ({
+  FormFieldType: new Proxy({}, { get: (_t, key) => String(key) }),
+}));
 
 jest.mock('../../provider-schema/hooks', () => ({
   useProviderFields: jest.fn(),
@@ -121,6 +125,7 @@ describe('Bedrock model credentials', () => {
         provider_name: 'Bedrock',
         api_key: apiKey,
         base_url: undefined,
+        instance_name: 'bedrock-instance',
       }),
     );
   });
@@ -213,6 +218,113 @@ describe('Bedrock model credentials', () => {
     await act(async () => result.current.mutations.handleBatchToggleModels());
     expect(mockUpdateProviderInstance).toHaveBeenCalledWith(
       expect.objectContaining({ api_key: apiKey, region: 'default' }),
+    );
+  });
+});
+
+describe('API-key-gated model listing (SystemOne / RAGcon)', () => {
+  beforeEach(() => {
+    mockListProviderModels.mockReset().mockResolvedValue({ code: 0, data: [] });
+  });
+
+  it('defers the SystemOne auto-fetch until an api_key is available', async () => {
+    let apiKey = '';
+    const resolveCreds = () => ({ apiKey, baseUrl: undefined });
+
+    const { rerender } = renderHook(
+      ({ apiKeyValue }) =>
+        useModelsCatalog({
+          providerName: 'SystemOne',
+          instanceName: DRAFT_INSTANCE_SENTINEL,
+          hideActions: false,
+          resolveCreds,
+          instanceModels: undefined,
+          apiKeyValue,
+          baseUrlValue: undefined,
+        }),
+      { initialProps: { apiKeyValue: apiKey } },
+    );
+
+    expect(mockListProviderModels).not.toHaveBeenCalled();
+
+    apiKey = 'draft-key';
+    rerender({ apiKeyValue: apiKey });
+
+    await waitFor(() =>
+      expect(mockListProviderModels).toHaveBeenCalledWith({
+        provider_name: 'SystemOne',
+        api_key: apiKey,
+        base_url: undefined,
+      }),
+    );
+  });
+
+  it('defers the RAGcon auto-fetch when base_url is set but api_key is missing', async () => {
+    let apiKey = '';
+    const baseUrl = 'https://api.ragcon.ai/v1';
+    const resolveCreds = () => ({ apiKey, baseUrl });
+
+    const { rerender } = renderHook(
+      ({ apiKeyValue }) =>
+        useModelsCatalog({
+          providerName: 'RAGcon',
+          instanceName: DRAFT_INSTANCE_SENTINEL,
+          hideActions: false,
+          resolveCreds,
+          instanceModels: undefined,
+          apiKeyValue,
+          baseUrlValue: baseUrl,
+        }),
+      { initialProps: { apiKeyValue: apiKey } },
+    );
+
+    // base_url alone must not trigger the fetch — the key gate still applies.
+    expect(mockListProviderModels).not.toHaveBeenCalled();
+
+    apiKey = 'draft-key';
+    rerender({ apiKeyValue: apiKey });
+
+    await waitFor(() =>
+      expect(mockListProviderModels).toHaveBeenCalledWith({
+        provider_name: 'RAGcon',
+        api_key: apiKey,
+        base_url: baseUrl,
+      }),
+    );
+  });
+
+  it('auto-fetches a saved RAGcon instance once its stored api_key loads', async () => {
+    let apiKey = '';
+    const baseUrl = 'https://api.ragcon.ai/v1';
+    const resolveCreds = () => ({ apiKey, baseUrl });
+
+    const { rerender } = renderHook(
+      ({ apiKeyValue, instanceDetailsLoaded }) =>
+        useModelsCatalog({
+          providerName: 'RAGcon',
+          instanceName: 'ragcon-instance',
+          hideActions: false,
+          resolveCreds,
+          instanceModels: undefined,
+          apiKeyValue,
+          baseUrlValue: baseUrl,
+          instanceDetailsLoaded,
+        }),
+      { initialProps: { apiKeyValue: apiKey, instanceDetailsLoaded: false } },
+    );
+
+    expect(mockListProviderModels).not.toHaveBeenCalled();
+
+    apiKey = 'saved-key';
+    rerender({ apiKeyValue: apiKey, instanceDetailsLoaded: true });
+
+    await waitFor(() =>
+      expect(mockListProviderModels).toHaveBeenCalledWith({
+        provider_name: 'RAGcon',
+        api_key: apiKey,
+        base_url: baseUrl,
+        instance_name: 'ragcon-instance',
+      }),
     );
   });
 });

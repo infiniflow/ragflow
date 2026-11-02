@@ -19,22 +19,30 @@ package parser
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"fmt"
-	"io"
 	"strings"
 
 	"golang.org/x/net/html"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/parser/charset"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/tableutil"
 )
 
 type HTMLParser struct {
 	RemoveHeaderFooter bool
 	RemoveTOC          bool
+	textOnly           bool
 }
 
 func NewHTMLParser() *HTMLParser {
 	return &HTMLParser{}
+}
+
+// NewHTMLTextParser extracts HTML text without caching inline images.
+func NewHTMLTextParser() *HTMLParser {
+	return &HTMLParser{textOnly: true}
 }
 
 func (p *HTMLParser) String() string {
@@ -79,8 +87,18 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("html parse: %w", err)}
 	}
 	var items []map[string]any
-	state := &htmlWalkState{}
+	state := &htmlWalkState{
+		refOnly:    true,
+		ctx:        ctx,
+		mediaCache: media.CacheFromContext(ctx),
+	}
+	if p.textOnly {
+		state.resolveImage = func(string) (string, bool) { return "", false }
+	}
 	walkHTMLBlocksWithState(doc, &items, state)
+	if state.err != nil {
+		return ParseResult{Err: state.err}
+	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
@@ -93,12 +111,11 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":     filename,
 			"encoding": encName,
 		},
-		JSON:     items,
+		JSON:     MapsToItems(items),
 		Warnings: state.warnings(),
 	}
 }
@@ -106,41 +123,119 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 // decodeHTMLToUTF8 converts non-UTF-8 HTML bytes to UTF-8 and reports the
 // encoding label used. It delegates to the shared DecodeToUTF8 helper.
 func decodeHTMLToUTF8(data []byte) ([]byte, string) {
-	return DecodeToUTF8(data, "text/html")
+	return charset.DecodeToUTF8(data, "text/html")
 }
 
 type htmlWalkState struct {
 	tableSequence       int
 	mediaOrder          int
 	skippedInlineImages int
+	mediaBudget         *embeddedMediaBudget
+	// refOnly defers image bytes to content-addressed references instead of
+	// carrying the normalized data URI on the item. HTML sets it; formats
+	// that still inline image bytes leave it false.
+	refOnly      bool
+	ctx          context.Context
+	mediaCache   media.Cache
+	resolveImage func(string) (string, bool)
+	err          error
 }
 
 func (s *htmlWalkState) warnings() []string {
-	if s.skippedInlineImages == 0 {
-		return nil
+	warnings := s.mediaBudget.warnings()
+	if s.skippedInlineImages > 0 {
+		warnings = append(warnings, fmt.Sprintf("document parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages))
 	}
-	return []string{fmt.Sprintf("HTML parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages)}
+	return warnings
+}
+
+func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool) {
+	if s.err != nil {
+		return "", nil, false
+	}
+	if s.resolveImage != nil {
+		normalized, ok := s.resolveImage(src)
+		return normalized, nil, ok
+	}
+	if !media.IsHTMLDataImageSource(src) {
+		return "", nil, false
+	}
+	if s.refOnly {
+		if media.HTMLImageExceedsLimit(src) {
+			return "", nil, false
+		}
+		mime, data, ok := media.DecodeHTMLImageSource(src)
+		if !ok {
+			return "", nil, false
+		}
+		if s.mediaCache == nil {
+			s.err = fmt.Errorf("html media cache is not configured")
+			return "", nil, false
+		}
+		ref, err := s.mediaCache.Put(s.ctx, "html", mime, data)
+		if err != nil {
+			s.err = fmt.Errorf("html media cache write: %w", err)
+			return "", nil, false
+		}
+		return "", &ref, true
+	}
+	if s.mediaBudget == nil {
+		s.mediaBudget = newEmbeddedMediaBudget()
+	}
+	if !s.mediaBudget.reserveItem() {
+		return "", nil, false
+	}
+	normalized, size, _, ok := media.NormalizeHTMLImageSource(src)
+	if !ok {
+		return "", nil, false
+	}
+	if !s.mediaBudget.includeReservedSize(int(size)) {
+		return "", nil, false
+	}
+	return normalized, nil, true
 }
 
 // walkHTMLBlocksWithState emits normalized text and image items in document
 // order. Inline formatting is collapsed into its parent text; script, style,
 // and noscript subtrees are skipped.
 func walkHTMLBlocksWithState(root *html.Node, out *[]map[string]any, state *htmlWalkState) {
+	if state.err != nil {
+		return
+	}
+	// Text and inline elements directly under <body> are one run of text, as
+	// a browser lays them out, so they are collected into one item. Emitted
+	// one item per text node and per inline element, "Hello <b>world</b>!"
+	// came out as the three items "Hello", "world" and "!".
+	var run *leafWriter
+	flushRun := func() {
+		if run != nil {
+			flushLeafText(run, out, "text", true)
+			run = nil
+		}
+	}
+	defer flushRun()
 	for child := root.FirstChild; child != nil; child = child.NextSibling {
-		if child.Type == html.TextNode {
-			if emitsLooseHTMLText(root) {
-				appendHTMLTextItem(out, child.Data, "text", true)
-			}
+		if state.err != nil {
+			return
+		}
+		// Invisible nodes neither show up nor end the run around them.
+		if child.Type == html.CommentNode || (child.Type == html.ElementNode &&
+			(child.Data == "script" || child.Data == "style" || child.Data == "noscript" || child.Data == "template")) {
 			continue
 		}
+		if emitsLooseHTMLText(root) && (child.Type == html.TextNode || isHTMLInlineElement(child)) {
+			if run == nil {
+				run = &leafWriter{b: &bytes.Buffer{}}
+			}
+			walkHTMLLeaf(child, run, out, "text", true, state)
+			continue
+		}
+		flushRun()
 		if child.Type != html.ElementNode {
 			continue
 		}
 		tag := child.Data
 		switch tag {
-		case "script", "style", "noscript":
-			// Skip executable / stylistic blocks entirely.
-			continue
 		case "head":
 			// Skip document metadata so it does not pollute body text.
 			continue
@@ -152,17 +247,17 @@ func walkHTMLBlocksWithState(root *html.Node, out *[]map[string]any, state *html
 			// Emit the <table> as a SINGLE structured doc_type_kwd:"table"
 			// item, in document order. Keeping the full <table>…</table>
 			// markup (not flattened) preserves row/column structure for
-			// embedding, retrieval, and LLM rendering, and doc_type_kwd/
-			// ck_type drives downstream table handling (discrete chunk +
+			// embedding, retrieval, and LLM rendering, and doc_type_kwd
+			// drives downstream table handling (discrete chunk +
 			// table context). We emit ONLY this item — no duplicate
 			// doc_type_kwd:"text" copy — so the table is embedded once and
 			// its markup does not pollute neighbouring prose chunks.
 			emitHTMLTable(child, out, state)
 			continue
 		}
-		ckType := htmlTagToCkType(tag)
+		layout := htmlTagToLayout(tag)
 		trim := tag != "pre" && tag != "textarea"
-		htmlLeafTextWithState(child, out, ckType, trim, state)
+		htmlLeafTextWithState(child, out, layout, trim, state)
 	}
 }
 
@@ -188,24 +283,42 @@ func emitsLooseHTMLText(root *html.Node) bool {
 	return root.Type == html.ElementNode && root.Data == "body"
 }
 
-func appendHTMLTextItem(out *[]map[string]any, text, ckType string, trim bool) {
+// isHTMLInlineElement reports whether n is a phrasing element, one a browser
+// lays out inside the surrounding line of text rather than as a block.
+func isHTMLInlineElement(n *html.Node) bool {
+	if n.Type != html.ElementNode {
+		return false
+	}
+	switch n.Data {
+	case "a", "abbr", "b", "bdi", "bdo", "big", "br", "cite", "code", "data",
+		"del", "dfn", "em", "font", "i", "img", "ins", "kbd", "label", "mark",
+		"q", "s", "samp", "small", "span", "strike", "strong", "sub", "sup",
+		"time", "tt", "u", "var", "wbr":
+		return true
+	}
+	return false
+}
+
+func appendHTMLTextItem(out *[]map[string]any, text, layout string, trim bool) {
 	if trim {
 		text = strings.TrimSpace(text)
 	}
 	if text == "" {
 		return
 	}
-	*out = append(*out, map[string]any{
+	item := map[string]any{
 		"text":         text,
 		"doc_type_kwd": "text",
-		"ck_type":      ckType,
-	})
+	}
+	if layout != "" {
+		item["layout"] = layout
+	}
+	*out = append(*out, item)
 }
 
-// htmlTagToCkType maps HTML block tags to the python `ck_type`
-// vocabulary used downstream by TitleChunker and similar
-// components. Tags not in the map fall back to "text".
-func htmlTagToCkType(tag string) string {
+// htmlTagToLayout maps an HTML block tag to its structural layout value.
+// Media tags are handled by their own emitters, so they have no entry here.
+func htmlTagToLayout(tag string) string {
 	switch tag {
 	case "h1", "h2", "h3", "h4", "h5", "h6":
 		return "heading"
@@ -215,14 +328,10 @@ func htmlTagToCkType(tag string) string {
 		return "list"
 	case "pre", "code":
 		return "code"
-	case "table", "tr", "td", "th":
-		return "table"
 	case "blockquote":
 		return "quote"
-	case "img":
-		return "image"
 	}
-	return "text"
+	return ""
 }
 
 // leafWriter accumulates the visible text of an HTML subtree while applying
@@ -291,27 +400,28 @@ func (w *leafWriter) hardBreak() {
 // subtrees are skipped. Whitespace is folded per CSS rules (so
 // "<h1>Hello   world</h1>" becomes "Hello world" and "<br>" survives as a
 // real line break), while <pre>/<textarea> keep their source formatting
-// verbatim. ckType is the block's ck_type (from htmlTagToCkType) applied to the
-// accumulated prose item; trim controls whether trailing/leading whitespace is
-// collapsed (false for <pre>/<textarea>, which must stay verbatim). Any <table>
+// verbatim. layout is the block's structural layout value (from
+// htmlTagToLayout) applied to the accumulated prose item; trim controls
+// whether trailing/leading whitespace is collapsed (false for
+// <pre>/<textarea>, which must stay verbatim). Any <table>
 // encountered in the subtree is emitted as a single structured
 // doc_type_kwd:"table" item at its document position (see walkHTMLLeaf's
 // "table" case) — the prose around it is flushed as ordinary text items, so
 // the table is never relocated to the end and never duplicated.
-func htmlLeafTextWithState(n *html.Node, out *[]map[string]any, ckType string, trim bool, state *htmlWalkState) {
+func htmlLeafTextWithState(n *html.Node, out *[]map[string]any, layout string, trim bool, state *htmlWalkState) {
 	var b bytes.Buffer
 	w := &leafWriter{b: &b}
-	walkHTMLLeaf(n, w, out, ckType, trim, state)
-	flushLeafText(w, out, ckType, trim)
+	walkHTMLLeaf(n, w, out, layout, trim, state)
+	flushLeafText(w, out, layout, trim)
 }
 
 // flushLeafText emits any text accumulated in w as a doc_type_kwd:"text" item
-// (dropping empty output) and resets the writer. ckType/trim mirror
+// (dropping empty output) and resets the writer. layout/trim mirror
 // appendHTMLTextItem. It is called at block boundaries and at <table> elements
 // so tables are emitted in their original document position rather than being
 // relocated. Prose with no specific block tag (e.g. text accumulated just
-// before a nested table) is flushed as ck_type "text".
-func flushLeafText(w *leafWriter, out *[]map[string]any, ckType string, trim bool) {
+// before a nested table) is flushed with no layout.
+func flushLeafText(w *leafWriter, out *[]map[string]any, layout string, trim bool) {
 	text := w.b.String()
 	if trim {
 		text = strings.TrimSpace(text)
@@ -319,19 +429,23 @@ func flushLeafText(w *leafWriter, out *[]map[string]any, ckType string, trim boo
 	if text == "" {
 		return
 	}
-	appendHTMLTextItem(out, text, ckType, false)
+	appendHTMLTextItem(out, text, layout, false)
 	w.b.Reset()
 	w.lastSpace = false
 	w.lineStart = true
 	w.endsNL = false
 }
 
-func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType string, trim bool, state *htmlWalkState) {
+func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout string, trim bool, state *htmlWalkState) {
+	if state.err != nil {
+		return
+	}
 	switch n.Type {
 	case html.TextNode:
 		w.writeText(n.Data)
 	case html.ElementNode:
-		if n.Data == "script" || n.Data == "style" || n.Data == "noscript" {
+		// A <template> holds markup a script may clone; the page never shows it.
+		if n.Data == "script" || n.Data == "style" || n.Data == "noscript" || n.Data == "template" {
 			return
 		}
 		if n.Data == "br" {
@@ -340,21 +454,27 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType str
 		}
 		if n.Data == "img" {
 			src := htmlAttribute(n, "src")
-			if !usableHTMLImageSource(src) {
-				if isHTMLDataImageSource(src) {
+			normalized, ref, ok := state.imageSource(src)
+			if !ok {
+				if state.resolveImage != nil {
+					w.writeText(htmlAttribute(n, "alt"))
+				} else if media.IsHTMLDataImageSource(src) {
 					state.skippedInlineImages++
 				}
 				return
 			}
-			flushLeafText(w, out, ckType, trim)
-			appendHTMLImageItem(out, state, src, htmlAttribute(n, "alt"), "", 0, 0)
+			flushLeafText(w, out, layout, trim)
+			appendHTMLImageItem(out, state, normalized, ref, htmlAttribute(n, "alt"), "", 0, 0)
 			return
 		}
 		if n.Data == "pre" || n.Data == "textarea" {
 			// Verbatim: no folding, no injected block breaks.
 			w.pre = true
 			for child := n.FirstChild; child != nil; child = child.NextSibling {
-				walkHTMLLeaf(child, w, out, ckType, trim, state)
+				if state.err != nil {
+					return
+				}
+				walkHTMLLeaf(child, w, out, layout, trim, state)
 			}
 			w.pre = false
 			return
@@ -373,18 +493,17 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType str
 			return
 		}
 		// Add a line break between block children so headings, paragraphs,
-		// and list items don't run together.
-		if !w.pre {
-			switch n.Data {
-			case "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre",
-				"tr", "blockquote":
-				if w.b.Len() > 0 && !w.endsNL {
-					w.hardBreak()
-				}
-			}
+		// and list items don't run together. A block starts on a new line as
+		// well as ending one: without the break before it, the text in front
+		// of a nested <div> ran into the block's own ("Name:Alice").
+		if !w.pre && isBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
+			w.hardBreak()
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
-			walkHTMLLeaf(child, w, out, ckType, trim, state)
+			if state.err != nil {
+				return
+			}
+			walkHTMLLeaf(child, w, out, layout, trim, state)
 		}
 		if !w.pre && isBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
 			w.hardBreak()
@@ -394,13 +513,17 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, ckType str
 
 type htmlTableImage struct {
 	src    string
+	ref    *entity.MediaRef
 	alt    string
 	row    int
 	column int
 }
 
 func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
-	images, skippedInlineImages := htmlTableImages(n)
+	if state.err != nil {
+		return
+	}
+	images, skippedInlineImages := htmlTableImages(n, state)
 	state.skippedInlineImages += skippedInlineImages
 	markup := renderTableHTML(n)
 	if strings.TrimSpace(markup) == "" {
@@ -415,7 +538,6 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	td, _ := tableutil.ParseTableHTML(markup)
 	table := map[string]any{
 		"doc_type_kwd": "table",
-		"ck_type":      "table",
 		"table":        td,
 	}
 	tableID := ""
@@ -426,17 +548,20 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	}
 	*out = append(*out, table)
 	for _, media := range images {
-		appendHTMLImageItem(out, state, media.src, media.alt, tableID, media.row, media.column)
+		appendHTMLImageItem(out, state, media.src, media.ref, media.alt, tableID, media.row, media.column)
 	}
 }
 
-func htmlTableImages(table *html.Node) ([]htmlTableImage, int) {
+func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, int) {
 	var images []htmlTableImage
 	skippedInlineImages := 0
 	rowCount := 0
 	columnCounts := make(map[int]int)
 	var walk func(node *html.Node, row, column int)
 	walk = func(node *html.Node, row, column int) {
+		if state.err != nil {
+			return
+		}
 		if node.Type == html.ElementNode {
 			switch node.Data {
 			case "tr":
@@ -448,14 +573,22 @@ func htmlTableImages(table *html.Node) ([]htmlTableImage, int) {
 				column = columnCounts[row]
 			case "img":
 				src := htmlAttribute(node, "src")
-				if !usableHTMLImageSource(src) {
-					if isHTMLDataImageSource(src) {
+				normalized, ref, ok := state.imageSource(src)
+				if !ok {
+					if state.err != nil {
+						return
+					}
+					if state.resolveImage != nil {
+						alt := htmlAttribute(node, "alt")
+						node.Type, node.Data, node.Attr = html.TextNode, alt, nil
+					} else if media.IsHTMLDataImageSource(src) {
 						skippedInlineImages++
 						removeHTMLImageSource(node)
 					}
 				} else {
 					images = append(images, htmlTableImage{
-						src:    src,
+						src:    normalized,
+						ref:    ref,
 						alt:    htmlAttribute(node, "alt"),
 						row:    row,
 						column: column,
@@ -468,6 +601,9 @@ func htmlTableImages(table *html.Node) ([]htmlTableImage, int) {
 			}
 		}
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			if state.err != nil {
+				return
+			}
 			walk(child, row, column)
 		}
 	}
@@ -485,104 +621,25 @@ func removeHTMLImageSource(n *html.Node) {
 	n.Attr = attrs
 }
 
-func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, parentTableID string, row, column int) {
-	if comma := strings.IndexByte(src, ','); comma > 0 && len(src) >= len("data:image/") && strings.EqualFold(src[:len("data:image/")], "data:image/") {
-		src = strings.ToLower(src[:comma]) + src[comma:]
-	}
+func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src string, ref *entity.MediaRef, alt, parentTableID string, row, column int) {
 	state.mediaOrder++
 	item := map[string]any{
 		"text":         strings.TrimSpace(alt),
 		"doc_type_kwd": "image",
-		"ck_type":      "image",
 		"media_order":  state.mediaOrder,
 	}
-	item["image"] = src
+	if !state.refOnly {
+		item["image"] = src
+	}
+	if state.refOnly && ref != nil {
+		item["media_ref"] = ref
+	}
 	if parentTableID != "" {
 		item["parent_table_id"] = parentTableID
 		item["row_index"] = row
 		item["column_index"] = column
 	}
 	*out = append(*out, item)
-}
-
-func usableHTMLImageSource(src string) bool {
-	src = strings.TrimSpace(src)
-	if !isHTMLDataImageSource(src) {
-		return false
-	}
-	separator := strings.IndexByte(src, ',')
-	if separator <= len("data:image/") || separator > 128 || !strings.EqualFold(src[separator-len(";base64"):separator], ";base64") {
-		return false
-	}
-	return validBase64ImagePayload(src[separator+1:], maxEmbeddedImageBytes)
-}
-
-func isHTMLDataImageSource(src string) bool {
-	const dataPrefix = "data:image/"
-	src = strings.TrimSpace(src)
-	return len(src) >= len(dataPrefix) && strings.EqualFold(src[:len(dataPrefix)], dataPrefix)
-}
-
-func validBase64ImagePayload(payload string, maxDecodedBytes int) bool {
-	if maxDecodedBytes < 0 {
-		return false
-	}
-	maxEncodedBytes := base64.StdEncoding.EncodedLen(maxDecodedBytes)
-	encodedBytes := 0
-	for i := 0; i < len(payload); i++ {
-		if payload[i] == '\r' || payload[i] == '\n' {
-			continue
-		}
-		encodedBytes++
-		if encodedBytes > maxEncodedBytes {
-			return false
-		}
-	}
-	if encodedBytes == 0 {
-		return false
-	}
-	decodedSize, ok := base64DecodedSize(payload, encodedBytes)
-	if !ok || decodedSize > int64(maxDecodedBytes) {
-		return false
-	}
-
-	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
-		decoder := base64.NewDecoder(encoding, strings.NewReader(payload))
-		decodedBytes, err := io.CopyN(io.Discard, decoder, int64(maxDecodedBytes)+1)
-		if decodedBytes > int64(maxDecodedBytes) {
-			return false
-		}
-		if err == io.EOF {
-			return decodedBytes > 0
-		}
-	}
-	return false
-}
-
-func base64DecodedSize(payload string, encodedBytes int) (int64, bool) {
-	padding := 0
-	sawPadding := false
-	for i := 0; i < len(payload); i++ {
-		if payload[i] == '\r' || payload[i] == '\n' {
-			continue
-		}
-		if payload[i] == '=' {
-			sawPadding = true
-			padding++
-			if padding > 2 {
-				return 0, false
-			}
-			continue
-		}
-		if sawPadding {
-			return 0, false
-		}
-	}
-	if encodedBytes%4 == 1 || (padding > 0 && encodedBytes%4 != 0) {
-		return 0, false
-	}
-	decodedSize := int64(encodedBytes/4)*3 + int64(encodedBytes%4)*3/4 - int64(padding)
-	return decodedSize, decodedSize >= 0
 }
 
 func htmlAttribute(n *html.Node, key string) string {
@@ -594,10 +651,16 @@ func htmlAttribute(n *html.Node, key string) string {
 	return ""
 }
 
+// isBlockTag reports whether a browser lays tag out as a block, on lines of
+// its own (the elements the HTML rendering rules display as block or list
+// item), so its text must not run into the text around it.
 func isBlockTag(tag string) bool {
 	switch tag {
 	case "h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre",
-		"tr", "blockquote", "div", "section", "article", "header", "footer":
+		"tr", "blockquote", "div", "section", "article", "header", "footer",
+		"main", "nav", "aside", "address", "hgroup", "search", "center",
+		"ul", "ol", "menu", "dl", "dt", "dd", "figure", "figcaption",
+		"details", "summary", "dialog", "form", "fieldset", "legend", "hr":
 		return true
 	}
 	return false

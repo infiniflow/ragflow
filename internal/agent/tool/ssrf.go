@@ -153,6 +153,8 @@ func isNonGlobalIP(ip net.IP) bool {
 	return err != nil
 }
 
+// allowAnyHost reports the in-memory test override. ValidateDBHost also
+// honors ALLOW_ANY_HOST; ResolveAndValidate does not.
 func allowAnyHost() bool {
 	return common.AllowAnyHostForTest
 }
@@ -177,19 +179,14 @@ func ValidateDBHost(host string) (string, error) {
 		return "", fmt.Errorf("%w: empty host", ErrSSRFBlocked)
 	}
 
-	// Mirror ResolveAndValidate's test-only bypass.
+	// Operator opt-in. ResolveAndValidate does not use this path, so
+	// user-controlled URLs stay strict.
+	if pinned, enabled, err := common.PinConfiguredPrivateHost(host); enabled {
+		return pinned, err
+	}
+	// In-memory test hook. Still resolve so the SQL dial stays pinned.
 	if allowAnyHost() {
-		if ip := net.ParseIP(host); ip != nil {
-			return ip.String(), nil
-		}
-		addrs, lerr := common.LookupHost(host)
-		if lerr != nil {
-			return "", fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
-		}
-		if len(addrs) == 0 {
-			return "", fmt.Errorf("ssrf: %s has no A/AAAA records", host)
-		}
-		return addrs[0], nil
+		return common.ResolveHostPin(host)
 	}
 
 	// Short-circuit the well-known host aliases DNS lookups may also

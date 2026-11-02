@@ -53,6 +53,11 @@ func HandleNonStreamingResponse(ctx context.Context, body []byte, modelUsage *co
 	}
 
 	if usage != nil {
+		// Charge the run that made this call, if it is budgeted. A no-op for
+		// every other caller, which is why it sits in the shared response
+		// handler rather than in the agentic loop: the token count only exists
+		// here.
+		common.ChargeTokens(ctx, usage.TotalTokens)
 		recordResponseUsage(modelUsage, extractRequestID(result), usage, "chat")
 		if chatConfig != nil {
 			chatConfig.UsageResult = usage

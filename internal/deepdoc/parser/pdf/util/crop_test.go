@@ -126,6 +126,61 @@ func TestCropSectionImage_NegativeCoordNotDropped(t *testing.T) {
 	}
 }
 
+func TestCropMediaSectionPositionsHasNoContextBands(t *testing.T) {
+	// Media previews must be clean position-only crops (Python cropout):
+	// no 120pt context bands, no putalpha(128) edge dimming. A solid-red
+	// page stays solid red top to bottom.
+	pageImages := map[int]image.Image{
+		0: makeTestPageImage(200, 800, color.RGBA{255, 0, 0, 255}),
+	}
+	positions := []pdf.Position{{PageNumbers: []int{0}, Left: 20, Right: 120, Top: 300, Bottom: 400}}
+	b64 := CropMediaSectionPositions(positions, pageImages, 1)
+	if b64 == "" {
+		t.Fatal("expected non-empty result")
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(b64)
+	img := decodePNG(t, decoded)
+	bounds := img.Bounds()
+	// Body is 100px tall; measureSectionRasterPlan adds one 6px stitch gap.
+	if bounds.Dx() != 100 || bounds.Dy() != 106 {
+		t.Fatalf("media crop bounds = %v, want 100x106 (body only, no context)", bounds)
+	}
+	for _, y := range []int{0, bounds.Dy() - 7} {
+		r, g, b, _ := img.At(0, y).RGBA()
+		if uint8(r>>8) < 200 || uint8(g>>8) != 0 || uint8(b>>8) != 0 {
+			t.Errorf("row %d = (%d,%d,%d), want undimmed red; edge overlay leaked into media crop", y, uint8(r>>8), uint8(g>>8), uint8(b>>8))
+		}
+	}
+}
+
+func TestCropMediaSectionPositionsSpansPages(t *testing.T) {
+	// A figure spanning two pages stitches body-only segments in page
+	// order: no context bands, no dimming, first page on top.
+	pageImages := map[int]image.Image{
+		0: makeTestPageImage(200, 400, color.RGBA{255, 0, 0, 255}),
+		1: makeTestPageImage(200, 400, color.RGBA{0, 0, 255, 255}),
+	}
+	positions := []pdf.Position{{PageNumbers: []int{0, 1}, Left: 20, Right: 120, Top: 300, Bottom: 100}}
+	b64 := CropMediaSectionPositions(positions, pageImages, 1)
+	if b64 == "" {
+		t.Fatal("expected non-empty result")
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(b64)
+	img := decodePNG(t, decoded)
+	// Spanning convention: Top is local to the first page, Bottom local
+	// to the last. Page 0 contributes rows [300,400], page 1 rows [0,100],
+	// plus two 6px stitch gaps: 100 + 100 + 12.
+	if bounds := img.Bounds(); bounds.Dx() != 100 || bounds.Dy() != 212 {
+		t.Fatalf("spanning media crop bounds = %v, want 100x212", bounds)
+	}
+	if r, _, _, _ := img.At(0, 0).RGBA(); uint8(r>>8) < 200 {
+		t.Error("top rows should be page-0 red, got dimmed or wrong content")
+	}
+	if _, _, b, _ := img.At(0, 150).RGBA(); uint8(b>>8) < 200 {
+		t.Error("bottom rows should be page-1 blue, got dimmed or wrong content")
+	}
+}
+
 func TestCropSectionImage_ContextPadding(t *testing.T) {
 	pageImages := map[int]image.Image{
 		0: makeTestPageImage(200, 800, color.RGBA{255, 0, 0, 255}),
@@ -157,6 +212,81 @@ func TestCropSectionImage_ZoomScaling(t *testing.T) {
 	bounds := img.Bounds()
 	if bounds.Dx() != 180 {
 		t.Errorf("width at zoom 2: got %d, want 180", bounds.Dx())
+	}
+}
+
+func TestCropTextSectionPositionsKeepsContinuousRows(t *testing.T) {
+	page := image.NewRGBA(image.Rect(0, 0, 100, 100))
+	for y := 0; y < 100; y++ {
+		for x := 0; x < 100; x++ {
+			page.SetRGBA(x, y, color.RGBA{uint8(x), uint8(y), 0, 255})
+		}
+	}
+	for _, tc := range []struct {
+		name      string
+		firstEnd  float64
+		secondTop float64
+	}{
+		{name: "touching slices", firstEnd: 45, secondTop: 45},
+		{name: "overlapping boxes", firstEnd: 60, secondTop: 40},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			positions := []pdf.Position{
+				{PageNumbers: []int{0}, Left: 10, Right: 90, Top: 0, Bottom: tc.firstEnd},
+				{PageNumbers: []int{0}, Left: 10, Right: 90, Top: tc.secondTop, Bottom: 100},
+			}
+			got, err := DecodeBase64PNG(CropTextSectionPositions(positions, map[int]image.Image{0: page}, 1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// The empty top context occupies a 1px placeholder plus a 6px gap.
+			// Every source row must follow intact, without internal gaps or repeats.
+			for y := 0; y < 100; y++ {
+				want := color.RGBA{10, uint8(y), 0, 255}
+				if pixel := color.RGBAModel.Convert(got.At(0, 7+y)); pixel != want {
+					t.Fatalf("source row %d: got %v, want %v", y, pixel, want)
+				}
+			}
+		})
+	}
+}
+
+func TestCropTextSectionPositionsKeepsSeparateRegions(t *testing.T) {
+	red := color.RGBA{255, 0, 0, 255}
+	blue := color.RGBA{0, 0, 255, 255}
+	page := makeTestPageImage(100, 100, red).(*image.RGBA)
+	for y := 0; y < 100; y++ {
+		for x := 50; x < 100; x++ {
+			page.SetRGBA(x, y, blue)
+		}
+	}
+	for _, tc := range []struct {
+		name      string
+		second    pdf.Position
+		wantColor color.RGBA
+	}{
+		{name: "vertical gap", second: pdf.Position{PageNumbers: []int{0}, Left: 10, Right: 40, Top: 60, Bottom: 100}, wantColor: red},
+		{name: "different column", second: pdf.Position{PageNumbers: []int{0}, Left: 50, Right: 80, Top: 40, Bottom: 100}, wantColor: blue},
+		{name: "different page", second: pdf.Position{PageNumbers: []int{1}, Left: 10, Right: 40, Top: 40, Bottom: 100}, wantColor: blue},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			positions := []pdf.Position{
+				{PageNumbers: []int{0}, Left: 10, Right: 40, Top: 0, Bottom: 40},
+				tc.second,
+			}
+			got, err := DecodeBase64PNG(CropTextSectionPositions(positions, map[int]image.Image{
+				0: page, 1: makeTestPageImage(100, 100, blue),
+			}, 1))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pixel := color.RGBAModel.Convert(got.At(0, 47)); pixel != (color.RGBA{245, 245, 245, 255}) {
+				t.Fatalf("separate regions lost their gap: %v", pixel)
+			}
+			if pixel := color.RGBAModel.Convert(got.At(0, 53)); pixel != tc.wantColor {
+				t.Fatalf("second region: got %v, want %v", pixel, tc.wantColor)
+			}
+		})
 	}
 }
 

@@ -109,7 +109,7 @@ func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, mess
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	messages = prepareJinaMessages(baseURL, messages)
-	url := fmt.Sprintf("%s/%s", baseURL, j.baseModel.URLSuffix.Chat)
+	url := joinURL(baseURL, j.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
@@ -150,7 +150,7 @@ func (j *JinaModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	messages = prepareJinaMessages(baseURL, messages)
-	url := fmt.Sprintf("%s/%s", baseURL, j.baseModel.URLSuffix.Chat)
+	url := joinURL(baseURL, j.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
@@ -437,11 +437,10 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, request EmbedR
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -549,11 +548,10 @@ func (j *JinaModel) Rerank(ctx context.Context, modelName *string, request Reran
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -622,11 +620,10 @@ func (j *JinaModel) Rerank(ctx context.Context, modelName *string, request Reran
 
 func (j *JinaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Models)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -650,16 +647,34 @@ func (j *JinaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Lis
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
+	var result struct {
+		Data *[]json.RawMessage `json:"data"`
+	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
+	if result.Data == nil {
+		return nil, fmt.Errorf("invalid model list response: data must be an array")
+	}
 
-	// convert result["data"] to []map[string]interface{}
-	models := make([]ModelListItem, 0, len(result["data"].([]interface{})))
-	for _, model := range result["data"].([]interface{}) {
-		modelName := model.(map[string]interface{})["id"].(string)
+	models := make([]ModelListItem, 0, len(*result.Data))
+	for i, rawModel := range *result.Data {
+		var model map[string]json.RawMessage
+		if err := json.Unmarshal(rawModel, &model); err != nil || model == nil {
+			return nil, fmt.Errorf("invalid model list response: data[%d] must be a model object", i)
+		}
+		rawID, ok := model["id"]
+		if !ok {
+			return nil, fmt.Errorf("invalid model list response: data[%d].id is required", i)
+		}
+		var id string
+		if err := json.Unmarshal(rawID, &id); err != nil {
+			return nil, fmt.Errorf("invalid model list response: data[%d].id must be a string: %w", i, err)
+		}
+		modelName := strings.TrimSpace(id)
+		if modelName == "" {
+			return nil, fmt.Errorf("invalid model list response: data[%d].id must be a non-empty string", i)
+		}
 		models = append(models, ModelListItem{
 			ID:      modelName,
 			OwnedBy: "",
@@ -711,5 +726,9 @@ func (j *JinaModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]List
 }
 
 func (j *JinaModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", j.Name())
+}
+
+func (j *JinaModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", j.Name())
 }

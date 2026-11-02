@@ -30,6 +30,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 )
 
@@ -71,7 +73,7 @@ func NewMemoryHandler(memoryService *service.MemoryService) *MemoryHandler {
 //
 // Response Format:
 //   - code: Status code (0=success, other=error)
-//   - message: true on success, error message on failure
+//   - message: "success" on success, error message on failure
 //   - data: Memory object on success
 //
 // Business Logic (matching Python create_memory):
@@ -224,6 +226,9 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 	// Call service layer to update memory
 	result, err := h.memoryService.UpdateMemory(ctx, userID, memoryID, &req)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		errMsg := err.Error()
 		// Check if it's a "not found" error
 		if strings.Contains(errMsg, "not found") {
@@ -276,6 +281,9 @@ func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
 	// Call service layer to delete memory (with access control)
 	err := h.memoryService.DeleteMemory(ctx, user.ID, memoryID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		errMsg := err.Error()
 		// Check if it's a "not found" error
 		if strings.Contains(errMsg, "not found") {
@@ -325,7 +333,7 @@ func splitQueryValues(c *gin.Context, key string) []string {
 //
 // Response Format:
 //   - code: Status code
-//   - message: true
+//   - message: "success"
 //   - data.memory_list: Array of Memory objects
 //   - data.total_count: Total record count
 func (h *MemoryHandler) ListMemories(c *gin.Context) {
@@ -373,9 +381,14 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// Call service layer to get memory list
-	result, err := h.memoryService.ListMemories(ctx, user.ID, tenantIDs, memoryTypes, storageType, keywords, page, pageSize)
+	result, err := h.memoryService.ListMemories(ctx, user.ID, tenantIDs, memoryTypes, storageType, keywords, page, pageSize, c.Query("canvas_id"))
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		code := common.CodeServerError
+		if errors.Is(err, permission.ErrUnauthenticated) || errors.Is(err, permission.ErrPermissionDenied) ||
+			errors.Is(err, permission.ErrMembershipNotFound) || errors.Is(err, permission.ErrResourceNotFound) {
+			code, err = permissionresponse.Normalize(err)
+		}
+		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
 
@@ -392,7 +405,7 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 //
 // Response Format:
 //   - code: Status code
-//   - message: true
+//   - message: "success"
 //   - data: Memory object, including owner_name field
 func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 	// Get memory_id from URL path
@@ -413,6 +426,9 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 	// Call service layer to get memory configuration (with access control)
 	result, err := h.memoryService.GetMemoryConfig(ctx, user.ID, memoryID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		errMsg := err.Error()
 		// Check if it's a "not found" error
 		if strings.Contains(errMsg, "not found") {
@@ -445,7 +461,7 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 //
 // Response Format:
 //   - code: Status code
-//   - message: true
+//   - message: "success"
 //   - data.messages: Array of message objects
 //   - data.storage_type: Storage type
 func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
@@ -487,6 +503,9 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 
 	data, err := h.memoryService.GetMemoryMessages(c.Request.Context(), userID, memoryID, agentIDs, keywords, page, pageSize)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		if isMemoryServiceNotFound(err) {
 			common.ResponseWithCodeData(c, common.CodeNotFound, nil, err.Error())
 			return
@@ -495,7 +514,7 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, data, true)
+	common.SuccessWithData(c, data, "success")
 }
 
 type messageMemoryIDs []string
@@ -617,6 +636,9 @@ func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 	}
 
 	if err = h.memoryService.ForgetMessage(c.Request.Context(), user.ID, memoryID, messageID); err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		errMsg := err.Error()
 		if isMemoryServiceNotFound(err) {
 			common.ResponseWithCodeData(c, common.CodeNotFound, nil, errMsg)
@@ -627,7 +649,7 @@ func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoData(c, true)
+	common.SuccessNoData(c, "success")
 }
 
 func isMemoryServiceNotFound(err error) bool {
@@ -705,6 +727,9 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 
 	ok, err = h.memoryService.UpdateMessageStatus(c.Request.Context(), userID, memoryID, messageID, status)
 	if err != nil || !ok {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		if isMemoryServiceNotFound(err) {
 			common.ResponseWithCodeData(c, common.CodeNotFound, nil, err.Error())
 			return
@@ -713,7 +738,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoData(c, true)
+	common.SuccessNoData(c, "success")
 }
 
 // GetMessageContent handles GET request for getting message content
@@ -749,6 +774,9 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 
 	data, err := h.memoryService.GetMessageContent(c.Request.Context(), userID, memoryID, messageID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		if _, ok := err.(*service.ResourceNotFoundError); ok {
 			common.ResponseWithCodeData(c, common.CodeNotFound, nil, err.Error())
 			return
@@ -757,7 +785,7 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, data, true)
+	common.SuccessWithData(c, data, "success")
 }
 
 // SearchMessage handles GET request for searching messages
@@ -825,7 +853,7 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, res, true)
+	common.SuccessWithData(c, res, "success")
 }
 
 // GetMessages handles GET request for getting message list
@@ -873,7 +901,7 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, data, true)
+	common.SuccessWithData(c, data, "success")
 }
 
 // isArgumentError determines if an error message is an argument error

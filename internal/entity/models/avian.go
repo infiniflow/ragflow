@@ -57,7 +57,7 @@ func (a *AvianModel) chatURL(apiConfig *APIConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Chat), nil
+	return joinURL(baseURL, a.baseModel.URLSuffix.Chat), nil
 }
 
 func (a *AvianModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -139,12 +139,10 @@ func (a *AvianModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 		return nil, err
 	}
 
-	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	url, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -224,5 +222,9 @@ func (a *AvianModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Lis
 }
 
 func (a *AvianModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
+}
+
+func (a *AvianModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }

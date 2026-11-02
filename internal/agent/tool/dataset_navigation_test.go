@@ -33,6 +33,9 @@ func (f *navRoutingFake) Search(_ context.Context, _, _ string, query string, _ 
 	f.mu.Unlock()
 	return f.hits, nil
 }
+func (f *navRoutingFake) EncodeQueryVector(context.Context, string, string) []float64 {
+	return nil
+}
 func (f *navRoutingFake) ListClusters(context.Context, string, string, string, int, int) ([]nav.NavNode, int64, error) {
 	return f.clusters, int64(len(f.clusters)), nil
 }
@@ -201,6 +204,33 @@ func TestDatasetNavigation_DocScopeFiltersClusterFallback(t *testing.T) {
 	}
 	if docs := decodeNavDocs(t, out); len(docs) != 1 || docs[0] != "d1" {
 		t.Errorf("fallback docs = %v, want only the in-scope d1", docs)
+	}
+}
+
+// TestDatasetNavigation_RecallFallbackDisablesDenseFallback pins the agentic
+// half of the split on the content-recall tier: when the nav tree routes
+// nothing the tool recalls by chunk content, and the model reads those chunks
+// as evidence, so no dense-only rescue there either.
+func TestDatasetNavigation_RecallFallbackDisablesDenseFallback(t *testing.T) {
+	fake := &navRoutingFake{}
+	prevNav := nav.GetNavService()
+	nav.SetNavService(fake)
+	defer func() { nav.SetNavService(prevNav) }()
+
+	prevSvc := GetRetrievalService()
+	svc := &capturingRetrievalService{}
+	SetRetrievalService(svc)
+	defer func() { SetRetrievalService(prevSvc) }()
+
+	tool := NewDatasetNavigationByTree()
+	if _, err := tool.InvokableRun(navTestContext(t), `{"topic":"X","dataset_ids":["kb1"]}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if svc.req.Query == "" {
+		t.Fatal("content-recall tier was not exercised: the tool never reached the retrieval service")
+	}
+	if svc.req.AllowDenseFallback == nil || *svc.req.AllowDenseFallback {
+		t.Fatal("dataset navigation is agentic and must disable the dense fallback")
 	}
 }
 

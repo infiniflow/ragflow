@@ -97,10 +97,8 @@ func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 
-	req.TenantID = user.ID
-
 	ctx := c.Request.Context()
-	result, code, err := h.searchService.UpdateConfig(ctx, &req)
+	result, code, err := h.searchService.UpdateConfig(ctx, user.ID, &req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -130,9 +128,7 @@ func (h *SkillSearchHandler) Search(c *gin.Context) {
 		return
 	}
 
-	req.TenantID = user.ID
-
-	result, code, err := h.searchService.Search(c.Request.Context(), &req, h.docEngine)
+	result, code, err := h.searchService.Search(c.Request.Context(), user.ID, &req, h.docEngine)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -195,12 +191,18 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 
 	if h.docEngine.GetType() == "elasticsearch" {
 		if err := h.indexerService.EnsureIndex(c.Request.Context(), user.ID, req.SpaceID, h.docEngine, embdID); err != nil {
+			if respondPermissionErrorIf(c, err, true) {
+				return
+			}
 			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 			return
 		}
 	}
 
 	if err := h.indexerService.BatchIndexSkills(c.Request.Context(), user.ID, req.SpaceID, req.Skills, h.docEngine, embdID); err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.Error(fmt.Sprintf("Failed to batch index skills: tenantID=%s, spaceID=%s, error=%v", user.ID, req.SpaceID, err), err)
 		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
@@ -262,6 +264,9 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 
 	result, err := h.indexerService.ReindexAll(c.Request.Context(), user.ID, req.SpaceID, h.docEngine, embdID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
@@ -296,6 +301,9 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 
 	err := h.indexerService.DeleteSkillIndex(c.Request.Context(), user.ID, spaceID, skillID, h.docEngine)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "failed to delete skill index")
 		return
 	}
@@ -329,6 +337,9 @@ func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
 	}
 
 	if err := h.indexerService.InitializeIndex(c.Request.Context(), user.ID, spaceID, h.docEngine, embdID); err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
@@ -394,8 +405,7 @@ func (h *SkillSearchHandler) CreateSpace(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.spaceService.CreateSpace(ctx, &service.CreateSpaceRequest{
-		TenantID:    user.ID,
+	result, code, err := h.spaceService.CreateSpace(ctx, user.ID, &service.CreateSpaceRequest{
 		Name:        req.Name,
 		Description: req.Description,
 		EmbdID:      req.EmbdID,
@@ -431,7 +441,7 @@ func (h *SkillSearchHandler) GetSpace(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.spaceService.GetSpace(ctx, spaceID, user.ID)
+	result, code, err := h.spaceService.GetSpace(ctx, user.ID, spaceID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -480,7 +490,7 @@ func (h *SkillSearchHandler) UpdateSpace(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.spaceService.UpdateSpace(ctx, spaceID, user.ID, &service.UpdateSpaceRequest{
+	result, code, err := h.spaceService.UpdateSpace(ctx, user.ID, spaceID, &service.UpdateSpaceRequest{
 		Name:        req.Name,
 		Description: req.Description,
 		EmbdID:      req.EmbdID,
@@ -518,7 +528,7 @@ func (h *SkillSearchHandler) DeleteSpace(c *gin.Context) {
 		return
 	}
 
-	code, err := h.spaceService.DeleteSpace(c.Request.Context(), spaceID, user.ID, h.docEngine)
+	code, err := h.spaceService.DeleteSpace(c.Request.Context(), user.ID, spaceID, h.docEngine)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -556,7 +566,7 @@ func (h *SkillSearchHandler) GetSpaceByFolder(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.spaceService.GetSpaceByFolderID(ctx, folderID, user.ID)
+	result, code, err := h.spaceService.GetSpaceByFolderID(ctx, user.ID, folderID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

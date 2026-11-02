@@ -1,6 +1,7 @@
 package chunker
 
 import (
+	"ragflow/internal/ingestion/component/schema"
 	"strings"
 	"testing"
 )
@@ -29,7 +30,7 @@ func TestTokenChunker_BareDelimiterHonored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatalf("no chunks produced")
 	}
@@ -73,7 +74,7 @@ func TestTokenChunker_MultiByteBacktickDelimiter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	// Custom (backtick) delimiters are DROPPED, mirroring Python's
 	// naive_merge has_custom branch: "段落" is split away, not preserved.
 	want := []string{"第一部分", "第二部分"}
@@ -104,7 +105,7 @@ func TestTokenChunker_MultiByteBacktickDelimiter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks2, _ := out2["chunks"].([]map[string]any)
+	chunks2, _ := schema.ChunkCarrierToMaps(out2["chunks"])
 	if len(chunks2) != 2 || chunks2[0]["text"].(string) != "A" || chunks2[1]["text"].(string) != "B" {
 		t.Errorf("longest delimiter not preferred: got %v", chunkTexts(chunks2))
 	}

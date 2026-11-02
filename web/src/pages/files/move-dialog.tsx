@@ -28,7 +28,7 @@ export function MoveDialog({ hideModal, onOk, loading }: IModalProps<any>) {
 
   const onLoadData = useCallback(
     async ({ id }: TreeNodeType) => {
-      const ret = await fetchList(id as string);
+      const ret = await fetchList({ parentId: id as string });
       if (ret.code === 0) {
         setTreeData((tree) => {
           return uniqBy(

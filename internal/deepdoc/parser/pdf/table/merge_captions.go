@@ -84,16 +84,13 @@ func MergeCaptions(sections []pdf.Section) []pdf.Section {
 			captions = append(captions, i)
 			continue
 		}
-		// No merge target. A FIGURE caption is kept as its own section: a pure
-		// image figure has no text section (BoxesToSections skips empty figure
-		// boxes), so removing it would drop caption text that Python keeps
-		// (07_mixed_content 'Figure 1/2'). A TABLE caption with neither a table
-		// nor a figure parent — findNearestParent already fell back to figures,
-		// mirroring Python's nearest(tables)/nearest(figures) double search — is
-		// a DLA mislabel (e.g. rotate_270's rotated text labeled "table"); keep
-		// the historical removal so rotated-page text is not duplicated. Python
-		// likewise drops a caption only when BOTH searches fail, so the removal
-		// branch now fires only when no parent exists at all.
+		// No merge target. Keep a FIGURE caption as its own section when no
+		// nearby figure is available. Position-only sections let captions for
+		// pure-image figures attach to their image before reaching this branch.
+		// A TABLE caption with no reachable table or figure parent is a DLA
+		// mislabel (e.g. rotate_270's rotated text labeled "table").
+		// findNearestParent searches both kinds, matching Python's fallback.
+		// Keep the historical removal so rotated-page text is not duplicated.
 		if captionType != pdf.LayoutTypeFigure {
 			captions = append(captions, i)
 		}

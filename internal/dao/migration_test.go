@@ -19,13 +19,38 @@ package dao
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
+	"ragflow/internal/entity"
 )
 
 const tenantModelIDWidth = 32
+
+func TestKnowledgeCompileQueuesHaveNoPrimaryKey(t *testing.T) {
+	for _, model := range []interface{}{&entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}} {
+		parsed, err := schema.Parse(model, &sync.Map{}, schema.NamingStrategy{})
+		if err != nil {
+			t.Fatalf("parse %T schema: %v", model, err)
+		}
+		if len(parsed.PrimaryFields) != 0 || parsed.FieldsByName["ID"] != nil {
+			t.Fatalf("%s must have no primary key or ID", parsed.Table)
+		}
+		indexes := parsed.ParseIndexes()
+		if len(indexes) != 1 {
+			t.Fatalf("%s indexes = %v, want one queue index", parsed.Table, indexes)
+		}
+		for _, index := range indexes {
+			if index.Class == "UNIQUE" || len(index.Fields) != 2 ||
+				index.Fields[0].DBName != "dataset_id" || index.Fields[1].DBName != "queue_position" {
+				t.Fatalf("unexpected queue index: %+v", index)
+			}
+		}
+	}
+}
 
 // setupOrphanColumnTestDB builds the narrow shape discardOrphanedColumnValues
 // needs: a table holding values left over from an int column widened to hold

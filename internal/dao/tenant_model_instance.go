@@ -34,23 +34,25 @@ func NewTenantModelInstanceDAO() *TenantModelInstanceDAO {
 }
 
 func (dao *TenantModelInstanceDAO) Create(ctx context.Context, db *gorm.DB, instance *entity.TenantModelInstance) error {
-	// begin tx and check if the same provider instance exists
-	tx := db.WithContext(ctx).Begin()
-	defer tx.Rollback()
-	var existingInstance entity.TenantModelInstance
-	err := tx.WithContext(ctx).Where("provider_id = ? AND instance_name = ?", instance.ProviderID, instance.InstanceName).First(&existingInstance).Error
-	if err == nil {
-		return fmt.Errorf("instance %s already exists", instance.InstanceName)
+	db = db.WithContext(ctx)
+	create := func(tx *gorm.DB) error {
+		var existingInstance entity.TenantModelInstance
+		err := tx.Where("provider_id = ? AND instance_name = ?", instance.ProviderID, instance.InstanceName).First(&existingInstance).Error
+		if err == nil {
+			return fmt.Errorf("instance %s already exists", instance.InstanceName)
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		return tx.Create(instance).Error
 	}
-	if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return err
+	if _, inTransaction := db.Statement.ConnPool.(interface {
+		Commit() error
+		Rollback() error
+	}); inTransaction {
+		return create(db)
 	}
-	err = tx.WithContext(ctx).Create(instance).Error
-	if err != nil {
-		return err
-	}
-	tx.Commit()
-	return nil
+	return db.Transaction(create)
 }
 
 func (dao *TenantModelInstanceDAO) GetAllInstancesByProviderID(ctx context.Context, db *gorm.DB, providerID string) ([]*entity.TenantModelInstance, error) {

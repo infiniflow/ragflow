@@ -56,11 +56,10 @@ func (o *OrcaRouterModel) ChatWithMessages(ctx context.Context, modelName string
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	url, err := o.baseModel.EndpointURL(apiConfig, o.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -86,11 +85,10 @@ func (o *OrcaRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	url, err := o.baseModel.EndpointURL(apiConfig, o.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
@@ -131,11 +129,10 @@ func (o *OrcaRouterModel) AudioSpeech(ctx context.Context, modelName *string, au
 		return nil, fmt.Errorf("audio content is empty")
 	}
 
-	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	url, err := o.baseModel.EndpointURL(apiConfig, o.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model":  *modelName,
@@ -203,11 +200,10 @@ func (o *OrcaRouterModel) ListModels(ctx context.Context, apiConfig *APIConfig) 
 		return nil, err
 	}
 
-	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	url, err := o.baseModel.EndpointURL(apiConfig, o.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Models)
 
 	reqBody := map[string]string{}
 
@@ -269,4 +265,8 @@ func (o *OrcaRouterModel) ListTasks(ctx context.Context, apiConfig *APIConfig) (
 
 func (o *OrcaRouterModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s no such method", o.Name())
+}
+
+func (o *OrcaRouterModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
 }

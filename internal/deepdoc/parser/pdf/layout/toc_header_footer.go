@@ -26,6 +26,19 @@ const (
 	// tocMaxLongBoxes is the maximum number of boxes longer than
 	// tocMaxProseRunes a page may carry and still be classified as TOC.
 	tocMaxLongBoxes = 2
+	// tocBodyRunes is the length (in runes) above which a box that is
+	// neither a chapter marker nor a leader run counts as body evidence.
+	// The prose guard above keys on long boxes, which a corpus of short
+	// lines (a legal code's articles, verse, lists) never produces — the
+	// 民法典's article lines wrap at ~35 runes, so prose stayed 0 on every
+	// page and a mixed TOC-tail + article page was read as a TOC page and
+	// dropped whole. A body line is still longer than a TOC entry title
+	// and does not open with a chapter marker, so a page carrying several
+	// such boxes is a body page no signal may drop.
+	tocBodyRunes = 20
+	// tocMaxBodyBoxes is the maximum number of body-evidence boxes a page
+	// may carry and still be classified as TOC.
+	tocMaxBodyBoxes = 2
 	// tocMinShortBoxes is the minimum number of short boxes a TOC page carries.
 	// A TOC is a list, so its entries usually stay separate boxes. A page whose
 	// entries were merged into one long box is covered by tocMinMergedRuns, and
@@ -88,6 +101,11 @@ var (
 	// one long box apart from a paragraph. Digits accept the full-width forms
 	// pageNumberPattern accepts, for the same reason.
 	tocEntryRunPattern = regexp.MustCompile(`(\.{2,}|…{2,}|⋯{2,}|·{2,})\s*[0-9０-９]{1,4}\s*[IVXLCDMivxlcdm]{0,5}`)
+	// tocLeaderOnlyPattern matches a box that is nothing but leader
+	// characters (dots, ellipses, middots, spaces): the leader column of a
+	// dotted TOC entry. Such a box is long but carries no body text, so it
+	// must not count as body evidence.
+	tocLeaderOnlyPattern = regexp.MustCompile(`^[.…⋯·\s]+$`)
 )
 
 // ---------------------------------------------------------------------------
@@ -191,10 +209,11 @@ func outlineTitle(title string) string {
 //     and only consulted when the parse begins in the document's front matter.
 //
 // Both signals pass through one guard: a page carrying body text (more than
-// tocMaxLongBoxes boxes longer than tocMaxProseRunes) is never dropped, and a
-// document consisting only of TOC pages is left untouched. The detector stays
-// deliberately conservative — missing a TOC page costs noise chunks, deleting a
-// content page loses text.
+// tocMaxLongBoxes boxes longer than tocMaxProseRunes, or more than
+// tocMaxBodyBoxes marker-less boxes longer than tocBodyRunes) is never
+// dropped, and a document consisting only of TOC pages is left untouched.
+// The detector stays deliberately conservative — missing a TOC page costs
+// noise chunks, deleting a content page loses text.
 func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool, firstParsedPage, totalPages int) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
@@ -250,7 +269,7 @@ func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool, firstParsedP
 				selected[pg] = true
 				continue
 			}
-			if shapes[pg].carriesProse() || lead >= tocMaxLeadPages {
+			if shapes[pg].carriesLongProse() || lead >= tocMaxLeadPages {
 				break
 			}
 			lead++
@@ -296,6 +315,7 @@ type pageShape struct {
 	short   int
 	markers int  // short boxes opening with a chapter marker or holding a page number
 	merged  bool // a long box carrying tocMinMergedRuns leader+page-number runs
+	body    int  // marker-less, leader-less short boxes longer than tocBodyRunes
 }
 
 func shapeOfPage(boxes []pdf.TextBox, indices []int) pageShape {
@@ -318,6 +338,10 @@ func shapeOfPage(boxes []pdf.TextBox, indices []int) pageShape {
 		s.short++
 		if chapterEntryPattern.MatchString(text) || pageNumberPattern.MatchString(text) {
 			s.markers++
+			continue
+		}
+		if utf8.RuneCountInString(text) > tocBodyRunes && !tocLeaderOnlyPattern.MatchString(text) {
+			s.body++
 		}
 	}
 	return s
@@ -334,8 +358,18 @@ func (s pageShape) isTOC() bool {
 }
 
 // carriesProse reports whether the page carries body text. No signal may drop
-// such a page: this is the single guard that bounds every removal.
-func (s pageShape) carriesProse() bool { return s.prose > tocMaxLongBoxes }
+// such a page: this is the single guard that bounds every removal. Body text
+// is evidenced by long boxes (prose), or — for corpora whose lines are all
+// short, such as a legal code's articles or verse — by several marker-less,
+// leader-less boxes longer than tocBodyRunes.
+func (s pageShape) carriesProse() bool { return s.carriesLongProse() || s.body > tocMaxBodyBoxes }
+
+// carriesLongProse reports the long-box signal alone. The leading-run scan
+// uses it rather than carriesProse: a cover or copyright page carries short
+// lines (its metadata block) but no body text, and the body-evidence arm
+// would stop the scan on such a page before it reaches the TOC. Every drop
+// still passes carriesProse, so the body evidence keeps bounding removal.
+func (s pageShape) carriesLongProse() bool { return s.prose > tocMaxLongBoxes }
 
 // ---------------------------------------------------------------------------
 // Running header / footer removal.

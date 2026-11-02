@@ -18,10 +18,12 @@ package main
 
 import (
 	"context"
+
 	"ragflow/internal/common"
+	"ragflow/internal/server/bootstrap"
 )
 
-func runDeepDoc(ctx context.Context, serverName string, args *serverArgs) error {
+func runDeepDoc(ctx context.Context, serverName string, args *bootstrap.ServerArgs) error {
 	common.Info("DeepDoc server is not implemented")
 	return nil
 }

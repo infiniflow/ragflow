@@ -15,6 +15,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	dataset "ragflow/internal/service/dataset"
 )
 
@@ -72,6 +74,9 @@ func insertListDatasetsTestKB(t *testing.T, id, tenantID, name string) {
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert test kb: %v", err)
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, tenantID); err != nil {
+		t.Fatalf("prepare dataset list permission fixture: %v", err)
+	}
 }
 
 func newListDatasetsTestRouter() *gin.Engine {
@@ -80,6 +85,7 @@ func newListDatasetsTestRouter() *gin.Engine {
 	r := gin.New()
 	r.GET("/api/v1/datasets", func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "user-1"})
+		c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
 		h.ListDatasets(c)
 	})
 	return r

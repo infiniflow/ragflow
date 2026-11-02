@@ -31,11 +31,12 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 
+	"ragflow/internal/parser/media"
 	parserlib "ragflow/internal/parser/parser"
 )
 
 const (
-	maxVisionImageBytes = parserlib.MaxImagePayloadBytes
+	maxVisionImageBytes = media.MaxImagePayloadBytes
 	maxVLMEncodedBytes  = (maxVisionImageBytes+2)/3*4 + 256
 	// maxVLMCropPixels and maxVLMCropEdge bound the raster of PDF page crops
 	// rendered for the vision model (see vision_enhancement_cgo.go). They are a

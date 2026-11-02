@@ -49,7 +49,6 @@ func parseWithTCADP(
 	fileType string,
 	tcadpAPIServer, tcadpAPIKey string,
 	tableResultType, markdownImageResponseType string,
-	outputFormat string,
 ) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
@@ -118,7 +117,7 @@ func parseWithTCADP(
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	return pdfItemsToResult(filename, items, outputFormat, pageCount)
+	return pdfItemsToResult(filename, items, pageCount)
 }
 
 // authHeaderForDownload returns the bearer Authorization header value to

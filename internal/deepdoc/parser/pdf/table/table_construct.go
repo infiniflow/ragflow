@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/parser/tableutil"
 )
 
 // constructTable produces an HTML table string from TSR cells and text boxes.
@@ -82,7 +83,7 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 		if item != nil {
 			MarkCoveredCells(item.Grid, covered)
 		}
-		return RowsToHTML(rows, caption, hdrs, spanInfo, covered)
+		return tableutil.RenderTableHTML(ToTableData(rows, caption, hdrs, spanInfo, covered))
 	}
 	// Fallback: boxes with R/C annotations.
 	if len(boxes) > 0 && BoxesHaveAnnotations(boxes) {
@@ -92,7 +93,7 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 				item.Rows = RowsToStrings(rows)
 			}
 			spanInfo, covered := CalSpans(rows)
-			return RowsToHTML(rows, caption, BoxHeaderSet(rows, boxes), spanInfo, covered)
+			return tableutil.RenderTableHTML(ToTableData(rows, caption, BoxHeaderSet(rows, boxes), spanInfo, covered))
 		}
 	}
 	// Test-only: Y/X coordinate grouping (matching Python construct_table).
@@ -104,7 +105,7 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 				item.Rows = RowsToStrings(rows)
 			}
 			spanInfo, covered := CalSpans(rows)
-			return RowsToHTML(rows, caption, BoxHeaderSet(rows, boxes), spanInfo, covered)
+			return tableutil.RenderTableHTML(ToTableData(rows, caption, BoxHeaderSet(rows, boxes), spanInfo, covered))
 		}
 	}
 	return ""

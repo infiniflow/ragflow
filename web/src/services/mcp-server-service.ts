@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-import { IPaginationRequestBody } from '@/interfaces/request/base';
+import { IMcpServerListRequestBody } from '@/interfaces/request/mcp';
 import api from '@/utils/api';
 import request from '@/utils/request';
 
@@ -34,12 +34,12 @@ const mcpServerService = {
   export: ({ mcp_id }: { mcp_id: string }) =>
     request.get(api.exportMcpServer(mcp_id)),
   test: (params: Record<string, any>) =>
-    request.post(api.testMcpServer(params.mcp_id || params.name || 'preview'), {
+    request.post(api.testMcpServer(params.mcp_id || 'preview'), {
       data: params,
     }),
 };
 
 export default mcpServerService;
 
-export const listMcpServers = (params?: IPaginationRequestBody, body?: any) =>
-  request.get(api.listMcpServer, { params: { ...params, ...(body || {}) } });
+export const listMcpServers = (params?: IMcpServerListRequestBody) =>
+  request.get(api.listMcpServer, { params });

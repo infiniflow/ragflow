@@ -257,6 +257,19 @@ func TestBegin_InjectsWebhookPayload(t *testing.T) {
 	if outPayload, _ := out["webhook_payload"].(map[string]any); !reflect.DeepEqual(outPayload, payload) {
 		t.Errorf("outputs[webhook_payload] mismatch:\n got  %v\n want %v", outPayload, payload)
 	}
+	for key, value := range out {
+		state.SetVar("Begin", key, value)
+	}
+	for _, tt := range []struct{ ref, want string }{
+		{"Begin@headers.x-token", "abc"},
+		{"Begin@query.q", "hello"},
+		{"Begin@body.k", "v"},
+	} {
+		got, err := canvas.ResolveTemplate("{{"+tt.ref+"}}", state)
+		if err != nil || got != tt.want {
+			t.Errorf("resolve %s = %q, %v; want %q", tt.ref, got, err, tt.want)
+		}
+	}
 }
 
 // TestBegin_AbsentWebhookPayload confirms that the chat path (no

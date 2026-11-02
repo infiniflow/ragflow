@@ -378,20 +378,7 @@ func populateModelUsage(usage *common.ModelUsage, info *modelModule.ModelInfo, a
 }
 
 func (s *ModelCallService) ownerTenantID(ctx context.Context, userID string) (string, error) {
-	if strings.TrimSpace(userID) == "" {
-		return "", errors.New("user id is required")
-	}
-	if s.providerService.userTenantDAO == nil {
-		return "", errors.New("user tenant service is not initialized")
-	}
-	tenants, err := s.providerService.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
-	if err != nil {
-		return "", err
-	}
-	if len(tenants) == 0 || tenants[0] == nil || strings.TrimSpace(tenants[0].TenantID) == "" {
-		return "", fmt.Errorf("no owner tenant found for user %s", userID)
-	}
-	return tenants[0].TenantID, nil
+	return requireCurrentTenantID(ctx, userID)
 }
 
 func (s *ModelCallService) resolveModelInfo(ctx context.Context, modelRef, userID string) (*ModelInstanceAndProviderInfo, error) {
@@ -411,7 +398,7 @@ func (s *ModelCallService) resolveModelInfo(ctx context.Context, modelRef, userI
 		return nil, err
 	}
 
-	modelName, instanceName, providerName, err := parseModelName(modelRef)
+	modelName, instanceName, providerName, err := common.ParseCompositeModelName(modelRef)
 	if err != nil {
 		return nil, err
 	}

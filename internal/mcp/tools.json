@@ -4,6 +4,7 @@
     "description": "Retrieve relevant chunks from the RAGFlow retrieve interface based on the question. You can optionally specify dataset_ids to search only specific datasets, or omit dataset_ids entirely to search across ALL available datasets. You can also optionally specify document_ids to search within specific documents. When dataset_ids is not provided or is empty, the system will automatically search across all available datasets. Below is the list of all available datasets, including their descriptions and IDs:",
     "inputSchema": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "dataset_ids": {
           "type": "array",
@@ -65,11 +66,6 @@
         "rerank_id": {
           "type": "string",
           "description": "Optional reranking model identifier"
-        },
-        "force_refresh": {
-          "type": "boolean",
-          "description": "Set to true only if fresh dataset and document metadata is explicitly required. Otherwise, cached metadata is used (default: false).",
-          "default": false
         }
       },
       "required": [

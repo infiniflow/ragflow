@@ -105,6 +105,24 @@ func TestAutoMigrateRuntimeModelsCreatesGoRuntimeTables(t *testing.T) {
 	}
 }
 
+func TestAutoMigrateRuntimeModelsAddsIngestionTaskFilterIndexes(t *testing.T) {
+	db := setupTaskTestDB(t)
+	indexes := []string{"idx_ingestion_task_user_id", "idx_ingestion_task_status"}
+	for _, name := range indexes {
+		if err := db.Migrator().DropIndex(&entity.IngestionTask{}, name); err != nil {
+			t.Fatalf("drop index %s: %v", name, err)
+		}
+	}
+	if err := autoMigrateRuntimeModels(t.Context(), db); err != nil {
+		t.Fatalf("migrate runtime models: %v", err)
+	}
+	for _, name := range indexes {
+		if !db.Migrator().HasIndex(&entity.IngestionTask{}, name) {
+			t.Errorf("missing task index %s after migration", name)
+		}
+	}
+}
+
 // TestMigrateIngestionTaskPipelineLogID covers the upgrade path AutoMigrate
 // cannot handle on MySQL: an existing ingestion_task created before
 // pipeline_log_id existed must gain the column, and running the migration again
@@ -127,14 +145,14 @@ func TestMigrateIngestionTaskPipelineLogID(t *testing.T) {
 		t.Fatalf("create legacy table: %v", err)
 	}
 	migrator := db.Migrator()
-	if migrator.HasColumn("ingestion_task", "pipeline_log_id") {
+	if migrator.HasColumn(&entity.IngestionTask{}, "pipeline_log_id") {
 		t.Fatal("precondition failed: column already present")
 	}
 
 	if err := migrateIngestionTaskPipelineLogID(ctx, db); err != nil {
 		t.Fatalf("migrateIngestionTaskPipelineLogID: %v", err)
 	}
-	if !migrator.HasColumn("ingestion_task", "pipeline_log_id") {
+	if !migrator.HasColumn(&entity.IngestionTask{}, "pipeline_log_id") {
 		t.Fatal("expected pipeline_log_id to be added")
 	}
 

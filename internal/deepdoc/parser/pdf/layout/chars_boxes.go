@@ -37,6 +37,11 @@ func CharsToBoxes(chars []pdf.TextChar, pageNum int, sortByTop bool) []pdf.TextB
 
 	boxes := make([]pdf.TextBox, 0, len(lines))
 	for _, line := range lines {
+		// GroupCharsToLines sorts by Bottom (or Top), so a raised superscript
+		// arrives before the base line and LineToTextBox would prepend it
+		// ("2I C" instead of "I2C"). Re-order each line X-first within fuzzy Y
+		// bands before assembling text and splitting columns.
+		sortLineByXY(line)
 		thr := threshold
 		if thr > 100 {
 			// No significant column gaps on this page → use per-line threshold.
@@ -51,6 +56,49 @@ func CharsToBoxes(chars []pdf.TextChar, pageNum int, sortByTop bool) []pdf.TextB
 		}
 	}
 	return boxes
+}
+
+// sortLineByXY orders one line's glyphs by X inside fuzzy Y bands (half the
+// median glyph height), falling back to Y across clearly different baselines.
+// Superscripts/subscripts stay at their text position instead of sorting to
+// the start of the line.
+//
+// Bands are assigned before sorting: a pairwise |Top difference| comparator is
+// not transitive (Top 0/4/8 with band 5 forms a cycle), and sort.SliceStable
+// requires a strict weak ordering.
+func sortLineByXY(chars []pdf.TextChar) {
+	if len(chars) < 2 {
+		return
+	}
+	band := util.MedianCharHeight(chars) * 0.5
+	if band <= 0 {
+		return
+	}
+	type glyph struct {
+		char pdf.TextChar
+		band int
+	}
+	glyphs := make([]glyph, len(chars))
+	for i, c := range chars {
+		glyphs[i] = glyph{char: c}
+	}
+	sort.SliceStable(glyphs, func(i, j int) bool { return glyphs[i].char.Top < glyphs[j].char.Top })
+	bandIdx := 0
+	for i := 1; i < len(glyphs); i++ {
+		if math.Abs(glyphs[i].char.Top-glyphs[i-1].char.Top) >= band {
+			bandIdx++
+		}
+		glyphs[i].band = bandIdx
+	}
+	sort.SliceStable(glyphs, func(i, j int) bool {
+		if glyphs[i].band != glyphs[j].band {
+			return glyphs[i].band < glyphs[j].band
+		}
+		return glyphs[i].char.X0 < glyphs[j].char.X0
+	})
+	for i := range chars {
+		chars[i] = glyphs[i].char
+	}
 }
 
 // perLineXGapThreshold computes a dynamic X-gap threshold for column

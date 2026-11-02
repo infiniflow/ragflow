@@ -28,6 +28,7 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
@@ -62,9 +63,10 @@ func TestUpdateMCPServerRejectsDuplicatedName(t *testing.T) {
 			t.Fatalf("create mcp server: %v", err)
 		}
 	}
+	addMCPOwnerMembership(t, testDB, tenantID, tenantID)
 
 	s := NewMCPService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, tenantID, tenantID)
 
 	nameReq := func(name string) UpdateMCPServerRequest {
 		raw, err := json.Marshal(name)
@@ -115,7 +117,13 @@ func TestServerInputValidation(t *testing.T) {
 }
 
 func TestImportServersValidationErrors(t *testing.T) {
-	s := &MCPService{}
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatalf("migrate MCP server: %v", err)
+	}
+	pushServiceDB(t, db)
+	addMCPOwnerMembership(t, db, "tenant-1", "tenant-1")
+	s := NewMCPService()
 
 	// Missing url and type produce an in-band error per entry rather than
 	// failing the batch.
@@ -123,7 +131,7 @@ func TestImportServersValidationErrors(t *testing.T) {
 		"missing-fields": {"foo": "bar"},
 		"bad-type":       {"url": "http://example.com", "type": "stdio"},
 	}
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
 	results, err := s.ImportServers(ctx, "tenant-1", configs, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -207,11 +215,13 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if err := db.Create(&entity.Tenant{ID: "tenant-1"}).Error; err != nil {
 		t.Fatal(err)
 	}
+	addMCPOwnerMembership(t, db, "tenant-1", "tenant-1")
 	server, captured := newMCPDiscoveryTestServer(t)
 	defer server.Close()
 	withMCPDiscoveryOverrides(t, server)
 	s := NewMCPService()
-	created, code, err := s.CreateMCPServer(t.Context(), "tenant-1", CreateMCPServerRequest{
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
+	created, code, err := s.CreateMCPServer(ctx, "tenant-1", CreateMCPServerRequest{
 		Name: "managed-auth", URL: server.URL, ServerType: mcpServerTypeStreamableHTTP,
 		Headers:   json.RawMessage(`{"Authorization":"Bearer ${authorization_token}"}`),
 		Variables: json.RawMessage(`{"authorization_token":"ragflow-secret"}`),
@@ -225,18 +235,18 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if created.Headers["Authorization"] != maskedMCPSecret {
 		t.Fatal("create response exposed headers")
 	}
-	listed, _, err := s.ListMCPServers(t.Context(), "tenant-1", nil, "", 0, 0, "create_time", false)
+	listed, _, err := s.ListMCPServers(ctx, "tenant-1", "", nil, "", 0, 0, "create_time", false)
 	if err != nil || len(listed.MCPServers) != 1 || listed.MCPServers[0].Variables["authorization_token"] != maskedMCPSecret {
 		t.Fatalf("list: result=%#v err=%v", listed, err)
 	}
 	testReq := &TestServerRequest{URL: server.URL, ServerType: mcpServerTypeStreamableHTTP, Headers: map[string]any(created.Headers), Variables: map[string]any{"authorization_token": maskedMCPSecret}}
 	beforeRejected := len(captured())
 	testReq.URL = server.URL + "/other"
-	if _, err := s.TestServer(t.Context(), "tenant-1", created.ID, testReq); err == nil {
+	if _, err := s.TestServer(ctx, "tenant-1", created.ID, testReq); err == nil {
 		t.Fatal("preview reused credentials for a different URL")
 	}
 	testReq.Variables["authorization_token"] = "replacement"
-	if _, err := s.TestServer(t.Context(), "tenant-1", created.ID, testReq); err == nil {
+	if _, err := s.TestServer(ctx, "tenant-1", created.ID, testReq); err == nil {
 		t.Fatal("preview reused masked headers for a different URL")
 	}
 	testReq.Variables["authorization_token"] = maskedMCPSecret
@@ -247,23 +257,23 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 		{"variables": json.RawMessage(`{"authorization_token":"replacement"}`), "headers": json.RawMessage(`{"Authorization":"********"}`)},
 	} {
 		extra["url"] = json.RawMessage(fmt.Sprintf("%q", server.URL+"/other"))
-		if _, _, err := s.UpdateMCPServer(t.Context(), "tenant-1", created.ID, extra); err == nil {
+		if _, _, err := s.UpdateMCPServer(ctx, "tenant-1", created.ID, extra); err == nil {
 			t.Fatal("update reused credentials for a different URL")
 		}
 	}
 	if len(captured()) != beforeRejected {
 		t.Fatal("rejected endpoint changes made outbound requests")
 	}
-	if _, err := s.TestServer(t.Context(), "other-tenant", created.ID, testReq); err == nil {
+	if _, err := s.TestServer(serviceTestContext(t, "other-tenant", "other-tenant"), "other-tenant", created.ID, testReq); err == nil {
 		t.Fatal("masked preview resolved another tenant's credential")
 	}
-	if _, err := s.TestServer(t.Context(), "tenant-1", created.ID, testReq); err != nil {
+	if _, err := s.TestServer(ctx, "tenant-1", created.ID, testReq); err != nil {
 		t.Fatalf("masked preview: %v", err)
 	}
 	if testReq.Variables["authorization_token"] != maskedMCPSecret || testReq.Headers["Authorization"] != maskedMCPSecret {
 		t.Fatal("preview mutated the client payload")
 	}
-	updated, code, err := s.UpdateMCPServer(t.Context(), "tenant-1", created.ID, UpdateMCPServerRequest{
+	updated, code, err := s.UpdateMCPServer(ctx, "tenant-1", created.ID, UpdateMCPServerRequest{
 		"url":       json.RawMessage(fmt.Sprintf("%q", server.URL)),
 		"variables": json.RawMessage(`{"authorization_token":"********"}`),
 		"headers":   json.RawMessage(`{"Authorization":"********"}`),
@@ -271,7 +281,7 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if err != nil || code != common.CodeSuccess || updated.URL != server.URL || updated.Variables["authorization_token"] != "ragflow-secret" {
 		t.Fatalf("masked update: result=%#v code=%d err=%v", updated, code, err)
 	}
-	stored, _, err := s.GetMCPServer(t.Context(), "tenant-1", created.ID)
+	stored, _, err := s.GetMCPServer(ctx, "tenant-1", created.ID)
 	if err != nil || stored.URL != server.URL || stored.Variables["authorization_token"] != "ragflow-secret" {
 		t.Fatalf("reload: result=%#v err=%v", stored, err)
 	}
@@ -283,7 +293,7 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 			t.Fatalf("authentication not preserved: %#v", headers)
 		}
 	}
-	exported, _, err := s.ExportMCPServer(t.Context(), "tenant-1", created.ID)
+	exported, _, err := s.ExportMCPServer(ctx, "tenant-1", created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +301,7 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if err != nil || !strings.Contains(string(payload), "ragflow-secret") {
 		t.Fatalf("explicit credential export: payload=%s err=%v", payload, err)
 	}
-	updated, code, err = s.UpdateMCPServer(t.Context(), "tenant-1", created.ID, UpdateMCPServerRequest{
+	updated, code, err = s.UpdateMCPServer(ctx, "tenant-1", created.ID, UpdateMCPServerRequest{
 		"url":       json.RawMessage(fmt.Sprintf("%q", server.URL+"/other")),
 		"variables": json.RawMessage(`{"authorization_token":"replacement"}`),
 		"headers":   json.RawMessage(`{"Authorization":"Bearer ${authorization_token}"}`),
@@ -332,12 +342,13 @@ func TestImportServersPreservesExplicitHeadersAndVariables(t *testing.T) {
 				t.Fatalf("migrate mcp server: %v", err)
 			}
 			pushServiceDB(t, testDB)
+			addMCPOwnerMembership(t, testDB, "tenant-1", "tenant-1")
 
 			srv, captured := newMCPDiscoveryTestServer(t)
 			defer srv.Close()
 			withMCPDiscoveryOverrides(t, srv)
 
-			results, err := NewMCPService().ImportServers(t.Context(), "tenant-1", map[string]map[string]interface{}{
+			results, err := NewMCPService().ImportServers(serviceTestContext(t, "tenant-1", "tenant-1"), "tenant-1", map[string]map[string]interface{}{
 				"parallel": {
 					"type":                mcpServerTypeStreamableHTTP,
 					"url":                 srv.URL,
@@ -401,7 +412,7 @@ func TestImportServersPreservesExplicitHeadersAndVariables(t *testing.T) {
 				t.Fatalf("export did not contain parallel config: %s", exported)
 			}
 			capturedBefore := len(captured())
-			reimported, err := NewMCPService().ImportServers(t.Context(), "tenant-1", map[string]map[string]interface{}{
+			reimported, err := NewMCPService().ImportServers(serviceTestContext(t, "tenant-1", "tenant-1"), "tenant-1", map[string]map[string]interface{}{
 				"parallel": reimportConfig,
 			}, 2)
 			if err != nil {
@@ -498,36 +509,45 @@ func withMCPDiscoveryOverrides(t *testing.T, server *httptest.Server) {
 	})
 }
 
-func TestPaginateMCPServersNegativeValuesMatchPythonSlice(t *testing.T) {
-	servers := makeMCPServers(13)
+func TestListMCPServersAppliesAuthorizationBeforeSQLPagination(t *testing.T) {
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatal(err)
+	}
+	pushServiceDB(t, db)
+	addMCPOwnerMembership(t, db, "owner", "tenant-1")
+	for _, server := range []*entity.MCPServer{
+		{ID: "mcp-c", TenantID: "tenant-1", Name: "charlie", URL: "https://example.test/c", ServerType: mcpServerTypeSSE},
+		{ID: "mcp-a", TenantID: "tenant-1", Name: "alpha", URL: "https://example.test/a", ServerType: mcpServerTypeSSE},
+		{ID: "mcp-b", TenantID: "tenant-1", Name: "bravo", URL: "https://example.test/b", ServerType: mcpServerTypeSSE},
+	} {
+		if err := db.Create(server).Error; err != nil {
+			t.Fatalf("create MCP server %q: %v", server.ID, err)
+		}
+	}
 
-	got := paginateMCPServers(servers, -1, -2)
-
-	if len(got) != 0 {
-		t.Fatalf("expected empty page for negative pagination, got %d servers", len(got))
+	ctx := serviceTestContext(t, "owner", "tenant-1")
+	listed, code, err := NewMCPService().ListMCPServers(ctx, "owner", "tenant-1", nil, "", 2, 1, "name", false)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListMCPServers() = (code %d, %v), want success", code, err)
+	}
+	if listed.Total != 3 || len(listed.MCPServers) != 1 || listed.MCPServers[0].ID != "mcp-b" {
+		t.Fatalf("ListMCPServers() = %#v, want total 3 and page [mcp-b]", listed)
 	}
 }
 
-func TestPaginateMCPServersKeepsUnpagedList(t *testing.T) {
-	servers := makeMCPServers(3)
-
-	got := paginateMCPServers(servers, 0, 0)
-
-	if len(got) != len(servers) {
-		t.Fatalf("expected unpaged list length %d, got %d", len(servers), len(got))
-	}
-}
-
-func TestPaginateMCPServersPositiveValues(t *testing.T) {
-	servers := makeMCPServers(5)
-
-	got := paginateMCPServers(servers, 2, 2)
-
-	if len(got) != 2 {
-		t.Fatalf("expected 2 servers, got %d", len(got))
-	}
-	if got[0].ID != "server-3" || got[1].ID != "server-4" {
-		t.Fatalf("expected second page servers, got %q and %q", got[0].ID, got[1].ID)
+func addMCPOwnerMembership(t *testing.T, db *gorm.DB, userID, tenantID string) {
+	t.Helper()
+	active := string(entity.StatusValid)
+	if err := db.Create(&entity.UserTenant{
+		ID:        "mcp-owner-" + tenantID,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Role:      "owner",
+		InvitedBy: userID,
+		Status:    &active,
+	}).Error; err != nil {
+		t.Fatalf("create MCP owner membership: %v", err)
 	}
 }
 

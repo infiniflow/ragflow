@@ -28,7 +28,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/utility"
+	"ragflow/internal/permission"
 	"strings"
 
 	"go.uber.org/zap"
@@ -55,10 +55,14 @@ type GetConfigRequest struct {
 }
 
 // GetConfig retrieves the search configuration for a tenant
-func (s *SkillSearchService) GetConfig(ctx context.Context, tenantID, spaceID, embdID string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSearchService) GetConfig(ctx context.Context, userID, spaceID, embdID string) (map[string]interface{}, common.ErrorCode, error) {
 	spaceID = normalizeSpaceID(spaceID)
+	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationRead)
+	if err != nil {
+		code, normalized := normalizeSkillSpacePermissionError(err)
+		return nil, code, normalized
+	}
 	var config *entity.SkillSearchConfig
-	var err error
 
 	if embdID == "" {
 		// If embd_id is not provided, get the latest config for the tenant
@@ -84,6 +88,11 @@ func (s *SkillSearchService) GetConfig(ctx context.Context, tenantID, spaceID, e
 	} else {
 		config, err = s.configDAO.GetByTenantAndEmbdID(ctx, dao.DB, tenantID, spaceID, embdID)
 		if err != nil {
+			tenantID, err = resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
+			if err != nil {
+				code, normalized := normalizeSkillSpacePermissionError(err)
+				return nil, code, normalized
+			}
 			// Config not found, create default one
 			config, err = s.configDAO.GetOrCreate(ctx, dao.DB, tenantID, spaceID, embdID)
 			if err != nil {
@@ -108,8 +117,14 @@ type UpdateConfigRequest struct {
 }
 
 // UpdateConfig updates the search configuration for a tenant
-func (s *SkillSearchService) UpdateConfig(ctx context.Context, req *UpdateConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSearchService) UpdateConfig(ctx context.Context, userID string, req *UpdateConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
 	req.SpaceID = normalizeSpaceID(req.SpaceID)
+	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, req.SpaceID, permission.OperationUpdate)
+	if err != nil {
+		code, normalized := normalizeSkillSpacePermissionError(err)
+		return nil, code, normalized
+	}
+	req.TenantID = tenantID
 	// Validate vector_similarity_weight
 	if req.VectorSimilarityWeight < 0 || req.VectorSimilarityWeight > 1 {
 		return nil, common.CodeDataError, errors.New("vector_similarity_weight must be between 0 and 1")
@@ -207,8 +222,14 @@ type SearchResponse struct {
 }
 
 // Search performs skill search with the configured strategy
-func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, docEngine engine.DocEngine) (*SearchResponse, common.ErrorCode, error) {
+func (s *SkillSearchService) Search(ctx context.Context, userID string, req *SearchRequest, docEngine engine.DocEngine) (*SearchResponse, common.ErrorCode, error) {
 	req.SpaceID = normalizeSpaceID(req.SpaceID)
+	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, req.SpaceID, permission.OperationUse)
+	if err != nil {
+		code, normalized := normalizeSkillSpacePermissionError(err)
+		return nil, code, normalized
+	}
+	req.TenantID = tenantID
 	if req.Page <= 0 {
 		req.Page = 1
 	}
@@ -291,6 +312,11 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 			results, err = s.keywordSearch(ctx, docEngine, indexName, req.Query, config, 0, req.SortBy, req.SortOrder)
 		} else {
 			results, err = s.hybridSearch(ctx, docEngine, indexName, req.Query, config, req.TenantID)
+			if err != nil {
+				common.Warn("Hybrid search failed, falling back to keyword search", zap.Error(err))
+				searchType = "keyword"
+				results, err = s.keywordSearch(ctx, docEngine, indexName, req.Query, config, config.SimilarityThreshold, req.SortBy, req.SortOrder)
+			}
 		}
 	}
 
@@ -451,11 +477,10 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 	// Get embedding for query
 	vector, err := s.getEmbedding(ctx, query, config.EmbdID, tenantID)
 	if err != nil {
-		common.Warn("Hybrid search: failed to get embedding, falling back to keyword search",
+		common.Warn("Hybrid search: failed to get embedding, will fallback to keyword search",
 			zap.String("embdID", config.EmbdID),
 			zap.Error(err))
-		// Fallback to keyword search with analyzed query
-		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchExpr, config)
+		return nil, fmt.Errorf("failed to get embedding: %w", err)
 	}
 	common.Debug("Hybrid search: successfully got embedding",
 		zap.String("embdID", config.EmbdID),
@@ -494,10 +519,10 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 
 	searchResult, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
-		common.Warn("Hybrid search: search execution failed, falling back to keyword search",
+		common.Warn("Hybrid search: search execution failed, will fallback to keyword search",
 			zap.String("indexName", indexName),
 			zap.Error(err))
-		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchExpr, config)
+		return nil, err
 	}
 
 	results := s.convertChunksToResults(searchResult.Chunks, config.SimilarityThreshold)
@@ -505,40 +530,13 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 		zap.Int("totalChunks", len(searchResult.Chunks)),
 		zap.Int("filteredResults", len(results)))
 
-	// If no results, fallback to keyword search
+	// If no results, return error to trigger fallback
 	if len(results) == 0 {
-		common.Info("Hybrid search: no results found, falling back to keyword search",
+		common.Info("Hybrid search: no results found, will fallback to keyword search",
 			zap.String("indexName", indexName),
 			zap.String("query", query))
-		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchExpr, config)
+		return nil, fmt.Errorf("hybrid search returned no results")
 	}
-
-	return results, nil
-}
-
-// executeKeywordSearch executes a keyword search (used for fallback)
-func (s *SkillSearchService) executeKeywordSearch(ctx context.Context, docEngine engine.DocEngine, indexName, query string, matchExpr *types.MatchTextExpr, config *entity.SkillSearchConfig) ([]entity.SkillSearchResult, error) {
-	common.Debug("Executing fallback keyword search",
-		zap.String("indexName", indexName),
-		zap.String("query", query))
-
-	searchReq := &types.SearchRequest{
-		IndexNames: []string{indexName},
-		Offset:     0,
-		Limit:      100,
-		MatchExprs: []interface{}{matchExpr},
-	}
-
-	searchResult, err := docEngine.Search(ctx, searchReq)
-	if err != nil {
-		common.Error("Keyword search fallback failed", err)
-		return nil, err
-	}
-
-	results := s.convertChunksToResults(searchResult.Chunks, config.SimilarityThreshold)
-	common.Debug("Keyword search fallback completed",
-		zap.Int("totalChunks", len(searchResult.Chunks)),
-		zap.Int("results", len(results)))
 
 	return results, nil
 }
@@ -561,13 +559,13 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 		// Note: SCORE/SIMILARITY may be float32 or float64 depending on Infinity version
 		bm25Score := 0.0
 		if scoreVal, ok := chunk["SCORE"]; ok {
-			if f, ok := utility.ToFloat64(scoreVal); ok {
+			if f, ok := common.ToFloat(scoreVal); ok {
 				bm25Score = f
 			}
 		}
 		vectorScore := 0.0
 		if simVal, ok := chunk["SIMILARITY"]; ok {
-			if f, ok := utility.ToFloat64(simVal); ok {
+			if f, ok := common.ToFloat(simVal); ok {
 				vectorScore = f
 			}
 		}
@@ -707,10 +705,12 @@ func SkillIndexName(tenantID, spaceID string) string {
 	return fmt.Sprintf("skill_%s_%s", uniqueTenant, uniqueSpace)
 }
 
+const defaultSkillSpaceID = "default"
+
 func normalizeSpaceID(spaceID string) string {
 	spaceID = strings.TrimSpace(spaceID)
 	if spaceID == "" {
-		return "default"
+		return defaultSkillSpaceID
 	}
 	return spaceID
 }

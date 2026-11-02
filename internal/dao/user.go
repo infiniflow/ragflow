@@ -46,6 +46,16 @@ func (dao *UserDAO) GetByID(ctx context.Context, db *gorm.DB, id uint) (*entity.
 	return &user, nil
 }
 
+// GetByIDString gets a user by its string ID.
+func (dao *UserDAO) GetByIDString(ctx context.Context, db *gorm.DB, id string) (*entity.User, error) {
+	var user entity.User
+	err := db.WithContext(ctx).Where("id = ?", id).First(&user).Error
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 func (dao *UserDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (*entity.User, error) {
 	var user entity.User
 	err := db.WithContext(ctx).Where("id = ?", tenantID).First(&user).Error
@@ -146,11 +156,6 @@ func (dao *UserDAO) List(ctx context.Context, db *gorm.DB, offset, limit int, na
 // Delete delete user
 func (dao *UserDAO) Delete(ctx context.Context, db *gorm.DB, id uint) error {
 	return db.WithContext(ctx).Delete(&entity.User{}, id).Error
-}
-
-// DeleteByID delete user by string ID (soft delete - set status to 0)
-func (dao *UserDAO) DeleteByID(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Model(&entity.User{}).Where("id = ?", id).Update("status", "0").Error
 }
 
 // HardDelete hard delete user by string ID

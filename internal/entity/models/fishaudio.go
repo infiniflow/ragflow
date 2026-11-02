@@ -80,11 +80,10 @@ func (f *FishAudioModel) TranscribeAudio(ctx context.Context, modelName *string,
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	url, err := f.baseModel.EndpointURL(apiConfig, f.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.ASR)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -191,11 +190,10 @@ func (f *FishAudioModel) AudioSpeech(ctx context.Context, modelName *string, aud
 		return nil, fmt.Errorf("text content is missing")
 	}
 
-	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	url, err := f.baseModel.EndpointURL(apiConfig, f.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"text": *audioContent,
@@ -254,11 +252,11 @@ func (f *FishAudioModel) AudioSpeechWithSender(ctx context.Context, modelName *s
 		return fmt.Errorf("text content is missing")
 	}
 
-	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	ttsURL, err := f.baseModel.EndpointURL(apiConfig, f.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.TTS, "stream/with-timestamp")
+	url := ttsURL + "/stream/with-timestamp"
 
 	reqBody := map[string]interface{}{
 		"text": *audioContent,
@@ -340,11 +338,10 @@ func (f *FishAudioModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 		return nil, err
 	}
 
-	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	url, err := f.baseModel.EndpointURL(apiConfig, f.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -452,5 +449,9 @@ func (f *FishAudioModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([
 }
 
 func (f *FishAudioModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
+}
+
+func (f *FishAudioModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", f.Name())
 }

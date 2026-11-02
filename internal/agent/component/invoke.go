@@ -44,6 +44,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"strings"
 	"time"
@@ -78,6 +79,9 @@ type InvokeComponent struct {
 
 // NewInvokeComponent constructs an Invoke component.
 func NewInvokeComponent(params map[string]any) (Component, error) {
+	if err := validateInvokeVariables(componentNameInvoke, params, false); err != nil {
+		return nil, runtime.NewUserFacingError(err.Error())
+	}
 	return &InvokeComponent{name: componentNameInvoke, params: cloneInvokeParams(params)}, nil
 }
 

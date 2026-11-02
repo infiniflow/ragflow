@@ -290,8 +290,10 @@ func (s *StringTransformComponent) doSplit(_ context.Context, state *runtime.Can
 	// matches. This mirrors Python's re.split with a capture group
 	// (which interleaves content and delimiter tokens) followed by
 	// dropping the odd-indexed (delimiter) tokens. When there are no
-	// matches, the whole input is a single content token.
-	kept := make([]string, 0, len(matches)+1)
+	// matches, the whole input is a single content token. The result is
+	// []any, like other canvas lists, so ListOperations and the
+	// VariableAssigner list operators accept it.
+	kept := make([]any, 0, len(matches)+1)
 	prevEnd := 0
 	for _, m := range matches {
 		kept = append(kept, varValue[prevEnd:m[0]])

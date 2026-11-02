@@ -151,12 +151,12 @@ func (o *OllamaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
+	url := joinURL(resolvedBaseURL, o.baseModel.URLSuffix.Chat)
 
 	// For qwen/glm models, use async chat endpoint
 	modelType := strings.Split(modelName, "_")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.AsyncChat)
+		url = joinURL(resolvedBaseURL, o.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body
@@ -187,10 +187,10 @@ func (o *OllamaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
+	url := joinURL(resolvedBaseURL, o.baseModel.URLSuffix.Chat)
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.AsyncChat)
+		url = joinURL(resolvedBaseURL, o.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body with streaming enabled
@@ -340,7 +340,7 @@ func (o *OllamaModel) Embed(ctx context.Context, modelName *string, request Embe
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for Ollama (e.g., http://127.0.0.1:11434/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), o.baseModel.URLSuffix.Embedding)
+	url := joinURL(baseURL, o.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -455,7 +455,7 @@ func (o *OllamaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for Ollama (e.g., http://127.0.0.1:11434)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), o.baseModel.URLSuffix.Models)
+	url := joinURL(baseURL, o.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -527,5 +527,9 @@ func (o *OllamaModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 }
 
 func (o *OllamaModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}
+
+func (o *OllamaModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }

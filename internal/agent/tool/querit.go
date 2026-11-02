@@ -18,14 +18,11 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -332,6 +329,14 @@ func mergeQueritParams(defaults, runtimeParams queritParams, provided map[string
 }
 
 func validateQueritParams(params queritParams) error {
+	if err := ValidateSearchFilters(map[string]any{
+		"site_include":     params.SiteInclude,
+		"site_exclude":     params.SiteExclude,
+		"country_include":  params.CountryInclude,
+		"language_include": params.LanguageInclude,
+	}, false); err != nil {
+		return err
+	}
 	if params.Count < 1 {
 		return fmt.Errorf("count must be at least 1")
 	}
@@ -481,8 +486,7 @@ func (q *QueritTool) BuildReferences(_ context.Context, response map[string]any)
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(queritHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(queritHashInt(documentID, 500), 10)
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -567,12 +571,6 @@ func queritText(value any) string {
 
 func queritPromptField(value any) string {
 	return queritNewlinePattern.ReplaceAllString(queritText(value), " ")
-}
-
-func queritHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateQueritRunes(value string, limit int) string {
