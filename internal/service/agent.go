@@ -2539,7 +2539,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					emit("message_end", string(meData))
 					s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "invoke: "+err.Error())
 					s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
-					return state, nil
+					// See above: the visible failure text does not make the
+					// run a success.
+					return state, err
 				}
 			}
 			s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "invoke: "+err.Error())
@@ -3116,6 +3118,11 @@ func agentRunFailureText(err error) (string, bool) {
 	case strings.Contains(msg, "exceeds max steps"):
 		return "**ERROR**: The agent did not finish its answer — it reached the internal step limit (max_rounds). Please try again or narrow the question.", true
 	case strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "timeout"):
+		// A timeout raised inside the tools node (MCP call, ExeSQL query,
+		// retrieval) is a tool failure, not a model endpoint failure.
+		if strings.Contains(msg, "tool") {
+			return "**ERROR**: A tool the agent called did not respond in time. Please try again.", true
+		}
 		return "**ERROR**: The model endpoint did not respond in time. Please try again.", true
 	case strings.Contains(msg, "no choices in response"):
 		return "**ERROR**: The model endpoint returned an empty response. Please try again.", true

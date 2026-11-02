@@ -425,6 +425,12 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite
 	done := make(chan error, 1)
 	go func() {
 		var firstErr error
+		// Cite mode holds content deltas for the grounding call. Models that
+		// inline <think>...</think> inside the content stream would otherwise
+		// be completely silent: stream the held reasoning part out as it
+		// completes so the client sees progress like non-cite runs.
+		var heldContent strings.Builder
+		emittedThinkLen := 0
 		iter := future.GetMessageStreams()
 		for {
 			msgStream, hasNext, err := iter.Next()
@@ -468,6 +474,20 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite
 				if cite {
 					if msg.ReasoningContent != "" {
 						runtime.EmitAgentMessage(ctx, "", msg.ReasoningContent)
+					}
+					if msg.Content != "" {
+						heldContent.WriteString(msg.Content)
+						held := heldContent.String()
+						if start := strings.Index(held, "<think>"); start >= 0 {
+							think := held[start+len("<think>"):]
+							if end := strings.Index(think, "</think>"); end >= 0 {
+								think = think[:end]
+							}
+							if len(think) > emittedThinkLen {
+								runtime.EmitAgentMessage(ctx, "", think[emittedThinkLen:])
+								emittedThinkLen = len(think)
+							}
+						}
 					}
 					continue
 				}
@@ -578,10 +598,17 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	if len(batches) > citationGroundingMaxBatches {
 		batches = batches[:citationGroundingMaxBatches]
 	}
+	// Later batches receive text already tagged by earlier ones; marker
+	// filtering must allow every chunk id, not just the current batch's,
+	// or it would strip citations from previous batches.
+	allowedIDs := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		allowedIDs = append(allowedIDs, c.ID)
+	}
 	grounded := content
 	var firstErr error
 	for i, batch := range batches {
-		out, err := citationGroundingCall(ctx, db, p, grounded, batch, i > 0)
+		out, err := citationGroundingCall(ctx, db, p, grounded, batch, allowedIDs, i > 0)
 		if err != nil {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("citation grounding batch %d/%d: %w", i+1, len(batches), err)
@@ -617,8 +644,11 @@ func citationBatches(chunks []prompts.CitationSource, budget int) [][]prompts.Ci
 
 // citationGroundingCall makes one grounding invocation over a single
 // batch of chunks.
-func citationGroundingCall(ctx context.Context, db *gorm.DB, p AgentParam, content string, batch []prompts.CitationSource, keepExisting bool) (string, error) {
-	systemPrompt, ids := prompts.CitationPlusPrompt(batch)
+// citationGroundingCall makes one grounding invocation over a single
+// batch of chunks. allowedIDs carries every chunk id across all batches so
+// marker filtering keeps citations written by earlier batches.
+func citationGroundingCall(ctx context.Context, db *gorm.DB, p AgentParam, content string, batch []prompts.CitationSource, allowedIDs []string, keepExisting bool) (string, error) {
+	systemPrompt, _ := prompts.CitationPlusPrompt(batch)
 	if keepExisting {
 		// Later batches see text already tagged by earlier ones; without
 		// this instruction models tend to strip prior [ID:] citations.
@@ -656,7 +686,7 @@ func citationGroundingCall(ctx context.Context, db *gorm.DB, p AgentParam, conte
 	if resp == nil {
 		return content, fmt.Errorf("citation grounding returned no response")
 	}
-	grounded := filterCitationMarkers(resp.Content, ids)
+	grounded := filterCitationMarkers(resp.Content, allowedIDs)
 	if strings.TrimSpace(grounded) == "" {
 		return content, nil
 	}
@@ -1188,18 +1218,23 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			groundingStatus = "no_chunks"
 		} else {
 			grounded, gErr := applyCitationGrounding(ctx, db, p, content, chunks)
-			if gErr == nil {
-				if grounded != content {
-					content = grounded
-					groundingStatus = "applied"
+			if grounded != content {
+				// A failed later batch keeps the batches that already
+				// succeeded: grounded carries their output, so emit it
+				// rather than discarding all grounding.
+				content = grounded
+				if gErr != nil {
+					groundingStatus = "partial: " + gErr.Error()
 				} else {
-					groundingStatus = "unchanged"
+					groundingStatus = "applied"
 				}
-			} else {
+			} else if gErr != nil {
 				// Grounded deltas are buffered inside applyCitationGrounding,
 				// so a failed call never reached the client — the original
 				// answer is safe to emit.
 				groundingStatus = "error: " + gErr.Error()
+			} else {
+				groundingStatus = "unchanged"
 			}
 		}
 	}
@@ -1288,7 +1323,7 @@ func (c *AgentComponent) Outputs() map[string]string {
 		"thinking":         "Model reasoning content, when the provider returns it separately.",
 		"tool_calls":       "One entry per tool call observed during the run",
 		"artifacts":        "Artifacts collected from tool responses (empty in P0)",
-		"grounding_status": "'applied' | 'no_chunks' | 'error: <msg>' (present when cite=true).",
+		"grounding_status": "'applied' | 'partial: <msg>' | 'unchanged' | 'no_chunks' | 'error: <msg>' (present when cite=true).",
 	}
 }
 
