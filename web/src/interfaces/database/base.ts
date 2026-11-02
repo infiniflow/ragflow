@@ -1,6 +1,6 @@
-export interface ResponseType<T = any> {
+export interface ResponseType<T extends object = any> {
   code: number;
-  data: T;
+  data: T | null;
   message: string;
   status: number;
 }

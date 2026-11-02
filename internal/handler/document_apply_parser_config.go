@@ -12,18 +12,18 @@ import (
 func (h *DocumentHandler) ApplyDatasetParserConfig(c *gin.Context) {
 	user, code, message := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ErrorWithCode(c, code, message)
+		common.Respond(c, common.Response{Code: code, Message: message})
 		return
 	}
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_id is required")
+		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "dataset_id is required"})
 		return
 	}
 	result, code, err := h.documentService.ApplyDatasetParserConfig(c.Request.Context(), user.ID, datasetID)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
-	common.SuccessWithData(c, result, "Parser settings applied. Re-parse files manually to update their content.")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "Parser settings applied. Re-parse files manually to update their content.", Data: result})
 }

@@ -2939,17 +2939,7 @@ func (c *CLI) DevRemoveChunksCommand(commandCount int, cmd *Command) (ResponseIf
 	var result SimpleResponse
 	result.Code = int(code)
 	if result.Code == 0 {
-		deletedCount := int64(0)
-		switch data := resJSON["data"].(type) {
-		case float64:
-			deletedCount = int64(data)
-		case map[string]interface{}:
-			var count float64
-			if count, ok = data["deleted_count"].(float64); ok {
-				deletedCount = int64(count)
-			}
-		}
-		result.Message = fmt.Sprintf("Success to remove chunks from document %s: %d chunks deleted", docID, deletedCount)
+		result.Message = fmt.Sprintf("Success to remove chunks from document %s", docID)
 	} else {
 		result.Message = fmt.Sprintf("Failed to remove chunks: %v", resJSON)
 	}

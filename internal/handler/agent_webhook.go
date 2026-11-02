@@ -126,7 +126,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	if isTest {
 		user, code, msg := GetUser(c)
 		if code != common.CodeSuccess {
-			common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, msg)
+			common.Respond(c, common.Response{Code: code, Message: msg, HTTPStatus: http.StatusUnauthorized})
 			return
 		}
 		userID = user.ID
@@ -137,7 +137,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 		credential, err := h.webhookCredentialManager().Resolve(ctx, canvasID, c.Query("credential"))
 		if err != nil {
 			if errors.Is(err, service.ErrInvalidAgentWebhookCredential) {
-				common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, common.CodeUnauthorized, nil, "Invalid or revoked webhook credential.")
+				common.Respond(c, common.Response{Code: common.CodeUnauthorized, Message: "Invalid or revoked webhook credential.", HTTPStatus: http.StatusUnauthorized})
 			} else {
 				jsonInternalError(c, err)
 			}
@@ -160,7 +160,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	cv, err := h.loader.LoadCanvasByID(ctx, userID, canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) || errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Canvas not found.")
+			common.Respond(c, common.Response{Code: common.CodeDataError, Message: "Canvas not found."})
 			return
 		}
 		jsonInternalError(c, err)
@@ -172,7 +172,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	// Mirrors Python agent_api.py:1786, which returns
 	// "Dataflow can not be triggered by webhook." for the same case.
 	if cv.CanvasCategory == "dataflow_canvas" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Dataflow can not be triggered by webhook.")
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "Dataflow can not be triggered by webhook."})
 		return
 	}
 
@@ -188,20 +188,20 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	// 4. Find Begin component with mode=="Webhook".
 	webhookCfg := findWebhookBegin(dsl)
 	if webhookCfg == nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Webhook not configured for this agent.")
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "Webhook not configured for this agent."})
 		return
 	}
 
 	// 5. Method gate.
 	if !methodAllowed(webhookCfg["methods"], c.Request.Method) {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("HTTP method '%s' not allowed for this webhook.", c.Request.Method))
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: fmt.Sprintf("HTTP method '%s' not allowed for this webhook.", c.Request.Method)})
 		return
 	}
 
 	// 6. Security gate (strict; surfaces all errors as 102).
 	securityCfg := stringMap(webhookCfg["security"])
 	if err = validateWebhookSecurity(securityCfg, c, canvasID); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: err.Error()})
 		return
 	}
 
@@ -232,13 +232,13 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 			// 501 — multipart/form-data uploads are not yet
 			// supported. Body is short so operators see exactly what
 			// is missing.
-			common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeNotImplemented, nil, parseErr.Error())
+			common.Respond(c, common.Response{Code: common.CodeNotImplemented, Message: parseErr.Error(), HTTPStatus: http.StatusNotImplemented})
 			return
 		case errors.Is(parseErr, ErrWebhookContentTypeMismatch):
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, parseErr.Error())
+			common.Respond(c, common.Response{Code: common.CodeDataError, Message: parseErr.Error()})
 			return
 		default:
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, parseErr.Error())
+			common.Respond(c, common.Response{Code: common.CodeDataError, Message: parseErr.Error()})
 			return
 		}
 	}
@@ -247,7 +247,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	schema, _ := webhookCfg["schema"].(map[string]any)
 	clean, schemaErr := applyWebhookSchema(parsed, schema)
 	if schemaErr != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, schemaErr.Error())
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: schemaErr.Error()})
 		return
 	}
 
@@ -259,7 +259,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	if mode == "Immediately" {
 		status, contentType, payload, perr := renderImmediatelyResponse(stringMap(webhookCfg["response"]))
 		if perr != nil {
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, perr.Error())
+			common.Respond(c, common.Response{Code: common.CodeDataError, Message: perr.Error()})
 			return
 		}
 		// Detached background run — does NOT inherit c.Request.Context()
@@ -278,7 +278,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 func (h *AgentHandler) CreateWebhookCredential(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
+		common.Respond(c, common.Response{Code: code, Message: msg})
 		return
 	}
 	if h.loader == nil {
@@ -290,13 +290,13 @@ func (h *AgentHandler) CreateWebhookCredential(c *gin.Context) {
 	canvas, err := h.loader.LoadCanvasByID(ctx, user.ID, canvasID)
 	if err != nil {
 		responseCode, responseMessage := mapAgentError(err)
-		common.ResponseWithCodeData(c, responseCode, nil, responseMessage)
+		common.Respond(c, common.Response{Code: responseCode, Message: responseMessage})
 		return
 	}
 	credential, err := h.webhookCredentialManager().Issue(ctx, permission.Subject{UserID: user.ID}, canvas)
 	if err != nil {
 		if errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrMembershipNotFound) || errors.Is(err, permission.ErrInvalidSubject) {
-			common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "You do not have permission to create a webhook credential for this agent.")
+			common.Respond(c, common.Response{Code: common.CodeForbidden, Message: "You do not have permission to create a webhook credential for this agent.", HTTPStatus: http.StatusForbidden})
 			return
 		}
 		jsonInternalError(c, err)
@@ -304,10 +304,10 @@ func (h *AgentHandler) CreateWebhookCredential(c *gin.Context) {
 	}
 	query := url.Values{"credential": []string{credential}}
 	webhookPath := fmt.Sprintf("/api/v1/agents/%s/webhook?%s", url.PathEscape(canvasID), query.Encode())
-	common.ResponseWithCodeData(c, common.CodeSuccess, gin.H{
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: gin.H{
 		"credential":  credential,
 		"webhook_url": webhookPath,
-	}, "success")
+	}})
 }
 
 // RevokeWebhookCredential revokes only the authenticated user's capability
@@ -315,14 +315,14 @@ func (h *AgentHandler) CreateWebhookCredential(c *gin.Context) {
 func (h *AgentHandler) RevokeWebhookCredential(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
+		common.Respond(c, common.Response{Code: code, Message: msg})
 		return
 	}
 	if err := h.webhookCredentialManager().Revoke(c.Request.Context(), c.Param("canvas_id"), user.ID); err != nil {
 		jsonInternalError(c, err)
 		return
 	}
-	common.ResponseWithCodeData(c, common.CodeSuccess, true, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success"})
 }
 
 func (h *AgentHandler) webhookCredentialManager() agentWebhookCredentialManager {

@@ -74,7 +74,7 @@ func sessionHistoryQuery(c *gin.Context) (dao.ConversationHistoryOptions, error)
 func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 	userID := user.ID
@@ -82,7 +82,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	// Get chat_id from query parameter
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "chat_id is required")
+		common.Respond(c, common.Response{Code: 400, Message: "chat_id is required", HTTPStatus: http.StatusBadRequest})
 		return
 	}
 
@@ -112,7 +112,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 			orderby = queryOrderby
 		default:
 			if len(sortTerms) == 0 {
-				common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", queryOrderby))
+				common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: fmt.Sprintf("invalid orderby field: %s", queryOrderby)})
 				return
 			}
 		}
@@ -129,7 +129,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	includeHistory := c.DefaultQuery("include_history", "true")
 	options, err := sessionHistoryQuery(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: err.Error()})
 		return
 	}
 	options.NoHistory = includeHistory == "false" || includeHistory == "False"
@@ -138,11 +138,11 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
+		common.Respond(c, common.Response{Code: 500, Message: err.Error(), HTTPStatus: http.StatusInternalServerError})
 		return
 	}
 
-	common.SuccessWithDataAndTotal(c, result.Sessions, result.Total, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: result.Sessions, Total: result.Total})
 }
 
 type ChatCompletionsRequest struct {
@@ -181,29 +181,29 @@ type ChatCompletionsRequest struct {
 func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 	userID := user.ID
 
 	var rawBody map[string]interface{}
 	if err := c.ShouldBindJSON(&rawBody); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: err.Error()})
 		return
 	}
 	if _, err := service.ResolveStoreHistoryMessages(rawBody); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: err.Error()})
 		return
 	}
 
 	var req ChatCompletionsRequest
 	b, err := json.Marshal(rawBody)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: err.Error()})
 		return
 	}
 	if err = json.Unmarshal(b, &req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: err.Error()})
 		return
 	}
 
@@ -242,7 +242,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	}
 	if req.MaxTokens != nil {
 		if *req.MaxTokens <= 0 {
-			common.ErrorWithCode(c, common.CodeBadRequest, "`max_tokens` must be greater than 0.")
+			common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: "`max_tokens` must be greater than 0."})
 			return
 		}
 		genConfig["max_tokens"] = *req.MaxTokens
@@ -322,20 +322,20 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		if err != nil {
 			var codedErr *common.CodedError
 			if errors.As(err, &codedErr) {
-				common.ErrorWithCode(c, codedErr.Code, codedErr.Message)
+				common.Respond(c, common.Response{Code: codedErr.Code, Message: codedErr.Message})
 				return
 			}
-			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
+			common.Respond(c, common.Response{Code: 500, Message: err.Error(), HTTPStatus: http.StatusInternalServerError})
 			return
 		}
-		common.SuccessWithData(c, result, "")
+		common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "", Data: result})
 	}
 }
 
 func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
@@ -345,7 +345,7 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 	ctx := c.Request.Context()
 	options, err := sessionHistoryQuery(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: err.Error()})
 		return
 	}
 	result, code, err := h.chatSessionService.GetSession(ctx, userID, chatID, sessionID, options)
@@ -353,29 +353,29 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
-	common.SuccessWithData(c, result, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: result})
 }
 
 // CreateSession create a session in a dialog
 func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "user_id is required")
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: "user_id is required"})
 		return
 	}
 
 	chatID := strings.TrimSpace(c.Param("chat_id"))
 	if chatID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "chat_id is required")
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: "chat_id is required"})
 		return
 	}
 
@@ -385,7 +385,7 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 			req = map[string]interface{}{}
 		} else {
 			// Mirror Python's malformed-JSON contract message.
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
+			common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "Malformed JSON syntax: Missing commas/brackets or invalid encoding"})
 			return
 		}
 	}
@@ -399,30 +399,30 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: result})
 }
 
 // DeleteSessions delete a session in a dialog
 func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
 	chatID := strings.TrimSpace(c.Param("chat_id"))
 	if chatID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "chat_id is required")
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: "chat_id is required"})
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "user_id is required")
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: "user_id is required"})
 		return
 	}
 
@@ -432,7 +432,7 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 			req = map[string]interface{}{}
 		} else {
 			// Mirror Python's malformed-JSON contract message.
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
+			common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "Malformed JSON syntax: Missing commas/brackets or invalid encoding"})
 			return
 		}
 	}
@@ -446,17 +446,20 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
 
-	common.SuccessWithData(c, result, message)
+	if _, ok := result.(bool); ok {
+		result = nil
+	}
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: message, Data: result})
 }
 
 func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
@@ -466,7 +469,7 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 	// An empty payload is a valid no-op (mirrors Python's update_session).
 	req := map[string]any{}
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
+		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "Invalid request: " + err.Error()})
 		return
 	}
 
@@ -476,16 +479,16 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
-	common.SuccessWithData(c, result, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: result})
 }
 
 func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 	userID := user.ID
@@ -497,16 +500,16 @@ func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
-	common.SuccessWithData(c, result, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: result})
 }
 
 func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
@@ -516,15 +519,14 @@ func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 	req := map[string]interface{}{}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		if errors.Is(err, io.EOF) {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-				"Request body cannot be empty")
+			common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "Request body cannot be empty"})
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
+		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "Invalid request: " + err.Error()})
 		return
 	}
 	if len(req) == 0 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Request body cannot be empty")
+		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "Request body cannot be empty"})
 		return
 	}
 
@@ -533,8 +535,8 @@ func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
-	common.SuccessWithData(c, result, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: result})
 }

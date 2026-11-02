@@ -41,7 +41,7 @@ func NewStatsHandler(statsService *service.StatsService) *StatsHandler {
 func (h *StatsHandler) GetChatStats(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
@@ -66,9 +66,9 @@ func (h *StatsHandler) GetChatStats(c *gin.Context) {
 		if errors.Is(err, service.ErrTenantNotFound) {
 			code = common.CodeDataError
 		}
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
 
-	common.SuccessWithData(c, stats, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: stats})
 }

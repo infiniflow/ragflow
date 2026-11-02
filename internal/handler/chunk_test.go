@@ -263,8 +263,8 @@ func TestChunkHandlerSwitchChunksCallsService(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
 		t.Fatalf("invalid JSON response: %v", err)
 	}
-	if res["data"] != true {
-		t.Fatalf("data = %v, want true", res["data"])
+	if res["data"] != nil {
+		t.Fatalf("data = %v, want null", res["data"])
 	}
 }
 

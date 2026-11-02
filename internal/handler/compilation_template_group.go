@@ -57,7 +57,7 @@ func NewCompilationTemplateGroupHandler(svc *service.CompilationTemplateGroupSer
 func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ErrorWithCode(c, code, msg)
+		common.Respond(c, common.Response{Code: code, Message: msg})
 		return
 	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
@@ -85,7 +85,7 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 
 	groups, err := h.compilationTemplateGroupService.ListSaved(c.Request.Context(), tenantID, keywords, scope, terms)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeExceptionError, Message: err.Error()})
 		return
 	}
 	total := len(groups)
@@ -101,7 +101,7 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 			groups = groups[start:end]
 		}
 	}
-	common.SuccessWithData(c, gin.H{"groups": groups, "total": total}, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: gin.H{"groups": groups, "total": total}})
 }
 
 // Get returns a single compilation template group.
@@ -115,20 +115,20 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 func (h *CompilationTemplateGroupHandler) Get(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ErrorWithCode(c, code, msg)
+		common.Respond(c, common.Response{Code: code, Message: msg})
 		return
 	}
 	id := c.Param("group_id")
 	group, err := h.compilationTemplateGroupService.GetSaved(c.Request.Context(), user.ID, id)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeExceptionError, Message: err.Error()})
 		return
 	}
 	if group == nil {
-		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Cannot find compilation template group "+id+".")
+		common.Respond(c, common.Response{Code: common.CodeNotFound, Message: "Cannot find compilation template group " + id + "."})
 		return
 	}
-	common.SuccessWithData(c, group, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: group})
 }
 
 // Save creates a new compilation template group with its child templates.
@@ -142,24 +142,24 @@ func (h *CompilationTemplateGroupHandler) Get(c *gin.Context) {
 func (h *CompilationTemplateGroupHandler) Save(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ErrorWithCode(c, code, msg)
+		common.Respond(c, common.Response{Code: code, Message: msg})
 		return
 	}
 	var req service.GroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
+		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "Invalid request: " + err.Error()})
 		return
 	}
 	if err := service.ValidateGroupRequest(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: err.Error()})
 		return
 	}
 	group, err := h.compilationTemplateGroupService.CreateGroup(c.Request.Context(), user.ID, &req)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: err.Error()})
 		return
 	}
-	common.SuccessWithData(c, group, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: group})
 }
 
 // Update applies a partial update to a compilation template group.
@@ -174,40 +174,40 @@ func (h *CompilationTemplateGroupHandler) Save(c *gin.Context) {
 func (h *CompilationTemplateGroupHandler) Update(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ErrorWithCode(c, code, msg)
+		common.Respond(c, common.Response{Code: code, Message: msg})
 		return
 	}
 	id := c.Param("group_id")
 	var req service.GroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
+		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "Invalid request: " + err.Error()})
 		return
 	}
 	if err := service.ValidateGroupRequest(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: err.Error()})
 		return
 	}
 	if req.Name != "" {
 		nameExists, nerr := h.compilationTemplateGroupService.NameExists(c.Request.Context(), user.ID, req.Name, id)
 		if nerr != nil {
-			common.ResponseWithCodeData(c, common.CodeExceptionError, nil, nerr.Error())
+			common.Respond(c, common.Response{Code: common.CodeExceptionError, Message: nerr.Error()})
 			return
 		}
 		if nameExists {
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Duplicated compilation template group name.")
+			common.Respond(c, common.Response{Code: common.CodeDataError, Message: "Duplicated compilation template group name."})
 			return
 		}
 	}
 	group, err := h.compilationTemplateGroupService.UpdateGroup(c.Request.Context(), user.ID, id, &req)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: err.Error()})
 		return
 	}
 	if group == nil {
-		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Cannot find compilation template group "+id+".")
+		common.Respond(c, common.Response{Code: common.CodeNotFound, Message: "Cannot find compilation template group " + id + "."})
 		return
 	}
-	common.SuccessWithData(c, group, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: group})
 }
 
 // Delete soft-deletes a compilation template group and its children.
@@ -221,18 +221,18 @@ func (h *CompilationTemplateGroupHandler) Update(c *gin.Context) {
 func (h *CompilationTemplateGroupHandler) Delete(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ErrorWithCode(c, code, msg)
+		common.Respond(c, common.Response{Code: code, Message: msg})
 		return
 	}
 	id := c.Param("group_id")
 	ok, err := h.compilationTemplateGroupService.DeleteGroup(c.Request.Context(), user.ID, id)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeExceptionError, Message: err.Error()})
 		return
 	}
 	if !ok {
-		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "Cannot find compilation template group "+id+".")
+		common.Respond(c, common.Response{Code: common.CodeNotFound, Message: "Cannot find compilation template group " + id + "."})
 		return
 	}
-	common.SuccessWithData(c, true, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success"})
 }

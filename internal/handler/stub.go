@@ -65,7 +65,7 @@ func issueUserAccessToken(user *entity.User, secretKey string) (string, error) {
 // edition. The route stays registered so clients see "not implemented" rather
 // than "not found".
 func eeNotImplemented(c *gin.Context, feature string) {
-	common.ErrorWithCode(c, common.CodeNotImplemented, feature+" not implemented")
+	common.Respond(c, common.Response{Code: common.CodeNotImplemented, Message: feature + " not implemented"})
 }
 
 func (h *SystemHandler) GetEnableAdmin(c *gin.Context) { eeNotImplemented(c, "EnableAdmin") }
@@ -90,11 +90,11 @@ func (h *UserHandler) GetMeta(c *gin.Context) { eeNotImplemented(c, "GetMeta") }
 func (h *UserHandler) GetLoginChannelsDeprecated(c *gin.Context) {
 	channels, code, err := h.userService.GetLoginChannels()
 	if err != nil {
-		common.ResponseWithCodeData(c, code, []interface{}{}, "Load channels failure, error: "+err.Error())
+		common.Respond(c, common.Response{Code: code, Message: "Load channels failure, error: " + err.Error(), Data: []interface{}{}})
 		return
 	}
 
-	common.SuccessWithData(c, channels, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: channels})
 }
 func (h *ProviderHandler) CreateModelGroup(c *gin.Context) { eeNotImplemented(c, "CreateModelGroup") }
 func (h *ProviderHandler) DeleteModelGroup(c *gin.Context) { eeNotImplemented(c, "DeleteModelGroup") }

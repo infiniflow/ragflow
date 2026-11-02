@@ -490,31 +490,31 @@ type agentHandlerTestable struct {
 func (h *agentHandlerTestable) listAgents(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "", nil)
 	if err != nil {
-		common.ResponseWithCodeData(c, code, false, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
-	common.SuccessWithData(c, result, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: result})
 }
 
 func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
 	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 	templates, err := h.svc.ListTemplates()
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error()})
 		return
 	}
 	if templates == nil {
 		templates = []*entity.CanvasTemplate{}
 	}
-	common.SuccessWithData(c, templates, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: templates})
 }
 
 func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
@@ -711,7 +711,7 @@ func TestAgentHandler_NotFoundOnUnknownCanvas(t *testing.T) {
 	r2.Use(setUser())
 	g2 := r2.Group("/api/v1/agents")
 	g2.GET("/:canvas_id", func(c *gin.Context) {
-		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "agent unknown: not found")
+		common.Respond(c, common.Response{Code: common.CodeNotFound, Message: "agent unknown: not found"})
 	})
 
 	w := httptest.NewRecorder()

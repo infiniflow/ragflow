@@ -79,7 +79,7 @@ func TestNewMCPServerResponsePreservesNullDescriptionAndFormatsDates(t *testing.
 	}
 }
 
-func TestMCPDetailDataErrorOmitsDataFieldLikePython(t *testing.T) {
+func TestMCPDetailDataErrorReturnsNullData(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -99,7 +99,7 @@ func TestMCPDetailDataErrorOmitsDataFieldLikePython(t *testing.T) {
 	if body["message"] != "Cannot find MCP server mcp-id for user user-id" {
 		t.Fatalf("message = %v", body["message"])
 	}
-	if _, ok := body["data"]; ok {
-		t.Fatalf("body unexpectedly contains data field: %s", recorder.Body.String())
+	if data, ok := body["data"]; !ok || data != nil {
+		t.Fatalf("expected data:null: %s", recorder.Body.String())
 	}
 }

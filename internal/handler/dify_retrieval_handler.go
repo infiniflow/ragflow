@@ -166,14 +166,14 @@ func NewDifyRetrievalHandler(
 func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	user, errCode, errMsg := GetUser(c)
 	if errCode != common.CodeSuccess {
-		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, errCode, nil, errMsg)
+		common.Respond(c, common.Response{Code: errCode, Message: errMsg, HTTPStatus: http.StatusUnauthorized})
 		return
 	}
 
 	var req difyRetrievalRequest
 	if c.Request.Method == http.MethodGet {
 		if err := c.ShouldBindQuery(&req); err != nil {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid query parameters")
+			common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "invalid query parameters", HTTPStatus: http.StatusBadRequest})
 			return
 		}
 		// Manually extract top_k and score_threshold from query (flat params, not nested)
@@ -195,13 +195,13 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		}
 	} else {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid request body")
+			common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "invalid request body", HTTPStatus: http.StatusBadRequest})
 			return
 		}
 	}
 
 	if req.KnowledgeID == "" || req.Query == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "knowledge_id and query are required")
+		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "knowledge_id and query are required", HTTPStatus: http.StatusBadRequest})
 		return
 	}
 
@@ -209,9 +209,9 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	kb, err := h.kbSvc.GetKnowledgebaseByID(ctx, req.KnowledgeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			common.ResponseWithHttpCodeData(c, http.StatusNotFound, common.CodeNotFound, nil, "Knowledge base not found!")
+			common.Respond(c, common.Response{Code: common.CodeNotFound, Message: "Knowledge base not found!", HTTPStatus: http.StatusNotFound})
 		} else {
-			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "failed to query knowledge base")
+			common.Respond(c, common.Response{Code: common.CodeServerError, Message: "failed to query knowledge base", HTTPStatus: http.StatusInternalServerError})
 		}
 		return
 	}
@@ -233,7 +233,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	pageSize := 1024
 	if topK != nil {
 		if *topK < 1 || *topK > 1024 {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be between 1 and 1024")
+			common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "top_k must be between 1 and 1024", HTTPStatus: http.StatusBadRequest})
 			return
 		}
 		pageSize = *topK
@@ -243,7 +243,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	access := service.Identity{UserID: user.ID, TenantID: kb.TenantID}
 	embModel, err := h.modelFactory.NewEmbeddingModel(ctx, access, kb.EmbdID)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to get embedding model: %v", err))
+		common.Respond(c, common.Response{Code: common.CodeServerError, Message: fmt.Sprintf("failed to get embedding model: %v", err), HTTPStatus: http.StatusInternalServerError})
 		return
 	}
 
@@ -290,10 +290,10 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	result, err := h.retrievalSvc.Retrieval(c.Request.Context(), sr)
 	if err != nil {
 		if strings.Contains(err.Error(), "not_found") {
-			common.ResponseWithHttpCodeData(c, http.StatusNotFound, common.CodeNotFound, nil, "No chunk found! Check the chunk status please!")
+			common.Respond(c, common.Response{Code: common.CodeNotFound, Message: "No chunk found! Check the chunk status please!", HTTPStatus: http.StatusNotFound})
 			return
 		}
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error(), HTTPStatus: http.StatusInternalServerError})
 		return
 	}
 
@@ -339,7 +339,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		var docs []*entity.Document
 		docs, err = h.docDAO.GetByIDs(ctx, dao.DB, allDocIDs)
 		if err != nil {
-			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to load documents: %v", err))
+			common.Respond(c, common.Response{Code: common.CodeServerError, Message: fmt.Sprintf("failed to load documents: %v", err), HTTPStatus: http.StatusInternalServerError})
 			return
 		}
 		for _, d := range docs {
@@ -401,5 +401,5 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 // HealthCheck Health check returns a simple health check response.
 func (h *DifyRetrievalHandler) HealthCheck(c *gin.Context) {
-	common.SuccessWithData(c, true, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success"})
 }

@@ -79,7 +79,7 @@ func NewConnectorHandler(connectorService *service.ConnectorService, userService
 func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 	userID := user.ID
@@ -91,11 +91,11 @@ func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 		if connectorErrorResponse(c, err) {
 			return
 		}
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
+		common.Respond(c, common.Response{Code: 500, Message: err.Error(), HTTPStatus: http.StatusInternalServerError})
 		return
 	}
 
-	common.SuccessWithData(c, result.Connectors, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: result.Connectors})
 }
 
 // connectorErrorResponse maps service sentinel errors to the response codes used
@@ -107,17 +107,17 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 		return false
 	case permissionresponse.IsPermissionError(err):
 		code, permissionErr := permissionresponse.NormalizeHidden(err)
-		common.ErrorWithCode(c, code, permissionErr.Error())
+		common.Respond(c, common.Response{Code: code, Message: permissionErr.Error()})
 	case errors.Is(err, service.ErrConnectorIDRequired):
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: err.Error()})
 	case errors.Is(err, service.ErrConnectorNotFound):
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Connector!")
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "Can't find this Connector!"})
 	case errors.Is(err, service.ErrConnectorTestUnsupported):
-		common.ResponseWithCodeData(c, common.CodeNotImplemented, false, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeNotImplemented, Message: err.Error()})
 	case errors.Is(err, service.ErrConnectorSourceNotImplemented):
-		common.ResponseWithCodeData(c, common.CodeNotImplemented, false, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeNotImplemented, Message: err.Error()})
 	default:
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error(), HTTPStatus: http.StatusInternalServerError})
 	}
 	return true
 }
@@ -133,7 +133,7 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 func (h *ConnectorHandler) GetConnector(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 	ctx := c.Request.Context()
@@ -143,20 +143,20 @@ func (h *ConnectorHandler) GetConnector(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, connector, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: connector})
 }
 
 // UpdateConnector Update an accessible connector's polling configuration.
 func (h *ConnectorHandler) UpdateConnector(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
 	req, err := decodeUpdateConnectorRequest(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: err.Error()})
 		return
 	}
 
@@ -164,11 +164,11 @@ func (h *ConnectorHandler) UpdateConnector(c *gin.Context) {
 
 	connector, code, err := h.connectorService.UpdateConnector(ctx, c.Param("connector_id"), user.ID, req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
 
-	common.SuccessWithData(c, connector, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: connector})
 }
 
 func decodeUpdateConnectorRequest(c *gin.Context) (*service.UpdateConnectorRequest, error) {
@@ -209,7 +209,7 @@ func decodeUpdateConnectorRequest(c *gin.Context) (*service.UpdateConnectorReque
 func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
@@ -217,7 +217,7 @@ func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 	if rawPage := strings.TrimSpace(c.DefaultQuery("page", "1")); rawPage != "" {
 		parsedPage, err := strconv.Atoi(rawPage)
 		if err != nil {
-			common.ErrorWithCode(c, common.CodeArgumentError, "page must be an integer")
+			common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "page must be an integer"})
 			return
 		}
 		page = parsedPage
@@ -227,7 +227,7 @@ func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 	if rawPageSize := strings.TrimSpace(c.DefaultQuery("page_size", "15")); rawPageSize != "" {
 		parsedPageSize, err := strconv.Atoi(rawPageSize)
 		if err != nil {
-			common.ErrorWithCode(c, common.CodeArgumentError, "page_size must be an integer")
+			common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "page_size must be an integer"})
 			return
 		}
 		pageSize = parsedPageSize
@@ -237,14 +237,14 @@ func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 
 	logs, total, code, err := h.connectorService.ListLog(ctx, c.Param("connector_id"), user.ID, page, pageSize)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
 	if logs == nil {
 		logs = []*entity.ConnectorSyncLog{}
 	}
 
-	common.SuccessWithData(c, gin.H{"total": total, "logs": logs}, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: gin.H{"total": total, "logs": logs}})
 }
 
 // ListSyncLogs handles GET /api/v1/connectors/sync-logs.
@@ -260,7 +260,7 @@ func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
@@ -269,7 +269,7 @@ func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
 	if rawPage := strings.TrimSpace(c.Query("page")); rawPage != "" {
 		parsedPage, err := strconv.Atoi(rawPage)
 		if err != nil {
-			common.ErrorWithCode(c, common.CodeArgumentError, "page must be an integer")
+			common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "page must be an integer"})
 			return
 		}
 		page = parsedPage
@@ -277,7 +277,7 @@ func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
 	if rawPageSize := strings.TrimSpace(c.Query("page_size")); rawPageSize != "" {
 		parsedPageSize, err := strconv.Atoi(rawPageSize)
 		if err != nil {
-			common.ErrorWithCode(c, common.CodeArgumentError, "page_size must be an integer")
+			common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "page_size must be an integer"})
 			return
 		}
 		pageSize = parsedPageSize
@@ -289,14 +289,14 @@ func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
 
 	logs, total, code, err := h.connectorService.ListLogs(ctx, user.ID, datasetID, page, pageSize)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
 	if logs == nil {
 		logs = []*entity.ConnectorSyncLog{}
 	}
 
-	common.SuccessWithData(c, gin.H{"total": total, "logs": logs}, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: gin.H{"total": total, "logs": logs}})
 }
 
 // CreateConnector create connector
@@ -310,26 +310,26 @@ func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
 func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
 	var req service.CreateConnectorRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: "Invalid request body: " + err.Error(), HTTPStatus: http.StatusBadRequest})
 		return
 	}
 
 	if strings.TrimSpace(req.Name) == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "name is required")
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "name is required"})
 		return
 	}
 	if strings.TrimSpace(req.Source) == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "source is required")
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "source is required"})
 		return
 	}
 	if req.Config == nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "config is required")
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "config is required"})
 		return
 	}
 
@@ -338,14 +338,14 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 	connector, err := h.connectorService.CreateConnector(ctx, user.ID, &req)
 	if err != nil {
 		if errors.Is(err, service.ErrConnectorInvalidFreq) {
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+			common.Respond(c, common.Response{Code: common.CodeDataError, Message: err.Error()})
 			return
 		}
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error(), HTTPStatus: http.StatusInternalServerError})
 		return
 	}
 
-	common.SuccessWithData(c, connector, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: connector})
 }
 
 type testConnectorRequest struct {
@@ -364,13 +364,13 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 	// check user and connector
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
 	connectorID := c.Param("connector_id")
 	if connectorID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "connector_id is required")
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: "connector_id is required", HTTPStatus: http.StatusBadRequest})
 		return
 	}
 
@@ -381,7 +381,7 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 	if c.Request.Body != nil && c.Request.ContentLength != 0 {
 		var body testConnectorRequest
 		if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
+			common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: err.Error(), HTTPStatus: http.StatusBadRequest})
 			return
 		}
 		// get source and config from web
@@ -411,17 +411,17 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 			rateErr *syncerconnector.RateLimitTriedTooManyTimesError
 		)
 		if errors.As(err, &valErr) || errors.As(err, &credErr) || errors.As(err, &rateErr) {
-			common.ResponseWithCodeData(c, common.CodeDataError, false, err.Error())
+			common.Respond(c, common.Response{Code: common.CodeDataError, Message: err.Error()})
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error()})
 		return
 	}
 	if connectorErrorResponse(c, err) {
 		return
 	}
 
-	common.SuccessWithData(c, true, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success"})
 }
 
 // DeleteConnector delete connector
@@ -432,19 +432,19 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 func (h *ConnectorHandler) DeleteConnector(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
 	ctx := c.Request.Context()
 
-	ok, code, err := h.connectorService.DeleteConnector(ctx, c.Param("connector_id"), user.ID)
+	_, code, err := h.connectorService.DeleteConnector(ctx, c.Param("connector_id"), user.ID)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
 
-	common.SuccessWithData(c, ok, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success"})
 }
 
 // RebuildConnector rebuild connector
@@ -458,7 +458,7 @@ func (h *ConnectorHandler) DeleteConnector(c *gin.Context) {
 func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
@@ -467,23 +467,23 @@ func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
 		KbID string `json:"kb_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "required argument is missing: kb_id")
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "required argument is missing: kb_id"})
 		return
 	}
 
 	if strings.TrimSpace(req.KbID) == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "kb_id cannot be empty")
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "kb_id cannot be empty"})
 		return
 	}
 
 	ctx := c.Request.Context()
-	ok, code, err := h.connectorService.RebuildConnector(ctx, c.Param("connector_id"), user.ID, req.KbID)
+	_, code, err := h.connectorService.RebuildConnector(ctx, c.Param("connector_id"), user.ID, req.KbID)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
 
-	common.SuccessWithData(c, ok, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success"})
 }
 
 // ResumeFailedSync resumes a failed connector sync task from checkpoint. (when network outage)
@@ -497,35 +497,35 @@ func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
 func (h *ConnectorHandler) ResumeFailedSync(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
 	var req service.ResumeFailedSyncRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "required argument is missing: kb_id or task_id")
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "required argument is missing: kb_id or task_id"})
 		return
 	}
 
 	ctx := c.Request.Context()
-	ok, code, err := h.connectorService.ResumeFailedSync(ctx, c.Param("connector_id"), user.ID, &req)
+	_, code, err := h.connectorService.ResumeFailedSync(ctx, c.Param("connector_id"), user.ID, &req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
-	common.SuccessWithData(c, ok, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success"})
 }
 
 func (h *ConnectorHandler) StartGoogleWebOAuth(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
 	var req service.StartGoogleWebOAuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: err.Error()})
 		return
 	}
 
@@ -533,23 +533,23 @@ func (h *ConnectorHandler) StartGoogleWebOAuth(c *gin.Context) {
 
 	data, code, err := h.connectorService.StartGoogleWebOAuth(ctx, user.ID, c.DefaultQuery("type", "google-drive"), &req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
 
-	common.SuccessWithData(c, data, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: data})
 }
 
 func (h *ConnectorHandler) PollGoogleWebOAuthResult(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
 	var req service.PollGoogleWebOAuthResultRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: err.Error(), HTTPStatus: http.StatusBadRequest})
 		return
 	}
 
@@ -557,11 +557,11 @@ func (h *ConnectorHandler) PollGoogleWebOAuthResult(c *gin.Context) {
 
 	data, code, err := h.connectorService.PollGoogleWebOAuthResult(ctx, user.ID, c.Query("type"), &req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
 
-	common.SuccessWithData(c, data, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: data})
 }
 
 func (h *ConnectorHandler) GoogleWebOAuthCallback(c *gin.Context) {
@@ -592,22 +592,22 @@ func (h *ConnectorHandler) googleWebOAuthCallback(c *gin.Context, source string)
 func (h *ConnectorHandler) StartBoxWebOAuth(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 	var req service.StartBoxWebOAuthRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: err.Error()})
 		return
 	}
 	ctx := c.Request.Context()
 
 	resp, code, err := h.connectorService.StartBoxWebOAuth(ctx, user.ID, &req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
-	common.ResponseWithCodeData(c, code, resp, "success")
+	common.Respond(c, common.Response{Code: code, Message: "success", Data: resp})
 }
 
 func (h *ConnectorHandler) BoxWebOAuthCallback(c *gin.Context) {
@@ -626,20 +626,20 @@ func (h *ConnectorHandler) BoxWebOAuthCallback(c *gin.Context) {
 func (h *ConnectorHandler) PollBoxWebOAuthResult(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 	var req service.PollBoxWebOAuthResultRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: err.Error()})
 		return
 	}
 	ctx := c.Request.Context()
 
 	resp, code, err := h.connectorService.PollBoxWebOAuthResult(ctx, user.ID, &req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.Respond(c, common.Response{Code: code, Message: err.Error()})
 		return
 	}
-	common.ResponseWithCodeData(c, code, resp, "success")
+	common.Respond(c, common.Response{Code: code, Message: "success", Data: resp})
 }

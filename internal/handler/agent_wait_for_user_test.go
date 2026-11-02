@@ -154,7 +154,7 @@ func waitForUserRoutes(svc *waitFakeAgentService) *gin.Engine {
 		if err != nil {
 			// We never expect a non-nil err from the fake,
 			// but be defensive.
-			common.ErrorWithCode(c, common.CodeServerError, err.Error())
+			common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error()})
 			return
 		}
 		c.Writer.Header().Set("Content-Type", "text/event-stream")

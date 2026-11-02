@@ -706,7 +706,7 @@ func (r *BenchmarkResponse) TimeCost() float64 {
 type KeyValueResponse struct {
 	Code         int    `json:"code"`
 	Key          string `json:"key"`
-	Value        string `json:"data"`
+	Value        string `json:"message"`
 	Duration     float64
 	OutputFormat OutputFormat
 }

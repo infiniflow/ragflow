@@ -77,18 +77,18 @@ func (h *SystemHandler) Healthz(c *gin.Context) {
 func (h *SystemHandler) GetConfig(c *gin.Context) {
 	config, err := h.systemService.GetConfig()
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to get system configuration")
+		common.Respond(c, common.Response{Code: 500, Message: "Failed to get system configuration", HTTPStatus: http.StatusInternalServerError})
 		return
 	}
 
-	common.SuccessWithData(c, config, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: config})
 }
 
 // GetStatus get RAGFlow status
 func (h *SystemHandler) GetStatus(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
 		return
 	}
 
@@ -99,7 +99,7 @@ func (h *SystemHandler) GetStatus(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, status, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: status})
 }
 
 // GetVersion get RAGFlow version
@@ -114,11 +114,11 @@ func (h *SystemHandler) GetStatus(c *gin.Context) {
 func (h *SystemHandler) GetVersion(c *gin.Context) {
 	version, err := h.systemService.GetVersion()
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to get version")
+		common.Respond(c, common.Response{Code: 500, Message: "Failed to get version", HTTPStatus: http.StatusInternalServerError})
 		return
 	}
 
-	common.SuccessWithData(c, version.Version, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: version.Version})
 }
 
 // GetLogLevel returns the current log level. The response uses the
@@ -128,7 +128,7 @@ func (h *SystemHandler) GetVersion(c *gin.Context) {
 // table carried (e.g. "peewee", "pdfminer") were inert for the Go
 // side and are no longer returned.
 func (h *SystemHandler) GetLogLevel(c *gin.Context) {
-	common.SuccessWithData(c, gin.H{"level": common.GetLogLevel()}, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: gin.H{"level": common.GetLogLevel()}})
 }
 
 // SetLogLevelRequest set log level request. PkgName is accepted for
@@ -152,12 +152,12 @@ type SetLogLevelRequest struct {
 func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, "pkg_name and level are required")
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "pkg_name and level are required"})
 		return
 	}
 
 	if err := common.SetLogLevel(req.Level); err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, "Invalid log level: "+req.Level)
+		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "Invalid log level: " + req.Level})
 		return
 	}
 
@@ -165,31 +165,31 @@ func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 		config.SetLogLevel(req.Level)
 	}
 
-	common.SuccessWithData(c, gin.H{"level": req.Level}, "SUCCESS")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "SUCCESS", Data: gin.H{"level": req.Level}})
 }
 
 // ListEnvironments handle list environments
 func (h *SystemHandler) ListEnvironments(c *gin.Context) {
 	environments, err := h.systemService.ListEnvironments()
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error()})
 		return
 	}
 
-	common.SuccessWithData(c, environments, "SUCCESS")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "SUCCESS", Data: environments})
 }
 
 // Language returns the backend runtime language so the front end can
 // choose the appropriate code path (Go vs Python).
 func (h *SystemHandler) Language(c *gin.Context) {
-	common.SuccessWithData(c, map[string]string{"language": "go"}, "success")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: map[string]string{"language": "go"}})
 }
 
 func (h *SystemHandler) GetHardwareInfo(c *gin.Context) {
 	hardwareInfo, err := utility.GetHardwareInfo()
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error()})
 		return
 	}
-	common.SuccessWithData(c, hardwareInfo, "SUCCESS")
+	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "SUCCESS", Data: hardwareInfo})
 }

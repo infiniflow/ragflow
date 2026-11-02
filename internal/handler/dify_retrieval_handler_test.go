@@ -205,8 +205,8 @@ func TestDifyRetrieval_HealthCheck(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["data"] != true {
-		t.Errorf("expected data=true, got %v", resp["data"])
+	if resp["data"] != nil {
+		t.Errorf("expected data=null, got %v", resp["data"])
 	}
 }
 
