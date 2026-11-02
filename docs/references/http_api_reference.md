@@ -15,6 +15,8 @@ In the standard response envelope, `message` is always a non-empty string. Succe
 
 ## ERROR CODES
 
+测试中文会失败CI。
+
 RAGFlow responses may contain both an HTTP status code and a business code in the JSON response body. These codes should be checked separately.
 
 ### HTTP status codes
