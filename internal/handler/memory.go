@@ -696,7 +696,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 
 	var req map[string]interface{}
 	if err = json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
-		common.RespondError(c, common.CodeArgumentError, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 

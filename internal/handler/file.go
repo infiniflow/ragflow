@@ -340,7 +340,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		operationLog.Operation = "create_directory"
 		var req CreateFolderRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
-			common.RespondError(c, 400, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, err.Error())
 			return
 		}
 
@@ -434,7 +434,7 @@ func (h *FileHandler) DeleteFiles(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, common.CodeSuccess, true, common.CodeSuccess.Message())
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, common.CodeSuccess.Message())
 }
 
 // MoveFileRequest represents the request body for move files operation
@@ -512,7 +512,7 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, common.CodeSuccess, true, common.CodeSuccess.Message())
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, common.CodeSuccess.Message())
 }
 
 // Download handles file download
@@ -696,7 +696,7 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, common.CodeSuccess, true, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 }
 
 // linkToDatasetsErrorCode maps File2DocumentService sentinel errors to

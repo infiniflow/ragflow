@@ -63,7 +63,7 @@ func (h *Handler) Healthz(c *gin.Context) {
 	if allOK {
 		common.RespondSuccess(c, result, "success")
 	} else {
-		common.Respond(c, common.CodeServerError, result, "", common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, result, "")
 	}
 }
 
@@ -90,7 +90,7 @@ func (h *Handler) Login(c *gin.Context) {
 	ctx := c.Request.Context()
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -496,7 +496,7 @@ func (h *Handler) GetServices(c *gin.Context) {
 	ctx := c.Request.Context()
 	services, err := h.service.ListServices(ctx)
 	if err != nil {
-		common.RespondError(c, common.CodeBadRequest, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -775,7 +775,7 @@ func (h *Handler) ListSandboxProviders(c *gin.Context) {
 func (h *Handler) GetSandboxProviderSchema(c *gin.Context) {
 	providerID := c.Param("provider_id")
 	if providerID == "" {
-		common.RespondError(c, common.CodeBadRequest, "Provider ID is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Provider ID is required")
 		return
 	}
 
@@ -810,12 +810,12 @@ type SetSandboxConfigHTTPRequest struct {
 func (h *Handler) SetSandboxConfig(c *gin.Context) {
 	var req SetSandboxConfigHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Invalid JSON request: provider_type must be a nonempty string, config an object, and set_active a boolean", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid JSON request: provider_type must be a nonempty string, config an object, and set_active a boolean")
 		return
 	}
 
 	if req.ProviderType == "" {
-		common.RespondError(c, common.CodeBadRequest, "Provider type is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Provider type is required")
 		return
 	}
 
@@ -839,12 +839,12 @@ type TestSandboxConnectionHTTPRequest struct {
 func (h *Handler) TestSandboxConnection(c *gin.Context) {
 	var req TestSandboxConnectionHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Invalid JSON request: provider_type must be a nonempty string and config an object", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid JSON request: provider_type must be a nonempty string and config an object")
 		return
 	}
 
 	if req.ProviderType == "" {
-		common.RespondError(c, common.CodeBadRequest, "Provider type is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Provider type is required")
 		return
 	}
 
@@ -854,7 +854,7 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 		return
 	}
 	if success, ok := result["success"].(bool); ok && !success {
-		common.Respond(c, common.CodeBadRequest, result, "Sandbox connection test failed", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, result, "Sandbox connection test failed")
 		return
 	}
 
@@ -864,10 +864,10 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 func writeSandboxError(c *gin.Context, err error) {
 	var coded *common.CodedError
 	if errors.As(err, &coded) {
-		common.RespondError(c, coded.Code, coded.Message, common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, coded.Code, nil, coded.Message)
 		return
 	}
-	common.RespondError(c, common.CodeServerError, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+	common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 }
 
 // AuthMiddleware authenticates system administrators for admin routes.
@@ -884,14 +884,14 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		// Get user by access token
 		identity, code, err := h.userService.ResolveAccessToken(ctx, token)
 		if err != nil {
-			common.RespondError(c, code, "Invalid access token", common.ResponseOptions{HTTPStatus: http.StatusUnauthorized})
+			common.Respond(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 			c.Abort()
 			return
 		}
 
 		user := identity.User
 		if user.IsSuperuser == nil || !*user.IsSuperuser {
-			common.RespondError(c, common.CodeForbidden, "Permission denied", common.ResponseOptions{HTTPStatus: http.StatusForbidden})
+			common.Respond(c, http.StatusForbidden, common.CodeForbidden, nil, "Permission denied")
 			c.Abort()
 			return
 		}
@@ -906,7 +906,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 
 // HandleNoRoute handle undefined routes
 func (h *Handler) HandleNoRoute(c *gin.Context) {
-	common.RespondError(c, 404, "The requested resource was not found", common.ResponseOptions{HTTPStatus: http.StatusNotFound})
+	common.Respond(c, http.StatusNotFound, 404, nil, "The requested resource was not found")
 }
 
 // GetLogLevel returns the current log level
@@ -1117,7 +1117,7 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 func (h *Handler) Reports(c *gin.Context) {
 	var req common.BaseMessage
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Invalid request body: "+err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -1128,13 +1128,13 @@ func (h *Handler) Reports(c *gin.Context) {
 
 	// Only process heartbeat messages for now
 	if req.MessageType != common.MessageHeartbeat {
-		common.RespondError(c, common.CodeBadRequest, "Unsupported report type: "+string(req.MessageType), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Unsupported report type: "+string(req.MessageType))
 		return
 	}
 
 	// Handle the heartbeat
 	errCode, data, message := h.service.HandleHeartbeat(&req)
-	common.Respond(c, errCode, data, message)
+	common.Respond(c, http.StatusOK, errCode, data, message)
 }
 
 func (h *Handler) ListAllModels(c *gin.Context) {
@@ -1166,7 +1166,7 @@ func (h *Handler) ListAllModels(c *gin.Context) {
 func (h *Handler) ShowModel(c *gin.Context) {
 	encodedModelName := c.Param("model_name")
 	if encodedModelName == "" {
-		common.RespondError(c, 400, "Encoded model name is empty", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Encoded model name is empty")
 		return
 	}
 
@@ -1200,7 +1200,7 @@ func (h *Handler) PingStore(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if storageImpl.Health(ctx) {
-		common.Respond(c, common.CodeSuccess, "SUCCESS", "success")
+		common.Respond(c, http.StatusOK, common.CodeSuccess, "SUCCESS", "success")
 	} else {
 		common.RespondError(c, common.CodeServerError, "storage health check failed")
 	}
@@ -1210,7 +1210,7 @@ func (h *Handler) PingCache(c *gin.Context) {
 	ctx := c.Request.Context()
 	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
-		common.Respond(c, common.CodeSuccess, "SUCCESS", "success")
+		common.Respond(c, http.StatusOK, common.CodeSuccess, "SUCCESS", "success")
 	} else {
 		common.RespondError(c, common.CodeServerError, "cache health check failed")
 	}
@@ -1224,14 +1224,14 @@ func (h *Handler) PingEngine(c *gin.Context) {
 			Code() common.ErrorCode
 		}
 		if errors.As(err, &coded) {
-			common.RespondError(c, coded.Code(), err.Error(), common.ResponseOptions{HTTPStatus: http.StatusServiceUnavailable})
+			common.Respond(c, http.StatusServiceUnavailable, coded.Code(), nil, err.Error())
 			return
 		}
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 
-	common.Respond(c, common.CodeSuccess, "SUCCESS", "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, "SUCCESS", "success")
 }
 
 func (h *Handler) GetHardwareInfo(c *gin.Context) {

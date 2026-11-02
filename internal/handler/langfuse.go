@@ -18,6 +18,7 @@ package handler
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 
@@ -101,7 +102,7 @@ func (h *LangfuseHandler) GetAPIKey(c *gin.Context) {
 		common.RespondError(c, code, message)
 		return
 	}
-	common.Respond(c, code, data, message)
+	common.Respond(c, http.StatusOK, code, data, message)
 }
 
 // DeleteAPIKey handles DELETE /langfuse/api-key.
@@ -123,5 +124,5 @@ func (h *LangfuseHandler) DeleteAPIKey(c *gin.Context) {
 		common.RespondSuccess(c, nil, message)
 		return
 	}
-	common.Respond(c, common.CodeSuccess, ok, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, ok, "success")
 }

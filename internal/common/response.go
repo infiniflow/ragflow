@@ -6,12 +6,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ResponseOptions supplies optional HTTP status and envelope metadata.
-// A zero HTTPStatus uses HTTP 200.
+// ResponseOptions supplies optional envelope metadata.
 type ResponseOptions struct {
-	HTTPStatus int
-	Total      any
-	Detail     any
+	Total  any
+	Detail any
 }
 
 type response struct {
@@ -24,22 +22,23 @@ type response struct {
 
 // RespondSuccessList writes a successful response with list data.
 func RespondSuccessList[T any](c *gin.Context, data []T, message string, options ...ResponseOptions) {
-	Respond(c, CodeSuccess, data, message, options...)
+	Respond(c, http.StatusOK, CodeSuccess, data, message, options...)
 }
 
 // RespondSuccess writes a successful response with optional object data.
 func RespondSuccess(c *gin.Context, data any, message string, options ...ResponseOptions) {
-	Respond(c, CodeSuccess, data, message, options...)
+	Respond(c, http.StatusOK, CodeSuccess, data, message, options...)
 }
 
 // RespondError writes an error code and message without data.
 func RespondError(c *gin.Context, code ErrorCode, message string, options ...ResponseOptions) {
-	Respond(c, code, nil, message, options...)
+	Respond(c, http.StatusOK, code, nil, message, options...)
 }
 
-// Respond writes a response with the supplied code and data. Use it for scalar
-// or mixed data, and for errors that carry a payload.
-func Respond(c *gin.Context, code ErrorCode, data any, message string, options ...ResponseOptions) {
+// Respond writes a response with an HTTP status and application code. A zero
+// HTTP status defaults to 200. Use it for scalar or mixed data, errors with a
+// payload, or responses that need an explicit HTTP status.
+func Respond(c *gin.Context, httpStatus int, code ErrorCode, data any, message string, options ...ResponseOptions) {
 	if message == "" {
 		message = code.Message()
 		if code == CodeSuccess {
@@ -47,12 +46,11 @@ func Respond(c *gin.Context, code ErrorCode, data any, message string, options .
 		}
 	}
 
-	status := http.StatusOK
+	if httpStatus == 0 {
+		httpStatus = http.StatusOK
+	}
 	body := response{Code: code, Message: message, Data: data}
 	for _, option := range options {
-		if option.HTTPStatus != 0 {
-			status = option.HTTPStatus
-		}
 		if option.Total != nil {
 			body.Total = option.Total
 		}
@@ -60,5 +58,5 @@ func Respond(c *gin.Context, code ErrorCode, data any, message string, options .
 			body.Detail = option.Detail
 		}
 	}
-	c.JSON(status, body)
+	c.JSON(httpStatus, body)
 }

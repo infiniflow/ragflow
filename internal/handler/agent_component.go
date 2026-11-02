@@ -33,6 +33,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -279,11 +280,11 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 		if capture == nil {
 			data = nil
 		}
-		common.Respond(c, common.CodeServerError, data, "invoke: "+err.Error())
+		common.Respond(c, http.StatusOK, common.CodeServerError, data, "invoke: "+err.Error())
 		return
 	}
 
-	common.Respond(c, common.CodeSuccess, data, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, data, "success")
 }
 
 // mapDSLError translates a dsl extractor error into a 102 envelope.

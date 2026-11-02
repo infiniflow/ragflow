@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net/http"
 	"ragflow/internal/engine/kvrocks"
 	"strconv"
 	"strings"
@@ -178,7 +179,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	if c.Query("type") == "filter" {
 		filters, code, err := h.agentService.ListAgentFilters(c.Request.Context(), user.ID, strings.TrimSpace(c.Query("canvas_category")))
 		if err != nil {
-			common.Respond(c, code, false, err.Error())
+			common.Respond(c, http.StatusOK, code, false, err.Error())
 			return
 		}
 		common.RespondSuccess(c, filters, "success")
@@ -244,7 +245,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		tags,
 	)
 	if err != nil {
-		common.Respond(c, code, false, err.Error())
+		common.Respond(c, http.StatusOK, code, false, err.Error())
 		return
 	}
 
@@ -431,7 +432,7 @@ func (h *AgentHandler) DeleteAgent(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.Respond(c, common.CodeSuccess, true, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 }
 
 // ListTemplates lists every canvas template available to authenticated users.
@@ -627,7 +628,7 @@ func respondWithDebugResult(c *gin.Context, result *task.PipelineResult, err err
 		if result != nil {
 			messageID = result.MessageID
 		}
-		common.Respond(c, common.CodeServerError, gin.H{"message_id": messageID}, err.Error())
+		common.Respond(c, http.StatusOK, common.CodeServerError, gin.H{"message_id": messageID}, err.Error())
 		return
 	}
 	messageID := ""
@@ -696,7 +697,7 @@ func (h *AgentHandler) CancelSessionRun(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.Respond(c, common.CodeSuccess, true, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 }
 
 // publishAgentRequest is the wire shape for POST /api/v1/agents/:canvas_id/publish.
@@ -826,7 +827,7 @@ func (h *AgentHandler) DeleteVersion(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.Respond(c, common.CodeSuccess, true, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 }
 
 // PatchVersion patches mutable metadata (alias/title/description) of a single
@@ -864,7 +865,7 @@ func (h *AgentHandler) PatchVersion(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.Respond(c, common.CodeSuccess, true, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 }
 
 // ApplyVersion restores a saved workflow as the current agent draft.
@@ -888,7 +889,7 @@ func (h *AgentHandler) ApplyVersion(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.Respond(c, common.CodeSuccess, true, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 }
 
 // --- PR2: missing routes wired up to the existing service layer ---
@@ -962,7 +963,7 @@ func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 		common.RespondError(c, errCode, errMsg.Error())
 		return
 	}
-	common.Respond(c, common.CodeSuccess, true, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 }
 
 // ListAgentSessions GET /api/v1/agents/:canvas_id/sessions
@@ -1093,7 +1094,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 			common.RespondError(c, code, err.Error())
 			return
 		}
-		common.Respond(c, common.CodeSuccess, ok, "success")
+		common.Respond(c, http.StatusOK, common.CodeSuccess, ok, "success")
 		return
 	}
 	idsParam := c.Query("ids")
@@ -1563,7 +1564,7 @@ func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.Respond(c, common.CodeSuccess, true, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 }
 
 // parseAgentLogs decodes the debug-log payload stored in Redis by the pipeline
@@ -1675,7 +1676,7 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	if rerr == nil {
 		data = parseAgentLogs(payload)
 	}
-	common.Respond(c, common.CodeSuccess, data, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, data, "success")
 }
 
 // GetAgentWebhookLogs GET /api/v1/agents/:canvas_id/webhook/logs

@@ -77,7 +77,7 @@ func (h *SystemHandler) Healthz(c *gin.Context) {
 func (h *SystemHandler) GetConfig(c *gin.Context) {
 	config, err := h.systemService.GetConfig()
 	if err != nil {
-		common.RespondError(c, 500, "Failed to get system configuration", common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to get system configuration")
 		return
 	}
 
@@ -114,11 +114,11 @@ func (h *SystemHandler) GetStatus(c *gin.Context) {
 func (h *SystemHandler) GetVersion(c *gin.Context) {
 	version, err := h.systemService.GetVersion()
 	if err != nil {
-		common.RespondError(c, 500, "Failed to get version", common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to get version")
 		return
 	}
 
-	common.Respond(c, common.CodeSuccess, version.Version, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, version.Version, "success")
 }
 
 // GetLogLevel returns the current log level. The response uses the

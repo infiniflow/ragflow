@@ -35,14 +35,15 @@ func TestResponseHelpers(t *testing.T) {
 		{"nil pointer", func(c *gin.Context) { RespondSuccess(c, nilPointer, "") }, 200, `{"code":0,"message":"success","data":null}`},
 		{"nil list", func(c *gin.Context) { RespondSuccessList(c, nilSlice, "") }, 200, `{"code":0,"message":"success","data":null}`},
 		{"business error", func(c *gin.Context) { RespondError(c, CodeBadRequest, "") }, 200, `{"code":400,"message":"Bad request"}`},
+		{"zero HTTP status", func(c *gin.Context) { Respond(c, 0, CodeSuccess, nil, "") }, 200, `{"code":0,"message":"success"}`},
 		{"HTTP error", func(c *gin.Context) {
-			RespondError(c, CodeBadRequest, "Missing name", ResponseOptions{HTTPStatus: http.StatusBadRequest})
-		}, 400, `{"code":400,"message":"Missing name"}`},
-		{"string", func(c *gin.Context) { Respond(c, CodeSuccess, "v1.2.3", "") }, 200, `{"code":0,"message":"success","data":"v1.2.3"}`},
-		{"empty string", func(c *gin.Context) { Respond(c, CodeSuccess, "", "") }, 200, `{"code":0,"message":"success","data":""}`},
-		{"boolean", func(c *gin.Context) { Respond(c, CodeSuccess, false, "") }, 200, `{"code":0,"message":"success","data":false}`},
-		{"integer", func(c *gin.Context) { Respond(c, CodeSuccess, int64(0), "") }, 200, `{"code":0,"message":"success","data":0}`},
-		{"error data", func(c *gin.Context) { Respond(c, CodeDataError, false, "Missing document") }, 200, `{"code":102,"message":"Missing document","data":false}`},
+			Respond(c, http.StatusBadRequest, CodeArgumentError, nil, "Missing name")
+		}, 400, `{"code":101,"message":"Missing name"}`},
+		{"string", func(c *gin.Context) { Respond(c, http.StatusOK, CodeSuccess, "v1.2.3", "") }, 200, `{"code":0,"message":"success","data":"v1.2.3"}`},
+		{"empty string", func(c *gin.Context) { Respond(c, http.StatusOK, CodeSuccess, "", "") }, 200, `{"code":0,"message":"success","data":""}`},
+		{"boolean", func(c *gin.Context) { Respond(c, http.StatusOK, CodeSuccess, false, "") }, 200, `{"code":0,"message":"success","data":false}`},
+		{"integer", func(c *gin.Context) { Respond(c, http.StatusOK, CodeSuccess, int64(0), "") }, 200, `{"code":0,"message":"success","data":0}`},
+		{"error data", func(c *gin.Context) { Respond(c, http.StatusOK, CodeDataError, false, "Missing document") }, 200, `{"code":102,"message":"Missing document","data":false}`},
 		{"pagination", func(c *gin.Context) {
 			RespondSuccessList(c, []string{}, "", ResponseOptions{Total: 0})
 		}, 200, `{"code":0,"message":"success","data":[],"total":0}`},
@@ -50,7 +51,7 @@ func TestResponseHelpers(t *testing.T) {
 			RespondError(c, CodeBillingStorageInsufficient, "", ResponseOptions{Detail: map[string]int{"limit": 100}})
 		}, 200, `{"code":2003,"message":"Billing storage insufficient","detail":{"limit":100}}`},
 		{"combined options", func(c *gin.Context) {
-			RespondSuccessList(c, []string{"one"}, "created", ResponseOptions{HTTPStatus: http.StatusCreated}, ResponseOptions{Total: 1})
+			Respond(c, http.StatusCreated, CodeSuccess, []string{"one"}, "created", ResponseOptions{Total: 1})
 		}, 201, `{"code":0,"message":"created","data":["one"],"total":1}`},
 	}
 	for _, tt := range tests {

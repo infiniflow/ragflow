@@ -130,7 +130,7 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, false) {
 			return
 		}
-		common.RespondError(c, 500, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
@@ -197,11 +197,11 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 
 	var req ChatMindMapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeArgumentError, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	if strings.TrimSpace(req.Question) == "" {
-		common.RespondError(c, common.CodeArgumentError, "kb_ids and question are required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 
@@ -229,7 +229,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 
 	kbIDs := mergeMindMapKbIDs(stringSliceFromConfig(searchConfig, "kb_ids"), req.KbIDs)
 	if len(kbIDs) == 0 {
-		common.RespondError(c, common.CodeArgumentError, "kb_ids and question are required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 
@@ -261,7 +261,7 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.RespondError(c, common.CodeBadRequest, "chat_id is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
 
@@ -274,7 +274,7 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, common.CodeSuccess, true, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 }
 
 // BulkDeleteChats soft deletes multiple chats owned by the current user.
@@ -292,7 +292,7 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 
 	var req service.BulkDeleteChatsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Invalid request body: "+err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -307,7 +307,7 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 				return
 			}
 
-			common.Respond(c, common.CodeSuccess, true, "success")
+			common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 			return
 		}
 
@@ -353,7 +353,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	// Get chat_id from path parameter (same as Python <chat_id>)
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.RespondError(c, common.CodeBadRequest, "chat_id is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
 
@@ -418,7 +418,7 @@ func (h *ChatHandler) GetAgenticRAGConfig(c *gin.Context) {
 	}
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.RespondError(c, common.CodeBadRequest, "chat_id is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
 	settings, err := h.chatService.GetAgenticRAGConfig(c.Request.Context(), user.ID, chatID)

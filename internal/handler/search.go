@@ -123,7 +123,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	var req service.ListSearchAppsRequest
 	if len(ownerIDs) == 0 && c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			common.RespondError(c, 400, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, err.Error())
 			return
 		}
 		ownerIDs = req.OwnerIDs
@@ -136,7 +136,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, false) {
 			return
 		}
-		common.RespondError(c, 500, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
@@ -178,7 +178,7 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 	// Parse request body (same as Python get_request_json())
 	var req CreateSearchRequest
 	if err = c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Invalid request body: "+err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -191,7 +191,7 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, err := h.searchService.CreateSearch(ctx, req.Name, req.Description)
 	if err != nil {
-		common.RespondError(c, common.CodeBadRequest, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -219,7 +219,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
-		common.RespondError(c, common.CodeBadRequest, "search_id is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "search_id is required")
 		return
 	}
 
@@ -275,7 +275,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
-		common.RespondError(c, common.CodeBadRequest, "search_id is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "search_id is required")
 		return
 	}
 
@@ -292,7 +292,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	}
 
 	// Return success response (same as Python get_json_result(data=True))
-	common.Respond(c, common.CodeSuccess, true, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 }
 
 // UpdateSearch update a search app
@@ -316,14 +316,14 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
-		common.RespondError(c, common.CodeBadRequest, "search_id is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "search_id is required")
 		return
 	}
 
 	// Parse request body
 	var req service.UpdateSearchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Invalid request body: "+err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -347,7 +347,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 		default:
 			// Check if it's a "cannot find search" error
 			if len(errMsg) > 18 && errMsg[:18] == "cannot find search" {
-				common.Respond(c, common.CodeDataError, false, errMsg)
+				common.Respond(c, http.StatusOK, common.CodeDataError, false, errMsg)
 			} else {
 				common.RespondError(c, common.CodeDataError, errMsg)
 			}

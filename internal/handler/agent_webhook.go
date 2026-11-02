@@ -126,7 +126,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 	if isTest {
 		user, code, msg := GetUser(c)
 		if code != common.CodeSuccess {
-			common.RespondError(c, code, msg, common.ResponseOptions{HTTPStatus: http.StatusUnauthorized})
+			common.Respond(c, http.StatusUnauthorized, code, nil, msg)
 			return
 		}
 		userID = user.ID
@@ -137,7 +137,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 		credential, err := h.webhookCredentialManager().Resolve(ctx, canvasID, c.Query("credential"))
 		if err != nil {
 			if errors.Is(err, service.ErrInvalidAgentWebhookCredential) {
-				common.RespondError(c, common.CodeUnauthorized, "Invalid or revoked webhook credential.", common.ResponseOptions{HTTPStatus: http.StatusUnauthorized})
+				common.Respond(c, http.StatusUnauthorized, common.CodeUnauthorized, nil, "Invalid or revoked webhook credential.")
 			} else {
 				jsonInternalError(c, err)
 			}
@@ -232,7 +232,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 			// 501 — multipart/form-data uploads are not yet
 			// supported. Body is short so operators see exactly what
 			// is missing.
-			common.RespondError(c, common.CodeNotImplemented, parseErr.Error(), common.ResponseOptions{HTTPStatus: http.StatusNotImplemented})
+			common.Respond(c, http.StatusNotImplemented, common.CodeNotImplemented, nil, parseErr.Error())
 			return
 		case errors.Is(parseErr, ErrWebhookContentTypeMismatch):
 			common.RespondError(c, common.CodeDataError, parseErr.Error())
@@ -296,7 +296,7 @@ func (h *AgentHandler) CreateWebhookCredential(c *gin.Context) {
 	credential, err := h.webhookCredentialManager().Issue(ctx, permission.Subject{UserID: user.ID}, canvas)
 	if err != nil {
 		if errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrMembershipNotFound) || errors.Is(err, permission.ErrInvalidSubject) {
-			common.RespondError(c, common.CodeForbidden, "You do not have permission to create a webhook credential for this agent.", common.ResponseOptions{HTTPStatus: http.StatusForbidden})
+			common.Respond(c, http.StatusForbidden, common.CodeForbidden, nil, "You do not have permission to create a webhook credential for this agent.")
 			return
 		}
 		jsonInternalError(c, err)
@@ -322,7 +322,7 @@ func (h *AgentHandler) RevokeWebhookCredential(c *gin.Context) {
 		jsonInternalError(c, err)
 		return
 	}
-	common.Respond(c, common.CodeSuccess, true, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 }
 
 func (h *AgentHandler) webhookCredentialManager() agentWebhookCredentialManager {

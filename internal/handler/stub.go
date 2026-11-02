@@ -90,7 +90,7 @@ func (h *UserHandler) GetMeta(c *gin.Context) { eeNotImplemented(c, "GetMeta") }
 func (h *UserHandler) GetLoginChannelsDeprecated(c *gin.Context) {
 	channels, code, err := h.userService.GetLoginChannels()
 	if err != nil {
-		common.Respond(c, code, []interface{}{}, "Load channels failure, error: "+err.Error())
+		common.Respond(c, http.StatusOK, code, []interface{}{}, "Load channels failure, error: "+err.Error())
 		return
 	}
 

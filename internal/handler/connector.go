@@ -91,7 +91,7 @@ func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 		if connectorErrorResponse(c, err) {
 			return
 		}
-		common.RespondError(c, 500, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
@@ -113,11 +113,11 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 	case errors.Is(err, service.ErrConnectorNotFound):
 		common.RespondError(c, common.CodeDataError, "Can't find this Connector!")
 	case errors.Is(err, service.ErrConnectorTestUnsupported):
-		common.Respond(c, common.CodeNotImplemented, false, err.Error())
+		common.Respond(c, http.StatusOK, common.CodeNotImplemented, false, err.Error())
 	case errors.Is(err, service.ErrConnectorSourceNotImplemented):
-		common.Respond(c, common.CodeNotImplemented, false, err.Error())
+		common.Respond(c, http.StatusOK, common.CodeNotImplemented, false, err.Error())
 	default:
-		common.RespondError(c, common.CodeServerError, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 	}
 	return true
 }
@@ -316,7 +316,7 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 
 	var req service.CreateConnectorRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Invalid request body: "+err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -341,7 +341,7 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 			common.RespondError(c, common.CodeDataError, err.Error())
 			return
 		}
-		common.RespondError(c, common.CodeServerError, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
 
@@ -370,7 +370,7 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 
 	connectorID := c.Param("connector_id")
 	if connectorID == "" {
-		common.RespondError(c, common.CodeBadRequest, "connector_id is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "connector_id is required")
 		return
 	}
 
@@ -381,7 +381,7 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 	if c.Request.Body != nil && c.Request.ContentLength != 0 {
 		var body testConnectorRequest
 		if err := c.ShouldBindJSON(&body); err != nil && !errors.Is(err, io.EOF) {
-			common.RespondError(c, common.CodeBadRequest, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
 			return
 		}
 		// get source and config from web
@@ -411,17 +411,17 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 			rateErr *syncerconnector.RateLimitTriedTooManyTimesError
 		)
 		if errors.As(err, &valErr) || errors.As(err, &credErr) || errors.As(err, &rateErr) {
-			common.Respond(c, common.CodeDataError, false, err.Error())
+			common.Respond(c, http.StatusOK, common.CodeDataError, false, err.Error())
 			return
 		}
-		common.Respond(c, common.CodeServerError, false, err.Error())
+		common.Respond(c, http.StatusOK, common.CodeServerError, false, err.Error())
 		return
 	}
 	if connectorErrorResponse(c, err) {
 		return
 	}
 
-	common.Respond(c, common.CodeSuccess, true, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 }
 
 // DeleteConnector delete connector
@@ -444,7 +444,7 @@ func (h *ConnectorHandler) DeleteConnector(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, common.CodeSuccess, ok, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, ok, "success")
 }
 
 // RebuildConnector rebuild connector
@@ -483,7 +483,7 @@ func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, common.CodeSuccess, ok, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, ok, "success")
 }
 
 // ResumeFailedSync resumes a failed connector sync task from checkpoint. (when network outage)
@@ -513,7 +513,7 @@ func (h *ConnectorHandler) ResumeFailedSync(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.Respond(c, common.CodeSuccess, ok, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, ok, "success")
 }
 
 func (h *ConnectorHandler) StartGoogleWebOAuth(c *gin.Context) {
@@ -549,7 +549,7 @@ func (h *ConnectorHandler) PollGoogleWebOAuthResult(c *gin.Context) {
 
 	var req service.PollGoogleWebOAuthResultRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -607,7 +607,7 @@ func (h *ConnectorHandler) StartBoxWebOAuth(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.Respond(c, code, resp, "success")
+	common.Respond(c, http.StatusOK, code, resp, "success")
 }
 
 func (h *ConnectorHandler) BoxWebOAuthCallback(c *gin.Context) {
@@ -641,5 +641,5 @@ func (h *ConnectorHandler) PollBoxWebOAuthResult(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.Respond(c, code, resp, "success")
+	common.Respond(c, http.StatusOK, code, resp, "success")
 }

@@ -120,7 +120,7 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 	result, code, err := h.mcpService.ListMCPServers(ctx, user.ID, tenantID, mcpIDs, keywords, page, pageSize, orderby, desc)
 	if err != nil {
 		if code == common.CodeServerError {
-			common.RespondError(c, code, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+			common.Respond(c, http.StatusInternalServerError, code, nil, err.Error())
 			return
 		}
 		common.RespondError(c, code, err.Error())
@@ -202,7 +202,7 @@ func (h *MCPHandler) DeleteMCPServer(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, common.CodeSuccess, result, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, result, "success")
 }
 
 // mcpErrorResponse maps the import / test sentinel errors to the response
@@ -292,13 +292,13 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Invalid request body: "+err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 	var raw map[string]json.RawMessage
 	if len(body) > 0 {
 		if err = json.Unmarshal(body, &raw); err != nil {
-			common.RespondError(c, common.CodeBadRequest, "Invalid request body: "+err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 			return
 		}
 	}
@@ -313,7 +313,7 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 
 	var servers map[string]map[string]interface{}
 	if err = json.Unmarshal(rawServers, &servers); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Invalid request body: "+err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 	if len(servers) == 0 {
@@ -336,7 +336,7 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 			common.RespondError(c, code, normalized.Error())
 			return
 		}
-		common.RespondError(c, common.CodeBadRequest, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -360,13 +360,13 @@ func (h *MCPHandler) TestMCPServer(c *gin.Context) {
 
 	mcpID := c.Param("mcp_id")
 	if mcpID == "" {
-		common.RespondError(c, common.CodeBadRequest, "mcp_id is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "mcp_id is required")
 		return
 	}
 
 	var req service.TestServerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Invalid request body: "+err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 

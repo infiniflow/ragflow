@@ -82,7 +82,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	// Get chat_id from query parameter
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.RespondError(c, 400, "chat_id is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "chat_id is required")
 		return
 	}
 
@@ -138,7 +138,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.RespondError(c, 500, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
@@ -325,7 +325,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 				common.RespondError(c, codedErr.Code, codedErr.Message)
 				return
 			}
-			common.RespondError(c, 500, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+			common.Respond(c, http.StatusInternalServerError, 500, nil, err.Error())
 			return
 		}
 		common.RespondSuccess(c, result, "")
@@ -450,7 +450,7 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, common.CodeSuccess, result, message)
+	common.Respond(c, http.StatusOK, common.CodeSuccess, result, message)
 }
 
 func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {

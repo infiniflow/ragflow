@@ -68,13 +68,13 @@ func (h *ComponentsHandler) Get(c *gin.Context) {
 	raw := c.Query("category")
 	cats, err := parseCategories(raw)
 	if err != nil {
-		common.RespondError(c, 400, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, err.Error())
 		return
 	}
 
 	out, err := h.svc.List(cats...)
 	if err != nil {
-		common.RespondError(c, 500, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 

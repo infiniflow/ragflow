@@ -40,7 +40,7 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 	// Get keys for the tenant
 	keys, err := h.systemService.ListAPIKeys(ctx, tenantID)
 	if err != nil {
-		common.RespondError(c, 500, "Failed to list keys", common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to list keys")
 		return
 	}
 
@@ -59,14 +59,14 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 	// ShouldBind reports io.EOF for it.
 	var req service.CreateAPIKeyRequest
 	if err = c.ShouldBind(&req); err != nil && !errors.Is(err, io.EOF) {
-		common.RespondError(c, 400, "Invalid request", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Invalid request")
 		return
 	}
 
 	// Create key
 	key, err := h.systemService.CreateAPIKey(ctx, user.ID, tenantID, &req)
 	if err != nil {
-		common.RespondError(c, 500, "Failed to create key", common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to create key")
 		return
 	}
 
@@ -84,17 +84,17 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	// Get key from path parameter
 	key := c.Param("key")
 	if key == "" {
-		common.RespondError(c, 400, "Key is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Key is required")
 		return
 	}
 
 	// Delete key
 	if err = h.systemService.DeleteAPIKey(ctx, tenantID, key); err != nil {
-		common.RespondError(c, 500, "Failed to delete key", common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
+		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to delete key")
 		return
 	}
 
-	common.Respond(c, common.CodeSuccess, true, "success")
+	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
 }
 
 func currentAPIKeyOwner(c *gin.Context) (*entity.User, string, common.ErrorCode, error) {
@@ -126,5 +126,5 @@ func respondAPIKeyContextError(c *gin.Context, code common.ErrorCode, err error)
 	} else if code == common.CodeServerError {
 		status = http.StatusInternalServerError
 	}
-	common.RespondError(c, code, err.Error(), common.ResponseOptions{HTTPStatus: status})
+	common.Respond(c, status, code, nil, err.Error())
 }

@@ -48,7 +48,7 @@ func HandleNoRoute(c *gin.Context) {
 	if isOAuthLoginNoRoute(c) ||
 		(c.Request.Method == http.MethodPost && c.Request.URL.Path == "/api/v1/chats//sessions") ||
 		(c.Request.Method == http.MethodPatch && strings.HasSuffix(c.Request.URL.Path, "/sessions/")) {
-		common.Respond(c, common.CodeExceptionError, false, "<MethodNotAllowed '405: Method Not Allowed'>")
+		common.Respond(c, http.StatusOK, common.CodeExceptionError, false, "<MethodNotAllowed '405: Method Not Allowed'>")
 		return
 	}
 

@@ -121,7 +121,7 @@ func (h *ProviderHandler) AddProvider(c *gin.Context) {
 
 	var req AddProviderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, common.CodeBadRequest, false, err.Error())
+		common.Respond(c, http.StatusOK, common.CodeBadRequest, false, err.Error())
 		return
 	}
 
@@ -140,7 +140,7 @@ func (h *ProviderHandler) AddProvider(c *gin.Context) {
 func (h *ProviderHandler) DeleteProvider(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
@@ -159,7 +159,7 @@ func (h *ProviderHandler) DeleteProvider(c *gin.Context) {
 func (h *ProviderHandler) ShowProvider(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
@@ -174,7 +174,7 @@ func (h *ProviderHandler) ShowProvider(c *gin.Context) {
 func (h *ProviderHandler) ListModels(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
@@ -185,7 +185,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	instanceName := strings.TrimSpace(c.Query("instance_name"))
 	if strings.EqualFold(c.Query("use_saved_credentials"), "true") {
 		if instanceName == "" {
-			common.RespondError(c, 400, "Saved credentials require an instance name", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Saved credentials require an instance name")
 			return
 		}
 		var baseURLOverride, regionOverride *string
@@ -479,12 +479,12 @@ func providerModelMapTypes(model map[string]interface{}) []string {
 func (h *ProviderHandler) ShowModel(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 	modelName := c.Param("model_name")
 	if modelName == "" {
-		common.RespondError(c, 400, "Model name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Model name is required")
 		return
 	}
 	model, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
@@ -499,7 +499,7 @@ func (h *ProviderHandler) ShowModel(c *gin.Context) {
 func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
@@ -543,7 +543,7 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 func (h *ProviderHandler) ListProviderInstances(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
@@ -562,13 +562,13 @@ func (h *ProviderHandler) ListProviderInstances(c *gin.Context) {
 func (h *ProviderHandler) ShowProviderInstance(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	instanceIDOrName := c.Param("instance_id_or_name")
 	if instanceIDOrName == "" {
-		common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 
@@ -587,13 +587,13 @@ func (h *ProviderHandler) ShowProviderInstance(c *gin.Context) {
 func (h *ProviderHandler) ShowInstanceBalance(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_id_or_name")
 	if instanceName == "" {
-		common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 
@@ -613,14 +613,14 @@ func (h *ProviderHandler) ShowInstanceBalance(c *gin.Context) {
 func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	ctx := c.Request.Context()
 	var req service.CheckConnectionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, 400, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, err.Error())
 		return
 	}
 
@@ -638,13 +638,13 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 	ctx := c.Request.Context()
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_id_or_name")
 	if instanceName == "" {
-		common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 	userID := c.GetString("user_id")
@@ -673,13 +673,13 @@ func (h *ProviderHandler) ListTasks(c *gin.Context) {
 	ctx := c.Request.Context()
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_id_or_name")
 	if instanceName == "" {
-		common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 
@@ -699,19 +699,19 @@ func (h *ProviderHandler) ShowTask(c *gin.Context) {
 	ctx := c.Request.Context()
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_id_or_name")
 	if instanceName == "" {
-		common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 
 	taskID := c.Param("task_id")
 	if taskID == "" {
-		common.RespondError(c, 400, "Task ID is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Task ID is required")
 		return
 	}
 
@@ -731,19 +731,19 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 	ctx := c.Request.Context()
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_id_or_name")
 	if instanceName == "" {
-		common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 
 	var req service.AlterProviderInstanceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -765,7 +765,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 	var req service.DropProviderInstanceRequest
@@ -790,12 +790,12 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 	ctx := c.Request.Context()
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 	instanceName := c.Param("instance_id_or_name")
 	if instanceName == "" {
-		common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 
@@ -830,13 +830,13 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 func (h *ProviderHandler) AlterModel(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 
 	instanceName := c.Param("instance_id_or_name")
 	if instanceName == "" {
-		common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 
@@ -852,13 +852,13 @@ func (h *ProviderHandler) AlterModel(c *gin.Context) {
 	modelID := strings.TrimSpace(req.ModelID)
 
 	if modelName == "" && modelID == "" {
-		common.RespondError(c, common.CodeBadRequest, "model_name or model_id is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "model_name or model_id is required")
 		return
 	}
 
 	status := strings.TrimSpace(req.Status)
 	if status != "" && status != "active" && status != "inactive" {
-		common.RespondError(c, common.CodeBadRequest, "status must be 'active' or 'inactive'", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "status must be 'active' or 'inactive'")
 		return
 	}
 
@@ -877,7 +877,7 @@ func (h *ProviderHandler) AlterModel(c *gin.Context) {
 	}
 
 	if len(updateDict) == 0 {
-		common.RespondError(c, common.CodeBadRequest, "at least one update field is required besides model_name or model_id", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "at least one update field is required besides model_name or model_id")
 		return
 	}
 
@@ -915,7 +915,7 @@ func (h *ProviderHandler) AddModel(c *gin.Context) {
 	var req service.AddModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
-		common.RespondError(c, common.CodeBadRequest, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -923,12 +923,12 @@ func (h *ProviderHandler) AddModel(c *gin.Context) {
 	req.InstanceName = c.Param("instance_id_or_name")
 
 	if req.ProviderName == "" || req.InstanceName == "" {
-		common.RespondError(c, common.CodeBadRequest, "provider_name and instance_name are required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "provider_name and instance_name are required")
 		return
 	}
 
 	if req.ModelName == "" {
-		common.RespondError(c, common.CodeBadRequest, "model_name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "model_name is required")
 		return
 	}
 
@@ -947,12 +947,12 @@ func (h *ProviderHandler) AddModel(c *gin.Context) {
 func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
-		common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 		return
 	}
 	instanceName := c.Param("instance_id_or_name")
 	if instanceName == "" {
-		common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
 
@@ -962,7 +962,7 @@ func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 		return
 	}
 	if len(req.ModelNames) == 0 {
-		common.RespondError(c, common.CodeBadRequest, "model_name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "model_name is required")
 		return
 	}
 
@@ -1014,22 +1014,22 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	}
 	if req.ModelID == nil {
 		if req.ProviderName == nil || *req.ProviderName == "" {
-			common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 			return
 		}
 
 		if req.InstanceName == nil || *req.InstanceName == "" {
-			common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 			return
 		}
 
 		if req.ModelName == nil || *req.ModelName == "" {
-			common.RespondError(c, 400, "Model name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model name is required")
 			return
 		}
 	} else {
 		if *req.ModelID == "" {
-			common.RespondError(c, 400, "Model ID is empty", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model ID is empty")
 			return
 		}
 	}
@@ -1179,22 +1179,22 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 
 	if req.ModelID == nil {
 		if req.ProviderName == nil || *req.ProviderName == "" {
-			common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 			return
 		}
 
 		if req.InstanceName == nil || *req.InstanceName == "" {
-			common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 			return
 		}
 
 		if req.ModelName == nil || *req.ModelName == "" {
-			common.RespondError(c, 400, "Model name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model name is required")
 			return
 		}
 	} else {
 		if *req.ModelID == "" {
-			common.RespondError(c, 400, "Model ID is empty", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model ID is empty")
 			return
 		}
 	}
@@ -1245,22 +1245,22 @@ func (h *ProviderHandler) RerankDocument(c *gin.Context) {
 
 	if req.ModelID == nil {
 		if req.ProviderName == nil || *req.ProviderName == "" {
-			common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 			return
 		}
 
 		if req.InstanceName == nil || *req.InstanceName == "" {
-			common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 			return
 		}
 
 		if req.ModelName == nil || *req.ModelName == "" {
-			common.RespondError(c, 400, "Model name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model name is required")
 			return
 		}
 	} else {
 		if *req.ModelID == "" {
-			common.RespondError(c, 400, "Model ID is empty", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model ID is empty")
 			return
 		}
 	}
@@ -1312,22 +1312,22 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 
 	if req.ModelID == nil {
 		if req.ProviderName == nil || *req.ProviderName == "" {
-			common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 			return
 		}
 
 		if req.InstanceName == nil || *req.InstanceName == "" {
-			common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 			return
 		}
 
 		if req.ModelName == nil || *req.ModelName == "" {
-			common.RespondError(c, 400, "Model name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model name is required")
 			return
 		}
 	} else {
 		if *req.ModelID == "" {
-			common.RespondError(c, 400, "Model ID is empty", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model ID is empty")
 			return
 		}
 	}
@@ -1420,22 +1420,22 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 
 	if req.ModelID == nil {
 		if req.ProviderName == nil || *req.ProviderName == "" {
-			common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 			return
 		}
 
 		if req.InstanceName == nil || *req.InstanceName == "" {
-			common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 			return
 		}
 
 		if req.ModelName == nil || *req.ModelName == "" {
-			common.RespondError(c, 400, "Model name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model name is required")
 			return
 		}
 	} else {
 		if *req.ModelID == "" {
-			common.RespondError(c, 400, "Model ID is empty", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model ID is empty")
 			return
 		}
 	}
@@ -1527,22 +1527,22 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 
 	if req.ModelID == nil {
 		if req.ProviderName == nil || *req.ProviderName == "" {
-			common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 			return
 		}
 
 		if req.InstanceName == nil || *req.InstanceName == "" {
-			common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 			return
 		}
 
 		if req.ModelName == nil || *req.ModelName == "" {
-			common.RespondError(c, 400, "Model name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model name is required")
 			return
 		}
 	} else {
 		if *req.ModelID == "" {
-			common.RespondError(c, 400, "Model ID is empty", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model ID is empty")
 			return
 		}
 	}
@@ -1593,22 +1593,22 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 
 	if req.ModelID == nil {
 		if req.ProviderName == nil || *req.ProviderName == "" {
-			common.RespondError(c, 400, "Provider name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
 			return
 		}
 
 		if req.InstanceName == nil || *req.InstanceName == "" {
-			common.RespondError(c, 400, "Instance name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 			return
 		}
 
 		if req.ModelName == nil || *req.ModelName == "" {
-			common.RespondError(c, 400, "Model name is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model name is required")
 			return
 		}
 	} else {
 		if *req.ModelID == "" {
-			common.RespondError(c, 400, "Model ID is empty", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Model ID is empty")
 			return
 		}
 	}

@@ -10,19 +10,20 @@ common.RespondSuccess(c, item, "success")
 common.RespondError(c, common.CodeBadRequest, "Missing name")
 ```
 
-`Respond` handles scalar or mixed payloads and errors with data:
+`Respond` takes the HTTP status before the application code. It handles scalar
+or mixed payloads, errors with data, and explicit HTTP statuses:
 
 ```go
-common.Respond(c, common.CodeSuccess, true, "success")
-common.Respond(c, code, data, message)
+common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+common.Respond(c, httpStatus, code, data, message)
 ```
 
-The default HTTP status is 200. Supply `ResponseOptions` only when a response
-needs an explicit HTTP status, a top-level total, or error details:
+The convenience helpers use HTTP 200. Supply `ResponseOptions` only when a
+response needs a top-level total or error details:
 
 ```go
 common.RespondSuccessList(c, items, "success", common.ResponseOptions{Total: total})
-common.RespondError(c, common.CodeBadRequest, "Missing name", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Missing name")
 ```
 
 Boolean, string, and integer payloads remain in `data`. A plain nil payload
