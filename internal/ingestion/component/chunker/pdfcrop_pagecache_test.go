@@ -4,6 +4,7 @@ import (
 	"image"
 	"sync"
 	"testing"
+	"time"
 )
 
 // taggedImg wraps an image with an id so tests can assert which page bitmap a
@@ -196,6 +197,97 @@ func TestLRUPageCache_ConcurrentSafe(t *testing.T) {
 		render := func(int) (image.Image, bool) { return fakeImg(pn), true }
 		c.Acquire(render, pn)
 		c.Release(pn)
+	}
+}
+
+// TestLRUPageCache_ConcurrentSamePageRendersOnce proves that concurrent misses
+// of the same page are coalesced: only the first worker renders, and every
+// worker receives the shared bitmap.
+func TestLRUPageCache_ConcurrentSamePageRendersOnce(t *testing.T) {
+	const (
+		workers = 8
+		pn      = 7
+	)
+	c := newLRUPageCache(4)
+
+	var (
+		mu      sync.Mutex
+		renders int
+	)
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	render := func(page int) (image.Image, bool) {
+		mu.Lock()
+		renders++
+		n := renders
+		mu.Unlock()
+		if n == 1 {
+			close(started) // the single in-flight render has started
+		}
+		<-release // hold the page stripe until the test observes the state
+		return fakeImg(page), true
+	}
+
+	imgs := make([]image.Image, workers)
+	oks := make([]bool, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func(i int) {
+			defer wg.Done()
+			imgs[i], oks[i] = c.Acquire(render, pn)
+		}(i)
+	}
+
+	// Let the blocked workers finish and drop their cache refs even when an
+	// assertion below fails before release is closed.
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		wg.Wait()
+		for _, ok := range oks {
+			if ok {
+				c.Release(pn)
+			}
+		}
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the first render to start")
+	}
+
+	// While the first render is still blocked, every other worker must be
+	// waiting on the page stripe rather than rendering the page again.
+	mu.Lock()
+	got := renders
+	mu.Unlock()
+	if got != 1 {
+		t.Fatalf("render called %d times while the first render is in flight, want 1: same-page misses must wait on the page stripe", got)
+	}
+
+	close(release)
+	wg.Wait()
+
+	for i := 0; i < workers; i++ {
+		if !oks[i] {
+			t.Fatalf("worker %d failed to acquire page %d", i, pn)
+		}
+		if imgs[i] == nil {
+			t.Fatalf("worker %d received a nil image", i)
+		}
+	}
+
+	mu.Lock()
+	got = renders
+	mu.Unlock()
+	if got != 1 {
+		t.Fatalf("render called %d times for one page, want 1 (concurrent misses must be coalesced)", got)
 	}
 }
 
