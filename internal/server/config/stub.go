@@ -107,8 +107,57 @@ func (c *AuditConfig) GetFileOutput() common.FileOutput {
 	return common.FileOutput{}
 }
 
-func (c *IngestLogConfig) ParseIngestLogConfig(v *viper.Viper) error { return nil }
+// Default ingest-log rotation values mirror the documented IngestLogConfig
+// defaults. File output is opt-in: leave ingestor.log.path empty and events emit
+// to stdout only.
+const (
+	defaultIngestLogMaxSizeMB  = 1000
+	defaultIngestLogMaxBackups = 20
+	defaultIngestLogMaxAgeDays = 60
+)
 
+// ParseIngestLogConfig reads the ingestor.log.* keys from the sub-viper passed by
+// the ingestor config parser (already merged with the environment by
+// server.Init), so env overrides such as RAGFLOW_INGESTOR_LOG_PATH win over the
+// YAML file. A nil viper is a no-op so the struct keeps its zero (off) state.
+func (c *IngestLogConfig) ParseIngestLogConfig(v *viper.Viper) error {
+	if v == nil {
+		return nil
+	}
+	c.Type = "file"
+	c.Format = "json"
+	c.MaxSize = defaultIngestLogMaxSizeMB
+	c.MaxBackups = defaultIngestLogMaxBackups
+	c.MaxAge = defaultIngestLogMaxAgeDays
+	if v.IsSet("type") {
+		c.Type = v.GetString("type")
+	}
+	if v.IsSet("format") {
+		c.Format = v.GetString("format")
+	}
+	if v.IsSet("path") {
+		c.Path = v.GetString("path")
+	}
+	if v.IsSet("max_size") {
+		c.MaxSize = v.GetInt("max_size")
+	}
+	if v.IsSet("max_backups") {
+		c.MaxBackups = v.GetInt("max_backups")
+	}
+	if v.IsSet("max_age") {
+		c.MaxAge = v.GetInt("max_age")
+	}
+	return nil
+}
+
+// GetFileOutput projects the ingest log config onto the common.FileOutput sink
+// descriptor. An empty Path means no file sink (stdout only), which keeps the
+// feature off by default.
 func (c *IngestLogConfig) GetFileOutput() common.FileOutput {
-	return common.FileOutput{}
+	return common.FileOutput{
+		Path:       c.Path,
+		MaxSize:    c.MaxSize,
+		MaxBackups: c.MaxBackups,
+		MaxAge:     c.MaxAge,
+	}
 }

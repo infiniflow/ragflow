@@ -649,7 +649,7 @@ func TestIngestionTaskServiceMarkFailedUpdatesTaskStatus(t *testing.T) {
 	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.MarkFailed(ctx, "task-1"); err != nil {
+	if err := svc.MarkFailed(ctx, "task-1", ""); err != nil {
 		t.Fatalf("MarkFailed failed: %v", err)
 	}
 	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
@@ -1824,7 +1824,7 @@ func TestIngestionTaskServiceMarkFailedIdempotentOnAlreadyTerminal(t *testing.T)
 
 	svc := NewIngestionTaskService()
 	ctx := t.Context()
-	if err := svc.MarkFailed(ctx, "task-1"); err != nil {
+	if err := svc.MarkFailed(ctx, "task-1", ""); err != nil {
 		t.Fatalf("MarkFailed on already COMPLETED task should be idempotent, got: %v", err)
 	}
 }
@@ -2462,5 +2462,170 @@ func TestIngestionTaskServiceCleanupMissingRun(t *testing.T) {
 				t.Fatalf("orphan terminal events = %d", events)
 			}
 		})
+	}
+}
+
+// recordingIngestLogEmitter captures emitted lifecycle events for assertions.
+type recordingIngestLogEmitter struct {
+	mu   sync.Mutex
+	logs []common.IngestionLog
+}
+
+func (e *recordingIngestLogEmitter) EmitIngestLog(_ context.Context, log common.IngestionLog) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.logs = append(e.logs, log)
+}
+
+func (e *recordingIngestLogEmitter) last() common.IngestionLog {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.logs) == 0 {
+		return common.IngestionLog{}
+	}
+	return e.logs[len(e.logs)-1]
+}
+
+// TestIngestionTaskServiceMarkFailedCarriesReason verifies that the failure
+// reason supplied by the ingestor reaches the emitted lifecycle event's
+// ErrorInfo, instead of being dropped (the previous gap: the run ledger got the
+// message but the observability event carried an empty ErrorInfo).
+func TestIngestionTaskServiceMarkFailedCarriesReason(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", common.RUNNING).Error; err != nil {
+		t.Fatalf("set running status: %v", err)
+	}
+	ctx := t.Context()
+	emitter := &recordingIngestLogEmitter{}
+	svc := NewIngestionTaskService()
+	svc.SetEventEmitter(emitter)
+	const reason = "boom: nil deref"
+	if err := svc.MarkFailed(ctx, "task-1", reason); err != nil {
+		t.Fatalf("MarkFailed failed: %v", err)
+	}
+	got := emitter.last()
+	if got.ErrorInfo != reason {
+		t.Fatalf("emitted ErrorInfo = %q, want %q", got.ErrorInfo, reason)
+	}
+	if got.EventType != "failed" || got.Status != common.FAILED {
+		t.Fatalf("emitted event type/status = %q/%q, want failed/%q", got.EventType, got.Status, common.FAILED)
+	}
+}
+
+// TestIngestionTaskServicePersistProcessEndAtIdempotent verifies that
+// persistProcessEndAt records the end time on first settlement and leaves an
+// already-recorded value untouched on a later settlement (overlapping
+// failure/timeout terminal events must not rewrite the completion instant).
+func TestIngestionTaskServicePersistProcessEndAtIdempotent(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	runID := "run-idempotent-1"
+	begin := time.Now().Add(-time.Minute)
+	run := &entity.PipelineOperationLog{
+		ID:              runID,
+		DocumentID:      "doc-idem-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "parser-1",
+		DocumentName:    "doc",
+		DocumentSuffix:  ".pdf",
+		DocumentType:    "pdf",
+		SourceFrom:      "web",
+		OperationStatus: "RUNNING",
+		ProcessBeginAt:  &begin,
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	ctx := t.Context()
+	svc := NewIngestionTaskService()
+	svc.persistProcessEndAt(ctx, runID)
+	var first entity.PipelineOperationLog
+	if err := db.Where("id = ?", runID).First(&first).Error; err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if first.ProcessEndAt == nil {
+		t.Fatalf("process_end_at not persisted on first call")
+	}
+	firstEnd := *first.ProcessEndAt
+	// A second settlement must not overwrite the recorded end time.
+	svc.persistProcessEndAt(ctx, runID)
+	var second entity.PipelineOperationLog
+	if err := db.Where("id = ?", runID).First(&second).Error; err != nil {
+		t.Fatalf("load run again: %v", err)
+	}
+	if second.ProcessEndAt == nil || !second.ProcessEndAt.Equal(firstEnd) {
+		t.Fatalf("process_end_at changed on second call: first=%v second=%v", firstEnd, second.ProcessEndAt)
+	}
+}
+
+// TestPrepareValidatedRunEmitsRunningEventWithFreshClaimTime verifies that the
+// running lifecycle event is emitted AFTER PrepareValidatedRun stamps the
+// document's worker-claim time. Previously the running event was emitted in
+// TransitionTaskToRunning, before the claim time was written, so its BeginTime
+// (and therefore wait_duration_s) was either zero or the previous run's stale
+// value.
+func TestPrepareValidatedRunEmitsRunningEventWithFreshClaimTime(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	// Simulate a previous run that already stamped a claim time one hour ago.
+	stale := time.Now().Add(-time.Hour)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("process_begin_at", stale).Error; err != nil {
+		t.Fatalf("seed stale claim time: %v", err)
+	}
+
+	// Bind a pipeline-operation-log row so advanceOpenLog/recordRunMessage succeed.
+	openLog := &entity.PipelineOperationLog{
+		ID:              "log-1",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusUnstart),
+	}
+	if err := db.Create(openLog).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "log-1").Error; err != nil {
+		t.Fatalf("bind task: %v", err)
+	}
+
+	ctx := t.Context()
+	emitter := &recordingIngestLogEmitter{}
+	svc := NewIngestionTaskService()
+	svc.SetEventEmitter(emitter)
+
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	svc.PrepareValidatedRun(ctx, task)
+
+	var running common.IngestionLog
+	found := false
+	for _, l := range emitter.logs {
+		if l.EventType == "running" {
+			running = l
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no running event emitted by PrepareValidatedRun")
+	}
+	if running.BeginTime.IsZero() {
+		t.Fatalf("running event BeginTime is zero - claim time was not stamped before emit")
+	}
+	if !running.BeginTime.After(stale) {
+		t.Fatalf("running event BeginTime = %v, want after stale claim time %v (must reflect current run)", running.BeginTime, stale)
+	}
+	if time.Since(running.BeginTime) > 30*time.Second {
+		t.Fatalf("running event BeginTime = %v, suspiciously old for a fresh claim", running.BeginTime)
 	}
 }
