@@ -47,12 +47,24 @@ const (
 	weComWebhookBodyLimit       = 1024 * 1024
 	weComWebhookShutdownTimeout = 5 * time.Second
 	weComPKCS7BlockSize         = 32
+	weComReplayWindow           = 5 * time.Minute
+	weComDeliveryTTL            = 10 * time.Minute
 )
 
 type wecomCrypto struct {
 	token     string
 	aesKey    []byte
 	receiveID string
+
+	deliveryMu sync.Mutex
+	deliveries map[string]*wecomDelivery
+}
+
+type wecomDelivery struct {
+	done      chan struct{}
+	status    int
+	settled   bool
+	claimedAt time.Time
 }
 
 type wecomEncryptedXML struct {
@@ -102,9 +114,10 @@ func newWeComCrypto(token, encodingAESKey, receiveID string) (*wecomCrypto, erro
 		return nil, fmt.Errorf("decoded WeCom AES key must be 32 bytes, got %d", len(aesKey))
 	}
 	return &wecomCrypto{
-		token:     token,
-		aesKey:    aesKey,
-		receiveID: receiveID,
+		token:      token,
+		aesKey:     aesKey,
+		receiveID:  receiveID,
+		deliveries: map[string]*wecomDelivery{},
 	}, nil
 }
 
@@ -114,6 +127,14 @@ func (c *wecomCrypto) decrypt(signature, timestamp, nonce, encrypted string) ([]
 	}
 	if !c.hasValidSignature(signature, timestamp, nonce, encrypted) {
 		return nil, errors.New("invalid WeCom message signature")
+	}
+	sentAt, err := parseWeComTimestamp(timestamp)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	if diff := now.Sub(sentAt); diff > weComReplayWindow || diff < -weComReplayWindow {
+		return nil, fmt.Errorf("stale WeCom timestamp: %s", timestamp)
 	}
 	ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
 	if err != nil {
@@ -152,6 +173,49 @@ func (c *wecomCrypto) hasValidSignature(signature, timestamp, nonce, encrypted s
 	hash := sha1.Sum([]byte(strings.Join(parts, "")))
 	expected := hex.EncodeToString(hash[:])
 	return subtle.ConstantTimeCompare([]byte(strings.ToLower(signature)), []byte(expected)) == 1
+}
+
+func parseWeComTimestamp(value string) (time.Time, error) {
+	seconds, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid WeCom timestamp %q: %w", value, err)
+	}
+	return time.Unix(seconds, 0), nil
+}
+
+func (c *wecomCrypto) claimDelivery(messageID string, now time.Time) (delivery *wecomDelivery, claimed bool) {
+	if messageID == "" {
+		// Without a platform message id there is nothing to deduplicate on.
+		return &wecomDelivery{done: make(chan struct{}), claimedAt: now}, true
+	}
+	c.deliveryMu.Lock()
+	defer c.deliveryMu.Unlock()
+	c.pruneDeliveriesLocked(now)
+	if existing, ok := c.deliveries[messageID]; ok {
+		return existing, false
+	}
+	delivery = &wecomDelivery{done: make(chan struct{}), claimedAt: now}
+	c.deliveries[messageID] = delivery
+	return delivery, true
+}
+
+func (c *wecomCrypto) finishDelivery(messageID string, delivery *wecomDelivery, status int) {
+	c.deliveryMu.Lock()
+	delivery.status = status
+	delivery.settled = true
+	if status != http.StatusOK {
+		delete(c.deliveries, messageID)
+	}
+	c.deliveryMu.Unlock()
+	close(delivery.done)
+}
+
+func (c *wecomCrypto) pruneDeliveriesLocked(now time.Time) {
+	for messageID, delivery := range c.deliveries {
+		if delivery.settled && now.Sub(delivery.claimedAt) > weComDeliveryTTL {
+			delete(c.deliveries, messageID)
+		}
+	}
 }
 
 func removeWeComPKCS7Padding(payload []byte) ([]byte, error) {
@@ -259,6 +323,7 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 	if r.Method == http.MethodGet {
 		plaintext, err := channel.crypto.decrypt(signature, timestamp, nonce, query.Get("echostr"))
 		if err != nil {
+			common.Warn("wecom: webhook verification rejected", zap.String("account_id", accountID), zap.Error(err))
 			http.Error(w, "bad signature", http.StatusForbidden)
 			return
 		}
@@ -285,6 +350,7 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 	}
 	plaintext, err := channel.crypto.decrypt(signature, timestamp, nonce, envelope.Encrypt)
 	if err != nil {
+		common.Warn("wecom: callback rejected", zap.String("account_id", accountID), zap.Error(err))
 		http.Error(w, "bad signature", http.StatusForbidden)
 		return
 	}
@@ -295,17 +361,44 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if message.MsgType == "text" && message.FromUserName != "" {
-		channel.handleTextMessage(r.Context(), message.FromUserName, message.FromUserName, message.MsgID, message.Content, "p2p", map[string]any{
-			"to_user_name":   message.ToUserName,
-			"from_user_name": message.FromUserName,
-			"create_time":    message.CreateTime,
-			"msg_type":       message.MsgType,
-			"content":        message.Content,
-			"msg_id":         message.MsgID,
-			"xml":            string(plaintext),
-		})
+		if status := channel.handleWebhookCallback(r.Context(), message, plaintext); status != http.StatusOK {
+			http.Error(w, "message handling failed", status)
+			return
+		}
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// handleWebhookCallback runs the chat handler once per platform message id. A
+// retry that arrives while the first attempt is still running waits for its
+// outcome, so the platform is never told that a delivery succeeded before it
+// did, and a failed attempt is still retried by the platform.
+func (c *wecomChannel) handleWebhookCallback(ctx context.Context, message wecomXMLMessage, plaintext []byte) int {
+	delivery, claimed := c.crypto.claimDelivery(message.MsgID, time.Now())
+	if !claimed {
+		common.Warn("wecom: waiting for the delivery still being handled", zap.String("account_id", c.AccountID()), zap.String("msg_id", message.MsgID))
+		select {
+		case <-delivery.done:
+			return delivery.status
+		case <-ctx.Done():
+			return http.StatusServiceUnavailable
+		}
+	}
+	err := c.handleTextMessage(ctx, message.FromUserName, message.FromUserName, message.MsgID, message.Content, "p2p", map[string]any{
+		"to_user_name":   message.ToUserName,
+		"from_user_name": message.FromUserName,
+		"create_time":    message.CreateTime,
+		"msg_type":       message.MsgType,
+		"content":        message.Content,
+		"msg_id":         message.MsgID,
+		"xml":            string(plaintext),
+	})
+	status := http.StatusOK
+	if err != nil {
+		status = http.StatusInternalServerError
+	}
+	c.crypto.finishDelivery(message.MsgID, delivery, status)
+	return status
 }
 
 func weComAccountIDFromPath(path string) (string, bool) {
