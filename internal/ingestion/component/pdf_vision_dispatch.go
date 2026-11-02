@@ -803,11 +803,11 @@ func mineruAPIParseMethod(raw string) string {
 const mineruDefaultTimeout = 30 * time.Minute
 
 // mineruRequestTimeout resolves the MinerU parse timeout with precedence:
-// 1. setup["mineru_timeout"] / setup["mineru_timeout_seconds"] (authoritative; non-empty invalid values
-//    do not fall through to env or API config and fall back to mineruDefaultTimeout)
-// 2. apiConfig provider JSON (mineru_timeout, mineru_timeout_seconds, MINERU_TIMEOUT, MINERU_TIMEOUT_SECONDS)
-// 3. Environment variables (MINERU_TIMEOUT, MINERU_TIMEOUT_SECONDS)
-// 4. mineruDefaultTimeout (30m)
+//  1. setup["mineru_timeout"] / setup["mineru_timeout_seconds"] (authoritative; non-empty invalid values
+//     do not fall through to env or API config and fall back to mineruDefaultTimeout)
+//  2. apiConfig provider JSON (mineru_timeout, mineru_timeout_seconds, MINERU_TIMEOUT, MINERU_TIMEOUT_SECONDS)
+//  3. Environment variables (MINERU_TIMEOUT, MINERU_TIMEOUT_SECONDS)
+//  4. mineruDefaultTimeout (30m)
 func mineruRequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) time.Duration {
 	value := ""
 	if raw, ok := setup["mineru_timeout"]; ok && raw != nil {
