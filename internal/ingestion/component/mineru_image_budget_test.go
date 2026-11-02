@@ -91,6 +91,43 @@ func TestMinerUImageItemKeptWhenZipMemberExists(t *testing.T) {
 	}
 }
 
+func TestMinerUStructuredFigureKeptWithoutCaptionOrZip(t *testing.T) {
+	payload := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{7}, 16))
+	dataURI := "data:image/png;base64," + payload
+	item := map[string]any{
+		"type": "image", "image_data_uri": dataURI,
+		"page_idx": 0, "bbox": []any{1.0, 2.0, 3.0, 4.0},
+	}
+	got := mineruContentItemToJSONBudget(item, nil, map[int][2]float64{0: {612, 792}}, media.NewBudget())
+	if got == nil {
+		t.Fatal("structured figure with positions must be kept without caption or zip member")
+	}
+	if _, ok := got["image"]; ok {
+		t.Fatalf("structured data URI must not be copied: %#v", got)
+	}
+	if _, ok := got["_pdf_positions"]; !ok {
+		t.Fatalf("positions must be kept: %#v", got)
+	}
+}
+
+func TestMinerUStructuredDataURIOverImageMaxBytesWarns(t *testing.T) {
+	payload := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 200))
+	dataURI := "data:image/png;base64," + payload
+	budget := media.NewBudgetWithLimits(media.Limits{
+		ImageMaxBytes:   100,
+		MaxImagesPerRun: 10,
+		MaxBytesPerRun:  1 << 20,
+	})
+	mineruAccountStructuredDataURI(budget, dataURI)
+	warnings := budget.Warnings()
+	if len(warnings) == 0 {
+		t.Fatal("expected per-image limit warning")
+	}
+	if !strings.Contains(warnings[0], "100-byte per-image limit") {
+		t.Fatalf("warnings = %v", warnings)
+	}
+}
+
 func TestMinerUStructuredDataURINotCopiedAndWarnsOnBudget(t *testing.T) {
 	payload := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 200))
 	dataURI := "data:image/png;base64," + payload

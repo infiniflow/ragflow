@@ -1202,12 +1202,16 @@ func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.F
 		if imgPath, _ := item["img_path"].(string); imgPath != "" {
 			hasImageFile = mineruZipImageFile(images, imgPath) != nil
 		}
+		hasStructuredFigure := false
 		if dataURI, _ := item["image_data_uri"].(string); strings.HasPrefix(dataURI, "data:") {
+			if _, ok := media.DataImageDecodedSize(dataURI); ok && len(mineruItemPositions(item, pageSizes)) > 0 {
+				hasStructuredFigure = true
+			}
 			if budget != nil {
 				mineruAccountStructuredDataURI(budget, dataURI)
 			}
 		}
-		if text == "" && !hasImageFile {
+		if text == "" && !hasImageFile && !hasStructuredFigure {
 			return nil
 		}
 	case "table":
@@ -1429,6 +1433,7 @@ func mineruReadBounded(f *zip.File, limit int64) ([]byte, bool) {
 	return data, true
 }
 
+// mineruZipImageFile resolves a MinerU img_path against the zip image index.
 func mineruZipImageFile(images map[string]*zip.File, imgPath string) *zip.File {
 	imgPath = strings.TrimSpace(strings.ReplaceAll(imgPath, "\\", "/"))
 	if imgPath == "" {
@@ -1443,16 +1448,20 @@ func mineruZipImageFile(images map[string]*zip.File, imgPath string) *zip.File {
 	return nil
 }
 
+// mineruAccountStructuredDataURI applies the shared media budget to a
+// structured image_data_uri without copying it into parser items. Valid payloads
+// above the per-image limit are recorded as omissions; malformed payloads are
+// ignored.
 func mineruAccountStructuredDataURI(budget *media.Budget, dataURI string) {
 	if budget == nil {
 		return
 	}
-	idx := strings.Index(strings.ToLower(dataURI), "base64,")
-	if idx < 0 {
+	decodedSize, ok := media.DataImageDecodedSize(dataURI)
+	if !ok {
 		return
 	}
-	_, decodedSize, _, ok := media.NormalizeBase64ImagePayload(dataURI[idx+len("base64,"):], media.ImageMaxBytes())
-	if !ok {
+	if decodedSize > media.ImageMaxBytes() {
+		_, _ = budget.ReserveOccurrence(media.Size(decodedSize))
 		return
 	}
 	reservation, admission := budget.ReserveOccurrence(media.UnknownSize)
