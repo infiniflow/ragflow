@@ -21,7 +21,7 @@ func (s *FileService) GetRootFolder(ctx context.Context, tenantID string) (map[s
 	if err != nil {
 		return nil, err
 	}
-	if err := checkFileAccess(ctx, tenantID, file, permission.OperationRead); err != nil {
+	if err = checkFileAccess(ctx, tenantID, file, permission.OperationRead); err != nil {
 		return nil, err
 	}
 	return s.toFileResponse(file), nil
@@ -448,14 +448,14 @@ func (s *FileService) CreateFolder(ctx context.Context, userID, name, parentID, 
 	if err != nil {
 		return nil, err
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, "file", permission.ActionWrite); err != nil {
+	if err = permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, "file", permission.ActionWrite); err != nil {
 		return nil, err
 	}
 	// "/" is the root folder name and the path separator used by recursive
 	// folder creation, so names containing it collide with the root folder
 	// and break path-based lookups.
 	if strings.Contains(name, "/") {
-		return nil, errors.New(`Folder name cannot contain "/"`)
+		return nil, errors.New(`folder name cannot contain "/"`)
 	}
 
 	if parentID == "" {
@@ -473,7 +473,7 @@ func (s *FileService) CreateFolder(ctx context.Context, userID, name, parentID, 
 	if parentFolder.TenantID != tenantID {
 		return nil, permission.ErrResourceNotFound
 	}
-	if err := checkFileAccess(ctx, userID, parentFolder, permission.OperationCreate); err != nil {
+	if err = checkFileAccess(ctx, userID, parentFolder, permission.OperationCreate); err != nil {
 		return nil, err
 	}
 

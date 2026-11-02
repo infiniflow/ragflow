@@ -178,7 +178,7 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 	// provider/selectors name PaddleOCR, or a bare tenant model UUID (in
 	// either parse_method or layout_recognizer) that resolves to a PaddleOCR
 	// OCR model. A bare UUID carries no provider spelling in the string, so it
-	// is resolved first — mirroring Python's get_composite_model_name_by_id +
+	// is resolved first - mirroring Python's get_composite_model_name_by_id +
 	// normalize_layout_recognizer chain, which converts the raw model UUID
 	// into model@instance@provider before choosing the dispatch path.
 	isPaddleOCRMatch := strings.EqualFold(strings.TrimSpace(method), "paddleocr") ||
@@ -216,6 +216,40 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 			return parser.ParseResult{}, true, err
 		}
 		return res, true, nil
+	}
+
+	// SoMark dispatch: parse_method "somark", a layout_recognizer naming
+	// SoMark, or a bare tenant model UUID (in either parse_method or
+	// layout_recognizer) that resolves to a SoMark OCR model. A resolved
+	// tenant instance overrides the parser's setup/env SoMark configuration
+	// with the instance's base URL and API key and runs the same SoMark
+	// parser path; when the tenant has no SoMark instance the branch falls
+	// through so the setup/env-driven parser path (SOMARK_BASE_URL et al.)
+	// keeps working unchanged.
+	isSoMarkMatch := strings.EqualFold(strings.TrimSpace(method), "somark") ||
+		strings.HasPrefix(layoutLower, "somark") ||
+		strings.Contains(layoutLower, "@somark")
+	soMarkSelector := layout
+	if strings.TrimSpace(soMarkSelector) == "" {
+		soMarkSelector = method
+	}
+	isSoMarkByUUID := false
+	if !isSoMarkMatch && tenantID != "" && strings.TrimSpace(soMarkSelector) != "" &&
+		!parser.IsPDFParseMethod(soMarkSelector) {
+		isSoMarkByUUID = isSoMarkLayoutModelID(ctx, db, tenantID, soMarkSelector)
+	}
+	if isSoMarkMatch || isSoMarkByUUID {
+		if tenantID != "" {
+			dispatchModelID := ""
+			if isSoMarkByUUID || strings.Contains(soMarkSelector, "@") {
+				dispatchModelID = soMarkSelector
+			}
+			if res, handled, err := dispatchSoMarkPDF(ctx, db, filename, binary, tenantID, setup, dispatchModelID); handled {
+				return res, true, err
+			}
+		}
+		// No tenant SoMark instance: fall through to the setup/env-driven
+		// parser path.
 	}
 
 	modelID, useVision := resolvePDFVisionModelID(setup)
@@ -555,7 +589,7 @@ func dispatchMinerUPDF(
 	parseMethod := mineruAPIParseMethod(getStringOr(setup, "mineru_parse_method", ""))
 	// MinerU's language is an OCR engine parameter, not the caption language:
 	// mineru_lang wins, then the family lang, then the engine's own default.
-	// That default used to arrive implicitly through defaultSetups() — which
+	// That default used to arrive implicitly through defaultSetups() - which
 	// also fed captions, so a knowledge base that never chose a language got
 	// Chinese captions (issue #20727). Keeping it here confines it to the engine.
 	lang := firstNonEmpty(getStringOr(setup, "mineru_lang", ""), getStringOr(setup, "lang", ""))
@@ -669,7 +703,7 @@ func appendMineruGeometryWarning(res *parser.ParseResult, err error) {
 // dispatch. modelID is the raw selector value: a bare tenant model UUID (no
 // "@") selects that exact model, a composite model@instance@provider name
 // resolves through the provider-instance chain, and an empty value falls back
-// to the tenant's first MinerU OCR model — mirroring Python's by_mineru,
+// to the tenant's first MinerU OCR model - mirroring Python's by_mineru,
 // which falls back to get_first_provider_model_name(tenant_id, "MinerU",
 // LLMType.OCR) for the named "mineru" selector.
 var resolveMinerUModelForDispatch = defaultResolveMinerUModelForDispatch
@@ -701,8 +735,8 @@ func defaultResolveMinerUModelForDispatch(ctx context.Context, db *gorm.DB, tena
 // Known limitation: composite names such as "some-model@instance@PaddleOCR.local"
 // (an explicit local selection) are not recognized here. Any value containing
 // "@" falls through to resolveTenantOCRModelByProvider("PaddleOCR"), which
-// returns the tenant's first active PaddleOCR OCR model — potentially the
-// local one — when both the local ("PaddleOCR.local") and the cloud
+// returns the tenant's first active PaddleOCR OCR model - potentially the
+// local one - when both the local ("PaddleOCR.local") and the cloud
 // ("PaddleOCR") providers are configured. The Python path behaves the same
 // way; if exact selection is required, pass the model's tenant-model UUID
 // instead.
@@ -1703,8 +1737,8 @@ func isMinerUDriver(driver modelModule.ModelDriver) bool {
 	return false
 }
 
-// isMinerULayoutModelID reports whether selector — a bare tenant model UUID
-// with no "model@instance@provider" composite hint — resolves to an active
+// isMinerULayoutModelID reports whether selector - a bare tenant model UUID
+// with no "model@instance@provider" composite hint - resolves to an active
 // OCR model driven by a MinerU provider (remote mineru.net or local mineru).
 // The raw UUID carries no provider spelling, so it must be resolved before
 // the dispatch path is chosen instead of falling through to the image2text
@@ -1736,8 +1770,8 @@ func isPaddleOCRDriver(driver modelModule.ModelDriver) bool {
 	return false
 }
 
-// isPaddleOCRLayoutModelID reports whether layout — a bare tenant model UUID
-// with no "model@instance@provider" composite hint — resolves to an active
+// isPaddleOCRLayoutModelID reports whether layout - a bare tenant model UUID
+// with no "model@instance@provider" composite hint - resolves to an active
 // OCR model driven by a PaddleOCR provider (cloud "PaddleOCR" or local
 // "PaddleOCR.local"). The web UI stores the tenant model UUID directly in
 // layout_recognizer, so the raw value carries no provider spelling; this
@@ -1758,4 +1792,103 @@ func defaultIsPaddleOCRLayoutModelID(ctx context.Context, db *gorm.DB, tenantID,
 		return false
 	}
 	return isPaddleOCRDriver(driver)
+}
+
+// resolveSoMarkModelForDispatch resolves the OCR model used by the SoMark PDF
+// dispatch. modelID is the raw selector value: a bare tenant model UUID (no
+// "@") selects that exact model, a composite model@instance@provider name
+// resolves through the provider-instance chain, and an empty value falls back
+// to the tenant's first SoMark OCR model.
+var resolveSoMarkModelForDispatch = defaultResolveSoMarkModelForDispatch
+
+func defaultResolveSoMarkModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	modelID = strings.TrimSpace(modelID)
+	if modelID != "" && !strings.Contains(modelID, "@") {
+		resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		return resolved.driver, resolved.model.ModelName, resolved.apiConfig, nil
+	}
+	if modelID != "" {
+		driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		return driver, modelName, apiConfig, err
+	}
+	driver, modelName, apiConfig, _, err := resolveTenantOCRModelByProvider(ctx, db, tenantID, "SoMark")
+	return driver, modelName, apiConfig, err
+}
+
+// isSoMarkLayoutModelID reports whether selector - a bare tenant model UUID
+// with no "model@instance@provider" composite hint - resolves to an active
+// OCR model driven by the SoMark provider. Mirrors the PaddleOCR/MinerU
+// probes: the raw UUID carries no provider spelling, so it must be resolved
+// before the dispatch path is chosen instead of falling through to the
+// image2text VLM path.
+var isSoMarkLayoutModelID = defaultIsSoMarkLayoutModelID
+
+func defaultIsSoMarkLayoutModelID(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+	selector = strings.TrimSpace(selector)
+	if db == nil {
+		return false
+	}
+	if selector == "" || strings.Contains(selector, "@") {
+		return false
+	}
+	driver, _, _, err := defaultResolveSoMarkModelForDispatch(ctx, db, tenantID, selector)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(driver.Name(), "somark")
+}
+
+// dispatchSoMarkPDF runs the SoMark parser path with the tenant model
+// provider instance's endpoint and key overriding the parser setup/env
+// configuration, so instance-driven parsing yields the same structured
+// result (titles, tables, figures with layout) as the env-driven path.
+// handled reports whether the dispatch consumed the request: resolution
+// failures for an explicit model selector are handled errors; when no tenant
+// model was selected, the caller falls through to the setup/env-driven path.
+func dispatchSoMarkPDF(
+	ctx context.Context,
+	db *gorm.DB,
+	filename string,
+	binary []byte,
+	tenantID string,
+	setup schema.ParserSetup,
+	modelID string,
+) (parser.ParseResult, bool, error) {
+	driver, _, apiConfig, err := resolveSoMarkModelForDispatch(ctx, db, tenantID, modelID)
+	if err != nil {
+		if strings.TrimSpace(modelID) != "" {
+			return parser.ParseResult{}, true, fmt.Errorf("parser: resolve selected SoMark model %q: %w", modelID, err)
+		}
+		// No tenant SoMark instance (or unresolvable selector): let the
+		// setup/env-driven parser path handle the request.
+		return parser.ParseResult{}, false, nil
+	}
+	if !strings.EqualFold(driver.Name(), "somark") {
+		return parser.ParseResult{}, true, fmt.Errorf(
+			"parser: SoMark requires a SoMark OCR model; found %q. Please add a SoMark OCR model to your tenant", driver.Name())
+	}
+
+	p := parser.NewPDFParser()
+	p.ConfigureFromSetup(setup)
+	p.ParseMethod = "somark"
+	if somarkDriver, ok := driver.(interface {
+		GetBaseURL(*modelModule.APIConfig) (string, error)
+	}); ok {
+		if baseURL, err := somarkDriver.GetBaseURL(apiConfig); err == nil && strings.TrimSpace(baseURL) != "" {
+			p.SoMarkBaseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+		}
+	}
+	if apiConfig != nil {
+		if apiConfig.ApiKey != nil && strings.TrimSpace(*apiConfig.ApiKey) != "" {
+			p.SoMarkAPIKey = strings.TrimSpace(*apiConfig.ApiKey)
+		}
+	}
+	res := p.ParseWithResult(ctx, filename, binary)
+	if res.Err != nil {
+		return parser.ParseResult{}, true, res.Err
+	}
+	return res, true, nil
 }

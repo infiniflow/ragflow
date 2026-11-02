@@ -518,7 +518,6 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
@@ -598,7 +597,6 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
@@ -662,7 +660,6 @@ func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
