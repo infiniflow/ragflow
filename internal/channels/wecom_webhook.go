@@ -394,7 +394,9 @@ func (c *wecomChannel) handleWebhookCallback(ctx context.Context, message wecomX
 		"content":        message.Content,
 		"msg_id":         message.MsgID,
 		"xml":            string(plaintext),
-	}); err == nil {
+	}); err == nil || errors.Is(err, errReplyAttempted) {
+		// A reply was already handed to the platform, so the platform must not
+		// run the delivery again.
 		status = http.StatusOK
 	}
 	return status

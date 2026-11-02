@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -39,6 +40,10 @@ const (
 	initialStartRetryDelay = 10 * time.Second
 	maxStartRetryDelay     = 5 * time.Minute
 )
+
+// errReplyAttempted marks a handler failure that happened after the answer was
+// handed to the platform, so retrying the delivery would answer twice.
+var errReplyAttempted = errors.New("reply attempted")
 
 type runningChannel struct {
 	channel     core.Channel
@@ -272,11 +277,16 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 		if err != nil || answer == "" {
 			return err
 		}
-		return ch.Send(ctx, core.OutgoingMessage{
+		if err := ch.Send(ctx, core.OutgoingMessage{
 			ChatID:           msg.ChatID,
 			Text:             answer,
 			ReplyToMessageID: msg.MessageID,
-		})
+		}); err != nil {
+			// The answer already went to the platform, so a retry of the delivery
+			// would answer the same message twice.
+			return fmt.Errorf("%w: %w", errReplyAttempted, err)
+		}
+		return nil
 	})
 	if err = ch.Start(ctx); err != nil {
 		return err
