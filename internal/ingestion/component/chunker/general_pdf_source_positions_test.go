@@ -136,3 +136,116 @@ func TestGeneralPDFChildPositionsFollowPageOrder(t *testing.T) {
 		}
 	}
 }
+
+func TestPDFSourceOffsetsSkipCustomDelimiter(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		text       string
+		wantTexts  []string
+		wantBounds [][2]float64
+	}{
+		{"delimiter substring", "a###", []string{"a", "#"}, [][2]float64{{0, 25}, {75, 100}}},
+		{"leading and repeated", "##a####b", []string{"a", "b"}, [][2]float64{{25, 37.5}, {87.5, 100}}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			unit := schema.ChunkDoc{Text: testCase.text, DocType: "text", Positions: json.RawMessage(`[[1,10,200,0,100]]`)}
+			pieces, sources := splitPDFUnits([]schema.ChunkDoc{unit}, pdfUnitSources([]schema.ChunkDoc{unit}), compileDelimPattern([]string{"`##`"}), false)
+			if len(pieces) != len(testCase.wantTexts) {
+				t.Fatalf("pieces = %v, want %v", generalChunkTexts(pieces), testCase.wantTexts)
+			}
+			for index, piece := range pieces {
+				if piece.Text != testCase.wantTexts[index] {
+					t.Errorf("piece %d text = %q, want %q", index, piece.Text, testCase.wantTexts[index])
+				}
+				_, raw := pdfSourcePositions(sources[index])
+				positions := decodeGeneralMatrix(t, raw)
+				if len(positions) != 1 || positions[0][3] != testCase.wantBounds[index][0] || positions[0][4] != testCase.wantBounds[index][1] {
+					t.Errorf("piece %d positions = %v, want bounds %v", index, positions, testCase.wantBounds[index])
+				}
+			}
+		})
+	}
+}
+
+func TestGeneralPDFCustomDelimiterPreservesSourceBounds(t *testing.T) {
+	chunker, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 512, "delimiters": []string{"`##`"}, "children_delimiters": []string{"。"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := chunker.Invoke(t.Context(), nil, map[string]any{
+		"name": "source.pdf", "file_type": "pdf", "output_format": "json",
+		"json": []map[string]any{{"text": "a###", "doc_type_kwd": "text", "positions": [][]float64{{1, 10, 200, 0, 100}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 1 || chunks[0]["text"] != "a\n#" {
+		t.Fatalf("unexpected chunks: %#v", chunks)
+	}
+	raw, err := json.Marshal(chunks[0]["positions"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got [][]float64
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]float64{{1, 10, 200, 0, 25}, {1, 10, 200, 75, 100}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("positions = %v, want %v", got, want)
+	}
+}
+
+func TestPDFSourceOffsetsIgnorePositionTags(t *testing.T) {
+	unit := schema.ChunkDoc{
+		Text: "a@@1\t2\t3\t4\t5##xyyb", DocType: "text",
+		Positions: json.RawMessage(`[[1,10,200,0,100]]`),
+	}
+	pieces, sources := splitPDFUnits([]schema.ChunkDoc{unit}, pdfUnitSources([]schema.ChunkDoc{unit}), compileDelimPattern([]string{"`xy`"}), false)
+	if len(pieces) != 2 || removeTag(pieces[1].Text) != "yb" {
+		t.Fatalf("unexpected pieces: %v", generalChunkTexts(pieces))
+	}
+	_, raw := pdfSourcePositions(sources[1])
+	got := decodeGeneralMatrix(t, raw)
+	want := [][]float64{{1, 10, 200, 60, 100}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("positions = %v, want %v", got, want)
+	}
+}
+
+func TestGeneralPDFWrappedChildExcludesPreviousParagraph(t *testing.T) {
+	chunker, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 512, "delimiters": []string{"#"}, "children_delimiters": []string{"#"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := []map[string]any{
+		{"text": "上一段很长，不能算进下一段。", "doc_type_kwd": "text", "_pdf_positions": [][]float64{{1, 10, 200, 10, 40}}},
+		{"text": "#", "doc_type_kwd": "text", "_pdf_positions": [][]float64{{1, 10, 20, 45, 55}}},
+		{"text": "将军向宠，性行淑均，\n晓畅军事。\n愚以为营中之事。", "doc_type_kwd": "text", "_pdf_positions": [][]float64{{1, 10, 200, 60, 100}}},
+	}
+	out, err := chunker.Invoke(t.Context(), nil, map[string]any{"name": "source.pdf", "file_type": "pdf", "output_format": "json", "json": items})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 2 {
+		t.Fatalf("got %d chunks, want 2", len(chunks))
+	}
+	raw, err := json.Marshal(chunks[1]["_pdf_positions"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got [][]float64
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]float64{{1, 10, 200, 60, 100}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("wrapped child positions = %v, want %v", got, want)
+	}
+}

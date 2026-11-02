@@ -33,16 +33,33 @@ func splitPDFUnits(units []schema.ChunkDoc, sources [][]pdfSourceSpan, pattern *
 	var resultSources [][]pdfSourceSpan
 	for index, unit := range units {
 		pieces := splitGeneralUnits([]schema.ChunkDoc{unit}, pattern, keepDelimiter)
-		text := removeTag(normalizeGeneralNewlines(unit.Text))
+		rawText := normalizeGeneralNewlines(unit.Text)
+		text := removeTag(rawText)
+		var ranges [][2]int
+		if !keepDelimiter && pattern != nil && itemDocType(unit) == "text" && pattern.MatchString(rawText) {
+			for _, part := range splitDroppedDelimiterRanges(len(rawText), pattern.FindAllStringIndex(rawText, -1)) {
+				if strings.TrimSpace(rawText[part[0]:part[1]]) != "" {
+					ranges = append(ranges, part)
+				}
+			}
+		}
 		cursor := 0
-		for _, piece := range pieces {
+		for pieceIndex, piece := range pieces {
 			pieceText := removeTag(piece.Text)
 			var spans []pdfSourceSpan
-			if offset := strings.Index(text[cursor:], pieceText); offset >= 0 && sources[index] != nil {
-				start := cursor + offset
-				end := start + len(pieceText)
-				spans = slicePDFSourceSpans(sources[index], text, start, end)
-				cursor = end
+			if ranges != nil && len(ranges) == len(pieces) && sources[index] != nil {
+				part := ranges[pieceIndex]
+				prefix, selected, suffix := removeTag(rawText[:part[0]]), removeTag(rawText[part[0]:part[1]]), removeTag(rawText[part[1]:])
+				if selected == pieceText && prefix+selected+suffix == text {
+					spans = slicePDFSourceSpans(sources[index], text, len(prefix), len(prefix)+len(selected))
+				}
+			} else if ranges == nil {
+				if offset := strings.Index(text[cursor:], pieceText); offset >= 0 && sources[index] != nil {
+					start := cursor + offset
+					end := start + len(pieceText)
+					spans = slicePDFSourceSpans(sources[index], text, start, end)
+					cursor = end
+				}
 			}
 			result = append(result, piece)
 			resultSources = append(resultSources, spans)
