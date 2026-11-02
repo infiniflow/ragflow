@@ -267,9 +267,10 @@ jobs:
 
   # Build the linux/amd64 image on a GitHub-hosted runner, mirroring
   # `build-arm64`. Pushes the version tag (amd64-only) so amd64 pulls always
-  # work even if the ARM64 job fails, plus the arch-specific -amd64/:amd64 tags
-  # for direct pulls. The multi-arch manifest is created by the `build-arm64`
-  # job once both arches are pushed.
+  # work even if the ARM64 job fails. The arch-specific -amd64/:amd64 tags are
+  # intermediate only: the `build-arm64` job creates the public multi-arch
+  # manifest list and then deletes them from Docker Hub, leaving only the
+  # version/latest/nightly dual-structure tags.
   build-amd64:
     needs:
       - prepare
@@ -318,6 +319,9 @@ jobs:
   # multi-arch manifest list for infiniflow/ragflow:${RELEASE_TAG} and :latest,
   # so `docker pull infiniflow/ragflow:${RELEASE_TAG}` resolves per-arch on both
   # platforms. Runs after `build-amd64` so the amd64 (-amd64/:amd64) tags exist.
+  # After the manifest is published, the intermediate -amd64/-arm64/amd64/arm64
+  # tags are deleted from Docker Hub, leaving only the dual-structure tags
+  # (${RELEASE_TAG}, :latest for stable, or :nightly).
   build-arm64:
     needs:
       - build-amd64
@@ -389,4 +393,37 @@ jobs:
           else
             echo "RELEASE_TAG=${RELEASE_TAG} is a prerelease/nightly build; skipping :latest update."
           fi
+
+      # The -amd64/-arm64 single-arch tags and the mutable amd64/arm64 tags are
+      # only intermediate steps used to assemble the multi-arch manifest above.
+      # Delete them from Docker Hub so the published repository exposes only the
+      # dual-structure tags (${RELEASE_TAG}, :latest for stable, or :nightly).
+      # The Docker Hub tag-delete API removes the tag name while keeping the
+      # manifest referenced by the multi-arch index, so the public tags stay
+      # intact for per-arch pulls.
+      - name: Remove intermediate per-arch tags
+        env:
+          DH_USER: infiniflow
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          JWT=$(curl -fsS -X POST -H "Content-Type: application/json" \
+            -d "{\"username\":\"${DH_USER}\",\"password\":\"${DH_TOKEN}\"}" \
+            https://hub.docker.com/v2/users/login/ | jq -r .token) || true
+          if [ -z "${JWT}" ] || [ "${JWT}" = "null" ]; then
+            echo "::error::Failed to obtain Docker Hub JWT; check DOCKERHUB_TOKEN can authenticate to the Hub API"
+            exit 1
+          fi
+          delete_tag() {
+            local tag="$1"
+            echo "Deleting Docker Hub tag: ${tag}"
+            curl -fsS -X DELETE \
+              -H "Authorization: JWT ${JWT}" \
+              "https://hub.docker.com/v2/repositories/${DH_USER}/ragflow/tags/${tag}/" \
+              || echo "  (delete returned non-zero for ${tag}; continuing)"
+          }
+          delete_tag "${RELEASE_TAG}-amd64"
+          delete_tag "${RELEASE_TAG}-arm64"
+          delete_tag "amd64"
+          delete_tag "arm64"
 
