@@ -17,6 +17,8 @@ package splitter
 import (
 	"errors"
 	"maps"
+	"math"
+	"strings"
 
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
@@ -235,6 +237,12 @@ func ConcatenateResults(originalPDF []byte, chapterResults []parser.ParseResult,
 		}
 
 		offsetItems := OffsetPositions(res.JSON, plan.StartPage)
+		if len(allItems) > 0 && len(offsetItems) > 0 {
+			if merged, ok := tryStitchBoundaryItems(allItems[len(allItems)-1], offsetItems[0]); ok {
+				allItems[len(allItems)-1] = merged
+				offsetItems = offsetItems[1:]
+			}
+		}
 		allItems = append(allItems, offsetItems...)
 	}
 
@@ -251,18 +259,177 @@ func ConcatenateResults(originalPDF []byte, chapterResults []parser.ParseResult,
 	if totalPages > 0 {
 		baseFile["page_count"] = totalPages
 	}
-	// Purge local chapter outline so AttachPDFOutlines will populate full document outline.
+	// Purge local chapter outline so the canonical normalize stage attaches full document outline.
 	delete(baseFile, "outline")
 
-	result := parser.ParseResult{
+	return parser.ParseResult{
 		File:     baseFile,
 		JSON:     allItems,
 		Warnings: allWarnings,
 	}
+}
 
-	if len(originalPDF) > 0 {
-		result = parser.AttachPDFOutlines(result, originalPDF)
+// tryStitchBoundaryItems stitches cross-chapter tables and figures spanning
+// across consecutive page boundaries (e.g. table continuing from chapter i into chapter i+1).
+func tryStitchBoundaryItems(prev, next parser.DocItem) (parser.DocItem, bool) {
+	t1, ok1 := prev.(parser.TableItem)
+	t2, ok2 := next.(parser.TableItem)
+	if ok1 && ok2 && t1.Table != nil && t2.Table != nil && len(t1.Table.Grid) > 0 && len(t2.Table.Grid) > 0 {
+		p1 := itemPageNumber(t1)
+		p2 := itemPageNumber(t2)
+		if p1 > 0 && p2 > 0 && p2 == p1+1 {
+			if merged, ok := stitchTables(t1, t2); ok {
+				return merged, true
+			}
+		}
 	}
 
-	return result
+	img1, okImg1 := prev.(parser.ImageItem)
+	img2, okImg2 := next.(parser.ImageItem)
+	if okImg1 && okImg2 {
+		p1 := itemPageNumber(img1)
+		p2 := itemPageNumber(img2)
+		if p1 > 0 && p2 > 0 && p2 == p1+1 {
+			if merged, ok := stitchImages(img1, img2); ok {
+				return merged, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func itemPageNumber(it parser.DocItem) int {
+	switch v := it.(type) {
+	case parser.TableItem:
+		for _, p := range v.Positions {
+			if box, ok := p.(parser.AbsoluteBox); ok && box.PageNumber > 0 {
+				return box.PageNumber
+			}
+		}
+		if v.Table != nil && v.Table.Page > 0 {
+			return v.Table.Page
+		}
+		if pg, ok := v.Extra["page_number"].(int); ok && pg > 0 {
+			return pg
+		}
+	case parser.ImageItem:
+		for _, p := range v.Positions {
+			if box, ok := p.(parser.AbsoluteBox); ok && box.PageNumber > 0 {
+				return box.PageNumber
+			}
+		}
+		if pg, ok := v.Extra["page_number"].(int); ok && pg > 0 {
+			return pg
+		}
+	}
+	return 0
+}
+
+func stitchTables(t1, t2 parser.TableItem) (parser.TableItem, bool) {
+	grid1 := t1.Table.Grid
+	grid2 := t2.Table.Grid
+	if len(grid1) == 0 || len(grid2) == 0 {
+		return t1, false
+	}
+
+	w1 := maxRowWidth(grid1)
+	w2 := maxRowWidth(grid2)
+	if w1 == 0 || w2 == 0 {
+		return t1, false
+	}
+
+	// Tables must have compatible column models (same number of columns, or within 1 column margin)
+	if math.Abs(float64(w1-w2)) > 1 {
+		return t1, false
+	}
+
+	targetW := max(w1, w2)
+
+	// Check if t2 repeats header rows from t1
+	startRow := 0
+	if t1.Table.HeaderRows > 0 && len(grid2) > t1.Table.HeaderRows {
+		repeatsHeader := true
+		for r := 0; r < t1.Table.HeaderRows; r++ {
+			if !cellsEqual(grid1[r], grid2[r]) {
+				repeatsHeader = false
+				break
+			}
+		}
+		if repeatsHeader {
+			startRow = t1.Table.HeaderRows
+		}
+	} else if len(grid2) > 1 && cellsEqual(grid1[0], grid2[0]) {
+		startRow = 1
+	}
+
+	newGrid := make([][]entity.TableCell, 0, len(grid1)+len(grid2)-startRow)
+	for _, row := range grid1 {
+		newGrid = append(newGrid, padRow(row, targetW))
+	}
+	for _, row := range grid2[startRow:] {
+		newGrid = append(newGrid, padRow(row, targetW))
+	}
+
+	mergedTable := *t1.Table
+	mergedTable.Grid = newGrid
+	if mergedTable.Caption == "" && t2.Table.Caption != "" {
+		mergedTable.Caption = t2.Table.Caption
+	}
+
+	combinedPositions := append(append(parser.Positions(nil), t1.Positions...), t2.Positions...)
+	combinedExtra := maps.Clone(t1.Extra)
+	if combinedExtra == nil {
+		combinedExtra = make(map[string]any)
+	}
+
+	return parser.TableItem{
+		Table:     &mergedTable,
+		Sheet:     t1.Sheet,
+		Positions: combinedPositions,
+		Extra:     combinedExtra,
+	}, true
+}
+
+func stitchImages(img1, img2 parser.ImageItem) (parser.ImageItem, bool) {
+	if img1.Text == "" || img2.Text == "" {
+		return img1, false
+	}
+	if img1.Text != img2.Text && !strings.Contains(img2.Text, img1.Text) && !strings.Contains(img1.Text, img2.Text) {
+		return img1, false
+	}
+
+	merged := img1
+	merged.Positions = append(append(parser.Positions(nil), img1.Positions...), img2.Positions...)
+	return merged, true
+}
+
+func maxRowWidth(grid [][]entity.TableCell) int {
+	m := 0
+	for _, r := range grid {
+		if len(r) > m {
+			m = len(r)
+		}
+	}
+	return m
+}
+
+func padRow(row []entity.TableCell, targetWidth int) []entity.TableCell {
+	if len(row) >= targetWidth {
+		return row
+	}
+	padded := make([]entity.TableCell, targetWidth)
+	copy(padded, row)
+	return padded
+}
+
+func cellsEqual(r1, r2 []entity.TableCell) bool {
+	if len(r1) != len(r2) {
+		return false
+	}
+	for i := range r1 {
+		if strings.TrimSpace(r1[i].Text) != strings.TrimSpace(r2[i].Text) {
+			return false
+		}
+	}
+	return true
 }

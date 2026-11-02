@@ -346,3 +346,126 @@ func TestPlanAdaptiveChapters_MinPagesRespected(t *testing.T) {
 		}
 	}
 }
+
+func TestConcatenateResults_CrossChapterTableStitching(t *testing.T) {
+	// Chapter 1 covers pages 0..9 (pages 1..10 in 1-indexed)
+	// Chapter 2 covers pages 10..19 (pages 11..20 in 1-indexed)
+	plans := []ChapterPlan{
+		{Index: 0, StartPage: 0, EndPage: 9, PageCount: 10},
+		{Index: 1, StartPage: 10, EndPage: 19, PageCount: 10},
+	}
+
+	header := []entity.TableCell{{Text: "Col 1"}, {Text: "Col 2"}}
+	row1 := []entity.TableCell{{Text: "Val A1"}, {Text: "Val A2"}}
+	row2 := []entity.TableCell{{Text: "Val B1"}, {Text: "Val B2"}}
+
+	// Table on page 10 (chapter 1 last page, local page 10)
+	t1 := parser.TableItem{
+		Table: &entity.TableData{
+			Grid:       [][]entity.TableCell{header, row1},
+			HeaderRows: 1,
+			Caption:    "Financial Summary",
+			Page:       9,
+		},
+		Positions: parser.Positions{
+			parser.AbsoluteBox{PageNumber: 10, Left: 10, Top: 500, Right: 500, Bottom: 700},
+		},
+	}
+
+	// Continuation on page 11 (chapter 2 first page, local page 1).
+	// Repeats header row!
+	t2 := parser.TableItem{
+		Table: &entity.TableData{
+			Grid:       [][]entity.TableCell{header, row2},
+			HeaderRows: 1,
+			Page:       0,
+		},
+		Positions: parser.Positions{
+			parser.AbsoluteBox{PageNumber: 1, Left: 10, Top: 50, Right: 500, Bottom: 200},
+		},
+	}
+
+	ch1 := parser.ParseResult{JSON: []parser.DocItem{t1}}
+	ch2 := parser.ParseResult{JSON: []parser.DocItem{t2}}
+
+	res := ConcatenateResults(nil, []parser.ParseResult{ch1, ch2}, plans)
+	if len(res.JSON) != 1 {
+		t.Fatalf("expected 1 stitched table item, got %d items", len(res.JSON))
+	}
+
+	stitched, ok := res.JSON[0].(parser.TableItem)
+	if !ok {
+		t.Fatalf("expected TableItem, got %T", res.JSON[0])
+	}
+
+	// Expect 3 rows: header, row1, row2 (duplicate header in t2 trimmed)
+	if len(stitched.Table.Grid) != 3 {
+		t.Errorf("expected 3 rows in stitched table, got %d", len(stitched.Table.Grid))
+	}
+	if stitched.Table.Grid[0][0].Text != "Col 1" || stitched.Table.Grid[1][0].Text != "Val A1" || stitched.Table.Grid[2][0].Text != "Val B1" {
+		t.Errorf("unexpected rows content: %#v", stitched.Table.Grid)
+	}
+
+	// Bounding boxes should have both pages (page 10 and page 11)
+	if len(stitched.Positions) != 2 {
+		t.Fatalf("expected 2 bounding boxes, got %d", len(stitched.Positions))
+	}
+	b1 := stitched.Positions[0].(parser.AbsoluteBox)
+	b2 := stitched.Positions[1].(parser.AbsoluteBox)
+	if b1.PageNumber != 10 {
+		t.Errorf("box 1 PageNumber = %d, want 10", b1.PageNumber)
+	}
+	if b2.PageNumber != 11 {
+		t.Errorf("box 2 PageNumber = %d, want 11", b2.PageNumber)
+	}
+}
+
+func TestConcatenateResults_EndToEndContinuity(t *testing.T) {
+	// 3 chapters:
+	// Ch 0: pages 0..9 (10 pages)
+	// Ch 1: pages 10..19 (10 pages)
+	// Ch 2: pages 20..24 (5 pages)
+	plans := []ChapterPlan{
+		{Index: 0, StartPage: 0, EndPage: 9, PageCount: 10},
+		{Index: 1, StartPage: 10, EndPage: 19, PageCount: 10},
+		{Index: 2, StartPage: 20, EndPage: 24, PageCount: 5},
+	}
+
+	ch0Items := []parser.DocItem{
+		parser.TextItem{Text: "Intro", Extra: map[string]any{"page_number": 1}},
+		parser.TextItem{Text: "Sec 1", Extra: map[string]any{"page_number": 5}},
+	}
+	ch1Items := []parser.DocItem{
+		parser.TextItem{Text: "Sec 2", Extra: map[string]any{"page_number": 2}},  // global 12
+		parser.TextItem{Text: "Sec 3", Extra: map[string]any{"page_number": 10}}, // global 20
+	}
+	ch2Items := []parser.DocItem{
+		parser.TextItem{Text: "Conclusion", Extra: map[string]any{"page_number": 5}}, // global 25
+	}
+
+	final := ConcatenateResults(nil, []parser.ParseResult{
+		{JSON: ch0Items},
+		{JSON: ch1Items},
+		{JSON: ch2Items},
+	}, plans)
+
+	if final.File == nil || final.File["page_count"] != 25 {
+		t.Fatalf("expected total page_count 25, got %v", final.File["page_count"])
+	}
+
+	expectedPages := []int{1, 5, 12, 20, 25}
+	if len(final.JSON) != len(expectedPages) {
+		t.Fatalf("expected %d items, got %d", len(expectedPages), len(final.JSON))
+	}
+
+	for i, it := range final.JSON {
+		m := it.ToMap()
+		pg, ok := m["page_number"].(int)
+		if !ok {
+			t.Fatalf("item %d missing page_number", i)
+		}
+		if pg != expectedPages[i] {
+			t.Errorf("item %d global page = %d, want %d", i, pg, expectedPages[i])
+		}
+	}
+}
