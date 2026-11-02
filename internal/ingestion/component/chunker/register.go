@@ -67,6 +67,8 @@ type imageUploadDecorator struct {
 	inner runtime.Component
 }
 
+// Invoke runs the wrapped chunker, stamps deterministic chunk ids, and uploads
+// any remaining inline or deferred media before the chunks leave the component.
 func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	out, err := d.inner.Invoke(ctx, db, inputs)
 	if err != nil {
@@ -140,9 +142,15 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 			return nil, err
 		}
 		if text == "" {
-			image, _ := ck["image"].(string)
-			imgID, _ := ck["img_id"].(string)
-			text = mediaChunkIdentity(image, imgID, entity.MediaRefFromAny(ck["media_ref"]))
+			docType, _ := ck["doc_type_kwd"].(string)
+			matrix := chunkPositionMatrix(ck)
+			if isMediaDocType(docType) && len(matrix) > 0 {
+				text = mediaTextIdentity("", true, matrix)
+			} else {
+				image, _ := ck["image"].(string)
+				imgID, _ := ck["img_id"].(string)
+				text = mediaChunkIdentity(image, imgID, entity.MediaRefFromAny(ck["media_ref"]))
+			}
 		} else {
 			docType, _ := ck["doc_type_kwd"].(string)
 			text = mediaTextIdentity(text, isMediaDocType(docType), chunkPositionMatrix(ck))
