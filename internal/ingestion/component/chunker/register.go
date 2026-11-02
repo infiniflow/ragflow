@@ -143,6 +143,9 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 			image, _ := ck["image"].(string)
 			imgID, _ := ck["img_id"].(string)
 			text = mediaChunkIdentity(image, imgID, entity.MediaRefFromAny(ck["media_ref"]))
+		} else {
+			docType, _ := ck["doc_type_kwd"].(string)
+			text = mediaTextIdentity(text, isMediaDocType(docType), chunkPositionMatrix(ck))
 		}
 		ck["id"] = common.ChunkID(docID, text)
 	}

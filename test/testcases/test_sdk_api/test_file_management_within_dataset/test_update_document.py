@@ -26,14 +26,15 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "name, expected_message",
         [
-            ("new_name.txt", ""),
-            (f"{'a' * 251}.txt", ""),
+            pytest.param("new_name.txt", ""),
+            pytest.param(f"{'a' * 251}.txt", ""),
             (0, "Field: <name> - Message: <Input should be a valid string> - Value: <0>"),
             (None, "Field: <name> - Message: <Input should be a valid string> - Value: <None>"),
             ("", "the extension of file can't be changed"),
             ("ragflow_test_upload_0", "the extension of file can't be changed"),
             ("ragflow_test_upload_1.txt", "duplicated document name in the same dataset"),
-            ("RAGFLOW_TEST_UPLOAD_1.TXT", ""),
+            ("RAGFLOW_TEST_UPLOAD_1.TXT", "duplicated document name in the same dataset"),
+            pytest.param("RAGFLOW_TEST_UPLOAD_0.TXT", ""),
         ],
     )
     def test_name(self, add_documents, name, expected_message):
@@ -107,8 +108,8 @@ class TestDocumentParserSelection:
             ("presentation", "selected pipeline does not support file type"),
             ("picture", "selected pipeline does not support file type"),
             ("email", "selected pipeline does not support file type"),
-            ("knowledge_graph", "selected pipeline does not support file type"),
-            ("tag", "selected pipeline does not support file type"),
+            ("knowledge_graph", "unknown builtin parser_id: knowledge_graph"),
+            ("tag", "unknown builtin parser_id: tag"),
             ("", "`chunk_method` (empty string) is not valid"),
             ("other_chunk_method", "unknown builtin parser_id: other_chunk_method"),
         ],

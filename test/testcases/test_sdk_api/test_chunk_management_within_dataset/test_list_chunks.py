@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from conftest import wait_ids
+from test.testcases.test_sdk_api.test_chunk_management_within_dataset.conftest import wait_ids
 from ragflow_sdk import Document
 
 pytestmark = pytest.mark.integration
@@ -75,7 +75,6 @@ class TestChunksList:
         _, document, _ = add_chunks
         assert len(document.list_chunks(id=chunk_id)) == 4
 
-    @pytest.mark.skip(reason="SDK sends id but Go ListChunks only reads chunk_ids; Go list also omits SDK id field")
     @pytest.mark.parametrize("selection", ["existing", "unknown"])
     def test_id(self, add_chunks, selection):
         _, document, chunks = add_chunks
@@ -83,7 +82,6 @@ class TestChunksList:
         rows = document.list_chunks(id=wanted)
         assert [chunk.id for chunk in rows] == ([wanted] if selection == "existing" else [])
 
-    @pytest.mark.skip(reason="Go List returns chunk_id/content_with_weight/important_kwd/question_kwd without SDK field mapping")
     def test_list_chunk_schema(self, add_chunks):
         dataset, document, chunks = add_chunks
         rows = document.list_chunks(page_size=100)

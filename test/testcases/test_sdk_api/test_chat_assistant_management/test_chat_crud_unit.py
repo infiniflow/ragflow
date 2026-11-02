@@ -17,7 +17,7 @@
 from copy import deepcopy
 from inspect import unwrap
 
-import conftest as chat_fixtures
+from test.testcases.test_sdk_api.test_chat_assistant_management import conftest as chat_fixtures
 import pytest
 import requests
 from beartype.roar import BeartypeCallHintParamViolation
@@ -215,8 +215,8 @@ def test_fixture_cleanup_only_deletes_owned_resources(monkeypatch):
         def list_chats(self, id):
             return [id] if id in chats else []
 
-        def list_datasets(self, id):
-            return [id] if id in datasets else []
+        def list_datasets(self, *, ids):
+            return [dataset_id for dataset_id in ids if dataset_id in datasets]
 
         def delete_chats(self, ids):
             deleted.extend(ids)

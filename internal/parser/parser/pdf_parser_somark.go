@@ -10,10 +10,12 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"ragflow/internal/common"
 	"strings"
 
 	pdfreader "github.com/ledongthuc/pdf"
+
+	"ragflow/internal/common"
+	"ragflow/internal/parser/media"
 )
 
 // parsePDFWithSoMark submits a PDF and converts the task result into parser
@@ -168,7 +170,7 @@ func soMarkItems(ctx context.Context, result map[string]any, keepHeaderFooter bo
 	jsonPayload, _ := outputs["json"].(map[string]any)
 	pages, _ := jsonPayload["pages"].([]any)
 	items := make([]map[string]any, 0)
-	state := &htmlWalkState{}
+	state := &htmlWalkState{budget: media.NewBudget()}
 	var warnings []string
 
 	// Positions reference real document pages: prefer the source PDF's page

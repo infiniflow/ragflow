@@ -53,9 +53,10 @@ import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { BedrockRegionList } from '../constants';
-import { VerifyResult } from '../hooks';
+import { useFetchInstanceNameSet, VerifyResult } from '../hooks';
 import { splitProviderPayload } from '../payload-utils';
 import {
+  InstanceSavePayload,
   ProviderInstanceCardProps,
   ProviderInstanceCardRef,
 } from './interface';
@@ -63,12 +64,14 @@ import {
   applySavedCredentialEdits,
   SAVED_CREDENTIAL_MASK,
   unwrapApiKey,
+  useInstanceSave,
 } from './hooks';
 import {
   SavedProviderConfigFieldSet,
   hasUnsavedProviderCredential,
   pickSavedProviderConfigOverrides,
 } from './saved-provider-config';
+import { InstanceSaveButton } from './components/instance-save-button';
 import { SavedCredentialInput } from './saved-credential-input';
 import { ModelsSection } from './models-section';
 import VerifyButton from './verify-button';
@@ -96,6 +99,8 @@ interface BedrockInstanceCardProps {
   instance: IProviderInstance;
   isDraft?: boolean;
   onDelete?: () => void;
+  /** Called after the card's Save button persists this instance. */
+  onSaved?: (payload: InstanceSavePayload) => void;
   defaultOpen?: boolean;
 }
 
@@ -104,14 +109,20 @@ interface BedrockInstanceCardProps {
  * (auth_mode segmented, credentials, region, and manual model settings)
  * directly instead of going through the generic DynamicForm path. API key
  * drafts discover models and persist them with the instance.
- * The parent page's top Save button drives persistence through the imperative
- * ref API.
+ * The header Save button persists only this instance.
  */
 export const BedrockInstanceCard = forwardRef<
   ProviderInstanceCardRef,
   BedrockInstanceCardProps
 >(function BedrockInstanceCard(
-  { providerName, instance, isDraft = false, onDelete, defaultOpen = false },
+  {
+    providerName,
+    instance,
+    isDraft = false,
+    onDelete,
+    onSaved,
+    defaultOpen = false,
+  },
   ref,
 ) {
   const { t } = useTranslation();
@@ -609,30 +620,48 @@ export const BedrockInstanceCard = forwardRef<
     }
   }, [isDraft]);
 
+  // Form validation shared by the header Save button and the
+  // imperative API.
+  const validate = useCallback(async () => {
+    if (isDraft && !draftNameRef.current.trim()) return false;
+    if (!isDraft && !modelsLoadedRef.current) {
+      message.error(tSetting('selectModelBeforeSave'));
+      return false;
+    }
+    if (
+      isDraft &&
+      authMode === 'bedrock_api_key' &&
+      modelInfoRef.current.length === 0
+    ) {
+      message.error(tSetting('selectModelBeforeSave'));
+      return false;
+    }
+    const isValid = await form.trigger();
+    return !!isValid;
+  }, [isDraft, authMode, form, tSetting]);
+
+  // The card header owns the Save button: each instance is persisted
+  // independently, straight from its own card.
+  const { instanceNameSet } = useFetchInstanceNameSet(
+    isDraft ? providerName : '',
+  );
+  const { save: handleSave, saving } = useInstanceSave({
+    isDraft,
+    getSavePayload,
+    validate,
+    markSaved,
+    existingNames: instanceNameSet,
+    onSaved,
+  });
+
   useImperativeHandle(
     ref,
     () => ({
-      validate: async () => {
-        if (isDraft && !draftNameRef.current.trim()) return false;
-        if (!isDraft && !modelsLoadedRef.current) {
-          message.error(tSetting('selectModelBeforeSave'));
-          return false;
-        }
-        if (
-          isDraft &&
-          authMode === 'bedrock_api_key' &&
-          modelInfoRef.current.length === 0
-        ) {
-          message.error(tSetting('selectModelBeforeSave'));
-          return false;
-        }
-        const isValid = await form.trigger();
-        return !!isValid;
-      },
+      validate,
       getSavePayload,
       markSaved,
     }),
-    [isDraft, authMode, form, getSavePayload, markSaved, tSetting],
+    [validate, getSavePayload, markSaved],
   );
 
   // ──────────────── Field group rendered in both modes ────────────────
@@ -868,7 +897,7 @@ export const BedrockInstanceCard = forwardRef<
               <span className="text-destructive mr-0.5">*</span>
               {tSetting('instanceName')}
             </label>
-            <div className="flex items-center">
+            <div className="flex items-center gap-2">
               <Input
                 id="instance-name-input"
                 value={draftName}
@@ -881,13 +910,14 @@ export const BedrockInstanceCard = forwardRef<
                 <Button
                   variant="delete"
                   size="icon-sm"
-                  className="ml-2 shrink-0"
+                  className="shrink-0"
                   aria-label={tSetting('deleteInstance')}
                   data-testid="draft-delete"
                 >
                   <Trash2 className="size-4" />
                 </Button>
               </ConfirmDeleteDialog>
+              <InstanceSaveButton onSave={handleSave} saving={saving} />
             </div>
           </div>
 
@@ -912,9 +942,9 @@ export const BedrockInstanceCard = forwardRef<
       ) : (
         <Collapsible open={open} onOpenChange={setOpen}>
           <CollapsibleTrigger asChild>
-            <div className="flex items-center gap-1 w-full mb-5">
+            <div className="flex items-center gap-2 w-full mb-5">
               <div
-                className="group flex items-center flex-1 gap-2 px-2 mx-2 py-1 cursor-pointer bg-bg-input rounded-md"
+                className="group flex items-center flex-1 min-w-0 gap-2 px-2 mx-2 py-1 cursor-pointer bg-bg-input rounded-md"
                 data-testid="instance-name-row"
               >
                 <Button
@@ -949,6 +979,7 @@ export const BedrockInstanceCard = forwardRef<
                   <Trash2 className="size-4" />
                 </Button>
               </ConfirmDeleteDialog>
+              <InstanceSaveButton onSave={handleSave} saving={saving} />
             </div>
           </CollapsibleTrigger>
           <CollapsibleContent

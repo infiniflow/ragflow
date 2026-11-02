@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 import pytest
 from ragflow_sdk import RAGFlow
 
-from message_helpers import assert_identity, wait_until
+from test.testcases.test_sdk_api.test_message_management.message_helpers import assert_identity, wait_until
 
 
 def assert_matches(messages, populated, indices):
@@ -137,9 +137,6 @@ class TestSearchMessage:
         )
         assert_matches(messages, populated_memory, range(5))
 
-    @pytest.mark.skip(
-        reason="Go MemoryHandler.SearchMessage parses float parameters without checking errors or documented [0,1] ranges (internal/handler/memory.go); invalid values reach search instead of returning argument errors"
-    )
     @pytest.mark.parametrize("field", ["similarity_threshold", "keywords_similarity_weight"])
     @pytest.mark.parametrize("value", [-0.1, 1.1, "invalid", "nan", "inf"])
     def test_invalid_similarity_parameters(self, client, populated_memory, field, value):

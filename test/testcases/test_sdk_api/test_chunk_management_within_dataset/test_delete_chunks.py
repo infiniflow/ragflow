@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from conftest import raw_ids, wait_ids
+from test.testcases.test_sdk_api.test_chunk_management_within_dataset.conftest import raw_ids, wait_ids
 
 pytestmark = pytest.mark.integration
 
@@ -81,7 +81,6 @@ class TestChunksDeletion:
         document.delete_chunks(**payload)
         wait_ids(document, ids[removed:])
 
-    @pytest.mark.skip(reason="Go RemoveChunks rejects omitted/empty IDs instead of documented safe no-op")
     @pytest.mark.parametrize("payload", [{}, {"ids": None}, {"ids": []}])
     def test_empty_selection_is_noop(self, add_chunks, payload):
         _, document, chunks = add_chunks

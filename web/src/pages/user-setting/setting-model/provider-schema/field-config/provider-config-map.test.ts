@@ -52,6 +52,39 @@ describe('Azure OpenAI provider configuration', () => {
   });
 });
 
+describe('MinerU provider configuration', () => {
+  const config = ProviderConfigMap[LLMFactory.MinerU];
+
+  it('stores the mineru.net token inside api_key', () => {
+    const values = {
+      instance_name: 'mineru',
+      mineru_apiserver: 'https://mineru.net',
+      mineru_api_token: 'sk-ui-token',
+      mineru_backend: 'pipeline',
+      mineru_delete_output: true,
+    };
+
+    expect(
+      config.fields.find((field) => field.name === 'mineru_api_token'),
+    ).toMatchObject({ type: 'password', required: false });
+
+    const saved = config.submitTransform?.(values);
+    expect(saved?.api_key).toMatchObject({
+      mineru_apiserver: 'https://mineru.net',
+      mineru_api_token: 'sk-ui-token',
+      mineru_backend: 'pipeline',
+      mineru_delete_output: '1',
+    });
+    expect(saved).not.toHaveProperty('mineru_api_token');
+    expect(
+      config.echoTransform?.({
+        api_key_config: saved?.api_key,
+        base_url: 'https://mineru.net',
+      }),
+    ).toMatchObject({ mineru_api_token: 'sk-ui-token' });
+  });
+});
+
 describe('provider instance submit transforms', () => {
   it.each([
     [

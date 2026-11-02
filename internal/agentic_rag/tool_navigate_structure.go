@@ -52,7 +52,7 @@ const navigateStructureToolName = "navigate_structure"
 const navigateStructureToolDescription = `Drill into documents' COMPILED STRUCTURE (the entity/relation outline built at compile time) and return a query-focused outline of where the answer sits, with chunk pointers you can pass to list_chunks to deep-read.
 Call it with just a query: it routes the query over the datasets' compiled navigation trees itself, so no prior navigate_tree call is needed. To drill ONE document the model already chose, pass the doc_id from a <tree_navigation> result; that path returns the document's internal structure (entities and how they relate).
 Returns an XML <structure_navigation> document: one <doc> element per readable structure, each with a <structure> outline of lines "- name (type): description [chunks: c1,c2]". Feed the chunk pointers to list_chunks (anchor_chunk_ids).
-An empty result (<structure_navigation count="0" error="...">) means the routed documents have NO compiled structure of the requested kind - the error attribute says which: "route first with navigate_tree" (no doc_id), or "no compiled structure for this kind" (absent in THOSE documents - fall back to grep_chunks / search_*_chunks; the verdict is per document, so the tool stays available for other documents).`
+An empty result (<structure_navigation count="0" error="...">) is a verdict, and the error attribute says which: "route first with navigate_tree" (no doc_id), "no documents in the conversation scope" (the turn is restricted to no documents), or "no compiled structure for this kind" (absent in THOSE documents - fall back to grep_chunks / search_*_chunks; the verdict is per document, so the tool stays available for other documents).`
 
 // navigateStructureArgs is the JSON the model sends into InvokableRun.
 type navigateStructureArgs struct {
@@ -102,20 +102,21 @@ const navQueryRouteDocs = 3
 // navStructureRoute resolves candidate doc_ids for a query when the caller
 // supplied no doc_id. It is the same navigation-tree router navigate_tree uses,
 // so a query-only call and the explicit two-step path rank documents identically.
-var navStructureRoute = func(ctx context.Context, tenantID, kbID, query string, limit int) ([][2]string, error) {
-	return nav.NewNavServiceRouter().Route(ctx, tenantID, kbID, query, nil, limit)
+var navStructureRoute = func(ctx context.Context, tenantID, kbID, query string, docScope []string, limit int) ([][2]string, error) {
+	return nav.NewNavServiceRouter().Route(ctx, tenantID, kbID, query, docScope, limit)
 }
 
 // routeDocIDsForQuery routes the query across the bound datasets and returns the
-// top doc_ids, deduped across datasets and capped at limit.
-func routeDocIDsForQuery(ctx context.Context, tenantID, query string, datasetIDs []string, limit int) []string {
+// top doc_ids, deduped across datasets and capped at limit. docScope is pushed
+// into the route so the ranking budget is spent inside the turn's documents.
+func routeDocIDsForQuery(ctx context.Context, tenantID, query string, datasetIDs, docScope []string, limit int) []string {
 	if limit <= 0 {
 		limit = navQueryRouteDocs
 	}
 	seen := map[string]bool{}
 	var out []string
 	for _, kbID := range datasetIDs {
-		routed, err := navStructureRoute(ctx, tenantID, kbID, query, limit)
+		routed, err := navStructureRoute(ctx, tenantID, kbID, query, docScope, limit)
 		if err != nil {
 			common.DebugCtx(ctx, "navigate_structure: query route failed",
 				zap.String("kb_id", kbID), zap.Error(err))
@@ -994,13 +995,24 @@ func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSO
 	if len(docIDs) == 0 && args.DocID != "" {
 		docIDs = []string{args.DocID}
 	}
+	if len(docIDs) > 0 {
+		docIDs, err = resolveDocumentScope(ctx, docIDs)
+		if err != nil {
+			return "", fmt.Errorf("navigate_structure: %w", err)
+		}
+	}
+	// An empty scope allows no documents at all, and the route reads a nil/empty
+	// docScope as "the whole dataset", so answer before touching the backend.
+	docScope, _ := resolveDocumentScope(ctx, nil)
+	if docScope != nil && len(docScope) == 0 {
+		return navStructEmpty("no documents in the conversation scope"), nil
+	}
 	// A doc_id is optional: with none, route the query ourselves so the tool is
-	// usable in one call.
+	// usable in one call. The route carries the scope so the ranking budget is
+	// spent inside the turn's documents.
 	routedByQuery := false
 	if len(docIDs) == 0 {
-		// The router ranks the whole bound corpus, so a turn restricted to a set
-		// of documents must intersect here.
-		docIDs = intersectDocumentScope(ctx, routeDocIDsForQuery(ctx, g.tenantID, text, datasetIDs, navQueryRouteDocs))
+		docIDs = routeDocIDsForQuery(ctx, g.tenantID, text, datasetIDs, docScope, navQueryRouteDocs)
 		if len(docIDs) == 0 {
 			return navStructEmpty("route first with navigate_tree"), nil
 		}

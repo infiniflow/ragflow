@@ -249,6 +249,20 @@ describe('ParserTreeSelect', () => {
     expect(mockTreeProps.trailingAddon).toBeUndefined();
   });
 
+  it('renders the outdated icon as a non-submit button inside forms', () => {
+    render(
+      <ParserTreeSelect
+        value="pipeline:pipe-1:v1"
+        onChange={jest.fn()}
+        outdated
+      />,
+    );
+    // The tooltip trigger renders a raw <button>; without an explicit
+    // type="button" it defaults to submit and clicking the icon would submit
+    // the surrounding form (dataset settings, document pipeline dialog).
+    expect(mockTreeProps.trailingAddon.props.type).toBe('button');
+  });
+
   it('flags the trigger border only while the owning field is invalid', () => {
     const { rerender } = render(
       <ParserTreeSelect

@@ -1002,6 +1002,7 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
     queryFn: async () => {
       const { data } = await fetchAgentLogsByCanvasId(id as string, {
         ...searchParams,
+        include_reference: true,
       });
 
       return { total: data?.total ?? 0, sessions: data?.data ?? [] };
@@ -1027,6 +1028,7 @@ export const useFetchSessionsByCanvasId = () => {
     fetchPage: async (params) => {
       const { data } = await fetchAgentLogsByCanvasId(canvasId!, {
         ...params,
+        include_history: false,
         exp_user_id: tenantInfo.tenant_id,
       });
 
@@ -1439,7 +1441,10 @@ export function useFetchSessionManually() {
         return null;
       }
 
-      const { data } = await fetchAgentLogsById(canvasId, sessionId);
+      const { data } = await fetchAgentLogsById(canvasId, sessionId, {
+        include_reference: true,
+        include_prompt: true,
+      });
 
       return data?.data;
     },

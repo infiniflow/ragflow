@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -63,8 +64,8 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	if name == "" {
 		return nil, common.CodeDataError, errors.New("dataset name can't be empty")
 	}
-	if len(name) > entity.DatasetNameLimit {
-		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(name), entity.DatasetNameLimit)
+	if utf8.RuneCountInString(name) > entity.DatasetNameLimit {
+		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", utf8.RuneCountInString(name), entity.DatasetNameLimit)
 	}
 
 	tenant, err := d.tenantDAO.GetByID(ctx, dao.DB, tenantID)
@@ -307,7 +308,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 // dedupeDatasetName returns a non-colliding dataset name within the tenant,
 // appending (1), (2), ... when the requested name is already taken.
 func (d *DatasetService) dedupeDatasetName(ctx context.Context, name, tenantID string) (string, error) {
-	return common.UniqueName(name, entity.DatasetNameLimit, func(candidate string) (bool, error) {
+	return common.UniqueNameCharacters(name, entity.DatasetNameLimit, func(candidate string) (bool, error) {
 		return d.kbDAO.NameExists(ctx, dao.DB, tenantID, candidate)
 	})
 }

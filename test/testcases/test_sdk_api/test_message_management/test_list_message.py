@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
 import pytest
 from ragflow_sdk import Memory, RAGFlow
 
-from message_helpers import assert_identity
+from test.testcases.test_sdk_api.test_message_management.message_helpers import assert_identity
 
 pytestmark = pytest.mark.integration
 
@@ -91,9 +91,7 @@ class TestMessageList:
         result = populated_memory["memory"].list_memory_messages(keywords=expected[0]["session_id"])
         _assert_messages(result, populated_memory, expected)
 
-    def test_search_keyword_substring(self, populated_memory, doc_engine):
-        if doc_engine in {"infinity", "oceanbase", "seekdb"}:
-            pytest.skip("Go Infinity/OceanBase session_id filters use equality, contrary to Python SDK docs' fuzzy session-ID contract (infinity/chunk.go, oceanbase/filter.go)")
+    def test_search_keyword_substring(self, populated_memory):
         expected = populated_memory["rows"][2:3]
         keyword = expected[0]["session_id"][4:]
         assert keyword != expected[0]["session_id"]

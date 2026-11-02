@@ -143,6 +143,7 @@ type OCRBlock struct {
 }
 
 type OCRFileResponse struct {
+	// Text is empty (but non-nil) when the response carries only media regions.
 	Text *string `json:"text"`
 	// Pages is optional structured output for internal parsing; nil means unavailable.
 	Pages []OCRPage `json:"-"`

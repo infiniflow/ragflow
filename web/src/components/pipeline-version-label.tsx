@@ -22,7 +22,7 @@ export function PipelineVersionLabel({
 }: PipelineVersionLabelProps) {
   return (
     <span className={cn('flex min-w-0 items-center gap-1.5', className)}>
-      <span className="truncate">{title}</span>
+      <span className="truncate text-text-primary">{title}</span>
       {alias ? (
         <span
           className={cn(

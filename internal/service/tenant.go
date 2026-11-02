@@ -161,6 +161,7 @@ func (s *TenantService) GetTenantInfo(ctx context.Context, userID string) (*Tena
 type TenantListItem struct {
 	TenantID     string  `json:"tenant_id"`
 	Role         string  `json:"role"`
+	Status       string  `json:"status"`
 	Nickname     string  `json:"nickname"`
 	Email        string  `json:"email"`
 	Avatar       string  `json:"avatar"`
@@ -250,6 +251,7 @@ func (s *TenantService) GetTenantList(ctx context.Context, userID string) ([]*Te
 		result[i] = &TenantListItem{
 			TenantID:     t.TenantID,
 			Role:         t.Role,
+			Status:       t.Status,
 			Nickname:     t.Nickname,
 			Email:        t.Email,
 			Avatar:       t.Avatar,

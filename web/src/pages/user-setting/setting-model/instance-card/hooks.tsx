@@ -15,16 +15,26 @@
  */
 
 import { DynamicFormRef, FormFieldType } from '@/components/dynamic-form';
+import message from '@/components/ui/message';
 import {
+  useAddProviderInstance,
   useDeleteProviderInstance,
   useFetchAvailableProviders,
   useFetchProviderInstance,
+  useUpdateProviderInstance,
   useVerifyProviderConnection,
 } from '@/hooks/use-llm-request';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IProviderInstance } from '@/interfaces/database/llm';
 import { IModelInfo } from '@/interfaces/request/llm';
-import { RefObject, useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  RefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { getProviderConfig } from '../provider-schema/field-config';
 import { useProviderFields } from '../provider-schema/hooks';
 import { SelectOption } from '../provider-schema/types';
@@ -580,6 +590,82 @@ export function useDeleteInstance(
       });
     }
   }, [isDraft, providerName, instanceName, deleteProviderInstance, onDelete]);
+}
+
+// ---------------------------------------------------------------------------
+// useInstanceSave - per-card save (button lives in the card header)
+// ---------------------------------------------------------------------------
+
+interface UseInstanceSaveArgs {
+  isDraft: boolean;
+  /** Builds the API body, or `null` when there is nothing to persist. */
+  getSavePayload: () => InstanceSavePayload | null;
+  /** Runs form validation; returns false when the card must not be saved. */
+  validate: () => Promise<boolean>;
+  /** Re-baselines dirty tracking after a successful update. */
+  markSaved: () => void;
+  /** Instance names already persisted for this provider (draft dup check). */
+  existingNames?: Set<string>;
+  /** Called after the save request succeeds. */
+  onSaved?: (payload: InstanceSavePayload) => void;
+}
+
+/**
+ * Drives a single instance card's save button. Drafts go through
+ * `addProviderInstance`, saved instances through `updateProviderInstance`;
+ * both mutations invalidate the instance / model queries themselves.
+ */
+export function useInstanceSave({
+  isDraft,
+  getSavePayload,
+  validate,
+  markSaved,
+  existingNames,
+  onSaved,
+}: UseInstanceSaveArgs) {
+  const { addProviderInstance } = useAddProviderInstance();
+  const { updateProviderInstance } = useUpdateProviderInstance();
+  const { t: tSetting } = useTranslate('setting');
+  const [saving, setSaving] = useState(false);
+
+  const save = useCallback(async () => {
+    if (saving) return;
+    const payload = getSavePayload();
+    if (!payload) return;
+    if (isDraft && existingNames?.has(payload.instanceName)) {
+      message.error(tSetting('instanceNameExists'));
+      return;
+    }
+    if (!(await validate())) return;
+
+    setSaving(true);
+    try {
+      const ret =
+        payload.apiKind === 'add'
+          ? await addProviderInstance(payload.payload as any)
+          : await updateProviderInstance(payload.payload as any);
+      if (ret?.code !== 0) return;
+      if (payload.apiKind === 'update') {
+        markSaved();
+      }
+      onSaved?.(payload);
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    saving,
+    getSavePayload,
+    isDraft,
+    existingNames,
+    validate,
+    addProviderInstance,
+    updateProviderInstance,
+    markSaved,
+    onSaved,
+    tSetting,
+  ]);
+
+  return { save, saving };
 }
 
 // ---------------------------------------------------------------------------

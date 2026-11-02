@@ -24,12 +24,13 @@
 // traceparent headers.
 //
 // SSRF guard (PR #15426): every outbound URL is validated against
-// the shared common.AssertURLSafe before any network I/O. Both the
-// target URL and an optional proxy URL are checked — the proxy
+// the shared common.AssertURLSafe before any network I/O, unless
+// ALLOW_ANY_HOST permits private hosts. Both the target URL and
+// an optional proxy URL are checked — the proxy
 // vector matters because the Go transport hands the request to the
 // proxy host, which would otherwise re-resolve the original host
 // and re-open the rebinding window the SSRF guard just closed. To
-// defeat DNS rebinding the transport dials the validated public IP
+// defeat DNS rebinding the transport dials the validated IP
 // directly (utility.PinnedHTTPClient) and we disable redirect
 // following so a 30x to a private host cannot bypass the guard.
 package component
@@ -93,12 +94,12 @@ func (i *InvokeComponent) Name() string { return i.name }
 // param
 //
 // SSRF flow (PR #15426):
-//  1. Validate the target URL via common.AssertURLSafe (loopback /
-//     link-local / RFC1918 / metadata / unresolvable are rejected).
+//  1. Validate the target URL (private addresses are rejected unless
+//     ALLOW_ANY_HOST is enabled; scheme and DNS checks always apply).
 //  2. Validate the optional proxy URL the same way (the proxy
 //     re-resolves the target host; an unsafe proxy would defeat
 //     step 1).
-//  3. Use utility.PinnedHTTPClient to dial the validated public IP
+//  3. Use utility.PinnedHTTPClient to dial the validated IP
 //     for the target host — closing the TOCTOU window between
 //     validation and connect.
 //  4. Disable redirect following so a 30x to a private host cannot
@@ -140,8 +141,8 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 
 	// Step 1: SSRF guard for the target URL. The validated
-	// hostname + resolved public IP are reused for DNS pinning.
-	host, pinnedIP, err := common.AssertURLSafe(rawURL)
+	// hostname + resolved IP are reused for DNS pinning.
+	host, pinnedIP, err := validateInvokeURL(rawURL)
 	if err != nil {
 		return invokeSSRFError("url", rawURL, err), nil
 	}
@@ -180,7 +181,7 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 			return invokeSSRFError("url", rawURL,
 				fmt.Errorf("Invoke: proxy mode requires a literal-IP target URL (hostnames are unsafe because the proxy re-resolves them)")), nil
 		}
-		ph, pip, perr := common.AssertURLSafe(proxyStr)
+		ph, pip, perr := validateInvokeURL(proxyStr)
 		if perr != nil {
 			return invokeSSRFError("proxy", proxyStr, perr), nil
 		}
@@ -247,7 +248,7 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 					// When the transport dials the proxy, addr is
 					// "<proxy_host>:<proxy_port>". Replace the
-					// host with the validated public IP while
+					// host with the validated IP while
 					// keeping the original port. Any other dial
 					// (e.g. a redirect hop the no-redirect policy
 					// would have blocked) falls through to the
@@ -266,7 +267,7 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 			CheckRedirect: noRedirects,
 		}
 	} else {
-		// Direct path: pin to the validated public IP, disable
+		// Direct path: pin to the validated IP, disable
 		// redirects, and apply the OTel transport. PinnedHTTPClient
 		// sets its own timeout; we re-wrap with otelhttp so the
 		// request gets a child span + W3C traceparent injected.
@@ -377,6 +378,22 @@ func invokeHeaders(raw any) (map[string]any, error) {
 		return nil, nil
 	}
 	return headers, nil
+}
+
+func validateInvokeURL(rawURL string) (hostname, resolvedIP string, err error) {
+	if !common.AllowConfiguredPrivateHost() {
+		return common.AssertURLSafe(rawURL)
+	}
+	if err := common.AssertURLSchemeSafe(rawURL); err != nil {
+		return "", "", err
+	}
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", "", err
+	}
+	hostname = parsed.Hostname()
+	resolvedIP, err = common.ResolveHostPin(hostname)
+	return hostname, resolvedIP, err
 }
 
 // invokeSSRFError builds the _ERROR output the canvas uses to route

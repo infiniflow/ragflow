@@ -33,20 +33,21 @@ import (
 type ChatSessionDAO struct{}
 
 type ListAgentSessionsParams struct {
-	AgentID    string
-	Page       int
-	PageSize   int
-	OrderBy    string
-	Desc       bool
-	SessionID  string
-	UserID     string
-	TenantID   string
-	IncludeDSL bool
-	NoHistory  bool
-	Keywords   string
-	FromDate   *time.Time
-	ToDate     *time.Time
-	ExpUserID  string
+	AgentID        string
+	Page           int
+	PageSize       int
+	OrderBy        string
+	Desc           bool
+	SessionID      string
+	UserID         string
+	TenantID       string
+	IncludeDSL     bool
+	NoHistory      bool
+	HistoryOptions ConversationHistoryOptions
+	Keywords       string
+	FromDate       *time.Time
+	ToDate         *time.Time
+	ExpUserID      string
 }
 
 // NewChatSessionDAO create chat session DAO
@@ -55,26 +56,34 @@ func NewChatSessionDAO() *ChatSessionDAO {
 }
 
 // GetByID gets chat session by ID
-func (dao *ChatSessionDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.ChatSession, error) {
+func (dao *ChatSessionDAO) GetByID(ctx context.Context, db *gorm.DB, id string, options ...ConversationHistoryOptions) (*entity.ChatSession, error) {
+	historyOptions := ConversationHistoryOptions{}
+	if len(options) > 0 {
+		historyOptions = options[0]
+	}
 	var conv entity.ChatSession
 	err := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Take(&conv, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
-	if err = hydrateChatSessions(ctx, db, []*entity.ChatSession{&conv}); err != nil {
+	if err = hydrateChatSessions(ctx, db, []*entity.ChatSession{&conv}, historyOptions); err != nil {
 		return nil, err
 	}
 	return &conv, nil
 }
 
 // GetBySessionIDAndChatID gets a chat session by session ID and chat ID.
-func (dao *ChatSessionDAO) GetBySessionIDAndChatID(ctx context.Context, db *gorm.DB, sessionID, chatID string) (*entity.ChatSession, error) {
+func (dao *ChatSessionDAO) GetBySessionIDAndChatID(ctx context.Context, db *gorm.DB, sessionID, chatID string, options ...ConversationHistoryOptions) (*entity.ChatSession, error) {
+	historyOptions := ConversationHistoryOptions{}
+	if len(options) > 0 {
+		historyOptions = options[0]
+	}
 	var conv entity.ChatSession
 	err := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("id = ? AND dialog_id = ?", sessionID, chatID).First(&conv).Error
 	if err != nil {
 		return nil, err
 	}
-	if err = hydrateChatSessions(ctx, db, []*entity.ChatSession{&conv}); err != nil {
+	if err = hydrateChatSessions(ctx, db, []*entity.ChatSession{&conv}, historyOptions); err != nil {
 		return nil, err
 	}
 	return &conv, nil
@@ -86,10 +95,7 @@ func (dao *ChatSessionDAO) Create(ctx context.Context, db *gorm.DB, conv *entity
 		if err := tx.Create(conv).Error; err != nil {
 			return err
 		}
-		if err := createHistory(ctx, tx, conversationMessageTable, "message", conv.ID, conv.Message); err != nil {
-			return err
-		}
-		return createHistory(ctx, tx, conversationReferenceTable, "reference", conv.ID, conv.Reference)
+		return createHistory(ctx, tx, conversationMessageTable, "message", conv.ID, conv.Message)
 	})
 }
 
@@ -127,7 +133,7 @@ func (dao *ChatSessionDAO) UpdateByID(ctx context.Context, db *gorm.DB, id strin
 			}
 		}
 		if targeted {
-			return updateConversationHistory(ctx, tx, conversationMessageTable, conversationReferenceTable, id, historyUpdate)
+			return updateConversationHistory(ctx, tx, conversationMessageTable, id, historyUpdate)
 		}
 		return nil
 	})
@@ -140,7 +146,7 @@ func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Select("id").Where("id = ?", id).Take(&parent).Error; err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
-		if err := deleteHistory(ctx, tx, []string{conversationMessageTable, conversationReferenceTable}, []string{id}); err != nil {
+		if err := deleteHistory(ctx, tx, []string{conversationMessageTable}, []string{id}); err != nil {
 			return err
 		}
 		return tx.Where("id = ?", id).Delete(&entity.ChatSession{}).Error
@@ -148,7 +154,7 @@ func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 }
 
 // ListByResourceIDs lists sessions for a chat, optionally restricted to sessionIDs.
-func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, terms []OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, int64, error) {
+func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name, sessionUserID string, terms []OrderTerm, page, pageSize int, options ...ConversationHistoryOptions) ([]*entity.ChatSession, int64, error) {
 	if sessionIDs != nil && len(sessionIDs) == 0 {
 		return []*entity.ChatSession{}, 0, nil
 	}
@@ -162,6 +168,9 @@ func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, c
 	}
 	if name != "" {
 		query = query.Where("name = ?", name)
+	}
+	if sessionUserID != "" {
+		query = query.Where("user_id = ?", sessionUserID)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -181,8 +190,12 @@ func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, c
 	if err != nil {
 		return nil, 0, err
 	}
-	if len(includeHistory) == 0 || includeHistory[0] {
-		if err = hydrateChatSessions(ctx, db, chatSessions); err != nil {
+	historyOptions := ConversationHistoryOptions{}
+	if len(options) > 0 {
+		historyOptions = options[0]
+	}
+	if !historyOptions.NoHistory {
+		if err = hydrateChatSessions(ctx, db, chatSessions, historyOptions); err != nil {
 			return nil, 0, err
 		}
 	}
@@ -210,7 +223,7 @@ func (dao *ChatSessionDAO) DeleteByDialogIDs(ctx context.Context, db *gorm.DB, d
 		if err := tx.Model(&entity.ChatSession{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("dialog_id IN ?", dialogIDs).Order("id").Pluck("id", &ids).Error; err != nil {
 			return err
 		}
-		if err := deleteHistory(ctx, tx, []string{conversationMessageTable, conversationReferenceTable}, ids); err != nil {
+		if err := deleteHistory(ctx, tx, []string{conversationMessageTable}, ids); err != nil {
 			return err
 		}
 		result := tx.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.ChatSession{})
@@ -341,7 +354,7 @@ func (dao *ChatSessionDAO) ListAgentSessions(ctx context.Context, db *gorm.DB, p
 		return 0, nil, err
 	}
 	if !params.NoHistory {
-		if err = hydrateAPIConversations(ctx, db, sessions); err != nil {
+		if err = hydrateAPIConversations(ctx, db, sessions, params.HistoryOptions); err != nil {
 			return 0, nil, err
 		}
 	}

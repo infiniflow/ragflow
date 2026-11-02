@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -18,8 +18,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import conftest
-import message_helpers
+from test.testcases.test_sdk_api.test_message_management import conftest
+from test.testcases.test_sdk_api.test_message_management import message_helpers
 
 
 def lifecycle(monkeypatch, *, failing_id=None, wrong_tenant=False):

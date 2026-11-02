@@ -131,7 +131,6 @@ export interface IConversation {
   id: string;
   avatar: string;
   messages: Message[];
-  reference: IReference[];
   name: string;
   update_date: string;
   update_time: number;
@@ -143,6 +142,7 @@ export interface Message {
   role: MessageType;
   doc_ids?: string[];
   prompt?: string;
+  reference?: IReference;
   id?: string;
   audio_binary?: string;
   data?: any;
@@ -155,6 +155,7 @@ export interface Message {
 }
 
 export interface IReferenceChunk {
+  citation_id?: string;
   id: string;
   content: null;
   document_id: string;
@@ -254,7 +255,6 @@ export interface IExternalChatInfo {
 export interface IMessage extends Message {
   id: string;
   awaitingServerId?: boolean;
-  reference?: IReference; // the latest news has reference
   conversationId?: string; // To distinguish which conversation the message belongs to
 }
 

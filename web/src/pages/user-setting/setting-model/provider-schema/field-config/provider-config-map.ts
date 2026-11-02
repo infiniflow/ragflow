@@ -670,6 +670,14 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { message: 'mineruApiserverMessage' },
       },
       {
+        name: 'mineru_api_token',
+        label: 'mineruApiToken',
+        type: FormFieldType.Password,
+        required: false,
+        placeholder: 'mineruApiTokenPlaceholder',
+        tooltip: 'mineruApiTokenTip',
+      },
+      {
         name: 'mineru_output_dir',
         label: 'mineruOutputDir',
         type: FormFieldType.Text,
@@ -741,6 +749,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
           typeof instance.base_url === 'string' && instance.base_url.trim()
             ? instance.base_url
             : (obj.mineru_apiserver ?? ''),
+        mineru_api_token: obj.mineru_api_token ?? '',
         mineru_output_dir: obj.mineru_output_dir ?? '',
         mineru_backend: obj.mineru_backend ?? 'pipeline',
         mineru_server_url: obj.mineru_server_url ?? '',

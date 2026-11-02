@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ import math
 import pytest
 from ragflow_sdk import Memory, RAGFlow
 
-from message_helpers import assert_content
+from test.testcases.test_sdk_api.test_message_management.message_helpers import assert_content
 
 pytestmark = pytest.mark.integration
 
@@ -42,9 +42,7 @@ class TestGetMessageContent:
             assert_content(content, payload, memory.id)
             assert content["status"] is True, content
 
-    def test_get_message_content_embedding(self, populated_memory, doc_engine):
-        if doc_engine == "infinity":
-            pytest.skip("Go Infinity GetChunk returns q_<dimension>_vec without mapping it to documented content_embed (internal/engine/infinity/chunk.go:1907-1911,2177).")
+    def test_get_message_content_embedding(self, populated_memory):
         memory = populated_memory["memory"]
         content = memory.get_message_content(populated_memory["rows"][0]["message_id"])
         vector = content["content_embed"]

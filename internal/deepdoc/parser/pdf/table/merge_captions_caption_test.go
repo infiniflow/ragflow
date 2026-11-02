@@ -183,6 +183,40 @@ func TestMergeCaptions_TallTableCaptionNearEdgeAttaches(t *testing.T) {
 	}
 }
 
+// TestMergeCaptions_FarTableDoesNotOutrankEligibleTable locks the vertical
+// limit as a pre-filter. Ranking alone can hand the caption to a table just
+// past maxCaptionVGap (its combined distance is smaller because dx is tiny),
+// and the attachment predicate then rejects the whole search — although a
+// touching table with a large centre offset is in range. Distance: far table
+// 201pt gap + 16pt dx ≈ 40657; wide table 0pt gap + 266pt dx ≈ 70756.
+func TestMergeCaptions_FarTableDoesNotOutrankEligibleTable(t *testing.T) {
+	far := pdf.Section{
+		Text: "<table><tr><td>far</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 300, Right: 400, Top: 427, Bottom: 500}}}
+	wide := pdf.Section{
+		Text: "<table><tr><td>wide</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 200, Right: 1000, Top: 226, Bottom: 300}}}
+	caption := pdf.Section{
+		Text: "Table 2: Wide", LayoutType: pdf.DLALabelTableCaption,
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 280, Right: 388, Top: 213, Bottom: 226}}}
+	result := MergeCaptions([]pdf.Section{far, wide, caption})
+	if len(result) != 2 {
+		t.Fatalf("expected 2 sections (two tables, caption consumed), got %d: %v", len(result), textsOf(result))
+	}
+	attached := false
+	for _, s := range result {
+		if strings.Contains(s.Text, "<caption>Table 2: Wide</caption>") {
+			attached = true
+			if !strings.Contains(s.Text, "wide") || strings.Contains(s.Text, "far") {
+				t.Errorf("caption attached to the wrong table: %q", s.Text)
+			}
+		}
+	}
+	if !attached {
+		t.Errorf("caption dropped because the out-of-range table won the ranking: %v", textsOf(result))
+	}
+}
+
 // TestMergeCaptions_CaptionOtherPageDoesNotAttach locks the page-scope guard:
 // a caption clearly ABOVE or BELOW a table's Y band on a DIFFERENT page must
 // NOT attach. The edge-distance alone is page-local-coordinate blind — a
@@ -583,9 +617,9 @@ func TestMergeCaptions_ProperNounCrossReferenceLandsInCaption(t *testing.T) {
 // TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach locks the figure-side
 // page-scope guard (go_bug figure-caption-cross-page-attached). Page-local
 // coordinates repeat on every page, so the figure search used to match on
-// page-local distance alone: here the page-2 caption's page-local centre is
-// CLOSER to the page-0 figure (dist²=13225) than to the page-2 figure it
-// belongs to (dist²=21025). The caption was therefore glued to the page-0
+// page-local gap alone: here the page-2 caption's page-local box is CLOSER to
+// the page-0 figure (50pt gap) than to the page-2 figure it belongs to (80pt
+// gap). The caption was therefore glued to the page-0
 // figure — pages away — and its own figure was left with no caption at all.
 func TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach(t *testing.T) {
 	sections := []pdf.Section{
@@ -762,8 +796,8 @@ func TestMergeCaptions_IdenticalBoxOtherPageNotChosen(t *testing.T) {
 func TestMergeCaptions_SamePageFigureBeatsPageLessNearer(t *testing.T) {
 	sections := []pdf.Section{
 		// page-less figure, much CLOSER to the caption than the same-page one:
-		// dist² 56 against the same-page figure's 6006, so distance alone would
-		// pick it.
+		// it overlaps the caption's Y band (edge gap 0) against the same-page
+		// figure's 20pt, so distance alone would pick it.
 		{Text: "page-less chart", LayoutType: pdf.LayoutTypeFigure, Image: "np",
 			Positions: []pdf.Position{{Left: 100, Right: 400, Top: 500, Bottom: 540}}},
 		{Text: "same-page chart", LayoutType: pdf.LayoutTypeFigure, Image: "sp",

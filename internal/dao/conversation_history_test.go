@@ -13,6 +13,8 @@ import (
 
 func TestFlattenMessageRoundTrip(t *testing.T) {
 	for _, item := range []string{
+		`{"role":"assistant","content":"answer","reference":{"chunks":[{"id":"chunk-1"}],"doc_aggs":[]}}`,
+		`{"role":"assistant","reference":{}}`,
 		`{"role":"assistant","content":"agentic answer","usage":{"prompt_tokens":896,"completion_tokens":71,"total_tokens":967},"elapsed_ms":4168.774506}`,
 		`{"role":"assistant","content":"answer","prompt":"system prompt","usage":{"prompt_tokens":896,"completion_tokens":71,"total_tokens":967},"elapsed_ms":4168.774506}`,
 		`{"role":"assistant","prompt":"","usage":null,"elapsed_ms":0}`,
@@ -27,7 +29,7 @@ func TestFlattenMessageRoundTrip(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			raw, err := marshalMessage(fields)
+			raw, err := marshalMessage(fields, ConversationHistoryOptions{IncludeReference: true, IncludePrompt: true, IncludeUsage: true, IncludeElapsedMs: true})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -92,7 +94,7 @@ func TestFlattenedMessagePersistence(t *testing.T) {
 			if agenticRow.Prompt != nil || !reflect.DeepEqual(agenticRow.Usage, row.Usage) || agenticRow.ElapsedMs == nil || *agenticRow.ElapsedMs != *row.ElapsedMs || agenticRow.Metadata != "{}" {
 				t.Fatalf("unexpected agentic answer details: %+v", agenticRow.ConversationMessageFields)
 			}
-			histories, err := loadHistory(t.Context(), db, table, "message", []string{"session-1"})
+			histories, err := loadHistory(t.Context(), db, table, []string{"session-1"}, ConversationHistoryOptions{IncludeReference: true, IncludePrompt: true, IncludeUsage: true, IncludeElapsedMs: true})
 			if err != nil {
 				t.Fatal(err)
 			}
