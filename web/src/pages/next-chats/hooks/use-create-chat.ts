@@ -36,7 +36,6 @@ export const useCreateChatDialog = () => {
           { key: 'knowledge', optional: false },
           { key: 'date', optional: true },
         ],
-        toc_enhance: false,
       },
       llm_id: defaultModelDictionary?.llm_id,
       tenant_llm_id: defaultModelDictionary?.llm_id,

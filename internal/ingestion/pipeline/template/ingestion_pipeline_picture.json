@@ -55,7 +55,6 @@
                         },
                         "image": {
                             "ocr_enabled": true,
-                            "output_format": "json",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -72,7 +71,6 @@
                             ]
                         },
                         "video": {
-                            "output_format": "text",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -248,14 +246,12 @@
                                 {
                                     "fileFormat": "image",
                                     "ocr_enabled": true,
-                                    "output_format": "json",
                                     "preprocess": [
                                         "main_content"
                                     ]
                                 },
                                 {
                                     "fileFormat": "video",
-                                    "output_format": "text",
                                     "preprocess": [
                                         "main_content"
                                     ]

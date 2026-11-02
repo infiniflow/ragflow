@@ -266,19 +266,22 @@ func TestGraphIntegration_Streaming(t *testing.T) {
 	outCh, errCh := cg.Stream(ctx, map[string]interface{}{"value": ""}, types.StreamModeValues)
 
 	events := 0
-loop:
-	for {
+	for outCh != nil || errCh != nil {
 		select {
 		case _, ok := <-outCh:
 			if !ok {
-				break loop
+				outCh = nil
+				continue
 			}
 			events++
-		case err := <-errCh:
+		case err, ok := <-errCh:
+			if !ok {
+				errCh = nil
+				continue
+			}
 			if err != nil {
 				t.Fatalf("Stream error: %v", err)
 			}
-			break loop
 		case <-time.After(3 * time.Second):
 			t.Fatal("stream timeout")
 		}

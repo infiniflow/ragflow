@@ -56,8 +56,7 @@ func (n *N1NModel) endpointURL(region, suffix string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	return fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(suffix, "/")), nil
+	return joinURL(baseURL, suffix), nil
 }
 
 func n1nRegion(apiConfig *APIConfig) string {
@@ -439,5 +438,9 @@ func (n *N1NModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListT
 }
 
 func (n *N1NModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}
+
+func (n *N1NModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }

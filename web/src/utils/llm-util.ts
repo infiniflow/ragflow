@@ -82,6 +82,11 @@ export function buildValidModelIds(
 ): Set<string> {
   const ids = new Set<string>();
   for (const m of allModels) {
+    if (
+      (m.status != null && m.status !== 'active') ||
+      (m.instance_status != null && m.instance_status !== 'active')
+    )
+      continue;
     if (!m.model_type?.some((t) => modelTypes.includes(t))) continue;
     const legacyId = buildModelValue({
       model_name: getRealModelName(m.name),

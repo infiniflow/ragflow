@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
 
 	infinitysdk "github.com/infiniflow/infinity-go-sdk"
@@ -299,6 +300,22 @@ func TestFieldJSONMatchesJSONMappingColumns(t *testing.T) {
 	}
 }
 
+// TestFieldVarcharJSONMatchesVarcharColumns keeps fieldVarcharJSON aligned with
+// the schema: a column it decodes must exist as a varchar column, and it must
+// not claim a json-typed column fieldJSON already owns.
+func TestFieldVarcharJSONMatchesVarcharColumns(t *testing.T) {
+	for _, column := range []string{"tag_feas"} {
+		if !fieldVarcharJSON(column) {
+			t.Errorf("fieldVarcharJSON(%q) = false, want true", column)
+		}
+	}
+	for column, columnType := range mappingColumnTypes(t) {
+		if fieldVarcharJSON(column) && columnType != "varchar" {
+			t.Errorf("fieldVarcharJSON(%q) = true, but the mapping declares type %q", column, columnType)
+		}
+	}
+}
+
 // chunkMappingColumns reads the column set the chunk table is created from.
 func chunkMappingColumns(t *testing.T) map[string]bool {
 	columns := mappingColumnTypes(t)
@@ -501,6 +518,60 @@ func TestJSONColumnsMatchCaseInsensitively(t *testing.T) {
 	decodeJSONFields(row)
 	if want := []interface{}{}; !reflect.DeepEqual(row["Source_Doc_IDs"], want) {
 		t.Errorf("nil Source_Doc_IDs = %#v, want %#v", row["Source_Doc_IDs"], want)
+	}
+}
+
+// TestDecodeVarcharJSONFieldsRoundTripsTagFeatures pins that the read-side
+// decode of tag_feas yields the map the write path marshaled.
+func TestDecodeVarcharJSONFieldsRoundTripsTagFeatures(t *testing.T) {
+	tags := map[string]int{"物流查询": 7, "售后服务": 8}
+	row := transformChunkFields(map[string]interface{}{"tag_feas": tags}, nil)
+	if _, ok := row["tag_feas"].(string); !ok {
+		t.Fatalf("write path should store tag_feas as JSON text, got %#v", row["tag_feas"])
+	}
+
+	decodeVarcharJSONFields(row)
+	got, ok := row["tag_feas"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("decodeVarcharJSONFields left tag_feas as %T, want map", row["tag_feas"])
+	}
+	if want := float64(7); got["物流查询"] != want {
+		t.Errorf("tag_feas[物流查询] = %#v, want %#v", got["物流查询"], want)
+	}
+	if want := float64(8); got["售后服务"] != want {
+		t.Errorf("tag_feas[售后服务] = %#v, want %#v", got["售后服务"], want)
+	}
+}
+
+// TestDecodeVarcharJSONFieldsEmptyAndPreDecoded covers empty/nil text (→ {}),
+// an already decoded value, and that pagerank_fea is left untouched.
+func TestDecodeVarcharJSONFieldsEmptyAndPreDecoded(t *testing.T) {
+	row := map[string]interface{}{"tag_feas": ""}
+	decodeVarcharJSONFields(row)
+	if want := map[string]interface{}{}; !reflect.DeepEqual(row["tag_feas"], want) {
+		t.Errorf("empty tag_feas = %#v, want %#v", row["tag_feas"], want)
+	}
+	row = map[string]interface{}{"tag_feas": nil}
+	decodeVarcharJSONFields(row)
+	if want := map[string]interface{}{}; !reflect.DeepEqual(row["tag_feas"], want) {
+		t.Errorf("nil tag_feas = %#v, want %#v", row["tag_feas"], want)
+	}
+
+	decoded := map[string]interface{}{"tag": float64(9)}
+	row = map[string]interface{}{"tag_feas": decoded}
+	decodeVarcharJSONFields(row)
+	if !reflect.DeepEqual(row["tag_feas"], decoded) {
+		t.Errorf("pre-decoded tag_feas = %#v, want %#v", row["tag_feas"], decoded)
+	}
+
+	// pagerank_fea ends in "_fea", not "_feas": it must stay untouched.
+	ranked := map[string]interface{}{"pagerank_fea": int64(7), "tag_feas": `{"t":1}`}
+	decodeVarcharJSONFields(ranked)
+	if want := int64(7); ranked["pagerank_fea"] != want {
+		t.Errorf("pagerank_fea = %#v, want %#v", ranked["pagerank_fea"], want)
+	}
+	if _, ok := ranked["tag_feas"].(map[string]interface{}); !ok {
+		t.Errorf("tag_feas = %#v, want a decoded map", ranked["tag_feas"])
 	}
 }
 
@@ -917,5 +988,127 @@ func TestDropUndeclaredFieldsFailsWhenMappingIsMissing(t *testing.T) {
 	}
 	if _, ok := unknown[0]["slide_number"]; !ok {
 		t.Fatal("a failed mapping read must leave the row unchanged")
+	}
+}
+
+// TestDedupeByChunkIDKeepsLast pins that a repeated id keeps its last row.
+func TestDedupeByChunkIDKeepsLast(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"id": "a", "chunk_order_int": int(0)},
+		{"id": "b", "chunk_order_int": int(1)},
+		{"id": "a", "chunk_order_int": int(9)},
+		{"id": "c", "chunk_order_int": int(2)},
+	}
+
+	got := dedupeByChunkID(rows)
+	if len(got) != 3 {
+		t.Fatalf("rows = %d, want 3: %#v", len(got), got)
+	}
+	if got[0]["id"] != "b" || got[1]["id"] != "a" || got[2]["id"] != "c" {
+		t.Fatalf("order = %#v, want b, a(last), c", got)
+	}
+	if got[1]["chunk_order_int"] != int(9) {
+		t.Fatalf("kept row = %#v, want the last occurrence of a", got[1])
+	}
+}
+
+// TestDedupeByChunkIDKeepsRowsWithoutID pins that rows the engine cannot key stay.
+func TestDedupeByChunkIDKeepsRowsWithoutID(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"chunk_data": "x"},
+		{"id": ""},
+		{"id": "a"},
+		{"id": "a"},
+	}
+	if got := dedupeByChunkID(rows); len(got) != 3 {
+		t.Fatalf("rows = %d, want 3 (only the duplicate id collapses): %#v", len(got), got)
+	}
+}
+
+// chunksFromColumnData must turn the column-oriented DataFrame into rows and
+// must not fabricate a row out of an all-null column.
+func TestChunksFromColumnDataConvertsAndSkipsNullCells(t *testing.T) {
+	rows := chunksFromColumnData(map[string][]interface{}{
+		"id":      {"a", "b"},
+		"content": {"alpha", "beta"},
+		"junk":    {nil, nil},
+	})
+	if len(rows) != 2 {
+		t.Fatalf("chunksFromColumnData() returned %d rows, want 2", len(rows))
+	}
+	if rows[0]["id"] != "a" || rows[0]["content"] != "alpha" {
+		t.Errorf("row 0 = %v, want id=a content=alpha", rows[0])
+	}
+	if rows[1]["id"] != "b" || rows[1]["content"] != "beta" {
+		t.Errorf("row 1 = %v, want id=b content=beta", rows[1])
+	}
+	if _, ok := rows[0]["junk"]; ok {
+		t.Errorf("row 0 = %v, a null column must not contribute a cell", rows[0])
+	}
+}
+
+// An entirely null projection (an empty match) must yield no rows rather than
+// one phantom empty row.
+func TestChunksFromColumnDataAllNullIsEmpty(t *testing.T) {
+	rows := chunksFromColumnData(map[string][]interface{}{"content": {nil}})
+	if len(rows) != 0 {
+		t.Fatalf("chunksFromColumnData() returned %d rows, want 0", len(rows))
+	}
+}
+
+// TestSortChunksByFieldsRestoresReadingOrder covers the cross-table merge: a table's
+// rows arrive in that table's order, so the requested order has to be re-applied across
+// the merged set, with page_num_int compared numerically (it arrives as a hex-decoded
+// int slice).
+func TestSortChunksByFieldsRestoresReadingOrder(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"id": "b1", "doc_id": "doc-b", "page_num_int": []int{10}, "chunk_order_int": 0},
+		{"id": "b2", "doc_id": "doc-b", "page_num_int": []int{3}, "chunk_order_int": 5},
+		{"id": "a1", "doc_id": "doc-a", "page_num_int": []int{2}, "chunk_order_int": 9},
+		{"id": "a2", "doc_id": "doc-a", "page_num_int": []int{2}, "chunk_order_int": 1},
+	}
+	sortChunksByFields(rows, &types.OrderByExpr{Fields: []types.OrderByField{
+		{Field: "doc_id"},
+		{Field: "page_num_int"},
+		{Field: "chunk_order_int"},
+	}})
+
+	got := make([]string, 0, len(rows))
+	for _, row := range rows {
+		got = append(got, row["id"].(string))
+	}
+	// Document first, then the page within it (numerically), then the chunk order
+	// within that page.
+	want := []string{"a2", "a1", "b2", "b1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("merged reading order = %v, want %v", got, want)
+	}
+}
+
+// TestSortChunksByFieldsRanksUnsetKeyFirst pins the mixed-key case: a chunk with no page
+// number arrives as the empty column default, a chunk that has one as a hex-decoded int
+// slice. An unset key ranks first, and both argument orders must agree on that.
+func TestSortChunksByFieldsRanksUnsetKeyFirst(t *testing.T) {
+	order := &types.OrderByExpr{Fields: []types.OrderByField{
+		{Field: "doc_id"},
+		{Field: "page_num_int"},
+	}}
+	sorted := func(rows []map[string]interface{}) []string {
+		sortChunksByFields(rows, order)
+		ids := make([]string, 0, len(rows))
+		for _, row := range rows {
+			ids = append(ids, row["id"].(string))
+		}
+		return ids
+	}
+	withPage := map[string]interface{}{"id": "page-5", "doc_id": "doc-1", "page_num_int": []int{5}}
+	unset := map[string]interface{}{"id": "page-unset", "doc_id": "doc-1", "page_num_int": ""}
+
+	want := []string{"page-unset", "page-5"}
+	if got := sorted([]map[string]interface{}{withPage, unset}); !reflect.DeepEqual(got, want) {
+		t.Errorf("sort(page-first input) = %v, want %v", got, want)
+	}
+	if got := sorted([]map[string]interface{}{unset, withPage}); !reflect.DeepEqual(got, want) {
+		t.Errorf("sort(unset-first input) = %v, want %v", got, want)
 	}
 }

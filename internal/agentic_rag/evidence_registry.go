@@ -40,11 +40,49 @@ type EvidenceRegistry struct {
 	order      []string
 	numOf      map[string]int
 	webResults map[string]WebResult
+	servedText map[string]struct{}
 }
 
 // NewEvidenceRegistry returns an empty registry.
 func NewEvidenceRegistry() *EvidenceRegistry {
-	return &EvidenceRegistry{numOf: map[string]int{}, webResults: map[string]WebResult{}}
+	return &EvidenceRegistry{
+		numOf:      map[string]int{},
+		webResults: map[string]WebResult{},
+		servedText: map[string]struct{}{},
+	}
+}
+
+// ServeText returns the passage's citation handle and reports whether this exact
+// TEXT is new to the run.
+//
+// It exists because a ReAct loop re-fetches: the same document is deep-read
+// again after a search, and the same chunk comes back in a later query's
+// results. Re-emitting the body re-sends tokens the model already holds in its
+// own context — measured on the five-question probe, roughly a third to a half
+// of all served passages were repeats. The first occurrence stays in the
+// transcript, so a repeat needs only to name it.
+//
+// The key is the text, not the chunk id: a locate tool renders a window around
+// the query terms, so the same chunk legitimately yields DIFFERENT snippets for
+// different queries, and those are new information the model has not seen.
+func (r *EvidenceRegistry) ServeText(id, text string) (int, bool) {
+	if r == nil {
+		return -1, false
+	}
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return -1, false
+	}
+	key := id + "\x1f" + fmt.Sprintf("%x", sha256.Sum256([]byte(text)))[:16]
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	n := r.stampLocked(id)
+	if r.servedText == nil {
+		r.servedText = map[string]struct{}{}
+	}
+	_, seen := r.servedText[key]
+	r.servedText[key] = struct{}{}
+	return n, !seen
 }
 
 // Stamp returns the stable handle for a chunk id, allocating the next one the

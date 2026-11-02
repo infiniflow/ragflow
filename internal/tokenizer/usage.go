@@ -50,6 +50,11 @@ type CallUsage struct {
 	// Model is the model the call went to, when the caller knows it (the
 	// explorer, the auditor and the synthesis fallback can use different ones).
 	Model string `json:"model,omitempty"`
+	// Phase names the run section that issued the call ("explore", "synth"),
+	// set by WithUsagePhase on the section's context. Empty when the caller did
+	// not scope the call, which keeps per-phase attribution honest instead of
+	// guessing from the call order.
+	Phase string `json:"phase,omitempty"`
 	// PromptTokens / CompletionTokens are the call's input and output split.
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
@@ -59,6 +64,7 @@ type CallUsage struct {
 // Context key types — unexported to prevent direct external access.
 type runUsageKeyType struct{}
 type runAttrsKeyType struct{}
+type usagePhaseKeyType struct{}
 
 // RunUsage is the mutable per-run token usage accumulator installed on
 // the context by the service layer at the start of a canvas turn.
@@ -87,6 +93,13 @@ func (u *RunUsage) Add(prompt, completion, total int) {
 // token split. Callers that know the model (the chat-model wrapper does) get a
 // per-turn breakdown for free; the rest still get a record with an empty model.
 func (u *RunUsage) AddFor(model string, prompt, completion, total int) {
+	u.AddForPhase(model, "", prompt, completion, total)
+}
+
+// AddForPhase is AddFor plus the run section that issued the call. The phase is
+// what makes "the exploration burned 38k prompt tokens, the final synthesis 3k"
+// answerable; a call that carries no phase is recorded as such, never guessed.
+func (u *RunUsage) AddForPhase(model, phase string, prompt, completion, total int) {
 	if u == nil {
 		return
 	}
@@ -110,6 +123,7 @@ func (u *RunUsage) AddFor(model string, prompt, completion, total int) {
 		Seq:              u.Calls,
 		AtSeconds:        float64(int(at*1000)) / 1000,
 		Model:            model,
+		Phase:            phase,
 		PromptTokens:     prompt,
 		CompletionTokens: completion,
 		TotalTokens:      total,
@@ -192,13 +206,38 @@ func RecordRunTokenUsage(ctx context.Context, promptTokens, completionTokens, to
 
 // RecordRunTokenUsageFor is RecordRunTokenUsage plus the model that served the
 // call, so the per-call breakdown can attribute tokens to the explorer, the
-// auditor or the synthesis fallback.
+// auditor or the synthesis fallback. The run section is read from the context
+// (see WithUsagePhase) so call sites stay unaware of the accounting.
 func RecordRunTokenUsageFor(ctx context.Context, model string, promptTokens, completionTokens, totalTokens int) {
 	sink := GetRunUsage(ctx)
 	if sink == nil {
 		return
 	}
-	sink.AddFor(model, promptTokens, completionTokens, totalTokens)
+	sink.AddForPhase(model, UsagePhase(ctx), promptTokens, completionTokens, totalTokens)
+}
+
+// WithUsagePhase tags ctx with the run section that is about to issue LLM
+// calls. Nested sections inherit it, so a section that does not set its own
+// phase is attributed to its caller — which is why every top-level section of a
+// run sets one explicitly.
+func WithUsagePhase(ctx context.Context, phase string) context.Context {
+	if phase == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, usagePhaseKeyType{}, phase)
+}
+
+// UsagePhase returns the run section installed by WithUsagePhase, if any.
+func UsagePhase(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	if v := ctx.Value(usagePhaseKeyType{}); v != nil {
+		if phase, ok := v.(string); ok {
+			return phase
+		}
+	}
+	return ""
 }
 
 // UsageFromMap extracts a token usage split from a raw API response map.

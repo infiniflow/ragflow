@@ -20,9 +20,10 @@
 // nlp.RetrievalService, which requires a doc engine + document
 // DAO. Those require network access and aren't worth standing up
 // in a unit test. Instead we exercise the translation layer
-// (translateChunk + helpers) directly — that's the surface that
+// (translateChunk + helpers) and the rank-feature resolution
+// (resolveRankFeature) directly — that's the surface that
 // differs between the nlp chunk shape and the agent-tool chunk
-// shape, and it's the only piece the adapter owns.
+// shape, and the only piece the adapter itself decides.
 
 package tool
 
@@ -36,6 +37,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service/nlp"
 
 	"github.com/glebarez/sqlite"
@@ -438,6 +440,9 @@ func TestNLPRetrievalAdapter_SearchRequiresDatasetUsePermission(t *testing.T) {
 	if err := db.Create(&memberships).Error; err != nil {
 		t.Fatalf("create memberships: %v", err)
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "owner", "member"); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
 
 	adapter := &NLPRetrievalAdapter{
 		svc:   &nlp.RetrievalService{},
@@ -445,7 +450,8 @@ func TestNLPRetrievalAdapter_SearchRequiresDatasetUsePermission(t *testing.T) {
 	}
 	state := runtime.NewCanvasState("run-1", "session-1")
 	state.Sys["user_id"] = "member"
-	ctx := runtime.WithState(t.Context(), state)
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "member", TenantID: "tenant-1"})
 	_, err = adapter.Search(ctx, db, RetrievalRequest{
 		Query: "hello", DatasetIDs: []string{dataset.ID}, UserID: "owner",
 	})
@@ -620,4 +626,143 @@ func (f fakeKnowledgebaseLookup) GetByName(_ context.Context, _ *gorm.DB, name, 
 		}
 	}
 	return nil, gorm.ErrRecordNotFound
+}
+
+// stubRankFeatureEnhancer records whether the question was labelled.
+type stubRankFeatureEnhancer struct {
+	labels map[string]float64
+	calls  int
+}
+
+func (s *stubRankFeatureEnhancer) CrossLanguages(context.Context, string, string, []string) (string, error) {
+	return "", nil
+}
+
+func (s *stubRankFeatureEnhancer) FilterDocuments(
+	context.Context, map[string]any, string, *modelModule.ChatModel, []string, []string,
+) ([]string, error) {
+	return nil, nil
+}
+
+func (s *stubRankFeatureEnhancer) LabelQuestion(
+	context.Context, string, []*entity.Knowledgebase,
+) map[string]float64 {
+	s.calls++
+	return s.labels
+}
+
+func (s *stubRankFeatureEnhancer) RetrieveByChildren(
+	context.Context, []map[string]any, []string,
+) []map[string]any {
+	return nil
+}
+
+func testRankFeatureKBs() []*entity.Knowledgebase {
+	return []*entity.Knowledgebase{{ID: "kb-1", TenantID: "tenant-1"}}
+}
+
+// No tag source: labelling yields nil, which must still reach the request as an
+// empty map instead of letting the nlp layer apply its default.
+func TestResolveRankFeature_NoTagSourceReturnsEmptyMap(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: nil}
+
+	got := resolveRankFeature(context.Background(), nil, enhancer, "q", testRankFeatureKBs(), false)
+
+	if got == nil {
+		t.Fatal("rankFeature = nil, want an empty (non-nil) map")
+	}
+	if len(got) != 0 {
+		t.Fatalf("rankFeature = %v, want empty", got)
+	}
+	if enhancer.calls != 1 {
+		t.Fatalf("LabelQuestion calls = %d, want 1", enhancer.calls)
+	}
+}
+
+func TestResolveRankFeature_TagMatchIsForwarded(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: map[string]float64{"tag_1": 0.8}}
+
+	got := resolveRankFeature(context.Background(), nil, enhancer, "q", testRankFeatureKBs(), false)
+
+	if got["tag_1"] != 0.8 {
+		t.Fatalf("rankFeature = %v, want tag_1=0.8", got)
+	}
+}
+
+// A caller-supplied feature wins over the enhancer and must not trigger a label
+// lookup.
+func TestResolveRankFeature_PrefersRequestSuppliedFeature(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: map[string]float64{"from_enhancer": 0.1}}
+	requested := map[string]float64{"from_request": 0.5}
+
+	got := resolveRankFeature(context.Background(), &requested, enhancer, "q", testRankFeatureKBs(), false)
+
+	if got["from_request"] != 0.5 || len(got) != 1 {
+		t.Fatalf("rankFeature = %v, want only from_request=0.5", got)
+	}
+	if enhancer.calls != 0 {
+		t.Fatalf("LabelQuestion calls = %d, want 0", enhancer.calls)
+	}
+}
+
+// A vector-only request skips the label lookup; the map must still be non-nil.
+func TestResolveRankFeature_VectorOnlySkipsLabelling(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: map[string]float64{"tag_1": 0.8}}
+
+	got := resolveRankFeature(context.Background(), nil, enhancer, "q", testRankFeatureKBs(), true)
+
+	if got == nil {
+		t.Fatal("rankFeature = nil, want an empty (non-nil) map")
+	}
+	if len(got) != 0 {
+		t.Fatalf("rankFeature = %v, want empty", got)
+	}
+	if enhancer.calls != 0 {
+		t.Fatalf("LabelQuestion calls = %d, want 0", enhancer.calls)
+	}
+}
+
+func TestResolveRankFeature_NilEnhancerReturnsEmptyMap(t *testing.T) {
+	got := resolveRankFeature(context.Background(), nil, nil, "q", testRankFeatureKBs(), false)
+
+	if got == nil {
+		t.Fatal("rankFeature = nil, want an empty (non-nil) map")
+	}
+	if len(got) != 0 {
+		t.Fatalf("rankFeature = %v, want empty", got)
+	}
+}
+
+// nil and {} are distinct: nil asks for labelling, {} means there are none.
+func TestResolveRankFeature_ExplicitEmptyMapSuppressesLabelling(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: map[string]float64{"tag_1": 0.8}}
+	requested := map[string]float64{}
+
+	got := resolveRankFeature(context.Background(), &requested, enhancer, "q", testRankFeatureKBs(), false)
+
+	if got == nil {
+		t.Fatal("rankFeature = nil, want an empty (non-nil) map")
+	}
+	if len(got) != 0 {
+		t.Fatalf("rankFeature = %v, want empty", got)
+	}
+	if enhancer.calls != 0 {
+		t.Fatalf("LabelQuestion calls = %d, want 0", enhancer.calls)
+	}
+}
+
+// The result must not alias the caller's map.
+func TestResolveRankFeature_ReturnsDetachedCopy(t *testing.T) {
+	requested := map[string]float64{"tag_1": 0.4}
+
+	got := resolveRankFeature(context.Background(), &requested, nil, "q", testRankFeatureKBs(), false)
+	got["tag_1"] = 0.9
+	got["injected"] = 1.0
+
+	if requested["tag_1"] != 0.4 {
+		t.Fatalf("caller map mutated through the result: %v", requested)
+	}
+	if _, ok := requested["injected"]; ok {
+		t.Fatalf("caller map gained a key through the result: %v", requested)
+	}
 }

@@ -34,7 +34,6 @@ type mindMapRunConfig struct {
 	KbIDs         common.StringSlice
 	SearchID      string
 	SearchConfig  map[string]interface{}
-	AuthUserID    string
 	ModelTenantID string
 	ChunkSvc      service.Retriever
 	LLM           *service.ModelFactory
@@ -48,12 +47,16 @@ func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, erro
 	if config.LLM == nil {
 		return mindMapNode{}, fmt.Errorf("LLM not configured")
 	}
+	identity, err := service.ResolveIdentity(ctx)
+	if err != nil {
+		return mindMapNode{}, err
+	}
 	modelTenantID := config.ModelTenantID
 	if modelTenantID == "" {
-		modelTenantID = config.AuthUserID
+		modelTenantID = identity.TenantID
 	}
 	retrievalReq := mindMapRetrievalRequest(config.Question, config.KbIDs, config.SearchID, config.SearchConfig)
-	ranks, err := config.ChunkSvc.RetrievalTest(ctx, retrievalReq, config.AuthUserID)
+	ranks, err := config.ChunkSvc.RetrievalTest(ctx, retrievalReq)
 	if err != nil {
 		return mindMapNode{}, err
 	}
@@ -69,7 +72,8 @@ func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, erro
 
 	// A stale search_config chat_id should not prevent mind-map generation;
 	// fall back to the tenant's configured default model.
-	access := service.ModelAccess{UserID: config.AuthUserID, TenantID: modelTenantID}
+	identity.TenantID = modelTenantID
+	access := identity
 	chatModel, modelErr := config.LLM.NewChatModel(streamCtx, access, modelID)
 	if modelErr != nil {
 		chatModel, modelErr = config.LLM.NewDefaultChatModel(streamCtx, access)

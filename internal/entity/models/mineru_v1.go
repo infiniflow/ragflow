@@ -129,21 +129,14 @@ func minerUV1SupportCacheKey(baseURL, apiKey string) string {
 	return baseURL + "\x00" + hex.EncodeToString(sum[:])
 }
 
+// minerUProbeGET reports the HTTP status. MinerUSupportsV1 only distinguishes
+// 404/405 from every other status, so a truncated health body must not hide it.
 func minerUProbeGET(ctx context.Context, client *http.Client, rawURL, token string) (int, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return 0, err
+	code, _, err := minerUGET(ctx, client, rawURL, token)
+	if code != 0 {
+		return code, nil
 	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
-	return resp.StatusCode, nil
+	return 0, err
 }
 
 // MinerUSupportsV1 reports whether baseURL speaks MinerU 4's /v1 HTTP API.
@@ -511,14 +504,15 @@ func minerUV1DownloadFile(ctx context.Context, client *http.Client, baseURL, tok
 	return body, nil
 }
 
-// minerUMarkdownFromZip prefers a .md member, then concatenates content_list.json text.
+// minerUMarkdownFromZip prefers a .md member, then content_list.json text,
+// then MinerU 4 structured_content.json block text.
 func minerUMarkdownFromZip(zipBytes []byte) (string, error) {
 	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
 		return "", fmt.Errorf("open zip: %w", err)
 	}
 	var md string
-	var contentList []byte
+	var contentList, structured []byte
 	for _, f := range zipReader.File {
 		name := strings.ReplaceAll(f.Name, "\\", "/")
 		if strings.Contains(name, "__MACOSX") {
@@ -534,18 +528,36 @@ func minerUMarkdownFromZip(zipBytes []byte) (string, error) {
 		if md == "" && strings.HasSuffix(lower, ".md") {
 			md = string(body)
 		}
-		if strings.HasSuffix(lower, "content_list.json") {
+		if len(contentList) == 0 && strings.HasSuffix(lower, "content_list.json") {
 			contentList = body
+		}
+		if len(structured) == 0 && strings.HasSuffix(lower, "structured_content.json") {
+			structured = body
 		}
 	}
 	if strings.TrimSpace(md) != "" {
 		return md, nil
 	}
-	if len(contentList) == 0 {
-		return "", fmt.Errorf("markdown and content_list.json not found in MinerU zip")
+	var contentErr error
+	if len(contentList) > 0 {
+		text, err := minerUMarkdownFromContentList(contentList)
+		if err == nil && strings.TrimSpace(text) != "" {
+			return text, nil
+		}
+		contentErr = err
 	}
+	if len(structured) > 0 {
+		return minerUMarkdownFromStructured(structured)
+	}
+	if contentErr != nil {
+		return "", contentErr
+	}
+	return "", fmt.Errorf("markdown, content_list.json, and structured_content.json not found in MinerU zip")
+}
+
+func minerUMarkdownFromContentList(raw []byte) (string, error) {
 	var items []map[string]any
-	if err := json.Unmarshal(contentList, &items); err != nil {
+	if err := json.Unmarshal(raw, &items); err != nil {
 		return "", fmt.Errorf("parse content_list.json: %w", err)
 	}
 	var parts []string
@@ -562,4 +574,55 @@ func minerUMarkdownFromZip(zipBytes []byte) (string, error) {
 		return "", fmt.Errorf("content_list.json had no text")
 	}
 	return strings.Join(parts, "\n"), nil
+}
+
+func minerUMarkdownFromStructured(raw []byte) (string, error) {
+	var doc struct {
+		Pages []struct {
+			Blocks []map[string]any `json:"blocks"`
+		} `json:"pages"`
+	}
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		return "", fmt.Errorf("parse structured_content.json: %w", err)
+	}
+	var parts []string
+	for _, page := range doc.Pages {
+		for _, block := range page.Blocks {
+			typ, _ := block["type"].(string)
+			switch strings.ToLower(strings.TrimSpace(typ)) {
+			case "header", "footer", "page_number", "page-header", "page-footer", "page_header", "page_footer", "aside_text", "discarded":
+				continue
+			}
+			if content, _ := block["content"].(string); strings.TrimSpace(content) != "" {
+				parts = append(parts, content)
+			}
+			parts = append(parts, minerUAnnotationContents(block["captions"])...)
+			parts = append(parts, minerUAnnotationContents(block["footnotes"])...)
+		}
+	}
+	if len(parts) == 0 {
+		return "", fmt.Errorf("structured_content.json had no text")
+	}
+	return strings.Join(parts, "\n"), nil
+}
+
+func minerUAnnotationContents(raw any) []string {
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	var out []string
+	for _, item := range items {
+		switch value := item.(type) {
+		case string:
+			if strings.TrimSpace(value) != "" {
+				out = append(out, value)
+			}
+		case map[string]any:
+			if text, _ := value["content"].(string); strings.TrimSpace(text) != "" {
+				out = append(out, text)
+			}
+		}
+	}
+	return out
 }

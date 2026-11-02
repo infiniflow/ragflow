@@ -30,6 +30,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
 	servicepkg "ragflow/internal/service"
@@ -39,7 +40,7 @@ import (
 // need only the task id because execution input lives in the database.
 func TestHandleAndExecute_MemoryTaskIDInvokesRunner(t *testing.T) {
 	ingestor := newUnitIngestor("test-mem-malformed", 1, nil)
-	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService()))
+	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService(dao.DB, engine.Get())))
 
 	runnerCalled := false
 	ingestor.runMemoryTask = func(ctx context.Context, taskID, leaseOwner string) (servicepkg.MemoryTaskDisposition, error) {
@@ -87,7 +88,7 @@ func TestHandleAndExecute_MemoryExtractorDisabledAcks(t *testing.T) {
 // an empty task ID is ack-skipped.
 func TestHandleAndExecute_MemoryEmptyTaskIDAcks(t *testing.T) {
 	ingestor := newUnitIngestor("test-mem-empty-id", 1, nil)
-	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService()))
+	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService(dao.DB, engine.Get())))
 
 	handle := &fakeTaskHandle{msg: common.TaskMessage{
 		TaskID:   "",
@@ -428,7 +429,7 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 // verifies DB lease admission controls settlement for duplicate or failed work.
 func TestHandleAndExecute_MemoryUnsettledDispositionDefersToDurableRecovery(t *testing.T) {
 	ingestor := newUnitIngestor("test-mem-dup", 1, nil)
-	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService()))
+	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService(dao.DB, engine.Get())))
 	ingestor.runMemoryTask = func(context.Context, string, string) (servicepkg.MemoryTaskDisposition, error) {
 		return servicepkg.MemoryTaskLeaveUnsettled, nil
 	}
@@ -449,7 +450,7 @@ func TestHandleAndExecute_MemoryUnsettledDispositionDefersToDurableRecovery(t *t
 // still acknowledged after the service durably schedules its retry.
 func TestHandleAndExecute_MemoryPersistedRetryAcks(t *testing.T) {
 	ingestor := newUnitIngestor("test-mem-retry", 1, nil)
-	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService()))
+	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService(dao.DB, engine.Get())))
 	ingestor.runMemoryTask = func(context.Context, string, string) (servicepkg.MemoryTaskDisposition, error) {
 		return servicepkg.MemoryTaskAcknowledge, errors.New("retry scheduled")
 	}

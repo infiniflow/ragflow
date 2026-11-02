@@ -9,114 +9,122 @@ sidebar_custom_props:
 
 # Chat Configuration
 
-## Dataset Configuration
+Open a Chat from the **Chat** list, then click the gear icon on the right to open **Chat setting**. Configure the basic fields first, expand **Advanced settings** for additional options, and click **Save** to apply your changes. Use **Cancel** to discard unsaved changes.
 
-dataset determine the data scope that Chat can retrieve and cite. Only dataset that contain successfully parsed, available chunks can serve as valid knowledge sources.
+## Basic Configuration
 
-- **Select dataset**: Associate one or more dataset in the **dataset** field. New or empty dataset generally do not appear in the selection list.
-- **Unavailable dataset**: If a dataset has been deleted or contains no available chunks, Chat indicates that the selected dataset is unavailable. Select another dataset.
+The top of **Chat setting** contains the Chat's name, avatar, description, **Model**, **Model settings**, **Opening greeting**, and **Datasets**.
 
-:::tip NOTE
-For answers grounded in retrieved knowledge, consider retaining the `{knowledge}` placeholder in the system prompt.
-:::
+### Model
 
-## Model
+Select the model used to generate answers. Available models depend on the provider instances configured for your account. Expand **Model settings** to adjust the generation parameters supported by the selected model. Start with the defaults and change one setting at a time while testing representative questions.
 
-Select the large language model that understands questions and generates answers. Models differ in context length, reasoning capability, response speed, tool-calling capability, and cost.
+### Opening Greeting
 
-Choose a model based on the use case. For routine dataset Q&A, prioritize response speed. For complex analysis or multi-document synthesis, select a model with stronger reasoning capabilities.
+Enter the message users see when starting a conversation. Briefly explain the Chat's purpose, the content it can answer questions about, and a few example questions. This greeting introduces the Chat; it does not set the rules for subsequent answers.
 
-The available models depend on the models that have been added and configured in the current system.
+### Datasets
 
-## Opening Greeting
+Select one or more datasets as the sources for retrieval. Prepare and parse documents before selecting a dataset: only datasets with available chunks can provide evidence for answers. If a selected dataset is unavailable or has been deleted, select another accessible dataset and save.
 
-The opening greeting is the initial content shown when a user enters the Chat. Use it to briefly introduce the Chat's purpose, capability scope, usage, or example questions and help users begin a conversation.
+## Advanced Settings
 
-An opening greeting can explain:
+Expand **Advanced settings** below **Datasets**. It contains shared options followed by separate **Naive** and **Agentic** groups. Expand the group for the mode you want to configure.
 
-- The types of questions the Chat can answer.
-- The knowledge or business content on which its answers are based.
-- How users should phrase their questions.
-- Recommended examples or frequently asked questions.
+The groups configure how each mode works. To choose the mode for a question, use the selector beside the message box; expanding a group in the settings panel does not switch the conversation's mode.
 
-The opening greeting primarily provides an introduction and guidance; it does not control subsequent answer behavior.
+![Chat advanced settings with shared options and Naive and Agentic groups](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_advanced_settings_groups.jpg)
 
-## System Prompt
+### Shared Options
 
-The system prompt defines the Chat's role, tasks, and answer rules, and affects model behavior throughout the conversation.
+| Setting | Purpose and operation |
+| --- | --- |
+| Show citations | Display references to source content in answers so users can inspect the supporting evidence. Turn it off if citation display is not needed. |
+| Text to speech | Enable spoken playback of answers. Configure an available TTS model in **User settings > Model providers** before using this option. This field is a switch; it is not the model selector. |
+| Web search provider | Select the search service used when a user enables web search for a question. Complete the provider-specific API key field when required. See [Configure Web Search](#configure-web-search). |
+| Metadata | When available for the selected datasets, set metadata filters to narrow the documents searched. Check the selected datasets and their metadata fields before adding rules. |
 
-Use it to specify the role, answer scope, language and tone, dataset usage, answer format, and how the Chat should handle missing information. For knowledge-base Q&A, explicitly instruct the model to prioritize dataset content and avoid filling in gaps or guessing when reliable evidence is unavailable.
+### Configure Web Search
 
-You can also require the Chat to:
+1. Open **Chat setting > Advanced settings**.
+2. In **Web search provider**, select the provider you want to use.
+3. Complete the API key field displayed for that provider. Fields marked as required must be filled in. Use the help link below the field if you need to obtain a key; providers that do not require a key can be used without one.
+4. Click **Save**.
+5. Return to the message box. Enable the globe-shaped web search control before sending a question that needs public web information. Turn it off when you want to ask without web search.
 
-- Answer in English, Chinese, or another specified language.
-- Keep answers concise and professional, or use a specified format.
-- State clearly when an answer cannot be confirmed from the available information.
-- Decline questions outside the scope of the current Chat.
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/retrieval_augmentation_options_1.jpg" alt="Select a web search provider, enter its required API key, and save the Chat settings" width="520" />
 
-Clearer prompts produce more stable behavior. Refine the prompt continuously based on testing, and avoid conflicting settings or overly complex rules.
+The screenshot uses Querit as an example. Select your own provider and complete the fields displayed for it.
 
-## Retrieval Configuration
+The web search control is shown only when a provider is configured and its required key is present. If the control is missing, reopen **Advanced settings**, check the provider and its required fields, and save again. A visible control means the configuration is present; a failed search can still require checking the key, provider quota, or network access.
 
-Retrieval configuration controls how Chat recalls, filters, and ranks chunks from dataset. Tune these settings to balance retrieval scope, relevance, and response efficiency.
+Web search supplements the datasets selected for the Chat. Select a provider, complete its required fields, and save the configuration to make the web search control available. For providers that require an API key, the key must be nonblank. Users can then enable web search when asking a question.
 
-- **Similarity threshold**: The minimum similarity score for retrieved content. A higher threshold is stricter and usually returns more relevant content, but may miss useful information. A lower threshold broadens recall but may introduce less relevant content.
-- **Vector similarity weight**: Controls the relative weight of vector semantic similarity and full-text matching in hybrid search. A higher vector weight favors semantic similarity; a higher full-text weight favors keyword and text matching. Tune it according to the dataset content and question style.
-- **Top N**: The number of candidate chunks returned by each retrieval. A larger value provides more context but increases context length, response time, and cost. Tune it according to document scale and retrieval results.
-- **Rerank model**: Reranks retrieval results, calculates the relevance between candidate chunks and the question, and moves more relevant content forward for answer generation. Configure an available rerank model before using this option.
-- **Metadata**: Uses document or chunk metadata to limit the retrieval scope, such as by document type, date, or source.
+## Naive Settings
 
-## Empty Response
+Expand **Advanced settings > Naive**. These fields configure the standard retrieval-and-answer flow. They do not replace the separate **Agentic template**.
 
-An empty response is preset content returned when the system cannot obtain enough information from a dataset, for example:
+### Empty Response
 
-> No relevant content was found in the dataset. Add more information and try again.
+Enter a fallback message for questions where retrieval finds no usable dataset content, for example:
 
-When retrieval returns no usable dataset content, Chat returns the preset response instead of continuing to generate an answer. This is useful when answers must be strictly grounded in a dataset and helps reduce unreliable output.
+> No relevant content was found in the dataset. Try a different question or add the missing information.
 
-If no empty response is configured, the model may continue answering from its own knowledge when the dataset contains no relevant content.
+Use this field when answers must be grounded in your datasets. Leaving it blank allows the model to continue generating an answer when retrieval finds no usable content. The fallback is based on retrieval results, not a guarantee that every generated answer is complete.
 
-Choose a configuration according to the scenario:
+### Keyword Analysis
 
-- **Strictly use the dataset**: Configure an empty response for internal policies, customer service, compliance, product documentation, and other scenarios that depend heavily on dataset content.
-- **Allow the model to answer freely**: Leave it blank if answering from the model's own knowledge is acceptable.
-- **Guide the user's next action**: Include a clear instruction, such as adding information, trying again, or contacting an administrator.
+Enable **Keyword analysis** to extract keywords from the question to assist retrieval. This can help with product names, technical terms, and reference numbers. Compare the results with the option enabled and disabled using questions typical of your users.
 
-An empty response is triggered only when retrieval finds no usable content. If any usable result exists, the system normally continues model generation; it does not decide based on whether the final answer is complete.
+### System Prompt
 
-The Thinking mode also affects this process. **Agentic** investigates the data with its own retrieval tools before answering, so it performs more retrieval and reasoning than **Naive** before returning an empty response. An empty response is returned only when the system ultimately determines that it cannot answer.
+Use **System prompt** to define the Naive mode's role, answer scope, language, format, and behavior when evidence is missing. For dataset-based Q&A, retain the `{knowledge}` placeholder so retrieved content can be inserted into the prompt.
+
+For example, instruct the model to prioritize the supplied dataset content, cite evidence, and state when the available information does not answer the question. Avoid conflicting instructions. This field configures Naive mode; configure Agentic behavior under **Advanced settings > Agentic**.
+
+### Retrieval Parameters
+
+The following parameters appear after **System prompt** in the Naive group.
+
+| Setting | How to use it |
+| --- | --- |
+| Similarity threshold | Set the minimum score for accepting retrieved content. Increase it to filter more strictly; decrease it if relevant content is being missed. |
+| Keyword similarity weight | Set the full-text weight in hybrid retrieval. The vector weight is `1 - keyword weight`. For example, `0.70` gives full-text a weight of `0.70` and vector retrieval `0.30`. Increase it for exact terms; decrease it to give semantic matching more weight. |
+| Rerank candidates | Set the candidate pool used for ranking or reranking. The default is `64`, within a range of `64–256`. This pool is separate from the final number of chunks used for the answer. |
+| Top N | Set the maximum number of retrieved chunks used for answer generation. More chunks provide more context but can increase response time and token usage. |
+| Rerank model | Select an available rerank model to reorder candidate chunks by relevance to the question. Configure the model provider before selecting it here. |
+
+### Cross-Language Search
+
+In **Cross-language search**, select the languages relevant to your documents. Use this when users ask questions in a different language from the dataset content, then test whether it improves retrieval for those questions.
+
+### Multi-Turn Optimization
+
+Enable **Multi-turn optimization** to use conversation history when refining the current retrieval query. This helps with follow-up questions that omit a name or refer to an earlier topic. Start a new conversation when changing to an unrelated topic.
+
+### Variables
+
+Use **Variable** to manage prompt variables. Keep the variable keys consistent with the placeholders used in **System prompt**, and set whether a variable is optional according to the inputs your application supplies.
+
+## Agentic Settings
+
+Expand **Advanced settings > Agentic** to configure the retrieval agent used by Agentic mode.
+
+| Setting | How to use it |
+| --- | --- |
+| Decision model | Select an available decision model for Agentic processing. Configure the model under **User settings > Model providers** before selecting it here. |
+| Agentic template | Edit the instructions used by the Agentic retrieval agent for this Chat. Begin with the supplied template, then adjust its role, evidence requirements, and answer rules for your scenario. |
+| Reset to default | Restore the supplied Agentic template in the editor. Click **Save** to apply the restored template to the Chat. |
+
+Agentic mode investigates the corpus with retrieval tools and can combine evidence across documents. It is suited to comparisons and questions that require several retrieval steps, and can take longer than Naive mode. Configure its instructions here rather than assuming that the Naive **System prompt** controls both modes.
 
 ## Select a Thinking Mode
 
-Thinking mode determines how Chat investigates available data before answering.
+The mode selector is beside the message box. Before sending a question, open it and choose:
 
-Before asking a question, select **Naive** or **Agentic** from the Thinking menu near the message box.
-
-Retrieval means searching for evidence before answering. If a dataset is associated with the Chat, the system retrieves relevant chunks. If web search is enabled, or the current version provides PageIndex or Graph capabilities, those sources can also be used as supplemental evidence. The final answer should be based on the retrieved content.
-
-- **Naive**: Performs retrieval without complex analysis. Use it for straightforward factual questions when identifiers, terms, or locations are clearly present in a document. It generally uses one query and responds fastest. It can be used together with empty responses and citations.
-- **Agentic**: Hands the turn to a retrieval agent that searches the corpus itself — locating passages, reading documents in depth, and combining evidence across several of them — before answering. Use it for cross-document questions, comparisons, and multi-step research. It takes longer and invokes the model more often.
-
-If you are unsure which mode to choose, use **Naive** for straightforward questions or when speed is critical, and **Agentic** when the answer is incomplete or requires cross-document comparison.
+- **Naive** for straightforward factual questions and a standard retrieval-and-answer flow.
+- **Agentic** for questions requiring investigation, comparisons, or evidence across several documents.
 
 ![Select a Thinking mode](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_thinking_mode.jpg)
 
-## Retrieval Augmentation Options
-
-Retrieval augmentation options further optimize queries or expand information retrieval beyond basic dataset retrieval. Enable them according to the actual question-answering scenario; you do not need to enable every option.
-
-- **Keyword analysis**: Analyzes the user's question and uses the extracted keywords to assist retrieval. It is suitable for questions with distinctive keywords, such as product names, technical terms, and reference numbers.
-- **Multi-turn conversation optimization**: Uses the conversation history to optimize the current retrieval query, helping the system understand context, references, and omitted information in a continuous conversation. It is suitable for multi-turn conversations about the same topic.
-- **Cross-language search**: Improves retrieval across languages. When the question language differs from the language of the dataset documents, this option can improve the recall of cross-language content.
-
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/retrieval_augmentation_options_1.jpg" alt="Retrieval augmentation options" width="700" />
-
-![Additional retrieval augmentation settings](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/retrieval_augmentation_options_2.jpg)
-
-## Answer and Display Settings
-
-Answer and display settings control how generated content is presented and output. They generally do not change the dataset retrieval scope, but affect how citations, metadata, and voice content are presented to users.
-
-- **Show citations**: When enabled, Chat displays the dataset content cited in the answer and its source, allowing users to inspect the evidence and trace it to the original document. When disabled, citation information is not shown.
-- **Show chunk metadata**: When enabled, citations display metadata for the corresponding chunk, such as the source, author, and date fields configured for the document. This supplements citation context and helps users understand the source and attributes of the cited content.
-- **Text-to-speech**: Select the model used to convert text answers to speech. Once configured, Chat can output generated text as speech. Leave it disabled if voice output is not needed. Before using this feature, configure an available text-to-speech (TTS) model.
+Selecting a mode chooses the flow for the question. Configure that flow in the corresponding **Naive** or **Agentic** settings group, save the Chat, and test both modes with representative questions. See [Using Chat conversations](./using_chat_sessions.md) for the message-box controls.

@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/tokenizer"
 )
 
 // TestRun_NilModel: Run must reject a nil model up front.
@@ -220,6 +221,52 @@ func TestRunDispatchesModelSelectedRetrievalTools(t *testing.T) {
 					}
 				})
 			}
+		}
+	}
+}
+
+// TestRunRecordsTokenUsageByPhase pins the accounting contract: every model call
+// the ReAct loop makes lands in the run sink tagged with the exploration phase,
+// with the provider-reported split. Without this the turn's cost exists nowhere
+// -- chat completions returns no usage, so the sink is the only record.
+func TestRunRecordsTokenUsageByPhase(t *testing.T) {
+	setupTestConfig(t)
+	runtime.SetRetrievalService(newCaptureService())
+	t.Cleanup(func() { runtime.SetRetrievalService(nil) })
+
+	driver := &retrievalToolDriver{respond: func([]models.Message, *models.ChatConfig) *models.ChatResponse {
+		answer := "Answer based on the available evidence."
+		return &models.ChatResponse{
+			Answer: &answer,
+			Usage:  &models.TokenUsage{PromptTokens: 900, CompletionTokens: 100, TotalTokens: 1000},
+		}
+	}}
+	name := driver.Name()
+	ctx := tokenizer.WithRunUsage(t.Context())
+	answer, err := Run(ctx, Input{
+		Model:      models.NewEinoChatModel(models.NewChatModel(driver, &name, &models.APIConfig{}), nil),
+		TemplateID: "smart-reasoning", TenantID: "tenant", Tools: []tool.BaseTool{NewThinkTool()},
+		Messages:      []*schema.Message{schema.UserMessage("Research a topic.")},
+		MaxIterations: 2, ToolCallCounts: map[string]int{}, OnDelta: func(string, string) {},
+	})
+	if err != nil || answer == "" {
+		t.Fatalf("Run: answer=%q err=%v", answer, err)
+	}
+
+	sink := tokenizer.GetRunUsage(ctx)
+	if sink == nil {
+		t.Fatal("no run sink installed")
+	}
+	_, _, total, calls := sink.Snapshot()
+	if calls == 0 || total != 1000*calls {
+		t.Fatalf("aggregate calls=%d total=%d, want %d calls of 1000 tokens", calls, total, calls)
+	}
+	for _, call := range sink.CallSnapshot() {
+		if call.Phase != "explore" {
+			t.Fatalf("call %d phase = %q, want explore", call.Seq, call.Phase)
+		}
+		if call.PromptTokens != 900 || call.CompletionTokens != 100 || call.TotalTokens != 1000 {
+			t.Fatalf("call %d split = %d/%d/%d", call.Seq, call.PromptTokens, call.CompletionTokens, call.TotalTokens)
 		}
 	}
 }

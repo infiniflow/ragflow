@@ -21,6 +21,60 @@ import (
 	"testing"
 )
 
+// joinURL keeps a single API version segment when the base URL the user pasted
+// already carries the one the provider's url_suffix adds. MiniMax is the
+// motivating case: suffix "v1/text/chatcompletion_v2" over a base URL that
+// OpenAI-compatible habits make people fill in as "https://api.minimaxi.com/v1"
+// would otherwise request /v1/v1/text/chatcompletion_v2.
+func TestJoinURL(t *testing.T) {
+	cases := []struct {
+		name    string
+		base    string
+		suffix  string
+		want    string
+		comment string
+	}{
+		{"versionless base", "https://api.minimaxi.com", "v1/text/chatcompletion_v2", "https://api.minimaxi.com/v1/text/chatcompletion_v2", "conf default: base has no version"},
+		{"base carries v1", "https://api.minimaxi.com/v1", "v1/text/chatcompletion_v2", "https://api.minimaxi.com/v1/text/chatcompletion_v2", "the bug: base duplicated the suffix's version"},
+		{"trailing slashes", "https://api.minimaxi.com/v1/", "v1/text/chatcompletion_v2", "https://api.minimaxi.com/v1/text/chatcompletion_v2", ""},
+		{"leading slash on suffix", "https://api.minimaxi.com/v1", "/v1/text/chatcompletion_v2", "https://api.minimaxi.com/v1/text/chatcompletion_v2", ""},
+		{"whitespace", " https://api.minimaxi.com/v1/ ", " v1/text/chatcompletion_v2 ", "https://api.minimaxi.com/v1/text/chatcompletion_v2", ""},
+		{"different versions kept", "https://host/v1", "v2/chat", "https://host/v1/v2/chat", "only an identical version segment is dropped"},
+		{"openai style untouched", "https://api.openai.com/v1", "chat/completions", "https://api.openai.com/v1/chat/completions", "suffix without a version must not lose the base's /v1"},
+		{"non version segment kept", "https://host/api", "api/x", "https://host/api/api/x", "only version segments are deduplicated"},
+		{"version-like host kept", "http://v1:8080", "v1/chat", "http://v1:8080/v1/chat", "host name is not a path segment"},
+		{"empty base", "", "v1/models", "v1/models", ""},
+		{"empty suffix", "https://api.minimaxi.com/v1", "", "https://api.minimaxi.com/v1", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := joinURL(tc.base, tc.suffix); got != tc.want {
+				t.Errorf("joinURL(%q, %q)=%q, want %q %s", tc.base, tc.suffix, got, tc.want, tc.comment)
+			}
+		})
+	}
+}
+
+func TestBaseModelEndpointURLUsesConfiguredBase(t *testing.T) {
+	base := BaseModel{BaseURL: map[string]string{"default": "https://api.minimaxi.com"}}
+	defaultURL, err := base.EndpointURL(nil, "v1/text/chatcompletion_v2")
+	if err != nil {
+		t.Fatalf("EndpointURL: %v", err)
+	}
+	if defaultURL != "https://api.minimaxi.com/v1/text/chatcompletion_v2" {
+		t.Errorf("EndpointURL(nil)=%q, want conf base joined with suffix", defaultURL)
+	}
+
+	apiKey := "key"
+	userURL, err := base.EndpointURL(&APIConfig{BaseURL: ptr("https://api.minimax.io/v1"), ApiKey: &apiKey}, "v1/text/chatcompletion_v2")
+	if err != nil {
+		t.Fatalf("EndpointURL: %v", err)
+	}
+	if userURL != "https://api.minimax.io/v1/text/chatcompletion_v2" {
+		t.Errorf("EndpointURL(user base)=%q, want the user base without a duplicated version", userURL)
+	}
+}
+
 // ParseListModel feeds the provider-model list endpoint whose merge treats
 // remote entries as authoritative: every returned entry must carry non-empty
 // model types. Catalog hits are normalized; catalog misses fall back to

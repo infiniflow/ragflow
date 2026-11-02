@@ -1,6 +1,7 @@
 package chunker
 
 import (
+	"ragflow/internal/ingestion/component/schema"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func TestTokenChunker_ChildrenDelimiterDroppedJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 3 {
 		t.Fatalf("chunk count: want 3 got %d (%v)", len(chunks), chunkTexts(chunks))
 	}
@@ -64,7 +65,7 @@ func TestTokenChunker_ChildrenDelimiterBacktickStripped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	// The children delimiter "###" is dropped from each child.
 	want := []string{"sec one", "sec two", "sec three"}
 	if len(chunks) != len(want) {
@@ -92,7 +93,7 @@ func TestTokenChunker_ChildrenDelimiterBacktickStripped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks2, _ := out2["chunks"].([]map[string]any)
+	chunks2, _ := schema.ChunkCarrierToMaps(out2["chunks"])
 	// The inner "###" matches and is DROPPED, leaving the surrounding
 	// backticks as literal text.
 	backtickWrapped := []string{"a `", "` b"}
@@ -123,7 +124,7 @@ func TestTokenChunker_ChildrenDelimiterDroppedText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	// The children delimiter ". " is retained on each child.
 	want := []string{"alpha one. ", "alpha two. ", "alpha three."}
 	if len(chunks) != len(want) {

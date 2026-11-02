@@ -37,6 +37,12 @@ func regionOverlapsBox(region pdf.DLARegion, box pdf.TextBox, scale float64) boo
 // Each table region is matched if at least one box overlaps it (>40% of box
 // area) or if there are no boxes at all (image-only PDF), matching Python's
 // _table_transformer_job which processes every table DLA region.
+//
+// Figure-layout boxes are skipped: AnnotateBoxLayouts appends one full-extent
+// geometry box per figure/equation region, and a nested/double-detected
+// table+figure pair would otherwise pull the whole figure extent into the
+// table's BoxIdx (and from there into Positions, boxInCrop and R/C
+// annotations, causing HTML cross-region and NoMerge mislabels).
 func MatchTableRegions(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float64) []TableMatch {
 	var matches []TableMatch
 	for _, r := range regions {
@@ -45,6 +51,9 @@ func MatchTableRegions(boxes []pdf.TextBox, regions []pdf.DLARegion, scale float
 		}
 		var matched []int
 		for i, b := range boxes {
+			if b.LayoutType == pdf.LayoutTypeFigure {
+				continue
+			}
 			if regionOverlapsBox(r, b, scale) {
 				matched = append(matched, i)
 			}
@@ -65,7 +74,6 @@ type annRegion struct {
 	x0, y0, x1, y1 float64
 	label          string
 	score          float64
-	visited        bool
 	typeIndex      int
 }
 
@@ -191,24 +199,22 @@ func cleanupLayouts(regs []annRegion, boxes []pdf.TextBox) []annRegion {
 	return regs
 }
 
-// nmsDLARegions applies per-class non-maximum suppression to raw DLA regions,
-// mirroring Python's layout model postprocess (layout_recognizer.py:246,
-// operators.py:667 nms with iou_thresh). For each label, detections are sorted
-// by confidence descending; the top one is kept and any other same-label
-// detection whose IoU (using the +1 overlap convention from operators.py:685)
-// exceeds iouThresh is suppressed. This runs on the raw, pre-scale detections
-// just as Python's postprocess does, before cleanup/annotation.
-//
-// It is idempotent with a server-side NMS: applying it again to already-suppressed
-// boxes yields the same set, so it safely converges Go to Python regardless of
-// where suppression happens upstream.
+// nmsDLARegions suppresses overlapping raw DLA regions within each label.
+// Figure and table captions share a group so competing labels for the same
+// region are resolved by confidence before annotation's type priority applies.
+// The highest-confidence detection wins when IoU exceeds iouThresh, using
+// the +1 overlap convention from Python's operators.py:685-688.
 func nmsDLARegions(regions []pdf.DLARegion, iouThresh float64) []pdf.DLARegion {
 	if len(regions) == 0 {
 		return regions
 	}
 	byLabel := map[string][]int{}
 	for i, r := range regions {
-		byLabel[r.Label] = append(byLabel[r.Label], i)
+		label := r.Label
+		if label == pdf.DLALabelTableCaption {
+			label = pdf.DLALabelFigureCaption
+		}
+		byLabel[label] = append(byLabel[label], i)
 	}
 	suppressed := make([]bool, len(regions))
 	for _, idxs := range byLabel {
@@ -280,16 +286,16 @@ func nmsIoU(a, b pdf.DLARegion) float64 {
 // AnnotateBoxLayouts assigns LayoutType and LayoutNo to boxes based on DLA
 // regions.  Returns the filtered slice (Python pops CID-garbled boxes and
 // garbage-layout boxes at wrong positions - Go mirrors with compact).
-// Also creates synthetic figure boxes for unmatched figure/equation regions.
+// Also creates a complete geometry box for every figure/equation region.
 //
 // Before annotation, regions are de-duplicated (layouts_cleanup) and sorted
-// top-to-bottom (sort_Y_firstly) to match Python, and unmatched figure and
-// equation regions receive SEPARATE synthetic namespaces (figure-N /
+// top-to-bottom (sort_Y_firstly), and figure and equation regions receive
+// separate geometry namespaces (figure-N /
 // equation-N) so they never collide.
-// FilteredDLARegions returns the DLA regions after per-class NMS, the
+// FilteredDLARegions returns the DLA regions after NMS, the
 // confidence filter, Y-sort, and cleanup — i.e. the exact set fed to
 // annotation. It mirrors Python's page_layout (layout_recognizer.py:84-100):
-//   - nmsDLARegions(0.45)                         == layout model postprocess (operators.py:667)
+//   - nmsDLARegions(0.45), with figure/table captions competing by confidence
 //   - keep if score >= 0.4 OR type not garbage    == layout_recognizer.py:97
 //   - sortYFirstly                                == layout_recognizer.py:99 (sort_Y_firstly)
 //   - cleanupLayouts                              == layout_recognizer.py:100 (layouts_cleanup)
@@ -413,7 +419,6 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 					dropped[i] = true
 					continue
 				}
-				cands[bestJ].visited = true
 				// Python: equation mapped to "figure" for layout_type
 				if ty == pdf.LayoutTypeEquation {
 					boxes[i].LayoutType = pdf.LayoutTypeFigure
@@ -446,28 +451,21 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 	}
 	boxes = compacted
 
-	// Synthetic figure boxes for unmatched figure/equation regions (Python:
-	// layout_recognizer.py:145-155).  Python numbers each unmatched region with
-	// its index WITHIN the per-type list that also includes already-visited
-	// regions (enumerate([lt for lt in lts if lt["type"] == ty])), so we reuse
-	// the per-type typeIndex computed above rather than a separate
-	// unvisited-only counter. Python keeps figure-N / equation-N in SEPARATE
-	// namespaces, so the typeIndex is keyed by the original type label.
+	// Keep one geometry box per figure/equation, independently of its text.
+	// ConsolidateFigures combines it with matching labels after text cleanup.
 	for j := range cands {
-		if cands[j].visited {
-			continue
-		}
 		if cands[j].label != pdf.LayoutTypeFigure && cands[j].label != pdf.LayoutTypeEquation {
 			continue
 		}
 		boxes = append(boxes, pdf.TextBox{
-			X0:         cands[j].x0,
-			X1:         cands[j].x1,
-			Top:        cands[j].y0,
-			Bottom:     cands[j].y1,
-			Text:       "",
-			LayoutType: pdf.LayoutTypeFigure,
-			LayoutNo:   fmt.Sprintf("%s-%d", cands[j].label, cands[j].typeIndex),
+			X0:           cands[j].x0,
+			X1:           cands[j].x1,
+			Top:          cands[j].y0,
+			Bottom:       cands[j].y1,
+			Text:         "",
+			LayoutType:   pdf.LayoutTypeFigure,
+			LayoutNo:     fmt.Sprintf("%s-%d", cands[j].label, cands[j].typeIndex),
+			FigureBounds: &pdf.Position{Left: cands[j].x0, Top: cands[j].y0, Right: cands[j].x1, Bottom: cands[j].y1},
 		})
 	}
 

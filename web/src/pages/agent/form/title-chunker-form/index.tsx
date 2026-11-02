@@ -66,7 +66,8 @@ export const FormSchema = z.object({
   root_chunk_as_heading: z.boolean().optional(),
   hierarchyRules: rulesSchema,
   groupRules: rulesSchema,
-  chunk_token_cap: z.coerce.number().int().min(128).max(8000).optional(),
+  hierarchyChunkTokenCap: z.coerce.number().int().min(128).max(8000).optional(),
+  groupChunkTokenCap: z.coerce.number().int().min(128).max(8000).optional(),
 });
 
 export enum TitleChunkerRulesField {
@@ -75,8 +76,15 @@ export enum TitleChunkerRulesField {
 }
 
 export type TitleChunkerFormSchemaType = z.infer<typeof FormSchema> & {
-  rules: z.infer<typeof rulesSchema>;
-  hierarchy: string;
+  // Pre-split keys carried by stored configs; the transforms migrate them
+  // into the split fields above, so they are absent from fresh form values.
+  rules?: z.infer<typeof rulesSchema>;
+  hierarchy?: string;
+  // Backend-facing cap key shared by both methods. The form edits the
+  // per-method split keys; transformTitleChunkerParams resolves the active
+  // method's value back into this one and falls back to it for canvas
+  // snapshots stored before the split existed.
+  chunk_token_cap?: number;
 };
 
 type LevelItemProps = {
@@ -286,7 +294,11 @@ const TitleChunkerForm = ({
         return;
       }
       onValuesChange?.(
-        omit(values, ['include_heading_content', 'chunk_token_cap']),
+        omit(values, [
+          'include_heading_content',
+          'hierarchyChunkTokenCap',
+          'groupChunkTokenCap',
+        ]),
       );
     },
     [pinMethodGroup, onValuesChange],
@@ -345,8 +357,15 @@ const TitleChunkerForm = ({
           </div>
         </div>
         {!pinMethodGroup && (
+          // Each method edits its own cap field; key={method} remounts the
+          // slider so it displays the active method's value.
           <SliderInputFormField
-            name="chunk_token_cap"
+            key={method}
+            name={
+              method === TitleChunkerMethod.Group
+                ? 'groupChunkTokenCap'
+                : 'hierarchyChunkTokenCap'
+            }
             max={8000}
             min={128}
             label={t('flow.chunkTokenCap', 'Chunk token cap')}

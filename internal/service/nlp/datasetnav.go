@@ -97,6 +97,26 @@ type NavService struct {
 	llm    nav.NavMergeLLM  // optional; nil disables LLM merge/summary
 }
 
+// EncodeQueryVector embeds one SEARCH QUERY for the tenant and returns it in the
+// engine's float64 form.
+//
+// It is the query-side seam the agentic claim recall uses to run a KNN leg over
+// claim rows (which store their own q_<dim>_vec). The vector is produced by the
+// tenant's DEFAULT embedding model, so on a dataset whose embedding model
+// differs in dimension the KNN leg addresses a column the rows do not carry and
+// recall falls back to its lexical leg — the documented degradation, and the
+// reason an error here returns nil instead of failing the caller.
+func (s *NavService) EncodeQueryVector(ctx context.Context, tenantID, text string) []float64 {
+	if s == nil || s.embed == nil || tenantID == "" || strings.TrimSpace(text) == "" {
+		return nil
+	}
+	vectors, err := encodeNavQuery(ctx, s.embed, tenantID, []string{text})
+	if err != nil || len(vectors) == 0 {
+		return nil
+	}
+	return f32ToF64Slice(vectors[0])
+}
+
 // NewNavService builds the ES-backed NavService. embed may be nil when the
 // caller guarantees every UpsertDocInput carries a precomputed Embedd.
 func NewNavService(embed NavEmbedder) *NavService {
@@ -856,7 +876,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			"content_sm_ltks":     contentSmLtks,
 			"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
 		}
-		_, err = de.InsertChunks(ctx, []map[string]interface{}{row}, idx, in.KbID)
+		_, err = de.InsertChunks(ctx, []map[string]interface{}{row}, idx, in.KbID, "")
 		return err
 	}
 
@@ -910,7 +930,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		"content_sm_ltks":     clusterContentSmLtks,
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
 	}
-	_, err = de.InsertChunks(ctx, []map[string]interface{}{clusterRow}, idx, in.KbID)
+	_, err = de.InsertChunks(ctx, []map[string]interface{}{clusterRow}, idx, in.KbID, "")
 	if err != nil {
 		return err
 	}
@@ -935,7 +955,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		"content_sm_ltks":     contentSmLtks,
 		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
 	}
-	_, err = de.InsertChunks(ctx, []map[string]interface{}{docRow}, idx, in.KbID)
+	_, err = de.InsertChunks(ctx, []map[string]interface{}{docRow}, idx, in.KbID, "")
 	return err
 }
 
@@ -1308,7 +1328,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		if vec := pickAnyVector(children, i2boolForTarget(spl.name, splitA)); len(vec) > 0 {
 			row["q_"+fmt.Sprintf("%d", len(vec))+"_vec"] = f32ToF64Slice(vec)
 		}
-		if _, err := de.InsertChunks(ctx, []map[string]interface{}{row}, s.navIndexName(tenantID), kbID); err != nil {
+		if _, err := de.InsertChunks(ctx, []map[string]interface{}{row}, s.navIndexName(tenantID), kbID, ""); err != nil {
 			return err
 		}
 	}

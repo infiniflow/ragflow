@@ -331,11 +331,11 @@ func TestMultiBranch_CompileSucceeds(t *testing.T) {
 				Upstream:   []string{"begin"},
 			},
 			"a": {
-				Obj:      CanvasComponentObj{ComponentName: "Message"},
+				Obj:      CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "a"}},
 				Upstream: []string{"switch_0"},
 			},
 			"b": {
-				Obj:      CanvasComponentObj{ComponentName: "Message"},
+				Obj:      CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "b"}},
 				Upstream: []string{"switch_0"},
 			},
 		},

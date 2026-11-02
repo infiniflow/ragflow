@@ -89,8 +89,7 @@ func (r *ReplicateModel) endpoint(apiConfig *APIConfig, suffix string) (string, 
 	if err != nil {
 		return "", err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	return fmt.Sprintf("%s/%s", baseURL, suffix), nil
+	return joinURL(baseURL, suffix), nil
 }
 
 func replicateUsesVersionEndpoint(modelName string) bool {
@@ -860,5 +859,9 @@ func (r *ReplicateModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([
 }
 
 func (r *ReplicateModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", r.Name())
+}
+
+func (r *ReplicateModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }

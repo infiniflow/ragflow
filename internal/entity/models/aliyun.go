@@ -22,11 +22,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/google/uuid"
 
 	"ragflow/internal/common"
 )
@@ -64,11 +68,10 @@ func (a *AliyunModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	url, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -111,11 +114,10 @@ func (a *AliyunModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	url, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
@@ -490,7 +492,7 @@ func (a *AliyunModel) Rerank(ctx context.Context, modelName *string, request Rer
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Rerank)
+	url := joinURL(baseURL, a.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 {
@@ -554,13 +556,349 @@ func (a *AliyunModel) Rerank(ctx context.Context, modelName *string, request Rer
 	return rerankResponse, nil
 }
 
-// TranscribeAudio transcribe audio
+// aliyunASRRequest is the DashScope multimodal-generation request for Qwen ASR
+// models. It mirrors dashscope.MultiModalConversation: the audio is a data URL
+// on the shared multimodal-generation endpoint.
+type aliyunASRRequest struct {
+	Model      string               `json:"model"`
+	Input      aliyunASRInput       `json:"input"`
+	Parameters *aliyunASRParameters `json:"parameters,omitempty"`
+}
+
+type aliyunASRInput struct {
+	Messages []aliyunASRMessage `json:"messages"`
+}
+
+type aliyunASRMessage struct {
+	Role    string                 `json:"role"`
+	Content []aliyunASRContentPart `json:"content"`
+}
+
+type aliyunASRContentPart struct {
+	Audio string `json:"audio,omitempty"`
+	Text  string `json:"text,omitempty"`
+}
+
+type aliyunASRParameters struct {
+	ResultFormat string                 `json:"result_format,omitempty"`
+	ASROptions   map[string]interface{} `json:"asr_options,omitempty"`
+}
+
+// aliyunASRResponse is the non-streaming DashScope multimodal-generation
+// response. The transcription lives in
+// output.choices[0].message.content[*].text.
+type aliyunASRResponse struct {
+	Output struct {
+		Choices []struct {
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
+				Content []struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	} `json:"output"`
+	Code      string `json:"code"`
+	Message   string `json:"message"`
+	RequestID string `json:"request_id"`
+}
+
+// TranscribeAudio transcribes an audio file with a DashScope ASR model
+// (qwen-asr-flash / qwen-audio-asr). It calls the same synchronized
+// multimodal-generation endpoint used for TTS, but the audio field must be a
+// URL DashScope can read: a public http(s) URL or an oss:// object in
+// DashScope's temporary storage. Base64 data URLs are rejected with
+// "InvalidParameter: url error", so a local file is uploaded first.
 func (a *AliyunModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	if file == nil || strings.TrimSpace(*file) == "" {
+		return nil, fmt.Errorf("audio file is required")
+	}
+	if strings.TrimSpace(a.baseModel.URLSuffix.ASR) == "" {
+		return nil, fmt.Errorf("aliyun ASR URL suffix is required")
+	}
+
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
+	audio, err := os.ReadFile(*file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read audio file: %w", err)
+	}
+	if len(audio) == 0 {
+		return nil, fmt.Errorf("audio file is empty")
+	}
+
+	contextText, options := aliyunASROptions(asrConfig)
+	asrEndpoint, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.ASR)
+	if err != nil {
+		return nil, err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
+	defer cancel()
+
+	audioURL, err := a.uploadAudio(ctx, asrEndpoint, *apiConfig.ApiKey, strings.TrimSpace(*modelName), *file, audio)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBody := aliyunASRRequest{
+		Model: strings.TrimSpace(*modelName),
+		Input: aliyunASRInput{Messages: []aliyunASRMessage{
+			{Role: "system", Content: []aliyunASRContentPart{{Text: contextText}}},
+			{Role: "user", Content: []aliyunASRContentPart{{Audio: audioURL}}},
+		}},
+		Parameters: &aliyunASRParameters{ResultFormat: "message", ASROptions: options},
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", asrEndpoint, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("X-DashScope-SSE", "disable")
+	// DashScope only resolves oss:// objects from its temporary upload space
+	// when this header is present; without it the request fails as a URL error.
+	req.Header.Set("X-DashScope-OssResourceResolve", "enable")
+
+	resp, err := a.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
+		}
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
+	}
+
+	body, err := readModelResponseBody(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var parsed aliyunASRResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse aliyun ASR response: %w, body: %s", err, string(body))
+	}
+	if parsed.Code != "" {
+		return nil, fmt.Errorf("aliyun ASR API error: %s: %s", parsed.Code, parsed.Message)
+	}
+	if len(parsed.Output.Choices) == 0 {
+		return nil, fmt.Errorf("aliyun ASR response has no choices, body: %s", string(body))
+	}
+
+	var text strings.Builder
+	for _, part := range parsed.Output.Choices[0].Message.Content {
+		text.WriteString(part.Text)
+	}
+	return &ASRResponse{Text: text.String()}, nil
 }
 
 func (a *AliyunModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", a.Name())
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+	// The synchronized DashScope ASR endpoint has no incremental-result
+	// stream; forward the finished transcription as a single chunk.
+	resp, err := a.TranscribeAudio(ctx, modelName, file, apiConfig, asrConfig, modelUsage)
+	if err != nil {
+		return err
+	}
+	chunk := resp.Text
+	return sender(&chunk, nil)
+}
+
+// aliyunASROptions splits the caller's ASRConfig into the recognition context
+// (system message text) and the DashScope asr_options. The defaults match the
+// legacy dashscope.MultiModalConversation path; only documented options are
+// forwarded so a stray UI parameter cannot fail the request.
+func aliyunASROptions(asrConfig *ASRConfig) (string, map[string]interface{}) {
+	options := map[string]interface{}{"enable_lid": true, "enable_itn": false}
+	if asrConfig == nil || asrConfig.Params == nil {
+		return "", options
+	}
+	contextText, _ := asrConfig.Params["context"].(string)
+	if raw, ok := asrConfig.Params["asr_options"].(map[string]interface{}); ok {
+		for key, value := range raw {
+			options[key] = value
+		}
+	}
+	for _, key := range []string{"language", "enable_lid", "enable_itn"} {
+		if value, ok := asrConfig.Params[key]; ok {
+			options[key] = value
+		}
+	}
+	return contextText, options
+}
+
+// aliyunUploadsPath is the DashScope endpoint handing out a temporary OSS
+// upload policy. The ASR endpoint cannot read a local file, so the audio is
+// uploaded here first and referenced as oss://<upload_dir>/<file>.
+const aliyunUploadsPath = "/api/v1/uploads"
+
+// aliyunUploadPolicy is the credential set DashScope returns for one upload.
+type aliyunUploadPolicy struct {
+	Policy              string `json:"policy"`
+	Signature           string `json:"signature"`
+	UploadDir           string `json:"upload_dir"`
+	UploadHost          string `json:"upload_host"`
+	OSSAccessKeyID      string `json:"oss_access_key_id"`
+	XOSSObjectACL       string `json:"x_oss_object_acl"`
+	XOSSForbidOverwrite string `json:"x_oss_forbid_overwrite"`
+}
+
+// aliyunUploadPolicyResponse is the getPolicy envelope; DashScope may report
+// failures in Code/Message with an HTTP 200 status.
+type aliyunUploadPolicyResponse struct {
+	RequestID string             `json:"request_id"`
+	Data      aliyunUploadPolicy `json:"data"`
+	Code      string             `json:"code"`
+	Message   string             `json:"message"`
+}
+
+// aliyunAudioExt lower-cases the filename extension for the OSS object key
+// and keeps it URL-safe: a dot followed by alphanumerics only. Anything else
+// ("clip.wav#1" -> ".wav#1", bare ".", no extension) falls back to ".wav".
+func aliyunAudioExt(filename string) string {
+	ext := strings.ToLower(filepath.Ext(filename))
+	if len(ext) > 1 && strings.TrimFunc(ext[1:], func(r rune) bool {
+		return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+	}) == "" {
+		return ext
+	}
+	return ".wav"
+}
+
+// uploadAudio stores audio in DashScope's temporary OSS space and returns the
+// oss:// URL to send as the ASR audio field. The policy endpoint is derived
+// from the ASR endpoint's origin, so the configured region is preserved.
+func (a *AliyunModel) uploadAudio(ctx context.Context, asrEndpoint, apiKey, model, filename string, audio []byte) (string, error) {
+	endpoint, err := url.Parse(asrEndpoint)
+	if err != nil {
+		return "", fmt.Errorf("parse aliyun ASR endpoint: %w", err)
+	}
+	if endpoint.Scheme == "" || endpoint.Host == "" {
+		return "", fmt.Errorf("aliyun ASR endpoint %q is not an absolute URL", asrEndpoint)
+	}
+	policyURL := url.URL{
+		Scheme:   endpoint.Scheme,
+		Host:     endpoint.Host,
+		Path:     aliyunUploadsPath,
+		RawQuery: url.Values{"action": {"getPolicy"}, "model": {model}}.Encode(),
+	}
+	policyReq, err := http.NewRequestWithContext(ctx, http.MethodGet, policyURL.String(), nil)
+	if err != nil {
+		return "", fmt.Errorf("create aliyun upload policy request: %w", err)
+	}
+	policyReq.Header.Set("Authorization", "Bearer "+apiKey)
+	// The getPolicy endpoint documents this header even though the request has
+	// no body.
+	policyReq.Header.Set("Content-Type", "application/json")
+	policyResp, err := a.baseModel.httpClient.Do(policyReq)
+	if err != nil {
+		return "", fmt.Errorf("request aliyun upload policy: %w", err)
+	}
+	defer policyResp.Body.Close()
+	if policyResp.StatusCode != http.StatusOK {
+		body, readErr := readModelErrorBody(policyResp.Body)
+		if readErr != nil {
+			return "", fmt.Errorf("aliyun upload policy failed with status %d; failed to read error response: %w", policyResp.StatusCode, readErr)
+		}
+		return "", &APIStatusError{Status: policyResp.StatusCode, Body: string(body)}
+	}
+	body, err := readModelResponseBody(policyResp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read aliyun upload policy: %w", err)
+	}
+	var policy aliyunUploadPolicyResponse
+	if err := json.Unmarshal(body, &policy); err != nil {
+		return "", fmt.Errorf("decode aliyun upload policy: %w", err)
+	}
+	if policy.Code != "" {
+		return "", &APIStatusError{Status: policyResp.StatusCode, Body: string(body)}
+	}
+	data := policy.Data
+	if data.UploadHost == "" || data.UploadDir == "" || data.OSSAccessKeyID == "" || data.Signature == "" || data.Policy == "" {
+		return "", fmt.Errorf("aliyun upload policy response is incomplete")
+	}
+
+	// The object name lands inside an oss:// URL the provider later resolves,
+	// so it must stay URL-safe. A generated name keeps a normalised extension,
+	// which is what the provider reads for the audio format, and drops
+	// everything else a caller-supplied filename may carry (spaces, '#',
+	// non-ASCII).
+	objectName := uuid.NewString() + aliyunAudioExt(filename)
+	objectKey := strings.Trim(data.UploadDir, "/") + "/" + objectName
+	fields := [][2]string{
+		{"OSSAccessKeyId", data.OSSAccessKeyID},
+		{"policy", data.Policy},
+		{"Signature", data.Signature},
+		{"key", objectKey},
+		{"success_action_status", "200"},
+	}
+	// The policy decides which optional form fields are signed; sending an
+	// empty value for one OSS did not sign makes the upload fail.
+	if data.XOSSObjectACL != "" {
+		fields = append(fields, [2]string{"x-oss-object-acl", data.XOSSObjectACL})
+	}
+	if data.XOSSForbidOverwrite != "" {
+		fields = append(fields, [2]string{"x-oss-forbid-overwrite", data.XOSSForbidOverwrite})
+	}
+
+	var form bytes.Buffer
+	writer := multipart.NewWriter(&form)
+	for _, field := range fields {
+		if err := writer.WriteField(field[0], field[1]); err != nil {
+			return "", fmt.Errorf("write aliyun upload form field %s: %w", field[0], err)
+		}
+	}
+	part, err := writer.CreateFormFile("file", objectName)
+	if err != nil {
+		return "", fmt.Errorf("create aliyun upload file part: %w", err)
+	}
+	if _, err := part.Write(audio); err != nil {
+		return "", fmt.Errorf("write aliyun upload audio: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("finish aliyun upload form: %w", err)
+	}
+
+	uploadHost := data.UploadHost
+	if !strings.Contains(uploadHost, "://") {
+		uploadHost = "https://" + uploadHost
+	}
+	uploadReq, err := http.NewRequestWithContext(ctx, http.MethodPost, uploadHost, &form)
+	if err != nil {
+		return "", fmt.Errorf("create aliyun upload request to %s: %w", uploadHost, err)
+	}
+	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+	uploadResp, err := a.baseModel.httpClient.Do(uploadReq)
+	if err != nil {
+		return "", fmt.Errorf("upload audio to aliyun at %s: %w", uploadHost, err)
+	}
+	defer uploadResp.Body.Close()
+	if uploadResp.StatusCode < 200 || uploadResp.StatusCode >= 300 {
+		body, readErr := readModelErrorBody(uploadResp.Body)
+		if readErr != nil {
+			return "", fmt.Errorf("aliyun audio upload failed with status %d; failed to read error response: %w", uploadResp.StatusCode, readErr)
+		}
+		return "", &APIStatusError{Status: uploadResp.StatusCode, Body: string(body)}
+	}
+	return "oss://" + objectKey, nil
 }
 
 // aliyunTTSDefaultVoice is used when the caller does not specify a voice;
@@ -613,11 +951,10 @@ func (a *AliyunModel) AudioSpeech(ctx context.Context, modelName *string, audioC
 		return nil, fmt.Errorf("aliyun TTS URL suffix is required")
 	}
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	url, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), strings.TrimPrefix(a.baseModel.URLSuffix.TTS, "/"))
 
 	input := aliyunTTSInput{Text: *audioContent, Voice: aliyunTTSDefaultVoice}
 	if ttsConfig != nil {
@@ -763,7 +1100,7 @@ func (a *AliyunModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), a.baseModel.URLSuffix.Models)
+	url := joinURL(baseURL, a.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -824,5 +1161,9 @@ func (a *AliyunModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 }
 
 func (a *AliyunModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", a.Name())
+}
+
+func (a *AliyunModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
 }

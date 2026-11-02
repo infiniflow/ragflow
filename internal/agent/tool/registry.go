@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
+
 	einotool "github.com/cloudwego/eino/components/tool"
 )
 
@@ -42,7 +44,7 @@ var registry = map[string]Factory{
 	"vector_search":              noConfig("vector_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolVectorSearch) }),
 	"bm25_search":                noConfig("bm25_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolBM25Search) }),
 	"wiki_query":                 noConfig("wiki_query", func() einotool.BaseTool { return NewWikiQueryTool() }),
-	"deepl":                      noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
+	"deepl":                      buildDeepLTool,
 	"duckduckgo":                 buildDuckDuckGoTool,
 	"email":                      buildEmailTool,
 	"execute_sql":                buildExeSQLTool,
@@ -54,7 +56,7 @@ var registry = map[string]Factory{
 	"jin10":                      noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
 	"keenable":                   buildKeenableTool,
 	"pubmed":                     buildPubMedTool,
-	"qweather":                   noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
+	"qweather":                   buildQWeatherTool,
 	"querit":                     buildQueritTool,
 	"querit_contents":            buildQueritContentsTool,
 	"querit_search":              buildQueritTool,
@@ -67,12 +69,13 @@ var registry = map[string]Factory{
 	"sofya":                      buildSofyaTool,
 	"tavily":                     buildTavilyTool,
 	"tavily_extract":             buildTavilyExtractTool,
-	"tushare":                    noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
+	"tushare":                    buildTushareTool,
 	"wencai":                     buildWencaiTool,
 	"web_crawler":                noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
 	"wikipedia":                  buildWikipediaTool,
 	"wikipedia_search":           buildWikipediaTool,
 	"yahoo_finance":              buildYahooFinanceTool,
+	"youcom":                     buildYouComTool,
 }
 
 // canvasToolNames maps lower-cased Canvas component names to the canonical
@@ -91,6 +94,7 @@ var canvasToolNames = map[string]string{
 	"tavilyextract":    "tavily_extract",
 	"tavilysearch":     "tavily",
 	"yahoofinance":     "yahoo_finance",
+	"youcomsearch":     "youcom",
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
@@ -114,6 +118,9 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 	}
 	if factory == nil {
 		return nil, fmt.Errorf("agent tool: nil factory for %q", name)
+	}
+	if err := ValidateSearchFilters(params, false); err != nil {
+		return nil, runtime.NewUserFacingError(fmt.Sprintf("agent tool %s: %s", name, err))
 	}
 	return factory(params)
 }
@@ -404,7 +411,7 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		switch key {
 		case "dataset_ids", "kb_ids", "top_n", "rerank_candidates_count", "top_k", "similarity_threshold",
 			"keywords_similarity_weight", "use_kg", "rerank_id", "empty_response",
-			"toc_enhance", "meta_data_filter", "retrieval_from", "memory_ids",
+			"meta_data_filter", "retrieval_from", "memory_ids",
 			"kb_vars", "cross_languages", "function_name", "description", "meta",
 			"inputs", "outputs", "user_id":
 		default:
@@ -452,9 +459,6 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	}
 	if v, ok := boolParam(params, "use_kg"); ok {
 		defaults.UseKG = v
-	}
-	if v, ok := boolParam(params, "toc_enhance"); ok {
-		defaults.TOCEnhance = v
 	}
 	if v, ok := floatParam(params, "similarity_threshold"); ok {
 		defaults.SimilarityThreshold = &v
@@ -749,6 +753,37 @@ func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
 	return newKeenableTool(nil, nil, apiKey, defaults), nil
 }
 
+func buildYouComTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := youComDefaults{}
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "youcom")
+		}
+	}
+	if value, ok := params["freshness"]; ok {
+		freshness, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param freshness", "youcom")
+		}
+		normalized := strings.ToLower(strings.TrimSpace(freshness))
+		if !slices.Contains(youComFreshnessValues, normalized) {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported freshness %v", "youcom", value)
+		}
+		defaults.Freshness = normalized
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "youcom")
+		}
+		defaults.TopN = min(topN, youComMaxResults)
+	}
+	return newYouComTool(nil, apiKey, defaults), nil
+}
+
 func buildSofyaTool(params map[string]any) (einotool.BaseTool, error) {
 	defaults := sofyaDefaults{}
 	apiKey := ""
@@ -832,6 +867,33 @@ func buildSearch1APICrawlTool(params map[string]any) (einotool.BaseTool, error) 
 		}
 	}
 	return newSearch1APICrawlTool(nil, apiKey, defaultURL), nil
+}
+
+// buildDeepLTool and buildQWeatherTool take the node-level api_key without
+// type enforcement: an unusable value is left out, so the tool falls back to
+// DEEPL_API_KEY / QWEATHER_API_KEY and reports the missing credential itself.
+func buildDeepLTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, _ := stringParam(params, "api_key")
+	return NewDeepLToolWith(nil, apiKey), nil
+}
+
+func buildQWeatherTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, _ := stringParam(params, "api_key")
+	return NewQWeatherToolWith(nil, apiKey), nil
+}
+
+func buildTushareTool(params map[string]any) (einotool.BaseTool, error) {
+	var token string
+	if value, exists := params["token"]; exists {
+		var valid bool
+		token, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param token", tushareToolName)
+		}
+	}
+	// An empty token builds fine; InvokableRun reports it as a node
+	// configuration error, so the registry can still construct every tool.
+	return newTushareTool(nil, tushareParams{Token: strings.TrimSpace(token)}), nil
 }
 
 func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {

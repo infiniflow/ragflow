@@ -125,11 +125,27 @@ const maxPageExtent = 14400.0
 // as-is: the "anomalies" are the norm, not noise.
 const maxTrimFraction = 0.10
 
-// maxBins caps the histogram allocation in gapColumnCount/detectColumnCount2D so
-// a malformed (ballooned) page extent cannot trigger an OOM-scale allocation
-// (mirrors pdf-inspector's bin cap). When the extent is huge, the bin is
-// widened so the projection still resolves real gutters.
+// maxBins caps the histogram allocation in gapColumnWidths/gapColumnCount/
+// detectColumnCount2D so a malformed (ballooned) page extent cannot trigger an
+// OOM-scale allocation (mirrors pdf-inspector's bin cap). When the extent is
+// huge, the bin is widened so the projection still resolves real gutters.
 const maxBins = 65536
+
+// columnHistogramBins returns the bin width and bin count for a page extent,
+// widening the bin when width/binPt would exceed maxBins. All three column
+// projections (gapColumnWidths, gapColumnCount, detectColumnCount2D) share this
+// so the allocation bound and the bin geometry cannot drift apart.
+func columnHistogramBins(width, baseBin float64) (float64, int) {
+	effBin := baseBin
+	if width/float64(maxBins) > effBin {
+		effBin = width / float64(maxBins)
+	}
+	nb := int(width/effBin) + 1
+	if nb < 1 {
+		nb = 1
+	}
+	return effBin, nb
+}
 
 // gapMinFrac: a horizontal run of low coverage counts as a column gap only if
 // it is at least this fraction of the page width. Reused by both gapColumnCount
@@ -152,7 +168,10 @@ func detectColumnCount(boxes []pdf.TextBox, indices []int) (int, []float64) {
 	}
 	g := gapColumnCount(lines, gapMinFrac, 0.15, binPt)
 	if g >= 2 {
-		_, width := pageExtent(lines)
+		// Use the same robust text extent as the gap/width projections: a
+		// malformed box must not inflate the denominator and make real columns
+		// look like narrow table cells.
+		_, width := robustPageExtent(textProjectionLines(lines))
 		if width > 0 {
 			widths := gapColumnWidths(lines)
 			maxw := 0.0
@@ -261,16 +280,27 @@ func gapColumnWidths(lines []pdf.TextBox) []float64 {
 	if n == 0 {
 		return nil
 	}
-	minX0, width := pageExtent(lines)
+	// Mirror gapColumnCount's projection: drop figure/equation placeholders and
+	// derive the extent from the robust text body. Using the raw extent here let
+	// one malformed box set the bin geometry, so ordinary lines collapsed into
+	// the first bin and the width gate disagreed with the gap count.
+	lines = textProjectionLines(lines)
+	if len(lines) == 0 {
+		return nil
+	}
+	// Threshold must be relative to the projected text lines, not the pre-filter
+	// count: figure/equation placeholders can otherwise push thr above the
+	// maximum per-column coverage and yield no widths.
+	n = len(lines)
+	minX0, width := robustPageExtent(lines)
 	if width <= 0 {
 		return nil
 	}
-	binPt := 2.0
-	nb := int(width/binPt) + 1
+	effBin, nb := columnHistogramBins(width, binPt)
 	cov := make([]int, nb)
 	for _, b := range lines {
-		i0 := clampInt(int((b.X0-minX0)/binPt), 0, nb-1)
-		i1 := clampInt(int((b.X1-minX0)/binPt), 0, nb-1)
+		i0 := clampInt(int((b.X0-minX0)/effBin), 0, nb-1)
+		i1 := clampInt(int((b.X1-minX0)/effBin), 0, nb-1)
 		for i := i0; i <= i1; i++ {
 			cov[i]++
 		}
@@ -287,7 +317,9 @@ func gapColumnWidths(lines []pdf.TextBox) []float64 {
 		for j < nb && float64(cov[j]) >= thr {
 			j++
 		}
-		widths = append(widths, float64(j-i)*binPt)
+		// Bins were widened by columnHistogramBins; convert bin counts with the
+		// effective width, not the base resolution.
+		widths = append(widths, float64(j-i)*effBin)
 		i = j
 	}
 	return widths
@@ -319,6 +351,10 @@ func gapColumnCount(lines []pdf.TextBox, gapMinFrac, crossTol, binPt float64) in
 	if len(lines) == 0 {
 		return 1
 	}
+	// Threshold must be relative to the projected text lines, not the pre-filter
+	// count: figure/equation placeholders can otherwise push thr above the
+	// maximum per-column coverage and make the two detectors disagree.
+	n = len(lines)
 	// A2: robust page extent discards malformed/outlier lines so a single bad
 	// box cannot balloon the width and collapse detection to one column.
 	minX0, width := robustPageExtent(lines)
@@ -326,17 +362,7 @@ func gapColumnCount(lines []pdf.TextBox, gapMinFrac, crossTol, binPt float64) in
 		return 1
 	}
 	minGap := gapMinFrac * width
-	// Cap the bin count so a ballooned extent cannot allocate an OOM-scale
-	// histogram. When the extent is huge, widen the bin so the projection still
-	// resolves real gutters.
-	effBin := binPt
-	if width/float64(maxBins) > effBin {
-		effBin = width / float64(maxBins)
-	}
-	nb := int(width/effBin) + 1
-	if nb < 1 {
-		nb = 1
-	}
+	effBin, nb := columnHistogramBins(width, binPt)
 	cov := make([]int, nb)
 	for _, b := range lines {
 		i0 := int((b.X0 - minX0) / effBin)
@@ -440,11 +466,7 @@ func detectColumnCount2D(lines []pdf.TextBox) (int, []float64) {
 	// Cap the bin count so a ballooned extent cannot allocate an OOM-scale
 	// histogram. When the extent is huge, widen the bin so the projection still
 	// resolves real gutters.
-	effBin := binPt
-	if width/float64(maxBins) > effBin {
-		effBin = width / float64(maxBins)
-	}
-	nb := int(width/effBin) + 1
+	effBin, nb := columnHistogramBins(width, binPt)
 	proj := make([]int, nb)
 	for _, b := range body {
 		w := utf8.RuneCountInString(b.Text)

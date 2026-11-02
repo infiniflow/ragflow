@@ -296,7 +296,7 @@ func TestQueryBuilder_Question(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			expr, keywords := qb.Question(tt.txt, tt.tbl, tt.minMatch)
+			expr, keywords := qb.Question(tt.txt, tt.tbl, tt.minMatch, "")
 			if tt.expectNil && expr != nil {
 				t.Errorf("Question(%q) expected nil expr, got %v", tt.txt, expr)
 			}
@@ -474,7 +474,7 @@ func TestQueryBuilder_Question_SynonymSingleQuote(t *testing.T) {
 	qb.synonym.dictionary = map[string][]string{
 		"cat": {"cat-o'-nine-tails", "'"},
 	}
-	expr, keywords := qb.Question("black cat sleeping near warm fire", "test", 0.3)
+	expr, keywords := qb.Question("black cat sleeping near warm fire", "test", 0.3, "")
 	if expr == nil {
 		t.Fatal("Question returned nil expr")
 	}
@@ -518,7 +518,7 @@ func TestQueryBuilder_Question_SynonymQuestionMark(t *testing.T) {
 	qb.synonym.dictionary = map[string][]string{
 		"cat": {"what?cat"},
 	}
-	expr, keywords := qb.Question("black cat sleeping near warm fire", "test", 0.3)
+	expr, keywords := qb.Question("black cat sleeping near warm fire", "test", 0.3, "")
 	if expr == nil {
 		t.Fatal("Question returned nil expr")
 	}

@@ -10,6 +10,8 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/parser/media"
+	"ragflow/internal/parser/parser"
 )
 
 func TestParserGlobalVisionModel(t *testing.T) {
@@ -57,7 +59,8 @@ func TestParserGlobalVisionModel(t *testing.T) {
 					filename = "figure.html"
 					binary = []byte(`<p><img src="data:image/png;base64,` + visionTestPNGBase64(t) + `" alt="figure"></p>`)
 				}
-				result, err := component.Invoke(t.Context(), nil, map[string]any{"name": filename, "file_type": fileType, "binary": binary, "tenant_id": "tenant-1"})
+				ctx := media.WithCache(t.Context(), &materializeCache{data: picturePNG(t)})
+				result, err := component.Invoke(ctx, nil, map[string]any{"name": filename, "file_type": fileType, "binary": binary, "tenant_id": "tenant-1"})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -69,7 +72,8 @@ func TestParserGlobalVisionModel(t *testing.T) {
 					t.Fatalf("resolved %v, want [%s]", resolved, tc.want)
 				}
 				if fileType == "image" {
-					items := result["json"].([]map[string]any)
+					jsonDocs := result["json"].([]parser.DocItem)
+					items := parser.ItemsToMaps(jsonDocs)
 					if !strings.Contains(items[0]["text"].(string), "OCR text") {
 						t.Fatalf("OCR text lost: %v", items)
 					}
@@ -124,7 +128,8 @@ func TestParserGlobalVisionDoesNotOverrideASR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := result["json"].([]map[string]any)
+	jsonDocs := result["json"].([]parser.DocItem)
+	items := parser.ItemsToMaps(jsonDocs)
 	if calls != 1 || len(items) != 1 || items[0]["text"] != "transcribed" {
 		t.Fatalf("ASR calls = %d, items = %v", calls, items)
 	}

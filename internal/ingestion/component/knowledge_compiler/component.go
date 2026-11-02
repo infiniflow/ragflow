@@ -6,8 +6,9 @@ package knowledge_compiler
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -46,7 +47,9 @@ var chunkerOutputs = map[string]string{
 // (rag/flow/compiler/compiler.py registers component_name = "Compiler"), so a
 // canvas saved by the Python frontend and Go's built-in ingestion templates
 // both reference the node as "Compiler" and resolve to the same component.
-const componentNameCompiler = "Compiler"
+// The value itself lives in the schema package so the pipeline layer can
+// reference the same identity.
+const componentNameCompiler = schema.ComponentNameCompiler
 
 // KnowledgeCompilerComponent is the runtime.Component surface. Param is set at
 // construction from the DSL; per-call overrides flow through the inputs map.
@@ -230,7 +233,11 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	// conf/infinity_mapping.json) and merge them into the upstream input
 	// chunks. The component stays DB-independent and no longer routes through a
 	// separate writer seam: its output is plain chunks.
-	compiled, err := productsToChunkDocs(out.Products)
+	// Compiled rows share the dataset's chunk table with the parsed chunks and
+	// are retrieved by the same queries, so they tokenize with the dataset
+	// language the Tokenizer component uses.
+	language := globals.GlobalOrInput(ctx, inputs, "lang", "English")
+	compiled, err := productsToChunkDocs(out.Products, language)
 	if err != nil {
 		return nil, err
 	}
@@ -396,7 +403,8 @@ func kindOrVariant(p common.Product) string {
 // schema.ChunkDoc values aligned to conf/infinity_mapping.json. Product.Meta is
 // not persisted: only engine columns are written, because Infinity rejects an
 // insert naming an unknown column.
-func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
+func productsToChunkDocs(products []common.Product, language string) ([]schema.ChunkDoc, error) {
+	tok := tokenizer.New(language)
 	docs := make([]schema.ChunkDoc, 0, len(products))
 	for _, p := range products {
 		doc := schema.ChunkDoc{
@@ -420,9 +428,9 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 				indexText = d
 			}
 		}
-		if ltks, err := tokenizer.Tokenize(indexText); err == nil && ltks != "" {
+		if ltks, err := tok.Tokenize(indexText); err == nil && ltks != "" {
 			doc.ContentLtks = ltks
-			if sm, err := tokenizer.FineGrainedTokenize(ltks); err == nil && sm != "" {
+			if sm, err := tok.FineGrainedTokenize(ltks); err == nil && sm != "" {
 				doc.ContentSmLtks = sm
 			}
 		}
@@ -438,17 +446,6 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 		compileKWD := enginetypes.CanonicalCompilationKind(kindOrVariant(p))
 		if err := doc.SetExtraValue("compile_kwd", compileKWD); err != nil {
 			return nil, err
-		}
-		if p.Variant == common.VariantStructure {
-			if inferred := metaString(p.Meta, "compile_kwd"); inferred != "" {
-				extra, err := json.Marshal(map[string]string{"compile_type": inferred})
-				if err != nil {
-					return nil, err
-				}
-				if err := doc.SetExtraValue("extra", string(extra)); err != nil {
-					return nil, err
-				}
-			}
 		}
 		// scope_kwd marks doc/dataset-level rows (B8/O1=B). A doc-level compiled
 		// product is always a per-document (scope="doc") input to the dataset-level
@@ -488,7 +485,7 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 			}
 		}
 		// Per-variant fine-grained columns (conf/infinity_mapping.json §45–97).
-		if err := applyVariantColumns(&doc, p); err != nil {
+		if err := applyVariantColumns(&doc, p, tok); err != nil {
 			return nil, err
 		}
 		docs = append(docs, doc)
@@ -499,7 +496,7 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 // applyVariantColumns emits the compile-specific columns defined in
 // conf/infinity_mapping.json lines 45–77, driven by Product.Meta keys that
 // each variant's build site populates. Unknown/absent keys are skipped.
-func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
+func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.Tokenizer) error {
 	kind := metaString(p.Meta, "kind")
 
 	switch p.Variant {
@@ -537,7 +534,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 			if err := doc.SetExtraValue("title_kwd", v); err != nil {
 				return err
 			}
-			setTitleTokens(doc, v)
+			setTitleTokens(doc, v, tok)
 		}
 		if v := metaString(p.Meta, "page_type"); v != "" {
 			if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
@@ -706,11 +703,11 @@ func metaString(m map[string]any, key string) string {
 // setTitleTokens populates ChunkDoc.title_tks. Python's page row has no
 // title_sm_tks, and the Infinity writer folds title_kwd / title_sm_tks into
 // `docnm`, so the twin would make docnm map-order dependent.
-func setTitleTokens(doc *schema.ChunkDoc, title string) {
+func setTitleTokens(doc *schema.ChunkDoc, title string, tok tokenizer.Tokenizer) {
 	if title == "" {
 		return
 	}
-	if tks, err := tokenizer.Tokenize(title); err == nil && tks != "" {
+	if tks, err := tok.Tokenize(title); err == nil && tks != "" {
 		doc.TitleTks = tks
 	}
 }
@@ -752,9 +749,11 @@ func metaStringSlice(m map[string]any, key string) []string {
 // headless / manual chaining reads them from the component output map, so they
 // must be forwarded when present.
 func mergeChunks(inputs map[string]any, compiled []schema.ChunkDoc) map[string]any {
-	// Accept both the []any and []map[string]any chunk carriers (the chunker
-	// emits the latter; buildInputs already handles both). Without this, the
-	// original source chunks would be dropped when the carrier is []map[string]any.
+	// Accept the []any and []map[string]any chunk carriers verbatim (the
+	// legacy chunker emits the latter; buildInputs already handles both). The
+	// default arm accepts the typed []ChunkDoc carrier via GetChunks, which
+	// also bridges legacy forms, so the upstream chunks are never silently
+	// dropped on a type mismatch.
 	var raw []any
 	switch v := inputs["chunks"].(type) {
 	case []any:
@@ -765,7 +764,13 @@ func mergeChunks(inputs map[string]any, compiled []schema.ChunkDoc) map[string]a
 			raw = append(raw, m)
 		}
 	default:
-		clog.Warn("knowledge_compiler: mergeChunks: unexpected chunks type", zap.String("type", fmt.Sprintf("%T", inputs["chunks"])))
+		if typed, ok := schema.GetChunks(inputs); ok {
+			for _, c := range typed {
+				raw = append(raw, c.ToMap())
+			}
+		} else {
+			clog.Warn("knowledge_compiler: mergeChunks: unexpected chunks type", zap.String("type", fmt.Sprintf("%T", inputs["chunks"])))
+		}
 	}
 	merged := make([]any, 0, len(raw)+len(compiled))
 	for _, r := range raw {
@@ -799,12 +804,7 @@ func mergeChunks(inputs map[string]any, compiled []schema.ChunkDoc) map[string]a
 // LLM/embedding work begins.
 // mapKeys returns the sorted keys of m, for diagnostics logging.
 func mapKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
+	return slices.Sorted(maps.Keys(m))
 }
 
 func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, error) {
@@ -819,7 +819,8 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 	// The upstream pipeline hands chunks over as a []any of map[string]any in
 	// some paths and as a []map[string]any in others (the chunker emits the
 	// latter). Accept both so the knowledge compiler never silently drops the
-	// whole upstream output on a type mismatch.
+	// whole upstream output on a type mismatch. The typed []ChunkDoc carrier is
+	// handled via GetChunks, which also bridges the legacy forms.
 	var raw []map[string]any
 	switch v := inputs["chunks"].(type) {
 	case []any:
@@ -834,7 +835,11 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 	case []map[string]any:
 		raw = v
 	default:
-		clog.Warn("knowledge_compiler: buildInputs: unexpected chunks type", zap.String("type", fmt.Sprintf("%T", inputs["chunks"])))
+		if typed, ok := schema.GetChunks(inputs); ok {
+			raw = schema.ChunkDocsToMaps(typed)
+		} else {
+			clog.Warn("knowledge_compiler: buildInputs: unexpected chunks type", zap.String("type", fmt.Sprintf("%T", inputs["chunks"])))
+		}
 	}
 	clog.Info("knowledge_compiler: buildInputs: accepted chunks from inputs[chunks]", zap.Int("chunks", len(raw)))
 	for _, m := range raw {

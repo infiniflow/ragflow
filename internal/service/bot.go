@@ -35,6 +35,7 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 // BotService coordinates chatbot + agentbot reads and the matching
@@ -67,21 +68,21 @@ func NewBotService(agentSvc *AgentService) *BotService {
 func (s *BotService) ChatbotInfo(ctx context.Context, userID, dialogID string) (
 	title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error,
 ) {
-	if err = checkChatPermission(ctx, nil, userID, dialogID, permission.OperationRead); err != nil {
-		ec, err = normalizeChatPermissionError(err)
+	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: dialogID}, permission.OperationRead); err != nil {
+		ec, err = permissionresponse.NormalizeHidden(err)
 		return "", "", "", "", false, ec, err
 	}
 
 	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			ec, err = normalizeChatPermissionError(permission.ErrResourceNotFound)
+			ec, err = permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return "", "", "", "", false, ec, err
 		}
 		return "", "", "", "", false, common.CodeServerError, err
 	}
 	if dialog == nil {
-		ec, err = normalizeChatPermissionError(permission.ErrResourceNotFound)
+		ec, err = permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return "", "", "", "", false, ec, err
 	}
 	pc := dialog.PromptConfig
@@ -153,16 +154,7 @@ func (s *BotService) AgentbotCompletion(
 	if _, err := s.loadCanvas(ctx, userID, agentID, permission.OperationRun); err != nil {
 		return nil, common.CodeDataError, err
 	}
-	// Compose the canvas user input the same way Python's
-	// canvas_service.completion does: `query` first (falling back to
-	// `question`), with the begin-form `inputs` dict only as a
-	// last resort when no free-text question is present. Passing the
-	// `inputs` map itself as the user input breaks the run — the
-	// canvas seeds sys.query / Begin's `query` output with it, and
-	// downstream Retrieval nodes then fail to unmarshal an object
-	// into a string field. Files remain a separate RunAgent argument
-	// so they can populate sys.files.
-	userInput := agentbotUserInput(req)
+	userInput := NormalizeAgentInput(question, req.UserInput)
 	var ch <-chan canvas.RunEvent
 	if req.Release != nil && *req.Release {
 		ch, err = s.agentService.runReleasedAgent(ctx, userID, agentID,
@@ -220,43 +212,6 @@ type AgentbotCompletionRequest struct {
 	Release   *bool                    `json:"release,omitempty"`
 }
 
-// agentbotUserInput uses the resolved question, falling back to Begin form inputs.
-// A single form field lifts its value; multiple fields collapse to a name/value map.
-func agentbotUserInput(req AgentbotCompletionRequest) any {
-	query := req.Question
-	if query == "" {
-		query = req.Query
-	}
-	if query != "" {
-		return query
-	}
-	inputs := req.UserInput
-	if len(inputs) == 0 {
-		return nil
-	}
-	if len(inputs) == 1 {
-		for _, raw := range inputs {
-			if field, ok := raw.(map[string]any); ok {
-				if v, ok := field["value"]; ok {
-					return v
-				}
-			}
-			return raw
-		}
-	}
-	out := make(map[string]any, len(inputs))
-	for name, raw := range inputs {
-		if field, ok := raw.(map[string]any); ok {
-			if v, ok := field["value"]; ok {
-				out[name] = v
-				continue
-			}
-		}
-		out[name] = raw
-	}
-	return out
-}
-
 // ChatbotCompletionRequest is the request body for
 // /api/v1/chatbots/<dialog_id>/completions. Mirrors the python
 // `async_iframe_completion` body shape (session_id, question,
@@ -293,7 +248,7 @@ func (s *BotService) loadCanvas(ctx context.Context, userID, agentID string, ope
 	if userID == "" {
 		return nil, dao.ErrUserCanvasNotFound
 	}
-	if err := CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, agentID, operation); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: agentID}, operation); err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return nil, dao.ErrUserCanvasNotFound
 		}

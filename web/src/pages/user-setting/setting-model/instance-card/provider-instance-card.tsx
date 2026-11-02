@@ -21,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import { LIST_MODEL_PROVIDERS } from '../provider-schema/constants';
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -37,6 +38,7 @@ import {
   useDeleteInstance,
   useFormFields,
   useFormResetOnDetailsLoad,
+  useInstanceSave,
   useInstanceSaveState,
   useLazyInstanceDetails,
   useProviderBaseUrlOptions,
@@ -56,22 +58,28 @@ import {
  * Two visual modes driven by `isDraft`:
  *  1. **Draft** (`isDraft`): the instance name lives in a dedicated
  *     input section at the top of the body, and the form fields are
- *     always editable (no fieldset lock). The parent drives save
- *     through the imperative ref API.
+ *     always editable (no fieldset lock). Its header Save button
+ *     persists the new instance.
  *  2. **Saved** (`!isDraft`): the form-field section collapses into a
  *     single collapsible row showing the name as plain text with a
  *     hover-only key/lock icon. The form fields live inside the
  *     collapsible content and can be collapsed/expanded.
  *
- * Auto-save has been removed; the parent page's top Save button
- * collects payloads from all cards via the ref and dispatches the API
- * calls in a single batch.
+ * Saving is per card: the header Save button validates and persists
+ * only the instance it belongs to.
  */
 const GenericProviderInstanceCard = forwardRef<
   ProviderInstanceCardRef,
   ProviderInstanceCardProps
 >(function GenericProviderInstanceCard(
-  { providerName, instance, isDraft = false, onDelete, defaultOpen = false },
+  {
+    providerName,
+    instance,
+    isDraft = false,
+    onDelete,
+    onSaved,
+    defaultOpen = false,
+  },
   ref,
 ) {
   // Drafts always start open (the user just added them and needs to
@@ -83,7 +91,7 @@ const GenericProviderInstanceCard = forwardRef<
   const [draftName, setDraftName] = useState('');
   // For saved cards: the instance name as shown in the UI. Initialized
   // from the persisted name and updated when the user double-clicks the
-  // name to rename it. Persisted via the top Save button.
+  // name to rename it. Persisted via the card's Save button.
   const [editedInstanceName, setEditedInstanceName] = useState(
     instance.instance_name,
   );
@@ -162,6 +170,8 @@ const GenericProviderInstanceCard = forwardRef<
     formRef,
     providerConfig.verifyTransform,
     modelInfoRef,
+    isDraft ? undefined : instance.id,
+    isDraft ? undefined : { ...instance, ...(instanceDetails ?? {}) },
   );
   const handleDelete = useDeleteInstance(
     providerName,
@@ -181,49 +191,56 @@ const GenericProviderInstanceCard = forwardRef<
     draftName,
     instanceDetails,
     initialValues,
+    baselineValues: formDefaultValues,
     modelInfoRef,
     submitTransform: providerConfig.submitTransform,
   });
 
-  // Expose the imperative save API to the parent so the top-of-page
-  // Save button can validate, collect payloads, and dispatch calls
-  // in a single batch without each card wiring its own auto-save.
+  // Form validation shared by the header Save button and the
+  // imperative ref API.
+  const validate = useCallback(async () => {
+    // Drafts need a non-empty instance name (the DynamicForm does
+    // not include the instance_name field, so `trigger()` won't
+    // catch it). For both drafts and saved cards, run the form's
+    // own validation so errors surface in the UI.
+    if (isDraft && !draftName.trim()) return false;
+    if (!isDraft && instanceDetails && !modelsLoadedRef.current) {
+      message.error(t('setting.selectModelBeforeSave'));
+      return false;
+    }
+    // List-model providers (list picker) require at least one selected model.
+    if (
+      LIST_MODEL_PROVIDERS.has(providerName) &&
+      modelInfoRef.current.length === 0
+    ) {
+      message.error(t('setting.selectModelBeforeVerify'));
+      return false;
+    }
+    const isValid = await formRef.current?.trigger();
+    return !!isValid;
+  }, [isDraft, draftName, instanceDetails, providerName, t]);
+
+  // The card header owns the Save button: each instance is persisted
+  // independently, straight from its own card.
+  const { save: handleSave, saving } = useInstanceSave({
+    isDraft,
+    getSavePayload,
+    validate,
+    markSaved,
+    existingNames: instanceNameSet,
+    onSaved,
+  });
+
+  // Expose the imperative save API for tests and embedders that drive
+  // the card from outside.
   useImperativeHandle(
     ref,
     () => ({
-      validate: async () => {
-        // Drafts need a non-empty instance name (the DynamicForm does
-        // not include the instance_name field, so `trigger()` won't
-        // catch it). For both drafts and saved cards, run the form's
-        // own validation so errors surface in the UI.
-        if (isDraft && !draftName.trim()) return false;
-        if (!isDraft && instanceDetails && !modelsLoadedRef.current) {
-          message.error(t('setting.selectModelBeforeSave'));
-          return false;
-        }
-        // List-model providers (list picker) require at least one selected model.
-        if (
-          LIST_MODEL_PROVIDERS.has(providerName) &&
-          modelInfoRef.current.length === 0
-        ) {
-          message.error(t('setting.selectModelBeforeVerify'));
-          return false;
-        }
-        const isValid = await formRef.current?.trigger();
-        return !!isValid;
-      },
+      validate,
       getSavePayload,
       markSaved,
     }),
-    [
-      isDraft,
-      draftName,
-      getSavePayload,
-      markSaved,
-      providerName,
-      t,
-      instanceDetails,
-    ],
+    [validate, getSavePayload, markSaved],
   );
 
   return (
@@ -238,6 +255,8 @@ const GenericProviderInstanceCard = forwardRef<
           formRef={formRef}
           handleVerify={handleVerify}
           handleDelete={handleDelete}
+          handleSave={handleSave}
+          saving={saving}
           handleInstanceModelsEdited={markModelsEdited}
           providerName={providerName}
           instanceName={instance.instance_name}
@@ -254,12 +273,14 @@ const GenericProviderInstanceCard = forwardRef<
           formRef={formRef}
           handleVerify={handleVerify}
           handleDelete={handleDelete}
+          handleSave={handleSave}
+          saving={saving}
           handleInstanceModelsEdited={markModelsEdited}
           providerName={providerName}
           instanceName={instance.instance_name}
           editedInstanceName={editedInstanceName}
           onRename={setEditedInstanceName}
-          instance={instance}
+          instance={{ ...instance, ...(instanceDetails ?? {}) }}
           instanceDetailsLoaded={Boolean(instanceDetails)}
           modelInfoRef={modelInfoRef}
           onInstanceModelsStatusChange={(ready) => {
@@ -283,16 +304,15 @@ const GenericProviderInstanceCard = forwardRef<
  * Two visual modes driven by `isDraft`:
  *  1. **Draft** (`isDraft`): the instance name lives in a dedicated
  *     input section at the top of the body, and the form fields are
- *     always editable (no fieldset lock). The parent drives save
- *     through the imperative ref API.
+ *     always editable (no fieldset lock). Its header Save button
+ *     persists the new instance.
  *  2. **Saved** (`!isDraft`): the form-field section collapses into a
  *     single collapsible row showing the name as plain text with a
  *     hover-only key/lock icon. The form fields live inside the
  *     collapsible content and can be collapsed/expanded.
  *
- * Auto-save has been removed; the parent page's top Save button
- * collects payloads from all cards via the ref and dispatches the API
- * calls in a single batch.
+ * Saving is per card: the header Save button validates and persists
+ * only the instance it belongs to.
  */
 export const ProviderInstanceCard = forwardRef<
   ProviderInstanceCardRef,
