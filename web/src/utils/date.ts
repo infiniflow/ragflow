@@ -14,21 +14,36 @@
  *  limitations under the License.
  */
 
-import dayjs from 'dayjs';
+import dayjs, { type ConfigType } from 'dayjs';
+import utc from 'dayjs/plugin/utc';
 
-export function formatDate(date: any, format?: string) {
+// `parseDate` calls `.utc()` for strings that already carry a timezone
+// suffix; dayjs only exposes that method once the plugin is registered.
+dayjs.extend(utc);
+
+const hasTimezoneSuffix = (value: string) =>
+  /(?:GMT|Z|[+-]\d{2}:?\d{2})$/.test(value.trim());
+
+const parseDate = (date: ConfigType) => {
+  if (typeof date === 'string' && hasTimezoneSuffix(date)) {
+    return dayjs(date).utc();
+  }
+  return dayjs(date);
+};
+
+export function formatDate(date: ConfigType, format?: string) {
   const thisFormat = format || 'DD/MM/YYYY HH:mm:ss';
   if (!date) {
     return '';
   }
-  return dayjs(date).format(thisFormat);
+  return parseDate(date).format(thisFormat);
 }
 
-export function formatTime(date: any) {
+export function formatTime(date: ConfigType) {
   if (!date) {
     return '';
   }
-  return dayjs(date).format('HH:mm:ss');
+  return parseDate(date).format('HH:mm:ss');
 }
 
 export function today() {
@@ -43,18 +58,18 @@ export function lastWeek() {
   return formatDate(dayjs().subtract(1, 'weeks'));
 }
 
-export function formatPureDate(date: any) {
+export function formatPureDate(date: ConfigType) {
   if (!date) {
     return '';
   }
-  return dayjs(date).format('DD/MM/YYYY');
+  return parseDate(date).format('DD/MM/YYYY');
 }
 
-export function formatStandardDate(date: any) {
+export function formatStandardDate(date: ConfigType) {
   if (!date) {
     return '';
   }
-  const parsedDate = dayjs(date);
+  const parsedDate = parseDate(date);
   if (!parsedDate.isValid()) {
     return '';
   }
