@@ -686,7 +686,9 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// without duplicating the fold. Inline bytes, an uploaded ID or a
 		// deferred reference also make the chunk retrievable; dropping it here
 		// would lose the image before the materializer can resolve or reject it.
-		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" && !hasMediaPayload(m) {
+		// A captionless figure that still has a PDF crop region is kept so the
+		// crop handoff can run when vision enhancement and image context are off.
+		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" && !hasMediaPayload(m) && !hasCroppableMedia(m) {
 			continue
 		}
 		materialized = append(materialized, materializeMediaContext(m))

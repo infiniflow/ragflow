@@ -1463,8 +1463,10 @@ func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Reg
 		// streamed crop upload sets ImgID and clears Image, so an uploaded
 		// media chunk (text may be only a position tag, or empty) must be
 		// retained via its ImgID — otherwise the already-uploaded image is
-		// dropped and its MinIO object orphaned.
-		if strings.TrimSpace(chunk.Text) == "" && !hasMediaPayload(chunk) {
+		// dropped and its MinIO object orphaned. Captionless figures with a
+		// PDF crop region are kept so cropImageChunks can still produce the
+		// preview when vision enhancement and image context are both off.
+		if strings.TrimSpace(chunk.Text) == "" && !hasMediaPayload(chunk) && !hasCroppableMedia(chunk) {
 			continue
 		}
 		visible = append(visible, chunk)

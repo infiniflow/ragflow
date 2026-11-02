@@ -242,6 +242,29 @@ func hasMediaPayload(ck schema.ChunkDoc) bool {
 	return ck.Image != "" || ck.ImgID != "" || ck.MediaRef != nil
 }
 
+// hasCroppableMedia reports whether a media chunk still has a PDF crop region
+// even when it has no caption or inline payload yet. Parser paths such as
+// MinerU JSON omit zip figure bytes and rely on the chunker to crop from
+// positions, so empty text must not drop the item before that handoff.
+func hasCroppableMedia(ck schema.ChunkDoc) bool {
+	if !isMediaChunk(ck) {
+		return false
+	}
+	for _, row := range mergePositionMatrix(ck.PDFPositions, ck.Positions) {
+		if len(row) < 5 {
+			continue
+		}
+		left, okL := schema.NumericFromAny(row[1])
+		right, okR := schema.NumericFromAny(row[2])
+		top, okT := schema.NumericFromAny(row[3])
+		bottom, okB := schema.NumericFromAny(row[4])
+		if okL && okR && okT && okB && right > left && bottom > top {
+			return true
+		}
+	}
+	return false
+}
+
 // itemTextOrFallback returns the item's preferred text, or "".
 func itemTextOrFallback(it schema.ChunkDoc) string {
 	if t, ok := itemText(it); ok {
@@ -377,16 +400,21 @@ func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
 // media chunk whose canonical text is empty — a captionless image — hashing
 // the text alone would give every such chunk in a document the same id
 // (ChunkID(docID, "")), silently overwriting images in MinIO and merging
-// index entries, so a stable per-image identity is folded in instead.
-// Non-empty media text also folds its region in: two figures can share a
-// caption ("Figure", "图"), and their previews must not collapse onto one id.
-// Text chunks hash their text unchanged.
+// index entries. Position-only figures use the crop region; otherwise a
+// stable per-image payload identity is folded in. Non-empty media text also
+// folds its region in: two figures can share a caption ("Figure", "图"), and
+// their previews must not collapse onto one id. Text chunks hash their text
+// unchanged.
 func chunkIDSource(ck schema.ChunkDoc) string {
 	text := canonicalChunkText(ck)
+	matrix := mergePositionMatrix(ck.PDFPositions, ck.Positions)
 	if text == "" {
+		if isMediaChunk(ck) && len(matrix) > 0 {
+			return mediaTextIdentity(text, true, matrix)
+		}
 		return mediaChunkIdentity(ck.Image, ck.ImgID, ck.MediaRef)
 	}
-	return mediaTextIdentity(text, isMediaChunk(ck), mergePositionMatrix(ck.PDFPositions, ck.Positions))
+	return mediaTextIdentity(text, isMediaChunk(ck), matrix)
 }
 
 // mediaTextIdentity appends a region digest to a media chunk's text identity.

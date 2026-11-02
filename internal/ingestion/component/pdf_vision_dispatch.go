@@ -1164,6 +1164,9 @@ func mergeMineruPageSizes(pdfSizes, middleSizes map[int][2]float64) map[int][2]f
 	return out
 }
 
+// mineruContentItemToJSON converts one MinerU content_list item without a
+// media budget. Tests and helpers that do not collect run warnings use this
+// wrapper; production extraction goes through mineruContentItemToJSONBudget.
 func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64) map[string]any {
 	return mineruContentItemToJSONBudget(item, images, pageSizes, nil)
 }
@@ -1202,16 +1205,16 @@ func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.F
 		if imgPath, _ := item["img_path"].(string); imgPath != "" {
 			hasImageFile = mineruZipImageFile(images, imgPath) != nil
 		}
-		hasStructuredFigure := false
+		hasCropRegion := len(mineruItemPositions(item, pageSizes)) > 0
 		if dataURI, _ := item["image_data_uri"].(string); strings.HasPrefix(dataURI, "data:") {
-			if _, ok := media.DataImageDecodedSize(dataURI); ok && len(mineruItemPositions(item, pageSizes)) > 0 {
-				hasStructuredFigure = true
-			}
 			if budget != nil {
 				mineruAccountStructuredDataURI(budget, dataURI)
 			}
 		}
-		if text == "" && !hasImageFile && !hasStructuredFigure {
+		// Captionless figures still crop from the source PDF when they carry
+		// a zip member or a bounding box. Vision enhancement and image
+		// context are optional; empty text must not drop the handoff.
+		if text == "" && !hasImageFile && !hasCropRegion {
 			return nil
 		}
 	case "table":

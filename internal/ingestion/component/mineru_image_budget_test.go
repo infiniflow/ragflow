@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/parser/media"
 )
 
@@ -89,6 +90,16 @@ func TestMinerUImageItemKeptWhenZipMemberExists(t *testing.T) {
 	if mineruContentItemToJSONBudget(missing, images, nil, nil) != nil {
 		t.Fatal("image with no text and no zip member must still be dropped")
 	}
+	bboxOnly := map[string]any{
+		"type": "image", "page_idx": 0, "bbox": []any{1.0, 2.0, 3.0, 4.0},
+	}
+	gotBBox := mineruContentItemToJSONBudget(bboxOnly, nil, map[int][2]float64{0: {612, 792}}, nil)
+	if gotBBox == nil {
+		t.Fatal("captionless figure with a crop box must be kept for PDF cropping")
+	}
+	if _, ok := gotBBox["_pdf_positions"]; !ok {
+		t.Fatalf("positions must be kept: %#v", gotBBox)
+	}
 }
 
 func TestMinerUStructuredFigureKeptWithoutCaptionOrZip(t *testing.T) {
@@ -111,13 +122,10 @@ func TestMinerUStructuredFigureKeptWithoutCaptionOrZip(t *testing.T) {
 }
 
 func TestMinerUStructuredDataURIOverImageMaxBytesWarns(t *testing.T) {
+	t.Setenv(common.EnvMediaImageMaxBytes, "100")
 	payload := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{9}, 200))
 	dataURI := "data:image/png;base64," + payload
-	budget := media.NewBudgetWithLimits(media.Limits{
-		ImageMaxBytes:   100,
-		MaxImagesPerRun: 10,
-		MaxBytesPerRun:  1 << 20,
-	})
+	budget := media.NewBudget()
 	mineruAccountStructuredDataURI(budget, dataURI)
 	warnings := budget.Warnings()
 	if len(warnings) == 0 {
@@ -125,6 +133,10 @@ func TestMinerUStructuredDataURIOverImageMaxBytesWarns(t *testing.T) {
 	}
 	if !strings.Contains(warnings[0], "100-byte per-image limit") {
 		t.Fatalf("warnings = %v", warnings)
+	}
+	mineruAccountStructuredDataURI(budget, "data:image/png;base64,????")
+	if got := budget.Warnings(); len(got) != len(warnings) {
+		t.Fatalf("invalid payload must not add a warning: %v", got)
 	}
 }
 
