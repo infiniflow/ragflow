@@ -39,20 +39,13 @@ func (dao *UserDAO) Create(ctx context.Context, db *gorm.DB, user *entity.User) 
 	return db.WithContext(ctx).Create(user).Error
 }
 
-// GetByID get user by ID
-func (dao *UserDAO) GetByID(ctx context.Context, db *gorm.DB, id uint) (*entity.User, error) {
+// GetByID gets a user by its string ID (a 32-char hex UUID, matching the
+// VARCHAR(32) primary key in MySQL). The id is bound by value through the
+// parameterized condition "id = ?", never passed as a bare string (which GORM
+// would interpolate as raw SQL for non-numeric IDs).
+func (dao *UserDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.User, error) {
 	var user entity.User
 	err := db.WithContext(ctx).Take(&user, "id = ?", id).Error
-	if err != nil {
-		return nil, err
-	}
-	return &user, nil
-}
-
-// GetByIDString gets a user by its string ID.
-func (dao *UserDAO) GetByIDString(ctx context.Context, db *gorm.DB, id string) (*entity.User, error) {
-	var user entity.User
-	err := db.WithContext(ctx).Where("id = ?", id).First(&user).Error
 	if err != nil {
 		return nil, err
 	}
@@ -210,9 +203,9 @@ func userListOrder(order UserListOrder, desc bool) (clause.OrderByColumn, error)
 	return clause.OrderByColumn{Column: clause.Column{Table: "user", Name: field}, Desc: desc}, nil
 }
 
-// Delete delete user
-func (dao *UserDAO) Delete(ctx context.Context, db *gorm.DB, id uint) error {
-	return db.WithContext(ctx).Delete(&entity.User{}, id).Error
+// Delete delete user by string ID.
+func (dao *UserDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
+	return db.WithContext(ctx).Where("id = ?", id).Delete(&entity.User{}).Error
 }
 
 // HardDelete hard delete user by string ID
