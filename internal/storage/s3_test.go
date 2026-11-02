@@ -56,6 +56,8 @@ func s3Response(status int, body string) *http.Response {
 	return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
 }
 
+// TestS3DeleteObjectsAddsContentMD5 checks that Content-MD5 covers the serialized
+// XML and is signed without replacing CRC32 or suppressing per-object errors.
 func TestS3DeleteObjectsAddsContentMD5(t *testing.T) {
 	for _, tc := range []struct {
 		name, response string

@@ -241,6 +241,9 @@ func (s *S3Storage) removeObjects(ctx context.Context, bucket, prefix string) er
 	return nil
 }
 
+// deleteObjects deletes the supplied objects in batches of at most 1,000.
+// It includes Content-MD5 alongside the SDK checksum and returns on the first
+// request-level or per-object error.
 func (s *S3Storage) deleteObjects(ctx context.Context, bucket string, objects []types.ObjectIdentifier) error {
 	for len(objects) > 0 {
 		count := min(len(objects), 1000)
