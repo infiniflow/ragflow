@@ -1,8 +1,0 @@
-{
-  "label": "Get Started",
-  "position": 1,
-  "link": {
-    "type": "generated-index",
-    "description": "RAGFlow Quick Start"
-  }
-}
