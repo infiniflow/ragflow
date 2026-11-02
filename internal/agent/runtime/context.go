@@ -69,6 +69,7 @@ type agentMessageEmitterState struct {
 	runEmitted        bool
 	runContentEmitted bool
 	runSuppressed     bool
+	inThink           bool
 	agentContent      strings.Builder
 }
 
@@ -344,8 +345,18 @@ func EmitCanvasMessageEvent(ctx context.Context, content string, startToThink, e
 			state.mu.Lock()
 			state.emitted = true
 			state.runEmitted = true
-			if content != "" {
+			// Reasoning deltas inside a start/endToThink window are thinking,
+			// not answer content — counting them as content would suppress
+			// the failure message when a deferred Agent streamed only
+			// thinking before failing.
+			if startToThink {
+				state.inThink = true
+			}
+			if content != "" && !state.inThink {
 				state.runContentEmitted = true
+			}
+			if endToThink {
+				state.inThink = false
 			}
 			state.mu.Unlock()
 		}
