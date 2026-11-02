@@ -49,9 +49,10 @@ var (
 )
 
 // requireRealKvrocks connects the process-wide Kvrocks client to the service
-// named by RAGFLOW_TEST_KVROCKS_ADDR (host:port). The password defaults to the
-// one in conf/service_conf.yaml and can be overridden with REDIS_PASSWORD.
-// Without an address the test is skipped instead of falling back to a fake.
+// named by RAGFLOW_TEST_KVROCKS_ADDR (host:port). The password defaults to
+// "infini_rag_flow" (the checked-in conf value) and can be overridden with
+// REDIS_PASSWORD. Without an address the test is skipped instead of falling
+// back to a fake.
 func requireRealKvrocks(t *testing.T) *kvrocks.Client {
 	t.Helper()
 	addr := strings.TrimSpace(os.Getenv("RAGFLOW_TEST_KVROCKS_ADDR"))
