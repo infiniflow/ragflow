@@ -972,6 +972,7 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 	return out, warnings, nil
 }
 
+// mineruReadZipFile reads one MinerU zip member in full for JSON extraction.
 func mineruReadZipFile(f *zip.File) ([]byte, error) {
 	rc, err := f.Open()
 	if err != nil {
@@ -1535,6 +1536,8 @@ func mineruZipImageDataURI(images map[string]*zip.File, imgPath string, budget *
 	return fmt.Sprintf("data:%s;base64,%s", mediaType, base64.StdEncoding.EncodeToString(data))
 }
 
+// mineruJSONParseResult wraps extracted MinerU JSON items in the shared parser
+// ParseResult envelope, including page_count derived from item positions.
 func mineruJSONParseResult(filename string, items []map[string]any) parser.ParseResult {
 	return parser.ParseResult{
 		File: map[string]any{

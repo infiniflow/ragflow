@@ -67,6 +67,8 @@ type imageUploadDecorator struct {
 	inner runtime.Component
 }
 
+// Invoke runs the wrapped chunker, stamps deterministic chunk ids, and uploads
+// any remaining inline or deferred media before the chunks leave the component.
 func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	out, err := d.inner.Invoke(ctx, db, inputs)
 	if err != nil {
