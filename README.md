@@ -69,7 +69,7 @@
 
 ## 💡 What is RAGFlow?
 
-RAGFlow is a leading open-source [agent-native database](https://ragflow.io/basics/what-is-agent-native-database) for AI agents: a ([RAG](https://ragflow.io/basics/what-is-rag)) engine that grew into context infrastructure. It compiles your data at ingestion time into governed, provenance-bound artifacts that any agent harness can call. It serves enterprises of any scale, and is built to last.
+RAGFlow is a leading open-source [agent-native database](https://ragflow.io/basics/what-is-agent-native-database) for AI agents: What began as a [RAG](https://ragflow.io/basics/what-is-rag) engine is now context infrastructure: at ingestion time it compiles your data into governed, provenance-bound artifacts that any agent harness can call. It serves enterprises of any scale—and is built to last.
 
 
 ## 🎮 Get Started
