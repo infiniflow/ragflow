@@ -11,6 +11,10 @@ A complete reference for RAGFlow's RESTful API, including migration notes for RA
 
 In the standard response envelope, `message` is always a non-empty string. Successful responses default to `"success"`; error responses contain a description of the error.
 
+`data` is optional and is omitted for a plain nil payload. Typed nil values can
+produce `"data": null`. Empty objects and arrays, `false`, `0`, and empty strings
+are still returned as valid payloads.
+
 ---
 
 ## ERROR CODES
@@ -5195,7 +5199,6 @@ Failure:
 ```json
 {
     "code": 401,
-    "data": null,
     "message": "<Unauthorized '401: Unauthorized'>"
 }
 ```
@@ -5990,7 +5993,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6032,7 +6034,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "success"
 }
 ```
@@ -6042,7 +6043,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Resource not found"
 }
 ```
@@ -6171,7 +6171,6 @@ Failure
 ```
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6249,7 +6248,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "All add to task."
 }
 ```
@@ -6259,7 +6257,6 @@ Failure
 ```json
 {
     "code": 500,
-    "data": null,
     "message": "Some messages failed to add. Detail: {fail information}"
 }
 ```
@@ -6304,7 +6301,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "success"
 }
 ```
@@ -6314,7 +6310,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6369,7 +6364,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "success"
 }
 ```
@@ -6379,7 +6373,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6627,7 +6620,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```

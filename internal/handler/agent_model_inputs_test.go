@@ -165,7 +165,7 @@ func TestDebugAgentModelInputsDefaultAndErrorContracts(t *testing.T) {
 	fail.Store(true)
 	without := runModelInputDebug(t, handler, "false")
 	with := runModelInputDebug(t, handler, "true")
-	if without.Code == 0 || without.Code != with.Code || without.Message != with.Message || string(without.Data) != "null" {
+	if without.Code == 0 || without.Code != with.Code || without.Message != with.Message || without.Data != nil {
 		t.Fatalf("error contract changed: without=%+v with=%+v", without, with)
 	}
 	var data struct {
@@ -191,7 +191,7 @@ func TestDebugAgentModelInputsRejectsInvalidFlagAndUnauthorizedExecution(t *test
 	defer server.Close()
 	handler, _ := setupModelInputDebug(t, server.URL)
 	for _, flag := range []string{`null`, `"true"`, `1`, `{}`, `[]`} {
-		if response := runModelInputDebug(t, handler, flag); response.Code != int(common.CodeArgumentError) || string(response.Data) != "null" {
+		if response := runModelInputDebug(t, handler, flag); response.Code != int(common.CodeArgumentError) || response.Data != nil {
 			t.Fatalf("flag %s accepted: %+v", flag, response)
 		}
 	}
@@ -201,7 +201,7 @@ func TestDebugAgentModelInputsRejectsInvalidFlagAndUnauthorizedExecution(t *test
 		t.Fatal(err)
 	}
 	response := runModelInputDebug(t, handler, "true")
-	if response.Code != int(common.CodeOperatingError) || response.Message != canvasNoAccessMessage || string(response.Data) != "null" {
+	if response.Code != int(common.CodeOperatingError) || response.Message != canvasNoAccessMessage || response.Data != nil {
 		t.Fatalf("unauthorized result: %+v", response)
 	}
 	if calls.Load() != 0 {
@@ -220,7 +220,7 @@ func TestDebugModelInputsRejectsNonAgent(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Code != int(common.CodeArgumentError) || string(response.Data) != "null" {
+	if response.Code != int(common.CodeArgumentError) || response.Data != nil {
 		t.Fatalf("non-Agent capture accepted: %+v", response)
 	}
 }

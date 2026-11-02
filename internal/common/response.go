@@ -17,7 +17,7 @@ type ResponseOptions struct {
 type response struct {
 	Code    ErrorCode `json:"code"`
 	Message string    `json:"message"`
-	Data    any       `json:"data"`
+	Data    any       `json:"data,omitempty"`
 	Total   any       `json:"total,omitempty"`
 	Detail  any       `json:"detail,omitempty"`
 }
@@ -27,12 +27,12 @@ func RespondSuccessList[T any](c *gin.Context, data []T, message string, options
 	Respond(c, CodeSuccess, data, message, options...)
 }
 
-// RespondSuccess writes a successful response with object data, or null.
+// RespondSuccess writes a successful response with optional object data.
 func RespondSuccess(c *gin.Context, data any, message string, options ...ResponseOptions) {
 	Respond(c, CodeSuccess, data, message, options...)
 }
 
-// RespondError writes an error code and message with null data.
+// RespondError writes an error code and message without data.
 func RespondError(c *gin.Context, code ErrorCode, message string, options ...ResponseOptions) {
 	Respond(c, code, nil, message, options...)
 }

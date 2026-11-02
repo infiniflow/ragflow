@@ -71,7 +71,7 @@ it.each([
   ['Have not record any Langfuse keys.', null, 'noLangfuseConfigToDelete'],
 ])('handles Langfuse deletion message %s', async (message, data, key) => {
   mockDeleteLangfuseConfig.mockResolvedValue({
-    data: { code: 0, message, data },
+    data: { code: 0, message, ...(data === null ? {} : { data }) },
   });
   const { result } = renderHook(() => useDeleteLangfuseConfig(), {
     wrapper: createWrapper(),

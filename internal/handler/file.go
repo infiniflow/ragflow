@@ -661,7 +661,7 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 	_ = c.ShouldBindJSON(&req)
 
 	// Mirror Python @validate_request("file_ids", "kb_ids"): a key absent from
-	// the body returns ARGUMENT_ERROR (101) with data=null and the aggregated
+	// the body returns ARGUMENT_ERROR (101) without data and with the aggregated
 	// message. Python's check is key-presence based, so an explicit empty list
 	// is valid — e.g. kb_ids: [] in replace mode unlinks all datasets.
 	var missing []string

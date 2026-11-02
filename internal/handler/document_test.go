@@ -512,8 +512,8 @@ func TestDocumentReadHandlersForbidden(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &responseFields); err != nil {
 				t.Fatal(err)
 			}
-			if _, ok := responseFields["data"]; !ok {
-				t.Fatalf("permission error response is missing data field: %s", w.Body.String())
+			if _, ok := responseFields["data"]; ok {
+				t.Fatalf("permission error response must omit absent data: %s", w.Body.String())
 			}
 			if fake.metadataKBID != "" {
 				t.Fatal("GetMetadataSummary should not be called without dataset access")

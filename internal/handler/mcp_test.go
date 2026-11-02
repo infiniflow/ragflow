@@ -79,7 +79,7 @@ func TestNewMCPServerResponsePreservesNullDescriptionAndFormatsDates(t *testing.
 	}
 }
 
-func TestMCPDetailDataErrorReturnsNullData(t *testing.T) {
+func TestMCPDetailDataErrorOmitsData(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -99,7 +99,7 @@ func TestMCPDetailDataErrorReturnsNullData(t *testing.T) {
 	if body["message"] != "Cannot find MCP server mcp-id for user user-id" {
 		t.Fatalf("message = %v", body["message"])
 	}
-	if data, ok := body["data"]; !ok || data != nil {
-		t.Fatalf("expected data:null: %s", recorder.Body.String())
+	if _, ok := body["data"]; ok {
+		t.Fatalf("expected data to be omitted: %s", recorder.Body.String())
 	}
 }

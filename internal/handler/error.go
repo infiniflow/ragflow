@@ -65,7 +65,6 @@ func HandleNoRoute(c *gin.Context) {
 	c.JSON(http.StatusNotFound, gin.H{
 		"code":    404,
 		"message": "Not Found: " + c.Request.URL.Path,
-		"data":    nil,
 		"error":   "Not Found",
 	})
 }

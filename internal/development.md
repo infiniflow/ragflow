@@ -25,8 +25,9 @@ common.RespondSuccessList(c, items, "success", common.ResponseOptions{Total: tot
 common.RespondError(c, common.CodeBadRequest, "Missing name", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
 ```
 
-Boolean, string, and integer payloads remain in `data`. Responses without a
-payload use `data: null`.
+Boolean, string, and integer payloads remain in `data`. A plain nil payload
+omits `data`; typed nil pointers, maps, and slices serialize as `data: null`.
+Empty objects and lists, `false`, `0`, and empty strings remain present.
 
 ## 1. Prepare dependencies
 
