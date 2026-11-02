@@ -16,7 +16,7 @@ Publish a pipeline version before applying a custom pipeline to a Dataset. Savin
 2. Find **Parsing mode** and open its dropdown. Search for the pipeline name if needed.
 3. Expand the custom pipeline to view its published versions, then select the required version within the same dropdown. Use the version title and alias, when provided, to identify the intended configuration. The pipeline name itself is a group, not a selectable draft.
 
-   ![Parsing mode dropdown showing available pipelines](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/connect_the_pipeline_to_a_knowledge_base.jpg)
+   ![Parsing mode dropdown with a custom pipeline expanded to show published versions](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_dataset_published_version_tree.jpg)
 
 4. Click **Save** to apply the selection to the Dataset.
 5. [Parse a sample document and inspect the results](./test_run.md) before processing more files.

@@ -64,7 +64,10 @@ export const buildReferenceObject = (
     ]),
   ),
   doc_aggs: Object.fromEntries(
-    (reference?.doc_aggs ?? []).map((document) => [document.doc_id, document]),
+    Object.values(reference?.doc_aggs ?? {}).map((document) => [
+      document.doc_id,
+      document,
+    ]),
   ),
 });
 

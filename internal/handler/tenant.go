@@ -18,12 +18,14 @@ package handler
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/mail"
 	"net/smtp"
 	"ragflow/internal/server"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -503,25 +505,47 @@ func sendMailWithTLS(addr, host string, auth smtp.Auth, from string, to []string
 // @Param request body service.AddMemberRequest true "Invite request"
 // @Router /api/v1/tenants/{tenant_id}/users [post]
 func (h *TenantHandler) AddTenantMember(c *gin.Context) {
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "set_tenant_info",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = errors.New("tenant_id is required")
 		return
 	}
 	if !matchesActiveTenant(c, tenantID) {
 		common.ErrorWithCode(c, common.CodeForbidden, "Tenant does not match the active token context")
+		operationLog.Code = int(common.CodeForbidden)
+		operationLog.Error = errors.New("tenant does not match the active token context")
 		return
 	}
 
 	var req service.AddMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "invalid request body: "+err.Error())
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = errors.New("invalid request body: " + err.Error())
 		return
 	}
 
@@ -529,6 +553,8 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 	resp, code, err := h.tenantService.AddMember(ctx, user.ID, tenantID, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 
@@ -544,6 +570,8 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 				zap.String("tenant_id", tenantID),
 				zap.String("email", req.Email),
 				zap.Error(err))
+			operationLog.Code = int(common.CodeServerError)
+			operationLog.Error = err
 		}
 	}
 
@@ -557,15 +585,32 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 // @Param request body object true "Remove member request" SchemaExample({"user_id":"string"})
 // @Router /api/v1/tenants/{tenant_id}/users [delete]
 func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "set_tenant_info",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = errors.New("tenant_id is required")
 		return
 	}
 	var body struct {
@@ -573,10 +618,14 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || body.UserID == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "user_id is required")
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = errors.New("user_id is required")
 		return
 	}
 	if body.UserID != user.ID && !matchesActiveTenant(c, tenantID) {
 		common.ErrorWithCode(c, common.CodeForbidden, "Tenant does not match the active token context")
+		operationLog.Code = int(common.CodeForbidden)
+		operationLog.Error = errors.New("tenant does not match the active token context")
 		return
 	}
 
@@ -584,6 +633,8 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 	code, err := h.tenantService.RemoveMember(ctx, user.ID, tenantID, body.UserID)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 	common.SuccessWithData(c, true, "success")
@@ -596,21 +647,41 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 // @Param tenant_id path string true "Tenant ID"
 // @Router /api/v1/tenants/{tenant_id} [patch]
 func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "set_tenant_info",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = errors.New("tenant_id is required")
 		return
 	}
 	ctx := c.Request.Context()
 	code, err := h.tenantService.AcceptInvite(ctx, user.ID, tenantID)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 	common.SuccessWithData(c, true, "success")

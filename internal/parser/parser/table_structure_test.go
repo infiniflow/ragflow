@@ -268,7 +268,7 @@ func TestOfficeTableRetainsDefaultHeaderCount(t *testing.T) {
 
 func TestOfficeTablePreservesLiteralCellText(t *testing.T) {
 	el := docxIRElement{Type: "table", Rows: []docxIRRow{{Cells: []docxIRCell{{Content: []docxIRElement{{Type: "paragraph", Content: json.RawMessage(`[{"type":"text","text":" <b>A & B</b>\nsecond line "}]`)}}}}}}}
-	items := appendOfficeTableSections(nil, el, " A & <B> ", "table-1", newMediaBudgetForTest())
+	items := appendOfficeTableSections(nil, el, " A & <B> ", "table-1", nil)
 	if len(items) != 1 {
 		t.Fatalf("items=%#v", items)
 	}

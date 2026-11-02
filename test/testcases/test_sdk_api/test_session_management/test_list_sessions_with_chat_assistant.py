@@ -105,16 +105,12 @@ class TestSessionsWithChatAssistantList:
         with pytest.raises(Exception, match="^Resource not found$"):
             chat.list_sessions()
 
-    @pytest.mark.skip(reason="Go ListChatSessions never reads user_id or filters by it (internal/handler/chat_session.go); remove when documented user_id filtering is implemented")
     @pytest.mark.parametrize("combined", [False, True])
     def test_user_id(self, add_sessions_with_chat_assistant, combined):
         chat, sessions = add_sessions_with_chat_assistant
         filters = {"id": sessions[0].id, "name": sessions[0].name} if combined else {}
         assert chat.list_sessions(user_id="nonexistent-session-user", **filters) == []
 
-    @pytest.mark.skip(
-        reason="Go list serializes entity.ChatSession as dialog_id/message, but SDK Session requires chat_id/messages (internal/handler/chat_session.go and sdk/python/ragflow_sdk/modules/session.py); remove when list returns SDK session schema"
-    )
     def test_list_response_session_contract(self, chat):
         created = chat.create_session()
         listed = chat.list_sessions(id=created.id)
@@ -235,6 +231,32 @@ def test_sdk_crud_http_contract(monkeypatch, operation):
     assert url == "http://unit.invalid/api/v1" + path
     assert kwargs[payload_key] == payload
     assert kwargs["headers"] == {"Authorization": "Bearer unit-token"}
+
+
+@pytest.mark.parametrize("field", ["id", "name", "user_id"])
+def test_list_sessions_optional_filter_types(monkeypatch, field):
+    from beartype.roar import BeartypeCallHintParamViolation
+    from ragflow_sdk import Chat
+
+    chat = Chat(None, {"id": "chat-1"})
+
+    class Response:
+        def json(self):
+            return {"code": 0, "data": []}
+
+    calls = []
+
+    def get(path, params):
+        calls.append((path, params))
+        return Response()
+
+    monkeypatch.setattr(chat, "get", get)
+    assert chat.list_sessions() == []
+    assert chat.list_sessions(**{field: None}) == []
+    assert calls[0] == calls[1]
+    with pytest.raises(BeartypeCallHintParamViolation):
+        chat.list_sessions(**{field: 1})
+    assert len(calls) == 2
 
 
 @pytest.mark.parametrize("operation", ["create", "update", "delete"])

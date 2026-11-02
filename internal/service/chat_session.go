@@ -49,7 +49,7 @@ type chatSessionStore interface {
 	Create(ctx context.Context, db *gorm.DB, conv *entity.ChatSession) error
 	UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error
 	DeleteByID(ctx context.Context, db *gorm.DB, id string) error
-	ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, options ...dao.ConversationHistoryOptions) ([]*entity.ChatSession, int64, error)
+	ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name, sessionUserID string, terms []dao.OrderTerm, page, pageSize int, options ...dao.ConversationHistoryOptions) ([]*entity.ChatSession, int64, error)
 	GetDialogByID(ctx context.Context, db *gorm.DB, chatID string) (*entity.Chat, error)
 }
 
@@ -112,7 +112,7 @@ type ListChatSessionsRequest struct {
 
 // ListChatSessionsResponse list chat sessions response
 type ListChatSessionsResponse struct {
-	Sessions []*entity.ChatSession
+	Sessions []*ChatSessionPayload
 	Total    int64
 }
 
@@ -130,19 +130,19 @@ type ChatSessionPayload struct {
 }
 
 // ListChatSessions lists chat sessions for a dialog
-func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, options ...dao.ConversationHistoryOptions) (*ListChatSessionsResponse, error) {
+func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name, sessionUserID string, terms []dao.OrderTerm, page, pageSize int, options ...dao.ConversationHistoryOptions) (*ListChatSessionsResponse, error) {
 	if err := checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationRead); err != nil {
 		_, normalizedErr := normalizeChatPermissionError(err)
 		return nil, normalizedErr
 	}
 
 	// List chat sessions
-	sessions, total, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, nil, sessionID, name, terms, page, pageSize, sessionHistoryOptions(options...))
+	sessions, total, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, nil, sessionID, name, sessionUserID, terms, page, pageSize, sessionHistoryOptions(options...))
 	if err != nil {
 		return nil, err
 	}
 	if len(sessions) == 0 {
-		return &ListChatSessionsResponse{Sessions: sessions, Total: total}, nil
+		return &ListChatSessionsResponse{Sessions: []*ChatSessionPayload{}, Total: total}, nil
 	}
 
 	checker := s.permissionChecker
@@ -162,10 +162,10 @@ func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatI
 	for _, ref := range accessible {
 		allowedIDs[ref.ID] = true
 	}
-	filtered := make([]*entity.ChatSession, 0, len(accessible))
+	filtered := make([]*ChatSessionPayload, 0, len(accessible))
 	for _, session := range sessions {
 		if allowedIDs[session.ID] {
-			filtered = append(filtered, session)
+			filtered = append(filtered, s.buildSessionPayload(session, nil, false, options...))
 		}
 	}
 
@@ -287,7 +287,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 			if len(sessionIDs) == 0 {
 				return map[string]interface{}{}, "success", common.CodeSuccess, nil
 			}
-			sessions, _, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, sessionIDs, "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 0, -1, dao.ConversationHistoryOptions{NoHistory: true})
+			sessions, _, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, sessionIDs, "", "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 0, -1, dao.ConversationHistoryOptions{NoHistory: true})
 			if err != nil {
 				return nil, "", common.CodeServerError, err
 			}

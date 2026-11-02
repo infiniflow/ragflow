@@ -2009,3 +2009,35 @@ func TestAgentChatCompletions_EmptyFilesNil(t *testing.T) {
 		t.Errorf("capturedFiles = %v, want nil when files not in request", capturedFiles)
 	}
 }
+
+func TestListAgentsPreservesImplicitMergedOrdering(t *testing.T) {
+	for _, tc := range []struct{ query, first string }{
+		{"", "old"}, {"?orderby=create_time", "new"}, {"?sort=create_time:asc", "old"}, {"?desc=false", "new"}, {"?canvas_category=agent_canvas", "new"},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			c, w, db := setupGinContextWithUserAndDB(t, "GET", "/api/v1/agents"+tc.query)
+			if err := db.AutoMigrate(&entity.CompilationTemplateGroup{}); err != nil {
+				t.Fatal(err)
+			}
+			for _, v := range []struct {
+				id               string
+				created, updated int64
+			}{{"old", 1, 20}, {"new", 2, 10}} {
+				if err := db.Create(&entity.UserCanvas{ID: v.id, UserID: "user-1", TenantID: new("user-1"), Title: new(v.id), CreateTime: new(v.created), UpdateTime: new(v.updated)}).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			(&AgentHandler{agentService: service.NewAgentService()}).ListAgents(c)
+			var payload struct {
+				Code int
+				Data struct{ Canvas []struct{ ID string } }
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Code != 0 || len(payload.Data.Canvas) != 2 || payload.Data.Canvas[0].ID != tc.first {
+				t.Fatalf("response=%s", w.Body.String())
+			}
+		})
+	}
+}

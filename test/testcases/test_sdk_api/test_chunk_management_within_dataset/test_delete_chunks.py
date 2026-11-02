@@ -81,7 +81,6 @@ class TestChunksDeletion:
         document.delete_chunks(**payload)
         wait_ids(document, ids[removed:])
 
-    @pytest.mark.skip(reason="Go RemoveChunks rejects omitted/empty IDs instead of documented safe no-op")
     @pytest.mark.parametrize("payload", [{}, {"ids": None}, {"ids": []}])
     def test_empty_selection_is_noop(self, add_chunks, payload):
         _, document, chunks = add_chunks

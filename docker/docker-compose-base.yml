@@ -185,15 +185,25 @@ services:
 
 
   vastbase:
+    # `vastbase` serves the doc engine; `metadata-vastbase` additionally lets
+    # the same instance carry the business metadata (DB_TYPE=vastbase).
     profiles:
       - vastbase
+      - metadata-vastbase
     image: ${VB_IMAGE:-vastbase-g100-single-v1.4-3.0.9.31338-linux-x86_64:20260513112809}
     env_file: .env
     environment:
       - VB_PASSWORD=${VB_PASSWORD}
       - VB_USERNAME=${VB_USERNAME}
       - VB_VEC_DBNAME=${VB_VEC_DBNAME:-ragflow}
+      - VB_META_DBNAME=${VB_META_DBNAME:-rag_flow}
       - VB_DBCOMPATIBILITY=${VB_DBCOMPATIBILITY:-B}
+      # MySQL-dialect catalog compatibility: the metadata migrations probe the
+      # catalog with uppercase MySQL-style names (INFORMATION_SCHEMA.COLUMNS,
+      # STATISTICS, KEY_COLUMN_USAGE). lower_case_table_names=1 folds unquoted
+      # identifiers to lowercase so those views resolve; without it Vastbase
+      # keeps the written case and every probe fails.
+      - OTHER_PG_CONF=lower_case_table_names=1
     # Bind the published port to loopback by default: the database ships
     # default credentials, and RAGFlow reaches it over the shared `ragflow`
     # network. Remote access is an explicit opt-in through VB_BIND_ADDR

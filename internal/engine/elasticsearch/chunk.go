@@ -2324,6 +2324,13 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 		if v == nil || v == "" {
 			continue
 		}
+		if isMemoryIndex && k == "session_id_contains" {
+			if text, ok := v.(string); ok {
+				pattern := strings.NewReplacer(`\`, `\\`, "*", `\*`, "?", `\?`).Replace(text)
+				filterClauses = append(filterClauses, map[string]interface{}{"wildcard": map[string]interface{}{"session_id": "*" + pattern + "*"}})
+			}
+			continue
+		}
 		if isMemoryIndex && k == "session_id" {
 			if strVal, ok := v.(string); ok && strVal != "" {
 				filterClauses = append(filterClauses, map[string]interface{}{

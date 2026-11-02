@@ -42,9 +42,7 @@ class TestGetMessageContent:
             assert_content(content, payload, memory.id)
             assert content["status"] is True, content
 
-    def test_get_message_content_embedding(self, populated_memory, doc_engine):
-        if doc_engine == "infinity":
-            pytest.skip("Go Infinity GetChunk returns q_<dimension>_vec without mapping it to documented content_embed (internal/engine/infinity/chunk.go:1907-1911,2177).")
+    def test_get_message_content_embedding(self, populated_memory):
         memory = populated_memory["memory"]
         content = memory.get_message_content(populated_memory["rows"][0]["message_id"])
         vector = content["content_embed"]

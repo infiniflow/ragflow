@@ -57,7 +57,9 @@ func NewPipelineHandler() *PipelineHandler {
 // Returns available pipeline templates. When type=builtin (or when no
 // type is specified), returns the built-in pipeline catalog shipped with
 // the binary. Support for user-defined pipelines may be added later.
-// This is public static data, so no auth is required.
+// The endpoint is registered under the authenticated group so the
+// /pipelines namespace is ready for per-tenant user pipelines; built-in
+// templates themselves are static data with no tenant scoping.
 func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 	if h == nil || h.registry == nil {
 		common.SuccessWithData(c, &pipelinepkg.BuiltinPipelineListResponse{
@@ -77,7 +79,8 @@ func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 
 // GetPipeline GET /api/v1/pipelines/:id
 // Returns a single built-in pipeline template with its DSL.
-// This is public static data, so no auth is required.
+// The endpoint is registered under the authenticated group; built-in
+// templates are static data with no tenant scoping.
 func (h *PipelineHandler) GetPipeline(c *gin.Context) {
 	if h == nil || h.registry == nil {
 		common.ErrorWithCode(c, common.CodeDataError, "pipeline not found")

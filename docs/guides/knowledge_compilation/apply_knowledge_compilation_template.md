@@ -21,7 +21,7 @@ Configuration steps:
 3. Open **Compiler**, select the target template group under **Operator**, and choose an available compilation model.
 4. Check node connections and required parameters, click **Save draft**, then **Publish** and confirm to create a pipeline version.
 
-![Configure Ingestion Pipeline with CompilerOperator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_ingestion_pipeline_apply_knowledge_compilation_template.jpg)
+![Configure the Compiler operator and model](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_compiler_operator_model.jpg)
 
 Note: CompilationTemplate only defines "how to compile". A KnowledgeArtifact is generated only after the template is referenced in CompilerOperator and the document actually executes this Pipeline.
 
@@ -33,7 +33,7 @@ Note: CompilationTemplate only defines "how to compile". A KnowledgeArtifact is 
 4. Open **Parsing mode**, expand the ingestion pipeline that contains **Compiler**, select its published version within that dropdown, and click **Save**. If it shows **No published versions**, publish the pipeline first.
 5. Start parsing and check in the task logs whether Parser, Chunker, Compiler, and Indexer complete in sequence.
 
-![Select the compilation pipeline in Dataset configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/connect_the_pipeline_to_a_knowledge_base.jpg)
+![Select the compilation pipeline in Dataset configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_dataset_published_version_tree.jpg)
 
 If CompilationTemplate is modified, completed documents are not automatically recompiled. You need to reparse or rerun the Pipeline according to the operations currently provided by the product before the new configuration can be applied.
 
