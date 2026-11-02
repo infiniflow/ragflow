@@ -17,6 +17,7 @@
 package sandbox
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -99,16 +100,23 @@ func TestCappedBufferBoundsRemoteStdout(t *testing.T) {
 	}
 }
 
-// Very short names can fit far more rows than the byte cap suggests, so one
-// listing is also bounded by row count.
-func TestCapRemoteEntriesBoundsOneListing(t *testing.T) {
-	entries := make([]remoteEntry, sshMaxListingEntries+5)
-	if got := len(capRemoteEntries(entries)); got != sshMaxListingEntries {
-		t.Fatalf("capRemoteEntries kept %d rows, want %d", got, sshMaxListingEntries)
+// A listing that hits either bound is refused rather than silently shortened,
+// otherwise collection would report fewer artifacts than the directory holds.
+func TestListingBoundsErrorRefusesShortenedListings(t *testing.T) {
+	if err := listingBoundsError("/srv/run/artifacts", false, 3); err != nil {
+		t.Fatalf("listing that fits was refused: %v", err)
 	}
-	small := entries[:3]
-	if got := capRemoteEntries(small); len(got) != 3 || &got[0] != &small[0] {
-		t.Fatalf("capRemoteEntries changed a listing that fits: %d rows", len(got))
+	// Exactly at the row cap still fits: only a row beyond it refuses.
+	if err := listingBoundsError("/srv/run/artifacts", false, sshMaxListingEntries); err != nil {
+		t.Fatalf("listing at the row cap was refused: %v", err)
+	}
+	if err := listingBoundsError("/srv/run/artifacts", false, sshMaxListingEntries+1); err == nil ||
+		!strings.Contains(err.Error(), strconv.Itoa(sshMaxListingEntries)) {
+		t.Fatalf("row cap error = %v, want the cap in the message", err)
+	}
+	if err := listingBoundsError("/srv/run/artifacts", true, 3); err == nil ||
+		!strings.Contains(err.Error(), strconv.Itoa(sshMaxListingBytes)) {
+		t.Fatalf("byte cap error = %v, want the cap in the message", err)
 	}
 }
 

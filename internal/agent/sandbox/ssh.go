@@ -757,16 +757,27 @@ func (p *SSHProvider) remoteListDir(ctx context.Context, client *ssh.Client, rem
 		}
 		return nil, fmt.Errorf("find %s: exit=%d stderr=%q", remotePath, exitCode, stderr)
 	}
-	return capRemoteEntries(parseRemoteEntries(stdout, remotePath)), nil
+	entries := parseRemoteEntries(stdout, remotePath)
+	if err := listingBoundsError(remotePath, bounded.truncated, len(entries)); err != nil {
+		return nil, err
+	}
+	return entries, nil
 }
 
-// capRemoteEntries bounds one directory listing. Very short names can fit a lot
-// of rows inside sshMaxListingBytes, so the row count is capped separately.
-func capRemoteEntries(entries []remoteEntry) []remoteEntry {
-	if len(entries) <= sshMaxListingEntries {
-		return entries
+// listingBoundsError refuses a listing that hit either per-listing bound.
+// Returning the prefix silently would report fewer artifacts than the directory
+// holds, so an oversized listing fails the collection instead. Truncated means
+// the retained stdout stopped at sshMaxListingBytes; a row count at
+// sshMaxListingEntries means the byte cap did not bound this listing on its own
+// (very short names), so the row bound has to refuse it.
+func listingBoundsError(remotePath string, truncated bool, rowCount int) error {
+	if truncated {
+		return fmt.Errorf("find %s: listing exceeded %d bytes", remotePath, sshMaxListingBytes)
 	}
-	return entries[:sshMaxListingEntries]
+	if rowCount > sshMaxListingEntries {
+		return fmt.Errorf("find %s: listing exceeded %d entries", remotePath, sshMaxListingEntries)
+	}
+	return nil
 }
 
 // parseRemoteEntries turns `find -printf '%p\t%s\t%m\t%y'` output into entries,
