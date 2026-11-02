@@ -1810,10 +1810,14 @@ func agentToolObject(item map[string]any) (string, map[string]any, bool) {
 		functionName, _ = stringFrom(toolParams, "function_name")
 		functionName = strings.TrimSpace(functionName)
 	}
+	// Only forward a DSL-provided function_name; without one the tool
+	// factory keeps its registered default (e.g. retrieval stays
+	// search_my_dateset), which is what the model calls.
 	if functionName == "" {
 		functionName = toolName
+	} else {
+		toolParams["function_name"] = functionName
 	}
-	toolParams["function_name"] = functionName
 
 	description, _ := stringFrom(item, "description")
 	description = strings.TrimSpace(description)
