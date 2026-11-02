@@ -417,13 +417,18 @@ def get_parser_config(chunk_method, parser_config):
     # enable_children is a flattened convenience flag and is only emitted for
     # payloads that explicitly carry a parent_child block, so pure defaults
     # keep the historical key set.
+    # An explicitly supplied but empty parent_child mapping still means
+    # "parent-child chunking disabled", so it has to take the disabled branch
+    # as well: the truthiness check alone skipped the flattening entirely and
+    # dropped both flattened keys for chunk methods without a parent_child
+    # default (qa, tag, ...).
     pc = merged_config.get("parent_child", {})
     explicit_parent_child = bool(parser_config) and "parent_child" in parser_config
     if pc.get("use_parent_child"):
         merged_config["children_delimiter"] = pc.get("children_delimiter", "\n")
         if explicit_parent_child:
             merged_config["enable_children"] = True
-    elif pc:
+    elif pc or explicit_parent_child:
         merged_config["children_delimiter"] = ""
         if explicit_parent_child:
             merged_config["enable_children"] = False
