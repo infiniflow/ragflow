@@ -1572,7 +1572,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 4. Construct the selected chat model through the factory.
-		access := ModelAccess{UserID: userID, TenantID: chat.TenantID}
+		access := Identity{UserID: userID, TenantID: chat.TenantID}
 		var chatModel *modelModule.ChatModel
 		if strings.TrimSpace(chat.LLMID) == "" {
 			chatModel, err = s.ModelFactory.NewDefaultChatModel(ctx, access)
@@ -2071,7 +2071,7 @@ func tokenizeText(text string) string {
 // models reject them at the provider (e.g. Zhipu GLM error 1210:
 // messages.content.type only allows 'text').
 func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
-	access := ModelAccess{TenantID: chat.TenantID}
+	access := Identity{TenantID: chat.TenantID}
 	var info *modelModule.ModelInfo
 	var err error
 	if strings.TrimSpace(chat.LLMID) == "" {
@@ -2153,7 +2153,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		}
 		if kbs[0].EmbdID != "" {
 			embdTenantID := kbs[0].TenantID
-			model, err := s.ModelFactory.NewEmbeddingModel(ctx, ModelAccess{TenantID: embdTenantID}, kbs[0].EmbdID)
+			model, err := s.ModelFactory.NewEmbeddingModel(ctx, Identity{TenantID: embdTenantID}, kbs[0].EmbdID)
 			if err != nil {
 				common.Warn("Failed to get embedding model for chat retrieval",
 					zap.String("embdID", kbs[0].EmbdID),
@@ -2166,7 +2166,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	}
 
 	// Chat model.
-	access := ModelAccess{TenantID: chat.TenantID}
+	access := Identity{TenantID: chat.TenantID}
 	var chatModel *modelModule.ChatModel
 	if strings.TrimSpace(chat.LLMID) == "" {
 		chatModel, _ = s.ModelFactory.NewDefaultChatModel(ctx, access)
@@ -2790,7 +2790,7 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 	if chatModel != nil {
 		return chatModel
 	}
-	access := ModelAccess{TenantID: chat.TenantID}
+	access := Identity{TenantID: chat.TenantID}
 	if strings.TrimSpace(chat.LLMID) == "" {
 		model, err := s.ModelFactory.NewDefaultChatModel(ctx, access)
 		if err != nil {

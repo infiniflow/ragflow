@@ -59,7 +59,7 @@ func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []strin
 	}
 	name := e.embdModelName
 	var model *modelModule.EmbeddingModel
-	access := ModelAccess{TenantID: tenantID}
+	access := Identity{TenantID: tenantID}
 	var err error
 	if name == "" {
 		model, err = e.modelFactory.NewDefaultEmbeddingModel(ctx, access)

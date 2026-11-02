@@ -189,7 +189,7 @@ func (h *ChatHandler) Create(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chat/mindmap [post]
 func (h *ChatHandler) MindMap(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -207,13 +207,13 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	searchConfig := map[string]interface{}{}
-	modelTenantID := user.ID
+	var modelTenantID string
 	if req.SearchID != "" {
 		if h.searchSvc == nil {
 			jsonInternalError(c, fmt.Errorf("search service not configured"))
 			return
 		}
-		detail, err := h.searchSvc.GetDetail(ctx, user.ID, req.SearchID)
+		detail, err := h.searchSvc.GetDetail(ctx, req.SearchID)
 		if err != nil {
 			if respondPermissionErrorIf(c, err, true) {
 				return
@@ -238,7 +238,6 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		KbIDs:         kbIDs,
 		SearchID:      req.SearchID,
 		SearchConfig:  searchConfig,
-		AuthUserID:    user.ID,
 		ModelTenantID: modelTenantID,
 		ChunkSvc:      h.chunkSvc,
 		LLM:           h.modelFactory,

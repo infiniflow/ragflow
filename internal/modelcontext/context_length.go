@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package dao
+package modelcontext
 
 import (
 	"context"
@@ -24,13 +24,14 @@ import (
 
 	"gorm.io/gorm"
 
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 )
 
 // ResolveModelContentLength returns the chat model's effective context window
-// (context_length) in tokens for modelRef — a tenant_model UUID or a
-// composite "model@provider" / "model@instance@provider" reference — or 0
+// (context_length) in tokens for modelRef - a tenant_model UUID or a
+// composite "model@provider" / "model@instance@provider" reference - or 0
 // when it cannot be resolved. tenantID scopes the composite-reference lookup
 // to the tenant's own provider/instance/model rows. driver and modelName are
 // an optional provider catalog fallback used when modelRef is not a
@@ -45,12 +46,11 @@ import (
 //     context_length (via the tenant row, the composite reference parts, or
 //     the resolved driver + model name).
 //
-// This is the shared implementation behind the agent LLM component, the
-// ingestion Extractor, and service.ModelProviderService — those packages
-// cannot import each other (import cycles), so the lookup lives here.
+// This is the shared implementation behind the Agent LLM component and the
+// Ingestion Extractor, which cannot depend on the Service package.
 func ResolveModelContentLength(ctx context.Context, db *gorm.DB, tenantID, modelRef, driver, modelName string) int {
 	if db == nil {
-		db = DB
+		db = dao.DB
 	}
 	pureName, instanceName, providerName, composite := splitCompositeModelRef(modelRef)
 
@@ -64,31 +64,31 @@ func ResolveModelContentLength(ctx context.Context, db *gorm.DB, tenantID, model
 	}
 
 	// 2. Catalog fallbacks (only when there is no custom override).
-	// 2a. Active tenant row → its provider row → catalog context_length.
+	// 2a. Active tenant row, its provider row, then catalog context_length.
 	if obj != nil && obj.Status == "active" {
-		if provider, err := NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
-			if mdl, err := GetModelProviderManager().GetModelByName(models.CatalogProviderName(provider.ProviderName), obj.ModelName); err == nil && mdl.ContextLength != nil {
+		if provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
+			if mdl, err := dao.GetModelProviderManager().GetModelByName(models.CatalogProviderName(provider.ProviderName), obj.ModelName); err == nil && mdl.ContextLength != nil {
 				return *mdl.ContextLength
 			}
 		}
 	}
-	// 2b. Composite reference with no tenant row → catalog by reference parts.
+	// 2b. Composite reference with no tenant row; query catalog by reference parts.
 	if composite {
-		if mdl, err := GetModelProviderManager().GetModelByName(models.CatalogProviderName(providerName), pureName); err == nil && mdl.ContextLength != nil {
+		if mdl, err := dao.GetModelProviderManager().GetModelByName(models.CatalogProviderName(providerName), pureName); err == nil && mdl.ContextLength != nil {
 			return *mdl.ContextLength
 		}
 	}
 	// 2c. Resolved driver + bare model name: fallback when modelRef is a
 	//     tenant id that could not be resolved without a database.
 	if driver != "" && modelName != "" {
-		if mdl, err := GetModelProviderManager().GetModelByName(models.CatalogProviderName(driver), modelName); err == nil && mdl.ContextLength != nil {
+		if mdl, err := dao.GetModelProviderManager().GetModelByName(models.CatalogProviderName(driver), modelName); err == nil && mdl.ContextLength != nil {
 			return *mdl.ContextLength
 		}
 	}
 	return 0
 }
 
-// lookupTenantModel resolves the tenant_model row for modelRef — by UUID, or
+// lookupTenantModel resolves the tenant_model row for modelRef by UUID, or
 // for a composite reference through the tenant's provider/instance rows (chat
 // model type). Returns nil when the row cannot be resolved.
 func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pureName, instanceName, providerName string, composite bool) *entity.TenantModel {
@@ -99,15 +99,20 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 		if tenantID == "" {
 			return nil
 		}
-		provider, err := NewTenantModelProviderDAO().GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
+		owner, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tenantID)
+		if err != nil {
+			return nil
+		}
+		ownerUserID := owner.UserID
+		provider, err := dao.NewTenantModelProviderDAO().GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, ownerUserID, providerName)
 		if err != nil || provider == nil {
 			return nil
 		}
-		instance, err := NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
+		instance, err := dao.NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
 		if err != nil || instance == nil || instance.Status != "active" {
 			return nil
 		}
-		obj, err := NewTenantModelDAO().GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx, db, provider.ID, instance.ID, int(entity.ModelTypeChat), pureName)
+		obj, err := dao.NewTenantModelDAO().GetByProviderIDAndInstanceIDAndModelTypeAndModelName(ctx, db, provider.ID, instance.ID, int(entity.ModelTypeChat), pureName)
 		if err != nil || obj == nil {
 			return nil
 		}
@@ -116,7 +121,7 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 	if modelRef == "" {
 		return nil
 	}
-	obj, err := NewTenantModelDAO().GetByID(ctx, db, modelRef)
+	obj, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelRef)
 	if err != nil || obj == nil {
 		return nil
 	}
@@ -130,7 +135,7 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 
 // modelExtraMaxTokens returns the per-model "max_tokens" override from the
 // tenant_model.extra JSON, or 0 when absent/invalid/non-positive. Mirrors
-// Python's model_extra.get("max_tokens") — the custom context-window length a
+// Python's model_extra.get("max_tokens"): the custom context-window length a
 // user configures for a model. Both JSON numbers and numeric strings are
 // accepted (some callers persist extra.max_tokens as a string).
 func modelExtraMaxTokens(extra string) int {
@@ -143,17 +148,25 @@ func modelExtraMaxTokens(extra string) int {
 	if err := json.Unmarshal([]byte(extra), &m); err != nil || len(m.MaxTokens) == 0 {
 		return 0
 	}
+	return MaxTokensFromJSON(m.MaxTokens)
+}
+
+// MaxTokensFromJSON parses a positive max_tokens JSON number or numeric string.
+func MaxTokensFromJSON(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
 	// Accept JSON numbers (int or float, e.g. 32000 / 32000.0) and numeric
 	// strings ("32000"); json.Number keeps the raw lexical form.
 	var num json.Number
-	if err := json.Unmarshal(m.MaxTokens, &num); err == nil {
+	if err := json.Unmarshal(raw, &num); err == nil {
 		if f, err := strconv.ParseFloat(num.String(), 64); err == nil && f > 0 {
 			return int(f)
 		}
 		return 0
 	}
 	var str string
-	if err := json.Unmarshal(m.MaxTokens, &str); err == nil {
+	if err := json.Unmarshal(raw, &str); err == nil {
 		if n, err := strconv.Atoi(strings.TrimSpace(str)); err == nil && n > 0 {
 			return n
 		}

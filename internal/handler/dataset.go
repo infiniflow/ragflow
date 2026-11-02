@@ -264,7 +264,7 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 	}
 	if _, exists := raw["ext"]; exists {
 		err = fmt.Errorf("extra inputs are not permitted: ext")
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		operationLog.Code = int(common.CodeArgumentError)
 		operationLog.Error = err
 		return
@@ -272,7 +272,7 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 	for field := range raw {
 		if !createDatasetAllowedFields[field] {
 			err = fmt.Errorf("extra inputs are not permitted: %s", field)
-			common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 			operationLog.Code = int(common.CodeArgumentError)
 			operationLog.Error = err
 			return
@@ -281,7 +281,7 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 
 	var req service.CreateDatasetRequest
 	if err = json.Unmarshal(bodyBytes, &req); err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		operationLog.Code = int(common.CodeDataError)
 		operationLog.Error = err
 		return
@@ -292,7 +292,7 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 
 	if req.Name == "" || (len(bodyBytes) > 0 && jsonNullValue(bodyBytes, "name")) {
 		err = fmt.Errorf("field validation for 'name' failed on the 'required' tag")
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		operationLog.Code = int(common.CodeDataError)
 		operationLog.Error = err
 		return
@@ -506,7 +506,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 
 	bodyBytes, _, err := parseJSONRequestObject(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		// parseJSONRequestObject already wrote the error response.
 		operationLog.Code = int(common.CodeArgumentError)
 		operationLog.Error = err
 		return
@@ -557,7 +557,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 		return
 	}
 	if code != common.CodeSuccess {
-		common.ErrorWithCode(c, code, "dataset updated failed")
+		common.ResponseWithCodeData(c, code, nil, "dataset updated failed")
 		operationLog.Code = int(code)
 		operationLog.Error = errors.New("dataset updated failed")
 		return
@@ -790,7 +790,7 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 
 	bodyBytes, rawPayload, err := parseJSONRequestObject(c)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		// parseJSONRequestObject already wrote the error response.
 		operationLog.Code = int(common.CodeArgumentError)
 		operationLog.Error = err
 		return
@@ -800,7 +800,7 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	for field := range rawPayload {
 		if field != "ids" && field != "delete_all" {
 			err = fmt.Errorf("extra inputs are not permitted: %s", field)
-			common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 			operationLog.Code = int(common.CodeArgumentError)
 			operationLog.Error = err
 			return
@@ -812,7 +812,7 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 		DeleteAll bool      `json:"delete_all,omitempty"`
 	}
 	if err = json.Unmarshal(bodyBytes, &req); err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		operationLog.Code = int(common.CodeDataError)
 		operationLog.Error = err
 		return
@@ -830,7 +830,7 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 		}
 		if len(duplicates) > 0 {
 			err = fmt.Errorf("duplicate ids: '%s'", strings.Join(duplicates, ", "))
-			common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 			operationLog.Code = int(common.CodeArgumentError)
 			operationLog.Error = err
 			return
