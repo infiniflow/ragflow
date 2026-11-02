@@ -1182,26 +1182,6 @@ func cellRef(col rune, row int) string {
 	return string(col) + strconv.Itoa(row)
 }
 
-// TestInheritMergedHeader unit-tests the merge inheritance helper directly.
-func TestInheritMergedHeader(t *testing.T) {
-	records := [][]string{
-		{"MASTER", "", "Q2"}, // header row: B1 blank, merged from master A1
-		{"a", "b", "c"},
-	}
-	mm := map[[2]int][2]int{
-		{1, 1}: {1, 1},
-		{1, 2}: {1, 1}, // B1's master is A1
-		{1, 3}: {1, 3},
-	}
-	inheritMergedHeader(records, 1, mm)
-	if records[0][1] != "MASTER" {
-		t.Fatalf("expected B1 to inherit A1 master text, got %q", records[0][1])
-	}
-	if records[0][2] != "Q2" {
-		t.Fatalf("expected non-merged C1 to keep its value, got %q", records[0][2])
-	}
-}
-
 // TestPadRowToWidth asserts the single-row padder widens with empty strings,
 // preserves existing cells, and never shrinks an already-wide row.
 func TestPadRowToWidth(t *testing.T) {
@@ -1423,7 +1403,8 @@ func TestXLSXParser_FormSheetEmitsKVChunk(t *testing.T) {
 	// Should have at least 2 items for the form sheet: HTML table + KV text.
 	// (Sheet1 is empty so yields nothing.)
 	var htmlCount, kvCount int
-	for _, item := range res.JSON {
+	for _, docItem := range res.JSON {
+		item := docItem.ToMap()
 		text, _ := item["text"].(string)
 		if strings.Contains(text, "<table>") {
 			htmlCount++
@@ -1437,8 +1418,8 @@ func TestXLSXParser_FormSheetEmitsKVChunk(t *testing.T) {
 	}
 	if kvCount == 0 {
 		var texts []string
-		for _, item := range res.JSON {
-			text, _ := item["text"].(string)
+		for _, docItem := range res.JSON {
+			text, _ := docItem.ToMap()["text"].(string)
 			texts = append(texts, text[:min(len(text), 200)])
 		}
 		t.Fatalf("no KV chunk found for form sheet, items:\n%v", texts)

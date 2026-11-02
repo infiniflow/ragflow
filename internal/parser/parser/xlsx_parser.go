@@ -182,7 +182,7 @@ func parseXLSXBytes(data []byte, sink *officeMediaSink) ([]map[string]any, []str
 		if rawErr == nil && isFormSheet(rawRows) {
 			kvText := renderFormSheetKV(sheet, rawRows)
 			if len(kvText) > 0 {
-				kvItem := NewTextJSONItem(kvText)
+				kvItem := NewTextJSONItem(kvText).ToMap()
 				kvItem["sheet"] = sheet
 				kvItem["sheet_index"] = sheetIdx + 1
 				items = append(items, kvItem)
