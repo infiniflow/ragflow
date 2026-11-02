@@ -43,12 +43,12 @@ func NewCompilationTemplateHandler(svc *service.CompilationTemplateService) *Com
 //	@Success 200 {object} map[string]interface{}
 //	@Router /v1/compilation-templates/builtins [get]
 func (h *CompilationTemplateHandler) ListBuiltins(c *gin.Context) {
-	user, code, msg := GetUser(c)
+	_, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
 		common.ErrorWithCode(c, code, msg)
 		return
 	}
-	templates, err := h.compilationTemplateService.ListBuiltins(c.Request.Context(), user.ID)
+	templates, err := h.compilationTemplateService.ListBuiltins(c.Request.Context())
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return

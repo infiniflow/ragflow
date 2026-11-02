@@ -172,6 +172,9 @@ func (p *communityPolicy) Scope(ctx context.Context, subject Subject, query Scop
 }
 
 func (p *communityPolicy) QueryScope(ctx context.Context, subject Subject, query ScopeQuery) (QueryScope, bool, error) {
+	if query.Kind == ResourceKindModelProvider || query.Kind == ResourceKindModelInstance || query.Kind == ResourceKindModel {
+		return p.modelQueryScope(ctx, subject, query)
+	}
 	if query.Kind == ResourceKindMCPServer && query.Operation == OperationRead && query.Parent.ID == "" && query.Parent.Kind == "" && query.Entry == nil {
 		return p.mcpServerReadQueryScope(ctx, subject)
 	}
@@ -216,6 +219,93 @@ func (p *communityPolicy) QueryScope(ctx context.Context, subject Subject, query
 			Where("(EXISTS (?) OR (knowledgebase.permission = ? AND EXISTS (?)))", callerIsOwner, string(entity.TenantPermissionTeam), callerIsMember)
 		return query.Where("knowledgebase.id IN (?)", accessibleDatasets)
 	}}, true, nil
+}
+
+func (p *communityPolicy) modelQueryScope(ctx context.Context, subject Subject, query ScopeQuery) (QueryScope, bool, error) {
+	parent := query.Parent
+	if query.Entry != nil || (parent.ID == "") != (parent.Kind == "") {
+		return QueryScope{}, false, nil
+	}
+	if err := validateSubject(subject); err != nil {
+		return QueryScope{}, true, err
+	}
+	source, ok := p.source.(*databaseSource)
+	if !ok || source.db == nil || tenantRoleMembershipEnabled(source.db) {
+		return QueryScope{}, false, nil
+	}
+	if query.Kind == ResourceKindModelInstance && parent.ID != "" && parent.Kind != ResourceKindModelProvider {
+		return QueryScope{}, false, nil
+	}
+	if query.Kind == ResourceKindModel && parent.ID != "" && parent.Kind != ResourceKindModelProvider && parent.Kind != ResourceKindModelInstance {
+		return QueryScope{}, false, nil
+	}
+
+	providerAccess := func(providerIDColumn, parentID string, ownerOnly bool) *gorm.DB {
+		provider := source.db.WithContext(ctx).Model(&entity.TenantModelProvider{}).
+			Select("1").
+			Where("tenant_model_provider.id = " + providerIDColumn)
+		if parentID != "" {
+			provider = provider.Where("tenant_model_provider.id = ?", parentID)
+		}
+		owner := source.db.WithContext(ctx).Model(&entity.UserTenant{}).
+			Select("user_tenant.user_id").
+			Where("user_tenant.tenant_id = tenant_model_provider.tenant_id AND user_tenant.role = ? AND user_tenant.status = ?", string(RoleOwner), string(entity.StatusValid)).
+			Limit(1)
+		provider = provider.Where("tenant_model_provider.user_id = COALESCE((?), tenant_model_provider.tenant_id)", owner)
+		if ownerOnly {
+			return provider.Where("tenant_model_provider.user_id = ?", subject.UserID)
+		}
+		membership := source.db.WithContext(ctx).Model(&entity.UserTenant{}).
+			Select("1").
+			Where("user_tenant.tenant_id = tenant_model_provider.tenant_id AND user_tenant.user_id = ? AND user_tenant.status = ? AND user_tenant.role IN ?",
+				subject.UserID, string(entity.StatusValid), []string{string(RoleOwner), string(RoleAdmin), string(RoleNormal)})
+		return provider.Where("(tenant_model_provider.user_id = ? OR EXISTS (?))", subject.UserID, membership)
+	}
+
+	switch query.Kind {
+	case ResourceKindModelProvider:
+		if parent.ID != "" || query.Operation != OperationRead {
+			return QueryScope{}, false, nil
+		}
+		return QueryScope{apply: func(query *gorm.DB) *gorm.DB {
+			db := source.db.WithContext(ctx)
+			owner := db.Model(&entity.UserTenant{}).
+				Select("user_tenant.user_id").
+				Where("user_tenant.tenant_id = tenant_model_provider.tenant_id AND user_tenant.role = ? AND user_tenant.status = ?", string(RoleOwner), string(entity.StatusValid)).
+				Limit(1)
+			membership := db.Model(&entity.UserTenant{}).
+				Select("1").
+				Where("user_tenant.tenant_id = tenant_model_provider.tenant_id AND user_tenant.user_id = ? AND user_tenant.status = ? AND user_tenant.role IN ?",
+					subject.UserID, string(entity.StatusValid), []string{string(RoleOwner), string(RoleAdmin), string(RoleNormal)})
+			return query.
+				Where("tenant_model_provider.user_id = COALESCE((?), tenant_model_provider.tenant_id)", owner).
+				Where("(tenant_model_provider.user_id = ? OR EXISTS (?))", subject.UserID, membership)
+		}}, true, nil
+	case ResourceKindModelInstance:
+		if query.Operation != OperationRead && query.Operation != OperationUse {
+			return QueryScope{}, false, nil
+		}
+		ownerOnly := query.Operation == OperationRead
+		return QueryScope{apply: func(query *gorm.DB) *gorm.DB {
+			return query.Where("EXISTS (?)", providerAccess("tenant_model_instance.provider_id", parent.ID, ownerOnly))
+		}}, true, nil
+	case ResourceKindModel:
+		if query.Operation != OperationRead && query.Operation != OperationUse {
+			return QueryScope{}, false, nil
+		}
+		return QueryScope{apply: func(query *gorm.DB) *gorm.DB {
+			modelQuery := query.Where("EXISTS (?)", providerAccess("tenant_model.provider_id", "", false))
+			switch parent.Kind {
+			case ResourceKindModelProvider:
+				modelQuery = modelQuery.Where("tenant_model.provider_id = ?", parent.ID)
+			case ResourceKindModelInstance:
+				modelQuery = modelQuery.Where("tenant_model.instance_id = ?", parent.ID)
+			}
+			return modelQuery
+		}}, true, nil
+	default:
+		return QueryScope{}, false, nil
+	}
 }
 
 func (p *communityPolicy) mcpServerReadQueryScope(ctx context.Context, subject Subject) (QueryScope, bool, error) {
