@@ -77,10 +77,17 @@ const (
 	// execution into unbounded SSH round trips.
 	sshMaxArtifactDepth    = 16
 	sshMaxArtifactListings = 256
-	sshDefaultMaxArtifact  = 10 << 20
-	sshDefaultPythonBin    = "python3"
-	sshDefaultNodeBin      = "node"
-	sshDefaultWorkDir      = "/tmp"
+	// One `find` lists one directory. A directory with very many entries would
+	// otherwise stream an unbounded listing into the provider's memory before
+	// maxArtifacts or the listing cap applies, so each listing is bounded in
+	// bytes and in entries: the retained stdout stops at sshMaxListingBytes and
+	// at most sshMaxListingEntries rows are parsed.
+	sshMaxListingBytes    = 1 << 20
+	sshMaxListingEntries  = 4096
+	sshDefaultMaxArtifact = 10 << 20
+	sshDefaultPythonBin   = "python3"
+	sshDefaultNodeBin     = "node"
+	sshDefaultWorkDir     = "/tmp"
 )
 
 // SSHProvider executes code on a remote host.
@@ -543,11 +550,50 @@ func (p *SSHProvider) hostKeyCallback() (ssh.HostKeyCallback, error) {
 // which single-quote escapes any value so the shell cannot be
 // tricked into re-interpreting it (see remoteMkdirAll,
 // remoteRemoveAll, remoteReadFile, remoteWriteFile, etc).
+// cappedBuffer retains at most limit bytes of a remote stdout stream and drops
+// the rest. A zero limit keeps everything. Writes always report success so a
+// bound never turns into a session error; the caller decides what truncation
+// means for its own parse.
+type cappedBuffer struct {
+	buf       strings.Builder
+	limit     int
+	truncated bool
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	if c.limit <= 0 {
+		c.buf.Write(p)
+		return len(p), nil
+	}
+	remaining := c.limit - c.buf.Len()
+	if remaining <= 0 {
+		c.truncated = true
+		return len(p), nil
+	}
+	if len(p) > remaining {
+		c.buf.Write(p[:remaining])
+		c.truncated = true
+		return len(p), nil
+	}
+	c.buf.Write(p)
+	return len(p), nil
+}
+
+// String returns the retained prefix of the remote output.
+func (c *cappedBuffer) String() string { return c.buf.String() }
+
 func (p *SSHProvider) runRemoteCommand(ctx context.Context, client *ssh.Client, command string, timeoutSec int) (string, string, int, error) {
 	return p.runRemoteCommandWithInput(ctx, client, command, timeoutSec, nil)
 }
 
 func (p *SSHProvider) runRemoteCommandWithInput(ctx context.Context, client *ssh.Client, command string, timeoutSec int, input io.Reader) (string, string, int, error) {
+	return p.runRemoteCommandCore(ctx, client, command, timeoutSec, input, nil)
+}
+
+// runRemoteCommandCore runs one remote command. When stdout is nil the whole
+// stream is retained; a capped buffer keeps the command running while bounding
+// how much of its output the provider holds.
+func (p *SSHProvider) runRemoteCommandCore(ctx context.Context, client *ssh.Client, command string, timeoutSec int, input io.Reader, stdout *cappedBuffer) (string, string, int, error) {
 	sess, err := client.NewSession()
 	if err != nil {
 		return "", "", -1, fmt.Errorf("ssh: open session: %w", err)
@@ -560,14 +606,17 @@ func (p *SSHProvider) runRemoteCommandWithInput(ctx context.Context, client *ssh
 			return "", "", -1, fmt.Errorf("ssh: open stdin: %w", err)
 		}
 	}
-	stdoutBuf, stderrBuf := &strings.Builder{}, &strings.Builder{}
-	sess.Stdout = stdoutBuf
+	if stdout == nil {
+		stdout = &cappedBuffer{}
+	}
+	stderrBuf := &strings.Builder{}
+	sess.Stdout = stdout
 	sess.Stderr = stderrBuf
 	// from shq()-escaped arguments only (see callers above); user
 	// input never reaches the shell unsanitized.
 	// codeql[go/command-injection] False positive: command is built
 	if err := sess.Start(command); err != nil {
-		return stdoutBuf.String(), stderrBuf.String(), -1, err
+		return stdout.String(), stderrBuf.String(), -1, err
 	}
 	runCtx := ctx
 	cancel := func() {}
@@ -611,7 +660,7 @@ func (p *SSHProvider) runRemoteCommandWithInput(ctx context.Context, client *ssh
 			if !writeComplete {
 				<-writeDone
 			}
-			return stdoutBuf.String(), stderrBuf.String(), -1, runCtx.Err()
+			return stdout.String(), stderrBuf.String(), -1, runCtx.Err()
 		}
 	}
 	if waitErr != nil {
@@ -620,14 +669,14 @@ func (p *SSHProvider) runRemoteCommandWithInput(ctx context.Context, client *ssh
 		// the ExitCode field).
 		var exitErr *ssh.ExitError
 		if errors.As(waitErr, &exitErr) {
-			return stdoutBuf.String(), stderrBuf.String(), exitErr.ExitStatus(), nil
+			return stdout.String(), stderrBuf.String(), exitErr.ExitStatus(), nil
 		}
-		return stdoutBuf.String(), stderrBuf.String(), -1, waitErr
+		return stdout.String(), stderrBuf.String(), -1, waitErr
 	}
 	if writeErr != nil {
-		return stdoutBuf.String(), stderrBuf.String(), -1, fmt.Errorf("ssh: write stdin: %w", writeErr)
+		return stdout.String(), stderrBuf.String(), -1, fmt.Errorf("ssh: write stdin: %w", writeErr)
 	}
-	return stdoutBuf.String(), stderrBuf.String(), 0, nil
+	return stdout.String(), stderrBuf.String(), 0, nil
 }
 
 // remoteMkdirAll runs `mkdir -p` on the remote. The Python
@@ -692,7 +741,11 @@ func (p *SSHProvider) remoteListDir(ctx context.Context, client *ssh.Client, rem
 		"find %s -mindepth 1 -maxdepth 1 -printf '%%p\\t%%s\\t%%m\\t%%y\\n'",
 		shq(remotePath),
 	)
-	stdout, stderr, exitCode, err := p.runRemoteCommand(ctx, client, cmd, p.timeout)
+	// Bound what a single `find` can make this process hold. Truncation can
+	// only cut the tail mid-line, which parseRemoteEntries drops as malformed;
+	// a line that arrives complete is still an ordinary entry.
+	bounded := &cappedBuffer{limit: sshMaxListingBytes}
+	stdout, stderr, exitCode, err := p.runRemoteCommandCore(ctx, client, cmd, p.timeout, nil, bounded)
 	if err != nil {
 		return nil, err
 	}
@@ -704,7 +757,16 @@ func (p *SSHProvider) remoteListDir(ctx context.Context, client *ssh.Client, rem
 		}
 		return nil, fmt.Errorf("find %s: exit=%d stderr=%q", remotePath, exitCode, stderr)
 	}
-	return parseRemoteEntries(stdout, remotePath), nil
+	return capRemoteEntries(parseRemoteEntries(stdout, remotePath)), nil
+}
+
+// capRemoteEntries bounds one directory listing. Very short names can fit a lot
+// of rows inside sshMaxListingBytes, so the row count is capped separately.
+func capRemoteEntries(entries []remoteEntry) []remoteEntry {
+	if len(entries) <= sshMaxListingEntries {
+		return entries
+	}
+	return entries[:sshMaxListingEntries]
 }
 
 // parseRemoteEntries turns `find -printf '%p\t%s\t%m\t%y'` output into entries,

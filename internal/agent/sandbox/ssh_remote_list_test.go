@@ -16,7 +16,10 @@
 
 package sandbox
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // find's %m is the permission bits only ("644"), not the st_mode file type, so
 // the entry kind has to come from %y. Masking %m for S_IFDIR/S_IFREG never
@@ -62,5 +65,67 @@ func TestParseRemoteEntriesSkipsMalformedLines(t *testing.T) {
 	}
 	if entries[0].Name != "a.txt" || entries[1].Name != "b.txt" {
 		t.Fatalf("unexpected entry names: %+v", entries)
+	}
+}
+
+// A wide directory must not let one `find` grow the provider's retained stdout
+// without bound: the cap keeps the prefix and flags the cut.
+func TestCappedBufferBoundsRemoteStdout(t *testing.T) {
+	capped := &cappedBuffer{limit: 64}
+	chunk := []byte(strings.Repeat("x", 32))
+	for i := 0; i < 8; i++ {
+		if n, err := capped.Write(chunk); n != len(chunk) || err != nil {
+			t.Fatalf("Write = %d, %v; want %d, nil", n, err, len(chunk))
+		}
+	}
+	if got := len(capped.String()); got != 64 {
+		t.Fatalf("retained %d bytes, want 64", got)
+	}
+	if !capped.truncated {
+		t.Fatal("cappedBuffer did not report the cut")
+	}
+
+	unlimited := &cappedBuffer{}
+	for i := 0; i < 8; i++ {
+		if _, err := unlimited.Write(chunk); err != nil {
+			t.Fatalf("unlimited Write: %v", err)
+		}
+	}
+	if got := len(unlimited.String()); got != 256 {
+		t.Fatalf("unlimited buffer retained %d bytes, want 256", got)
+	}
+	if unlimited.truncated {
+		t.Fatal("unlimited buffer reported a cut")
+	}
+}
+
+// Very short names can fit far more rows than the byte cap suggests, so one
+// listing is also bounded by row count.
+func TestCapRemoteEntriesBoundsOneListing(t *testing.T) {
+	entries := make([]remoteEntry, sshMaxListingEntries+5)
+	if got := len(capRemoteEntries(entries)); got != sshMaxListingEntries {
+		t.Fatalf("capRemoteEntries kept %d rows, want %d", got, sshMaxListingEntries)
+	}
+	small := entries[:3]
+	if got := capRemoteEntries(small); len(got) != 3 || &got[0] != &small[0] {
+		t.Fatalf("capRemoteEntries changed a listing that fits: %d rows", len(got))
+	}
+}
+
+// head -c can stop inside a row. Complete rows still parse; the partial tail is
+// dropped instead of becoming a bogus entry.
+func TestParseRemoteEntriesDropsByteTruncatedTail(t *testing.T) {
+	stdout := "/srv/run/artifacts/a.txt\t1\t644\tf\n" +
+		"/srv/run/artifacts/b.txt\t2\t644"
+	entries := parseRemoteEntries(stdout, "/srv/run/artifacts")
+	if len(entries) != 1 || entries[0].Name != "a.txt" {
+		t.Fatalf("entries = %+v, want only a.txt", entries)
+	}
+
+	// A row that arrived complete is kept even without its trailing newline.
+	complete := "/srv/run/artifacts/a.txt\t1\t644\tf\n" +
+		"/srv/run/artifacts/b.txt\t2\t644\tf"
+	if got := parseRemoteEntries(complete, "/srv/run/artifacts"); len(got) != 2 {
+		t.Fatalf("complete rows = %+v, want 2 entries", got)
 	}
 }
