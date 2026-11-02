@@ -19,6 +19,7 @@ package component
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	agenttool "ragflow/internal/agent/tool"
@@ -137,33 +138,64 @@ func TestRetrievalComponentForwardsUserIDNodeParam(t *testing.T) {
 	}
 }
 
-// TestRetrievalComponentHonorsInputUserID pins the canvas side of the trust
-// split: the Retrieval component assembles its arguments from node config and
-// upstream outputs, never from a model tool call, so an input-supplied value
-// keeps working. Only the Agent tool path rejects one.
-func TestRetrievalComponentHonorsInputUserID(t *testing.T) {
+// TestRetrievalComponentIgnoresInputUserID pins the canvas side of the trust
+// split: user_id decides whose memories are read, so it comes from the node
+// configuration or the authenticated run user, and an upstream value never
+// selects it.
+func TestRetrievalComponentIgnoresInputUserID(t *testing.T) {
 	previous := agenttool.GetMemoryRetrievalService()
-	recorder := &retrievalRequestRecorder{}
-	agenttool.SetMemoryRetrievalService(recorder)
 	t.Cleanup(func() { agenttool.SetMemoryRetrievalService(previous) })
 
-	component, err := newRetrievalComponent(map[string]any{
-		"memory_ids":     []any{"memory-1"},
-		"retrieval_from": "memory",
-	})
-	if err != nil {
-		t.Fatalf("newRetrievalComponent: %v", err)
-	}
+	t.Run("node config wins", func(t *testing.T) {
+		recorder := &retrievalRequestRecorder{}
+		agenttool.SetMemoryRetrievalService(recorder)
 
-	if _, err = component.Invoke(t.Context(), nil, map[string]any{
-		"query":   "remember",
-		"user_id": "user-from-upstream",
-	}); err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	if recorder.request.UserID != "user-from-upstream" {
-		t.Errorf("UserID = %q, want the upstream value user-from-upstream", recorder.request.UserID)
-	}
+		component, err := newRetrievalComponent(map[string]any{
+			"memory_ids":     []any{"memory-1"},
+			"retrieval_from": "memory",
+			"user_id":        "user-configured",
+		})
+		if err != nil {
+			t.Fatalf("newRetrievalComponent: %v", err)
+		}
+		if _, err := component.Invoke(t.Context(), nil, map[string]any{
+			"query":   "remember",
+			"user_id": "user-from-upstream",
+		}); err != nil {
+			t.Fatalf("Invoke: %v", err)
+		}
+		if recorder.request.UserID != "user-configured" {
+			t.Errorf("UserID = %q, want the node config value user-configured", recorder.request.UserID)
+		}
+	})
+
+	t.Run("upstream value dropped", func(t *testing.T) {
+		recorder := &retrievalRequestRecorder{}
+		agenttool.SetMemoryRetrievalService(recorder)
+
+		component, err := newRetrievalComponent(map[string]any{
+			"memory_ids":     []any{"memory-1"},
+			"retrieval_from": "memory",
+		})
+		if err != nil {
+			t.Fatalf("newRetrievalComponent: %v", err)
+		}
+		// No node config and no authenticated run user: the upstream value must
+		// not stand in, so the memory search fails closed before any search runs.
+		_, err = component.Invoke(t.Context(), nil, map[string]any{
+			"query":   "remember",
+			"user_id": "user-from-upstream",
+		})
+		if err == nil {
+			t.Fatal("Invoke: expected the memory user_id requirement to fail closed")
+		}
+		if !strings.Contains(err.Error(), "requires a user_id") {
+			t.Fatalf("err = %v, want the user_id requirement", err)
+		}
+		if recorder.request.RetrievalFrom != "" {
+			t.Fatalf("memory search ran without a user filter: %#v", recorder.request)
+		}
+	})
 }
 
 func TestRetrievalComponentForwardsExplicitZeroSimilarityParams(t *testing.T) {

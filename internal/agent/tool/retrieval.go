@@ -96,8 +96,8 @@ type RetrievalTool struct {
 	// argsUserIDUntrusted marks callers whose arguments come from a model. For
 	// those, user_id decides whose memory messages are read, so the model must
 	// not be able to pick it: the node's value is the only source. Canvas
-	// components build their arguments themselves (node config merged with
-	// upstream outputs) and leave this false.
+	// components leave this false; applyDefaults takes user_id from the node
+	// config alone and drops any upstream value.
 	argsUserIDUntrusted bool
 }
 

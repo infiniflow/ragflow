@@ -536,7 +536,7 @@ func TestRetrieval_ModelSuppliedUserIDIsIgnored(t *testing.T) {
 	}
 }
 
-func TestRetrieval_UnsetBareUserRefYieldsNoFilter(t *testing.T) {
+func TestRetrieval_UnsetBareUserRefFailsClosed(t *testing.T) {
 	previous := GetMemoryRetrievalService()
 	memoryService := &capturingRetrievalService{}
 	SetMemoryRetrievalService(memoryService)
