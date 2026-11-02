@@ -229,7 +229,7 @@ Local deployment supports both Docker deployment and launching from source. Dock
    ```
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
-   > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number), because the default HTTP serving port `80` can be omitted when using the default configuration.
+   > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**without** port number), because the default HTTP serving port `80` can be omitted when using the default configuration.
 
 6. After signing in, add an LLM, embedding, and reranker on the model provider page, including the model name, service address, and API key.
 

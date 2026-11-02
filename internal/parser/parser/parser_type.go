@@ -77,7 +77,13 @@ func newParser(fileType utility.FileType, textOnly bool) (ParseResultProducer, e
 		p.textOnly = textOnly
 		return p, nil
 	case utility.FileTypeMarkdown:
-		return NewMarkdownParser(GoMarkdown)
+		p, err := NewMarkdownParser(GoMarkdown)
+		if err != nil {
+			return nil, err
+		}
+		p.textOnly = textOnly
+		p.mediaRefs = !textOnly
+		return p, nil
 	case utility.FileTypeTXT:
 		return NewTextParser(), nil
 	case utility.FileTypeEPUB:

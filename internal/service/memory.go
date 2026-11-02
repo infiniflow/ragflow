@@ -503,7 +503,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 	// tenant_model row) — we leave the tenant_*_id fields nil and proceed.
 	modelFactory := NewModelFactory()
 	if req.LLMID != "" && req.TenantLLMID == nil {
-		info, err := modelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, entity.ModelTypeChat, req.LLMID)
+		info, err := modelFactory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, entity.ModelTypeChat, req.LLMID)
 		if err != nil {
 			common.Warn("CreateMemory: failed to resolve tenant LLM id",
 				zap.String("tenant_id", tenantID), zap.String("llm_id", req.LLMID), zap.Error(err))
@@ -513,7 +513,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 		}
 	}
 	if req.EmbdID != "" && req.TenantEmbdID == nil {
-		info, err := modelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, entity.ModelTypeEmbedding, req.EmbdID)
+		info, err := modelFactory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, entity.ModelTypeEmbedding, req.EmbdID)
 		if err != nil {
 			common.Warn("CreateMemory: failed to resolve tenant embedding id",
 				zap.String("tenant_id", tenantID), zap.String("embd_id", req.EmbdID), zap.Error(err))
@@ -673,7 +673,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, userID string, memoryI
 	if req.LLMID != nil {
 		updateDict["llm_id"] = *req.LLMID
 		if req.TenantLLMID == nil && *req.LLMID != "" {
-			info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: ownerTenantID}, entity.ModelTypeChat, *req.LLMID)
+			info, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: ownerTenantID}, entity.ModelTypeChat, *req.LLMID)
 			if err != nil {
 				common.Warn("UpdateMemory: failed to resolve tenant LLM id",
 					zap.String("tenant_id", ownerTenantID), zap.String("llm_id", *req.LLMID), zap.Error(err))
@@ -686,7 +686,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, userID string, memoryI
 	if req.EmbdID != nil {
 		updateDict["embd_id"] = *req.EmbdID
 		if req.TenantEmbdID == nil && *req.EmbdID != "" {
-			info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: ownerTenantID}, entity.ModelTypeEmbedding, *req.EmbdID)
+			info, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: ownerTenantID}, entity.ModelTypeEmbedding, *req.EmbdID)
 			if err != nil {
 				common.Warn("UpdateMemory: failed to resolve tenant embedding id",
 					zap.String("tenant_id", ownerTenantID), zap.String("embd_id", *req.EmbdID), zap.Error(err))
@@ -1539,7 +1539,7 @@ func memoryFusionWeights(keywordsSimilarityWeight float64) string {
 }
 
 func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
-	embeddingModel, err := NewModelFactory().NewEmbeddingModel(ctx, ModelAccess{TenantID: memory.TenantID}, memory.EmbdID)
+	embeddingModel, err := NewModelFactory().NewEmbeddingModel(ctx, Identity{TenantID: memory.TenantID}, memory.EmbdID)
 	if err != nil {
 		return nil, err
 	}
