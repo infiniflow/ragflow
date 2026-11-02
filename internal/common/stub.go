@@ -106,15 +106,21 @@ func InitIngestLog(logType string, file FileOutput, serviceName string) error {
 	}
 	stdoutSyncer := zapcore.AddSync(os.Stdout)
 	syncers := []zapcore.WriteSyncer{stdoutSyncer}
-	// File output is opt-in: only when a directory is configured. A missing
-	// Filename falls back to "<service>_ingest.log" so operators only set path.
+	// File output is opt-in via a non-empty Path. Path is treated as the log FILE
+	// (matching conf/service_conf.yaml's "path is the file" wording): a stray
+	// directory named after the file is never created. Only when Path is itself an
+	// existing directory do we synthesize a per-service file name inside it.
 	if file.Path != "" {
-		filename := file.Filename
-		if filename == "" {
-			filename = fmt.Sprintf("%s_ingest.log", serviceName)
+		filename := file.Path
+		if fi, statErr := os.Stat(file.Path); statErr == nil && fi.IsDir() {
+			name := file.Filename
+			if name == "" {
+				name = fmt.Sprintf("%s_ingest.log", serviceName)
+			}
+			filename = filepath.Join(file.Path, name)
 		}
 		ljLogger := &lumberjack.Logger{
-			Filename:   filepath.Join(file.Path, filename),
+			Filename:   filename,
 			MaxSize:    maxSize,
 			MaxBackups: maxBackups,
 			MaxAge:     maxAge,

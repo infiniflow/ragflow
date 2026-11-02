@@ -57,17 +57,25 @@ func isBeginRelevant(eventType string) bool {
 }
 
 // claimTime returns the worker-claim time. It prefers the document's own
-// ProcessBeginAt (set when the worker actually starts, in PrepareValidatedRun)
-// over the run row's ProcessBeginAt (set in CreateOpenLog at open time, before
-// the worker claims). This keeps wait_duration_s measuring real queue wait
-// rather than ~0. A retry's new run overwrites doc.ProcessBeginAt at its own
-// claim, so the current run never inherits a previous run's claim time here.
+// ProcessBeginAt (set when the worker actually starts, in PrepareValidatedRun).
+//
+// doc.ProcessBeginAt is never cleared between runs, so on a run that never claimed
+// the document (RequestStop/supersede on a queued task, or a publish failure) or a
+// retry that reuses a stale document value, it can hold a PRIOR run's instant.
+// We therefore only trust it when it falls at or after this run's open time
+// (run.CreateDate); otherwise the run never started and must not report a
+// claim/parse time. The run row's ProcessBeginAt is the open time (set in
+// CreateOpenLog), not a claim time, so it is intentionally not used here.
 func claimTime(doc *entity.Document, run *entity.PipelineOperationLog) *time.Time {
+	if doc != nil && doc.ProcessBeginAt != nil && run != nil && run.CreateDate != nil {
+		if !doc.ProcessBeginAt.Before(*run.CreateDate) {
+			return doc.ProcessBeginAt
+		}
+		return nil
+	}
+	// No run to validate against: fall back to the document value as-is.
 	if doc != nil && doc.ProcessBeginAt != nil {
 		return doc.ProcessBeginAt
-	}
-	if run != nil && run.ProcessBeginAt != nil {
-		return run.ProcessBeginAt
 	}
 	return nil
 }
