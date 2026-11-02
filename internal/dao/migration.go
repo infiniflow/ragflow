@@ -19,10 +19,12 @@ package dao
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -262,17 +264,8 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 		return nil
 	}
 
-	var duplicateCount int64
-	if err = db.WithContext(ctx).Raw(`
-		SELECT COUNT(*) FROM (
-			SELECT document_id FROM ingestion_task GROUP BY document_id HAVING COUNT(*) > 1
-		) AS duplicates
-	`).Scan(&duplicateCount).Error; err != nil {
+	if err = repairDuplicateIngestionTasks(ctx, db); err != nil {
 		return err
-	}
-	if duplicateCount > 0 {
-		common.Warn("Found duplicate document_id values in ingestion_task, cannot add unique index", zap.Int64("count", duplicateCount))
-		return nil
 	}
 
 	// A non-unique index under the same name would block the unique one.
@@ -281,6 +274,132 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 	}
 
 	return addUniqueIndex(ctx, db, "ingestion_task", indexName, columns)
+}
+
+// repairDuplicateIngestionTasks keeps the task selected by GetByDocumentID and
+// removes older terminal rows before the unique document index is created.
+// Active duplicates and terminal rows whose bound pipeline log is still open
+// require operator intervention because deleting them could orphan a worker or
+// run ledger.
+func repairDuplicateIngestionTasks(ctx context.Context, db *gorm.DB) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var documentIDs []string
+		if err := tx.Model(&entity.IngestionTask{}).
+			Select("document_id").
+			Group("document_id").
+			Having("COUNT(*) > 1").
+			Order("document_id").
+			Pluck("document_id", &documentIDs).Error; err != nil {
+			return fmt.Errorf("find duplicate ingestion_task.document_id values: %w", err)
+		}
+		if len(documentIDs) == 0 {
+			return nil
+		}
+
+		hasPipelineLogID := tx.Migrator().HasColumn(&entity.IngestionTask{}, "pipeline_log_id")
+		columns := "id, document_id, status, create_time"
+		if hasPipelineLogID {
+			columns += ", pipeline_log_id"
+		}
+
+		var staleTasks []entity.IngestionTask
+		for _, documentID := range documentIDs {
+			var tasks []entity.IngestionTask
+			if err := tx.Model(&entity.IngestionTask{}).
+				Select(columns).
+				Where("document_id = ?", documentID).
+				Order("COALESCE(create_time, 0) DESC").
+				Order("id DESC").
+				Find(&tasks).Error; err != nil {
+				return fmt.Errorf("load duplicate ingestion tasks for document %s: %w", documentID, err)
+			}
+			if len(tasks) < 2 {
+				continue
+			}
+			for _, task := range tasks[1:] {
+				if !common.IsTerminalTaskStatus(task.Status) {
+					return fmt.Errorf(
+						"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s is %s; stop ingestors and resolve the duplicate task before upgrading",
+						task.ID, task.DocumentID, task.Status,
+					)
+				}
+				if hasPipelineLogID && task.PipelineLogID != nil && *task.PipelineLogID != "" {
+					if err := requireSettledDuplicateTaskRun(tx, task); err != nil {
+						return err
+					}
+				}
+				staleTasks = append(staleTasks, task)
+			}
+		}
+
+		for _, task := range staleTasks {
+			result := tx.Where("id = ? AND status = ?", task.ID, task.Status).
+				Delete(&entity.IngestionTask{})
+			if result.Error != nil {
+				return fmt.Errorf("delete duplicate ingestion task %s: %w", task.ID, result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf(
+					"cannot delete duplicate ingestion task %s for document %s: task changed during migration",
+					task.ID, task.DocumentID,
+				)
+			}
+		}
+		common.Warn(
+			"Removed duplicate terminal ingestion tasks before adding the unique document index",
+			zap.Int("rows", len(staleTasks)),
+		)
+		return nil
+	})
+}
+
+func requireSettledDuplicateTaskRun(tx *gorm.DB, task entity.IngestionTask) error {
+	if !tx.Migrator().HasTable("pipeline_operation_log") {
+		return fmt.Errorf(
+			"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s references pipeline log %s, but pipeline_operation_log is missing",
+			task.ID, task.DocumentID, *task.PipelineLogID,
+		)
+	}
+
+	var operationStatus string
+	err := tx.Table("pipeline_operation_log").
+		Select("operation_status").
+		Where("id = ? AND document_id = ?", *task.PipelineLogID, task.DocumentID).
+		Take(&operationStatus).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf(
+			"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s references missing pipeline log %s",
+			task.ID, task.DocumentID, *task.PipelineLogID,
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("load pipeline log %s for duplicate task %s: %w", *task.PipelineLogID, task.ID, err)
+	}
+	if isOpenPipelineOperationStatus(operationStatus) {
+		return fmt.Errorf(
+			"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s is bound to open pipeline log %s; settle the log before upgrading",
+			task.ID, task.DocumentID, *task.PipelineLogID,
+		)
+	}
+	if !isTerminalPipelineOperationStatus(operationStatus) {
+		return fmt.Errorf(
+			"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s is bound to pipeline log %s with unknown status %q",
+			task.ID, task.DocumentID, *task.PipelineLogID, operationStatus,
+		)
+	}
+	return nil
+}
+
+func isOpenPipelineOperationStatus(status string) bool {
+	return slices.Contains(expandPipelineOperationStatuses(OpenPipelineOperationStatuses()), status)
+}
+
+func isTerminalPipelineOperationStatus(status string) bool {
+	return slices.Contains(expandPipelineOperationStatuses([]string{
+		string(entity.TaskStatusCancel),
+		string(entity.TaskStatusDone),
+		string(entity.TaskStatusFail),
+	}), status)
 }
 
 // migrateIngestionTaskPipelineLogID adds ingestion_task.pipeline_log_id when
@@ -370,12 +489,17 @@ func createIngestionLogIndexIfMissing(migrator ingestionLogSchemaMigrator, model
 	return nil
 }
 
+// isDuplicateColumnError reports whether err means the column is already
+// there: MySQL's Error 1060 on the MySQL wire, or the duplicate-object
+// SQLSTATEs on the Vastbase connection. A bare "already exists" text match is
+// deliberately absent — unrelated failures phrase themselves that way too.
 func isDuplicateColumnError(err error) bool {
 	if err == nil {
 		return false
 	}
 	text := err.Error()
-	return strings.Contains(text, "Error 1060") && strings.Contains(text, "Duplicate column name")
+	return (strings.Contains(text, "Error 1060") && strings.Contains(text, "Duplicate column name")) ||
+		isPostgresDuplicateObjectErr(err)
 }
 
 // migrateKnowledgebaseNameUnique adds a case-insensitive unique constraint on
@@ -499,10 +623,10 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 // system_settings under mysql_migration.database.version, the marker shared with
 // the other versioned steps, so work already performed by a previous run is
 // skipped.
-const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2.dev1"
+const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2"
 
 // removedParserConfigKeys are the top level knowledgebase parser config keys the
-// v1.0.0-rc2.dev1 step deletes. raptor and graphrag moved out of the dataset
+// v1.0.0-rc2 step deletes. raptor and graphrag moved out of the dataset
 // parser config, so the stored sections are dead data.
 var removedParserConfigKeys = []string{"raptor", "graphrag"}
 
@@ -613,6 +737,18 @@ func dropRemovedParserConfigKeys(config map[string]interface{}) bool {
 // entities, so AutoMigrate converges on the same definition and the two paths
 // cannot fight over the column.
 func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
+	// The specs carry MySQL type names (int, longtext, datetime) compared
+	// against COLUMN_TYPE to keep the shared schema aligned with the Python
+	// models. On Vastbase the columns are created by AutoMigrate's postgres
+	// mapping, whose reported type names (integer, bigint, timestamp) never
+	// compare equal to the specs, so every startup would re-issue the MODIFY
+	// and AutoMigrate would flip the column back — an ALTER loop measured on
+	// a live instance (spec int NOT NULL vs stored bigint YES). The columns
+	// are already correct there; there is nothing to align.
+	if isVastbaseMetaDB(db) {
+		return nil
+	}
+
 	specs := []columnSpec{
 		// dialog.top_k mirrors Python's IntegerField(default=1024).
 		{
@@ -669,7 +805,6 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 			return err
 		}
 	}
-
 	return nil
 }
 

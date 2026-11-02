@@ -347,6 +347,7 @@ const ExtractorForm = ({
                 />
                 <RAGFlowFormItem
                   label={t('flow.tagFile')}
+                  tooltip={t('flow.tagFileTip')}
                   name="tags.tag_file_id"
                 >
                   {(field) => (

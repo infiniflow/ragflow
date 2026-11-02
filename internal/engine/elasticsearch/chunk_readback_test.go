@@ -91,7 +91,7 @@ func TestInsertChunks_WritesIngestionShape(t *testing.T) {
 	visible := map[string]interface{}{"id": "visible", "doc_id": "doc-1", "content_with_weight": "visible source"}
 	nullAvailability := map[string]interface{}{"id": "null", "doc_id": "doc-1", "available_int": nil}
 	enabled := map[string]interface{}{"id": "enabled", "doc_id": "doc-1", "available_int": 1}
-	if _, err := engine.InsertChunks(t.Context(), []map[string]interface{}{chunk, visible, nullAvailability, enabled}, "ragflow_chunk_readback_test", "kb-1"); err != nil {
+	if _, err := engine.InsertChunks(t.Context(), []map[string]interface{}{chunk, visible, nullAvailability, enabled}, "ragflow_chunk_readback_test", "kb-1", ""); err != nil {
 		t.Fatalf("InsertChunks: %v", err)
 	}
 

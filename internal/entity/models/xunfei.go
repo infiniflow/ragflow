@@ -60,11 +60,10 @@ func (x *XunFeiModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -98,11 +97,10 @@ func (x *XunFeiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
@@ -166,11 +164,10 @@ func (x *XunFeiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, err
 	}
 
-	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.Models)
 
 	body, err := x.baseModel.doGetRequest(ctx, url, apiConfig, nonStreamCallTimeout)
 	if err != nil {
@@ -211,5 +208,9 @@ func (x *XunFeiModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 }
 
 func (x *XunFeiModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XunFeiModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", x.Name())
 }

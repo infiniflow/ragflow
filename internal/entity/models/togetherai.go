@@ -73,13 +73,7 @@ func applyTogetherAIReasoningRequestParams(reqBody map[string]any, modelName str
 }
 
 func (t *TogetherAIModel) chatURL(apiConfig *APIConfig) (string, error) {
-
-	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return "", err
-	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	return fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Chat), nil
+	return t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Chat)
 }
 
 func (t *TogetherAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -152,12 +146,10 @@ func (t *TogetherAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) 
 		return nil, err
 	}
 
-	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -221,12 +213,10 @@ func (t *TogetherAIModel) Embed(ctx context.Context, modelName *string, request 
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -307,11 +297,10 @@ func (t *TogetherAIModel) Rerank(ctx context.Context, modelName *string, request
 		return &RerankResponse{}, nil
 	}
 
-	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Rerank)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN != 0 {
@@ -330,7 +319,7 @@ func (t *TogetherAIModel) Rerank(ctx context.Context, modelName *string, request
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -389,11 +378,10 @@ func (t *TogetherAIModel) TranscribeAudio(ctx context.Context, modelName *string
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.ASR)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -446,7 +434,7 @@ func (t *TogetherAIModel) TranscribeAudio(ctx context.Context, modelName *string
 	}
 
 	// request
-	req, err := http.NewRequest("POST", url, &body)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -496,11 +484,10 @@ func (t *TogetherAIModel) AudioSpeech(ctx context.Context, modelName *string, au
 		return nil, fmt.Errorf("text content is missing")
 	}
 
-	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -521,7 +508,7 @@ func (t *TogetherAIModel) AudioSpeech(ctx context.Context, modelName *string, au
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -556,13 +543,10 @@ func (t *TogetherAIModel) AudioSpeechWithSender(ctx context.Context, modelName *
 		return fmt.Errorf("text content is missing")
 	}
 
-	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return err
 	}
-	cleanBaseURL := strings.TrimRight(resolvedBaseURL, "/")
-	cleanSuffix := strings.TrimLeft(t.baseModel.URLSuffix.TTS, "/")
-	url := fmt.Sprintf("%s/%s", cleanBaseURL, cleanSuffix)
 
 	// Build Request body
 	reqBody := map[string]interface{}{
@@ -587,8 +571,17 @@ func (t *TogetherAIModel) AudioSpeechWithSender(ctx context.Context, modelName *
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	// The shared client sets no overall Timeout and the transport only
+	// interrupts a response-body read when the request ends, so a body that
+	// stalls mid-read would otherwise pin this call until the caller cancels.
+	// streamCallTimeout is the streaming ceiling, not a tight error-page bound:
+	// it ends the unbounded case, and the caller's context still ends it
+	// earlier. FishAudio's streaming TTS carries the same deadline.
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
+	defer cancel()
+
 	// Build Request
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -603,9 +596,11 @@ func (t *TogetherAIModel) AudioSpeechWithSender(ctx context.Context, modelName *
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		buf := make([]byte, 1024)
-		n, _ := resp.Body.Read(buf)
-		return fmt.Errorf("TogetherAI stream API error: %d - %s", resp.StatusCode, string(buf[:n]))
+		body, err := readStreamTTSErrorBody(resp.Body)
+		if err != nil {
+			return fmt.Errorf("TogetherAI stream API error: %d - %s: %w", resp.StatusCode, string(body), err)
+		}
+		return fmt.Errorf("TogetherAI stream API error: %d - %s", resp.StatusCode, string(body))
 	}
 
 	if _, err := ParseSSEStream[struct {
@@ -646,5 +641,9 @@ func (t *TogetherAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) (
 }
 
 func (t *TogetherAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", t.Name())
+}
+
+func (t *TogetherAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", t.Name())
 }

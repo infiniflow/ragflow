@@ -30,6 +30,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	dataset "ragflow/internal/service/dataset"
 )
 
@@ -86,6 +88,9 @@ func insertArtifactGraphKB(t *testing.T, db *gorm.DB, kbID, ownerID string) {
 	}).Error; err != nil {
 		t.Fatalf("insert knowledgebase: %v", err)
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, ownerID, ownerID); err != nil {
+		t.Fatalf("prepare artifact graph permission fixture: %v", err)
+	}
 }
 
 // artifactGraphResponse mirrors the JSON envelope produced by
@@ -106,7 +111,7 @@ func callGetArtifactGraph(t *testing.T, datasetID, query string) (int, artifactG
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/"+datasetID+"/artifacts/graph"+query, nil)
 	c, _ := gin.CreateTestContext(w)
-	c.Request = req
+	c.Request = req.WithContext(permission.WithSubject(req.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Params = gin.Params{{Key: "dataset_id", Value: datasetID}}
 	h := &DatasetArtifactHandler{

@@ -19,6 +19,7 @@ package io
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/xml"
 	"io"
 	"strings"
 	"testing"
@@ -150,6 +151,71 @@ func TestDOCXWriter_EmptyContent(t *testing.T) {
 	}
 	if len(doc) < 4 || !bytes.HasPrefix(doc, []byte{'P', 'K', 0x03, 0x04}) {
 		t.Fatalf("expected ZIP magic, got: % x", doc[:4])
+	}
+}
+
+func TestDOCXWriter_MarkdownTables(t *testing.T) {
+	content := "Before table\n\n| A | B | C |\n| --- | --- | --- |\n| one | two | three |\n| 1 | 2 | 3 |\n\n" +
+		"```markdown\n| X | Y | Z |\n| --- | --- | --- |\n| α & < | 二 | 3 |\n| x | y | z |\n```\n\n" +
+		"| L | M | N |\n| --- | --- |\n| four | five | six |\n| 4 | 5 | 6 |\n\n" +
+		"```text\n| not | a | table |\n| --- | --- | --- |\n```\nAfter table"
+	doc, err := WriteDOCX(content, DOCXOptions{})
+	if err != nil {
+		t.Fatalf("WriteDOCX: %v", err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(doc), int64(len(doc)))
+	if err != nil {
+		t.Fatalf("zip.NewReader: %v", err)
+	}
+	body, ok := readZipFile(t, zr, "word/document.xml")
+	if !ok {
+		t.Fatal("word/document.xml missing")
+	}
+	decoder := xml.NewDecoder(strings.NewReader(body))
+	var tables, rows, cells int
+	var inCell bool
+	var values []string
+	for {
+		tok, err := decoder.Token()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			t.Fatalf("decode document.xml: %v", err)
+		}
+		switch token := tok.(type) {
+		case xml.StartElement:
+			switch token.Name.Local {
+			case "tbl":
+				tables++
+			case "tr":
+				rows++
+			case "tc":
+				cells++
+				inCell = true
+			}
+		case xml.EndElement:
+			if token.Name.Local == "tc" {
+				inCell = false
+			}
+		case xml.CharData:
+			if inCell && strings.TrimSpace(string(token)) != "" {
+				values = append(values, strings.TrimSpace(string(token)))
+			}
+		}
+	}
+	if tables != 3 || rows != 9 || cells != 27 {
+		t.Fatalf("DOCX table structure = %d tables, %d rows, %d cells; want 3, 9, 27", tables, rows, cells)
+	}
+	wantValues := []string{"A", "B", "C", "one", "two", "three", "1", "2", "3", "X", "Y", "Z", "α & <", "二", "3", "x", "y", "z", "L", "M", "N", "four", "five", "six", "4", "5", "6"}
+	if strings.Join(values, "\x00") != strings.Join(wantValues, "\x00") {
+		t.Errorf("table cells = %q, want %q", values, wantValues)
+	}
+	if strings.Index(body, "Before table") > strings.Index(body, "<w:tbl>") || strings.Index(body, "<w:tbl>") > strings.Index(body, "After table") {
+		t.Error("table changed its order relative to surrounding paragraphs")
+	}
+	if !strings.Contains(body, "Before table") || !strings.Contains(body, "After table") || !strings.Contains(body, "```text\n| not | a | table |\n| --- | --- | --- |\n```") {
+		t.Errorf("paragraph or non-Markdown code content changed: %s", truncate(body, 1200))
 	}
 }
 

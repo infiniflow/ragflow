@@ -63,14 +63,27 @@ describe('ProcessLogModal ingestion events', () => {
         event_type: 1,
         component: '',
         phase: 0,
-        message: 'embedding 40/120 chunks',
+        message: '[WARN] LLM call failed; retrying in 2s',
+      },
+      {
+        id: 3,
+        ts: '2026-09-18T10:21:10+08:00',
+        event_type: 2,
+        component: 'Compiler',
+        phase: 0,
+        message: '[ERROR] LLM call failed after 6 attempts',
       },
     ]);
 
     const times = screen.getAllByTestId('ingestion-event-time');
-    expect(times).toHaveLength(2);
+    expect(times).toHaveLength(3);
     expect(times[0].textContent).toBe(formatTime(eventTs));
-    expect(screen.getByText('embedding 40/120 chunks')).toBeInTheDocument();
+    expect(
+      screen.getByText('[WARN] LLM call failed; retrying in 2s'),
+    ).toHaveClass('text-state-warning');
+    expect(
+      screen.getByText('[ERROR] LLM call failed after 6 attempts'),
+    ).toHaveClass('text-state-error');
   });
 
   it('omits the timestamp span when ts is absent', () => {

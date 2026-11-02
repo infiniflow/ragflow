@@ -20,7 +20,6 @@
 package tableutil
 
 import (
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -50,9 +49,15 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 	if err != nil {
 		return nil, err
 	}
-	var rows [][]cellInput
+	var rows [][]CellInput
 	var headerFlags []bool
 	var caption string
+	// A <tfoot> shows below the body wherever the markup puts it, and HTML 4
+	// required it before <tbody>, so its rows are collected apart and placed
+	// last; read in source order, a "Total" row came before the data it sums.
+	var footRows [][]CellInput
+	var footFlags []bool
+	inFoot := false
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode && isInertElement(n.Data) {
@@ -62,20 +67,44 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 			caption = cellText(n)
 			return
 		}
+		// A table's footer goes below that table's own body, not below every table
+		// the fragment holds
+		if isHTMLElement(n, "table") && !inFoot {
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				walk(c)
+			}
+			rows = append(rows, footRows...)
+			headerFlags = append(headerFlags, footFlags...)
+			footRows, footFlags = nil, nil
+			return
+		}
+		if isHTMLElement(n, "tfoot") && !inFoot {
+			inFoot = true
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				walk(c)
+			}
+			inFoot = false
+			return
+		}
 		if isHTMLElement(n, "tr") {
-			var cells []cellInput
+			var cells []CellInput
 			anyTh := false
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
 				if isHTMLElement(c, "td") || isHTMLElement(c, "th") {
 					if isHTMLElement(c, "th") {
 						anyTh = true
 					}
-					cells = append(cells, cellInput{
+					cells = append(cells, CellInput{
 						Text:    cellText(c),
 						ColSpan: attrInt(c, "colspan", maxColSpan),
 						RowSpan: attrInt(c, "rowspan", maxRowSpan),
 					})
 				}
+			}
+			if inFoot {
+				footRows = append(footRows, cells)
+				footFlags = append(footFlags, anyTh)
+				return
 			}
 			rows = append(rows, cells)
 			headerFlags = append(headerFlags, anyTh)
@@ -89,6 +118,22 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 		}
 	}
 	walk(doc)
+	rows = append(rows, footRows...)
+	headerFlags = append(headerFlags, footFlags...)
+	return BuildTableData(rows, headerFlags, caption), nil
+}
+
+// BuildTableData assembles the canonical TableData from collected cell rows,
+// per-row header flags and a caption. It owns the header-row count (leading
+// consecutive run, defaulting to 1 when the table has any rows) and the shared
+// grid normalization (buildGrid). Both ParseTableHTML and the deepdoc direct
+// converter (ToTableData) route through it, so the two produce identical grids
+// by construction rather than by a runtime comparison.
+//
+// ColSpan/RowSpan inputs are clamped to [1, max] to match ParseTableHTML's
+// attribute parser and to keep a hostile or malformed span from driving a
+// multi-gigabyte allocation inside buildGrid's width pre-pass.
+func BuildTableData(rows [][]CellInput, headerFlags []bool, caption string) *entity.TableData {
 	headerCount := 0
 	for headerCount < len(headerFlags) && headerFlags[headerCount] {
 		headerCount++
@@ -96,15 +141,32 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 	if len(rows) > 0 && headerCount == 0 {
 		headerCount = 1
 	}
+	for r := range rows {
+		for i := range rows[r] {
+			rows[r][i].ColSpan = clampSpan(rows[r][i].ColSpan, maxColSpan)
+			rows[r][i].RowSpan = clampSpan(rows[r][i].RowSpan, maxRowSpan)
+		}
+	}
 	return &entity.TableData{
 		Grid:       buildGrid(rows),
 		HeaderRows: headerCount,
 		Caption:    caption,
-	}, nil
+	}
 }
 
-// cellInput is one cell as collected from a <tr> before grid normalization.
-type cellInput struct {
+// clampSpan bounds a span extent to [1, max].
+func clampSpan(v, max int) int {
+	if v < 1 {
+		return 1
+	}
+	if v > max {
+		return max
+	}
+	return v
+}
+
+// CellInput is one cell as collected from a <tr> before grid normalization.
+type CellInput struct {
 	Text    string
 	ColSpan int
 	RowSpan int
@@ -133,7 +195,7 @@ type origin struct {
 // (the legacy computation), an ancestor rowspan would push a later row's cells
 // past the width and its trailing real cells would be silently dropped by the
 // column guard — both losing data and regressing the legacy Rows text view.
-func buildGrid(rows [][]cellInput) [][]entity.TableCell {
+func buildGrid(rows [][]CellInput) [][]entity.TableCell {
 	// Pre-pass: discover the columns that ancestor rowspans occupy in each
 	// later row (recorded in `covered`) and the true grid width. The placement
 	// here mirrors the main loop below exactly so the width matches what the
@@ -329,12 +391,10 @@ func attrInt(n *html.Node, name string, max int) int {
 }
 
 // RenderTableHTML emits a deterministic <table> markup for a TableData. It is
-// used only as a test oracle / round-trip helper and is NOT part of the
-// persisted contract (producers emit TableData, not HTML). The emitted shape
-// matches the legacy spreadsheet producer's renderSpreadsheetTable exactly
-// (including the inter-row newlines) for 1x1 grids, so RenderTableText
-// reproduces the legacy htmlTableRE-stripped text byte for byte. For merged
-// tables it emits colspan/rowspan on the origin slot and skips Covered slots.
+// the persisted display form of a table chunk: the chunker renders each table
+// chunk's Text with it, and the chunk id is a hash of that rendered text. For
+// merged tables it emits colspan/rowspan on the origin slot and skips Covered
+// slots.
 func RenderTableHTML(td *entity.TableData) string {
 	if td == nil {
 		return ""
@@ -382,22 +442,6 @@ func RenderTableHTML(td *entity.TableData) string {
 	b.WriteString("</table>")
 	b.WriteString("\n")
 	return b.String()
-}
-
-// tableTagRE strips table markup tags (with any attributes) so the plaintext a
-// chunker writes for an embed-only path matches the legacy tag-stripped output.
-// The pattern tolerates arbitrary attribute lists (including colspan/rowspan)
-// so merged-table markup is stripped completely rather than left partly in the
-// text.
-var tableTagRE = regexp.MustCompile(`</?(?:table|td|caption|tr|th)(?:\s[^<>]*)?>`)
-
-// RenderTableText renders a TableData to plain text with no markup tags, for
-// the rare embed path that receives a table without a downstream TableChunker.
-// It reproduces the legacy htmlTableRE stripping of RenderTableHTML(td).
-func RenderTableText(td *entity.TableData) string {
-	h := RenderTableHTML(td)
-	h = tableTagRE.ReplaceAllString(h, " ")
-	return strings.TrimSpace(h)
 }
 
 // cellText returns the visible text of a table cell: text nodes contribute

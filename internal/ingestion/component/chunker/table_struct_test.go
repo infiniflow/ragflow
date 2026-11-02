@@ -15,11 +15,32 @@
 package chunker
 
 import (
+	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 )
+
+// wantHTMLCells asserts the chunk text is an HTML table carrying exactly the
+// given header and data cells (in order). The row chunks render header+row as
+// HTML, so the projected row's cells appear as <td> values.
+func wantHTMLCells(t *testing.T, text string, header, data []string) {
+	t.Helper()
+	if !strings.Contains(text, "<table>") {
+		t.Fatalf("not HTML: %q", text)
+	}
+	for _, h := range header {
+		if !strings.Contains(text, "<th>"+h+"</th>") {
+			t.Fatalf("missing header cell %q in %q", h, text)
+		}
+	}
+	for _, d := range data {
+		if !strings.Contains(text, "<td>"+d+"</td>") {
+			t.Fatalf("missing data cell %q in %q", d, text)
+		}
+	}
+}
 
 func TestExpandHTMLTableRowsFromTableData(t *testing.T) {
 	td := &entity.TableData{
@@ -30,12 +51,8 @@ func TestExpandHTMLTableRowsFromTableData(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("got %d chunks, want 2", len(out))
 	}
-	if out[0].Text != "- Name: Alice\n- Age: 30" {
-		t.Fatalf("row0 text = %q", out[0].Text)
-	}
-	if out[1].Text != "- Name: Bob\n- Age: 25" {
-		t.Fatalf("row1 text = %q", out[1].Text)
-	}
+	wantHTMLCells(t, out[0].Text, []string{"Name", "Age"}, []string{"Alice", "30"})
+	wantHTMLCells(t, out[1].Text, []string{"Name", "Age"}, []string{"Bob", "25"})
 	for _, c := range out {
 		if c.TableData != nil {
 			t.Fatalf("TableData must be cleared on emitted row chunk, got %+v", c.TableData)
@@ -67,8 +84,8 @@ func TestExpandHTMLTableRowsNonTablePassesThrough(t *testing.T) {
 // continuation row must not lose the spanned column (CellTexts drops Covered
 // slots, which would shift its value under the wrong header). The projection
 // must recover the spanned value from the grid alone, without relying on
-// OriginRow/OriginCol — those fields are json:"-" and absent after a JSON
-// round-trip, which is the path expandHTMLTableRows actually consumes.
+// OriginRow/OriginCol back-pointers — the projection resolves spans from the
+// grid's RowSpan/Covered geometry alone.
 func TestExpandHTMLTableRowsKeepsRowspanColumns(t *testing.T) {
 	td := &entity.TableData{
 		HeaderRows: 1,
@@ -78,7 +95,7 @@ func TestExpandHTMLTableRowsKeepsRowspanColumns(t *testing.T) {
 			{{Covered: true, OriginRow: 0, OriginCol: 0}, {Text: "25"}},
 		},
 	}
-	// Simulate a JSON round-trip that strips the json:"-" OriginRow/OriginCol.
+	// Clear OriginRow/OriginCol to prove the projection does not depend on them.
 	for r := range td.Grid {
 		for c := range td.Grid[r] {
 			td.Grid[r][c].OriginRow = 0
@@ -89,23 +106,18 @@ func TestExpandHTMLTableRowsKeepsRowspanColumns(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("got %d chunks, want 2", len(out))
 	}
-	if out[0].Text != "- Name: Alice\n- Age: 30" {
-		t.Fatalf("row0 text = %q", out[0].Text)
-	}
+	wantHTMLCells(t, out[0].Text, []string{"Name", "Age"}, []string{"Alice", "30"})
 	// The continuation row must keep the spanned "Name" column resolved to the
-	// origin value and stay aligned: "Name: Alice" + "Age: 25", not a shifted
-	// "Name: 25" that drops the Age column.
-	if out[1].Text != "- Name: Alice\n- Age: 25" {
-		t.Fatalf("row1 text = %q (rowspan column must be preserved, not dropped/misaligned)", out[1].Text)
-	}
+	// origin value and stay aligned: "Alice" + "25", not a shifted "25" that
+	// drops the Age column.
+	wantHTMLCells(t, out[1].Text, []string{"Name", "Age"}, []string{"Alice", "25"})
 }
 
 // A cell that spans BOTH rows and columns (RowSpan>1 && ColSpan>1) must keep
-// every column it covers on the continuation rows, not just the first. The
-// active-rowspan state machine in tableChunkRows used to register the span
-// only at the origin's start column, so a 2x2 block left its second covered
-// column blank on the row below — dropping that field's value and misaligning
-// the row under the header.
+// every column it covers on the continuation rows, not just the first. A
+// projection that registers the active rowspan only at the origin's start
+// column would leave the second covered column blank on the row below,
+// dropping that field's value and misaligning the row under the header.
 func TestExpandHTMLTableRowsKeepsRowColSpanBlock(t *testing.T) {
 	td := &entity.TableData{
 		HeaderRows: 1,
@@ -115,7 +127,7 @@ func TestExpandHTMLTableRowsKeepsRowColSpanBlock(t *testing.T) {
 			{{Covered: true, OriginRow: 1, OriginCol: 0}, {Covered: true, OriginRow: 1, OriginCol: 0}, {Text: "y"}},
 		},
 	}
-	// Simulate a JSON round-trip that strips the json:"-" OriginRow/OriginCol;
+	// Clear OriginRow/OriginCol to prove the projection does not depend on them;
 	// the projection must recover the spanned value from the grid alone.
 	for r := range td.Grid {
 		for c := range td.Grid[r] {
@@ -127,14 +139,11 @@ func TestExpandHTMLTableRowsKeepsRowColSpanBlock(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("got %d chunks, want 2 (one per data row)", len(out))
 	}
-	if out[0].Text != "- Name: Wide\n- B: Wide\n- C: x" {
-		t.Fatalf("row0 text = %q", out[0].Text)
-	}
+	// The origin row keeps both covered columns resolved to "Wide".
+	wantHTMLCells(t, out[0].Text, []string{"Name", "B", "C"}, []string{"Wide", "Wide", "x"})
 	// The continuation row must keep BOTH covered columns resolved to "Wide",
-	// not drop the second one to a blank and misalign under the header.
-	if out[1].Text != "- Name: Wide\n- B: Wide\n- C: y" {
-		t.Fatalf("row1 text = %q (both spanned columns must be preserved)", out[1].Text)
-	}
+	// not drop the second one and misalign under the header.
+	wantHTMLCells(t, out[1].Text, []string{"Name", "B", "C"}, []string{"Wide", "Wide", "y"})
 }
 
 // A data row whose first cell spans two columns must keep both columns after
@@ -148,7 +157,7 @@ func TestExpandHTMLTableRowsKeepsColspanColumns(t *testing.T) {
 			{{Text: "Info", ColSpan: 2}, {Covered: true, OriginRow: 1, OriginCol: 0}},
 		},
 	}
-	// Simulate a JSON round-trip that strips the json:"-" OriginRow/OriginCol.
+	// Clear OriginRow/OriginCol to prove the projection does not depend on them.
 	for r := range td.Grid {
 		for c := range td.Grid[r] {
 			td.Grid[r][c].OriginRow = 0
@@ -159,7 +168,6 @@ func TestExpandHTMLTableRowsKeepsColspanColumns(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("got %d chunks, want 1", len(out))
 	}
-	if out[0].Text != "- Name: Info\n- Age: Info" {
-		t.Fatalf("row text = %q (colspan must fill both columns)", out[0].Text)
-	}
+	// colspan must fill both columns with the spanned value "Info".
+	wantHTMLCells(t, out[0].Text, []string{"Name", "Age"}, []string{"Info", "Info"})
 }

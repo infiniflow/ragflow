@@ -42,23 +42,6 @@ func TestModelScopeName(t *testing.T) {
 	}
 }
 
-func TestNormalizeModelScopeBaseURL(t *testing.T) {
-	cases := []struct {
-		in   string
-		want string
-	}{
-		{"http://127.0.0.1:8000", "http://127.0.0.1:8000"},
-		{"http://127.0.0.1:8000/", "http://127.0.0.1:8000"},
-		{"http://127.0.0.1:8000/v1", "http://127.0.0.1:8000"},
-		{" http://127.0.0.1:8000/v1/ ", "http://127.0.0.1:8000"},
-	}
-	for _, tc := range cases {
-		if got := normalizeModelScopeBaseURL(tc.in); got != tc.want {
-			t.Errorf("normalizeModelScopeBaseURL(%q)=%q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestModelScopeFactoryRoute(t *testing.T) {
 	driver, err := NewModelFactory().CreateModelDriver("ModelScope", map[string]string{"default": "http://unused"}, URLSuffix{})
 	if err != nil {

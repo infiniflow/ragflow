@@ -222,10 +222,6 @@ export interface ISearchAppDetailProps {
       method: string;
       manual: { key: string; op: string; value: string }[];
     };
-    reference_metadata?: {
-      include?: boolean;
-      fields?: string[];
-    };
   };
   tenant_id: string;
   update_time: number;

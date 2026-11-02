@@ -206,7 +206,7 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 // not component-scoped (i.e. do not contain ":"), since the Go backend only
 // consumes keys keyed by a component id (e.g. "Parser:abc123" or
 // "Extractor:AutoExtractDefault"). Flat keys are legacy transport artifacts
-// that downstream consumers (CleanComponentParams) never read, so they are
+// that downstream consumers (BuildParserConfig) never read, so they are
 // dropped rather than rejected. Only top-level keys are affected; a key nested
 // inside a component node (e.g. "Extractor:AutoExtractDefault.metadata") keeps
 // its existing name. It mutates the provided map in place and returns the names
@@ -301,7 +301,7 @@ func pythonStringListRepr(items []string) string {
 }
 
 func canvasAccessibleForUser(ctx context.Context, subject permission.Subject, canvasID string) (bool, error) {
-	err := service.CheckCanvasPermission(ctx, subject, canvasID, permission.OperationUse)
+	err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, subject, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationUse)
 	if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 		return false, nil
 	}

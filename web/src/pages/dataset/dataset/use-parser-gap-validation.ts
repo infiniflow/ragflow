@@ -35,10 +35,7 @@ export function useParserGapValidation() {
       if (!config) {
         return [];
       }
-      return attachAutoSwitchTargets(
-        findFilesParserGaps(names, config),
-        knowledgeBase?.pipeline_id,
-      );
+      return attachAutoSwitchTargets(findFilesParserGaps(names, config));
     },
     [loading, knowledgeBase],
   );

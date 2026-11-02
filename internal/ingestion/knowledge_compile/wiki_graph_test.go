@@ -18,6 +18,7 @@ package knowledge_compile
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -360,5 +361,28 @@ func TestProjectWikiGraphRowsSelfLoopSkipped(t *testing.T) {
 	}
 	if findEntity(rows, "entity/alpha") == nil {
 		t.Fatalf("the self-referencing entity must still exist")
+	}
+}
+
+// TestProjectWikiGraphRowsResolvesDatasetLanguage pins that graph rows are
+// tokenized with the language of the dataset they are written to.
+func TestProjectWikiGraphRowsResolvesDatasetLanguage(t *testing.T) {
+	var resolved []string
+	w := engineWriter{resolveLanguage: func(_ context.Context, datasetID string) (string, error) {
+		resolved = append(resolved, datasetID)
+		return "slovak", nil
+	}}
+	if _, err := w.projectWikiGraphRows(context.Background(), "t1", kbForTest, []wikiPageProjection{page("entity", "škola")}); err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	if len(resolved) != 1 || resolved[0] != kbForTest {
+		t.Fatalf("language resolved for %v, want [%s]", resolved, kbForTest)
+	}
+
+	w.resolveLanguage = func(context.Context, string) (string, error) {
+		return "", errors.New("dataset lookup failed")
+	}
+	if _, err := w.projectWikiGraphRows(context.Background(), "t1", kbForTest, []wikiPageProjection{page("entity", "škola")}); err == nil {
+		t.Fatal("projection must fail when the dataset language cannot be resolved")
 	}
 }

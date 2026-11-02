@@ -32,6 +32,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 // SkillSearchService handles business logic for skill search operations
@@ -59,7 +60,7 @@ func (s *SkillSearchService) GetConfig(ctx context.Context, userID, spaceID, emb
 	spaceID = normalizeSpaceID(spaceID)
 	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationRead)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 	var config *entity.SkillSearchConfig
@@ -90,7 +91,7 @@ func (s *SkillSearchService) GetConfig(ctx context.Context, userID, spaceID, emb
 		if err != nil {
 			tenantID, err = resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
 			if err != nil {
-				code, normalized := normalizeSkillSpacePermissionError(err)
+				code, normalized := permissionresponse.NormalizeHidden(err)
 				return nil, code, normalized
 			}
 			// Config not found, create default one
@@ -121,7 +122,7 @@ func (s *SkillSearchService) UpdateConfig(ctx context.Context, userID string, re
 	req.SpaceID = normalizeSpaceID(req.SpaceID)
 	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, req.SpaceID, permission.OperationUpdate)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 	req.TenantID = tenantID
@@ -226,7 +227,7 @@ func (s *SkillSearchService) Search(ctx context.Context, userID string, req *Sea
 	req.SpaceID = normalizeSpaceID(req.SpaceID)
 	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, req.SpaceID, permission.OperationUse)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 	req.TenantID = tenantID
@@ -312,6 +313,11 @@ func (s *SkillSearchService) Search(ctx context.Context, userID string, req *Sea
 			results, err = s.keywordSearch(ctx, docEngine, indexName, req.Query, config, 0, req.SortBy, req.SortOrder)
 		} else {
 			results, err = s.hybridSearch(ctx, docEngine, indexName, req.Query, config, req.TenantID)
+			if err != nil {
+				common.Warn("Hybrid search failed, falling back to keyword search", zap.Error(err))
+				searchType = "keyword"
+				results, err = s.keywordSearch(ctx, docEngine, indexName, req.Query, config, config.SimilarityThreshold, req.SortBy, req.SortOrder)
+			}
 		}
 	}
 
@@ -472,11 +478,10 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 	// Get embedding for query
 	vector, err := s.getEmbedding(ctx, query, config.EmbdID, tenantID)
 	if err != nil {
-		common.Warn("Hybrid search: failed to get embedding, falling back to keyword search",
+		common.Warn("Hybrid search: failed to get embedding, will fallback to keyword search",
 			zap.String("embdID", config.EmbdID),
 			zap.Error(err))
-		// Fallback to keyword search with analyzed query
-		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchExpr, config)
+		return nil, fmt.Errorf("failed to get embedding: %w", err)
 	}
 	common.Debug("Hybrid search: successfully got embedding",
 		zap.String("embdID", config.EmbdID),
@@ -515,10 +520,10 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 
 	searchResult, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
-		common.Warn("Hybrid search: search execution failed, falling back to keyword search",
+		common.Warn("Hybrid search: search execution failed, will fallback to keyword search",
 			zap.String("indexName", indexName),
 			zap.Error(err))
-		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchExpr, config)
+		return nil, err
 	}
 
 	results := s.convertChunksToResults(searchResult.Chunks, config.SimilarityThreshold)
@@ -526,40 +531,13 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 		zap.Int("totalChunks", len(searchResult.Chunks)),
 		zap.Int("filteredResults", len(results)))
 
-	// If no results, fallback to keyword search
+	// If no results, return error to trigger fallback
 	if len(results) == 0 {
-		common.Info("Hybrid search: no results found, falling back to keyword search",
+		common.Info("Hybrid search: no results found, will fallback to keyword search",
 			zap.String("indexName", indexName),
 			zap.String("query", query))
-		return s.executeKeywordSearch(ctx, docEngine, indexName, query, matchExpr, config)
+		return nil, fmt.Errorf("hybrid search returned no results")
 	}
-
-	return results, nil
-}
-
-// executeKeywordSearch executes a keyword search (used for fallback)
-func (s *SkillSearchService) executeKeywordSearch(ctx context.Context, docEngine engine.DocEngine, indexName, query string, matchExpr *types.MatchTextExpr, config *entity.SkillSearchConfig) ([]entity.SkillSearchResult, error) {
-	common.Debug("Executing fallback keyword search",
-		zap.String("indexName", indexName),
-		zap.String("query", query))
-
-	searchReq := &types.SearchRequest{
-		IndexNames: []string{indexName},
-		Offset:     0,
-		Limit:      100,
-		MatchExprs: []interface{}{matchExpr},
-	}
-
-	searchResult, err := docEngine.Search(ctx, searchReq)
-	if err != nil {
-		common.Error("Keyword search fallback failed", err)
-		return nil, err
-	}
-
-	results := s.convertChunksToResults(searchResult.Chunks, config.SimilarityThreshold)
-	common.Debug("Keyword search fallback completed",
-		zap.Int("totalChunks", len(searchResult.Chunks)),
-		zap.Int("results", len(results)))
 
 	return results, nil
 }
@@ -683,7 +661,7 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(ctx, ModelAccess{TenantID: tenantID}, embdID)
+	embeddingModel, err := s.modelFactory.NewEmbeddingModel(ctx, Identity{TenantID: tenantID}, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}

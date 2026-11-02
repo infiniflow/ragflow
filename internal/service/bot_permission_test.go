@@ -48,17 +48,19 @@ func TestBotServiceChatbotEndpointsUseChatPermissions(t *testing.T) {
 	}
 
 	svc := NewBotService(nil)
-	_, _, _, _, _, code, err := svc.ChatbotInfo(t.Context(), "owner-1", "chat-1")
+	ownerCtx := serviceTestContext(t, "owner-1", "owner-1", "outsider")
+	_, _, _, _, _, code, err := svc.ChatbotInfo(ownerCtx, "owner-1", "chat-1")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ChatbotInfo(owner) = (%d, %v), want success", code, err)
 	}
 
-	_, _, _, _, _, code, err = svc.ChatbotInfo(t.Context(), "outsider", "chat-1")
+	outsiderCtx := serviceTestContext(t, "outsider", "owner-1", "owner-1")
+	_, _, _, _, _, code, err = svc.ChatbotInfo(outsiderCtx, "outsider", "chat-1")
 	if !errors.Is(err, permission.ErrPermissionDenied) || code != common.CodeNotFound {
 		t.Fatalf("ChatbotInfo(outsider) = (%d, %v), want hidden permission denial", code, err)
 	}
 
-	_, code, err = svc.ChatbotCompletion(t.Context(), "outsider", "chat-1", ChatbotCompletionRequest{Question: "hello"})
+	_, code, err = svc.ChatbotCompletion(outsiderCtx, "outsider", "chat-1", ChatbotCompletionRequest{Question: "hello"})
 	if !errors.Is(err, permission.ErrPermissionDenied) || code != common.CodeNotFound {
 		t.Fatalf("ChatbotCompletion(outsider) = (%d, %v), want hidden permission denial", code, err)
 	}

@@ -37,12 +37,17 @@ func setupChatListTestDB(t *testing.T) *gorm.DB {
 	status := string(entity.StatusValid)
 	if err = db.Create(&entity.Tenant{
 		ID:        "user-1",
-		LLMID:     "model-a",
-		EmbdID:    "embd-a",
 		ParserIDs: "naive",
 		Status:    &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
+	}
+
+	if err = db.Create(&entity.UserTenant{
+		ID: "user-tenant-1", UserID: "user-1", TenantID: "user-1", Role: "owner",
+		LLMID: "model-a", EmbdID: "embd-a", Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create owner membership: %v", err)
 	}
 
 	if err = db.Create(&entity.User{
@@ -52,7 +57,6 @@ func setupChatListTestDB(t *testing.T) *gorm.DB {
 	}).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
 	}
-
 	return db
 }
 
@@ -83,7 +87,7 @@ func TestChatServiceListChatsDefaultReturnsAllWithCorrectTotal(t *testing.T) {
 	createChatListTestChat(t, db, "chat-3", "user-1", "list_test_2")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	result, err := svc.ListChats(ctx, "user-1", "1", "", "", "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListChats failed: %v", err)
@@ -125,7 +129,7 @@ func TestChatServiceListChatsDoesNotExposeAnotherTenantsChats(t *testing.T) {
 	createChatListTestChat(t, db, "chat-team", "tenant-2", "team_chat")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	result, err := svc.ListChats(ctx, "user-1", "1", "", "", "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, []string{"tenant-2"})
 	if err != nil {
 		t.Fatalf("ListChats failed: %v", err)
@@ -143,7 +147,7 @@ func TestChatServiceListChatsKeywordFiltersCorrectly(t *testing.T) {
 
 	svc := NewChatService()
 
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	exactResult, err := svc.ListChats(ctx, "user-1", "1", "list_keyword_1", "", "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListChats keyword exact failed: %v", err)
@@ -180,7 +184,7 @@ func TestChatServiceListChatsPagination(t *testing.T) {
 
 	svc := NewChatService()
 
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	page1, err := svc.ListChats(ctx, "user-1", "1", "", "", "", 1, 2, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListChats page 1 failed: %v", err)
@@ -210,7 +214,7 @@ func TestChatServiceListChatsExcludesDeletedChats(t *testing.T) {
 	db.Model(&entity.Chat{}).Where("id = ?", "chat-2").Update("status", invalidStatus)
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	result, err := svc.ListChats(ctx, "user-1", "1", "", "", "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListChats failed: %v", err)
@@ -229,7 +233,7 @@ func TestChatServiceListChatsExactFilters(t *testing.T) {
 	createChatListTestChat(t, db, "chat-2", "user-1", "exact_beta")
 
 	svc := NewChatService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 	terms := []dao.OrderTerm{{Column: "create_time", Desc: true}}
 
 	byID, err := svc.ListChats(ctx, "user-1", "1", "", "chat-2", "", 0, 0, terms, nil)
@@ -295,7 +299,7 @@ func TestChatServiceListChatsPaginatesOwnerBranch(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := NewChatService().ListChats(t.Context(), "user-1", "1", "", "", "", tt.page, tt.pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}}, []string{"user-1"})
+			result, err := NewChatService().ListChats(serviceTestContext(t, "user-1", "user-1"), "user-1", "1", "", "", "", tt.page, tt.pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}}, []string{"user-1"})
 			if err != nil {
 				t.Fatalf("ListChats failed: %v", err)
 			}

@@ -17,8 +17,9 @@
 package chunker
 
 import (
-	"strings"
+	"go.uber.org/zap"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/tableutil"
 )
@@ -27,13 +28,23 @@ import (
 // splitting it into sub-tables that fit. Splitting is row-granular: every
 // emitted sub-table is a whole number of complete rows (never a partial row),
 // so the per-row chunk produced downstream keeps full row semantics. The token
-// budget is counted on the real cell text of each row, not on any HTML markup.
+// budget is counted on the HTML rendering of each row — the text actually
+// stored on the chunk — so a rendered part never exceeds the budget.
 //
 // Splitting is also span-safe: a cut never falls inside a merged cell's
 // rowspan, so an origin and every row it covers stay in the same part, and a
 // header cell whose rowspan reached into data rows is re-derived per part so
 // it never claims rows the part does not contain. Every part therefore
 // satisfies the same grid contract as a freshly parsed table.
+//
+// The budget covers DATA rows only. Header rows and the caption are replicated
+// into every part — each part has to stand alone — but they are fixed
+// boilerplate that does not grow with content, so charging them per part would
+// shrink every part's data allowance and, on a wide-header table, fragment the
+// data into one-row chunks. A part may therefore exceed maxTokens by up to the
+// size of the replicated header. When that header alone meets or exceeds the
+// whole budget the table width and the configured chunk size disagree, which is
+// reported through a warning rather than silently absorbed.
 //
 // Alongside the parts it returns dataRanges and headerRows: for part i, the
 // half-open range [start, end) of DATA rows (rows below the header) the part
@@ -42,7 +53,8 @@ import (
 // matrix[:headerRows] + matrix[headerRows+start : headerRows+end] to stay
 // aligned with the sub-table. headerRows and ranges are 0/nil when the table
 // fits in a single chunk (the caller then emits the whole table unchanged).
-func splitLargeTable(td *entity.TableData, maxTokens int, countTokens func(string) int) (parts []entity.TableData, dataRanges [][2]int, headerRows int) {
+// docID is only used to attribute the oversized-header warning.
+func splitLargeTable(td *entity.TableData, maxTokens int, countTokens func(string) int, docID string) (parts []entity.TableData, dataRanges [][2]int, headerRows int) {
 	if td == nil || len(td.Grid) == 0 {
 		return nil, nil, 0
 	}
@@ -57,9 +69,23 @@ func splitLargeTable(td *entity.TableData, maxTokens int, countTokens func(strin
 
 	headerGrid := append([][]entity.TableCell{}, td.Grid[:headerRows]...)
 
-	// Base tokens: header rows + caption, replicated into every sub-table.
+	// Base tokens: header rows + caption, replicated into every sub-table,
+	// counted on the HTML rendering — the text actually stored on the chunk —
+	// so a rendered part never exceeds the budget. The <table> wrapper + caption
+	// appear once per part; emptyWrapper isolates them so each data row below is
+	// charged only its own <tr> contribution. The base count no longer feeds
+	// the splitting budget; it is kept only to detect a header that cannot fit
+	// a part on its own.
 	base := &entity.TableData{Grid: headerGrid, Caption: td.Caption}
-	baseTokens := countTokens(tableutil.RenderTableText(base))
+	baseTokens := countTokens(tableutil.RenderTableHTML(base))
+	emptyWrapper := countTokens(tableutil.RenderTableHTML(&entity.TableData{Caption: td.Caption}))
+	if baseTokens >= maxTokens {
+		common.Warn("chunker: table header alone exceeds chunk budget",
+			zap.String("doc_id", docID),
+			zap.Int("header_tokens", baseTokens),
+			zap.Int("chunk_token_size", maxTokens),
+			zap.Int("header_rows", headerRows))
+	}
 
 	// spanThrough[i] is the last data-row index any rowspan originating at or
 	// before row i still covers (-1 while no span is active). Header-origin
@@ -93,6 +119,9 @@ func splitLargeTable(td *entity.TableData, maxTokens int, countTokens func(strin
 	}
 
 	var start int
+	// currentTokens counts the data rows batched into the current part. It
+	// starts at zero on purpose: the replicated header is not charged, see the
+	// doc comment above.
 	var currentTokens int
 	flush := func(end int) {
 		if end <= start {
@@ -107,15 +136,14 @@ func splitLargeTable(td *entity.TableData, maxTokens int, countTokens func(strin
 		parts = append(parts, part)
 		dataRanges = append(dataRanges, [2]int{start, end})
 		start = end
-		currentTokens = baseTokens
+		currentTokens = 0
 	}
 
-	currentTokens = baseTokens
 	for i, row := range dataRows {
 		if i < start {
 			continue // already belongs to a flushed part
 		}
-		rowTokens := countTokens(rowTokenText(row))
+		rowTokens := countTokens(tableutil.RenderTableHTML(&entity.TableData{Grid: [][]entity.TableCell{row}, Caption: td.Caption})) - emptyWrapper
 		// Flush the running batch before this row if adding it would exceed the
 		// budget. A single row that alone exceeds the budget still becomes its
 		// own chunk (row integrity wins over the budget).
@@ -193,17 +221,4 @@ func partDataRows(dataRows [][]entity.TableCell, start, end, headerRows int) [][
 		out = append(out, row)
 	}
 	return out
-}
-
-// rowTokenText joins the non-covered cell texts of a grid row for token
-// counting, mirroring how the row is later rendered.
-func rowTokenText(row []entity.TableCell) string {
-	texts := make([]string, 0, len(row))
-	for _, c := range row {
-		if c.Covered {
-			continue
-		}
-		texts = append(texts, c.Text)
-	}
-	return strings.Join(texts, " ")
 }

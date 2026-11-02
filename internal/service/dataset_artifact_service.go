@@ -619,9 +619,18 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 		// so a raw multi-token keyword (e.g. "桃园三结义") never equals a stored
 		// token and silently matches nothing. Tokenize the query like the other
 		// lexical callers (see navKeywordExpressions); the raw input stays on
-		// original_query for engines that analyze the query themselves.
+		// original_query for engines that analyze the query themselves. The
+		// entity rows are tokenized in the dataset language, so the query is too.
+		kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, datasetID)
+		if err != nil {
+			return nil, err
+		}
+		kbLanguage := ""
+		if kb.Language != nil {
+			kbLanguage = *kb.Language
+		}
 		originalQuery := keywords
-		if tokenized, err := tokenizer.Tokenize(keywords); err == nil && tokenized != "" {
+		if tokenized, err := tokenizer.New(kbLanguage).Tokenize(keywords); err == nil && tokenized != "" {
 			keywords = tokenized
 		}
 		matchExprs = []interface{}{&types.MatchTextExpr{

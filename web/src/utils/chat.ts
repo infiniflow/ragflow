@@ -18,15 +18,20 @@ import {
   ChatVariableEnabledField,
   EmptyConversationId,
 } from '@/constants/chat';
-import { IMessage, Message } from '@/interfaces/database/chat';
+import {
+  IMessage,
+  IReference,
+  IReferenceObject,
+  Message,
+} from '@/interfaces/database/chat';
 import type { CompletionChunk } from '@/services/chat-completion-stream';
-import { omit } from 'lodash';
 import { v4 as uuid } from 'uuid';
 import {
   buildCitationDisplayMap,
   citationMarkerReg,
   normalizeCitationDigits,
   parseCitationIndex,
+  resolveCitationChunk,
 } from './citation-utils';
 
 export const isConversationIdExist = (conversationId: string) => {
@@ -43,11 +48,28 @@ export const buildMessageUuid = (message: Partial<Message | IMessage>) => {
 export const buildMessageListWithUuid = (messages?: Message[]) => {
   return (
     messages?.map((x: Message | IMessage) => ({
-      ...omit(x, 'reference'),
+      ...x,
       id: buildMessageUuid(x),
     })) ?? []
   );
 };
+
+export const buildReferenceObject = (
+  reference?: IReference,
+): IReferenceObject => ({
+  chunks: Object.fromEntries(
+    (reference?.chunks ?? []).map((chunk, index) => [
+      chunk.citation_id ?? String(index),
+      chunk,
+    ]),
+  ),
+  doc_aggs: Object.fromEntries(
+    Object.values(reference?.doc_aggs ?? {}).map((document) => [
+      document.doc_id,
+      document,
+    ]),
+  ),
+});
 
 export const generateConversationId = () => {
   return uuid().replace(/-/g, '');
@@ -220,6 +242,17 @@ export function unescapeAngleBrackets(content: string): string {
     .replace(new RegExp(GT_MARKER, 'g'), '&gt;');
 }
 
+/**
+ * Decode the &lt;/&gt; entities restored by unescapeAngleBrackets.
+ * react-markdown decodes character references in prose, but code blocks and
+ * inline code are literal, so the entities would render as-is there. Code
+ * renderers call this to show the original < and > the model emitted.
+ */
+export function decodeAngleBracketEntities(content: string): string {
+  if (!content) return content;
+  return content.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
 export function setInitialChatVariableEnabledFieldValue(
   field: ChatVariableEnabledField,
 ) {
@@ -249,7 +282,9 @@ export {
   buildCitationDisplayMap,
   normalizeCitationDigits,
   parseCitationIndex,
+  resolveCitationChunk,
 };
+export type { CitationKey } from './citation-utils';
 
 // To be compatible with the old index matching mode
 export const replaceTextByOldReg = (text: string) => {

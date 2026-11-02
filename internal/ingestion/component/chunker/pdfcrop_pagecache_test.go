@@ -4,6 +4,7 @@ import (
 	"image"
 	"sync"
 	"testing"
+	"time"
 )
 
 // taggedImg wraps an image with an id so tests can assert which page bitmap a
@@ -197,6 +198,167 @@ func TestLRUPageCache_ConcurrentSafe(t *testing.T) {
 		c.Acquire(render, pn)
 		c.Release(pn)
 	}
+}
+
+// TestLRUPageCache_ConcurrentSamePageRendersOnce proves that concurrent misses
+// of the same page are coalesced: only the first worker renders, and every
+// worker receives the shared bitmap.
+func TestLRUPageCache_ConcurrentSamePageRendersOnce(t *testing.T) {
+	const (
+		workers = 8
+		pn      = 7
+	)
+	c := newLRUPageCache(4)
+
+	var (
+		mu      sync.Mutex
+		renders int
+	)
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	render := func(page int) (image.Image, bool) {
+		mu.Lock()
+		renders++
+		n := renders
+		mu.Unlock()
+		if n == 1 {
+			close(started) // the single in-flight render has started
+		}
+		<-release // hold the page stripe until the test observes the state
+		return fakeImg(page), true
+	}
+
+	imgs := make([]image.Image, workers)
+	oks := make([]bool, workers)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func(i int) {
+			defer wg.Done()
+			imgs[i], oks[i] = c.Acquire(render, pn)
+		}(i)
+	}
+
+	// Let the blocked workers finish and drop their cache refs even when an
+	// assertion below fails before release is closed.
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+		wg.Wait()
+		for _, ok := range oks {
+			if ok {
+				c.Release(pn)
+			}
+		}
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for the first render to start")
+	}
+
+	// While the first render is still blocked, every other worker must be
+	// waiting on the page stripe rather than rendering the page again.
+	mu.Lock()
+	got := renders
+	mu.Unlock()
+	if got != 1 {
+		t.Fatalf("render called %d times while the first render is in flight, want 1: same-page misses must wait on the page stripe", got)
+	}
+
+	close(release)
+	wg.Wait()
+
+	for i := 0; i < workers; i++ {
+		if !oks[i] {
+			t.Fatalf("worker %d failed to acquire page %d", i, pn)
+		}
+		if imgs[i] == nil {
+			t.Fatalf("worker %d received a nil image", i)
+		}
+	}
+
+	mu.Lock()
+	got = renders
+	mu.Unlock()
+	if got != 1 {
+		t.Fatalf("render called %d times for one page, want 1 (concurrent misses must be coalesced)", got)
+	}
+}
+
+// TestLRUPageCache_HitDoesNotWaitForSameStripeRender proves a cache hit does
+// not take the page-load stripe. Pages 7 and 71 share a stripe (71%64 == 7);
+// rendering page 71 must not delay a hit on page 7.
+func TestLRUPageCache_HitDoesNotWaitForSameStripeRender(t *testing.T) {
+	c := newLRUPageCache(4)
+	if _, ok := c.Acquire(func(int) (image.Image, bool) { return fakeImg(7), true }, 7); !ok {
+		t.Fatal("prime page 7")
+	}
+	c.Release(7)
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseRender := func() { releaseOnce.Do(func() { close(release) }) }
+
+	var renderWG sync.WaitGroup
+	renderWG.Add(1)
+	var ok71 bool
+	go func() {
+		defer renderWG.Done()
+		_, ok71 = c.Acquire(func(pn int) (image.Image, bool) {
+			close(started)
+			<-release
+			return fakeImg(pn), true
+		}, 71)
+	}()
+
+	defer func() {
+		releaseRender()
+		renderWG.Wait()
+		if ok71 {
+			c.Release(71)
+		}
+		c.Release(7)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for page 71 render to start")
+	}
+
+	hitDone := make(chan struct{})
+	var hitOK bool
+	go func() {
+		defer close(hitDone)
+		img, ok := c.Acquire(func(int) (image.Image, bool) {
+			t.Error("cache hit on page 7 must not render")
+			return nil, false
+		}, 7)
+		hitOK = ok
+		if img == nil {
+			t.Error("cache hit on page 7 returned a nil image")
+		}
+	}()
+
+	select {
+	case <-hitDone:
+	case <-time.After(time.Second):
+		releaseRender()
+		<-hitDone
+		t.Fatal("cache hit on page 7 waited for the page 71 render sharing its stripe")
+	}
+
+	if !hitOK {
+		t.Fatal("cache hit on page 7 reported a miss")
+	}
+	c.Release(7)
 }
 
 func TestPageCacheLimit_DefaultAndOverride(t *testing.T) {

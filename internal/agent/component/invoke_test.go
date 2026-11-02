@@ -34,19 +34,11 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
-// Test setup: enable the test-only SSRF bypass for tests in this
-// file (the happy-path httptest server lives on 127.0.0.1, which
-// the production guard rejects). The bypass is now a process-
-// memory boolean (common.AllowAnyHostForTest) instead of an
-// env var — the previous form (ALLOW_ANY_HOST env) was a live
-// runtime toggle any operator could flip to disable the guard
-// globally. PR review round 6, Major #3.
-//
-// Each test that wants the production guard back resets it to
-// false in its body; we don't blanket-disable here because some
-// tests below rely on the bypass being on.
+// Reset the environment opt-in so tests select private-host access explicitly
+// through either ALLOW_ANY_HOST or the in-memory test hook.
 func setupAllowAnyHost(t *testing.T, enabled bool) {
 	t.Helper()
+	t.Setenv(common.EnvAllowAnyHost, "")
 	prev := common.AllowAnyHostForTest
 	common.AllowAnyHostForTest = enabled
 	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
@@ -254,6 +246,85 @@ func TestInvoke_MissingURL(t *testing.T) {
 	}
 }
 
+func TestInvoke_AllowAnyHost(t *testing.T) {
+	setupAllowAnyHost(t, false)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Host, "local.test.invalid:") || r.URL.Path != "/logo.svg" {
+			t.Errorf("request = %s%s, want local.test.invalid:<port>/logo.svg", r.Host, r.URL.Path)
+		}
+		_, _ = w.Write([]byte("local response"))
+	}))
+	defer srv.Close()
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	originalLookup := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
+		if host != "local.test.invalid" {
+			return nil, fmt.Errorf("unexpected hostname %q", host)
+		}
+		return []string{"127.0.0.1"}, nil
+	}
+	t.Cleanup(func() { common.LookupHost = originalLookup })
+
+	for _, value := range []string{"", "0", "1"} {
+		t.Run("ALLOW_ANY_HOST="+value, func(t *testing.T) {
+			t.Setenv(common.EnvAllowAnyHost, value)
+			c, err := NewInvokeComponent(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := c.Invoke(t.Context(), nil, map[string]any{
+				"method": "GET",
+				"url":    "http://local.test.invalid:" + port + "/logo.svg",
+			})
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if value == "1" {
+				if out["result"] != "local response" || out["_ERROR"] != nil {
+					t.Fatalf("output = %#v, want local response", out)
+				}
+			} else if out["_ERROR"] != "URL not valid" || out["result"] != nil {
+				t.Fatalf("output = %#v, want blocked URL", out)
+			}
+		})
+	}
+}
+
+func TestInvoke_AllowAnyHostRejectsInvalidURLs(t *testing.T) {
+	setupAllowAnyHost(t, false)
+	t.Setenv(common.EnvAllowAnyHost, "1")
+	originalLookup := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
+		return nil, fmt.Errorf("no such host: %s", host)
+	}
+	t.Cleanup(func() { common.LookupHost = originalLookup })
+
+	for _, kind := range []string{"url", "proxy"} {
+		for _, target := range []string{"file://127.0.0.1/logo.svg", "http:///logo.svg", "http://missing.test.invalid/logo.svg"} {
+			t.Run(kind+"/"+target, func(t *testing.T) {
+				c, err := NewInvokeComponent(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				inputs := map[string]any{"method": "GET", "url": "http://192.168.1.5/logo.svg"}
+				inputs[kind] = target
+				out, err := c.Invoke(t.Context(), nil, inputs)
+				if err != nil {
+					t.Fatalf("Invoke: %v", err)
+				}
+				if out["_ERROR"] != "URL not valid" || out["result"] != nil {
+					t.Fatalf("output = %#v, want blocked URL", out)
+				}
+			})
+		}
+	}
+}
+
 // TestInvoke_SSRFGuard_BlocksLoopback mirrors PR #15426: when
 // AllowAnyHostForTest is unset (production shape), the Invoke
 // component must reject loopback / link-local / RFC1918 URLs
@@ -360,8 +431,8 @@ func TestInvoke_SSRFGuard_BlocksProxy(t *testing.T) {
 // not followed. This closes the bypass window where a public
 // host could 302-redirect to a private one.
 func TestInvoke_NoRedirects_NotFollowed(t *testing.T) {
-	// Need the bypass to talk to the local httptest server.
-	setupAllowAnyHost(t, true)
+	setupAllowAnyHost(t, false)
+	t.Setenv(common.EnvAllowAnyHost, "1")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Location", "http://127.0.0.1:1/secret")
@@ -402,9 +473,8 @@ func TestInvoke_NoRedirects_NotFollowed(t *testing.T) {
 // proxy URL itself is unreachable on the test network, so
 // the dial will fail — but with an error that mentions
 // the IP we dialled, not the original hostname. That
-// proves the pinning path is active. We un-set
-// ALLOW_ANY_HOST so the SSRF guard accepts a public-IP
-// URL but the dial still happens through our code path.
+// proves the pinning path is active. ALLOW_ANY_HOST permits
+// the local proxy while the dial stays pinned.
 //
 // Target host is a literal IP (8.8.8.8) — proxy mode
 // fail-closes for hostname targets because the proxy
@@ -412,7 +482,8 @@ func TestInvoke_NoRedirects_NotFollowed(t *testing.T) {
 // would re-open the rebinding window. PR review round 5,
 // Major #3.
 func TestInvoke_ProxyDNSPin(t *testing.T) {
-	setupAllowAnyHost(t, true)
+	setupAllowAnyHost(t, false)
+	t.Setenv(common.EnvAllowAnyHost, "1")
 
 	proxyHit := make(chan struct{}, 1)
 	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

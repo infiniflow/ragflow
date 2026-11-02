@@ -23,7 +23,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"strings"
 )
 
 // ModelScopeModel implements ModelDriver for ModelScope chat models.
@@ -55,17 +54,6 @@ func (m *ModelScopeModel) Name() string {
 	return "ModelScope"
 }
 
-func normalizeModelScopeBaseURL(base string) string {
-	trimmed := strings.TrimRight(strings.TrimSpace(base), "/")
-	if trimmed == "" {
-		return trimmed
-	}
-	if strings.HasSuffix(trimmed, "/v1") {
-		return strings.TrimSuffix(trimmed, "/v1")
-	}
-	return trimmed
-}
-
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (m *ModelScopeModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -76,12 +64,10 @@ func (m *ModelScopeModel) ChatWithMessages(ctx context.Context, modelName string
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = normalizeModelScopeBaseURL(baseURL)
-	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
@@ -109,12 +95,10 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 		return err
 	}
 
-	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = normalizeModelScopeBaseURL(baseURL)
-	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
@@ -163,12 +147,10 @@ func (m *ModelScopeModel) ListModels(ctx context.Context, apiConfig *APIConfig) 
 		return nil, err
 	}
 
-	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = normalizeModelScopeBaseURL(baseURL)
-	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -219,5 +201,9 @@ func (m *ModelScopeModel) ListTasks(ctx context.Context, apiConfig *APIConfig) (
 }
 
 func (m *ModelScopeModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
+
+func (m *ModelScopeModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }

@@ -14,8 +14,9 @@ import (
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/dao"
+	mcpclient "ragflow/internal/mcp/client"
 	"ragflow/internal/permission"
-	"ragflow/internal/utility"
+	servercfg "ragflow/internal/server"
 )
 
 // buildAgentMCPTools binds the saved tool selection to servers the canvas can use.
@@ -25,8 +26,8 @@ func buildAgentMCPTools(ctx context.Context, db *gorm.DB, raw any, timeout time.
 		return nil, nil
 	}
 	var selections []struct {
-		ID    string                  `json:"mcp_id"`
-		Tools map[string]utility.Tool `json:"tools"`
+		ID    string                    `json:"mcp_id"`
+		Tools map[string]mcpclient.Tool `json:"tools"`
 	}
 	data, err := json.Marshal(raw)
 	if err != nil {
@@ -45,12 +46,12 @@ func buildAgentMCPTools(ctx context.Context, db *gorm.DB, raw any, timeout time.
 		if err != nil || state == nil || db == nil {
 			return nil, fmt.Errorf("MCP server %q: missing runtime tenant or database", selection.ID)
 		}
-		userID, _ := state.Sys["user_id"].(string)
-		canvasID, _ := state.Sys["canvas_id"].(string)
+		userID, _ := state.GetSysString("user_id")
+		canvasID, _ := state.GetSysString("canvas_id")
 		if strings.TrimSpace(userID) == "" || strings.TrimSpace(canvasID) == "" {
 			return nil, fmt.Errorf("MCP server %q: missing runtime user or canvas", selection.ID)
 		}
-		tenantID, _ := state.Sys["tenant_id"].(string)
+		tenantID, _ := state.GetSysString("tenant_id")
 		checker := permission.NewDatabaseChecker(db)
 		err = checker.CheckDependency(
 			ctx,
@@ -82,11 +83,13 @@ func buildAgentMCPTools(ctx context.Context, db *gorm.DB, raw any, timeout time.
 		for key, value := range server.Variables {
 			variables[key] = fmt.Sprint(value)
 		}
+		allowPrivateHosts := servercfg.MCPAllowPrivateHosts()
 		for _, name := range slices.Sorted(maps.Keys(selection.Tools)) {
 			descriptor := selection.Tools[name]
 			descriptor.Name = name
-			adapter := agenttool.NewMCPToolAdapterWithOptions(descriptor, utility.CallOptions{
+			adapter := agenttool.NewMCPToolAdapterWithOptions(descriptor, mcpclient.CallOptions{
 				URL: server.URL, ServerType: server.ServerType, Headers: headers, Variables: variables, Timeout: timeout,
+				AllowPrivateHosts: allowPrivateHosts,
 			})
 			adapter.SetVisibleName(fmt.Sprintf("%s_%d", name, toolIndex))
 			toolIndex++

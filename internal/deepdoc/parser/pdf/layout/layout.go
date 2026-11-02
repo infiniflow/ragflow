@@ -554,6 +554,9 @@ func groupBoxesByPage(boxes []pdf.TextBox) (map[int][]int, []int) {
 
 // shouldMergeBoxes determines whether two boxes should be merged
 func shouldMergeBoxes(prev, curr *pdf.TextBox, mh, mw float64, isEnglish bool) bool {
+	if prev.LayoutType == pdf.LayoutTypeFigure || curr.LayoutType == pdf.LayoutTypeFigure {
+		return false
+	}
 	// Check layout number
 	if prev.LayoutNo != curr.LayoutNo {
 		common.Debug("vm reject", zap.String("reason", "layoutNo"),
@@ -674,6 +677,10 @@ func mergeColumnBoxes(sortedBoxes []pdf.TextBox, mh, mw float64, isEnglish bool)
 	out := make([]pdf.TextBox, 0, len(sortedBoxes))
 	for i := 0; i < len(sortedBoxes); i++ {
 		curr := sortedBoxes[i]
+		if curr.LayoutType == pdf.LayoutTypeFigure {
+			out = append(out, curr)
+			continue
+		}
 
 		// Skip cross-page suffixes (like previous page number)
 		if i > 0 && sortedBoxes[i-1].PageNumber < curr.PageNumber && pageNumSuffixPattern.MatchString(sortedBoxes[i-1].Text) {

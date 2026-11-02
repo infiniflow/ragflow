@@ -18,13 +18,10 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -231,8 +228,6 @@ func buildBGPTReferences(envelope map[string]any) ([]map[string]any, []map[strin
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(bgptHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(bgptHashInt(documentID, 500), 10)
 		title := bgptFirstField(paper, "title")
 		if title == "-" {
 			title = "Untitled"
@@ -241,6 +236,7 @@ func buildBGPTReferences(envelope map[string]any) ([]map[string]any, []map[strin
 		if resultURL == "-" {
 			resultURL = ""
 		}
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -311,12 +307,6 @@ func renderBGPTReferences(chunks []map[string]any, maxTokens int) string {
 		blocks = append(blocks, block)
 	}
 	return strings.Join(blocks, "\n")
-}
-
-func bgptHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateBGPTRunes(value string, limit int) string {

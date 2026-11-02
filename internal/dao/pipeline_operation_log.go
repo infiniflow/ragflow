@@ -272,16 +272,20 @@ func (dao *PipelineOperationLogDAO) NextRunCount(ctx context.Context, db *gorm.D
 // the from-states the caller declares:
 // the transitions are monotonic (unstart -> schedule -> running), so a late
 // queued write cannot regress a row a concurrent writer already advanced.
-// A row that already left the declared from-states is left untouched. The
-// legacy progress_msg column is intentionally not updated; run text belongs
-// to ingestion_task_log events.
-func (dao *PipelineOperationLogDAO) AdvanceOpenLog(ctx context.Context, db *gorm.DB, logID string, fromStatuses []string, operationStatus string) error {
+// A row that already left the declared from-states is left untouched and the
+// returned bool is false. The legacy progress_msg column is intentionally not
+// updated; run text belongs to ingestion_task_log events.
+func (dao *PipelineOperationLogDAO) AdvanceOpenLog(ctx context.Context, db *gorm.DB, logID string, fromStatuses []string, operationStatus string) (bool, error) {
 	if logID == "" || len(fromStatuses) == 0 {
-		return nil
+		return false, nil
 	}
-	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
+	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("id = ? AND operation_status IN ?", logID, fromStatuses).
-		Update("operation_status", operationStatus).Error
+		Update("operation_status", operationStatus)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
 }
 
 // GetByIDAndKBID fetches a single ingestion log scoped to its knowledge base.

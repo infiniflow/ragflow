@@ -1113,9 +1113,9 @@ func tenantModelModelTypeIsInteger(db *gorm.DB) (bool, error) {
 // Model id normalization ports ModelIdConfigStage.
 
 var modelIDStringColumns = map[string][]string{
-	"tenant":        {"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id", "ocr_id"},
+	"tenant":        {"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id", "ocr_id", "decision_id"},
 	"knowledgebase": {"embd_id"},
-	"dialog":        {"llm_id", "rerank_id"},
+	"dialog":        {"llm_id", "rerank_id", "decision_id"},
 	"memory":        {"embd_id", "llm_id"},
 }
 
@@ -1141,6 +1141,7 @@ var modelIDFieldSet = map[string]bool{
 	"img2txt_id":      true,
 	"tts_id":          true,
 	"ocr_id":          true,
+	"decision_id":     true,
 }
 
 var searchConfigModelIDFieldSet = map[string]bool{"chat_id": true}
