@@ -1,4 +1,4 @@
-import { IngestionTaskStatus, RunningStatus, RunningStatusValue } from '@/constants/knowledge';
+import { IngestionTaskStatus, RunningStatusValue } from '@/constants/knowledge';
 
 export interface IDocumentInfo {
   // chunk_num: number;
@@ -18,7 +18,8 @@ export interface IDocumentInfo {
   process_duration: number;
   progress: number;
   progress_msg: string;
-import { IngestionTaskStatus, RunningStatus, RunningStatusValue } from '@/constants/knowledge';
+  run: RunningStatusValue;
+  ingestion_status?: IngestionTaskStatus;
   size: number;
   source_type: string;
   status: string;

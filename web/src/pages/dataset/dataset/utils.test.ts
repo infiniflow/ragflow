@@ -56,6 +56,23 @@ describe('isDocumentProcessing', () => {
       ).toBe(true);
     },
   );
+
+  it('treats a cancelled document as terminal even when the ingestion task is stopping', () => {
+    // A legacy numeric cancel status must be normalized before the terminal
+    // check, otherwise the document stays in a processing state forever.
+    expect(
+      isDocumentProcessing({
+        run: 2,
+        ingestion_status: IngestionTaskStatus.STOPPING,
+      }),
+    ).toBe(false);
+    expect(
+      isDocumentProcessing({
+        run: RunningStatusOld.CANCEL,
+        ingestion_status: IngestionTaskStatus.STOPPING,
+      }),
+    ).toBe(false);
+  });
 });
 
 describe('getFileTypeByExtension', () => {

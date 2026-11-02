@@ -1,5 +1,0 @@
-{
-  "id": {"type": "varchar", "default": ""},
-  "kb_id": {"type": "varchar", "default": ""},
-  "meta_fields": {"type": "json", "default": "{}"}
-}

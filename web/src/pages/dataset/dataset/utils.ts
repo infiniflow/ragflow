@@ -34,11 +34,12 @@ export const isDocumentQueued = (
 export const isDocumentProcessing = (
   document: Pick<IDocumentInfo, 'run' | 'ingestion_status'>,
 ) => {
-  if (isParserRunning(document.run)) return true;
+  const normalizedRun = normalizeRunningStatus(document.run);
+  if (normalizedRun === RunningStatus.RUNNING) return true;
   if (
-    document.run === RunningStatus.CANCEL ||
-    document.run === RunningStatus.DONE ||
-    document.run === RunningStatus.FAIL
+    normalizedRun === RunningStatus.CANCEL ||
+    normalizedRun === RunningStatus.DONE ||
+    normalizedRun === RunningStatus.FAIL
   ) {
     return false;
   }
