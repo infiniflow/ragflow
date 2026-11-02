@@ -376,7 +376,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 		// Design C5/G3: an empty pipeline_version_id in Pipeline mode is REJECTED
 		// (no longer silently cleared or auto-backfilled to the canvas latest).
 		// The Save fails with ErrPipelineVersionEmpty so the UI can show the red
-		// Missing badge and the "版本信息缺失" error. BuiltIn mode (no canvas
+		// Missing badge and the "mission version info" error. BuiltIn mode (no canvas
 		// bound) is exempt and may carry an empty version.
 		isEffPipeline := canvasCtx != nil && strings.TrimSpace(*canvasCtx) != ""
 		if req.PipelineVersionID != nil {

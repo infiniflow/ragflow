@@ -4481,7 +4481,7 @@ func TestUpdateDatasetDocumentParentChildConfigReachesCanvasChunker(t *testing.T
 	seedDocVersion(t, db, pipelineID, "v-pcc-0001", 0)
 	// Bind the document to the pipeline first, so the update below is a plain
 	// parser_config patch on an already-canvas document. A pipeline switch must
-	// reset parser_config to the canvas DSL defaults (design A3 整体重置), so the
+	// reset parser_config to the canvas DSL defaults, so the
 	// submitted parent_child would be dropped on a switch; this test verifies the
 	// config reaches the canvas chunker when no switch occurs.
 	bindDocCanvas(t, db, "kb-1", "doc-1", pipelineID, "v-pcc-0001")
