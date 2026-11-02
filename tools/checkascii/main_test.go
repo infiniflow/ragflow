@@ -90,6 +90,10 @@ func TestCheck(t *testing.T) {
 				if !strings.Contains(out.String(), ",line="+line+"::") {
 					t.Errorf("missing annotation at line %s: %s", line, &out)
 				}
+				file := strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A").Replace(tt.file)
+				if !strings.Contains(out.String(), "::"+file+":"+line+": Non-ASCII characters on added line.") {
+					t.Errorf("missing visible file and line %s:%s: %s", tt.file, line, &out)
+				}
 			}
 			if tt.name == "annotation escaping" && !strings.Contains(out.String(), "file=code%25%2C%0A.go,line=1::") {
 				t.Errorf("unescaped annotation path: %s", &out)

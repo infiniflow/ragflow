@@ -48,6 +48,7 @@ func check(ctx context.Context, dir, base, head string, out io.Writer) error {
 	}
 	failures := 0
 	escape := strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A", ":", "%3A", ",", "%2C")
+	escapeMessage := strings.NewReplacer("%", "%25", "\r", "%0D", "\n", "%0A")
 	for _, name := range bytes.Split(files, []byte{0}) {
 		file := string(name)
 		if file == "" || isExcluded(file) {
@@ -76,7 +77,7 @@ func check(ctx context.Context, dir, base, head string, out io.Writer) error {
 			case '+':
 				for _, b := range line[1:] {
 					if b >= 0x80 {
-						if _, err := fmt.Fprintf(out, "::error file=%s,line=%d::Non-ASCII characters on added line. Use English ASCII text or Unicode escapes in string literals.\n", escape.Replace(file), lineNumber); err != nil {
+						if _, err := fmt.Fprintf(out, "::error file=%s,line=%d::%s:%d: Non-ASCII characters on added line. Use English ASCII text or Unicode escapes in string literals.\n", escape.Replace(file), lineNumber, escapeMessage.Replace(file), lineNumber); err != nil {
 							return err
 						}
 						failures++
