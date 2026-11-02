@@ -16,8 +16,10 @@ bash build.sh --test ./tools/checkascii
 ```
 
 The checker reads committed content rather than working-tree files. Failures
-produce GitHub Actions annotations with the file and new line number. Invalid
-Git references and other Git errors fail the check. Git binary patches are
+produce a GitHub Actions annotation for every offending added line, with the
+file and new line number in both the annotation metadata and the visible error
+message (for example, `web/src/app.tsx:42: Non-ASCII characters on added line.`).
+Invalid Git references and other Git errors fail the check. Git binary patches are
 skipped. Renamed files are treated as additions, including moves out of
 excluded paths.
 
