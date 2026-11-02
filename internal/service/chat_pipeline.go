@@ -3409,14 +3409,16 @@ func (s *ChatPipelineService) useSQL(
 		}
 	}
 
-	// Step 1.5: inject the kb_id WHERE filter for ES / OS / OceanBase.
-	// No-op for Infinity (the table name already encodes the KB scope).
-	// Mirrors add_kb_filter at dialog_service.py:992-1021, called from
-	// get_table right after normalize_sql.
+	// Step 1.5: constrain the SQL to the authorized kb_ids for ES / OS /
+	// OceanBase. No-op for Infinity (the table name already encodes the KB
+	// scope). When the scope cannot be enforced safely, skip SQL retrieval so
+	// the caller falls back to vector search instead of running an unfiltered
+	// query.
 	if filtered, ok := addKBFilter(sqlText, engineName, kbs); ok {
 		sqlText = filtered
 	} else {
-		common.Warn("SQL retrieval: invalid kb_id UUID; SQL will run unfiltered")
+		common.Warn("SQL retrieval: SQL cannot be scoped to the authorized datasets; falling back")
+		return nil, nil
 	}
 
 	// Step 2: try to execute. On failure, repair once with the
@@ -3434,10 +3436,12 @@ func (s *ChatPipelineService) useSQL(
 			return nil, nil
 		}
 		// Re-apply the kb filter after the LLM-driven repair.
-		if filtered, ok := addKBFilter(repaired, engineName, kbs); ok {
-			repaired = filtered
+		filtered, ok := addKBFilter(repaired, engineName, kbs)
+		if !ok {
+			common.Warn("SQL retrieval: repaired SQL cannot be scoped to the authorized datasets; falling back")
+			return nil, nil
 		}
-		rows, execErr = docEngine.RunSQL(ctx, tableName, repaired, kbIDStrings(kbs), "json")
+		rows, execErr = docEngine.RunSQL(ctx, tableName, filtered, kbIDStrings(kbs), "json")
 		if execErr != nil {
 			common.Warn("SQL retrieval: repaired SQL also failed", zap.Error(execErr))
 			return nil, nil
@@ -3464,19 +3468,23 @@ func (s *ChatPipelineService) useSQL(
 			ctx, chatModel, sysPrompt, tableName, question, sqlText, expectedCol, engineName, fieldMap,
 		)
 		if repairErr == nil && repaired != "" {
-			// Re-apply the kb filter after the LLM-driven repair.
-			if filtered, ok := addKBFilter(repaired, engineName, kbs); ok {
-				repaired = filtered
-			}
-			repairedRows, repairedErr := docEngine.RunSQL(ctx, tableName, repaired, kbIDStrings(kbs), "json")
-			if repairedErr == nil && len(repairedRows) > 0 && hasSourceColumns(repairedRows) {
-				common.Debug("SQL retrieval: missing-columns repair succeeded",
-					zap.String("sql", repaired))
-				rows = repairedRows
-				sqlText = repaired
+			// Re-apply the kb filter after the LLM-driven repair. The current
+			// rows are already scope-safe, so when the repaired SQL cannot be
+			// scoped we keep them instead of running an unfiltered query.
+			filtered, ok := addKBFilter(repaired, engineName, kbs)
+			if !ok {
+				common.Warn("SQL retrieval: repaired SQL cannot be scoped to the authorized datasets; keeping the scoped result")
 			} else {
-				common.Warn("SQL retrieval: missing-columns repair did not yield source columns; using best-effort answer",
-					zap.String("sql", repaired))
+				repairedRows, repairedErr := docEngine.RunSQL(ctx, tableName, filtered, kbIDStrings(kbs), "json")
+				if repairedErr == nil && len(repairedRows) > 0 && hasSourceColumns(repairedRows) {
+					common.Debug("SQL retrieval: missing-columns repair succeeded",
+						zap.String("sql", filtered))
+					rows = repairedRows
+					sqlText = filtered
+				} else {
+					common.Warn("SQL retrieval: missing-columns repair did not yield source columns; using best-effort answer",
+						zap.String("sql", filtered))
+				}
 			}
 		} else if repairErr != nil {
 			common.Warn("SQL retrieval: missing-columns repair failed; using best-effort answer",
@@ -3535,23 +3543,247 @@ func isValidUUID(s string) bool {
 	return uuidRe.MatchString(s)
 }
 
-// addKBFilter injects a validated kb_id WHERE filter into sqlText for
-// ES / OS / OceanBase engines. Infinity is a no-op because the table
-// name already encodes the KB scope. Mirrors dialog_service.py:992-1021.
+// scalarWord is one unquoted SQL word plus its parenthesis depth.
+type scalarWord struct {
+	word       string
+	start, end int
+	depth      int
+}
+
+func isScalarWordStart(c byte) bool {
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
+func isScalarWordByte(c byte) bool {
+	return isScalarWordStart(c) || c >= '0' && c <= '9' || c == '$'
+}
+
+// scalarDollarQuoteDelimiter returns the delimiter of a PostgreSQL dollar-quoted
+// string starting at start (either "$$" or "$tag$"). ok is false when start does
+// not open one, e.g. for the "$1" bind placeholder.
+func scalarDollarQuoteDelimiter(sqlText string, start int) (string, bool) {
+	i := start + 1
+	if i < len(sqlText) && sqlText[i] == '$' {
+		return "$$", true
+	}
+	if i >= len(sqlText) || !isScalarWordStart(sqlText[i]) {
+		return "", false
+	}
+	for i < len(sqlText) && (isScalarWordStart(sqlText[i]) || sqlText[i] >= '0' && sqlText[i] <= '9') {
+		i++
+	}
+	if i >= len(sqlText) || sqlText[i] != '$' {
+		return "", false
+	}
+	return sqlText[start : i+1], true
+}
+
+// sqlScanDialect selects the lexical differences between the engines
+// addKBFilter runs against. The scan never guesses: a construct it cannot skip
+// exactly makes it fail, which callers treat as "do not execute".
+type sqlScanDialect struct {
+	// backslashEscapes enables MySQL-family backslash escapes in quoted strings.
+	backslashEscapes bool
+	// hashLineComments treats "#" as a line comment (MySQL/OceanBase). It is
+	// refused rather than skipped because a "#" would swallow any filter the
+	// wrapper appends on the same line.
+	hashLineComments bool
+	// executableComments refuses "/*! ... */" (MySQL/OceanBase), whose contents
+	// the server executes and which could therefore hide a set operation.
+	executableComments bool
+	// dollarQuotes enables $$...$$ and $tag$...$tag$ literals (PostgreSQL).
+	dollarQuotes bool
+	// nestedBlockComments enables PostgreSQL's nested "/* /* */ */".
+	nestedBlockComments bool
+}
+
+func sqlScanDialectFor(engineName string) sqlScanDialect {
+	switch {
+	case engine.IsOceanBaseFamily(engineName):
+		return sqlScanDialect{backslashEscapes: true, hashLineComments: true, executableComments: true}
+	case engine.IsVastbase(engineName), engineName == string(engine.EngineSereneDB):
+		return sqlScanDialect{dollarQuotes: true, nestedBlockComments: true}
+	default:
+		// Elasticsearch / OpenSearch / unknown: standard literals only.
+		return sqlScanDialect{}
+	}
+}
+
+// scanScalarWords tokenizes sqlText, skipping quoted strings, quoted
+// identifiers, dollar-quoted strings, and comments. It records only unquoted
+// words plus their parenthesis depth, which is all that is needed to locate the
+// top-level WHERE clause without being fooled by keywords inside literals or
+// comments.
 //
-// Returns the (possibly modified) SQL and a boolean indicating whether
-// all kb_ids passed UUID validation. When validation fails, the SQL is
-// returned unchanged — the engine will likely reject the un-filtered
-// query, triggering the repair path (Python's `_assert_valid_uuid` raises
-// ValueError, which `get_table`'s try/except catches and routes to the
-// repair flow).
+// lineComments lists the byte ranges of line comments (from "--" to the
+// terminating newline or end of input). Callers use it to avoid appending SQL
+// onto a commented-out line.
 //
-// If the SQL already has a WHERE clause with `kb_id =`, the filter is
-// not duplicated. Otherwise a fresh WHERE is appended, or `kb_id = '...'
-// AND` is prepended to an existing WHERE.
+// Parentheses must balance: a ')' at depth 0 or a positive depth at the end
+// would let a predicate escape the wrapping parentheses, so both make the scan
+// fail. Unterminated literals and comments also fail so callers can fail closed
+// instead of guessing.
+func scanScalarWords(sqlText string, dialect sqlScanDialect) (words []scalarWord, lineComments [][2]int, ok bool) {
+	words = make([]scalarWord, 0, len(sqlText)/4)
+	depth := 0
+	for i := 0; i < len(sqlText); {
+		c := sqlText[i]
+		if c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' {
+			i++
+			continue
+		}
+		if c == '-' && i+1 < len(sqlText) && sqlText[i+1] == '-' {
+			start := i
+			i += 2
+			for i < len(sqlText) && sqlText[i] != '\n' && sqlText[i] != '\r' {
+				i++
+			}
+			lineComments = append(lineComments, [2]int{start, i})
+			continue
+		}
+		if dialect.hashLineComments && c == '#' {
+			// A "#" comment runs to end of line and would swallow anything the
+			// wrapper appends after it. Refuse instead of trying to place the
+			// filter around it.
+			return nil, nil, false
+		}
+		if c == '/' && i+1 < len(sqlText) && sqlText[i+1] == '*' {
+			if dialect.executableComments && i+2 < len(sqlText) && sqlText[i+2] == '!' {
+				// Executable comment: the server runs its contents, so the scan
+				// would not see statements (e.g. a UNION) hidden inside it.
+				return nil, nil, false
+			}
+			i += 2
+			commentDepth := 1
+			for i < len(sqlText) && commentDepth > 0 {
+				if i+1 < len(sqlText) && sqlText[i] == '/' && sqlText[i+1] == '*' {
+					if !dialect.nestedBlockComments {
+						return nil, nil, false
+					}
+					commentDepth++
+					i += 2
+					continue
+				}
+				if i+1 < len(sqlText) && sqlText[i] == '*' && sqlText[i+1] == '/' {
+					commentDepth--
+					i += 2
+					continue
+				}
+				i++
+			}
+			if commentDepth != 0 {
+				return nil, nil, false
+			}
+			continue
+		}
+		if c == '\'' || c == '"' || c == '`' {
+			quote := c
+			escapes := quote != '`' && dialect.backslashEscapes
+			if dialect.dollarQuotes && quote == '\'' && i > 0 &&
+				(sqlText[i-1] == 'E' || sqlText[i-1] == 'e') &&
+				(i == 1 || !isScalarWordByte(sqlText[i-2])) {
+				escapes = true // PostgreSQL E'...' escape string.
+			}
+			i++
+			closed := false
+			for i < len(sqlText) {
+				if sqlText[i] == '\\' && i+1 < len(sqlText) {
+					if escapes {
+						i += 2
+						continue
+					}
+					// PostgreSQL's plain-string behavior depends on the server
+					// setting. Refuse ambiguous quote escapes in either mode.
+					if dialect.dollarQuotes && quote == '\'' && sqlText[i+1] == '\'' {
+						return nil, nil, false
+					}
+				}
+				if sqlText[i] == quote {
+					if i+1 < len(sqlText) && sqlText[i+1] == quote {
+						i += 2
+						continue
+					}
+					i++
+					closed = true
+					break
+				}
+				i++
+			}
+			if !closed {
+				return nil, nil, false
+			}
+			continue
+		}
+		if dialect.dollarQuotes && c == '$' {
+			if delim, isQuote := scalarDollarQuoteDelimiter(sqlText, i); isQuote {
+				bodyStart := i + len(delim)
+				closeOffset := strings.Index(sqlText[bodyStart:], delim)
+				if closeOffset < 0 {
+					return nil, nil, false
+				}
+				i = bodyStart + closeOffset + len(delim)
+				continue
+			}
+		}
+		if c == '(' {
+			depth++
+			i++
+			continue
+		}
+		if c == ')' {
+			// A ')' without a matching '(' means the predicate would close the
+			// wrapper early and let OR escape the injected scope.
+			if depth == 0 {
+				return nil, nil, false
+			}
+			depth--
+			i++
+			continue
+		}
+		if isScalarWordStart(c) {
+			start := i
+			i++
+			for i < len(sqlText) && isScalarWordByte(sqlText[i]) {
+				i++
+			}
+			words = append(words, scalarWord{
+				word:  strings.ToUpper(sqlText[start:i]),
+				start: start,
+				end:   i,
+				depth: depth,
+			})
+			continue
+		}
+		i++
+	}
+	if depth != 0 {
+		return nil, nil, false
+	}
+	return words, lineComments, true
+}
+
+// addKBFilter constrains sqlText to the caller's authorized kb_ids. Infinity is
+// a no-op because its table name already encodes the KB scope.
+//
+// The authorized filter is always ANDed onto the top-level predicate, with the
+// model's own predicate wrapped in parentheses. This means a model-written
+// `kb_id = '<other>'` is neutralized rather than trusted: the resulting
+// predicate is a contradiction and yields zero rows. The filter is never
+// skipped just because the text already mentions kb_id.
+//
+// Returns the rewritten SQL and whether the result is safe to execute. It
+// returns false when a kb_id is not a UUID, or when the statement shape cannot
+// be scoped safely (set operations, unterminated literals/comments). Callers
+// must not execute the SQL when it is false.
 func addKBFilter(sqlText, engineName string, kbs []*entity.Knowledgebase) (string, bool) {
 	if engineName == "infinity" || len(kbs) == 0 {
 		return sqlText, true
+	}
+	// ES and OceanBase remove backticks after this rewrite. Refuse them so
+	// engine preprocessing cannot expose SQL syntax hidden from the scan.
+	if strings.Contains(sqlText, "`") &&
+		(engine.IsOceanBaseFamily(engineName) || engineName == "elasticsearch" || engineName == "opensearch") {
+		return sqlText, false
 	}
 
 	// Validate all kb_ids as UUIDs.
@@ -3573,20 +3805,92 @@ func addKBFilter(sqlText, engineName string, kbs []*entity.Knowledgebase) (strin
 		kbFilter = "(" + strings.Join(parts, " OR ") + ")"
 	}
 
-	lower := strings.ToLower(sqlText)
-	if !strings.Contains(lower, "where ") {
-		// No WHERE clause: append one. Honor ORDER BY if present.
-		if oIdx := strings.Index(lower, "order by"); oIdx >= 0 {
-			sqlText = sqlText[:oIdx] + " WHERE " + kbFilter + "  order by " + sqlText[oIdx+len("order by"):]
-		} else {
-			sqlText += " WHERE " + kbFilter
-		}
-	} else if !strings.Contains(lower, "kb_id =") && !strings.Contains(lower, "kb_id=") {
-		// Has WHERE but no kb_id: insert "kb_id = '...' AND" after WHERE.
-		whereRe := regexp.MustCompile(`(?i)\bwhere\b `)
-		sqlText = whereRe.ReplaceAllString(sqlText, "where "+kbFilter+" and ")
+	words, lineComments, ok := scanScalarWords(sqlText, sqlScanDialectFor(engineName))
+	if !ok {
+		return sqlText, false
 	}
-	return sqlText, true
+
+	// Set operations cannot be scoped from the first arm alone: the second arm
+	// would bypass the injected predicate. Refuse instead of guessing.
+	for _, w := range words {
+		if w.depth == 0 && (w.word == "UNION" || w.word == "INTERSECT" || w.word == "EXCEPT") {
+			return sqlText, false
+		}
+	}
+
+	whereIdx := -1
+	for i, w := range words {
+		if w.depth == 0 && w.word == "WHERE" {
+			whereIdx = i
+			break
+		}
+	}
+
+	// The predicate ends at the first top-level trailing clause after WHERE, or
+	// at end of statement. Comments after WHERE stay inside the predicate: they
+	// may sit mid-expression (`1=1 -- note\n OR 1=1`), and cutting there would
+	// leave the trailing OR outside the wrapper and make it always true.
+	endPos := len(sqlText)
+	scanFrom := 0
+	if whereIdx >= 0 {
+		scanFrom = whereIdx + 1
+	}
+	for i := scanFrom; i < len(words); i++ {
+		w := words[i]
+		if w.depth != 0 {
+			continue
+		}
+		switch w.word {
+		case "GROUP", "HAVING", "ORDER", "LIMIT", "OFFSET":
+			endPos = w.start
+		}
+		if endPos != len(sqlText) {
+			break
+		}
+	}
+
+	// A line comment running to the end of its line swallows anything appended
+	// on that line. When the insertion point falls at the end of such a
+	// comment, terminate the comment with a newline first so the injected text
+	// starts on a fresh line.
+	lineCommentSwallows := func(pos int) bool {
+		for _, lc := range lineComments {
+			if pos > lc[0] && pos <= lc[1] {
+				return true
+			}
+		}
+		return false
+	}
+
+	if whereIdx < 0 {
+		head := strings.TrimRight(sqlText[:endPos], " \t\r\n")
+		sep := " WHERE "
+		if lineCommentSwallows(len(head)) {
+			sep = "\nWHERE "
+		}
+		tail := strings.TrimSpace(sqlText[endPos:])
+		if tail != "" {
+			return head + sep + kbFilter + " " + tail, true
+		}
+		return head + sep + kbFilter, true
+	}
+
+	whereWord := words[whereIdx]
+	predicateRaw := sqlText[whereWord.end:endPos]
+	predicate := strings.TrimSpace(predicateRaw)
+	if predicate == "" {
+		return sqlText, false
+	}
+	closeParen := ")"
+	if lineCommentSwallows(whereWord.end + len(strings.TrimRight(predicateRaw, " \t\r\n"))) {
+		closeParen = "\n)"
+	}
+	rewritten := sqlText[:whereWord.start] +
+		"WHERE (" + predicate + closeParen + " AND (" + kbFilter + ")"
+	if tail := strings.TrimSpace(sqlText[endPos:]); tail != "" {
+		rewritten += " " + tail
+	}
+	return rewritten, true
 }
 
 // generateSQL calls the chat model to produce a SQL SELECT.
