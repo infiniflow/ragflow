@@ -151,6 +151,63 @@ func TestStopParseDocumentsHandler_CancelAll_MutuallyExclusive(t *testing.T) {
 	}
 }
 
+// TestStopParseDocumentsHandler_CancelAll_EmptyDocumentIDsArrayRejected is the
+// adversarial case for the cancel_all / document_ids mutual exclusion. An explicit
+// empty JSON array ("document_ids": []) unmarshals to a non-nil empty slice, which
+// len() == 0 does NOT detect. The old guard `len(req.DocumentIDs) > 0` therefore
+// let `{"cancel_all": true, "document_ids": []}` slip past the 400 and trigger a
+// full-dataset cancel. The guard must reject any explicit document_ids (nil or []),
+// so this request must return 400 and never call StopParseDocumentsAll.
+func TestStopParseDocumentsHandler_CancelAll_EmptyDocumentIDsArrayRejected(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeDocumentService{}
+	h, cleanup := cancelAllHandlerWithAccess(t, fake)
+	defer cleanup()
+
+	body := `{"cancel_all":true,"document_ids":[]}`
+	c, w := setupHandlerAccessContext("POST", "/api/v1/datasets/ds-1/documents/stop", body)
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+	h.StopParseDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 envelope", w.Code)
+	}
+	var resp struct {
+		Code common.ErrorCode `json:"code"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Code != common.CodeArgumentError {
+		t.Fatalf("code = %v, want %v (explicit empty document_ids must be rejected): %s", resp.Code, common.CodeArgumentError, w.Body.String())
+	}
+	if fake.cancelAllCalled {
+		t.Fatal("StopParseDocumentsAll must not be called when cancel_all is set with an explicit (even empty) document_ids array")
+	}
+}
+
+// TestStopParseDocumentsHandler_CancelAll_OmittedDocumentIDsOk guards against an
+// over-strict fix. Omitting document_ids entirely (nil slice) is the normal
+// cancel_all usage and must still proceed to StopParseDocumentsAll.
+func TestStopParseDocumentsHandler_CancelAll_OmittedDocumentIDsOk(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeDocumentService{}
+	h, cleanup := cancelAllHandlerWithAccess(t, fake)
+	defer cleanup()
+
+	body := `{"cancel_all":true}`
+	c, w := setupHandlerAccessContext("POST", "/api/v1/datasets/ds-1/documents/stop", body)
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+	h.StopParseDocuments(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if !fake.cancelAllCalled {
+		t.Fatal("expected StopParseDocumentsAll to be called when document_ids is omitted")
+	}
+}
+
 func TestStopParseDocumentsHandler_CancelAll_ServiceError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	fake := &fakeDocumentService{stopAllErr: errFakeCancelAll}

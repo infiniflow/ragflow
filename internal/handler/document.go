@@ -1594,8 +1594,11 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 		return
 	}
 
-	// cancel_all and an explicit document list are mutually exclusive.
-	if req.CancelAll && len(req.DocumentIDs) > 0 {
+	// cancel_all and an explicit document list are mutually exclusive. Use a nil
+	// check rather than len > 0 so that an explicit empty array
+	// (`document_ids: []`) is still rejected instead of silently falling through
+	// to a full-dataset cancel.
+	if req.CancelAll && req.DocumentIDs != nil {
 		common.ErrorWithCode(c, common.CodeArgumentError, "`cancel_all` and `document_ids` are mutually exclusive")
 		return
 	}
