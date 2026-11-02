@@ -35,6 +35,7 @@ import (
 	dataset "ragflow/internal/service/dataset"
 
 	"go.uber.org/zap"
+	"ragflow/internal/dao"
 )
 
 // TenantHandler tenant handler
@@ -276,7 +277,7 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	// Check authorization - user must have access to this kb
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KBID, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: req.KBID}, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -324,7 +325,7 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	}
 
 	// Check authorization
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KBID, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: req.KBID}, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}

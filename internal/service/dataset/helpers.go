@@ -301,7 +301,7 @@ func pythonStringListRepr(items []string) string {
 }
 
 func canvasAccessibleForUser(ctx context.Context, subject permission.Subject, canvasID string) (bool, error) {
-	err := service.CheckCanvasPermission(ctx, subject, canvasID, permission.OperationUse)
+	err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, subject, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationUse)
 	if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 		return false, nil
 	}

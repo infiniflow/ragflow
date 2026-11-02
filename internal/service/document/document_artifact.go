@@ -235,7 +235,7 @@ func (s *DocumentService) sandboxArtifactAccessible(ctx context.Context, filenam
 		return false
 	}
 	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(ctx, filename, userID) {
-		if service.CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, dialogID, permission.OperationRead) == nil {
+		if permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: dialogID}, permission.OperationRead) == nil {
 			return true
 		}
 	}
