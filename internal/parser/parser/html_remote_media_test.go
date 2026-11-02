@@ -28,6 +28,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/utility"
 )
 
@@ -37,8 +38,8 @@ import (
 // rejected.
 func allowLoopbackImages(t *testing.T) {
 	t.Helper()
-	previous := common.AssertURLSafe
-	common.AssertURLSafe = func(rawURL string) (string, string, error) {
+	previous := common.AssertURLSafeWithContext
+	common.AssertURLSafeWithContext = func(ctx context.Context, rawURL string) (string, string, error) {
 		parsed, err := url.Parse(strings.TrimSpace(rawURL))
 		if err == nil {
 			if host := parsed.Hostname(); host != "" {
@@ -47,9 +48,9 @@ func allowLoopbackImages(t *testing.T) {
 				}
 			}
 		}
-		return previous(rawURL)
+		return previous(ctx, rawURL)
 	}
-	t.Cleanup(func() { common.AssertURLSafe = previous })
+	t.Cleanup(func() { common.AssertURLSafeWithContext = previous })
 }
 
 func imageTestServer(t *testing.T, body string, hits *atomic.Int32) *httptest.Server {
@@ -341,5 +342,35 @@ func TestHTMLTextParserSkipsRemoteImages(t *testing.T) {
 	}
 	if len(result.Warnings) != 0 {
 		t.Fatalf("warnings = %v, want none for a text-only parse", result.Warnings)
+	}
+}
+
+func TestRemoteMediaReusesCachedSourceAfterDeadline(t *testing.T) {
+	allowLoopbackImages(t)
+	var hits atomic.Int32
+	server := imageTestServer(t, "cached-image", &hits)
+	ctx, cache := recordingMediaContext()
+	ctx, cancelTask := context.WithCancel(ctx)
+	defer cancelTask()
+	state := &htmlWalkState{ctx: ctx, mediaCache: cache, budget: media.NewBudget()}
+	ref, ok := state.resolveRemoteMedia(ctx, server.URL)
+	if !ok {
+		t.Fatal("initial image was not cached")
+	}
+	expired, cancel := context.WithDeadline(ctx, time.Now().Add(-time.Second))
+	defer cancel()
+	reused, ok := state.resolveRemoteMedia(expired, server.URL)
+	if !ok || reused == nil || *reused != *ref {
+		t.Fatalf("cached image was lost after deadline: %+v", reused)
+	}
+	if _, ok := state.resolveRemoteMedia(expired, server.URL+"/new"); ok {
+		t.Fatal("new source resolved after deadline")
+	}
+	if hits.Load() != 1 || len(cache.puts) != 1 {
+		t.Fatalf("fetches=%d, cache writes=%d; want one each", hits.Load(), len(cache.puts))
+	}
+	cancelTask()
+	if _, ok := state.resolveRemoteMedia(expired, server.URL); ok || state.err != context.Canceled {
+		t.Fatalf("task cancellation was ignored: %v", state.err)
 	}
 }

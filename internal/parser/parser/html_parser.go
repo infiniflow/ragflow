@@ -284,12 +284,19 @@ func (s *htmlWalkState) storeDataURIMedia(key, src string) (*entity.MediaRef, bo
 }
 
 // resolveRemoteMedia downloads one HTTP(S) image into the run media cache.
-// fetchCtx bounds the download: a document image deadline skips the source
-// without counting it, while a failed download is counted once for the
+// fetchCtx bounds new downloads; cached sources remain reusable after its
+// deadline. A failed download is counted once for the
 // parser warning. A cache or task-context failure is returned to the caller
 // through the walk state.
 func (s *htmlWalkState) resolveRemoteMedia(fetchCtx context.Context, src string) (*entity.MediaRef, bool) {
 	src = strings.TrimSpace(src)
+	if err := s.ctx.Err(); err != nil {
+		s.err = err
+		return nil, false
+	}
+	if ref, seen := s.mediaOutput().Lookup(src); seen {
+		return ref, ref != nil
+	}
 	if fetchCtx.Err() != nil {
 		return nil, false
 	}

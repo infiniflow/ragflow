@@ -432,16 +432,16 @@ func TestFileService_UploadFromURL_PDFAddsExtensionAndStoresToDownloads(t *testi
 	}))
 	defer server.Close()
 
-	origAssert := common.AssertURLSafe
+	origAssert := common.AssertURLSafeWithContext
 	origPinned := utility.PinnedHTTPClient
-	common.AssertURLSafe = func(rawURL string) (string, string, error) {
+	common.AssertURLSafeWithContext = func(_ context.Context, rawURL string) (string, string, error) {
 		return "127.0.0.1", "127.0.0.1", nil
 	}
 	utility.PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 		return server.Client()
 	}
 	t.Cleanup(func() {
-		common.AssertURLSafe = origAssert
+		common.AssertURLSafeWithContext = origAssert
 		utility.PinnedHTTPClient = origPinned
 	})
 
@@ -479,16 +479,16 @@ func TestFileService_UploadFromURL_HTMLNormalizesReadableContent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	origAssert := common.AssertURLSafe
+	origAssert := common.AssertURLSafeWithContext
 	origPinned := utility.PinnedHTTPClient
-	common.AssertURLSafe = func(rawURL string) (string, string, error) {
+	common.AssertURLSafeWithContext = func(_ context.Context, rawURL string) (string, string, error) {
 		return "127.0.0.1", "127.0.0.1", nil
 	}
 	utility.PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 		return server.Client()
 	}
 	t.Cleanup(func() {
-		common.AssertURLSafe = origAssert
+		common.AssertURLSafeWithContext = origAssert
 		utility.PinnedHTTPClient = origPinned
 	})
 
@@ -553,16 +553,16 @@ func TestFileService_UploadFromURL_ShortensLongNamesWithinTheLimit(t *testing.T)
 			}))
 			defer server.Close()
 
-			origAssert := common.AssertURLSafe
+			origAssert := common.AssertURLSafeWithContext
 			origPinned := utility.PinnedHTTPClient
-			common.AssertURLSafe = func(rawURL string) (string, string, error) {
+			common.AssertURLSafeWithContext = func(_ context.Context, rawURL string) (string, string, error) {
 				return "127.0.0.1", "127.0.0.1", nil
 			}
 			utility.PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 				return server.Client()
 			}
 			t.Cleanup(func() {
-				common.AssertURLSafe = origAssert
+				common.AssertURLSafeWithContext = origAssert
 				utility.PinnedHTTPClient = origPinned
 			})
 
