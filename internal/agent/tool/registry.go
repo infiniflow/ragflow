@@ -177,6 +177,26 @@ func cloneToolParams(in map[string]any) map[string]any {
 }
 
 // BuildAll resolves a list of tool names into Eino BaseTool instances.
+// ResolveParams returns the constructor params BuildAll would select for the
+// given tool name, so per-occurrence tool specs can share the same lookup.
+func ResolveParams(name string, perToolParams map[string]map[string]any) map[string]any {
+	if perToolParams == nil {
+		return nil
+	}
+	// Prefer the canonical key so callers can provide params using the
+	// Go registry name even when the tool list uses a Canvas name.
+	params := perToolParams[normalizeToolName(name)]
+	if params == nil {
+		// Canvas DSL extraction currently keys object params by the
+		// lower-cased component name, so retain that lookup as a fallback.
+		params = perToolParams[strings.ToLower(strings.TrimSpace(name))]
+	}
+	if params == nil {
+		params = perToolParams[name]
+	}
+	return params
+}
+
 // perToolParams is keyed by the Agent-visible tool name.
 func BuildAll(names []string, perToolParams map[string]map[string]any) ([]einotool.BaseTool, error) {
 	if len(names) == 0 {
@@ -184,20 +204,7 @@ func BuildAll(names []string, perToolParams map[string]map[string]any) ([]einoto
 	}
 	tools := make([]einotool.BaseTool, 0, len(names))
 	for _, name := range names {
-		var params map[string]any
-		if perToolParams != nil {
-			// Prefer the canonical key so callers can provide params using the
-			// Go registry name even when the tool list uses a Canvas name.
-			params = perToolParams[normalizeToolName(name)]
-			if params == nil {
-				// Canvas DSL extraction currently keys object params by the
-				// lower-cased component name, so retain that lookup as a fallback.
-				params = perToolParams[strings.ToLower(strings.TrimSpace(name))]
-			}
-			if params == nil {
-				params = perToolParams[name]
-			}
-		}
+		params := ResolveParams(name, perToolParams)
 		t, err := BuildByName(name, params)
 		if err != nil {
 			return nil, err

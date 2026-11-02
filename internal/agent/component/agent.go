@@ -72,17 +72,21 @@ type AgentComponent struct {
 
 // AgentParam captures the (resolved) DSL parameters for an Agent node.
 type AgentParam struct {
-	ModelID                  string
-	Description              string
-	SystemPrompt             string
-	UserPrompt               string
-	OutputStructure          map[string]any
-	Thinking                 string
-	MaxTokens                *int
-	TopP                     *float64
-	Temperature              *float64
-	Tools                    []string                  // Agent-visible tool names resolved into Eino BaseTool instances
-	ToolParams               map[string]map[string]any // node-level tool constructor params keyed by tool name
+	ModelID         string
+	Description     string
+	SystemPrompt    string
+	UserPrompt      string
+	OutputStructure map[string]any
+	Thinking        string
+	MaxTokens       *int
+	TopP            *float64
+	Temperature     *float64
+	Tools           []string                  // Agent-visible tool names resolved into Eino BaseTool instances
+	ToolParams      map[string]map[string]any // node-level tool constructor params keyed by tool name
+	// ToolSpecs preserves one entry per canvas tool object so that several
+	// DSL nodes sharing a component name (e.g. two Retrieval nodes) keep
+	// their own params instead of overwriting a name-keyed map slot.
+	ToolSpecs                []AgentToolSpec
 	SubAgents                []SubAgentTool
 	MCP                      any // Saved MCP selections, decoded and validated when tools are built.
 	ToolTimeout              time.Duration
@@ -798,6 +802,15 @@ func optimizeMultiTurnQuestion(ctx context.Context, db *gorm.DB, p AgentParam, h
 	return strings.TrimSpace(resp.Content), nil
 }
 
+// AgentToolSpec is one canvas tool occurrence: the agent-visible (or
+// component) name plus its own constructor params. Keeping params per
+// occurrence matters when several DSL nodes share a component name — a
+// name-keyed map would let only the last configuration survive.
+type AgentToolSpec struct {
+	Name   string
+	Params map[string]any
+}
+
 func hasCodeExecTool(names []string) bool {
 	for _, name := range names {
 		switch strings.ToLower(strings.TrimSpace(name)) {
@@ -809,19 +822,47 @@ func hasCodeExecTool(names []string) bool {
 }
 
 func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, error) {
-	tools, err := agenttool.BuildAll(p.Tools, p.ToolParams)
-	if err != nil {
-		return nil, err
+	specs := p.ToolSpecs
+	if len(specs) == 0 && len(p.Tools) > 0 {
+		specs = make([]AgentToolSpec, len(p.Tools))
+		for i, name := range p.Tools {
+			specs[i] = AgentToolSpec{Name: name}
+		}
+	}
+	// Each spec builds one tool with its own params; toolSignatures keeps the
+	// effective constructor params so dedupe can compare real configuration
+	// (Retrieval defaults, ExeSQL connection details, ...) instead of the
+	// model-facing ToolInfo, which omits most of it.
+	tools := make([]einotool.BaseTool, 0, len(specs))
+	toolSignatures := make([][]byte, 0, len(specs))
+	for _, spec := range specs {
+		params := spec.Params
+		if params == nil {
+			params = agenttool.ResolveParams(spec.Name, p.ToolParams)
+		}
+		t, err := agenttool.BuildByName(spec.Name, params)
+		if err != nil {
+			return nil, err
+		}
+		sig, err := json.Marshal(map[string]any{"params": params})
+		if err != nil {
+			return nil, fmt.Errorf("agent tool signature: %w", err)
+		}
+		tools = append(tools, t)
+		toolSignatures = append(toolSignatures, sig)
 	}
 	mcpTools, err := buildAgentMCPTools(ctx, dao.DB, p.MCP, p.ToolTimeout)
 	if err != nil {
 		return nil, err
 	}
-	tools = append(tools, mcpTools...)
+	for _, t := range mcpTools {
+		tools = append(tools, t)
+		toolSignatures = append(toolSignatures, nil) // signature falls back to ToolInfo
+	}
 	toolNames := make(map[string]struct{}, len(tools)+len(p.SubAgents))
-	toolInfoByName := make(map[string][]byte, len(tools))
+	toolSigs := make([][]byte, 0, len(tools))
 	var deduped []einotool.BaseTool
-	for _, tool := range tools {
+	for i, tool := range tools {
 		info, err := tool.Info(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("agent tool info: %w", err)
@@ -829,13 +870,25 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 		if info == nil || strings.TrimSpace(info.Name) == "" {
 			return nil, fmt.Errorf("agent tool info: missing name")
 		}
-		infoJSON, err := json.Marshal(info)
-		if err != nil {
-			return nil, fmt.Errorf("agent tool info: marshal: %w", err)
+		sig := toolSignatures[i]
+		if sig == nil {
+			sig, err = json.Marshal(info)
+			if err != nil {
+				return nil, fmt.Errorf("agent tool info: marshal: %w", err)
+			}
 		}
 		name := info.Name
 		if _, exists := toolNames[name]; exists {
-			if bytes.Equal(toolInfoByName[name], infoJSON) {
+			// A previously renamed duplicate also counts as identical: an
+			// A/B/B sequence must not rename the second B again.
+			identical := false
+			for _, prevSig := range toolSigs {
+				if bytes.Equal(prevSig, sig) {
+					identical = true
+					break
+				}
+			}
+			if identical {
 				// Identical tool definition registered more than once (e.g.
 				// agent-level tools and canvas nodes). The model cannot
 				// distinguish them, so keep the first occurrence.
@@ -849,7 +902,7 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 				zap.String("original", info.Name), zap.String("assigned", name))
 		}
 		toolNames[name] = struct{}{}
-		toolInfoByName[name] = infoJSON
+		toolSigs = append(toolSigs, sig)
 		if name != info.Name {
 			deduped = append(deduped, wrapRenamedTool(tool, name))
 		} else {
@@ -1846,9 +1899,10 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := intFrom(inputs, "tool_timeout"); ok {
 		p.ToolTimeout = time.Duration(v) * time.Second
 	}
-	if tools, params, subAgents, ok := agentToolsFrom(inputs, "tools"); ok {
+	if tools, specs, params, subAgents, ok := agentToolsFrom(inputs, "tools"); ok {
 		p.Tools = tools
 		p.SubAgents = subAgents
+		p.ToolSpecs = specs
 		p.ToolParams = mergeToolParams(p.ToolParams, params)
 	}
 	if v, ok := nestedMapFrom(inputs, "tool_params"); ok {
@@ -1870,16 +1924,17 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 // []string; the canvas DSL shape stores tool component objects with
 // component_name and params. Child Agent objects are returned separately
 // because they are dynamic tools, not entries in the static tool registry.
-func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]map[string]any, []SubAgentTool, bool) {
+func agentToolsFrom(inputs map[string]any, name string) ([]string, []AgentToolSpec, map[string]map[string]any, []SubAgentTool, bool) {
 	v, ok := inputs[name]
 	if !ok {
-		return nil, nil, nil, false
+		return nil, nil, nil, nil, false
 	}
 	switch x := v.(type) {
 	case []string:
-		return x, nil, nil, true
+		return x, nil, nil, nil, true
 	case []any:
 		out := make([]string, 0, len(x))
+		specs := make([]AgentToolSpec, 0, len(x))
 		params := make(map[string]map[string]any)
 		subAgents := make([]SubAgentTool, 0)
 		for _, item := range x {
@@ -1889,6 +1944,7 @@ func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]ma
 					continue
 				}
 				out = append(out, tool)
+				specs = append(specs, AgentToolSpec{Name: tool})
 			case map[string]any:
 				if subAgent, ok := subAgentToolObject(tool); ok {
 					subAgents = append(subAgents, subAgent)
@@ -1899,14 +1955,15 @@ func agentToolsFrom(inputs map[string]any, name string) ([]string, map[string]ma
 					continue
 				}
 				out = append(out, toolName)
+				specs = append(specs, AgentToolSpec{Name: toolName, Params: toolParams})
 				if len(toolParams) != 0 {
 					params[strings.ToLower(strings.TrimSpace(toolName))] = toolParams
 				}
 			}
 		}
-		return out, params, subAgents, true
+		return out, specs, params, subAgents, true
 	}
-	return nil, nil, nil, false
+	return nil, nil, nil, nil, false
 }
 
 func subAgentToolObject(item map[string]any) (SubAgentTool, bool) {

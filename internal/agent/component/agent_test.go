@@ -1730,3 +1730,102 @@ func TestAgent_SubAgentNameCollisionRenamed(t *testing.T) {
 		t.Fatalf("expected 2 distinct names, got %v", names)
 	}
 }
+
+// TestAgent_DedupeComparesEffectiveConfig verifies that dedupe keys on the
+// constructor params, not the model-facing ToolInfo: two ExeSQL tools whose
+// advertised definition is identical but whose connection details differ are
+// distinct configurations and must both survive (renamed), and an A/B/B
+// sequence where the second B matches an already-renamed duplicate is
+// dropped instead of renamed again.
+func TestAgent_DedupeComparesEffectiveConfig(t *testing.T) {
+	conn := func(host string) map[string]any {
+		return map[string]any{
+			"db_type":  "mysql",
+			"host":     host,
+			"port":     float64(3306),
+			"database": "db",
+			"username": "u",
+			"password": "p",
+		}
+	}
+	p := AgentParam{
+		Tools: []string{"execute_sql", "execute_sql", "execute_sql"},
+		ToolSpecs: []AgentToolSpec{
+			{Name: "execute_sql", Params: conn("a.db")},
+			{Name: "execute_sql", Params: conn("b.db")},
+			{Name: "execute_sql", Params: conn("b.db")},
+		},
+		MaxRounds: 1,
+	}
+	tools, err := buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("distinct ExeSQL configs: len(tools) = %d, want 2", len(tools))
+	}
+	names := make(map[string]bool)
+	for _, tool := range tools {
+		info, err := tool.Info(t.Context())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		names[info.Name] = true
+	}
+	if !names["execute_sql"] || !names["execute_sql_2"] {
+		t.Fatalf("expected base name plus one rename, got %v", names)
+	}
+}
+
+// TestAgent_CanvasDuplicateComponentKeepsPerOccurrenceParams verifies that two
+// canvas DSL nodes sharing a component name keep their own params: the
+// name-keyed params map can only hold one configuration, so params must travel
+// per tool occurrence or only the last node's configuration would survive.
+func TestAgent_CanvasDuplicateComponentKeepsPerOccurrenceParams(t *testing.T) {
+	cmp, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "x",
+		"tools": []any{
+			map[string]any{
+				"component_name": "Retrieval",
+				"function_name":  "search_a",
+				"params":         map[string]any{"kb_ids": []any{"kb-a"}},
+			},
+			map[string]any{
+				"component_name": "Retrieval",
+				"function_name":  "search_b",
+				"params":         map[string]any{"kb_ids": []any{"kb-b"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	agent, ok := cmp.(*AgentComponent)
+	if !ok {
+		t.Fatalf("New(Agent) returned %T, want *AgentComponent", cmp)
+	}
+	tools, err := buildAgentTools(t.Context(), agent.param)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("len(tools) = %d, want 2", len(tools))
+	}
+	got := make(map[string]any)
+	for _, tool := range tools {
+		info, err := tool.Info(t.Context())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		got[info.Name] = info.Extra["dataset_ids"]
+	}
+	aIDs, _ := got["search_a"].([]string)
+	if len(aIDs) != 1 || aIDs[0] != "kb-a" {
+		t.Fatalf("search_a dataset_ids = %#v, want [kb-a]", got["search_a"])
+	}
+	bIDs, _ := got["search_b"].([]string)
+	if len(bIDs) != 1 || bIDs[0] != "kb-b" {
+		t.Fatalf("search_b dataset_ids = %#v, want [kb-b]", got["search_b"])
+	}
+}
