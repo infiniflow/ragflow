@@ -16,6 +16,7 @@ package component
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -40,17 +41,31 @@ var pdfChapterDispatchSingle = func(ctx context.Context, db *gorm.DB, filename s
 	return dispatchPDFBackend(ctx, db, filename, binary, tenantID, setup)
 }
 
+var errPDFChapterUnhandled = errors.New("parser: no backend handled pdf chapter")
+
+func getNumericSetting(val any) (int, bool) {
+	switch v := val.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	case string:
+		if iv, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+			return iv, true
+		}
+	}
+	return 0, false
+}
+
 // resolveSplitOptions parses SplitOptions from setup and environment variables.
 func resolveSplitOptions(setup schema.ParserSetup) splitter.SplitOptions {
 	opts := splitter.DefaultSplitOptions()
 
 	if v, ok := setup["chapter_split_threshold"]; ok {
-		if iv, ok := v.(int); ok && iv > 0 {
+		if iv, ok := getNumericSetting(v); ok && iv > 0 {
 			opts.ThresholdPages = iv
-		} else if sv, ok := v.(string); ok {
-			if iv, err := strconv.Atoi(sv); err == nil && iv > 0 {
-				opts.ThresholdPages = iv
-			}
 		}
 	} else if envV := os.Getenv(common.EnvChapterSplitThreshold); envV != "" {
 		if iv, err := strconv.Atoi(envV); err == nil && iv > 0 {
@@ -59,12 +74,8 @@ func resolveSplitOptions(setup schema.ParserSetup) splitter.SplitOptions {
 	}
 
 	if v, ok := setup["chapter_min_pages"]; ok {
-		if iv, ok := v.(int); ok && iv > 0 {
+		if iv, ok := getNumericSetting(v); ok && iv > 0 {
 			opts.MinPages = iv
-		} else if sv, ok := v.(string); ok {
-			if iv, err := strconv.Atoi(sv); err == nil && iv > 0 {
-				opts.MinPages = iv
-			}
 		}
 	} else if envV := os.Getenv(common.EnvChapterMinPages); envV != "" {
 		if iv, err := strconv.Atoi(envV); err == nil && iv > 0 {
@@ -73,12 +84,8 @@ func resolveSplitOptions(setup schema.ParserSetup) splitter.SplitOptions {
 	}
 
 	if v, ok := setup["chapter_max_pages"]; ok {
-		if iv, ok := v.(int); ok && iv > 0 {
+		if iv, ok := getNumericSetting(v); ok && iv > 0 {
 			opts.MaxPages = iv
-		} else if sv, ok := v.(string); ok {
-			if iv, err := strconv.Atoi(sv); err == nil && iv > 0 {
-				opts.MaxPages = iv
-			}
 		}
 	} else if envV := os.Getenv(common.EnvChapterMaxPages); envV != "" {
 		if iv, err := strconv.Atoi(envV); err == nil && iv > 0 {
@@ -87,12 +94,8 @@ func resolveSplitOptions(setup schema.ParserSetup) splitter.SplitOptions {
 	}
 
 	if v, ok := setup["chapter_concurrency"]; ok {
-		if iv, ok := v.(int); ok && iv > 0 {
+		if iv, ok := getNumericSetting(v); ok && iv > 0 {
 			opts.MaxConcurrency = iv
-		} else if sv, ok := v.(string); ok {
-			if iv, err := strconv.Atoi(sv); err == nil && iv > 0 {
-				opts.MaxConcurrency = iv
-			}
 		}
 	} else if envV := os.Getenv(common.EnvChapterConcurrency); envV != "" {
 		if iv, err := strconv.Atoi(envV); err == nil && iv > 0 {
@@ -157,10 +160,13 @@ func dispatchAdaptiveChapterPDF(
 		zap.Int("chapter_count", len(plans)),
 		zap.Int("concurrency", opts.MaxConcurrency))
 
-	dispatchSingle := func(cctx context.Context, cname string, cdata []byte) (parser.ParseResult, error) {
+	cctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	dispatchSingle := func(cname string, cdata []byte) (parser.ParseResult, error) {
 		res, handled, err := pdfChapterDispatchSingle(cctx, db, cname, cdata, tenantID, setup)
 		if !handled && err == nil {
-			return parser.ParseResult{}, fmt.Errorf("parser: no backend handled pdf chapter %q", cname)
+			return parser.ParseResult{}, errPDFChapterUnhandled
 		}
 		return res, err
 	}
@@ -169,19 +175,28 @@ func dispatchAdaptiveChapterPDF(
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, opts.MaxConcurrency)
 	baseName := strings.TrimSuffix(filename, filepath.Ext(filename))
+	var sliceErr error
 
+ChapterLoop:
 	for i, plan := range plans {
-		if ctx.Err() != nil {
-			return parser.ParseResult{Err: ctx.Err()}, true, ctx.Err()
+		if cctx.Err() != nil {
+			break ChapterLoop
 		}
 
 		chapterBytes, err := splitter.SlicePDF(binary, plan.StartPage, plan.EndPage)
 		if err != nil {
-			return parser.ParseResult{}, true, fmt.Errorf("splitter: slice chapter %d (pages %d-%d) failed: %w", plan.Index, plan.StartPage+1, plan.EndPage+1, err)
+			sliceErr = err
+			cancel()
+			break ChapterLoop
+		}
+
+		select {
+		case sem <- struct{}{}:
+		case <-cctx.Done():
+			break ChapterLoop
 		}
 
 		wg.Add(1)
-		sem <- struct{}{}
 		go func(idx int, p splitter.ChapterPlan, cBytes []byte) {
 			defer func() {
 				<-sem
@@ -189,9 +204,10 @@ func dispatchAdaptiveChapterPDF(
 			}()
 
 			cName := fmt.Sprintf("%s_Sec%02d_P%04d-%04d.pdf", baseName, p.Index+1, p.StartPage+1, p.EndPage+1)
-			res, parseErr := dispatchSingle(ctx, cName, cBytes)
+			res, parseErr := dispatchSingle(cName, cBytes)
 			if parseErr != nil {
 				res.Err = parseErr
+				cancel()
 			}
 			chapterResults[idx] = res
 		}(i, plan, chapterBytes)
@@ -199,8 +215,35 @@ func dispatchAdaptiveChapterPDF(
 
 	wg.Wait()
 
+	if errors.Is(sliceErr, splitter.ErrSplitterNotSupported) {
+		common.Info("dispatchAdaptiveChapterPDF: splitter not supported in this environment, falling back",
+			zap.String("filename", filename))
+		return parser.ParseResult{}, false, nil
+	}
+	if sliceErr != nil {
+		return parser.ParseResult{}, true, sliceErr
+	}
+
+	for _, r := range chapterResults {
+		if errors.Is(r.Err, errPDFChapterUnhandled) {
+			common.Info("dispatchAdaptiveChapterPDF: backend does not handle PDF chapters, falling back",
+				zap.String("filename", filename))
+			return parser.ParseResult{}, false, nil
+		}
+	}
+
 	if ctx.Err() != nil {
 		return parser.ParseResult{Err: ctx.Err()}, true, ctx.Err()
+	}
+
+	for _, r := range chapterResults {
+		if r.Err != nil {
+			return parser.ParseResult{}, true, r.Err
+		}
+	}
+
+	if cctx.Err() != nil {
+		return parser.ParseResult{Err: cctx.Err()}, true, cctx.Err()
 	}
 
 	aggregated := splitter.ConcatenateResults(binary, chapterResults, plans)

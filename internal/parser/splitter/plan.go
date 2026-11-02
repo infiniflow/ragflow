@@ -245,16 +245,21 @@ func PlanAdaptiveChapters(totalPages int, outlines []doctype.Outline, opts Split
 							subStart = &startVal
 							subEnd = &endVal
 							subTitles = []string{subTitle}
-						} else if (subEp - *subStart + 1) <= opts.MaxPages {
-							*subEnd = subEp
-							subTitles = append(subTitles, subTitle)
 						} else {
-							flushSub()
-							startVal := subSp
-							endVal := subEp
-							subStart = &startVal
-							subEnd = &endVal
-							subTitles = []string{subTitle}
+							subCurLen := *subEnd - *subStart + 1
+							subCombinedLen := subEp - *subStart + 1
+							shouldCoalesce := subCombinedLen <= opts.MaxPages && (subCurLen < opts.MinPages || subCnt < opts.MinPages || subCombinedLen <= opts.MinPages)
+							if shouldCoalesce {
+								*subEnd = subEp
+								subTitles = append(subTitles, subTitle)
+							} else {
+								flushSub()
+								startVal := subSp
+								endVal := subEp
+								subStart = &startVal
+								subEnd = &endVal
+								subTitles = []string{subTitle}
+							}
 						}
 					}
 				}
@@ -284,16 +289,21 @@ func PlanAdaptiveChapters(totalPages int, outlines []doctype.Outline, opts Split
 			curStart = &startVal
 			curEnd = &endVal
 			curTitles = []string{title}
-		} else if (ep - *curStart + 1) <= opts.MaxPages {
-			*curEnd = ep
-			curTitles = append(curTitles, title)
 		} else {
-			flush()
-			startVal := sp
-			endVal := ep
-			curStart = &startVal
-			curEnd = &endVal
-			curTitles = []string{title}
+			curLen := *curEnd - *curStart + 1
+			combinedLen := ep - *curStart + 1
+			shouldCoalesce := combinedLen <= opts.MaxPages && (curLen < opts.MinPages || cnt < opts.MinPages || combinedLen <= opts.MinPages)
+			if shouldCoalesce {
+				*curEnd = ep
+				curTitles = append(curTitles, title)
+			} else {
+				flush()
+				startVal := sp
+				endVal := ep
+				curStart = &startVal
+				curEnd = &endVal
+				curTitles = []string{title}
+			}
 		}
 	}
 	flush()

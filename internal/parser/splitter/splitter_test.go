@@ -304,3 +304,45 @@ func TestSlicePDF_Execution(t *testing.T) {
 		t.Fatal("SlicePDF returned empty slice")
 	}
 }
+
+func TestPlanAdaptiveChapters_MinPagesRespected(t *testing.T) {
+	opts := SplitOptions{
+		MinPages:       40,
+		MaxPages:       110,
+		ThresholdPages: 100,
+	}
+
+	// Case 1: Three chapters of 50 pages each (total 150 pages > MaxPages 110).
+	// Sec 1 (50 pages) + Sec 2 (50 pages) = 100 pages <= MaxPages (110).
+	// Without MinPages enforcement, Sec 1 and Sec 2 would coalesce into 100 pages.
+	// But because each section already satisfies MinPages (50 >= 40),
+	// they should NOT coalesce and remain 3 distinct chapters.
+	outlinesIndependent := []doctype.Outline{
+		{Title: "Section 1", Level: 0, PageNumber: 1},
+		{Title: "Section 2", Level: 0, PageNumber: 51},
+		{Title: "Section 3", Level: 0, PageNumber: 101},
+	}
+	plans := PlanAdaptiveChapters(150, outlinesIndependent, opts)
+	if len(plans) != 3 {
+		t.Fatalf("expected 3 plans when each section >= MinPages, got %d", len(plans))
+	}
+	for i, p := range plans {
+		if p.PageCount != 50 {
+			t.Errorf("plan %d (%s) page count = %d, want 50", i, p.Title, p.PageCount)
+		}
+	}
+
+	// Case 2: Small chapters (< MinPages) should be coalesced up to MaxPages.
+	outlinesSmall := []doctype.Outline{
+		{Title: "Small A", Level: 0, PageNumber: 1},
+		{Title: "Small B", Level: 0, PageNumber: 21},
+		{Title: "Small C", Level: 0, PageNumber: 41},
+		{Title: "Big D", Level: 0, PageNumber: 61},
+	}
+	plansSmall := PlanAdaptiveChapters(120, outlinesSmall, opts)
+	for i, p := range plansSmall {
+		if p.PageCount < opts.MinPages {
+			t.Errorf("plan %d (%s) page count %d < MinPages %d", i, p.Title, p.PageCount, opts.MinPages)
+		}
+	}
+}

@@ -16,12 +16,7 @@
 
 package splitter
 
-import (
-	"errors"
-)
-
-// ErrSplitterNotSupported indicates CGO/pdfium is not available in the current build.
-var ErrSplitterNotSupported = errors.New("splitter: pdf slicing requires cgo and pdfium")
+// ErrSplitterNotSupported is declared in types.go.
 
 // SlicePDF returns ErrSplitterNotSupported when compiled without cgo.
 func SlicePDF(pdfData []byte, startPage, endPage int) ([]byte, error) {

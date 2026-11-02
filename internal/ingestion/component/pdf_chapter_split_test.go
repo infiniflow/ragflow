@@ -17,6 +17,7 @@ package component
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"ragflow/internal/common"
@@ -180,9 +181,9 @@ func TestDispatchAdaptiveChapterPDF_ExecuteSplit(t *testing.T) {
 	orig := pdfChapterDispatchSingle
 	defer func() { pdfChapterDispatchSingle = orig }()
 
-	callCount := 0
+	var callCount atomic.Int32
 	pdfChapterDispatchSingle = func(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup) (parser.ParseResult, bool, error) {
-		callCount++
+		callCount.Add(1)
 		return parser.ParseResult{
 			File: map[string]any{"format": "pdf"},
 			JSON: []parser.DocItem{
@@ -212,8 +213,8 @@ func TestDispatchAdaptiveChapterPDF_ExecuteSplit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if callCount != 2 {
-		t.Errorf("callCount = %d, want 2 (split 6 pages into 3+3)", callCount)
+	if callCount.Load() != 2 {
+		t.Errorf("callCount = %d, want 2 (split 6 pages into 3+3)", callCount.Load())
 	}
 	if len(result.JSON) != 2 {
 		t.Fatalf("len(result.JSON) = %d, want 2", len(result.JSON))
@@ -232,6 +233,85 @@ func TestDispatchAdaptiveChapterPDF_ExecuteSplit(t *testing.T) {
 
 	if result.File["page_count"] != 6 {
 		t.Errorf("File page_count = %v, want 6", result.File["page_count"])
+	}
+}
+
+func TestResolveSplitOptions_JSONTypes(t *testing.T) {
+	setup := schema.ParserSetup{
+		"chapter_split_threshold": float64(150),
+		"chapter_min_pages":       int64(20),
+		"chapter_max_pages":       "80",
+		"chapter_concurrency":     float64(4),
+	}
+	opts := resolveSplitOptions(setup)
+
+	if opts.ThresholdPages != 150 {
+		t.Errorf("ThresholdPages = %d, want 150", opts.ThresholdPages)
+	}
+	if opts.MinPages != 20 {
+		t.Errorf("MinPages = %d, want 20", opts.MinPages)
+	}
+	if opts.MaxPages != 80 {
+		t.Errorf("MaxPages = %d, want 80", opts.MaxPages)
+	}
+	if opts.MaxConcurrency != 4 {
+		t.Errorf("MaxConcurrency = %d, want 4", opts.MaxConcurrency)
+	}
+}
+
+func TestDispatchAdaptiveChapterPDF_FallbackWhenUnhandled(t *testing.T) {
+	orig := pdfChapterDispatchSingle
+	defer func() { pdfChapterDispatchSingle = orig }()
+
+	// Return handled=false, err=nil simulating deepdoc or unsupported backend
+	pdfChapterDispatchSingle = func(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup) (parser.ParseResult, bool, error) {
+		return parser.ParseResult{}, false, nil
+	}
+
+	pdfData := makeTestPDF(6)
+	setup := schema.ParserSetup{
+		"enable_adaptive_chapter_split": true,
+		"chapter_split_threshold":       4,
+		"chapter_max_pages":             3,
+		"chapter_min_pages":             2,
+	}
+
+	normalize := func(r parser.ParseResult) parser.ParseResult { return r }
+	_, handled, err := dispatchAdaptiveChapterPDF(t.Context(), nil, "bigdoc.pdf", pdfData, "tenant-1", setup, normalize)
+
+	if handled {
+		t.Error("expected handled=false when backend does not handle pdf chapters")
+	}
+	if err != nil {
+		t.Errorf("expected err=nil on fallback, got %v", err)
+	}
+}
+
+func TestDispatchAdaptiveChapterPDF_WorkerError(t *testing.T) {
+	orig := pdfChapterDispatchSingle
+	defer func() { pdfChapterDispatchSingle = orig }()
+
+	expectedErr := fmt.Errorf("backend network timeout")
+	pdfChapterDispatchSingle = func(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup) (parser.ParseResult, bool, error) {
+		return parser.ParseResult{}, true, expectedErr
+	}
+
+	pdfData := makeTestPDF(6)
+	setup := schema.ParserSetup{
+		"enable_adaptive_chapter_split": true,
+		"chapter_split_threshold":       4,
+		"chapter_max_pages":             3,
+		"chapter_min_pages":             2,
+	}
+
+	normalize := func(r parser.ParseResult) parser.ParseResult { return r }
+	_, handled, err := dispatchAdaptiveChapterPDF(t.Context(), nil, "bigdoc.pdf", pdfData, "tenant-1", setup, normalize)
+
+	if !handled {
+		t.Error("expected handled=true when error occurs during split execution")
+	}
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
 }
 

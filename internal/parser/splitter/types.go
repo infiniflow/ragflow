@@ -14,6 +14,11 @@
 
 package splitter
 
+import "errors"
+
+// ErrSplitterNotSupported indicates CGO/pdfium is not available in the current build.
+var ErrSplitterNotSupported = errors.New("splitter: pdf slicing requires cgo and pdfium")
+
 // ChapterPlan defines one adaptive chapter slice to be parsed.
 type ChapterPlan struct {
 	Index     int    `json:"index"`      // 0-indexed sequential chapter number
