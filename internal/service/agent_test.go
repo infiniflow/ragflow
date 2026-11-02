@@ -1000,14 +1000,11 @@ func TestNormalizeAgentSessionPreservesMetadataFilters(t *testing.T) {
 	session := &entity.API4Conversation{
 		Message: json.RawMessage(`[
 			{"role":"user","content":"question"},
-			{"role":"assistant","content":"answer"}
-		]`),
-		Reference: json.RawMessage(`[
-			{
+			{"role":"assistant","content":"answer","reference":{
 				"chunks":[{"chunk_id":"chunk-1","content_with_weight":"content"}],
 				"doc_aggs":[{"doc_id":"doc-1"}],
 				"metadata_filters":[{"method":"auto","status":"applied"}]
-			}
+			}}
 		]`),
 	}
 

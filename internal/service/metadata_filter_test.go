@@ -56,7 +56,7 @@ func TestApplyMetaDataFilterWithDiagnosticsGenerationErrors(t *testing.T) {
 				filter["semi_auto"] = []interface{}{"author"}
 			}
 			diagnostic := &common.MetadataFilterDiagnostic{}
-			docIDs, empty := ApplyMetaDataFilterWithDiagnostics(
+			docIDs := ApplyMetaDataFilterWithDiagnostics(
 				context.Background(),
 				filter,
 				common.MetaData{"author": {"Ada": {"doc-1"}}},
@@ -66,9 +66,6 @@ func TestApplyMetaDataFilterWithDiagnosticsGenerationErrors(t *testing.T) {
 				nil,
 				diagnostic,
 			)
-			if empty {
-				t.Fatal("generation error should preserve unfiltered retrieval")
-			}
 			if len(docIDs) != 1 || docIDs[0] != "doc-1" {
 				t.Fatalf("docIDs = %v, want [doc-1]", docIDs)
 			}
