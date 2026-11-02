@@ -366,7 +366,7 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interfac
 
 	// Case 1: Single document update (when condition["id"] is a string)
 	if chunkID, ok := condition["id"].(string); ok {
-		return e.updateSingleChunk(ctx, fullIndexName, chunkID, newValue)
+		return e.updateSingleChunk(ctx, fullIndexName, chunkID, condition, newValue)
 	}
 
 	// Case 2: Multi-document update via UpdateByQuery
@@ -520,13 +520,30 @@ func mapMemoryMessageESConditionFields(condition map[string]interface{}) map[str
 }
 
 // updateSingleChunk handles single document update
-func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID string, newValue map[string]interface{}) error {
+func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID string, condition, newValue map[string]interface{}) error {
 	common.Debug("ElasticsearchConnection.updateSingleChunk called", zap.String("indexName", indexName), zap.String("chunkID", chunkID))
 
-	// First find the document by id field to get the actual _id
+	// Resolve the actual _id only within all of the caller's update conditions.
+	filters := make([]map[string]interface{}, 0, len(condition))
+	for field, value := range condition {
+		switch field {
+		case "and", "or", "must_not", "exists":
+			return fmt.Errorf("unsupported single chunk update condition %q", field)
+		}
+		if items, ok := conditionTermsList(value); ok {
+			filters = append(filters, map[string]interface{}{"terms": map[string]interface{}{field: items}})
+			continue
+		}
+		switch value.(type) {
+		case string, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+			filters = append(filters, map[string]interface{}{"term": map[string]interface{}{field: value}})
+		default:
+			return fmt.Errorf("unsupported single chunk update condition %q: %T", field, value)
+		}
+	}
 	searchReq := map[string]interface{}{
 		"query": map[string]interface{}{
-			"term": map[string]interface{}{"id": chunkID},
+			"bool": map[string]interface{}{"filter": filters},
 		},
 	}
 
