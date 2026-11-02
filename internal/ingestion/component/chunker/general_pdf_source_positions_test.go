@@ -216,6 +216,35 @@ func TestPDFSourceOffsetsIgnorePositionTags(t *testing.T) {
 	}
 }
 
+func TestPDFSourceOffsetsWithWhitespaceDelimiters(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		text      string
+		delimiter string
+		bounds    [][2]float64
+	}{
+		{"repeated spaces", "a  b", "` `", [][2]float64{{0, 25}, {75, 100}}},
+		{"repeated tabs", "a\t\tb", "`\t`", [][2]float64{{0, 25}, {75, 100}}},
+		{"spaces in delimiter", "a / b", "` / `", [][2]float64{{0, 20}, {80, 100}}},
+		{"position tag", "a@@1\t2\t3\t4\t5##  b", "` `", [][2]float64{{0, 25}, {75, 100}}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			unit := schema.ChunkDoc{Text: testCase.text, DocType: "text", Positions: json.RawMessage(`[[1,10,200,0,100]]`)}
+			pieces, sources := splitPDFUnits([]schema.ChunkDoc{unit}, pdfUnitSources([]schema.ChunkDoc{unit}), compileDelimPattern([]string{testCase.delimiter}), false)
+			if len(pieces) != 2 || removeTag(pieces[0].Text) != "a" || removeTag(pieces[1].Text) != "b" {
+				t.Fatalf("unexpected pieces: %v", generalChunkTexts(pieces))
+			}
+			for index, want := range testCase.bounds {
+				_, raw := pdfSourcePositions(sources[index])
+				positions := decodeGeneralMatrix(t, raw)
+				if len(positions) != 1 || positions[0][3] != want[0] || positions[0][4] != want[1] {
+					t.Errorf("piece %d positions = %v, want bounds %v", index, positions, want)
+				}
+			}
+		})
+	}
+}
+
 func TestGeneralPDFWrappedChildExcludesPreviousParagraph(t *testing.T) {
 	chunker, err := NewGeneralChunker(map[string]any{
 		"chunk_token_size": 512, "delimiters": []string{"#"}, "children_delimiters": []string{"#"},
