@@ -521,22 +521,146 @@ func TestInvoke_ProxyDNSPin(t *testing.T) {
 	}
 	t.Cleanup(func() { common.LookupHost = originalLookup })
 
-	c, _ := NewInvokeComponent(nil)
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-	defer cancel()
-	_, err = c.Invoke(ctx, nil, map[string]any{
-		"method":  "GET",
-		"url":     "http://8.8.8.8/api",
-		"proxy":   "http://proxy.test.invalid:" + proxyPort,
-		"timeout": 2,
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
+	for _, tc := range []struct {
+		name   string
+		prefix string
+		suffix string
+	}{
+		{name: "plain"},
+		{name: "spaces", prefix: " ", suffix: " "},
+		{name: "tabs and newlines", prefix: "\t", suffix: "\r\n"},
+		{name: "unicode whitespace", prefix: "\u3000", suffix: "\u00a0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := NewInvokeComponent(map[string]any{
+				"method":  "GET",
+				"url":     "http://8.8.8.8/api",
+				"proxy":   tc.prefix + "http://proxy.test.invalid:" + proxyPort + tc.suffix,
+				"timeout": 2,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			out, err := c.Invoke(ctx, nil, nil)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if out["_ERROR"] != nil || out["result"] != "" {
+				t.Fatalf("output = %#v, want empty proxy response", out)
+			}
+			select {
+			case <-proxyHit:
+			case <-time.After(time.Second):
+				t.Fatal("fake proxy was not hit; proxy dial was not pinned to validated IP")
+			}
+		})
 	}
-	select {
-	case <-proxyHit:
-	case <-time.After(time.Second):
-		t.Fatal("fake proxy was not hit; proxy dial was not pinned to validated IP")
+}
+
+func TestInvokeBlankProxy(t *testing.T) {
+	setupAllowAnyHost(t, true)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "direct response")
+	}))
+	defer srv.Close()
+
+	for _, proxy := range []string{"", " ", "\t\r\n", "\u3000\u00a0"} {
+		t.Run(fmt.Sprintf("%q", proxy), func(t *testing.T) {
+			c, err := NewInvokeComponent(map[string]any{
+				"method": "GET",
+				"url":    srv.URL,
+				"proxy":  proxy,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := c.Invoke(t.Context(), nil, nil)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if out["result"] != "direct response" || out["_ERROR"] != nil {
+				t.Fatalf("output = %#v, want direct response", out)
+			}
+		})
+	}
+}
+
+func TestInvokeInvalidProxy(t *testing.T) {
+	setupAllowAnyHost(t, false)
+	for _, proxy := range []string{
+		"http://%",
+		"http://8.8.4.4:invalid",
+		"http://8.8.4.4:\t3128",
+		"http:///proxy",
+		"file://8.8.4.4/proxy",
+		" http://127.0.0.1:3128 ",
+	} {
+		t.Run(fmt.Sprintf("%q", proxy), func(t *testing.T) {
+			c, err := NewInvokeComponent(map[string]any{
+				"method": "GET",
+				"url":    "http://8.8.8.8/api",
+				"proxy":  proxy,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := c.Invoke(t.Context(), nil, nil)
+			if err != nil {
+				t.Fatalf("Invoke: want _ERROR output, got Go error: %v", err)
+			}
+			if out["_ERROR"] != "URL not valid" || out["result"] != nil {
+				t.Fatalf("output = %#v, want rejected proxy", out)
+			}
+		})
+	}
+}
+
+func TestInvokeInvalidProxyDoesNotLogCredentials(t *testing.T) {
+	setupAllowAnyHost(t, false)
+	for _, tc := range []struct {
+		name  string
+		proxy string
+	}{
+		{
+			name:  "invalid port",
+			proxy: "http://proxy-user:proxy-password@8.8.4.4:invalid/private-path?token=proxy-token",
+		},
+		{
+			name:  "control character",
+			proxy: "http://proxy-user:proxy-password@8.8.4.4/private-path\t?token=proxy-token",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			previous := zap.L()
+			core, logs := observer.New(zap.WarnLevel)
+			zap.ReplaceGlobals(zap.New(core))
+			t.Cleanup(func() { zap.ReplaceGlobals(previous) })
+
+			c, err := NewInvokeComponent(map[string]any{
+				"method": "GET",
+				"url":    "http://8.8.8.8/api",
+				"proxy":  tc.proxy,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := c.Invoke(t.Context(), nil, nil)
+			if err != nil || out["_ERROR"] != "URL not valid" || out["result"] != nil {
+				t.Fatalf("Invoke = %#v, %v; want rejected proxy", out, err)
+			}
+			if logs.Len() != 1 {
+				t.Fatalf("log count = %d, want one proxy validation warning", logs.Len())
+			}
+			for _, entry := range logs.All() {
+				for _, secret := range []string{"proxy-user", "proxy-password", "private-path", "proxy-token"} {
+					if strings.Contains(entry.Message, secret) || strings.Contains(fmt.Sprint(entry.ContextMap()), secret) {
+						t.Errorf("log contains proxy credentials or path/query: %#v", entry)
+					}
+				}
+			}
+		})
 	}
 }
 
