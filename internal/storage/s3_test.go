@@ -3,8 +3,13 @@ package storage
 import (
 	"bytes"
 	"context"
+	"crypto/md5"
 	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/xml"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -49,6 +54,70 @@ func newS3TestStorage(region string, handler s3RoundTripper) *S3Storage {
 
 func s3Response(status int, body string) *http.Response {
 	return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}
+}
+
+func TestS3DeleteObjectsAddsContentMD5(t *testing.T) {
+	for _, tc := range []struct {
+		name, response string
+		wantError      bool
+	}{
+		{name: "success", response: `<DeleteResult/>`},
+		{name: "per-object error", response: `<DeleteResult><Error><Key>docs/a&amp;b.txt</Key><VersionId>null</VersionId><Code>AccessDenied</Code><Message>not allowed</Message></Error></DeleteResult>`, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			requests := 0
+			store := newS3TestStorage("ap-shanghai", func(req *http.Request) (*http.Response, error) {
+				requests++
+				if req.Method != http.MethodPost || !req.URL.Query().Has("delete") {
+					t.Fatal("expected a batch delete request")
+				}
+				body, err := io.ReadAll(req.Body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				md5Sum := md5.Sum(body)
+				if got, want := req.Header.Get("Content-MD5"), base64.StdEncoding.EncodeToString(md5Sum[:]); got != want {
+					t.Errorf("Content-MD5 = %q, want digest of serialized XML %q", got, want)
+				}
+				crc := make([]byte, 4)
+				binary.BigEndian.PutUint32(crc, crc32.ChecksumIEEE(body))
+				if got, want := req.Header.Get("X-Amz-Checksum-Crc32"), base64.StdEncoding.EncodeToString(crc); got != want {
+					t.Error("SDK CRC32 checksum was lost or changed")
+				}
+				if !strings.Contains(req.Header.Get("Authorization"), "content-md5") {
+					t.Error("Content-MD5 was added after signing")
+				}
+				var deletion struct {
+					Objects []struct {
+						Key       string
+						VersionID string `xml:"VersionId"`
+					} `xml:"Object"`
+					Quiet bool
+				}
+				if err := xml.Unmarshal(body, &deletion); err != nil {
+					t.Fatal(err)
+				}
+				if len(deletion.Objects) != 2 || deletion.Objects[0].Key != "docs/a&b.txt" || deletion.Objects[0].VersionID != "null" || deletion.Objects[1].Key != "docs/说明.txt" || deletion.Objects[1].VersionID != "version-2" || !deletion.Quiet {
+					t.Error("batch object identifiers or quiet mode changed")
+				}
+				return s3Response(http.StatusOK, tc.response), nil
+			})
+			err := store.deleteObjects(t.Context(), "bucket", []types.ObjectIdentifier{
+				{Key: aws.String("docs/a&b.txt"), VersionId: aws.String("null")},
+				{Key: aws.String("docs/说明.txt"), VersionId: aws.String("version-2")},
+			})
+			if requests != 1 {
+				t.Fatalf("requests = %d, want 1", requests)
+			}
+			if tc.wantError {
+				if err == nil || !strings.Contains(err.Error(), "AccessDenied") || !strings.Contains(err.Error(), "not allowed") {
+					t.Fatal("per-object deletion error was not propagated")
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }
 
 func TestS3StorageConnectAppliesAddressingStyle(t *testing.T) {
