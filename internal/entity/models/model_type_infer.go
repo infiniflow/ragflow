@@ -120,7 +120,7 @@ func inferModelTypesByName(modelName string) []string {
 		strings.Contains(lowerName, "gpt-4o") ||
 		hasToken("vl", "vlm", "vision", "llava", "internvl", "pixtral", "qvq", "image", "video"):
 		return []string{modelTypeChat, modelTypeVision}
-	case hasToken("decision") || hasToken("nimble", "tev1", "clef") || strings.Contains(lowerName, "clef-flash"):
+	case hasToken("decision") || hasToken("nimble", "tev", "clef", "kev"):
 		return []string{modelTypeDecision}
 	default:
 		return nil
