@@ -594,3 +594,7 @@ func (v *VolcEngine) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Lis
 func (v *VolcEngine) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }
+
+func (v *VolcEngine) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
+}

@@ -42,14 +42,20 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 import {
   buildCitationDisplayMap,
   currentReg,
+  decodeAngleBracketEntities,
   escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  resolveCitationChunk,
   unescapeAngleBrackets,
 } from '@/utils/chat';
+import {
+  citationWholeMarkerReg,
+  type CitationKey,
+} from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
@@ -223,9 +229,22 @@ function MarkdownContent({
         (value: string) => replaceThinkToSection(value, thinkSummary),
         replaceRetrievingToSection,
         preprocessLaTeX,
+        // Entity decoding can expose a line-leading > after the first escape.
+        escapeUnmatchedAngleBrackets,
       )(nextText),
     );
   }, [content, loading, t]);
+
+  // Scope the display numbering to the whole message: each text node only
+  // sees its own markers, so a per-node map restarts at 0 every time and
+  // every distinct [ID:xxx] in a long answer renders as [1]. Building once
+  // from the rendered source (which keeps [n]/[ID:xxx] markers through the
+  // sanitize/latex/section pipeline) makes the numbers unique across the
+  // message while the tooltip still resolves chunks by the marker itself.
+  const citationDisplayMap = useMemo(
+    () => buildCitationDisplayMap(contentWithCursor),
+    [contentWithCursor],
+  );
 
   useEffect(() => {
     const docAggs = reference?.doc_aggs;
@@ -277,12 +296,10 @@ function MarkdownContent({
   };
 
   const getReferenceInfo = useCallback(
-    (chunkIndex: number) => {
-      const chunks = reference?.chunks ?? {};
-      // Agent reference.chunks is a Record keyed by the original citation ID
-      // (e.g. "3092e7ae6831b877"); the caller maps those IDs to a positional
-      // display index, so look up the N-th entry by insertion order.
-      const chunkItem = Object.values(chunks)[chunkIndex];
+    (chunkKey: CitationKey) => {
+      // The marker itself selects the chunk: a numeric key indexes the
+      // payload, an agent [ID:<chunkId>] key matches the chunk's own id.
+      const chunkItem = resolveCitationChunk(reference?.chunks, chunkKey);
 
       const documentList = Object.values(reference?.doc_aggs ?? {});
       const document = documentList.find(
@@ -308,7 +325,7 @@ function MarkdownContent({
   );
 
   const renderPopoverContent = useCallback(
-    (chunkIndex: number) => {
+    (chunkKey: CitationKey) => {
       const {
         documentUrl,
         fileThumbnail,
@@ -317,10 +334,16 @@ function MarkdownContent({
         chunkItem,
         documentId,
         document,
-      } = getReferenceInfo(chunkIndex);
+      } = getReferenceInfo(chunkKey);
+
+      // The citation chip already gates on the chunk being found; this narrows
+      // chunkItem for the handlers below.
+      if (!chunkItem) {
+        return null;
+      }
 
       return (
-        <div key={chunkItem?.id} className="flex gap-2">
+        <div key={chunkItem.id} className="flex gap-2">
           {imageId && (
             <HoverCard>
               <HoverCardTrigger>
@@ -384,32 +407,49 @@ function MarkdownContent({
 
   const renderReference = useCallback(
     (text: string) => {
-      // Assign each unique citation marker a stable display number based on
-      // its first occurrence, so the same ID always renders as the same [N]
-      // chip. The actual chunk lookup uses that index against the positional
-      // order of IReferenceObject.chunks (see getReferenceInfo).
-      const keyToDisplay = buildCitationDisplayMap(text);
-      const replacedText = reactStringReplace(text, currentReg, (match) => {
-        const chunkKey = getChunkKey(match);
-        const displayIndex = keyToDisplay.get(chunkKey) ?? 0;
+      // Chip numbers follow each unique marker's first occurrence in the
+      // full message (citationDisplayMap), so the same citation always
+      // renders as the same [N] chip and distinct citations get distinct
+      // numbers across paragraphs and list items. That numbering is
+      // display-only: the chunk behind a marker is resolved from the marker
+      // itself (position for numeric markers, chunk id for agent
+      // [ID:<chunkId>] markers), never from the display position — the
+      // payload ships in retrieval order, which is unrelated to the order
+      // the answer cites passages in.
+      const replacedText = reactStringReplace(
+        text,
+        citationWholeMarkerReg,
+        (match) => {
+          const chunkKey = getChunkKey(match);
+          const displayIndex = citationDisplayMap.get(chunkKey) ?? 0;
+          const chunkItem = resolveCitationChunk(reference?.chunks, chunkKey);
+          // The reference lands at message_end, after the answer stream, so an
+          // unresolved marker keeps its chip while loading. Afterwards it
+          // stays as literal text rather than pointing at the wrong chunk.
+          if (!chunkItem && !loading) {
+            return match;
+          }
 
-        return (
-          <HoverCard key={`${String(chunkKey)}-${displayIndex}`}>
-            <HoverCardTrigger>
-              <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
-                [{displayIndex + 1}]
-              </bdi>
-            </HoverCardTrigger>
-            <HoverCardContent className="max-w-3xl">
-              {renderPopoverContent(displayIndex)}
-            </HoverCardContent>
-          </HoverCard>
-        );
-      });
+          return (
+            <HoverCard key={`${String(chunkKey)}-${displayIndex}`}>
+              <HoverCardTrigger>
+                <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
+                  [{displayIndex + 1}]
+                </bdi>
+              </HoverCardTrigger>
+              {chunkItem && (
+                <HoverCardContent className="max-w-3xl">
+                  {renderPopoverContent(chunkKey)}
+                </HoverCardContent>
+              )}
+            </HoverCard>
+          );
+        },
+      );
 
       return replacedText;
     },
-    [renderPopoverContent],
+    [citationDisplayMap, loading, reference?.chunks, renderPopoverContent],
   );
 
   const dir = getDirAttribute(content?.replace(currentReg, ''));
@@ -475,6 +515,10 @@ function MarkdownContent({
               const { children, className, ...rest } = props;
               const restProps = omit(rest, 'node');
               const match = /language-(\w+)/.exec(className || '');
+              // Code content is literal for react-markdown, so the &lt;/&gt;
+              // entities restored by unescapeAngleBrackets survive parsing;
+              // decode them back.
+              const codeText = decodeAngleBracketEntities(String(children));
               return match ? (
                 <SyntaxHighlighter
                   {...restProps}
@@ -482,14 +526,14 @@ function MarkdownContent({
                   language={match[1]}
                   wrapLongLines
                 >
-                  {String(children).replace(/\n$/, '')}
+                  {codeText.replace(/\n$/, '')}
                 </SyntaxHighlighter>
               ) : (
                 <code
                   {...restProps}
                   className={classNames(className, 'text-wrap')}
                 >
-                  {children}
+                  {codeText}
                 </code>
               );
             },

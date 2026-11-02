@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"ragflow/internal/utility"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -50,7 +51,7 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	adminService := adminapi.NewService()
 	adminHandler := adminapi.NewHandler(adminService)
 
-	if err := adminapi.InitLicense(); err != nil {
+	if err := adminapi.InitLicense(ctx); err != nil {
 		common.Warn("Failed to initialize license", zap.Error(err))
 	}
 
@@ -100,6 +101,10 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 
 	// Set log level
 	bootstrap.SetLogger(serverName, args)
+
+	validator := utility.NewScheduledTask("Admin validator", globalConfig.GetHeartbeatInterval(), adminapi.CheckServicePeriodically)
+	validator.Start()
+	defer validator.Stop()
 
 	// Start HTTP server in a goroutine
 	go func() {

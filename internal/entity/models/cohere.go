@@ -752,3 +752,7 @@ func (c *CoHereModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 func (c *CoHereModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }
+
+func (c *CoHereModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
+}

@@ -33,7 +33,7 @@ import { formatDate } from '@/utils/date';
 import { ArrowDown, ArrowUp, ArrowUpDown, LogOut } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { TenantRole } from '../constants';
+import { TenantMembershipStatus, TenantRole } from '../constants';
 import { useHandleAgreeTenant, useHandleQuitUser } from './hooks';
 const TenantTable = ({ searchTerm }: { searchTerm: string }) => {
   const { t } = useTranslation();
@@ -138,7 +138,7 @@ const TenantTable = ({ searchTerm }: { searchTerm: string }) => {
                   <SearchHighlight text={tenant.email} query={searchTerm} />
                 </TableCell>
                 <TableCell className="p-4">
-                  {tenant.role === TenantRole.Invite ? (
+                  {tenant.status === TenantMembershipStatus.Invited ? (
                     <div className="flex gap-2">
                       <Button
                         variant="link"

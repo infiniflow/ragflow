@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -43,6 +44,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/dao/transaction"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/ingestion/knowledge_compile"
@@ -134,8 +136,9 @@ func NewChunkService() *ChunkService {
 //     - Builds doc_aggs by aggregating chunks per document
 //  7. knowledge graph retrieval (not implemented)
 //  8. Apply retrieval by children to group child chunks under parent chunks
-func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
-	common.Info("RetrievalTest started", zap.String("userID", userID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question))
+func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest) (*service.RetrievalTestResponse, error) {
+	subject, _ := permission.SubjectFromContext(ctx)
+	common.Info("RetrievalTest started", zap.String("userID", subject.UserID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question))
 
 	common.Debug(fmt.Sprintf("RetrievalTest request:\n"+
 		"    kbID=%v\n"+
@@ -169,7 +172,10 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	var tenantIDs []string
 	var kbRecords []*entity.Knowledgebase
 	for _, datasetID := range req.Datasets {
-		if err := s.checkDatasetAccess(ctx, datasetID, userID, permission.OperationUse); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{}, permission.ResourceRef{
+			Kind: permission.ResourceKindDataset,
+			ID:   datasetID,
+		}, permission.OperationUse); err != nil {
 			_, permissionErr := permissionresponse.NormalizeHidden(err)
 			return nil, permissionErr
 		}
@@ -191,10 +197,10 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 
 	// Check if all kbs resolve to the same base embedding model
 	if len(kbRecords) > 1 {
-		embdNameCache := make(map[string]string)
-		firstEmbeddingKey := knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[0], tenantIDs[0], embdNameCache)
+		embdNames := transaction.NewEmbeddingBaseNameResolver(dao.NewKnowledgebaseDAO().EmbeddingBaseName)
+		firstEmbeddingKey := knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[0], tenantIDs[0], embdNames)
 		for i := 1; i < len(kbRecords); i++ {
-			if knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[i], tenantIDs[i], embdNameCache) != firstEmbeddingKey {
+			if knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[i], tenantIDs[i], embdNames) != firstEmbeddingKey {
 				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
 			}
 		}
@@ -219,7 +225,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		if s.searchService == nil {
 			return nil, fmt.Errorf("search service not configured")
 		}
-		searchDetail, err := s.searchService.GetDetail(ctx, userID, *req.SearchID)
+		searchDetail, err := s.searchService.GetDetail(ctx, *req.SearchID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get search app %s: %w", *req.SearchID, err)
 		}
@@ -255,7 +261,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	if filter != nil {
 		method, _ := filter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
-			access := service.ModelAccess{TenantID: tenantIDs[0]}
+			access := service.Identity{TenantID: tenantIDs[0]}
 			if chatID != "" {
 				chatModelForFilter, getErr = modelFactory.NewChatModel(ctx, access, chatID)
 				if getErr != nil {
@@ -287,8 +293,11 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 			common.Warn("Failed to get flatted metadata", zap.Error(err))
 		} else {
 			common.Info("metadata filter conditions", zap.Any("filter", filter))
-			filteredDocIDs, _ := service.ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, req.DocIDs, []string(req.Datasets))
-			docIDs = filteredDocIDs
+			// nil means no metadata narrowing: search the caller's scope
+			// unfiltered rather than scoping to nothing.
+			if filteredDocIDs := service.ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, req.DocIDs, []string(req.Datasets)); filteredDocIDs != nil {
+				docIDs = filteredDocIDs
+			}
 			common.Info("ApplyMetaDataFilter result", zap.Strings("docIDs", docIDs))
 		}
 	}
@@ -300,20 +309,17 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	// Get chat model for cross_languages and keyword_extraction
 	var llmModelName string
 	if len(req.CrossLanguages) > 0 || (req.Keyword != nil && *req.Keyword) {
-		tenantSvc := service.NewTenantService()
 		var err error
-		llmModelName, err = tenantSvc.GetDefaultModelName(ctx, tenantIDs[0], entity.ModelTypeChat)
-		if err != nil || llmModelName == "" {
+		chatModel, err = modelFactory.NewDefaultChatModel(ctx, service.Identity{TenantID: tenantIDs[0]})
+		if err != nil {
 			common.Warn("Failed to get default chat model name for LLM transformations", zap.Error(err))
 		} else {
-			chatModel, err = modelFactory.NewChatModel(ctx, service.ModelAccess{TenantID: tenantIDs[0]}, llmModelName)
-			if err != nil {
-				common.Warn("Failed to get chat model for LLM transformations", zap.Error(err))
-			} else {
-				common.Info("Fetched chat model (tenant default) for cross_languages/keyword_extraction",
-					zap.String("tenantID", tenantIDs[0]),
-					zap.String("modelName", llmModelName))
+			if info := chatModel.Info(); info != nil {
+				llmModelName = service.ModelReference(info)
 			}
+			common.Info("Fetched chat model (tenant default) for cross_languages/keyword_extraction",
+				zap.String("tenantID", tenantIDs[0]),
+				zap.String("modelName", llmModelName))
 		}
 	}
 
@@ -351,7 +357,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	labels := metadataSvc.LabelQuestion(ctx, modifiedQuestion, kbRecords)
 
 	// Determine embedding model.
-	access := service.ModelAccess{TenantID: tenantIDs[0]}
+	access := service.Identity{TenantID: tenantIDs[0]}
 	var embeddingModel *models.EmbeddingModel
 	var embdID string
 	if kbRecords[0].TenantEmbdID != nil && *kbRecords[0].TenantEmbdID != "" {
@@ -440,7 +446,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	// Infinity/OceanBase chunks already carry real vectors and are left unchanged.
 	hydrateChunkVectors(ctx, s.docEngine, filteredChunks, req.Datasets, tenantIDs)
 
-	common.Info("RetrievalTest completed", zap.String("userID", userID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question), zap.Int64("chunkCount", int64(len(filteredChunks))))
+	common.Info("RetrievalTest completed", zap.String("userID", subject.UserID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question), zap.Int64("chunkCount", int64(len(filteredChunks))))
 
 	return &service.RetrievalTestResponse{
 		Chunks:  filteredChunks,
@@ -497,11 +503,11 @@ func resolveSearchbotRetrievalParams(req *service.RetrievalTestRequest, searchCo
 // model name (e.g. "BAAI/bge-m3") so datasets pointing at the same model
 // through different provider instances or storage forms (tenant_model id vs
 // legacy composite name) retrieve together.
-func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, tenantID string, cache map[string]string) string {
+func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, tenantID string, names *transaction.EmbeddingBaseNameResolver) string {
 	if strings.TrimSpace(kb.EmbdID) == "" && (kb.TenantEmbdID == nil || strings.TrimSpace(*kb.TenantEmbdID) == "") {
 		return fmt.Sprintf("default:%s", tenantID)
 	}
-	return "embd:" + dao.NewKnowledgebaseDAO().EmbeddingBaseName(ctx, db, kb, cache)
+	return "embd:" + names.Resolve(ctx, db, kb)
 }
 
 // hydrateChunkVectors replaces zero (placeholder) vectors in chunks with real
@@ -630,7 +636,7 @@ func (s *ChunkService) cancelAllTasksOfDoc(ctx context.Context, doc *entity.Docu
 }
 
 func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -653,18 +659,12 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 			return nil, common.CodeDataError, fmt.Errorf("you don't own the document %s", docID)
 		}
 
-		task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, dao.DB, docID)
-		if err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("get ingestion task for %s: %w", docID, err)
-		}
-		if task == nil || task.Status == common.COMPLETED ||
-			task.Status == common.STOPPED || task.Status == common.FAILED {
-			return &service.StopParsingResponse{
-				Data: map[string]interface{}{"error_code": docStopParsingInvalidStateErrorCode},
-			}, common.CodeDataError, fmt.Errorf("%s", docStopParsingInvalidStateMessage)
-		}
-
 		if err = s.cancelAllTasksOfDoc(ctx, doc); err != nil {
+			if errors.Is(err, document.ErrParseNotRunning) {
+				return &service.StopParsingResponse{
+					Data: map[string]interface{}{"error_code": docStopParsingInvalidStateErrorCode},
+				}, common.CodeDataError, fmt.Errorf("%s", docStopParsingInvalidStateMessage)
+			}
 			return nil, common.CodeServerError, err
 		}
 		// CancelDocParse (inside cancelAllTasksOfDoc) already issues
@@ -711,7 +711,7 @@ func (s *ChunkService) checkDatasetAccess(ctx context.Context, datasetID, userID
 	if s.checkDatasetAccessFunc != nil {
 		return s.checkDatasetAccessFunc(datasetID, userID)
 	}
-	return service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, operation)
+	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, operation)
 }
 
 func (s *ChunkService) getKnowledgebaseByID(ctx context.Context, datasetID string) (*entity.Knowledgebase, error) {
@@ -988,6 +988,12 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 				}
 			}
 		}
+		result["id"] = result["chunk_id"]
+		result["content"] = result["content_with_weight"]
+		utility.SetFieldArray(result, "important_keywords", result["important_kwd"])
+		utility.SetFieldArray(result, "questions", result["question_kwd"])
+		result["document_id"] = req.DocID
+		result["dataset_id"] = doc.KbID
 		chunks = append(chunks, result)
 	}
 
@@ -1310,7 +1316,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		// Delete all chunks for this document
 		condition["doc_id"] = req.DocID
 	default:
-		return 0, fmt.Errorf("either chunk_ids or delete_all must be provided")
+		return 0, nil
 	}
 
 	deletedCount, err := s.docEngine.DeleteChunks(ctx, condition, indexName, doc.KbID)
@@ -1474,6 +1480,12 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	}
 	if tagFeas != nil {
 		chunkData["tag_feas"] = tagFeas
+	}
+	if kb.Pagerank != 0 {
+		// Python's chunk_api.create stamps the dataset's pagerank on a manually
+		// added chunk (`if kb.pagerank: d["pagerank_fea"] = kb.pagerank`); a
+		// chunk that skipped it would rank at 0 until the setting is re-saved.
+		chunkData[common.PAGERANK_FLD] = kb.Pagerank
 	}
 
 	if req.ImageBase64 != nil {
@@ -1730,7 +1742,7 @@ func (s *ChunkService) getEmbeddingModel(ctx context.Context, tenantID, embdID s
 	if s.getEmbeddingModelFunc != nil {
 		return s.getEmbeddingModelFunc(tenantID, embdID)
 	}
-	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(ctx, service.ModelAccess{TenantID: tenantID}, embdID)
+	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(ctx, service.Identity{TenantID: tenantID}, embdID)
 	if err != nil {
 		return nil, err
 	}

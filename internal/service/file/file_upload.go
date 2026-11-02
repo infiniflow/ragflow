@@ -3,6 +3,7 @@ package file
 import (
 	"context"
 	"fmt"
+	"gorm.io/gorm"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -12,27 +13,26 @@ import (
 	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
-	"strconv"
 	"strings"
 	"time"
 )
 
-const defaultDeploymentUploadMaxBytes int64 = 1 << 30
+const defaultDeploymentUploadMaxBytes int64 = common.DefaultMaxMultipartRequestBodyBytes
 
 func DeploymentUploadMaxBytes() int64 {
-	raw := common.GetEnv(common.EnvMaxContentLength)
-	if raw == "" {
-		return defaultDeploymentUploadMaxBytes
-	}
-	n, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || n <= 0 {
-		return defaultDeploymentUploadMaxBytes
-	}
-	return n
+	return common.GetMaxMultipartRequestBodyBytes()
 }
 
 // UploadFile uploads files to a folder
 func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string, files []*multipart.FileHeader, maxBytes int64) ([]map[string]interface{}, error) {
+	userID, currentTenantID, err := fileRequestSubject(ctx, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	tenantID = currentTenantID
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, "file", permission.ActionWrite); err != nil {
+		return nil, err
+	}
 	if parentID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
 		if err != nil {
@@ -45,7 +45,10 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 	if err != nil || parentFolder == nil || parentFolder.Type != FileTypeFolder {
 		return nil, fmt.Errorf("can't find this folder")
 	}
-	if err := checkFileAccess(ctx, tenantID, parentFolder, permission.OperationCreate); err != nil {
+	if parentFolder.TenantID != tenantID {
+		return nil, permission.ErrResourceNotFound
+	}
+	if err := checkFileAccess(ctx, userID, parentFolder, permission.OperationCreate); err != nil {
 		return nil, err
 	}
 
@@ -99,7 +102,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 				return nil, fmt.Errorf("folder not found")
 			}
 			var createdFolder *entity.File
-			createdFolder, err = s.createFolderRecursive(ctx, lastFolder, fileObjNames, len(idList), tenantID)
+			createdFolder, err = s.createFolderRecursive(ctx, lastFolder, fileObjNames, len(idList), tenantID, userID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create folder: %w", err)
 			}
@@ -144,7 +147,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 			ID:         common.GenerateToken(),
 			ParentID:   lastFolder.ID,
 			TenantID:   tenantID,
-			CreatedBy:  tenantID,
+			CreatedBy:  userID,
 			Name:       uniqueName,
 			Location:   &location,
 			Size:       int64(len(data)),
@@ -152,7 +155,13 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 			SourceType: "",
 		}
 
-		if err = s.fileDAO.Insert(ctx, dao.DB, fileRecord); err != nil {
+		if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := s.fileDAO.Insert(ctx, tx, fileRecord); err != nil {
+				return err
+			}
+			return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: permission.ResourceKindFile, ID: fileRecord.ID})
+		}); err != nil {
+			_ = storageImpl.Remove(ctx, lastFolder.ID, location)
 			return nil, fmt.Errorf("failed to insert file record: %w", err)
 		}
 

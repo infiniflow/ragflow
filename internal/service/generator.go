@@ -126,7 +126,7 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	var chatModel *modelModule.ChatModel
 	var err error
 
-	access := ModelAccess{TenantID: tenantID}
+	access := Identity{TenantID: tenantID}
 	if llmID != "" {
 		chatModel, err = modelFactory.NewChatModel(ctx, access, llmID)
 		if err != nil {

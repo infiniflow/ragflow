@@ -425,14 +425,18 @@ func TestMessage_DeferredStreamSurfacesResultError(t *testing.T) {
 	})
 	ctx := runtime.WithDeferredNodeRegistry(withStateForTest(t.Context(), state))
 	completed := false
-	runtime.RegisterDeferredNode(ctx, "agent_0", func() { completed = true })
+	var completedErr error
+	runtime.RegisterDeferredNode(ctx, "agent_0", func(err error) {
+		completed = true
+		completedErr = err
+	})
 
 	_, err := c.Invoke(ctx, nil, map[string]any{"text": "{{agent_0@content}}"})
 	if err == nil || !strings.Contains(err.Error(), "upstream 402") {
 		t.Fatalf("Invoke error = %v, want upstream 402", err)
 	}
-	if completed {
-		t.Fatal("deferred node completed after result _ERROR")
+	if !completed || completedErr == nil || !strings.Contains(completedErr.Error(), "upstream 402") {
+		t.Fatalf("expected deferred node completion with error, got completed=%v, err=%v", completed, completedErr)
 	}
 }
 
@@ -457,6 +461,41 @@ func TestMessage_DeferredStreamOpenFailure(t *testing.T) {
 				}
 			} else if got := deferred.FailureText(); got != "**ERROR**: agent failed: model unavailable" {
 				t.Fatalf("failure text = %q, want chat error envelope", got)
+			}
+		})
+	}
+}
+
+func TestMessage_DeferredStreamErrorPersistsOutputsBeforeCompletion(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		result map[string]any
+		err    error
+	}{
+		{name: "provider error", result: map[string]any{"tool_invocations": []map[string]any{{"tool_name": "search"}}}, err: errors.New("provider failed")},
+		{name: "step exhaustion", result: map[string]any{"_ERROR": "**ERROR**: exceeds max steps", "tool_invocations": []map[string]any{{"tool_name": "search"}}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := NewMessageComponent(nil)
+			state := canvas.NewCanvasState("run-deferred-output", "task-deferred-output")
+			state.SetVar("agent_0", "content", &runtime.DeferredStream{
+				Open: func(context.Context, runtime.AgentDeltaSink) (map[string]any, error) {
+					return tc.result, tc.err
+				},
+			})
+			ctx := runtime.WithDeferredNodeRegistry(withStateForTest(t.Context(), state))
+			var outputAtCompletion any
+			runtime.RegisterDeferredNode(ctx, "agent_0", func(error) {
+				outputAtCompletion, _ = state.GetVar("agent_0@tool_invocations")
+			})
+
+			_, err := c.Invoke(ctx, nil, map[string]any{"text": "{{agent_0@content}}"})
+			if err == nil {
+				t.Fatal("expected deferred stream failure")
+			}
+			invocations, ok := outputAtCompletion.([]map[string]any)
+			if !ok || len(invocations) != 1 || invocations[0]["tool_name"] != "search" {
+				t.Fatalf("tool_invocations at completion = %#v, want recorded search invocation", outputAtCompletion)
 			}
 		})
 	}

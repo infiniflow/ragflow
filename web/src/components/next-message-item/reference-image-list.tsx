@@ -26,9 +26,8 @@ import {
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import PdfDrawer from '@/pages/next-search/document-preview-modal';
-import { buildCitationDisplayMap } from '@/utils/chat';
+import { buildCitationDisplayMap, resolveCitationChunk } from '@/utils/chat';
 import { middleEllipsis } from '@/utils/common-util';
-import { isPlainObject } from 'lodash';
 import { RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useMemo } from 'react';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
@@ -182,28 +181,15 @@ export function ReferenceImageList({
   messageContent,
 }: IProps) {
   const images = useMemo(() => {
-    // In plain chat the body chips (markdown-content) treat a numeric marker
-    // [n] as the 0-based index into the full retrieved chunks array and render
-    // [n + 1], so the carousel must index chunks by that same key and label
-    // it n + 1 — indexing by first-occurrence position would show unrelated
-    // chunks whenever retrieval returns more chunks than the model cited.
-    // Agent markers are [ID:<chunkId>] strings; those keep the positional
-    // ordering (matched by chunk.id first, when possible).
+    // The marker itself selects the chunk: plain-chat numeric markers index
+    // the retrieved chunks array (chip renders n + 1); agent [ID:<chunkId>]
+    // markers match the chunk's own id. Either way a citation lands on its
+    // own chunk regardless of the payload's retrieval order.
     const keyToPosition = buildCitationDisplayMap(messageContent);
-    const chunkList = Array.isArray(referenceChunks)
-      ? referenceChunks
-      : isPlainObject(referenceChunks)
-        ? Object.values(referenceChunks ?? {})
-        : [];
 
     return [...keyToPosition.entries()]
       .map(([key, position]) => {
-        const chunk =
-          typeof key === 'number'
-            ? chunkList[key]
-            : ((Array.isArray(referenceChunks)
-                ? referenceChunks.find((item) => item.id === String(key))
-                : referenceChunks?.[String(key)]) ?? chunkList[position]);
+        const chunk = resolveCitationChunk(referenceChunks, key);
         if (!chunk?.image_id || !chunk?.document_id) {
           return null;
         }

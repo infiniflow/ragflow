@@ -19,8 +19,7 @@ import {
   useMemo,
 } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { z } from 'zod';
-import { formSchema } from './form-schema';
+import { DatasetSettingFormValues } from './form-schema';
 
 export function useHasParsedDocument(isEdit?: boolean) {
   const { data: knowledgeDetails } = useFetchDatasetPipelineConfiguration({
@@ -30,7 +29,7 @@ export function useHasParsedDocument(isEdit?: boolean) {
 }
 
 export const useFetchDatasetSettingOnMount = (
-  form: UseFormReturn<z.infer<typeof formSchema>>,
+  form: UseFormReturn<DatasetSettingFormValues>,
 ) => {
   const { data: knowledgeDetails, loading } =
     useFetchDatasetPipelineConfiguration();
@@ -62,6 +61,7 @@ export const useFetchDatasetSettingOnMount = (
         'pagerank',
         'avatar',
         'pipeline_id',
+        'pipeline_version_id',
         'parser_id',
       ]),
       embedding_model: knowledgeDetails.embedding_model,
@@ -69,8 +69,11 @@ export const useFetchDatasetSettingOnMount = (
       parse_type: knowledgeDetails.pipeline_id
         ? ParseType.Pipeline
         : ParseType.BuiltIn,
+      // Backfill the pinned version (design section 5/C2); an absent pin
+      // renders as the empty (track latest) form value.
+      pipeline_version_id: knowledgeDetails.pipeline_version_id ?? '',
       parser_config: formParserConfig,
-    } as z.infer<typeof formSchema>;
+    } as DatasetSettingFormValues;
     form.reset(formValues);
   }, [form, knowledgeDetails, sourceData]);
 
@@ -81,7 +84,7 @@ export const useSaveDatasetSetting = () => {
   const { saveKnowledgeConfiguration, loading } = useUpdateKnowledge();
 
   const handleSave = useCallback(
-    async (values: z.infer<typeof formSchema>) => {
+    async (values: DatasetSettingFormValues) => {
       const payload = { ...values };
 
       // Apply forward transforms to parser_config if in pipeline mode. Each node
@@ -108,6 +111,9 @@ export const useSaveDatasetSetting = () => {
 
       if (payload.parse_type === ParseType.BuiltIn) {
         payload.pipeline_id = undefined;
+        // A version pin only exists for a dataflow pipeline; drop it in
+        // built-in mode so no stale canvas version is submitted.
+        payload.pipeline_version_id = undefined;
       } else {
         payload.parser_id = undefined;
       }

@@ -54,7 +54,6 @@
                             }
                         },
                         "audio": {
-                            "output_format": "text",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -233,7 +232,6 @@
                             "setups": [
                                 {
                                     "fileFormat": "audio",
-                                    "output_format": "text",
                                     "preprocess": [
                                         "main_content"
                                     ]

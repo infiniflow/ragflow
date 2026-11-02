@@ -60,7 +60,10 @@ export const buildChunkHighlights = (
 export const isFileUploadDone = (file: UploadFile) => file.status === 'done';
 
 export const getExtension = (name: string) =>
-  name?.slice(name.lastIndexOf('.') + 1).toLowerCase() ?? '';
+  name
+    ?.slice(name.lastIndexOf('.') + 1)
+    .trim()
+    .toLowerCase() ?? '';
 
 export const isPdf = (name: string) => {
   return getExtension(name) === 'pdf';

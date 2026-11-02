@@ -84,7 +84,6 @@ export const bitbucketConstant = (t: TFunction) => [
     },
     shouldRender: (formValues: any) => {
       const index_mode = formValues?.config?.index_mode;
-      console.log('formValues.config', formValues?.config);
       return index_mode === 'projects';
     },
     tooltip: t('setting.bitbucketProjectsTip'),

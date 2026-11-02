@@ -782,3 +782,7 @@ func (s *SiliconflowModel) ListTasks(ctx context.Context, apiConfig *APIConfig) 
 func (s *SiliconflowModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", s.Name())
 }
+
+func (s *SiliconflowModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", s.Name())
+}

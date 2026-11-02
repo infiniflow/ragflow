@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
+import dayjs from 'dayjs';
 import { Operator } from '../constant';
 import { JsonViewer } from '../form/components/json-viewer';
 import OperatorIcon, { SVGIconMap } from '@/components/operator-icon';
@@ -164,16 +165,24 @@ const ToolTimelineItem = ({
                           </span>
                         )}
                         <span className="text-text-secondary text-xs">
-                          {/* 0:00*/}
+                          {tool.timestamp
+                            ? dayjs(tool.timestamp).format('HH:mm:ss')
+                            : ''}
+                          {tool.timestamp && ' | '}
                           {tool.elapsed_time?.toString().slice(0, 6) || ''}
                           {tool.elapsed_time ? 's' : ''}
                         </span>
                         <span
                           className={cn(
-                            'border-background  -end-1 -top-1 size-2 rounded-full bg-state--success',
+                            'border-background  -end-1 -top-1 size-2 rounded-full',
+                            tool.status === 'error'
+                              ? 'bg-state--error'
+                              : 'bg-state--success',
                           )}
                         >
-                          <span className="sr-only">Online</span>
+                          <span className="sr-only">
+                            {tool.status === 'error' ? 'Error' : 'Online'}
+                          </span>
                         </span>
                       </div>
                     </AccordionTrigger>
@@ -183,6 +192,10 @@ const ToolTimelineItem = ({
                           <JsonViewer
                             data={tool.result}
                             title="content"
+                          ></JsonViewer>
+                          <JsonViewer
+                            data={tool.arguments}
+                            title="Arguments"
                           ></JsonViewer>
                         </div>
                       </AccordionContent>

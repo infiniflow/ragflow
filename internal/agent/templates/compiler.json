@@ -59,7 +59,6 @@
             "doc": {
               "flatten_media_to_text": false,
               "order_index": 7,
-              "output_format": "json",
               "remove_header_footer": false,
               "suffix": [
                 "doc"
@@ -69,7 +68,6 @@
             "docx": {
               "flatten_media_to_text": false,
               "order_index": 8,
-              "output_format": "json",
               "remove_header_footer": false,
               "suffix": [
                 "docx"
@@ -88,7 +86,6 @@
                 "attachments"
               ],
               "order_index": 3,
-              "output_format": "text",
               "suffix": [
                 "eml",
                 "msg"
@@ -96,7 +93,6 @@
             },
             "html": {
               "order_index": 6,
-              "output_format": "json",
               "remove_header_footer": false,
               "suffix": [
                 "htm",
@@ -105,7 +101,6 @@
             },
             "image": {
               "order_index": 2,
-              "output_format": "json",
               "parse_method": "ocr",
               "suffix": [
                 "jpg",
@@ -117,7 +112,6 @@
             "markdown": {
               "flatten_media_to_text": false,
               "order_index": 4,
-              "output_format": "json",
               "suffix": [
                 "md",
                 "markdown",
@@ -128,7 +122,6 @@
             "pdf": {
               "flatten_media_to_text": false,
               "order_index": 0,
-              "output_format": "json",
               "parse_method": "DeepDOC",
               "remove_header_footer": false,
               "suffix": [
@@ -138,7 +131,6 @@
             },
             "slides": {
               "order_index": 9,
-              "output_format": "json",
               "parse_method": "DeepDOC",
               "suffix": [
                 "pptx",
@@ -148,7 +140,6 @@
             "spreadsheet": {
               "flatten_media_to_text": false,
               "order_index": 1,
-              "output_format": "html",
               "parse_method": "DeepDOC",
               "suffix": [
                 "xls",
@@ -159,7 +150,6 @@
             },
             "text&code": {
               "order_index": 5,
-              "output_format": "json",
               "suffix": [
                 "txt",
                 "py",
@@ -285,7 +275,6 @@
               {
                 "fileFormat": "pdf",
                 "flatten_media_to_text": false,
-                "output_format": "json",
                 "parse_method": "DeepDOC",
                 "remove_header_footer": false,
                 "vlm": {}
@@ -293,13 +282,11 @@
               {
                 "fileFormat": "spreadsheet",
                 "flatten_media_to_text": false,
-                "output_format": "html",
                 "parse_method": "DeepDOC",
                 "vlm": {}
               },
               {
                 "fileFormat": "image",
-                "output_format": "json",
                 "parse_method": "ocr"
               },
               {
@@ -313,41 +300,34 @@
                   "body",
                   "attachments"
                 ],
-                "fileFormat": "email",
-                "output_format": "text"
+                "fileFormat": "email"
               },
               {
                 "fileFormat": "markdown",
                 "flatten_media_to_text": false,
-                "output_format": "json",
                 "vlm": {}
               },
               {
-                "fileFormat": "text&code",
-                "output_format": "json"
+                "fileFormat": "text&code"
               },
               {
                 "fileFormat": "html",
-                "output_format": "json",
                 "remove_header_footer": false
               },
               {
                 "fileFormat": "doc",
                 "flatten_media_to_text": false,
-                "output_format": "json",
                 "remove_header_footer": false,
                 "vlm": {}
               },
               {
                 "fileFormat": "docx",
                 "flatten_media_to_text": false,
-                "output_format": "json",
                 "remove_header_footer": false,
                 "vlm": {}
               },
               {
                 "fileFormat": "slides",
-                "output_format": "json",
                 "parse_method": "DeepDOC"
               }
             ]

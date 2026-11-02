@@ -427,38 +427,39 @@ func (e *Engine) withDDLLock(ctx context.Context, lockName string, check func() 
 
 	timeout := 60 * time.Second
 	distributed := kvrocks.NewDistributedLock(lockName, "", timeout, timeout)
+	acquired := false
 	if distributed != nil {
-		acquired, err := distributed.Acquire(ctx)
+		acquired, err = distributed.Acquire(ctx)
 		if err != nil {
-			return err
+			return fmt.Errorf("acquire distributed DDL lock %s: %w", lockName, err)
 		}
-		if !acquired {
-			deadline := time.NewTimer(timeout)
-			defer deadline.Stop()
-			ticker := time.NewTicker(time.Second)
-			defer ticker.Stop()
-		waitForLock:
-			for {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-deadline.C:
-					return fmt.Errorf("timeout waiting for DDL %s", lockName)
-				case <-ticker.C:
-					exists, err = check()
-					if err != nil {
-						return err
-					}
-					if exists {
-						return nil
-					}
-					got, err := distributed.Acquire(ctx)
-					if err != nil {
-						return err
-					}
-					if got {
-						break waitForLock
-					}
+	}
+	if distributed != nil && !acquired {
+		deadline := time.NewTimer(timeout)
+		defer deadline.Stop()
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+	waitForLock:
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-deadline.C:
+				return fmt.Errorf("timeout waiting for DDL %s", lockName)
+			case <-ticker.C:
+				exists, err = check()
+				if err != nil {
+					return err
+				}
+				if exists {
+					return nil
+				}
+				acquired, err = distributed.Acquire(ctx)
+				if err != nil {
+					return fmt.Errorf("acquire distributed DDL lock %s: %w", lockName, err)
+				}
+				if acquired {
+					break waitForLock
 				}
 			}
 		}

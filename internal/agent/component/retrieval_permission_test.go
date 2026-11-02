@@ -8,6 +8,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -29,7 +30,7 @@ func TestCheckCanvasRetrievalDependencies(t *testing.T) {
 		Permission: string(entity.TenantPermissionTeam), Status: &valid,
 	}
 	privateDataset := entity.Knowledgebase{
-		ID: "private-dataset", TenantID: "other-owner", CreatedBy: "other-owner",
+		ID: "private-dataset", TenantID: "canvas-owner", CreatedBy: "other-owner",
 		Permission: string(entity.TenantPermissionMe), Status: &valid,
 	}
 	sharedMemory := entity.Memory{
@@ -37,7 +38,7 @@ func TestCheckCanvasRetrievalDependencies(t *testing.T) {
 		Permissions: string(entity.TenantPermissionTeam),
 	}
 	callerOnlyMemory := entity.Memory{
-		ID: "caller-only-memory", Name: "Caller only", TenantID: "caller",
+		ID: "caller-only-memory", Name: "Caller only", TenantID: "canvas-owner",
 		Permissions: string(entity.TenantPermissionMe),
 	}
 	ownerOnlyMemory := entity.Memory{
@@ -59,11 +60,15 @@ func TestCheckCanvasRetrievalDependencies(t *testing.T) {
 			t.Fatalf("create membership: %v", err)
 		}
 	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "canvas-owner", "canvas-owner", "caller", "other-owner"); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
 
 	state := runtime.NewCanvasState("run-1", "session-1")
 	state.Sys["canvas_id"] = canvas.ID
 	state.Sys["user_id"] = "caller"
-	ctx := runtime.WithState(t.Context(), state)
+	state.Sys["tenant_id"] = "canvas-owner"
+	ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "caller", TenantID: "canvas-owner"})
 
 	if err := checkCanvasRetrievalDependencies(ctx, db, map[string]any{"dataset_ids": []string{dataset.ID}}); err != nil {
 		t.Fatalf("check accessible dataset dependency: %v", err)

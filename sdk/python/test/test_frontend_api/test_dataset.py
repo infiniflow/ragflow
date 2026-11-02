@@ -151,7 +151,8 @@ def test_update_different_params_dataset_success(get_auth):
             "name": "test_update_dataset",
             "description": "test",
             "permission": "me",
-            "chunk_method": "presentation",
+            "parse_type": 1,
+            "parser_id": "presentation",
             "language": "spanish",
         },
     )

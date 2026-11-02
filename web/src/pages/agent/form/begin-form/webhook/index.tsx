@@ -4,13 +4,19 @@ import NumberInput from '@/components/originui/number-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Label } from '@/components/ui/label';
+import { Modal } from '@/components/ui/modal/modal';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { useBuildWebhookUrl } from '@/pages/agent/hooks/use-build-webhook-url';
+import { Button } from '@/components/ui/button';
+import message from '@/components/ui/message';
+import {
+  useCreateAgentWebhookCredential,
+  useRevokeAgentWebhookCredential,
+} from '@/hooks/use-agent-request';
 import { buildOptions } from '@/utils/form';
 import { upperFirst } from 'lodash';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import {
@@ -40,6 +46,11 @@ const RequestLimitMap = {
 export function WebHook() {
   const { t } = useTranslation();
   const form = useFormContext();
+  const [personalWebhookUrl, setPersonalWebhookUrl] = useState('');
+  const { createWebhookCredential, loading: creatingCredential } =
+    useCreateAgentWebhookCredential();
+  const { revokeWebhookCredential, loading: revokingCredential } =
+    useRevokeAgentWebhookCredential();
 
   const rateLimitPer = useWatch({
     name: 'security.rate_limit.per',
@@ -50,11 +61,71 @@ export function WebHook() {
     return RequestLimitMap[rateLimitPer as keyof typeof RequestLimitMap] ?? 100;
   }, []);
 
-  const text = useBuildWebhookUrl();
+  const handleCreateCredential = useCallback(async () => {
+    try {
+      const credential = await createWebhookCredential();
+      setPersonalWebhookUrl(
+        new URL(credential.webhook_url, window.location.origin).toString(),
+      );
+      message.success(t('flow.webhook.credentialCreated'));
+    } catch {
+      message.error(t('flow.webhook.credentialRequestFailed'));
+    }
+  }, [createWebhookCredential, t]);
+
+  const revokeCredential = useCallback(async () => {
+    try {
+      await revokeWebhookCredential();
+      setPersonalWebhookUrl('');
+      message.success(t('flow.webhook.credentialRevoked'));
+    } catch {
+      message.error(t('flow.webhook.credentialRequestFailed'));
+    }
+  }, [revokeWebhookCredential, t]);
+
+  const handleRevokeCredential = useCallback(() => {
+    Modal.confirm({
+      title: t('flow.webhook.revokeCredentialTitle'),
+      content: t('flow.webhook.revokeCredentialDescription'),
+      okText: t('common.confirm'),
+      cancelText: t('common.cancel'),
+      okButtonClassName: 'bg-state-error hover:bg-state-error/90',
+      onOk: revokeCredential,
+    });
+  }, [revokeCredential, t]);
 
   return (
     <>
-      <CopyToClipboardWithText text={text}></CopyToClipboardWithText>
+      <section className="space-y-3 rounded-md border border-border-button bg-bg-card p-3">
+        <div>
+          <Label>{t('flow.webhook.personalUrl')}</Label>
+          <p className="mt-1 text-xs text-text-secondary">
+            {t('flow.webhook.credentialDescription')}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            loading={creatingCredential}
+            onClick={handleCreateCredential}
+          >
+            {t('flow.webhook.createCredential')}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            loading={revokingCredential}
+            onClick={handleRevokeCredential}
+          >
+            {t('flow.webhook.revokeCredential')}
+          </Button>
+        </div>
+        {personalWebhookUrl && (
+          <CopyToClipboardWithText text={personalWebhookUrl} />
+        )}
+      </section>
       <RAGFlowFormItem name="methods" label={t('flow.webhook.methods')}>
         {(field) => (
           <MultiSelect

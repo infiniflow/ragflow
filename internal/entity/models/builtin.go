@@ -74,7 +74,7 @@ func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, request Emb
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +166,10 @@ func (b *BuiltinModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]L
 
 func (b *BuiltinModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("builtin model does not support tasks")
+}
+
+func (b *BuiltinModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("builtin model does not support decide")
 }
 
 // GetBuiltinEmbeddingModel returns a Builtin model driver for the given model name

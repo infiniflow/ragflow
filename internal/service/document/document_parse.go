@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/service"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,7 +34,11 @@ var documentParseLocks = struct {
 }{locks: make(map[string]*documentParseLock)}
 
 const (
-	cleanupBatchTimeout = 30 * time.Second
+	cleanupBatchTimeout                    = 30 * time.Second
+	taskTerminalMessageSuperseded          = "Task superseded by a new parse request."
+	taskTerminalMessageDocumentDeleted     = "Task cancelled by document deletion."
+	taskTerminalMessageDocumentRemoved     = "Task cancelled by document removal."
+	taskTerminalMessageParseResultsDeleted = "Task cancelled by parse result deletion."
 )
 
 func lockDocumentParse(docID string) func() {
@@ -58,18 +63,48 @@ func lockDocumentParse(docID string) func() {
 	}
 }
 
-// purgeTaskStateForCleanup removes the per-chunk cache state for a task before
-// its row is deleted. The bounded context makes Redis outages and hung clients
-// observable to the caller instead of allowing a destructive task/document
-// delete to proceed with stale cache state.
-func (s *DocumentService) purgeTaskStateForCleanup(ctx context.Context, taskID string) error {
+// cleanupDocumentTask settles and conditionally deletes the document's task
+// before purging its run-scoped cache state. If the task starts running between
+// settlement and deletion, the conditional delete fails and no cache state is
+// removed for the new run.
+func (s *DocumentService) cleanupDocumentTask(ctx context.Context, docID, terminalMessage string) error {
+	task, err := s.ingestionTaskSvc.PrepareDocumentTaskForCleanup(ctx, docID, terminalMessage)
+	if err != nil {
+		return fmt.Errorf("prepare ingestion task for document %s cleanup: %w", docID, err)
+	}
+	if err := s.deletePreparedDocumentTask(ctx, docID, task); err != nil {
+		return err
+	}
+	if task == nil {
+		return nil
+	}
+
 	purgeTaskState := s.purgeTaskState
 	if purgeTaskState == nil {
 		purgeTaskState = ingestionpipeline.PurgeTaskState
 	}
-	batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+	// The task row is gone, so a request cancellation must not skip cleanup that
+	// is now retryable only through the 24-hour TTL.
+	batchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), cleanupBatchTimeout)
 	defer cancel()
-	return purgeTaskState(batchCtx, taskID)
+	if err := purgeTaskState(batchCtx, task.ID); err != nil {
+		return fmt.Errorf("purge task state for document %s task %s: %w", docID, task.ID, err)
+	}
+	return nil
+}
+
+func (s *DocumentService) deletePreparedDocumentTask(ctx context.Context, docID string, task *entity.IngestionTask) error {
+	if task == nil {
+		return nil
+	}
+	deleted, err := s.ingestionTaskDAO.DeleteIfTerminal(ctx, dao.DB, task.ID)
+	if err != nil {
+		return fmt.Errorf("delete ingestion task %s for document %s: %w", task.ID, docID, err)
+	}
+	if deleted != 1 {
+		return fmt.Errorf("document %s ingestion task %s started running; stop it before cleanup", docID, task.ID)
+	}
+	return nil
 }
 
 // StartParseDocuments starts parsing a document via the DSL ingestion
@@ -87,8 +122,14 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	unlock := lockDocumentParse(doc.ID)
 	defer unlock()
 
+	if opts.ApplyKB {
+		if err := s.applyKnowledgebaseParserConfig(ctx, doc, kb); err != nil {
+			return err
+		}
+	}
+
 	if opts.RerunWithDelete {
-		if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID); err != nil {
+		if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID, taskTerminalMessageSuperseded); err != nil {
 			return err
 		}
 	}
@@ -106,6 +147,168 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	return nil
 }
 
+// applyKnowledgebaseParserConfig merges the dataset-scoped parser_config into
+// the document's existing component-scoped config and persists the merged
+// result before parsing when ApplyKB is requested.
+//
+// The dataset may contribute a top-level llm_id (used only to fill empty
+// Extractor / Compiler node llm_ids) and a top-level modular metadata object
+// (parser_config["metadata"] = {enabled, metadata, built_in_metadata}). Those
+// are scoped onto the document's existing Extractor nodes via
+// service.ApplyComponentScopedParserConfig, which also strips legacy flat
+// metadata fields. No top-level llm_id is written, and when the dataset sets
+// no metadata no top-level metadata key is left behind; the document's own
+// component nodes and unrelated keys are preserved. Nested maps/slices are
+// deep-copied so a failed persist cannot mutate the caller's document or the
+// source dataset. On a persistence failure the document's in-memory config is
+// left untouched.
+func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase) error {
+	if doc == nil || kb == nil {
+		return fmt.Errorf("apply dataset parser config: document and dataset are required")
+	}
+
+	merged := deepCopyJSONMap(doc.ParserConfig)
+	if merged == nil {
+		merged = entity.JSONMap{}
+	}
+
+	// The dataset's llm_id is used only as the helper's fill value for empty
+	// Extractor/Compiler node llm_ids. It is resolved from the same persisted
+	// source the dataset writer uses (explicit top-level value, else the
+	// tenant-resolved value already scoped into the dataset's Extractor nodes).
+	// No top-level llm_id flat key is written (the pipeline ignores it), and
+	// any legacy top-level llm_id the document already carries is dropped
+	// rather than re-written into the result.
+	llmID := resolveDatasetLLMID(kb.ParserConfig)
+	delete(merged, "llm_id")
+
+	// Carry the dataset's modular metadata object when present. Resolution
+	// follows the dataset reader contract: the top-level modular object
+	// first, else the first (sorted) Extractor node carrying modular metadata
+	// — the stored form after component scoping. When absent everywhere the
+	// dataset expresses "no metadata config": reset each existing Extractor
+	// node's metadata to the disabled default directly, mirroring the Python
+	// apply_kb defaults, without creating a top-level key the helper would
+	// otherwise have to clean up.
+	meta, metaOK, fromTopLevel := resolveDatasetModularMetadata(kb.ParserConfig)
+	if metaOK {
+		merged["metadata"] = deepCopyValue(meta)
+	} else {
+		for _, cpnID := range sortedExtractorKeys(merged) {
+			params, ok := nodeParams(merged[cpnID])
+			if !ok {
+				continue
+			}
+			params["metadata"] = map[string]any{
+				"enabled":           false,
+				"metadata":          []any{},
+				"built_in_metadata": []any{},
+			}
+		}
+	}
+
+	merged = service.ApplyComponentScopedParserConfig(merged, llmID)
+	if !fromTopLevel {
+		// The dataset itself carries no top-level modular object: never leave
+		// the transport key behind, mirroring the stored dataset shape.
+		delete(merged, "metadata")
+	}
+
+	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+		"parser_config": entity.JSONMap(merged),
+	}); err != nil {
+		return fmt.Errorf("apply dataset parser config for document %s: %w", doc.ID, err)
+	}
+	doc.ParserConfig = merged
+	return nil
+}
+
+// sortedExtractorKeys returns the component IDs in parserConfig that name
+// Extractor nodes, in sorted order so multi-Extractor configs resolve
+// deterministically instead of depending on Go map iteration order.
+func sortedExtractorKeys(parserConfig entity.JSONMap) []string {
+	var keys []string
+	for k := range parserConfig {
+		lower := strings.ToLower(k)
+		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// nodeParams returns a writable view of a component node's params, accepting
+// both the decoded (map[string]any) and entity (entity.JSONMap) shapes.
+// The returned map shares storage with the input, so writes are visible.
+func nodeParams(raw any) (map[string]any, bool) {
+	switch params := raw.(type) {
+	case map[string]any:
+		return params, true
+	case entity.JSONMap:
+		return map[string]any(params), true
+	default:
+		return nil, false
+	}
+}
+
+// nodeModularMetadata returns the node's modular metadata object
+// ({enabled, metadata, built_in_metadata}) in either stored map shape.
+func nodeModularMetadata(params map[string]any) (map[string]any, bool) {
+	if meta, ok := params["metadata"].(map[string]any); ok {
+		return meta, true
+	}
+	if meta, ok := params["metadata"].(entity.JSONMap); ok {
+		return map[string]any(meta), true
+	}
+	return nil, false
+}
+
+// resolveDatasetModularMetadata returns the dataset's effective modular
+// metadata config, following the dataset reader contract: the top-level
+// modular object first, else the first (sorted) Extractor node carrying
+// modular metadata — the stored form after component scoping. It reports
+// whether any was found and whether it came from the top level. The returned
+// map is a live view of the dataset config; callers must copy before mutating.
+func resolveDatasetModularMetadata(parserConfig entity.JSONMap) (map[string]any, bool, bool) {
+	if mm, ok := parserConfig["metadata"].(map[string]any); ok {
+		return mm, true, true
+	}
+	if mm, ok := parserConfig["metadata"].(entity.JSONMap); ok {
+		return map[string]any(mm), true, true
+	}
+	for _, cpnID := range sortedExtractorKeys(parserConfig) {
+		params, ok := nodeParams(parserConfig[cpnID])
+		if !ok {
+			continue
+		}
+		if meta, ok := nodeModularMetadata(params); ok {
+			return meta, true, false
+		}
+	}
+	return nil, false, false
+}
+
+// resolveDatasetLLMID returns the dataset's effective LLM id: an explicit
+// non-empty top-level llm_id first, else the first (sorted) Extractor node's
+// non-empty llm_id (populated from the tenant default at dataset write time).
+// Empty means the dataset carries no llm_id and empty node llm_ids stay empty.
+func resolveDatasetLLMID(parserConfig entity.JSONMap) string {
+	if s, ok := parserConfig["llm_id"].(string); ok && strings.TrimSpace(s) != "" {
+		return s
+	}
+	for _, cpnID := range sortedExtractorKeys(parserConfig) {
+		params, ok := nodeParams(parserConfig[cpnID])
+		if !ok {
+			continue
+		}
+		if s, ok := params["llm_id"].(string); ok && strings.TrimSpace(s) != "" {
+			return s
+		}
+	}
+	return ""
+}
+
 // AssertIngestionTasksTerminal verifies none of the documents has an
 // in-flight (RUNNING/STOPPING) ingestion task. Used as a batch pre-check
 // before re-parsing so a single non-terminal doc rejects the whole request
@@ -116,59 +319,23 @@ func (s *DocumentService) AssertIngestionTasksTerminal(ctx context.Context, docI
 		if err != nil {
 			return fmt.Errorf("check ingestion task for %s: %w", docID, err)
 		}
-		if task == nil {
-			continue
-		}
-		if common.IsRunningOrStopping(task.Status) {
-			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", docID, task.Status)
+		if task != nil && common.IsRunningOrStopping(task.Status) {
+			return fmt.Errorf("document %s ingestion task %s is %s; stop it and wait for a terminal state before re-parsing", docID, task.ID, task.Status)
 		}
 	}
 	return nil
 }
 
-func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *entity.Document, tenantID string) error {
+func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *entity.Document, tenantID, terminalMessage string) error {
 	if doc == nil {
 		return fmt.Errorf("document is nil")
 	}
 
-	// Refuse to clear a non-terminal ingestion task. An in-flight worker
-	// (RUNNING) or one mid-stop (STOPPING) would keep writing chunks and
-	// corrupt the new run's results. The caller must stop the task first
-	// and wait for a terminal state (COMPLETED/STOPPED/FAILED), CREATED, or
-	// SCHEDULED.
-	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
-	if err != nil {
-		return fmt.Errorf("get ingestion task for document %s: %w", doc.ID, err)
-	}
-	taskExisted := task != nil
-	if task != nil {
-		if task.Status == common.RUNNING || task.Status == common.STOPPING {
-			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", doc.ID, task.Status)
-		}
-		if task.Status == common.CREATED || task.Status == common.SCHEDULED {
-			if err := s.ingestionTaskSvc.SupersedeUnstartedTask(ctx, task.ID); err != nil {
-				return fmt.Errorf("supersede queued ingestion task for document %s: %w", doc.ID, err)
-			}
-			task.Status = common.STOPPED
-		}
-		taskExisted = true
-	}
-	if task != nil {
-		if err := s.purgeTaskStateForCleanup(ctx, task.ID); err != nil {
-			return fmt.Errorf("purge task state for document %s: %w", doc.ID, err)
-		}
-	}
-
-	// Delete terminal, CREATED, and SCHEDULED ingestion tasks atomically, leaving
-	// RUNNING/STOPPING tasks untouched so the check-then-delete window
-	// between GetByDocumentID and the delete cannot delete a task that just
-	// transitioned to RUNNING. In that case, do not clear its parse results.
-	deleted, err := s.ingestionTaskDAO.DeleteIfTerminal(ctx, dao.DB, doc.ID)
-	if err != nil {
+	// Settle and conditionally delete the task before touching cache state or
+	// durable results. A task that starts running after preparation blocks the
+	// delete and leaves both the document and its results intact.
+	if err := s.cleanupDocumentTask(ctx, doc.ID, terminalMessage); err != nil {
 		return err
-	}
-	if taskExisted && deleted == 0 {
-		return fmt.Errorf("document %s ingestion task started running; stop it before re-parsing", doc.ID)
 	}
 	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {
 		return err
@@ -335,7 +502,7 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 	successCount := 0
 	for _, doc := range docs {
 		if cancelErr := s.CancelDocParse(ctx, doc); cancelErr != nil {
-			if errors.Is(cancelErr, errParseNotRunning) {
+			if errors.Is(cancelErr, ErrParseNotRunning) {
 				// Mirror the Python /documents/stop endpoint's message.
 				errs = append(errs, "Can't stop parsing document that has not started or already completed")
 			} else {
@@ -397,77 +564,34 @@ func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []st
 	return docs, nil
 }
 
-// errParseNotRunning is returned by CancelDocParse when the document has no
+// ErrParseNotRunning is returned by CancelDocParse when the document has no
 // in-flight ingestion task and is not already stopped. Callers map it to their
 // endpoint-specific message (the Python /documents/ingest and /documents/stop messages differ).
-var errParseNotRunning = errors.New("parse task is not in running status")
+var ErrParseNotRunning = errors.New("parse task is not in running status")
 
-// CancelDocParse stops the ingestion task for the document by calling
-// RequestStop (STOPPING).
-// It returns errParseNotRunning if the document has neither an in-flight
-// ingestion task (CREATED/SCHEDULED/RUNNING/STOPPING) nor an already stopped
-// task (STOPPED).
+// CancelDocParse stops the document's active ingestion task. It returns
+// ErrParseNotRunning when the task is absent or already completed/failed.
 func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get ingestion task for %s: %w", doc.ID, err)
 	}
-
-	inFlight := task != nil && common.IsActiveTaskStatus(task.Status)
-	isStopped := task != nil && task.Status == common.STOPPED
-	if !inFlight && !isStopped {
-		return errParseNotRunning
+	if task == nil {
+		return ErrParseNotRunning
 	}
-
-	if inFlight {
-		if _, err = s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
+	switch {
+	case common.IsActiveTaskStatus(task.Status):
+		if _, err := s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
 			return fmt.Errorf("failed to stop ingestion task %s: %w", task.ID, err)
 		}
+		return nil
+	case task.Status == common.STOPPED:
+		return nil
+	case task.Status == common.COMPLETED || task.Status == common.FAILED:
+		return ErrParseNotRunning
+	default:
+		return fmt.Errorf("ingestion task %s has unrecognized status %q", task.ID, task.Status)
 	}
-
-	return nil
-}
-
-func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *entity.Document, tenantID string, parserID *string, pipelineID *string) error {
-	updates := map[string]interface{}{
-		"progress": 0,
-	}
-	if parserID != nil {
-		updates["parser_id"] = *parserID
-	}
-	if pipelineID != nil {
-		updates["pipeline_id"] = *pipelineID
-	}
-
-	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, updates); err != nil {
-		return errors.New("document not found")
-	}
-
-	if doc.TokenNum > 0 {
-		decremented, err := s.decrementDocumentAndKBCountersForReparse(doc)
-		if err != nil {
-			return errors.New("document not found")
-		}
-		if !decremented {
-			return nil
-		}
-		if s.docEngine != nil {
-			indexName := fmt.Sprintf("ragflow_%s", tenantID)
-			s.deleteChunkImages(ctx, doc, indexName)
-			if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-func (s *DocumentService) deleteChunkImages(ctx context.Context, doc *entity.Document, indexName string) {
-	if doc == nil {
-		return
-	}
-	_ = s.deleteDocumentChunkImages(ctx, indexName, doc.KbID, doc.ID)
 }
 
 // deleteDocumentChunkImages removes source chunk image objects in bounded
@@ -547,34 +671,6 @@ func firstStringField(m map[string]interface{}, keys ...string) string {
 		}
 	}
 	return ""
-}
-
-func (s *DocumentService) decrementDocumentAndKBCountersForReparse(doc *entity.Document) (bool, error) {
-	decremented := false
-	err := dao.DB.Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&entity.Document{}).
-			Where("id = ? AND kb_id = ? AND token_num = ? AND chunk_num = ?", doc.ID, doc.KbID, doc.TokenNum, doc.ChunkNum).
-			Updates(map[string]interface{}{
-				"token_num":        gorm.Expr("token_num - ?", doc.TokenNum),
-				"chunk_num":        gorm.Expr("chunk_num - ?", doc.ChunkNum),
-				"process_duration": gorm.Expr("process_duration - ?", doc.ProcessDuration),
-			})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil
-		}
-		decremented = true
-
-		return tx.Model(&entity.Knowledgebase{}).
-			Where("id = ?", doc.KbID).
-			Updates(map[string]interface{}{
-				"token_num": gorm.Expr("token_num - ?", doc.TokenNum),
-				"chunk_num": gorm.Expr("chunk_num - ?", doc.ChunkNum),
-			}).Error
-	})
-	return decremented, err
 }
 
 func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, status int) error {

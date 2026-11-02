@@ -15,6 +15,7 @@
  */
 
 import {
+  DSL,
   IAgentLogsRequest,
   IPipeLineListRequest,
 } from '@/interfaces/database/agent';
@@ -37,6 +38,8 @@ const {
   trace,
   fetchVersionList,
   fetchVersion,
+  deleteVersion,
+  updateVersion: updateVersionApi,
   getAgent,
   fetchAgentSessions,
   fetchExternalAgentInputs,
@@ -64,6 +67,21 @@ const methods = {
     url: (config: { agentId: string; versionId: string }) =>
       fetchVersion(config.agentId, config.versionId),
     method: 'get',
+  },
+  deleteVersion: {
+    url: (config: { agentId: string; versionId: string }) =>
+      deleteVersion(config.agentId, config.versionId),
+    method: 'delete',
+  },
+  updateVersion: {
+    url: (config: { agentId: string; versionId: string }) =>
+      updateVersionApi(config.agentId, config.versionId),
+    method: 'put',
+  },
+  applyVersion: {
+    url: (config: { agentId: string; versionId: string }) =>
+      api.applyVersion(config.agentId, config.versionId),
+    method: 'post',
   },
   listAgents: {
     url: listAgents,
@@ -156,14 +174,27 @@ export const updateAgent = (
   agentId: string,
   params: {
     title?: string;
-    dsl?: Record<string, any>;
-    avatar?: string;
+    dsl?: DSL | Record<string, any>;
+    avatar?: string | null;
     description?: string | null;
     permission?: string;
     release?: string;
+    autosave?: boolean;
+    alias?: string;
   },
 ) => {
   return request(updateAgentApi(agentId), { method: 'put', data: params });
+};
+
+export const updateVersion = (
+  agentId: string,
+  versionId: string,
+  params: { alias?: string; title?: string; description?: string },
+) => {
+  return request(updateVersionApi(agentId, versionId), {
+    method: 'patch',
+    data: params,
+  });
 };
 
 export const updateAgentTags = (agentId: string, tags: string[]) => {
@@ -220,8 +251,14 @@ export const fetchAgentLogsByCanvasId = (
   });
 };
 
-export const fetchAgentLogsById = (canvasId: string, sessionId: string) => {
-  return request.get(api.fetchAgentSessionById(canvasId, sessionId));
+export const fetchAgentLogsById = (
+  canvasId: string,
+  sessionId: string,
+  params?: Pick<IAgentLogsRequest, 'include_reference' | 'include_prompt'>,
+) => {
+  return request.get(api.fetchAgentSessionById(canvasId, sessionId), {
+    params,
+  });
 };
 
 export const fetchPipeLineList = (params: IPipeLineListRequest) => {
@@ -234,6 +271,12 @@ export const fetchWebhookTrace = (
 ) => {
   return request.get(api.fetchWebhookTrace(id), { params: params });
 };
+
+export const issueAgentWebhookCredential = (id: string) =>
+  request.post(api.issueAgentWebhookCredential(id), { data: {} });
+
+export const revokeAgentWebhookCredential = (id: string) =>
+  request.delete(api.revokeAgentWebhookCredential(id));
 
 export function createAgentSession({ id, name }: { id: string; name: string }) {
   return request.post(api.createAgentSession(id), { data: { name } });

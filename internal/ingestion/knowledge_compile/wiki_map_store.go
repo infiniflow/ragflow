@@ -26,6 +26,8 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -36,9 +38,10 @@ const (
 
 type wikiMapVersionStore struct {
 	engine            engine.DocEngine
+	db                *gorm.DB
 	resolveVectorSize func(context.Context) (int, error)
 	// resolveLanguage returns the dataset language a missing Infinity chunk
-	// table is created with; nil reads it from the dataset row.
+	// table is created with; nil reads it from the dataset row via db.
 	resolveLanguage func(ctx context.Context, datasetID string) (string, error)
 }
 
@@ -97,11 +100,13 @@ func (s *wikiMapVersionStore) PutWikiMapActiveState(ctx context.Context, state k
 // rows. Elasticsearch does not need this resolver because it can create its
 // mapping dynamically.
 func NewWikiMapVersionStoreWithVectorSizeResolver(
+	db *gorm.DB,
 	docEngine engine.DocEngine,
 	resolveVectorSize func(context.Context) (int, error),
 ) kccommon.WikiMapVersionStore {
 	return &wikiMapVersionStore{
 		engine:            docEngine,
+		db:                db,
 		resolveVectorSize: resolveVectorSize,
 	}
 }
@@ -132,7 +137,9 @@ func (s *wikiMapVersionStore) ensureInfinityChunkStore(ctx context.Context, tena
 	// analyzer here, so it has to be created with the dataset language.
 	resolveLanguage := s.resolveLanguage
 	if resolveLanguage == nil {
-		resolveLanguage = datasetLanguageByID
+		resolveLanguage = func(ctx context.Context, datasetID string) (string, error) {
+			return datasetLanguageByID(ctx, s.db, datasetID)
+		}
 	}
 	language, err := resolveLanguage(ctx, datasetID)
 	if err != nil {
@@ -144,9 +151,13 @@ func (s *wikiMapVersionStore) ensureInfinityChunkStore(ctx context.Context, tena
 	return nil
 }
 
-// datasetLanguageByID reads the dataset's language, "" when it is unset.
-func datasetLanguageByID(ctx context.Context, datasetID string) (string, error) {
-	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, datasetID)
+// datasetLanguageByID reads the dataset's language, "" when it is unset (or
+// when no database handle was wired — the caller then tokenizes as English).
+func datasetLanguageByID(ctx context.Context, db *gorm.DB, datasetID string) (string, error) {
+	if db == nil {
+		return "", nil
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, datasetID)
 	if err != nil {
 		return "", err
 	}

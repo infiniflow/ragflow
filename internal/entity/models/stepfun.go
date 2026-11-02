@@ -220,7 +220,7 @@ func (s *StepFunModel) AudioSpeech(ctx context.Context, modelName *string, audio
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -281,7 +281,16 @@ func (s *StepFunModel) AudioSpeechWithSender(ctx context.Context, modelName *str
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	// The shared client sets no overall Timeout and the transport only
+	// interrupts a response-body read when the request ends, so a body that
+	// stalls mid-read would otherwise pin this call until the caller cancels.
+	// streamCallTimeout is the streaming ceiling, not a tight error-page bound:
+	// it ends the unbounded case, and the caller's context still ends it
+	// earlier. FishAudio's streaming TTS carries the same deadline.
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -296,7 +305,10 @@ func (s *StepFunModel) AudioSpeechWithSender(ctx context.Context, modelName *str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, err := readStreamTTSErrorBody(resp.Body)
+		if err != nil {
+			return fmt.Errorf("StepFun stream TTS API error: %d (body: %q): %w", resp.StatusCode, string(body), err)
+		}
 		return fmt.Errorf("StepFun stream TTS API error: %d - %s", resp.StatusCode, string(body))
 	}
 
@@ -342,5 +354,9 @@ func (s *StepFunModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]L
 }
 
 func (s *StepFunModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", s.Name())
+}
+
+func (s *StepFunModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", s.Name())
 }

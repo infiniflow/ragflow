@@ -22,10 +22,10 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -73,7 +73,7 @@ func NewMemoryHandler(memoryService *service.MemoryService) *MemoryHandler {
 //
 // Response Format:
 //   - code: Status code (0=success, other=error)
-//   - message: true on success, error message on failure
+//   - message: "success" on success, error message on failure
 //   - data: Memory object on success
 //
 // Business Logic (matching Python create_memory):
@@ -82,12 +82,13 @@ func NewMemoryHandler(memoryService *service.MemoryService) *MemoryHandler {
 //  3. Call service layer to create memory
 //  4. Return creation result
 func (h *MemoryHandler) CreateMemory(c *gin.Context) {
-	// Check if API timing is enabled
-	// If RAGFLOW_API_TIMING environment variable is set, request processing time will be logged
-	timingEnabled := common.GetEnv(common.EnvRAGFlowAPITiming)
-	var tStart time.Time
-	if timingEnabled != "" {
-		tStart = time.Now()
+	user, errorCode, err := billingQuotaUser(c)
+	if err != nil {
+		common.ErrorWithCode(c, errorCode, err.Error())
+		return
+	}
+	if !billingEnforceApps(c, user.ID) {
+		return
 	}
 
 	// Get current logged-in user information
@@ -101,7 +102,7 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 
 	// Parse JSON request body
 	var req service.CreateMemoryRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err = c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, err.Error())
 		return
 	}
@@ -131,20 +132,11 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	}
 
 	// Record request parsing completion time (for timing)
-	tParsed := time.Now()
 	ctx := c.Request.Context()
 
 	// Call service layer to create memory
 	result, err := h.memoryService.CreateMemory(ctx, userID, &req)
 	if err != nil {
-		// Log error if timing is enabled
-		if timingEnabled != "" {
-			totalMs := float64(time.Since(tStart).Microseconds()) / 1000.0
-			parseMs := float64(tParsed.Sub(tStart).Microseconds()) / 1000.0
-			_ = parseMs
-			_ = totalMs
-		}
-
 		errMsg := err.Error()
 		// Determine if it's an argument error and return appropriate error code
 		if isArgumentError(errMsg) {
@@ -155,16 +147,6 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 		// Other errors return server error
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, errMsg)
 		return
-	}
-
-	// Log success if timing is enabled
-	if timingEnabled != "" {
-		totalMs := float64(time.Since(tStart).Microseconds()) / 1000.0
-		parseMs := float64(tParsed.Sub(tStart).Microseconds()) / 1000.0
-		validateAndDbMs := totalMs - parseMs
-		_ = parseMs
-		_ = validateAndDbMs
-		_ = totalMs
 	}
 
 	// Return success response
@@ -333,7 +315,7 @@ func splitQueryValues(c *gin.Context, key string) []string {
 //
 // Response Format:
 //   - code: Status code
-//   - message: true
+//   - message: "success"
 //   - data.memory_list: Array of Memory objects
 //   - data.total_count: Total record count
 func (h *MemoryHandler) ListMemories(c *gin.Context) {
@@ -405,7 +387,7 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 //
 // Response Format:
 //   - code: Status code
-//   - message: true
+//   - message: "success"
 //   - data: Memory object, including owner_name field
 func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 	// Get memory_id from URL path
@@ -461,7 +443,7 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 //
 // Response Format:
 //   - code: Status code
-//   - message: true
+//   - message: "success"
 //   - data.messages: Array of message objects
 //   - data.storage_type: Storage type
 func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
@@ -514,7 +496,7 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, data, true)
+	common.SuccessWithData(c, data, "success")
 }
 
 type messageMemoryIDs []string
@@ -649,7 +631,7 @@ func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoData(c, true)
+	common.SuccessNoData(c, "success")
 }
 
 func isMemoryServiceNotFound(err error) bool {
@@ -738,7 +720,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 		return
 	}
 
-	common.SuccessNoData(c, true)
+	common.SuccessNoData(c, "success")
 }
 
 // GetMessageContent handles GET request for getting message content
@@ -785,7 +767,7 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, data, true)
+	common.SuccessWithData(c, data, "success")
 }
 
 // SearchMessage handles GET request for searching messages
@@ -822,8 +804,16 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 
 	query := c.Query("query")
 
-	similarityThreshold, _ := strconv.ParseFloat(c.DefaultQuery("similarity_threshold", "0.2"), 64)
-	keywordsSimilarityWeight, _ := strconv.ParseFloat(c.DefaultQuery("keywords_similarity_weight", "0.7"), 64)
+	similarityThreshold, err := strconv.ParseFloat(c.DefaultQuery("similarity_threshold", "0.2"), 64)
+	if err != nil || math.IsNaN(similarityThreshold) || math.IsInf(similarityThreshold, 0) || similarityThreshold < 0 || similarityThreshold > 1 {
+		common.ErrorWithCode(c, common.CodeArgumentError, "similarity_threshold must be a finite number between 0 and 1")
+		return
+	}
+	keywordsSimilarityWeight, err := strconv.ParseFloat(c.DefaultQuery("keywords_similarity_weight", "0.7"), 64)
+	if err != nil || math.IsNaN(keywordsSimilarityWeight) || math.IsInf(keywordsSimilarityWeight, 0) || keywordsSimilarityWeight < 0 || keywordsSimilarityWeight > 1 {
+		common.ErrorWithCode(c, common.CodeArgumentError, "keywords_similarity_weight must be a finite number between 0 and 1")
+		return
+	}
 	topN, _ := strconv.Atoi(c.DefaultQuery("top_n", "5"))
 	if topN <= 0 || topN > 100 {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "top_n must be between 1 and 100")
@@ -853,7 +843,7 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, res, true)
+	common.SuccessWithData(c, res, "success")
 }
 
 // GetMessages handles GET request for getting message list
@@ -901,7 +891,7 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, data, true)
+	common.SuccessWithData(c, data, "success")
 }
 
 // isArgumentError determines if an error message is an argument error

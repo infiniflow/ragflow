@@ -56,10 +56,7 @@ func (dao *API4ConversationDAO) Create(ctx context.Context, db *gorm.DB, conv *e
 		if err := tx.Create(conv).Error; err != nil {
 			return err
 		}
-		if err := createHistory(ctx, tx, apiConversationMessageTable, "message", conv.ID, conv.Message); err != nil {
-			return err
-		}
-		return createHistory(ctx, tx, apiConversationReferenceTable, "reference", conv.ID, conv.Reference)
+		return createHistory(ctx, tx, apiConversationMessageTable, "message", conv.ID, conv.Message)
 	})
 }
 
@@ -85,7 +82,7 @@ func (dao *API4ConversationDAO) UpdateHistory(ctx context.Context, db *gorm.DB, 
 		if err := query.Updates(updates).Error; err != nil {
 			return err
 		}
-		return updateConversationHistory(ctx, tx, apiConversationMessageTable, apiConversationReferenceTable, sessionID, history)
+		return updateConversationHistory(ctx, tx, apiConversationMessageTable, sessionID, history)
 	})
 }
 
@@ -118,12 +115,16 @@ func (dao *API4ConversationDAO) Stats(ctx context.Context, db *gorm.DB, tenantID
 	return rows, err
 }
 
-func (dao *API4ConversationDAO) GetBySessionID(ctx context.Context, db *gorm.DB, sessionID, agentID string) (*entity.API4Conversation, error) {
+func (dao *API4ConversationDAO) GetBySessionID(ctx context.Context, db *gorm.DB, sessionID, agentID string, options ...ConversationHistoryOptions) (*entity.API4Conversation, error) {
+	historyOptions := ConversationHistoryOptions{}
+	if len(options) > 0 {
+		historyOptions = options[0]
+	}
 	result, err := dao.GetMetadataBySessionID(ctx, db, sessionID, agentID)
 	if err != nil || result == nil {
 		return result, err
 	}
-	if err := hydrateAPIConversations(ctx, db, []*entity.API4Conversation{result}); err != nil {
+	if err := hydrateAPIConversations(ctx, db, []*entity.API4Conversation{result}, historyOptions); err != nil {
 		return nil, err
 	}
 	return result, nil
@@ -144,7 +145,11 @@ func (dao *API4ConversationDAO) GetMetadataBySessionID(ctx context.Context, db *
 
 // GetByID returns a conversation without requiring the caller to know its
 // agent. It is used when the session itself is the authorization resource.
-func (dao *API4ConversationDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.API4Conversation, error) {
+func (dao *API4ConversationDAO) GetByID(ctx context.Context, db *gorm.DB, id string, options ...ConversationHistoryOptions) (*entity.API4Conversation, error) {
+	historyOptions := ConversationHistoryOptions{}
+	if len(options) > 0 {
+		historyOptions = options[0]
+	}
 	var result entity.API4Conversation
 	tx := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Take(&result, "id = ?", id)
 	if tx.Error != nil {
@@ -153,7 +158,7 @@ func (dao *API4ConversationDAO) GetByID(ctx context.Context, db *gorm.DB, id str
 		}
 		return nil, tx.Error
 	}
-	if err := hydrateAPIConversations(ctx, db, []*entity.API4Conversation{&result}); err != nil {
+	if err := hydrateAPIConversations(ctx, db, []*entity.API4Conversation{&result}, historyOptions); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -174,7 +179,7 @@ func (dao *API4ConversationDAO) DeleteBySessionIDAndAgentID(ctx context.Context,
 		if err := tx.Model(&entity.API4Conversation{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND dialog_id = ?", sessionID, agentID).Order("id").Pluck("id", &ids).Error; err != nil {
 			return err
 		}
-		if err := deleteHistory(ctx, tx, []string{apiConversationMessageTable, apiConversationReferenceTable}, ids); err != nil {
+		if err := deleteHistory(ctx, tx, []string{apiConversationMessageTable}, ids); err != nil {
 			return err
 		}
 		result := tx.Where("id = ? AND dialog_id = ?", sessionID, agentID).Delete(&entity.API4Conversation{})
@@ -195,7 +200,7 @@ func (dao *API4ConversationDAO) DeleteByDialogIDs(ctx context.Context, db *gorm.
 		if err := tx.Model(&entity.API4Conversation{}).Clauses(clause.Locking{Strength: "UPDATE"}).Where("dialog_id IN ?", dialogIDs).Order("id").Pluck("id", &ids).Error; err != nil {
 			return err
 		}
-		if err := deleteHistory(ctx, tx, []string{apiConversationMessageTable, apiConversationReferenceTable}, ids); err != nil {
+		if err := deleteHistory(ctx, tx, []string{apiConversationMessageTable}, ids); err != nil {
 			return err
 		}
 		result := tx.Where("dialog_id IN ?", dialogIDs).Delete(&entity.API4Conversation{})

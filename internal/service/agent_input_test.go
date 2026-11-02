@@ -67,7 +67,7 @@ func TestAgentbotCompletionPreservesBooleanBeginInput(t *testing.T) {
 			if err := json.Unmarshal([]byte(body), &req); err != nil {
 				t.Fatal(err)
 			}
-			events, code, err := svc.AgentbotCompletion(t.Context(), "user-1", "canvas-bool", req)
+			events, code, err := svc.AgentbotCompletion(serviceTestContext(t, "user-1", "tenant-1"), "user-1", "canvas-bool", req)
 			if err != nil || code != common.CodeSuccess {
 				t.Fatalf("AgentbotCompletion = (%d, %v)", code, err)
 			}

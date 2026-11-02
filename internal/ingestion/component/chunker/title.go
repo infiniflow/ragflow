@@ -39,7 +39,7 @@
 //     fallback_level = len(selected_group) + 1. Strategy (1) —
 //     PDF-outline detection — is also ported: newLevelContext
 //     (title.go) reads the Parser-supplied file.outline via
-//     outlineFromInputs / resolveOutlineLevels / outlineSimilarity
+//     outlineFromUpstream / resolveOutlineLevels / outlineSimilarity
 //     (port of common.py:_outline_similarity) before falling back to
 //     the regex/layout branch, wired into group.go / hierarchy.go
 //     (Chunker omission 1.5, Gap C closed).
@@ -52,6 +52,13 @@
 //     recover structure from numbered/bulleted list entries, before
 //     the layout-title fallback. It never overrides an existing level
 //     assignment.
+//
+//   - Two Go-side guards narrow the regex branch: level patterns are
+//     compiled with Python's `{,n}` repetition rewritten to RE2's
+//     `{0,n}` (the shipped templates use it, and RE2 reads the braces
+//     literally), and a matched line that is too long to be a heading
+//     stays body text so include_heading_content cannot copy a body
+//     paragraph into every chunk below it (#21585).
 //
 //   - GROUP-TITLE and HIERARCHY-TITLE are separate Go files
 //     (`group.go`, `hierarchy.go`); they share the resolve_levels
@@ -67,6 +74,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 
@@ -149,7 +157,8 @@ func selectLevelGroup(lines []string, rawLevels [][]string) []string {
 			}
 			// Mirror common.py:select_level_group — a bullet-looking
 			// line cannot count as a heading hit for any family.
-			if notBullet(text) {
+			// A long body paragraph does not count either.
+			if notHeadingCandidate(text) {
 				continue
 			}
 			for _, pattern := range group {
@@ -191,7 +200,7 @@ func matchRegexLevel(text string, group []string) int {
 	}
 	// Mirror common.py:match_regex_level — a bullet-looking line is not
 	// a heading regardless of the regex family.
-	if notBullet(stripped) {
+	if notHeadingCandidate(stripped) {
 		return 0
 	}
 	for lvl, pattern := range group {
@@ -223,6 +232,42 @@ func notBullet(s string) bool {
 		}
 	}
 	return false
+}
+
+// notHeadingCandidate reports whether a line matched by a level pattern must
+// still not be promoted to a heading.
+func notHeadingCandidate(s string) bool {
+	return notBullet(s) || headingTooLong(s)
+}
+
+// numberedMarkerRe matches a numbering prefix followed by whitespace: "(1) ",
+// "（一）", "1. ", "一、", "第三章 ". The whitespace after such a marker is
+// structural, not word separation, so headingTooLong must look past it.
+var numberedMarkerRe = regexp.MustCompile(`^(?:[\(（][0-9零一二三四五六七八九十百]{1,3}[\)）]|[0-9]{1,3}[\.、．\)）]|[零一二三四五六七八九十百]{1,4}[、.．]|第[零一二三四五六七八九十百0-9]+[章节])[ \t\x{3000}]+`)
+
+// headingTooLong reports whether a line is too long to be a heading. A numbered
+// body paragraph that happens to start like a heading — "(1)社区口腔健康教育：
+// 是在社区范围内…" of ~300 runes — is not a heading: with
+// include_heading_content its text would be prepended to every chunk below it
+// (#21585). Only notTitle's length test applies here. Its punctuation test is
+// skipped because numbering families legitimately match headings carrying a
+// comma or colon ("Chapter 3: Methods, Results and Evaluation"), and an
+// explicit Markdown ATX marker is structural at any length.
+func headingTooLong(s string) bool {
+	if strings.HasPrefix(s, "#") || notTitleException.MatchString(s) {
+		return false
+	}
+	if len(strings.Fields(s)) > 12 {
+		return true
+	}
+	if !strings.Contains(s, " ") && utf8.RuneCountInString(s) >= 32 {
+		return true
+	}
+	// The marker delimiter is often the only space on a numbered CJK paragraph,
+	// which hid it from the rune cap above. Measure the text after the marker;
+	// a multi-word heading keeps its spaces and stays a heading.
+	rest := numberedMarkerRe.ReplaceAllString(s, "")
+	return !strings.Contains(rest, " ") && !strings.Contains(rest, "\u3000") && utf8.RuneCountInString(rest) >= 32
 }
 
 // notTitlePatterns mirrors rag/nlp.not_title:
@@ -337,7 +382,9 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 			out[i] = lvl
 			continue
 		}
-		if rec.ckType == "heading" {
+		// Only the asserted "heading" marker bypasses the notTitle guard;
+		// model heuristics use "title" and go through matchLayoutLevel below.
+		if isHeadingLayout(rec.layout) {
 			out[i] = fallbackLevel
 			continue
 		}
@@ -368,7 +415,7 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 				trimmed := strings.TrimSpace(rec.text)
 				matched := false
 				for j, pat := range bulletPatterns[bull] {
-					if pat.MatchString(trimmed) && !notBullet(trimmed) {
+					if pat.MatchString(trimmed) && !notHeadingCandidate(trimmed) {
 						out[i] = j + 1
 						matched = true
 						break
@@ -557,27 +604,27 @@ func resolveOutlineLevels(records []lineRecord, outline []outlineEntry) (levels 
 	return levels, max(1, maxLevel), true
 }
 
-// outlineFromInputs reads the parser-supplied PDF outline from the upstream
-// file metadata (file.outline, written by the ingestion PDF parser's
-// outlinesToFileMeta) and normalizes it into the chunker's outlineEntry
-// shape. Returns nil when no outline is present, so callers fall back to
-// frequency-based title detection. Numbers are coerced from int/float64
-// because the runtime may hand the chunker a JSON-decoded payload.
-func outlineFromInputs(inputs map[string]any) []outlineEntry {
-	file, _ := inputs["file"].(map[string]any)
-	if file == nil {
+// outlineFromUpstream reads the parser-supplied PDF outline from the decoded
+// upstream file metadata (file.outline, written by the ingestion PDF parser's
+// outlinesToFileMeta and kept verbatim in ChunkerFileMeta.Extra) and normalizes
+// it into the chunker's outlineEntry shape. Returns nil when no outline is
+// present, so callers fall back to frequency-based title detection. Numbers
+// are coerced from int/float64 because the runtime may hand the chunker a
+// JSON-decoded payload.
+func outlineFromUpstream(upstream schema.ChunkerFromUpstream) []outlineEntry {
+	if upstream.File == nil {
 		return nil
 	}
-	raw, _ := file["outline"].([]any)
-	if len(raw) == 0 {
+	raw, ok := upstream.File.Extra["outline"]
+	if !ok || len(raw) == 0 {
 		return nil
 	}
-	out := make([]outlineEntry, 0, len(raw))
-	for _, item := range raw {
-		m, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
+	var items []map[string]any
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil
+	}
+	out := make([]outlineEntry, 0, len(items))
+	for _, m := range items {
 		title, _ := m["title"].(string)
 		if title == "" {
 			continue
@@ -635,14 +682,18 @@ func lineRecordsFromText(text string) []lineRecord {
 // common.py:extract_line_records yields. Used by Group/Hierarchy
 // chunk-builders.
 type lineRecord struct {
-	text         string
-	docType      string
-	imgID        *string
-	layout       string
-	ckType       string
-	pdfPositions json.RawMessage
-	positions    json.RawMessage
-	parentMeta   map[string]any
+	text          string
+	docType       string
+	imgID         *string
+	image         string
+	mediaRef      *entity.MediaRef
+	layout        string
+	pdfPositions  json.RawMessage
+	positions     json.RawMessage
+	preserveOrder bool
+	sheet         string
+	sheetIndex    *int
+	parentMeta    map[string]any
 }
 
 func (r lineRecord) textOrEmpty() string { return r.text }
@@ -654,6 +705,13 @@ func (r lineRecord) isText() bool        { return r.docType == "text" }
 func trim(s string) string {
 	return strings.TrimSpace(s)
 }
+
+// pythonRepetitionRe rewrites Python's `{,n}` repetition to RE2's `{0,n}`.
+// Python's re reads `{,2}` as "zero to two"; RE2 reads the braces literally,
+// so a pattern copied from a Python config compiled but never matched. The
+// Book, Paper, Laws and Manual templates all ship `[\(（][0-9]{,2}[\)）]`,
+// whose `(1)` level was silently dead.
+var pythonRepetitionRe = regexp.MustCompile(`\{,(\d+)\}`)
 
 // compileLevelPattern returns a compiled regex for `pattern`. Returns
 // nil on empty/error to skip the entry — same effect as a regex
@@ -667,6 +725,7 @@ func compileLevelPattern(pattern string) *regexp.Regexp {
 	if pattern == "" {
 		return nil
 	}
+	pattern = pythonRepetitionRe.ReplaceAllString(pattern, "{0,$1}")
 	anchored := pattern
 	if !strings.HasPrefix(pattern, "^") {
 		anchored = "^(?:" + pattern + ")"
@@ -773,9 +832,9 @@ func (c *TitleChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs 
 	}
 	switch c.param.Method {
 	case "hierarchy":
-		return invokeHierarchy(ctx, db, inputs, &c.param)
+		return invokeHierarchy(ctx, db, withName(inputs, name), &c.param)
 	case "group":
-		return invokeGroup(ctx, db, inputs, &c.param)
+		return invokeGroup(ctx, db, withName(inputs, name), &c.param)
 	default:
 		return map[string]any{
 			"output_format": "chunks",

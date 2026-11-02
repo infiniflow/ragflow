@@ -70,6 +70,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/dao/transaction"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -129,14 +130,6 @@ type retrievalEnhancer interface {
 		question string,
 		kbs []*entity.Knowledgebase,
 	) map[string]float64
-	EnhanceTOC(
-		ctx context.Context,
-		chatModel *modelModule.ChatModel,
-		tenantIDs, kbIDs []string,
-		question string,
-		topN int,
-		chunks []map[string]any,
-	) ([]map[string]any, error)
 	RetrieveByChildren(
 		ctx context.Context,
 		chunks []map[string]any,
@@ -207,7 +200,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	// agent run, not req.UserID, which is a configurable per-user memory filter.
 	userID := ""
 	if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
-		userID, _ = state.Sys["user_id"].(string)
+		userID, _ = state.GetSysString("user_id")
 	}
 	userID = strings.TrimSpace(userID)
 	checker := permission.NewDatabaseChecker(db)
@@ -263,19 +256,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	}
 	query = retrievalUserPrefixPattern.ReplaceAllString(query, "")
 	vectorOnly := req.KeywordsSimilarityWeight != nil && *req.KeywordsSimilarityWeight < 0.01
-	// rank_feature (Python retrieve: rank_feature=label_question(question,
-	// self.kbs)). Prefer a feature supplied on the request (computed by RAGTools
-	// from its own KB objects) so the agentic tool stays authoritative; fall
-	// back to the enhancer, which resolves the KB objects itself.
-	var rankFeature map[string]float64
-	if req.RankFeature != nil && len(*req.RankFeature) > 0 {
-		rankFeature = *req.RankFeature
-	} else if a.enhancer != nil && !vectorOnly {
-		// Rank features are extra scoring clauses on the TEXT leg; a
-		// vector-only request has no text leg, so labelling the question would
-		// be a tag lookup whose result nothing consumes.
-		rankFeature = a.enhancer.LabelQuestion(ctx, query, datasets.kbs)
-	}
+	rankFeature := resolveRankFeature(ctx, req.RankFeature, a.enhancer, query, datasets.kbs, vectorOnly)
 	rerankModel, err := a.resolveRerankModel(ctx, req, datasets.kbs[0].TenantID)
 	if err != nil {
 		return nil, err
@@ -287,9 +268,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	nlpReq := nlpRequestFromRetrieval(preparedReq, datasets.tenantIDs, topN, embeddingModel, preparedReq.ExcludeCompiled)
 	nlpReq.Language = entity.KnowledgebasesLanguage(datasets.kbs)
 	nlpReq.RerankModel = rerankModel
-	if rankFeature != nil {
-		nlpReq.RankFeature = &rankFeature
-	}
+	nlpReq.RankFeature = &rankFeature
 
 	res, err := a.svc.Retrieval(ctx, nlpReq)
 	if err != nil {
@@ -299,24 +278,6 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 		return []RetrievalChunk{}, nil
 	}
 	rawChunks := res.Chunks
-	if req.TOCEnhance {
-		if a.enhancer == nil {
-			return nil, fmt.Errorf("retrieval: TOC enhancement service is not configured")
-		}
-		rawChunks, err = a.enhancer.EnhanceTOC(
-			ctx,
-			chatModel,
-			datasets.tenantIDs,
-			datasets.kbIDs,
-			query,
-			topN,
-			rawChunks,
-		)
-		if err != nil {
-			common.Warn("agent retrieval: TOC enhancement failed; using retrieval results", zap.Error(err))
-			rawChunks = res.Chunks
-		}
-	}
 	if a.enhancer != nil {
 		rawChunks = a.enhancer.RetrieveByChildren(ctx, rawChunks, datasets.tenantIDs)
 	}
@@ -325,6 +286,46 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 		out = append(out, translateChunk(raw))
 	}
 	return out, nil
+}
+
+// resolveRankFeature resolves the rank features handed to the nlp layer, which
+// takes them as *map and distinguishes "unset" from "empty". The result is never
+// nil: a nil map leaves that pointer unset and the nlp layer substitutes its
+// {pagerank_fea: 10} default.
+func resolveRankFeature(
+	ctx context.Context,
+	requested *map[string]float64,
+	enhancer retrievalEnhancer,
+	query string,
+	kbs []*entity.Knowledgebase,
+	vectorOnly bool,
+) map[string]float64 {
+	// A caller-supplied feature (computed by RAGTools from its own KB objects) is
+	// authoritative: nil means "said nothing, label it", an empty map means
+	// "there are none" and must not turn into a label lookup.
+	if requested != nil {
+		return cloneRankFeature(*requested)
+	}
+	// Only the engine-side clause needs a text leg, so a dense-only request is not
+	// labelled. The features still reach the similarity - with no scored bool, the
+	// nlp layer applies them locally - so a caller-supplied feature keeps its
+	// effect in vector-only mode and only the enhancer fallback is skipped.
+	if enhancer == nil || vectorOnly {
+		return map[string]float64{}
+	}
+	if labels := enhancer.LabelQuestion(ctx, query, kbs); labels != nil {
+		return cloneRankFeature(labels)
+	}
+	return map[string]float64{}
+}
+
+// cloneRankFeature detaches the request's map from the caller's.
+func cloneRankFeature(features map[string]float64) map[string]float64 {
+	clone := make(map[string]float64, len(features))
+	for field, weight := range features {
+		clone[field] = weight
+	}
+	return clone
 }
 
 func nlpRequestFromRetrieval(
@@ -377,17 +378,6 @@ func nlpRequestFromRetrieval(
 		nlpReq.VectorSimilarityWeight = &vectorSimilarityWeight
 		if *req.KeywordsSimilarityWeight > 0.99 {
 			nlpReq.EmbeddingModel = nil
-		}
-	}
-	// Restrict to ordinary document text chunks with the SAME filter grep_chunks
-	// applies: available_int=1 (must_not available_int<1 semantics so chunks
-	// whose available_int is absent still pass) and must_not exists compile_kwd
-	// to exclude knowledge-compiled products. Setting available_int explicitly
-	// here matches grep exactly (both go through buildBoolQueryFromCondition).
-	if req.OnlyOriginalText {
-		nlpReq.Filter = map[string]interface{}{
-			"available_int": 1,
-			"must_not":      map[string]interface{}{"exists": "compile_kwd"},
 		}
 	}
 	// Restrict to ordinary document text chunks with the SAME filter grep_chunks
@@ -484,10 +474,10 @@ func validateEmbeddingModels(ctx context.Context, db *gorm.DB, kbs []*entity.Kno
 			return fmt.Errorf("retrieval: dataset record is nil")
 		}
 	}
-	embdNameCache := make(map[string]string)
-	firstKey := knowledgebaseEmbeddingKey(ctx, db, kbs[0], embdNameCache)
+	embdNames := transaction.NewEmbeddingBaseNameResolver(dao.NewKnowledgebaseDAO().EmbeddingBaseName)
+	firstKey := knowledgebaseEmbeddingKey(ctx, db, kbs[0], embdNames)
 	for _, kb := range kbs[1:] {
-		if knowledgebaseEmbeddingKey(ctx, db, kb, embdNameCache) != firstKey {
+		if knowledgebaseEmbeddingKey(ctx, db, kb, embdNames) != firstKey {
 			return fmt.Errorf("retrieval: datasets use different embedding models")
 		}
 	}
@@ -499,11 +489,11 @@ func validateEmbeddingModels(ctx context.Context, db *gorm.DB, kbs []*entity.Kno
 // validation, so datasets pointing at the same model through different
 // provider instances or storage forms (tenant_model id vs legacy composite
 // name) retrieve together.
-func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, cache map[string]string) string {
+func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, names *transaction.EmbeddingBaseNameResolver) string {
 	if strings.TrimSpace(kb.EmbdID) == "" && (kb.TenantEmbdID == nil || strings.TrimSpace(*kb.TenantEmbdID) == "") {
 		return "default:" + strings.TrimSpace(kb.TenantID)
 	}
-	return "embedding:" + dao.NewKnowledgebaseDAO().EmbeddingBaseName(ctx, db, kb, cache)
+	return "embedding:" + names.Resolve(ctx, db, kb)
 }
 
 func (a *NLPRetrievalAdapter) resolveEmbeddingModel(
@@ -530,7 +520,7 @@ func (a *NLPRetrievalAdapter) resolveChatModel(
 	tenantID string,
 ) (*modelModule.ChatModel, error) {
 	method, _ := req.MetaDataFilter["method"].(string)
-	needsChatModel := req.TOCEnhance || method == "auto" || method == "semi_auto"
+	needsChatModel := method == "auto" || method == "semi_auto"
 	if !needsChatModel {
 		return nil, nil
 	}

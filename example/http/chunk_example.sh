@@ -17,7 +17,7 @@
 
 # Variables
 HOST_ADDRESS="${RAGFLOW_HOST_ADDRESS:-http://localhost:9380}"
-API_KEY="${RAGFLOW_API_KEY:-ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm}"
+API_KEY="${RAGFLOW_API_KEY:?Set RAGFLOW_API_KEY before running this example}"
 
 # Check for jq
 if ! command -v jq &> /dev/null; then
@@ -62,7 +62,7 @@ curl -s --request GET \
 
 # 3. Update a chunk
 echo -e "\n-- Update a chunk"
-curl -s --request PUT \
+curl -s --request PATCH \
      --url "${HOST_ADDRESS}/api/v1/datasets/${DATASET_ID}/documents/${DOC_ID}/chunks/${CHUNK_ID}" \
      --header 'Content-Type: application/json' \
      --header "Authorization: Bearer ${API_KEY}" \

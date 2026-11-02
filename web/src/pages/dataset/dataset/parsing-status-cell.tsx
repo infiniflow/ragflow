@@ -1,5 +1,8 @@
 import { IconFontFill } from '@/components/icon-font';
+import { ParserUnavailableLabel } from '@/components/parser-unavailable-label';
+import { PipelineVersionLabel } from '@/components/pipeline-version-label';
 import { Button } from '@/components/ui/button';
+import message from '@/components/ui/message';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -8,11 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Separator } from '@/components/ui/separator';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { RAGFlowTooltip } from '@/components/ui/tooltip';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
 import { CircleQuestionMark, CircleX, Clock3, Loader2 } from 'lucide-react';
@@ -22,8 +21,10 @@ import { DocumentType, RunningStatus } from './constant';
 import { ParsingCard } from './parsing-card';
 import { ReparseDialog } from './reparse-dialog';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
+import { useDocumentPipelineVersion } from './use-document-pipeline-version';
 import { useHandleRunDocumentByIds } from './use-run-document';
 import {
+  getDocumentParserLabel,
   getDocumentRunningStatus,
   isDocumentProcessing,
   isDocumentStopping,
@@ -71,36 +72,60 @@ export function ParseDropdownButton({
   record: IDocumentInfo;
 } & UseChangeDocumentParserShowType) {
   const { t } = useTranslation();
-  const { pipeline_id, pipeline_name, chunk_method } = record;
+  const parserLabel = getDocumentParserLabel(record);
+  const { version, missing: parserMissing } =
+    useDocumentPipelineVersion(record);
+  const isPipeline = !!record.pipeline_id;
 
   const handleShowChangeParserModal = useCallback(() => {
     showChangeParserModal(record);
   }, [record, showChangeParserModal]);
 
+  // Pipeline documents are labeled by the version they parse with — the
+  // version title plus its alias as secondary text, the same display the
+  // parser tree select uses. While the version list is still loading, fall
+  // back to the pipeline name. A binding whose pipeline or pinned version was
+  // deleted renders the same "unavailable" display as ParserTreeSelect's
+  // missing value, with the reason on hover. Built-in parsers keep the plain
+  // parser label.
+  const versionTitle = version?.title ?? parserLabel;
+
+  const tooltipContent = parserMissing ? (
+    <p>{t('knowledgeConfiguration.parserOptionUnavailableMessage')}</p>
+  ) : isPipeline ? (
+    <div>
+      <p>{versionTitle}</p>
+      {version?.alias ? <p>{version.alias}</p> : null}
+    </div>
+  ) : (
+    <p>{parserLabel}</p>
+  );
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="static" size="auto" className="capitalize">
-                {pipeline_id
-                  ? pipeline_name || pipeline_id
-                  : chunk_method === 'naive'
-                    ? 'general'
-                    : chunk_method}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p className="capitalize">
-                {pipeline_id
-                  ? pipeline_name || pipeline_id
-                  : chunk_method === 'naive'
-                    ? 'general'
-                    : chunk_method}
-              </p>
-            </TooltipContent>
-          </Tooltip>
+        <div className="flex items-center gap-1">
+          <RAGFlowTooltip asChild tooltip={tooltipContent}>
+            <Button variant="static" size="auto">
+              {parserMissing ? (
+                <ParserUnavailableLabel className="text-text-secondary" />
+              ) : isPipeline ? (
+                <PipelineVersionLabel
+                  title={versionTitle}
+                  alias={version?.alias}
+                  className="max-w-72"
+                  aliasClassName="max-w-[50%]"
+                />
+              ) : (
+                parserLabel
+              )}
+            </Button>
+          </RAGFlowTooltip>
+          {record.pipeline_version_outdated && !parserMissing ? (
+            <RAGFlowTooltip tooltip={t('flow.version.outdated')}>
+              <span className="text-destructive cursor-help font-bold">!</span>
+            </RAGFlowTooltip>
+          ) : null}
         </div>
       </DropdownMenuTrigger>
       <DropdownMenuContent>
@@ -137,6 +162,7 @@ export function ParsingStatusCell({
   const isQueued = effectiveRun === RunningStatus.QUEUED;
   const isStopping = isDocumentStopping(record);
   const isZeroChunk = chunk_count === 0;
+  const { missing: parserMissing } = useDocumentPipelineVersion(record);
 
   const handleOperationIconClick = (option?: {
     delete: boolean;
@@ -151,6 +177,16 @@ export function ParsingStatusCell({
   const needsParseConfirm = !isRunning && !isZeroChunk;
 
   const handleParseClick = () => {
+    // A document whose pipeline or pinned version was deleted can no longer
+    // parse — warn and keep the run request from firing (and the reparse
+    // confirmation from opening). Cancelling a running parse stays allowed:
+    // it never touches the pipeline.
+    if (!isRunning && parserMissing) {
+      message.warning(
+        t('knowledgeConfiguration.parserOptionUnavailableMessage'),
+      );
+      return;
+    }
     if (needsParseConfirm) {
       showReparseDialogModal();
       return;
@@ -272,7 +308,6 @@ export function ParsingStatusCell({
       )}
       {reparseDialogVisible && (
         <ReparseDialog
-          forceDelete
           handleOperationIconClick={handleOperationIconClick}
           visible={reparseDialogVisible}
           hideModal={hideReparseDialogModal}

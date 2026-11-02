@@ -342,7 +342,7 @@ func resolveDocsGeneratorContent(ctx context.Context, configured string, inputs 
 			}
 		}
 	}
-	if !strings.Contains(content, "{{") {
+	if !strings.Contains(content, "{") {
 		// The think cut itself is the greedy re.sub(r"^.*</think>", "", s,
 		// re.DOTALL) pattern (as in generator.py). The unconditional trim —
 		// applied even when no think block is present — mirrors Python's
@@ -369,7 +369,7 @@ func storeAgentAttachment(ctx context.Context, docID string, payload []byte) (bo
 	if err != nil || state == nil {
 		return false, nil
 	}
-	tenantID, _ := state.Sys["tenant_id"].(string)
+	tenantID, _ := state.GetSysString("tenant_id")
 	tenantID = strings.TrimSpace(tenantID)
 	if tenantID == "" {
 		return false, nil
