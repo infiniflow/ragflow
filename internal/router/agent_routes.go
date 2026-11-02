@@ -93,7 +93,7 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	// (api/apps/restful_apis/agent_api.py) has since removed the route.
 	// See plan: .claude/plans/agent-api-gaps-go-port.md §Gap E.
 	g.POST("/chat/completions", h.AgentChatCompletions)
-	g.POST("/test_db_connection", h.TestDBConnection)
+	g.POST("/test-db-connection", h.TestDBConnection)
 }
 
 // RegisterPublicAgentWebhookRoutes registers external webhook triggers on

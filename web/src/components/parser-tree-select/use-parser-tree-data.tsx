@@ -14,6 +14,7 @@ import { AgentListItemType } from '@/interfaces/database/agent';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PipelineVersionLabel } from '../pipeline-version-label';
 import {
   filterTreeNodes,
   TreeSelectNode,
@@ -69,19 +70,44 @@ export function useParserTreeData({ value }: { value?: string }) {
     }
   }
 
-  // Versions load for the selected pipeline plus every expanded branch. The
-  // set is derived, so collapsing a branch drops its observer and a re-expand
-  // refetches (gcTime: 0) — always-fresh data over a cached shortcut.
-  const versionCanvasIds = useMemo(() => {
-    const ids = new Set<string>();
-    if (selectedPipelineId) ids.add(selectedPipelineId);
-    expandedIds.forEach((nodeId) => {
-      const parsed = parseParserOptionValue(nodeId);
-      if (parsed?.kind === ParserOptionKind.Pipeline) ids.add(parsed.rawId);
+  // The fetch set only grows: once a branch has been expanded, its versions
+  // stay loaded for the rest of the select's lifetime. Dropping the query
+  // observer on collapse would revert the branch's children to the
+  // empty-titled loading placeholder, and an active search filter would then
+  // drop the whole branch from the results. Freshness still comes from
+  // gcTime: 0 across remounts and from version mutations invalidating the
+  // shared query key. Render-phase adjustment, same pattern as the
+  // selected-branch expansion above.
+  const [loadedCanvasIds, setLoadedCanvasIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [prevExpandedIds, setPrevExpandedIds] = useState(expandedIds);
+  if (expandedIds !== prevExpandedIds) {
+    setPrevExpandedIds(expandedIds);
+    setLoadedCanvasIds((prev) => {
+      const next = new Set(prev);
+      let added = false;
+      expandedIds.forEach((nodeId) => {
+        const parsed = parseParserOptionValue(nodeId);
+        if (
+          parsed?.kind === ParserOptionKind.Pipeline &&
+          !next.has(parsed.rawId)
+        ) {
+          next.add(parsed.rawId);
+          added = true;
+        }
+      });
+      return added ? next : prev;
     });
-    // Sorted so the useQueries array stays stable across expansion changes.
+  }
+
+  // Versions load for the selected pipeline plus every branch expanded so
+  // far. Sorted so the useQueries array stays stable across changes.
+  const versionCanvasIds = useMemo(() => {
+    const ids = new Set(loadedCanvasIds);
+    if (selectedPipelineId) ids.add(selectedPipelineId);
     return [...ids].sort();
-  }, [selectedPipelineId, expandedIds]);
+  }, [selectedPipelineId, loadedCanvasIds]);
   const versionResults = useFetchCanvasVersions(versionCanvasIds);
 
   const { versionsByCanvas, loadingCanvasIds } = useMemo(() => {
@@ -152,15 +178,19 @@ export function useParserTreeData({ value }: { value?: string }) {
               ? `${version.title} ${version.alias}`
               : version.title,
             searchKeywords: version.alias ? [version.alias] : undefined,
+            // The trigger display needs the alias and the unpolluted title
+            // (title above has the alias joined in for search). The dropdown
+            // row caps the alias at a fixed width — the popover is w-auto, so
+            // an uncapped alias would blow it wide instead of truncating.
+            data: version.alias
+              ? { title: version.title, alias: version.alias }
+              : undefined,
             label: (
-              <span className="flex items-center gap-1.5 min-w-0">
-                <span className="truncate">{version.title}</span>
-                {version.alias && (
-                  <span className="text-text-secondary truncate flex-shrink-0">
-                    {version.alias}
-                  </span>
-                )}
-              </span>
+              <PipelineVersionLabel
+                title={version.title}
+                alias={version.alias}
+                aliasClassName="max-w-60"
+              />
             ),
           }));
         }

@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,150 +13,172 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import random
+import os
+
 import pytest
-from configs import INVALID_API_TOKEN, HOST_ADDRESS, IS_GO_PROXY, SDK_UNAUTHORIZED_ERROR_MESSAGE
-from ragflow_sdk import RAGFlow, Memory
-from hypothesis import HealthCheck, example, given, settings
-from utils import encode_avatar
-from utils.file_utils import create_image_file
-from utils.hypothesis_utils import valid_names
+from ragflow_sdk import Memory, RAGFlow
+
+
+pytestmark = pytest.mark.integration
+
+
+def _assert_persisted(client, memory, changes):
+    result = memory.update(changes)
+    assert result is memory
+    fresh = Memory(client, {"id": memory.id}).get_config()
+    for field, expected in changes.items():
+        assert getattr(result, field) == expected
+        assert getattr(fresh, field) == expected
+    return fresh
 
 
 class TestAuthorization:
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "invalid_auth, expected_message",
-        [
-            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-        ],
-        ids=["empty_auth", "invalid_api_token"],
-    )
-    def test_auth_invalid(self, invalid_auth, expected_message):
-
-        with pytest.raises(Exception) as exception_info:
-            client = RAGFlow(invalid_auth, HOST_ADDRESS)
-            memory = Memory(client, {"id": "memory_id"})
-            memory.update({"name": "New_Name"})
-        assert str(exception_info.value) == expected_message, str(exception_info.value)
+    @pytest.mark.parametrize("invalid_auth", [None, "invalid-sdk-memory-token"], ids=["missing", "invalid"])
+    def test_auth_invalid(self, client, memory, integration_settings, invalid_auth):
+        original = Memory(client, {"id": memory.id}).get_config().name
+        unauthorized = RAGFlow(invalid_auth, integration_settings["base_url"])
+        with pytest.raises(Exception, match="^Invalid access token$") as error:
+            Memory(unauthorized, {"id": memory.id}).update({"name": "Unauthorized change"})
+        assert str(error.value)
+        assert Memory(client, {"id": memory.id}).get_config().name == original
 
 
-@pytest.mark.usefixtures("add_memory_func")
 class TestMemoryUpdate:
-    @pytest.mark.p1
-    @given(name=valid_names())
-    @example("f" * 128)
-    @settings(max_examples=20, suppress_health_check=[HealthCheck.function_scoped_fixture])
-    def test_name(self, client, name):
-        memory_ids = self.memory_ids
-        update_dict = {"name": name}
-        memory = Memory(client, {"id": random.choice(memory_ids)})
-        res = memory.update(update_dict)
-        assert res.name == name, str(res)
+    @pytest.mark.parametrize("kind", ["ascii", "unicode", "trimmed", "max_length"])
+    def test_name(self, client, memory, kind):
+        name = f"renamed-{memory.id}"
+        if kind == "unicode":
+            name = f"记忆-{memory.id}"
+        elif kind == "max_length":
+            name = "a" * (128 - len(memory.id)) + memory.id
+        submitted = f"  {name}  " if kind == "trimmed" else name
+        result = memory.update({"name": submitted})
+        assert result.name == name
+        assert Memory(client, {"id": memory.id}).get_config().name == name
 
-    @pytest.mark.p2
     @pytest.mark.parametrize(
-        "name, expected_message",
+        "name, message",
         [
-            ("", "Memory name cannot be empty or whitespace."),
-            (" ", "Memory name cannot be empty or whitespace."),
-            ("a" * 129, f"Memory name '{'a' * 129}' exceeds limit of 128."),
+            ("", "name cannot be empty"),
+            (" \t\n", "name cannot be empty"),
+            ("a" * 129, None),
+            ("a" * 257, "name length"),
         ],
     )
-    def test_name_invalid(self, client, name, expected_message):
-        memory_ids = self.memory_ids
-        update_dict = {"name": name}
-        memory = Memory(client, {"id": random.choice(memory_ids)})
-        with pytest.raises(Exception) as exception_info:
-            memory.update(update_dict)
-        if IS_GO_PROXY:
-            if len(name) > 128:
-                expected_message = "failed to update memory"
-            else:
-                expected_message = "name can't be empty"
-        assert expected_message in str(exception_info.value), str(exception_info.value)
+    def test_name_invalid(self, client, memory, name, message):
+        original = Memory(client, {"id": memory.id}).get_config().name
+        with pytest.raises(Exception, match=message):
+            memory.update({"name": name})
+        assert Memory(client, {"id": memory.id}).get_config().name == original
 
-    @pytest.mark.p2
-    def test_duplicate_name(self, client):
-        memory_ids = self.memory_ids
-        update_dict = {"name": "Test_Memory"}
-        memory_0 = Memory(client, {"id": memory_ids[0]})
-        res_0 = memory_0.update(update_dict)
-        assert res_0.name == "Test_Memory", str(res_0)
+    def test_duplicate_name(self, client, memory, memory_factory):
+        other = memory_factory()
+        original = Memory(client, {"id": memory.id}).get_config().name
+        with pytest.raises(Exception, match="duplicated memory name"):
+            memory.update({"name": other.name})
+        assert Memory(client, {"id": memory.id}).get_config().name == original
+        assert Memory(client, {"id": other.id}).get_config().name == other.name
 
-        memory_1 = Memory(client, {"id": memory_ids[1]})
-        res_1 = memory_1.update(update_dict)
-        assert res_1.name == "Test_Memory(1)", str(res_1)
+    @pytest.mark.parametrize("avatar", ["data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=", ""])
+    def test_avatar(self, client, memory, avatar):
+        if not avatar:
+            memory.update({"avatar": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII="})
+        _assert_persisted(client, memory, {"avatar": avatar})
 
-    @pytest.mark.p2
-    def test_avatar(self, client, tmp_path):
-        memory_ids = self.memory_ids
-        fn = create_image_file(tmp_path / "ragflow_test.png")
-        update_dict = {"avatar": f"data:image/png;base64,{encode_avatar(fn)}"}
-        memory = Memory(client, {"id": random.choice(memory_ids)})
-        res = memory.update(update_dict)
-        assert res.avatar == f"data:image/png;base64,{encode_avatar(fn)}", str(res)
+    @pytest.mark.parametrize("description", ["SDK memory description", ""])
+    def test_description(self, client, memory, description):
+        memory.update({"description": "previous description"})
+        _assert_persisted(client, memory, {"description": description})
 
-    @pytest.mark.p2
-    def test_description(self, client):
-        memory_ids = self.memory_ids
-        description = "This is a test description."
-        update_dict = {"description": description}
-        memory = Memory(client, {"id": random.choice(memory_ids)})
-        res = memory.update(update_dict)
-        assert res.description == description, str(res)
+    def test_llm(self, client, memory, model_ids):
+        llm_id = os.environ.get("RAGFLOW_SDK_MEMORY_UPDATE_LLM_ID")
+        if not llm_id or llm_id == model_ids["llm_id"]:
+            pytest.fail("Requires RAGFLOW_SDK_MEMORY_UPDATE_LLM_ID naming a second configured chat model")
+        _assert_persisted(client, memory, {"llm_id": llm_id})
 
-    @pytest.mark.p1
-    def test_llm(self, client):
-        memory_ids = self.memory_ids
-        llm_id = "glm-4@ZHIPU-AI"
-        update_dict = {"llm_id": llm_id}
-        memory = Memory(client, {"id": random.choice(memory_ids)})
-        res = memory.update(update_dict)
-        assert res.llm_id == llm_id, str(res)
+    @pytest.mark.parametrize("permission", ["me", "team", "all", " TEAM "])
+    def test_permission(self, client, memory, permission):
+        memory.update({"permissions": "team" if permission == "me" else "me"})
+        result = memory.update({"permissions": permission})
+        expected = permission.strip().lower()
+        assert result.permissions == expected
+        assert Memory(client, {"id": memory.id}).get_config().permissions == expected
 
-    @pytest.mark.p2
-    @pytest.mark.parametrize("permission", ["me", "team"], ids=["me", "team"])
-    def test_permission(self, client, permission):
-        memory_ids = self.memory_ids
-        update_dict = {"permissions": permission}
-        memory = Memory(client, {"id": random.choice(memory_ids)})
-        res = memory.update(update_dict)
-        assert res.permissions == permission.lower().strip(), str(res)
+    @pytest.mark.parametrize("memory_size", [1, 1048576, 5242880])
+    def test_memory_size(self, client, memory, memory_size):
+        _assert_persisted(client, memory, {"memory_size": memory_size})
 
-    @pytest.mark.p1
-    def test_memory_size(self, client):
-        memory_ids = self.memory_ids
-        memory_size = 1048576  # 1 MB
-        update_dict = {"memory_size": memory_size}
-        memory = Memory(client, {"id": random.choice(memory_ids)})
-        res = memory.update(update_dict)
-        assert res.memory_size == memory_size, str(res)
+    @pytest.mark.parametrize("temperature", [0, 0.7, 1])
+    def test_temperature(self, client, memory, temperature):
+        _assert_persisted(client, memory, {"temperature": temperature})
 
-    @pytest.mark.p1
-    def test_temperature(self, client):
-        memory_ids = self.memory_ids
-        temperature = 0.7
-        update_dict = {"temperature": temperature}
-        memory = Memory(client, {"id": random.choice(memory_ids)})
-        res = memory.update(update_dict)
-        assert res.temperature == temperature, str(res)
+    @pytest.mark.parametrize("system_prompt", ["custom", ""])
+    def test_system_prompt(self, client, memory, system_prompt):
+        original = Memory(client, {"id": memory.id}).get_config().system_prompt or ""
+        if system_prompt:
+            system_prompt = original + "\nUse concise language when extracting memories."
+        else:
+            memory.update({"system_prompt": original + "\nPrevious custom instruction."})
+        _assert_persisted(client, memory, {"system_prompt": system_prompt})
 
-    @pytest.mark.p1
-    def test_system_prompt(self, client):
-        memory_ids = self.memory_ids
-        system_prompt = "This is a system prompt."
-        update_dict = {"system_prompt": system_prompt}
-        memory = Memory(client, {"id": random.choice(memory_ids)})
-        res = memory.update(update_dict)
-        assert res.system_prompt == system_prompt, str(res)
+    @pytest.mark.parametrize("user_prompt", ["Remember these preferences.", ""])
+    def test_user_prompt(self, client, memory, user_prompt):
+        memory.update({"user_prompt": "previous user prompt"})
+        _assert_persisted(client, memory, {"user_prompt": user_prompt})
 
-    @pytest.mark.p1
-    def test_user_prompt(self, client):
-        memory_ids = self.memory_ids
-        user_prompt = "This is a user prompt."
-        update_dict = {"user_prompt": user_prompt}
-        memory = Memory(client, {"id": random.choice(memory_ids)})
-        res = memory.update(update_dict)
-        assert res.user_prompt == user_prompt, res
+    @pytest.mark.parametrize(
+        "changes, message",
+        [
+            ({"permissions": ""}, "unknown permission"),
+            ({"permissions": "owner"}, "unknown permission"),
+            ({"memory_size": -1}, "memory size should be in range"),
+            ({"memory_size": 0}, "memory size should be in range"),
+            ({"memory_size": 5242881}, "memory size should be in range"),
+            ({"temperature": -0.1}, "temperature should be in range"),
+            ({"temperature": 1.1}, "temperature should be in range"),
+            ({"forgetting_policy": "LRU"}, "forgetting policy.*not supported"),
+            ({"memory_type": ["unknown"]}, "memory type.*not supported"),
+            ({"temperature": "warm"}, "cannot unmarshal"),
+            ({"memory_size": "large"}, "cannot unmarshal"),
+        ],
+    )
+    def test_invalid_update(self, client, memory, changes, message):
+        original = Memory(client, {"id": memory.id}).get_config()
+        with pytest.raises(Exception, match=message):
+            memory.update({"description": "must not persist", **changes})
+        fresh = Memory(client, {"id": memory.id}).get_config()
+        assert fresh.description == original.description
+        for field in changes:
+            assert getattr(fresh, field) == getattr(original, field)
+
+    @pytest.mark.parametrize("policy", ["FIFO", " fifo "])
+    def test_forgetting_policy(self, client, memory, policy):
+        result = memory.update({"forgetting_policy": policy})
+        assert result.forgetting_policy == "FIFO"
+        assert Memory(client, {"id": memory.id}).get_config().forgetting_policy == "FIFO"
+
+    def test_identity_fields_immutable(self, client, memory):
+        original = Memory(client, {"id": memory.id}).get_config()
+        result = memory.update(
+            {
+                "id": "cannot-reassign-id",
+                "tenant_id": "cannot-reassign-owner",
+                "storage_type": "unsupported-storage",
+                "description": "supported field still updates",
+            }
+        )
+        assert result.id == original.id
+        fresh = Memory(client, {"id": original.id}).get_config()
+        for field in ("id", "tenant_id", "storage_type"):
+            assert getattr(result, field) == getattr(original, field)
+            assert getattr(fresh, field) == getattr(original, field)
+        assert fresh.description == "supported field still updates"
+
+    def test_empty_update(self, client, memory):
+        original = Memory(client, {"id": memory.id}).get_config()
+        result = memory.update({})
+        assert result is memory
+        fresh = Memory(client, {"id": memory.id}).get_config()
+        for field in ("name", "memory_type", "permissions", "memory_size", "temperature"):
+            assert getattr(result, field) == getattr(original, field)
+            assert getattr(fresh, field) == getattr(original, field)

@@ -162,22 +162,33 @@ export function useDocumentPipelineForm({
         ? pipelineId
         : parserId
       : undefined;
+  const savedVersionId = isPipelineMode ? (pipelineVersionId ?? '') : '';
+
+  // The saved parser_config overrides the DSL defaults only while the
+  // selection matches the saved pipeline+version binding; a different version
+  // renders that version's own DSL defaults. (The form's parser_config stays
+  // the display source of truth via operatorValues either way.)
+  const isSavedBindingSelected =
+    !!selectedPipelineId &&
+    selectedPipelineId === savedPipelineId &&
+    (selectedVersionId ?? '') === savedVersionId;
 
   const { operatorNodes, loading: operatorNodesLoading } =
-    usePipelineOperatorNodes(
-      selectedPipelineId,
-      selectedPipelineId && selectedPipelineId === savedPipelineId
-        ? parserConfig
-        : undefined,
-      !isPipelineMode,
-    );
+    usePipelineOperatorNodes({
+      pipelineId: selectedPipelineId,
+      versionId: isPipelineMode ? selectedVersionId : undefined,
+      savedParserConfig: isSavedBindingSelected ? parserConfig : undefined,
+      isBuiltin: !isPipelineMode,
+    });
 
-  useResetParserConfigOnPipelineChange(
+  useResetParserConfigOnPipelineChange({
     form,
-    selectedPipelineId,
+    pipelineId: selectedPipelineId,
+    versionId: isPipelineMode ? selectedVersionId : undefined,
     savedPipelineId,
+    savedVersionId: isPipelineMode ? savedVersionId : undefined,
     operatorNodes,
-  );
+  });
 
   // Design section 8 (T37): an unpinned document still pre-selects the latest
   // concrete version once the version list resolves. The "switch pipeline

@@ -43,6 +43,7 @@ func newStrictTestClient(t *testing.T) (*Client, *miniredis.Miniredis) {
 		client:           rdb,
 		luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
 		luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
+		luaMediaPut:      redis.NewScript(luaMediaPutScript),
 		// luaAutoIncrement intentionally not loaded; not used here.
 	}, mr
 }
@@ -142,6 +143,167 @@ func TestEvalTokenBucketStrict_NilClient(t *testing.T) {
 	}
 	if ok {
 		t.Fatalf("expected allowed=false on nil client (fail-closed)")
+	}
+}
+
+func TestMediaPutEnforcesQuotaAndRestoresDuplicate(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+	mediaKey := "mc:media:test:a"
+	digestKey := "mc:quota:test:digests"
+	stateKey := "mc:quota:test:state"
+	manifestKey := "mc:manifest:test"
+
+	accepted, inserted, err := r.MediaPut(
+		ctx,
+		mediaKey,
+		digestKey,
+		stateKey,
+		"digest-a",
+		"abc",
+		manifestKey,
+		mediaKey,
+		1,
+		3,
+		time.Hour,
+	)
+	if err != nil || !accepted || !inserted {
+		t.Fatalf("first MediaPut = (%v, %v, %v), want (true, true, nil)", accepted, inserted, err)
+	}
+	accepted, inserted, err = r.MediaPut(
+		ctx,
+		"mc:media:test:b",
+		digestKey,
+		stateKey,
+		"digest-b",
+		"b",
+		manifestKey,
+		"mc:media:test:b",
+		1,
+		3,
+		time.Hour,
+	)
+	if err != nil || accepted || inserted {
+		t.Fatalf("limit MediaPut = (%v, %v, %v), want (false, false, nil)", accepted, inserted, err)
+	}
+
+	if !r.Delete(ctx, mediaKey) {
+		t.Fatal("delete media value failed")
+	}
+	for _, key := range []string{digestKey, stateKey} {
+		if err := r.GetClient().Expire(ctx, key, time.Second).Err(); err != nil {
+			t.Fatalf("shorten %s TTL: %v", key, err)
+		}
+	}
+	accepted, inserted, err = r.MediaPut(
+		ctx,
+		mediaKey,
+		digestKey,
+		stateKey,
+		"digest-a",
+		"abc",
+		manifestKey,
+		mediaKey,
+		1,
+		3,
+		time.Hour,
+	)
+	if err != nil || !accepted || inserted {
+		t.Fatalf("restore MediaPut = (%v, %v, %v), want (true, false, nil)", accepted, inserted, err)
+	}
+	value, err := r.Get(ctx, mediaKey)
+	if err != nil || value != "abc" {
+		t.Fatalf("restored value = %q, %v; want abc, nil", value, err)
+	}
+	for _, key := range []string{mediaKey, digestKey, stateKey} {
+		ttl, err := r.GetClient().TTL(ctx, key).Result()
+		if err != nil || ttl < 59*time.Minute {
+			t.Fatalf("restored %s TTL = %v, %v; want the refreshed one-hour lifetime", key, ttl, err)
+		}
+	}
+}
+
+func TestMediaPutCountsDigestSetInsteadOfMirroredHash(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+	digestKey := "mc:quota:scard:digests"
+	stateKey := "mc:quota:scard:state"
+
+	accepted, inserted, err := r.MediaPut(
+		ctx,
+		"mc:media:scard:a",
+		digestKey,
+		stateKey,
+		"digest-a",
+		"a",
+		"",
+		"",
+		1,
+		100,
+		time.Hour,
+	)
+	if err != nil || !accepted || !inserted {
+		t.Fatalf("first MediaPut = (%v, %v, %v), want (true, true, nil)", accepted, inserted, err)
+	}
+	if err := r.GetClient().HSet(ctx, stateKey, "images", 0).Err(); err != nil {
+		t.Fatalf("make mirrored image count diverge: %v", err)
+	}
+
+	accepted, inserted, err = r.MediaPut(
+		ctx,
+		"mc:media:scard:b",
+		digestKey,
+		stateKey,
+		"digest-b",
+		"b",
+		"",
+		"",
+		1,
+		100,
+		time.Hour,
+	)
+	if err != nil || accepted || inserted {
+		t.Fatalf("second MediaPut = (%v, %v, %v), want (false, false, nil)", accepted, inserted, err)
+	}
+}
+
+func TestMediaPutRejectsByteOverflow(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+	digestKey := "mc:quota:bytes:digests"
+	stateKey := "mc:quota:bytes:state"
+
+	accepted, inserted, err := r.MediaPut(
+		ctx,
+		"mc:media:bytes:a",
+		digestKey,
+		stateKey,
+		"digest-a",
+		"abcde",
+		"",
+		"",
+		10,
+		5,
+		time.Hour,
+	)
+	if err != nil || !accepted || !inserted {
+		t.Fatalf("first MediaPut = (%v, %v, %v), want (true, true, nil)", accepted, inserted, err)
+	}
+	accepted, inserted, err = r.MediaPut(
+		ctx,
+		"mc:media:bytes:b",
+		digestKey,
+		stateKey,
+		"digest-b",
+		"b",
+		"",
+		"",
+		10,
+		5,
+		time.Hour,
+	)
+	if err != nil || accepted || inserted {
+		t.Fatalf("overflow MediaPut = (%v, %v, %v), want (false, false, nil)", accepted, inserted, err)
 	}
 }
 

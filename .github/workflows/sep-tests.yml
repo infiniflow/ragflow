@@ -688,7 +688,31 @@ jobs:
             export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee: if tee fails (e.g. the
+          # artifacts dir is missing or NFS hiccups), the step must still reflect
+          # the real test outcome, not the tee failure.
+          set +eo pipefail
           ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/infinity_go_api_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
+
+      - name: Run Python SDK integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        env:
+          RAGFLOW_SDK_CI: "1"
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          uv pip install sdk/python
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee (see Go API step above).
+          set +eo pipefail
+          uv run --no-sync python -m pytest -s --tb=short --level=p2 test/testcases/test_sdk_api 2>&1 | tee "${ARTIFACTS_DIR}/infinity_sdk_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
@@ -1249,7 +1273,31 @@ jobs:
             export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee: if tee fails (e.g. the
+          # artifacts dir is missing or NFS hiccups), the step must still reflect
+          # the real test outcome, not the tee failure.
+          set +eo pipefail
           ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/es_go_api_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
+
+      - name: Run Python SDK integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        env:
+          RAGFLOW_SDK_CI: "1"
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          uv pip install sdk/python
+          mkdir -p "${ARTIFACTS_DIR}"
+          # Decouple the test result from the log tee (see Go API step above).
+          set +eo pipefail
+          uv run --no-sync python -m pytest -s --tb=short --level=p2 test/testcases/test_sdk_api 2>&1 | tee "${ARTIFACTS_DIR}/es_sdk_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
 
       - name: Collect ragflow log Elasticsearch
         if: ${{ !cancelled() }}
@@ -1841,6 +1889,7 @@ jobs:
           EXPOSE_MYSQL_PORT=$(_port EXPOSE_MYSQL_PORT)
           MINIO_PORT=$(_port MINIO_PORT)
           REDIS_PORT=$(_port REDIS_PORT)
+          KVROCKS_PORT=$(_port KVROCKS_PORT)
           EXPOSE_NATS_PORT=$(_port EXPOSE_NATS_PORT)
           EXPOSE_CLICKHOUSE_TCP_PORT=$(_port EXPOSE_CLICKHOUSE_TCP_PORT)
           export RAGFLOW_INFINITY_URI="host.docker.internal:${INFINITY_THRIFT_PORT}"
@@ -1848,6 +1897,10 @@ jobs:
           export RAGFLOW_MYSQL_PORT="${EXPOSE_MYSQL_PORT}"
           export RAGFLOW_MINIO_HOST="host.docker.internal:${MINIO_PORT}"
           export RAGFLOW_REDIS_HOST="host.docker.internal:${REDIS_PORT}"
+          # Test-only Kvrocks endpoint. Do not export RAGFLOW_KVROCKS_HOST here:
+          # that is a production config override and changes config-default tests.
+          export RAGFLOW_TEST_KVROCKS_ADDR="host.docker.internal:${KVROCKS_PORT}"
+          export KVROCKS_TEST_ADDR="${RAGFLOW_TEST_KVROCKS_ADDR}"
           export RAGFLOW_NATS_HOST=host.docker.internal
           export RAGFLOW_NATS_PORT="${EXPOSE_NATS_PORT}"
           export RAGFLOW_CLICKHOUSE_HOST=host.docker.internal

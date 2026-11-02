@@ -44,7 +44,7 @@ var registry = map[string]Factory{
 	"vector_search":              noConfig("vector_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolVectorSearch) }),
 	"bm25_search":                noConfig("bm25_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolBM25Search) }),
 	"wiki_query":                 noConfig("wiki_query", func() einotool.BaseTool { return NewWikiQueryTool() }),
-	"deepl":                      noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
+	"deepl":                      buildDeepLTool,
 	"duckduckgo":                 buildDuckDuckGoTool,
 	"email":                      buildEmailTool,
 	"execute_sql":                buildExeSQLTool,
@@ -56,7 +56,7 @@ var registry = map[string]Factory{
 	"jin10":                      noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
 	"keenable":                   buildKeenableTool,
 	"pubmed":                     buildPubMedTool,
-	"qweather":                   noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
+	"qweather":                   buildQWeatherTool,
 	"querit":                     buildQueritTool,
 	"querit_contents":            buildQueritContentsTool,
 	"querit_search":              buildQueritTool,
@@ -69,7 +69,7 @@ var registry = map[string]Factory{
 	"sofya":                      buildSofyaTool,
 	"tavily":                     buildTavilyTool,
 	"tavily_extract":             buildTavilyExtractTool,
-	"tushare":                    noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
+	"tushare":                    buildTushareTool,
 	"wencai":                     buildWencaiTool,
 	"web_crawler":                noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
 	"wikipedia":                  buildWikipediaTool,
@@ -867,6 +867,33 @@ func buildSearch1APICrawlTool(params map[string]any) (einotool.BaseTool, error) 
 		}
 	}
 	return newSearch1APICrawlTool(nil, apiKey, defaultURL), nil
+}
+
+// buildDeepLTool and buildQWeatherTool take the node-level api_key without
+// type enforcement: an unusable value is left out, so the tool falls back to
+// DEEPL_API_KEY / QWEATHER_API_KEY and reports the missing credential itself.
+func buildDeepLTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, _ := stringParam(params, "api_key")
+	return NewDeepLToolWith(nil, apiKey), nil
+}
+
+func buildQWeatherTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, _ := stringParam(params, "api_key")
+	return NewQWeatherToolWith(nil, apiKey), nil
+}
+
+func buildTushareTool(params map[string]any) (einotool.BaseTool, error) {
+	var token string
+	if value, exists := params["token"]; exists {
+		var valid bool
+		token, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param token", tushareToolName)
+		}
+	}
+	// An empty token builds fine; InvokableRun reports it as a node
+	// configuration error, so the registry can still construct every tool.
+	return newTushareTool(nil, tushareParams{Token: strings.TrimSpace(token)}), nil
 }
 
 func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {

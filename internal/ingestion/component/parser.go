@@ -91,6 +91,7 @@ import (
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/service/billing"
 	"ragflow/internal/utility"
 )
 
@@ -563,6 +564,24 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	lang, _ := getString(inputs, "lang")
 	out := buildParserOutputs(ctx, dispatched, filename, binary, lang)
+
+	// Parse billing: DeepDOC PDFs are metered per page after a successful
+	// parse. A shortage fails the run, matching the Python hold contract.
+	if tenantID, _ := getString(inputs, "tenant_id"); tenantID != "" && docID != "" && fileTypeExt == utility.FileTypePDF {
+		if pdfSetup, ok := c.setups["pdf"]; ok {
+			if method, _ := pdfSetup["parse_method"].(string); strings.Contains(strings.ToUpper(method), "DEEPDOC") {
+				if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+					if runKey := parseRunKey(ctx); runKey != "" {
+						if pageCount := parserPageCount(dispatched.File); pageCount > 0 {
+							if chargeErr := billingService.ChargeParsedDocument(ctx, tenantID, docID, runKey, pageCount, true); chargeErr != nil {
+								return nil, chargeErr
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 	out["file_type"] = string(fileTypeExt)
 	// Forward the storage references so a downstream chunker can
 	// re-acquire the source PDF and crop section images on demand,
@@ -707,4 +726,32 @@ func init() {
 			Inputs:  pc.Inputs(),
 			Outputs: pc.Outputs(),
 		})
+}
+
+// parserPageCount extracts page_count from parser metadata.
+func parserPageCount(file map[string]any) int64 {
+	if file == nil {
+		return 0
+	}
+	switch value := file["page_count"].(type) {
+	case int:
+		return int64(value)
+	case int64:
+		return value
+	case float64:
+		return int64(value)
+	default:
+		return 0
+	}
+}
+
+// parseRunKey returns the billing identity of this parse attempt. The ingestion
+// task id is stable across checkpoint resume and component replay, so a retried
+// run charges once; only runs without a task scope fall back to a fresh id.
+func parseRunKey(ctx context.Context) string {
+	if taskID := globals.TaskID(ctx); taskID != "" {
+		return "task:" + taskID
+	}
+	// No task scope means a debug/dry-run preview: nothing is metered.
+	return ""
 }

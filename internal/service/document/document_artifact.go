@@ -235,7 +235,7 @@ func (s *DocumentService) sandboxArtifactAccessible(ctx context.Context, filenam
 		return false
 	}
 	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(ctx, filename, userID) {
-		if service.CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, dialogID, permission.OperationRead) == nil {
+		if permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: dialogID}, permission.OperationRead) == nil {
 			return true
 		}
 	}
@@ -319,7 +319,11 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID 
 // document via the office_oxide-backed DOCParser. The parser only emits JSON
 // payloads, so the preview text is flattened from the JSON items.
 func extractDOCPreviewText(ctx context.Context, filename string, data []byte) (string, error) {
-	res := parser.NewDOCParser().ParseWithResult(ctx, filename, data)
+	p, err := parser.GetTextOnlyParser(utility.FileTypeDOC)
+	if err != nil {
+		return "", err
+	}
+	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
 		return "", res.Err
 	}

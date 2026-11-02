@@ -18,10 +18,10 @@ Configuration steps:
 
 1. Create or open an Ingestion Pipeline.
 2. Add and connect Parser, Chunker, Compiler, and Indexer.
-3. Open CompilerOperator and select the target CompilationTemplate from the template list.
-4. Check node connections and required parameters, and then save the Pipeline.
+3. Open **Compiler**, select the target template group under **Operator**, and choose an available compilation model.
+4. Check node connections and required parameters, click **Save draft**, then **Publish** and confirm to create a pipeline version.
 
-![Configure Ingestion Pipeline with CompilerOperator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_ingestion_pipeline_apply_knowledge_compilation_template.jpg)
+![Configure the Compiler operator and model](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_compiler_operator_model.jpg)
 
 Note: CompilationTemplate only defines "how to compile". A KnowledgeArtifact is generated only after the template is referenced in CompilerOperator and the document actually executes this Pipeline.
 
@@ -29,23 +29,21 @@ Note: CompilationTemplate only defines "how to compile". A KnowledgeArtifact is 
 
 1. Go to the Dataset page and create a Dataset or open an existing Dataset.
 2. Upload the documents to process.
-3. In the file list, select Configure Ingestion Pipeline.
-4. Select the Ingestion Pipeline that contains CompilerOperator.
+3. Open **Configuration** and find **Parsing mode**.
+4. Open **Parsing mode**, expand the ingestion pipeline that contains **Compiler**, select its published version within that dropdown, and click **Save**. If it shows **No published versions**, publish the pipeline first.
 5. Start parsing and check in the task logs whether Parser, Chunker, Compiler, and Indexer complete in sequence.
 
-![Create a Dataset and select Pipeline](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/connect_the_pipeline_to_a_knowledge_base_1.jpg)
-
-![Configure an Ingestion Pipeline in Dataset](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/connect_the_pipeline_to_a_knowledge_base_2.jpg)
+![Select the compilation pipeline in Dataset configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_dataset_published_version_tree.jpg)
 
 If CompilationTemplate is modified, completed documents are not automatically recompiled. You need to reparse or rerun the Pipeline according to the operations currently provided by the product before the new configuration can be applied.
 
 ## View Knowledge Artifacts
 
-After knowledge compilation is complete, enter the corresponding knowledge base and select **Artifacts** from the left sidebar. In the upper-right corner of the Artifacts page, select the artifact type you want to view from the drop-down list, such as **Wiki**, **Tree/Page index**, **Graph**, **Mind map**, or **Timeline**, to view the corresponding generated results.
+After knowledge compilation is complete, enter the corresponding knowledge base and select **Artifacts** from the left sidebar. In the upper-right corner of the Artifacts page, select the artifact type you want to view from the drop-down list, such as **Wiki**, **Tree/Page index**, **Graph**, **Mindmap**, or **Timeline**, to view the corresponding generated results.
 
 Knowledge artifacts can be divided by generation scope into document-level and knowledge-base-level artifacts:
 
-- **Document-level knowledge artifacts**: Graph, Tree, PageIndex, MindMap, and Timeline can generate corresponding document-level results. Click a file name in the files list to view its artifacts.
+- **Document-level knowledge artifacts**: Graph, Tree, PageIndex, Mindmap, and Timeline can generate corresponding document-level results. Click a file name in the files list to view its artifacts.
 
 - **Knowledge-base-level knowledge artifacts**: After a document completes a Pipeline that produces compilation results, the system automatically schedules the corresponding knowledge-base-level processing. Wiki pages are generated and merged from the document-level Wiki compilation results in the background. Open **Artifacts > Wiki** to view the results when processing is complete.
 
@@ -62,7 +60,7 @@ For different knowledge artifact types, focus on the following checks:
 | Graph | Whether entities are duplicated; whether relationship directions are correct; whether there are unsupported nodes or edges. |
 | Tree | Whether the hierarchy is clear; whether peer nodes are at similar abstraction levels; whether summaries are accurate. |
 | PageIndex | Whether chapter hierarchy is preserved; whether facts and conclusions come from the corresponding chapters. |
-| MindMap | Whether the central topic is clear; whether branches are duplicated or crossed; whether node names are concise. |
+| Mindmap | Whether the central topic is clear; whether branches are duplicated or crossed; whether node names are concise. |
 | Timeline | Whether time is accurate; whether event order is correct; whether relative time is misinterpreted. |
 | Wiki | Whether page topics are reasonable; whether links between pages are valid; whether facts are consistent with sources. |
 

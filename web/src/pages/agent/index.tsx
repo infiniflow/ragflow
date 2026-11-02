@@ -331,7 +331,7 @@ export default function Agent() {
             onClick={handleSave}
             loading={loading}
           >
-            <LaptopMinimalCheck /> {t('flow.save')}
+            <LaptopMinimalCheck /> {t('flow.saveDraft')}
           </ButtonLoading>
           {showRunButton &&
             (runTooltipKey ? (

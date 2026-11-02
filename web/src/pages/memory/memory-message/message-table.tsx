@@ -344,6 +344,13 @@ export function MemoryTable({
   const [expanded, setExpanded] = React.useState<ExpandedState>({});
   const table = useReactTable({
     data: messages,
+    // Use the message id as the row id so a row keeps its identity when
+    // the backend reorders the list (the list is sorted by `valid_at`,
+    // and messages sharing a timestamp can be reordered after an
+    // update). Without it `row.id` falls back to the row index, so React
+    // reuses the row components - and their switch state - by position
+    // and the switch would show the state of a different message.
+    getRowId: (row) => String(row.message_id),
     columns,
     onExpandedChange: setExpanded,
     getSubRows: (row) => (row.extract as IMessageInfo[]) || undefined,

@@ -184,3 +184,8 @@ func (j *JSONSlice) Scan(value interface{}) error {
 	}
 	return json.Unmarshal(b, j)
 }
+
+// GormDataType tells GORM how to create a JSONSlice column.
+func (j *JSONSlice) GormDataType() string {
+	return "longtext"
+}

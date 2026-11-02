@@ -8,13 +8,7 @@ title: Manage User Accounts
 
 ## View and Search Users
 
-User accounts are managed on the **User management** page. Administrators can view the user list, including `Email`, `Nickname`, `Status`, and `User type`.
-
-![User Management](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/user_management_1.jpg)
-
-![User Management](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/user_management_2.jpg)
-
-![User Management](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/user_management_3.jpg)
+User accounts are managed on the **Users** page. Administrators can view the user list, including `Email`, `Nickname`, `Status`, and `User type`.
 
 Use the search box in the upper-right corner to search users by `Email` or `Nickname`. You can also filter `Active` or `Inactive` users by `Status`.
 
@@ -24,18 +18,20 @@ Use the search box in the upper-right corner to search users by `Email` or `Nick
 
 ## Create a New User
 
-To create an account for a new member, go to **User management** and click **New user**. In the dialog, fill in `Email`, `Password`, and `Confirm password`.
+To create an account for a new member, go to **Users** and click **New user**. The **New user** dialog contains `Email`, `Password`, and `Confirm password`. It has no Role selector. Set the account type separately from the **User type** column after creation if needed; see [Set Backend Administrator Identity](#set-backend-administrator-identity).
 
-1. Go to the **User management** page.
+1. Go to the **Users** page.
 2. Click **New user**.
+
+   ![Open Users and click New user](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_a_new_user_1.jpg)
+
 3. Enter the user's `Email`.
 4. Enter the initial password.
 5. Enter the same password again in `Confirm password`.
+
+   ![Create new user form with Email, Password, Confirm password, and Confirm](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_a_new_user_2.jpg)
+
 6. Click **Confirm** to create the account.
-
-![Create A New User](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_a_new_user_1.jpg)
-
-![Create A New User](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_a_new_user_2.jpg)
 
 After creation, return to the user list and confirm that the account appears and that its status matches expectations. Then send the login information to the user through a secure channel.
 
@@ -52,7 +48,7 @@ The `Status` field in the user list controls whether an account can log in to th
 | `Active` | The account is enabled and can log in and use the system normally. |
 | `Inactive` | The account is disabled. The user cannot log in, but the account and related data are retained. |
 
-1. Go to the **User management** page and find the target user in the user list.
+1. Go to the **Users** page and find the target user in the user list.
 2. In the `Status` column of that user's row, click the current status dropdown and select `Active` or `Inactive` as needed.
 
 ![Disable Or Restore Accounts](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/disable_or_restore_accounts.jpg)
@@ -63,7 +59,7 @@ The `Status` field in the user list controls whether an account can log in to th
 
 `User type` distinguishes `Normal` from `Superuser`. `Normal` is a regular user type. `Superuser` can enter the Admin UI and perform system-level management operations.
 
-1. Find the target user on the **User management** page.
+1. Find the target user on the **Users** page.
 2. Open the selector in the `User type` column.
 3. Select `Normal` or `Superuser`.
 4. Wait for the system to submit the change and refresh the user list.
@@ -76,7 +72,7 @@ The `Status` field in the user list controls whether an account can log in to th
 
 When a user forgets their password or must be forced to change it, administrators can reset another user's password from **Actions** in the user list. After the reset-password dialog opens, the page displays the target user's `Email` and requires `New password` and `Confirm new password`.
 
-1. Find the target user on the **User management** page. Hover over the user row to display **Actions**, then click the reset-password button.
+1. Find the target user on the **Users** page. Hover over the user row to display **Actions**, then click the reset-password button.
 2. Confirm that the `Email` in the dialog is the target user.
 3. Enter the new password and confirm it again.
 4. Click **Change password**.
@@ -93,7 +89,7 @@ When a user no longer needs system access and related resources have been handed
 
 Before deleting a user, set their account status to **Inactive**. If their user type is **Superuser**, change it to **Normal** first. The backend rejects deletion of active accounts and Superuser accounts.
 
-1. Find the target user on the **User management** page and set **Status** to **Inactive**.
+1. Find the target user on the **Users** page and set **Status** to **Inactive**.
 2. If **User type** is **Superuser**, change it to **Normal**.
 3. Hover over the user row to display **Actions**, then click the delete button.
 4. Check the user's `Email` in the confirmation dialog.

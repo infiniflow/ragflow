@@ -1,7 +1,6 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { ButtonLoading } from '@/components/ui/button';
 import { IFlow } from '@/interfaces/database/agent';
-import { IDataset } from '@/interfaces/database/dataset';
 import { formatDate } from '@/utils/date';
 import { BookPlus } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -13,43 +12,6 @@ interface PublishConfirmDialogProps {
   agentDetail: IFlow;
   loading: boolean;
   onPublish: (alias?: string) => void;
-}
-
-function AssociatedDataset({
-  associatedDatasets,
-}: {
-  associatedDatasets: Pick<IDataset, 'id' | 'name' | 'avatar'>[];
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <div className="space-y-2 pl-10 pt-3">
-      <div className="text-sm font-medium text-text-secondary">
-        {t('flow.linkedDataset')}
-      </div>
-      {associatedDatasets.length > 0 ? (
-        <div className="space-y-2 max-h-32 overflow-y-auto">
-          {associatedDatasets.map((dataset) => (
-            <div
-              key={dataset.id}
-              className="flex items-center gap-2 px-2 py-2 bg-bg-card rounded text-sm text-text-primary"
-            >
-              <RAGFlowAvatar
-                avatar={dataset.avatar}
-                name={dataset.name}
-                className="size-4 text-xs"
-              />
-              <span className="truncate text-text-secondary">
-                {dataset.name}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="text-sm text-text-disabled">{t('common.noData')}</div>
-      )}
-    </div>
-  );
 }
 
 export function PublishConfirmDialog({
@@ -67,11 +29,6 @@ export function PublishConfirmDialog({
     }
     return '';
   }, [agentDetail.last_publish_time]);
-
-  // Get datasets associated with this pipeline from API response
-  const associatedDatasets = useMemo(() => {
-    return agentDetail?.datasets || [];
-  }, [agentDetail?.datasets]);
 
   const handleTriggerClick = useCallback(() => {
     setOpen(true);
@@ -106,12 +63,6 @@ export function PublishConfirmDialog({
               {agentDetail.title}
             </span>
           </div>
-
-          {isPipeline && (
-            <AssociatedDataset
-              associatedDatasets={associatedDatasets}
-            ></AssociatedDataset>
-          )}
         </section>
 
         {lastPublished && (

@@ -128,9 +128,8 @@ func (s *ChatPipelineService) agenticRag(
 		}
 		// Per-turn token accounting. Every LLM call inside the run records its
 		// usage into this sink (models.EinoChatModel does it for both the
-		// non-streaming and streaming paths), which is the only place the cost of
-		// an agentic turn exists: chat completions carries no usage field, so a
-		// caller cannot recover it from the answer.
+		// non-streaming and streaming paths). Its totals are emitted on the final
+		// result and stored with the assistant message.
 		runCtx = tokenizer.WithRunUsage(runCtx)
 		runCtx = tokenizer.WithRunAttrs(runCtx, &tokenizer.RunAttrs{UserID: userID})
 		turnStarted := time.Now()
@@ -346,11 +345,10 @@ func (s *ChatPipelineService) agenticRag(
 
 // agenticUsageFields renders a turn's LLM cost as structured log fields.
 //
-// The chat-completions response carries no usage, and conversation storage has
-// no token column, so this log line is the only per-question cost record: it is
-// what a benchmark run aggregates and what a support investigation greps. The
-// per-call breakdown goes to the debug log to keep the INFO line one line per
-// turn.
+// The final response and stored message carry token totals. The log also records
+// call counts and per-phase totals for benchmarks and support investigations.
+// The per-call breakdown goes to the debug log to keep the INFO line one line
+// per turn.
 //
 // usage_missing_calls counts calls whose provider reported no usable split.
 // They are counted rather than silently folded into the totals, so "cheap"
@@ -417,7 +415,7 @@ func agenticUsageFields(ctx context.Context, usage *tokenizer.RunUsage) []zap.Fi
 // model choice to every chat model owned by the tenant: a failover chain is
 // exactly the list the dialog's author chose, and nothing else.
 func (s *ChatPipelineService) agenticModelChain(ctx context.Context, userID string, chat *entity.Chat) ([]*modelModule.ChatModel, error) {
-	access := ModelAccess{UserID: userID, TenantID: chat.TenantID}
+	access := Identity{UserID: userID, TenantID: chat.TenantID}
 	primary, err := s.agenticPrimaryModel(ctx, access, chat)
 	if err != nil {
 		return nil, err
@@ -447,7 +445,7 @@ func (s *ChatPipelineService) agenticModelChain(ctx context.Context, userID stri
 
 // agenticPrimaryModel resolves the dialog's own model, or the tenant default
 // when it selected none.
-func (s *ChatPipelineService) agenticPrimaryModel(ctx context.Context, access ModelAccess, chat *entity.Chat) (*modelModule.ChatModel, error) {
+func (s *ChatPipelineService) agenticPrimaryModel(ctx context.Context, access Identity, chat *entity.Chat) (*modelModule.ChatModel, error) {
 	var (
 		model *modelModule.ChatModel
 		err   error

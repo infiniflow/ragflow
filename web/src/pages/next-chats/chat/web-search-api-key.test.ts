@@ -9,6 +9,56 @@ import {
   missingWebSearchApiKeyField,
 } from './web-search-api-key';
 
+describe('AnySearch configuration', () => {
+  const provider = WebSearchProvider.AnySearch;
+
+  it.each([undefined, '', '   '])(
+    'allows anonymous search with key %p',
+    (key) => {
+      const saved = JSON.parse(
+        JSON.stringify({
+          web_search_provider: provider,
+          anysearch_api_key: key,
+          tavily_api_key: 'other-provider-key',
+        }),
+      );
+
+      expect(getWebSearchProvider(saved)).toBe(provider);
+      expect(getWebSearchApiKeyField(provider)).toBe('anysearch_api_key');
+      expect(isWebSearchApiKeyRequired(provider)).toBe(false);
+      expect(missingWebSearchApiKeyField(saved)).toBeUndefined();
+      expect(hasWebSearchProvider(saved)).toBe(true);
+      expect(getWebSearchApiKey(saved)).toBe(
+        key === undefined ? undefined : '',
+      );
+    },
+  );
+
+  it('reads only the saved AnySearch key and trims it', () => {
+    const saved = JSON.parse(
+      JSON.stringify({
+        web_search_provider: provider,
+        anysearch_api_key: '  anysearch-test  ',
+        tavily_api_key: 'other-provider-key',
+      }),
+    );
+    expect(getWebSearchApiKey(saved)).toBe('anysearch-test');
+  });
+
+  it('keeps a cleared provider disabled after reload despite retained keys', () => {
+    const saved = JSON.parse(
+      JSON.stringify({
+        web_search_provider: '',
+        anysearch_api_key: 'anysearch-test',
+        tavily_api_key: 'other-provider-key',
+      }),
+    );
+    expect(getWebSearchProvider(saved)).toBeUndefined();
+    expect(getWebSearchApiKey(saved)).toBeUndefined();
+    expect(hasWebSearchProvider(saved)).toBe(false);
+  });
+});
+
 describe('getWebSearchProvider', () => {
   it('does not select a provider for a new unconfigured dialog', () => {
     expect(getWebSearchProvider({} as PromptConfig)).toBeUndefined();

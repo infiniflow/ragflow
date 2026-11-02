@@ -3,6 +3,7 @@ package table
 import (
 	"math"
 	"sort"
+	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -40,14 +41,15 @@ func createTableBoxFromItem(tbl *pdf.TableItem, html string) pdf.TextBox {
 		x0, x1, top, bottom = p.Left, p.Right, p.Top, p.Bottom
 	}
 	return pdf.TextBox{
-		X0:         x0,
-		X1:         x1,
-		Top:        top,
-		Bottom:     bottom,
-		Text:       html,
-		PageNumber: pg,
-		Pages:      mergedTablePages(tbl),
-		LayoutType: pdf.LayoutTypeTable,
+		X0:            x0,
+		X1:            x1,
+		Top:           top,
+		Bottom:        bottom,
+		Text:          html,
+		PageNumber:    pg,
+		HasPageNumber: len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0,
+		Pages:         mergedTablePages(tbl),
+		LayoutType:    pdf.LayoutTypeTable,
 	}
 }
 
@@ -625,7 +627,34 @@ func ConsolidateFigures(boxes []pdf.TextBox) []pdf.TextBox {
 	}
 
 	applyFigureBounds(boxes)
+	markDuplicateTableFigures(boxes, removeSet)
 	return FilterBoxesByRemoveSet(boxes, removeSet)
+}
+
+// Remove only empty figure regions duplicating a successfully extracted table.
+// Nested regions and captioned figures retain their independent content.
+func markDuplicateTableFigures(boxes []pdf.TextBox, removeSet map[int]bool) {
+	tables := make(map[int][]pdf.TextBox)
+	for i, b := range boxes {
+		if removeSet[i] || b.LayoutType != pdf.LayoutTypeTable || !b.HasPageNumber || len(b.Pages) > 1 ||
+			!strings.HasPrefix(strings.TrimSpace(b.Text), "<table>") || b.X1 <= b.X0 || b.Bottom <= b.Top {
+			continue
+		}
+		tables[b.PageNumber] = append(tables[b.PageNumber], b)
+	}
+	const tolerance = 1e-6 // PDF-point rounding noise, not a geometric overlap threshold.
+	for i, b := range boxes {
+		if removeSet[i] || b.LayoutType != pdf.LayoutTypeFigure || !b.HasPageNumber || len(b.Pages) > 1 || strings.TrimSpace(b.Text) != "" {
+			continue
+		}
+		for _, table := range tables[b.PageNumber] {
+			if math.Abs(b.X0-table.X0) <= tolerance && math.Abs(b.X1-table.X1) <= tolerance &&
+				math.Abs(b.Top-table.Top) <= tolerance && math.Abs(b.Bottom-table.Bottom) <= tolerance {
+				removeSet[i] = true
+				break
+			}
+		}
+	}
 }
 
 // applyFigureBounds pins every figure box to its matched DLA region.

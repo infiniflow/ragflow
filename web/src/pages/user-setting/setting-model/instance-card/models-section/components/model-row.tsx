@@ -84,7 +84,7 @@ export function ModelRow({
           <ConfirmDeleteDialog
             hidden={!isAdded}
             onOk={onRemove}
-            title={t('common.removeModalTitle')}
+            title={t('common.removeIt')}
             okButtonText={t('common.remove')}
             content={{ title: model.name }}
           >

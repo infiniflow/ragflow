@@ -17,7 +17,7 @@
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { CompilationTemplateKind } from '@/constants/compilation';
-import { useMemo } from 'react';
+import { FormEvent, useCallback, useMemo } from 'react';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -60,9 +60,17 @@ export function CompilationTemplateGroupEditor({
     [form, onSubmit],
   );
 
+  const handleSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.stopPropagation();
+      handleSave(event);
+    },
+    [handleSave],
+  );
+
   return (
     <Form {...form}>
-      <form className="flex-1 min-h-0 flex flex-col" onSubmit={handleSave}>
+      <form className="flex-1 min-h-0 flex flex-col" onSubmit={handleSubmit}>
         <TemplateConfiguration
           form={form}
           builtins={builtins}

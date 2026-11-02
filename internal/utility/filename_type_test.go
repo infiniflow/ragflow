@@ -38,6 +38,31 @@ func TestFilenameTypeBMP(t *testing.T) {
 	}
 }
 
+// TestFilenameTypeTIFF verifies that the upload gate admits both TIFF
+// extensions as visual, matching the GetFileType classification the picture
+// parser dispatches on.
+func TestFilenameTypeTIFF(t *testing.T) {
+	cases := []struct {
+		name string
+		want FileType
+	}{
+		{"scan.tiff", FileTypeVISUAL},
+		{"SCAN.TIFF", FileTypeVISUAL},
+		{"path/to/fax_page_1.tiff", FileTypeVISUAL},
+		{"scan.tif", FileTypeVISUAL},
+		{"SCAN.TIF", FileTypeVISUAL},
+		{"scan.tiffx", FileTypeOTHER},
+	}
+	for _, tc := range cases {
+		if got := FilenameType(tc.name); got != tc.want {
+			t.Errorf("FilenameType(%q) = %q, want %q", tc.name, got, tc.want)
+		}
+		if got := GetFileType(tc.name); got != tc.want {
+			t.Errorf("GetFileType(%q) = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
 // TestFilenameTypeVideo covers the upload bucket: video is admitted as visual
 // (legacy categorization) and routed to the picture pipeline; parsing is
 // blocked later. Every extension in the shared video set must classify as

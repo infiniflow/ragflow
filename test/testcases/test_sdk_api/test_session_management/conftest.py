@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,37 +13,59 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
+from uuid import uuid4
+
 import pytest
-from common import batch_add_sessions_with_chat_assistant, delete_all_sessions
-from pytest import FixtureRequest
-from ragflow_sdk import Chat, DataSet, Document, Session
+import requests
+from ragflow_sdk import RAGFlow
 
 
-@pytest.fixture(scope="class")
-def add_sessions_with_chat_assistant(request: FixtureRequest, add_chat_assistants: tuple[DataSet, Document, list[Chat]]) -> tuple[Chat, list[Session]]:
-    def cleanup():
-        for chat_assistant in chat_assistants:
-            try:
-                delete_all_sessions(chat_assistant)
-            except Exception:
-                pass
-
-    request.addfinalizer(cleanup)
-
-    _, _, chat_assistants = add_chat_assistants
-    return chat_assistants[0], batch_add_sessions_with_chat_assistant(chat_assistants[0], 5)
+@pytest.fixture(scope="session", autouse=True)
+def set_tenant_info():
+    # Session CRUD needs no models; override the ancestor's live model configuration.
+    return None
 
 
-@pytest.fixture(scope="function")
-def add_sessions_with_chat_assistant_func(request: FixtureRequest, add_chat_assistants: tuple[DataSet, Document, list[Chat]]) -> tuple[Chat, list[Session]]:
-    def cleanup():
-        for chat_assistant in chat_assistants:
-            try:
-                delete_all_sessions(chat_assistant)
-            except Exception:
-                pass
+@pytest.fixture(autouse=True)
+def network_boundary(request, monkeypatch):
+    original = requests.sessions.Session.request
 
-    request.addfinalizer(cleanup)
+    def guarded(session, method, url, **kwargs):
+        if request.node.get_closest_marker("integration") is None:
+            pytest.fail(f"Service-free test attempted HTTP: {method} {url}")
+        kwargs.setdefault("timeout", 30)
+        return original(session, method, url, **kwargs)
 
-    _, _, chat_assistants = add_chat_assistants
-    return chat_assistants[0], batch_add_sessions_with_chat_assistant(chat_assistants[0], 5)
+    monkeypatch.setattr(requests.sessions.Session, "request", guarded)
+
+
+@pytest.fixture
+def client():
+    required = ("RAGFLOW_SDK_BASE_URL", "RAGFLOW_SDK_API_KEY")
+    if os.environ.get("RAGFLOW_SDK_ISOLATED") != "1" or not all(os.environ.get(key) for key in required):
+        pytest.fail("Environment blocked: requires RAGFLOW_SDK_ISOLATED=1, RAGFLOW_SDK_BASE_URL and RAGFLOW_SDK_API_KEY for a disposable Go backend and dedicated empty tenant")
+    client = RAGFlow(os.environ["RAGFLOW_SDK_API_KEY"], os.environ["RAGFLOW_SDK_BASE_URL"])
+    assert not client.list_chats(page_size=1), "Dedicated tenant must start without chats"
+    assert not client.list_datasets(page_size=1), "Dedicated tenant must start without datasets"
+    return client
+
+
+@pytest.fixture
+def chat(client):
+    chat = client.create_chat(name=f"sdk-session-{uuid4().hex}", prompt_config={"prologue": "session audit greeting"})
+    try:
+        yield chat
+    finally:
+        if client.list_chats(id=chat.id):
+            sessions = chat.list_sessions(page_size=-1)
+            if sessions:
+                chat.delete_sessions(ids=[session.id for session in sessions])
+            assert chat.list_sessions(page_size=-1) == [], "Test-owned session cleanup did not persist"
+            client.delete_chats(ids=[chat.id])
+        assert not client.list_chats(id=chat.id), "Test-owned chat cleanup did not persist"
+
+
+@pytest.fixture
+def add_sessions_with_chat_assistant(chat):
+    return chat, [chat.create_session(name=f"session_with_chat_assistant_{i}") for i in range(5)]
