@@ -4,11 +4,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { AgentCategory } from '@/constants/agent';
 import { IFlowTemplate } from '@/interfaces/database/agent';
-import { BrainCircuit, Route } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { FlowTypeConfig } from './constant';
 import { CreateAgentForm, CreateAgentFormProps } from './create-agent-form';
 import {
   collectUnboundRetrievalBindings,
@@ -16,7 +15,6 @@ import {
 } from './template-retrieval-binding';
 
 type CreateAgentDialogProps = CreateAgentFormProps & {
-  canvasCategory?: AgentCategory;
   template?: IFlowTemplate;
 };
 
@@ -24,7 +22,7 @@ export function CreateAgentDialog({
   hideModal,
   onOk,
   loading,
-  canvasCategory,
+  selectedType,
   template,
 }: CreateAgentDialogProps) {
   const { t } = useTranslation();
@@ -39,26 +37,15 @@ export function CreateAgentDialog({
     [template],
   );
 
-  const dialogTitle =
-    canvasCategory === AgentCategory.DataflowCanvas
-      ? t('flow.createIngestionPipeline')
-      : canvasCategory === AgentCategory.AgentCanvas
-        ? t('flow.createWorkflow')
-        : t('common.create');
-
-  const DialogIcon =
-    canvasCategory === AgentCategory.DataflowCanvas
-      ? Route
-      : canvasCategory === AgentCategory.AgentCanvas
-        ? BrainCircuit
-        : undefined;
+  const dialogTitle = t(`flow.${FlowTypeConfig[selectedType].createTitleKey}`);
+  const DialogIcon = FlowTypeConfig[selectedType].icon;
 
   return (
     <Dialog open onOpenChange={hideModal}>
       <DialogContent data-testid="agent-create-modal" className="max-w-[800px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {DialogIcon && <DialogIcon className="size-5" />}
+            <DialogIcon className="size-5" />
             {dialogTitle}
           </DialogTitle>
         </DialogHeader>
@@ -66,7 +53,7 @@ export function CreateAgentDialog({
           hideModal={hideModal}
           onOk={onOk}
           loading={loading}
-          showTypeCards={!canvasCategory}
+          selectedType={selectedType}
           retrievalBindings={retrievalBindings}
           modelBindings={modelBindings}
         ></CreateAgentForm>

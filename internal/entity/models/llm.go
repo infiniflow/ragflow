@@ -391,6 +391,7 @@ func (m *EinoChatModel) labelOf(idx int) string {
 }
 
 // generateOnce runs one Generate attempt against a single chain entry.
+// It captures normalized input immediately before the driver call when enabled.
 func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	if cm == nil || cm.ModelDriver == nil {
 		return nil, fmt.Errorf("models: EinoChatModel: nil inner ModelDriver")
@@ -409,13 +410,6 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	if err != nil {
 		return nil, err
 	}
-	// eino's ChatModelAgent binds tools via the per-call model.WithTools option
-	// (not by calling WithTools). Merge those into the config so the model
-	// actually emits tool_calls; otherwise the ReAct loop would have no tools.
-	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
-	if err != nil {
-		return nil, err
-	}
 	// Once a tool result is in context the model must be free to answer in
 	// prose. Code-exec agents pin tool_choice to "required"/execute_code, and
 	// keeping that pin on the follow-up turn would loop forever instead of
@@ -425,6 +419,11 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 		chatCfg.ToolChoice = &choice
 		chatCfg.ToolChoiceValue = nil
 	}
+	// Per-call options override defaults, including the release after tool results.
+	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
+	if err != nil {
+		return nil, err
+	}
 	common.Debug("models: eino generate request",
 		zap.String("model", *cm.ModelName),
 		zap.Int("messages", len(internal)),
@@ -432,6 +431,7 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	)
 	common.Debug("models: eino generate message skeleton",
 		zap.String("skeleton", describeInternalMessages(internal)))
+	captureModelInput(ctx, *cm.ModelName, internal)
 	resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, internal, cm.APIConfig, chatCfg, nil)
 	if err != nil {
 		// The chat paths surface this to the user as `**ERROR**: <err>`
@@ -618,6 +618,7 @@ func (m *EinoChatModel) chatConfigWithOptsTools(base *ChatConfig, opts []model.O
 			choice = "auto"
 		case schema.ToolChoiceForbidden:
 			choice = "none"
+			cfg.Tools = nil
 		case schema.ToolChoiceForced:
 			choice = "required"
 			if len(co.AllowedToolNames) == 1 {
@@ -788,6 +789,7 @@ func containsToolResult(messages []Message) bool {
 // With a failover chain, a stream that fails BEFORE any delta was emitted
 // moves to the next model; once deltas have reached the client the call
 // cannot be replayed, so the error is surfaced as-is.
+// Opt-in input capture records each actual driver attempt, including failover.
 func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	if m == nil || len(m.chain) == 0 {
 		return nil, fmt.Errorf("models: EinoChatModel: empty model chain")
@@ -817,12 +819,6 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	if err != nil {
 		return nil, err
 	}
-	// Same tool-binding fix as Generate: honor the per-call model.WithTools
-	// option so the ReAct loop's model requests actually carry tool definitions.
-	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
-	if err != nil {
-		return nil, err
-	}
 	// Same tool_choice release as generateOnce: a turn carrying tool results
 	// must be able to produce the final text instead of being forced to call
 	// a tool again, unless an explicit per-call choice requires it.
@@ -830,6 +826,11 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 		choice := "auto"
 		chatCfg.ToolChoice = &choice
 		chatCfg.ToolChoiceValue = nil
+	}
+	// Per-call options override defaults, including the release after tool results.
+	chatCfg, err = m.chatConfigWithOptsTools(chatCfg, opts)
+	if err != nil {
+		return nil, err
 	}
 	common.Debug("models: eino stream request",
 		zap.String("model", modelNameOf(m.chain[0])),
@@ -921,6 +922,7 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 			}
 			attemptCfg.ToolCallsResult = nil
 			attemptCfg.UsageResult = nil
+			captureModelInput(ctx, *cm.ModelName, internalMessage)
 			err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, internalMessage, cm.APIConfig, attemptCfg, nil, sender)
 			if err != nil {
 				// Same user-visible shape as generateOnce's error: lead with the

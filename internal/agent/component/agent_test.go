@@ -15,9 +15,12 @@ package component
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -28,9 +31,12 @@ import (
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/common"
+	"ragflow/internal/entity/models"
 )
 
 // withAgentRunner replaces the package-level agentRunner for the duration
@@ -65,6 +71,9 @@ func TestAgent_NoToolsReAct(t *testing.T) {
 	}
 	if len(toolCalls) != 0 {
 		t.Errorf("tool_calls=%d, want 0", len(toolCalls))
+	}
+	if _, exists := out["tool_invocations"]; exists {
+		t.Errorf("tool_invocations unexpectedly present without tool calls: %#v", out["tool_invocations"])
 	}
 	if calls != 1 {
 		t.Errorf("runner called %d times, want 1", calls)
@@ -803,7 +812,7 @@ func TestAgent_ToolCallRound(t *testing.T) {
 
 func TestAgent_ExhaustRoundsError(t *testing.T) {
 	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
-		return nil, errors.New("[GraphRunError] exceeds max steps")
+		return nil, fmt.Errorf("[GraphRunError] %w", compose.ErrExceedMaxSteps)
 	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 2})
@@ -814,7 +823,52 @@ func TestAgent_ExhaustRoundsError(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got := out["_ERROR"]; got != "**ERROR**: [GraphRunError] exceeds max steps" {
-		t.Fatalf("_ERROR = %v, want Python-compatible error envelope", got)
+		t.Fatalf("_ERROR = %v, want step-exhaustion error envelope", got)
+	}
+}
+
+func TestAgent_ToolInvocationsWithRunnerErrors(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		runnerErr    error
+		wantError    bool
+		wantEnvelope bool
+	}{
+		{name: "max steps", runnerErr: fmt.Errorf("[GraphRunError] %w", compose.ErrExceedMaxSteps), wantEnvelope: true},
+		{name: "other failure", runnerErr: errors.New("provider failed"), wantError: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			withAgentRunner(t, func(ctx context.Context, p AgentParam) (*schema.Message, error) {
+				recorder := &toolInvocationRecordingTool{
+					InvokableTool: &referenceRecordingFakeTool{out: `{"ok":true}`},
+					name:          "search",
+					recorder:      p.toolInvocations,
+				}
+				if _, err := recorder.InvokableRun(ctx, `{"query":"test"}`); err != nil {
+					return nil, err
+				}
+				return nil, tt.runnerErr
+			})
+
+			out, err := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 1}).Invoke(t.Context(), nil, map[string]any{"user_prompt": "test"})
+			if tt.wantError {
+				if err == nil || !errors.Is(err, tt.runnerErr) {
+					t.Fatalf("Invoke error = %v, want wrapped %v", err, tt.runnerErr)
+				}
+			} else if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if tt.wantEnvelope {
+				if got := out["_ERROR"]; got != "**ERROR**: [GraphRunError] exceeds max steps" {
+					t.Fatalf("_ERROR = %v, want step-exhaustion envelope", got)
+				}
+			} else if _, ok := out["_ERROR"]; ok {
+				t.Fatalf("unexpected _ERROR output: %#v", out["_ERROR"])
+			}
+			if invocations, ok := out["tool_invocations"].([]map[string]any); !ok || len(invocations) != 1 {
+				t.Fatalf("tool_invocations = %#v, want one invocation", out["tool_invocations"])
+			}
+		})
 	}
 }
 
@@ -1374,5 +1428,165 @@ func TestAgentDisabledMaxTokens(t *testing.T) {
 		if p.MaxTokens == nil || *p.MaxTokens != 256 {
 			t.Fatal("enabled or unflagged max_tokens lost")
 		}
+	}
+}
+
+func TestAgentDisabledTemperatureAndTopP(t *testing.T) {
+	p := mergeAgentParam(AgentParam{}, map[string]any{
+		"temperature": 0.2, "temperatureEnabled": false,
+		"top_p": 0.75, "topPEnabled": false,
+	})
+	if p.Temperature != nil {
+		t.Fatalf("disabled temperature still applied: %v", *p.Temperature)
+	}
+	if p.TopP != nil {
+		t.Fatalf("disabled top_p still applied: %v", *p.TopP)
+	}
+	for _, inputs := range []map[string]any{
+		{"temperature": 0.2, "top_p": 0.75},
+		{"temperature": 0.2, "temperatureEnabled": true, "top_p": 0.75, "topPEnabled": true},
+	} {
+		p = mergeAgentParam(AgentParam{}, inputs)
+		if p.Temperature == nil || *p.Temperature != 0.2 || p.TopP == nil || *p.TopP != 0.75 {
+			t.Fatal("enabled or unflagged temperature/top_p lost")
+		}
+	}
+}
+
+type fakeAgentRetrievalService struct {
+	chunks []agenttool.RetrievalChunk
+}
+
+func (f *fakeAgentRetrievalService) Search(ctx context.Context, db *gorm.DB, req agenttool.RetrievalRequest) ([]agenttool.RetrievalChunk, error) {
+	return f.chunks, nil
+}
+
+func TestAgent_AnthropicReActToolCallLoop(t *testing.T) {
+	common.AllowAnyHostForTest = true
+	defer func() { common.AllowAnyHostForTest = false }()
+
+	fakeRetrieval := &fakeAgentRetrievalService{
+		chunks: []agenttool.RetrievalChunk{
+			{ID: "c1", Content: "RAGFlow is an open-source RAG engine based on deep document understanding."},
+		},
+	}
+	prevSvc := agenttool.GetRetrievalService()
+	agenttool.SetRetrievalService(fakeRetrieval)
+	defer agenttool.SetRetrievalService(prevSvc)
+
+	if err := models.InitProviderManager("../../../conf/models"); err != nil {
+		t.Fatal(err)
+	}
+
+	turn := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		turn++
+		body, _ := io.ReadAll(r.Body)
+
+		if turn == 1 {
+			var req map[string]any
+			if err := json.Unmarshal(body, &req); err != nil {
+				t.Errorf("turn 1: unmarshal request body: %v", err)
+			}
+			tools, _ := req["tools"].([]any)
+			if len(tools) == 0 {
+				t.Errorf("turn 1: expected tools in request, got none")
+			} else {
+				t0, _ := tools[0].(map[string]any)
+				if t0["name"] != "search_my_dateset" {
+					t.Errorf("turn 1: expected tool name search_my_dateset, got %v", t0["name"])
+				}
+				schema, _ := t0["input_schema"].(map[string]any)
+				if schema == nil || schema["type"] != "object" {
+					t.Errorf("turn 1: expected object input_schema, got %#v", t0["input_schema"])
+				}
+				props, _ := schema["properties"].(map[string]any)
+				if props == nil || props["query"] == nil {
+					t.Errorf("turn 1: expected query property in input_schema, got %#v", schema["properties"])
+				}
+			}
+
+			// First turn (non-streaming): model decides to call tool
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"id": "msg_001",
+				"type": "message",
+				"role": "assistant",
+				"content": [
+					{
+						"type": "tool_use",
+						"id": "toolu_01",
+						"name": "search_my_dateset",
+						"input": {"query": "ragflow 是什么"}
+					}
+				],
+				"stop_reason": "tool_use",
+				"usage": {"input_tokens": 50, "output_tokens": 20}
+			}`))
+			return
+		}
+
+		if turn == 2 {
+			if !strings.Contains(string(body), "RAGFlow is an open-source RAG engine based on deep document understanding.") {
+				t.Errorf("turn 2: expected retrieval chunk in request body, got %s", string(body))
+			}
+		}
+
+		// Second turn (streaming): model answers with final text
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+
+		events := []string{
+			`event: message_start` + "\n" + `data: {"type": "message_start", "message": {"id": "msg_002", "type": "message", "role": "assistant", "content": [], "model": "qwen3.5-27b", "usage": {"input_tokens": 80, "output_tokens": 1}}}` + "\n\n",
+			`event: content_block_start` + "\n" + `data: {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}` + "\n\n",
+			`event: content_block_delta` + "\n" + `data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "RAGFlow 是一款基于深度文档理解的开源 RAG 引擎。"}}` + "\n\n",
+			`event: content_block_stop` + "\n" + `data: {"type": "content_block_stop", "index": 0}` + "\n\n",
+			`event: message_delta` + "\n" + `data: {"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 30}}` + "\n\n",
+			`event: message_stop` + "\n" + `data: {"type": "message_stop"}` + "\n\n",
+		}
+		for _, e := range events {
+			_, _ = w.Write([]byte(e))
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer srv.Close()
+
+	rawJSON := `{
+		"llm_id": "qwen3.5-27b",
+		"driver": "Anthropic",
+		"api_key": "test-key",
+		"base_url": "` + srv.URL + `",
+		"max_rounds": 5,
+		"sys_prompt": "You are a test assistant.",
+		"prompts": [
+			{"role": "user", "content": "The user query is ragflow 是什么"}
+		],
+		"tools": [
+			{
+				"component_name": "Retrieval",
+				"name": "Retrieval",
+				"params": {
+					"dataset_ids": ["8d4eec40b50548cab31d4985bd807e23"]
+				}
+			}
+		]
+	}`
+
+	var params map[string]any
+	if err := json.Unmarshal([]byte(rawJSON), &params); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	p := agentParamFromMap(params)
+	msg, err := runEinoReActAgent(context.Background(), p)
+	if err != nil {
+		t.Fatalf("runEinoReActAgent failed: %v", err)
+	}
+	if msg.Content != "RAGFlow 是一款基于深度文档理解的开源 RAG 引擎。" {
+		t.Fatalf("unexpected content: %s", msg.Content)
 	}
 }

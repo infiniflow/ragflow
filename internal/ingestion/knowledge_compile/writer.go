@@ -27,6 +27,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
@@ -94,7 +95,6 @@ type Writer interface {
 // folded descriptions and the union of source docs/chunks. It is written as a
 // scope_kwd="dataset" row. Relations carry FromEntity/ToEntity instead of Name.
 type StructureBucket struct {
-	CompileType    string
 	Name           string
 	Type           string
 	Description    string   // folded entity descriptions
@@ -119,13 +119,36 @@ type StructureBucket struct {
 	MentionCount int
 }
 
-// engineWriter persists dataset-level merged products through the global
-// DocEngine (§11.7). Like engineReader, it depends on the process-wide DocEngine
-// obtained via engine.Get(); the storage schema lives behind the engine
-// abstraction rather than in this package.
+// engineWriter persists dataset-level merged products through the injected
+// DocEngine (§11.7). The engine is wired by the server assembly point (see
+// WithDocEngine); the storage schema lives behind the engine abstraction
+// rather than in this package. A writer without an engine fails fast instead
+// of silently reporting successful writes.
 type engineWriter struct {
 	eng           engine.DocEngine
+	db            *gorm.DB
 	commitService pageCommitter
+	// resolveLanguage returns the dataset language the dataset-level rows are
+	// tokenized with; nil reads it from the dataset row via db, defaulting to
+	// English when db is nil.
+	resolveLanguage func(ctx context.Context, datasetID string) (string, error)
+}
+
+// datasetTokenizer returns a tokenizer in kb's language. Dataset-level rows
+// share the dataset's chunk table with the parsed chunks and are retrieved by
+// the same queries, so they tokenize like them.
+func (w engineWriter) datasetTokenizer(ctx context.Context, kb string) (tokenizer.Tokenizer, error) {
+	resolveLanguage := w.resolveLanguage
+	if resolveLanguage == nil {
+		resolveLanguage = func(ctx context.Context, datasetID string) (string, error) {
+			return datasetLanguageByID(ctx, w.db, datasetID)
+		}
+	}
+	language, err := resolveLanguage(ctx, kb)
+	if err != nil {
+		return tokenizer.Tokenizer{}, fmt.Errorf("resolve dataset language: %w", err)
+	}
+	return tokenizer.New(language), nil
 }
 
 type pageCommitter interface {
@@ -136,13 +159,10 @@ func (w engineWriter) DeleteMergedWikiPages(ctx context.Context, tenant, kb stri
 	if len(ids) == 0 {
 		return nil
 	}
+	if w.eng == nil {
+		return errEngineNotConfigured
+	}
 	eng := w.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil
-	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	_, err := eng.DeleteChunks(ctx, map[string]interface{}{
 		"id": ids, "kb_id": kb, "available_int": 1, "scope_kwd": "dataset", "type_kwd": compileKwdWikiPage,
@@ -157,14 +177,17 @@ func (w engineWriter) DeleteMergedWikiPages(ctx context.Context, tenant, kb stri
 // these filter keys and would reject the query or silently drop unknown fields.
 // The guard is checked at every dataset-structure write/delete/rebuild entry so
 // those engines never leave partial state or hit an unknown-filter error (plan §5).
-func datasetStructureSupported() bool {
-	switch engine.GetEngineType() {
-	case "infinity", "elasticsearch":
-		return true
-	case "":
+// It reads the engine injected via engineWriter.eng rather than the process
+// global, so the dependency is explicit.
+func (w engineWriter) datasetStructureSupported() bool {
+	if w.eng == nil {
 		// Engine not initialized (unit tests inject a fake engine directly via
 		// engineWriter.eng). The guard is only meaningful against a real engine
 		// type, so an empty type is treated as supported.
+		return true
+	}
+	switch w.eng.GetType() {
+	case "infinity", "elasticsearch", "":
 		return true
 	default:
 		return false
@@ -173,8 +196,12 @@ func datasetStructureSupported() bool {
 
 // errDatasetStructureUnsupported returns an error (not a silent no-op) naming
 // the engine when a dataset-structure operation runs on an unsupported engine.
-func errDatasetStructureUnsupported() error {
-	return fmt.Errorf("dataset structure graph unsupported on doc engine %q", engine.GetEngineType())
+func (w engineWriter) errDatasetStructureUnsupported() error {
+	engineType := ""
+	if w.eng != nil {
+		engineType = w.eng.GetType()
+	}
+	return fmt.Errorf("dataset structure graph unsupported on doc engine %q", engineType)
 }
 
 // writeMergedBatchSize bounds how many rows each parallel InsertChunks call
@@ -213,13 +240,10 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 		zap.Int("total", len(products)),
 		zap.Any("by_compile_kwd", byKwd),
 	)
+	if w.eng == nil {
+		return errEngineNotConfigured
+	}
 	eng := w.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil
-	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	// Source-tracing fields (tasks/2026-08-07-wiki-duplicates-research.md §5.1):
 	// one runID + inputHash + timestamp per WriteMerged call, shared by every
@@ -273,7 +297,7 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 					zap.String("id", metaString(chunks[0], "id")),
 				)
 			}
-			_, err := eng.InsertChunks(ctx, chunks, baseName, kb)
+			_, err := eng.InsertChunks(ctx, chunks, baseName, kb, "")
 			return err
 		})
 	}
@@ -298,14 +322,11 @@ type wikiPageCommitTarget struct {
 // generated version, while an empty value means an existing page currently has
 // empty content; callers must preserve that distinction.
 func (w engineWriter) loadWikiPageContent(ctx context.Context, tenant, kb string, products []kccommon.Product) (map[string]string, error) {
+	if w.eng == nil {
+		return nil, errEngineNotConfigured
+	}
 	eng := w.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
 	result := make(map[string]string)
-	if eng == nil {
-		return result, nil
-	}
 
 	pageSlugs := make(map[string]struct{})
 	for _, product := range products {
@@ -467,19 +488,20 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 	if len(buckets) == 0 {
 		return nil
 	}
-	if !datasetStructureSupported() {
-		return errDatasetStructureUnsupported()
+	if !w.datasetStructureSupported() {
+		return w.errDatasetStructureUnsupported()
+	}
+	if w.eng == nil {
+		return errEngineNotConfigured
 	}
 	eng := w.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil
-	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	now := time.Now()
 	staleIDs, err := mergeExistingStructureBuckets(ctx, eng, baseName, tenant, kb, buckets)
+	if err != nil {
+		return err
+	}
+	tok, err := w.datasetTokenizer(ctx, kb)
 	if err != nil {
 		return err
 	}
@@ -529,6 +551,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			return err
 		}
 		payload := string(payloadBytes)
+		contentLTKS, contentSMLTKS := tokenizeWikiGraphContent(tok, "", kccommon.PayloadDescription(payloadMap, nil))
 		row := map[string]interface{}{
 			// Stable dataset-level id keyed on the template-scoped entity name or
 			// relation identity plus the raw compile kind.
@@ -539,17 +562,12 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			"compile_kwd":          types.CanonicalCompilationKind(kccommon.FirstNonEmpty(b.TemplateKind, ckwd)),
 			"scope_kwd":            "dataset",
 			"content_with_weight":  payload,
+			"content_ltks":         contentLTKS,
+			"content_sm_ltks":      contentSMLTKS,
 			"source_doc_ids":       b.SourceDocIDs,
 			"source_chunk_ids":     b.SourceChunkIDs,
 			"create_time":          now.Format("2006-01-02 15:04:05"),
 			"create_timestamp_flt": float64(now.Unix()),
-		}
-		if b.CompileType != "" {
-			extra, err := json.Marshal(map[string]string{"compile_type": b.CompileType})
-			if err != nil {
-				return err
-			}
-			row["extra"] = string(extra)
 		}
 		if b.TemplateID != "" {
 			row["compilation_template_ids"] = []string{b.TemplateID}
@@ -561,7 +579,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			row["to_entity_kwd"] = b.ToEntity
 		} else {
 			row["type_kwd"] = "entity"
-			row["name_kwd"] = b.Name
+			row["name_kwd"] = strings.ToLower(b.Name)
 			row["entity_type_kwd"] = b.Type
 			if b.MentionCount > 0 {
 				row["mention_count_int"] = b.MentionCount
@@ -614,7 +632,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 		}
 		batch := rows[start:end]
 		jobs = append(jobs, func() error {
-			_, err := eng.InsertChunks(ctx, batch, baseName, kb)
+			_, err := eng.InsertChunks(ctx, batch, baseName, kb, "")
 			return err
 		})
 	}
@@ -802,16 +820,13 @@ func (w engineWriter) DeleteStructureForDocs(ctx context.Context, tenant, kb str
 	if len(deletedDocIDs) == 0 {
 		return nil
 	}
-	if !datasetStructureSupported() {
-		return errDatasetStructureUnsupported()
+	if !w.datasetStructureSupported() {
+		return w.errDatasetStructureUnsupported()
+	}
+	if w.eng == nil {
+		return errEngineNotConfigured
 	}
 	eng := w.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil
-	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	deleted := make(map[string]bool, len(deletedDocIDs))
 	for _, d := range deletedDocIDs {
@@ -1045,13 +1060,10 @@ func (w engineWriter) DeleteDocLevelForDocs(ctx context.Context, tenant, kb stri
 	if len(deletedDocIDs) == 0 {
 		return nil
 	}
+	if w.eng == nil {
+		return errEngineNotConfigured
+	}
 	eng := w.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil
-	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	_, err := eng.DeleteChunks(ctx, map[string]interface{}{
 		"doc_id": deletedDocIDs,
@@ -1070,13 +1082,10 @@ func (w engineWriter) StripMergedSources(ctx context.Context, tenant, kb string,
 	if len(deletedDocIDs) == 0 {
 		return nil
 	}
+	if w.eng == nil {
+		return errEngineNotConfigured
+	}
 	eng := w.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil
-	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	delSet := make(map[string]bool, len(deletedDocIDs))
 	for _, d := range deletedDocIDs {
@@ -1356,17 +1365,17 @@ func wikiGraphBareKey(slug string) string {
 // tokenizeWikiGraphContent tokenizes Python's entity search text,
 // `slug + " " + description` (dataset_wiki_generator.py:750-773); the entity row
 // gets no title token column.
-func tokenizeWikiGraphContent(slug, description string) (string, string) {
+func tokenizeWikiGraphContent(tok tokenizer.Tokenizer, slug, description string) (string, string) {
 	content := strings.TrimSpace(strings.Join([]string{slug, description}, " "))
 	if content == "" {
 		return "", ""
 	}
 
-	contentLTKS, err := tokenizer.Tokenize(content)
+	contentLTKS, err := tok.Tokenize(content)
 	if err != nil || contentLTKS == "" {
 		contentLTKS = content
 	}
-	contentSMLTKS, err := tokenizer.FineGrainedTokenize(contentLTKS)
+	contentSMLTKS, err := tok.FineGrainedTokenize(contentLTKS)
 	if err != nil || contentSMLTKS == "" {
 		contentSMLTKS = contentLTKS
 	}
@@ -1429,14 +1438,11 @@ func (w engineWriter) ProjectWikiGraph(ctx context.Context, tenant, kb string) e
 // LLM-composed dataset page, otherwise disabling one of several contributors
 // would leave that contributor's entities and edges in the graph.
 func (w engineWriter) loadActiveDocumentWikiPages(ctx context.Context, tenant, kb string) ([]wikiPageProjection, error) {
+	if w.eng == nil {
+		return nil, errEngineNotConfigured
+	}
 	eng := w.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil, nil
-	}
-	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, kb)
+	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, w.db, kb)
 	if err != nil {
 		return nil, fmt.Errorf("load enabled Wiki documents for graph: %w", err)
 	}
@@ -1521,19 +1527,16 @@ func (w engineWriter) DeleteMerged(ctx context.Context, tenant, kb string) error
 // DeleteMergedForVariant clears the selected dataset outputs, preserving
 // document-level compilation inputs. An empty variant set clears all outputs.
 func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb string, variants []kccommon.Variant) error {
+	if w.eng == nil {
+		return errEngineNotConfigured
+	}
 	eng := w.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil
-	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	if len(variants) == 0 {
 		// Navigation roles and searchable wiki outputs are separate from the
 		// dataset-scoped structure sweep.
-		if !datasetStructureSupported() {
-			return errDatasetStructureUnsupported()
+		if !w.datasetStructureSupported() {
+			return w.errDatasetStructureUnsupported()
 		}
 		_, err := eng.DeleteChunks(ctx, map[string]interface{}{
 			"kb_id": kb,
@@ -1569,8 +1572,8 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 				return fmt.Errorf("delete merged (wiki): %w", err)
 			}
 		case kccommon.VariantStructure, kccommon.VariantMindmap:
-			if !datasetStructureSupported() {
-				return errDatasetStructureUnsupported()
+			if !w.datasetStructureSupported() {
+				return w.errDatasetStructureUnsupported()
 			}
 			// structure/mindmap dataset rows are scope_kwd="dataset" +
 			// type_kwd ∈ {entity,relation,kg_build_meta} with a raw
@@ -1607,13 +1610,10 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 // accumulate stale state. The dataset-wide full delete of merged rows is owned
 // by DeleteDocLevelForKb elsewhere and is not repeated here.
 func (w engineWriter) dropWikiGraph(ctx context.Context, tenant, kb string) error {
+	if w.eng == nil {
+		return errEngineNotConfigured
+	}
 	eng := w.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil
-	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	_, err := eng.DeleteChunks(ctx, map[string]interface{}{
 		"kb_id": kb,
@@ -1631,13 +1631,10 @@ func (w engineWriter) dropWikiGraph(ctx context.Context, tenant, kb string) erro
 // title / entity_names_kwd (aliases) / summary_with_weight / outlinks_kwd /
 // source_doc_ids / source_chunk_ids), never the JSON payload.
 func (w engineWriter) loadMergedWikiPages(ctx context.Context, tenant, kb string) ([]wikiPageProjection, error) {
+	if w.eng == nil {
+		return nil, errEngineNotConfigured
+	}
 	eng := w.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil, nil
-	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	const batchSize = 2000
 	var out []wikiPageProjection
@@ -1723,7 +1720,11 @@ func (w engineWriter) loadMergedWikiPages(ctx context.Context, tenant, kb string
 // dangling edge, e.g. the target was pruned/deleted) is skipped, as is a
 // self-loop (src == tgt) — the graph is rebuilt from a consistent read each
 // time, so cross-batch dangling edges cannot accumulate.
-func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string, pages []wikiPageProjection) ([]map[string]interface{}, error) {
+func (w engineWriter) projectWikiGraphRows(ctx context.Context, tenant, kb string, pages []wikiPageProjection) ([]map[string]interface{}, error) {
+	tok, err := w.datasetTokenizer(ctx, kb)
+	if err != nil {
+		return nil, err
+	}
 	// Sort pages deterministically by full slug before building the indexes so
 	// the outcome is reproducible across reprojections. The engine's row order
 	// is otherwise scroll-order dependent, which made bare-slug first-match
@@ -1783,7 +1784,7 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 		if err != nil {
 			return nil, err
 		}
-		contentLTKS, contentSMLTKS := tokenizeWikiGraphContent(p.Slug, p.Summary)
+		contentLTKS, contentSMLTKS := tokenizeWikiGraphContent(tok, p.Slug, p.Summary)
 		rows = append(rows, map[string]interface{}{
 			"id":                  entityID,
 			"doc_id":              kb,
@@ -1791,6 +1792,7 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 			"available_int":       1,
 			"compile_kwd":         "wiki",
 			"type_kwd":            compileKwdWikiEntity,
+			"scope_kwd":           "dataset",
 			"entity_type_kwd":     p.PageType,
 			"slug_kwd":            p.Slug,
 			"title_kwd":           p.Title,
@@ -1847,6 +1849,7 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 				"available_int":       1,
 				"compile_kwd":         "wiki",
 				"type_kwd":            compileKwdWikiRelation,
+				"scope_kwd":           "dataset",
 				"from_kwd":            p.Slug,
 				"to_kwd":              tgt,
 				"source_doc_ids":      srcDocs,
@@ -1877,13 +1880,10 @@ func (w engineWriter) insertWikiGraphChunks(ctx context.Context, tenant, kb stri
 	if len(rows) == 0 {
 		return nil
 	}
+	if w.eng == nil {
+		return errEngineNotConfigured
+	}
 	eng := w.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil
-	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	jobs := make([]CompilerJob, 0, (len(rows)+wikiGraphBatchSize-1)/wikiGraphBatchSize)
 	for start := 0; start < len(rows); start += wikiGraphBatchSize {
@@ -1893,7 +1893,7 @@ func (w engineWriter) insertWikiGraphChunks(ctx context.Context, tenant, kb stri
 		}
 		batch := rows[start:end]
 		jobs = append(jobs, func() error {
-			_, err := eng.InsertChunks(ctx, batch, baseName, kb)
+			_, err := eng.InsertChunks(ctx, batch, baseName, kb, "")
 			return err
 		})
 	}

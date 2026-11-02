@@ -18,12 +18,14 @@ package handler
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/mail"
 	"net/smtp"
 	"ragflow/internal/server"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -37,17 +39,17 @@ import (
 
 // TenantHandler tenant handler
 type TenantHandler struct {
-	tenantService  *service.TenantService
-	userService    *service.UserService
-	datasetService *dataset.DatasetService
+	tenantService     *service.TenantService
+	userTenantService *service.UserTenantService
+	datasetService    *dataset.DatasetService
 }
 
 // NewTenantHandler create tenant handler
-func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService, datasetService *dataset.DatasetService) *TenantHandler {
+func NewTenantHandler(tenantService *service.TenantService, userTenantService *service.UserTenantService, datasetService *dataset.DatasetService) *TenantHandler {
 	return &TenantHandler{
-		tenantService:  tenantService,
-		userService:    userService,
-		datasetService: datasetService,
+		tenantService:     tenantService,
+		userTenantService: userTenantService,
+		datasetService:    datasetService,
 	}
 }
 
@@ -82,9 +84,17 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 	}
 
 	ctx := c.Request.Context()
-	err := h.tenantService.SetTenantDefaultModels(ctx, user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType, req.ModelID)
+	code, err := h.userTenantService.SetModelSettings(ctx, user.ID, &service.SetModelSettingsRequest{
+		DefaultModel: &service.DefaultModelSelection{
+			ModelProvider: req.ModelProvider,
+			ModelInstance: req.ModelInstance,
+			ModelName:     req.ModelName,
+			ModelType:     req.ModelType,
+			ModelID:       req.ModelID,
+		},
+	})
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
 
@@ -96,7 +106,7 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 	common.SuccessNoData(c, "success")
 }
 
-// GetDefaultModels returns the tenant's default model selections. The
+// GetDefaultModels returns the user's model selections for the current tenant. The
 // response wraps the model list under `data.models` to mirror the
 // Python `list_tenant_default_models` contract (api/apps/restful_apis/
 // models_api.py:84). The frontend hook `useFetchDefaultModels`
@@ -109,7 +119,7 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
-	defaultModels, err := h.tenantService.ListTenantDefaultModels(ctx, user.ID)
+	defaultModels, err := h.userTenantService.ListDefaultModels(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -140,7 +150,7 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
-	tenantInfo, err := h.tenantService.GetTenantInfo(ctx, user.ID)
+	tenantInfo, err := h.userTenantService.GetCurrentTenantInfo(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -160,7 +170,7 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 // @Tags tenants
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/list [get]
+// @Router /api/v1/tenants [get]
 func (h *TenantHandler) TenantList(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -186,7 +196,7 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/metadata_store [post]
+// @Router /v1/tenant/metadata-store [post]
 func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -214,7 +224,7 @@ func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 // @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/metadata_store [delete]
+// @Router /v1/tenant/metadata-store [delete]
 func (h *TenantHandler) DeleteMetadataStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -250,7 +260,7 @@ type CreateChunkTableRequest struct {
 // @Security ApiKeyAuth
 // @Param request body CreateChunkTableRequest true "create chunk store request"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/chunk_store [post]
+// @Router /v1/tenant/chunk-store [post]
 func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -298,7 +308,7 @@ type DeleteChunkTableRequest struct {
 // @Security ApiKeyAuth
 // @Param request body DeleteChunkTableRequest true "delete chunk store request"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/chunk_store [delete]
+// @Router /v1/tenant/chunk-store [delete]
 func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -343,6 +353,10 @@ func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
+		return
+	}
+	if !matchesActiveTenant(c, tenantID) {
+		common.ErrorWithCode(c, common.CodeForbidden, "Tenant does not match the active token context")
 		return
 	}
 
@@ -491,21 +505,47 @@ func sendMailWithTLS(addr, host string, auth smtp.Auth, from string, to []string
 // @Param request body service.AddMemberRequest true "Invite request"
 // @Router /api/v1/tenants/{tenant_id}/users [post]
 func (h *TenantHandler) AddTenantMember(c *gin.Context) {
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "set_tenant_info",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = errors.New("tenant_id is required")
+		return
+	}
+	if !matchesActiveTenant(c, tenantID) {
+		common.ErrorWithCode(c, common.CodeForbidden, "Tenant does not match the active token context")
+		operationLog.Code = int(common.CodeForbidden)
+		operationLog.Error = errors.New("tenant does not match the active token context")
 		return
 	}
 
 	var req service.AddMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "invalid request body: "+err.Error())
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = errors.New("invalid request body: " + err.Error())
 		return
 	}
 
@@ -513,6 +553,8 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 	resp, code, err := h.tenantService.AddMember(ctx, user.ID, tenantID, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 
@@ -528,6 +570,8 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 				zap.String("tenant_id", tenantID),
 				zap.String("email", req.Email),
 				zap.Error(err))
+			operationLog.Code = int(common.CodeServerError)
+			operationLog.Error = err
 		}
 	}
 
@@ -541,23 +585,47 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 // @Param request body object true "Remove member request" SchemaExample({"user_id":"string"})
 // @Router /api/v1/tenants/{tenant_id}/users [delete]
 func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "set_tenant_info",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = errors.New("tenant_id is required")
 		return
 	}
-
 	var body struct {
 		UserID string `json:"user_id"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || body.UserID == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "user_id is required")
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = errors.New("user_id is required")
+		return
+	}
+	if body.UserID != user.ID && !matchesActiveTenant(c, tenantID) {
+		common.ErrorWithCode(c, common.CodeForbidden, "Tenant does not match the active token context")
+		operationLog.Code = int(common.CodeForbidden)
+		operationLog.Error = errors.New("tenant does not match the active token context")
 		return
 	}
 
@@ -565,35 +633,61 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 	code, err := h.tenantService.RemoveMember(ctx, user.ID, tenantID, body.UserID)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 	common.SuccessWithData(c, true, "success")
 }
 
-// AcceptTenantInvite accepts a pending team invitation, transitioning role invite → normal.
+// AcceptTenantInvite accepts a pending invitation, transitioning membership status to joined.
 // @Summary Accept tenant invitation
 // @Tags tenants
 // @Produce json
 // @Param tenant_id path string true "Tenant ID"
 // @Router /api/v1/tenants/{tenant_id} [patch]
 func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "set_tenant_info",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = errors.New("tenant_id is required")
 		return
 	}
-
 	ctx := c.Request.Context()
 	code, err := h.tenantService.AcceptInvite(ctx, user.ID, tenantID)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 	common.SuccessWithData(c, true, "success")
+}
+
+func matchesActiveTenant(c *gin.Context, tenantID string) bool {
+	activeTenantID := strings.TrimSpace(c.GetString("tenant_id"))
+	return activeTenantID == "" || activeTenantID == tenantID
 }

@@ -34,13 +34,17 @@ const tushareToolName = "tushare"
 const tushareToolDescription = "Call Tushare Pro (api.tushare.pro) for Chinese financial data. " +
 	"Returns the upstream data.fields and data.items arrays."
 
-// tushareEndpoint is the Tushare Pro REST endpoint. Exposed as a
-// package var so tests can substitute a httptest.Server URL.
-var tushareEndpoint = "http://api.tushare.pro"
+// tushareEndpoint is the Tushare Pro REST endpoint. The API only reads the
+// request body, so plaintext HTTP would ship the account token in the clear;
+// keep it on TLS. Exposed as a package var so tests can substitute a
+// httptest.Server URL.
+var tushareEndpoint = "https://api.tushare.pro"
 
 // tushareParams is the JSON shape the model sends into InvokableRun.
 //
-//   - Token (required): the Tushare Pro API token (积分账户).
+//   - Token: the Tushare Pro API token (积分账户). Resolved from the Canvas
+//     node's tool_params, never from the model; a model-supplied value is
+//     ignored so the credential cannot travel through tool-call arguments.
 //   - APIName (required): the Tushare interface name, e.g. "stock_basic",
 //     "daily", "fund_basic", "index_daily", "fut_basic".
 //   - Params (optional): a free-form map of Tushare query parameters,
@@ -101,21 +105,27 @@ type tushareEnvelope struct {
 // TushareTool uses the shared HTTPHelper for retry/timeout/OTel
 // propagation.
 type TushareTool struct {
-	helper *HTTPHelper
+	helper   *HTTPHelper
+	defaults tushareParams
 }
 
 // NewTushareTool returns a TushareTool using the default HTTPHelper.
 func NewTushareTool() *TushareTool {
-	return NewTushareToolWith(NewHTTPHelper())
+	return newTushareTool(NewHTTPHelper(), tushareParams{})
 }
 
 // NewTushareToolWith returns a TushareTool that uses the provided
 // HTTPHelper. Useful for tests.
 func NewTushareToolWith(h *HTTPHelper) *TushareTool {
+	return newTushareTool(h, tushareParams{})
+}
+
+// newTushareTool carries the node-level defaults, including the API token.
+func newTushareTool(h *HTTPHelper, defaults tushareParams) *TushareTool {
 	if h == nil {
 		h = NewHTTPHelper()
 	}
-	return &TushareTool{helper: h}
+	return &TushareTool{helper: h, defaults: defaults}
 }
 
 // Info returns the tool's metadata for the chat model.
@@ -124,11 +134,6 @@ func (t *TushareTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		Name: tushareToolName,
 		Desc: tushareToolDescription,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"token": {
-				Type:     schema.String,
-				Desc:     "Tushare Pro API token (积分账户).",
-				Required: true,
-			},
 			"api_name": {
 				Type:     schema.String,
 				Desc:     "Tushare interface name, e.g. stock_basic, daily, fund_basic, index_daily, fut_basic.",
@@ -178,9 +183,12 @@ func (t *TushareTool) InvokableRun(ctx context.Context, argsJSON string, _ ...to
 		return tushareErrJSON(fmt.Errorf("tushare: parse arguments: %w", err)),
 			fmt.Errorf("tushare: parse arguments: %w", err)
 	}
+	// The token is a node-level credential: the node's value overrides whatever
+	// the model sent, so it never has to travel through tool-call arguments.
+	p.Token = t.defaults.Token
 	if p.Token == "" {
-		return tushareErrJSON(fmt.Errorf("tushare: token is required")),
-			fmt.Errorf("tushare: token is required")
+		return tushareErrJSON(fmt.Errorf("tushare: token is not configured on the node")),
+			fmt.Errorf("tushare: token is not configured on the node")
 	}
 	if p.APIName == "" {
 		return tushareErrJSON(fmt.Errorf("tushare: api_name is required")),

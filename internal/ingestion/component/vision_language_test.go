@@ -66,6 +66,7 @@ func TestRenderFigureVisionLanguage(t *testing.T) {
 }
 
 func TestBuildFigureVisionPromptRendersLanguage(t *testing.T) {
+	t.Chdir(t.TempDir())
 	prompt, err := buildFigureVisionPrompt("Japanese")
 	if err != nil {
 		t.Fatalf("buildFigureVisionPrompt: %v", err)
@@ -80,15 +81,15 @@ func TestBuildFigureVisionPromptRendersLanguage(t *testing.T) {
 		}
 	}
 
-	// Second call uses cache — verify language is re-rendered correctly per call.
+	// Verify language is rendered separately for each request.
 	secondPrompt, err := buildFigureVisionPrompt("Chinese")
 	if err != nil {
-		t.Fatalf("buildFigureVisionPrompt with cached template: %v", err)
+		t.Fatalf("buildFigureVisionPrompt for second language: %v", err)
 	}
 	if !strings.Contains(secondPrompt, "Write all descriptions and field values in Chinese.") {
-		t.Fatalf("cached prompt did not render the second request language")
+		t.Fatalf("prompt did not render the second request language")
 	}
 	if strings.Contains(secondPrompt, "in Japanese.") {
-		t.Fatalf("cached prompt leaked the previous request language")
+		t.Fatalf("prompt leaked the previous request language")
 	}
 }

@@ -1,4 +1,4 @@
-import { cloneDeep } from 'lodash';
+import { cloneDeep, isNil } from 'lodash';
 import { useMemo } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -53,6 +53,14 @@ function filterEmptyRules(rules: any[]) {
       return { levels: filteredLevels };
     })
     .filter((rule) => rule !== null);
+}
+
+function parseChunkTokenCap(value: unknown): number {
+  if (isNil(value) || value === '') {
+    return 512;
+  }
+  const cap = Number(value);
+  return Number.isFinite(cap) ? cap : 512;
 }
 
 function transformApiResponseToForm(
@@ -122,19 +130,18 @@ function transformApiResponseToForm(
     }
   }
 
-  let chunk_token_cap = apiData.chunk_token_cap;
-  if (
-    chunk_token_cap === undefined ||
-    chunk_token_cap === null ||
-    chunk_token_cap === ''
-  ) {
-    chunk_token_cap = 512;
-  } else {
-    chunk_token_cap = Number(chunk_token_cap);
-    if (!Number.isFinite(chunk_token_cap)) {
-      chunk_token_cap = 512;
-    }
-  }
+  // chunk_token_cap is one backend-facing key read by both methods' runtime
+  // components, but the form keeps each method's cap under its own key
+  // (mirroring the hierarchyRules/groupRules split) so editing one mode never
+  // changes the other. Configs stored before the split carry only the shared
+  // key — seed both methods from it so they behave as before until edited.
+  const sharedChunkTokenCap = parseChunkTokenCap(apiData.chunk_token_cap);
+  const hierarchyChunkTokenCap = parseChunkTokenCap(
+    apiData.hierarchyChunkTokenCap ?? sharedChunkTokenCap,
+  );
+  const groupChunkTokenCap = parseChunkTokenCap(
+    apiData.groupChunkTokenCap ?? sharedChunkTokenCap,
+  );
 
   return {
     method,
@@ -142,7 +149,8 @@ function transformApiResponseToForm(
     hierarchyGroup,
     include_heading_content: Boolean(apiData.include_heading_content),
     root_chunk_as_heading: Boolean(apiData.root_chunk_as_heading),
-    chunk_token_cap,
+    hierarchyChunkTokenCap,
+    groupChunkTokenCap,
     hierarchyRules,
     groupRules,
   };

@@ -17,8 +17,8 @@ func (dao *ChatChannelDAO) Create(ctx context.Context, db *gorm.DB, channel *ent
 	return db.WithContext(ctx).Create(channel).Error
 }
 
-// GetByID returns the chat channel with the given id, ignoring tenant isolation.
-// Callers must enforce tenant authorization themselves (see service.accessible).
+// GetByID returns the chat channel with the given id. Callers must authorize
+// access through the permission package before exposing it to a user.
 func (dao *ChatChannelDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.ChatChannel, error) {
 	var channel entity.ChatChannel
 	if err := db.WithContext(ctx).Take(&channel, "id = ?", id).Error; err != nil {
@@ -55,14 +55,17 @@ func (dao *ChatChannelDAO) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	return db.WithContext(ctx).Where("id = ?", id).Delete(&entity.ChatChannel{}).Error
 }
 
-// ListByTenantID List a single record by TenantID
-func (dao *ChatChannelDAO) ListByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]*entity.ChatChannelListResponse, error) {
+// ListByIDs lists chat channels selected by permission scope.
+func (dao *ChatChannelDAO) ListByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.ChatChannelListResponse, error) {
 	results := make([]*entity.ChatChannelListResponse, 0)
+	if len(ids) == 0 {
+		return results, nil
+	}
 
 	err := db.WithContext(ctx).Table("chat_channel").
 		Select("chat_channel.id, chat_channel.name, chat_channel.channel, chat_channel.chat_id, chat_channel.status, dialog.name as dialog_name").
 		Joins("LEFT JOIN dialog ON dialog.id = chat_channel.chat_id").
-		Where("chat_channel.tenant_id = ?", tenantID).
+		Where("chat_channel.id IN ?", ids).
 		Order("chat_channel.create_time DESC").
 		Scan(&results).Error
 

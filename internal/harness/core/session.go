@@ -111,14 +111,96 @@ type branchEvents struct {
 type runSession struct {
 	mu           sync.Mutex
 	Values       map[string]any
-	valuesMx     *sync.Mutex
+	valuesMx     *sync.RWMutex
 	events       []*eventWrapEntry
 	BranchEvents *branchEvents
 	TypedEvents  any // *[]*typedAgentEventWrapper[M] for AgenticMessage path (gob-encodable)
 }
 
 func newRunSession() *runSession {
-	return &runSession{Values: make(map[string]any), valuesMx: &sync.Mutex{}}
+	return &runSession{Values: make(map[string]any), valuesMx: &sync.RWMutex{}}
+}
+
+func (s *runSession) shareValuesFrom(parent *runSession) {
+	if s == nil || parent == nil || s == parent {
+		return
+	}
+	parent.valuesMx.RLock()
+	values := parent.Values
+	valuesMx := parent.valuesMx
+	parent.valuesMx.RUnlock()
+
+	s.Values = values
+	s.valuesMx = valuesMx
+}
+
+func (s *runSession) ensureValues() {
+	if s == nil {
+		return
+	}
+	s.valuesMx.Lock()
+	defer s.valuesMx.Unlock()
+	if s.Values == nil {
+		s.Values = make(map[string]any)
+	}
+}
+
+func (s *runSession) setValue(key string, value any) {
+	if s == nil {
+		return
+	}
+	s.valuesMx.Lock()
+	defer s.valuesMx.Unlock()
+	if s.Values == nil {
+		s.Values = make(map[string]any)
+	}
+	s.Values[key] = value
+}
+
+func (s *runSession) setValues(values map[string]any) {
+	if s == nil || len(values) == 0 {
+		return
+	}
+	s.valuesMx.Lock()
+	defer s.valuesMx.Unlock()
+	if s.Values == nil {
+		s.Values = make(map[string]any, len(values))
+	}
+	for key, value := range values {
+		s.Values[key] = value
+	}
+}
+
+func (s *runSession) getValue(key string) (any, bool) {
+	if s == nil {
+		return nil, false
+	}
+	s.valuesMx.RLock()
+	defer s.valuesMx.RUnlock()
+	value, ok := s.Values[key]
+	return value, ok
+}
+
+func (s *runSession) valuesSnapshot() map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.valuesMx.RLock()
+	defer s.valuesMx.RUnlock()
+	values := make(map[string]any, len(s.Values))
+	for key, value := range s.Values {
+		values[key] = value
+	}
+	return values
+}
+
+func (s *runSession) deleteValue(key string) {
+	if s == nil {
+		return
+	}
+	s.valuesMx.Lock()
+	defer s.valuesMx.Unlock()
+	delete(s.Values, key)
 }
 
 func (s *runSession) addEvent(event any) {
@@ -265,11 +347,9 @@ func forkRunCtx(ctx context.Context) context.Context {
 	copy(eventsCopy, parent.Session.events)
 	parent.Session.mu.Unlock()
 
-	childSession := &runSession{
-		events:   eventsCopy,
-		Values:   parent.Session.Values, // Share values map
-		valuesMx: parent.Session.valuesMx,
-	}
+	childSession := newRunSession()
+	childSession.events = eventsCopy
+	childSession.shareValuesFrom(parent.Session)
 
 	childSession.BranchEvents = &branchEvents{
 		Parent: parent.Session.BranchEvents,
@@ -369,9 +449,5 @@ func AddSessionValues(ctx context.Context, values map[string]any) {
 	if rc == nil || rc.Session == nil || values == nil {
 		return
 	}
-	rc.Session.valuesMx.Lock()
-	defer rc.Session.valuesMx.Unlock()
-	for k, v := range values {
-		rc.Session.Values[k] = v
-	}
+	rc.Session.setValues(values)
 }

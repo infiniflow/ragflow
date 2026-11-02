@@ -63,7 +63,6 @@ export const AgentOperatorList = [
   Operator.Retrieval,
   Operator.Categorize,
   Operator.Message,
-  Operator.RewriteQuestion,
   Operator.Switch,
   Operator.Iteration,
   Operator.WaitingDialogue,
@@ -110,12 +109,6 @@ export const initialRetrievalValues = {
       value: [],
     },
   },
-};
-
-export const initialRewriteQuestionValues = {
-  ...initialLlmBaseValues,
-  language: '',
-  message_history_window_size: 6,
 };
 
 export const initialRelevantValues = {
@@ -869,17 +862,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Begin]: [Operator.Begin],
   [Operator.Categorize]: [Operator.Begin],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
-  [Operator.Message]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.RewriteQuestion,
-    Operator.Categorize,
-  ],
-  [Operator.RewriteQuestion]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.RewriteQuestion,
-  ],
+  [Operator.Message]: [Operator.Begin, Operator.Message, Operator.Categorize],
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
   [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
@@ -933,7 +916,6 @@ export const RestrictedUpstreamMap = {
   [Operator.LoopStart]: [Operator.Begin],
   [Operator.ExitLoop]: [Operator.Begin],
   [Operator.DocGenerator]: [Operator.Begin],
-  [Operator.Browser]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -941,7 +923,6 @@ export const NodeMap = {
   [Operator.Categorize]: 'categorizeNode',
   [Operator.Retrieval]: 'retrievalNode',
   [Operator.Message]: 'messageNode',
-  [Operator.RewriteQuestion]: 'rewriteNode',
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
   [Operator.PubMed]: 'ragNode',
@@ -997,7 +978,6 @@ export const NodeMap = {
   [Operator.ExitLoop]: 'exitLoopNode',
   [Operator.ExcelProcessor]: 'ragNode',
   [Operator.DocGenerator]: 'ragNode',
-  [Operator.Browser]: 'ragNode',
 };
 
 export enum BeginQueryType {
@@ -1023,7 +1003,6 @@ export const BeginQueryTypeIconMap = {
 export const NoDebugOperatorsList = [
   Operator.Begin,
   Operator.Message,
-  Operator.RewriteQuestion,
   Operator.Switch,
   Operator.Iteration,
   Operator.UserFillUp,
@@ -1236,21 +1215,6 @@ export const initialDocGeneratorValues = {
     mime_type: { type: 'string' },
     size: { type: 'number' },
     download: { type: 'string' },
-  },
-};
-
-export const initialBrowserValues = {
-  ...initialLlmBaseValues,
-  prompts: `{${AgentGlobals.SysQuery}}`,
-  max_steps: 30,
-  headless: true,
-  enable_default_extensions: false,
-  chromium_sandbox: false,
-  persist_session: true,
-  upload_sources: '',
-  outputs: {
-    content: { type: 'string', value: '' },
-    downloaded_files: { type: 'Array<Object>', value: [] },
   },
 };
 

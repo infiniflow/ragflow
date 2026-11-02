@@ -19,6 +19,11 @@ import { LLMFactory } from '@/constants/llm';
 import type { ProviderConfig } from '../types';
 import { parseApiKeyAsObject } from './utils';
 
+const buildAzureApiKey = (values: Record<string, any>) =>
+  values.api_version
+    ? { api_key: values.api_key ?? '', api_version: values.api_version }
+    : (values.api_key ?? '');
+
 const buildMineruApiKey = (values: Record<string, any>) => {
   const cfg: Record<string, any> = { ...values };
   delete cfg.instance_name;
@@ -76,18 +81,16 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         type: FormFieldType.Text,
         required: false,
         placeholder: 'apiVersionMessage',
-        defaultValue: '2024-02-01',
+        defaultValue: '2024-10-21',
       },
     ],
     verifyTransform: (values) => ({
-      apiKey: values.api_key,
+      apiKey: buildAzureApiKey(values),
       baseUrl: values.base_url,
       modelInfo: [],
     }),
     submitTransform: (values) => {
-      const apiKey = values.api_version
-        ? { api_key: values.api_key ?? '', api_version: values.api_version }
-        : (values.api_key ?? '');
+      const apiKey = buildAzureApiKey(values);
       return {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.AzureOpenAI,
@@ -189,9 +192,11 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
     submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.GoogleCloud,
-      google_project_id: values.google_project_id,
-      google_region: values.google_region,
-      google_service_account_key: values.google_service_account_key,
+      api_key: {
+        google_project_id: values.google_project_id,
+        google_region: values.google_region,
+        google_service_account_key: values.google_service_account_key,
+      },
       model_info: [],
     }),
     echoTransform: (instance) => ({
@@ -246,8 +251,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
     submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.TencentCloud,
-      TencentCloud_sid: values.TencentCloud_sid,
-      TencentCloud_sk: values.TencentCloud_sk,
+      api_key: {
+        TencentCloud_sid: values.TencentCloud_sid,
+        TencentCloud_sk: values.TencentCloud_sk,
+      },
       model_info: [],
     }),
     echoTransform: (instance) => ({
@@ -419,8 +426,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
     submitTransform: (values) => ({
       instance_name: values.instance_name,
       llm_factory: LLMFactory.FishAudio,
-      fish_audio_ak: values.fish_audio_ak,
-      fish_audio_refid: values.fish_audio_refid,
+      api_key: {
+        fish_audio_ak: values.fish_audio_ak,
+        fish_audio_refid: values.fish_audio_refid,
+      },
       model_info: [],
     }),
     echoTransform: (instance) => ({
@@ -490,7 +499,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       };
     },
     echoTransform: (instance) => {
-      const obj = parseApiKeyAsObject(instance.api_key) ?? {};
+      const obj = parseApiKeyAsObject(instance.api_key_config) ?? {};
       return {
         opendataloader_apiserver: obj.opendataloader_apiserver ?? '',
         opendataloader_api_key: obj.opendataloader_api_key ?? '',
@@ -578,7 +587,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       };
     },
     echoTransform: (instance) => {
-      const obj = parseApiKeyAsObject(instance.api_key) ?? {};
+      const obj = parseApiKeyAsObject(instance.api_key_config) ?? {};
       return {
         paddleocr_api_url: obj.paddleocr_api_url ?? '',
         paddleocr_access_token: obj.paddleocr_access_token ?? '',
@@ -634,7 +643,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
     }),
     echoTransform: (instance) => ({
       paddleocr_api_url: instance.base_url ?? '',
-      paddleocr_access_token: instance.api_key ?? '',
+      paddleocr_access_token: '',
     }),
   },
 
@@ -659,6 +668,14 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         required: true,
         placeholder: 'mineruApiserverPlaceholder',
         validation: { message: 'mineruApiserverMessage' },
+      },
+      {
+        name: 'mineru_api_token',
+        label: 'mineruApiToken',
+        type: FormFieldType.Password,
+        required: false,
+        placeholder: 'mineruApiTokenPlaceholder',
+        tooltip: 'mineruApiTokenTip',
       },
       {
         name: 'mineru_output_dir',
@@ -725,13 +742,14 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       model_info: [],
     }),
     echoTransform: (instance) => {
-      const obj = parseApiKeyAsObject(instance.api_key) ?? {};
+      const obj = parseApiKeyAsObject(instance.api_key_config) ?? {};
       const rawDelete = obj.mineru_delete_output;
       return {
         mineru_apiserver:
           typeof instance.base_url === 'string' && instance.base_url.trim()
             ? instance.base_url
             : (obj.mineru_apiserver ?? ''),
+        mineru_api_token: obj.mineru_api_token ?? '',
         mineru_output_dir: obj.mineru_output_dir ?? '',
         mineru_backend: obj.mineru_backend ?? 'pipeline',
         mineru_server_url: obj.mineru_server_url ?? '',

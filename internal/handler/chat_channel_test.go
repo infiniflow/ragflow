@@ -234,13 +234,13 @@ func TestChatChannelHandlerListServiceError(t *testing.T) {
 	}
 }
 
-func TestChatChannelHandlerGetChatChannelUnauthorized(t *testing.T) {
+func TestChatChannelHandlerGetChatChannelHidesPermissionDenial(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
 			getFn: func(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
-				return nil, common.CodeAuthenticationError, errors.New("no authorization")
+				return nil, common.CodeNotFound, errors.New("Resource not found")
 			},
 		},
 	}
@@ -259,10 +259,10 @@ func TestChatChannelHandlerGetChatChannelUnauthorized(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("unmarshal response: %v", err)
 	}
-	if payload["code"] != float64(common.CodeAuthenticationError) {
+	if payload["code"] != float64(common.CodeNotFound) {
 		t.Fatalf("payload=%v", payload)
 	}
-	if payload["data"] != false {
+	if payload["data"] != nil {
 		t.Fatalf("payload=%v", payload)
 	}
 }

@@ -114,7 +114,7 @@ func newTelegramChannel(account telegramAccount) *telegramChannel {
 	}
 	return &telegramChannel{
 		account: account,
-		client:  &http.Client{Timeout: telegramHTTPTimeout},
+		client:  newSafeChannelHTTPClient(telegramHTTPTimeout, channelURLPolicy{exactHosts: []string{"api.telegram.org"}}),
 	}
 }
 

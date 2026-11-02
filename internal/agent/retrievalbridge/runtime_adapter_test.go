@@ -8,7 +8,6 @@ import (
 
 	agentrunt "ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
-	agenticruntime "ragflow/internal/rag/agentic-rag/runtime"
 
 	"gorm.io/gorm"
 )
@@ -79,29 +78,6 @@ func TestRuntimeAdapterPreservesCompiledExclusion(t *testing.T) {
 				t.Fatalf("RerankID = %q, want %q", service.req.RerankID, req.RerankID)
 			}
 		})
-	}
-}
-
-func TestRuntimeRetrieverSurvivesProductionBridge(t *testing.T) {
-	previous := agentrunt.GetRetrievalService()
-	service := &captureRetrievalService{}
-	agentrunt.SetRetrievalService(NewRuntimeAdapter(service))
-	t.Cleanup(func() { agentrunt.SetRetrievalService(previous) })
-
-	filter := map[string]any{"method": "manual", "value": "invoice"}
-	_, err := (&agenticruntime.RuntimeRetriever{}).Retrieve(t.Context(), agenticruntime.RetrieveRequest{
-		Query:           "test",
-		MetaDataFilter:  filter,
-		ExcludeCompiled: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(service.req.MetaDataFilter, filter) {
-		t.Fatalf("MetaDataFilter = %#v, want %#v", service.req.MetaDataFilter, filter)
-	}
-	if !service.req.ExcludeCompiled {
-		t.Fatal("ExcludeCompiled was dropped across RuntimeRetriever and RuntimeAdapter")
 	}
 }
 

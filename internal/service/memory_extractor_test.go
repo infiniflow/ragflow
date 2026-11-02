@@ -29,6 +29,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
 
@@ -105,7 +106,7 @@ func TestBuildExtractedMessageValidAtSemantics(t *testing.T) {
 		MessageType: "fact",
 		Content:     "likes coffee",
 		ValidAt:     "2026-08-20T10:05:00+08:00",
-	}}, now)
+	}}, now, nil)
 	withLLMTime := buildExtractedMessage(42, "mem-1", msg, materialized[0])
 	if got := withLLMTime["valid_at"]; got != "2026-08-20 10:05:00" {
 		t.Fatalf("valid_at = %v, want LLM wall clock %q", got, "2026-08-20 10:05:00")
@@ -114,7 +115,7 @@ func TestBuildExtractedMessageValidAtSemantics(t *testing.T) {
 	materialized = materializeMemoryExtraction(t.Context(), []extractedMemory{{
 		MessageType: "fact",
 		Content:     "likes coffee",
-	}}, now)
+	}}, now, nil)
 	fallbackOnly := buildExtractedMessage(42, "mem-1", msg, materialized[0])
 	if got := fallbackOnly["valid_at"]; got != now.Format(memoryTimeLayout) {
 		t.Fatalf("valid_at = %v, want fallback %q", got, now.Format(memoryTimeLayout))
@@ -124,7 +125,7 @@ func TestBuildExtractedMessageValidAtSemantics(t *testing.T) {
 		MessageType: "fact",
 		Content:     "likes coffee",
 		InvalidAt:   "   ",
-	}}, now)
+	}}, now, nil)
 	blankInvalidAt := buildExtractedMessage(42, "mem-1", msg, materialized[0])
 	if got := blankInvalidAt["invalid_at"]; got != nil {
 		t.Fatalf("invalid_at = %#v, want nil for whitespace-only input", got)
@@ -153,7 +154,7 @@ func TestMaterializeMemoryExtractionInvalidAtStaysValidWhenUnparseable(t *testin
 				MessageType: "fact",
 				Content:     "likes coffee",
 				InvalidAt:   test.invalidAt,
-			}}, now)
+			}}, now, nil)
 			got := buildExtractedMessage(42, "mem-1", msg, materialized[0])["invalid_at"]
 			if got != test.want {
 				t.Fatalf("invalid_at = %#v, want %#v", got, test.want)
@@ -210,7 +211,7 @@ func TestExtractMemoryTaskMarksMissingMemoryPermanent(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	svc := NewMemoryMessageService(NewMemoryService())
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	_, err := svc.extractMemoryTask(t.Context(), &entity.MemoryTask{MemoryID: "missing-memory"}, MemoryMessage{})
 	if !errors.Is(err, errPermanentMemoryTask) || !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("extractMemoryTask error = %v, want permanent missing-memory error", err)
@@ -224,7 +225,7 @@ func TestExtractMemoryTaskKeepsLookupFailureRetryable(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	svc := NewMemoryMessageService(NewMemoryService())
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	_, err := svc.extractMemoryTask(t.Context(), &entity.MemoryTask{MemoryID: "memory-1"}, MemoryMessage{})
 	if err == nil || errors.Is(err, errPermanentMemoryTask) {
 		t.Fatalf("extractMemoryTask error = %v, want retryable database error", err)
@@ -238,7 +239,7 @@ func TestExtractByLLMMarksMissingModelPermanent(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	svc := NewMemoryMessageService(NewMemoryService())
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	mem := &CreateMemoryResponse{Memory: entity.Memory{
 		TenantID: "tenant-1",
 		LLMID:    "deleted-model-id",
@@ -278,7 +279,7 @@ func TestExtractByLLMMarksInvalidModelConfigPermanent(t *testing.T) {
 		t.Fatalf("create model instance: %v", err)
 	}
 
-	svc := NewMemoryMessageService(NewMemoryService())
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	mem := &CreateMemoryResponse{Memory: entity.Memory{
 		TenantID: "tenant-1",
 		LLMID:    "gpt-4o@default@OpenAI",
@@ -317,7 +318,7 @@ func TestHandleSaveToMemoryTaskResumesStoredCheckpoint(t *testing.T) {
 		t.Fatalf("create memory task: %v", err)
 	}
 
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "task-1", "worker-1")
 	if err != nil || disposition != MemoryTaskAcknowledge {
 		t.Fatalf("HandleSaveToMemoryTask disposition=%v err=%v", disposition, err)
@@ -380,7 +381,7 @@ func TestHandleSaveToMemoryTaskRetriesCompletionFromStored(t *testing.T) {
 		t.Fatalf("create update trigger: %v", err)
 	}
 
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "task-completion-retry", "worker-1")
 	if err == nil || disposition != MemoryTaskAcknowledge {
 		t.Fatalf("first attempt disposition=%v err=%v, want acknowledged scheduled retry", disposition, err)
@@ -439,7 +440,7 @@ func TestHandleSaveToMemoryTaskResumesExtractedWithoutLLM(t *testing.T) {
 		t.Fatalf("create memory task: %v", err)
 	}
 
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "task-extracted-resume", "worker-1")
 	if err != nil || disposition != MemoryTaskAcknowledge {
 		t.Fatalf("HandleSaveToMemoryTask disposition=%v err=%v", disposition, err)
@@ -471,7 +472,7 @@ func TestHandleSaveToMemoryTaskLeavesActiveLeaseUnsettled(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("create memory task: %v", err)
 	}
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	if _, acquired, err := svc.memoryTaskDAO.Claim(t.Context(), db, "task-live-lease", "worker-1", now, memoryTaskLeaseTTL); err != nil || !acquired {
 		t.Fatalf("Claim acquired=%v err=%v, want acquired", acquired, err)
 	}
@@ -500,7 +501,7 @@ func TestHandleSaveToMemoryTaskFailsTaskMissingDurableState(t *testing.T) {
 		t.Fatalf("create generic task: %v", err)
 	}
 
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "task-missing-state", "worker-1")
 	if err == nil || disposition != MemoryTaskAcknowledge || !strings.Contains(err.Error(), "missing durable execution state") {
 		t.Fatalf("HandleSaveToMemoryTask disposition=%v err=%v, want acknowledged explicit failure", disposition, err)
@@ -522,7 +523,7 @@ func TestHandleSaveToMemoryTaskAcknowledgesUnknownID(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "unknown-task", "worker-1")
 	if err == nil || disposition != MemoryTaskAcknowledge || !strings.Contains(err.Error(), "is not found") {
 		t.Fatalf("HandleSaveToMemoryTask disposition=%v err=%v, want acknowledged unknown task", disposition, err)
@@ -578,7 +579,7 @@ func TestHandleSaveToMemoryTaskDoesNotReportUnpersistedExtraction(t *testing.T) 
 		t.Fatalf("create checkpoint trigger: %v", err)
 	}
 
-	svc := NewMemoryMessageService(NewMemoryService())
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "task-checkpoint-failure", "worker-1")
 	if err == nil || disposition != MemoryTaskAcknowledge {
 		t.Fatalf("HandleSaveToMemoryTask disposition=%v err=%v, want acknowledged scheduled retry", disposition, err)
@@ -611,7 +612,7 @@ func TestPersistMemoryTaskFailureSchedulesRetry(t *testing.T) {
 		t.Fatalf("create memory task: %v", err)
 	}
 
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	claimed, acquired, err := svc.memoryTaskDAO.Claim(t.Context(), db, "task-retry", "worker-1", now, memoryTaskLeaseTTL)
 	if err != nil || !acquired {
 		t.Fatalf("Claim acquired=%v err=%v, want acquired", acquired, err)
@@ -668,7 +669,7 @@ func TestPersistMemoryTaskFailureStopsAtMaxAttempts(t *testing.T) {
 		t.Fatalf("create memory task: %v", err)
 	}
 
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	claimed, acquired, err := svc.memoryTaskDAO.Claim(t.Context(), db, "task-max-attempts", "worker-1", now, memoryTaskLeaseTTL)
 	if err != nil || !acquired {
 		t.Fatalf("Claim acquired=%v err=%v, want acquired", acquired, err)
@@ -714,7 +715,7 @@ func TestPersistMemoryTaskFailureLeavesDeliveryUnsettledWhenRetryWriteFails(t *t
 		t.Fatalf("create memory task: %v", err)
 	}
 
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	claimed, acquired, err := svc.memoryTaskDAO.Claim(t.Context(), db, "task-retry-write-failure", "worker-1", now, memoryTaskLeaseTTL)
 	if err != nil || !acquired {
 		t.Fatalf("Claim acquired=%v err=%v, want acquired", acquired, err)
@@ -759,7 +760,7 @@ func TestRunClaimedMemoryTaskPersistsPanic(t *testing.T) {
 		t.Fatalf("create memory task: %v", err)
 	}
 
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	svc.resumeTask = func(context.Context, *entity.MemoryTask, string) error {
 		panic("simulated state-machine panic")
 	}
@@ -812,7 +813,7 @@ func TestRenewMemoryTaskLeaseRetriesTransientError(t *testing.T) {
 		t.Fatalf("register renewal callback: %v", err)
 	}
 
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	runCtx, cancel := context.WithCancel(t.Context())
 	renewErr := make(chan error, 1)
 	done := make(chan struct{})
@@ -887,7 +888,7 @@ func TestRenewMemoryTaskLeaseTimesOutNearExpiry(t *testing.T) {
 		t.Fatalf("register blocking update callback: %v", err)
 	}
 
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	runCtx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	renewErr := make(chan error, 1)
@@ -943,7 +944,7 @@ func TestHandleSaveToMemoryTaskMarksInvalidInputFailed(t *testing.T) {
 		t.Fatalf("create memory task: %v", err)
 	}
 
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get()))
 	disposition, err := svc.HandleSaveToMemoryTask(t.Context(), "task-invalid", "worker-1")
 	if err == nil || disposition != MemoryTaskAcknowledge {
 		t.Fatalf("HandleSaveToMemoryTask disposition=%v err=%v, want acknowledged terminal failure", disposition, err)
@@ -989,7 +990,7 @@ func TestUpdateTaskProgressReturnsPersistenceError(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	svc := &MemoryMessageService{taskDAO: dao.NewTaskDAO()}
+	svc := &MemoryMessageService{taskDAO: dao.NewTaskDAO(), memories: NewMemoryService(db, nil)}
 	if err := svc.updateTaskProgress(t.Context(), "mem-task-1", 1.0, "completed"); err == nil {
 		t.Fatal("updateTaskProgress() error = nil, want persistence error")
 	}

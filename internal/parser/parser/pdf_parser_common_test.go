@@ -1,12 +1,17 @@
 package parser
 
 import (
+	"context"
 	"image"
 	"strings"
 	"testing"
 
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
+
+func pdfParseResultToJSON(filename string, parsed *deepdoctype.ParseResult) ParseResult {
+	return NewPDFParser().NormalizeResult(context.Background(), filename, pdfParseResultToJSONWithOptions(filename, parsed, pdfPostProcessOptions{}))
+}
 
 func TestPDFParseResultToJSON_NormalizesCoreFields(t *testing.T) {
 	parsed := &deepdoctype.ParseResult{
@@ -48,8 +53,8 @@ func TestPDFParseResultToJSON_NormalizesCoreFields(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want true", res.Produced())
 	}
 	if got, want := res.File["name"], "sample.pdf"; got != want {
 		t.Fatalf("File.name = %v, want %v", got, want)
@@ -64,39 +69,39 @@ func TestPDFParseResultToJSON_NormalizesCoreFields(t *testing.T) {
 	if len(res.JSON) != 2 {
 		t.Fatalf("JSON len = %d, want 2", len(res.JSON))
 	}
-	if got, want := res.JSON[0]["layout"], "title"; got != want {
+	if got, want := res.JSON[0].ToMap()["layout"], "title"; got != want {
 		t.Fatalf("JSON[0].layout = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[0]["page_number"], 1; got != want {
+	if got, want := res.JSON[0].ToMap()["page_number"], 1; got != want {
 		t.Fatalf("JSON[0].page_number = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[0]["doc_type_kwd"], "text"; got != want {
+	if got, want := res.JSON[0].ToMap()["doc_type_kwd"], "text"; got != want {
 		t.Fatalf("JSON[0].doc_type_kwd = %v, want %v", got, want)
 	}
-	pdfPositions, ok := res.JSON[0]["_pdf_positions"].([][]any)
+	pdfPositions, ok := res.JSON[0].ToMap()["_pdf_positions"].([][]any)
 	if !ok {
-		t.Fatalf("JSON[0]._pdf_positions type = %T, want [][]any", res.JSON[0]["_pdf_positions"])
+		t.Fatalf("JSON[0]._pdf_positions type = %T, want [][]any", res.JSON[0].ToMap()["_pdf_positions"])
 	}
 	if len(pdfPositions) != 1 || pdfPositions[0][0] != 1 {
 		t.Fatalf("JSON[0]._pdf_positions = %+v, want canonical 1-based positions", pdfPositions)
 	}
-	if got := res.JSON[0]["positions"]; got == nil {
+	if got := res.JSON[0].ToMap()["positions"]; got == nil {
 		t.Fatal("JSON[0].positions missing after normalization")
 	}
-	if got, want := res.JSON[1]["doc_type_kwd"], "image"; got != want {
+	if got, want := res.JSON[1].ToMap()["doc_type_kwd"], "image"; got != want {
 		t.Fatalf("JSON[1].doc_type_kwd = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[1]["page_number"], 2; got != want {
+	if got, want := res.JSON[1].ToMap()["page_number"], 2; got != want {
 		t.Fatalf("JSON[1].page_number = %v, want %v", got, want)
 	}
-	secondPDFPositions, ok := res.JSON[1]["_pdf_positions"].([][]any)
+	secondPDFPositions, ok := res.JSON[1].ToMap()["_pdf_positions"].([][]any)
 	if !ok {
-		t.Fatalf("JSON[1]._pdf_positions type = %T, want [][]any", res.JSON[1]["_pdf_positions"])
+		t.Fatalf("JSON[1]._pdf_positions type = %T, want [][]any", res.JSON[1].ToMap()["_pdf_positions"])
 	}
 	if len(secondPDFPositions) != 1 || secondPDFPositions[0][0] != 2 {
 		t.Fatalf("JSON[1]._pdf_positions = %+v, want canonical 1-based positions (DeepDoc page 1 → 2)", secondPDFPositions)
 	}
-	if got, want := res.JSON[1]["image"], "data:image/png;base64,aGVsbG8="; got != want {
+	if got, want := res.JSON[1].ToMap()["image"], "data:image/png;base64,aGVsbG8="; got != want {
 		t.Fatalf("JSON[1].image = %v, want %v", got, want)
 	}
 }
@@ -128,15 +133,15 @@ func TestPDFParseResultToJSON_ClassifiesFigureCaptionWithImage(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
 	}
-	if got := res.JSON[0]["doc_type_kwd"]; got != "image" {
+	if got := res.JSON[0].ToMap()["doc_type_kwd"]; got != "image" {
 		t.Fatalf("figure caption with positions doc_type_kwd = %v, want image", got)
 	}
 
 	// A figure caption with an inlined image but NO positions is NOT promoted
 	// to image: positions are the sole classifier now. (In the PDF JSON path
-	// an inlined image without positions does not occur — cropMediaSections was
-	// removed — so this documents that the presence of a stray image alone is
-	// insufficient.)
+	// media are not cropped — the chunker crops on demand from positions — so
+	// an inlined image without positions does not occur; this documents that
+	// the presence of a stray image alone is insufficient.)
 	withImageNoPos := &deepdoctype.ParseResult{
 		Sections: []deepdoctype.Section{{
 			Text:       "小灰灰",
@@ -148,13 +153,13 @@ func TestPDFParseResultToJSON_ClassifiesFigureCaptionWithImage(t *testing.T) {
 	if res2.Err != nil {
 		t.Fatalf("pdfParseResultToJSON: %v", res2.Err)
 	}
-	if got := res2.JSON[0]["doc_type_kwd"]; got != "text" {
+	if got := res2.JSON[0].ToMap()["doc_type_kwd"]; got != "text" {
 		t.Fatalf("figure caption with image but no positions doc_type_kwd = %v, want text", got)
 	}
 }
 
 // TestNormalizePDFPageNumber_UnconditionalIncrement pins the contract that
-// DeepDoc emits 0-indexed page numbers and normalizePDFPageNumber is the
+// DeepDoc emits 0-indexed page numbers and normalizeDeepDocPageNumber is the
 // SINGLE conversion point to 1-indexed. It must add +1 unconditionally —
 // not just for v<=0 — so that downstream addPDFPositions (a passthrough) and
 // PositionsFromMatrix (which subtracts 1 for the 0-indexed PDFium engine)
@@ -178,7 +183,7 @@ func TestNormalizePDFPageNumber_UnconditionalIncrement(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, ok := normalizePDFPageNumber(tc.in)
+			got, ok := normalizeDeepDocPageNumber(tc.in)
 			if ok != tc.ok {
 				t.Fatalf("ok = %v, want %v", ok, tc.ok)
 			}
@@ -189,11 +194,11 @@ func TestNormalizePDFPageNumber_UnconditionalIncrement(t *testing.T) {
 	}
 }
 
-func TestPDFParseResultToJSON_PreservesPositivePageNumbers(t *testing.T) {
+func TestPDFParseResultToJSONConvertsPositiveSourcePageNumbers(t *testing.T) {
 	parsed := &deepdoctype.ParseResult{
 		Sections: []deepdoctype.Section{
 			{
-				Text:       "Already one-based",
+				Text:       "<table><tr><td>Page four</td></tr></table>",
 				LayoutType: deepdoctype.LayoutTypeTable,
 				Positions: []deepdoctype.Position{
 					{
@@ -209,12 +214,12 @@ func TestPDFParseResultToJSON_PreservesPositivePageNumbers(t *testing.T) {
 	}
 
 	res := pdfParseResultToJSON("one-based.pdf", parsed)
-	// DeepDoc page 3 is 0-indexed (the 4th page); normalizePDFPageNumber
+	// DeepDoc page 3 is 0-indexed (the 4th page); normalizeDeepDocPageNumber
 	// converts it to 1-indexed page 4.
-	if got, want := res.JSON[0]["page_number"], 4; got != want {
+	if got, want := res.JSON[0].ToMap()["page_number"], 4; got != want {
 		t.Fatalf("JSON[0].page_number = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[0]["doc_type_kwd"], "table"; got != want {
+	if got, want := res.JSON[0].ToMap()["doc_type_kwd"], "table"; got != want {
 		t.Fatalf("JSON[0].doc_type_kwd = %v, want %v", got, want)
 	}
 }
@@ -227,7 +232,7 @@ func TestPDFParseResultToJSON_EmptySectionsStillEmitPlaceholder(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
 	}
-	if got, want := res.JSON[0]["doc_type_kwd"], "text"; got != want {
+	if got, want := res.JSON[0].ToMap()["doc_type_kwd"], "text"; got != want {
 		t.Fatalf("JSON[0].doc_type_kwd = %v, want %v", got, want)
 	}
 }
@@ -261,13 +266,13 @@ func TestPDFParseResultToJSON_DefaultKeepsHeaderFooterLikePython(t *testing.T) {
 	// Sections are now sorted by (page, top, left). Header and Footer have
 	// no position data (page=0, top=0), Body has top=30, so the sorted order
 	// is Header/Footer (tied top=0, stable) then Body (top=30).
-	if got, want := res.JSON[0]["text"], "Header"; got != want {
+	if got, want := res.JSON[0].ToMap()["text"], "Header"; got != want {
 		t.Fatalf("JSON[0].text = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[1]["text"], "Footer"; got != want {
+	if got, want := res.JSON[1].ToMap()["text"], "Footer"; got != want {
 		t.Fatalf("JSON[1].text = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[2]["text"], "Body"; got != want {
+	if got, want := res.JSON[2].ToMap()["text"], "Body"; got != want {
 		t.Fatalf("JSON[2].text = %v, want %v", got, want)
 	}
 }
@@ -276,15 +281,11 @@ func TestPDFParser_ConfigureFromSetup(t *testing.T) {
 	p := NewPDFParser()
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":          "deepdoc",
-		"output_format":         "markdown",
 		"enable_multi_column":   true,
 		"flatten_media_to_text": true,
 		"remove_toc":            true,
 		"remove_header_footer":  true,
 	})
-	if got, want := p.OutputFormat, "markdown"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
-	}
 	if !p.EnableMultiColumn {
 		t.Fatal("EnableMultiColumn = false, want true")
 	}
@@ -302,154 +303,10 @@ func TestPDFParser_ConfigureFromSetup(t *testing.T) {
 	}
 }
 
-func TestPDFParseResultToMarkdownWithOptions_RendersLikePython(t *testing.T) {
-	parsed := &deepdoctype.ParseResult{
-		Sections: []deepdoctype.Section{
-			{Text: "Title", LayoutType: deepdoctype.LayoutTypeTitle},
-			{Text: "Figure", LayoutType: deepdoctype.LayoutTypeFigure, Image: "aGVsbG8="},
-			{Text: "WhitespaceFigureText", LayoutType: deepdoctype.LayoutTypeFigure, Image: "   \t\n"},
-			{Text: "<table><tr><td>cell</td></tr></table>", LayoutType: deepdoctype.LayoutTypeTable, Image: "dGFibGVpbWc="},
-			{Text: "", LayoutType: deepdoctype.LayoutTypeTable, Image: "dGFibGVvbmx5"},
-			{Text: "ImageCaption", LayoutType: "image", Image: "aW1hZ2Vvbmx5"},
-			{Text: "Body", LayoutType: deepdoctype.LayoutTypeText},
-		},
-	}
-
-	res := pdfParseResultToMarkdownWithOptions("sample.pdf", parsed, pdfPostProcessOptions{})
-	if res.Err != nil {
-		t.Fatalf("pdfParseResultToMarkdownWithOptions: %v", res.Err)
-	}
-	if got, want := res.OutputFormat, "markdown"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
-	}
-	if res.Markdown == "" {
-		t.Fatal("Markdown is empty; want rendered content")
-	}
-	if !strings.Contains(res.Markdown, "## Title") {
-		t.Fatalf("Markdown = %q, want title heading", res.Markdown)
-	}
-	if !strings.Contains(res.Markdown, "![Image](data:image/png;base64,aGVsbG8=)") {
-		t.Fatalf("Markdown = %q, want inline figure image", res.Markdown)
-	}
-	if !strings.Contains(res.Markdown, "WhitespaceFigureText") {
-		t.Fatalf("Markdown = %q, want whitespace figure text preserved", res.Markdown)
-	}
-	if strings.Contains(res.Markdown, "![Image]()") {
-		t.Fatalf("Markdown = %q, unexpected empty image tag", res.Markdown)
-	}
-	if !strings.Contains(res.Markdown, "<table><tr><td>cell</td></tr></table>") {
-		t.Fatalf("Markdown = %q, want table text", res.Markdown)
-	}
-	if !strings.Contains(res.Markdown, "![Image](data:image/png;base64,dGFibGVvbmx5)") {
-		t.Fatalf("Markdown = %q, want fallback table image when text is empty", res.Markdown)
-	}
-	if !strings.Contains(res.Markdown, "![Image](data:image/png;base64,aW1hZ2Vvbmx5)") {
-		t.Fatalf("Markdown = %q, want image section", res.Markdown)
-	}
-	if !strings.Contains(res.Markdown, "Body") {
-		t.Fatalf("Markdown = %q, want body text", res.Markdown)
-	}
-	if len(res.JSON) != 0 {
-		t.Fatalf("JSON len = %d, want 0 for markdown output", len(res.JSON))
-	}
-}
-
-func TestPDFParseResultToMarkdownWithOptions_TableFallback(t *testing.T) {
-	// 1. Table with text + image -> renders table text
-	withText := &deepdoctype.ParseResult{
-		Sections: []deepdoctype.Section{
-			{Text: "<table><tr><td>content</td></tr></table>", LayoutType: deepdoctype.LayoutTypeTable, Image: "dGFibGVpbWc="},
-		},
-	}
-	resText := pdfParseResultToMarkdownWithOptions("table.pdf", withText, pdfPostProcessOptions{})
-	if !strings.Contains(resText.Markdown, "<table><tr><td>content</td></tr></table>") {
-		t.Fatalf("Markdown = %q, want table text", resText.Markdown)
-	}
-	if strings.Contains(resText.Markdown, "![Image]") {
-		t.Fatalf("Markdown = %q, unexpected image tag when table text is present", resText.Markdown)
-	}
-
-	// 2. Table with empty text + image -> falls back to image tag
-	emptyText := &deepdoctype.ParseResult{
-		Sections: []deepdoctype.Section{
-			{Text: "", LayoutType: deepdoctype.LayoutTypeTable, Image: "dGFibGVvbmx5"},
-		},
-	}
-	resFallback := pdfParseResultToMarkdownWithOptions("table.pdf", emptyText, pdfPostProcessOptions{})
-	if !strings.Contains(resFallback.Markdown, "![Image](data:image/png;base64,dGFibGVvbmx5)") {
-		t.Fatalf("Markdown = %q, want fallback table image tag", resFallback.Markdown)
-	}
-
-	// 3. Table with empty text + whitespace-only image -> empty string, no broken tags
-	wsImg := &deepdoctype.ParseResult{
-		Sections: []deepdoctype.Section{
-			{Text: "", LayoutType: deepdoctype.LayoutTypeTable, Image: "   \t\n"},
-		},
-	}
-	resWS := pdfParseResultToMarkdownWithOptions("table.pdf", wsImg, pdfPostProcessOptions{})
-	if strings.TrimSpace(resWS.Markdown) != "" {
-		t.Fatalf("Markdown = %q, want empty output for empty text + whitespace image", resWS.Markdown)
-	}
-}
-
-func TestSectionsToMarkdown_DocTypeKwdImage(t *testing.T) {
-	// LayoutType is not figure/image, but DocTypeKwd == "image"
-	sections := []deepdoctype.Section{
-		{Text: "Caption", LayoutType: "custom_block", DocTypeKwd: "image", Image: "aW1hZ2Vvbmx5"},
-	}
-	got := sectionsToMarkdown(sections)
-	want := "\n![Image](data:image/png;base64,aW1hZ2Vvbmx5)"
-	if got != want {
-		t.Fatalf("got %q, want %q", got, want)
-	}
-
-	// DocTypeKwd == "image" with whitespace image preserves text and drops empty tag
-	sectionsWS := []deepdoctype.Section{
-		{Text: "Caption", LayoutType: "custom_block", DocTypeKwd: "image", Image: "   \t\n"},
-	}
-	gotWS := sectionsToMarkdown(sectionsWS)
-	wantWS := "Caption\n"
-	if gotWS != wantWS {
-		t.Fatalf("got %q, want %q", gotWS, wantWS)
-	}
-}
-
-func TestPDFParseResultToMarkdownWithOptions_ImageSection(t *testing.T) {
-	parsed := &deepdoctype.ParseResult{
-		Sections: []deepdoctype.Section{
-			{Text: "Caption", LayoutType: "image", Image: "aW1hZ2Vvbmx5"},
-		},
-	}
-	res := pdfParseResultToMarkdownWithOptions("doc.pdf", parsed, pdfPostProcessOptions{})
-	if !strings.Contains(res.Markdown, "![Image](data:image/png;base64,aW1hZ2Vvbmx5)") {
-		t.Fatalf("Markdown = %q, want image embed for LayoutType == 'image'", res.Markdown)
-	}
-}
-
-func TestPDFParseResultToMarkdownWithOptions_WhitespaceOnlyImage(t *testing.T) {
-	parsed := &deepdoctype.ParseResult{
-		Sections: []deepdoctype.Section{
-			{Text: "Figure Caption", LayoutType: deepdoctype.LayoutTypeFigure, Image: "   \r\n\t "},
-		},
-	}
-	res := pdfParseResultToMarkdownWithOptions("doc.pdf", parsed, pdfPostProcessOptions{})
-	if !strings.Contains(res.Markdown, "Figure Caption") {
-		t.Fatalf("Markdown = %q, want figure caption preserved", res.Markdown)
-	}
-	if strings.Contains(res.Markdown, "![Image]") {
-		t.Fatalf("Markdown = %q, unexpected image tag for whitespace-only image", res.Markdown)
-	}
-}
-
 func TestPDFParser_ValidateParseMethod(t *testing.T) {
 	p := NewPDFParser()
 	if err := p.validateParseMethod(); err != nil {
 		t.Fatalf("default validateParseMethod: %v", err)
-	}
-
-	p.ConfigureFromSetup(map[string]any{"parse_method": "PaddleOCR"})
-	if err := p.validateParseMethod(); err != nil {
-		t.Fatalf("validateParseMethod(PaddleOCR): %v", err)
 	}
 
 	p.ConfigureFromSetup(map[string]any{"parse_method": "tenant@provider@SoMark"})
@@ -550,28 +407,11 @@ func TestIsPDFParseMethodLayoutSuffixes(t *testing.T) {
 	}
 }
 
-// TestPDFParseMethodTablesAgree pins the relationship between the two
-// vocabulary tables in pdf_parser_common.go: every canonical token a
-// spelling maps to must be executable by PDFParser, and every executable
-// token must be reachable from some spelling. The only intended divergences
-// are:
-//
-//   - "" (the unset sentinel) is accepted by the parser as the default
-//     method but has no spelling, so IsPDFParseMethod("") stays false;
-//   - "monkeyocrv2" is dispatched by the ingestion vision dispatcher
-//     before PDFParser runs, so it is a recognized method without being
-//     executable by the parser switch itself.
-//
-// Any other difference means one table was updated without the other: a
-// spelling whose canonical token is not executable dies in
-// validateParseMethod, and an executable token without a spelling is
-// misclassified as a VLM model name by Check and the dispatcher (the
-// "Plain Text" bug class).
+// TestPDFParseMethodTablesAgree verifies executable parser methods and
+// dispatcher-handled OCR methods remain recognized by the selector vocabulary.
 func TestPDFParseMethodTablesAgree(t *testing.T) {
-	const (
-		unsetSentinel     = ""
-		dispatcherHandled = "monkeyocrv2"
-	)
+	const unsetSentinel = ""
+	dispatcherHandled := map[string]bool{"monkeyocrv2": true, "paddleocr": true}
 	reachable := make(map[string]bool, len(pdfParseMethodSpellings))
 	for spelling, canonical := range pdfParseMethodSpellings {
 		if canonical == unsetSentinel {
@@ -579,12 +419,12 @@ func TestPDFParseMethodTablesAgree(t *testing.T) {
 			continue
 		}
 		reachable[canonical] = true
-		if canonical == dispatcherHandled {
+		if dispatcherHandled[canonical] {
 			continue
 		}
 		if _, ok := supportedPDFParseMethods[canonical]; !ok {
-			t.Errorf("spelling %q maps to canonical %q, which supportedPDFParseMethods cannot execute; add %q to that set, or handle it in the ingestion dispatcher like %q",
-				spelling, canonical, canonical, dispatcherHandled)
+			t.Errorf("spelling %q maps to canonical %q, which supportedPDFParseMethods cannot execute; add %q to that set, or handle it in the ingestion dispatcher like PaddleOCR",
+				spelling, canonical, canonical)
 		}
 	}
 	for supported := range supportedPDFParseMethods {
@@ -593,8 +433,10 @@ func TestPDFParseMethodTablesAgree(t *testing.T) {
 		}
 		t.Errorf("supportedPDFParseMethods contains %q that no spelling maps to; without a spelling, Check() and the vision dispatcher route it to the VLM path", supported)
 	}
-	if !IsPDFParseMethod(dispatcherHandled) {
-		t.Errorf("IsPDFParseMethod(%q) = false; the ingestion dispatcher relies on it being recognized (Check() must not demand lang for it)", dispatcherHandled)
+	for method := range dispatcherHandled {
+		if !IsPDFParseMethod(method) {
+			t.Errorf("dispatcher-handled method %q must remain recognized", method)
+		}
 	}
 }
 
@@ -633,7 +475,7 @@ func TestPDFParseResultToJSON_NoInlineRetainsPositions(t *testing.T) {
 		PageHeight: map[int]float64{0: 100},
 		Sections: []deepdoctype.Section{
 			{
-				Text:        "Figure caption",
+				Text:        "",
 				LayoutType:  deepdoctype.LayoutTypeFigure,
 				PositionTag: "@@0\t10\t50\t10\t50##",
 				Positions: []deepdoctype.Position{
@@ -670,26 +512,33 @@ func TestPDFParseResultToJSON_NoInlineRetainsPositions(t *testing.T) {
 		t.Fatalf("JSON len = %d, want 3", len(res.JSON))
 	}
 
-	// Figure must retain positions but NOT inline an image.
-	figPos, ok := res.JSON[0]["_pdf_positions"].([][]any)
-	if !ok || len(figPos) == 0 {
-		t.Fatalf("Figure should retain _pdf_positions, got %v", res.JSON[0]["_pdf_positions"])
+	// A textless figure must remain an image crop item without inlining an image.
+	figure := res.JSON[0].ToMap()
+	if got, want := figure["doc_type_kwd"], "image"; got != want {
+		t.Fatalf("textless figure doc_type_kwd = %v, want %v", got, want)
 	}
-	if img, _ := res.JSON[0]["image"].(string); img != "" {
+	figPos, ok := figure["_pdf_positions"].([][]any)
+	if !ok || len(figPos) == 0 {
+		t.Fatalf("textless figure should retain _pdf_positions, got %v", figure["_pdf_positions"])
+	}
+	if !HasPDFCropRegion(figure) {
+		t.Fatal("textless figure should carry a crop region for VLM and chunker")
+	}
+	if img, _ := figure["image"].(string); img != "" {
 		t.Fatalf("Figure should not inline image under cgo, got %q", img)
 	}
 
 	// Table likewise retains positions, no inline image.
-	tblPos, ok := res.JSON[1]["_pdf_positions"].([][]any)
+	tblPos, ok := res.JSON[1].ToMap()["_pdf_positions"].([][]any)
 	if !ok || len(tblPos) == 0 {
-		t.Fatalf("Table should retain _pdf_positions, got %v", res.JSON[1]["_pdf_positions"])
+		t.Fatalf("Table should retain _pdf_positions, got %v", res.JSON[1].ToMap()["_pdf_positions"])
 	}
-	if img, _ := res.JSON[1]["image"].(string); img != "" {
+	if img, _ := res.JSON[1].ToMap()["image"].(string); img != "" {
 		t.Fatalf("Table should not inline image under cgo, got %q", img)
 	}
 
 	// Plain text: no image, positions retained.
-	if img, _ := res.JSON[2]["image"].(string); img != "" {
+	if img, _ := res.JSON[2].ToMap()["image"].(string); img != "" {
 		t.Fatalf("Text should not inline image, got %q", img)
 	}
 }
@@ -719,13 +568,13 @@ func TestPDFParseResultToJSON_FigureCaptionNoInline(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
 	}
-	if got, want := res.JSON[0]["doc_type_kwd"], "image"; got != want {
+	if got, want := res.JSON[0].ToMap()["doc_type_kwd"], "image"; got != want {
 		t.Fatalf("doc_type_kwd = %v, want %v", got, want)
 	}
-	if pos, ok := res.JSON[0]["_pdf_positions"].([][]any); !ok || len(pos) == 0 {
+	if pos, ok := res.JSON[0].ToMap()["_pdf_positions"].([][]any); !ok || len(pos) == 0 {
 		t.Fatal("figure caption should retain _pdf_positions for on-demand crop")
 	}
-	if image, _ := res.JSON[0]["image"].(string); image != "" {
+	if image, _ := res.JSON[0].ToMap()["image"].(string); image != "" {
 		t.Fatalf("figure caption should not be inlined by the parser, got %q", image)
 	}
 }
@@ -875,5 +724,14 @@ func TestPDFParseResultToJSON_EngineNilGraceful(t *testing.T) {
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
+	}
+}
+
+func TestPDFParserPaddleOCRRequiresTenantDispatch(t *testing.T) {
+	p := NewPDFParser()
+	p.ConfigureFromSetup(map[string]any{"parse_method": "paddleocr"})
+	result := p.ParseWithResult(t.Context(), "document.pdf", []byte("%PDF-1.4"))
+	if result.Err == nil || !strings.Contains(result.Err.Error(), "unsupported PDF parse_method") {
+		t.Fatalf("standalone parser must not submit OCR jobs: %v", result.Err)
 	}
 }

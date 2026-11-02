@@ -13,7 +13,7 @@ import { useDataSourceInfo } from '@/pages/user-setting/data-source/constant';
 import { useDataSourceRebuild } from '@/pages/user-setting/data-source/hooks';
 import { IDataSourceBase } from '@/pages/user-setting/data-source/interface';
 import { Link, Settings, Unlink } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import LinkDataSourceModal from './link-data-source-modal';
 
@@ -32,6 +32,7 @@ export interface ILinkDataSourceProps {
 }
 
 interface DataSourceItemProps extends IDataSourceNodeProps {
+  itemRef?: React.Ref<HTMLDivElement>;
   openLinkModalFunc?: (open: boolean, data?: IDataSourceNodeProps) => void;
   unbindFunc?: (item: DataSourceItemProps) => void;
   handleAutoParse?: (option: {
@@ -43,8 +44,16 @@ interface DataSourceItemProps extends IDataSourceNodeProps {
 const DataSourceItem = (props: DataSourceItemProps) => {
   const { dataSourceInfo } = useDataSourceInfo();
   const { t } = useTranslation();
-  const { id, name, icon, source, auto_parse, unbindFunc, handleAutoParse } =
-    props;
+  const {
+    id,
+    name,
+    icon,
+    source,
+    auto_parse,
+    unbindFunc,
+    handleAutoParse,
+    itemRef,
+  } = props;
 
   const { navigateToDataSourceDetail } = useNavigatePage();
   const { handleRebuild } = useDataSourceRebuild();
@@ -53,7 +62,10 @@ const DataSourceItem = (props: DataSourceItemProps) => {
   };
 
   return (
-    <div className="flex items-center justify-between gap-1 px-2 h-10 rounded-md border group hover:bg-bg-card">
+    <div
+      ref={itemRef}
+      className="flex items-center justify-between gap-1 px-2 h-10 rounded-md border group hover:bg-bg-card"
+    >
       <div className="flex items-center gap-1">
         <div className="w-6 h-6 flex-shrink-0">{icon}</div>
         <div className="text-base text-text-primary">
@@ -144,6 +156,9 @@ const LinkDataSource = (props: ILinkDataSourceProps) => {
   const { t } = useTranslation();
   const { dataSourceInfo } = useDataSourceInfo();
   const [openLinkModal, setOpenLinkModal] = useState(false);
+  const itemRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const prevIdsRef = useRef<string[]>([]);
+  const linkedFromModalRef = useRef(false);
 
   const pipelineNode: IDataSourceNodeProps[] = useMemo(() => {
     if (data && data.length > 0) {
@@ -161,14 +176,39 @@ const LinkDataSource = (props: ILinkDataSourceProps) => {
     return [];
   }, [data, dataSourceInfo]);
 
+  useEffect(() => {
+    const ids = pipelineNode
+      .map((item) => item.id)
+      .filter((id): id is string => !!id);
+    const prevIds = prevIdsRef.current;
+    const newIds = ids.filter((id) => !prevIds.includes(id));
+    prevIdsRef.current = ids;
+    if (!linkedFromModalRef.current || newIds.length === 0) return;
+    linkedFromModalRef.current = false;
+    const lastNewId = newIds[newIds.length - 1];
+    requestAnimationFrame(() => {
+      itemRefs.current[lastNewId]?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    });
+  }, [pipelineNode]);
+
   const openLinkModalFunc = (open: boolean, data?: IDataSourceNodeProps) => {
     console.log('open', open, data);
     setOpenLinkModal(open);
   };
 
-  const handleLinkOrEditSubmit = (data: IDataSourceBase[] | undefined) => {
-    console.log('handleLinkOrEditSubmit', data);
-    submit?.(data);
+  const handleLinkOrEditSubmit = (submitted: IDataSourceBase[] | undefined) => {
+    console.log('handleLinkOrEditSubmit', submitted);
+    const existingIds = new Set(
+      (data ?? []).map((item) => item.id).filter(Boolean),
+    );
+    const hasNew = !!submitted?.some(
+      (item) => !existingIds.has(item.id as string),
+    );
+    linkedFromModalRef.current = hasNew;
+    submit?.(submitted);
     setOpenLinkModal(false);
   };
 
@@ -202,6 +242,9 @@ const LinkDataSource = (props: ILinkDataSourceProps) => {
             item.id && (
               <DataSourceItem
                 key={item.id}
+                itemRef={(el) => {
+                  itemRefs.current[item.id] = el;
+                }}
                 openLinkModalFunc={openLinkModalFunc}
                 unbindFunc={unbindFunc}
                 handleAutoParse={handleAutoParse}

@@ -67,7 +67,6 @@ func TestConfigureFromSetup_Pages(t *testing.T) {
 		setup := map[string]any{
 			"flatten_media_to_text": true,
 			"parse_method":          "DeepDOC",
-			"output_format":         "json",
 			"pages": []any{
 				[]any{float64(1), float64(100)},
 			},
@@ -78,9 +77,6 @@ func TestConfigureFromSetup_Pages(t *testing.T) {
 		}
 		if p.ParseMethod != "DeepDOC" {
 			t.Errorf("ParseMethod = %q, want DeepDOC", p.ParseMethod)
-		}
-		if p.OutputFormat != "json" {
-			t.Errorf("OutputFormat = %q, want json", p.OutputFormat)
 		}
 		if want := [][]int{{1, 100}}; !reflect.DeepEqual(p.Pages, want) {
 			t.Errorf("Pages = %v, want %v", p.Pages, want)
@@ -101,7 +97,7 @@ func TestPDFParser_PlainTextHonorsPages(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	var pageNumbers []any
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		pageNumbers = append(pageNumbers, item["page_number"])
 	}
 	if want := []any{2, 3}; !reflect.DeepEqual(pageNumbers, want) {

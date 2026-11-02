@@ -33,7 +33,6 @@ import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-u
 import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
-import { useParams } from 'react-router';
 
 import { AgentKeys } from './use-agent-request';
 
@@ -55,8 +54,7 @@ export const CompilationTemplateGroupKeys = {
     [CompilationTemplateGroupApiAction.FetchCompilationTemplateGroups] as const,
 };
 
-export const useFetchCompilationTemplateGroup = () => {
-  const { id } = useParams<{ id: string }>();
+export const useFetchCompilationTemplateGroup = (id?: string) => {
   const isCreate = isCreateCompilationTemplateGroup(id);
 
   const { data, isFetching: loading } = useQuery<

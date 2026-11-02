@@ -89,7 +89,6 @@ export const S3Constant = (t: TFunction) => [
     customValidate: (val: string, formValues: any) => {
       const authMode = formValues?.config?.credentials?.authentication_method;
       const bucketType = formValues?.config?.bucket_type;
-      console.log('authMode', authMode, val);
       if (
         !val &&
         (authMode === 'access_key' || bucketType === 's3_compatible')

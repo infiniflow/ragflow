@@ -24,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"strings"
 )
 
 // VoyageModel implements ModelDriver for Voyage AI.
@@ -76,12 +75,10 @@ func (v *VoyageModel) Embed(ctx context.Context, modelName *string, request Embe
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	url, err := v.baseModel.EndpointURL(apiConfig, v.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Embedding)
 
 	// Python VoyageEmbed.embed passes input_type="document"; encode_queries
 	// passes "query". The Voyage API applies a different (asymmetric) encoding
@@ -189,12 +186,10 @@ func (v *VoyageModel) Rerank(ctx context.Context, modelName *string, request Rer
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	url, err := v.baseModel.EndpointURL(apiConfig, v.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Rerank)
 
 	topK := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 {
@@ -317,5 +312,9 @@ func (v *VoyageModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 }
 
 func (v *VoyageModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
+}
+
+func (v *VoyageModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }

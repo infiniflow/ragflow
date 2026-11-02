@@ -643,6 +643,19 @@ func compilationTemplateKind(kind string) string {
 	return k
 }
 
+// templateDisplayKind prefers the compilation template's own kind for the
+// response, falling back to the kind keywords stored on the entity rows. The
+// stored row keyword canonicalizes to "graph" (CanonicalCompilationKind)
+// while the normal-mode bucket answers the template kind ("knowledge_graph"),
+// which is the dialect the frontend renderer keys off — a keyword no-match
+// shell built with the row kind flips the UI to "unsupported representation".
+func templateDisplayKind(rowKind, templateKind string) string {
+	if templateKind != "" {
+		return templateKind
+	}
+	return rowKind
+}
+
 // ErrInvalidStructureKind is returned when the request kind does not resolve to a
 // supported dataset-structure kind. Handlers use errors.Is to map it to
 // CodeArgumentError (400) while treating every other service error as a server
@@ -918,9 +931,7 @@ func (s *DatasetArtifactService) discoverDocumentGraphTemplateMeta(ctx context.C
 			if !strings.HasPrefix(templateID, "legacy:") {
 				if template, loadErr := templateDAO.GetTemplate(ctx, dao.DB, tenantID, templateID); loadErr == nil && template != nil {
 					templateName = template.Name
-					if kind == "" {
-						kind = template.Kind
-					}
+					kind = templateDisplayKind(kind, template.Kind)
 				}
 			} else {
 				templateName = "Legacy (" + strings.TrimPrefix(templateID, "legacy:") + ")"

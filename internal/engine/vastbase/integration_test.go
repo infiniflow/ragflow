@@ -82,7 +82,7 @@ func TestVastbaseStorageRoundTrip(t *testing.T) {
 	defer engine.DropChunkStore(ctx, table, "")
 
 	// --- Chunk store: DDL, dynamic columns, storage-format round trip ---
-	if err := engine.CreateChunkStore(ctx, table, dataset, 3, "naive"); err != nil {
+	if err := engine.CreateChunkStore(ctx, table, dataset, 3, "naive", ""); err != nil {
 		t.Fatal(err)
 	}
 	exists, err := engine.ChunkStoreExists(ctx, table, dataset)
@@ -105,7 +105,7 @@ func TestVastbaseStorageRoundTrip(t *testing.T) {
 			"content_with_weight": "second chunk", "content_ltks": "second chunk",
 			"available_int": 1, "q_3_vec": []interface{}{0.9, 0.8, 0.7},
 		},
-	}, table, dataset); err != nil {
+	}, table, dataset, ""); err != nil {
 		t.Fatal(err)
 	}
 	row, err := engine.GetChunk(ctx, table, "c1", []string{dataset})
@@ -213,13 +213,13 @@ func TestVastbaseStorageRoundTrip(t *testing.T) {
 	memoryTable := "memory_vb_it_" + suffix
 	memoryID := "mem-" + suffix
 	defer engine.DropChunkStore(ctx, memoryTable, "")
-	if err := engine.CreateChunkStore(ctx, memoryTable, memoryID, 0, ""); err != nil {
+	if err := engine.CreateChunkStore(ctx, memoryTable, memoryID, 0, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := engine.InsertChunks(ctx, []map[string]interface{}{
 		{"id": memoryID + "_1", "content": "remember the vastbase meeting", "status": true,
 			"content_embed": []interface{}{0.25, 0.5}},
-	}, memoryTable, memoryID); err != nil {
+	}, memoryTable, memoryID, ""); err != nil {
 		t.Fatal(err)
 	}
 	memoryText, err := engine.Search(ctx, &types.SearchRequest{
@@ -293,7 +293,7 @@ func TestVastbaseStorageRoundTrip(t *testing.T) {
 	// --- Drop deletes dataset rows but keeps the shared table ---
 	remaining, err := engine.InsertChunks(ctx, []map[string]interface{}{
 		{"id": "c3", "kb_id": dataset, "content_ltks": "third"},
-	}, table, dataset)
+	}, table, dataset, "")
 	if err != nil {
 		t.Fatal(err)
 	}

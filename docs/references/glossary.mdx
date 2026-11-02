@@ -31,7 +31,7 @@ Agentic Retrieval is a retrieval approach designed for complex questions.
 
 Unlike one-time retrieval, it incorporates model reasoning to analyze user queries and, when necessary, perform steps such as question decomposition, retrieval, and evidence checking to obtain more comprehensive context for answer generation.
 
-In Chat, different Thinking levels can be used to control the processing depth of Agentic Retrieval.
+In Chat, select **Agentic** from the Thinking menu to use Agentic Retrieval. The **Naive** mode performs retrieval without complex analysis.
 
 **Auto keyword**
 
@@ -225,7 +225,7 @@ In RAGFlow, keyword analysis is used to enrich query representation, helping the
 
 A knowledge artifact is a structured representation of knowledge generated from documents or knowledge base content through Knowledge Compilation.
 
-Depending on the Knowledge Compilation template used, different forms of knowledge artifacts can be generated, including Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, and Skills.
+Depending on the Knowledge Compilation template used, different forms of knowledge artifacts can be generated, including Wiki, Graph, Tree, PageIndex, Mindmap, Timeline, and Skills.
 
 These artifacts reorganize existing knowledge into different structures and can be used for knowledge browsing, understanding, and subsequent applications.
 
@@ -233,13 +233,13 @@ These artifacts reorganize existing knowledge into different structures and can 
 
 Knowledge Compilation further refines, organizes, and structures existing document or knowledge base content.
 
-Knowledge Compilation can be performed on an individual document or an entire knowledge base. By selecting different compilation templates, raw content can be transformed into knowledge artifacts such as Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, or Skills.
+Knowledge Compilation can be performed on an individual document or an entire knowledge base. By selecting different compilation templates, raw content can be transformed into knowledge artifacts such as Wiki, Graph, Tree, PageIndex, Mindmap, Timeline, or Skills.
 
 **Knowledge Compilation Template**
 
 A Knowledge Compilation Template is a predefined template that determines how knowledge is compiled and how the resulting artifact is structured.
 
-In RAGFlow, different templates can compile source documents or knowledge base content into specific forms of knowledge artifacts, such as Wiki, Graph, Tree, Page Index, Mind Map, Timeline, and Skills, to support different knowledge organization and usage scenarios.
+In RAGFlow, different templates can compile source documents or knowledge base content into specific forms of knowledge artifacts, such as Wiki, Graph, Tree, Page Index, Mindmap, Timeline, and Skills, to support different knowledge organization and usage scenarios.
 
 ### **L**
 
@@ -275,9 +275,9 @@ Metadata filtering restricts the retrieval scope based on document or chunk meta
 
 For example, retrieval can be limited to content that matches a specified category, source, or other business attribute, making retrieval results more targeted.
 
-**Mind Map**
+**Mindmap**
 
-Mind Map is a knowledge artifact supported by Knowledge Compilation.
+Mindmap is a knowledge artifact supported by Knowledge Compilation.
 
 It organizes the main topics and subtopics in the content into a hierarchical mind map, helping users quickly understand the knowledge structure and relationships among different topics.
 
@@ -442,11 +442,12 @@ Temperature is a parameter that controls randomness in model generation.
 
 Lower values generally make outputs more stable and deterministic, while higher values increase diversity and randomness. The exact effect depends on the model being used.
 
-**Thinking level**
+**Thinking mode**
 
-Thinking level controls the depth of retrieval and reasoning used by Chat when processing a question.
+Thinking mode determines how Chat investigates available data before answering. Select **Naive** or **Agentic** from the Thinking menu near the message box.
 
-RAGFlow provides different Thinking levels. Higher levels can perform deeper question analysis and retrieval processing and are suitable for complex questions that require multi-step analysis or more comprehensive supporting evidence, but they generally require more processing time and model invocations.
+- **Naive**: Performs retrieval without complex analysis and is suitable for straightforward factual questions. It generally responds faster.
+- **Agentic**: Uses a retrieval agent to search the corpus, read documents in depth, and combine evidence across documents before answering. It is suitable for comparisons and multi-step research, but generally takes longer and invokes the model more often.
 
 **Timeline**
 

@@ -7,13 +7,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  EnterpriseHeaderPlanBadge,
+  EnterpriseHeaderTicketsLink,
+  EnterpriseHeaderUpgradeBadge,
+} from '@/ee/layouts/components/header-enterprise';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
 import {
   useFetchUserInfo,
   useListTenant,
 } from '@/hooks/use-user-setting-request';
 import { cn } from '@/lib/utils';
-import { TenantRole } from '@/pages/user-setting/constants';
+import { TenantMembershipStatus } from '@/pages/user-setting/constants';
 import { Routes } from '@/routes';
 import {
   LucideChevronDown,
@@ -43,7 +48,7 @@ export function Header({
 
   const { data: tenantData } = useListTenant();
   const hasNotification = useMemo(
-    () => tenantData?.some((x) => x.role === TenantRole.Invite),
+    () => tenantData?.some((x) => x.status === TenantMembershipStatus.Invited),
     [tenantData],
   );
 
@@ -82,6 +87,7 @@ export function Header({
             >
               <img src={'/logo.svg'} alt="RAGFlow logo" className="size-10" />
             </Link>
+            <EnterpriseHeaderUpgradeBadge />
           </div>
         </div>
 
@@ -169,6 +175,7 @@ export function Header({
               </Button>
 
               {hasNotification && <BellButton className="!size-8" />}
+              <EnterpriseHeaderTicketsLink />
             </>
           )}
 
@@ -188,6 +195,7 @@ export function Header({
               isPerson
               className="size-8"
             />
+            <EnterpriseHeaderPlanBadge />
           </Link>
         </div>
       </header>
@@ -216,6 +224,7 @@ export function Header({
           <Button variant="ghost" size="icon" className="size-8">
             <LucideCircleHelp className="size-[1em]" />
           </Button>
+          <EnterpriseHeaderTicketsLink />
           <ThemeButton className="!size-8" />
           {hasNotification && <BellButton className="!size-8" />}
           <div className="relative ms-3 flex size-10 shrink-0 items-center justify-center">
@@ -225,6 +234,7 @@ export function Header({
               isPerson
               className="size-8"
             />
+            <EnterpriseHeaderPlanBadge />
           </div>
         </div>
       </div>

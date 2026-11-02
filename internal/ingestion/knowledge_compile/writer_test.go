@@ -172,7 +172,7 @@ func TestProductFromChunkMapRestoresWikiFields(t *testing.T) {
 
 func TestWriteMergedStructureMigratesTypeScopedEntityID(t *testing.T) {
 	oldID := "dataset_structure_old_type_identity"
-	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+	eng := &fakeEngine{engineType: "infinity", searchChunks: []map[string]interface{}{
 		{
 			"id":                            oldID,
 			"compile_kwd":                   "hypergraph",
@@ -237,9 +237,75 @@ func TestWriteMergedStructureMigratesTypeScopedEntityID(t *testing.T) {
 	}
 }
 
+func TestWriteMergedStructureKeepsEntityKeywordLowercase(t *testing.T) {
+	eng := &fakeEngine{engineType: "infinity"}
+	w := engineWriter{eng: eng}
+	if err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{{
+		Name: "Acme Corp", Type: "organization", Description: "company", CompileKwd: "knowledge_graph", TemplateKind: "knowledge_graph",
+	}}); err != nil {
+		t.Fatalf("WriteMergedStructure: %v", err)
+	}
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] != "entity" {
+			continue
+		}
+		if row["name_kwd"] != "acme corp" {
+			t.Errorf("name_kwd = %v, want normalized keyword acme corp", row["name_kwd"])
+		}
+		payload, _ := row["content_with_weight"].(string)
+		if !strings.Contains(payload, `"name":"Acme Corp"`) {
+			t.Errorf("entity payload = %s, want extracted spelling Acme Corp", payload)
+		}
+		for _, field := range []string{"content_ltks", "content_sm_ltks"} {
+			text, _ := row[field].(string)
+			if !strings.Contains(text, "company") || !strings.Contains(strings.ToLower(text), "acme corp") || strings.Contains(text, `"name":`) {
+				t.Errorf("%s = %q, want searchable entity payload text", field, text)
+			}
+		}
+		if _, exists := row["extra"]; exists {
+			t.Fatalf("compiler must not write extra: %#v", row["extra"])
+		}
+		return
+	}
+	t.Fatal("inserted rows contain no entity")
+}
+
+func TestWriteMergedStructurePreservesDistinctRelationTypes(t *testing.T) {
+	eng := &fakeEngine{engineType: "infinity"}
+	w := engineWriter{eng: eng}
+	buckets := []StructureBucket{
+		{Name: "Acme Corp -> Beta Ltd", Type: "relation", FromEntity: "Acme Corp", ToEntity: "Beta Ltd", RelationType: "supplies", Description: "supply", CompileKwd: "knowledge_graph", TemplateKind: "knowledge_graph"},
+		{Name: "Acme Corp -> Beta Ltd", Type: "relation", FromEntity: "Acme Corp", ToEntity: "Beta Ltd", RelationType: "owns", Description: "ownership", CompileKwd: "knowledge_graph", TemplateKind: "knowledge_graph"},
+	}
+	if err := w.WriteMergedStructure(context.Background(), "t1", "kb1", buckets); err != nil {
+		t.Fatalf("WriteMergedStructure: %v", err)
+	}
+	relations := map[string]bool{}
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] != "relation" {
+			continue
+		}
+		for _, field := range []string{"content_ltks", "content_sm_ltks"} {
+			text, _ := row[field].(string)
+			if !strings.Contains(strings.ToLower(text), "acme corp") || !strings.Contains(strings.ToLower(text), "beta ltd") || strings.Contains(text, `"from":`) {
+				t.Errorf("%s = %q, want searchable relation payload text", field, text)
+			}
+		}
+		payload, _ := row["content_with_weight"].(string)
+		for _, relationType := range []string{"supplies", "owns"} {
+			if strings.Contains(payload, `"type":"`+relationType+`"`) {
+				relations[relationType] = true
+			}
+		}
+	}
+	if len(relations) != 2 || !relations["supplies"] || !relations["owns"] {
+		t.Errorf("stored relation types = %v, want separate supplies and owns rows", relations)
+	}
+}
+
 func TestWriteMergedStructureDoesNotDeleteForInvalidBucket(t *testing.T) {
 	oldID := "dataset_structure_old"
-	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+	eng := &fakeEngine{engineType: "infinity", searchChunks: []map[string]interface{}{
 		{
 			"id":                            oldID,
 			"compile_kwd":                   "hypergraph",
@@ -269,7 +335,7 @@ func TestWriteMergedStructureDoesNotDeleteForInvalidBucket(t *testing.T) {
 // the source of truth, so a wrong tenant/kb can never cascade to per-document
 // rows or to rows of other variants.
 func TestDeleteMergedScopesToMergedWikiRows(t *testing.T) {
-	eng := &fakeEngine{}
+	eng := &fakeEngine{engineType: "infinity"}
 	w := engineWriter{eng: eng}
 	if err := w.DeleteMerged(context.Background(), "t1", "kb1"); err != nil {
 		t.Fatalf("DeleteMerged: %v", err)
@@ -297,7 +363,7 @@ func TestDeleteMergedScopesToMergedWikiRows(t *testing.T) {
 // slice (full rebuild) clears the full managed set — nav + wiki + structure
 // compile_kwds — plus the structure scope_kwd="dataset" sweep.
 func TestDeleteMergedForVariant_EmptySetClearsAll(t *testing.T) {
-	eng := &fakeEngine{}
+	eng := &fakeEngine{engineType: "infinity"}
 	w := engineWriter{eng: eng}
 	if err := w.DeleteMergedForVariant(context.Background(), "t1", "kb1", nil); err != nil {
 		t.Fatalf("DeleteMergedForVariant: %v", err)
@@ -336,7 +402,7 @@ func TestDeleteMergedForVariant_EmptySetClearsAll(t *testing.T) {
 // wiki clean: it must issue a delete scoped to available_int=1 and the wiki
 // page/section kwds (wiki merged rows carry available_int=1).
 func TestDeleteMergedForVariant_WikiScopesToAvailableOne(t *testing.T) {
-	eng := &fakeEngine{}
+	eng := &fakeEngine{engineType: "infinity"}
 	w := engineWriter{eng: eng}
 	if err := w.DeleteMergedForVariant(context.Background(), "t1", "kb1", []kccommon.Variant{kccommon.VariantWiki}); err != nil {
 		t.Fatalf("DeleteMergedForVariant: %v", err)
@@ -358,7 +424,7 @@ func TestDeleteMergedForVariant_WikiScopesToAvailableOne(t *testing.T) {
 // structure clean: dataset rows are tagged scope_kwd="dataset" (compile_kwd may
 // be the inferred sub-kind), so the delete is scoped to scope_kwd="dataset".
 func TestDeleteMergedForVariant_StructureScopesToDataset(t *testing.T) {
-	eng := &fakeEngine{}
+	eng := &fakeEngine{engineType: "infinity"}
 	w := engineWriter{eng: eng}
 	if err := w.DeleteMergedForVariant(context.Background(), "t1", "kb1", []kccommon.Variant{kccommon.VariantStructure}); err != nil {
 		t.Fatalf("DeleteMergedForVariant: %v", err)
@@ -377,7 +443,7 @@ func TestDeleteMergedForVariant_StructureScopesToDataset(t *testing.T) {
 // "dataset"). A wiki+tree clean must produce one wiki delete (available_int=1)
 // and one nav delete (compile_kwd=dataset_nav, no available_int).
 func TestDeleteMergedForVariant_WikiPlusNavCoversNavRows(t *testing.T) {
-	eng := &fakeEngine{}
+	eng := &fakeEngine{engineType: "infinity"}
 	w := engineWriter{eng: eng}
 	if err := w.DeleteMergedForVariant(context.Background(), "t1", "kb1",
 		[]kccommon.Variant{kccommon.VariantWiki, kccommon.VariantTree}); err != nil {
@@ -409,7 +475,7 @@ func TestDeleteMergedForVariant_WikiPlusNavCoversNavRows(t *testing.T) {
 // whose source docs are ALL deleted are ghosts and removed; rows that still have
 // a surviving source doc are kept.
 func TestDeleteStructureForDocs_RemovesGhostOnly(t *testing.T) {
-	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+	eng := &fakeEngine{engineType: "infinity", searchChunks: []map[string]interface{}{
 		{"id": "row_ghost", "source_doc_ids": []any{"d1", "d2"}}, // all deleted -> ghost
 		{"id": "row_keep", "source_doc_ids": []any{"d1", "d3"}},  // d3 survives -> keep
 	}}
@@ -429,7 +495,7 @@ func TestDeleteStructureForDocs_RemovesGhostOnly(t *testing.T) {
 // TestDeleteStructureForDocs_NoGhostsNoDelete covers G3: when every structure row
 // still has a surviving source doc, no delete is issued.
 func TestDeleteStructureForDocs_NoGhostsNoDelete(t *testing.T) {
-	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+	eng := &fakeEngine{engineType: "infinity", searchChunks: []map[string]interface{}{
 		{"id": "row_keep", "source_doc_ids": []any{"d1", "d3"}},
 	}}
 	before := len(eng.deleteConds)

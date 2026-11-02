@@ -95,7 +95,7 @@ func TestCreateMemoryStoreDDLGolden(t *testing.T) {
 	}
 	// vectorSize 0: no vector column or index is created.
 
-	if err := engine.CreateChunkStore(context.Background(), "memory_t1", "mem-1", 0, ""); err != nil {
+	if err := engine.CreateChunkStore(context.Background(), "memory_t1", "mem-1", 0, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -144,7 +144,7 @@ func TestCreateChunkStoreBModeProvisionsFullTextPerColumn(t *testing.T) {
 				quoteIdent(indexName), quoteIdent(field)))
 	}
 
-	if err := engine.CreateChunkStore(context.Background(), "t1", "kb-1", 0, ""); err != nil {
+	if err := engine.CreateChunkStore(context.Background(), "t1", "kb-1", 0, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -185,7 +185,7 @@ func TestCreateChunkStoreBModeDegradesWhenFullTextIndexFails(t *testing.T) {
 
 	// vectorSize 0: no vector column or index is created; the failed
 	// full-text DDL must not surface as an error.
-	if err := engine.CreateChunkStore(context.Background(), "t1", "kb-1", 0, ""); err != nil {
+	if err := engine.CreateChunkStore(context.Background(), "t1", "kb-1", 0, "", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

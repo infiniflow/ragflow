@@ -96,7 +96,7 @@ func resolveTemplate(tmpl string, ctx context.Context) string {
 		return tmpl
 	}
 	result := tmpl
-	for k, v := range s.Values {
+	for k, v := range s.valuesSnapshot() {
 		repl := fmt.Sprintf("{%s}", k)
 		if sv, ok := v.(string); ok {
 			result = strings.ReplaceAll(result, repl, sv)
@@ -432,7 +432,7 @@ func setOutputToSession[M MessageType](ctx context.Context, msg M, key string) {
 	if !isNilMessage(msg) {
 		s := getSession(ctx)
 		if s != nil {
-			s.Values[key] = extractTextContent(msg)
+			s.setValue(key, extractTextContent(msg))
 		}
 	}
 }
@@ -573,8 +573,10 @@ func getChatModelExecCtx(ctx context.Context) *reActExecCtx {
 		return nil
 	}
 	// The exec ctx is stored on the run session or passed via context value
-	if ec, ok := rc.Session.Values["__exec_ctx"].(*reActExecCtx); ok {
-		return ec
+	if value, ok := rc.Session.getValue("__exec_ctx"); ok {
+		if ec, ok := value.(*reActExecCtx); ok {
+			return ec
+		}
 	}
 	return nil
 }

@@ -68,8 +68,6 @@ type ChatMindMapRequest struct {
 // @Summary List Chats
 // @Description Get list of chats (dialogs) for the current user
 // @Tags chat
-// @Accept json
-// @Produce json
 // @Success 200 {object} service.ListChatsResponse
 // @Router /api/v1/chats [get]
 func (h *ChatHandler) ListChats(c *gin.Context) {
@@ -107,12 +105,12 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	// `sort` supersedes the older pair, so a request it can order is not rejected
 	// for the spelling of an `orderby` that will not be read.
 	sortTerms := sortTermsFromQuery(c)
-	orderby := c.DefaultQuery("orderby", "create_time")
+	orderBy := c.DefaultQuery("orderby", "create_time")
 	if len(sortTerms) == 0 {
-		switch orderby {
+		switch orderBy {
 		case "create_time", "update_time", "name":
 		default:
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderBy))
 			return
 		}
 	}
@@ -121,7 +119,7 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	if descStr := c.Query("desc"); descStr != "" {
 		desc = !strings.EqualFold(descStr, "false")
 	}
-	terms := orderTerms(sortTerms, orderby, desc)
+	terms := orderTerms(sortTerms, orderBy, desc)
 
 	ownerIDs := getOwnerIDs(c)
 	ctx := c.Request.Context()
@@ -129,6 +127,9 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	// List chats - default to valid status "1" (same as Python StatusEnum.VALID.value)
 	result, err := h.chatService.ListChats(ctx, userID, "1", keywords, id, name, page, pageSize, terms, ownerIDs)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
@@ -140,12 +141,19 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 // @Summary Create Chat
 // @Description Create a chat, aligned with Python POST /api/v1/chats.
 // @Tags chat
-// @Accept json
-// @Produce json
 // @Param request body service.CreateChatRequest true "chat configuration"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chats [post]
 func (h *ChatHandler) Create(c *gin.Context) {
+	user, errorCode, err := billingQuotaUser(c)
+	if err != nil {
+		common.ErrorWithCode(c, errorCode, err.Error())
+		return
+	}
+	if !billingEnforceApps(c, user.ID) {
+		return
+	}
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
@@ -155,7 +163,7 @@ func (h *ChatHandler) Create(c *gin.Context) {
 	var req map[string]interface{}
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.UseNumber()
-	if err := decoder.Decode(&req); err != nil {
+	if err = decoder.Decode(&req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
@@ -177,13 +185,11 @@ func (h *ChatHandler) Create(c *gin.Context) {
 // @Summary Generate Chat Mind Map
 // @Description Retrieves related chunks and asks the configured chat model to summarize them into a mind map.
 // @Tags chat
-// @Accept json
-// @Produce json
 // @Param request body ChatMindMapRequest true "Mind map parameters"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chat/mindmap [post]
 func (h *ChatHandler) MindMap(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -201,7 +207,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	searchConfig := map[string]interface{}{}
-	modelTenantID := user.ID
+	var modelTenantID string
 	if req.SearchID != "" {
 		if h.searchSvc == nil {
 			jsonInternalError(c, fmt.Errorf("search service not configured"))
@@ -209,6 +215,9 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		}
 		detail, err := h.searchSvc.GetDetail(ctx, req.SearchID)
 		if err != nil {
+			if respondPermissionErrorIf(c, err, true) {
+				return
+			}
 			jsonInternalError(c, err)
 			return
 		}
@@ -229,7 +238,6 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		KbIDs:         kbIDs,
 		SearchID:      req.SearchID,
 		SearchConfig:  searchConfig,
-		AuthUserID:    user.ID,
 		ModelTenantID: modelTenantID,
 		ChunkSvc:      h.chunkSvc,
 		LLM:           h.modelFactory,
@@ -259,8 +267,7 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if err := h.chatService.DeleteChat(ctx, userID, chatID); err != nil {
-		if err.Error() == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
@@ -293,8 +300,7 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 	if len(req.IDs) == 0 && !req.DeleteAll {
 		if req.ChatID != "" {
 			if err := h.chatService.DeleteChat(ctx, userID, req.ChatID); err != nil {
-				if err.Error() == "no authorization" {
-					common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
+				if respondPermissionErrorIf(c, err, true) {
 					return
 				}
 				common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
@@ -329,8 +335,6 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 // @Summary Get Chat Detail
 // @Description Get detail of a chat by ID
 // @Tags chat
-// @Accept json
-// @Produce json
 // @Param chat_id path string true "chat ID"
 // @Success 200 {object} service.GetChatResponse
 // @Router /api/v1/chats/{chat_id} [get]
@@ -357,10 +361,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	ctx := c.Request.Context()
 	chat, err := h.chatService.GetChat(ctx, userID, chatID)
 	if err != nil {
-		errMsg := err.Error()
-		// Check if it's an authorization error
-		if errMsg == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		// Not found error
@@ -398,10 +399,37 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		"update_date":                chat.UpdateDate,
 		"tenant_llm_id":              chat.TenantLLMID,
 		"tenant_rerank_id":           chat.TenantRerankID,
+		// The per-chat decision model override. Without it the settings form
+		// resets to empty after saving and the field looks unset.
+		"decision_id":        chat.DecisionID,
+		"tenant_decision_id": chat.TenantDecisionID,
 	}
 
 	// Return success response
 	common.SuccessWithData(c, result, "success")
+}
+
+// GetAgenticRAGConfig returns defaults and effective Agentic RAG settings.
+func (h *ChatHandler) GetAgenticRAGConfig(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+	chatID := c.Param("chat_id")
+	if chatID == "" {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
+		return
+	}
+	settings, err := h.chatService.GetAgenticRAGConfig(c.Request.Context(), user.ID, chatID)
+	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, settings, "success")
 }
 
 // UpdateChat updates a chat by ID using REST PUT semantics.
@@ -443,10 +471,6 @@ func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
 	}
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
-			return
-		}
-		if err.Error() == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())

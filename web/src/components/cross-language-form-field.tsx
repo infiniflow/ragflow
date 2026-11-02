@@ -39,6 +39,8 @@ export const Languages = [
   'Arabic',
   'Turkish',
   'Dutch',
+  'Slovak',
+  'Czech',
 ];
 
 export function useCrossLanguageOptions() {

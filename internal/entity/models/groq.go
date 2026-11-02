@@ -59,8 +59,7 @@ func (g *GroqModel) endpoint(apiConfig *APIConfig, suffix string) (string, error
 	if err != nil {
 		return "", err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	return fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(suffix, "/")), nil
+	return joinURL(baseURL, suffix), nil
 }
 
 func applyGroqReasoningRequestParams(reqBody map[string]any, modelName string, chatModelConfig *ChatConfig) {
@@ -242,11 +241,10 @@ func (g *GroqModel) TranscribeAudio(ctx context.Context, modelName *string, file
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -314,7 +312,7 @@ func (g *GroqModel) TranscribeAudio(ctx context.Context, modelName *string, file
 	}
 
 	// build request
-	req, err := http.NewRequest("POST", url, &body)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -363,11 +361,10 @@ func (g *GroqModel) AudioSpeech(ctx context.Context, modelName *string, audioCon
 		return nil, fmt.Errorf("audio content is empty")
 	}
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -388,7 +385,7 @@ func (g *GroqModel) AudioSpeech(ctx context.Context, modelName *string, audioCon
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -431,5 +428,9 @@ func (g *GroqModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]List
 }
 
 func (g *GroqModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", g.Name())
+}
+
+func (g *GroqModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }

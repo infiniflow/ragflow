@@ -28,8 +28,7 @@ import (
 
 // RuntimeAdapter exposes the agent tool's NLPRetrievalAdapter (the production
 // hybrid-retrieval backend installed by the server) through the runtime
-// RetrievalService singleton that the agentic-RAG harness reads via
-// harness.RuntimeRetriever.
+// RetrievalService singleton the smart-reasoning agent reads per call.
 //
 // The wrapped service is captured at construction, NOT resolved from the runtime
 // singleton on every call: agenttool.SetRetrievalService and
@@ -38,7 +37,7 @@ import (
 // at call time therefore returned this adapter itself, and Search called itself
 // until the stack overflowed on every agentic retrieval.
 //
-// This keeps a single retrieval implementation: the harness and the canvas both
+// This keeps a single retrieval implementation: the agent and the canvas both
 // search through the same NLPRetrievalAdapter.
 type RuntimeAdapter struct {
 	svc agenttool.RetrievalService
@@ -58,10 +57,10 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 	if svc == nil {
 		return nil, agenttool.ErrRetrievalServiceMissing
 	}
-	// The harness calls the runtime service with a nil *gorm.DB (see
-	// harness.RuntimeRetriever.Retrieve), while the underlying NLPRetrievalAdapter
-	// needs a real connection to resolve knowledge bases. Fall back to the
-	// process-wide DB handle used by the rest of the chat pipeline.
+	// Callers of the runtime service pass a nil *gorm.DB, while the underlying
+	// NLPRetrievalAdapter needs a real connection to resolve knowledge bases.
+	// Fall back to the process-wide DB handle used by the rest of the chat
+	// pipeline.
 	if db == nil {
 		db = dao.DB
 	}

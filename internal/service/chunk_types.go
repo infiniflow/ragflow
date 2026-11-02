@@ -161,6 +161,7 @@ type UpdateChunkRequest struct {
 
 // RemoveChunksRequest request for removing chunks
 type RemoveChunksRequest struct {
+	DatasetID string   `json:"-"`
 	DocID     string   `json:"doc_id"`
 	ChunkIDs  []string `json:"chunk_ids,omitempty"`
 	DeleteAll bool     `json:"delete_all,omitempty"`
