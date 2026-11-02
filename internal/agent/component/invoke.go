@@ -154,8 +154,8 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		proxyIP  string
 	)
 	proxyStr, _ := inputs["proxy"].(string)
-	proxyStr = strings.TrimSpace(proxyStr)
 	if proxyStr != "" {
+		proxyStr = strings.TrimSpace(proxyStr)
 		// Fail-closed target check (PR #15426 round-2 review).
 		//
 		// When a proxy is configured, Go dials the proxy host and then

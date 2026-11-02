@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/common"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -561,13 +562,16 @@ func TestInvoke_ProxyDNSPin(t *testing.T) {
 
 func TestInvokeBlankProxy(t *testing.T) {
 	setupAllowAnyHost(t, true)
+	var requests atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
 		_, _ = io.WriteString(w, "direct response")
 	}))
 	defer srv.Close()
 
 	for _, proxy := range []string{"", " ", "\t\r\n", "\u3000\u00a0"} {
 		t.Run(fmt.Sprintf("%q", proxy), func(t *testing.T) {
+			before := requests.Load()
 			c, err := NewInvokeComponent(map[string]any{
 				"method": "GET",
 				"url":    srv.URL,
@@ -580,8 +584,17 @@ func TestInvokeBlankProxy(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
-			if out["result"] != "direct response" || out["_ERROR"] != nil {
-				t.Fatalf("output = %#v, want direct response", out)
+			if proxy == "" {
+				if out["result"] != "direct response" || out["_ERROR"] != nil {
+					t.Fatalf("output = %#v, want direct response", out)
+				}
+				return
+			}
+			if out["_ERROR"] != "URL not valid" || out["result"] != nil {
+				t.Errorf("output = %#v, want rejected proxy", out)
+			}
+			if requests.Load() != before {
+				t.Error("whitespace-only proxy sent a direct request")
 			}
 		})
 	}
