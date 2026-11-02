@@ -291,6 +291,76 @@ func TestLRUPageCache_ConcurrentSamePageRendersOnce(t *testing.T) {
 	}
 }
 
+// TestLRUPageCache_HitDoesNotWaitForSameStripeRender proves a cache hit does
+// not take the page-load stripe. Pages 7 and 71 share a stripe (71%64 == 7);
+// rendering page 71 must not delay a hit on page 7.
+func TestLRUPageCache_HitDoesNotWaitForSameStripeRender(t *testing.T) {
+	c := newLRUPageCache(4)
+	if _, ok := c.Acquire(func(int) (image.Image, bool) { return fakeImg(7), true }, 7); !ok {
+		t.Fatal("prime page 7")
+	}
+	c.Release(7)
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseRender := func() { releaseOnce.Do(func() { close(release) }) }
+
+	var renderWG sync.WaitGroup
+	renderWG.Add(1)
+	var ok71 bool
+	go func() {
+		defer renderWG.Done()
+		_, ok71 = c.Acquire(func(pn int) (image.Image, bool) {
+			close(started)
+			<-release
+			return fakeImg(pn), true
+		}, 71)
+	}()
+
+	defer func() {
+		releaseRender()
+		renderWG.Wait()
+		if ok71 {
+			c.Release(71)
+		}
+		c.Release(7)
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for page 71 render to start")
+	}
+
+	hitDone := make(chan struct{})
+	var hitOK bool
+	go func() {
+		defer close(hitDone)
+		img, ok := c.Acquire(func(int) (image.Image, bool) {
+			t.Error("cache hit on page 7 must not render")
+			return nil, false
+		}, 7)
+		hitOK = ok
+		if img == nil {
+			t.Error("cache hit on page 7 returned a nil image")
+		}
+	}()
+
+	select {
+	case <-hitDone:
+	case <-time.After(time.Second):
+		releaseRender()
+		<-hitDone
+		t.Fatal("cache hit on page 7 waited for the page 71 render sharing its stripe")
+	}
+
+	if !hitOK {
+		t.Fatal("cache hit on page 7 reported a miss")
+	}
+	c.Release(7)
+}
+
 func TestPageCacheLimit_DefaultAndOverride(t *testing.T) {
 	t.Setenv("RAGFLOW_PAGE_CACHE_LIMIT", "")
 	if got := pageCacheLimit(); got != 64 {

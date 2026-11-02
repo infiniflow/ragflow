@@ -61,18 +61,26 @@ func newLRUPageCache(capacity int) *lruPageCache {
 // referenced. The caller must call Release(pn) once cropping from pn is done.
 // render is invoked outside the lock on a miss, so the CGO pdfium render is
 // never serialized by the cache mutex. Concurrent misses of the same page
-// share one load.
+// share one load. A hit is served without taking the page's load stripe, so it
+// never waits for an unrelated page that hashes to the same stripe.
 func (c *lruPageCache) Acquire(render func(int) (image.Image, bool), pn int) (image.Image, bool) {
+	// Fast path: a cached page only needs the cache mutex. Taking the load
+	// stripe here would make a hit wait behind an unrelated page's render.
+	c.mu.Lock()
+	if img, ok := c.lookupLocked(pn); ok {
+		c.mu.Unlock()
+		return img, true
+	}
+	c.mu.Unlock()
+
 	load := &c.loading[uint(pn)%uint(len(c.loading))]
 	load.Lock()
 	defer load.Unlock()
+
+	// Another worker may have loaded the page while this one waited for the
+	// stripe; recheck before paying for a render.
 	c.mu.Lock()
-	if el, ok := c.items[pn]; ok {
-		e := el.Value.(pageCacheEntry)
-		e.ref++
-		el.Value = e
-		c.ll.MoveToFront(el)
-		img := e.img
+	if img, ok := c.lookupLocked(pn); ok {
 		c.mu.Unlock()
 		return img, true
 	}
@@ -89,6 +97,20 @@ func (c *lruPageCache) Acquire(render func(int) (image.Image, bool), pn int) (im
 	c.evictLocked()
 	c.mu.Unlock()
 	return img, true
+}
+
+// lookupLocked returns pn's bitmap and marks it referenced. Caller must hold
+// c.mu.
+func (c *lruPageCache) lookupLocked(pn int) (image.Image, bool) {
+	el, ok := c.items[pn]
+	if !ok {
+		return nil, false
+	}
+	e := el.Value.(pageCacheEntry)
+	e.ref++
+	el.Value = e
+	c.ll.MoveToFront(el)
+	return e.img, true
 }
 
 // Release marks pn as no longer needed by the caller. It becomes a candidate
