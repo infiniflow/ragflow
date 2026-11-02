@@ -520,6 +520,32 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 	return result, nil
 }
 
+// cancelAllTaskBatchSize bounds the IN-clause size when loading the latest
+// ingestion tasks for a dataset-wide cancel, keeping the query within the
+// database driver's prepared-statement parameter limit even for very large
+// queues.
+var cancelAllTaskBatchSize = 1000
+
+// chunkDocumentIDs splits ids into batches of at most size. A non-positive size
+// is treated as 1. Order and membership are preserved across the batches.
+func chunkDocumentIDs(ids []string, size int) [][]string {
+	if size <= 0 {
+		size = 1
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	var batches [][]string
+	for i := 0; i < len(ids); i += size {
+		end := i + size
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batches = append(batches, ids[i:end])
+	}
+	return batches
+}
+
 // StopParseDocumentsAll stops parsing for every document in a dataset whose
 // latest ingestion task matches one of the supplied run statuses. An empty
 // runStatuses defaults to DefaultCancelRunStatuses. The matching document IDs are
@@ -539,14 +565,26 @@ func (s *DocumentService) StopParseDocumentsAll(ctx context.Context, datasetID s
 	if err != nil {
 		return nil, err
 	}
+	// A document may map to multiple files (file2document), which would produce
+	// duplicate document IDs in the list; collapse them so each document is
+	// cancelled and counted at most once.
+	ids = common.Deduplicate(ids)
 	if len(ids) == 0 {
 		return map[string]interface{}{"success_count": 0}, nil
 	}
 
-	// Single batch lookup instead of N per-document GetByDocumentID calls.
-	tasksByDoc, err := s.ingestionTaskDAO.GetLatestByDocumentIDs(ctx, dao.DB, ids)
-	if err != nil {
-		return nil, err
+	// Load the latest task per document in bounded batches so the IN-clause never
+	// exceeds the driver's prepared-statement parameter limit, even for very
+	// large queues.
+	tasksByDoc := make(map[string]*entity.IngestionTask, len(ids))
+	for _, batch := range chunkDocumentIDs(ids, cancelAllTaskBatchSize) {
+		batchTasks, err := s.ingestionTaskDAO.GetLatestByDocumentIDs(ctx, dao.DB, batch)
+		if err != nil {
+			return nil, err
+		}
+		for docID, task := range batchTasks {
+			tasksByDoc[docID] = task
+		}
 	}
 
 	var errs []string
@@ -555,8 +593,11 @@ func (s *DocumentService) StopParseDocumentsAll(ctx context.Context, datasetID s
 		task := tasksByDoc[id]
 		switch {
 		case task == nil:
-			// UNSTART (no task row): nothing to stop; treat as already not-running.
-			successCount++
+			// Selected by the status filter but has no ingestion task to stop:
+			// report as a failure rather than a misleading success (the sibling
+			// StopParseDocuments endpoint returns ErrParseNotRunning for the same
+			// situation).
+			errs = append(errs, fmt.Sprintf("document %s: can't stop parsing that has not started or already completed", id))
 		case common.IsActiveTaskStatus(task.Status):
 			if _, err := s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
 				errs = append(errs, err.Error())

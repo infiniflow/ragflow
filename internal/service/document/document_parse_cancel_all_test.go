@@ -112,9 +112,14 @@ func TestStopParseDocumentsAll_ExplicitIncludesUnstartNoop(t *testing.T) {
 		t.Fatalf("StopParseDocumentsAll failed: %v", err)
 	}
 
-	// doc-1/2/3 cancelled + doc-5 (no task) no-op success = 4.
-	if sc := stopAllSuccessCount(t, result); sc != 4 {
-		t.Fatalf("expected success_count=4, got %d", sc)
+	// doc-1/2/3 cancelled; doc-5 has no ingestion task, so it is reported as a
+	// failure rather than a no-op success.
+	if sc := stopAllSuccessCount(t, result); sc != 3 {
+		t.Fatalf("expected success_count=3 (active cancelled), got %d", sc)
+	}
+	errs, ok := result["errors"].([]string)
+	if !ok || len(errs) != 1 {
+		t.Fatalf("expected exactly 1 error for doc-5 (no task), got %v", result["errors"])
 	}
 	// COMPLETED doc-4 must remain untouched.
 	task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, db, "doc-4")
