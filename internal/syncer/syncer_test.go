@@ -1991,3 +1991,78 @@ func TestFetchSkippedDocumentDoesNotFailSync(t *testing.T) {
 		t.Fatalf("task status = %q, want %q", completed.Status, dao.SyncStatusDone)
 	}
 }
+
+// TestFetchSkippedDocumentIsRelistedByNextSync verifies the completion
+// watermark is held behind a fetch-skipped document: the next task's listing
+// window starts at the failed document's modified time, so the source is
+// listed and retried instead of aging out of the window; once the fetch
+// succeeds the watermark resumes advancing with the clock.
+func TestFetchSkippedDocumentIsRelistedByNextSync(t *testing.T) {
+	failedAt := time.Date(2026, 8, 10, 10, 0, 0, 0, time.UTC)
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	connector := &connectormock.Connector{
+		SyncBatches: []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{
+			{SourceID: "source-bad", FetchRef: &syncerconnector.FetchReference{Key: "bad"}, UpdatedAt: failedAt},
+			{SourceID: "source-good", Blob: []byte("x"), UpdatedAt: failedAt},
+		}}},
+		FetchErrs: map[string]error{"bad": fmt.Errorf("%w: 404 not found", syncerconnector.ErrDocumentSkipped)},
+	}
+	sink := &fakeSink{}
+	coordinator := newCoordinator(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{})
+	taskContext, _ := taskDAO.GetTaskContext(t.Context(), "task-1")
+	outcome, err := coordinator.Execute(t.Context(), taskContext, testLockLease())
+	if err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	nextTaskID := outcome.NextTaskID
+
+	var retryTask entity.SyncLogs
+	if err := db.First(&retryTask, "id = ?", nextTaskID).Error; err != nil {
+		t.Fatalf("load next task: %v", err)
+	}
+	if retryTask.PollRangeStart == nil || !retryTask.PollRangeStart.Time().Equal(failedAt) {
+		t.Fatalf("next task window start = %v, want the failed document's mtime %v", retryTask.PollRangeStart, failedAt)
+	}
+
+	// The source becomes readable again and the next listing window includes
+	// it: the second sync must upsert it and let the watermark advance past
+	// the failed document's modified time.
+	delete(connector.FetchErrs, "bad")
+	connector.SyncBatches = []syncerconnector.SyncBatch{{Documents: []syncerconnector.SourceDocument{
+		{SourceID: "source-bad", Blob: []byte("recovered"), UpdatedAt: failedAt},
+	}}}
+	retryContext, err := taskDAO.GetTaskContext(t.Context(), nextTaskID)
+	if err != nil {
+		t.Fatalf("load retry task context: %v", err)
+	}
+	// Mirror the scheduler: the claimed task runs in the running state.
+	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", nextTaskID).Update("status", dao.SyncStatusRunning).Error; err != nil {
+		t.Fatalf("claim retry task: %v", err)
+	}
+	finalOutcome, err := coordinator.Execute(t.Context(), retryContext, testLockLease())
+	if err != nil {
+		t.Fatalf("execute retry: %v", err)
+	}
+	finalTaskID := finalOutcome.NextTaskID
+
+	sawBad := false
+	for _, call := range sink.calls {
+		if call.SourceDocument.SourceID == "source-bad" {
+			sawBad = true
+		}
+	}
+	if !sawBad {
+		t.Fatalf("retry sync never upserted source-bad; sink calls = %d", len(sink.calls))
+	}
+	var finalTask entity.SyncLogs
+	if err := db.First(&finalTask, "id = ?", finalTaskID).Error; err != nil {
+		t.Fatalf("load final task: %v", err)
+	}
+	if finalTask.PollRangeStart == nil || !finalTask.PollRangeStart.Time().After(failedAt) {
+		t.Fatalf("watermark did not resume advancing: got %v, want > %v", finalTask.PollRangeStart, failedAt)
+	}
+}

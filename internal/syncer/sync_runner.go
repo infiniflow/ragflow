@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
 	syncerconnector "ragflow/internal/syncer/connector"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -123,7 +124,13 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 
 	// prepare sourceType, waterline, stats, resultChan
 	stats := statsFromCheckpointState(checkpointState) // count `add`, `updated`, `skipped`
-	resultChans := make([]<-chan syncJobResult, 0)
+	pendingBatches := make([]pendingBatchResult, 0)
+	// fetchSkipped collects documents whose fetch failed with
+	// ErrDocumentSkipped across every batch of this run, restarts included:
+	// the completion watermark is held behind the oldest of them so the next
+	// sync's listing window still selects them (a failed document whose
+	// modified time has left the window would otherwise be dropped silently).
+	fetchSkipped := make([]syncerconnector.SourceDocument, 0)
 
 	for {
 		// check if task has been canceled
@@ -137,7 +144,7 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 			break
 		}
 		if nextErr != nil {
-			if err = r.collectResults(ctx, taskContext.Task.ID, resultChans, &checkpointState, &stats); err != nil {
+			if err = r.collectResults(ctx, taskContext.Task.ID, pendingBatches, &checkpointState, &stats, &fetchSkipped); err != nil {
 				return "", err
 			}
 			if errors.Is(nextErr, syncerconnector.ErrSyncResumeInvalid) {
@@ -146,7 +153,7 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 				}
 				_ = session.Close()
 				session = nil
-				resultChans = nil
+				pendingBatches = nil
 				session, err = r.restartSyncSession(ctx, taskContext, sourceType, fingerprints, &checkpointState, connector)
 				if err != nil {
 					return "", err
@@ -158,21 +165,31 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 		}
 
 		// a batch, a syncJob
-		resultChan, err := r.submitBatch(ctx, taskContext, sourceType, session, batch)
+		pending, err := r.submitBatch(ctx, taskContext, sourceType, session, batch)
 		if err != nil {
 			return "", err
 		}
-		resultChans = append(resultChans, resultChan)
+		pendingBatches = append(pendingBatches, pending)
 	}
 
-	if err = r.collectResults(ctx, taskContext.Task.ID, resultChans, &checkpointState, &stats); err != nil {
+	if err = r.collectResults(ctx, taskContext.Task.ID, pendingBatches, &checkpointState, &stats, &fetchSkipped); err != nil {
 		return "", err
 	}
 
 	if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
 		return "", err
 	}
-	nextTaskID, err := r.taskService.CompleteSync(ctx, taskContext, checkpointState.WindowEnd, stats)
+	// Hold the watermark behind failed fetches: the next task starts its
+	// listing window at poll_range_end minus the connector tolerance, so a
+	// watermark at or below the oldest failed document keeps it listed even
+	// after its own modified time has aged out. Documents that come back
+	// readable are fingerprint-skipped at zero cost; once none fail, the
+	// watermark resumes advancing with the clock.
+	completeEnd := checkpointState.WindowEnd
+	if oldest := oldestFetchSkip(fetchSkipped); oldest != nil {
+		completeEnd = *oldest
+	}
+	nextTaskID, err := r.taskService.CompleteSync(ctx, taskContext, completeEnd, stats)
 	if err != nil {
 		return "", err
 	}
@@ -230,16 +247,19 @@ func (r *SyncRunner) resetCheckpointForRestart(ctx context.Context, taskID strin
 	return r.checkpoints.SaveSyncCheckpoint(ctx, taskID, *checkpointState)
 }
 
-func (r *SyncRunner) collectResults(ctx context.Context, taskID string, resultChans []<-chan syncJobResult, checkpointState *syncerconnector.SyncCheckpointState, stats *service.SyncStats) error {
+func (r *SyncRunner) collectResults(ctx context.Context, taskID string, pendingBatches []pendingBatchResult, checkpointState *syncerconnector.SyncCheckpointState, stats *service.SyncStats, fetchSkipped *[]syncerconnector.SourceDocument) error {
 	var firstErr error
-	for _, resultChan := range resultChans {
+	for _, pending := range pendingBatches {
 		var jobResult syncJobResult
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case jobResult = <-resultChan:
+		case jobResult = <-pending.results:
 		}
 		stats.Add(jobResult.stats)
+		// Move this batch's fetch skips into the run-wide ledger now so a
+		// later session restart, which drops the pending list, cannot lose it.
+		*fetchSkipped = append(*fetchSkipped, pending.fetchSkips.take()...)
 		if jobResult.err != nil && firstErr == nil {
 			firstErr = jobResult.err
 		}
@@ -256,6 +276,55 @@ func (r *SyncRunner) collectResults(ctx context.Context, taskID string, resultCh
 		return firstErr
 	}
 	return nil
+}
+
+// pendingBatchResult pairs one submitted batch's result channel with the
+// collector its worker goroutine reports fetch skips into.
+type pendingBatchResult struct {
+	results    <-chan syncJobResult
+	fetchSkips *fetchSkipCollector
+}
+
+// fetchSkipCollector accumulates ErrDocumentSkipped documents from a batch's
+// worker goroutine; the runner goroutine drains it in collectResults.
+type fetchSkipCollector struct {
+	mu   sync.Mutex
+	docs []syncerconnector.SourceDocument
+}
+
+func (c *fetchSkipCollector) add(docs []syncerconnector.SourceDocument) {
+	if len(docs) == 0 {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.docs = append(c.docs, docs...)
+}
+
+func (c *fetchSkipCollector) take() []syncerconnector.SourceDocument {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	docs := c.docs
+	c.docs = nil
+	return docs
+}
+
+// oldestFetchSkip returns the earliest modified time among this run's failed
+// fetches, or nil when every fetch succeeded.
+func oldestFetchSkip(docs []syncerconnector.SourceDocument) *time.Time {
+	var oldest time.Time
+	for _, doc := range docs {
+		if doc.UpdatedAt.IsZero() {
+			continue
+		}
+		if oldest.IsZero() || doc.UpdatedAt.Before(oldest) {
+			oldest = doc.UpdatedAt
+		}
+	}
+	if oldest.IsZero() {
+		return nil
+	}
+	return &oldest
 }
 
 func (r *SyncRunner) prepareCheckpoint(ctx context.Context, taskContext dao.SyncTaskContext, windowStart *time.Time, windowEnd time.Time) (syncerconnector.SyncCheckpointState, error) {
@@ -308,14 +377,17 @@ func applyStatsToCheckpointState(state *syncerconnector.SyncCheckpointState, sta
 }
 
 // submitBatch submits one source batch as one BatchJob.
-func (r *SyncRunner) submitBatch(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, batch syncerconnector.SyncBatch) (<-chan syncJobResult, error) {
+func (r *SyncRunner) submitBatch(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, batch syncerconnector.SyncBatch) (pendingBatchResult, error) {
+	fetchSkips := &fetchSkipCollector{}
 	resultChan, err := r.queue.submit(ctx, func(jobCtx context.Context) (service.SyncStats, error) {
-		return r.processDocuments(jobCtx, taskContext, sourceType, session, batch.Documents)
+		stats, skipped, err := r.processDocuments(jobCtx, taskContext, sourceType, session, batch.Documents)
+		fetchSkips.add(skipped)
+		return stats, err
 	}, batch.Checkpoint)
 	if err != nil {
-		return nil, err
+		return pendingBatchResult{}, err
 	}
-	return resultChan, nil
+	return pendingBatchResult{results: resultChan, fetchSkips: fetchSkips}, nil
 }
 
 // cloneSyncCheckpoint safe clone
@@ -335,18 +407,19 @@ func cloneSyncCheckpoint(checkpoint *syncerconnector.SyncCheckpoint) *syncerconn
 }
 
 // processDocuments
-func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, documents []syncerconnector.SourceDocument) (service.SyncStats, error) {
+func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, documents []syncerconnector.SourceDocument) (service.SyncStats, []syncerconnector.SourceDocument, error) {
 	stats := service.SyncStats{}
+	fetchSkipped := make([]syncerconnector.SourceDocument, 0)
 
 	var firstErr error
 	lastCancelCheck := time.Time{}
 	for _, sourceDocument := range documents {
 		if err := ctx.Err(); err != nil {
-			return stats, err
+			return stats, fetchSkipped, err
 		}
 		if lastCancelCheck.IsZero() || time.Since(lastCancelCheck) >= syncCancelCheckInterval {
 			if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
-				return stats, err
+				return stats, fetchSkipped, err
 			}
 			lastCancelCheck = time.Now()
 		}
@@ -358,8 +431,11 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncT
 			continue
 		}
 		stats.AddResult(result)
+		if result.FetchSkipped {
+			fetchSkipped = append(fetchSkipped, sourceDocument)
+		}
 	}
-	return stats, firstErr
+	return stats, fetchSkipped, firstErr
 }
 
 // processDocumentWithRetry retries transient item failures.
@@ -417,7 +493,9 @@ func (r *SyncRunner) processDocument(ctx context.Context, taskContext dao.SyncTa
 		}
 		blob, err := fetcher.Fetch(ctx, *sourceDocument.FetchRef)
 		if errors.Is(err, syncerconnector.ErrDocumentSkipped) {
-			return service.DocumentUpsertResult{DocID: resolved.DocID, Action: service.DocumentActionSkipped}, nil
+			// FetchSkipped keeps this run's watermark behind the document so a
+			// later sync still lists it; see oldestFetchSkip.
+			return service.DocumentUpsertResult{DocID: resolved.DocID, Action: service.DocumentActionSkipped, FetchSkipped: true}, nil
 		}
 		if err != nil {
 			return service.DocumentUpsertResult{}, err
