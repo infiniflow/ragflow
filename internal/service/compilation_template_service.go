@@ -38,7 +38,7 @@ import (
 // fill_config_default_llm: when the config has no explicit llm_id it lazily
 // fills the current member's default chat model id (read-side only; the DB row is left
 // untouched).
-func fillConfigDefaultLLM(ctx context.Context, config entity.JSONMap, access ModelAccess) entity.JSONMap {
+func fillConfigDefaultLLM(ctx context.Context, config entity.JSONMap, access Identity) entity.JSONMap {
 	if len(config) == 0 || access.TenantID == "" {
 		return config
 	}
@@ -118,8 +118,8 @@ func NewCompilationTemplateService() *CompilationTemplateService {
 
 // ListBuiltins returns the read-only template palette loaded from the YAML
 // definitions. Built-in templates are never persisted in the database.
-func (s *CompilationTemplateService) ListBuiltins(ctx context.Context, userID string) ([]*BuiltinTemplate, error) {
-	access, err := ModelAccessForUser(ctx, userID)
+func (s *CompilationTemplateService) ListBuiltins(ctx context.Context) ([]*BuiltinTemplate, error) {
+	access, err := ResolveIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -267,14 +267,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			} else {
 				tenantEmbdID = ""
 			}
-			modelAccess := service.ModelAccess{UserID: userID, TenantID: lockedKB.TenantID}
-			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, modelAccess)
+			identity := service.Identity{UserID: userID, TenantID: lockedKB.TenantID}
+			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, identity)
 			if !ok {
 				txCode = common.CodeDataError
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				target, err := service.NewModelFactory().ResolveInfo(ctx, modelAccess, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelFactory().ResolveInfo(ctx, identity, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
 					tenantEmbdID = target.ID
 				}

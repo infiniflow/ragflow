@@ -52,7 +52,7 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userI
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 	llmID := ""
-	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.ModelAccess{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
 		llmID = service.ModelReference(modelInfo)
 	}
 	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
@@ -163,7 +163,7 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, us
 	delete(parserConfig, "enable_metadata")
 	delete(parserConfig, "built_in_metadata")
 	llmID := ""
-	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.ModelAccess{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
 		llmID = service.ModelReference(modelInfo)
 	}
 	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)

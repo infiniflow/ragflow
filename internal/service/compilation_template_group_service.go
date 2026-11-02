@@ -270,7 +270,7 @@ func (s *CompilationTemplateGroupService) buildGroupItem(ctx context.Context, te
 			Name:        c.Name,
 			Description: derefString(c.Description),
 			Kind:        c.Kind,
-			Config:      fillConfigDefaultLLM(ctx, c.Config, modelAccessForTemplateTenant(ctx, tenantID)),
+			Config:      fillConfigDefaultLLM(ctx, c.Config, identityForTemplateTenant(ctx, tenantID)),
 			CreateTime:  timeStr(c.CreateTime),
 			UpdateTime:  timeStr(c.UpdateTime),
 		})
@@ -393,7 +393,7 @@ func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db
 			}
 		}
 		desc := child.Description
-		config := fillConfigDefaultLLM(ctx, child.Config, modelAccessForTemplateTenant(ctx, tenantID))
+		config := fillConfigDefaultLLM(ctx, child.Config, identityForTemplateTenant(ctx, tenantID))
 		if config == nil {
 			config = entity.JSONMap{}
 		}
@@ -497,7 +497,7 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 
 	// Pass 3: apply updates and inserts.
 	for _, item := range resolved {
-		config := fillConfigDefaultLLM(ctx, item.child.Config, modelAccessForTemplateTenant(ctx, tenantID))
+		config := fillConfigDefaultLLM(ctx, item.child.Config, identityForTemplateTenant(ctx, tenantID))
 		if config == nil {
 			config = entity.JSONMap{}
 		}
@@ -550,8 +550,8 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 	return s.assertUniqueChildNames(ctx, db, groupID, oldNames)
 }
 
-func modelAccessForTemplateTenant(ctx context.Context, tenantID string) ModelAccess {
-	access := ModelAccess{UserID: tenantID, TenantID: tenantID}
+func identityForTemplateTenant(ctx context.Context, tenantID string) Identity {
+	access := Identity{UserID: tenantID, TenantID: tenantID}
 	if subject, ok := permission.SubjectFromContext(ctx); ok && strings.TrimSpace(subject.UserID) != "" {
 		access.UserID = subject.UserID
 	}

@@ -165,7 +165,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 	}
 	defaultEmbdID := req.EmbdID
 	if defaultEmbdID == "" {
-		info, modelErr := NewModelFactory().ResolveDefaultInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, entity.ModelTypeEmbedding)
+		info, modelErr := NewModelFactory().ResolveDefaultInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, entity.ModelTypeEmbedding)
 		if modelErr == nil {
 			defaultEmbdID = ModelReference(info)
 		} else if !errors.Is(modelErr, ErrNoDefaultModel) {

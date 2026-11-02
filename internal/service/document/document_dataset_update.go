@@ -292,7 +292,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, parentChildOverrides)
 			llmID := ""
-			if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.ModelAccess{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+			if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
 				llmID = service.ModelReference(modelInfo)
 			}
 			cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
@@ -323,7 +323,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 				zap.String("parserID", effParserID), zap.Error(cpErr))
 		} else {
 			llmID := ""
-			if modelInfo, llmErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.ModelAccess{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); llmErr == nil {
+			if modelInfo, llmErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); llmErr == nil {
 				llmID = service.ModelReference(modelInfo)
 			} else if !errors.Is(llmErr, service.ErrNoDefaultModel) {
 				common.Warn("document pipeline/version switch: failed to resolve default chat model, falling back to no llm binding",

@@ -211,7 +211,7 @@ func (s *UserTenantService) SetModelSettings(ctx context.Context, userID string,
 			continue
 		}
 
-		info, err := factory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, modelType, modelRef)
+		info, err := factory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, modelType, modelRef)
 		if err != nil {
 			switch {
 			case errors.Is(err, permission.ErrPermissionDenied), errors.Is(err, permission.ErrResourceNotFound), errors.Is(err, permission.ErrMembershipNotFound):
@@ -368,7 +368,7 @@ func (s *UserTenantService) ListDefaultModels(ctx context.Context, userID string
 		if err != nil {
 			continue
 		}
-		info, err := factory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, modelType, modelRef)
+		info, err := factory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, modelType, modelRef)
 		if err != nil || info == nil {
 			continue
 		}

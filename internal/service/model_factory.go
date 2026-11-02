@@ -50,27 +50,9 @@ type modelTarget struct {
 	SupportsTools bool
 }
 
-// ModelAccess identifies the user and active tenant requesting a model.
-// UserID may be empty for trusted background work scoped to TenantID.
-type ModelAccess struct {
-	UserID   string
-	TenantID string
-}
-
 // ErrNoDefaultModel reports that a membership has no configured model for the
 // requested capability.
 var ErrNoDefaultModel = errors.New("no default model configured")
-
-// ModelAccessForUser resolves the current tenant context for an authenticated
-// user. Request handlers should use this when they need to resolve the user's
-// default model rather than assuming the user's personal tenant.
-func ModelAccessForUser(ctx context.Context, userID string) (ModelAccess, error) {
-	tenantID, err := requireCurrentTenantID(ctx, userID)
-	if err != nil {
-		return ModelAccess{}, err
-	}
-	return ModelAccess{UserID: userID, TenantID: tenantID}, nil
-}
 
 // ModelReference returns the internal ID when available, falling back to the
 // composite name for built-in or catalog-only models.
@@ -115,7 +97,7 @@ func NewModelFactory() *ModelFactory {
 }
 
 // NewChatModel resolves and constructs a chat model for the given access scope.
-func (f *ModelFactory) NewChatModel(ctx context.Context, access ModelAccess, modelRef string) (*modelModule.ChatModel, error) {
+func (f *ModelFactory) NewChatModel(ctx context.Context, access Identity, modelRef string) (*modelModule.ChatModel, error) {
 	target, err := f.resolveConfig(ctx, access, entity.ModelTypeChat, modelRef)
 	if err != nil {
 		return nil, err
@@ -124,7 +106,7 @@ func (f *ModelFactory) NewChatModel(ctx context.Context, access ModelAccess, mod
 }
 
 // NewDefaultChatModel constructs the tenant's configured default chat model.
-func (f *ModelFactory) NewDefaultChatModel(ctx context.Context, access ModelAccess) (*modelModule.ChatModel, error) {
+func (f *ModelFactory) NewDefaultChatModel(ctx context.Context, access Identity) (*modelModule.ChatModel, error) {
 	target, err := f.resolveDefaultConfig(ctx, access, entity.ModelTypeChat)
 	if err != nil {
 		return nil, err
@@ -133,7 +115,7 @@ func (f *ModelFactory) NewDefaultChatModel(ctx context.Context, access ModelAcce
 }
 
 // NewEmbeddingModel resolves and constructs an embedding model.
-func (f *ModelFactory) NewEmbeddingModel(ctx context.Context, access ModelAccess, modelRef string) (*modelModule.EmbeddingModel, error) {
+func (f *ModelFactory) NewEmbeddingModel(ctx context.Context, access Identity, modelRef string) (*modelModule.EmbeddingModel, error) {
 	target, err := f.resolveConfig(ctx, access, entity.ModelTypeEmbedding, modelRef)
 	if err != nil {
 		return nil, err
@@ -142,7 +124,7 @@ func (f *ModelFactory) NewEmbeddingModel(ctx context.Context, access ModelAccess
 }
 
 // NewDefaultEmbeddingModel constructs the tenant's configured default embedding model.
-func (f *ModelFactory) NewDefaultEmbeddingModel(ctx context.Context, access ModelAccess) (*modelModule.EmbeddingModel, error) {
+func (f *ModelFactory) NewDefaultEmbeddingModel(ctx context.Context, access Identity) (*modelModule.EmbeddingModel, error) {
 	target, err := f.resolveDefaultConfig(ctx, access, entity.ModelTypeEmbedding)
 	if err != nil {
 		return nil, err
@@ -151,7 +133,7 @@ func (f *ModelFactory) NewDefaultEmbeddingModel(ctx context.Context, access Mode
 }
 
 // NewRerankModel resolves and constructs a rerank model.
-func (f *ModelFactory) NewRerankModel(ctx context.Context, access ModelAccess, modelRef string) (*modelModule.RerankModel, error) {
+func (f *ModelFactory) NewRerankModel(ctx context.Context, access Identity, modelRef string) (*modelModule.RerankModel, error) {
 	target, err := f.resolveConfig(ctx, access, entity.ModelTypeRerank, modelRef)
 	if err != nil {
 		return nil, err
@@ -160,7 +142,7 @@ func (f *ModelFactory) NewRerankModel(ctx context.Context, access ModelAccess, m
 }
 
 // NewDefaultRerankModel constructs the tenant's configured default rerank model.
-func (f *ModelFactory) NewDefaultRerankModel(ctx context.Context, access ModelAccess) (*modelModule.RerankModel, error) {
+func (f *ModelFactory) NewDefaultRerankModel(ctx context.Context, access Identity) (*modelModule.RerankModel, error) {
 	target, err := f.resolveDefaultConfig(ctx, access, entity.ModelTypeRerank)
 	if err != nil {
 		return nil, err
@@ -169,7 +151,7 @@ func (f *ModelFactory) NewDefaultRerankModel(ctx context.Context, access ModelAc
 }
 
 // NewOCRModel resolves and constructs an OCR model.
-func (f *ModelFactory) NewOCRModel(ctx context.Context, access ModelAccess, modelRef string) (*modelModule.OCRModel, error) {
+func (f *ModelFactory) NewOCRModel(ctx context.Context, access Identity, modelRef string) (*modelModule.OCRModel, error) {
 	target, err := f.resolveConfig(ctx, access, entity.ModelTypeOCR, modelRef)
 	if err != nil {
 		return nil, err
@@ -178,7 +160,7 @@ func (f *ModelFactory) NewOCRModel(ctx context.Context, access ModelAccess, mode
 }
 
 // NewASRModel resolves and constructs a speech-to-text model.
-func (f *ModelFactory) NewASRModel(ctx context.Context, access ModelAccess, modelRef string) (*modelModule.ASRModel, error) {
+func (f *ModelFactory) NewASRModel(ctx context.Context, access Identity, modelRef string) (*modelModule.ASRModel, error) {
 	target, err := f.resolveConfig(ctx, access, entity.ModelTypeSpeech2Text, modelRef)
 	if err != nil {
 		return nil, err
@@ -187,7 +169,7 @@ func (f *ModelFactory) NewASRModel(ctx context.Context, access ModelAccess, mode
 }
 
 // NewDefaultASRModel constructs the tenant's configured default speech-to-text model.
-func (f *ModelFactory) NewDefaultASRModel(ctx context.Context, access ModelAccess) (*modelModule.ASRModel, error) {
+func (f *ModelFactory) NewDefaultASRModel(ctx context.Context, access Identity) (*modelModule.ASRModel, error) {
 	target, err := f.resolveDefaultConfig(ctx, access, entity.ModelTypeSpeech2Text)
 	if err != nil {
 		return nil, err
@@ -196,7 +178,7 @@ func (f *ModelFactory) NewDefaultASRModel(ctx context.Context, access ModelAcces
 }
 
 // NewTTSModel resolves and constructs a text-to-speech model.
-func (f *ModelFactory) NewTTSModel(ctx context.Context, access ModelAccess, modelRef string) (*modelModule.TTSModel, error) {
+func (f *ModelFactory) NewTTSModel(ctx context.Context, access Identity, modelRef string) (*modelModule.TTSModel, error) {
 	target, err := f.resolveConfig(ctx, access, entity.ModelTypeTTS, modelRef)
 	if err != nil {
 		return nil, err
@@ -205,7 +187,7 @@ func (f *ModelFactory) NewTTSModel(ctx context.Context, access ModelAccess, mode
 }
 
 // NewDefaultTTSModel constructs the tenant's configured default text-to-speech model.
-func (f *ModelFactory) NewDefaultTTSModel(ctx context.Context, access ModelAccess) (*modelModule.TTSModel, error) {
+func (f *ModelFactory) NewDefaultTTSModel(ctx context.Context, access Identity) (*modelModule.TTSModel, error) {
 	target, err := f.resolveDefaultConfig(ctx, access, entity.ModelTypeTTS)
 	if err != nil {
 		return nil, err
@@ -214,8 +196,8 @@ func (f *ModelFactory) NewDefaultTTSModel(ctx context.Context, access ModelAcces
 }
 
 // ResolveInfo returns model metadata without exposing API credentials or a driver.
-func (f *ModelFactory) ResolveInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error) {
-	access = modelAccessFromContext(ctx, access)
+func (f *ModelFactory) ResolveInfo(ctx context.Context, access Identity, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error) {
+	access = identityFromContext(ctx, access)
 	if modelType == entity.ModelTypeOCR {
 		modelName, instanceName, providerName := splitRightAnchoredModelName(modelRef)
 		if modelName == "deepdoc" && instanceName == "default" && providerName == "infiniflow" {
@@ -252,8 +234,8 @@ func (f *ModelFactory) ResolveInfo(ctx context.Context, access ModelAccess, mode
 
 // ResolveDefaultInfo returns metadata for the tenant's default model without
 // exposing its provider driver or API credentials.
-func (f *ModelFactory) ResolveDefaultInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType) (*modelModule.ModelInfo, error) {
-	access = modelAccessFromContext(ctx, access)
+func (f *ModelFactory) ResolveDefaultInfo(ctx context.Context, access Identity, modelType entity.ModelType) (*modelModule.ModelInfo, error) {
+	access = identityFromContext(ctx, access)
 	if err := f.authorize(ctx, access); err != nil {
 		return nil, err
 	}
@@ -482,15 +464,15 @@ func maxOutputFromModelInfo(modelInfo *modelModule.Model) int {
 	return *modelInfo.MaxOutput
 }
 
-func (f *ModelFactory) resolveConfig(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
-	access = modelAccessFromContext(ctx, access)
+func (f *ModelFactory) resolveConfig(ctx context.Context, access Identity, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
+	access = identityFromContext(ctx, access)
 	if err := f.authorize(ctx, access); err != nil {
 		return nil, err
 	}
 	return f.resolveConfigAuthorized(ctx, access, modelType, modelRef)
 }
 
-func (f *ModelFactory) resolveConfigAuthorized(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
+func (f *ModelFactory) resolveConfigAuthorized(ctx context.Context, access Identity, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
 	modelRef = strings.TrimSpace(modelRef)
 	if modelRef == "" {
 		return nil, fmt.Errorf("%w: model ref is required", errModelConfigUnavailable)
@@ -500,24 +482,24 @@ func (f *ModelFactory) resolveConfigAuthorized(ctx context.Context, access Model
 	return f.resolveModel(ctx, access, modelType, modelRef)
 }
 
-func normalizeModelAccess(access ModelAccess) ModelAccess {
-	access.TenantID = strings.TrimSpace(access.TenantID)
-	access.UserID = strings.TrimSpace(access.UserID)
-	return access
+func normalizeIdentity(identity Identity) Identity {
+	identity.TenantID = strings.TrimSpace(identity.TenantID)
+	identity.UserID = strings.TrimSpace(identity.UserID)
+	return identity
 }
 
-func modelAccessFromContext(ctx context.Context, access ModelAccess) ModelAccess {
-	access = normalizeModelAccess(access)
-	if access.UserID == "" {
+func identityFromContext(ctx context.Context, identity Identity) Identity {
+	identity = normalizeIdentity(identity)
+	if identity.UserID == "" {
 		if subject, ok := permission.SubjectFromContext(ctx); ok && strings.TrimSpace(subject.UserID) != "" &&
-			(strings.TrimSpace(subject.TenantID) == "" || strings.TrimSpace(subject.TenantID) == access.TenantID) {
-			access.UserID = strings.TrimSpace(subject.UserID)
+			(strings.TrimSpace(subject.TenantID) == "" || strings.TrimSpace(subject.TenantID) == identity.TenantID) {
+			identity.UserID = strings.TrimSpace(subject.UserID)
 		}
 	}
-	return access
+	return identity
 }
 
-func (f *ModelFactory) authorize(ctx context.Context, access ModelAccess) error {
+func (f *ModelFactory) authorize(ctx context.Context, access Identity) error {
 	if f == nil {
 		return fmt.Errorf("%w: model factory is not initialized", errModelConfigUnavailable)
 	}
@@ -547,8 +529,8 @@ func (f *ModelFactory) tenantOwnerMembership(ctx context.Context, tenantID strin
 	return membership, nil
 }
 
-func (f *ModelFactory) resolveDefaultConfig(ctx context.Context, access ModelAccess, modelType entity.ModelType) (*modelTarget, error) {
-	access = modelAccessFromContext(ctx, access)
+func (f *ModelFactory) resolveDefaultConfig(ctx context.Context, access Identity, modelType entity.ModelType) (*modelTarget, error) {
+	access = identityFromContext(ctx, access)
 	if err := f.authorize(ctx, access); err != nil {
 		return nil, err
 	}
@@ -559,7 +541,7 @@ func (f *ModelFactory) resolveDefaultConfig(ctx context.Context, access ModelAcc
 	return f.resolveConfigAuthorized(ctx, access, modelType, ref)
 }
 
-func (f *ModelFactory) defaultModelReference(ctx context.Context, access ModelAccess, modelType entity.ModelType) (string, error) {
+func (f *ModelFactory) defaultModelReference(ctx context.Context, access Identity, modelType entity.ModelType) (string, error) {
 	if modelType == 0 {
 		return "", fmt.Errorf("%w: model type is required", errModelConfigUnavailable)
 	}
@@ -614,8 +596,8 @@ func defaultModelRefs(membership *entity.UserTenant, modelType entity.ModelType)
 
 // ResolveModelType returns every model category supported by modelRef. A
 // model may expose multiple categories, such as chat and vision.
-func (s *ModelFactory) ResolveModelType(ctx context.Context, access ModelAccess, modelRef string) ([]entity.ModelType, error) {
-	access = modelAccessFromContext(ctx, access)
+func (s *ModelFactory) ResolveModelType(ctx context.Context, access Identity, modelRef string) ([]entity.ModelType, error) {
+	access = identityFromContext(ctx, access)
 	if err := s.authorize(ctx, access); err != nil {
 		return nil, err
 	}
@@ -684,7 +666,7 @@ func catalogToolSupport(providerName, modelName string) bool {
 
 // resolveModelIdentity resolves saved IDs and composite names before applying the
 // same ownership, relationship, status and resource permission checks.
-func (s *ModelFactory) resolveModelIdentity(ctx context.Context, access ModelAccess, requestedType entity.ModelType, modelRef string) (*modelIdentity, error) {
+func (s *ModelFactory) resolveModelIdentity(ctx context.Context, access Identity, requestedType entity.ModelType, modelRef string) (*modelIdentity, error) {
 	if s == nil || s.modelDAO == nil || s.modelProviderDAO == nil || s.modelInstanceDAO == nil {
 		return nil, fmt.Errorf("%w: model factory is not initialized", errModelConfigUnavailable)
 	}
@@ -796,7 +778,7 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, access ModelAcc
 	return identity, nil
 }
 
-func (s *ModelFactory) resolveModel(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
+func (s *ModelFactory) resolveModel(ctx context.Context, access Identity, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
 	if name, ok := builtinEmbeddingName(modelRef); ok && modelType == entity.ModelTypeEmbedding {
 		driver := modelModule.GetBuiltinEmbeddingModel(name)
 		if driver == nil {

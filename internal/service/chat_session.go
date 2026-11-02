@@ -63,9 +63,9 @@ type chatPipelineRunner interface {
 }
 
 type chatModelInfoResolver interface {
-	ResolveInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error)
-	ResolveDefaultInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType) (*modelModule.ModelInfo, error)
-	ResolveModelType(ctx context.Context, access ModelAccess, modelRef string) ([]entity.ModelType, error)
+	ResolveInfo(ctx context.Context, access Identity, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error)
+	ResolveDefaultInfo(ctx context.Context, access Identity, modelType entity.ModelType) (*modelModule.ModelInfo, error)
+	ResolveModelType(ctx context.Context, access Identity, modelRef string) ([]entity.ModelType, error)
 }
 
 // chunkFeedbackApplier is the dispatch seam for chunk-level feedback
@@ -1225,7 +1225,7 @@ func (s *ChatSessionService) ChatCompletions(
 		dialog.LLMID = llmID
 		dialog.LLMSetting = genConfig
 	} else if dialog.LLMID == "" {
-		modelInfo, err := NewModelFactory().ResolveDefaultInfo(ctx, ModelAccess{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat)
+		modelInfo, err := NewModelFactory().ResolveDefaultInfo(ctx, Identity{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat)
 		if err != nil {
 			return fail(errors.New("no default chat model for tenant"))
 		}
@@ -1824,7 +1824,7 @@ func (s *ChatSessionService) checkTenantLLMAPIKey(ctx context.Context, tenantID,
 		modelFactory = NewModelFactory()
 	}
 	var err error
-	access := ModelAccess{TenantID: tenantID}
+	access := Identity{TenantID: tenantID}
 	if modelName == "" {
 		_, err = modelFactory.ResolveDefaultInfo(ctx, access, entity.ModelTypeChat)
 	} else {

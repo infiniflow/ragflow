@@ -1042,7 +1042,7 @@ func TestModelFactoryResolveModelConfigByID(t *testing.T) {
 	seedModelProviderServiceScope(t, db)
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	target, err := NewModelFactory().resolveConfig(ctx, ModelAccess{TenantID: "user-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
+	target, err := NewModelFactory().resolveConfig(ctx, Identity{TenantID: "user-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
 	if err != nil {
 		t.Fatalf("resolveConfig() error = %v", err)
 	}
@@ -1075,7 +1075,7 @@ func TestModelProviderServiceMissingProviderAndInstancePreserveLookupError(t *te
 	} {
 		t.Run(modelRef, func(t *testing.T) {
 			_, err := NewModelFactory().resolveConfig(
-				serviceTestContext(t, "user-1", "tenant-1"), ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeEmbedding, modelRef,
+				serviceTestContext(t, "user-1", "tenant-1"), Identity{TenantID: "tenant-1"}, entity.ModelTypeEmbedding, modelRef,
 			)
 			if !errors.Is(err, errModelConfigUnavailable) || !errors.Is(err, gorm.ErrRecordNotFound) {
 				t.Fatalf("resolveConfig() error = %v, want unavailable record-not-found error", err)
@@ -1102,13 +1102,13 @@ func TestModelProviderServiceDecodesCompatibleInstanceExtra(t *testing.T) {
 		{
 			name: "model ID",
 			resolve: func() (*modelTarget, error) {
-				return solver.resolveConfig(serviceTestContext(t, "user-1", "user-1"), ModelAccess{TenantID: "user-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
+				return solver.resolveConfig(serviceTestContext(t, "user-1", "user-1"), Identity{TenantID: "user-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
 			},
 		},
 		{
 			name: "provider instance",
 			resolve: func() (*modelTarget, error) {
-				return solver.resolveConfig(serviceTestContext(t, "user-1", "user-1"), ModelAccess{TenantID: "user-1"}, entity.ModelTypeChat, "gpt-test@default@OpenAI")
+				return solver.resolveConfig(serviceTestContext(t, "user-1", "user-1"), Identity{TenantID: "user-1"}, entity.ModelTypeChat, "gpt-test@default@OpenAI")
 			},
 		},
 	}
@@ -1383,7 +1383,7 @@ func TestModelFactoryResolveModelConfigReportsToolSupport(t *testing.T) {
 	ctx := serviceTestContext(t, "user-1", "tenant-1")
 
 	// A reference that passes validation still reads the persisted flag.
-	target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-active")
+	target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-active")
 	if err != nil || target == nil || !target.SupportsTools {
 		t.Fatalf("active chat model = (%v, %v), want tool support", target, err)
 	}
@@ -1396,7 +1396,7 @@ func TestModelFactoryResolveModelConfigReportsToolSupport(t *testing.T) {
 		{"not enrolled as chat", "model-embedding"},
 		{"provider owned by another tenant", "model-foreign"},
 	} {
-		target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, tc.modelID)
+		target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, tc.modelID)
 		if err == nil {
 			t.Errorf("%s: err = nil, want a validation error", tc.name)
 		}
@@ -1457,7 +1457,7 @@ func TestModelFactoryResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 	solver := NewModelFactory()
 	ctx := serviceTestContext(t, "user-1", "tenant-1")
 
-	target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, toolsOn+"@default@OpenAI")
+	target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, toolsOn+"@default@OpenAI")
 	if err != nil {
 		t.Fatalf("tool-capable model: err = %v", err)
 	}
@@ -1465,7 +1465,7 @@ func TestModelFactoryResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 		t.Errorf("tool support = true, want false: the tenant_model flag must win over the catalog")
 	}
 
-	target, err = solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, toolsOff+"@default@OpenAI")
+	target, err = solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, toolsOff+"@default@OpenAI")
 	if err != nil {
 		t.Fatalf("tool-incapable model: err = %v", err)
 	}
@@ -1473,7 +1473,7 @@ func TestModelFactoryResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 		t.Errorf("tool support = false, want true: the tenant_model flag must win over the catalog")
 	}
 
-	target, err = solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, toolsOn+"-disabled@default@OpenAI")
+	target, err = solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, toolsOn+"-disabled@default@OpenAI")
 	if err == nil || (target != nil && target.SupportsTools) {
 		t.Errorf("disabled model = (%v, %v), want (false, error)", target, err)
 	}
@@ -1499,7 +1499,7 @@ func TestModelFactoryResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 
 	solver := NewModelFactory()
 	ctx := serviceTestContext(t, "user-1", "tenant-1")
-	if target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-1"); err != nil || target == nil || !target.SupportsTools {
+	if target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-1"); err != nil || target == nil || !target.SupportsTools {
 		t.Fatalf("baseline = (%v, %v), want tool support", target, err)
 	}
 
@@ -1510,11 +1510,11 @@ func TestModelFactoryResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 		t.Fatalf("failed to drop provider table: %v", err)
 	}
 	// Composite refs resolve the provider row directly.
-	if target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "gpt-test@default@OpenAI"); err == nil {
+	if target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, "gpt-test@default@OpenAI"); err == nil {
 		t.Errorf("composite provider lookup failure = (%v, nil), want a propagated error", target)
 	}
 	// The UUID path too.
-	if target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-1"); err == nil {
+	if target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-1"); err == nil {
 		t.Errorf("uuid provider lookup failure = (%v, nil), want a propagated error", target)
 	}
 
@@ -1522,7 +1522,7 @@ func TestModelFactoryResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 	if err := db.Migrator().DropTable(&entity.TenantModel{}); err != nil {
 		t.Fatalf("failed to drop model table: %v", err)
 	}
-	if target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-1"); err == nil {
+	if target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-1"); err == nil {
 		t.Errorf("model lookup failure = (%v, nil), want a propagated error", target)
 	}
 }

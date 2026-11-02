@@ -451,7 +451,7 @@ func resolveCreateLLMID(ctx context.Context, llmID, tenantID string, llmSetting 
 		}
 	}
 	modelFactory := NewModelFactory()
-	target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, modelType, llmID)
+	target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: tenantID}, modelType, llmID)
 	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
@@ -467,7 +467,7 @@ func resolveCreateRerankID(ctx context.Context, rerankID, tenantID string) (stri
 		return "", nil
 	}
 	modelFactory := NewModelFactory()
-	target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, entity.ModelTypeRerank, rerankID)
+	target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: tenantID}, entity.ModelTypeRerank, rerankID)
 	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
@@ -923,7 +923,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 			req["tenant_decision_id"] = nil
 		} else {
 			modelFactory := NewModelFactory()
-			target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: userID}, entity.ModelTypeDecision, decisionID)
+			target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: userID}, entity.ModelTypeDecision, decisionID)
 			if err != nil {
 				return nil, fmt.Errorf("`decision_id` %s doesn't exist", decisionID)
 			}
@@ -1129,7 +1129,7 @@ func (s *ChatService) resolveRESTLLMID(ctx context.Context, llmID, tenantID stri
 		}
 	}
 	modelFactory := NewModelFactory()
-	target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, modelType, llmID)
+	target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: tenantID}, modelType, llmID)
 	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
@@ -1145,7 +1145,7 @@ func (s *ChatService) resolveRESTRerankID(ctx context.Context, rerankID, tenantI
 		return "", nil
 	}
 	modelFactory := NewModelFactory()
-	target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, entity.ModelTypeRerank, rerankID)
+	target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: tenantID}, entity.ModelTypeRerank, rerankID)
 	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}

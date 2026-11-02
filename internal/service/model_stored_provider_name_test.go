@@ -58,7 +58,7 @@ func TestModelFactoryResolvesStoredMistralOCRProvider(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
 
-	access := ModelAccess{TenantID: "user-1", UserID: "user-1"}
+	access := Identity{TenantID: "user-1", UserID: "user-1"}
 	for _, tc := range []struct {
 		name      string
 		modelRef  string
@@ -96,7 +96,7 @@ func TestModelFactoryResolveModelTypeForStoredMistralOCRProvider(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
 
-	types, err := NewModelFactory().ResolveModelType(serviceTestContext(t, "user-1", "user-1"), ModelAccess{TenantID: "user-1", UserID: "user-1"}, "mistral-ocr-2512@default@Mistral OCR")
+	types, err := NewModelFactory().ResolveModelType(serviceTestContext(t, "user-1", "user-1"), Identity{TenantID: "user-1", UserID: "user-1"}, "mistral-ocr-2512@default@Mistral OCR")
 	if err != nil {
 		t.Fatalf("ResolveModelType: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestModelFactoryResolvesStoredMistralOCRCapability(t *testing.T) {
 	factory := NewModelFactory()
 	for _, modelRef := range []string{"model-mistral-ocr", "mistral-ocr-latest@default@Mistral OCR"} {
 		t.Run(modelRef, func(t *testing.T) {
-			target, err := factory.resolveConfig(serviceTestContext(t, "user-1", "user-1"), ModelAccess{TenantID: "user-1", UserID: "user-1"}, 0, modelRef)
+			target, err := factory.resolveConfig(serviceTestContext(t, "user-1", "user-1"), Identity{TenantID: "user-1", UserID: "user-1"}, 0, modelRef)
 			if err != nil {
 				t.Fatalf("resolve model %q: %v", modelRef, err)
 			}

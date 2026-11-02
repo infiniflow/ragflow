@@ -2703,7 +2703,7 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 	for _, model := range modelObjs {
 		modelRefs = append(modelRefs, permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID})
 	}
-	modelAccesses, err := permission.NewDatabaseChecker(dao.DB).ResolveAccesses(ctx, permission.Subject{UserID: userID}, modelRefs)
+	resourceAccesses, err := permission.NewDatabaseChecker(dao.DB).ResolveAccesses(ctx, permission.Subject{UserID: userID}, modelRefs)
 	if err != nil {
 		_, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, normalizedErr
@@ -2711,7 +2711,7 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 
 	modelList := make([]map[string]interface{}, 0, len(modelObjs))
 	for _, model := range modelObjs {
-		access, ok := modelAccesses[permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID}]
+		access, ok := resourceAccesses[permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID}]
 		if !ok || !access.Allows(permission.OperationRead) {
 			continue
 		}

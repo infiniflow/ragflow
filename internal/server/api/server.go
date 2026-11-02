@@ -154,21 +154,21 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 		documentDAO,
 		agenttool.RetrievalModelConstructors{
 			Embedding: func(ctx context.Context, tenantID, modelRef string) (*modelModule.EmbeddingModel, error) {
-				access := service.ModelAccess{TenantID: tenantID}
+				access := service.Identity{TenantID: tenantID}
 				if strings.TrimSpace(modelRef) == "" {
 					return modelFactory.NewDefaultEmbeddingModel(ctx, access)
 				}
 				return modelFactory.NewEmbeddingModel(ctx, access, modelRef)
 			},
 			Chat: func(ctx context.Context, tenantID, modelRef string) (*modelModule.ChatModel, error) {
-				access := service.ModelAccess{TenantID: tenantID}
+				access := service.Identity{TenantID: tenantID}
 				if strings.TrimSpace(modelRef) == "" {
 					return modelFactory.NewDefaultChatModel(ctx, access)
 				}
 				return modelFactory.NewChatModel(ctx, access, modelRef)
 			},
 			Rerank: func(ctx context.Context, tenantID, modelRef string) (*modelModule.RerankModel, error) {
-				return modelFactory.NewRerankModel(ctx, service.ModelAccess{TenantID: tenantID}, modelRef)
+				return modelFactory.NewRerankModel(ctx, service.Identity{TenantID: tenantID}, modelRef)
 			},
 		},
 		retrievalEnhancer,

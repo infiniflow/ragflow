@@ -131,7 +131,7 @@ func (h *SearchBotHandler) SetAskService(svc *service.AskService) { h.askSvc = s
 // @Router /api/v1/searchbots/related-questions [post]
 func (h *SearchBotHandler) Handle(c *gin.Context) {
 	ctx := c.Request.Context()
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -148,7 +148,7 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 		return
 	}
 
-	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.modelFactory)
+	questions, err := service.GenerateRelatedQuestions(ctx, req.Question, req.SearchID, h.searchSvc, h.modelFactory)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -169,7 +169,7 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/retrieval [post]
 func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, errorCode, nil, errorMessage)
 		return
@@ -211,7 +211,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 
 	svcReq := toRetrievalServiceRequest(&req)
 	ctx := c.Request.Context()
-	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq, user.ID)
+	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -234,7 +234,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/ask [post]
 func (h *SearchBotHandler) Ask(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -269,7 +269,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	// Resolve chat model ID.
 	modelID := ""
 	options := service.AskStreamOptions{}
-	askAccess, accessErr := service.ModelAccessForUser(c.Request.Context(), user.ID)
+	askAccess, accessErr := service.ResolveIdentity(c.Request.Context())
 	if accessErr != nil {
 		if respondPermissionErrorIf(c, accessErr, true) {
 			return
@@ -283,7 +283,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 			return
 		}
 		ctx := c.Request.Context()
-		detail, err := h.searchSvc.GetDetail(ctx, user.ID, req.SearchID)
+		detail, err := h.searchSvc.GetDetail(ctx, req.SearchID)
 		if err != nil {
 			if respondPermissionErrorIf(c, err, true) {
 				return
@@ -325,8 +325,8 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	defer cancel()
 	c.Request = c.Request.WithContext(ctx)
 	hadError := false
-	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, UserID: askAccess.UserID, TenantID: askAccess.TenantID, ModelID: modelID}
-	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, user.ID, req.Question, filtered, options) {
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, Identity: askAccess, ModelID: modelID}
+	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, req.Question, filtered, options) {
 		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
@@ -360,7 +360,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/mindmap [post]
 func (h *SearchBotHandler) MindMap(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -398,7 +398,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 			return
 		}
 		ctx := c.Request.Context()
-		detail, err := h.searchSvc.GetDetail(ctx, user.ID, req.SearchID)
+		detail, err := h.searchSvc.GetDetail(ctx, req.SearchID)
 		if err != nil {
 			if respondPermissionErrorIf(c, err, true) {
 				return
@@ -411,15 +411,13 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	mindMap, err := runMindMap(ctx, mindMapRunConfig{
-		Question:      req.Question,
-		KbIDs:         filtered,
-		SearchID:      req.SearchID,
-		SearchConfig:  searchConfig,
-		AuthUserID:    user.ID,
-		ModelTenantID: user.ID,
-		ChunkSvc:      h.chunkSvc,
-		LLM:           h.modelFactory,
-		TenantSvc:     h.tenantSvc,
+		Question:     req.Question,
+		KbIDs:        filtered,
+		SearchID:     req.SearchID,
+		SearchConfig: searchConfig,
+		ChunkSvc:     h.chunkSvc,
+		LLM:          h.modelFactory,
+		TenantSvc:    h.tenantSvc,
 	})
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
@@ -456,7 +454,7 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 		jsonInternalError(c, fmt.Errorf("search service not configured"))
 		return
 	}
-	detail, err := h.searchSvc.GetSearchShareDetail(ctx, identity.User.ID, searchID)
+	detail, err := h.searchSvc.GetSearchShareDetail(ctx, searchID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return

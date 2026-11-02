@@ -48,7 +48,7 @@ func TestModelFactoryIDAndNameShareValidation(t *testing.T) {
 			}
 			ctx := serviceTestContext(t, "user-1", "user-1")
 			factory := NewModelFactory()
-			access := ModelAccess{UserID: "user-1", TenantID: "user-1"}
+			access := Identity{UserID: "user-1", TenantID: "user-1"}
 			for _, ref := range []string{"model-1", "gpt-test@default@OpenAI"} {
 				info, infoErr := factory.ResolveInfo(ctx, access, entity.ModelTypeChat, ref)
 				types, typeErr := factory.ResolveModelType(ctx, access, ref)
@@ -86,7 +86,7 @@ func TestModelFactoryMetadataDoesNotBuildExecutionConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	factory := NewModelFactory()
-	access := ModelAccess{UserID: "user-1", TenantID: "user-1"}
+	access := Identity{UserID: "user-1", TenantID: "user-1"}
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	for _, ref := range []string{"model-1", "gpt-test@default@OpenAI"} {
 		if _, err := factory.ResolveInfo(ctx, access, entity.ModelTypeChat, ref); err != nil {
@@ -114,7 +114,7 @@ func TestModelFactoryCompositeSelectsRequestedType(t *testing.T) {
 		t.Fatal(err)
 	}
 	factory := NewModelFactory()
-	access := ModelAccess{UserID: "user-1", TenantID: "user-1"}
+	access := Identity{UserID: "user-1", TenantID: "user-1"}
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	ref := "gpt-test@default@OpenAI"
 	types, err := factory.ResolveModelType(ctx, access, ref)

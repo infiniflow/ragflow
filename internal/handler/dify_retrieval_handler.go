@@ -50,8 +50,8 @@ type KBServiceIface interface {
 
 // ModelCreator supplies typed model instances to Dify retrieval.
 type ModelCreator interface {
-	NewEmbeddingModel(ctx context.Context, access service.ModelAccess, modelRef string) (*modelModule.EmbeddingModel, error)
-	NewDefaultChatModel(ctx context.Context, access service.ModelAccess) (*modelModule.ChatModel, error)
+	NewEmbeddingModel(ctx context.Context, access service.Identity, modelRef string) (*modelModule.EmbeddingModel, error)
+	NewDefaultChatModel(ctx context.Context, access service.Identity) (*modelModule.ChatModel, error)
 }
 
 // MetadataServiceIface abstracts MetadataService for the Dify handler.
@@ -240,7 +240,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 
 	// Get embedding model
-	access := service.ModelAccess{UserID: user.ID, TenantID: kb.TenantID}
+	access := service.Identity{UserID: user.ID, TenantID: kb.TenantID}
 	embModel, err := h.modelFactory.NewEmbeddingModel(ctx, access, kb.EmbdID)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to get embedding model: %v", err))

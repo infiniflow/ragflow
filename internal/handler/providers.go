@@ -1058,10 +1058,8 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		Verbosity:   req.Verbosity,
 	}
 
-	userID := c.GetString("user_id")
 	email := c.GetString("email")
 	modelUsage := common.ModelUsage{
-		UserID:    userID,
 		UserEmail: email,
 		Type:      "chat",
 		StartAt:   time.Now(),
@@ -1117,7 +1115,6 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		errorCode, err := h.modelCallService.ChatToModelStreamWithSender(
 			ctx,
 			modelRef,
-			userID,
 			messages,
 			&chatConfig,
 			&modelUsage,
@@ -1144,7 +1141,6 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	response, errorCode, err = h.modelCallService.ChatToModelWithMessages(
 		ctx,
 		modelRef,
-		userID,
 		messages,
 		&chatConfig,
 		&modelUsage,
@@ -1203,7 +1199,6 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
 	modelRef := ""
 	if req.ModelID != nil {
 		modelRef = *req.ModelID
@@ -1220,7 +1215,7 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelCallService.EmbedText(ctx, modelRef, userID, req.Texts, &embeddingConfig)
+	response, errorCode, err = h.modelCallService.EmbedText(ctx, modelRef, req.Texts, &embeddingConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1270,7 +1265,6 @@ func (h *ProviderHandler) RerankDocument(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
 	modelRef := ""
 	if req.ModelID != nil {
 		modelRef = *req.ModelID
@@ -1287,7 +1281,7 @@ func (h *ProviderHandler) RerankDocument(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelCallService.RerankDocument(ctx, modelRef, userID, req.Query, req.Documents, &rerankConfig)
+	response, errorCode, err = h.modelCallService.RerankDocument(ctx, modelRef, req.Query, req.Documents, &rerankConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1338,7 +1332,6 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
 	modelRef := ""
 	if req.ModelID != nil {
 		modelRef = *req.ModelID
@@ -1385,7 +1378,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 		}
 
 		// Stream response using sender function ( the best performance, no channel)
-		errorCode, err := h.modelCallService.TranscribeAudioStream(ctx, modelRef, userID, req.File, &asrConfig, sender)
+		errorCode, err := h.modelCallService.TranscribeAudioStream(ctx, modelRef, req.File, &asrConfig, sender)
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())
 		}
@@ -1397,7 +1390,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelCallService.TranscribeAudio(ctx, modelRef, userID, req.File, &asrConfig)
+	response, errorCode, err = h.modelCallService.TranscribeAudio(ctx, modelRef, req.File, &asrConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1447,7 +1440,6 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
 	modelRef := ""
 	if req.ModelID != nil {
 		modelRef = *req.ModelID
@@ -1494,7 +1486,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 		}
 
 		// Stream response using sender function ( the best performance, no channel)
-		errorCode, err := h.modelCallService.AudioSpeechStream(ctx, modelRef, userID, req.Text, &ttsConfig, sender)
+		errorCode, err := h.modelCallService.AudioSpeechStream(ctx, modelRef, req.Text, &ttsConfig, sender)
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())
 		}
@@ -1506,7 +1498,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelCallService.AudioSpeech(ctx, modelRef, userID, req.Text, &ttsConfig)
+	response, errorCode, err = h.modelCallService.AudioSpeech(ctx, modelRef, req.Text, &ttsConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1555,8 +1547,6 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
-
 	modelRef := ""
 	if req.ModelID != nil {
 		modelRef = *req.ModelID
@@ -1571,7 +1561,7 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelCallService.OCRFile(ctx, modelRef, userID, req.Content, req.URL, &OCRConfig)
+	response, errorCode, err = h.modelCallService.OCRFile(ctx, modelRef, req.Content, req.URL, &OCRConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1623,8 +1613,6 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
-
 	modelRef := ""
 	if req.ModelID != nil {
 		modelRef = *req.ModelID
@@ -1645,7 +1633,7 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelCallService.ParseFile(ctx, modelRef, userID, req.Content, req.URL, &parseFileConfig)
+	response, errorCode, err = h.modelCallService.ParseFile(ctx, modelRef, req.Content, req.URL, &parseFileConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return

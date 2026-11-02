@@ -451,7 +451,7 @@ type fakeChatModelConfigResolver struct {
 	err      error
 }
 
-func (f *fakeChatModelConfigResolver) ResolveInfo(_ context.Context, access ModelAccess, _ entity.ModelType, modelRef string) (*modelModule.ModelInfo, error) {
+func (f *fakeChatModelConfigResolver) ResolveInfo(_ context.Context, access Identity, _ entity.ModelType, modelRef string) (*modelModule.ModelInfo, error) {
 	f.tenantID = access.TenantID
 	f.llmID = modelRef
 	if f.err != nil {
@@ -460,7 +460,7 @@ func (f *fakeChatModelConfigResolver) ResolveInfo(_ context.Context, access Mode
 	return &modelModule.ModelInfo{ID: "resolved-model-id", Name: "resolved-model"}, nil
 }
 
-func (f *fakeChatModelConfigResolver) ResolveDefaultInfo(_ context.Context, access ModelAccess, _ entity.ModelType) (*modelModule.ModelInfo, error) {
+func (f *fakeChatModelConfigResolver) ResolveDefaultInfo(_ context.Context, access Identity, _ entity.ModelType) (*modelModule.ModelInfo, error) {
 	f.tenantID = access.TenantID
 	if f.err != nil {
 		return nil, f.err
@@ -468,7 +468,7 @@ func (f *fakeChatModelConfigResolver) ResolveDefaultInfo(_ context.Context, acce
 	return &modelModule.ModelInfo{ID: "resolved-model-id", Name: "resolved-model"}, nil
 }
 
-func (f *fakeChatModelConfigResolver) ResolveModelType(ctx context.Context, access ModelAccess, modelRef string) ([]entity.ModelType, error) {
+func (f *fakeChatModelConfigResolver) ResolveModelType(ctx context.Context, access Identity, modelRef string) ([]entity.ModelType, error) {
 	return []entity.ModelType{entity.ModelTypeChat}, nil
 }
 

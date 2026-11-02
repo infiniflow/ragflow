@@ -30,15 +30,15 @@ import (
 )
 
 // GenerateRelatedQuestions generates related search questions for chat/searchbot endpoints.
-func GenerateRelatedQuestions(ctx context.Context, userID, question, searchID string, searchSvc *SearchService, modelFactory *ModelFactory) ([]string, error) {
+func GenerateRelatedQuestions(ctx context.Context, question, searchID string, searchSvc *SearchService, modelFactory *ModelFactory) ([]string, error) {
 	if modelFactory == nil {
 		return nil, fmt.Errorf("model factory not configured")
 	}
-	searchConfig, err := relatedQuestionsSearchConfig(ctx, userID, searchID, searchSvc)
+	searchConfig, err := relatedQuestionsSearchConfig(ctx, searchID, searchSvc)
 	if err != nil {
 		return nil, err
 	}
-	access, err := ModelAccessForUser(ctx, userID)
+	access, err := ResolveIdentity(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -73,14 +73,14 @@ func GenerateRelatedQuestions(ctx context.Context, userID, question, searchID st
 	return []string{}, nil
 }
 
-func relatedQuestionsSearchConfig(ctx context.Context, userID, searchID string, searchSvc *SearchService) (map[string]interface{}, error) {
+func relatedQuestionsSearchConfig(ctx context.Context, searchID string, searchSvc *SearchService) (map[string]interface{}, error) {
 	if searchID == "" {
 		return map[string]interface{}{}, nil
 	}
 	if searchSvc == nil {
 		return nil, fmt.Errorf("search service not configured")
 	}
-	detail, err := searchSvc.GetDetail(ctx, userID, searchID)
+	detail, err := searchSvc.GetDetail(ctx, searchID)
 	if err != nil {
 		return nil, err
 	}
