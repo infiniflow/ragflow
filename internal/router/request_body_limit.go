@@ -32,7 +32,7 @@ func requestBodyLimitMiddleware() gin.HandlerFunc {
 		}
 
 		if c.Request.ContentLength > limit {
-			common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: "request body too large", HTTPStatus: http.StatusRequestEntityTooLarge})
+			common.RespondError(c, common.CodeBadRequest, "request body too large", common.ResponseOptions{HTTPStatus: http.StatusRequestEntityTooLarge})
 			c.Abort()
 			return
 		}

@@ -10,38 +10,51 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestRespond(t *testing.T) {
+func TestResponseHelpers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	var nilMap map[string]any
 	var nilSlice []string
 	tests := []struct {
-		name     string
-		response Response
-		status   int
-		body     string
+		name   string
+		write  func(*gin.Context)
+		status int
+		body   string
 	}{
-		{"no data", Response{}, 200, `{"code":0,"message":"success","data":null}`},
-		{"object", Response{Data: map[string]any{"ok": false}}, 200, `{"code":0,"message":"success","data":{"ok":false}}`},
-		{"struct", Response{Data: struct {
-			ID string `json:"id"`
-		}{"one"}}, 200, `{"code":0,"message":"success","data":{"id":"one"}}`},
-		{"array", Response{Data: []int{0, 1}}, 200, `{"code":0,"message":"success","data":[0,1]}`},
-		{"empty object", Response{Data: map[string]any{}}, 200, `{"code":0,"message":"success","data":{}}`},
-		{"empty array", Response{Data: []int{}}, 200, `{"code":0,"message":"success","data":[]}`},
-		{"nil map", Response{Data: nilMap}, 200, `{"code":0,"message":"success","data":null}`},
-		{"nil slice", Response{Data: nilSlice}, 200, `{"code":0,"message":"success","data":null}`},
-		{"business error", Response{Code: CodeBadRequest}, 200, `{"code":400,"message":"Bad request","data":null}`},
-		{"HTTP error", Response{Code: CodeBadRequest, Message: "Missing name", HTTPStatus: http.StatusBadRequest}, 400, `{"code":400,"message":"Missing name","data":null}`},
-		{"version", Response{Message: "v1.2.3"}, 200, `{"code":0,"message":"v1.2.3","data":null}`},
-		{"pagination", Response{Data: []string{}, Total: 0}, 200, `{"code":0,"message":"success","data":[],"total":0}`},
-		{"detail", Response{Code: CodeBillingStorageInsufficient, Detail: map[string]int{"limit": 100}}, 200, `{"code":2003,"message":"Billing storage insufficient","data":null,"detail":{"limit":100}}`},
-		{"raw object", Response{Data: json.RawMessage(`{"name":"test"}`)}, 200, `{"code":0,"message":"success","data":{"name":"test"}}`},
+		{"no data", func(c *gin.Context) { RespondSuccessObject(c, nil, "") }, 200, `{"code":0,"message":"success","data":null}`},
+		{"object", func(c *gin.Context) { RespondSuccessObject(c, map[string]any{"ok": false}, "") }, 200, `{"code":0,"message":"success","data":{"ok":false}}`},
+		{"struct", func(c *gin.Context) {
+			RespondSuccessObject(c, struct {
+				ID string `json:"id"`
+			}{"one"}, "")
+		}, 200, `{"code":0,"message":"success","data":{"id":"one"}}`},
+		{"list", func(c *gin.Context) { RespondSuccessList(c, []int{0, 1}, "") }, 200, `{"code":0,"message":"success","data":[0,1]}`},
+		{"empty object", func(c *gin.Context) { RespondSuccessObject(c, map[string]any{}, "") }, 200, `{"code":0,"message":"success","data":{}}`},
+		{"empty list", func(c *gin.Context) { RespondSuccessList(c, []int{}, "") }, 200, `{"code":0,"message":"success","data":[]}`},
+		{"nil object", func(c *gin.Context) { RespondSuccessObject(c, nilMap, "") }, 200, `{"code":0,"message":"success","data":null}`},
+		{"nil list", func(c *gin.Context) { RespondSuccessList(c, nilSlice, "") }, 200, `{"code":0,"message":"success","data":null}`},
+		{"business error", func(c *gin.Context) { RespondError(c, CodeBadRequest, "") }, 200, `{"code":400,"message":"Bad request","data":null}`},
+		{"HTTP error", func(c *gin.Context) {
+			RespondError(c, CodeBadRequest, "Missing name", ResponseOptions{HTTPStatus: http.StatusBadRequest})
+		}, 400, `{"code":400,"message":"Missing name","data":null}`},
+		{"string", func(c *gin.Context) { Respond(c, CodeSuccess, "v1.2.3", "") }, 200, `{"code":0,"message":"success","data":"v1.2.3"}`},
+		{"boolean", func(c *gin.Context) { Respond(c, CodeSuccess, false, "") }, 200, `{"code":0,"message":"success","data":false}`},
+		{"integer", func(c *gin.Context) { Respond(c, CodeSuccess, int64(0), "") }, 200, `{"code":0,"message":"success","data":0}`},
+		{"error data", func(c *gin.Context) { Respond(c, CodeDataError, false, "Missing document") }, 200, `{"code":102,"message":"Missing document","data":false}`},
+		{"pagination", func(c *gin.Context) {
+			RespondSuccessList(c, []string{}, "", ResponseOptions{Total: 0})
+		}, 200, `{"code":0,"message":"success","data":[],"total":0}`},
+		{"detail", func(c *gin.Context) {
+			RespondError(c, CodeBillingStorageInsufficient, "", ResponseOptions{Detail: map[string]int{"limit": 100}})
+		}, 200, `{"code":2003,"message":"Billing storage insufficient","data":null,"detail":{"limit":100}}`},
+		{"combined options", func(c *gin.Context) {
+			RespondSuccessList(c, []string{"one"}, "created", ResponseOptions{HTTPStatus: http.StatusCreated}, ResponseOptions{Total: 1})
+		}, 201, `{"code":0,"message":"created","data":["one"],"total":1}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(recorder)
-			Respond(c, tt.response)
+			tt.write(c)
 			if recorder.Code != tt.status {
 				t.Fatalf("status = %d, want %d", recorder.Code, tt.status)
 			}
@@ -57,27 +70,6 @@ func TestRespond(t *testing.T) {
 			}
 			if got := recorder.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
 				t.Fatalf("Content-Type = %q", got)
-			}
-		})
-	}
-}
-
-func TestRespondRejectsScalarAndInvalidData(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	for name, data := range map[string]any{
-		"string": "secret", "bool": false, "integer": 0, "float": 1.5,
-		"bytes": []byte("secret"), "raw scalar": json.RawMessage(`true`),
-		"invalid JSON": json.RawMessage(`{`), "unsupported": make(chan int),
-	} {
-		t.Run(name, func(t *testing.T) {
-			recorder := httptest.NewRecorder()
-			c, _ := gin.CreateTestContext(recorder)
-			Respond(c, Response{Data: data, Message: "private details", Total: 5})
-			if recorder.Code != http.StatusInternalServerError {
-				t.Fatalf("status = %d, body = %s", recorder.Code, recorder.Body.String())
-			}
-			if got, want := recorder.Body.String(), `{"code":500,"message":"Internal server error","data":null}`; got != want {
-				t.Fatalf("body = %s, want %s", got, want)
 			}
 		})
 	}

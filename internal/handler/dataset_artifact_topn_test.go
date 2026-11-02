@@ -94,7 +94,7 @@ func insertArtifactGraphKB(t *testing.T, db *gorm.DB, kbID, ownerID string) {
 }
 
 // artifactGraphResponse mirrors the JSON envelope produced by
-// common.Respond for the wiki-graph endpoint.
+// common.ErrorWithCode / common.SuccessWithData for the wiki-graph endpoint.
 type artifactGraphResponse struct {
 	Code    int         `json:"code"`
 	Message string      `json:"message"`

@@ -1,5 +1,33 @@
 # RAGFlow Go implementation - Development Guide
 
+## API response helpers
+
+Pass response data directly to the helper:
+
+```go
+common.RespondSuccessList(c, items, "success")
+common.RespondSuccessObject(c, item, "success")
+common.RespondError(c, common.CodeBadRequest, "Missing name")
+```
+
+`Respond` handles scalar or mixed payloads and errors with data:
+
+```go
+common.Respond(c, common.CodeSuccess, true, "success")
+common.Respond(c, code, data, message)
+```
+
+The default HTTP status is 200. Supply `ResponseOptions` only when a response
+needs an explicit HTTP status, a top-level total, or error details:
+
+```go
+common.RespondSuccessList(c, items, "success", common.ResponseOptions{Total: total})
+common.RespondError(c, common.CodeBadRequest, "Missing name", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
+```
+
+Boolean, string, and integer payloads remain in `data`. Responses without a
+payload use `data: null`.
+
 ## 1. Prepare dependencies
 
 ### 1.1 Install CMake and build RAGFlow on Ubuntu 24.04

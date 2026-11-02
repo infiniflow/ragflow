@@ -468,7 +468,7 @@ func TestConnectorHandlerDeleteConnector(t *testing.T) {
 			name:     "success",
 			service:  fakeConnectorService{},
 			wantCode: common.CodeSuccess,
-			wantData: nil,
+			wantData: true,
 		},
 		{
 			name:     "unauthorized",

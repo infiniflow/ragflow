@@ -55,37 +55,37 @@ func (h *ModelHandler) ListAllModels(c *gin.Context) {
 	// list tenant models
 	models, err := h.modelProviderService.ListAllModels(page, pageSize)
 	if err != nil {
-		common.Respond(c, common.Response{Code: common.CodeDataError, Message: err.Error()})
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: models})
+	common.RespondSuccessList(c, models, "success")
 	return
 }
 
 func (h *ModelHandler) ShowModel(c *gin.Context) {
 	encodedModelName := c.Param("model_name")
 	if encodedModelName == "" {
-		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: "Encoded model name is empty"})
+		common.RespondError(c, common.CodeBadRequest, "Encoded model name is empty")
 		return
 	}
 
 	decodedModelName, err := common.DecodeFromBase64(encodedModelName)
 	if err != nil {
-		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: err.Error()})
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if decodedModelName == "" {
-		common.Respond(c, common.Response{Code: common.CodeBadRequest, Message: "Decoded model name is empty"})
+		common.RespondError(c, common.CodeBadRequest, "Decoded model name is empty")
 		return
 	}
 
 	// Get model
 	model, err := h.modelProviderService.ShowModel(decodedModelName)
 	if err != nil {
-		common.Respond(c, common.Response{Code: common.CodeDataError, Message: err.Error()})
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: model})
+	common.RespondSuccessObject(c, model, "success")
 }

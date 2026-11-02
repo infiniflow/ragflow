@@ -331,7 +331,7 @@ func TestChatChannelHandlerDeleteChatChannelSuccess(t *testing.T) {
 	if payload["code"] != float64(common.CodeSuccess) {
 		t.Fatalf("payload=%v", payload)
 	}
-	if payload["data"] != nil {
+	if payload["data"] != true {
 		t.Fatalf("payload=%v", payload)
 	}
 }

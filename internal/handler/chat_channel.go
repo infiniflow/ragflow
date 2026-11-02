@@ -58,13 +58,13 @@ type CreateChatChannelRequest struct {
 func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	var req CreateChatChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "Invalid request: " + err.Error()})
+		common.RespondError(c, common.CodeDataError, "Invalid request: "+err.Error())
 		return
 	}
 	if req.Config == nil {
@@ -85,17 +85,17 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error()})
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: row})
+	common.RespondSuccessObject(c, row, "success")
 }
 
 // ListChatChannel handles GET /chat-channels.
 func (h *ChatChannelHandler) ListChatChannel(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -105,29 +105,29 @@ func (h *ChatChannelHandler) ListChatChannel(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error()})
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: rows})
+	common.RespondSuccessList(c, rows, "success")
 }
 
 // GetChatChannel handles GET /chat-channels/:channel_id.
 func (h *ChatChannelHandler) GetChatChannel(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "user_id is required"})
+		common.RespondError(c, common.CodeArgumentError, "user_id is required")
 		return
 	}
 
 	channelID := strings.TrimSpace(c.Param("channel_id"))
 	if channelID == "" {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "channel_id is required"})
+		common.RespondError(c, common.CodeArgumentError, "channel_id is required")
 		return
 	}
 
@@ -138,32 +138,32 @@ func (h *ChatChannelHandler) GetChatChannel(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: channel})
+	common.RespondSuccessObject(c, channel, "success")
 }
 
 // UpdateChatChannel handles PATCH /chat-channels/:channel_id.
 func (h *ChatChannelHandler) UpdateChatChannel(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "user_id is required"})
+		common.RespondError(c, common.CodeArgumentError, "user_id is required")
 		return
 	}
 
 	channelID := strings.TrimSpace(c.Param("channel_id"))
 	if channelID == "" {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "channel_id is required"})
+		common.RespondError(c, common.CodeArgumentError, "channel_id is required")
 		return
 	}
 
 	var request map[string]interface{}
 	if err := c.ShouldBindJSON(&request); err != nil {
-		common.Respond(c, common.Response{Code: common.CodeDataError, Message: err.Error()})
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -177,26 +177,26 @@ func (h *ChatChannelHandler) UpdateChatChannel(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: result})
+	common.RespondSuccessObject(c, result, "success")
 }
 
 // GetChatChannelRuntime returns live runtime metadata for a running chat channel.
 func (h *ChatChannelHandler) GetChatChannelRuntime(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "user_id is required"})
+		common.RespondError(c, common.CodeArgumentError, "user_id is required")
 		return
 	}
 
 	channelID := strings.TrimSpace(c.Param("channel_id"))
 	if channelID == "" {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "channel_id is required"})
+		common.RespondError(c, common.CodeArgumentError, "channel_id is required")
 		return
 	}
 
@@ -206,37 +206,37 @@ func (h *ChatChannelHandler) GetChatChannelRuntime(c *gin.Context) {
 		writeChatChannelError(c, code, chatChannelErrMsg(code, err))
 		return
 	}
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: result})
+	common.RespondSuccessObject(c, result, "success")
 }
 
 // DeleteChatChannel handles DELETE /chat-channels/:channel_id.
 func (h *ChatChannelHandler) DeleteChatChannel(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "user_id is required"})
+		common.RespondError(c, common.CodeArgumentError, "user_id is required")
 		return
 	}
 
 	channelID := strings.TrimSpace(c.Param("channel_id"))
 	if channelID == "" {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "channel_id is required"})
+		common.RespondError(c, common.CodeArgumentError, "channel_id is required")
 		return
 	}
 
 	ctx := c.Request.Context()
-	_, code, err := h.chatChannelService.DeleteChatChannel(ctx, userID, channelID)
+	result, code, err := h.chatChannelService.DeleteChatChannel(ctx, userID, channelID)
 	if code != common.CodeSuccess || err != nil {
 		writeChatChannelError(c, code, chatChannelErrMsg(code, err))
 		return
 	}
 
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success"})
+	common.Respond(c, common.CodeSuccess, result, "success")
 }
 
 func unwrapChatChannelPayload(payload map[string]interface{}) map[string]interface{} {
@@ -247,7 +247,7 @@ func unwrapChatChannelPayload(payload map[string]interface{}) map[string]interfa
 }
 
 func writeChatChannelError(c *gin.Context, code common.ErrorCode, message string) {
-	common.Respond(c, common.Response{Code: code, Message: message})
+	common.RespondError(c, code, message)
 }
 
 func chatChannelErrMsg(code common.ErrorCode, err error) string {

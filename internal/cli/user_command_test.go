@@ -25,64 +25,6 @@ import (
 	"testing"
 )
 
-func TestAPIShowVersionReadsMessage(t *testing.T) {
-	client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/system/version" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"code":0,"message":"v1.2.3","data":null}`)
-	}))
-	c := &CLI{
-		Config:             &CommandLineConfig{APIClientConfig: APIModeConfig{CurrentAPIServer: "test"}},
-		APIServerClientMap: map[string]*HTTPClient{"test": client},
-	}
-	response, err := c.APIShowVersionCommand(1, &Command{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	version := response.(*KeyValueResponse)
-	if version.Value != "v1.2.3" || version.Key != "version" || version.Code != 0 {
-		t.Fatalf("unexpected version response: %#v", version)
-	}
-}
-
-func TestDevRemoveChunksDoesNotReportMissingCount(t *testing.T) {
-	client := newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/v1/datasets":
-			fmt.Fprint(w, `{"code":0,"data":[{"id":"dataset-1","name":"test"}],"message":"success"}`)
-		case "/api/v1/datasets/dataset-1/documents/doc-1/chunks":
-			if r.Method != http.MethodDelete {
-				t.Errorf("method = %s, want DELETE", r.Method)
-			}
-			fmt.Fprint(w, `{"code":0,"message":"success","data":null}`)
-		default:
-			t.Errorf("unexpected path: %s", r.URL.Path)
-			http.NotFound(w, r)
-		}
-	}))
-	client.useAPIKey = true
-	c := &CLI{
-		Config: &CommandLineConfig{
-			CLIMode:         APIMode,
-			APIClientConfig: APIModeConfig{CurrentAPIServer: "test"},
-		},
-		APIServerClientMap: map[string]*HTTPClient{"test": client},
-	}
-	response, err := c.DevRemoveChunksCommand(1, &Command{Params: map[string]interface{}{
-		"dataset_name": "test", "doc_id": "doc-1", "delete_all": true,
-	}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	result := response.(*SimpleResponse)
-	if result.Code != 0 || result.Message != "Success to remove chunks from document doc-1" {
-		t.Fatalf("unexpected deletion response: %#v", result)
-	}
-}
-
 func TestParseLocalHTMLWithInlineImage(t *testing.T) {
 	filename := filepath.Join(t.TempDir(), "image.html")
 	if err := os.WriteFile(filename, []byte(`<p>hello</p><img alt="image" src="data:image/png;base64,aGVsbG8=">`), 0600); err != nil {

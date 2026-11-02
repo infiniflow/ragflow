@@ -120,8 +120,8 @@ func TestAgentVersionActions(t *testing.T) {
 				if response.Code != wantCode || response.Message == "" {
 					t.Fatalf("unexpected response: %s", w.Body.String())
 				}
-				if wantCode == common.CodeSuccess && response.Data != nil {
-					t.Fatalf("success data = %v, want null", response.Data)
+				if wantCode == common.CodeSuccess && response.Data != true {
+					t.Fatalf("success data = %v, want true", response.Data)
 				}
 				persisted, err := dao.NewUserCanvasDAO().GetByID(t.Context(), db, current.ID)
 				if err != nil {

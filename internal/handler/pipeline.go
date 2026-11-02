@@ -62,10 +62,10 @@ func NewPipelineHandler() *PipelineHandler {
 // templates themselves are static data with no tenant scoping.
 func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 	if h == nil || h.registry == nil {
-		common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: &pipelinepkg.BuiltinPipelineListResponse{
+		common.RespondSuccessObject(c, &pipelinepkg.BuiltinPipelineListResponse{
 			BuiltinPipelines: []*pipelinepkg.BuiltinPipelineMeta{},
 			Total:            0,
-		}})
+		}, "success")
 		return
 	}
 
@@ -74,7 +74,7 @@ func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 	// When type is empty or "builtin", return the builtin catalog.
 	_ = pipelineType
 
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: h.registry.List()})
+	common.RespondSuccessObject(c, h.registry.List(), "success")
 }
 
 // GetPipeline GET /api/v1/pipelines/:id
@@ -83,16 +83,16 @@ func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 // templates are static data with no tenant scoping.
 func (h *PipelineHandler) GetPipeline(c *gin.Context) {
 	if h == nil || h.registry == nil {
-		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "pipeline not found"})
+		common.RespondError(c, common.CodeDataError, "pipeline not found")
 		return
 	}
 
 	id := c.Param("id")
 	tpl, ok := h.registry.Get(id)
 	if !ok || tpl == nil {
-		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "pipeline not found"})
+		common.RespondError(c, common.CodeDataError, "pipeline not found")
 		return
 	}
 
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: map[string]any{"dsl": tpl.DSL}})
+	common.RespondSuccessObject(c, map[string]any{"dsl": tpl.DSL}, "success")
 }

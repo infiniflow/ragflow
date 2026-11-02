@@ -55,7 +55,7 @@ var ttsSegmentSplitRegex = regexp.MustCompile("[，。/《》？；：！\\n\\r:
 func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -64,18 +64,18 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 
 	var req chatAudioSpeechRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: err.Error()})
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
 	if h.modelFactory == nil {
-		common.Respond(c, common.Response{Code: common.CodeServerError, Message: "TTS service not available"})
+		common.RespondError(c, common.CodeServerError, "TTS service not available")
 		return
 	}
 
 	ttsModel, err := h.modelFactory.NewDefaultTTSModel(ctx, service.Identity{UserID: user.ID, TenantID: user.ID})
 	if err != nil {
-		common.Respond(c, common.Response{Code: common.CodeDataError, Message: err.Error()})
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -174,10 +174,10 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 	}
 	if !headerWritten {
 		if firstSynthErr != nil {
-			common.Respond(c, common.Response{Code: common.CodeServerError, Message: fmt.Sprintf("TTS synthesis failed for model %s (%s)", modelName, providerName)})
+			common.RespondError(c, common.CodeServerError, fmt.Sprintf("TTS synthesis failed for model %s (%s)", modelName, providerName))
 			return
 		}
-		common.Respond(c, common.Response{Code: common.CodeServerError, Message: fmt.Sprintf("TTS synthesis produced no audio for model %s (%s)", modelName, providerName)})
+		common.RespondError(c, common.CodeServerError, fmt.Sprintf("TTS synthesis produced no audio for model %s (%s)", modelName, providerName))
 	}
 }
 
@@ -211,12 +211,12 @@ var chatAudioAllowedExtsList = func() string {
 func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	if h.modelFactory == nil {
-		common.Respond(c, common.Response{Code: common.CodeServerError, Message: "ASR service not available"})
+		common.RespondError(c, common.CodeServerError, "ASR service not available")
 		return
 	}
 
@@ -225,11 +225,11 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 	// rejected instead of being drained into memory or spooled to disk.
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, chatAudioUploadMaxBytes)
 	if cl := c.Request.ContentLength; cl > chatAudioUploadMaxBytes {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "request body too large."})
+		common.RespondError(c, common.CodeArgumentError, "request body too large.")
 		return
 	}
 	if err := c.Request.ParseMultipartForm(chatAudioUploadMaxBytes); err != nil {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "invalid multipart form: " + err.Error()})
+		common.RespondError(c, common.CodeArgumentError, "invalid multipart form: "+err.Error())
 		return
 	}
 	defer func() {
@@ -240,20 +240,20 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "Missing 'file' in multipart form-data"})
+		common.RespondError(c, common.CodeArgumentError, "Missing 'file' in multipart form-data")
 		return
 	}
 
 	suffix := strings.ToLower(filepath.Ext(fileHeader.Filename))
 	if _, ok := chatAudioAllowedExts[suffix]; suffix == "" || !ok {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: fmt.Sprintf("Unsupported audio format: %s. Allowed: %s", suffix, chatAudioAllowedExtsList)})
+		common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("Unsupported audio format: %s. Allowed: %s", suffix, chatAudioAllowedExtsList))
 		return
 	}
 
 	// Save the uploaded file to a temporary location so the model driver can read it.
 	tmpFile, err := os.CreateTemp("", "*"+suffix)
 	if err != nil {
-		common.Respond(c, common.Response{Code: common.CodeServerError, Message: "Failed to create temp audio file: " + err.Error()})
+		common.RespondError(c, common.CodeServerError, "Failed to create temp audio file: "+err.Error())
 		return
 	}
 	tmpPath := tmpFile.Name()
@@ -261,13 +261,13 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 	defer func() { _ = os.Remove(tmpPath) }()
 
 	if err := c.SaveUploadedFile(fileHeader, tmpPath); err != nil {
-		common.Respond(c, common.Response{Code: common.CodeServerError, Message: "Failed to save audio file: " + err.Error()})
+		common.RespondError(c, common.CodeServerError, "Failed to save audio file: "+err.Error())
 		return
 	}
 
 	asrModel, err := h.modelFactory.NewDefaultASRModel(ctx, service.Identity{UserID: user.ID, TenantID: user.ID})
 	if err != nil {
-		common.Respond(c, common.Response{Code: common.CodeDataError, Message: err.Error()})
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -320,13 +320,13 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 
 	resp, err := asrModel.Transcribe(ctx, &tmpPath, &modelModule.ASRConfig{}, nil)
 	if err != nil {
-		common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error()})
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 	if resp == nil {
-		common.Respond(c, common.Response{Code: common.CodeServerError, Message: "empty transcription response"})
+		common.RespondError(c, common.CodeServerError, "empty transcription response")
 		return
 	}
 
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: map[string]string{"text": resp.Text}})
+	common.RespondSuccessObject(c, map[string]string{"text": resp.Text}, "success")
 }

@@ -355,7 +355,7 @@ export const useDeleteAgent = () => {
         });
         markListItemsDeleted(ListDeletionKey.AgentList);
       }
-      return data?.code === 0;
+      return data?.data ?? false;
     },
   });
 
@@ -1191,7 +1191,7 @@ export const useCancelDataflow = () => {
       if (ret?.data?.code === 0) {
         message.success('success');
       } else {
-        message.error(ret?.data?.message);
+        message.error(ret?.data?.data);
       }
       return ret?.data?.code;
     },

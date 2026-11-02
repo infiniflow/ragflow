@@ -58,12 +58,12 @@ const canvasNoAccessMessage = "Make sure you have permission to access the agent
 func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: code, Message: msg})
+		common.RespondError(c, code, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	if canvasID == "" {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "`canvas_id` is required."})
+		common.RespondError(c, common.CodeArgumentError, "`canvas_id` is required.")
 		return
 	}
 
@@ -75,10 +75,10 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	// still pattern-match the text.
 	if _, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID); err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
-			common.Respond(c, common.Response{Code: common.CodeOperatingError, Message: canvasNoAccessMessage})
+			common.RespondError(c, common.CodeOperatingError, canvasNoAccessMessage)
 			return
 		}
-		common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error()})
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -87,11 +87,11 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	// into memory by ParseMultipartForm before any size check fires.
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, uploadMaxBytes)
 	if cl := c.Request.ContentLength; cl > uploadMaxBytes {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "request body too large."})
+		common.RespondError(c, common.CodeArgumentError, "request body too large.")
 		return
 	}
 	if err := c.Request.ParseMultipartForm(uploadMaxBytes); err != nil {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "invalid multipart form: " + err.Error()})
+		common.RespondError(c, common.CodeArgumentError, "invalid multipart form: "+err.Error())
 		return
 	}
 	defer func() {
@@ -101,7 +101,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	}()
 	form := c.Request.MultipartForm
 	if form == nil {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "missing multipart form."})
+		common.RespondError(c, common.CodeArgumentError, "missing multipart form.")
 		return
 	}
 	files := form.File["file"]
@@ -117,21 +117,21 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	if url := c.Query("url"); url != "" && len(files) == 1 {
 		uploaded, err := h.fileService.UploadFromURL(ctx, user.ID, url)
 		if err != nil {
-			common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error()})
+			common.RespondError(c, common.CodeServerError, err.Error())
 			return
 		}
-		common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: uploaded})
+		common.RespondSuccessObject(c, uploaded, "success")
 		return
 	}
 
 	if len(files) == 0 {
-		common.Respond(c, common.Response{Code: common.CodeArgumentError, Message: "`file` field is required."})
+		common.RespondError(c, common.CodeArgumentError, "`file` field is required.")
 		return
 	}
 
 	results, err := h.fileService.UploadInfos(ctx, user.ID, files)
 	if err != nil {
-		common.Respond(c, common.Response{Code: common.CodeServerError, Message: err.Error()})
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -142,5 +142,5 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	} else {
 		payload = results
 	}
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: payload})
+	common.Respond(c, common.CodeSuccess, payload, "success")
 }

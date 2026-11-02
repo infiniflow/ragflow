@@ -36,7 +36,7 @@ func jsonInternalError(c *gin.Context, err error) {
 		zap.String("method", c.Request.Method),
 		zap.String("path", c.Request.URL.Path),
 	)
-	common.Respond(c, common.Response{Code: common.CodeServerError, Message: common.CodeServerError.Message()})
+	common.RespondError(c, common.CodeServerError, common.CodeServerError.Message())
 }
 
 // HandleNoRoute handles requests to undefined routes
@@ -48,7 +48,7 @@ func HandleNoRoute(c *gin.Context) {
 	if isOAuthLoginNoRoute(c) ||
 		(c.Request.Method == http.MethodPost && c.Request.URL.Path == "/api/v1/chats//sessions") ||
 		(c.Request.Method == http.MethodPatch && strings.HasSuffix(c.Request.URL.Path, "/sessions/")) {
-		common.Respond(c, common.Response{Code: common.CodeExceptionError, Message: "<MethodNotAllowed '405: Method Not Allowed'>"})
+		common.Respond(c, common.CodeExceptionError, false, "<MethodNotAllowed '405: Method Not Allowed'>")
 		return
 	}
 

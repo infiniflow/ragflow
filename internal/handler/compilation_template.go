@@ -45,15 +45,15 @@ func NewCompilationTemplateHandler(svc *service.CompilationTemplateService) *Com
 func (h *CompilationTemplateHandler) ListBuiltins(c *gin.Context) {
 	_, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: code, Message: msg})
+		common.RespondError(c, code, msg)
 		return
 	}
 	templates, err := h.compilationTemplateService.ListBuiltins(c.Request.Context())
 	if err != nil {
-		common.Respond(c, common.Response{Code: common.CodeExceptionError, Message: err.Error()})
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: templates})
+	common.RespondSuccessList(c, templates, "success")
 }
 
 // ListWikiPresets returns the wiki page-structure presets loaded from YAML.
@@ -66,13 +66,13 @@ func (h *CompilationTemplateHandler) ListBuiltins(c *gin.Context) {
 func (h *CompilationTemplateHandler) ListWikiPresets(c *gin.Context) {
 	_, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: code, Message: msg})
+		common.RespondError(c, code, msg)
 		return
 	}
 	presets, err := h.compilationTemplateService.LoadWikiPresets()
 	if err != nil {
-		common.Respond(c, common.Response{Code: common.CodeExceptionError, Message: err.Error()})
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: presets})
+	common.RespondSuccessList(c, presets, "success")
 }

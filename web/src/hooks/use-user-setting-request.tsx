@@ -215,7 +215,7 @@ export const useFetchSystemVersion = () => {
       setLoading(true);
       const { data } = await userService.getSystemVersion();
       if (data.code === 0) {
-        setVersion(data.message);
+        setVersion(data.data);
         setLoading(false);
       }
     } catch (error) {
@@ -472,7 +472,7 @@ export const useDeleteLangfuseConfig = () => {
     mutationFn: async () => {
       const { data } = await userService.deleteLangfuseConfig();
       if (data.code === 0) {
-        if (data.message === 'success') {
+        if (data.data) {
           message.success(t('message.deleted'));
         } else {
           message.warning(t('message.noLangfuseConfigToDelete'));

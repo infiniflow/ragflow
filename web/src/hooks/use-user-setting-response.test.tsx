@@ -52,9 +52,9 @@ function createWrapper() {
 
 beforeEach(() => jest.clearAllMocks());
 
-it('reads the system version from message with null data', async () => {
+it('reads the system version from data', async () => {
   mockGetSystemVersion.mockResolvedValue({
-    data: { code: 0, message: 'v1.2.3', data: null },
+    data: { code: 0, message: 'success', data: 'v1.2.3' },
   });
   const { result } = renderHook(() => useFetchSystemVersion());
 
@@ -67,23 +67,20 @@ it('reads the system version from message with null data', async () => {
 });
 
 it.each([
-  ['success', 'deleted'],
-  ['Have not record any Langfuse keys.', 'noLangfuseConfigToDelete'],
-])(
-  'handles Langfuse deletion message %s with null data',
-  async (message, key) => {
-    mockDeleteLangfuseConfig.mockResolvedValue({
-      data: { code: 0, message, data: null },
-    });
-    const { result } = renderHook(() => useDeleteLangfuseConfig(), {
-      wrapper: createWrapper(),
-    });
+  ['success', true, 'deleted'],
+  ['Have not record any Langfuse keys.', null, 'noLangfuseConfigToDelete'],
+])('handles Langfuse deletion message %s', async (message, data, key) => {
+  mockDeleteLangfuseConfig.mockResolvedValue({
+    data: { code: 0, message, data },
+  });
+  const { result } = renderHook(() => useDeleteLangfuseConfig(), {
+    wrapper: createWrapper(),
+  });
 
-    await act(async () => {
-      expect(await result.current.deleteLangfuseConfig()).toBe(0);
-    });
+  await act(async () => {
+    expect(await result.current.deleteLangfuseConfig()).toBe(0);
+  });
 
-    const notification = message === 'success' ? mockSuccess : mockWarning;
-    expect(notification).toHaveBeenCalledWith(`message.${key}`);
-  },
-);
+  const notification = message === 'success' ? mockSuccess : mockWarning;
+  expect(notification).toHaveBeenCalledWith(`message.${key}`);
+});

@@ -40,11 +40,11 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 	// Get keys for the tenant
 	keys, err := h.systemService.ListAPIKeys(ctx, tenantID)
 	if err != nil {
-		common.Respond(c, common.Response{Code: 500, Message: "Failed to list keys", HTTPStatus: http.StatusInternalServerError})
+		common.RespondError(c, 500, "Failed to list keys", common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
 		return
 	}
 
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: keys})
+	common.RespondSuccessList(c, keys, "success")
 }
 
 func (h *SystemHandler) CreateKey(c *gin.Context) {
@@ -59,18 +59,18 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 	// ShouldBind reports io.EOF for it.
 	var req service.CreateAPIKeyRequest
 	if err = c.ShouldBind(&req); err != nil && !errors.Is(err, io.EOF) {
-		common.Respond(c, common.Response{Code: 400, Message: "Invalid request", HTTPStatus: http.StatusBadRequest})
+		common.RespondError(c, 400, "Invalid request", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
 		return
 	}
 
 	// Create key
 	key, err := h.systemService.CreateAPIKey(ctx, user.ID, tenantID, &req)
 	if err != nil {
-		common.Respond(c, common.Response{Code: 500, Message: "Failed to create key", HTTPStatus: http.StatusInternalServerError})
+		common.RespondError(c, 500, "Failed to create key", common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
 		return
 	}
 
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: key})
+	common.RespondSuccessObject(c, key, "success")
 }
 
 func (h *SystemHandler) DeleteKey(c *gin.Context) {
@@ -84,17 +84,17 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	// Get key from path parameter
 	key := c.Param("key")
 	if key == "" {
-		common.Respond(c, common.Response{Code: 400, Message: "Key is required", HTTPStatus: http.StatusBadRequest})
+		common.RespondError(c, 400, "Key is required", common.ResponseOptions{HTTPStatus: http.StatusBadRequest})
 		return
 	}
 
 	// Delete key
 	if err = h.systemService.DeleteAPIKey(ctx, tenantID, key); err != nil {
-		common.Respond(c, common.Response{Code: 500, Message: "Failed to delete key", HTTPStatus: http.StatusInternalServerError})
+		common.RespondError(c, 500, "Failed to delete key", common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
 		return
 	}
 
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success"})
+	common.Respond(c, common.CodeSuccess, true, "success")
 }
 
 func currentAPIKeyOwner(c *gin.Context) (*entity.User, string, common.ErrorCode, error) {
@@ -126,5 +126,5 @@ func respondAPIKeyContextError(c *gin.Context, code common.ErrorCode, err error)
 	} else if code == common.CodeServerError {
 		status = http.StatusInternalServerError
 	}
-	common.Respond(c, common.Response{Code: code, Message: err.Error(), HTTPStatus: status})
+	common.RespondError(c, code, err.Error(), common.ResponseOptions{HTTPStatus: status})
 }

@@ -11,13 +11,6 @@ A complete reference for RAGFlow's RESTful API, including migration notes for RA
 
 In the standard response envelope, `message` is always a non-empty string. Successful responses default to `"success"`; error responses contain a description of the error.
 
-`data` is an object, an array, or `null` when there is no payload. String results
-such as the system version are returned in `message`. Boolean acknowledgements
-and integer counts are not returned in `data`; check `code` for success. Chunk
-deletion no longer returns a deleted count. Optional top-level fields such as
-`total` and `detail` remain available. Streaming and external protocol formats
-have their own response contracts.
-
 ---
 
 ## ERROR CODES
@@ -1694,8 +1687,7 @@ Success:
 ```json
 {
     "code": 0,
-    "message": "success",
-    "data": null
+    "data": true
 }
 ```
 
@@ -2244,8 +2236,7 @@ Success:
 ```json
 {
     "code": 0,
-    "message": "success",
-    "data": null
+    "data": true
 }
 ```
 
@@ -3082,8 +3073,7 @@ Success:
 ```json
 {
     "code": 0,
-    "message": "success",
-    "data": null
+    "data": true
 }
 ```
 
@@ -5363,7 +5353,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": null,
+    "data": true,
     "message": "success"
 }
 ```
@@ -5433,7 +5423,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": null,
+    "data": true,
     "message": "success"
 }
 ```
@@ -5494,7 +5484,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": null,
+    "data": true,
     "message": "success"
 }
 ```
@@ -5548,7 +5538,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": null,
+    "data": true,
     "message": "success"
 }
 ```
@@ -5601,7 +5591,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": null,
+    "data": true,
     "message": "success"
 }
 ```
@@ -7404,8 +7394,7 @@ Success:
 ```json
 {
     "code": 0,
-    "message": "success",
-    "data": null
+    "data": true
 }
 ```
 
@@ -8360,8 +8349,7 @@ Success:
 ```json
 {
     "code": 0,
-    "message": "success",
-    "data": null
+    "data": true
 }
 ```
 

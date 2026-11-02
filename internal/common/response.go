@@ -1,54 +1,64 @@
 package common
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"go.uber.org/zap"
 )
 
-// Response is the standard API envelope. Data must encode as an object, array,
-// or null. HTTPStatus defaults to 200 and is not part of the JSON body.
-type Response struct {
-	Code       ErrorCode `json:"code"`
-	Message    string    `json:"message"`
-	Data       any       `json:"data"`
-	Total      any       `json:"total,omitempty"`
-	Detail     any       `json:"detail,omitempty"`
-	HTTPStatus int       `json:"-"`
+// ResponseOptions supplies optional HTTP status and envelope metadata.
+// A zero HTTPStatus uses HTTP 200.
+type ResponseOptions struct {
+	HTTPStatus int
+	Total      any
+	Detail     any
 }
 
-// Respond writes an API response, rejecting scalar data before writing headers.
-func Respond(c *gin.Context, response Response) {
-	status := response.HTTPStatus
-	if status == 0 {
-		status = http.StatusOK
-	}
-	if response.Message == "" {
-		response.Message = response.Code.Message()
-		if response.Code == CodeSuccess {
-			response.Message = "success"
+type response struct {
+	Code    ErrorCode `json:"code"`
+	Message string    `json:"message"`
+	Data    any       `json:"data"`
+	Total   any       `json:"total,omitempty"`
+	Detail  any       `json:"detail,omitempty"`
+}
+
+// RespondSuccessList writes a successful response with list data.
+func RespondSuccessList[T any](c *gin.Context, data []T, message string, options ...ResponseOptions) {
+	Respond(c, CodeSuccess, data, message, options...)
+}
+
+// RespondSuccessObject writes a successful response with object data, or null.
+func RespondSuccessObject(c *gin.Context, data any, message string, options ...ResponseOptions) {
+	Respond(c, CodeSuccess, data, message, options...)
+}
+
+// RespondError writes an error code and message with null data.
+func RespondError(c *gin.Context, code ErrorCode, message string, options ...ResponseOptions) {
+	Respond(c, code, nil, message, options...)
+}
+
+// Respond writes a response with the supplied code and data. Use it for scalar
+// or mixed data, and for errors that carry a payload.
+func Respond(c *gin.Context, code ErrorCode, data any, message string, options ...ResponseOptions) {
+	if message == "" {
+		message = code.Message()
+		if code == CodeSuccess {
+			message = "success"
 		}
 	}
 
-	data, err := json.Marshal(response.Data)
-	if err == nil && (data[0] == '{' || data[0] == '[' || string(data) == "null") {
-		response.Data = json.RawMessage(data)
-		var body []byte
-		body, err = json.Marshal(response)
-		if err == nil {
-			c.Data(status, "application/json; charset=utf-8", body)
-			return
+	status := http.StatusOK
+	body := response{Code: code, Message: message, Data: data}
+	for _, option := range options {
+		if option.HTTPStatus != 0 {
+			status = option.HTTPStatus
+		}
+		if option.Total != nil {
+			body.Total = option.Total
+		}
+		if option.Detail != nil {
+			body.Detail = option.Detail
 		}
 	}
-
-	Warn("response payload must contain serializable object, array, or null data",
-		zap.String("data_type", fmt.Sprintf("%T", response.Data)),
-	)
-	c.JSON(http.StatusInternalServerError, Response{
-		Code:    CodeServerError,
-		Message: CodeServerError.Message(),
-	})
+	c.JSON(status, body)
 }

@@ -61,67 +61,67 @@ type SetLangfuseRequest struct {
 func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	var req SetLangfuseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "Invalid request: " + err.Error()})
+		common.RespondError(c, common.CodeDataError, "Invalid request: "+err.Error())
 		return
 	}
 	ctx := c.Request.Context()
 
 	row, code, err := h.langfuseService.SetAPIKey(ctx, user.ID, req.SecretKey, req.PublicKey, req.Host)
 	if err != nil {
-		common.Respond(c, common.Response{Code: code, Message: err.Error()})
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
 	// Echo back the stored keys, matching the Python langfuse_keys payload.
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success", Data: gin.H{
+	common.RespondSuccessObject(c, gin.H{
 		"tenant_id":  row.TenantID,
 		"secret_key": row.SecretKey,
 		"public_key": row.PublicKey,
 		"host":       row.Host,
-	}})
+	}, "success")
 }
 
 // GetAPIKey handles GET /langfuse/api-key.
 func (h *LangfuseHandler) GetAPIKey(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	ctx := c.Request.Context()
 
 	data, code, message, err := h.langfuseService.GetAPIKey(ctx, user.ID)
 	if err != nil {
-		common.Respond(c, common.Response{Code: code, Message: message})
+		common.RespondError(c, code, message)
 		return
 	}
-	common.Respond(c, common.Response{Code: code, Message: message, Data: data})
+	common.Respond(c, code, data, message)
 }
 
 // DeleteAPIKey handles DELETE /langfuse/api-key.
 func (h *LangfuseHandler) DeleteAPIKey(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	ctx := c.Request.Context()
 
-	_, code, message, err := h.langfuseService.DeleteAPIKey(ctx, user.ID)
+	ok, code, message, err := h.langfuseService.DeleteAPIKey(ctx, user.ID)
 	if err != nil {
-		common.Respond(c, common.Response{Code: code, Message: message})
+		common.RespondError(c, code, message)
 		return
 	}
 	// No record: mirror get_json_result(message=...) with data=nil.
 	if message != "" {
-		common.Respond(c, common.Response{Code: common.CodeSuccess, Message: message})
+		common.RespondSuccessObject(c, nil, message)
 		return
 	}
-	common.Respond(c, common.Response{Code: common.CodeSuccess, Message: "success"})
+	common.Respond(c, common.CodeSuccess, ok, "success")
 }

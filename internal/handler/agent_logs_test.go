@@ -54,7 +54,7 @@ func TestParseAgentLogs(t *testing.T) {
 	cases := []struct {
 		name     string
 		payload  string
-		wantKind byte // '[' for array, '{' for object, 'n' for null
+		wantKind byte // '[' for array, '{' for object
 	}{
 		{
 			name:     "missing_key_returns_empty_object",
@@ -76,9 +76,6 @@ func TestParseAgentLogs(t *testing.T) {
 			payload:  `{"component_id":`,
 			wantKind: '{',
 		},
-		{name: "string_has_no_data", payload: `"log"`, wantKind: 'n'},
-		{name: "boolean_has_no_data", payload: `true`, wantKind: 'n'},
-		{name: "integer_has_no_data", payload: `12`, wantKind: 'n'},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -1081,7 +1081,7 @@ func TestDeleteDocumentsHandler_MissingDatasetID(t *testing.T) {
 	}
 }
 
-func TestDocumentHandlerIngestReturnsNullData(t *testing.T) {
+func TestDocumentHandlerIngestMatchesPythonResponseShape(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	fake := &fakeDocumentService{}
@@ -1104,8 +1104,8 @@ func TestDocumentHandlerIngestReturnsNullData(t *testing.T) {
 	if resp["code"] != float64(common.CodeSuccess) {
 		t.Fatalf("expected top-level code 0, got %v", resp["code"])
 	}
-	if resp["data"] != nil {
-		t.Fatalf("expected top-level data=null, got %#v", resp["data"])
+	if resp["data"] != true {
+		t.Fatalf("expected top-level data=true, got %#v", resp["data"])
 	}
 	if _, ok := resp["data"].(map[string]interface{}); ok {
 		t.Fatalf("response must not nest code/message under data: %#v", resp["data"])
@@ -1134,7 +1134,7 @@ func TestDocumentIngestRoutePassesPythonBodyToService(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["code"] != float64(common.CodeSuccess) || resp["data"] != nil {
+	if resp["code"] != float64(common.CodeSuccess) || resp["data"] != true {
 		t.Fatalf("unexpected response: %s", w.Body.String())
 	}
 	if fake.ingestUserID != "user-1" {
@@ -1214,8 +1214,8 @@ func TestDocumentHandlerIngest_CancelDispatchesToService(t *testing.T) {
 	if resp["code"] != float64(common.CodeSuccess) {
 		t.Fatalf("expected code 0, got %v", resp["code"])
 	}
-	if resp["data"] != nil {
-		t.Fatalf("expected data null, got %#v", resp["data"])
+	if resp["data"] != true {
+		t.Fatalf("expected data true, got %#v", resp["data"])
 	}
 	if fake.ingestReq == nil || len(fake.ingestReq.DocIDs) != 1 || fake.ingestReq.DocIDs[0] != "doc-1" {
 		t.Fatalf("unexpected ingestReq: %#v", fake.ingestReq)

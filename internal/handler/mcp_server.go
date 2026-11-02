@@ -98,7 +98,7 @@ func (h *MCPServerHandler) NewStandalone(ctx context.Context, auth *AuthHandler,
 func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.Respond(c, common.Response{Code: errorCode, Message: errorMessage})
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 

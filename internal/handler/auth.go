@@ -113,7 +113,7 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		if auth == "" {
 			// Mirror Python's login_required(auth_types=AUTH_BETA): any auth
 			// failure on beta endpoints is a business error, not an HTTP 401.
-			common.Respond(c, common.Response{Code: common.CodeDataError, Message: "Authorization is not valid!"})
+			common.RespondError(c, common.CodeDataError, "Authorization is not valid!")
 			c.Abort()
 			return
 		}
@@ -125,7 +125,7 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		// Then try a regular API token (non-beta public bot flow).
 		if identity, code, err := h.userService.ResolveAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
 			if !billingAllowsAPIToken(ctx, identity.TenantID) {
-				common.Respond(c, common.Response{Code: common.CodePermissionError, Message: "API key requires a Starter or Pro plan"})
+				common.RespondError(c, common.CodePermissionError, "API key requires a Starter or Pro plan")
 				c.Abort()
 				return
 			}
@@ -137,7 +137,7 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		// Fall back to beta API token (public bot access).
 		if identity, code, err := h.userService.ResolveBetaAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
 			if !billingAllowsAPIToken(ctx, identity.TenantID) {
-				common.Respond(c, common.Response{Code: common.CodePermissionError, Message: "API key requires a Starter or Pro plan"})
+				common.RespondError(c, common.CodePermissionError, "API key requires a Starter or Pro plan")
 				c.Abort()
 				return
 			}
@@ -150,7 +150,7 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 		// Mirror Python's login_required(auth_types=AUTH_BETA).
-		common.Respond(c, common.Response{Code: common.CodeDataError, Message: "Authorization is not valid!"})
+		common.RespondError(c, common.CodeDataError, "Authorization is not valid!")
 		c.Abort()
 	}
 }
@@ -162,7 +162,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		ctx := c.Request.Context()
 		token := c.GetHeader("Authorization")
 		if token == "" {
-			common.Respond(c, common.Response{Code: 401, Message: "Missing Authorization header", HTTPStatus: http.StatusUnauthorized})
+			common.RespondError(c, 401, "Missing Authorization header", common.ResponseOptions{HTTPStatus: http.StatusUnauthorized})
 			c.Abort()
 			return
 		}
@@ -173,7 +173,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		if err != nil {
 			identity, code, err = h.userService.ResolveAPIToken(ctx, token)
 			if err != nil {
-				common.Respond(c, common.Response{Code: code, Message: "Invalid access token", HTTPStatus: http.StatusUnauthorized})
+				common.RespondError(c, code, "Invalid access token", common.ResponseOptions{HTTPStatus: http.StatusUnauthorized})
 				c.Abort()
 				return
 			}
@@ -185,12 +185,12 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
 				allowed, gateErr := billingService.APIAuthAllowed(ctx, identity.TenantID)
 				if gateErr != nil {
-					common.Respond(c, common.Response{Code: common.CodeForbidden, Message: gateErr.Error(), HTTPStatus: http.StatusForbidden})
+					common.RespondError(c, common.CodeForbidden, gateErr.Error(), common.ResponseOptions{HTTPStatus: http.StatusForbidden})
 					c.Abort()
 					return
 				}
 				if !allowed {
-					common.Respond(c, common.Response{Code: common.CodeForbidden, Message: "API key requires a Starter or Pro plan", HTTPStatus: http.StatusForbidden})
+					common.RespondError(c, common.CodeForbidden, "API key requires a Starter or Pro plan", common.ResponseOptions{HTTPStatus: http.StatusForbidden})
 					c.Abort()
 					return
 				}
@@ -198,7 +198,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		if identity.User.IsSuperuser != nil && *identity.User.IsSuperuser {
-			common.Respond(c, common.Response{Code: common.CodeForbidden, Message: "Super user shouldn't access the URL", HTTPStatus: http.StatusForbidden})
+			common.RespondError(c, common.CodeForbidden, "Super user shouldn't access the URL", common.ResponseOptions{HTTPStatus: http.StatusForbidden})
 			c.Abort()
 			return
 		}
@@ -207,7 +207,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			adminStatus := local.GetAdminStatus()
 			errMsg := fmt.Sprintf("server error: %s", adminStatus.Reason)
 			common.Warn(errMsg)
-			common.Respond(c, common.Response{Code: common.CodeUnauthorized, Message: errMsg, HTTPStatus: http.StatusServiceUnavailable})
+			common.Respond(c, common.CodeUnauthorized, "No", errMsg, common.ResponseOptions{HTTPStatus: http.StatusServiceUnavailable})
 			c.Abort()
 			return
 		}
