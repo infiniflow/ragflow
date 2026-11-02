@@ -200,6 +200,52 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		contentType = defaultInvokeContentCT
 	}
 
+	// Form variables supply request fields unless an explicit body is configured.
+	if _, explicit := inputs["body"]; !explicit {
+		fields := map[string]any{}
+		variables, _ := inputs["variables"].([]any)
+		for _, raw := range variables {
+			variable, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			key, _ := variable["key"].(string)
+			value := variable["value"]
+			if ref, _ := variable["ref"].(string); ref != "" {
+				var found bool
+				value, found = inputs[ref]
+				if !found {
+					state, err := runtime.GetStateFromContext(ctx)
+					if err != nil || state == nil {
+						return nil, fmt.Errorf("Invoke: cannot resolve variable %q", key)
+					}
+					value, err = state.GetVar(ref)
+					if err != nil {
+						return nil, fmt.Errorf("Invoke: variable %q: %w", key, err)
+					}
+				}
+			}
+			fields[key] = value
+		}
+		if len(fields) > 0 {
+			if method == http.MethodGet || method == http.MethodDelete {
+				u, _ := url.Parse(rawURL)
+				query := u.Query()
+				for key, value := range fields {
+					query.Set(key, fmt.Sprint(value))
+				}
+				u.RawQuery = query.Encode()
+				rawURL = u.String()
+			} else {
+				encoded, err := json.Marshal(fields)
+				if err != nil {
+					return nil, fmt.Errorf("Invoke: encode variables: %w", err)
+				}
+				inputs["body"] = string(encoded)
+			}
+		}
+	}
+
 	var body io.Reader
 	if s, ok := inputs["body"].(string); ok != false && s != "" {
 		body = bytes.NewReader([]byte(s))
@@ -299,6 +345,9 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 
 	bodyStr := string(bodyBytes)
+	if resp.StatusCode >= http.StatusBadRequest {
+		return map[string]any{"result": bodyStr}, fmt.Errorf("Invoke: HTTP %d: %s", resp.StatusCode, bodyStr)
+	}
 
 	// Clean HTML from response body when clean_html input is set.
 	if cleanHTML, _ := inputs["clean_html"].(bool); cleanHTML {
