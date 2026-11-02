@@ -133,3 +133,111 @@ func TestVastbaseExportConfigsKeys(t *testing.T) {
 		}
 	}
 }
+
+// TestParseVastbaseDatabaseConfigDefaultsAndOverrides checks the metadata-side
+// defaults of the shared vastbase: section and that file values override them
+// without disturbing the doc-engine keys.
+func TestParseVastbaseDatabaseConfigDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("DB_TYPE", "vastbase")
+	v := viper.New()
+	c := &Config{}
+	if err := c.ParseGeneralConfig(v); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ParseDatabaseConfig(v); err != nil {
+		t.Fatal(err)
+	}
+	defaults := c.GetVastbaseMetaConfig()
+	if defaults.DatabaseName != "rag_flow" || defaults.Host != "vastbase" || defaults.Port != 5432 ||
+		defaults.User != "ragflow" || defaults.Password != "Infini_Rag@123" ||
+		defaults.MaxConnections != 50 || defaults.StaleTimeout != 300 ||
+		defaults.SSLMode != "" || defaults.DisableReturning {
+		t.Fatalf("vastbase metadata defaults = %#v", defaults)
+	}
+
+	v = viper.New()
+	v.Set("vastbase", map[string]interface{}{
+		"host": "vb-host", "port": 15432, "user": "vb-user",
+		"password": "vb-secret", "name": "meta_db",
+		"max_connections": 11, "stale_timeout": 22,
+		"ssl_mode": "require", "disable_returning": true,
+	})
+	c = &Config{}
+	if err := c.ParseDatabaseConfig(v); err != nil {
+		t.Fatal(err)
+	}
+	got := c.GetVastbaseMetaConfig()
+	if got.DatabaseName != "meta_db" || got.Host != "vb-host" || got.Port != 15432 ||
+		got.User != "vb-user" || got.Password != "vb-secret" ||
+		got.MaxConnections != 11 || got.StaleTimeout != 22 ||
+		got.SSLMode != "require" || !got.DisableReturning {
+		t.Fatalf("vastbase metadata overrides = %#v", got)
+	}
+}
+
+// TestParseDatabaseConfigAcceptsVastbaseType checks DB_TYPE=vastbase routes to
+// the vastbase parser instead of the "not supported" error.
+func TestParseDatabaseConfigAcceptsVastbaseType(t *testing.T) {
+	t.Setenv("DB_TYPE", "vastbase")
+	v := viper.New()
+	c := &Config{}
+	if err := c.ParseDatabaseConfig(v); err != nil {
+		t.Fatalf("ParseDatabaseConfig(vastbase): %v", err)
+	}
+	if got := c.GetVastbaseMetaConfig().DatabaseName; got != "rag_flow" {
+		t.Fatalf("metadata database name = %q, want rag_flow", got)
+	}
+}
+
+// TestParseVastbaseDatabaseConfigEnvironmentOnly mirrors the doc-engine env
+// test: the metadata keys must be readable from RAGFLOW_VASTBASE_* variables
+// through the parent viper's AutomaticEnv.
+func TestParseVastbaseDatabaseConfigEnvironmentOnly(t *testing.T) {
+	t.Setenv("DB_TYPE", "vastbase")
+	t.Setenv("RAGFLOW_VASTBASE_HOST", "env-host")
+	t.Setenv("RAGFLOW_VASTBASE_NAME", "env_meta")
+	t.Setenv("RAGFLOW_VASTBASE_MAX_CONNECTIONS", "17")
+	v := viper.New()
+	v.SetEnvPrefix("RAGFLOW")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+	c := &Config{}
+	if err := c.ParseGeneralConfig(v); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ParseDatabaseConfig(v); err != nil {
+		t.Fatal(err)
+	}
+	got := c.GetVastbaseMetaConfig()
+	if got.Host != "env-host" || got.DatabaseName != "env_meta" || got.MaxConnections != 17 {
+		t.Fatalf("vastbase metadata env-only overrides = %#v", got)
+	}
+}
+
+// TestVastbaseMetaExportConfigsKeys checks the exported metadata configuration
+// carries exactly the expected keys.
+func TestVastbaseMetaExportConfigsKeys(t *testing.T) {
+	exported := (&VastbaseMetaConfig{
+		DatabaseName: "d", User: "u", Password: "p", Host: "h", Port: 1,
+		SSLMode: "disable", MaxConnections: 2, StaleTimeout: 3,
+	}).ExportConfigs()
+	for _, key := range []string{"database_name", "username", "password", "host", "port", "ssl_mode", "max_connections", "stale_timeout"} {
+		if _, present := exported[key]; !present {
+			t.Fatalf("ExportConfigs missing key %q: %#v", key, exported)
+		}
+	}
+}
+
+// TestGetEnvironmentsAcceptsVastbaseDBType guards the DB_TYPE env gate: the
+// server aborts startup with "invalid database type" before the vastbase
+// dialector is reached if this case list drifts from the supported set.
+func TestGetEnvironmentsAcceptsVastbaseDBType(t *testing.T) {
+	t.Setenv("DB_TYPE", "vastbase")
+	c := &Config{}
+	if err := c.GetEnvironments(); err != nil {
+		t.Fatalf("GetEnvironments with DB_TYPE=vastbase: %v", err)
+	}
+	if got := c.GetEnvDatabaseType(); got != "vastbase" {
+		t.Fatalf("env database type = %q, want vastbase", got)
+	}
+}
