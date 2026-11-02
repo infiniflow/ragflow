@@ -13,7 +13,6 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 //
-// 测试中文失败CI
 
 package admin
 
