@@ -40,6 +40,7 @@ func TestCreateCommit_DeleteRecordsTombstoneWhenLiveFileIsGone(t *testing.T) {
 	if err := db.Create(parent).Error; err != nil {
 		t.Fatalf("seed parent commit: %v", err)
 	}
+	seedFolder(t, db, "folder-1", "")
 
 	commit, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "remove a.txt", []entity.FileChange{
 		{FileID: "f1", FileName: "a.txt", Operation: "delete"},
@@ -105,6 +106,7 @@ func TestCreateCommit_RejectsDeleteOfLiveFile(t *testing.T) {
 	if err := db.Create(parent).Error; err != nil {
 		t.Fatalf("seed parent commit: %v", err)
 	}
+	seedFolder(t, db, "folder-1", "")
 	seedLiveFile(t, db, "f2", "folder-1")
 	seedFolder(t, db, "sub-1", "folder-1")
 	seedLiveFile(t, db, "f4", "sub-1")
@@ -136,6 +138,7 @@ func TestCreateCommit_AllowsDeleteOfFileOutsideFolder(t *testing.T) {
 	if err := db.Create(parent).Error; err != nil {
 		t.Fatalf("seed parent commit: %v", err)
 	}
+	seedFolder(t, db, "folder-1", "")
 	seedLiveFile(t, db, "f3", "other-folder")
 
 	if _, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "remove f3", []entity.FileChange{

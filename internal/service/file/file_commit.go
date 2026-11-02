@@ -347,7 +347,22 @@ func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, tx *gorm.D
 		}
 	}
 
-	return ensureFilesInFolder(tx, folderID, existing)
+	// A delete-only change records a tombstone in tree_state and never writes
+	// the file row, so its ID may already be gone, or its live row may have
+	// drifted to another folder since the commit that introduced it. Scope
+	// validation applies only to operations that write the file row; a live
+	// row still inside the folder is rejected later by the ErrDeleteLiveFile
+	// check.
+	scoped := make(map[string]*entity.File, len(existing))
+	for id, file := range existing {
+		for _, operation := range operations[id] {
+			if operation != "delete" {
+				scoped[id] = file
+				break
+			}
+		}
+	}
+	return ensureFilesInFolder(tx, folderID, scoped)
 }
 
 // lockedCommitFiles loads file rows for the commit transaction with write locks
