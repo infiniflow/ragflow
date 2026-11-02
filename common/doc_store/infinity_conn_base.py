@@ -801,10 +801,10 @@ class InfinityConnectionBase(DocStoreConnection):
             else:
                 return {}
         for i in range(num_rows):
-            id = column_id[i]
+            doc_id = column_id[i]
             txt = res[field_name][i]
             if re.search(r"<em>[^<>]+</em>", txt, flags=re.IGNORECASE | re.MULTILINE):
-                ans[id] = txt
+                ans[doc_id] = txt
                 continue
             txt = re.sub(r"[\r\n]", " ", txt, flags=re.IGNORECASE | re.MULTILINE)
             txt_list = []
@@ -829,9 +829,9 @@ class InfinityConnectionBase(DocStoreConnection):
                     continue
                 txt_list.append(t)
             if txt_list:
-                ans[id] = "...".join(txt_list)
+                ans[doc_id] = "...".join(txt_list)
             else:
-                ans[id] = txt
+                ans[doc_id] = txt
         return ans
 
     def get_aggregation(self, res: tuple[pd.DataFrame, int] | pd.DataFrame, field_name: str):
