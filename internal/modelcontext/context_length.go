@@ -30,8 +30,8 @@ import (
 )
 
 // ResolveModelContentLength returns the chat model's effective context window
-// (context_length) in tokens for modelRef — a tenant_model UUID or a
-// composite "model@provider" / "model@instance@provider" reference — or 0
+// (context_length) in tokens for modelRef - a tenant_model UUID or a
+// composite "model@provider" / "model@instance@provider" reference - or 0
 // when it cannot be resolved. tenantID scopes the composite-reference lookup
 // to the tenant's own provider/instance/model rows. driver and modelName are
 // an optional provider catalog fallback used when modelRef is not a
@@ -64,7 +64,7 @@ func ResolveModelContentLength(ctx context.Context, db *gorm.DB, tenantID, model
 	}
 
 	// 2. Catalog fallbacks (only when there is no custom override).
-	// 2a. Active tenant row → its provider row → catalog context_length.
+	// 2a. Active tenant row, its provider row, then catalog context_length.
 	if obj != nil && obj.Status == "active" {
 		if provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
 			if mdl, err := dao.GetModelProviderManager().GetModelByName(models.CatalogProviderName(provider.ProviderName), obj.ModelName); err == nil && mdl.ContextLength != nil {
@@ -72,7 +72,7 @@ func ResolveModelContentLength(ctx context.Context, db *gorm.DB, tenantID, model
 			}
 		}
 	}
-	// 2b. Composite reference with no tenant row → catalog by reference parts.
+	// 2b. Composite reference with no tenant row; query catalog by reference parts.
 	if composite {
 		if mdl, err := dao.GetModelProviderManager().GetModelByName(models.CatalogProviderName(providerName), pureName); err == nil && mdl.ContextLength != nil {
 			return *mdl.ContextLength
@@ -88,7 +88,7 @@ func ResolveModelContentLength(ctx context.Context, db *gorm.DB, tenantID, model
 	return 0
 }
 
-// lookupTenantModel resolves the tenant_model row for modelRef — by UUID, or
+// lookupTenantModel resolves the tenant_model row for modelRef by UUID, or
 // for a composite reference through the tenant's provider/instance rows (chat
 // model type). Returns nil when the row cannot be resolved.
 func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pureName, instanceName, providerName string, composite bool) *entity.TenantModel {
@@ -135,7 +135,7 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 
 // modelExtraMaxTokens returns the per-model "max_tokens" override from the
 // tenant_model.extra JSON, or 0 when absent/invalid/non-positive. Mirrors
-// Python's model_extra.get("max_tokens") — the custom context-window length a
+// Python's model_extra.get("max_tokens"): the custom context-window length a
 // user configures for a model. Both JSON numbers and numeric strings are
 // accepted (some callers persist extra.max_tokens as a string).
 func modelExtraMaxTokens(extra string) int {
