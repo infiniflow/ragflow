@@ -350,7 +350,6 @@ func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.Can
 		return map[string]any{"result": script}
 	}
 	for _, n := range names {
-		placeholder := "{{" + n + "}}"
 		var value any
 		if v, ok := inputs[n]; ok {
 			value = v
@@ -359,7 +358,13 @@ func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.Can
 		} else {
 			value = ""
 		}
-		script = strings.ReplaceAll(script, placeholder, formatValue(value))
+		// placeholderPattern admits optional whitespace inside the braces, so the
+		// substitution has to honour every spelling it accepts ("{{x}}", "{{ x }}")
+		// rather than only the canonical one.
+		pattern := regexp.MustCompile(`\{\{\s*` + regexp.QuoteMeta(n) + `\s*\}\}`)
+		replacement := formatValue(value)
+		// A value is data, not a replacement template: "$1" must stay literal.
+		script = pattern.ReplaceAllStringFunc(script, func(string) string { return replacement })
 	}
 	return map[string]any{"result": script}
 }
