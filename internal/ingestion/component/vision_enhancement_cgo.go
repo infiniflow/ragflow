@@ -77,6 +77,7 @@ type visionPDFCropper struct {
 	engine      deepdoctype.PDFEngine
 	engErr      error
 	sourceErr   error
+	pages       *deepdoctype.PageDocument
 }
 
 // newVisionImageCropper builds the on-demand cropper. It never touches storage
@@ -89,6 +90,7 @@ func newVisionImageCropper(ctx context.Context, db *gorm.DB, inputs map[string]a
 	sourceCtx, cancelSource := context.WithTimeout(ctx, visionPDFSourceBudget)
 	return &visionPDFCropper{
 		invocationCtx: ctx,
+		pages:         deepdocpdf.PageDocumentFromContext(ctx),
 		sourceCtx:     sourceCtx,
 		cancelSource:  cancelSource,
 		db:            db,
@@ -138,13 +140,15 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 	if !ok {
 		return nil, nil
 	}
-	if err := c.ensureEngine(); err != nil {
-		// Best-effort: a missing/unreadable source PDF means no vision
-		// description for this item, not a hard failure.
-		return nil, nil
-	}
-	if err := c.invocationCtx.Err(); err != nil {
-		return nil, err
+	if c.pages == nil {
+		if err := c.ensureEngine(); err != nil {
+			// Best-effort: a missing/unreadable source PDF means no vision
+			// description for this item, not a hard failure.
+			return nil, nil
+		}
+		if err := c.invocationCtx.Err(); err != nil {
+			return nil, err
+		}
 	}
 	// Source acquisition has its own invocation-level budget and can outlive
 	// this item's materialization deadline. Once the shared source is ready,
@@ -155,7 +159,7 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 	}
 	renderCtx, cancelRender := context.WithTimeout(c.invocationCtx, visionMediaItemBudget)
 	defer cancelRender()
-	if c.engine == nil {
+	if c.engine == nil && c.pages == nil {
 		return nil, nil
 	}
 	// Render each distinct page the positions span (1-based → 0-based is
@@ -167,15 +171,38 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 			pages[pn] = struct{}{}
 		}
 	}
-	if !pdfPagesRasterWithinVisionLimits(c.engine, pages) {
+	if c.pages == nil && !pdfPagesRasterWithinVisionLimits(c.engine, pages) {
 		return nil, nil
+	}
+	if document := c.pages; document != nil {
+		var total int64
+		for pn := range pages {
+			ref, ok := document.Pages[pn]
+			if !ok {
+				continue
+			}
+			pixels := int64(ref.Width) * int64(ref.Height)
+			if ref.Width <= 0 || ref.Height <= 0 || ref.Width > maxVLMCropEdge || ref.Height > maxVLMCropEdge || pixels > maxVLMCropPixels-total {
+				return nil, nil
+			}
+			total += pixels
+		}
 	}
 	single := make(map[int]image.Image, len(pages))
 	for pn := range pages {
 		if err := renderCtx.Err(); err != nil {
 			return nil, err
 		}
-		img, rerr := deepdocpdf.RenderPageToImage(c.engine, pn)
+		var img image.Image
+		var rerr error
+		if c.pages != nil {
+			img, rerr = deepdocpdf.LoadCachedPage(renderCtx, pn)
+			if rerr != nil {
+				return nil, rerr
+			}
+		} else {
+			img, rerr = deepdocpdf.RenderPageToImage(c.engine, pn)
+		}
 		if rerr != nil || img == nil {
 			continue
 		}
@@ -198,8 +225,10 @@ func (c *visionPDFCropper) Prepare(ctx context.Context, item map[string]any) err
 	if _, ok := pdfSourcePositions(item); !ok {
 		return nil
 	}
-	if err := c.ensureEngine(); err != nil {
-		return err
+	if c.pages == nil {
+		if err := c.ensureEngine(); err != nil {
+			return err
+		}
 	}
 	return ctx.Err()
 }

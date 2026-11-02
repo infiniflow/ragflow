@@ -2,6 +2,7 @@ package pdf
 
 import (
 	"context"
+	"errors"
 	"image"
 	"sync"
 
@@ -109,6 +110,7 @@ type pageTask struct {
 	// progress reports this run's page completions; the worker fires the
 	// caller's callback as soon as its page finishes.
 	progress *pageProgress
+	cancel   context.CancelCauseFunc
 }
 
 // pageProgress serialises page-completion reporting for one runPageWorkers
@@ -167,8 +169,11 @@ func parserPageWorkerPool() *utility.WorkerPool[pageTask, pageResult] {
 		pagePool = utility.NewWorkerPool(workers, workers*pageWorkerQueueFactor,
 			func(ctx context.Context, task pageTask) (pageResult, error) {
 				defer task.progress.finish()
-				return task.parser.processPage(ctx, task.engine, task.pageNumber,
-					task.docAnalyzer, task.tb), nil
+				result := task.parser.processPage(ctx, task.engine, task.pageNumber, task.docAnalyzer, task.tb)
+				if errors.Is(result.Err, ErrPageCache) && task.cancel != nil {
+					task.cancel(result.Err)
+				}
+				return result, nil
 			})
 	})
 	return pagePool
@@ -204,7 +209,11 @@ func SetPageWorkerPoolSize(workers int) {
 // access inside the engine is serialized by the process-wide pdfsync.Mu
 // (see pdfsync/pdfsync.go), so no per-Parser engine limiter is needed here.
 func (p *Parser) renderPageToImage(ctx context.Context, eng pdf.PDFEngine, pageNum int) (image.Image, error) {
-	return RenderPageToImage(eng, pageNum)
+	img, err := RenderPageToImage(eng, pageNum)
+	if err == nil && img != nil {
+		err = cachePage(ctx, pageNum, img)
+	}
+	return img, err
 }
 
 // renderAtDPI invokes the engine's DPI-parameterized render path. As with

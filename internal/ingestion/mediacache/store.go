@@ -226,7 +226,8 @@ func PurgeTask(ctx context.Context, backend chunkcache.Store, taskID string) err
 		return fmt.Errorf("mediacache: delete manifest %s", mk)
 	}
 	digestKey, stateKey := quotaKeys(taskID)
-	for _, key := range []string{digestKey, stateKey} {
+	pageDigests, pageState := pageQuotaKeys(taskID)
+	for _, key := range []string{digestKey, stateKey, pageDigests, pageState} {
 		if !backend.Delete(ctx, key) {
 			return fmt.Errorf("mediacache: delete quota state %s", key)
 		}

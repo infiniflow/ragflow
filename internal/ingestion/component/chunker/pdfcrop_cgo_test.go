@@ -155,7 +155,7 @@ func TestCropImageChunks_PositionFallback(t *testing.T) {
 			chunks := []schema.ChunkDoc{{DocType: "image", Text: "figure caption", PDFPositions: tc.pdfPositions, Positions: tc.positions}}
 			// Only page 1 (engine index 0) can render: falling back when a
 			// PDF region exists, or cropping page-only PDF positions, fails.
-			out := cropImageChunks(context.Background(), assertZeroPageEngine{}, chunks)
+			out := mustCropImageChunks(t, context.Background(), assertZeroPageEngine{}, chunks)
 			if len(out) != 1 {
 				t.Fatalf("len(out) = %d, want 1", len(out))
 			}
@@ -178,7 +178,7 @@ func TestCropImageChunks_CropsImageTableAndText(t *testing.T) {
 		{PDFPositions: pos}, // restored preview (Chunker-1.3)
 		{DocType: "image", Image: "data:image/png;base64,preexisting"}, // preserved
 	}
-	out := cropImageChunks(ctx, eng, chunks)
+	out := mustCropImageChunks(t, ctx, eng, chunks)
 	if len(out) != len(chunks) {
 		t.Fatalf("len(out) = %d, want %d", len(out), len(chunks))
 	}
@@ -230,7 +230,7 @@ func TestCropImageChunks_DocTypeFallbackCropsImageTableText(t *testing.T) {
 		{DocType: "text", PDFPositions: pos},
 		{DocType: "image", Image: "data:image/png;base64,preexisting"}, // preserved
 	}
-	out := cropImageChunks(ctx, eng, chunks)
+	out := mustCropImageChunks(t, ctx, eng, chunks)
 	if len(out) != len(chunks) {
 		t.Fatalf("len(out) = %d, want %d", len(out), len(chunks))
 	}
@@ -262,7 +262,7 @@ func TestRestorePDFTextPreview(t *testing.T) {
 	withPos := schema.ChunkDoc{PDFPositions: pos}
 	withoutPos := schema.ChunkDoc{Text: "plain text, no coordinates"}
 
-	out := cropImageChunks(ctx, mockCropEngine{}, []schema.ChunkDoc{withPos, withoutPos})
+	out := mustCropImageChunks(t, ctx, mockCropEngine{}, []schema.ChunkDoc{withPos, withoutPos})
 	if len(out) != 2 {
 		t.Fatalf("len(out) = %d, want 2", len(out))
 	}
@@ -281,7 +281,7 @@ func TestCropImageChunks_NilEnginePassesThrough(t *testing.T) {
 		{DocType: "image", PDFPositions: pos},
 		{DocType: "table", PDFPositions: pos},
 	}
-	out := cropImageChunks(ctx, nil, chunks)
+	out := mustCropImageChunks(t, ctx, nil, chunks)
 	if len(out) != 2 {
 		t.Fatalf("len(out) = %d, want 2", len(out))
 	}
@@ -299,7 +299,7 @@ func TestCropImageChunks_RenderFailureSkipsChunk(t *testing.T) {
 	chunks := []schema.ChunkDoc{
 		{DocType: "image", Text: "cap", PDFPositions: pos},
 	}
-	out := cropImageChunks(ctx, mockCropEngine{}, chunks)
+	out := mustCropImageChunks(t, ctx, mockCropEngine{}, chunks)
 	if len(out) != 1 {
 		t.Fatalf("len(out) = %d, want 1", len(out))
 	}
@@ -363,7 +363,7 @@ func TestCropImageChunks_StreamingUpload(t *testing.T) {
 		{DocType: "table", Text: "tbl-chunk", PDFPositions: pos},
 		{Text: "txt-chunk", PDFPositions: pos},
 	}
-	out := cropImageChunks(ctx, eng, chunks)
+	out := mustCropImageChunks(t, ctx, eng, chunks)
 	if len(out) != len(chunks) {
 		t.Fatalf("len(out) = %d, want %d", len(out), len(chunks))
 	}
@@ -420,7 +420,7 @@ func TestCropImageChunks_NoUploadWhenKBAbsent(t *testing.T) {
 	eng := mockCropEngine{}
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
 	chunks := []schema.ChunkDoc{{DocType: "image", Text: "img", PDFPositions: pos}}
-	out := cropImageChunks(ctx, eng, chunks)
+	out := mustCropImageChunks(t, ctx, eng, chunks)
 
 	if len(rec.calls) != 0 {
 		t.Fatalf("upload calls = %d, want 0 (kb_id absent)", len(rec.calls))
@@ -448,7 +448,7 @@ func TestCropImageChunks_UploadFailureFallsThroughToBatchPass(t *testing.T) {
 	eng := mockCropEngine{}
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
 	chunks := []schema.ChunkDoc{{DocType: "image", Text: "img-chunk", PDFPositions: pos}}
-	out := cropImageChunks(ctx, eng, chunks)
+	out := mustCropImageChunks(t, ctx, eng, chunks)
 
 	if out[0].ImgID != "" {
 		t.Errorf("ImgID = %q, want empty after failed upload", out[0].ImgID)
@@ -481,7 +481,7 @@ func TestCropImageChunks_StreamingUploadUsesFinalizedText(t *testing.T) {
 	chunks := []schema.ChunkDoc{
 		{DocType: "image", Text: "body", ContextAbove: "ABOVE ", PDFPositions: pos},
 	}
-	out := cropImageChunks(ctx, eng, chunks)
+	out := mustCropImageChunks(t, ctx, eng, chunks)
 
 	if len(out) != 1 {
 		t.Fatalf("len(out) = %d, want 1", len(out))
@@ -532,7 +532,7 @@ func TestCropImageChunks_DistinctIdsForSameTextMedia(t *testing.T) {
 		t.Fatalf("same-text media at different regions share chunk id %q", ids[0])
 	}
 
-	out := cropImageChunks(ctx, eng, chunks)
+	out := mustCropImageChunks(t, ctx, eng, chunks)
 	if len(out) != 2 {
 		t.Fatalf("len(out) = %d, want 2", len(out))
 	}
@@ -600,7 +600,7 @@ func TestCropImageChunks_SkipsEmptyTextMedia(t *testing.T) {
 		{DocType: "table", ContextAbove: "", ContextBelow: "", PDFPositions: pos}, // explicit empty
 		{DocType: "image", PDFPositions: pos},                                     // doc-type fallback, no text
 	}
-	out := cropImageChunks(ctx, eng, emptyMedia)
+	out := mustCropImageChunks(t, ctx, eng, emptyMedia)
 	if len(out) != len(emptyMedia) {
 		t.Fatalf("len(out) = %d, want %d", len(out), len(emptyMedia))
 	}
@@ -620,7 +620,7 @@ func TestCropImageChunks_SkipsEmptyTextMedia(t *testing.T) {
 	captioned := []schema.ChunkDoc{
 		{DocType: "image", Text: "a real figure caption", PDFPositions: pos},
 	}
-	out2 := cropImageChunks(ctx, eng, captioned)
+	out2 := mustCropImageChunks(t, ctx, eng, captioned)
 	if len(out2) != 1 {
 		t.Fatalf("len(out2) = %d, want 1", len(out2))
 	}
@@ -664,7 +664,7 @@ func TestCropImageChunks_StreamingUploadUsesCanonicalID(t *testing.T) {
 	// context — materializeMediaContext short-circuits, so the tag-stripped
 	// canonical text is "fig caption".
 	in := schema.ChunkDoc{DocType: "image", Text: "fig caption@@1\t2##", PDFPositions: pos}
-	out := cropImageChunks(ctx, eng, []schema.ChunkDoc{in})
+	out := mustCropImageChunks(t, ctx, eng, []schema.ChunkDoc{in})
 
 	if len(out) != 1 {
 		t.Fatalf("len(out) = %d, want 1", len(out))

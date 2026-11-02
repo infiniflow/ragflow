@@ -68,6 +68,16 @@ type imageUploadDecorator struct {
 }
 
 func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	rawPages := inputs["pdf_pages"]
+	if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil {
+		if value, ok := state.GetGlobal("pdf_pages"); ok && rawPages == nil {
+			rawPages = value
+		}
+	}
+	if rawPages != nil && inputs["pdf_pages"] == nil {
+		inputs = cloneInputs(inputs)
+		inputs["pdf_pages"] = rawPages
+	}
 	out, err := d.inner.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
@@ -97,6 +107,9 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 			// (the legacy []map[string]any path shares the reference already).
 			out["chunks"] = chunks
 		}
+	}
+	if rawPages != nil {
+		out["pdf_pages"] = rawPages
 	}
 	if len(chunks) == 0 {
 		return out, nil
@@ -171,6 +184,7 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 // ChunkerInputs is the static, registered input descriptor shared
 // by all chunker variants.
 var ChunkerInputs = map[string]string{
+	"pdf_pages":     "Optional PDF page-cache metadata.",
 	"text":          "Plain-text input. The chunker slices this into downstream chunks.",
 	"chunks":        "Optional upstream chunk list (structured JSON form).",
 	"name":          "Source document name. Not required on the payload: when absent it is read from the workflow-wide globals bag (CanvasState.Globals) via globals.GlobalOrInput.",
@@ -188,6 +202,7 @@ var ChunkerInputs = map[string]string{
 // is read directly from ctx (see runtime.CanvasState.Globals and
 // globals.GlobalOrInput). Do not add those keys here.
 var ChunkerOutputs = map[string]string{
+	"pdf_pages":     "PDF page-cache metadata for subsequent chunkers.",
 	"output_format": "Always \"chunks\" on success.",
 	"chunks":        "list[object]: per-chunk map (text + optional meta keys).",
 	"_ERROR":        "Set only on validation failure.",

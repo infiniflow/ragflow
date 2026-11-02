@@ -77,6 +77,8 @@ package component
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -87,6 +89,8 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
+	doctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
@@ -429,6 +433,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 	return map[string]string{
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
 		"file_type":     "string: canonical extension used for parser dispatch (for example pdf, md, xlsx, or other).",
+		"pdf_pages":     "Optional PDF page-cache metadata.",
 		"output_format": "string: always \"json\".",
 		"json":          "[]parser.DocItem: canonical structured parser items.",
 		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
@@ -497,6 +502,14 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	//
 	fileTypeExt := fileTypeFromInputs(inputs)
 	parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
+	if fileTypeExt == utility.FileTypePDF && deepdocpdf.PageCacheFromContext(ctx) != nil {
+		method, _ := setups["pdf"]["parse_method"].(string)
+		method = strings.TrimSpace(method)
+		if method == "" || strings.EqualFold(method, "deepdoc") {
+			sum := sha256.Sum256(binary)
+			ctx = deepdocpdf.WithPageDocument(ctx, doctype.PageDocument{Source: hex.EncodeToString(sum[:])})
+		}
+	}
 	enhanceOn := c.enableVisionEnhancement
 	split := progress.NewSplit(parsePagesOn, enhanceOn)
 	pageWin := split.Take(parsePagesOn)
@@ -583,6 +596,10 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		}
 	}
 	out["file_type"] = string(fileTypeExt)
+	out["pdf_pages"] = nil
+	if pages := deepdocpdf.PageDocumentFromContext(ctx); pages != nil {
+		out["pdf_pages"] = pages
+	}
 	// Forward the storage references so a downstream chunker can
 	// re-acquire the source PDF and crop section images on demand,
 	// instead of carrying the binary across the component boundary.

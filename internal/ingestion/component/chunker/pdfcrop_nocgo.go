@@ -20,6 +20,6 @@ func newPDFEngineFromUpstream(_ context.Context, _ *gorm.DB, _ schema.ChunkerFro
 	return nil, nil
 }
 
-func cropImageChunks(_ context.Context, _ deepdoctype.PDFEngine, chunks []schema.ChunkDoc) []schema.ChunkDoc {
-	return chunks
+func cropImageChunks(_ context.Context, _ deepdoctype.PDFEngine, chunks []schema.ChunkDoc) ([]schema.ChunkDoc, error) {
+	return chunks, nil
 }

@@ -277,13 +277,17 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		}
 	}
 	chunks = splitGeneralChildren(chunks, childrenPattern)
+	ctx = pdfPageContext(ctx, upstream)
 	engine, err := newPDFEngineFromUpstream(ctx, db, upstream)
 	if err != nil {
 		common.Warn("GeneralChunker: could not open PDF for on-demand cropping", zap.Error(err))
 	}
 	if engine != nil {
 		defer engine.Close()
-		chunks = cropImageChunks(ctx, engine, chunks)
+	}
+	chunks, err = cropImageChunks(ctx, engine, chunks)
+	if err != nil {
+		return nil, err
 	}
 	chunks = finalizeGeneralChunks(chunks, nil)
 	if err := ctx.Err(); err != nil {

@@ -4,11 +4,17 @@ package component
 
 import (
 	"context"
+	"errors"
 	"image"
+	"strings"
 	"testing"
 	"time"
 
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/ingestion/component/progress"
+	"ragflow/internal/parser/parser"
+	"ragflow/internal/utility"
 )
 
 // mockVisionEngine returns a fixed image for any rendered page so the
@@ -435,5 +441,56 @@ func TestVisionCropImage_CanceledParentDoesNotRetrySource(t *testing.T) {
 	}
 	if fetchCalls != 1 {
 		t.Fatalf("source fetch calls = %d, want one; canceled parent must prevent retries", fetchCalls)
+	}
+}
+
+type visionPageCache struct{ err error }
+
+func (c *visionPageCache) Put(context.Context, deepdoctype.PageRef, image.Image) error { return nil }
+func (c *visionPageCache) Get(context.Context, deepdoctype.PageRef) (image.Image, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return image.NewRGBA(image.Rect(0, 0, 600, 600)), nil
+}
+func TestVisionReadsCachedPageWithoutFetchingSource(t *testing.T) {
+	cache := &visionPageCache{}
+	source := strings.Repeat("a", 64)
+	ctx := deepdocpdf.WithPageDocument(deepdocpdf.WithPageCache(t.Context(), cache), deepdoctype.PageDocument{
+		Source: source, Pages: map[int]deepdoctype.PageSize{0: {Width: 600, Height: 600}},
+	})
+	old := visionSourceFetcher
+	visionSourceFetcher = func(context.Context, string, string) ([]byte, error) {
+		t.Fatal("source PDF was fetched")
+		return nil, nil
+	}
+	t.Cleanup(func() { visionSourceFetcher = old })
+	cropper, err := newVisionImageCropper(ctx, nil, map[string]any{"bucket": "unused", "path": "unused"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cropper.Close()
+	if err := cropper.Prepare(ctx, cgoPositions()); err != nil {
+		t.Fatal(err)
+	}
+	img, err := cropper.Crop(ctx, cgoPositions())
+	if err != nil || img == nil || img.Raster == nil {
+		t.Fatalf("cached crop: %v, %v", img, err)
+	}
+	cache.err = errors.New("cache miss")
+	if _, err := cropper.Crop(ctx, cgoPositions()); !errors.Is(err, deepdocpdf.ErrPageCache) {
+		t.Fatalf("cache error: %v", err)
+	}
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+	item := cgoPositions()
+	item["doc_type_kwd"] = "image"
+	item["text"] = "figure"
+	_, _, err = maybeDispatchVisionEnhancement(ctx, nil, utility.FileTypePDF, parser.ParseResult{JSON: parser.MapsToItems([]map[string]any{item})}, map[string]any{"tenant_id": "t1"}, visionSettings{}, progress.Window{})
+	if !errors.Is(err, deepdocpdf.ErrPageCache) {
+		t.Fatalf("enhancement swallowed cache error: %v", err)
+	}
+	if len(invoker.images) != 0 {
+		t.Fatal("VLM invoked after cache failure")
 	}
 }

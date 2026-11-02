@@ -42,7 +42,7 @@ func TestCropTitleChunks_CropsPositionedChunk(t *testing.T) {
 		{"text": "no coords", "doc_type_kwd": "text"},
 	}
 
-	got := cropTitleChunks(ctx, mockCropEngine{}, in)
+	got := mustCropTitleChunks(t, ctx, mockCropEngine{}, in)
 	if len(got) != 2 {
 		t.Fatalf("len = %d, want 2", len(got))
 	}
@@ -62,7 +62,7 @@ func TestCropTitleChunks_CropsImageWithPageList(t *testing.T) {
 	in := []map[string]any{
 		{"text": "Figure 1: caption", "doc_type_kwd": "image", "positions": pos, "_pdf_positions": pos},
 	}
-	got := cropTitleChunks(context.Background(), mockCropEngine{}, in)
+	got := mustCropTitleChunks(t, context.Background(), mockCropEngine{}, in)
 	if len(got) != 1 {
 		t.Fatalf("len = %d, want 1", len(got))
 	}
@@ -160,7 +160,7 @@ func testPositionOnlyImagesWithRootHeading(t *testing.T, comp runtime.Component,
 				}
 			}
 			if mode != "no-engine" {
-				chunks = cropTitleChunks(ctx, assertZeroPageEngine{}, chunks)
+				chunks = mustCropTitleChunks(t, ctx, assertZeroPageEngine{}, chunks)
 				if len(rec.calls) != 2 {
 					t.Fatalf("uploads = %d, want 2", len(rec.calls))
 				}
@@ -248,7 +248,7 @@ func TestCropTitleChunks_PositionOnlyImageWithoutHeading(t *testing.T) {
 			if len(chunks) != 3 || chunks[1]["doc_type_kwd"] != "image" || chunks[1]["text"] != "" {
 				t.Fatalf("chunks = %#v, want text, textless figure, text", chunks)
 			}
-			chunks = cropTitleChunks(ctx, mockCropEngine{}, chunks)
+			chunks = mustCropTitleChunks(t, ctx, mockCropEngine{}, chunks)
 			decorated := &imageUploadDecorator{inner: &stubChunker{chunks: chunks}}
 			out, err := decorated.Invoke(ctx, nil, nil)
 			if err != nil {
@@ -276,7 +276,7 @@ func TestCropTitleChunks_PositionOnlyImageWithoutHeading(t *testing.T) {
 // when no PDF engine is available (best-effort contract).
 func TestCropTitleChunks_NilEnginePassthrough(t *testing.T) {
 	in := []map[string]any{{"text": "hello"}}
-	got := cropTitleChunks(context.Background(), nil, in)
+	got := mustCropTitleChunks(t, context.Background(), nil, in)
 	if len(got) != 1 || got[0]["text"] != "hello" {
 		t.Fatalf("nil engine should pass through unchanged: %v", got)
 	}

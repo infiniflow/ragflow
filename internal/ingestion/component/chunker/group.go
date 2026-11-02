@@ -196,13 +196,17 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, upstream schema.Ch
 	// On-demand PDF preview cropping for image/table/text chunks,
 	// mirroring the TokenChunker JSON path (token.go:513). Best-effort:
 	// a missing or unreadable PDF simply skips cropping.
+	parentCtx = pdfPageContext(parentCtx, upstream)
 	engine, eErr := newPDFEngineFromUpstream(parentCtx, db, upstream)
 	if eErr != nil {
 		common.Warn("chunker: could not open PDF for on-demand cropping", zap.Error(eErr))
 	}
 	if engine != nil {
 		defer engine.Close()
-		chunks = cropTitleChunks(parentCtx, engine, chunks)
+	}
+	chunks, eErr = cropTitleChunks(parentCtx, engine, chunks)
+	if eErr != nil {
+		return nil, eErr
 	}
 
 	if len(chunks) == 0 {

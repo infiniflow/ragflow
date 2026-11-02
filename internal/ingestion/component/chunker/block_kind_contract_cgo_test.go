@@ -32,7 +32,7 @@ func TestCropTitleChunksNeverEmitsChunkStructure(t *testing.T) {
 			"doc_type_kwd": "text",
 			"layout":       "heading",
 		}}
-		got := cropTitleChunks(t.Context(), engine, in)
+		got := mustCropTitleChunks(t, t.Context(), engine, in)
 		for i, ck := range got {
 			if layout, ok := ck["layout"]; ok {
 				t.Errorf("engine=%T chunk[%d] leaks structural layout %v: %#v", engine, i, layout, ck)

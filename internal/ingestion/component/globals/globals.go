@@ -64,6 +64,7 @@ var GlobalMetadataKeys = []string{
 	"bucket",
 	"path",
 	"file",
+	"pdf_pages",
 	"tenant_id",
 	"kb_id",
 	"lang",

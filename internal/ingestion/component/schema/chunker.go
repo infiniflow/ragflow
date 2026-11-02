@@ -21,6 +21,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	doctype "ragflow/internal/deepdoc/parser/type"
 )
 
 // ChunkerFromUpstream is the shared upstream payload consumed by the chunker
@@ -50,8 +52,9 @@ import (
 //	text_result:      str        | None  (alias "text")
 //	html_result:      str        | None  (alias "html")
 type ChunkerFromUpstream struct {
-	CreatedTime *float64 `json:"_created_time,omitempty"`
-	ElapsedTime *float64 `json:"_elapsed_time,omitempty"`
+	PDFPages    *doctype.PageDocument `json:"pdf_pages,omitempty"`
+	CreatedTime *float64              `json:"_created_time,omitempty"`
+	ElapsedTime *float64              `json:"_elapsed_time,omitempty"`
 
 	// Name is the source document name. Required.
 	Name string `json:"name"`
@@ -108,6 +111,11 @@ type ChunkerFromUpstream struct {
 // combination of `OutputFormat == "chunks"` with a non-nil Chunks is the
 // happy path.
 func (c *ChunkerFromUpstream) Validate() error {
+	if c.PDFPages != nil {
+		if err := c.PDFPages.Validate(); err != nil {
+			return err
+		}
+	}
 	if c.Name == "" {
 		return errRequiredField{Field: "name"}
 	}
@@ -155,6 +163,8 @@ func (c *ChunkerFromUpstream) Validate() error {
 // published by the File component — and is read directly from ctx, not
 // re-emitted by each chunker. The fields below are the chunker-owned outputs.
 type ChunkerOutputs struct {
+	PDFPages *doctype.PageDocument `json:"pdf_pages,omitempty"`
+
 	// OutputFormat is always "chunks" on success.
 	OutputFormat PayloadFormat `json:"output_format,omitempty"`
 

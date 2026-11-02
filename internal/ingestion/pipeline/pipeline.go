@@ -20,21 +20,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 
 	"ragflow/internal/agent/canvas"
 	_ "ragflow/internal/agent/component"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/ingestion/mediacache"
 	"ragflow/internal/parser/media"
 	"ragflow/internal/utility"
-
-	"go.uber.org/zap"
 )
 
 var _ mediacache.Backend = (*kvrocks.Client)(nil)
@@ -282,6 +284,12 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 		runCtx = media.WithCache(runCtx, mediaCache)
 	}
 
+	if os.Getenv("RAGFLOW_PDF_PAGE_CACHE") == "1" {
+		if p.kv == nil || p.taskID == "" {
+			return nil, fmt.Errorf("PDF page cache requires Kvrocks and task scope")
+		}
+		runCtx = deepdocpdf.WithPageCache(runCtx, mediacache.NewPageStore(p.kv, p.taskID))
+	}
 	return p.runPlain(runCtx, current, compiled, tracker, runState)
 }
 

@@ -48,7 +48,7 @@ func TestCropImageChunksPreservesCompleteTextLines(t *testing.T) {
 		{"table", schema.ChunkDoc{Text: "table", DocType: "table", PDFPositions: pos}, 24},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out := cropImageChunks(t.Context(), textCropEngine{page: page}, []schema.ChunkDoc{tc.ck})
+			out := mustCropImageChunks(t, t.Context(), textCropEngine{page: page}, []schema.ChunkDoc{tc.ck})
 			if out[0].Text != tc.ck.Text || !reflect.DeepEqual(out[0].PDFPositions, tc.ck.PDFPositions) || !reflect.DeepEqual(out[0].Positions, tc.ck.Positions) {
 				t.Fatal("preview correction changed text or source coordinates")
 			}
@@ -83,7 +83,7 @@ func TestCropImageChunksKeepsSeparateMediaBoxes(t *testing.T) {
 			pos := jsonPositions(t,
 				[]float64{1, 10, 60, 112.0 / 3, 162.0 / 3},
 				[]float64{1, 10, 60, 162.0 / 3, 212.0 / 3})
-			out := cropImageChunks(t.Context(), textCropEngine{page: page}, []schema.ChunkDoc{{Text: typ, DocType: typ, PDFPositions: pos}})
+			out := mustCropImageChunks(t, t.Context(), textCropEngine{page: page}, []schema.ChunkDoc{{Text: typ, DocType: typ, PDFPositions: pos}})
 			img, err := util.DecodeBase64PNG(strings.TrimPrefix(out[0].Image, "data:image/png;base64,"))
 			if err != nil {
 				t.Fatal(err)

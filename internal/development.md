@@ -314,6 +314,17 @@ docker compose -f docker/docker-compose-base.yml --profile infinity up -d
   ZIP-entry extraction, picture parsing, vision encoding and media-cache writes.
   Set `RAGFLOW_MEDIA_IMAGE_MAX_BYTES` to a positive byte count to change it.
   Native PDF region cropping retains its separate page/raster limits.
+  Set `RAGFLOW_PDF_PAGE_CACHE=1` to hand the local DeepDoc parser\'s 216 DPI
+  page bitmaps to vision enhancement and chunkers through Kvrocks. It requires
+  a task scope and a configured Kvrocks client. The default is disabled.
+  Pages use lossless RGBA with dimensions and a checksum; they are limited to
+  40 million pixels each. `RAGFLOW_PDF_PAGE_CACHE_MAX_BYTES` sets the positive
+  per-task page-cache byte limit (default 64 GiB, separate from embedded-image
+  quotas). Writes follow parser page concurrency. Consumers retain the existing
+  in-process page LRU for chunk cropping and never re-render a published page
+  after a cache miss. Cache errors fail the task. Page keys share the media
+  manifest and one-day TTL, and are removed with media after successful
+  persistence. Direct parser calls without a page-cache context render normally.
   The parser budget and media cache apply the same numeric run caps: 1024 items
   and 1 GiB of decoded image bytes per run. The parser counts distinct source
   references; the cache counts distinct SHA-256 payloads. Set

@@ -24,10 +24,12 @@ package component
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"image"
 	"io"
 	"maps"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -351,6 +353,10 @@ func maybeDispatchVisionEnhancement(
 				return
 			}
 			resource, err = cropper.Crop(itemCtx, item)
+			if errors.Is(err, deepdocpdf.ErrPageCache) {
+				mediaFailures[slot] = err
+				return
+			}
 			if err != nil || resource == nil {
 				cropErr := err
 				if ctx.Err() == nil && vlmReady {
@@ -378,6 +384,10 @@ func maybeDispatchVisionEnhancement(
 			}
 		}()
 		if err := ctx.Err(); err != nil {
+			releaseSlot()
+			break
+		}
+		if mediaFailures[slot] != nil {
 			releaseSlot()
 			break
 		}

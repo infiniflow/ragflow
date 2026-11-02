@@ -34,14 +34,14 @@ type pageCacheEntry struct {
 
 // lruPageCache is a concurrency-safe bounded LRU of rendered page bitmaps with
 // reference counting. Eviction only drops ref==0 pages, so an in-flight crop
-// can never lose a page it still holds a reference to. A transient double
-// render (two workers both missing the same page) is harmless — the later one
-// discards its render and reuses the cached entry.
+// can never lose a page it still holds a reference to. Concurrent loads of the
+// same page are serialized so workers share the loaded bitmap.
 type lruPageCache struct {
-	mu    sync.Mutex
-	ll    *list.List // front = most-recently-used; element value = pageCacheEntry
-	items map[int]*list.Element
-	cap   int
+	loading [64]sync.Mutex
+	mu      sync.Mutex
+	ll      *list.List // front = most-recently-used; element value = pageCacheEntry
+	items   map[int]*list.Element
+	cap     int
 }
 
 // newLRUPageCache returns a cache that retains at most capacity pages. A
@@ -60,10 +60,12 @@ func newLRUPageCache(capacity int) *lruPageCache {
 // Acquire returns the cached or freshly rendered image for pn and marks it
 // referenced. The caller must call Release(pn) once cropping from pn is done.
 // render is invoked outside the lock on a miss, so the CGO pdfium render is
-// never serialized by the cache mutex. A transient double render (two workers
-// both miss the same page) is harmless: the later one reuses the cached entry
-// and discards its own redundant copy.
+// never serialized by the cache mutex. Concurrent misses of the same page
+// share one load.
 func (c *lruPageCache) Acquire(render func(int) (image.Image, bool), pn int) (image.Image, bool) {
+	load := &c.loading[uint(pn)%uint(len(c.loading))]
+	load.Lock()
+	defer load.Unlock()
 	c.mu.Lock()
 	if el, ok := c.items[pn]; ok {
 		e := el.Value.(pageCacheEntry)
@@ -82,16 +84,6 @@ func (c *lruPageCache) Acquire(render func(int) (image.Image, bool), pn int) (im
 	}
 
 	c.mu.Lock()
-	if el, ok := c.items[pn]; ok {
-		// Another worker rendered the page concurrently; reuse it and discard
-		// our redundant copy.
-		e := el.Value.(pageCacheEntry)
-		e.ref++
-		el.Value = e
-		c.ll.MoveToFront(el)
-		c.mu.Unlock()
-		return e.img, true
-	}
 	el := c.ll.PushFront(pageCacheEntry{pn: pn, img: img, ref: 1})
 	c.items[pn] = el
 	c.evictLocked()

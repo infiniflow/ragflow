@@ -82,6 +82,7 @@ import (
 	"gorm.io/gorm"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
@@ -233,6 +234,7 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 		// refs) so image/table sections are cropped on demand rather
 		// than carried through the wire. Best-effort: a nil engine
 		// simply skips cropping.
+		ctx = pdfPageContext(ctx, upstream)
 		engine, engErr := newPDFEngineFromUpstream(ctx, db, upstream)
 		if engErr != nil {
 			common.Warn("TokenChunker: could not open PDF for on-demand cropping", zap.Error(engErr))
@@ -240,8 +242,15 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 		if engine != nil {
 			defer engine.Close()
 		}
-		return c.invokeJSONPayload(ctx, items, delimPattern, childrenPattern, engine, upstream.FileType), nil
+		return c.invokeJSONPayload(ctx, items, delimPattern, childrenPattern, engine, upstream.FileType)
 	}
+}
+
+func pdfPageContext(ctx context.Context, upstream schema.ChunkerFromUpstream) context.Context {
+	if upstream.PDFPages == nil {
+		return ctx
+	}
+	return deepdocpdf.WithPageDocument(ctx, *upstream.PDFPages)
 }
 
 func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstream, error) {
@@ -311,24 +320,27 @@ func stripChunkerRuntimeTimestamps(inputs map[string]any) map[string]any {
 // (cropImageChunks at token.go:513). A nil engine (or an undecodable payload)
 // skips cropping, but the returned maps are still normalized so retired
 // chunker-internal structural layout never leaves the component.
-func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks []map[string]any) []map[string]any {
+func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks []map[string]any) ([]map[string]any, error) {
 	if len(chunks) == 0 {
-		return chunks
+		return chunks, nil
 	}
-	if engine == nil {
+	if engine == nil && !deepdocpdf.HasPageDocument(ctx) {
 		normalizeTitleChunkMaps(chunks)
-		return chunks
+		return chunks, nil
 	}
 	docs, _, err := schema.ChunkDocsFromAny(chunks)
 	if err != nil || len(docs) == 0 {
 		normalizeTitleChunkMaps(chunks)
-		return chunks
+		return chunks, nil
 	}
-	cropped := cropImageChunks(ctx, engine, docs)
+	cropped, err := cropImageChunks(ctx, engine, docs)
+	if err != nil {
+		return nil, err
+	}
 	for i := range cropped {
 		clearStructuralLayout(&cropped[i])
 	}
-	return schema.ChunkDocsToMaps(cropped)
+	return schema.ChunkDocsToMaps(cropped), nil
 }
 
 // normalizeTitleChunkMaps keeps the Title-family output shape independent of
@@ -570,9 +582,9 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, delimPattern, chil
 
 // invokeJSONPayload handles structured upstream input. Items fan
 // across 4 goroutines; merge is by input index.
-func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []schema.ChunkDoc, delimPattern, childrenPattern *regexp.Regexp, engine deepdoctype.PDFEngine, fileType string) map[string]any {
+func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []schema.ChunkDoc, delimPattern, childrenPattern *regexp.Regexp, engine deepdoctype.PDFEngine, fileType string) (map[string]any, error) {
 	if len(items) == 0 {
-		return emptyOutputs()
+		return emptyOutputs(), nil
 	}
 	workers := 4
 	if workers < 1 {
@@ -613,11 +625,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	}
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("TokenChunker: %v", err),
-		}
+		return nil, fmt.Errorf("TokenChunker: %w", err)
 	}
 	if !customDelim {
 		separateItemBoundaries(perItem)
@@ -661,7 +669,11 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	}
 
 	// Crop image/table chunks on demand when a PDF engine is available.
-	flat = cropImageChunks(ctx, engine, flat)
+	var cropErr error
+	flat, cropErr = cropImageChunks(ctx, engine, flat)
+	if cropErr != nil {
+		return nil, cropErr
+	}
 
 	// Fuse the keep-filter and the media-context materialisation into a single
 	// pass. The previous code built `out` (a full []ChunkDoc copy of the kept
@@ -694,12 +706,12 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	// flat has been consumed; release it before we build the output map.
 	flat = nil
 	if len(materialized) == 0 {
-		return emptyOutputs()
+		return emptyOutputs(), nil
 	}
 	return map[string]any{
 		"output_format": "chunks",
 		"chunks":        schema.ChunkDocsToMaps(materialized),
-	}
+	}, nil
 }
 
 // isTextParserSentenceFallback restores the semantic sentence units that the

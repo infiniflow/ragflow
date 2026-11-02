@@ -40,6 +40,9 @@ import (
 // (nil, nil) when no storage reference is present or the bytes are not a PDF,
 // so callers can treat a nil engine as "no cropping".
 func newPDFEngineFromUpstream(ctx context.Context, db *gorm.DB, up schema.ChunkerFromUpstream) (deepdoctype.PDFEngine, error) {
+	if deepdocpdf.HasPageDocument(ctx) {
+		return nil, nil
+	}
 	var data []byte
 	var err error
 	switch {
@@ -97,9 +100,9 @@ func cropConcurrency() int {
 // CropSectionImage → image/png) is fanned out across a bounded worker pool.
 // The pdfium CGO render is serialized by pdfsync.Mu inside the engine, so
 // concurrent renders are safe — only the Go-side encode runs in parallel.
-func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks []schema.ChunkDoc) []schema.ChunkDoc {
-	if engine == nil {
-		return chunks
+func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks []schema.ChunkDoc) ([]schema.ChunkDoc, error) {
+	if engine == nil && !deepdocpdf.HasPageDocument(ctx) {
+		return chunks, nil
 	}
 
 	// cache bounds peak memory (reference counting + LRU, see lruPageCache)
@@ -108,8 +111,19 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 	// relied on in-order processing and is unsafe under fan-out. render is
 	// called outside the lock; the warning on failure is logged here so the
 	// cache stays render-agnostic and unit-testable.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	cache := newLRUPageCache(pageCacheLimit())
+	var loadErr error
+	var loadOnce sync.Once
 	render := func(pn int) (image.Image, bool) {
+		if deepdocpdf.HasPageDocument(ctx) {
+			img, err := deepdocpdf.LoadCachedPage(ctx, pn)
+			if err != nil {
+				loadOnce.Do(func() { loadErr = err; cancel() })
+			}
+			return img, err == nil && img != nil
+		}
 		img, rerr := deepdocpdf.RenderPageToImage(engine, pn)
 		if rerr != nil || img == nil {
 			common.Warn("cropImageChunks: render failed, skipping page",
@@ -149,7 +163,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		candidateIndices = append(candidateIndices, i)
 	}
 	if len(candidateIndices) == 0 {
-		return out
+		return out, nil
 	}
 
 	total := int64(len(candidateIndices))
@@ -258,10 +272,16 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		}(idx)
 	}
 	wg.Wait()
+	if loadErr != nil {
+		return nil, loadErr
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if ctx.Err() == nil {
 		agentruntime.ReportComponentFraction(ctx, 1.0)
 	}
-	return out
+	return out, nil
 }
 
 // needsCrop reports whether a chunk should be cropped to a page-region

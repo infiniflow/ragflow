@@ -4,6 +4,7 @@ package chunker
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sort"
 	"sync"
@@ -55,7 +56,7 @@ func TestCropImageChunks_ReportsFractions(t *testing.T) {
 		},
 	}
 
-	out := cropImageChunks(ctx, mockCropEngine{}, chunks)
+	out := mustCropImageChunks(t, ctx, mockCropEngine{}, chunks)
 	if len(out) != 3 {
 		t.Fatalf("expected 3 chunks, got %d", len(out))
 	}
@@ -92,7 +93,7 @@ func TestCropImageChunks_ZeroTasksReportsNothing(t *testing.T) {
 		},
 	}
 
-	out := cropImageChunks(ctx, mockCropEngine{}, chunks)
+	out := mustCropImageChunks(t, ctx, mockCropEngine{}, chunks)
 	if len(out) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(out))
 	}
@@ -119,7 +120,10 @@ func TestCropImageChunks_CancelledContextDoesNotReport(t *testing.T) {
 		},
 	}
 
-	_ = cropImageChunks(ctx, mockCropEngine{}, chunks)
+	_, err := cropImageChunks(ctx, mockCropEngine{}, chunks)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation error: %v", err)
+	}
 	fractions := rec.getFractions()
 	if len(fractions) != 0 {
 		t.Errorf("cancelled context must not report progress, got: %v", fractions)

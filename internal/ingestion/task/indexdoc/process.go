@@ -172,7 +172,7 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 // deferred-image reference consumed by the upload pass; a chunk that still
 // carries one must not reach the index.
 var pipelineOnlyFields = []string{
-	"tk_nums", "layout", "layout_type", "layoutno", "image", "media_ref",
+	"tk_nums", "layout", "layout_type", "layoutno", "image", "media_ref", "pdf_pages",
 	"context_above", "context_below", "page_number", "_preserve_order",
 	"table_id", "sheet", "sheet_index", "headers", "cells",
 	"row_start", "row_end", "col_start", "col_end",

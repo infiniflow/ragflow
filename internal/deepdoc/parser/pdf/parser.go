@@ -202,6 +202,9 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 	common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "render start"))
 	pageImg, renderErr := p.renderPageToImage(ctx, engine, pg)
 	common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "render done"))
+	if errors.Is(renderErr, ErrPageCache) {
+		return pageResult{PageNumber: pg, Err: renderErr}
+	}
 	pageZoom := pdf.DlaScale
 	var ocrBoxes []pdf.TextBox
 	var updatedChars []pdf.TextChar
@@ -386,6 +389,8 @@ func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
 		return nil, err
 	}
 
+	ctx, cancel := context.WithCancelCause(ctx)
+	defer cancel(nil)
 	resultMap := make(map[int]*pageResult, len(pages))
 	var firstErr error
 	recordErr := func(e error) {
@@ -407,6 +412,7 @@ func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
 			docAnalyzer: docAnalyzer,
 			tb:          tb,
 			progress:    progress,
+			cancel:      cancel,
 		}
 		if err := parserPageWorkerPool().SubmitTo(ctx, task, resultCh); err != nil {
 			recordErr(err)
@@ -437,6 +443,9 @@ func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
 		if r, ok := resultMap[pg]; ok {
 			results = append(results, r)
 		}
+	}
+	if cause := context.Cause(ctx); cause != nil {
+		return results, errors.Join(firstErr, cause)
 	}
 	return results, firstErr
 }
@@ -665,6 +674,9 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnal
 	}
 
 	pageResults, pageErr := p.runPageWorkers(ctx, engine, pages, docAnalyzer, tb)
+	if errors.Is(pageErr, ErrPageCache) {
+		return nil, pageErr
+	}
 	if pageErr != nil && !errors.Is(pageErr, context.Canceled) {
 		common.Warn("deepdoc pdf parse: runPageWorkers some pages failed",
 			zap.Error(pageErr))
