@@ -75,20 +75,21 @@ type whatsappRuntimeSnapshot struct {
 type whatsappChannel struct {
 	account whatsappAccount
 
-	mu             sync.Mutex
-	cancel         context.CancelFunc
-	handler        core.MessageHandler
-	client         *http.Client
-	status         string
-	lastErr        string
-	qrDataURL      string
-	qrUpdatedAt    float64
-	connectedAt    float64
-	lastSnapshotAt float64
-	sessionID      string
-	eventCursor    int64
-	seen           map[string]time.Time
-	workers        map[string]*whatsappChatWorker
+	mu                  sync.Mutex
+	cancel              context.CancelFunc
+	handler             core.MessageHandler
+	client              *http.Client
+	allowDefaultGateway bool
+	status              string
+	lastErr             string
+	qrDataURL           string
+	qrUpdatedAt         float64
+	connectedAt         float64
+	lastSnapshotAt      float64
+	sessionID           string
+	eventCursor         int64
+	seen                map[string]time.Time
+	workers             map[string]*whatsappChatWorker
 }
 
 type whatsappChatWorker struct {
@@ -99,6 +100,8 @@ var liveWhatsAppChannels sync.Map
 
 // newWhatsAppChannel creates a WhatsApp channel instance with default runtime settings filled in.
 func newWhatsAppChannel(account whatsappAccount) *whatsappChannel {
+	account.GatewayBaseURL = strings.TrimSpace(account.GatewayBaseURL)
+	allowDefaultGateway := account.GatewayBaseURL == "" || strings.TrimRight(account.GatewayBaseURL, "/") == defaultGatewayBaseURL
 	if account.GatewayBaseURL == "" {
 		account.GatewayBaseURL = defaultGatewayBaseURL
 	}
@@ -108,12 +111,18 @@ func newWhatsAppChannel(account whatsappAccount) *whatsappChannel {
 	if account.Timeout <= 0 {
 		account.Timeout = defaultTimeout
 	}
+	policy := channelURLPolicy{}
+	if allowDefaultGateway {
+		policy.localBaseURL = defaultGatewayBaseURL
+		policy.localPathPrefix = "/whatsapp/"
+	}
 	return &whatsappChannel{
-		account: account,
-		client:  &http.Client{Timeout: account.Timeout},
-		status:  "stopped",
-		seen:    map[string]time.Time{},
-		workers: map[string]*whatsappChatWorker{},
+		account:             account,
+		client:              newSafeChannelHTTPClient(account.Timeout, policy),
+		allowDefaultGateway: allowDefaultGateway,
+		status:              "stopped",
+		seen:                map[string]time.Time{},
+		workers:             map[string]*whatsappChatWorker{},
 	}
 }
 
@@ -302,9 +311,12 @@ func (c *whatsappChannel) runEvents(ctx context.Context) error {
 	if auth := c.authHeader(); auth != "" {
 		header.Set("Authorization", auth)
 	}
-	dialer := *websocket.DefaultDialer
-	dialer.HandshakeTimeout = wsHandshakeTimeout
-	conn, _, err := dialer.DialContext(ctx, wsURL, header)
+	policy := channelURLPolicy{}
+	if c.allowDefaultGateway {
+		policy.localBaseURL = defaultGatewayBaseURL
+		policy.localPathPrefix = "/whatsapp/"
+	}
+	conn, _, err := dialSafeChannelWebSocket(ctx, wsURL, header, wsHandshakeTimeout, policy)
 	if err != nil {
 		return err
 	}
@@ -576,10 +588,10 @@ func (c *whatsappChannel) requestJSONWithClient(ctx context.Context, client *htt
 		return err
 	}
 	defer resp.Body.Close()
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("status: %d, response: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("WhatsApp gateway returned HTTP status %d", resp.StatusCode)
 	}
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	if out != nil && len(bytes.TrimSpace(respBody)) > 0 {
 		return json.Unmarshal(respBody, out)
 	}

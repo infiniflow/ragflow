@@ -56,6 +56,10 @@ const devPrereleaseIdentifier = "dev"
 // GetDatabaseMigrationVersion reads the stored migration version. It returns an
 // empty string when the marker or the system_settings table is absent.
 func GetDatabaseMigrationVersion(ctx context.Context, db *gorm.DB) (string, error) {
+	return getDatabaseMigrationVersion(ctx, db, migrationDBVersionMarker)
+}
+
+func getDatabaseMigrationVersion(ctx context.Context, db *gorm.DB, marker string) (string, error) {
 	scoped := db.WithContext(ctx)
 	if !scoped.Migrator().HasTable("system_settings") {
 		common.Info("Table 'system_settings' does not exist, migration version marker is unavailable")
@@ -63,7 +67,7 @@ func GetDatabaseMigrationVersion(ctx context.Context, db *gorm.DB) (string, erro
 	}
 
 	var value string
-	err := scoped.Raw("SELECT `value` FROM `system_settings` WHERE `name` = ?", migrationDBVersionMarker).Row().Scan(&value)
+	err := scoped.Raw("SELECT `value` FROM `system_settings` WHERE `name` = ?", marker).Row().Scan(&value)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
@@ -75,6 +79,10 @@ func GetDatabaseMigrationVersion(ctx context.Context, db *gorm.DB) (string, erro
 
 // setDatabaseMigrationVersion upserts the migration version marker.
 func setDatabaseMigrationVersion(ctx context.Context, db *gorm.DB, version string) error {
+	return setDatabaseMigrationVersionForMarker(ctx, db, migrationDBVersionMarker, version)
+}
+
+func setDatabaseMigrationVersionForMarker(ctx context.Context, db *gorm.DB, marker, version string) error {
 	scoped := db.WithContext(ctx)
 	if !scoped.Migrator().HasTable("system_settings") {
 		common.Warn("Table 'system_settings' does not exist, migration version marker was not saved")
@@ -84,7 +92,7 @@ func setDatabaseMigrationVersion(ctx context.Context, db *gorm.DB, version strin
 	nowMs := time.Now().UnixMilli()
 	now := time.Now()
 	setting := entity.SystemSettings{
-		Name:     migrationDBVersionMarker,
+		Name:     marker,
 		Source:   "migration",
 		DataType: "string",
 		Value:    version,

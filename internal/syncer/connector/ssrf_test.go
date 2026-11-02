@@ -18,10 +18,13 @@ package connector
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -192,6 +195,160 @@ func TestConnectorRequestPinsRedirectHopAgainstDNSRebinding(t *testing.T) {
 	}
 }
 
+func TestConnectorRequestUsesProxyWithPinnedHTTPTarget(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+
+	type observedRequest struct {
+		urlHost string
+	}
+	observed := make(chan observedRequest, 1)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		observed <- observedRequest{urlHost: r.URL.Host}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const rawURL = "http://docs.example.test:8123/file"
+	base := &http.Client{Transport: &http.Transport{Proxy: func(req *http.Request) (*url.URL, error) {
+		if req.URL.Host != "docs.example.test:8123" {
+			t.Errorf("proxy selection saw rewritten host %q", req.URL.Host)
+		}
+		return proxyURL, nil
+	}}}
+	hostHeader := make(chan string, 1)
+	trace := &httptrace.ClientTrace{WroteHeaderField: func(key string, values []string) {
+		if strings.EqualFold(key, "Host") && len(values) > 0 {
+			hostHeader <- values[0]
+		}
+	}}
+	ctx := httptrace.WithClientTrace(context.Background(), trace)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:  http.MethodGet,
+		RawURL:  rawURL,
+		Timeout: webdavRequestTimeout,
+		Base:    base,
+		Validate: func(string) (string, net.IP, error) {
+			return "docs.example.test", net.ParseIP("203.0.113.9"), nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("connectorRequest: %v", err)
+	}
+	resp.Body.Close()
+
+	got := <-observed
+	if got.urlHost != "203.0.113.9:8123" {
+		t.Errorf("proxy target URL host = %q, want pinned IP", got.urlHost)
+	}
+	select {
+	case got := <-hostHeader:
+		if got != "docs.example.test:8123" {
+			t.Errorf("HTTP Host header = %q, want original host", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("HTTP request did not write the origin Host header")
+	}
+	if resp.Request.URL.String() != rawURL {
+		t.Errorf("response request URL = %q, want original URL %q", resp.Request.URL, rawURL)
+	}
+}
+
+func TestConnectorRequestUsesHTTPSConnectToPinnedIPAndPreservesOrigin(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+
+	type observedRequest struct {
+		host       string
+		serverName string
+	}
+	observed := make(chan observedRequest, 1)
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serverName := ""
+		if r.TLS != nil {
+			serverName = r.TLS.ServerName
+		}
+		observed <- observedRequest{host: r.Host, serverName: serverName}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+	targetURL, err := url.Parse(target.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetPort := targetURL.Port()
+
+	connectTarget := make(chan string, 1)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			http.Error(w, "CONNECT required", http.StatusMethodNotAllowed)
+			return
+		}
+		connectTarget <- r.Host
+		clientConn, rw, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijack proxy connection: %v", err)
+			return
+		}
+		defer clientConn.Close()
+		targetConn, err := net.Dial("tcp", r.Host)
+		if err != nil {
+			t.Errorf("dial CONNECT target %q: %v", r.Host, err)
+			return
+		}
+		defer targetConn.Close()
+		if _, err := io.WriteString(rw, "HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
+			t.Errorf("write CONNECT response: %v", err)
+			return
+		}
+		if err := rw.Flush(); err != nil {
+			t.Errorf("flush CONNECT response: %v", err)
+			return
+		}
+		go func() {
+			_, _ = io.Copy(targetConn, rw)
+		}()
+		_, _ = io.Copy(clientConn, targetConn)
+	}))
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rawURL := "https://docs.example.test:" + targetPort + "/file"
+	base := &http.Client{Transport: &http.Transport{
+		Proxy:           func(req *http.Request) (*url.URL, error) { return proxyURL, nil },
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // Test certificate only.
+	}}
+	resp, err := connectorRequest(context.Background(), connectorRequestOptions{
+		Method:  http.MethodGet,
+		RawURL:  rawURL,
+		Timeout: webdavRequestTimeout,
+		Base:    base,
+		Validate: func(string) (string, net.IP, error) {
+			return "docs.example.test", net.ParseIP("127.0.0.1"), nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("connectorRequest: %v", err)
+	}
+	resp.Body.Close()
+
+	if got := <-connectTarget; got != "127.0.0.1:"+targetPort {
+		t.Errorf("CONNECT target = %q, want validated IP and port", got)
+	}
+	got := <-observed
+	if got.host != "docs.example.test:"+targetPort {
+		t.Errorf("TLS request Host = %q, want original host", got.host)
+	}
+	if got.serverName != "docs.example.test" {
+		t.Errorf("TLS SNI = %q, want original hostname", got.serverName)
+	}
+}
+
 func TestConnectorRequestRejectsCrossOriginBodyRedirect(t *testing.T) {
 	withConnectorLoopbackTestHook(t)
 
@@ -309,7 +466,10 @@ func TestConnectorStripAuthHeadersRemovesCredentials(t *testing.T) {
 // Host-type SSRF guards (IMAP / MySQL / PostgreSQL / S3-compatible)
 // ---------------------------------------------------------------------------
 
+// TestAssertConnectorHostSafe checks the strict host guard used by
+// MySQL, PostgreSQL, and IMAP when ALLOW_ANY_HOST is unset.
 func TestAssertConnectorHostSafe(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "")
 	connectorAllowLoopbackForTest = false
 	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
 
@@ -343,7 +503,10 @@ func TestAssertConnectorHostSafe(t *testing.T) {
 	}
 }
 
+// TestAssertConnectorHostSafeLoopbackHookAllowsOnlyLoopback checks that
+// the unit-test loopback hook does not allow other private addresses.
 func TestAssertConnectorHostSafeLoopbackHookAllowsOnlyLoopback(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "")
 	withConnectorLoopbackTestHook(t)
 	if _, err := assertConnectorHostSafe("127.0.0.1"); err != nil {
 		t.Fatalf("loopback should be allowed with hook on: %v", err)
@@ -357,6 +520,43 @@ func TestAssertConnectorHostSafeLoopbackHookAllowsOnlyLoopback(t *testing.T) {
 	}
 	if _, err := assertConnectorHostSafe("169.254.169.254"); err == nil {
 		t.Fatalf("metadata address should be rejected even with hook on")
+	}
+}
+
+// TestAssertConnectorHostSafeHonorsAllowAnyHost checks that a private
+// connector host is pinned when ALLOW_ANY_HOST is set, and that URL
+// connector checks stay strict.
+func TestAssertConnectorHostSafeHonorsAllowAnyHost(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "1")
+	connectorAllowLoopbackForTest = false
+	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
+
+	orig := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
+		if host == "host.docker.internal" {
+			return []string{"192.168.65.254"}, nil
+		}
+		return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+	}
+	t.Cleanup(func() { common.LookupHost = orig })
+
+	ip, err := assertConnectorHostSafe("host.docker.internal")
+	if err != nil {
+		t.Fatalf("assertConnectorHostSafe(host.docker.internal) = %v, want nil", err)
+	}
+	if ip == nil || ip.String() != "192.168.65.254" {
+		t.Fatalf("assertConnectorHostSafe(host.docker.internal) = %v, want 192.168.65.254", ip)
+	}
+
+	literal, err := assertConnectorHostSafe("10.0.0.5")
+	if err != nil || literal == nil || literal.String() != "10.0.0.5" {
+		t.Fatalf("assertConnectorHostSafe(10.0.0.5) = %v, %v", literal, err)
+	}
+	if _, err = assertConnectorHostSafe("missing.internal"); err == nil {
+		t.Fatal("unresolvable host must still fail when ALLOW_ANY_HOST is set")
+	}
+	if err = validateConnectorURL("http://10.0.0.5/x"); err == nil {
+		t.Fatal("ALLOW_ANY_HOST must not relax URL connector checks")
 	}
 }
 
@@ -559,19 +759,25 @@ func TestPostgreSQLConnectorOpenAllowsLoopbackUnderHook(t *testing.T) {
 }
 
 // TestValidateS3CompatibleEndpointSSRF verifies the user-controlled endpoint
-// is rejected when it resolves to non-public addresses and allowed for
-// loopback under the test hook.
+// is rejected when it resolves to non-public addresses or uses plain HTTP, and
+// that plain-HTTP loopback is allowed only under the test hook.
 func TestValidateS3CompatibleEndpointSSRF(t *testing.T) {
 	connectorAllowLoopbackForTest = false
 	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
-	for _, endpoint := range []string{"http://10.0.0.5", "https://169.254.169.254", "http://127.0.0.1"} {
+	for _, endpoint := range []string{"https://10.0.0.5", "https://169.254.169.254", "https://127.0.0.1", "http://8.8.8.8"} {
 		if err := validateS3CompatibleEndpoint(endpoint); err == nil {
 			t.Fatalf("endpoint %q should be rejected", endpoint)
 		}
 	}
+	if err := validateS3CompatibleEndpoint("https://8.8.8.8"); err != nil {
+		t.Fatalf("public HTTPS endpoint should be allowed: %v", err)
+	}
 	withConnectorLoopbackTestHook(t)
 	if err := validateS3CompatibleEndpoint("http://127.0.0.1"); err != nil {
 		t.Fatalf("loopback endpoint should be allowed under the test hook: %v", err)
+	}
+	if err := validateS3CompatibleEndpoint("http://8.8.8.8"); err == nil {
+		t.Fatalf("public plain-HTTP endpoint should be rejected under the test hook")
 	}
 }
 
@@ -633,4 +839,53 @@ func TestS3PinnedHTTPClientRedirectPolicy(t *testing.T) {
 			t.Fatalf("CheckRedirect(%d) = %v, want nil (follow)", code, err)
 		}
 	}
+}
+
+// TestS3PinnedHTTPClientRedirectRequiresHTTPS verifies a followed 307/308 hop
+// cannot downgrade the signed request to plain HTTP: the dial-time pin only
+// sees the host, so CheckRedirect must reject a non-HTTPS destination, with
+// loopback excepted under the test hook.
+func TestS3PinnedHTTPClientRedirectRequiresHTTPS(t *testing.T) {
+	client := s3PinnedHTTPClient()
+	prev, err := http.NewRequest(http.MethodGet, "https://bucket.s3.example.com/obj", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(t *testing.T, dest string, wantFollow bool) {
+		t.Helper()
+		for _, code := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+			next, err := http.NewRequest(http.MethodGet, dest, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			next.Response = &http.Response{StatusCode: code, Request: prev}
+			err = client.CheckRedirect(next, []*http.Request{prev})
+			if wantFollow && err != nil {
+				t.Fatalf("CheckRedirect(%d -> %s) = %v, want nil (follow)", code, dest, err)
+			}
+			if !wantFollow && (err == nil || err == http.ErrUseLastResponse) {
+				t.Fatalf("CheckRedirect(%d -> %s) = %v, want a scheme error", code, dest, err)
+			}
+		}
+	}
+
+	connectorAllowLoopbackForTest = false
+	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
+	check(t, "http://8.8.8.8/x", false)
+	check(t, "https://8.8.8.8/x", true)
+	// Other redirects still go back to the SDK whatever their scheme.
+	for _, code := range []int{http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther} {
+		next, err := http.NewRequest(http.MethodGet, "http://8.8.8.8/x", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next.Response = &http.Response{StatusCode: code, Request: prev}
+		if err := client.CheckRedirect(next, []*http.Request{prev}); err != http.ErrUseLastResponse {
+			t.Fatalf("CheckRedirect(%d -> http://8.8.8.8/x) = %v, want http.ErrUseLastResponse", code, err)
+		}
+	}
+
+	withConnectorLoopbackTestHook(t)
+	check(t, "http://8.8.8.8/x", false)
+	check(t, "http://127.0.0.1/x", true)
 }

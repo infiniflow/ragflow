@@ -1,0 +1,12 @@
+{
+  "name": "Demon Route",
+  "url": {
+    "default": "https://api.demonroute.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "demonroute",
+  "models": []
+}

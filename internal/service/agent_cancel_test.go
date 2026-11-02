@@ -83,11 +83,10 @@ func TestCancelSessionRunFinishedSessionDoesNotCreateCancelMarker(t *testing.T) 
 	testDB := setupServiceTestDB(t)
 	pushServiceDB(t, testDB)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-persisted",
-		DialogID:  "agent-1",
-		UserID:    "user-a",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       "session-persisted",
+		DialogID: "agent-1",
+		UserID:   "user-a",
+		Message:  json.RawMessage(`[]`),
 	}); err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}

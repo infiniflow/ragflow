@@ -23,7 +23,7 @@ import (
 
 func TestModelAssetCandidatesOnlyAppliesWhenTheEnvIsSet(t *testing.T) {
 	t.Setenv(EnvModelAssetsDir, "")
-	if got := ModelAssetCandidates("ragflow_deps/huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model"); got != nil {
+	if got := ModelAssetCandidates("deps/huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model"); got != nil {
 		t.Fatalf("expected no candidates without %s, got %v", EnvModelAssetsDir, got)
 	}
 	t.Setenv(EnvModelAssetsDir, "   ")
@@ -33,12 +33,12 @@ func TestModelAssetCandidatesOnlyAppliesWhenTheEnvIsSet(t *testing.T) {
 }
 
 // The three layouts an operator may have in mind when pointing MODEL_ASSETS_DIR at a
-// tree: the ragflow_deps-like root, a huggingface.co-like root, or a flat directory.
+// tree: the deps-like root, a huggingface.co-like root, or a flat directory.
 func TestModelAssetCandidatesCoverEverySensibleRoot(t *testing.T) {
 	root := filepath.Join(string(filepath.Separator)+"assets", "models")
 	t.Setenv(EnvModelAssetsDir, root)
 
-	got := ModelAssetCandidates("ragflow_deps/huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model")
+	got := ModelAssetCandidates("deps/huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model")
 	want := []string{
 		filepath.Join(root, "huggingface.co", "BAAI", "bge-m3", "sentencepiece.bpe.model"),
 		filepath.Join(root, "BAAI", "bge-m3", "sentencepiece.bpe.model"),
@@ -54,7 +54,7 @@ func TestModelAssetCandidatesCoverEverySensibleRoot(t *testing.T) {
 		}
 	}
 
-	// The same asset named without the ragflow_deps/ prefix must resolve identically.
+	// The same asset named without the deps/ prefix must resolve identically.
 	bare := ModelAssetCandidates("huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model")
 	if len(bare) != len(want) || bare[0] != want[0] {
 		t.Errorf("prefix form differs: %v vs %v", bare, want)
@@ -62,7 +62,7 @@ func TestModelAssetCandidatesCoverEverySensibleRoot(t *testing.T) {
 
 	// A file that is not an HF repo (the cl100k table) sits at the root itself,
 	// and its single candidate must not be repeated.
-	flat := ModelAssetCandidates("ragflow_deps/cl100k_base.tiktoken")
+	flat := ModelAssetCandidates("deps/cl100k_base.tiktoken")
 	if len(flat) != 1 || flat[0] != filepath.Join(root, "cl100k_base.tiktoken") {
 		t.Errorf("flat asset candidates = %v, want exactly one root-level candidate", flat)
 	}

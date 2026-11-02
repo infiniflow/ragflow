@@ -9,7 +9,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/mcp"
 	"ragflow/internal/service"
-	dataset "ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 )
 
@@ -36,10 +35,19 @@ func validateRetrievalWindow(page, pageSize int) error {
 	return nil
 }
 
+// mcpDatasetService is the dataset surface mcpRetrieval depends on. It exists so
+// the MCP retrieval entry point can be tested against a recording fake without
+// standing up the full DatasetService.
+type mcpDatasetService interface {
+	ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID, userID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error)
+	SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
+	GetDataset(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error)
+}
+
 // mcpRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
-func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+func mcpRetrieval(ctx context.Context, ds mcpDatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
 	if err := validateRetrievalWindow(req.Page, req.PageSize); err != nil {
 		return "", err
 	}
@@ -51,7 +59,7 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 		ids, err := fetchAllDatasetIDs(func(page, pageSize int) ([]map[string]interface{}, int64, error) {
 			data, total, _, err := ds.ListDatasets(ctx,
 				"", "", page, pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}},
-				"", nil, "", userID, nil,
+				"", nil, "", userID, nil, "",
 			)
 			return data, total, err
 		}, maxPageSize)
@@ -65,10 +73,9 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 	}
 
 	searchReq := &service.SearchDatasetsRequest{
-		DatasetIDs:   datasetIDs,
-		Question:     req.Question,
-		DocumentIDs:  req.DocumentIDs,
-		ForceRefresh: req.ForceRefresh,
+		DatasetIDs:  datasetIDs,
+		Question:    req.Question,
+		DocumentIDs: req.DocumentIDs,
 	}
 
 	if req.Page > 0 {
@@ -110,8 +117,6 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 	}
 
 	// Metadata reads use the same authorized service paths as the REST API.
-	// No shared cache: force_refresh always sees current metadata, without
-	// cross-tenant cache state or a second metadata implementation.
 	documents := document.NewDocumentService()
 	datasetNames := make(map[string]string)
 	documentMetadata := make(map[string]map[string]any)
@@ -133,7 +138,7 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 			if _, ok := documentMetadata[docID]; ok {
 				continue
 			}
-			docs, _, err := documents.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{KbID: id, DocIDs: []string{docID}}, 1, 1)
+			docs, _, err := documents.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{KbID: id, DocIDs: []string{docID}, DocIDFilterApplied: true}, 1, 1)
 			if err != nil || len(docs) == 0 {
 				continue
 			}

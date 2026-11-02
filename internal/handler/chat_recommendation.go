@@ -43,7 +43,7 @@ type ChatRecommendationRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chat/recommendation [post]
 func (h *ChatHandler) Recommendation(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -59,7 +59,7 @@ func (h *ChatHandler) Recommendation(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.modelFactory)
+	questions, err := service.GenerateRelatedQuestions(ctx, req.Question, req.SearchID, h.searchSvc, h.modelFactory)
 	if err != nil {
 		common.Warn("chat recommendation failed", zap.String("error", err.Error()))
 		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())

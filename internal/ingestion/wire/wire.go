@@ -24,11 +24,10 @@
 // fragile: a new entry that forgets the blank import sees
 // "unknown component" at run time.
 //
-// This package centralises the import list. cmd entries should
-// blank-import this package and call RegisterComponents once
-// at startup. The function is a no-op at run time — its only
-// purpose is to ensure the blank imports here are evaluated,
-// which in turn triggers init() in each component package.
+// This package centralises the import list: cmd entries
+// blank-import this package, and the Go toolchain evaluates
+// the blank imports at link time, triggering each component
+// package's init().
 //
 // LOCATION NOTE: this lives under ingestion/ (not
 // ingestion/pipeline/) because pipeline.go imports the
@@ -44,33 +43,5 @@ import (
 	// Component registration: the blank imports trigger each
 	// package's init() which calls runtime.DefaultRegistry.Register.
 	_ "ragflow/internal/ingestion/component"         // File / Parser / Tokenizer / Extractor
-	_ "ragflow/internal/ingestion/component/chunker" // 4 chunker variants
+	_ "ragflow/internal/ingestion/component/chunker" // chunker variants
 )
-
-// RegisterComponents is the single bootstrap entry point that
-// guarantees every ingestion component is registered before the
-// pipeline runner resolves a name. It is a no-op at run time
-// (the actual registration happens via the package-level init()
-// triggered by the blank imports above); the function exists
-// only so cmd entries have a deterministic symbol to call.
-//
-// Usage from a cmd entry:
-//
-//	import _ "ragflow/internal/ingestion/wire"
-//
-// The blank import alone is sufficient — the Go toolchain will
-// evaluate the blank imports at link time. The function is
-// exported for callers that prefer a function-call style over a
-// blank import:
-//
-//	import "ragflow/internal/ingestion/wire"
-//	...
-//	wire.RegisterComponents()
-//
-// Both styles are equivalent; the blank-import form is the
-// convention in this repo today.
-func RegisterComponents() {
-	// Intentional no-op. The init() functions in the blank-imported
-	// packages above have already registered the components by
-	// the time this function is callable.
-}

@@ -91,10 +91,10 @@ func TestSearchHandlerUpdateRejectsInvalidSearchID(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
-	if resp["code"] != float64(common.CodeAuthenticationError) {
-		t.Fatalf("expected code 109, got %v", resp["code"])
+	if resp["code"] != float64(common.CodeNotFound) {
+		t.Fatalf("expected code %d, got %v", common.CodeNotFound, resp["code"])
 	}
-	if !strings.Contains(strings.ToLower(resp["message"].(string)), "no authorization") {
-		t.Fatalf("expected 'no authorization' in message, got %v", resp["message"])
+	if resp["message"] != "Resource not found" {
+		t.Fatalf("message = %v, want hidden resource-not-found response", resp["message"])
 	}
 }

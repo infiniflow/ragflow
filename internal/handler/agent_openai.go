@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -110,7 +111,8 @@ func (h *AgentHandler) handleOpenAICompat(c *gin.Context, user *entity.User, req
 		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), req.SessionID))
 	}
 
-	runContext := service.WithOpenAICompatMessages(c.Request.Context(), req.Messages)
+	runContext, cancel := context.WithCancel(service.WithOpenAICompatMessages(c.Request.Context(), req.Messages))
+	defer cancel()
 	events, err := h.chatRunner.RunAgent(
 		runContext, user.ID, req.AgentID, req.SessionID, "", question, req.Files,
 	)

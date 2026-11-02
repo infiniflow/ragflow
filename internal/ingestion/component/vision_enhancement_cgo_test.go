@@ -12,7 +12,7 @@ import (
 )
 
 // mockVisionEngine returns a fixed image for any rendered page so the
-// on-demand cropper can exercise CropSectionPositions without a real PDF.
+// on-demand cropper can exercise section cropping without a real PDF.
 type mockVisionEngine struct {
 	closed      *bool
 	pageWidth   float64

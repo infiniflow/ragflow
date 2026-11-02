@@ -19,9 +19,10 @@
 // Pydantic schema in rag/flow/<component>/schema.py (or, when none exists,
 // the runtime contract implied by the component's _invoke signature).
 //
-// Files in this package are pure data definitions — they import only stdlib.
-// Business logic (the component Implementations) lives elsewhere in
-// internal/ingestion/component/.
+// Files in this package are pure data definitions. They depend on
+// ragflow/internal/common, ragflow/internal/entity, and
+// ragflow/internal/parser/parser for shared types, but hold no business logic;
+// the component Implementations live elsewhere in internal/ingestion/component/.
 package schema
 
 // FileFromUpstream is the upstream payload consumed by the File component.

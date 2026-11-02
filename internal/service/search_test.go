@@ -17,13 +17,16 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 func setupSearchServiceTestDB(t *testing.T) {
@@ -54,8 +57,8 @@ func createSearchServiceTestSearch(t *testing.T, id, tenantID, name string) {
 func TestSearchServiceCreateRejectsEmptyName(t *testing.T) {
 	setupSearchServiceTestDB(t)
 
-	ctx := t.Context()
-	_, err := NewSearchService().CreateSearch(ctx, "tenant-1", "   ", nil)
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
+	_, err := NewSearchService().CreateSearch(ctx, "   ", nil)
 	if err == nil {
 		t.Fatal("expected empty name validation error")
 	}
@@ -67,24 +70,24 @@ func TestSearchServiceCreateRejectsEmptyName(t *testing.T) {
 func TestSearchServiceUpdateRejectsUnauthorizedSearchID(t *testing.T) {
 	setupSearchServiceTestDB(t)
 
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-2", "user-2")
 	req := &UpdateSearchRequest{
 		Name:         "New Name",
 		SearchConfig: map[string]interface{}{},
 	}
-	_, err := NewSearchService().UpdateSearch(ctx, "user-2", "invalid_search_id", req)
+	_, err := NewSearchService().UpdateSearch(ctx, "invalid_search_id", req)
 	if err == nil {
 		t.Fatal("expected authorization error")
 	}
-	if err.Error() != "no authorization" {
+	if !errors.Is(err, permission.ErrResourceNotFound) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 	setupSearchServiceTestDB(t)
-	ctx := t.Context()
-	created, err := NewSearchService().CreateSearch(ctx, "tenant-1", "My Search", nil)
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1", "user-2")
+	created, err := NewSearchService().CreateSearch(ctx, "My Search", nil)
 	if err != nil {
 		t.Fatalf("CreateSearch failed: %v", err)
 	}
@@ -97,9 +100,9 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 		Name:         "Hijacked Name",
 		SearchConfig: map[string]interface{}{},
 	}
-	_, err = NewSearchService().UpdateSearch(ctx, "user-2", created.SearchID, req)
-	if err == nil || err.Error() != "no authorization" {
-		t.Fatalf("expected no authorization, got %v", err)
+	_, err = NewSearchService().UpdateSearch(serviceTestContext(t, "user-2", "tenant-1", "tenant-1"), created.SearchID, req)
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("expected permission denied, got %v", err)
 	}
 
 	// The owner can update name + merge config.
@@ -107,7 +110,7 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 		Name:         "Updated Name",
 		SearchConfig: map[string]interface{}{"summary": true, "keywords_similarity_weight": 0.7},
 	}
-	updated, err := NewSearchService().UpdateSearch(ctx, "tenant-1", created.SearchID, req)
+	updated, err := NewSearchService().UpdateSearch(ctx, created.SearchID, req)
 	if err != nil {
 		t.Fatalf("owner UpdateSearch failed: %v", err)
 	}
@@ -129,6 +132,39 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 	}
 	if persisted.Name != "Updated Name" {
 		t.Fatalf("expected persisted name, got %q", persisted.Name)
+	}
+}
+
+func TestPrepareCompletionKeepsActiveTenantIdentity(t *testing.T) {
+	setupSearchServiceTestDB(t)
+	ctx := serviceTestContext(t, "user-1", "team-1")
+	status := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID: "team-owner", UserID: "team-1", TenantID: "team-1", Role: string(permission.RoleOwner), Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("create tenant owner membership: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Knowledgebase{
+		ID: "kb-1", TenantID: "team-1", CreatedBy: "user-1", Name: "dataset", Permission: "team", Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Search{
+		ID: "search-1", TenantID: "team-1", CreatedBy: "user-1", Name: "search",
+		SearchConfig: entity.JSONMap{"kb_ids": []interface{}{"kb-1"}}, Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("create search: %v", err)
+	}
+
+	plan, code, err := NewSearchService().PrepareCompletion(ctx, "search-1", &SearchCompletionsRequest{Question: "question"})
+	if err != nil {
+		t.Fatalf("PrepareCompletion() error = %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("PrepareCompletion() code = %v, want success", code)
+	}
+	if plan.Identity != (Identity{UserID: "user-1", TenantID: "team-1"}) {
+		t.Fatalf("Identity = %+v, want user-1 in team-1", plan.Identity)
 	}
 }
 
@@ -162,8 +198,8 @@ func TestSearchServiceListSearchesReturnsOwnerDisplayFields(t *testing.T) {
 	}
 	createSearchServiceTestSearch(t, "search-1", "user-1", "Search One")
 
-	ctx := t.Context()
-	result, err := NewSearchService().ListSearches(ctx, "user-1", "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
+	ctx := serviceTestContext(t, "user-1", "user-1")
+	result, err := NewSearchService().ListSearches(ctx, "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListSearches failed: %v", err)
 	}
@@ -180,8 +216,8 @@ func TestSearchServiceListSearchesNicknameFallsBackToTenantID(t *testing.T) {
 
 	createSearchServiceTestSearch(t, "search-1", "user-1", "Search One")
 
-	ctx := t.Context()
-	result, err := NewSearchService().ListSearches(ctx, "user-1", "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
+	ctx := serviceTestContext(t, "user-1", "user-1")
+	result, err := NewSearchService().ListSearches(ctx, "", 0, 0, []dao.OrderTerm{{Column: "create_time", Desc: true}}, nil)
 	if err != nil {
 		t.Fatalf("ListSearches failed: %v", err)
 	}
@@ -193,12 +229,86 @@ func TestSearchServiceListSearchesNicknameFallsBackToTenantID(t *testing.T) {
 	}
 }
 
-// TestSearchServiceListSearchesPaginatesOwnerBranch covers the owner_ids branch
-// end to end: pagination happens in SQL now, so each page must carry only its
-// own rows while total still reports every matching search.
-func TestSearchServiceListSearchesPaginatesOwnerBranch(t *testing.T) {
+func TestSearchServiceListSearchesUsesPermissionScope(t *testing.T) {
 	setupSearchServiceTestDB(t)
-	ctx := t.Context()
+	valid := string(entity.StatusValid)
+	for _, row := range []entity.Search{
+		{ID: "team-search", TenantID: "team-tenant", CreatedBy: "team-owner", Name: "Team Search", SearchConfig: entity.JSONMap{}, Status: &valid},
+		{ID: "member-search", TenantID: "team-tenant", CreatedBy: "member-1", Name: "Member Search", SearchConfig: entity.JSONMap{}, Status: &valid},
+		{ID: "unshared-search", TenantID: "other-tenant", CreatedBy: "other-owner", Name: "Unshared Search", SearchConfig: entity.JSONMap{}, Status: &valid},
+	} {
+		search := row
+		if err := dao.DB.Create(&search).Error; err != nil {
+			t.Fatalf("create search %s: %v", search.ID, err)
+		}
+	}
+	for _, membership := range []entity.UserTenant{
+		{ID: "member-team", UserID: "member-1", TenantID: "team-tenant", Role: string(permission.RoleNormal), Status: &valid},
+		{ID: "owner-team", UserID: "team-owner", TenantID: "team-tenant", Role: string(permission.RoleOwner), Status: &valid},
+	} {
+		row := membership
+		if err := dao.DB.Create(&row).Error; err != nil {
+			t.Fatalf("create membership %s: %v", row.ID, err)
+		}
+	}
+
+	ctx := serviceTestContext(t, "member-1", "team-tenant", "team-owner")
+	result, err := NewSearchService().ListSearches(ctx, "", 0, 0, nil, nil)
+	if err != nil {
+		t.Fatalf("ListSearches failed: %v", err)
+	}
+	if result.Total != 1 || len(result.SearchApps) != 1 {
+		t.Fatalf("ListSearches returned total=%d rows=%d, want only the member-owned app", result.Total, len(result.SearchApps))
+	}
+	ids := map[string]bool{}
+	for _, app := range result.SearchApps {
+		ids[app["id"].(string)] = true
+	}
+	if ids["team-search"] || !ids["member-search"] || ids["unshared-search"] {
+		t.Fatalf("ListSearches returned unauthorized scope: %v", ids)
+	}
+}
+
+func TestSearchServiceSeparatesSearchReadFromRunPermission(t *testing.T) {
+	setupSearchServiceTestDB(t)
+	valid := string(entity.StatusValid)
+	search := entity.Search{
+		ID:           "team-search",
+		TenantID:     "team-tenant",
+		CreatedBy:    "team-owner",
+		Name:         "Team Search",
+		SearchConfig: entity.JSONMap{},
+		Status:       &valid,
+	}
+	if err := dao.DB.Create(&search).Error; err != nil {
+		t.Fatalf("create search: %v", err)
+	}
+	membership := entity.UserTenant{
+		ID:       "member-team",
+		UserID:   "member-1",
+		TenantID: "team-tenant",
+		Role:     string(permission.RoleNormal),
+		Status:   &valid,
+	}
+	if err := dao.DB.Create(&membership).Error; err != nil {
+		t.Fatalf("create membership: %v", err)
+	}
+
+	service := NewSearchService()
+	ctx := serviceTestContext(t, "member-1", "team-tenant", "team-owner")
+	if _, err := service.GetSearchDetail(ctx, search.ID); !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("tenant member should not be able to read another user's Search App metadata, got %v", err)
+	}
+	if _, err := service.GetDetail(ctx, search.ID); !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("tenant member should not be able to run another user's Search App, got %v", err)
+	}
+}
+
+// TestSearchServiceListSearchesPaginatesOwnerFilter verifies that owner_ids
+// filtering and pagination happen in SQL while total counts all matching rows.
+func TestSearchServiceListSearchesPaginatesOwnerFilter(t *testing.T) {
+	setupSearchServiceTestDB(t)
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
 
 	for i := 1; i <= 5; i++ {
 		createTime := int64(i * 100)
@@ -227,7 +337,7 @@ func TestSearchServiceListSearchesPaginatesOwnerBranch(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := NewSearchService().ListSearches(ctx, "tenant-1", "", tt.page, tt.pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}}, []string{"tenant-1"})
+			result, err := NewSearchService().ListSearches(ctx, "", tt.page, tt.pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}}, []string{"tenant-1"})
 			if err != nil {
 				t.Fatalf("ListSearches failed: %v", err)
 			}

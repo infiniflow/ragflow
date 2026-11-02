@@ -96,7 +96,6 @@ export function AccordionOperators({
     Operator.AnySearchSearch,
     Operator.AnySearchExtract,
     Operator.DocGenerator,
-    Operator.Browser,
   ]);
 
   return (

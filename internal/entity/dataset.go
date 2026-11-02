@@ -16,7 +16,10 @@
 
 package entity
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // DatasetNameLimit is the maximum length for dataset name
 const DatasetNameLimit = 128
@@ -114,6 +117,7 @@ type Knowledgebase struct {
 	VectorSimilarityWeight float64    `gorm:"column:vector_similarity_weight;default:0.3;index" json:"vector_similarity_weight"`
 	ParserID               string     `gorm:"column:parser_id;size:32;not null;default:general;index" json:"parser_id"`
 	PipelineID             *string    `gorm:"column:pipeline_id;size:32;index" json:"pipeline_id,omitempty"`
+	PipelineVersionID      *string    `gorm:"column:pipeline_version_id;size:32;index" json:"pipeline_version_id,omitempty"`
 	ParserConfig           JSONMap    `gorm:"column:parser_config;type:json" json:"parser_config"`
 	Pagerank               int64      `gorm:"column:pagerank;default:0" json:"pagerank"`
 	GraphragTaskID         *string    `gorm:"column:graphrag_task_id;size:32;index" json:"graphrag_task_id,omitempty"`
@@ -138,6 +142,7 @@ type Knowledgebase struct {
 	SessionGraphTaskFinishAt     *time.Time `gorm:"column:session_graph_task_finish_at" json:"session_graph_task_finish_at,omitempty"`
 	SessionEssenceTaskID         *string    `gorm:"column:session_essence_task_id;size:32;index" json:"session_essence_task_id,omitempty"`
 	SessionEssenceTaskFinishAt   *time.Time `gorm:"column:session_essence_task_finish_at" json:"session_essence_task_finish_at,omitempty"`
+	OperatorPermission           int32      `gorm:"-" json:"operator_permission,omitempty"`
 	Status                       *string    `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
 	BaseModel
 }
@@ -145,6 +150,29 @@ type Knowledgebase struct {
 // TableName returns the table name for Knowledgebase model
 func (kb *Knowledgebase) TableName() string {
 	return "knowledgebase"
+}
+
+// KnowledgebasesLanguage returns the language to retrieve with over kbs, which
+// is only well defined when they all agree: one query is tokenized once, but
+// each dataset was indexed under its own language. A mixed set therefore falls
+// back to "" (English, no folding) rather than letting the first dataset in the
+// slice decide how the others are searched.
+func KnowledgebasesLanguage(kbs []*Knowledgebase) string {
+	language := ""
+	for i, kb := range kbs {
+		current := ""
+		if kb != nil && kb.Language != nil {
+			current = *kb.Language
+		}
+		if i == 0 {
+			language = current
+			continue
+		}
+		if !strings.EqualFold(strings.TrimSpace(current), strings.TrimSpace(language)) {
+			return ""
+		}
+	}
+	return language
 }
 
 // ToMap converts Knowledgebase to a map for JSON response
@@ -256,6 +284,8 @@ type KnowledgebaseListItem struct {
 	Nickname               string  `json:"nickname"`
 	TenantAvatar           *string `json:"tenant_avatar,omitempty"`
 	UpdateTime             *int64  `json:"update_time,omitempty"`
+	PipelineID             *string `json:"pipeline_id,omitempty"`
+	PipelineVersionID      *string `json:"pipeline_version_id,omitempty"`
 }
 
 // DatasetOwnerFilter represents an owner option in dataset filter responses.

@@ -14,7 +14,7 @@
 	"important_kwd_empty_count": {"type": "integer", "default": 0},
 	"important_keywords": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"], "comment": "important_kwd, important_tks"},
 	"questions": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"], "comment": "question_kwd, question_tks"},
-	"content": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"], "comment": "content_with_weight, content_ltks, content_sm_ltks"},
+	"content": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine", "sparsegram-3-12-fold"], "comment": "content_with_weight, content_ltks, content_sm_ltks"},
 	"authors": {"type": "varchar", "default": "", "analyzer": ["rag-coarse", "rag-fine"], "comment": "authors_tks, authors_sm_tks"},
 	"page_num_int": {"type": "varchar", "default": ""},
 	"top_int": {"type": "varchar", "default": ""},

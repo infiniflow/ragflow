@@ -27,10 +27,11 @@ package chunker
 
 // TestJSONGlobalMergeMatchesPython pins the TokenChunker json path's
 // cross-item merge: adjacent text chunks across JSON items collapse into one
-// chunk when they jointly fit chunk_token_size, matching Python's
-// _merge_text_chunks_by_token_size.
+// chunk when they jointly fit chunk_token_size, with a separator at the item
+// boundary like Python's _merge_text_chunks_by_token_size.
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"strings"
 	"testing"
 )
@@ -66,7 +67,7 @@ func TestJSONGlobalMergeMatchesPython(t *testing.T) {
 	if msg, _ := out["_ERROR"].(string); msg != "" {
 		t.Fatalf("TokenChunker returned _ERROR: %s", msg)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("want 1 chunk (global merge across items), got %d", len(chunks))
 	}
@@ -82,6 +83,9 @@ func TestJSONGlobalMergeMatchesPython(t *testing.T) {
 	// The two items must appear in source order within the single merged chunk.
 	if i1 >= i2 {
 		t.Errorf("merged chunk reordered items (want %q before %q):\n%q", first, second, text)
+	}
+	if i2 == 0 || text[i2-1] != '\n' {
+		t.Errorf("items are missing a line break at their boundary:\n%q", text)
 	}
 }
 
@@ -116,7 +120,7 @@ func TestJSONSingleItemSubSplitUnderHardCap(t *testing.T) {
 	if msg, _ := out["_ERROR"].(string); msg != "" {
 		t.Fatalf("TokenChunker returned _ERROR: %s", msg)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) < 2 {
 		t.Fatalf("over-budget item must be split, got %d chunk(s)", len(chunks))
 	}

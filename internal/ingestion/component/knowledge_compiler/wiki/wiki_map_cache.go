@@ -111,7 +111,7 @@ func (p *wikiPipeline) runVersionedMap() error {
 	}
 
 	batches := common.PackBatches(misses, wikiMapTokenBudget, p.deps.Tokenizer)
-	batchExtracts, err := runMapBatches(p.ctx, batches, p.mapBatch)
+	batchExtracts, err := runMapBatches(p.ctx, batches, p.deps.Progress.Sub(0, 6).Sub(0, 2), p.mapBatch)
 	if err != nil {
 		return err
 	}
@@ -159,7 +159,7 @@ func (p *wikiPipeline) runVersionedMap() error {
 		uncacheable = append(uncacheable, chunk)
 	}
 	uncacheableBatches := common.PackBatches(uncacheable, wikiMapTokenBudget, p.deps.Tokenizer)
-	uncachedExtracts, err := runMapBatches(p.ctx, uncacheableBatches, p.mapBatch)
+	uncachedExtracts, err := runMapBatches(p.ctx, uncacheableBatches, p.deps.Progress.Sub(0, 6).Sub(1, 2), p.mapBatch)
 	if err != nil {
 		return err
 	}

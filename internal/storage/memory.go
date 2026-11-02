@@ -20,11 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"ragflow/internal/common"
 	"sync"
 	"time"
-
-	"go.uber.org/zap"
 )
 
 // ErrMemoryNotFound is returned when a key does not exist in the in-memory backend.
@@ -265,24 +262,15 @@ func (m *MemoryStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket
 // Move transfers an object to a new location, deleting the source on success.
 // Returns false if the source does not exist or the copy step fails.
 func (m *MemoryStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
-
 	if err := ctx.Err(); err != nil {
 		return false
 	}
 
-	if !m.Copy(ctx, srcBucket, srcPath, destBucket, destPath) {
-		return false
-	}
-	if err := m.Remove(ctx, srcBucket, srcPath); err != nil {
-		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		defer cancel()
-		err = m.Remove(rollbackCtx, destBucket, destPath)
-		if err != nil {
-			common.Warn("Failed to roll back copied destination object", zap.String("bucket", destBucket), zap.String("key", destPath), zap.Error(err))
-		}
-		return false
-	}
-	return true
+	return moveWithRollback(ctx, srcBucket, srcPath, destBucket, destPath,
+		func() bool { return m.Copy(ctx, srcBucket, srcPath, destBucket, destPath) },
+		func(rctx context.Context) error { return m.Remove(rctx, srcBucket, srcPath) },
+		func(rctx context.Context) error { return m.Remove(rctx, destBucket, destPath) },
+	)
 }
 
 func (m *MemoryStorage) Close() error { return nil }

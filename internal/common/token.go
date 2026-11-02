@@ -17,18 +17,14 @@
 package common
 
 import (
-	"bytes"
-	"compress/zlib"
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,159 +33,98 @@ import (
 
 const accessTokenExpireSeconds = 86400
 
-// ExtractAccessToken extract access token from authorization header
-// This is equivalent to: str(jwt.loads(authorization)) in Python
-func ExtractAccessToken(authorization, secretKey string) (string, error) {
-	if authorization == "" {
-		return "", errors.New("empty authorization")
-	}
+const accessTokenContextVersion = "v2"
 
-	// Strip "Bearer " prefix if present
-	token := strings.TrimPrefix(authorization, "Bearer ")
-
-	encodedValue, err := unsignAccessToken(token, secretKey, accessTokenExpireSeconds)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode token: %w", err)
-	}
-
-	jsonValue, err := decodePayload(encodedValue)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode payload: %w", err)
-	}
-
-	var value string
-	if err := json.Unmarshal(jsonValue, &value); err != nil {
-		return "", fmt.Errorf("failed to parse payload: %w", err)
-	}
-
-	return value, nil
+// AccessTokenContext is the identity and tenant context carried by a signed
+// user token. TenantID is empty in Community Edition and for system admins.
+type AccessTokenContext struct {
+	AccessToken string
+	TenantID    string
 }
 
-// DumpAccessToken creates an authorization token from access token
-// This is equivalent to: jwt.dumps(access_token) in Python
-func DumpAccessToken(accessToken, secretKey string) (string, error) {
+// ExtractAccessTokenContext extracts the access token and tenant context from
+// an authorization header.
+func ExtractAccessTokenContext(authorization, secretKey string) (*AccessTokenContext, error) {
+	if authorization == "" {
+		return nil, errors.New("empty authorization")
+	}
+
+	// Strip an optional Bearer scheme.
+	token := strings.TrimSpace(authorization)
+	token = strings.TrimPrefix(token, "Bearer ")
+	token = strings.TrimSpace(token)
+
+	parts := strings.Split(token, ".")
+	if len(parts) != 5 || parts[0] != accessTokenContextVersion {
+		return nil, errors.New("invalid access token format")
+	}
+
+	signature, err := urlSafeB64Decode(parts[4])
+	if err != nil {
+		return nil, fmt.Errorf("malformed token signature: %w", err)
+	}
+	value := strings.Join(parts[:4], ".")
+	mac := hmac.New(sha256.New, []byte(secretKey))
+	mac.Write([]byte(value))
+	if !hmac.Equal(signature, mac.Sum(nil)) {
+		return nil, errors.New("token signature does not match")
+	}
+
+	timestamp, err := strconv.ParseInt(parts[3], 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("malformed token timestamp: %w", err)
+	}
+	age := time.Now().Unix() - timestamp
+	if age > accessTokenExpireSeconds {
+		return nil, fmt.Errorf("token age %d > %d seconds", age, accessTokenExpireSeconds)
+	}
+	if age < 0 {
+		return nil, fmt.Errorf("token age %d < 0 seconds", age)
+	}
+
+	accessTokenBytes, err := urlSafeB64Decode(parts[1])
+	if err != nil {
+		return nil, fmt.Errorf("malformed access token: %w", err)
+	}
+	tenantIDBytes, err := urlSafeB64Decode(parts[2])
+	if err != nil {
+		return nil, fmt.Errorf("malformed tenant context: %w", err)
+	}
+	if len(accessTokenBytes) == 0 {
+		return nil, errors.New("empty access token")
+	}
+
+	return &AccessTokenContext{
+		AccessToken: string(accessTokenBytes),
+		TenantID:    string(tenantIDBytes),
+	}, nil
+}
+
+// DumpAccessToken creates a signed authorization token from a user access
+// token and its active tenant context.
+func DumpAccessToken(accessToken, tenantID, secretKey string) (string, error) {
 	if accessToken == "" {
 		return "", errors.New("empty access token")
 	}
-
-	jsonValue, err := json.Marshal(accessToken)
-	if err != nil {
-		return "", fmt.Errorf("failed to encode payload: %w", err)
-	}
-
-	return signAccessToken(encodePayload(jsonValue), secretKey), nil
+	value := strings.Join([]string{
+		accessTokenContextVersion,
+		urlSafeB64Encode([]byte(accessToken)),
+		urlSafeB64Encode([]byte(tenantID)),
+		strconv.FormatInt(time.Now().Unix(), 10),
+	}, ".")
+	mac := hmac.New(sha256.New, []byte(secretKey))
+	mac.Write([]byte(value))
+	return value + "." + urlSafeB64Encode(mac.Sum(nil)), nil
 }
 
-// urlSafeB64Decode URL-safe base64 decode
+// urlSafeB64Decode decodes unpadded URL-safe base64.
 func urlSafeB64Decode(s string) ([]byte, error) {
 	return base64.RawURLEncoding.DecodeString(s)
 }
 
-// urlSafeB64Encode URL-safe base64 encode (without padding)
+// urlSafeB64Encode encodes unpadded URL-safe base64.
 func urlSafeB64Encode(data []byte) string {
 	return base64.RawURLEncoding.EncodeToString(data)
-}
-
-func encodePayload(jsonValue []byte) string {
-	var buf bytes.Buffer
-	zw := zlib.NewWriter(&buf)
-	_, _ = zw.Write(jsonValue)
-	_ = zw.Close()
-
-	compressed := buf.Bytes()
-	if len(compressed) < len(jsonValue)-1 {
-		return "." + urlSafeB64Encode(compressed)
-	}
-	return urlSafeB64Encode(jsonValue)
-}
-
-func decodePayload(payload string) ([]byte, error) {
-	decompress := false
-	if strings.HasPrefix(payload, ".") {
-		payload = payload[1:]
-		decompress = true
-	}
-
-	jsonValue, err := urlSafeB64Decode(payload)
-	if err != nil {
-		return nil, err
-	}
-	if !decompress {
-		return jsonValue, nil
-	}
-
-	zr, err := zlib.NewReader(bytes.NewReader(jsonValue))
-	if err != nil {
-		return nil, err
-	}
-	defer zr.Close()
-	return io.ReadAll(zr)
-}
-
-func signAccessToken(payload, secretKey string) string {
-	value := payload + "." + urlSafeB64Encode(intToBytes(time.Now().Unix()))
-	return value + "." + getAccessTokenSignature(value, secretKey)
-}
-
-func unsignAccessToken(token, secretKey string, maxAge int64) (string, error) {
-	token = strings.TrimSpace(token)
-
-	li := strings.LastIndex(token, ".")
-	if li < 0 {
-		return "", errors.New("signature missing")
-	}
-	value := token[:li]
-	sig := token[li+1:]
-	if !hmac.Equal([]byte(sig), []byte(getAccessTokenSignature(value, secretKey))) {
-		return "", errors.New("signature does not match")
-	}
-
-	li = strings.LastIndex(value, ".")
-	if li < 0 {
-		return "", errors.New("timestamp missing")
-	}
-	payload := value[:li]
-	tsValue := value[li+1:]
-	tsBytes, err := urlSafeB64Decode(tsValue)
-	if err != nil {
-		return "", fmt.Errorf("malformed timestamp: %w", err)
-	}
-	timestamp := bytesToInt(tsBytes)
-	if maxAge > 0 {
-		age := time.Now().Unix() - timestamp
-		if age > maxAge {
-			return "", fmt.Errorf("signature age %d > %d seconds", age, maxAge)
-		}
-		if age < 0 {
-			return "", fmt.Errorf("signature age %d < 0 seconds", age)
-		}
-	}
-	return payload, nil
-}
-
-func getAccessTokenSignature(value, secretKey string) string {
-	h := sha1.New()
-	h.Write([]byte("itsdangerous" + "signer" + secretKey))
-	key := h.Sum(nil)
-
-	mac := hmac.New(sha1.New, key)
-	mac.Write([]byte(value))
-	return urlSafeB64Encode(mac.Sum(nil))
-}
-
-func intToBytes(num int64) []byte {
-	var buf [8]byte
-	binary.BigEndian.PutUint64(buf[:], uint64(num))
-	return bytes.TrimLeft(buf[:], "\x00")
-}
-
-func bytesToInt(data []byte) int64 {
-	if len(data) > 8 {
-		data = data[len(data)-8:]
-	}
-	var buf [8]byte
-	copy(buf[8-len(data):], data)
-	return int64(binary.BigEndian.Uint64(buf[:]))
 }
 
 // GenerateSecretKey generates a 32-byte hex string (equivalent to Python's secrets.token_hex(32))

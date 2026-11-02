@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -47,9 +48,11 @@ type Template struct {
 	// model-default runs proved noisier than the exploration its sampling
 	// buys. An undeclared template leaves the field unset: the model's own
 	// default applies.
-	Temperature *float64 `json:"temperature" yaml:"temperature"`
-	Tools       []string `json:"tools" yaml:"tools"`
-	Content     string   `json:"content" yaml:"content"`
+	Temperature   *float64 `json:"temperature" yaml:"temperature"`
+	Tools         []string `json:"tools" yaml:"tools"`
+	Content       string   `json:"content" yaml:"content"`
+	strictTools   bool
+	customContent bool
 }
 
 // configFile is the on-disk shape: a plain list of templates. Which template
@@ -83,6 +86,23 @@ func toolRegistry() map[string]toolFactory {
 		"search_semantic_chunks": func(t string, d []string) tool.BaseTool { return NewSearchSemanticChunksTool(t, d) },
 		"list_chunks":            func(t string, d []string) tool.BaseTool { return NewListChunksTool(t, d) },
 		"search_metadata":        func(t string, d []string) tool.BaseTool { return NewMetadataSearchTool(t, d) },
+		// The compiled-knowledge-graph walk. Registered always; a template that
+		// omits it simply never offers it to the model.
+		"graph_explore": func(t string, d []string) tool.BaseTool { return NewGraphExploreTool(t, d) },
+		// The compiled-graph panorama read: one call returns a whole document's
+		// entities and relations instead of scanning it chunk by chunk.
+		// Registered always; a template that omits it never offers it to the
+		// model (same pattern as graph_explore).
+		"graph_doc_outline": func(t string, d []string) tool.BaseTool { return NewGraphDocOutlineTool(t, d) },
+		// The compiled-navigation-tree router. Registered always; a template that
+		// omits it simply never offers it to the model (same pattern as
+		// graph_explore).
+		"navigate_tree": func(t string, d []string) tool.BaseTool { return NewNavigateTreeTool(t, d) },
+		// The compiled-structure drilldown: given a doc_id (from navigate_tree),
+		// reads that document's compiled entity/relation outline and returns a
+		// query-focused TOC the model feeds to list_chunks. Registered always; a
+		// template that omits it never offers it to the model.
+		"navigate_structure": func(t string, d []string) tool.BaseTool { return NewNavigateStructureTool(t, d) },
 	}
 }
 
@@ -176,6 +196,10 @@ func resolveTemplateFor(id string) (Template, error) {
 				if strings.TrimSpace(t.Content) == "" {
 					return Template{}, fmt.Errorf("agentic_rag: template %q has no prompt content in %s", id, defaultConfigPath())
 				}
+				t.Tools = slices.Clone(t.Tools)
+				if t.Temperature != nil {
+					t.Temperature = new(*t.Temperature)
+				}
 				return t, nil
 			}
 		}
@@ -202,16 +226,17 @@ func TemplateTemperature(templateID string) *float64 {
 // skipped with a warning. The conversation's web capability is added here so
 // all retrieval tools use the same agent dispatch path.
 func toolsFor(ctx context.Context, t Template, tenantID string, datasetIDs []string, tools []tool.BaseTool) []tool.BaseTool {
-	if len(tools) > 0 {
+	if len(tools) > 0 && !t.strictTools {
 		return append(append([]tool.BaseTool(nil), tools...), webSearchTools(ctx)...)
 	}
 	reg := toolRegistry()
 	names := t.Tools
-	if len(names) == 0 {
+	if len(names) == 0 && !t.strictTools {
 		names = make([]string, 0, len(reg))
 		for n := range reg {
 			names = append(names, n)
 		}
+		slices.Sort(names)
 	}
 	out := make([]tool.BaseTool, 0, len(names))
 	for _, name := range names {

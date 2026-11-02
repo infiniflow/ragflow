@@ -31,6 +31,7 @@ import (
 	"net"
 	"net/http"
 	neturl "net/url"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -205,7 +206,7 @@ func (h *HTTPHelper) DoPinned(
 	if err != nil {
 		return nil, fmt.Errorf("http_helper: parse url: %w", err)
 	}
-	if u.Hostname() != originalHost {
+	if !strings.EqualFold(u.Hostname(), originalHost) {
 		return nil, fmt.Errorf(
 			"http_helper: DoPinned url host %q != originalHost %q "+
 				"(refusing to pin — would break TLS SNI / cert check)",

@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"ragflow/internal/entity/models"
+	componentpkg "ragflow/internal/ingestion/component"
 )
 
 func makeEmbeddingModelForResolver() *models.EmbeddingModel {
@@ -75,6 +76,23 @@ func TestEmbedderResolver_EmptyKBEmbdIDReturnsNil(t *testing.T) {
 	}
 	if embdID != "" {
 		t.Fatalf("expected empty embdID when kb has no embd_id, got %q", embdID)
+	}
+}
+
+// TestEmbedderResolverFailsFastWhenUninitialized guards the nil-db guard in the
+// production resolver closure: if the server assembly point forgets to call
+// InitEmbedderResolver, the resolver must fail loud instead of dereferencing a
+// nil *gorm.DB at run time.
+func TestEmbedderResolverFailsFastWhenUninitialized(t *testing.T) {
+	saved := embedderResolverDB
+	defer func() { embedderResolverDB = saved }()
+	embedderResolverDB = nil
+	if componentpkg.DefaultEmbedderResolver == nil {
+		t.Fatal("DefaultEmbedderResolver was not wired by init()")
+	}
+	_, _, err := componentpkg.DefaultEmbedderResolver(t.Context(), "tenant-1", "kb-1")
+	if err == nil {
+		t.Fatal("expected fail-fast error when the resolver db is uninitialized, got nil")
 	}
 }
 
@@ -137,6 +155,9 @@ func (d *stubDriver) ListTasks(ctx context.Context, apiConfig *models.APIConfig)
 	return nil, nil
 }
 func (d *stubDriver) ShowTask(ctx context.Context, taskID string, apiConfig *models.APIConfig) (*models.TaskResponse, error) {
+	return nil, nil
+}
+func (d *stubDriver) Decide(ctx context.Context, modelName *string, request *models.DecideRequest, apiConfig *models.APIConfig, modelUsage *common.ModelUsage) (*models.DecideResponse, error) {
 	return nil, nil
 }
 func (d *stubDriver) ToolCall(ctx context.Context, name string, arguments map[string]interface{}) (string, error) {

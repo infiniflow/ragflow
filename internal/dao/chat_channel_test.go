@@ -213,9 +213,9 @@ func TestChatChannelDAO_ListByTenantID(t *testing.T) {
 
 	// Perform query
 	ctx := t.Context()
-	list, err := dao.ListByTenantID(ctx, db, "tenant-1")
+	list, err := dao.ListByIDs(ctx, db, []string{"chan-1", "chan-2"})
 	if err != nil {
-		t.Fatalf("ListByTenantID failed: %v", err)
+		t.Fatalf("ListByIDs failed: %v", err)
 	}
 
 	// Verify count and order (create_time DESC, so cc2 should be index 0)

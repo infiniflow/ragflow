@@ -165,7 +165,7 @@ export function useMonacoTheme() {
     schema?: JSONSchema,
   ) => {
     // Create a new diagnostics options object
-    const diagnosticsOptions: Monaco.languages.json.DiagnosticsOptions = {
+    const diagnosticsOptions: Monaco.json.DiagnosticsOptions = {
       validate: true,
       allowComments: false,
       schemaValidation: 'error',
@@ -194,9 +194,7 @@ export function useMonacoTheme() {
           ],
     };
 
-    monaco.languages.json.jsonDefaults.setDiagnosticsOptions(
-      diagnosticsOptions,
-    );
+    monaco.json.jsonDefaults.setDiagnosticsOptions(diagnosticsOptions);
   };
 
   return {

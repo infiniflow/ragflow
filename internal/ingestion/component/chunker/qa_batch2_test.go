@@ -18,6 +18,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"strings"
 	"testing"
 )
@@ -34,7 +35,7 @@ func qaInvoke(t *testing.T, inputs map[string]any) []map[string]any {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("Invoke did not return []map chunks: %#v", out["chunks"])
 	}

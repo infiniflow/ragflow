@@ -27,7 +27,7 @@ type MemoriesFormFieldProps = {
   label: string;
   name?: string;
   required?: boolean;
-  ownerTenantId?: string;
+  canvasID?: string;
 };
 
 function MemoryLabel({ text }: { text: string }) {
@@ -40,11 +40,11 @@ function MemoryLabel({ text }: { text: string }) {
 
 export function useDisableDifferenceEmbeddingMemory(
   name: string,
-  ownerTenantId?: string,
+  canvasID?: string,
 ) {
   const form = useFormContext();
   const memoryIds = useWatch({ name, control: form.control });
-  const { data: memoryListOrigin } = useFetchAllMemoryList(ownerTenantId);
+  const { data: memoryListOrigin } = useFetchAllMemoryList(canvasID);
   const memoryCacheRef = useRef(new Map<string, IMemory>());
 
   const memoryList = useMemo(() => {
@@ -99,10 +99,10 @@ export function MemoriesFormField({
   label,
   name = 'memory_ids',
   required = false,
-  ownerTenantId,
+  canvasID,
 }: MemoriesFormFieldProps) {
   const { t } = useTranslation();
-  const { options } = useDisableDifferenceEmbeddingMemory(name, ownerTenantId);
+  const { options } = useDisableDifferenceEmbeddingMemory(name, canvasID);
 
   return (
     <RAGFlowFormItem name={name} label={label} required={required}>

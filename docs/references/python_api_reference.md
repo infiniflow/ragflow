@@ -149,18 +149,19 @@ When `extra_body.reference_metadata.include` is `true`, each reference chunk may
 ```python
 RAGFlow.create_dataset(
     name: str,
-    avatar: Optional[str] = None,
-    description: Optional[str] = None,
+    parse_type: int = 1,
+    parser_id: str | None = None,
+    pipeline_id: str | None = None,
     embedding_model: Optional[str] = None,
     permission: str = "me",
-    chunk_method: str = "naive",
     parser_config: Optional[DataSet.ParserConfig] = None,
-    auto_metadata_config: Optional[dict[str, Any]] = None
-
+    language: Optional[str] = None,
 ) -> DataSet
 ```
 
 Creates a dataset.
+
+`avatar`, `description`, `auto_metadata_config`, and `chunk_method` are not accepted by the RAGFlow 1.0 create endpoint. Set avatar and description through `DataSet.update()`, and metadata configuration through `DataSet.update_auto_metadata()`.
 
 #### Parameters
 
@@ -171,21 +172,28 @@ The unique name of the dataset to create. It must adhere to the following requir
 - Maximum 128 characters.
 - Case-insensitive.
 
-##### avatar: `string`
+##### parse_type: `int`
 
-Base64 encoding of the avatar. Defaults to `None`
+Selects the parser mode. Defaults to `1`.
 
-##### description: `string`
+- `1`: BuiltIn. Use the builtin parser selected by `parser_id`.
+- `2`: Pipeline. Use the ingestion pipeline selected by `pipeline_id`.
 
-A brief description of the dataset to create. Defaults to `None`.
+##### parser_id: `string | None`
+
+The builtin parser ID. Defaults to `"general"` when `parse_type` is `1`.
+
+Available values include `"general"`, `"qa"`, `"manual"`, `"table"`, `"paper"`, `"book"`, `"laws"`, `"presentation"`, `"picture"`, `"one"`, `"audio"`, and `"email"`.
+
+Must be omitted when `parse_type` is `2`.
+
+##### pipeline_id: `string | None`
+
+The ingestion pipeline ID. Required when `parse_type` is `2`; must be omitted when `parse_type` is `1`.
 
 ##### embedding_model: `string | None`
 
 The embedding model to use for the dataset. Defaults to `None`.
-
-##### auto_metadata_config: `dict[str, Any] | None`
-
-The automatic metadata extraction configuration for the dataset. Defaults to `None`.
 
 ##### permission
 
@@ -194,52 +202,19 @@ Specifies who can access the dataset to create. Available options:
 - `"me"`: (Default) Only you can manage the dataset.
 - `"team"`: All team members can manage the dataset.
 
-##### chunk_method, `string`
+##### language: `string | None`
 
-The chunking method of the dataset to create. Available options:
-
-- `"naive"`: General (default)
-- `"manual"`: Manual
-- `"qa"`: Q&A
-- `"table"`: Table
-- `"paper"`: Paper
-- `"book"`: Book
-- `"laws"`: Laws
-- `"presentation"`: Presentation
-- `"picture"`: Picture
-- `"one"`: One
-- `"email"`: Email
+Optional document/dataset language, for example `"English"` or `"Chinese"`. Defaults to `None`.
 
 ##### parser_config: `DataSet.ParserConfig | None`
 
-The parser configuration of the dataset. A `ParserConfig` object's attributes vary based on the selected `chunk_method`:
+The parser configuration of the dataset. Defaults to `None`.
 
-- `chunk_method`=`"naive"`:
-  `{"chunk_token_num":512,"delimiter":"\n","html4excel":False,"layout_recognize":"DeepDOC","raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\n"}}`.
-- `chunk_method`=`"qa"`:
-  `{"raptor": {"use_raptor": False}}`
-- `chunk_method`=`"manual"`:
-  `{"raptor": {"use_raptor": False}}`
-- `chunk_method`=`"table"`:
-  `None`
-- `chunk_method`=`"paper"`:
-  `{"raptor": {"use_raptor": False}}`
-- `chunk_method`=`"book"`:
-  `{"raptor": {"use_raptor": False}}`
-- `chunk_method`=`"laws"`:
-  `{"raptor": {"use_raptor": False}}`
-- `chunk_method`=`"picture"`:
-  `None`
-- `chunk_method`=`"presentation"`:
-  `{"raptor": {"use_raptor": False}}`
-- `chunk_method`=`"one"`:
-  `None`
-- `chunk_method`=`"email"`:
-  `None`
+RAGFlow 1.0 stores parser settings per ingestion-pipeline component. Use component-scoped keys (keys containing `:`) as returned by the API; legacy flat keys are ignored.
 
 #### Returns
 
-- Success: A `dataset` object.
+- Success: A `dataset` object. Its `parser_id`, `pipeline_id`, and derived `parse_type` reflect the selected parser mode.
 - Failure: `Exception`
 
 #### Examples
@@ -249,6 +224,12 @@ from ragflow_sdk import RAGFlow
 
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.create_dataset(name="kb_1")
+dataset = rag_object.create_dataset(name="kb_table", parse_type=1, parser_id="table")
+dataset = rag_object.create_dataset(
+    name="kb_pipeline",
+    parse_type=2,
+    pipeline_id="<PIPELINE_ID>",
+)
 ```
 
 ---
@@ -389,6 +370,11 @@ A dictionary representing the attributes to update, with the following keys:
 - `"avatar"`: (*Body parameter*), `string`
   The updated base64 encoding of the avatar.
   - Maximum 65535 characters
+- `"description"`: (*Body parameter*), `string`
+  The updated dataset description.
+  - Maximum 65535 characters
+- `"language"`: (*Body parameter*), `string`
+  The updated document/dataset language, for example `"English"` or `"Chinese"`.
 - `"embedding_model"`: (*Body parameter*), `string`
   The updated embedding model name.
   - Ensure that `"chunk_count"` is `0` before updating `"embedding_model"`.
@@ -403,20 +389,14 @@ A dictionary representing the attributes to update, with the following keys:
   - Default: `0`
   - Minimum: `0`
   - Maximum: `100`
-- `"chunk_method"`: (*Body parameter*), `enum<string>`
-  The chunking method for the dataset. Available options:
-  - `"naive"`: General (default)
-  - `"book"`: Book
-  - `"email"`: Email
-  - `"laws"`: Laws
-  - `"manual"`: Manual
-  - `"one"`: One
-  - `"paper"`: Paper
-  - `"picture"`: Picture
-  - `"presentation"`: Presentation
-  - `"qa"`: Q&A
-  - `"table"`: Table
-  - `"tag"`: Tag
+- `"parse_type"`: (*Body parameter*), `int`
+  The parser mode: `1` for a builtin parser or `2` for an ingestion pipeline. Required whenever `parser_id` or `pipeline_id` is provided.
+- `"parser_id"`: (*Body parameter*), `string`
+  The builtin parser ID. Required when `parse_type` is `1`.
+- `"pipeline_id"`: (*Body parameter*), `string`
+  The ingestion pipeline ID. Required when `parse_type` is `2`.
+
+`chunk_method` is not supported by the RAGFlow 1.0 SDK; use `parse_type` together with `parser_id` or `pipeline_id`.
 
 #### Returns
 
@@ -431,7 +411,7 @@ from ragflow_sdk import RAGFlow
 rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
 dataset = rag_object.list_datasets(name="kb_name")
 dataset = dataset[0]
-dataset.update({"embedding_model":"BAAI/bge-zh-v1.5", "chunk_method":"manual"})
+dataset.update({"embedding_model":"BAAI/bge-zh-v1.5", "parse_type":1, "parser_id":"manual"})
 ```
 
 ---
