@@ -242,29 +242,6 @@ func hasMediaPayload(ck schema.ChunkDoc) bool {
 	return ck.Image != "" || ck.ImgID != "" || ck.MediaRef != nil
 }
 
-// hasCroppableMedia reports whether a media chunk still has a PDF crop region
-// even when it has no caption or inline payload yet. Parser paths such as
-// MinerU JSON omit zip figure bytes and rely on the chunker to crop from
-// positions, so empty text must not drop the item before that handoff.
-func hasCroppableMedia(ck schema.ChunkDoc) bool {
-	if !isMediaChunk(ck) {
-		return false
-	}
-	for _, row := range mergePositionMatrix(ck.PDFPositions, ck.Positions) {
-		if len(row) < 5 {
-			continue
-		}
-		left, okL := schema.NumericFromAny(row[1])
-		right, okR := schema.NumericFromAny(row[2])
-		top, okT := schema.NumericFromAny(row[3])
-		bottom, okB := schema.NumericFromAny(row[4])
-		if okL && okR && okT && okB && right > left && bottom > top {
-			return true
-		}
-	}
-	return false
-}
-
 // itemTextOrFallback returns the item's preferred text, or "".
 func itemTextOrFallback(it schema.ChunkDoc) string {
 	if t, ok := itemText(it); ok {
@@ -458,7 +435,8 @@ func chunkPositionMatrix(ck map[string]any) [][]any {
 // a digest of the image payload when present (identical images collapse onto
 // one id, which is harmless — they carry identical bytes), else the
 // content-addressed media reference, else the uploaded image id. Empty when
-// the chunk has none of them, leaving the id the plain empty-text hash.
+// the chunk has none of them; callers with PDF crop regions use
+// mediaTextIdentity instead.
 func mediaChunkIdentity(image, imgID string, ref *entity.MediaRef) string {
 	if image != "" {
 		sum := sha256.Sum256([]byte(image))

@@ -100,6 +100,10 @@ func TestMinerUImageItemKeptWhenZipMemberExists(t *testing.T) {
 	if _, ok := gotBBox["_pdf_positions"]; !ok {
 		t.Fatalf("positions must be kept: %#v", gotBBox)
 	}
+	zipOnly := map[string]any{"type": "image", "img_path": "images/a.png"}
+	if mineruContentItemToJSONBudget(zipOnly, images, nil, nil) != nil {
+		t.Fatal("zip-only figure without a crop region must be dropped")
+	}
 }
 
 func TestMinerUStructuredFigureKeptWithoutCaptionOrZip(t *testing.T) {
@@ -162,6 +166,54 @@ func TestMinerUStructuredDataURINotCopiedAndWarnsOnBudget(t *testing.T) {
 	}
 	if len(budget.Warnings()) == 0 {
 		t.Fatalf("expected budget warnings, got none")
+	}
+}
+
+func TestMinerUExtractJSONItemsWarnsOnZipOnlyFigure(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list := []map[string]any{
+		{"type": "image", "img_path": "images/a.png"},
+		{"type": "image", "img_path": "images/a.png", "page_idx": 0, "bbox": []any{1.0, 2.0, 3.0, 4.0}},
+	}
+	raw, err := json.Marshal(list)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cl, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = cl.Write(raw); err != nil {
+		t.Fatal(err)
+	}
+	img, err := zw.Create("images/a.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = img.Write(bytes.Repeat([]byte{1}, 8)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	items, warnings, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {612, 792}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items)=%d, want 1 positioned figure kept", len(items))
+	}
+	found := false
+	for _, w := range warnings {
+		if strings.Contains(w, "zip bytes but no PDF crop region") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("warnings = %v, want zip-only omission warning", warnings)
 	}
 }
 

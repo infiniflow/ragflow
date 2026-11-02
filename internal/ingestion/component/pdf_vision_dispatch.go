@@ -948,16 +948,28 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 
 	pageSizes := mergeMineruPageSizes(pdfPageSizes, mineruPageSizesFromMiddleJSON(middleJSON))
 	out := make([]map[string]any, 0, len(rawItems))
+	var zipOnlyOmitted int
 	for _, item := range rawItems {
 		converted := mineruContentItemToJSONBudget(item, images, pageSizes, budget)
 		if converted != nil {
 			out = append(out, converted)
+			continue
+		}
+		if mineruZipOnlyFigureSkipped(item, images, pageSizes) {
+			zipOnlyOmitted++
 		}
 	}
 	if len(out) == 0 {
 		return nil, nil, fmt.Errorf("MinerU zip contained no usable content_list items")
 	}
-	return out, budget.Warnings(), nil
+	warnings := budget.Warnings()
+	if zipOnlyOmitted > 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"omitted %d MinerU figure(s) with zip bytes but no PDF crop region",
+			zipOnlyOmitted,
+		))
+	}
+	return out, warnings, nil
 }
 
 func mineruReadZipFile(f *zip.File) ([]byte, error) {
@@ -1184,7 +1196,6 @@ func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.F
 	}
 
 	text := mineruItemText(item, typ)
-	hasImageFile := false
 	docType := "text"
 	// External MinerU labels are mapped explicitly. Unknown labels must not
 	// acquire parser block-kind semantics implicitly; list/code are real
@@ -1202,19 +1213,15 @@ func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.F
 	case "image", "chart":
 		docType = "image"
 		layout = "figure"
-		if imgPath, _ := item["img_path"].(string); imgPath != "" {
-			hasImageFile = mineruZipImageFile(images, imgPath) != nil
-		}
-		hasCropRegion := len(mineruItemPositions(item, pageSizes)) > 0
 		if dataURI, _ := item["image_data_uri"].(string); strings.HasPrefix(dataURI, "data:") {
 			if budget != nil {
 				mineruAccountStructuredDataURI(budget, dataURI)
 			}
 		}
-		// Captionless figures still crop from the source PDF when they carry
-		// a zip member or a bounding box. Vision enhancement and image
-		// context are optional; empty text must not drop the handoff.
-		if text == "" && !hasImageFile && !hasCropRegion {
+		hasCropRegion := len(mineruItemPositions(item, pageSizes)) > 0
+		// Zip figure bytes are not inlined on this path; keep captionless items
+		// only when they still have a PDF crop box (or non-empty text above).
+		if text == "" && !hasCropRegion {
 			return nil
 		}
 	case "table":
@@ -1268,6 +1275,27 @@ func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.F
 	return jsonItem
 }
 
+// mineruZipOnlyFigureSkipped reports a captionless MinerU figure that had a zip
+// member but no PDF crop region. Those bytes are intentionally not inlined, so
+// the item is omitted with a parse warning instead of producing an empty chunk.
+func mineruZipOnlyFigureSkipped(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64) bool {
+	typ, _ := item["type"].(string)
+	typ = strings.ToLower(strings.TrimSpace(typ))
+	if typ != "image" && typ != "chart" {
+		return false
+	}
+	if mineruItemText(item, typ) != "" {
+		return false
+	}
+	if len(mineruItemPositions(item, pageSizes)) > 0 {
+		return false
+	}
+	imgPath, _ := item["img_path"].(string)
+	return imgPath != "" && mineruZipImageFile(images, imgPath) != nil
+}
+
+// mineruItemText assembles the searchable text MinerU attaches to one
+// content_list item before it is converted into a parser JSON item.
 func mineruItemText(item map[string]any, typ string) string {
 	var parts []string
 	switch typ {
@@ -1306,6 +1334,8 @@ func mineruItemText(item map[string]any, typ string) string {
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
+// mineruItemPositions converts MinerU page/bbox fields into the shared
+// _pdf_positions matrix used by jump-to-source and on-demand PDF cropping.
 func mineruItemPositions(item map[string]any, pageSizes map[int][2]float64) [][]any {
 	if raw, ok := item["_mineru_positions"].([]any); ok {
 		var out [][]any

@@ -644,6 +644,28 @@ func TestCropImageChunks_CropsEmptyTextMediaWithPositions(t *testing.T) {
 	}
 }
 
+func TestFinalizeGeneralChunks_DropsUncroppedPositionOnlyMedia(t *testing.T) {
+	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	uncropped := []schema.ChunkDoc{{DocType: "image", PDFPositions: pos}}
+	if kept := finalizeGeneralChunks(uncropped, nil); len(kept) != 0 {
+		t.Fatalf("finalize kept %d, want uncropped position-only media dropped", len(kept))
+	}
+}
+
+func TestCanonicalChunkIDUsesRegionForCaptionlessPositionedMedia(t *testing.T) {
+	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	ck := schema.ChunkDoc{
+		DocType:      "image",
+		PDFPositions: pos,
+		Image:        "data:image/png;base64,QUFBQQ==",
+	}
+	regionID := canonicalChunkID("doc1", ck)
+	payloadID := common.ChunkID("doc1", mediaChunkIdentity(ck.Image, "", nil))
+	if regionID == payloadID {
+		t.Fatalf("region id %q must differ from payload hash id %q", regionID, payloadID)
+	}
+}
+
 // TestCropImageChunks_StreamingUploadUsesCanonicalID is the regression test
 // for the most common chunk shape: an image/table chunk whose Text still
 // carries parser position tags (@@…##) but has NO media context
