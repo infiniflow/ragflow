@@ -1348,10 +1348,6 @@ func (s *ConnectorService) ListLogs(ctx context.Context, userID, datasetID strin
 	var taskIDs []string
 	for _, connectorID := range connectorIDs {
 		connectorRef := permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}
-		if err := checker.CheckResource(ctx, subject, connectorRef, permission.OperationRead); err != nil {
-			code, permissionErr := permissionresponse.NormalizeHidden(err)
-			return nil, 0, code, permissionErr
-		}
 		taskScope, err := checker.Scope(ctx, subject, permission.ScopeQuery{
 			Kind:      permission.ResourceKindSyncTask,
 			Parent:    connectorRef,
