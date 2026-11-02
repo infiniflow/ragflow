@@ -878,6 +878,11 @@ func TestResolveSavedProviderModelConfigUsePermissionCannotOverrideSavedEndpoint
 	}).Error; err != nil {
 		t.Fatalf("seed tenant member: %v", err)
 	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "user-tenant-owner", UserID: "user-1", TenantID: "tenant-1", Role: string(permission.RoleOwner), Status: &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("seed tenant owner: %v", err)
+	}
 	service := NewModelProviderService()
 	ctx := serviceTestContext(t, "member-1", "tenant-1")
 	config, err := service.ResolveSavedProviderModelConfig(ctx, "OpenAI", "default", "member-1", SavedProviderModelOptions{})

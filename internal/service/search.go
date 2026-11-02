@@ -258,12 +258,13 @@ func (s *SearchService) DeleteSearch(ctx context.Context, userID string, searchI
 }
 
 type SearchCompletionPlan struct {
-	UserID     string
-	SearchID   string
-	Question   string
-	DatasetIDs []string
-	ModelID    string
-	Options    AskStreamOptions
+	UserID      string
+	ModelAccess ModelAccess
+	SearchID    string
+	Question    string
+	DatasetIDs  []string
+	ModelID     string
+	Options     AskStreamOptions
 }
 
 func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID string, req *SearchCompletionsRequest) (*SearchCompletionPlan, common.ErrorCode, error) {
@@ -311,23 +312,27 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 			return nil, code, permissionErr
 		}
 	}
+	modelAccess, err := ModelAccessForUser(ctx, userID)
+	if err != nil {
+		code, normalizedErr := permissionresponse.Normalize(err)
+		return nil, code, normalizedErr
+	}
 
 	modelID, _ := stringFromSearchConfig(searchConfig["chat_id"])
 	if modelID == "" {
-		if access, accessErr := ModelAccessForUser(ctx, userID); accessErr == nil {
-			if info, infoErr := NewModelFactory().ResolveDefaultInfo(ctx, access, entity.ModelTypeChat); infoErr == nil {
-				modelID = ModelReference(info)
-			}
+		if info, infoErr := NewModelFactory().ResolveDefaultInfo(ctx, modelAccess, entity.ModelTypeChat); infoErr == nil {
+			modelID = ModelReference(info)
 		}
 	}
 
 	return &SearchCompletionPlan{
-		UserID:     userID,
-		SearchID:   searchID,
-		Question:   question,
-		DatasetIDs: datasetIDs,
-		ModelID:    modelID,
-		Options:    BuildAskStreamOptions(searchID, searchConfig),
+		UserID:      userID,
+		ModelAccess: modelAccess,
+		SearchID:    searchID,
+		Question:    question,
+		DatasetIDs:  datasetIDs,
+		ModelID:     modelID,
+		Options:     BuildAskStreamOptions(searchID, searchConfig),
 	}, common.CodeSuccess, nil
 }
 

@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"gorm.io/gorm"
@@ -30,6 +29,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/modelcontext"
 	"ragflow/internal/permission"
 )
 
@@ -415,7 +415,7 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 		return nil, err
 	}
 
-	if maxTokens := maxTokensFromJSON(extra.MaxTokens); maxTokens > 0 {
+	if maxTokens := modelcontext.MaxTokensFromJSON(extra.MaxTokens); maxTokens > 0 {
 		contextLength := maxTokens
 		model.ContextLength = &contextLength
 	}
@@ -446,27 +446,6 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 	}
 
 	return &model, nil
-}
-
-func maxTokensFromJSON(raw json.RawMessage) int {
-	if len(raw) == 0 {
-		return 0
-	}
-	var number json.Number
-	if err := json.Unmarshal(raw, &number); err == nil {
-		if value, err := strconv.ParseFloat(number.String(), 64); err == nil && value > 0 {
-			return int(value)
-		}
-		return 0
-	}
-	var text string
-	if err := json.Unmarshal(raw, &text); err == nil {
-		value, err := strconv.Atoi(strings.TrimSpace(text))
-		if err == nil && value > 0 {
-			return value
-		}
-	}
-	return 0
 }
 
 func setModelInfoTypes(modelInfo *modelModule.Model, modelTypes entity.ModelType) {
@@ -562,9 +541,6 @@ func (f *ModelFactory) tenantOwnerMembership(ctx context.Context, tenantID strin
 		return nil, fmt.Errorf("%w: user tenant DAO is not initialized", errModelConfigUnavailable)
 	}
 	membership, err := f.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return &entity.UserTenant{UserID: tenantID, TenantID: tenantID}, nil
-	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tenant owner: %s: %w", tenantID, err)
 	}
@@ -605,7 +581,7 @@ func (f *ModelFactory) defaultModelReference(ctx context.Context, access ModelAc
 		return modelID, nil
 	}
 	if strings.TrimSpace(modelName) == "" {
-		return "", fmt.Errorf("%w: %s", ErrNoDefaultModel, modelType)
+		return "", fmt.Errorf("no default %s model is set: %w", modelType, ErrNoDefaultModel)
 	}
 	return modelName, nil
 }

@@ -19,7 +19,6 @@ package modelcontext
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strconv"
 	"strings"
 
@@ -100,13 +99,11 @@ func lookupTenantModel(ctx context.Context, db *gorm.DB, tenantID, modelRef, pur
 		if tenantID == "" {
 			return nil
 		}
-		ownerUserID := tenantID
 		owner, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tenantID)
-		if err == nil {
-			ownerUserID = owner.UserID
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		if err != nil {
 			return nil
 		}
+		ownerUserID := owner.UserID
 		provider, err := dao.NewTenantModelProviderDAO().GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, ownerUserID, providerName)
 		if err != nil || provider == nil {
 			return nil
@@ -151,17 +148,25 @@ func modelExtraMaxTokens(extra string) int {
 	if err := json.Unmarshal([]byte(extra), &m); err != nil || len(m.MaxTokens) == 0 {
 		return 0
 	}
+	return MaxTokensFromJSON(m.MaxTokens)
+}
+
+// MaxTokensFromJSON parses a positive max_tokens JSON number or numeric string.
+func MaxTokensFromJSON(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
 	// Accept JSON numbers (int or float, e.g. 32000 / 32000.0) and numeric
 	// strings ("32000"); json.Number keeps the raw lexical form.
 	var num json.Number
-	if err := json.Unmarshal(m.MaxTokens, &num); err == nil {
+	if err := json.Unmarshal(raw, &num); err == nil {
 		if f, err := strconv.ParseFloat(num.String(), 64); err == nil && f > 0 {
 			return int(f)
 		}
 		return 0
 	}
 	var str string
-	if err := json.Unmarshal(m.MaxTokens, &str); err == nil {
+	if err := json.Unmarshal(raw, &str); err == nil {
 		if n, err := strconv.Atoi(strings.TrimSpace(str)); err == nil && n > 0 {
 			return n
 		}

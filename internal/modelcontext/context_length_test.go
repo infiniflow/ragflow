@@ -18,6 +18,7 @@ package modelcontext
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -26,6 +27,29 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
+
+func TestMaxTokensFromJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		json json.RawMessage
+		want int
+	}{
+		{name: "integer", json: json.RawMessage(`32000`), want: 32000},
+		{name: "fractional number", json: json.RawMessage(`32000.9`), want: 32000},
+		{name: "numeric string", json: json.RawMessage(`" 32000 "`), want: 32000},
+		{name: "zero", json: json.RawMessage(`0`)},
+		{name: "negative", json: json.RawMessage(`-1`)},
+		{name: "invalid string", json: json.RawMessage(`"large"`)},
+		{name: "null", json: json.RawMessage(`null`)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := MaxTokensFromJSON(test.json); got != test.want {
+				t.Fatalf("MaxTokensFromJSON(%s) = %d, want %d", test.json, got, test.want)
+			}
+		})
+	}
+}
 
 func resolveTestContextLength(ctx context.Context, db *gorm.DB, tenantID, modelRef, driver, modelName string) int {
 	return ResolveModelContentLength(ctx, db, tenantID, modelRef, driver, modelName)

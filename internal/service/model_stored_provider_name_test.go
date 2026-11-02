@@ -115,8 +115,8 @@ func TestCatalogToolSupportForStoredMistralOCRProvider(t *testing.T) {
 	}
 }
 
-// ModelFactory resolves a "Mistral OCR" model by tenant model ID and composite reference.
-func TestModelFactoryResolvesStoredMistralOCRDocumentParseCapability(t *testing.T) {
+// ModelFactory preserves the stored OCR capability for the Mistral OCR provider.
+func TestModelFactoryResolvesStoredMistralOCRCapability(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
@@ -134,8 +134,8 @@ func TestModelFactoryResolvesStoredMistralOCRDocumentParseCapability(t *testing.
 			if target.ModelInfo == nil || target.ModelInfo.Name != "mistral-ocr-latest" {
 				t.Fatalf("model info = %+v, want mistral-ocr-latest", target.ModelInfo)
 			}
-			if !target.ModelInfo.ModelTypeMap["doc_parse"] {
-				t.Fatalf("model info = %+v, want document-parse capability", target.ModelInfo)
+			if !target.ModelInfo.ModelTypeMap["ocr"] || target.ModelInfo.ModelTypeMap["doc_parse"] {
+				t.Fatalf("model info = %+v, want OCR capability without unsupported document-parse capability", target.ModelInfo)
 			}
 		})
 	}

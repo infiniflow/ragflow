@@ -464,14 +464,16 @@ func TestUpdateMemoryTeamMemberResolvesModelsAgainstOwnerTenant(t *testing.T) {
 
 	for _, row := range []struct {
 		providerID string
+		userID     string
 		tenantID   string
 		modelID    string
 	}{
-		{providerID: "provider-owner", tenantID: "owner-1", modelID: "tenant-llm-owner"},
-		{providerID: "provider-member", tenantID: "member-1", modelID: "tenant-llm-member"},
+		{providerID: "provider-owner", userID: "owner-1", tenantID: "owner-1", modelID: "tenant-llm-owner"},
+		{providerID: "provider-member", userID: "member-1", tenantID: "member-1", modelID: "tenant-llm-member"},
 	} {
 		if err := dao.DB.Create(&entity.TenantModelProvider{
 			ID:           row.providerID,
+			UserID:       row.userID,
 			ProviderName: "OpenAI",
 			TenantID:     row.tenantID,
 		}).Error; err != nil {

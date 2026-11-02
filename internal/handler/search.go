@@ -439,7 +439,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		return
 	}
 
-	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, TenantID: plan.UserID, ModelID: plan.ModelID}
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, UserID: plan.ModelAccess.UserID, TenantID: plan.ModelAccess.TenantID, ModelID: plan.ModelID}
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()

@@ -269,6 +269,14 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	// Resolve chat model ID.
 	modelID := ""
 	options := service.AskStreamOptions{}
+	askAccess, accessErr := service.ModelAccessForUser(c.Request.Context(), user.ID)
+	if accessErr != nil {
+		if respondPermissionErrorIf(c, accessErr, true) {
+			return
+		}
+		jsonInternalError(c, accessErr)
+		return
+	}
 	if req.SearchID != "" {
 		if h.searchSvc == nil {
 			jsonInternalError(c, fmt.Errorf("search service not configured"))
@@ -291,11 +299,8 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	}
 	if modelID == "" && h.modelFactory != nil {
 		ctx := c.Request.Context()
-		access, err := service.ModelAccessForUser(ctx, user.ID)
-		if err == nil {
-			if info, infoErr := h.modelFactory.ResolveDefaultInfo(ctx, access, entity.ModelTypeChat); infoErr == nil {
-				modelID = service.ModelReference(info)
-			}
+		if info, infoErr := h.modelFactory.ResolveDefaultInfo(ctx, askAccess, entity.ModelTypeChat); infoErr == nil {
+			modelID = service.ModelReference(info)
 		}
 	}
 	if modelID == "" {
@@ -320,7 +325,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	defer cancel()
 	c.Request = c.Request.WithContext(ctx)
 	hadError := false
-	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, TenantID: user.ID, ModelID: modelID}
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, UserID: askAccess.UserID, TenantID: askAccess.TenantID, ModelID: modelID}
 	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, user.ID, req.Question, filtered, options) {
 		var ok bool
 		switch delta.Kind {

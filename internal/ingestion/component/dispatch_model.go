@@ -31,13 +31,14 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/modelcontext"
 	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
 
 type tenantModelExtra struct {
-	MaxTokens *int `json:"max_tokens"`
+	MaxTokens json.RawMessage `json:"max_tokens"`
 }
 
 type resolvedModelConfig struct {
@@ -239,12 +240,12 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 
 	// Scope the lookup itself so missing and foreign models are indistinguishable
 	// before exposing status, type, instance configuration, or driver details.
-	ownerUserID, err := tenantOwnerUserID(ctx, db, tenantID)
+	owner, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("resolve tenant owner for model lookup: %w", err)
 	}
 	providers := db.Session(&gorm.Session{}).Model(&entity.TenantModelProvider{}).
-		Select("id").Where("tenant_id = ? AND user_id = ?", tenantID, ownerUserID)
+		Select("id").Where("tenant_id = ? AND user_id = ?", tenantID, owner.UserID)
 	scopedDB := db.Session(&gorm.Session{}).Where("provider_id IN (?)", providers)
 	modelObj, err := modelDAO.GetByID(ctx, scopedDB, modelID)
 	if err != nil {
@@ -308,8 +309,8 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 		if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
 			return nil, err
 		}
-		if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
-			contextLength = *tenantExtra.MaxTokens
+		if maxTokens := modelcontext.MaxTokensFromJSON(tenantExtra.MaxTokens); maxTokens > 0 {
+			contextLength = maxTokens
 		}
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
@@ -380,8 +381,8 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 			if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
 				return nil, "", nil, 0, err
 			}
-			if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
-				contextLength = *tenantExtra.MaxTokens
+			if maxTokens := modelcontext.MaxTokensFromJSON(tenantExtra.MaxTokens); maxTokens > 0 {
+				contextLength = maxTokens
 			}
 		}
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
@@ -440,24 +441,10 @@ func errorsIsRecordNotFound(err error) bool {
 	return err != nil && (errors.Is(err, gorm.ErrRecordNotFound) || strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()))
 }
 
-func tenantOwnerUserID(ctx context.Context, db *gorm.DB, tenantID string) (string, error) {
-	owner, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tenantID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return tenantID, nil
-	}
-	if err != nil {
-		return "", err
-	}
-	if owner == nil {
-		return tenantID, nil
-	}
-	return owner.UserID, nil
-}
-
 func getTenantModelProviderByName(ctx context.Context, db *gorm.DB, tenantID, providerName string) (*entity.TenantModelProvider, error) {
-	ownerUserID, err := tenantOwnerUserID(ctx, db, tenantID)
+	owner, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	return dao.NewTenantModelProviderDAO().GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, ownerUserID, providerName)
+	return dao.NewTenantModelProviderDAO().GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, owner.UserID, providerName)
 }

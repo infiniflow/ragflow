@@ -231,12 +231,14 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	modelFactory := service.NewModelFactory()
 	modelAccess := service.ModelAccess{UserID: userID, TenantID: tenantID}
 	embdID, tenantEmbdID := "", ""
-	embeddingInfo, embeddingErr := modelFactory.ResolveDefaultInfo(ctx, modelAccess, entity.ModelTypeEmbedding)
-	if embeddingErr == nil {
-		embdID = service.ModelReference(embeddingInfo)
-		tenantEmbdID = embeddingInfo.ID
-	} else if !errors.Is(embeddingErr, service.ErrNoDefaultModel) {
-		return nil, common.CodeServerError, embeddingErr
+	if embeddingModel == "" {
+		embeddingInfo, embeddingErr := modelFactory.ResolveDefaultInfo(ctx, modelAccess, entity.ModelTypeEmbedding)
+		if embeddingErr == nil {
+			embdID = service.ModelReference(embeddingInfo)
+			tenantEmbdID = embeddingInfo.ID
+		} else if !errors.Is(embeddingErr, service.ErrNoDefaultModel) {
+			return nil, common.CodeServerError, embeddingErr
+		}
 	}
 	if embeddingModel != "" {
 		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, modelAccess)

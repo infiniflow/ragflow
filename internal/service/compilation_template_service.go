@@ -38,14 +38,14 @@ import (
 // fill_config_default_llm: when the config has no explicit llm_id it lazily
 // fills the current member's default chat model id (read-side only; the DB row is left
 // untouched).
-func fillConfigDefaultLLM(ctx context.Context, config entity.JSONMap, tenantID *string) entity.JSONMap {
-	if len(config) == 0 || tenantID == nil || *tenantID == "" {
+func fillConfigDefaultLLM(ctx context.Context, config entity.JSONMap, access ModelAccess) entity.JSONMap {
+	if len(config) == 0 || access.TenantID == "" {
 		return config
 	}
 	if _, ok := config["llm_id"]; ok {
 		return config
 	}
-	info, err := NewModelFactory().ResolveDefaultInfo(ctx, ModelAccess{TenantID: *tenantID}, entity.ModelTypeChat)
+	info, err := NewModelFactory().ResolveDefaultInfo(ctx, access, entity.ModelTypeChat)
 	if err != nil {
 		return config
 	}
@@ -118,14 +118,17 @@ func NewCompilationTemplateService() *CompilationTemplateService {
 
 // ListBuiltins returns the read-only template palette loaded from the YAML
 // definitions. Built-in templates are never persisted in the database.
-func (s *CompilationTemplateService) ListBuiltins(ctx context.Context, tenantID string) ([]*BuiltinTemplate, error) {
+func (s *CompilationTemplateService) ListBuiltins(ctx context.Context, userID string) ([]*BuiltinTemplate, error) {
+	access, err := ModelAccessForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
 	templates, err := loadBuiltinTemplates()
 	if err != nil {
 		return nil, err
 	}
-	tenantPtr := &tenantID
 	for _, template := range templates {
-		template.Config = fillConfigDefaultLLM(ctx, template.Config, tenantPtr)
+		template.Config = fillConfigDefaultLLM(ctx, template.Config, access)
 	}
 	return s.sortBuiltins(templates), nil
 }

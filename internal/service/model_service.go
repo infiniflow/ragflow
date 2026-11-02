@@ -710,26 +710,49 @@ func mergeSavedProviderAPIKeyConfig(existing string, submitted json.RawMessage) 
 	return string(encoded), nil
 }
 
-func (m *ModelProviderService) findProviderByIDOrNameInTenant(ctx context.Context, tenantID, userID, providerIDOrName string) (*entity.TenantModelProvider, error) {
+func (m *ModelProviderService) findProviderByIDOrNameInTenant(ctx context.Context, tenantID, userID, providerIDOrName string, includeTenantOwner bool) (*entity.TenantModelProvider, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 	if providerIDOrName == "" {
 		return nil, gorm.ErrRecordNotFound
 	}
 	provider, err := m.modelProviderDAO.GetByID(ctx, dao.DB, providerIDOrName)
 	if err == nil {
-		if provider.TenantID != tenantID || provider.UserID != userID {
+		if provider.TenantID != tenantID {
 			return nil, gorm.ErrRecordNotFound
+		}
+		if provider.UserID != userID {
+			if !includeTenantOwner {
+				return nil, gorm.ErrRecordNotFound
+			}
+			owner, ownerErr := m.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
+			if ownerErr != nil {
+				return nil, ownerErr
+			}
+			if provider.UserID != owner.UserID {
+				return nil, gorm.ErrRecordNotFound
+			}
 		}
 		return provider, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
 	}
-	return m.modelProviderDAO.GetByTenantIDAndUserIDAndProviderName(ctx, dao.DB, tenantID, userID, providerIDOrName)
+	provider, err = m.modelProviderDAO.GetByTenantIDAndUserIDAndProviderName(ctx, dao.DB, tenantID, userID, providerIDOrName)
+	if err == nil || !errors.Is(err, gorm.ErrRecordNotFound) || !includeTenantOwner {
+		return provider, err
+	}
+	owner, err := m.userTenantDAO.GetOwnerByTenantID(ctx, dao.DB, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	if owner.UserID == userID {
+		return nil, gorm.ErrRecordNotFound
+	}
+	return m.modelProviderDAO.GetByTenantIDAndUserIDAndProviderName(ctx, dao.DB, tenantID, owner.UserID, providerIDOrName)
 }
 
-// resolveProviderInTenant resolves the provider addressed by a route inside the
-// request's active tenant and authorizes operation on that row.
+// resolveProviderInTenant resolves the caller's provider, or the active tenant
+// owner's provider for read-only use, then authorizes the requested operation.
 //
 // Provider names are only unique per tenant (idx_tenant_provider_user_unique),
 // so a lookup across every tenant a user belongs to can select a same-named
@@ -739,7 +762,7 @@ func (m *ModelProviderService) resolveProviderInTenant(ctx context.Context, user
 	if err != nil {
 		return nil, err
 	}
-	provider, err := m.findProviderByIDOrNameInTenant(ctx, tenantID, userID, providerIDOrName)
+	provider, err := m.findProviderByIDOrNameInTenant(ctx, tenantID, userID, providerIDOrName, operation == permission.OperationRead)
 	if err != nil {
 		return nil, err
 	}
