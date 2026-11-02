@@ -1,8 +1,7 @@
 ---
-sidebar_position: 1
+sidebar_position: 2
 slug: /what-is-rag
 ---
-
 # What Is Retrieval-Augmented Generation (RAG)?
 
 Since large language models (LLMs) became the focus of technology, their ability to handle general knowledge has been astonishing. However, when questions shift to internal corporate documents, proprietary knowledge bases, or real-time data, the limitations of LLMs become glaringly apparent: they cannot access private information outside their training data. Retrieval-Augmented Generation (RAG) was born precisely to address this core need. Before an LLM generates an answer, it first retrieves the most relevant context from an external knowledge base and inputs it as "reference material" to the LLM, thereby guiding it to produce accurate answers. In short, RAG elevates LLMs from "relying on memory" to "having evidence to rely on," significantly improving their accuracy and trustworthiness in specialized fields and real-time information queries.
@@ -59,6 +58,7 @@ Advanced Practice: Leading solutions, such as RAGFlow, tend to use Visual Langua
 ### The Complexity of Chunking: The Trade-Off Between Precision and Context
 
 A simple "chunk-embed-retrieve" pipeline has an inherent contradiction:
+
 - Semantic Matching requires small text chunks to ensure clear semantic focus.
 - Context Understanding requires large text chunks to ensure complete and coherent information.
 
@@ -69,6 +69,7 @@ Advanced Practice: Leading solutions, such as RAGFlow, employ semantic enhanceme
 ### Why Is a Vector Database Insufficient for Serving RAG?
 
 Vector databases excel at semantic similarity search, but RAG requires precise and reliable answers, demanding more capabilities from the retrieval system:
+
 - Hybrid Search: Relying solely on vector retrieval may miss exact keyword matches (e.g., product codes, regulation numbers). Hybrid search, combining vector retrieval with keyword retrieval (BM25), ensures both semantic breadth and keyword precision.
 - Tensor or Multi-Vector Representation: To support cross-modal data, employing tensor or multi-vector representation has become an important trend.
 - Metadata Filtering: Filtering based on attributes like date, department, and type is a rigid requirement in business scenarios.
@@ -78,9 +79,10 @@ Therefore, the retrieval layer of RAG is a composite system based on vector sear
 ## RAG and Memory: Retrieval from the Same Source but Different Streams
 
 Within the agent framework, the essence of the memory mechanism is the same as RAG: both retrieve relevant information from storage based on current needs. The key difference lies in the data source:
+
 - RAG: Targets pre-existing static or dynamic private data provided by the user in advance (e.g., documents, databases).
 - Memory: Targets dynamic data generated or perceived by the agent in real-time during interaction (e.g., conversation history, environmental state, tool execution results).
-They are highly consistent at the technical base (e.g., vector retrieval, keyword matching) and can be seen as the same retrieval capability applied in different scenarios ("existing knowledge" vs. "interaction memory"). A complete agent system often includes both an RAG module for inherent knowledge and a Memory module for interaction history.
+  They are highly consistent at the technical base (e.g., vector retrieval, keyword matching) and can be seen as the same retrieval capability applied in different scenarios ("existing knowledge" vs. "interaction memory"). A complete agent system often includes both an RAG module for inherent knowledge and a Memory module for interaction history.
 
 ## RAG Applications
 
