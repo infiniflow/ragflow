@@ -15,8 +15,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"image"
-	"os"
-	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -94,18 +92,13 @@ func cropWorkerPool() *utility.WorkerPool[cropJob, struct{}] {
 	return cropPool
 }
 
-// cropConcurrency bounds how many chunks are cropped concurrently. The CGO
-// pdfium render is serialized by pdfsync.Mu inside the engine, so raising this
-// mostly parallelises the pure-Go crop + PNG-encode path (CropSectionImage →
-// image/png), which was the dominant cost in the serial loop. Overridable via
-// RAGFLOW_CROP_CONCURRENCY; otherwise it reuses the existing process-wide PDF
-// page budget, never below 1.
+// cropConcurrency returns the process-wide crop worker count. The CGO pdfium
+// render is serialized by pdfsync.Mu inside the engine, so raising this mostly
+// parallelises the pure-Go crop + PNG-encode path (CropSectionImage ->
+// image/png), which was the dominant cost in the serial loop. Crop reuses the
+// existing process-wide PDF page budget (pdf.SetPageConcurrency, resolved from
+// CLI > env > config), so there is one source of truth for PDF concurrency.
 func cropConcurrency() int {
-	if v := os.Getenv("RAGFLOW_CROP_CONCURRENCY"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
-	}
 	if n := deepdocpdf.PageConcurrency(); n > 0 {
 		return n
 	}

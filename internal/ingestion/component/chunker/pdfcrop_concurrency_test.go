@@ -5,7 +5,6 @@ package chunker
 import (
 	"context"
 	"image"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -15,39 +14,33 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 )
 
-// TestCropConcurrency_UsesPageBudgetOrDefault pins the sizing policy: the
-// explicit override wins, otherwise the crop pool reuses the process-wide PDF
-// page budget rather than deriving its own core fraction.
-func TestCropConcurrency_UsesPageBudgetOrDefault(t *testing.T) {
+// TestCropConcurrency_UsesPageBudget pins the sizing policy: the crop pool
+// reuses the process-wide PDF page budget instead of deriving its own core
+// fraction or reading a second override.
+func TestCropConcurrency_UsesPageBudget(t *testing.T) {
 	orig := deepdocpdf.PageConcurrency()
 	t.Cleanup(func() { deepdocpdf.SetPageConcurrency(orig) })
-	t.Setenv("RAGFLOW_CROP_CONCURRENCY", "")
 
 	deepdocpdf.SetPageConcurrency(7)
 	if got := cropConcurrency(); got != 7 {
 		t.Fatalf("cropConcurrency() = %d, want page concurrency 7", got)
 	}
-
-	t.Setenv("RAGFLOW_CROP_CONCURRENCY", "3")
-	if got := cropConcurrency(); got != 3 {
-		t.Fatalf("cropConcurrency() = %d, want env override 3", got)
-	}
 }
 
 // resetCropWorkerPoolForTest replaces the process-wide crop pool with a fresh
-// one sized from RAGFLOW_CROP_CONCURRENCY. Resizing the existing pool is not
-// enough for a concurrency test: shrinking only retires workers after they
-// finish a job, so idle workers from an earlier test can still pick up new
-// jobs. Tests in this package run without t.Parallel, so replacing the global
-// pool is safe.
+// one sized from the PDF page budget. Resizing the existing pool is not enough
+// for a concurrency test: shrinking only retires workers after they finish a
+// job, so idle workers from an earlier test can still pick up new jobs. Tests
+// in this package run without t.Parallel, so replacing the global pool is safe.
 func resetCropWorkerPoolForTest(t *testing.T, n int) {
 	t.Helper()
+	orig := deepdocpdf.PageConcurrency()
 	if cropPool != nil {
 		cropPool.StopWait()
 	}
 	cropPoolOnce = sync.Once{}
 	cropPool = nil
-	t.Setenv("RAGFLOW_CROP_CONCURRENCY", strconv.Itoa(n))
+	deepdocpdf.SetPageConcurrency(n)
 	cropWorkerPool()
 	t.Cleanup(func() {
 		if cropPool != nil {
@@ -55,6 +48,7 @@ func resetCropWorkerPoolForTest(t *testing.T, n int) {
 		}
 		cropPoolOnce = sync.Once{}
 		cropPool = nil
+		deepdocpdf.SetPageConcurrency(orig)
 	})
 }
 
@@ -62,7 +56,7 @@ func resetCropWorkerPoolForTest(t *testing.T, n int) {
 // crops every eligible chunk — no lost work, no missing output. Run with
 // `go test -race` to catch data races in the shared pageCache / out slice.
 func TestCropImageChunks_ConcurrentCropsAll(t *testing.T) {
-	resetCropWorkerPoolForTest(t, 32)
+	resetCropWorkerPoolForTest(t, 16)
 	ctx := context.Background()
 	eng := mockCropEngine{}
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
