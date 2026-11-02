@@ -106,21 +106,6 @@ func noConfig(name string, fn func() einotool.BaseTool) Factory {
 	}
 }
 
-// stringCredentialParam reads the node-level api_key shared by tools whose
-// model-facing params carry no credential. A missing or nil value yields an
-// empty string so the tool can fall back to its env var.
-func stringCredentialParam(name string, params map[string]any) (string, error) {
-	value, exists := params["api_key"]
-	if !exists || value == nil {
-		return "", nil
-	}
-	apiKey, valid := value.(string)
-	if !valid {
-		return "", fmt.Errorf("agent tool: tool %q requires string node-level param api_key", name)
-	}
-	return apiKey, nil
-}
-
 // BuildByName resolves a tool name into an Eino BaseTool.
 func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) {
 	key := normalizeToolName(name)
@@ -884,19 +869,16 @@ func buildSearch1APICrawlTool(params map[string]any) (einotool.BaseTool, error) 
 	return newSearch1APICrawlTool(nil, apiKey, defaultURL), nil
 }
 
+// buildDeepLTool and buildQWeatherTool take the node-level api_key without
+// type enforcement: an unusable value is left out, so the tool falls back to
+// DEEPL_API_KEY / QWEATHER_API_KEY and reports the missing credential itself.
 func buildDeepLTool(params map[string]any) (einotool.BaseTool, error) {
-	apiKey, err := stringCredentialParam(deeplToolName, params)
-	if err != nil {
-		return nil, err
-	}
+	apiKey, _ := stringParam(params, "api_key")
 	return NewDeepLToolWith(nil, apiKey), nil
 }
 
 func buildQWeatherTool(params map[string]any) (einotool.BaseTool, error) {
-	apiKey, err := stringCredentialParam(qweatherToolName, params)
-	if err != nil {
-		return nil, err
-	}
+	apiKey, _ := stringParam(params, "api_key")
 	return NewQWeatherToolWith(nil, apiKey), nil
 }
 

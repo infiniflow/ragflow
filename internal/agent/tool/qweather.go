@@ -167,6 +167,7 @@ func (q *QWeatherTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 
 	resp, err := q.helper.Do(ctx, http.MethodGet, endpoint, "", "", headers)
 	if err != nil {
+		err = redactQWeatherError(err, apiKey)
 		return qweatherErrJSON(err), err
 	}
 	defer resp.Body.Close()
@@ -196,6 +197,32 @@ func (q *QWeatherTool) InvokableRun(ctx context.Context, argsJSON string, _ ...t
 		Humidity:  raw.Now.Humidity,
 	}), nil
 }
+
+// redactQWeatherError replaces the API key inside a request error message. The
+// key travels in the request URL's query string and Go's *url.Error prints that
+// URL, so the unredacted message would hand the node-level or QWEATHER_API_KEY
+// credential to the model (_ERROR) and to the logs. The wrapped error stays
+// reachable through Unwrap, so errors.Is still reports context cancellation and
+// deadline exceeded.
+func redactQWeatherError(err error, apiKey string) error {
+	if err == nil || apiKey == "" {
+		return err
+	}
+	msg := strings.ReplaceAll(err.Error(), apiKey, "REDACTED")
+	if msg == err.Error() {
+		return err
+	}
+	return &qweatherRedactedError{msg: msg, err: err}
+}
+
+type qweatherRedactedError struct {
+	msg string
+	err error
+}
+
+func (e *qweatherRedactedError) Error() string { return e.msg }
+
+func (e *qweatherRedactedError) Unwrap() error { return e.err }
 
 func qweatherJSON(env qweatherEnvelope) string {
 	b, err := json.Marshal(env)

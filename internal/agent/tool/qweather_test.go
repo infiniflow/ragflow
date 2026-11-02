@@ -188,6 +188,41 @@ func TestQWeather_UpstreamBusinessError(t *testing.T) {
 	}
 }
 
+// TestQWeather_NetworkErrorRedactsCredential pins that a transport failure
+// never echoes the node-level or environment API key. The key travels in the
+// request URL's query string and Go's *url.Error prints that URL, so the raw
+// error would both reach the model through _ERROR and land in the logs.
+func TestQWeather_NetworkErrorRedactsCredential(t *testing.T) {
+	// Not t.Parallel(): this test replaces the package-level qweatherEndpoint.
+	prev := qweatherEndpoint
+	// 127.0.0.1:1 refuses connections, so HTTPHelper exhausts its retries.
+	qweatherEndpoint = "http://127.0.0.1:1/v7/weather/now"
+	t.Cleanup(func() { qweatherEndpoint = prev })
+
+	const secret = "secret-node-key"
+	out, err := NewQWeatherToolWith(nil, secret).InvokableRun(t.Context(), `{"location":"101010100"}`)
+	if err == nil {
+		t.Fatal("expected a transport error, got nil")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("returned error leaks the API key: %v", err)
+	}
+	if strings.Contains(out, secret) {
+		t.Errorf("tool output leaks the API key: %s", out)
+	}
+	if !strings.Contains(err.Error(), "REDACTED") {
+		t.Errorf("err = %v, want the redacted key marker", err)
+	}
+
+	var env qweatherEnvelope
+	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
+		t.Fatalf("output is not valid JSON: %v (raw=%s)", jerr, out)
+	}
+	if env.Error == "" {
+		t.Error("expected _ERROR to describe the transport failure")
+	}
+}
+
 // TestQWeather_RejectsMissingCredential pins that the credential is a
 // server-side setting: an unconfigured tool fails before any request, and the
 // model cannot inject one through its arguments.
