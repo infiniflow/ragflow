@@ -520,6 +520,64 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 	return result, nil
 }
 
+// StopParseDocumentsAll stops parsing for every document in a dataset whose
+// latest ingestion task matches one of the supplied run statuses. An empty
+// runStatuses defaults to DefaultCancelRunStatuses. The matching document IDs are
+// resolved server-side with a single unpaginated list query (no client-side
+// pagination), then cancelled in bulk: one batch task lookup followed by a
+// RequestStop per active task. This keeps the work O(1) with respect to the
+// number of documents, avoiding the previous filter-and-paginate cancel loop.
+func (s *DocumentService) StopParseDocumentsAll(ctx context.Context, datasetID string, runStatuses []string) (map[string]interface{}, error) {
+	if len(runStatuses) == 0 {
+		runStatuses = common.DefaultCancelRunStatuses
+	}
+
+	ids, err := s.ListDocumentIDsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{
+		KbID:        datasetID,
+		RunStatuses: runStatuses,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) == 0 {
+		return map[string]interface{}{"success_count": 0}, nil
+	}
+
+	// Single batch lookup instead of N per-document GetByDocumentID calls.
+	tasksByDoc, err := s.ingestionTaskDAO.GetLatestByDocumentIDs(ctx, dao.DB, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	var errs []string
+	successCount := 0
+	for _, id := range ids {
+		task := tasksByDoc[id]
+		switch {
+		case task == nil:
+			// UNSTART (no task row): nothing to stop; treat as already not-running.
+			successCount++
+		case common.IsActiveTaskStatus(task.Status):
+			if _, err := s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
+				errs = append(errs, err.Error())
+				continue
+			}
+			successCount++
+		case task.Status == common.STOPPED:
+			// Already stopped: idempotent success, no further RequestStop.
+			successCount++
+		default:
+			// COMPLETED / FAILED (terminal) are not actionable; skip silently.
+		}
+	}
+
+	result := map[string]interface{}{"success_count": successCount}
+	if len(errs) > 0 {
+		result["errors"] = errs
+	}
+	return result, nil
+}
+
 // documentsNotInDatasetError carries the ids that are missing from (or do not
 // belong to) a dataset so each endpoint can format its own contract message.
 type documentsNotInDatasetError struct {
