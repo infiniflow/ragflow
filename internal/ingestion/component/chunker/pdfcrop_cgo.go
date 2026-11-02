@@ -126,7 +126,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 	// relied on in-order processing and is unsafe under fan-out. render is
 	// called outside the lock; the warning on failure is logged here so the
 	// cache stays render-agnostic and unit-testable.
-	cache := newLRUPageCache(pageCacheLimit())
+	cache := newLRUPageCache(pageCacheLimit(), pageCacheBytes())
 	render := func(pn int) (image.Image, bool) {
 		img, rerr := deepdocpdf.RenderPageToImage(engine, pn)
 		if rerr != nil || img == nil {
