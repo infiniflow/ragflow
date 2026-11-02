@@ -571,12 +571,19 @@ func TestCropImageChunks_DistinctIdsForSameTextMedia(t *testing.T) {
 	}
 }
 
-// TestCropImageChunks_CropsEmptyTextMediaWithPositions verifies that a
-// captionless media chunk with a crop region is still cropped and uploaded.
-// MinerU JSON (and similar) omit inline figure bytes, so vision enhancement
-// and image context may both be off; the region digest keeps chunk ids
-// distinct instead of collapsing onto ChunkID(docID, "").
-func TestCropImageChunks_CropsEmptyTextMediaWithPositions(t *testing.T) {
+// TestCropImageChunks_SkipsEmptyTextMedia verifies that a media chunk whose
+// finalized text is empty - no caption, no vision description, no media
+// context - is NOT cropped or uploaded. Such a chunk is not retrievable
+// (its embedding would be the empty-string vector) and, under the old
+// behavior, collapsed every captionless image/table in a document onto the
+// same canonical id ChunkID(docID, ""), overwriting each other's MinIO
+// object. Skipping the crop+upload here means no object is orphaned and no
+// pdfium render / PNG encode / upload work is wasted; the finalizer then
+// drops the chunk outright (mirroring Python's token_chunker empty-text
+// drop). A captioned (or context-bearing) media chunk must still be cropped
+// and uploaded, so this is guarded by finalized-text emptiness, not by the
+// media type alone.
+func TestCropImageChunks_SkipsEmptyTextMedia(t *testing.T) {
 	ctx := withIngestionGlobals(t, "kb1", "doc1")
 
 	rec := &recordingUploader{}
@@ -593,32 +600,19 @@ func TestCropImageChunks_CropsEmptyTextMediaWithPositions(t *testing.T) {
 		{DocType: "table", PDFPositions: posB},
 		{DocType: "image", Text: "@@1\t2##", PDFPositions: posC},
 	}
-	ids := []string{
-		canonicalChunkID("doc1", emptyMedia[0]),
-		canonicalChunkID("doc1", emptyMedia[1]),
-		canonicalChunkID("doc1", emptyMedia[2]),
-	}
-	if ids[0] == ids[1] {
-		t.Fatalf("captionless media at different regions share chunk id %q", ids[0])
-	}
-
 	out := cropImageChunks(ctx, eng, emptyMedia)
 	if len(out) != len(emptyMedia) {
 		t.Fatalf("len(out) = %d, want %d", len(out), len(emptyMedia))
 	}
-	if len(rec.calls) != len(emptyMedia) {
-		t.Fatalf("upload calls = %d, want %d for positioned empty-text media", len(rec.calls), len(emptyMedia))
-	}
-	kept := finalizeGeneralChunks(out, nil)
-	if len(kept) != len(emptyMedia) {
-		t.Fatalf("finalize kept %d, want %d captionless cropped figures", len(kept), len(emptyMedia))
+	if len(rec.calls) != 0 {
+		t.Fatalf("upload calls = %d, want 0 for empty-text media", len(rec.calls))
 	}
 	for i, ck := range out {
-		if ck.ImgID == "" && ck.Image == "" {
-			t.Errorf("chunk %d: expected crop payload", i)
+		if ck.Image != "" {
+			t.Errorf("chunk %d: Image = %q, want empty (must not be cropped)", i, ck.Image)
 		}
-		if ck.ID != ids[i] {
-			t.Errorf("chunk %d: ID = %q, want %q", i, ck.ID, ids[i])
+		if ck.ImgID != "" {
+			t.Errorf("chunk %d: ImgID = %q, want empty (must not be uploaded)", i, ck.ImgID)
 		}
 	}
 
@@ -630,8 +624,8 @@ func TestCropImageChunks_CropsEmptyTextMediaWithPositions(t *testing.T) {
 	if len(out2) != 1 {
 		t.Fatalf("len(out2) = %d, want 1", len(out2))
 	}
-	if len(rec.calls) != len(emptyMedia)+1 {
-		t.Fatalf("captioned upload calls = %d, want %d", len(rec.calls), len(emptyMedia)+1)
+	if len(rec.calls) != 1 {
+		t.Fatalf("captioned upload calls = %d, want 1", len(rec.calls))
 	}
 	// With a KB present the preview is streamed then the in-memory base64 is
 	// dropped (the #20165 memory fix), so assert the upload landed (ImgID set)
