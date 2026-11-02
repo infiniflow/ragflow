@@ -374,13 +374,13 @@ func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
 }
 
 // chunkIDSource returns the identity string hashed into a chunk id. For a
-// media chunk whose canonical text is empty — a captionless image — hashing
+// media chunk whose canonical text is empty - a captionless image - hashing
 // the text alone would give every such chunk in a document the same id
 // (ChunkID(docID, "")), silently overwriting images in MinIO and merging
 // index entries. Position-only figures use the crop region; otherwise a
 // stable per-image payload identity is folded in. Non-empty media text also
-// folds its region in: two figures can share a caption ("Figure", "图"), and
-// their previews must not collapse onto one id. Text chunks hash their text
+// folds its region in: two figures can share a caption (for example "Figure"),
+// and their previews must not collapse onto one id. Text chunks hash their text
 // unchanged.
 func chunkIDSource(ck schema.ChunkDoc) string {
 	text := canonicalChunkText(ck)

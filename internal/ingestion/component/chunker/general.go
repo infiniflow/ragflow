@@ -1470,7 +1470,7 @@ func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Reg
 		// Keep a chunk whenever it still carries retrievable content. A
 		// streamed crop upload sets ImgID and clears Image, so an uploaded
 		// media chunk (text may be only a position tag, or empty) must be
-		// retained via its ImgID — otherwise the already-uploaded image is
+		// retained via its ImgID - otherwise the already-uploaded image is
 		// dropped and its MinIO object orphaned. Position-only media without
 		// a crop result is dropped here; cropImageChunks runs immediately
 		// before this pass.
