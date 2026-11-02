@@ -129,6 +129,9 @@ func (dao *UserTenantDAO) GetOwnerByTenantID(ctx context.Context, db *gorm.DB, t
 		Where("tenant_id = ? AND user_id = ? AND status = ?", tenantID, tenantID, entity.TenantMembershipStatusJoined).
 		Take(&membership).Error
 	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return &entity.UserTenant{UserID: tenantID, TenantID: tenantID}, nil
+		}
 		return nil, err
 	}
 	return &membership, nil

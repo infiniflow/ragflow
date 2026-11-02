@@ -308,7 +308,7 @@ func TestIngest_ApplyKB_RealCreatedDatasetChain(t *testing.T) {
 	// resolved embedding model id, keeping CreateDataset on its real path
 	// (no embedding override).
 	if err := dao.DB.Model(&entity.UserTenant{}).Where("user_id = ? AND tenant_id = ?", "user-1", "tenant-1").Update(
-		"tenant_embd_id", "embd-1",
+		"tenant_embd_id", "embd-default",
 	).Error; err != nil {
 		t.Fatalf("set membership embd id: %v", err)
 	}

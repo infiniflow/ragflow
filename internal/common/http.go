@@ -18,6 +18,7 @@ package common
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -515,6 +516,18 @@ var AssertURLSchemeSafe = func(rawURL string) error {
 }
 
 var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error) {
+	return assertURLSafe(rawURL, LookupHost)
+}
+
+// AssertURLSafeWithContext validates every resolved address while allowing
+// cancellation and deadlines to interrupt DNS resolution.
+var AssertURLSafeWithContext = func(ctx context.Context, rawURL string) (hostname, resolvedIP string, err error) {
+	return assertURLSafe(rawURL, func(host string) ([]string, error) {
+		return net.DefaultResolver.LookupHost(ctx, host)
+	})
+}
+
+func assertURLSafe(rawURL string, lookup func(string) ([]string, error)) (hostname, resolvedIP string, err error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
 		return "", "", fmt.Errorf("invalid url")
@@ -533,7 +546,7 @@ var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error)
 	}
 
 	allowAny := allowAnyHost()
-	addresses, err := LookupHost(hostname)
+	addresses, err := lookup(hostname)
 	if err != nil {
 		return "", "", fmt.Errorf("could not resolve hostname '%s': %w", hostname, err)
 	}

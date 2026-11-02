@@ -91,7 +91,7 @@ class TestMessageList:
         result = populated_memory["memory"].list_memory_messages(keywords=expected[0]["session_id"])
         _assert_messages(result, populated_memory, expected)
 
-    def test_search_keyword_substring(self, populated_memory, doc_engine):
+    def test_search_keyword_substring(self, populated_memory):
         expected = populated_memory["rows"][2:3]
         keyword = expected[0]["session_id"][4:]
         assert keyword != expected[0]["session_id"]
