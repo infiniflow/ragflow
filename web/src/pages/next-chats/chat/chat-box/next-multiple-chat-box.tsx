@@ -15,11 +15,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { VirtualMessageList } from '@/components/virtual-message-list';
 import { MessageType } from '@/constants/chat';
-import {
-  useHandleMessageInputChange,
-  useScrollToBottom,
-} from '@/hooks/logic-hooks';
+import { useHandleMessageInputChange } from '@/hooks/logic-hooks';
 import {
   useFetchChat,
   useGetChatSearchParams,
@@ -28,8 +26,11 @@ import {
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IClientConversation } from '@/interfaces/database/chat';
-import { buildMessageUuidWithRole } from '@/utils/chat';
-import { removeUselessFieldsFromValues } from '@/utils/form';
+import {
+  deriveModelPreset,
+  removeUselessFieldsFromValues,
+  setLLMSettingEnabledValues,
+} from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { isEmpty, omit, trim } from 'lodash';
@@ -106,18 +107,19 @@ const ChatCard = forwardRef(function ChatCard(
   const { id: dialogId } = useParams();
   const { updateChat } = useUpdateChat();
 
-  const { derivedMessages, handlePressEnter, sendLoading } =
-    useSendSingleMessage({
-      controller,
-      value,
-      setValue,
-      files,
-      clearFiles,
-    });
-
-  const messageContainerRef = useRef<HTMLDivElement>(null);
-
-  const { scrollRef } = useScrollToBottom(derivedMessages, messageContainerRef);
+  const {
+    derivedMessages,
+    handlePressEnter,
+    sendLoading,
+    messageContainerRef,
+    virtualizer,
+  } = useSendSingleMessage({
+    controller,
+    value,
+    setValue,
+    files,
+    clearFiles,
+  });
 
   const messageReferences = useMessageReferences(derivedMessages);
 
@@ -136,19 +138,26 @@ const ChatCard = forwardRef(function ChatCard(
   const { data: currentDialog } = useFetchChat();
   const findLlmByUuid = useFindLlmByUuid();
 
-  // Each card must keep its own independently selected model after the initial
+  // Each card must keep its own independently selected config after the initial
   // sync. Without this guard, clicking "Apply" in one card updates the dialog
   // (which invalidates [FetchChat] and refetches currentDialog), and the
-  // changed currentDialog.llm_id would then overwrite every other card's
-  // llm_id via this effect. Sync only when dialogId changes (initial load or
-  // conversation switch), not when currentDialog.llm_id changes due to Apply.
+  // changed currentDialog would then overwrite every other card's values via
+  // this effect. Sync only when dialogId changes (initial load or conversation
+  // switch), not when currentDialog changes due to Apply.
   const syncedDialogIdRef = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     if (syncedDialogIdRef.current !== dialogId && currentDialog?.llm_id) {
-      form.setValue('llm_id', currentDialog.llm_id);
+      // The preset name is not part of the stored llm_setting; derive it from
+      // the stored values so the freedom select reflects them.
+      form.reset({
+        ...currentDialog.llm_setting,
+        ...setLLMSettingEnabledValues(currentDialog.llm_setting),
+        parameter: deriveModelPreset(currentDialog.llm_setting),
+        llm_id: currentDialog.llm_id,
+      });
       syncedDialogIdRef.current = dialogId;
     }
-  }, [currentDialog?.llm_id, dialogId, form]);
+  }, [currentDialog, dialogId, form]);
 
   const isLatestChat = idx === chatBoxIds.length - 1;
 
@@ -253,32 +262,31 @@ const ChatCard = forwardRef(function ChatCard(
       </CardHeader>
       <CardContent className="flex-1 min-h-0">
         <div ref={messageContainerRef} className="h-full overflow-auto">
-          <div className="w-full">
-            {derivedMessages?.map((message, i) => {
-              return (
-                <MessageItem
-                  loading={
-                    message.role === MessageType.Assistant &&
-                    sendLoading &&
-                    derivedMessages.length - 1 === i
-                  }
-                  key={buildMessageUuidWithRole(message)}
-                  item={message}
-                  nickname={userInfo.nickname}
-                  avatar={userInfo.avatar}
-                  avatarDialog={currentDialog.icon}
-                  reference={messageReferences.get(message) ?? EmptyReference}
-                  // clickDocumentButton={clickDocumentButton}
-                  index={i}
-                  isLast={i === derivedMessages.length - 1}
-                  sendLoading={sendLoading}
-                  clickDocumentButton={clickDocumentButton}
-                  showLikeButton={false}
-                ></MessageItem>
-              );
-            })}
-          </div>
-          <div ref={scrollRef} />
+          <VirtualMessageList
+            className="w-full"
+            items={derivedMessages ?? []}
+            virtualizer={virtualizer}
+            renderItem={(message, i) => (
+              <MessageItem
+                loading={
+                  message.role === MessageType.Assistant &&
+                  sendLoading &&
+                  derivedMessages.length - 1 === i
+                }
+                item={message}
+                nickname={userInfo.nickname}
+                avatar={userInfo.avatar}
+                avatarDialog={currentDialog.icon}
+                reference={messageReferences.get(message) ?? EmptyReference}
+                // clickDocumentButton={clickDocumentButton}
+                index={i}
+                isLast={i === derivedMessages.length - 1}
+                sendLoading={sendLoading}
+                clickDocumentButton={clickDocumentButton}
+                showLikeButton={false}
+              />
+            )}
+          />
         </div>
       </CardContent>
     </Card>

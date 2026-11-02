@@ -9,7 +9,8 @@ export default {
       delete: '删除',
       deleteModalTitle: '确定删除吗?',
       deleteThem: '确定要删除吗？',
-      removeModalTitle: '确定移除吗？',
+      removeIt: '确定移除吗？',
+      removeThem: '确定移除吗？',
       ok: '确认',
       cancel: '取消',
       yes: '是',
@@ -358,6 +359,9 @@ export default {
     },
     knowledgeDetails: {
       continueUpload: '继续上传',
+      uploadPipelineDeletedTitle: '解析 Pipeline 不可用',
+      uploadPipelineDeletedContent:
+        '该数据集配置的解析 Pipeline 已被删除或没有已发布版本，无法在上传时自动解析。请在数据集设置中重新配置 Pipeline，或继续上传后为文件单独配置解析方式。',
       reselectParser: '重新选择解析方法',
       goAddModel: '前往添加模型',
       uploadMissingModelsTitle: '部分文件缺少解析所需的模型',
@@ -1044,7 +1048,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       model: '模型',
       modelTip: '大语言聊天模型',
       tokensSpent:
-        '消耗 {{total}} tokens（输入 {{prompt}} + 输出 {{completion}}）',
+        '消耗 {{total}} tokens（输入 {{prompt}}, 输出 {{completion}}）',
       turnElapsed: '耗时 {{seconds}}s',
       decisionModel: '决策模型',
       decisionModelTip:
@@ -1175,9 +1179,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       webSearchApiKeyRequired:
         '所选服务必须填写 API Key —— 否则不会发起联网搜索，聊天框里也不会出现联网开关。',
       // 密钥输入框的标签。{{provider}} 是 provider 的品牌名，故意不翻译，
-      // 因此一个模板即可覆盖全部 9 个 provider。
+      // 因此一个模板即可覆盖全部 provider。
       webSearchApiKeyLabel: '{{provider}} API Key',
       // 每个 provider 一组 Tip/Message，按 provider id 字典序排列。
+      anysearchApiKeyTip:
+        '可选。AnySearch 无需密钥即可使用；填写密钥可使用账户额度。服务限额仍然适用。',
+      anysearchApiKeyMessage: '可选 - 留空则使用匿名搜索',
       braveApiKeyTip:
         '选择 Brave Search 后，将使用其搜索结果补充知识库检索。Brave 的所有端点都需要 Key。',
       braveApiKeyMessage: '请输入你的 Brave Search API Key',
@@ -1838,7 +1845,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        '所有新创建的知识库使用的默认 Embedding 模型。如未显示可选模型，请检查你是否在使用 RAGFlow slim 版(不含 Embedding 模型)；或前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
+        '所有新创建的知识库使用的默认 Embedding 模型。如未显示可选模型，前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       img2txtModel: 'VLM',
       img2txtModelTip:
         '所有新创建的知识库都将使用默认的 VLM 模型。 它可以描述图片或视频。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
@@ -3454,6 +3461,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       arabic: '阿拉伯语',
       turkish: '土耳其语',
       dutch: '荷兰语',
+      slovak: '斯洛伐克语',
+      czech: '捷克语',
     },
     pagination: {
       total: '总共 {{total}} 条',

@@ -156,7 +156,6 @@ def test_llm_setting(client, chat_factory, setting):
     [
         pytest.param(
             field,
-            marks=pytest.mark.skip(reason="Go PATCH persists string-valued numeric llm_setting fields (internal/service/chat.go:updateChatREST)"),
         )
         for field in (
             "temperature",
@@ -263,7 +262,6 @@ def test_prompt_config(client, chat_factory, prompt_config):
             field,
             value,
             id=f"{field}-{value}",
-            marks=pytest.mark.skip(reason="Go PATCH merges prompt_config without validating documented string fields (internal/service/chat.go:updateChatREST)"),
         )
         for field, values in (
             ("empty_response", (123, True)),
@@ -282,7 +280,6 @@ def test_prompt_config_rejects_invalid_text(client, chat_factory, field, value):
 
 
 @pytest.mark.p3
-@pytest.mark.skip(reason="Go PATCH replaces nested prompt_config.reference_metadata instead of deep-merging it (internal/service/chat.go:mergeJSONMap)")
 def test_prompt_config_preserves_nested_reference_metadata(client, chat_factory):
     chat = chat_factory(prompt_config={"reference_metadata": {"include": False, "fields": ["source"]}})
     before = client.get_chat(chat.id).prompt_config.reference_metadata.to_json()

@@ -69,7 +69,7 @@ func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel
 // channel-based streaming interface.
 type TenantStreamAdapter struct {
 	Factory  *ModelFactory
-	TenantID string
+	Identity Identity
 	ModelID  string
 }
 
@@ -77,7 +77,7 @@ func (a *TenantStreamAdapter) ChatStream(ctx context.Context, messages []modelMo
 	if a.Factory == nil {
 		return nil, nil, fmt.Errorf("model factory not configured")
 	}
-	chatModel, err := a.Factory.NewChatModel(ctx, ModelAccess{TenantID: a.TenantID}, a.ModelID)
+	chatModel, err := a.Factory.NewChatModel(ctx, a.Identity, a.ModelID)
 	if err != nil {
 		return nil, nil, err
 	}

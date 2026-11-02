@@ -17,6 +17,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/permission/testsupport"
 )
 
 type modelInputDebugEnvelope struct {
@@ -33,6 +34,9 @@ func setupModelInputDebug(t *testing.T, endpoint string) (*AgentHandler, *entity
 	previous := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = previous })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u-1", "u-1"); err != nil {
+		t.Fatalf("prepare agent model input permission fixture: %v", err)
+	}
 	previousHostSetting := common.AllowAnyHostForTest
 	common.AllowAnyHostForTest = true
 	t.Cleanup(func() { common.AllowAnyHostForTest = previousHostSetting })

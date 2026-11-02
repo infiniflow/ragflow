@@ -944,6 +944,39 @@ func createAgentSessionTestCanvas(t *testing.T, id, userID string) {
 	}
 }
 
+func TestMergedAgentsRespectRequestedTimestamp(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	items := []*AgentItem{
+		{ID: "old", CreateTime: new(int64(1)), UpdateTime: new(int64(20))},
+		{ID: "new", CreateTime: new(int64(2)), UpdateTime: new(int64(10))},
+	}
+	for _, tc := range []struct {
+		name  string
+		terms []dao.OrderTerm
+		first string
+	}{
+		{"created ascending", []dao.OrderTerm{{Column: "create_time"}}, "old"},
+		{"created descending", []dao.OrderTerm{{Column: "create_time", Desc: true}}, "new"},
+		{"updated ascending", []dao.OrderTerm{{Column: "update_time"}}, "new"},
+		{"updated descending", []dao.OrderTerm{{Column: "update_time", Desc: true}}, "old"},
+		{"default", nil, "new"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, code, err := NewAgentService().mergeAgentsAndGroups(t.Context(), "user-1", items, "", tc.terms, 1, 1)
+			if err != nil || code != common.CodeSuccess || resp.Total != 2 || len(resp.Canvas) != 1 {
+				t.Fatalf("merge: response=%+v code=%v err=%v", resp, code, err)
+			}
+			var first AgentItem
+			if err := json.Unmarshal(resp.Canvas[0], &first); err != nil {
+				t.Fatal(err)
+			}
+			if first.ID != tc.first {
+				t.Fatalf("first=%q, want %q", first.ID, tc.first)
+			}
+		})
+	}
+}
+
 func createAgentSessionTestConversation(t *testing.T, id, agentID, userID string, updateTime int64) {
 	t.Helper()
 	updateDate := time.UnixMilli(updateTime)
@@ -2462,7 +2495,7 @@ func TestListAgents_MergesCompilationTemplateGroups(t *testing.T) {
 	if err := dao.DB.Create(&entity.UserCanvas{
 		ID: "canvas-1", UserID: "user-1", Title: sptr("Agent canvas"),
 		CanvasCategory: "agent_canvas",
-		BaseModel:      entity.BaseModel{UpdateTime: &canvasUpdate},
+		BaseModel:      entity.BaseModel{CreateTime: &canvasUpdate, UpdateTime: &canvasUpdate},
 	}).Error; err != nil {
 		t.Fatalf("failed to seed agent: %v", err)
 	}

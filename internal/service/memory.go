@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -502,7 +503,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 	// tenant_model row) — we leave the tenant_*_id fields nil and proceed.
 	modelFactory := NewModelFactory()
 	if req.LLMID != "" && req.TenantLLMID == nil {
-		info, err := modelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, entity.ModelTypeChat, req.LLMID)
+		info, err := modelFactory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, entity.ModelTypeChat, req.LLMID)
 		if err != nil {
 			common.Warn("CreateMemory: failed to resolve tenant LLM id",
 				zap.String("tenant_id", tenantID), zap.String("llm_id", req.LLMID), zap.Error(err))
@@ -512,7 +513,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 		}
 	}
 	if req.EmbdID != "" && req.TenantEmbdID == nil {
-		info, err := modelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, entity.ModelTypeEmbedding, req.EmbdID)
+		info, err := modelFactory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, entity.ModelTypeEmbedding, req.EmbdID)
 		if err != nil {
 			common.Warn("CreateMemory: failed to resolve tenant embedding id",
 				zap.String("tenant_id", tenantID), zap.String("embd_id", req.EmbdID), zap.Error(err))
@@ -672,7 +673,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, userID string, memoryI
 	if req.LLMID != nil {
 		updateDict["llm_id"] = *req.LLMID
 		if req.TenantLLMID == nil && *req.LLMID != "" {
-			info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: ownerTenantID}, entity.ModelTypeChat, *req.LLMID)
+			info, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: ownerTenantID}, entity.ModelTypeChat, *req.LLMID)
 			if err != nil {
 				common.Warn("UpdateMemory: failed to resolve tenant LLM id",
 					zap.String("tenant_id", ownerTenantID), zap.String("llm_id", *req.LLMID), zap.Error(err))
@@ -685,7 +686,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, userID string, memoryI
 	if req.EmbdID != nil {
 		updateDict["embd_id"] = *req.EmbdID
 		if req.TenantEmbdID == nil && *req.EmbdID != "" {
-			info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: ownerTenantID}, entity.ModelTypeEmbedding, *req.EmbdID)
+			info, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: ownerTenantID}, entity.ModelTypeEmbedding, *req.EmbdID)
 			if err != nil {
 				common.Warn("UpdateMemory: failed to resolve tenant embedding id",
 					zap.String("tenant_id", ownerTenantID), zap.String("embd_id", *req.EmbdID), zap.Error(err))
@@ -1151,6 +1152,16 @@ func (s *MemoryService) UpdateMessageStatus(ctx context.Context, userID, memoryI
 	}
 
 	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
+	message, err := s.docEngine.GetChunk(ctx, MemoryIndexName(memory.TenantID), messageDocID, []string{memoryID})
+	if err != nil {
+		if isMessageDocumentNotFound(err) {
+			return false, &ResourceNotFoundError{Resource: "Message", ID: messageDocID}
+		}
+		return false, fmt.Errorf("failed to load message before status update: %w", err)
+	}
+	if message == nil {
+		return false, &ResourceNotFoundError{Resource: "Message", ID: messageDocID}
+	}
 	statusValue := 0
 	if status {
 		statusValue = 1
@@ -1206,6 +1217,14 @@ func (s *MemoryService) GetMessageContent(ctx context.Context, userID, memoryID 
 }
 
 func (s *MemoryService) SearchMessage(ctx context.Context, userID string, filterDict, params map[string]interface{}) ([]map[string]interface{}, common.ErrorCode, error) {
+	for _, field := range []string{"similarity_threshold", "keywords_similarity_weight"} {
+		if value, exists := params[field]; exists {
+			number := memoryFloatParam(value, math.NaN())
+			if math.IsNaN(number) || math.IsInf(number, 0) || number < 0 || number > 1 {
+				return nil, common.CodeArgumentError, fmt.Errorf("%s must be a finite number between 0 and 1", field)
+			}
+		}
+	}
 	memoryIDs := splitFilterValues(filterDict["memory_id"])
 	memories, err := s.filterAccessibleMemories(ctx, userID, memoryIDs)
 	if err != nil {
@@ -1520,7 +1539,7 @@ func memoryFusionWeights(keywordsSimilarityWeight float64) string {
 }
 
 func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
-	embeddingModel, err := NewModelFactory().NewEmbeddingModel(ctx, ModelAccess{TenantID: memory.TenantID}, memory.EmbdID)
+	embeddingModel, err := NewModelFactory().NewEmbeddingModel(ctx, Identity{TenantID: memory.TenantID}, memory.EmbdID)
 	if err != nil {
 		return nil, err
 	}
@@ -1869,7 +1888,7 @@ func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.M
 		filter["agent_id"] = agentIDs
 	}
 	if keywords = strings.TrimSpace(keywords); keywords != "" {
-		filter["session_id"] = keywords
+		filter["session_id_contains"] = keywords
 	}
 	filter["memory_id"] = []string{memoryID}
 	indexNames := memorySearchIndexNames([]*entity.Memory{memory}, s.docEngine)
@@ -1881,7 +1900,7 @@ func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.M
 		SelectFields: selectFields,
 		Filter:       filter,
 		MatchExprs:   []interface{}{},
-		OrderBy:      (&enginetypes.OrderByExpr{}).Desc("valid_at"),
+		OrderBy:      (&enginetypes.OrderByExpr{}).Desc("valid_at").Desc("message_id"),
 	}
 	rawResult, err := s.docEngine.Search(ctx, rawReq)
 	if err != nil {

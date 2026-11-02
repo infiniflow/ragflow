@@ -161,9 +161,25 @@ func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *C
 		}
 		inputSchema := map[string]any{"type": "object", "properties": map[string]any{}}
 		if parameters, present := function["parameters"]; present {
-			inputSchema, ok = parameters.(map[string]any)
-			if !ok || inputSchema == nil {
+			if parameters == nil {
 				return fmt.Errorf("anthropic: tool %q parameters must be an object", name)
+			}
+			switch p := parameters.(type) {
+			case map[string]any:
+				if p == nil {
+					return fmt.Errorf("anthropic: tool %q parameters must be an object", name)
+				}
+				inputSchema = p
+			default:
+				data, err := json.Marshal(p)
+				if err != nil {
+					return fmt.Errorf("anthropic: tool %q parameters cannot be marshaled: %w", name, err)
+				}
+				var m map[string]any
+				if err := json.Unmarshal(data, &m); err != nil || m == nil {
+					return fmt.Errorf("anthropic: tool %q parameters must be an object", name)
+				}
+				inputSchema = m
 			}
 		}
 		nativeTool := map[string]any{"name": name, "input_schema": inputSchema}

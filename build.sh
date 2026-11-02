@@ -25,8 +25,10 @@ RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 # Strip symbols from Go binaries (set via --strip / -s)
 STRIP_SYMBOLS=""
 
-# Extra Go build tags appended to every build (comma separated). This tree has
-# no enterprise edition, so 'ee' is rejected below rather than forwarded.
+# Extra Go build tags appended to every build (comma separated). This tree
+# carries the enterprise sources, so RAGFLOW_GO_TAGS=ee selects them through the
+# //go:build ee constraints; without it the same command lines build the
+# community edition.
 EXTRA_GO_TAGS="${RAGFLOW_GO_TAGS:-}"
 GO_BUILD_TAGS="cgo,static,sonic"
 [ -n "$EXTRA_GO_TAGS" ] && GO_BUILD_TAGS="$GO_BUILD_TAGS,$EXTRA_GO_TAGS"
@@ -39,14 +41,6 @@ if [ -n "$EXTRA_GO_TAGS" ]; then
     EXTRA_TAGS_COMMA=",$EXTRA_GO_TAGS"
     EXTRA_TAGS_SPACE=" $EXTRA_GO_TAGS"
 fi
-# This tree ships no enterprise sources, so the ee tag selects nothing: fail
-# loudly instead of building a binary without them.
-case ",$EXTRA_GO_TAGS," in
-    *",ee,"*)
-        echo "error: RAGFLOW_GO_TAGS contains 'ee', but this tree has no enterprise sources" >&2
-        exit 1
-        ;;
-esac
 
 # Native static library settings. These are the user-cache paths (~/ragflow-native-libs/).
 # If /opt/ragflow-native-libs/ exists (pre-seeded in CI runner image), it takes priority
@@ -825,7 +819,7 @@ build_go() {
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build -tags "$GO_BUILD_TAGS" "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
-        cmd/ragflow_server.go cmd/stub.go
+        ./cmd
     set +x
 
 

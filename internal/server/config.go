@@ -161,6 +161,11 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse OAuth config error: %w", err)
 	}
 
+	err = globalConfig.ParseAuditConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse audit log config error: %w", err)
+	}
+
 	return nil
 }
 
@@ -193,6 +198,9 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 		mysqlConfig := globalConfig.GetMySQLConfig()
 		exportedMySQLConfigs := mysqlConfig.ExportConfigs()
 		allConfigs = append(allConfigs, exportedMySQLConfigs)
+	case "vastbase":
+		vastbaseConfig := globalConfig.GetVastbaseMetaConfig()
+		allConfigs = append(allConfigs, vastbaseConfig.ExportConfigs())
 	default:
 		return nil, fmt.Errorf("not supported database: %s", databaseType)
 	}

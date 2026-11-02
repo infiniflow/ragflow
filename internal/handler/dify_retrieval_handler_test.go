@@ -65,12 +65,12 @@ func (m *mockKBService) CheckAccess(ctx context.Context, subject permission.Subj
 
 type mockModelFactory struct{}
 
-func (mockModelFactory) NewEmbeddingModel(context.Context, service.ModelAccess, string) (*modelModule.EmbeddingModel, error) {
+func (mockModelFactory) NewEmbeddingModel(context.Context, service.Identity, string) (*modelModule.EmbeddingModel, error) {
 	name := "test-model"
 	return modelModule.NewEmbeddingModel(&modelModule.DummyModel{}, &name, &modelModule.APIConfig{}, 0), nil
 }
 
-func (mockModelFactory) NewDefaultChatModel(context.Context, service.ModelAccess) (*modelModule.ChatModel, error) {
+func (mockModelFactory) NewDefaultChatModel(context.Context, service.Identity) (*modelModule.ChatModel, error) {
 	name := "test-model"
 	return modelModule.NewChatModel(&modelModule.DummyModel{}, &name, &modelModule.APIConfig{}), nil
 }
