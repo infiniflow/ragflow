@@ -271,10 +271,12 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	}
 	flushBody()
 
-	// Finalize child text and positions before cropping stamps IDs and uploads
-	// previews. Splitting an uploaded chunk would copy its ID and image to
-	// every child, causing index overwrites and mismatched previews.
-	chunks = finalizePDFChunks(chunks, childrenPattern)
+	for i := range chunks {
+		if itemDocType(chunks[i]) == "text" {
+			chunks[i].Text = removeTag(chunks[i].Text)
+		}
+	}
+	chunks = splitGeneralChildren(chunks, childrenPattern)
 	engine, err := newPDFEngineFromUpstream(ctx, db, upstream)
 	if err != nil {
 		common.Warn("GeneralChunker: could not open PDF for on-demand cropping", zap.Error(err))
@@ -283,15 +285,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		defer engine.Close()
 		chunks = cropImageChunks(ctx, engine, chunks)
 	}
-	// Context can make a media region worth cropping, but cannot replace a
-	// missing payload when the source or rendering is unavailable.
-	visible := chunks[:0]
-	for _, chunk := range chunks {
-		if strings.TrimSpace(chunk.Text) != "" || hasMediaPayload(chunk) {
-			visible = append(visible, chunk)
-		}
-	}
-	chunks = visible
+	chunks = finalizeGeneralChunks(chunks, nil)
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("GeneralChunker: %w", err)
 	}
@@ -1467,26 +1461,11 @@ func sliceGeneralSplitPieces(unit schema.ChunkDoc, parts []string) []schema.Chun
 	return out
 }
 
-// finalizePDFChunks retains context-only media through pre-crop finalization:
-// the PDF cropper may still attach the missing payload. Other formats have no
-// later stage that can fill it, so they use finalizeGeneralChunks directly.
-func finalizePDFChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Regexp) []schema.ChunkDoc {
-	return finalizeGeneralChunksWithContextRetention(chunks, childrenPattern, true)
-}
-
 func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Regexp) []schema.ChunkDoc {
-	return finalizeGeneralChunksWithContextRetention(chunks, childrenPattern, false)
-}
-
-func finalizeGeneralChunksWithContextRetention(chunks []schema.ChunkDoc, childrenPattern *regexp.Regexp, retainContextOnlyMedia bool) []schema.ChunkDoc {
 	visible := make([]schema.ChunkDoc, 0, len(chunks))
 	for _, chunk := range chunks {
 		chunk.Text = removeTag(chunk.Text)
-		text := chunk.Text
-		if retainContextOnlyMedia {
-			text = canonicalChunkText(chunk)
-		}
-		if strings.TrimSpace(text) == "" && !hasMediaPayload(chunk) {
+		if strings.TrimSpace(chunk.Text) == "" && !hasMediaPayload(chunk) {
 			continue
 		}
 		visible = append(visible, chunk)
