@@ -384,7 +384,9 @@ func (c *wecomChannel) handleWebhookCallback(ctx context.Context, message wecomX
 			return http.StatusServiceUnavailable
 		}
 	}
-	err := c.handleTextMessage(ctx, message.FromUserName, message.FromUserName, message.MsgID, message.Content, "p2p", map[string]any{
+	status := http.StatusInternalServerError
+	defer func() { c.crypto.finishDelivery(message.MsgID, delivery, status) }()
+	if err := c.handleTextMessage(ctx, message.FromUserName, message.FromUserName, message.MsgID, message.Content, "p2p", map[string]any{
 		"to_user_name":   message.ToUserName,
 		"from_user_name": message.FromUserName,
 		"create_time":    message.CreateTime,
@@ -392,12 +394,9 @@ func (c *wecomChannel) handleWebhookCallback(ctx context.Context, message wecomX
 		"content":        message.Content,
 		"msg_id":         message.MsgID,
 		"xml":            string(plaintext),
-	})
-	status := http.StatusOK
-	if err != nil {
-		status = http.StatusInternalServerError
+	}); err == nil {
+		status = http.StatusOK
 	}
-	c.crypto.finishDelivery(message.MsgID, delivery, status)
 	return status
 }
 

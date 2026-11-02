@@ -283,7 +283,8 @@ func TestWeComWebhookDuplicateWaitsForInFlightDelivery(t *testing.T) {
 			})
 			timestamp := currentWeComTimestamp()
 			firstRequest := weComTestMessageRequest(t, aesKey, timestamp, "nonce-1", plaintext)
-			duplicateRequest := weComTestMessageRequest(t, aesKey, timestamp, "nonce-2", plaintext)
+			waited := newWaitedContext(context.Background())
+			duplicateRequest := weComTestMessageRequest(t, aesKey, timestamp, "nonce-2", plaintext).WithContext(waited)
 
 			first := httptest.NewRecorder()
 			firstDone := make(chan struct{})
@@ -306,9 +307,11 @@ func TestWeComWebhookDuplicateWaitsForInFlightDelivery(t *testing.T) {
 				server.handleRequest(duplicate, duplicateRequest)
 			}()
 			select {
+			case <-waited.waited:
 			case <-duplicateDone:
 				t.Fatal("duplicate delivery was answered while the first one was in flight")
-			case <-time.After(100 * time.Millisecond):
+			case <-time.After(time.Second):
+				t.Fatal("duplicate delivery did not wait for the delivery in flight")
 			}
 
 			close(release)
@@ -660,6 +663,25 @@ func testWeComSignature(token, timestamp, nonce, encrypted string) string {
 	sort.Strings(parts)
 	hash := sha1.Sum([]byte(strings.Join(parts, "")))
 	return hex.EncodeToString(hash[:])
+}
+
+// waitedContext reports when its Done channel is first read, which happens when a
+// duplicate callback enters the wait for the delivery in flight.
+type waitedContext struct {
+	context.Context
+	waited chan struct{}
+	closed atomic.Bool
+}
+
+func newWaitedContext(parent context.Context) *waitedContext {
+	return &waitedContext{Context: parent, waited: make(chan struct{})}
+}
+
+func (c *waitedContext) Done() <-chan struct{} {
+	if c.closed.CompareAndSwap(false, true) {
+		close(c.waited)
+	}
+	return c.Context.Done()
 }
 
 // currentWeComTimestamp returns the Unix-second timestamp WeCom puts in the
