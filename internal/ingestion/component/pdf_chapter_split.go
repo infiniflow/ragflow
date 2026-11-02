@@ -176,6 +176,8 @@ func dispatchAdaptiveChapterPDF(
 	sem := make(chan struct{}, opts.MaxConcurrency)
 	baseName := strings.TrimSuffix(filename, filepath.Ext(filename))
 	var sliceErr error
+	var firstErr error
+	var firstErrOnce sync.Once
 
 ChapterLoop:
 	for i, plan := range plans {
@@ -207,6 +209,7 @@ ChapterLoop:
 			res, parseErr := dispatchSingle(cName, cBytes)
 			if parseErr != nil {
 				res.Err = parseErr
+				firstErrOnce.Do(func() { firstErr = parseErr })
 				cancel()
 			}
 			chapterResults[idx] = res
@@ -234,6 +237,10 @@ ChapterLoop:
 
 	if ctx.Err() != nil {
 		return parser.ParseResult{Err: ctx.Err()}, true, ctx.Err()
+	}
+
+	if firstErr != nil {
+		return parser.ParseResult{}, true, firstErr
 	}
 
 	for _, r := range chapterResults {
