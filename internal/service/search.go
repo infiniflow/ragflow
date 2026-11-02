@@ -203,7 +203,7 @@ func (s *SearchService) CreateSearch(ctx context.Context, name string, descripti
 		if err := s.searchDAO.Create(ctx, tx, search); err != nil {
 			return err
 		}
-		return grantCreatedResourceOwner(ctx, tx, identity.UserID, identity.TenantID, permission.ResourceKindSearchApp, search.ID)
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: identity.UserID, TenantID: identity.TenantID}, permission.ResourceRef{Kind: permission.ResourceKindSearchApp, ID: search.ID})
 	}); err != nil {
 		return nil, fmt.Errorf("failed to create search: %w", err)
 	}

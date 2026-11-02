@@ -66,7 +66,7 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		if err != nil {
 			return common.CodeDataError, fmt.Errorf("dataset not found")
 		}
-		if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, kb.ID, permission.OperationRun); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationRun); err != nil {
 			code, permissionErr := permissionresponse.Normalize(err)
 			return code, permissionErr
 		}

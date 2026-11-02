@@ -23,7 +23,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
-	"ragflow/internal/service"
+
 	"strconv"
 	"strings"
 
@@ -101,7 +101,7 @@ func CommitFolderResolver(h *FileCommitHandler, entityType, urlParam string) gin
 			if c.Request.Method == "GET" || c.Request.Method == "HEAD" {
 				operation = permission.OperationRead
 			}
-			if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: user.ID}, id, operation); err != nil {
+			if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: id}, operation); err != nil {
 				respondPermissionError(c, err, true)
 				c.Abort()
 				return

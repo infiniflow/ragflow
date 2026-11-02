@@ -112,7 +112,7 @@ type CheckConnectionRequest struct {
 
 func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerName, userID string) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	if err := checkFeatureAction(ctx, userID, "model_provider", permission.ActionEnable); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, "model_provider", permission.ActionEnable); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}

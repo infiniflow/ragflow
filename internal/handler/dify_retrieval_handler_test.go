@@ -56,9 +56,9 @@ func (m *mockKBService) GetKnowledgebaseByID(ctx context.Context, kbID string) (
 	}, nil
 }
 
-func (m *mockKBService) CheckAccess(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error {
+func (m *mockKBService) CheckResource(ctx context.Context, subject permission.Subject, resource permission.ResourceRef, operation permission.Operation) error {
 	if m.checkAccessFn != nil {
-		return m.checkAccessFn(ctx, subject, datasetID, operation)
+		return m.checkAccessFn(ctx, subject, resource.ID, operation)
 	}
 	return nil
 }
@@ -155,13 +155,15 @@ func (m *mockDocEngine) GetChunk(ctx context.Context, _, _ string, _ []string) (
 // --- Helper ---
 
 func setupDifyTest(userID string) (*DifyRetrievalHandler, *gin.Engine) {
+	kbSvc := &mockKBService{}
 	h := &DifyRetrievalHandler{
-		kbSvc:        &mockKBService{},
-		modelFactory: mockModelFactory{},
-		metadataSvc:  &mockMetadataService{},
-		retrievalSvc: &mockRetrievalService{},
-		docDAO:       &mockDocDAO{},
-		docEngine:    &mockDocEngine{},
+		kbSvc:             kbSvc,
+		permissionChecker: kbSvc,
+		modelFactory:      mockModelFactory{},
+		metadataSvc:       &mockMetadataService{},
+		retrievalSvc:      &mockRetrievalService{},
+		docDAO:            &mockDocDAO{},
+		docEngine:         &mockDocEngine{},
 	}
 
 	gin.SetMode(gin.TestMode)
@@ -380,7 +382,7 @@ func TestDifyRetrieval_NoAuth(t *testing.T) {
 
 func TestDifyRetrieval_Unauthorized(t *testing.T) {
 	h, r := setupDifyTest("user1")
-	h.kbSvc = &mockKBService{
+	kbSvc := &mockKBService{
 		checkAccessFn: func(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error {
 			if operation != permission.OperationUse {
 				t.Errorf("dataset operation = %q, want %q", operation, permission.OperationUse)
@@ -388,6 +390,8 @@ func TestDifyRetrieval_Unauthorized(t *testing.T) {
 			return permission.ErrPermissionDenied
 		},
 	}
+	h.kbSvc = kbSvc
+	h.permissionChecker = kbSvc
 	w := httptest.NewRecorder()
 	body := `{"knowledge_id": "kb1", "query": "test"}`
 	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))

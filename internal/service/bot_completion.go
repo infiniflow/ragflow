@@ -45,6 +45,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 // ChatbotSSEFrame is one envelope pushed to the SSE writer by the
@@ -297,20 +298,20 @@ func (s *BotService) ChatbotCompletion(
 	}
 	req.Question = question
 	// 1. Authorize and load the dialog before touching session state.
-	if err := checkChatPermission(ctx, nil, userID, dialogID, permission.OperationRun); err != nil {
-		code, normalizedErr := normalizeChatPermissionError(err)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: dialogID}, permission.OperationRun); err != nil {
+		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
 	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			code, normalizedErr := normalizeChatPermissionError(permission.ErrResourceNotFound)
+			code, normalizedErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return nil, code, normalizedErr
 		}
 		return nil, common.CodeServerError, err
 	}
 	if dialog == nil {
-		code, normalizedErr := normalizeChatPermissionError(permission.ErrResourceNotFound)
+		code, normalizedErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return nil, code, normalizedErr
 	}
 
