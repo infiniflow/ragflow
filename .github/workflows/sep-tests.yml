@@ -1900,8 +1900,9 @@ jobs:
           export RAGFLOW_MYSQL_PORT="${EXPOSE_MYSQL_PORT}"
           export RAGFLOW_MINIO_HOST="host.docker.internal:${MINIO_PORT}"
           export RAGFLOW_REDIS_HOST="host.docker.internal:${REDIS_PORT}"
-          export RAGFLOW_KVROCKS_HOST="host.docker.internal:${KVROCKS_PORT}"
-          export RAGFLOW_TEST_KVROCKS_ADDR="${RAGFLOW_KVROCKS_HOST}"
+          # Test-only Kvrocks endpoint. Do not export RAGFLOW_KVROCKS_HOST here:
+          # that is a production config override and changes config-default tests.
+          export RAGFLOW_TEST_KVROCKS_ADDR="host.docker.internal:${KVROCKS_PORT}"
           export KVROCKS_TEST_ADDR="${RAGFLOW_TEST_KVROCKS_ADDR}"
           export RAGFLOW_NATS_HOST=host.docker.internal
           export RAGFLOW_NATS_PORT="${EXPOSE_NATS_PORT}"
