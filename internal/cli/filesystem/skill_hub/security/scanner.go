@@ -135,6 +135,11 @@ func scanQuotedRmExpansion(line string) (string, bool) {
 		if i+2 < len(line) && line[i+2] != ' ' && line[i+2] != '\t' {
 			continue
 		}
+		// "rm" is only destructive at a shell command position; as an
+		// argument of another command (`echo rm -rf ...`) it is inert text.
+		if !isCommandPosition(line, i, code) {
+			continue
+		}
 
 		recursive, endOfOptions := false, false
 		var operands []string
@@ -161,6 +166,82 @@ func scanQuotedRmExpansion(line string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// isCommandPosition reports whether the "rm" starting at offset i sits at a
+// shell command position: preceded by nothing, by a command separator, or by
+// a chain of command prefixes — variable assignments, sudo/env and friends,
+// or the path head of the executable itself (`/bin/rm`, `./rm`). An rm that
+// is a word of another command (`echo rm -rf ...`) is inert and must not
+// reach the quoted-operand pass. A quoted word is never a prefix, so
+// `"echo" rm` stays a command of echo.
+func isCommandPosition(line string, i int, code []bool) bool {
+	// Inside a larger word only a path head keeps rm a command (`/bin/rm`);
+	// anything else (`myrm`, `transform-rm`) is not an rm invocation.
+	wordStart := i
+	for wordStart > 0 && line[wordStart-1] != ' ' && line[wordStart-1] != '\t' && !isCommandSeparator(line, wordStart-1, code) {
+		wordStart--
+	}
+	if wordStart < i {
+		switch head := line[wordStart:i]; head[0] {
+		case '/', '.':
+		default:
+			return false
+		}
+	}
+	for j := wordStart; j > 0; {
+		for j > 0 && (line[j-1] == ' ' || line[j-1] == '\t') {
+			j--
+		}
+		if j == 0 || isCommandSeparator(line, j-1, code) {
+			return true
+		}
+		start := j
+		for start > 0 && line[start-1] != ' ' && line[start-1] != '\t' && !isCommandSeparator(line, start-1, code) {
+			start--
+		}
+		if !isCommandPrefix(line[start:j]) {
+			return false
+		}
+		j = start
+	}
+	return true
+}
+
+// isCommandSeparator reports whether the byte at pos ends a shell command
+// outside quotes; the same bytes inside quotes are ordinary data.
+func isCommandSeparator(line string, pos int, code []bool) bool {
+	if !code[pos] {
+		return false
+	}
+	switch line[pos] {
+	case ';', '|', '&', '(':
+		return true
+	}
+	return false
+}
+
+// isCommandPrefix reports whether word is a prefix token another command word
+// may follow: a variable assignment or a command wrapper that preserves the
+// wrapped command's identity.
+func isCommandPrefix(word string) bool {
+	if name, _, ok := strings.Cut(word, "="); ok && name != "" {
+		for i := 0; i < len(name); i++ {
+			if !isShellWordByte(name[i]) {
+				return false
+			}
+		}
+		// A variable name cannot start with a digit.
+		if name[0] >= '0' && name[0] <= '9' {
+			return false
+		}
+		return true
+	}
+	switch word {
+	case "sudo", "exec", "env", "nohup", "nice", "command", "xargs":
+		return true
+	}
+	return false
 }
 
 func isShellWordByte(c byte) bool {
