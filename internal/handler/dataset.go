@@ -32,6 +32,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/billing"
@@ -1155,7 +1156,7 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 	ctx := c.Request.Context()
 	// Check access for each dataset
 	for _, datasetID := range datasetIDs {
-		if err := h.datasetsService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 			respondPermissionError(c, err, false)
 			return
 		}

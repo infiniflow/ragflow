@@ -45,7 +45,6 @@ import (
 // KBServiceIface abstracts KnowledgebaseService for the Dify handler.
 type KBServiceIface interface {
 	GetKnowledgebaseByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
-	CheckAccess(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error
 }
 
 // ModelCreator supplies typed model instances to Dify retrieval.
@@ -130,14 +129,19 @@ type difyRecord struct {
 
 // --- Handler ---
 
+type resourcePermissionChecker interface {
+	CheckResource(context.Context, permission.Subject, permission.ResourceRef, permission.Operation) error
+}
+
 // DifyRetrievalHandler handles Dify-compatible retrieval requests.
 type DifyRetrievalHandler struct {
-	kbSvc        KBServiceIface
-	modelFactory ModelCreator
-	metadataSvc  MetadataServiceIface
-	retrievalSvc RetrievalServiceIface
-	docDAO       DocumentDAOIface
-	docEngine    engine.DocEngine
+	kbSvc             KBServiceIface
+	permissionChecker resourcePermissionChecker
+	modelFactory      ModelCreator
+	metadataSvc       MetadataServiceIface
+	retrievalSvc      RetrievalServiceIface
+	docDAO            DocumentDAOIface
+	docEngine         engine.DocEngine
 }
 
 // NewDifyRetrievalHandler creates a new DifyRetrievalHandler.
@@ -152,12 +156,13 @@ func NewDifyRetrievalHandler(
 	docEngine engine.DocEngine,
 ) *DifyRetrievalHandler {
 	return &DifyRetrievalHandler{
-		kbSvc:        kbSvc,
-		modelFactory: modelFactory,
-		metadataSvc:  metadataSvc,
-		retrievalSvc: retrievalSvc,
-		docDAO:       docDAO,
-		docEngine:    docEngine,
+		kbSvc:             kbSvc,
+		permissionChecker: permission.NewDatabaseChecker(dao.DB),
+		modelFactory:      modelFactory,
+		metadataSvc:       metadataSvc,
+		retrievalSvc:      retrievalSvc,
+		docDAO:            docDAO,
+		docEngine:         docEngine,
 	}
 }
 
@@ -216,7 +221,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		return
 	}
 
-	if err := h.kbSvc.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KnowledgeID, permission.OperationUse); err != nil {
+	if err := h.permissionChecker.CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: req.KnowledgeID}, permission.OperationUse); err != nil {
 		respondHTTPPermissionError(c, err, false)
 		return
 	}
@@ -247,19 +252,22 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		return
 	}
 
-	// Metadata filter
+	// Metadata filter. An empty conditions list means no metadata filtering,
+	// the same as the dataset retrieval path. Only conditions that were
+	// actually supplied, and matched nothing, narrow the search to the
+	// no-match sentinel.
 	metas, metaErr := h.metadataSvc.GetFlattedMetaByKBs(ctx, []string{req.KnowledgeID})
 	docIDs := make([]string, 0)
-	if metaErr == nil && req.MetadataCondition != nil {
+	if metaErr == nil && req.MetadataCondition != nil && len(req.MetadataCondition.Conditions) > 0 {
 		logic := req.MetadataCondition.Logic
 		if logic == "" {
 			logic = "and"
 		}
 		filteredIDs := service.ApplyMetaFilter(metas, req.MetadataCondition.toMetaFilterConditions(), logic)
 		docIDs = append(docIDs, filteredIDs...)
-	}
-	if len(docIDs) == 0 && req.MetadataCondition != nil {
-		docIDs = []string{service.NoMatchDocIDSentinel}
+		if len(docIDs) == 0 {
+			docIDs = []string{service.NoMatchDocIDSentinel}
+		}
 	}
 
 	// Hand the label result over unconditionally: an empty map says "issue no

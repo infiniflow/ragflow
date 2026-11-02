@@ -31,7 +31,27 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	permissionresponse "ragflow/internal/permission/response"
 )
+
+func resolveSkillSpaceTenantID(ctx context.Context, userID, spaceID string, operation permission.Operation) (string, error) {
+	spaceID = normalizeSpaceID(spaceID)
+	if spaceID == defaultSkillSpaceID {
+		return requireCurrentTenantID(ctx, userID)
+	}
+
+	checker := permission.NewDatabaseChecker(dao.DB)
+	subject := permission.Subject{UserID: userID}
+	ref := permission.ResourceRef{Kind: permission.ResourceKindSkillSpace, ID: spaceID}
+	if err := checker.CheckResource(ctx, subject, ref, operation); err != nil {
+		return "", err
+	}
+	access, err := checker.ResolveAccess(ctx, subject, ref)
+	if err != nil {
+		return "", err
+	}
+	return access.TenantID, nil
+}
 
 // SkillSpaceService handles business logic for skills space operations
 type SkillSpaceService struct {
@@ -156,11 +176,11 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 	}
 	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
-	if err := checkFeatureAction(ctx, userID, "file", permission.ActionWrite); err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, "file", permission.ActionWrite); err != nil {
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 	defaultEmbdID := req.EmbdID
@@ -305,10 +325,17 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 
 // ListSpaces lists skill spaces the caller can read.
 func (s *SkillSpaceService) ListSpaces(ctx context.Context, userID string) (map[string]interface{}, common.ErrorCode, error) {
-	spaceIDs, err := accessibleSkillSpaceIDs(ctx, userID, permission.OperationRead)
+	spaceScope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
+		Kind:      permission.ResourceKindSkillSpace,
+		Operation: permission.OperationRead,
+	})
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
+	}
+	spaceIDs := spaceScope.ResourceIDs
+	if spaceScope.Mode != permission.ScopeIDs {
+		spaceIDs = []string{}
 	}
 	spaces, err := s.spaceDAO.GetByIDs(ctx, dao.DB, spaceIDs)
 	if err != nil {
@@ -330,18 +357,18 @@ func (s *SkillSpaceService) ListSpaces(ctx context.Context, userID string) (map[
 // GetSpace retrieves a skills space by ID (includes deleting status for visibility)
 func (s *SkillSpaceService) GetSpace(ctx context.Context, userID, spaceID string) (map[string]interface{}, common.ErrorCode, error) {
 	if _, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationRead); err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 	space, err := s.spaceDAO.GetByIDAnyStatus(ctx, dao.DB, spaceID)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		code, normalized := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return nil, code, normalized
 	}
 
 	// Return deleted spaces as not found
 	if space.Status == entity.SpaceStatusDeleted {
-		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		code, normalized := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return nil, code, normalized
 	}
 
@@ -352,12 +379,12 @@ func (s *SkillSpaceService) GetSpace(ctx context.Context, userID, spaceID string
 func (s *SkillSpaceService) UpdateSpace(ctx context.Context, userID, spaceID string, req *UpdateSpaceRequest) (map[string]interface{}, common.ErrorCode, error) {
 	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 	space, err := s.spaceDAO.GetByID(ctx, dao.DB, spaceID)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		code, normalized := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return nil, code, normalized
 	}
 
@@ -435,13 +462,13 @@ func (s *SkillSpaceService) UpdateSpace(ctx context.Context, userID, spaceID str
 func (s *SkillSpaceService) DeleteSpace(ctx context.Context, userID, spaceID string, docEngine engine.DocEngine) (common.ErrorCode, error) {
 	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationDelete)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return code, normalized
 	}
 	// Get space regardless of status (could be retrying a failed delete)
 	space, err := s.spaceDAO.GetByIDAnyStatus(ctx, dao.DB, spaceID)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		code, normalized := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return code, normalized
 	}
 
@@ -643,11 +670,11 @@ func (s *SkillSpaceService) deleteFolderRecursive(ctx context.Context, folderID 
 func (s *SkillSpaceService) GetSpaceByFolderID(ctx context.Context, userID, folderID string) (map[string]interface{}, common.ErrorCode, error) {
 	space, err := s.spaceDAO.GetByFolderID(ctx, dao.DB, folderID)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		code, normalized := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return nil, code, normalized
 	}
 	if _, err := resolveSkillSpaceTenantID(ctx, userID, space.ID, permission.OperationRead); err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 

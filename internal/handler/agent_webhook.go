@@ -349,10 +349,18 @@ func findWebhookBegin(dsl map[string]any) map[string]any {
 			continue
 		}
 		name, _ := entry["name"].(string)
+		params, _ := entry["params"].(map[string]any)
+		if obj, ok := entry["obj"].(map[string]any); ok {
+			if nestedName, _ := obj["component_name"].(string); nestedName != "" {
+				name = nestedName
+			}
+			if nestedParams, ok := obj["params"].(map[string]any); ok {
+				params = nestedParams
+			}
+		}
 		if !strings.EqualFold(name, "begin") {
 			continue
 		}
-		params, _ := entry["params"].(map[string]any)
 		if params == nil {
 			continue
 		}

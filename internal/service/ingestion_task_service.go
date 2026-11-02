@@ -457,15 +457,17 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 			}
 		}
 	}
-	// A queued task becomes STOPPED before its run is settled. If settlement
-	// failed, a retry must finish it before the task row is deleted.
-	if task.Status == common.STOPPED && task.PipelineLogID != nil && *task.PipelineLogID != "" {
+	// A terminal task normally closes its own run, but that terminal write is
+	// best-effort: when it was lost the ledger stays open with no worker left to
+	// settle it. Settlement is idempotent, so finish it before deleting the row
+	// — the same rule PrepareDocumentTaskForCleanup applies to document cleanup.
+	if runStatus, message, ok := terminalRunSettlement(task.Status); ok && task.PipelineLogID != nil && *task.PipelineLogID != "" {
 		run, runErr := s.pipelineLogDAO.GetByID(ctx, dao.DB, *task.PipelineLogID)
 		if runErr != nil && !errors.Is(runErr, gorm.ErrRecordNotFound) {
 			return nil, runErr
 		}
 		if run != nil && run.RunCount != nil && *run.RunCount > 0 {
-			if err := s.settleTaskRun(ctx, task, entity.TaskStatusCancel, "Task superseded by a new parse request."); err != nil {
+			if err := s.settleTaskRun(ctx, task, runStatus, message); err != nil {
 				return nil, err
 			}
 		}
@@ -492,6 +494,21 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 		)
 	}
 	return info, nil
+}
+
+// terminalRunSettlement maps a terminal task to the run status and terminal
+// message its ledger should carry.
+func terminalRunSettlement(taskStatus string) (entity.TaskStatus, string, bool) {
+	switch taskStatus {
+	case common.STOPPED:
+		return entity.TaskStatusCancel, "Task superseded by a new parse request.", true
+	case common.COMPLETED:
+		return entity.TaskStatusDone, taskTerminalMessageComplete, true
+	case common.FAILED:
+		return entity.TaskStatusFail, taskTerminalMessageFailed, true
+	default:
+		return "", "", false
+	}
 }
 
 func (s *IngestionTaskService) GetTask(ctx context.Context, taskID string) (*entity.IngestionTask, error) {

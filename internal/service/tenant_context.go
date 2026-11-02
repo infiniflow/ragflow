@@ -19,7 +19,6 @@ import (
 	"context"
 	"strings"
 
-	"gorm.io/gorm"
 	"ragflow/internal/dao"
 	"ragflow/internal/permission"
 )
@@ -47,12 +46,4 @@ func requireCurrentTenantID(ctx context.Context, userID string) (string, error) 
 		return tenantID, nil
 	}
 	return strings.TrimSpace(userID), nil
-}
-
-func checkFeatureAction(ctx context.Context, userID string, feature permission.Feature, action permission.Action) error {
-	return permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, feature, action)
-}
-
-func grantCreatedResourceOwner(ctx context.Context, tx *gorm.DB, userID, tenantID string, kind permission.ResourceKind, resourceID string) error {
-	return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: kind, ID: resourceID})
 }

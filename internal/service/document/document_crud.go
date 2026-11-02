@@ -220,7 +220,7 @@ func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, del
 	// Deleting the entire dataset requires dataset-level access; deleting
 	// explicit documents also accepts direct document grants.
 	if deleteAll {
-		if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDeleteContent); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationDeleteContent); err != nil {
 			_, permissionErr := permissionresponse.Normalize(err)
 			return 0, permissionErr
 		}
@@ -233,7 +233,7 @@ func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, del
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDeleteContent); err != nil &&
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationDeleteContent); err != nil &&
 		!errors.Is(err, permission.ErrPermissionDenied) && !errors.Is(err, permission.ErrMembershipNotFound) {
 		_, permissionErr := permissionresponse.Normalize(err)
 		return 0, permissionErr

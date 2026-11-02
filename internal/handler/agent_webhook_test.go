@@ -140,6 +140,7 @@ func (f *fakeCanvasLoader) RunAgentWithWebhook(ctx context.Context, userID, canv
 // schema/content-type checks under test.
 func makeWebhookCanvas(id, userID, mode string, params map[string]any) *entity.UserCanvas {
 	dsl := map[string]any{
+		"graph": map[string]any{"nodes": []any{map[string]any{"id": "begin", "type": "beginNode", "position": map[string]any{"x": 0, "y": 0}, "data": map[string]any{"label": "Begin", "name": "Begin"}}}, "edges": []any{}},
 		"components": map[string]any{
 			"begin": map[string]any{
 				"obj": map[string]any{
@@ -1358,3 +1359,57 @@ func TestWebhook_ContentTypeMissingHeaderRejected(t *testing.T) {
 // inline above.)
 // _unused previously lived here as a placeholder; deleted during
 // cleanup (code-review MEDIUM-2).
+
+// Saved canvases include both the editor graph and nested runtime components.
+func TestWebhookSavedDSLRepresentations(t *testing.T) {
+	for _, format := range []string{"nested graph", "flat graph", "nested graphless"} {
+		for _, endpoint := range []string{"/webhook", "/webhook/test"} {
+			for _, scenario := range []string{"valid", "invalid token", "manual", "missing begin"} {
+				t.Run(format+endpoint+"/"+scenario, func(t *testing.T) {
+					cv := makeWebhookCanvas("c1", "u-1", "Webhook", map[string]any{
+						"execution_mode": "Streaming",
+						"security":       map[string]any{"auth_type": "token", "token": map[string]any{"token_header": "X-Webhook-Token", "token_value": "fixture-token"}},
+					})
+					comps := cv.DSL["components"].(map[string]any)
+					entry := comps["begin"].(map[string]any)
+					obj := entry["obj"].(map[string]any)
+					if scenario == "manual" {
+						obj["params"].(map[string]any)["mode"] = "conversational"
+					}
+					if format == "flat graph" {
+						comps["begin"] = map[string]any{"name": obj["component_name"], "params": obj["params"]}
+					}
+					if format == "nested graphless" {
+						delete(cv.DSL, "graph")
+					}
+					if scenario == "missing begin" {
+						delete(comps, "begin")
+					}
+					loader := &fakeCanvasLoader{canvas: cv}
+					h := newWebhookTestAgentHandler(loader)
+					c, w := webhookCtx("POST", "/api/v1/agents/c1"+endpoint, "{}", "application/json")
+					token := "fixture-token"
+					if scenario == "invalid token" {
+						token = "wrong"
+					}
+					c.Request.Header.Set("X-Webhook-Token", token)
+					h.Webhook(c)
+					if scenario == "valid" {
+						if w.Code != http.StatusOK || loader.runCalls.Load() != 1 {
+							t.Fatalf("status=%d body=%s runs=%d", w.Code, w.Body.String(), loader.runCalls.Load())
+						}
+					} else {
+						code, msg := errBody(t, w.Body.Bytes())
+						want := "Webhook not configured for this agent."
+						if scenario == "invalid token" {
+							want = "invalid token authentication"
+						}
+						if code != int(common.CodeDataError) || msg != want || loader.runCalls.Load() != 0 {
+							t.Fatalf("code=%d message=%q runs=%d", code, msg, loader.runCalls.Load())
+						}
+					}
+				})
+			}
+		}
+	}
+}

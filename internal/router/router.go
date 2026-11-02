@@ -592,7 +592,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// with the binary, but the endpoint is gated behind auth so the
 			// /pipelines namespace is already auth-protected when per-tenant
 			// user pipelines (dataflow canvases) are added later. Those will
-			// reuse user_canvas + CheckCanvasPermission for ownership checks.
+			// reuse user_canvas and the permission checker for ownership checks.
 			// Query: ?type=builtin returns built-in templates (default).
 			v1.GET("/pipelines", r.pipelineHandler.ListPipelines)
 			v1.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
