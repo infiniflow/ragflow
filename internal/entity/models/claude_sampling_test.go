@@ -41,7 +41,7 @@ func TestClaudeSamplingPolicy(t *testing.T) {
 		{"haiku 5.5 accepts no sampling", "claude-haiku-5-5", f64(0.7), f64(0.9), false, false},
 		{"sonnet 5 accepts no sampling", "claude-sonnet-5", f64(0.7), f64(0.9), false, false},
 		{"sonnet 4.5 is not sonnet 5", "claude-sonnet-4-5-20250929", f64(0.7), f64(0.9), true, false},
-		{"opus 4.1 rejects the pair", "anthropic.claude-opus-4-1-20250805-v1:0", f64(0.7), f64(0.9), true, false},
+		{"opus 4.1 drops top_p", "anthropic.claude-opus-4-1-20250805-v1:0", f64(0.7), f64(0.9), true, false},
 		{"claude 4.0 accepts the pair", "claude-sonnet-4-20250514", f64(0.7), f64(0.9), true, true},
 		{"claude 3.5 accepts the pair", "anthropic.claude-3-5-sonnet-20241022-v2:0", f64(0.7), f64(0.9), true, true},
 		{"unparsable claude name counts as recent", "claude-custom", f64(0.7), f64(0.9), true, false},

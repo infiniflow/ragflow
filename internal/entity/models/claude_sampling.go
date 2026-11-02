@@ -65,6 +65,12 @@ func claudeVersion(modelName string) (major, minor int, ok bool) {
 //   - Claude 4.1 and later reject temperature and top_p together (HTTP 400,
 //     "temperature and top_p cannot both be specified for this model"), so
 //     top_p is dropped and temperature, the knob the chat presets expose, is kept.
+//     The 4.1 boundary comes from the Anthropic API, not from Bedrock: the
+//     Anthropic API release notes of 2025-08-05 state that Opus 4.1 does not
+//     allow both temperature and top_p to be specified, and the Haiku 4.5
+//     migration guide repeats it for later models. Bedrock's Opus 4.1 tolerates
+//     the pair, but this shared helper keeps the stricter boundary on purpose;
+//     the only cost there is a dropped top_p.
 //   - Claude 3.x and 4.0 accept the pair. A Claude name whose generation cannot
 //     be read counts as recent, since a dropped top_p beats a failing chat.
 //
