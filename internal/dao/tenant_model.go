@@ -159,7 +159,7 @@ func (dao *TenantModelDAO) DeleteByInstanceIDs(ctx context.Context, db *gorm.DB,
 // used to fetch per-tenant enable/disable overrides in bulk during
 // /api/v1/models response assembly. The Go port never WRITES to
 // tenant_model, so callers must treat an empty result as "use factory
-// defaults" — see ModelProviderService.ListModelsForUserInTenant.
+// defaults" - see ModelProviderService.ListModelsForUserInTenant.
 func (dao *TenantModelDAO) GetModelsByProviderIDsAndInstanceIDs(ctx context.Context, db *gorm.DB, providerIDs, instanceIDs []string) ([]*entity.TenantModel, error) {
 	models := make([]*entity.TenantModel, 0)
 	if len(providerIDs) == 0 || len(instanceIDs) == 0 {
