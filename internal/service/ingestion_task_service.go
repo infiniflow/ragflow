@@ -292,14 +292,30 @@ func (s *IngestionTaskService) PrepareValidatedRun(ctx context.Context, task *en
 	s.recordRunMessage(ctx, task, "Task is running...")
 }
 
+// ErrTaskNotInScope indicates RequestStopScoped was asked to stop a task whose
+// current status is not among the caller-supplied allowed statuses. It is not a
+// failure of the stop operation itself; callers treat it as a no-op for that task
+// and may still count an already-stopped task as an idempotent success.
+var ErrTaskNotInScope = errors.New("task status is not within the requested cancel scope")
+
+// RequestStop stops a task unconditionally (as long as its status is one it can
+// act on: CREATED/SCHEDULED/RUNNING). It is the per-task cancel path.
 func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
 	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
+	return s.stopActiveTask(ctx, task)
+}
+
+// stopActiveTask performs the state transition for a task already loaded and known
+// to be in a stoppable state. It centralizes the CREATED/SCHEDULED -> STOPPED and
+// RUNNING -> STOPPING logic so RequestStop (unconditional) and RequestStopScoped
+// (scope-checked) share one implementation and cannot drift apart.
+func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.IngestionTask) (*entity.IngestionTask, error) {
 	switch task.Status {
 	case common.CREATED, common.SCHEDULED:
-		stopped, err := s.transitionFrom(ctx, taskID, []string{common.CREATED, common.SCHEDULED}, common.STOPPED)
+		stopped, err := s.transitionFrom(ctx, task.ID, []string{common.CREATED, common.SCHEDULED}, common.STOPPED)
 		if err != nil {
 			return nil, err
 		}
@@ -310,7 +326,7 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 		s.recordRunTerminal(ctx, stopped, "Task stopped by user.")
 		return stopped, nil
 	case common.RUNNING:
-		task, err = s.transition(ctx, taskID, common.STOPPING)
+		task, err := s.transition(ctx, task.ID, common.STOPPING)
 		if err != nil {
 			return nil, err
 		}
@@ -318,12 +334,41 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 		// running worker's pollCancel detects the stop on its next 500ms
 		// tick instead of the slower DB fallback path.
 		if rc := kvrocks.Get(); rc != nil {
-			rc.Set(ctx, fmt.Sprintf("%s-cancel", taskID), "x", 1*time.Hour)
+			rc.Set(ctx, fmt.Sprintf("%s-cancel", task.ID), "x", 1*time.Hour)
 		}
 		return task, nil
 	default:
 		return task, nil
 	}
+}
+
+// RequestStopScoped stops a task only when its current status is among allowed.
+// The scope check runs after the task is loaded (GetTask) and before any
+// transition, so a status that drifts between the caller's list/lookup query and
+// this call cannot cause an out-of-scope stop: the TOCTOU window the caller's
+// earlier read opened is closed here, atomically with the CAS that performs the
+// transition. A status outside allowed returns the loaded task and
+// ErrTaskNotInScope without any state change. An empty allowed set permits no
+// status, so every task is out of scope.
+func (s *IngestionTaskService) RequestStopScoped(ctx context.Context, taskID string, allowed []string) (*entity.IngestionTask, error) {
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if !statusInSet(task.Status, allowed) {
+		return task, ErrTaskNotInScope
+	}
+	return s.stopActiveTask(ctx, task)
+}
+
+// statusInSet reports whether status equals one of the members of set.
+func statusInSet(status string, set []string) bool {
+	for _, s := range set {
+		if s == status {
+			return true
+		}
+	}
+	return false
 }
 
 // SupersedeUnstartedTask closes a queued run before a replacement parse is

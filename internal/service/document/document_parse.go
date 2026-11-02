@@ -546,6 +546,23 @@ func chunkDocumentIDs(ids []string, size int) [][]string {
 	return batches
 }
 
+// cancellableStatuses returns the subset of runStatuses that RequestStopScoped can
+// actually transition (CREATED/SCHEDULED/RUNNING). It scopes the per-task stop so
+// a request naming a terminal or derived status (COMPLETED, UNSTART) selects
+// documents via the list query but is never reported as cancelled. If none of the
+// requested statuses are stoppable the result is empty, which RequestStopScoped
+// treats as "cancel nothing".
+func cancellableStatuses(runStatuses []string) []string {
+	out := make([]string, 0, len(runStatuses))
+	for _, st := range runStatuses {
+		switch st {
+		case common.CREATED, common.SCHEDULED, common.RUNNING:
+			out = append(out, st)
+		}
+	}
+	return out
+}
+
 // StopParseDocumentsAll stops parsing for every document in a dataset whose
 // latest ingestion task matches one of the supplied run statuses. An empty
 // runStatuses defaults to DefaultCancelRunStatuses. The matching document IDs are
@@ -587,29 +604,47 @@ func (s *DocumentService) StopParseDocumentsAll(ctx context.Context, datasetID s
 		}
 	}
 
+	// The statuses RequestStopScoped is permitted to transition. Only queued or
+	// running states are actually stoppable; STOPPED/STOPPING are counted as
+	// idempotent successes when encountered out of scope, and terminal states
+	// (COMPLETED/FAILED) or any status that drifted out of the requested scope
+	// after the list query are left untouched. Restricting the scope to this set
+	// also neutralizes a request that names a non-cancellable status (e.g.
+	// COMPLETED), which the list query would otherwise select but which must
+	// never be reported as cancelled.
+	allowed := cancellableStatuses(runStatuses)
+
 	var errs []string
 	successCount := 0
 	for _, id := range ids {
 		task := tasksByDoc[id]
-		switch {
-		case task == nil:
+		if task == nil {
 			// Selected by the status filter but has no ingestion task to stop:
 			// report as a failure rather than a misleading success (the sibling
 			// StopParseDocuments endpoint returns ErrParseNotRunning for the same
 			// situation).
 			errs = append(errs, fmt.Sprintf("document %s: can't stop parsing that has not started or already completed", id))
-		case common.IsActiveTaskStatus(task.Status):
-			if _, err := s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
-				errs = append(errs, err.Error())
+			continue
+		}
+		// Hand the task to RequestStopScoped, which re-reads the current status
+		// and decides atomically with the transition. This closes the TOCTOU
+		// window between the list/lookup read above and the stop: a status that
+		// drifted out of the requested scope returns ErrTaskNotInScope and is not
+		// reported as cancelled.
+		got, err := s.ingestionTaskSvc.RequestStopScoped(ctx, task.ID, allowed)
+		if err != nil {
+			if errors.Is(err, service.ErrTaskNotInScope) {
+				// Already stopped/stopping (idempotent) or drifted out of scope:
+				// count an already-cancelled task as success, otherwise skip.
+				if got != nil && (got.Status == common.STOPPED || got.Status == common.STOPPING) {
+					successCount++
+				}
 				continue
 			}
-			successCount++
-		case task.Status == common.STOPPED:
-			// Already stopped: idempotent success, no further RequestStop.
-			successCount++
-		default:
-			// COMPLETED / FAILED (terminal) are not actionable; skip silently.
+			errs = append(errs, err.Error())
+			continue
 		}
+		successCount++
 	}
 
 	result := map[string]interface{}{"success_count": successCount}
