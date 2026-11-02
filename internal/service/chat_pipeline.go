@@ -216,7 +216,8 @@ type ThinkEvent struct {
 //
 // Parameters:
 //   - chat: the chat/chat entity with KBs, prompt_config, etc.
-//   - messages: saved user/assistant history, or the full payload for non-storing model tests.
+//   - messages: saved user/assistant history, or the caller's full payload when
+//     there is no stored history (non-storing model tests, OpenAI-compatible calls).
 //   - stream: if true, yields content deltas as they arrive.
 //   - kwargs: extra parameters (doc_ids, knowledge, quote, etc.).
 func (s *ChatPipelineService) AsyncChat(
