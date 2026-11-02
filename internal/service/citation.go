@@ -39,12 +39,20 @@ type Embedder interface {
 // allowing optional whitespace after "ID:" (e.g. "[ID: 12]").
 var CitationMarkerPattern = regexp.MustCompile(`\[(?:ID:\s*)?([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\]`)
 
-// badCitationPatterns match malformed citation shapes that LLMs sometimes emit
-var badCitationPatterns = []*regexp.Regexp{
+// badCitationPatterns match malformed citation shapes that LLMs sometimes emit:
+// the delimited ID shapes plus the bare "ref12" shape.
+var badCitationPatterns = append(append([]*regexp.Regexp{}, delimitedBadCitationPatterns...), refCitationPattern)
+
+// refCitationPattern matches the bare "ref12" citation shape. Unlike the
+// delimited shapes it also matches ordinary text such as "The filing is ref123".
+var refCitationPattern = regexp.MustCompile(`(?i)\bref\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`) // ref12
+
+// delimitedBadCitationPatterns match the malformed citation shapes that carry
+// "ID" inside brackets or parentheses, so they cannot be ordinary text.
+var delimitedBadCitationPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\(\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\)`), // (ID: 12)
 	regexp.MustCompile(`\[\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\]`), // [ID: 12]
 	regexp.MustCompile(`【\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*】`),   // 【ID: 12】
-	regexp.MustCompile(`(?i)\bref\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`),           // ref12
 	// (**ID:5**) / (*ID: 5*) — markdown-asterisk-wrapped parenthetical cites that
 	// models sometimes emit instead of [ID:5]. Mirrors Python agentic_rag.py:885
 	// `re.sub(r"\(\**(ID:\d+)\**\)", r"[\1]", ...)`, which deep-research runs over
@@ -394,12 +402,21 @@ var rangeCitationPattern = regexp.MustCompile(`(?i)\[\s*ID\s*[:： ]*\s*([0-9]+)
 // the trailing word also preserves the word boundaries used by refN markers.
 var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(【][\s*idslot:：0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}–—~～-]*$|#{1,2}(?:[0-9]+\$?)?$|\bref\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*$|\w+$`)
 
+// stripCitations removes every citation shape the answer path accepts,
+// including the bare "ref12" shape.
 func stripCitations(text string) string {
+	return refCitationPattern.ReplaceAllString(stripDelimitedCitations(text), "")
+}
+
+// stripDelimitedCitations removes the citation shapes that cannot be ordinary
+// text: ##n$$, [ID:n] and its slot/range variants, and the delimited bad
+// shapes. It keeps "ref12", which a previous answer may use as plain text.
+func stripDelimitedCitations(text string) string {
 	text = cleanCitationMarkers(text)
 	text = canonicalIDMarkerPattern.ReplaceAllString(text, "")
 	text = slotCitationPattern.ReplaceAllString(text, "")
 	text = rangeCitationPattern.ReplaceAllString(text, "")
-	for _, pattern := range badCitationPatterns {
+	for _, pattern := range delimitedBadCitationPatterns {
 		text = pattern.ReplaceAllString(text, "")
 	}
 	return text

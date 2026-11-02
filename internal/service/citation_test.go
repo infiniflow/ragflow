@@ -394,9 +394,25 @@ func TestCitationStreamFilter(t *testing.T) {
 	}
 }
 
+// TestStripCitations pins that the answer path removes every citation shape it
+// accepts, the bare "ref12" shape included.
+func TestStripCitations(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Answer ref12 here [ID:2].", "Answer  here ."},
+		{"a (ID: 1) b 【ID: 2】 c (**ID:3**) d [ID:Slot 0] e ##4$$", "a  b  c  d  e "},
+		{"[2024][guide](https://example.com)", "[2024][guide](https://example.com)"},
+	}
+	for _, c := range cases {
+		if got := stripCitations(c.in); got != c.want {
+			t.Errorf("stripCitations(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 // TestHistoryMessageContent pins what a history message keeps on its way back
-// to the model: a previous answer loses its [ID:n] markers in every spelling,
-// so the model cannot reuse that turn's numbering in a new answer, while user
+// to the model: a previous answer loses its [ID:n] markers in every delimited
+// spelling, so the model cannot reuse that turn's numbering in a new answer,
+// but keeps a bare "ref123", which may be ordinary text, while user
 // messages keep their text and only lose the ##n$$ markers.
 func TestHistoryMessageContent(t *testing.T) {
 	cases := []struct {
@@ -405,6 +421,8 @@ func TestHistoryMessageContent(t *testing.T) {
 		{"answer markers", "assistant", "Delibera n. 815 sugli elicotteri [ID:20] e [ID: 21].", "Delibera n. 815 sugli elicotteri  e ."},
 		{"answer legacy markers", "assistant", "testo ##3$$ fine", "testo  fine"},
 		{"answer without markers", "assistant", "nessuna citazione", "nessuna citazione"},
+		{"answer keeps ref text", "assistant", "The filing is ref123 [ID:2].", "The filing is ref123 ."},
+		{"answer delimited bad markers", "assistant", "a (ID: 1) b 【ID: 2】 c (**ID:3**) d [ID:4-5]", "a  b  c  d "},
 		{"user keeps brackets", "user", "cosa dice [ID:3]?", "cosa dice [ID:3]?"},
 		{"user legacy markers", "user", "testo ##3$$ fine", "testo  fine"},
 	}

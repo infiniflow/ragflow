@@ -2474,12 +2474,13 @@ func truncateForLog(s string, n int) string {
 
 // historyMessageContent strips citation markers from a history message before
 // it reaches the model. A previous answer's [ID:n] markers number that turn's
-// reference, so they are removed in every spelling the answer path accepts:
-// left in, the model reuses them in the new answer, where the same numbers
-// open the new turn's passages. Other messages only lose the ##n$$ markers.
+// reference, so they are removed in every delimited spelling the answer path
+// accepts: left in, the model reuses them in the new answer, where the same
+// numbers open the new turn's passages. A bare "ref12" stays, since it may be
+// ordinary text. Other messages only lose the ##n$$ markers.
 func historyMessageContent(role, content string) string {
 	if role == "assistant" {
-		return stripCitations(content)
+		return stripDelimitedCitations(content)
 	}
 	return cleanCitationMarkers(content)
 }
