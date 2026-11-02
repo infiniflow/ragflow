@@ -70,7 +70,7 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, key, "success")
+	common.RespondSuccess(c, key, "success")
 }
 
 func (h *SystemHandler) DeleteKey(c *gin.Context) {

@@ -89,7 +89,7 @@ func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // ListMCPServers lists MCP servers for an owned tenant or a requested tenant the caller belongs to.
@@ -127,7 +127,7 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func (h *MCPHandler) GetMCPServer(c *gin.Context) {
@@ -144,7 +144,7 @@ func (h *MCPHandler) GetMCPServer(c *gin.Context) {
 			mcpDetailError(c, code, err)
 			return
 		}
-		common.RespondSuccessObject(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 
@@ -153,7 +153,7 @@ func (h *MCPHandler) GetMCPServer(c *gin.Context) {
 		mcpDetailError(c, code, err)
 		return
 	}
-	common.RespondSuccessObject(c, newMCPServerResponse(result), "success")
+	common.RespondSuccess(c, newMCPServerResponse(result), "success")
 }
 
 func mcpDetailError(c *gin.Context, code common.ErrorCode, err error) {
@@ -185,7 +185,7 @@ func (h *MCPHandler) UpdateMCPServer(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, newMCPServerResponse(result), "success")
+	common.RespondSuccess(c, newMCPServerResponse(result), "success")
 }
 
 // DeleteMCPServer deletes an MCP server for the current user.
@@ -340,7 +340,7 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, gin.H{"results": results}, "success")
+	common.RespondSuccess(c, gin.H{"results": results}, "success")
 }
 
 // TestMCPServer opens a live MCP session and returns the tools the server advertises.

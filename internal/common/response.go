@@ -27,8 +27,8 @@ func RespondSuccessList[T any](c *gin.Context, data []T, message string, options
 	Respond(c, CodeSuccess, data, message, options...)
 }
 
-// RespondSuccessObject writes a successful response with object data, or null.
-func RespondSuccessObject(c *gin.Context, data any, message string, options ...ResponseOptions) {
+// RespondSuccess writes a successful response with object data, or null.
+func RespondSuccess(c *gin.Context, data any, message string, options ...ResponseOptions) {
 	Respond(c, CodeSuccess, data, message, options...)
 }
 

@@ -120,7 +120,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 			common.RespondError(c, common.CodeServerError, err.Error())
 			return
 		}
-		common.RespondSuccessObject(c, uploaded, "success")
+		common.RespondSuccess(c, uploaded, "success")
 		return
 	}
 

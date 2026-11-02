@@ -99,11 +99,11 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 	}
 
 	if wrapModels {
-		common.RespondSuccessObject(c, map[string]interface{}{"models": []service.ModelItem{}}, "success")
+		common.RespondSuccess(c, map[string]interface{}{"models": []service.ModelItem{}}, "success")
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // GetDefaultModels returns the user's model selections for the current tenant. The
@@ -132,7 +132,7 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 	if defaultModels == nil {
 		defaultModels = []service.ModelItem{}
 	}
-	common.RespondSuccessObject(c, map[string]interface{}{"models": defaultModels}, "success")
+	common.RespondSuccess(c, map[string]interface{}{"models": defaultModels}, "success")
 }
 
 // TenantInfo get tenant information
@@ -161,7 +161,7 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, tenantInfo, "success")
+	common.RespondSuccess(c, tenantInfo, "success")
 }
 
 // TenantList get tenant list for current user
@@ -213,7 +213,7 @@ func (h *TenantHandler) CreateMetadataStore(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // DeleteMetadataStore handles the delete metadata store request
@@ -242,7 +242,7 @@ func (h *TenantHandler) DeleteMetadataStore(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // CreateChunkTableRequest represents the request for creating a chunk table
@@ -291,7 +291,7 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // DeleteChunkTableRequest represents the request for deleting a chunk table
@@ -335,7 +335,7 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // ListTenantMembers lists all non-owner members of a tenant.
@@ -575,7 +575,7 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 		}
 	}
 
-	common.RespondSuccessObject(c, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }
 
 // RemoveTenantMember removes a user from the tenant.

@@ -73,7 +73,7 @@ func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // UpdateConfig handles the update skill search config request
@@ -104,7 +104,7 @@ func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // Search handles the skill search request
@@ -134,7 +134,7 @@ func (h *SkillSearchHandler) Search(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // IndexSkillsRequest represents the request to index skills
@@ -213,7 +213,7 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 		zap.String("spaceID", req.SpaceID),
 		zap.Int("indexedCount", len(req.Skills)))
 
-	common.RespondSuccessObject(c, gin.H{
+	common.RespondSuccess(c, gin.H{
 		"indexed_count": len(req.Skills),
 	}, "success")
 }
@@ -271,7 +271,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // DeleteSkillIndex handles the delete skill index request
@@ -344,7 +344,7 @@ func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, gin.H{"initialized": true}, "success")
+	common.RespondSuccess(c, gin.H{"initialized": true}, "success")
 }
 
 // ==================== Skill Space Management ====================
@@ -370,7 +370,7 @@ func (h *SkillSearchHandler) ListSpaces(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // CreateSpaceRequest represents the request to create a skill space
@@ -416,7 +416,7 @@ func (h *SkillSearchHandler) CreateSpace(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetSpace handles the get skill space request
@@ -447,7 +447,7 @@ func (h *SkillSearchHandler) GetSpace(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // UpdateSpaceRequest represents the request to update a skill space
@@ -502,7 +502,7 @@ func (h *SkillSearchHandler) UpdateSpace(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // DeleteSpace handles the delete skill space request
@@ -572,5 +572,5 @@ func (h *SkillSearchHandler) GetSpaceByFolder(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }

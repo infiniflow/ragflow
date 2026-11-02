@@ -150,7 +150,7 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	}
 
 	// Return success response
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // UpdateMemory handles PUT request for updating Memory
@@ -230,7 +230,7 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 	}
 
 	// Return success response
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // DeleteMemory handles DELETE request for deleting Memory
@@ -279,7 +279,7 @@ func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
 	}
 
 	// Return success response
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // splitQueryValues returns every value sent under the repeated query key,
@@ -331,7 +331,7 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 			common.RespondError(c, common.CodeServerError, err.Error())
 			return
 		}
-		common.RespondSuccessObject(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 
@@ -375,7 +375,7 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	}
 
 	// Return success response
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetMemoryConfig handles GET request for getting Memory configuration
@@ -424,7 +424,7 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 	}
 
 	// Return success response
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetMemoryMessages handles GET request for getting Memory messages
@@ -496,7 +496,7 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 type messageMemoryIDs []string
@@ -590,7 +590,7 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, message)
+	common.RespondSuccess(c, nil, message)
 }
 
 // ForgetMessage handles DELETE request for forgetting messages.
@@ -630,7 +630,7 @@ func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func isMemoryServiceNotFound(err error) bool {
@@ -719,7 +719,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // GetMessageContent handles GET request for getting message content
@@ -766,7 +766,7 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 // SearchMessage handles GET request for searching messages

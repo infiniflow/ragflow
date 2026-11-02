@@ -6,7 +6,7 @@ Pass response data directly to the helper:
 
 ```go
 common.RespondSuccessList(c, items, "success")
-common.RespondSuccessObject(c, item, "success")
+common.RespondSuccess(c, item, "success")
 common.RespondError(c, common.CodeBadRequest, "Missing name")
 ```
 

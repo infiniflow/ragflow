@@ -143,7 +143,7 @@ func (h *ConnectorHandler) GetConnector(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, connector, "success")
+	common.RespondSuccess(c, connector, "success")
 }
 
 // UpdateConnector Update an accessible connector's polling configuration.
@@ -168,7 +168,7 @@ func (h *ConnectorHandler) UpdateConnector(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, connector, "success")
+	common.RespondSuccess(c, connector, "success")
 }
 
 func decodeUpdateConnectorRequest(c *gin.Context) (*service.UpdateConnectorRequest, error) {
@@ -244,7 +244,7 @@ func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 		logs = []*entity.ConnectorSyncLog{}
 	}
 
-	common.RespondSuccessObject(c, gin.H{"total": total, "logs": logs}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "logs": logs}, "success")
 }
 
 // ListSyncLogs handles GET /api/v1/connectors/sync-logs.
@@ -296,7 +296,7 @@ func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
 		logs = []*entity.ConnectorSyncLog{}
 	}
 
-	common.RespondSuccessObject(c, gin.H{"total": total, "logs": logs}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "logs": logs}, "success")
 }
 
 // CreateConnector create connector
@@ -345,7 +345,7 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, connector, "success")
+	common.RespondSuccess(c, connector, "success")
 }
 
 type testConnectorRequest struct {
@@ -537,7 +537,7 @@ func (h *ConnectorHandler) StartGoogleWebOAuth(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 func (h *ConnectorHandler) PollGoogleWebOAuthResult(c *gin.Context) {
@@ -561,7 +561,7 @@ func (h *ConnectorHandler) PollGoogleWebOAuthResult(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 func (h *ConnectorHandler) GoogleWebOAuthCallback(c *gin.Context) {

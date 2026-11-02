@@ -80,7 +80,7 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 		common.RespondError(c, ec, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, gin.H{
+	common.RespondSuccess(c, gin.H{
 		"title":                   title,
 		"avatar":                  avatar,
 		"prologue":                prologue,
@@ -111,7 +111,7 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 		common.RespondError(c, ec, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, gin.H{
+	common.RespondSuccess(c, gin.H{
 		"title":    title,
 		"avatar":   avatar,
 		"inputs":   inputs,
@@ -282,5 +282,5 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 		common.RespondError(c, ec, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, data, "success")
+	common.RespondSuccess(c, data, "success")
 }

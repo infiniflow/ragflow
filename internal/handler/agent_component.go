@@ -77,7 +77,7 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 		mapDSLError(c, componentID, err)
 		return
 	}
-	common.RespondSuccessObject(c, form, "success")
+	common.RespondSuccess(c, form, "success")
 }
 
 // componentInputForm returns the input-form schema for a single component.

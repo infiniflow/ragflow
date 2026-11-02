@@ -181,7 +181,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 			common.Respond(c, code, false, err.Error())
 			return
 		}
-		common.RespondSuccessObject(c, filters, "success")
+		common.RespondSuccess(c, filters, "success")
 		return
 	}
 
@@ -248,7 +248,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // mapAgentError normalises service-layer errors onto the existing
@@ -311,7 +311,7 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, row, "success")
+	common.RespondSuccess(c, row, "success")
 }
 
 // GetAgent returns one canvas by ID.
@@ -353,7 +353,7 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 	if row != nil {
 		tenantID = row.EffectiveTenantID()
 	}
-	common.RespondSuccessObject(c, &agentDetailResponse{
+	common.RespondSuccess(c, &agentDetailResponse{
 		UserCanvas:      row,
 		TenantID:        tenantID,
 		LastPublishTime: lastPublishTime,
@@ -404,10 +404,10 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 	}
 	canvasInstance, err := h.agentService.GetAgent(c.Request.Context(), user.ID, canvasID)
 	if err != nil || canvasInstance == nil {
-		common.RespondSuccessObject(c, map[string]interface{}{}, "success")
+		common.RespondSuccess(c, map[string]interface{}{}, "success")
 		return
 	}
-	common.RespondSuccessObject(c, map[string]interface{}{
+	common.RespondSuccess(c, map[string]interface{}{
 		"update_time": canvasInstance.UpdateTime,
 	}, "success")
 }
@@ -639,7 +639,7 @@ func respondWithDebugResult(c *gin.Context, result *task.PipelineResult, err err
 	if len(chunks) == 0 {
 		chunks = []map[string]any{}
 	}
-	common.RespondSuccessObject(c, gin.H{"message_id": messageID, "chunks": chunks}, "success")
+	common.RespondSuccess(c, gin.H{"message_id": messageID, "chunks": chunks}, "success")
 }
 
 // extractChatDebugFile pulls the first uploaded file from a chat/completions
@@ -742,7 +742,7 @@ func (h *AgentHandler) PublishAgent(c *gin.Context) {
 	if row != nil {
 		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
 	}
-	common.RespondSuccessObject(c, row, "success")
+	common.RespondSuccess(c, row, "success")
 }
 
 // ListVersions returns every version of a canvas, newest first.
@@ -802,7 +802,7 @@ func (h *AgentHandler) GetVersion(c *gin.Context) {
 	if row != nil {
 		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
 	}
-	common.RespondSuccessObject(c, row, "success")
+	common.RespondSuccess(c, row, "success")
 }
 
 // DeleteVersion removes a single version by id.
@@ -916,7 +916,7 @@ func (h *AgentHandler) Prompts(c *gin.Context) {
 		common.RespondError(c, code, msg)
 		return
 	}
-	common.RespondSuccessObject(c, gin.H{
+	common.RespondSuccess(c, gin.H{
 		"task_analysis":       "As an AI agent designer, your role is to engage users by understanding their objectives and creating effective agent designs. Begin by analyzing the user's request to determine the appropriate actions.",
 		"output_format":       "For each agent you create, detail its components and explain how they collaborate to achieve the user's goal.",
 		"citation_guidelines": "If the agent uses external sources, cite them in the final output. Use the format: [index] document_id, which corresponds to the document identifier in the database.",
@@ -1044,7 +1044,7 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, struct {
+	common.RespondSuccess(c, struct {
 		*entity.API4Conversation
 		AgentID string `json:"agent_id"`
 	}{row, row.DialogID}, "success")
@@ -1070,7 +1070,7 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, row, "success")
+	common.RespondSuccess(c, row, "success")
 }
 
 // DeleteAgentSession DELETE /api/v1/agents/:canvas_id/sessions[/:session_id]
@@ -1121,7 +1121,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // AgentChatCompletions POST /api/v1/agents/chat/completions
@@ -1510,7 +1510,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 			zap.String("agent_id", req.AgentID),
 			zap.String("session_id", req.SessionID),
 		)
-		common.RespondSuccessObject(c, gin.H{"session_id": req.SessionID}, "success")
+		common.RespondSuccess(c, gin.H{"session_id": req.SessionID}, "success")
 		return
 	}
 
@@ -1542,7 +1542,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		"task_id":    finalAns.SessionID,
 		"session_id": finalAns.SessionID,
 	}
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // TestDBConnection POST /api/v1/agents/test-db-connection
@@ -1711,7 +1711,7 @@ func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 
 	sinceTS, hasSinceTS := parseWebhookSinceTS(c.Query("since_ts"))
 	if !hasSinceTS {
-		common.RespondSuccessObject(c, newWebhookTracePoll(nil, float64(time.Now().UnixNano())/1e9, false), "success")
+		common.RespondSuccess(c, newWebhookTracePoll(nil, float64(time.Now().UnixNano())/1e9, false), "success")
 		return
 	}
 	if h.redisGet == nil {
@@ -1728,7 +1728,7 @@ func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 		jsonInternalError(c, err)
 		return
 	}
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // checkCanvasAccessForHandler is the shared 103 envelope helper for
@@ -1792,5 +1792,5 @@ func (h *AgentHandler) ResetAgent(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.RespondSuccessObject(c, dsl, "success")
+	common.RespondSuccess(c, dsl, "success")
 }

@@ -144,7 +144,7 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, doc, "")
+	common.RespondSuccess(c, doc, "")
 }
 
 // GetThumbnail Get thumbnails for documents.
@@ -168,7 +168,7 @@ func (h *DocumentHandler) GetThumbnail(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func parseThumbnailDocIDs(c *gin.Context) []string {
@@ -394,7 +394,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "updated successfully")
+	common.RespondSuccess(c, nil, "updated successfully")
 }
 
 // DeleteDocument delete document
@@ -555,7 +555,7 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, map[string]interface{}{"deleted": deleted}, "success")
+	common.RespondSuccess(c, map[string]interface{}{"deleted": deleted}, "success")
 }
 
 // BatchUpdateDocumentStatus Batch update status of documents within a dataset.
@@ -674,7 +674,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 			common.Respond(c, common.CodeExceptionError, map[string]interface{}{"total": 0, "filter": map[string]interface{}{}}, "failed to get document filters")
 			return
 		}
-		common.RespondSuccessObject(c, gin.H{"total": total, "filter": filters}, "success")
+		common.RespondSuccess(c, gin.H{"total": total, "filter": filters}, "success")
 		return
 	}
 
@@ -750,7 +750,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		// otherwise an active task on another page could be missed.
 		hasActiveTasks = true
 	}
-	common.RespondSuccessObject(c, gin.H{"total": total, "docs": docs, "has_active_tasks": hasActiveTasks}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "docs": docs, "has_active_tasks": hasActiveTasks}, "success")
 }
 
 func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentListOptions, string) {
@@ -1157,7 +1157,7 @@ func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowled
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, mapDocKeysWithRunStatus(data), "success")
+	common.RespondSuccess(c, mapDocKeysWithRunStatus(data), "success")
 }
 
 func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
@@ -1185,7 +1185,7 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, mapDocKeysWithRunStatus(data), "success")
+	common.RespondSuccess(c, mapDocKeysWithRunStatus(data), "success")
 }
 
 // mapDocKeysWithRunStatus renames a freshly-created document's raw keys to the
@@ -1496,7 +1496,7 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 			successCount++
 		}
 	}
-	common.RespondSuccessObject(c, map[string]interface{}{"success_count": successCount}, "success")
+	common.RespondSuccess(c, map[string]interface{}{"success_count": successCount}, "success")
 }
 
 type StopIngestionsRequest struct {
@@ -1614,7 +1614,7 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
@@ -1646,7 +1646,7 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, gin.H{"summary": summary}, "success")
+	common.RespondSuccess(c, gin.H{"summary": summary}, "success")
 }
 
 func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
@@ -1727,7 +1727,7 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 func (h *DocumentHandler) UploadInfo(c *gin.Context) {
@@ -1792,7 +1792,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 			common.RespondError(c, code, err.Error())
 			return
 		}
-		common.RespondSuccessObject(c, data, "success")
+		common.RespondSuccess(c, data, "success")
 		return
 	}
 
@@ -1876,7 +1876,7 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }
 
 func inferJSONType(err error) string {

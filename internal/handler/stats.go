@@ -70,5 +70,5 @@ func (h *StatsHandler) GetChatStats(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, stats, "success")
+	common.RespondSuccess(c, stats, "success")
 }

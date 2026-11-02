@@ -304,7 +304,7 @@ func (h *AgentHandler) CreateWebhookCredential(c *gin.Context) {
 	}
 	query := url.Values{"credential": []string{credential}}
 	webhookPath := fmt.Sprintf("/api/v1/agents/%s/webhook?%s", url.PathEscape(canvasID), query.Encode())
-	common.RespondSuccessObject(c, gin.H{
+	common.RespondSuccess(c, gin.H{
 		"credential":  credential,
 		"webhook_url": webhookPath,
 	}, "success")

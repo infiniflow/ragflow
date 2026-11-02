@@ -20,17 +20,17 @@ func TestResponseHelpers(t *testing.T) {
 		status int
 		body   string
 	}{
-		{"no data", func(c *gin.Context) { RespondSuccessObject(c, nil, "") }, 200, `{"code":0,"message":"success","data":null}`},
-		{"object", func(c *gin.Context) { RespondSuccessObject(c, map[string]any{"ok": false}, "") }, 200, `{"code":0,"message":"success","data":{"ok":false}}`},
+		{"no data", func(c *gin.Context) { RespondSuccess(c, nil, "") }, 200, `{"code":0,"message":"success","data":null}`},
+		{"object", func(c *gin.Context) { RespondSuccess(c, map[string]any{"ok": false}, "") }, 200, `{"code":0,"message":"success","data":{"ok":false}}`},
 		{"struct", func(c *gin.Context) {
-			RespondSuccessObject(c, struct {
+			RespondSuccess(c, struct {
 				ID string `json:"id"`
 			}{"one"}, "")
 		}, 200, `{"code":0,"message":"success","data":{"id":"one"}}`},
 		{"list", func(c *gin.Context) { RespondSuccessList(c, []int{0, 1}, "") }, 200, `{"code":0,"message":"success","data":[0,1]}`},
-		{"empty object", func(c *gin.Context) { RespondSuccessObject(c, map[string]any{}, "") }, 200, `{"code":0,"message":"success","data":{}}`},
+		{"empty object", func(c *gin.Context) { RespondSuccess(c, map[string]any{}, "") }, 200, `{"code":0,"message":"success","data":{}}`},
 		{"empty list", func(c *gin.Context) { RespondSuccessList(c, []int{}, "") }, 200, `{"code":0,"message":"success","data":[]}`},
-		{"nil object", func(c *gin.Context) { RespondSuccessObject(c, nilMap, "") }, 200, `{"code":0,"message":"success","data":null}`},
+		{"nil object", func(c *gin.Context) { RespondSuccess(c, nilMap, "") }, 200, `{"code":0,"message":"success","data":null}`},
 		{"nil list", func(c *gin.Context) { RespondSuccessList(c, nilSlice, "") }, 200, `{"code":0,"message":"success","data":null}`},
 		{"business error", func(c *gin.Context) { RespondError(c, CodeBadRequest, "") }, 200, `{"code":400,"message":"Bad request","data":null}`},
 		{"HTTP error", func(c *gin.Context) {

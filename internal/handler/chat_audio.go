@@ -328,5 +328,5 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, map[string]string{"text": resp.Text}, "success")
+	common.RespondSuccess(c, map[string]string{"text": resp.Text}, "success")
 }

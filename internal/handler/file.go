@@ -134,7 +134,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetParentFolder gets parent folder of a file
@@ -166,7 +166,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, gin.H{"parent_folder": parentFolder}, common.CodeSuccess.Message())
+	common.RespondSuccess(c, gin.H{"parent_folder": parentFolder}, common.CodeSuccess.Message())
 }
 
 // GetFileAncestors gets all ancestor folders of a file (matches Python /files/<file_id>/ancestors)
@@ -206,7 +206,7 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, gin.H{"parent_folders": parentFolders}, common.CodeSuccess.Message())
+	common.RespondSuccess(c, gin.H{"parent_folders": parentFolders}, common.CodeSuccess.Message())
 }
 
 type CreateFolderRequest struct {
@@ -372,7 +372,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			return
 		}
 
-		common.RespondSuccessObject(c, result, common.CodeSuccess.Message())
+		common.RespondSuccess(c, result, common.CodeSuccess.Message())
 		return
 	}
 

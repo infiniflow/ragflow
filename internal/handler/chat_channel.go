@@ -88,7 +88,7 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, row, "success")
+	common.RespondSuccess(c, row, "success")
 }
 
 // ListChatChannel handles GET /chat-channels.
@@ -138,7 +138,7 @@ func (h *ChatChannelHandler) GetChatChannel(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, channel, "success")
+	common.RespondSuccess(c, channel, "success")
 }
 
 // UpdateChatChannel handles PATCH /chat-channels/:channel_id.
@@ -177,7 +177,7 @@ func (h *ChatChannelHandler) UpdateChatChannel(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetChatChannelRuntime returns live runtime metadata for a running chat channel.
@@ -206,7 +206,7 @@ func (h *ChatChannelHandler) GetChatChannelRuntime(c *gin.Context) {
 		writeChatChannelError(c, code, chatChannelErrMsg(code, err))
 		return
 	}
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // DeleteChatChannel handles DELETE /chat-channels/:channel_id.

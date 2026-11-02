@@ -126,7 +126,7 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 	}
 	// Python's list_wiki_pages returns {total, items}; align the Go port so the
 	// shared frontend (which reads data.items) stays compatible.
-	common.RespondSuccessObject(c, gin.H{"total": total, "items": items}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "items": items}, "success")
 }
 
 // UpdateArtifact handles PUT /artifacts/<page_type>/<slug> — edit a wiki page.
@@ -198,7 +198,7 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 		}
 	}
 
-	common.RespondSuccessObject(c, detail, "success")
+	common.RespondSuccess(c, detail, "success")
 }
 
 // GetArtifact handles GET /artifacts/<page_type>/<slug> — single wiki page.
@@ -220,7 +220,7 @@ func (h *DatasetArtifactHandler) GetArtifact(c *gin.Context) {
 		common.RespondError(c, common.CodeNotFound, "page not found")
 		return
 	}
-	common.RespondSuccessObject(c, detail, "success")
+	common.RespondSuccess(c, detail, "success")
 }
 
 // ListArtifactTopics handles GET /artifacts/topics — list wiki topics.
@@ -238,7 +238,7 @@ func (h *DatasetArtifactHandler) ListArtifactTopics(c *gin.Context) {
 	}
 	// Python's list_wiki_topics returns {total, items}; align the Go port so the
 	// shared frontend (which reads data.items) stays compatible.
-	common.RespondSuccessObject(c, gin.H{"total": total, "items": items}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "items": items}, "success")
 }
 
 // GetArtifactAlteration handles GET /artifacts/alteration — wiki alteration summary.
@@ -253,7 +253,7 @@ func (h *DatasetArtifactHandler) GetArtifactAlteration(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, alt, "success")
+	common.RespondSuccess(c, alt, "success")
 }
 
 // GetArtifactGraph handles GET /artifacts/graph — wiki entity/relation graph.
@@ -288,7 +288,7 @@ func (h *DatasetArtifactHandler) GetArtifactGraph(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, graph, "success")
+	common.RespondSuccess(c, graph, "success")
 }
 
 // ListStructures handles GET /artifacts/structure?kind=<kind>&keywords=<query> —
@@ -322,7 +322,7 @@ func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 		}
 		return
 	}
-	common.RespondSuccessObject(c, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }
 
 // AnySkill handles HEAD /skills — any skill artifact present?
@@ -358,7 +358,7 @@ func (h *DatasetArtifactHandler) ListNavigation(c *gin.Context) {
 	}
 	// Response key is "items" (not "nav") — the frontend DatasetNavList reads
 	// data.items and Python list_nav_clusters/_nav_search return {"total","items"}.
-	common.RespondSuccessObject(c, gin.H{"total": total, "items": items}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "items": items}, "success")
 }
 
 // ListNavigationChildren handles GET /navigation/<name>/children — list
@@ -376,7 +376,7 @@ func (h *DatasetArtifactHandler) ListNavigationChildren(c *gin.Context) {
 	}
 	// Same contract as the top-level nav list: Python list_nav_children returns
 	// {"total","items"} and the frontend reads data.items for child expansion.
-	common.RespondSuccessObject(c, gin.H{"total": total, "items": items}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "items": items}, "success")
 }
 
 // GetSkillTree handles GET /skills — skill tree.
@@ -391,7 +391,7 @@ func (h *DatasetArtifactHandler) GetSkillTree(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, gin.H{"total": total, "tree": items}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "tree": items}, "success")
 }
 
 // DeleteSkills handles DELETE /skills — delete all skills.
@@ -405,7 +405,7 @@ func (h *DatasetArtifactHandler) DeleteSkills(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, gin.H{"deleted": n}, "success")
+	common.RespondSuccess(c, gin.H{"deleted": n}, "success")
 }
 
 // GetSkillPage handles GET /skills/<skill_kwd> — single skill page.
@@ -423,7 +423,7 @@ func (h *DatasetArtifactHandler) GetSkillPage(c *gin.Context) {
 		common.RespondError(c, common.CodeNotFound, "skill not found")
 		return
 	}
-	common.RespondSuccessObject(c, detail, "success")
+	common.RespondSuccess(c, detail, "success")
 }
 
 // DeleteSkill handles DELETE /skills/<skill_kwd> — delete a single skill.
@@ -437,7 +437,7 @@ func (h *DatasetArtifactHandler) DeleteSkill(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, gin.H{"deleted": n}, "success")
+	common.RespondSuccess(c, gin.H{"deleted": n}, "success")
 }
 
 // GetDocumentGraph handles GET /documents/<document_id>/structure/graph — document structure graph.
@@ -461,7 +461,7 @@ func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 	if resp == nil {
 		resp = &service.DocumentStructureGraphResponse{Templates: []service.DocumentStructureGraphTemplate{}}
 	}
-	common.RespondSuccessObject(c, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }
 
 // GetDocumentClaims handles GET /documents/<document_id>/structure/claims —
@@ -504,7 +504,7 @@ func (h *DatasetArtifactHandler) GetDocumentClaims(c *gin.Context) {
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, gin.H{"claims": claims, "total": total, "offset": offset, "limit": limit}, "success")
+	common.RespondSuccess(c, gin.H{"claims": claims, "total": total, "offset": offset, "limit": limit}, "success")
 }
 
 // DeleteDocumentGraph handles DELETE /documents/<document_id>/structure/graph — delete document structure graph.
@@ -520,5 +520,5 @@ func (h *DatasetArtifactHandler) DeleteDocumentGraph(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, gin.H{"deleted": n}, "success")
+	common.RespondSuccess(c, gin.H{"deleted": n}, "success")
 }

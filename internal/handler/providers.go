@@ -134,7 +134,7 @@ func (h *ProviderHandler) AddProvider(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func (h *ProviderHandler) DeleteProvider(c *gin.Context) {
@@ -153,7 +153,7 @@ func (h *ProviderHandler) DeleteProvider(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func (h *ProviderHandler) ShowProvider(c *gin.Context) {
@@ -168,7 +168,7 @@ func (h *ProviderHandler) ShowProvider(c *gin.Context) {
 		common.RespondError(c, common.CodeNotFound, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, provider, "success")
+	common.RespondSuccess(c, provider, "success")
 }
 
 func (h *ProviderHandler) ListModels(c *gin.Context) {
@@ -493,7 +493,7 @@ func (h *ProviderHandler) ShowModel(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, model, "success")
+	common.RespondSuccess(c, model, "success")
 }
 
 func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
@@ -527,7 +527,7 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 			common.RespondError(c, code, err.Error())
 			return
 		}
-		common.RespondSuccessObject(c, nil, "success")
+		common.RespondSuccess(c, nil, "success")
 		return
 	}
 
@@ -537,7 +537,7 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func (h *ProviderHandler) ListProviderInstances(c *gin.Context) {
@@ -581,7 +581,7 @@ func (h *ProviderHandler) ShowProviderInstance(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, instance, "success")
+	common.RespondSuccess(c, instance, "success")
 }
 
 func (h *ProviderHandler) ShowInstanceBalance(c *gin.Context) {
@@ -607,7 +607,7 @@ func (h *ProviderHandler) ShowInstanceBalance(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, balance, "success")
+	common.RespondSuccess(c, balance, "success")
 }
 
 func (h *ProviderHandler) CheckConnection(c *gin.Context) {
@@ -631,7 +631,7 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
@@ -666,7 +666,7 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func (h *ProviderHandler) ListTasks(c *gin.Context) {
@@ -724,7 +724,7 @@ func (h *ProviderHandler) ShowTask(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, taskResponse, "success")
+	common.RespondSuccess(c, taskResponse, "success")
 }
 
 func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
@@ -759,7 +759,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
@@ -783,7 +783,7 @@ func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
@@ -888,7 +888,7 @@ func (h *ProviderHandler) AlterModel(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func prepareProviderInstance(providerName, instanceName, reqProviderName, reqInstanceName string) error {
@@ -975,7 +975,7 @@ func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 type ChatToModelRequest struct {
@@ -1396,7 +1396,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, response, "success")
+	common.RespondSuccess(c, response, "success")
 }
 
 type AudioSpeechRequest struct {
@@ -1504,7 +1504,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, response, "success")
+	common.RespondSuccess(c, response, "success")
 }
 
 type OCRFileRequest struct {
@@ -1567,7 +1567,7 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, response, "success")
+	common.RespondSuccess(c, response, "success")
 }
 
 type ParseFileRequest struct {
@@ -1639,7 +1639,7 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, response, "success")
+	common.RespondSuccess(c, response, "success")
 }
 
 // ListModelsForUserInTenant handles GET /api/v1/models for the authenticated

@@ -25,5 +25,5 @@ func (h *DocumentHandler) ApplyDatasetParserConfig(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, result, "Parser settings applied. Re-parse files manually to update their content.")
+	common.RespondSuccess(c, result, "Parser settings applied. Re-parse files manually to update their content.")
 }

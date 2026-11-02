@@ -61,7 +61,7 @@ type ErrorResponse struct {
 func (h *Handler) Healthz(c *gin.Context) {
 	result, allOK := service.GetComponentsHealthz(c.Request.Context())
 	if allOK {
-		common.RespondSuccessObject(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 	} else {
 		common.Respond(c, common.CodeServerError, result, "", common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
 	}
@@ -69,12 +69,12 @@ func (h *Handler) Healthz(c *gin.Context) {
 
 // Live endpoint
 func (h *Handler) Live(c *gin.Context) {
-	common.RespondSuccessObject(c, nil, "")
+	common.RespondSuccess(c, nil, "")
 }
 
 // Ping ping endpoint
 func (h *Handler) Ping(c *gin.Context) {
-	common.RespondSuccessObject(c, nil, "pong")
+	common.RespondSuccess(c, nil, "pong")
 }
 
 // Login handle admin login
@@ -128,7 +128,7 @@ func (h *Handler) Login(c *gin.Context) {
 	c.Header("Access-Control-Allow-Headers", "*")
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
-	common.RespondSuccessObject(c, user, "Welcome back!")
+	common.RespondSuccess(c, user, "Welcome back!")
 }
 
 // Logout handle logout
@@ -145,12 +145,12 @@ func (h *Handler) Logout(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "Logout successful")
+	common.RespondSuccess(c, nil, "Logout successful")
 }
 
 // AuthCheck check admin auth
 func (h *Handler) AuthCheck(c *gin.Context) {
-	common.RespondSuccessObject(c, nil, "Admin is authorized")
+	common.RespondSuccess(c, nil, "Admin is authorized")
 }
 
 // ListUsers handle list users
@@ -276,7 +276,7 @@ func (h *Handler) CreateUser(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, userInfo, "User created successfully")
+	common.RespondSuccess(c, userInfo, "User created successfully")
 }
 
 func getUserName(c *gin.Context) (string, error) {
@@ -327,7 +327,7 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		detailsMsg += detail + "\n"
 	}
 
-	common.RespondSuccessObject(c, nil, detailsMsg)
+	common.RespondSuccess(c, nil, detailsMsg)
 }
 
 // ChangePasswordHTTPRequest change password request
@@ -354,7 +354,7 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "Password updated successfully")
+	common.RespondSuccess(c, nil, "Password updated successfully")
 }
 
 // UpdateActivateStatusHTTPRequest update activate status request
@@ -387,7 +387,7 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "Activation status updated")
+	common.RespondSuccess(c, nil, "Activation status updated")
 }
 
 // GrantAdmin handle grant admin role
@@ -410,7 +410,7 @@ func (h *Handler) GrantAdmin(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "Admin role granted")
+	common.RespondSuccess(c, nil, "Admin role granted")
 }
 
 // RevokeAdmin handle revoke admin role
@@ -433,7 +433,7 @@ func (h *Handler) RevokeAdmin(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "Admin role revoked")
+	common.RespondSuccess(c, nil, "Admin role revoked")
 }
 
 // ListUserAPITokens handle get user API keys
@@ -467,7 +467,7 @@ func (h *Handler) GenerateUserAPIToken(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, apiKey, "API key generated successfully")
+	common.RespondSuccess(c, apiKey, "API key generated successfully")
 }
 
 // DeleteUserAPIToken handle delete user API key
@@ -488,7 +488,7 @@ func (h *Handler) DeleteUserAPIToken(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "API key deleted successfully")
+	common.RespondSuccess(c, nil, "API key deleted successfully")
 }
 
 // GetServices handle get all services
@@ -537,7 +537,7 @@ func (h *Handler) GetService(c *gin.Context) {
 
 	for _, serviceInstance := range services {
 		if serviceInstance.Name == serviceName {
-			common.RespondSuccessObject(c, serviceInstance, "")
+			common.RespondSuccess(c, serviceInstance, "")
 			return
 		}
 	}
@@ -559,7 +559,7 @@ func (h *Handler) ShutdownService(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "")
+	common.RespondSuccess(c, result, "")
 }
 
 // StartService handle start service
@@ -576,7 +576,7 @@ func (h *Handler) StartService(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "")
+	common.RespondSuccess(c, result, "")
 }
 
 // RestartService handle restart service
@@ -593,7 +593,7 @@ func (h *Handler) RestartService(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "")
+	common.RespondSuccess(c, result, "")
 }
 
 // ListVariables handle list variables
@@ -728,7 +728,7 @@ func (h *Handler) SetVariable(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "Set variable successfully")
+	common.RespondSuccess(c, nil, "Set variable successfully")
 }
 
 // ListConfigs returns configurations, including plaintext credentials, for
@@ -757,7 +757,7 @@ func (h *Handler) ListEnvironments(c *gin.Context) {
 // GetVersion handle get version
 func (h *Handler) GetVersion(c *gin.Context) {
 	version, versionType := h.service.GetVersion()
-	common.RespondSuccessObject(c, gin.H{"version": version, "version_type": versionType}, "")
+	common.RespondSuccess(c, gin.H{"version": version, "version_type": versionType}, "")
 }
 
 // ListSandboxProviders handle list sandbox providers
@@ -785,7 +785,7 @@ func (h *Handler) GetSandboxProviderSchema(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, schema, "")
+	common.RespondSuccess(c, schema, "")
 }
 
 // GetSandboxConfig handle get sandbox config
@@ -796,7 +796,7 @@ func (h *Handler) GetSandboxConfig(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, config, "")
+	common.RespondSuccess(c, config, "")
 }
 
 // SetSandboxConfigHTTPRequest set sandbox config request
@@ -826,7 +826,7 @@ func (h *Handler) SetSandboxConfig(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "Sandbox configuration updated successfully")
+	common.RespondSuccess(c, result, "Sandbox configuration updated successfully")
 }
 
 // TestSandboxConnectionHTTPRequest test sandbox connection request
@@ -858,7 +858,7 @@ func (h *Handler) TestSandboxConnection(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "")
+	common.RespondSuccess(c, result, "")
 }
 
 func writeSandboxError(c *gin.Context, err error) {
@@ -912,7 +912,7 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 // GetLogLevel returns the current log level
 func (h *Handler) GetLogLevel(c *gin.Context) {
 	level := common.GetLogLevel()
-	common.RespondSuccessObject(c, gin.H{"level": level}, "SUCCESS")
+	common.RespondSuccess(c, gin.H{"level": level}, "SUCCESS")
 }
 
 // SetLogLevelRequest set log level request
@@ -933,7 +933,7 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, gin.H{"level": req.Level}, "SUCCESS")
+	common.RespondSuccess(c, gin.H{"level": req.Level}, "SUCCESS")
 }
 
 func (h *Handler) ListMessagesFromQueue(c *gin.Context) {
@@ -991,7 +991,7 @@ func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "Publish message successfully")
+	common.RespondSuccess(c, nil, "Publish message successfully")
 }
 
 type PullMessageFromQueueRequest struct {
@@ -1067,7 +1067,7 @@ func (h *Handler) ShowMessageQueue(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "show message queue successfully")
+	common.RespondSuccess(c, result, "show message queue successfully")
 }
 
 func (h *Handler) ListIngestors(c *gin.Context) {
@@ -1110,7 +1110,7 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 	//	AssignedTo: req.IngestorID,
 	//})
 
-	common.RespondSuccessObject(c, gin.H{"task_id": taskID, "ingestor_id": req.IngestorID}, "Shutdown ingestor")
+	common.RespondSuccess(c, gin.H{"task_id": taskID, "ingestor_id": req.IngestorID}, "Shutdown ingestor")
 }
 
 // Reports handle heartbeat reports from servers
@@ -1187,7 +1187,7 @@ func (h *Handler) ShowModel(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, model, "")
+	common.RespondSuccess(c, model, "")
 
 }
 
@@ -1240,5 +1240,5 @@ func (h *Handler) GetHardwareInfo(c *gin.Context) {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, hardwareInfo, "SUCCESS")
+	common.RespondSuccess(c, hardwareInfo, "SUCCESS")
 }

@@ -98,7 +98,7 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, resp.Chunk, "success")
+	common.RespondSuccess(c, resp.Chunk, "success")
 }
 
 // Parse reparse the datasets' files
@@ -192,7 +192,7 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }
 
 func queryStringList(c *gin.Context, name string) []string {
@@ -559,7 +559,7 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, nil, "chunk updated successfully")
+	common.RespondSuccess(c, nil, "chunk updated successfully")
 }
 
 // RemoveChunks handles chunk removal requests
@@ -731,5 +731,5 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }

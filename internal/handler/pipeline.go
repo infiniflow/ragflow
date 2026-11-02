@@ -62,7 +62,7 @@ func NewPipelineHandler() *PipelineHandler {
 // templates themselves are static data with no tenant scoping.
 func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 	if h == nil || h.registry == nil {
-		common.RespondSuccessObject(c, &pipelinepkg.BuiltinPipelineListResponse{
+		common.RespondSuccess(c, &pipelinepkg.BuiltinPipelineListResponse{
 			BuiltinPipelines: []*pipelinepkg.BuiltinPipelineMeta{},
 			Total:            0,
 		}, "success")
@@ -74,7 +74,7 @@ func (h *PipelineHandler) ListPipelines(c *gin.Context) {
 	// When type is empty or "builtin", return the builtin catalog.
 	_ = pipelineType
 
-	common.RespondSuccessObject(c, h.registry.List(), "success")
+	common.RespondSuccess(c, h.registry.List(), "success")
 }
 
 // GetPipeline GET /api/v1/pipelines/:id
@@ -94,5 +94,5 @@ func (h *PipelineHandler) GetPipeline(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, map[string]any{"dsl": tpl.DSL}, "success")
+	common.RespondSuccess(c, map[string]any{"dsl": tpl.DSL}, "success")
 }

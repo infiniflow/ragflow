@@ -132,7 +132,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(ctx, user)
-	common.RespondSuccessObject(c, profile, fmt.Sprintf("%s, welcome aboard!", req.Nickname))
+	common.RespondSuccess(c, profile, fmt.Sprintf("%s, welcome aboard!", req.Nickname))
 }
 
 // Login user login
@@ -203,7 +203,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(ctx, user)
-	common.RespondSuccessObject(c, profile, "Welcome back!")
+	common.RespondSuccess(c, profile, "Welcome back!")
 }
 
 // LoginByEmail user login by email
@@ -285,7 +285,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(ctx, user)
-	common.RespondSuccessObject(c, profile, "Welcome back!")
+	common.RespondSuccess(c, profile, "Welcome back!")
 }
 
 // GetUserByID get user by ID
@@ -310,7 +310,7 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, user, "success")
+	common.RespondSuccess(c, user, "success")
 }
 
 // Logout user logout
@@ -397,7 +397,7 @@ func (h *UserHandler) Info(c *gin.Context) {
 	// Get user profile
 	profile := h.userService.GetUserProfile(ctx, user)
 
-	common.RespondSuccessObject(c, profile, "success")
+	common.RespondSuccess(c, profile, "success")
 }
 
 // Setting update user settings

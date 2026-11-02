@@ -221,7 +221,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // Ask performs a retrieval-augmented Q&A with streaming SSE response.
@@ -427,7 +427,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 		common.RespondError(c, common.CodeOperatingError, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, mindMap, "success")
+	common.RespondSuccess(c, mindMap, "success")
 }
 
 // SearchBotDetail returns the public share-page bootstrap payload for a
@@ -463,7 +463,7 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, detail, "success")
+	common.RespondSuccess(c, detail, "success")
 }
 
 // ---- SSE helpers ----

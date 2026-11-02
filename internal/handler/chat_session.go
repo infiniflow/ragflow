@@ -328,7 +328,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 			common.RespondError(c, 500, err.Error(), common.ResponseOptions{HTTPStatus: http.StatusInternalServerError})
 			return
 		}
-		common.RespondSuccessObject(c, result, "")
+		common.RespondSuccess(c, result, "")
 	}
 }
 
@@ -356,7 +356,7 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // CreateSession create a session in a dialog
@@ -403,7 +403,7 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // DeleteSessions delete a session in a dialog
@@ -479,7 +479,7 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
@@ -500,7 +500,7 @@ func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
@@ -535,5 +535,5 @@ func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }

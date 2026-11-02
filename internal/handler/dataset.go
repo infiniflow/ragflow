@@ -82,7 +82,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 			common.RespondError(c, code, err.Error())
 			return
 		}
-		common.RespondSuccessObject(c, data, "success")
+		common.RespondSuccess(c, data, "success")
 		return
 	}
 
@@ -338,7 +338,7 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetDataset handles GET /api/v1/datasets/:dataset_id.
@@ -358,7 +358,7 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // UpdateDataset Update a dataset.
@@ -563,7 +563,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
@@ -582,7 +582,7 @@ func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
@@ -607,7 +607,7 @@ func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetIngestionSummary handles GET /api/v1/datasets/:dataset_id/ingestions/summary.
@@ -625,7 +625,7 @@ func (h *DatasetsHandler) GetIngestionSummary(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // ListIngestionLogs handles GET /api/v1/datasets/:dataset_id/ingestions.
@@ -666,7 +666,7 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 			common.RespondError(c, code, err.Error())
 			return
 		}
-		common.RespondSuccessObject(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 
@@ -689,7 +689,7 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetIngestionLog handles GET /api/v1/datasets/:dataset_id/ingestions/:log_id.
@@ -710,7 +710,7 @@ func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // ListIngestionMessages handles GET
@@ -747,7 +747,7 @@ func (h *DatasetsHandler) ListIngestionMessages(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func ingestionEventCursor(c *gin.Context, name string) (*int, bool) {
@@ -857,7 +857,7 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetKnowledgeGraph handles GET /api/v1/datasets/:dataset_id/graph.
@@ -905,7 +905,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		"mind_map": map[string]interface{}{},
 	}
 	if !exists {
-		common.RespondSuccessObject(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 
@@ -925,7 +925,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		return
 	}
 	if searchResult == nil || len(searchResult.Chunks) == 0 {
-		common.RespondSuccessObject(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 
@@ -936,17 +936,17 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	}
 	contentWithWeight, _ := chunk["content_with_weight"].(string)
 	if strings.TrimSpace(contentWithWeight) == "" {
-		common.RespondSuccessObject(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 
 	var graphData map[string]interface{}
 	if err = json.Unmarshal([]byte(contentWithWeight), &graphData); err != nil {
-		common.RespondSuccessObject(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 	if len(graphData) == 0 {
-		common.RespondSuccessObject(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 
@@ -960,7 +960,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		result[graphType] = graphData
 	}
 
-	common.RespondSuccessObject(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // DeleteKnowledgeGraph handles DELETE /api/v1/datasets/:dataset_id/graph.
@@ -1049,7 +1049,7 @@ func (h *DatasetsHandler) CheckEmbedding(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 // AggregateTags handles GET /api/v1/datasets/tags/aggregation.
@@ -1114,7 +1114,7 @@ func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, st, "success")
+	common.RespondSuccess(c, st, "success")
 }
 
 // ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.
@@ -1167,7 +1167,7 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, flattenedMeta, "success")
+	common.RespondSuccess(c, flattenedMeta, "success")
 }
 
 func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
@@ -1289,7 +1289,7 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }
 
 // SearchDataset searches chunks within a single dataset based on a question.
@@ -1348,7 +1348,7 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {

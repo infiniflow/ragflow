@@ -209,7 +209,7 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 		ct = *commit.CreateTime
 	}
 
-	common.RespondSuccessObject(c, entity.CommitResponse{
+	common.RespondSuccess(c, entity.CommitResponse{
 		ID:         commit.ID,
 		FolderID:   commit.FolderID,
 		ParentID:   commit.ParentID,
@@ -302,7 +302,7 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 			jsonInternalError(c, err)
 			return
 		}
-		common.RespondSuccessObject(c, gin.H{
+		common.RespondSuccess(c, gin.H{
 			"total":     total,
 			"page":      page,
 			"page_size": pageSize,
@@ -334,7 +334,7 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 		})
 	}
 
-	common.RespondSuccessObject(c, gin.H{
+	common.RespondSuccess(c, gin.H{
 		"total":     total,
 		"page":      page,
 		"page_size": pageSize,
@@ -391,7 +391,7 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 			common.RespondError(c, common.CodeNotFound, "Commit not found")
 			return
 		}
-		common.RespondSuccessObject(c, detail, common.CodeSuccess.Message())
+		common.RespondSuccess(c, detail, common.CodeSuccess.Message())
 		return
 	}
 
@@ -405,7 +405,7 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 		ct = *commit.CreateTime
 	}
 
-	common.RespondSuccessObject(c, gin.H{
+	common.RespondSuccess(c, gin.H{
 		"id":          commit.ID,
 		"folder_id":   commit.FolderID,
 		"parent_id":   commit.ParentID,
@@ -601,7 +601,7 @@ func (h *FileCommitHandler) GetCommitTree(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, tree, common.CodeSuccess.Message())
+	common.RespondSuccess(c, tree, common.CodeSuccess.Message())
 }
 
 // GetCommitFileContent gets file content as it existed in a given commit
@@ -652,7 +652,7 @@ func (h *FileCommitHandler) GetCommitFileContent(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, gin.H{"content": string(content)}, common.CodeSuccess.Message())
+	common.RespondSuccess(c, gin.H{"content": string(content)}, common.CodeSuccess.Message())
 }
 
 // GetFileVersionHistory gets version history for a specific file

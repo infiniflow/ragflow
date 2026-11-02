@@ -101,7 +101,7 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 			groups = groups[start:end]
 		}
 	}
-	common.RespondSuccessObject(c, gin.H{"groups": groups, "total": total}, "success")
+	common.RespondSuccess(c, gin.H{"groups": groups, "total": total}, "success")
 }
 
 // Get returns a single compilation template group.
@@ -128,7 +128,7 @@ func (h *CompilationTemplateGroupHandler) Get(c *gin.Context) {
 		common.RespondError(c, common.CodeNotFound, "Cannot find compilation template group "+id+".")
 		return
 	}
-	common.RespondSuccessObject(c, group, "success")
+	common.RespondSuccess(c, group, "success")
 }
 
 // Save creates a new compilation template group with its child templates.
@@ -159,7 +159,7 @@ func (h *CompilationTemplateGroupHandler) Save(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.RespondSuccessObject(c, group, "success")
+	common.RespondSuccess(c, group, "success")
 }
 
 // Update applies a partial update to a compilation template group.
@@ -207,7 +207,7 @@ func (h *CompilationTemplateGroupHandler) Update(c *gin.Context) {
 		common.RespondError(c, common.CodeNotFound, "Cannot find compilation template group "+id+".")
 		return
 	}
-	common.RespondSuccessObject(c, group, "success")
+	common.RespondSuccess(c, group, "success")
 }
 
 // Delete soft-deletes a compilation template group and its children.

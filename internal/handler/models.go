@@ -87,5 +87,5 @@ func (h *ModelHandler) ShowModel(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccessObject(c, model, "success")
+	common.RespondSuccess(c, model, "success")
 }
