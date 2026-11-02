@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -860,7 +861,12 @@ func emit(
 // expired mid-investigation, so inheriting that deadline would guarantee its
 // failure — q268 shipped a 60-char narration sentence because the final
 // synthesis call was itself killed by the budget that had just run out.
-const finalizeTimeout = 90 * time.Second
+//
+// A local LLM over a large evidence block can legitimately need more than the
+// default to produce its first token (#21829), so operators can raise the
+// budget with AGENTIC_FINALIZE_TIMEOUT (Go duration, e.g. "5m"); the default
+// stays 90s.
+var finalizeTimeout = durationFromEnv("AGENTIC_FINALIZE_TIMEOUT", 90*time.Second)
 
 // finalizeEvidenceMaxRunes caps the evidence block handed to the synthesis
 // call. Tool outputs accumulate 4KB each; without a cap a long investigation
@@ -877,8 +883,23 @@ const finalizeEvidenceMaxRunes = 40000
 // claimAnswerTimeout bounds the claims path as a whole: an answer call over
 // evidence that was already retrieved and, only if it produced an answer, its
 // verification. Both are non-streaming and need a fraction of the loop's budget -
-// and a hung provider must not eat the turn.
-const claimAnswerTimeout = 90 * time.Second
+// and a hung provider must not eat the turn. AGENTIC_CLAIM_ANSWER_TIMEOUT
+// raises it for a provider that legitimately needs longer than the 90s
+// default to start answering (#21829).
+var claimAnswerTimeout = durationFromEnv("AGENTIC_CLAIM_ANSWER_TIMEOUT", 90*time.Second)
+
+// durationFromEnv parses one Go-duration environment variable, falling back to
+// the default when unset or malformed so a typo cannot zero out a budget.
+func durationFromEnv(name string, fallback time.Duration) time.Duration {
+	if raw := strings.TrimSpace(os.Getenv(name)); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			return d
+		}
+		common.WarnCtx(context.Background(), "agentic_rag: ignoring malformed duration override",
+			zap.String("env", name), zap.String("value", raw), zap.Duration("default", fallback))
+	}
+	return fallback
+}
 
 // synthModelFor picks the model that answers without tools: the caller's
 // dedicated synthesis instance when it supplied one, else the agent's own model.
