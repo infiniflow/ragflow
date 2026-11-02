@@ -311,16 +311,15 @@ jobs:
             GOPROXY=https://proxy.golang.org,direct
           tags: |
             infiniflow/ragflow:${{ needs.prepare.outputs.release_tag }}-amd64
-            infiniflow/ragflow:amd64
             infiniflow/ragflow:${{ needs.prepare.outputs.release_tag }}
 
   # Build the linux/arm64 image on a GitHub-hosted ARM64 runner and merge it
   # with the amd64 image (pushed by the `build-amd64` job above) into a single
   # multi-arch manifest list for infiniflow/ragflow:${RELEASE_TAG} and :latest,
   # so `docker pull infiniflow/ragflow:${RELEASE_TAG}` resolves per-arch on both
-  # platforms. Runs after `build-amd64` so the amd64 (-amd64/:amd64) tags exist.
-  # After the manifest is published, the intermediate -amd64/-arm64/amd64/arm64
-  # tags are deleted from Docker Hub, leaving only the dual-structure tags
+  # platforms. Runs after `build-amd64` so the amd64 -amd64 tag exists.
+  # After the manifest is published, the intermediate -amd64/-arm64 tags are
+  # deleted from Docker Hub, leaving only the dual-structure tags
   # (${RELEASE_TAG}, :latest for stable, or :nightly).
   build-arm64:
     needs:
@@ -369,15 +368,17 @@ jobs:
             GOPROXY=https://proxy.golang.org,direct
           tags: |
             infiniflow/ragflow:${{ needs.prepare.outputs.release_tag }}-arm64
-            infiniflow/ragflow:arm64
 
       # Create/upgrade the public multi-arch tags now that both arch-specific
-      # images (-amd64/:amd64 from the `build-amd64` job, -arm64/:arm64 from this
-      # job) are pushed. :${RELEASE_TAG} was already pushed amd64-only by the
-      # build-amd64 job (so amd64 pulls always work); this upgrades it to multi-arch.
+      # images (-amd64 from the `build-amd64` job, -arm64 from this job) are
+      # pushed. :${RELEASE_TAG} was already pushed amd64-only by the build-amd64
+      # job (so amd64 pulls always work); this upgrades it to multi-arch.
       # :latest is created here for the first time this release (it is NOT pushed
       # by the build-amd64 job), so the previous, possibly multi-arch, :latest is
-      # never overwritten with an amd64-only image before ARM64 is ready.
+      # never overwritten with an amd64-only image before ARM64 is ready. Both
+      # :${RELEASE_TAG} and :latest are assembled from this run's release-specific
+      # -amd64/-arm64 tags, so overlapping runs for other refs cannot race on the
+      # shared mutable amd64/arm64 tags.
       - name: Create multi-arch manifest
         run: |
           docker buildx imagetools create --tag infiniflow/ragflow:${RELEASE_TAG} \
@@ -388,19 +389,19 @@ jobs:
           # not overwrite the stable :latest.
           if [ "${PRERELEASE}" != "true" ]; then
             docker buildx imagetools create --tag infiniflow/ragflow:latest \
-              infiniflow/ragflow:amd64 \
-              infiniflow/ragflow:arm64
+              infiniflow/ragflow:${RELEASE_TAG}-amd64 \
+              infiniflow/ragflow:${RELEASE_TAG}-arm64
           else
             echo "RELEASE_TAG=${RELEASE_TAG} is a prerelease/nightly build; skipping :latest update."
           fi
 
-      # The -amd64/-arm64 single-arch tags and the mutable amd64/arm64 tags are
-      # only intermediate steps used to assemble the multi-arch manifest above.
-      # Delete them from Docker Hub so the published repository exposes only the
-      # dual-structure tags (${RELEASE_TAG}, :latest for stable, or :nightly).
-      # The Docker Hub tag-delete API removes the tag name while keeping the
-      # manifest referenced by the multi-arch index, so the public tags stay
-      # intact for per-arch pulls.
+      # The -amd64/-arm64 single-arch tags are intermediate steps used to assemble
+      # the multi-arch manifest above. They are release-specific, so no other
+      # workflow run references them. Delete them from Docker Hub so the published
+      # repository exposes only the dual-structure tags (${RELEASE_TAG}, :latest
+      # for stable, or :nightly). The Docker Hub tag-delete API removes the tag
+      # name while keeping the manifest referenced by the multi-arch index, so the
+      # public tags stay intact for per-arch pulls.
       - name: Remove intermediate per-arch tags
         env:
           DH_USER: infiniflow
@@ -414,16 +415,33 @@ jobs:
             echo "::error::Failed to obtain Docker Hub JWT; check DOCKERHUB_TOKEN can authenticate to the Hub API"
             exit 1
           fi
+          FAILED_TAGS=""
           delete_tag() {
             local tag="$1"
-            echo "Deleting Docker Hub tag: ${tag}"
-            curl -fsS -X DELETE \
+            # Capture the HTTP status instead of failing on 404 (-f would make
+            # curl exit non-zero on 404 and abort the step under set -e). A tag
+            # that was never pushed is fine; only real failures should surface.
+            local code
+            code=$(curl -sS -o /dev/null -w "%{http_code}" -X DELETE \
               -H "Authorization: JWT ${JWT}" \
               "https://hub.docker.com/v2/repositories/${DH_USER}/ragflow/tags/${tag}/" \
-              || echo "  (delete returned non-zero for ${tag}; continuing)"
+              || echo "000")
+            case "${code}" in
+              200|202|204)
+                echo "Deleted Docker Hub tag: ${tag}"
+                ;;
+              404)
+                echo "Docker Hub tag already absent: ${tag}"
+                ;;
+              *)
+                echo "::warning::Failed to delete Docker Hub tag ${tag} (HTTP ${code})"
+                FAILED_TAGS="${FAILED_TAGS} ${tag}"
+                ;;
+            esac
           }
           delete_tag "${RELEASE_TAG}-amd64"
           delete_tag "${RELEASE_TAG}-arm64"
-          delete_tag "amd64"
-          delete_tag "arm64"
+          if [ -n "${FAILED_TAGS}" ]; then
+            echo "::warning::Some intermediate tags could not be removed and may linger on Docker Hub:${FAILED_TAGS}"
+          fi
 
