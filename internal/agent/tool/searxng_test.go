@@ -322,7 +322,7 @@ func TestSearXNGDoesNotRetryFailedRequest(t *testing.T) {
 }
 
 func TestSearXNGPrivateHostBlockedByDefault(t *testing.T) {
-	t.Parallel()
+	t.Setenv(common.EnvAllowAnyHost, "")
 	ctx := t.Context()
 
 	var calls atomic.Int32

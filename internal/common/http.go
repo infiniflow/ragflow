@@ -477,9 +477,10 @@ var LookupHost = net.LookupHost
 // talk to a local httptest server flip it on and reset it in
 // t.Cleanup.
 //
-// Host-based database and connector dials, configured MCP servers, and Invoke
-// URLs have a separate ALLOW_ANY_HOST opt-in via AllowConfiguredPrivateHost.
-// AssertURLSafe and AssertHostSafe stay limited to the in-memory test hook.
+// Host-based database and connector dials, configured MCP servers, Invoke
+// URLs, and the SearXNG URL stored in an Agent node config have a separate
+// ALLOW_ANY_HOST opt-in via AllowConfiguredPrivateHost. AssertURLSafe and
+// AssertHostSafe stay limited to the in-memory test hook.
 var AllowAnyHostForTest = false
 
 // allowAnyHost reads the test-only override. Kept as a private
