@@ -394,6 +394,37 @@ func TestRetrieval_UsesEmptyResponseForEmptyQuery(t *testing.T) {
 	}
 }
 
+// TestRetrieval_EmptyQuerySkipsMemoryUserIDRequirement pins the ordering of the
+// empty-query short-circuit and the memory user_id guard: no search runs, so a
+// memory node without user_id and without an authenticated run user answers
+// with the configured empty response instead of failing closed.
+func TestRetrieval_EmptyQuerySkipsMemoryUserIDRequirement(t *testing.T) {
+	previous := GetMemoryRetrievalService()
+	memoryService := &capturingRetrievalService{}
+	SetMemoryRetrievalService(memoryService)
+	t.Cleanup(func() { SetMemoryRetrievalService(previous) })
+
+	rt := NewRetrievalToolWithDefaults(retrievalArgs{
+		RetrievalFrom: "memory",
+		MemoryIDs:     []string{"memory-1"},
+		EmptyResponse: "No query or result.",
+	})
+	out, err := rt.InvokableRun(t.Context(), `{"query":""}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	var result retrievalResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if result.FormalizedContent != "No query or result." {
+		t.Fatalf("FormalizedContent = %q", result.FormalizedContent)
+	}
+	if memoryService.req.RetrievalFrom != "" {
+		t.Fatalf("memory search ran for an empty query: %#v", memoryService.req)
+	}
+}
+
 func TestRetrieval_RoutesMemoryRequests(t *testing.T) {
 	previous := GetMemoryRetrievalService()
 	memoryService := &capturingRetrievalService{}
