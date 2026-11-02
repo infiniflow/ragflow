@@ -973,10 +973,11 @@ func (r *Client) ExpireIfEqual(ctx context.Context, key, expectedValue string, e
 	if r.luaExpireIfEqual == nil {
 		return false, errors.New("kvrocks expire-if-equal script is not initialized")
 	}
-	if exp <= 0 {
-		return false, errors.New("kvrocks expire-if-equal ttl must be positive")
+	ttlMs := exp.Milliseconds()
+	if ttlMs <= 0 {
+		return false, errors.New("kvrocks expire-if-equal ttl must be at least 1ms")
 	}
-	result, err := r.luaExpireIfEqual.Run(ctx, r.client, []string{key}, expectedValue, exp.Milliseconds()).Int64()
+	result, err := r.luaExpireIfEqual.Run(ctx, r.client, []string{key}, expectedValue, ttlMs).Int64()
 	if err != nil {
 		common.Warn("Redis ExpireIfEqual error", zap.String("key", key), zap.Error(err))
 		return false, fmt.Errorf("expire key %q if value matches: %w", key, err)

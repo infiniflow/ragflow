@@ -96,6 +96,12 @@ func (f *fakeTaskClaimStore) setOwner(key, owner string) {
 	f.entries[key] = fakeClaimEntry{owner: owner, expiresAt: time.Now().Add(time.Hour)}
 }
 
+func (f *fakeTaskClaimStore) setExpireErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.expireErr = err
+}
+
 func newClaimTestIngestor(name string, store taskClaimStore, ttl, renew time.Duration) *Ingestor {
 	return &Ingestor{
 		id:                     name,
@@ -186,7 +192,7 @@ func TestTaskClaimWatchCancelsWhenRenewalKeepsFailing(t *testing.T) {
 	}
 	t.Cleanup(func() { ingestor.releaseTask(claim) })
 
-	store.expireErr = errors.New("kvrocks unavailable")
+	store.setExpireErr(errors.New("kvrocks unavailable"))
 	select {
 	case <-claim.ctx.Done():
 	case <-time.After(time.Second):

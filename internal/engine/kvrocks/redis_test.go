@@ -457,3 +457,24 @@ func TestExpireIfEqualExtendsOnlyOwnedKey(t *testing.T) {
 		t.Fatal("ExpireIfEqual missing key = true, want false")
 	}
 }
+
+func TestExpireIfEqualRejectsSubMillisecondTTL(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+	key := "claim:task-1"
+
+	if err := r.client.Set(ctx, key, "owner-a", time.Minute).Err(); err != nil {
+		t.Fatalf("seed claim: %v", err)
+	}
+	if _, err := r.ExpireIfEqual(ctx, key, "owner-a", 500*time.Microsecond); err == nil {
+		t.Fatal("ExpireIfEqual sub-millisecond ttl error = nil, want validation error")
+	}
+	// The rejected renewal must not run PEXPIRE 0 and delete the claim.
+	exists, err := r.client.Exists(ctx, key).Result()
+	if err != nil {
+		t.Fatalf("check claim after rejected renewal: %v", err)
+	}
+	if exists != 1 {
+		t.Fatal("sub-millisecond renewal deleted the claim")
+	}
+}
