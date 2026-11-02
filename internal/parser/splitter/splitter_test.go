@@ -246,7 +246,7 @@ func TestConcatenateResults(t *testing.T) {
 		{Index: 1, Title: "Ch 2", StartPage: 50, EndPage: 99, PageCount: 50},
 	}
 
-	final := ConcatenateResults(nil, []parser.ParseResult{ch1, ch2}, plans)
+	final := ConcatenateResults([]parser.ParseResult{ch1, ch2}, plans)
 	if final.Err != nil {
 		t.Fatalf("unexpected error: %v", final.Err)
 	}
@@ -388,7 +388,7 @@ func TestConcatenateResults_CrossChapterTableStitching(t *testing.T) {
 	ch1 := parser.ParseResult{JSON: []parser.DocItem{t1}}
 	ch2 := parser.ParseResult{JSON: []parser.DocItem{t2}}
 
-	res := ConcatenateResults(nil, []parser.ParseResult{ch1, ch2}, plans)
+	res := ConcatenateResults([]parser.ParseResult{ch1, ch2}, plans)
 	if len(res.JSON) != 1 {
 		t.Fatalf("expected 1 stitched table item, got %d items", len(res.JSON))
 	}
@@ -443,7 +443,7 @@ func TestConcatenateResults_EndToEndContinuity(t *testing.T) {
 		parser.TextItem{Text: "Conclusion", Extra: map[string]any{"page_number": 5}}, // global 25
 	}
 
-	final := ConcatenateResults(nil, []parser.ParseResult{
+	final := ConcatenateResults([]parser.ParseResult{
 		{JSON: ch0Items},
 		{JSON: ch1Items},
 		{JSON: ch2Items},

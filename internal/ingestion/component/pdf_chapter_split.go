@@ -253,7 +253,7 @@ ChapterLoop:
 		return parser.ParseResult{Err: cctx.Err()}, true, cctx.Err()
 	}
 
-	aggregated := splitter.ConcatenateResults(binary, chapterResults, plans)
+	aggregated := splitter.ConcatenateResults(chapterResults, plans)
 	if aggregated.Err != nil {
 		return aggregated, true, aggregated.Err
 	}

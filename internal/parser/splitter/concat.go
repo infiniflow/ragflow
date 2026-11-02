@@ -204,7 +204,7 @@ func addOffsetToAny(val any, offset int) (any, bool) {
 // ConcatenateResults lossless aggregates chapter parse results into a single ParseResult.
 // It applies coordinate offsets, stitches DocItems sequentially, attaches authoritative
 // original document outlines, and updates total page_count metadata.
-func ConcatenateResults(originalPDF []byte, chapterResults []parser.ParseResult, plans []ChapterPlan) parser.ParseResult {
+func ConcatenateResults(chapterResults []parser.ParseResult, plans []ChapterPlan) parser.ParseResult {
 	if len(chapterResults) == 0 {
 		return parser.ParseResult{}
 	}
