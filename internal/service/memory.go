@@ -502,7 +502,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 	if err != nil {
 		return nil, err
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, "memory", permission.ActionWrite); err != nil {
+	if err := permission.NewDatabaseChecker(s.db).CheckFeature(ctx, permission.Subject{UserID: userID}, "memory", permission.ActionWrite); err != nil {
 		return nil, err
 	}
 	// Resolve tenant model IDs, mirroring Python's ensure_tenant_model_ids_for_params.
