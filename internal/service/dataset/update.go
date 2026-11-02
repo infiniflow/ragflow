@@ -434,6 +434,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			var membership entity.UserTenant
 			if tenantErr := tx.Where("user_id = ? AND tenant_id = ? AND status = ?", userID, lockedKB.TenantID, entity.TenantMembershipStatusJoined).Take(&membership).Error; tenantErr == nil {
 				llmID = membership.LLMID
+				if membership.TenantLLMID != nil && strings.TrimSpace(*membership.TenantLLMID) != "" {
+					llmID = strings.TrimSpace(*membership.TenantLLMID)
+				}
 			}
 			effectiveParserConfig = service.ApplyComponentScopedParserConfig(
 				effectiveParserConfig,
