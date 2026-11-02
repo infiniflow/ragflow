@@ -157,6 +157,11 @@ func TestMinerURequestTimeout(t *testing.T) {
 	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "invalid"}, nil); got != 30*time.Minute {
 		t.Fatalf("invalid string timeout fallback=%v, want 30m", got)
 	}
+	// Present setup key is authoritative: invalid values do not fall through to MINERU_TIMEOUT env or apiConfig
+	t.Setenv(common.EnvMineruTimeout, "7200")
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "invalid"}, nil); got != 30*time.Minute {
+		t.Fatalf("invalid setup with MINERU_TIMEOUT env fallback=%v, want 30m", got)
+	}
 }
 
 func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
