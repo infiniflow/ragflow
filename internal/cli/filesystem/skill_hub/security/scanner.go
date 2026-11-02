@@ -118,12 +118,11 @@ func (s *Scanner) scanFile(filename, content string) []Finding {
 
 // scanQuotedRmExpansion is a quote-aware pass that stays out of
 // ThreatPatterns: a regular expression over the raw line cannot track quote
-// and escape state across an operand. The destructive-rm rules stop an
-// unquoted operand at a separator, so a separator inside a double-quoted
-// operand hides an expansion that follows it. The operand can also continue
-// after the closing quote with more quoted or unquoted fragments, and `\"`
-// does not end the quoted span. Return the operand that carries the hidden
-// expansion.
+// and escape state across an operand. It flags a recursive rm operand that
+// carries a separator inside a double-quoted span with a later expansion in
+// the same operand. The operand can continue after the closing quote with
+// more quoted or unquoted fragments, and `\"` does not end the quoted span.
+// Return the operand that carries the hidden expansion.
 func scanQuotedRmExpansion(line string) (string, bool) {
 	code := shellCodeMask(line)
 	for i := 0; i+2 <= len(line); i++ {
