@@ -528,6 +528,25 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 		return
 	}
 
+	// Acquire the claim before TransitionTaskToRunning: that method has side
+	// effects for a STOPPING task (finalize STOPPED, clear the cancel flag,
+	// close the run log), and those must never run on a duplicate delivery
+	// while the owning worker still holds the claim.
+	claim, claimed, claimErr := e.acquireTaskClaim(taskMessage.TaskID)
+	if claimErr != nil {
+		// Fail closed: running without the Kvrocks claim would silently
+		// reintroduce multi-node duplicate execution.
+		common.Error(fmt.Sprintf("task %s: acquire distributed claim", taskMessage.TaskID), claimErr)
+		e.nackHandle(hb, handle, taskMessage.TaskID)
+		return
+	}
+	if !claimed {
+		common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, renew lease", taskMessage.TaskID))
+		e.renewDuplicateHandle(hb, handle, taskMessage.TaskID)
+		return
+	}
+	defer e.releaseTask(claim)
+
 	task, err := e.ingestionTaskSvc.TransitionTaskToRunning(e.ctx, taskMessage.TaskID)
 	if err != nil {
 		if errors.Is(err, common.ErrTaskNotFound) {
@@ -569,18 +588,11 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 			return
 		}
 		task = validatedTask
-		claim, claimed, claimErr := e.acquireTaskClaim(task.ID)
-		if claimErr != nil {
-			// Fail closed: running without the Kvrocks claim would silently
-			// reintroduce multi-node duplicate execution.
-			common.Error(fmt.Sprintf("task %s: acquire distributed claim", task.ID), claimErr)
+		// The claim was acquired before the state transition. Confirm it
+		// again before PrepareValidatedRun writes document/run-log state.
+		if !e.confirmTaskClaim(e.ctx, claim) {
+			common.Warn(fmt.Sprintf("task %s: claim lost before preparing the run, leaving for redelivery", task.ID))
 			e.nackHandle(hb, handle, taskMessage.TaskID)
-			return
-		}
-		if !claimed {
-			common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, renew lease (task_id=%s doc_id=%s kb_id=%s)",
-				taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
-			e.renewDuplicateHandle(hb, handle, taskMessage.TaskID)
 			return
 		}
 		// Claim the task before applying document/log side effects. A duplicate
@@ -773,10 +785,6 @@ func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpk
 	task := taskCtx.IngestionTask
 	common.Info(fmt.Sprintf("Starting task %s", task.ID))
 
-	// Release the claim when executeTask returns so that a future
-	// redelivery (after restart) can re-claim the task.
-	defer e.releaseTask(claim)
-
 	// Derive a per-task cancelable context so that an external cancel
 	// signal (Redis cancel flag, mirrored from Python's {task_id}-cancel)
 	// can stop only this task without affecting the whole Ingestor.
@@ -855,13 +863,13 @@ func (e *Ingestor) markFailed(ctx context.Context, taskID string) bool {
 // the message for broker redelivery instead. It returns whether the task
 // reached a durably-persisted terminal status.
 func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask, claim *taskClaim) bool {
-	if claim.Lost() {
+	if !e.confirmTaskClaim(ctx, claim) {
 		common.Warn(fmt.Sprintf("Task %s: distributed claim lost before pipeline start, leaving for redelivery", task.ID))
 		return false
 	}
 	select {
 	case <-ctx.Done():
-		if claim.Lost() {
+		if !e.confirmTaskClaim(ctx, claim) {
 			common.Warn(fmt.Sprintf("Task %s: distributed claim lost during cancellation, leaving for redelivery", task.ID))
 			return false
 		}
@@ -895,7 +903,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask, clai
 
 	if err := e.runDocumentTask(ctx, task); err != nil {
 		e.clearPendingCompileEvent(task.ID)
-		if claim.Lost() {
+		if !e.confirmTaskClaim(ctx, claim) {
 			common.Warn(fmt.Sprintf("Task %s: distributed claim lost during pipeline, leaving for redelivery", task.ID))
 			return false
 		}
@@ -929,7 +937,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask, clai
 		return ok
 	}
 
-	if claim.Lost() {
+	if !e.confirmTaskClaim(ctx, claim) {
 		e.clearPendingCompileEvent(task.ID)
 		common.Warn(fmt.Sprintf("Task %s: distributed claim lost before completion, leaving for redelivery", task.ID))
 		return false
@@ -1059,7 +1067,7 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 					}
 				}()
 				common.Error(fmt.Sprintf("task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
-				if claim.Lost() {
+				if !e.confirmTaskClaim(ctx, claim) {
 					// Another ingestor may own the task now; writing FAILED
 					// here would corrupt the new owner's run.
 					e.clearPendingCompileEvent(taskID)

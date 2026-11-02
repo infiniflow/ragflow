@@ -425,6 +425,62 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 	}
 }
 
+// TestHandleAndExecute_StoppingDuplicateDoesNotFinalize verifies that a
+// duplicate delivery for a STOPPING task cannot finalize it while another
+// ingestor still owns the claim. Before the claim was acquired before
+// TransitionTaskToRunning, this duplicate would move the task to STOPPED and
+// clear the cancel flag under the running owner.
+func TestHandleAndExecute_StoppingDuplicateDoesNotFinalize(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.STOPPING).Error; err != nil {
+		t.Fatalf("set status STOPPING: %v", err)
+	}
+
+	owner := newUnitIngestor("test-stopping-owner", 1, []string{"pdf"})
+	duplicate := newUnitIngestor("test-stopping-dup", 1, []string{"pdf"})
+	store := newFakeTaskClaimStore()
+	owner.taskClaims = store
+	duplicate.taskClaims = store
+	ownerClaim, ok, err := owner.acquireTaskClaim(taskID)
+	if err != nil || !ok {
+		t.Fatalf("owner claim should succeed: ok=%v err=%v", ok, err)
+	}
+	t.Cleanup(func() { owner.releaseTask(ownerClaim) })
+
+	pipelineRan := false
+	duplicate.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
+		pipelineRan = true
+		return nil
+	}
+	handle := &fakeTaskHandle{msg: common.TaskMessage{
+		TaskID:   taskID,
+		TaskType: common.TaskTypeIngestionTask,
+	}}
+	duplicate.handleAndExecute(handle)
+
+	if pipelineRan {
+		t.Fatal("duplicate delivery must not run the pipeline")
+	}
+	if handle.inProgress.Load() != 1 {
+		t.Fatalf("expected InProgress = 1 for duplicate delivery, got %d", handle.inProgress.Load())
+	}
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 0 Ack/0 Nack for duplicate delivery, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	var task entity.IngestionTask
+	if err := db.First(&task, "id = ?", taskID).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.STOPPING {
+		t.Fatalf("task status = %s, want STOPPING while owner holds the claim", task.Status)
+	}
+}
+
 // TestHandleAndExecute_ClaimStoreErrorNacks verifies that a Kvrocks claim
 // failure fails closed: the task must not run and the delivery must be Nacked
 // for a later retry, never silently executed with a local-only claim.

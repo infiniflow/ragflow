@@ -203,6 +203,25 @@ func TestTaskClaimWatchCancelsWhenRenewalKeepsFailing(t *testing.T) {
 	}
 }
 
+func TestConfirmTaskClaimDetectsTakeover(t *testing.T) {
+	store := newFakeTaskClaimStore()
+	ingestor := newClaimTestIngestor("confirm", store, time.Minute, time.Hour)
+
+	claim, ok, err := ingestor.acquireTaskClaim("task-1")
+	if err != nil || !ok {
+		t.Fatalf("claim should succeed: ok=%v err=%v", ok, err)
+	}
+	t.Cleanup(func() { ingestor.releaseTask(claim) })
+
+	store.setOwner(taskClaimKey("task-1"), "another-ingestor")
+	if ingestor.confirmTaskClaim(t.Context(), claim) {
+		t.Fatal("confirmTaskClaim = true after takeover, want false")
+	}
+	if !claim.Lost() {
+		t.Fatal("claim.Lost() = false after synchronous takeover confirmation")
+	}
+}
+
 func TestReleaseTaskClaimKeepsNewOwner(t *testing.T) {
 	store := newFakeTaskClaimStore()
 	ingestor := newClaimTestIngestor("stale", store, time.Minute, time.Hour)

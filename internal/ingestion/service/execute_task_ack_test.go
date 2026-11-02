@@ -286,18 +286,21 @@ func TestClaimTask_AfterReleaseCanReclaim(t *testing.T) {
 	t.Cleanup(func() { ingestor.releaseTask(secondClaim) })
 }
 
-// TestExecuteTaskWithHeartbeat_ReleasesClaim verifies the execution path
-// releases the Kvrocks claim when it finishes, so a later delivery can claim
-// the same task again.
-func TestExecuteTaskWithHeartbeat_ReleasesClaim(t *testing.T) {
+// TestHandleAndExecute_ReleasesClaim verifies the execution path releases the
+// Kvrocks claim when the task finishes, so a later delivery can claim it again.
+func TestHandleAndExecute_ReleasesClaim(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	_, _, docID, taskID := testutil.SeedTestData(t, db,
+	_, _, _, taskID := testutil.SeedTestData(t, db,
 		testutil.WithPipelineID("flow-1"),
 		testutil.WithTenantID("tenant-1"),
 	)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.RUNNING).Error; err != nil {
+		t.Fatalf("set status RUNNING: %v", err)
+	}
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	store := newFakeTaskClaimStore()
@@ -305,25 +308,19 @@ func TestExecuteTaskWithHeartbeat_ReleasesClaim(t *testing.T) {
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return nil
 	}
-	claim, ok, err := ingestor.acquireTaskClaim(taskID)
-	if err != nil || !ok {
-		t.Fatalf("first claim should succeed: ok=%v err=%v", ok, err)
-	}
 
-	taskCtx := newAckTaskCtx(claim.ctx, taskID, docID, &fakeTaskHandle{})
-	hb := NewHeartbeat(taskCtx.ID(), taskCtx.Handle, ingestor.heartbeatInterval).WithContext(taskCtx.Ctx)
-	hb.Start()
-	ingestor.executeTaskWithHeartbeat(t.Context(), taskCtx, hb, claim)
+	handle := &fakeTaskHandle{msg: common.TaskMessage{
+		TaskID:   taskID,
+		TaskType: common.TaskTypeIngestionTask,
+	}}
+	ingestor.handleAndExecute(handle)
 
 	if owner := store.owner(taskClaimKey(taskID)); owner != "" {
 		t.Fatalf("claim owner = %q after execution, want released", owner)
 	}
-	// After release, a new claim must succeed.
-	reclaimed, ok, err := ingestor.acquireTaskClaim(taskID)
-	if err != nil || !ok {
-		t.Fatalf("expected reclaim after execution to succeed: ok=%v err=%v", ok, err)
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack after execution, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
-	t.Cleanup(func() { ingestor.releaseTask(reclaimed) })
 }
 
 // TestSettleMessage_AckOnTerminal: body returns true -> Ack, no Nack.

@@ -64,6 +64,13 @@ func taskClaimKey(taskID string) string {
 	return taskClaimKeyPrefix + taskID
 }
 
+func (e *Ingestor) taskClaimTTLValue() time.Duration {
+	if e.taskClaimTTL > 0 {
+		return e.taskClaimTTL
+	}
+	return defaultTaskClaimTTL
+}
+
 // acquireTaskClaim takes a Kvrocks claim for taskID. It fails closed: a
 // missing store or a SET NX error returns an error and the caller must Nack
 // the delivery. There is no process-local fallback.
@@ -79,10 +86,7 @@ func (e *Ingestor) acquireTaskClaim(taskID string) (*taskClaim, bool, error) {
 	ctx, cancel := context.WithCancel(e.ctx)
 	claim := &taskClaim{taskID: taskID, ctx: ctx, cancel: cancel}
 
-	ttl := e.taskClaimTTL
-	if ttl <= 0 {
-		ttl = defaultTaskClaimTTL
-	}
+	ttl := e.taskClaimTTLValue()
 	renewInterval := e.taskClaimRenewInterval
 	if renewInterval <= 0 {
 		renewInterval = defaultTaskClaimRenewInterval
@@ -145,6 +149,44 @@ func (c *taskClaim) watch(store taskClaimStore, ttl, interval time.Duration) {
 			lastConfirmed = time.Now()
 		}
 	}
+}
+
+// confirmTaskClaim synchronously verifies that the Kvrocks claim still belongs
+// to this worker. It narrows the window between the watcher's last renewal and
+// a side effect such as PrepareValidatedRun or a terminal write, but it is not
+// a fencing token: a process pause after this check can still let a stale owner
+// write. A transient Kvrocks error returns true and leaves cancellation to the
+// watcher's safety window; a definitive false marks the claim lost and cancels
+// the task.
+func (e *Ingestor) confirmTaskClaim(ctx context.Context, claim *taskClaim) bool {
+	if claim == nil {
+		return true
+	}
+	if claim.Lost() {
+		return false
+	}
+	if claim.owner == "" || e.taskClaims == nil {
+		return false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	checkCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+	owned, err := e.taskClaims.ExpireIfEqual(checkCtx, taskClaimKey(claim.taskID), claim.owner, e.taskClaimTTLValue())
+	if err != nil {
+		common.Warn(fmt.Sprintf("task %s: confirm kvrocks claim failed, relying on watcher: %v", claim.taskID, err))
+		return true
+	}
+	if owned {
+		return true
+	}
+	claim.lost.Store(true)
+	if claim.cancel != nil {
+		claim.cancel()
+	}
+	common.Warn(fmt.Sprintf("task %s: kvrocks claim no longer owned at synchronous check", claim.taskID))
+	return false
 }
 
 // releaseTask drops the Kvrocks claim when this worker still owns it. The
