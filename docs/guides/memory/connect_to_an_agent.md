@@ -33,4 +33,4 @@ A memory must be connected to an Agent before historical messages can be written
 6. Save and run a test, and check whether the answer correctly references historical memories.
 
 
-![Let an agent retrieve from memory](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/let_an_agent_retrieve_from_memory.jpg)
+![Let an agent retrieve from memory](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/retrieve_from_memory.PNG)

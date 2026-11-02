@@ -106,7 +106,6 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
@@ -163,7 +162,8 @@ func (h *UserHandler) Login(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
-	operationLog.UserName = req.Username
+	operationLog.Resources = make(map[string]any)
+	operationLog.Resources["user_name"] = req.Username
 
 	user, code, err := h.userService.Login(ctx, &req)
 	if err != nil {
@@ -233,7 +233,8 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
-	operationLog.UserName = req.Email
+	operationLog.Resources = make(map[string]any)
+	operationLog.Resources["user_name"] = req.Email
 
 	if !local.IsAdminAvailable() {
 		adminStatus := local.GetAdminStatus()
@@ -363,7 +364,6 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	}
 	user := identity.User
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	// Logout user
 	code, err = h.userService.Logout(ctx, user)
@@ -499,7 +499,6 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	requiredKeys := []string{"tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id"}
 	missingArgumentMessage := "required argument are missing: tenant_id,asr_id,embd_id,img2txt_id,llm_id; "

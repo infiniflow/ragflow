@@ -56,6 +56,7 @@ func setupProviderHandlerTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 	if err := db.AutoMigrate(
+		&entity.User{},
 		&entity.UserTenant{},
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
@@ -77,6 +78,8 @@ func seedProviderHandlerModel(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	activeStatus := "1"
 	rows := []interface{}{
+		// The enterprise policy resolves the tenant role through the user row.
+		&entity.User{ID: "user-1", Nickname: "user", Email: "user-1@test.local", IsAuthenticated: "1", IsActive: "1", IsAnonymous: "0"},
 		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
 		&entity.TenantModelProvider{ID: "provider-1", UserID: "user-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-1", ProviderID: "provider-1", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
@@ -315,6 +318,11 @@ func TestListModelsSavedCredentialsUsesProviderCatalogMerge(t *testing.T) {
 	db := setupProviderHandlerTestDB(t)
 	useProviderHandlerTestDB(t, db)
 	seedProviderHandlerModel(t, db)
+	// The enterprise policy also reads group, role and grant tables; the
+	// fixture migrates and seeds them, and is a no-op in the community build.
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1"); err != nil {
+		t.Fatalf("prepare provider permission fixture: %v", err)
+	}
 
 	provider := dao.GetModelProviderManager().FindProvider("OpenAI")
 	if provider == nil {

@@ -177,7 +177,7 @@ func buildArxivURL(query string, topN int, sortBy string) string {
 	q.Set("search_query", "all:"+query)
 	q.Set("max_results", fmt.Sprintf("%d", topN))
 	q.Set("sortBy", sortBy)
-	return "http://export.arxiv.org/api/query?" + q.Encode()
+	return "https://export.arxiv.org/api/query?" + q.Encode()
 }
 
 // parseArxivAtom decodes the upstream Atom XML and returns the model-

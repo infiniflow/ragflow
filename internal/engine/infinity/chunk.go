@@ -1928,6 +1928,7 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 
 	common.Debug("infinity get chunk", zap.String("chunkID", chunkID), zap.Any("tables", tableNames))
 	decodeJSONFields(chunk)
+	decodeVarcharJSONFields(chunk)
 
 	// Memory rows come back under the message mapping's storage columns, which
 	// the chunk field mappings below would mangle.
@@ -3408,6 +3409,31 @@ func decodeJSONFields(chunk map[string]interface{}) {
 	}
 }
 
+// decodeVarcharJSONFields parses the JSON text transformChunkFields writes into
+// fieldVarcharJSON columns back into a map; empty or nil becomes {}.
+func decodeVarcharJSONFields(chunk map[string]interface{}) {
+	for fieldName, value := range chunk {
+		if !fieldVarcharJSON(fieldName) {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok {
+			if value == nil {
+				chunk[fieldName] = map[string]interface{}{}
+			}
+			continue
+		}
+		if text == "" {
+			chunk[fieldName] = map[string]interface{}{}
+			continue
+		}
+		var decoded interface{}
+		if err := json.Unmarshal([]byte(text), &decoded); err == nil {
+			chunk[fieldName] = decoded
+		}
+	}
+}
+
 // splitLengthPrefixedSegments splits Infinity's `[int32 little-endian
 // length][payload]` framing into its payloads, each the JSON text of one value.
 // parseLengthPrefixedJSON (metadata.go) unpacks the same framing for the
@@ -3837,7 +3863,7 @@ func transformChunkFields(chunk map[string]interface{}, embeddingCols [][2]inter
 		default:
 			if fieldJSON(k) {
 				d[k] = encodeJSONField(k, v)
-			} else if strings.HasSuffix(k, "_feas") {
+			} else if fieldVarcharJSON(k) {
 				jsonBytes, _ := json.Marshal(v)
 				d[k] = string(jsonBytes)
 			} else if fieldKeyword(k) {

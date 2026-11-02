@@ -40,7 +40,8 @@ import (
 // every retry and space creation refuses the same name.
 func TestAsyncDeleteSpaceOutlivesTheRequestContext(t *testing.T) {
 	db := setupServiceTestDB(t)
-	if err := db.AutoMigrate(&entity.SkillSpace{}); err != nil {
+	models := append([]interface{}{&entity.SkillSpace{}}, permissionChangeLogTestModels()...)
+	if err := db.AutoMigrate(models...); err != nil {
 		t.Fatalf("failed to migrate skill space: %v", err)
 	}
 	pushServiceDB(t, db)
@@ -77,7 +78,8 @@ func TestAsyncDeleteSpaceOutlivesTheRequestContext(t *testing.T) {
 // and storage objects behind even though the space was marked deleted.
 func TestAsyncDeleteSpaceDeletesTheFolderAsItsCreator(t *testing.T) {
 	db := setupServiceTestDB(t)
-	if err := db.AutoMigrate(&entity.SkillSpace{}); err != nil {
+	models := append([]interface{}{&entity.SkillSpace{}}, permissionChangeLogTestModels()...)
+	if err := db.AutoMigrate(models...); err != nil {
 		t.Fatalf("failed to migrate skill space: %v", err)
 	}
 	pushServiceDB(t, db)
@@ -153,7 +155,8 @@ func failFolderLookupsOnce(t *testing.T, db *gorm.DB, budget int32) {
 // the retry is what keeps the space and its folder in agreement.
 func TestAsyncDeleteSpaceRetriesTheFolderLookup(t *testing.T) {
 	db := setupServiceTestDB(t)
-	if err := db.AutoMigrate(&entity.SkillSpace{}); err != nil {
+	models := append([]interface{}{&entity.SkillSpace{}}, permissionChangeLogTestModels()...)
+	if err := db.AutoMigrate(models...); err != nil {
 		t.Fatalf("failed to migrate skill space: %v", err)
 	}
 	pushServiceDB(t, db)
@@ -212,7 +215,8 @@ func TestAsyncDeleteSpaceRetriesTheFolderLookup(t *testing.T) {
 // storage objects survive.
 func TestAsyncDeleteSpaceKeepsTheDeletingStatusWhenTheFolderCreatorCannotBeRead(t *testing.T) {
 	db := setupServiceTestDB(t)
-	if err := db.AutoMigrate(&entity.SkillSpace{}); err != nil {
+	models := append([]interface{}{&entity.SkillSpace{}}, permissionChangeLogTestModels()...)
+	if err := db.AutoMigrate(models...); err != nil {
 		t.Fatalf("failed to migrate skill space: %v", err)
 	}
 	pushServiceDB(t, db)
@@ -260,7 +264,8 @@ func TestAsyncDeleteSpaceKeepsTheDeletingStatusWhenTheFolderCreatorCannotBeRead(
 // space creation kept refusing the name.
 func TestDeleteSpaceRestartsCleanupLeftInTheDeletingState(t *testing.T) {
 	db := setupServiceTestDB(t)
-	if err := db.AutoMigrate(&entity.SkillSpace{}); err != nil {
+	models := append([]interface{}{&entity.SkillSpace{}}, permissionChangeLogTestModels()...)
+	if err := db.AutoMigrate(models...); err != nil {
 		t.Fatalf("failed to migrate skill space: %v", err)
 	}
 	pushServiceDB(t, db)
@@ -275,6 +280,14 @@ func TestDeleteSpaceRestartsCleanupLeftInTheDeletingState(t *testing.T) {
 	sqlDB.SetMaxOpenConns(1)
 
 	valid := string(entity.StatusValid)
+	// The enterprise policy resolves the tenant role through the user row, so
+	// the acting owner needs one; the community policy never reads it.
+	if err := db.Create(&entity.User{
+		ID: "owner-1", Nickname: "owner", Email: "owner-1@test.local",
+		IsAuthenticated: "1", IsActive: "1", IsAnonymous: "0",
+	}).Error; err != nil {
+		t.Fatalf("create owner user: %v", err)
+	}
 	if err := db.Create(&entity.UserTenant{
 		ID:       "owner-membership",
 		UserID:   "owner-1",
@@ -283,6 +296,12 @@ func TestDeleteSpaceRestartsCleanupLeftInTheDeletingState(t *testing.T) {
 		Status:   &valid,
 	}).Error; err != nil {
 		t.Fatalf("create membership: %v", err)
+	}
+	// The cleanup runs as member-1, the folder creator; the enterprise policy
+	// authorizes that principal through its tenant membership. The owner seeded
+	// above keeps the fixture from promoting member-1 to owner.
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "member-1"); err != nil {
+		t.Fatalf("prepare skill space permission fixture: %v", err)
 	}
 
 	factory := storage.GetStorageFactory()
