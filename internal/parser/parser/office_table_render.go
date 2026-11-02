@@ -903,8 +903,11 @@ func cellIsStyled(f *excelize.File, sheet string, row, col int) bool {
 //  3. Width-based recovery: when step 2 finds a styled/contrast row that is much
 //     narrower than the typical data row (likely a metadata label in a form-
 //     style sheet), remember it as a fallback and search a wider window for the
-//     first text-majority row whose width matches the data body. This only runs
-//     when a fallback candidate exists, so plain sheets without any styled
+//     first text-majority row whose width matches the data body. Recovery only
+//     fires when at least one more narrow row follows the deferred candidate —
+//     a lone narrow row is a narrow header (merged header cells count only
+//     their merge masters), not a metadata preamble. The scan never runs when
+//     no fallback candidate exists, so plain sheets without any styled
 //     metadata keep row 1 as the default.
 func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables []excelize.Table) int {
 	n := len(records)
@@ -1001,7 +1004,7 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 				// Row 1 is subject to the same width validation as any other
 				// candidate: a narrow styled row at the top of a form sheet is
 				// a metadata label, not the column header.
-				if medWidth >= 4 && rowNonEmpty(row)*2 <= medWidth {
+				if rowIsNarrow(rowNonEmpty(row), medWidth) {
 					bestCandidate = 1
 					continue
 				}
@@ -1020,9 +1023,7 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 				// cells than the typical data row, it is probably a metadata
 				// title (e.g. "Stavba: DSP MILLHAUS") and not the real
 				// column header. Remember it as fallback and keep scanning.
-				// Use the same trimmed non-empty count as medianRowWidth so
-				// the two figures do not diverge on whitespace-only cells.
-				if medWidth >= 4 && rowNonEmpty(row)*2 <= medWidth {
+				if rowIsNarrow(rowNonEmpty(row), medWidth) {
 					if bestCandidate == 0 {
 						bestCandidate = k + 1
 					}
@@ -1043,16 +1044,19 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 		if wideScan > n-1 {
 			wideScan = n - 1
 		}
-		// Start after the deferred candidate: rows at or above it were already
-		// rejected by the styled/contrast scan, so matching them again can only
-		// promote a row that was previously refused (e.g. a wide title row).
-		for k := bestCandidate; k < wideScan; k++ {
+		// bestCandidate is a 1-based row number, so index bestCandidate is the
+		// row directly after it. That row must stay narrow too: a lone narrow
+		// row in front of a wide body is a narrow header (merged header cells
+		// count only their merge masters), not a metadata preamble. Recovery
+		// therefore needs at least one more narrow row between the candidate
+		// and the recovered row — a metadata block is a run of narrow rows.
+		for k := bestCandidate + 1; k < wideScan; k++ {
 			row := records[k]
 			ne := rowNonEmpty(row)
 			// Accept rows within ±2 of the median data width, but reject rows
 			// that are half as wide (or narrower) — they are still metadata
 			// labels, not the real column header.
-			if ne < medWidth-2 || ne > medWidth+2 || ne*2 <= medWidth {
+			if ne < medWidth-2 || ne > medWidth+2 || rowIsNarrow(ne, medWidth) {
 				continue
 			}
 			// The recovered row must close a contiguous narrow metadata block:
@@ -1063,7 +1067,7 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 			contiguous := true
 			for j := bestCandidate; j < k; j++ {
 				w := rowNonEmpty(records[j])
-				if w > 0 && w*2 > medWidth {
+				if w > 0 && !rowIsNarrow(w, medWidth) {
 					contiguous = false
 					break
 				}
@@ -1071,21 +1075,15 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 			if !contiguous {
 				break
 			}
-			// Reject numeric-majority rows (data, not a header).
+			// Reject data rows the same way step 2 does: a row whose
+			// non-empty cells are majority numbers is data, not a header.
 			numCells := 0
-			textCells := 0
 			for _, v := range row {
-				v = strings.TrimSpace(v)
-				if v == "" {
-					continue
-				}
 				if isNumericCell(v) {
 					numCells++
-				} else {
-					textCells++
 				}
 			}
-			if textCells < numCells {
+			if ne > 0 && numCells*2 >= ne {
 				continue
 			}
 			return k + 1
@@ -1096,6 +1094,14 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 		return bestCandidate
 	}
 	return 1
+}
+
+// rowIsNarrow reports whether a row with ne non-empty cells is much narrower
+// than the typical data row (at most half the median width). Width checks only
+// run when a usable median exists (medWidth >= 4); below that a "narrow" row
+// cannot be told apart from a small header.
+func rowIsNarrow(ne, medWidth int) bool {
+	return medWidth >= 4 && ne*2 <= medWidth
 }
 
 // rowNonEmpty counts the non-empty cells in a row.

@@ -1419,6 +1419,145 @@ func TestDetectHeaderRow_MultiBlockKeepsFirstHeader(t *testing.T) {
 	}
 }
 
+// TestDetectHeaderRow_MergedHeaderOverWideBody covers a merged header whose
+// merge masters make the row look narrow against a wider body: only three
+// cells (A1:B1, C1:D1, E1:F1) sit over six text columns. The row must stay
+// the header — a lone narrow row is a narrow header, not a metadata preamble,
+// so the recovery scan must not promote the first data row.
+func TestDetectHeaderRow_MergedHeaderOverWideBody(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		mustSetCell(t, f, "Sheet1", "A1", "Name")
+		mustSetCell(t, f, "Sheet1", "C1", "Amount")
+		mustSetCell(t, f, "Sheet1", "E1", "Date")
+		mustMergeCell(t, f, "Sheet1", "A1", "B1")
+		mustMergeCell(t, f, "Sheet1", "C1", "D1")
+		mustMergeCell(t, f, "Sheet1", "E1", "F1")
+		mustSetCellStyle(t, f, "Sheet1", "A1", "F1", bold)
+		// Rows 2–10: six text columns of data.
+		for r := 2; r <= 10; r++ {
+			for c, v := range []string{"item", "cat", "bob", "x", "y", "z"} {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "merged-header.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th") || !strings.Contains(text, "Name") {
+		t.Fatalf("merged row-1 header must be kept:\n%s", text)
+	}
+	if strings.Contains(text, "<th>item</th>") {
+		t.Fatalf("first data row must not be promoted to header:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_NarrowPlainHeaderOverWideBody covers a plain 3-column
+// bold header over 6 columns of text data. Like the merged-header case the
+// header row is narrower than the body, and the recovery scan must not
+// promote the first data row.
+func TestDetectHeaderRow_NarrowPlainHeaderOverWideBody(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		for i, hdr := range []string{"Item", "Cat", "Bob"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 1), hdr)
+		}
+		mustSetCellStyle(t, f, "Sheet1", "A1", "C1", bold)
+		for r := 2; r <= 10; r++ {
+			for c, v := range []string{"item", "cat", "bob", "x", "y", "z"} {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "narrow-header.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Item</th>") {
+		t.Fatalf("narrow row-1 header must be kept:\n%s", text)
+	}
+	if strings.Contains(text, "<th>item</th>") {
+		t.Fatalf("first data row must not be promoted to header:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_RecoveryRejectsHalfNumericRow aligns the recovery scan
+// with the step-2 data-majority reject: a row whose non-empty cells are half
+// numeric is data, not a header, and must not be promoted by the width scan.
+func TestDetectHeaderRow_RecoveryRejectsHalfNumericRow(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		// Rows 1–3: narrow bold metadata block (defers row 1, needs ≥1 more
+		// narrow row before recovery can fire).
+		for r := 1; r <= 3; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "Meta")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "x")
+			mustSetCellStyle(t, f, "Sheet1", cellRef('A', r), cellRef('B', r), bold)
+		}
+		// Row 4: body-width row, half text half numeric — data, not a header.
+		for i, v := range []string{"a", "b", "c", "1", "2", "3"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 4), v)
+		}
+		// Rows 5–12: text data, body width.
+		for r := 5; r <= 12; r++ {
+			for c, v := range []string{"p", "q", "r", "s", "t", "u"} {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "half-numeric.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if strings.Contains(text, "<th>a</th>") {
+		t.Fatalf("half-numeric row must not be promoted to header:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_TitlePlusInvisibleFillHeader pins an intentional change:
+// cells carrying only excelize's default pattern fill (Fill.Type "pattern"
+// with no pattern or color) no longer count as styled. A title stub followed
+// by such an "unstyled-looking" header row therefore falls back to row 1
+// instead of promoting row 2 on a style artifact the user cannot see.
+func TestDetectHeaderRow_TitlePlusInvisibleFillHeader(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Report Title")
+		// Row 2: header text with only the default pattern fill — invisible.
+		for i, hdr := range []string{"Name", "Category", "Owner"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 2), hdr)
+		}
+		fillOnly := mustNewStyle(t, f, &excelize.Style{
+			Fill: excelize.Fill{Type: "pattern"},
+		})
+		mustSetCellStyle(t, f, "Sheet1", "A2", "C2", fillOnly)
+		// Rows 3–8: unstyled data.
+		for r := 3; r <= 8; r++ {
+			for i, v := range []string{"alice", "eng", "bob"} {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), r), v)
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "invisible-fill.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Report Title</th>") {
+		t.Fatalf("invisible fill must not promote row 2; header stays row 1:\n%s", text)
+	}
+	if strings.Contains(text, "<th>Name</th><th>Category</th>") {
+		t.Fatalf("invisible pattern fill must not mark a header:\n%s", text)
+	}
+}
+
 // TestPadRowToWidth asserts the single-row padder widens with empty strings,
 // preserves existing cells, and never shrinks an already-wide row.
 func TestPadRowToWidth(t *testing.T) {
