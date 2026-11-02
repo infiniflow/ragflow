@@ -42,6 +42,7 @@ func newStrictTestClient(t *testing.T) (*Client, *miniredis.Miniredis) {
 	return &Client{
 		client:           rdb,
 		luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
+		luaExpireIfEqual: redis.NewScript(luaExpireIfEqualScript),
 		luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
 		luaMediaPut:      redis.NewScript(luaMediaPutScript),
 		// luaAutoIncrement intentionally not loaded; not used here.
@@ -410,5 +411,49 @@ func TestDistributedLockAcquireReturnsCleanupError(t *testing.T) {
 	}
 	if exists != 0 {
 		t.Fatal("Acquire attempted SetNX after cleanup failure")
+	}
+}
+
+func TestExpireIfEqualExtendsOnlyOwnedKey(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+	key := "claim:task-1"
+
+	if err := r.client.Set(ctx, key, "owner-a", time.Second).Err(); err != nil {
+		t.Fatalf("seed claim: %v", err)
+	}
+
+	owned, err := r.ExpireIfEqual(ctx, key, "owner-b", time.Minute)
+	if err != nil {
+		t.Fatalf("ExpireIfEqual wrong owner: %v", err)
+	}
+	if owned {
+		t.Fatal("ExpireIfEqual wrong owner = true, want false")
+	}
+
+	owned, err = r.ExpireIfEqual(ctx, key, "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("ExpireIfEqual owner: %v", err)
+	}
+	if !owned {
+		t.Fatal("ExpireIfEqual owner = false, want true")
+	}
+	ttl, err := r.client.TTL(ctx, key).Result()
+	if err != nil {
+		t.Fatalf("claim ttl: %v", err)
+	}
+	if ttl < 30*time.Second {
+		t.Fatalf("claim ttl = %v, want extended to about 1m", ttl)
+	}
+
+	if err := r.client.Del(ctx, key).Err(); err != nil {
+		t.Fatalf("delete claim: %v", err)
+	}
+	owned, err = r.ExpireIfEqual(ctx, key, "owner-a", time.Minute)
+	if err != nil {
+		t.Fatalf("ExpireIfEqual missing key: %v", err)
+	}
+	if owned {
+		t.Fatal("ExpireIfEqual missing key = true, want false")
 	}
 }

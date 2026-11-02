@@ -32,7 +32,7 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 
 	terminal := ingestor.runTask(ctx, &entity.IngestionTask{
 		ID: taskID, DocumentID: "doc-1", DatasetID: "kb-1", PipelineLogID: &runID,
-	})
+	}, nil)
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably recorded cancel) on cancelled ctx")
@@ -77,7 +77,7 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 		PipelineLogID: &runID,
-	})
+	}, nil)
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably marked FAILED)")
@@ -122,7 +122,7 @@ func TestRunTask_PipelineCancelledMarksStopped(t *testing.T) {
 
 	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.STOPPING,
-	})
+	}, nil)
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably marked STOPPED)")
@@ -155,7 +155,7 @@ func TestRunTask_ComponentTimeoutMarksFailed(t *testing.T) {
 
 	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
-	})
+	}, nil)
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably marked FAILED)")
@@ -196,7 +196,7 @@ func TestRunTask_AlreadyCompletedAcksNotRedelivers(t *testing.T) {
 
 	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
-	})
+	}, nil)
 
 	if !terminal {
 		t.Fatal("expected true (terminal: task already COMPLETED, Ack instead of redeliver)")
@@ -236,7 +236,7 @@ func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
 
 	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
-	})
+	}, nil)
 
 	if !terminal {
 		t.Fatal("expected true (terminal: settled to STOPPED, Ack)")
@@ -249,6 +249,38 @@ func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
 	}
 	if task.Status != common.STOPPED {
 		t.Fatalf("task status = %s, want STOPPED (settled from concurrent STOPPING)", task.Status)
+	}
+}
+
+// TestRunTask_LostClaimDuringPipelineLeavesStatusForRedelivery verifies a
+// worker that loses its distributed claim mid-run does not complete or fail the
+// task; the new owner (or a later delivery) must settle it.
+func TestRunTask_LostClaimDuringPipelineLeavesStatusForRedelivery(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	claim := &taskClaim{}
+	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
+		claim.lost.Store(true)
+		return nil
+	}
+
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+	}, claim)
+
+	if terminal {
+		t.Fatal("runTask terminal = true after claim loss, want false")
+	}
+	task, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, taskID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("task status = %s, want RUNNING for the new owner", task.Status)
 	}
 }
 
@@ -267,7 +299,7 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 
 	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
-	})
+	}, nil)
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably completed)")

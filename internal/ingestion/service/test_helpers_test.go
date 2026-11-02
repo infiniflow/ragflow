@@ -23,16 +23,6 @@ import (
 	"ragflow/internal/ingestion"
 )
 
-// NewTestIngestor creates a new Ingestor for testing with default values.
-func NewTestIngestor() *Ingestor {
-	return &Ingestor{
-		id: "test-ingestor",
-	}
-}
-
-// IngestorOption configures a test Ingestor.
-type IngestorOption func(*Ingestor)
-
 // newUnitIngestor builds a unit-test Ingestor. The dependency bundle reads the
 // process-wide handles the surrounding test swaps in (dao.DB via
 // testutil.ReplaceDBForTest, the message queue via engine.SetMessageQueueEngine),
@@ -40,25 +30,16 @@ type IngestorOption func(*Ingestor)
 // nil-dependency guards. Engine stays nil: executor tests stub the index writer
 // or assert the downstream no-engine failure.
 func newUnitIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
-	return NewIngestor(name, maxConcurrency, supportedTypes, &ingestion.Deps{
+	ingestor := NewIngestor(name, maxConcurrency, supportedTypes, &ingestion.Deps{
 		DB: dao.DB,
 		MQ: engine.GetMessageQueueEngine(),
 		KV: kvrocks.Get(),
 	})
-}
-
-// SetupTestIngestor creates a new test Ingestor with the given options.
-func SetupTestIngestor(t testingT, opts ...IngestorOption) *Ingestor {
-	t.Helper()
-	i := NewTestIngestor()
-	for _, opt := range opts {
-		opt(i)
+	// Unit fixtures do not initialize the process-wide Kvrocks client. Use the
+	// in-memory claim store so claim acquisition exercises the same fail-closed
+	// contract as production without depending on an external service.
+	if ingestor.taskClaims == nil {
+		ingestor.taskClaims = newFakeTaskClaimStore()
 	}
-	return i
-}
-
-// testingT is a subset of testing.TB used by test helpers (no *testing.T import needed).
-type testingT interface {
-	Helper()
-	Fatalf(format string, args ...any)
+	return ingestor
 }

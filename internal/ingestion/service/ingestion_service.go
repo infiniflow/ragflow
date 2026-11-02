@@ -69,14 +69,19 @@ type Ingestor struct {
 	memoryReconcileBatchSize int
 
 	// Runtime state
-	currentTasks         map[string]struct{} // set of task IDs currently claimed by a worker
-	tasksMu              sync.RWMutex
 	pendingCompileEvents map[string]pendingDocumentCompileEvent
 	compileEventsMu      sync.Mutex
 	activeWorkers        atomic.Int32 // number of worker goroutines currently in workerLoop
 	activeLeases         map[*Heartbeat]*activeLease
 	leasesMu             sync.Mutex
 	stopLeases           atomic.Bool
+
+	// taskClaims is the Kvrocks-backed cross-node claim. Production requires
+	// it; a nil store makes claim acquisition fail closed so the delivery is
+	// Nacked instead of running without a distributed claim.
+	taskClaims             taskClaimStore
+	taskClaimTTL           time.Duration
+	taskClaimRenewInterval time.Duration
 
 	// Shutdown channel - receive on this to trigger graceful shutdown
 	ShutdownCh chan struct{}
@@ -187,7 +192,6 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, dep
 		maxConcurrency:           maxConcurrency,
 		supportedDocTypes:        supportedTypes,
 		version:                  "1.0.0",
-		currentTasks:             make(map[string]struct{}),
 		pendingCompileEvents:     make(map[string]pendingDocumentCompileEvent),
 		activeLeases:             make(map[*Heartbeat]*activeLease),
 		workerQueue:              make(chan *worker, maxConcurrency),
@@ -195,9 +199,14 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, dep
 		ingestionTaskSvc:         servicepkg.NewIngestionTaskService(),
 		docState:                 newDocStateUpdater(),
 		heartbeatInterval:        defaultHeartbeatInterval,
+		taskClaimTTL:             defaultTaskClaimTTL,
+		taskClaimRenewInterval:   defaultTaskClaimRenewInterval,
 		memoryReconcileInterval:  defaultMemoryTaskReconcileInterval,
 		memoryReconcileBatchSize: defaultMemoryTaskReconcileBatchSize,
 		deps:                     deps,
+	}
+	if deps.KV != nil {
+		ingestor.taskClaims = deps.KV
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	ingestor.runMemoryTask = ingestor.defaultRunMemoryTask
@@ -560,7 +569,15 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 			return
 		}
 		task = validatedTask
-		if !e.claimTask(task.ID) {
+		claim, claimed, claimErr := e.acquireTaskClaim(task.ID)
+		if claimErr != nil {
+			// Fail closed: running without the Kvrocks claim would silently
+			// reintroduce multi-node duplicate execution.
+			common.Error(fmt.Sprintf("task %s: acquire distributed claim", task.ID), claimErr)
+			e.nackHandle(hb, handle, taskMessage.TaskID)
+			return
+		}
+		if !claimed {
 			common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, renew lease (task_id=%s doc_id=%s kb_id=%s)",
 				taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
 			e.renewDuplicateHandle(hb, handle, taskMessage.TaskID)
@@ -570,15 +587,15 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 		// delivery must only renew its broker lease; resetting the document here
 		// would race the owning worker and erase its in-flight progress.
 		e.ingestionTaskSvc.PrepareValidatedRun(e.ctx, task)
+		taskCtx := taskpkg.NewTaskContextForScheduling(claim.ctx, task)
+		taskCtx.Handle = handle
+		e.executeTaskWithHeartbeat(e.ctx, taskCtx, hb, claim)
+		return
 	default:
 		common.Warn(fmt.Sprintf("task %s in unexpected status %s, ack-skip", taskMessage.TaskID, task.Status))
 		e.ackHandle(hb, handle, taskMessage.TaskID)
 		return
 	}
-
-	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
-	taskCtx.Handle = handle
-	e.executeTaskWithHeartbeat(e.ctx, taskCtx, hb)
 }
 
 func (e *Ingestor) ackHandle(hb *Heartbeat, handle common.TaskHandle, taskID string) {
@@ -745,18 +762,20 @@ func (e *Ingestor) defaultRunMemoryTask(ctx context.Context, taskID, leaseOwner 
 func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {
 	hb := NewHeartbeat(taskCtx.ID(), taskCtx.Handle, e.heartbeatInterval).WithContext(taskCtx.Ctx)
 	hb.Start()
-	e.executeTaskWithHeartbeat(ctx, taskCtx, hb)
+	e.executeTaskWithHeartbeat(ctx, taskCtx, hb, nil)
 }
 
 // executeTaskWithHeartbeat executes one document task using the lease already
-// started by the worker that owns its Handle.
-func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpkg.TaskContext, hb *Heartbeat) {
+// started by the worker that owns its Handle. claim is nil for direct test
+// execution; when non-nil, losing it aborts the run without writing a terminal
+// status.
+func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpkg.TaskContext, hb *Heartbeat, claim *taskClaim) {
 	task := taskCtx.IngestionTask
 	common.Info(fmt.Sprintf("Starting task %s", task.ID))
 
 	// Release the claim when executeTask returns so that a future
 	// redelivery (after restart) can re-claim the task.
-	defer e.releaseTask(task.ID)
+	defer e.releaseTask(claim)
 
 	// Derive a per-task cancelable context so that an external cancel
 	// signal (Redis cancel flag, mirrored from Python's {task_id}-cancel)
@@ -782,8 +801,8 @@ func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpk
 		perTaskCancel()
 	}
 
-	e.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) bool {
-		return e.runTask(ctx, task)
+	e.settleMessage(ctx, taskCtx, hb, claim, func(ctx context.Context) bool {
+		return e.runTask(ctx, task, claim)
 	})
 }
 
@@ -830,12 +849,22 @@ func (e *Ingestor) markFailed(ctx context.Context, taskID string) bool {
 	return true
 }
 
-// runTask executes the task's business logic — document pipeline and
-// completion — behind the heartbeat. It returns whether the task reached a
-// durably-persisted terminal status.
-func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool {
+// runTask executes the task's business logic - document pipeline and
+// completion - behind the heartbeat. A lost claim means another ingestor may
+// own the task now, so this worker must not write a terminal status; it leaves
+// the message for broker redelivery instead. It returns whether the task
+// reached a durably-persisted terminal status.
+func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask, claim *taskClaim) bool {
+	if claim.Lost() {
+		common.Warn(fmt.Sprintf("Task %s: distributed claim lost before pipeline start, leaving for redelivery", task.ID))
+		return false
+	}
 	select {
 	case <-ctx.Done():
+		if claim.Lost() {
+			common.Warn(fmt.Sprintf("Task %s: distributed claim lost during cancellation, leaving for redelivery", task.ID))
+			return false
+		}
 		if e.ctx.Err() != nil || e.dispatchCtx.Err() != nil {
 			common.Info(fmt.Sprintf("Task %s aborted due to ingestor shutdown, leaving for redelivery", task.ID))
 			return false
@@ -866,6 +895,10 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 
 	if err := e.runDocumentTask(ctx, task); err != nil {
 		e.clearPendingCompileEvent(task.ID)
+		if claim.Lost() {
+			common.Warn(fmt.Sprintf("Task %s: distributed claim lost during pipeline, leaving for redelivery", task.ID))
+			return false
+		}
 		if errors.Is(err, context.Canceled) {
 			if e.ctx.Err() != nil || e.dispatchCtx.Err() != nil {
 				common.Info(fmt.Sprintf("Task %s pipeline interrupted by ingestor shutdown, leaving for redelivery", task.ID))
@@ -896,6 +929,11 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		return ok
 	}
 
+	if claim.Lost() {
+		e.clearPendingCompileEvent(task.ID)
+		common.Warn(fmt.Sprintf("Task %s: distributed claim lost before completion, leaving for redelivery", task.ID))
+		return false
+	}
 	if err := e.completeTask(ctx, task.ID); err != nil {
 		common.Error(fmt.Sprintf("Task %s update status failed", task.ID), err)
 		return false
@@ -986,10 +1024,12 @@ func (e *Ingestor) settleToTerminal(ctx context.Context, taskID string) error {
 // The heartbeat is stopped (and waited on) before ack/nack — see Heartbeat.Stop.
 // A panic in body is recovered: the task is marked FAILED and the message is
 // Nacked for redelivery, so a single task's panic never crashes the worker.
-// Settlement queries the DB for the task's actual status: a terminal state
-// (COMPLETED/STOPPED/FAILED) means Ack; anything else means Nack. The body's
-// return value is advisory only — DB truth is authoritative (BP1).
-func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskContext, hb *Heartbeat, body func(context.Context) bool) (terminal bool) {
+// When the distributed claim was lost, the status is left untouched for the new
+// owner and the message is still Nacked. Settlement queries the DB for the
+// task's actual status: a terminal state (COMPLETED/STOPPED/FAILED) means Ack;
+// anything else means Nack. The body's return value is advisory only - DB truth
+// is authoritative (BP1).
+func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskContext, hb *Heartbeat, claim *taskClaim, body func(context.Context) bool) (terminal bool) {
 	defer func() {
 		hb.Stop() // stop heartbeat (and wait) before ack/nack
 		if r := recover(); r != nil {
@@ -1019,6 +1059,13 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 					}
 				}()
 				common.Error(fmt.Sprintf("task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
+				if claim.Lost() {
+					// Another ingestor may own the task now; writing FAILED
+					// here would corrupt the new owner's run.
+					e.clearPendingCompileEvent(taskID)
+					common.Warn(fmt.Sprintf("task %s: claim lost after panic, leaving status untouched for redelivery", taskID))
+					return
+				}
 				e.markFailed(ctx, taskID)
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task panicked: %v", r))
 			}()
@@ -1171,29 +1218,6 @@ func docRunFromTasks(tasks []*entity.IngestionTask) string {
 	default:
 		return string(entity.TaskStatusUnstart)
 	}
-}
-
-// claimTask registers a worker claim on a task ID. Returns false if another
-// worker has already claimed it (e.g. MQ redelivery), true on first claim.
-// The claim is released by releaseTask when the worker finishes, so a future
-// redelivery (after restart) can re-claim the task. Broker lease renewal is a
-// separate concern handled by the worker-owned Heartbeat until settlement.
-func (e *Ingestor) claimTask(taskID string) bool {
-	e.tasksMu.Lock()
-	defer e.tasksMu.Unlock()
-	if _, ok := e.currentTasks[taskID]; ok {
-		return false
-	}
-	e.currentTasks[taskID] = struct{}{}
-	return true
-}
-
-// releaseTask removes the claim so a future redelivery (after process restart)
-// can re-claim the task.
-func (e *Ingestor) releaseTask(taskID string) {
-	e.tasksMu.Lock()
-	delete(e.currentTasks, taskID)
-	e.tasksMu.Unlock()
 }
 
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {
@@ -1352,12 +1376,12 @@ func (e *Ingestor) Stop(ctx context.Context) {
 	case <-ctx.Done():
 		e.stopActiveLeases()
 		e.cancel()
-		e.tasksMu.RLock()
-		ids := make([]string, 0, len(e.currentTasks))
-		for id := range e.currentTasks {
-			ids = append(ids, id)
+		e.leasesMu.Lock()
+		ids := make([]string, 0, len(e.activeLeases))
+		for heartbeat := range e.activeLeases {
+			ids = append(ids, heartbeat.id)
 		}
-		e.tasksMu.RUnlock()
+		e.leasesMu.Unlock()
 		common.Warn(fmt.Sprintf("Stop timed out with %d task(s) still in-flight (will be redelivered by broker): %v", len(ids), ids))
 	}
 

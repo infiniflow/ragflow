@@ -374,11 +374,17 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 		t.Fatalf("set status RUNNING: %v", err)
 	}
 
-	ingestor := newUnitIngestor("test-doc-dup", 1, []string{"pdf"})
-	// Simulate active claim by another worker
-	if !ingestor.claimTask(taskID) {
-		t.Fatal("first claim should succeed")
+	owner := newUnitIngestor("test-doc-owner", 1, []string{"pdf"})
+	duplicate := newUnitIngestor("test-doc-dup", 1, []string{"pdf"})
+	store := newFakeTaskClaimStore()
+	owner.taskClaims = store
+	duplicate.taskClaims = store
+	// Simulate the task being owned by another ingestor.
+	ownerClaim, ok, err := owner.acquireTaskClaim(taskID)
+	if err != nil || !ok {
+		t.Fatalf("owner claim should succeed: ok=%v err=%v", ok, err)
 	}
+	t.Cleanup(func() { owner.releaseTask(ownerClaim) })
 	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
 		"progress":         0.42,
 		"chunk_num":        7,
@@ -389,7 +395,7 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 	}
 
 	pipelineRan := false
-	ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
+	duplicate.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
 		pipelineRan = true
 		return nil
 	}
@@ -399,7 +405,7 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 		TaskType: common.TaskTypeIngestionTask,
 	}}
 
-	ingestor.handleAndExecute(handle)
+	duplicate.handleAndExecute(handle)
 
 	if pipelineRan {
 		t.Fatal("duplicate delivery should not execute pipeline")
@@ -416,6 +422,45 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 	}
 	if doc.Progress != 0.42 || doc.ChunkNum != 7 || doc.TokenNum != 9 || doc.ProcessDuration != 12.5 {
 		t.Fatalf("duplicate delivery rewrote document state: progress=%v chunks=%d tokens=%d duration=%v", doc.Progress, doc.ChunkNum, doc.TokenNum, doc.ProcessDuration)
+	}
+}
+
+// TestHandleAndExecute_ClaimStoreErrorNacks verifies that a Kvrocks claim
+// failure fails closed: the task must not run and the delivery must be Nacked
+// for a later retry, never silently executed with a local-only claim.
+func TestHandleAndExecute_ClaimStoreErrorNacks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.RUNNING).Error; err != nil {
+		t.Fatalf("set status RUNNING: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test-claim-error", 1, []string{"pdf"})
+	store := newFakeTaskClaimStore()
+	store.setNXErr = errors.New("kvrocks unavailable")
+	ingestor.taskClaims = store
+
+	pipelineRan := false
+	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
+		pipelineRan = true
+		return nil
+	}
+
+	handle := &fakeTaskHandle{msg: common.TaskMessage{
+		TaskID:   taskID,
+		TaskType: common.TaskTypeIngestionTask,
+	}}
+	ingestor.handleAndExecute(handle)
+
+	if pipelineRan {
+		t.Fatal("pipeline ran after a claim-store failure; want fail-closed Nack")
+	}
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 1 {
+		t.Fatalf("expected 0 Ack/1 Nack after claim-store failure, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 }
 

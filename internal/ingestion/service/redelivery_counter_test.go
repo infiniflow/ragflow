@@ -96,11 +96,11 @@ func TestRunTask_RedeliveryOfCompletedTaskCountsOnce(t *testing.T) {
 	ingestor.runDocumentTask = applyResult(ingestor, docID, kbID)
 
 	// First delivery: parse succeeds, counters applied once, task -> COMPLETED.
-	if terminal := ingestor.runTask(context.Background(), rcMsg(taskID, docID, kbID)); !terminal {
+	if terminal := ingestor.runTask(context.Background(), rcMsg(taskID, docID, kbID), nil); !terminal {
 		t.Fatalf("expected the first delivery to complete (terminal=true)")
 	}
 	// Redelivery (Ack lost): the same message is processed again. Must NOT re-count.
-	ingestor.runTask(context.Background(), rcMsg(taskID, docID, kbID))
+	ingestor.runTask(context.Background(), rcMsg(taskID, docID, kbID), nil)
 
 	assertCountersAppliedOnce(t, db, kbID, docID)
 }
@@ -126,7 +126,7 @@ func TestRunTask_RedeliveryAfterIncompleteRunCountsOnce(t *testing.T) {
 	// Preparation must preserve the counts already included in the KB aggregate.
 	msg := rcMsg(taskID, docID, kbID)
 	ingestor.ingestionTaskSvc.PrepareValidatedRun(context.Background(), msg)
-	if terminal := ingestor.runTask(context.Background(), msg); !terminal {
+	if terminal := ingestor.runTask(context.Background(), msg, nil); !terminal {
 		t.Fatalf("expected the redelivery run to complete (terminal=true)")
 	}
 

@@ -246,41 +246,50 @@ func TestExecuteTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
 
 // TestClaimTask_FirstTrueThenFalse: claiming a task for the first time must
 // succeed; a second claim while the first worker is still processing must
-// fail. This is the local guard that catches MQ redeliveries.
+// fail. This is the distributed claim guard that catches MQ redeliveries.
 func TestClaimTask_FirstTrueThenFalse(t *testing.T) {
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 
-	if !ingestor.claimTask("task-1") {
-		t.Fatal("first claim should succeed")
+	firstClaim, ok, err := ingestor.acquireTaskClaim("task-1")
+	if err != nil || !ok {
+		t.Fatalf("first claim should succeed: ok=%v err=%v", ok, err)
 	}
+	t.Cleanup(func() { ingestor.releaseTask(firstClaim) })
 
 	// Same task claimed again — must fail (another worker is already on it).
-	if ingestor.claimTask("task-1") {
-		t.Fatal("second claim should fail: task already claimed by another worker")
+	if _, ok, err := ingestor.acquireTaskClaim("task-1"); err != nil || ok {
+		t.Fatalf("second claim should fail: ok=%v err=%v", ok, err)
 	}
 
 	// Different task — should succeed.
-	if !ingestor.claimTask("task-2") {
-		t.Fatal("different task should succeed")
+	secondClaim, ok, err := ingestor.acquireTaskClaim("task-2")
+	if err != nil || !ok {
+		t.Fatalf("different task should succeed: ok=%v err=%v", ok, err)
 	}
+	t.Cleanup(func() { ingestor.releaseTask(secondClaim) })
 }
 
 // TestClaimTask_AfterReleaseCanReclaim: after a worker finishes and releases
 // the task, a fresh claim (e.g. on restart) must succeed again.
 func TestClaimTask_AfterReleaseCanReclaim(t *testing.T) {
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
-	ingestor.claimTask("task-1")
-	ingestor.releaseTask("task-1")
-
-	if !ingestor.claimTask("task-1") {
-		t.Fatal("after release should be able to reclaim (previous worker finished)")
+	firstClaim, ok, err := ingestor.acquireTaskClaim("task-1")
+	if err != nil || !ok {
+		t.Fatalf("first claim should succeed: ok=%v err=%v", ok, err)
 	}
+	ingestor.releaseTask(firstClaim)
+
+	secondClaim, ok, err := ingestor.acquireTaskClaim("task-1")
+	if err != nil || !ok {
+		t.Fatalf("after release claim should succeed: ok=%v err=%v", ok, err)
+	}
+	t.Cleanup(func() { ingestor.releaseTask(secondClaim) })
 }
 
-// TestExecuteTask_ReleasesTaskFromCurrentTasks: executeTask must call
-// releaseTask in its defer so the task is removed from currentTasks and
-// a subsequent claim succeeds.
-func TestExecuteTask_ReleasesTaskFromCurrentTasks(t *testing.T) {
+// TestExecuteTaskWithHeartbeat_ReleasesClaim verifies the execution path
+// releases the Kvrocks claim when it finishes, so a later delivery can claim
+// the same task again.
+func TestExecuteTaskWithHeartbeat_ReleasesClaim(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -291,22 +300,30 @@ func TestExecuteTask_ReleasesTaskFromCurrentTasks(t *testing.T) {
 	)
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	store := newFakeTaskClaimStore()
+	ingestor.taskClaims = store
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return nil
 	}
-	ingestor.claimTask(taskID)
-	ctx := t.Context()
+	claim, ok, err := ingestor.acquireTaskClaim(taskID)
+	if err != nil || !ok {
+		t.Fatalf("first claim should succeed: ok=%v err=%v", ok, err)
+	}
 
-	handle := &fakeTaskHandle{}
-	ingestor.executeTask(ctx, newAckTaskCtx(t.Context(), taskID, docID, handle))
+	taskCtx := newAckTaskCtx(claim.ctx, taskID, docID, &fakeTaskHandle{})
+	hb := NewHeartbeat(taskCtx.ID(), taskCtx.Handle, ingestor.heartbeatInterval).WithContext(taskCtx.Ctx)
+	hb.Start()
+	ingestor.executeTaskWithHeartbeat(t.Context(), taskCtx, hb, claim)
 
-	if _, stillActive := ingestor.currentTasks[taskID]; stillActive {
-		t.Fatal("expected task released from currentTasks after executeTask finished")
+	if owner := store.owner(taskClaimKey(taskID)); owner != "" {
+		t.Fatalf("claim owner = %q after execution, want released", owner)
 	}
 	// After release, a new claim must succeed.
-	if !ingestor.claimTask(taskID) {
-		t.Fatal("expected reclaim after executeTask to succeed")
+	reclaimed, ok, err := ingestor.acquireTaskClaim(taskID)
+	if err != nil || !ok {
+		t.Fatalf("expected reclaim after execution to succeed: ok=%v err=%v", ok, err)
 	}
+	t.Cleanup(func() { ingestor.releaseTask(reclaimed) })
 }
 
 // TestSettleMessage_AckOnTerminal: body returns true -> Ack, no Nack.
@@ -318,7 +335,7 @@ func TestSettleMessage_AckOnTerminal(t *testing.T) {
 	hb := NewHeartbeat(taskCtx.ID(), taskCtx.Handle, ingestor.heartbeatInterval).WithContext(taskCtx.Ctx)
 	hb.Start()
 
-	ingestor.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) bool { return true })
+	ingestor.settleMessage(ctx, taskCtx, hb, nil, func(ctx context.Context) bool { return true })
 
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("body=true: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -334,7 +351,7 @@ func TestSettleMessage_NackOnNonTerminal(t *testing.T) {
 	hb := NewHeartbeat(taskCtx.ID(), taskCtx.Handle, ingestor.heartbeatInterval).WithContext(taskCtx.Ctx)
 	hb.Start()
 
-	ingestor.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) bool { return false })
+	ingestor.settleMessage(ctx, taskCtx, hb, nil, func(ctx context.Context) bool { return false })
 
 	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
 		t.Fatalf("body=false: expected 1 Nack/0 Ack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
@@ -369,7 +386,7 @@ func TestSettleMessage_RecoversPanicAndAcksWhenTaskTerminal(t *testing.T) {
 				panicked = true
 			}
 		}()
-		ingestor.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) bool {
+		ingestor.settleMessage(ctx, taskCtx, hb, nil, func(ctx context.Context) bool {
 			panic("boom")
 		})
 	}()
@@ -459,7 +476,7 @@ func TestSettleMessage_DBTruthOverridesBodyReturn(t *testing.T) {
 	ctx := t.Context()
 	hb := NewHeartbeat(taskCtx.ID(), taskCtx.Handle, ingestor.heartbeatInterval).WithContext(taskCtx.Ctx)
 	hb.Start()
-	ingestor.settleMessage(ctx, taskCtx, hb, body)
+	ingestor.settleMessage(ctx, taskCtx, hb, nil, body)
 
 	// DB shows FAILED → terminal → Ack, overriding body's false.
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {

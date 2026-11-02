@@ -50,5 +50,5 @@ func TestRunTaskToleratesNilDatabase(t *testing.T) {
 	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error { return nil }
 	ingestor.runTask(context.Background(), &entity.IngestionTask{
 		ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1", PipelineLogID: &runID,
-	})
+	}, nil)
 }

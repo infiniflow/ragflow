@@ -71,6 +71,7 @@ func TestHandleAndExecute_SurvivesMemoryPanicAndKeepsServing(t *testing.T) {
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
 
 	ingestor := NewIngestor("test", 1, []string{"pdf"}, nil)
+	ingestor.taskClaims = newFakeTaskClaimStore()
 	ingestor.SetMemoryMessageService(servicepkg.NewMemoryMessageService(servicepkg.NewMemoryService(dao.DB, engine.Get())))
 	ingestor.runMemoryTask = func(_ context.Context, _, _ string) (servicepkg.MemoryTaskDisposition, error) {
 		panic("simulated memory extraction panic")

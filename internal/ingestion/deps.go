@@ -49,7 +49,8 @@ type Deps struct {
 	DB *gorm.DB
 	// MQ is the task broker (NATS JetStream) the ingestor consumes.
 	MQ engine.MessageQueue
-	// KV is the Kvrocks client for HTML media, chunkcache, run trackers and memory ids.
+	// KV is the Kvrocks client for HTML media, chunkcache, run trackers, memory
+	// ids, and the cross-node ingestion task claim.
 	KV *kvrocks.Client
 }
 

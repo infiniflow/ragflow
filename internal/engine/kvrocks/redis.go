@@ -45,6 +45,7 @@ var (
 type Client struct {
 	client           *redis.Client
 	luaDeleteIfEqual *redis.Script
+	luaExpireIfEqual *redis.Script
 	luaTokenBucket   *redis.Script
 	luaMediaPut      *redis.Script
 	luaAutoIncrement *redis.Script
@@ -66,6 +67,15 @@ const (
 		local current_value = redis.call('get', KEYS[1])
 		if current_value and current_value == ARGV[1] then
 			redis.call('del', KEYS[1])
+			return 1
+		end
+		return 0
+	`
+
+	luaExpireIfEqualScript = `
+		local current_value = redis.call('get', KEYS[1])
+		if current_value and current_value == ARGV[1] then
+			redis.call('pexpire', KEYS[1], ARGV[2])
 			return 1
 		end
 		return 0
@@ -186,6 +196,7 @@ func Init(ctx context.Context) error {
 			client:           client,
 			config:           kvrocksConfig,
 			luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
+			luaExpireIfEqual: redis.NewScript(luaExpireIfEqualScript),
 			luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
 			luaMediaPut:      redis.NewScript(luaMediaPutScript),
 		}
@@ -947,6 +958,28 @@ func (r *Client) DeleteIfEqual(ctx context.Context, key, expectedValue string) (
 	if err != nil {
 		common.Warn("Redis DeleteIfEqual error", zap.String("key", key), zap.Error(err))
 		return false, fmt.Errorf("delete key %q if value matches: %w", key, err)
+	}
+	return result == 1, nil
+}
+
+// ExpireIfEqual extends key's TTL only while its value still equals
+// expectedValue. It is the owner-checked renewal primitive for distributed
+// leases: a stale owner that lost the key (expired or taken over) cannot
+// extend the new owner's lease.
+func (r *Client) ExpireIfEqual(ctx context.Context, key, expectedValue string, exp time.Duration) (bool, error) {
+	if r == nil || r.client == nil {
+		return false, errors.New("kvrocks client is not initialized")
+	}
+	if r.luaExpireIfEqual == nil {
+		return false, errors.New("kvrocks expire-if-equal script is not initialized")
+	}
+	if exp <= 0 {
+		return false, errors.New("kvrocks expire-if-equal ttl must be positive")
+	}
+	result, err := r.luaExpireIfEqual.Run(ctx, r.client, []string{key}, expectedValue, exp.Milliseconds()).Int64()
+	if err != nil {
+		common.Warn("Redis ExpireIfEqual error", zap.String("key", key), zap.Error(err))
+		return false, fmt.Errorf("expire key %q if value matches: %w", key, err)
 	}
 	return result == 1, nil
 }
