@@ -314,18 +314,14 @@ func (c *wecomChannel) Stop(ctx context.Context) error {
 	}
 }
 
-// Send sends an application message or a WebSocket bot message.
+// Send sends an application message or a WebSocket bot message. A failed send is
+// reported, so the caller can record that the reply was already attempted. The
+// application error is redacted because the request URL carries the credentials.
 func (c *wecomChannel) Send(ctx context.Context, msg core.OutgoingMessage) error {
 	if c.account.ConnectionType == "websocket" {
-		if err := c.sendWebSocketMessage(msg); err != nil {
-			common.Error("wecom: websocket send failed", err, zap.String("account_id", c.account.AccountID))
-		}
-		return nil
+		return c.sendWebSocketMessage(msg)
 	}
-	if err := c.sendApplicationMessage(ctx, msg); err != nil {
-		common.Error("wecom: application send failed", redactURLError(err), zap.String("account_id", c.account.AccountID))
-	}
-	return nil
+	return redactURLError(c.sendApplicationMessage(ctx, msg))
 }
 
 func (c *wecomChannel) runWebSocket(ctx context.Context) {

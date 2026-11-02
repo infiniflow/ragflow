@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -268,6 +269,9 @@ func TestWeComWebhookDuplicateWaitsForInFlightDelivery(t *testing.T) {
 		// failed attempt is forgotten, so the next retry is handled again.
 		"succeeds": {wantStatus: http.StatusOK, wantCalls: 1},
 		"fails":    {handlerErr: errors.New("transient failure"), wantStatus: http.StatusInternalServerError, wantCalls: 2},
+		// The reply already went to the platform, so the platform must not run
+		// the delivery again.
+		"reply attempted": {handlerErr: fmt.Errorf("%w: %w", errReplyAttempted, errors.New("send failed")), wantStatus: http.StatusOK, wantCalls: 1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			entered := make(chan struct{}, 1)
@@ -619,7 +623,7 @@ func TestWeComWebSocketMessagePreservesWhitespaceAndFallsBackToSender(t *testing
 	}
 }
 
-func TestWeComSendIgnoresTransportErrors(t *testing.T) {
+func TestWeComSendReportsTransportErrors(t *testing.T) {
 	channel, err := newWeComChannel(wecomAccount{
 		AccountID:      "account-1",
 		ConnectionType: "websocket",
@@ -629,8 +633,41 @@ func TestWeComSendIgnoresTransportErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWeComChannel() error = %v", err)
 	}
-	if err := channel.Send(context.Background(), core.OutgoingMessage{ChatID: "chat-1", Text: "answer"}); err != nil {
-		t.Fatalf("Send() error = %v, want nil", err)
+	if err := channel.Send(context.Background(), core.OutgoingMessage{ChatID: "chat-1", Text: "answer"}); err == nil {
+		t.Fatal("Send() error = nil, want an error for a websocket that is not connected")
+	}
+}
+
+func TestWeComSendRedactsApplicationErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	server.Close()
+	allowChannelURLForTest(t, server.URL)
+
+	encodingAESKey, _ := testWeComAESKey()
+	channel, err := newWeComChannel(wecomAccount{
+		AccountID:      "account-1",
+		ConnectionType: "webhook",
+		CorpID:         "corp-id",
+		AgentID:        1000001,
+		Secret:         "corp-secret",
+		Token:          "token",
+		AESKey:         encodingAESKey,
+		APIBaseURL:     server.URL,
+	})
+	if err != nil {
+		t.Fatalf("newWeComChannel() error = %v", err)
+	}
+	err = channel.Send(context.Background(), core.OutgoingMessage{ChatID: "user-1", Text: "answer"})
+	if err == nil {
+		t.Fatal("Send() error = nil, want a transport error")
+	}
+	if !strings.Contains(err.Error(), "gettoken") {
+		t.Fatalf("Send() error = %v, want the transport failure of the gettoken request", err)
+	}
+	for _, secret := range []string{"corpsecret", "corp-secret", "access_token"} {
+		if strings.Contains(err.Error(), secret) {
+			t.Fatalf("Send() error leaks %q: %v", secret, err)
+		}
 	}
 }
 
