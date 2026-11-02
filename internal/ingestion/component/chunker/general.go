@@ -239,11 +239,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	}
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
 	if customDelimiter {
-		if unitSources != nil {
-			units, unitSources = splitPDFUnits(units, unitSources, primaryPattern, false)
-		} else {
-			units = splitGeneralUnits(units, primaryPattern, false)
-		}
+		units, unitSources = splitPDFUnits(units, unitSources, primaryPattern, false)
 	}
 	if unitSources != nil {
 		units, unitSources = sortPDFUnitsWithSources(units, unitSources)
@@ -265,11 +261,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		joinSep := "\n"
 		if !customDelimiter {
 			body = separateGeneralTextBlocks(body)
-			if unitSources != nil {
-				body, bodySources = splitPDFUnits(body, bodySources, primaryPattern, true)
-			} else {
-				body = splitGeneralUnits(body, primaryPattern, true)
-			}
+			body, bodySources = splitPDFUnits(body, bodySources, primaryPattern, true)
 			joinSep = ""
 		}
 		merged, mergedSources := mergeGeneralUnitsWithSources(body, bodySources, c.param.ChunkTokenSize, c.param.OverlappedPercent, joinSep)
@@ -1535,21 +1527,43 @@ func normalizeGeneralNewlines(text string) string {
 // (@@...##) carry no visual height and are excluded from the ratio, mirroring
 // the Token path (chunkFromItem/splitOversizedText).
 func sliceGeneralSplitPieces(unit schema.ChunkDoc, parts []string) []schema.ChunkDoc {
+	return sliceGeneralSplitPiecesWithSources(unit, parts, nil)
+}
+
+func sliceGeneralSplitPiecesWithSources(unit schema.ChunkDoc, parts []string, sources []pdfSourceSpan) []schema.ChunkDoc {
 	out := make([]schema.ChunkDoc, 0, len(parts))
 	if len(parts) == 0 {
 		return out
 	}
-	counts := make([]int, len(parts))
-	for i, part := range parts {
-		counts[i] = utf8.RuneCountInString(removeTag(part))
-	}
-	pdfSliced, posSliced := slicePositionsByCounts(unit.PDFPositions, unit.Positions, counts)
+	var pdfSliced, posSliced []json.RawMessage
+	cursor := 0
 	for i, part := range parts {
 		piece := cloneChunkDoc(unit)
 		piece.Text = part
 		piece.TKNums = intPtr(tokenizeStr(part))
-		piece.PDFPositions = pdfSliced[i]
-		piece.Positions = posSliced[i]
+		positioned := false
+		if sources != nil {
+			if offset := strings.Index(unit.Text[cursor:], part); offset >= 0 {
+				start := cursor + offset
+				cursor = start + len(part)
+				spans := slicePDFSourceSpans(sources, unit.Text, start, cursor)
+				pdfPositions, positions := pdfSourcePositions(spans)
+				if len(pdfPositions) > 0 || len(positions) > 0 {
+					piece.PDFPositions, piece.Positions = pdfPositions, positions
+					positioned = true
+				}
+			}
+		}
+		if !positioned {
+			if pdfSliced == nil {
+				counts := make([]int, len(parts))
+				for index, text := range parts {
+					counts[index] = utf8.RuneCountInString(removeTag(text))
+				}
+				pdfSliced, posSliced = slicePositionsByCounts(unit.PDFPositions, unit.Positions, counts)
+			}
+			piece.PDFPositions, piece.Positions = pdfSliced[i], posSliced[i]
+		}
 		out = append(out, piece)
 	}
 	return out
@@ -1611,38 +1625,11 @@ func splitGeneralChildrenWithSources(chunks []schema.ChunkDoc, sources [][]pdfSo
 			result = append(result, chunk)
 			continue
 		}
-		if sources == nil || sources[index] == nil {
-			for _, piece := range sliceGeneralSplitPieces(chunk, parts) {
-				piece.Mom = mom
-				result = append(result, piece)
-			}
-			continue
+		var spans []pdfSourceSpan
+		if sources != nil {
+			spans = sources[index]
 		}
-		cursor := 0
-		var fallback []schema.ChunkDoc
-		for partIndex, part := range parts {
-			piece := cloneChunkDoc(chunk)
-			piece.Text = part
-			piece.TKNums = intPtr(tokenizeStr(part))
-			positioned := false
-			offset := strings.Index(chunk.Text[cursor:], part)
-			if offset >= 0 {
-				start := cursor + offset
-				end := start + len(part)
-				spans := slicePDFSourceSpans(sources[index], chunk.Text, start, end)
-				pdfPositions, positions := pdfSourcePositions(spans)
-				if len(pdfPositions) > 0 || len(positions) > 0 {
-					piece.PDFPositions, piece.Positions = pdfPositions, positions
-					positioned = true
-				}
-				cursor = end
-			}
-			if !positioned {
-				if fallback == nil {
-					fallback = sliceGeneralSplitPieces(chunk, parts)
-				}
-				piece.PDFPositions, piece.Positions = fallback[partIndex].PDFPositions, fallback[partIndex].Positions
-			}
+		for _, piece := range sliceGeneralSplitPiecesWithSources(chunk, parts, spans) {
 			piece.Mom = mom
 			result = append(result, piece)
 		}

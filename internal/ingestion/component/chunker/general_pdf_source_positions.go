@@ -26,6 +26,9 @@ func pdfUnitSources(units []schema.ChunkDoc) [][]pdfSourceSpan {
 }
 
 func splitPDFUnits(units []schema.ChunkDoc, sources [][]pdfSourceSpan, pattern *regexp.Regexp, keepDelimiter bool) ([]schema.ChunkDoc, [][]pdfSourceSpan) {
+	if sources == nil {
+		return splitGeneralUnits(units, pattern, keepDelimiter), nil
+	}
 	var result []schema.ChunkDoc
 	var resultSources [][]pdfSourceSpan
 	for index, unit := range units {
