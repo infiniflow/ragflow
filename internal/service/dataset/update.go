@@ -271,14 +271,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			} else {
 				tenantEmbdID = ""
 			}
-			modelAccess := service.ModelAccess{UserID: userID, TenantID: lockedKB.TenantID}
-			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, modelAccess)
+			identity := service.Identity{UserID: userID, TenantID: lockedKB.TenantID}
+			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, identity)
 			if !ok {
 				txCode = common.CodeDataError
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				target, err := service.NewModelFactory().ResolveInfo(ctx, modelAccess, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelFactory().ResolveInfo(ctx, identity, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
 					tenantEmbdID = target.ID
 				}
@@ -438,6 +438,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			var membership entity.UserTenant
 			if tenantErr := tx.Where("user_id = ? AND tenant_id = ? AND status = ?", userID, lockedKB.TenantID, entity.TenantMembershipStatusJoined).Take(&membership).Error; tenantErr == nil {
 				llmID = membership.LLMID
+				if membership.TenantLLMID != nil && strings.TrimSpace(*membership.TenantLLMID) != "" {
+					llmID = strings.TrimSpace(*membership.TenantLLMID)
+				}
 			}
 			effectiveParserConfig = service.ApplyComponentScopedParserConfig(
 				effectiveParserConfig,

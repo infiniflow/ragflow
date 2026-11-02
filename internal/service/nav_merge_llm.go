@@ -225,7 +225,7 @@ func navChatText(ctx context.Context, modelFactory *ModelFactory, tenantID, mode
 	if modelFactory == nil {
 		return "", fmt.Errorf("datasetnav: model factory not initialized")
 	}
-	access := ModelAccess{TenantID: tenantID}
+	access := Identity{TenantID: tenantID}
 	var (
 		chatModel *modelModule.ChatModel
 		err       error

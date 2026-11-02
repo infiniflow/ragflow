@@ -271,6 +271,12 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	}
 	flushBody()
 
+	for i := range chunks {
+		if itemDocType(chunks[i]) == "text" {
+			chunks[i].Text = removeTag(chunks[i].Text)
+		}
+	}
+	chunks = splitGeneralChildren(chunks, childrenPattern)
 	engine, err := newPDFEngineFromUpstream(ctx, db, upstream)
 	if err != nil {
 		common.Warn("GeneralChunker: could not open PDF for on-demand cropping", zap.Error(err))
@@ -279,7 +285,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		defer engine.Close()
 		chunks = cropImageChunks(ctx, engine, chunks)
 	}
-	chunks = finalizeGeneralChunks(chunks, childrenPattern)
+	chunks = finalizeGeneralChunks(chunks, nil)
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("GeneralChunker: %w", err)
 	}
@@ -1455,6 +1461,8 @@ func sliceGeneralSplitPieces(unit schema.ChunkDoc, parts []string) []schema.Chun
 	return out
 }
 
+// finalizeGeneralChunks drops empty chunks after media context and on-demand
+// PDF cropping have run, then applies the shared child-delimiter split.
 func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Regexp) []schema.ChunkDoc {
 	visible := make([]schema.ChunkDoc, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -1462,8 +1470,10 @@ func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Reg
 		// Keep a chunk whenever it still carries retrievable content. A
 		// streamed crop upload sets ImgID and clears Image, so an uploaded
 		// media chunk (text may be only a position tag, or empty) must be
-		// retained via its ImgID — otherwise the already-uploaded image is
-		// dropped and its MinIO object orphaned.
+		// retained via its ImgID - otherwise the already-uploaded image is
+		// dropped and its MinIO object orphaned. Position-only media without
+		// a crop result is dropped here; cropImageChunks runs immediately
+		// before this pass.
 		if strings.TrimSpace(chunk.Text) == "" && !hasMediaPayload(chunk) {
 			continue
 		}

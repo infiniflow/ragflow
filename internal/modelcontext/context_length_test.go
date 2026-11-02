@@ -14,22 +14,52 @@
 //  limitations under the License.
 //
 
-package dao
+package modelcontext
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
+
+func TestMaxTokensFromJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		json json.RawMessage
+		want int
+	}{
+		{name: "integer", json: json.RawMessage(`32000`), want: 32000},
+		{name: "fractional number", json: json.RawMessage(`32000.9`), want: 32000},
+		{name: "numeric string", json: json.RawMessage(`" 32000 "`), want: 32000},
+		{name: "zero", json: json.RawMessage(`0`)},
+		{name: "negative", json: json.RawMessage(`-1`)},
+		{name: "invalid string", json: json.RawMessage(`"large"`)},
+		{name: "null", json: json.RawMessage(`null`)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := MaxTokensFromJSON(test.json); got != test.want {
+				t.Fatalf("MaxTokensFromJSON(%s) = %d, want %d", test.json, got, test.want)
+			}
+		})
+	}
+}
+
+func resolveTestContextLength(ctx context.Context, db *gorm.DB, tenantID, modelRef, driver, modelName string) int {
+	return ResolveModelContentLength(ctx, db, tenantID, modelRef, driver, modelName)
+}
 
 // TestResolveModelContentLength_CompositeReference resolves context_length
 // for a composite "model@provider" reference from the provider catalog.
 func TestResolveModelContentLength_CompositeReference(t *testing.T) {
-	if got := ResolveModelContentLength(t.Context(), nil, "", "gpt-4o@openai", "", ""); got != 128000 {
-		t.Fatalf("ResolveModelContentLength(gpt-4o@openai) = %d, want 128000", got)
+	if got := resolveTestContextLength(t.Context(), nil, "", "gpt-4o@openai", "", ""); got != 128000 {
+		t.Fatalf("resolveTestContextLength(gpt-4o@openai) = %d, want 128000", got)
 	}
 }
 
@@ -38,8 +68,8 @@ func TestResolveModelContentLength_CompositeReference(t *testing.T) {
 // instance-bearing form used by tenant model instances — from the provider
 // catalog.
 func TestResolveModelContentLength_CompositeReferenceThreePart(t *testing.T) {
-	if got := ResolveModelContentLength(t.Context(), nil, "", "gpt-4o@default@openai", "", ""); got != 128000 {
-		t.Fatalf("ResolveModelContentLength(gpt-4o@default@openai) = %d, want 128000", got)
+	if got := resolveTestContextLength(t.Context(), nil, "", "gpt-4o@default@openai", "", ""); got != 128000 {
+		t.Fatalf("resolveTestContextLength(gpt-4o@default@openai) = %d, want 128000", got)
 	}
 }
 
@@ -50,32 +80,32 @@ func TestResolveModelContentLength_CompositeReferenceThreePart(t *testing.T) {
 // and provider anchored on the right. When the catalog lookup fails it falls
 // through to the driver+modelName fallback, and to 0 when no fallback exists.
 func TestResolveModelContentLength_MultiSegmentComposite(t *testing.T) {
-	if got := ResolveModelContentLength(t.Context(), nil, "", "a@b@c@d", "openai", "gpt-4o"); got != 128000 {
-		t.Fatalf("ResolveModelContentLength(a@b@c@d, openai, gpt-4o) = %d, want 128000 (driver fallback)", got)
+	if got := resolveTestContextLength(t.Context(), nil, "", "a@b@c@d", "openai", "gpt-4o"); got != 128000 {
+		t.Fatalf("resolveTestContextLength(a@b@c@d, openai, gpt-4o) = %d, want 128000 (driver fallback)", got)
 	}
-	if got := ResolveModelContentLength(t.Context(), nil, "", "gpt-4o@default@openai@extra", "", ""); got != 0 {
-		t.Fatalf("ResolveModelContentLength(gpt-4o@default@openai@extra) = %d, want 0", got)
+	if got := resolveTestContextLength(t.Context(), nil, "", "gpt-4o@default@openai@extra", "", ""); got != 0 {
+		t.Fatalf("resolveTestContextLength(gpt-4o@default@openai@extra) = %d, want 0", got)
 	}
-	modelName, instanceName, providerName, ok := splitCompositeModelRef("a@b@c@d")
-	if !ok || modelName != "a@b" || instanceName != "c" || providerName != "d" {
-		t.Fatalf("splitCompositeModelRef(a@b@c@d) = %q/%q/%q/%v, want a@b/c/d/true", modelName, instanceName, providerName, ok)
+	modelName, instanceName, providerName, err := common.ParseCompositeModelName("a@b@c@d")
+	if err != nil || modelName != "a@b" || instanceName != "c" || providerName != "d" {
+		t.Fatalf("ParseCompositeModelName(a@b@c@d) = %q/%q/%q/%v, want a@b/c/d", modelName, instanceName, providerName, err)
 	}
 }
 
 // TestResolveModelContentLength_DriverModelFallback resolves context_length
 // from the resolved driver + bare model name, which needs no database.
 func TestResolveModelContentLength_DriverModelFallback(t *testing.T) {
-	if got := ResolveModelContentLength(t.Context(), nil, "", "", "openai", "gpt-4o"); got != 128000 {
-		t.Fatalf("ResolveModelContentLength(openai/gpt-4o) = %d, want 128000", got)
+	if got := resolveTestContextLength(t.Context(), nil, "", "", "openai", "gpt-4o"); got != 128000 {
+		t.Fatalf("resolveTestContextLength(openai/gpt-4o) = %d, want 128000", got)
 	}
 }
 
 // TestResolveModelContentLength_Unknown returns 0 for unknown references.
 func TestResolveModelContentLength_Unknown(t *testing.T) {
-	if got := ResolveModelContentLength(t.Context(), nil, "", "no-such-model@no-such-provider", "", ""); got != 0 {
+	if got := resolveTestContextLength(t.Context(), nil, "", "no-such-model@no-such-provider", "", ""); got != 0 {
 		t.Fatalf("unknown model = %d, want 0", got)
 	}
-	if got := ResolveModelContentLength(t.Context(), nil, "", "", "", ""); got != 0 {
+	if got := resolveTestContextLength(t.Context(), nil, "", "", "", ""); got != 0 {
 		t.Fatalf("empty reference = %d, want 0", got)
 	}
 }
@@ -84,13 +114,12 @@ func TestResolveModelContentLength_Unknown(t *testing.T) {
 // tenant_model UUID row through the provider catalog.
 func TestResolveModelContentLength_TenantModelUUID(t *testing.T) {
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	ctx := t.Context()
 
 	seedOpenAIChatModel(t, db, "")
 
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
-		t.Fatalf("ResolveModelContentLength(uuid) = %d, want 128000", got)
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
+		t.Fatalf("resolveTestContextLength(uuid) = %d, want 128000", got)
 	}
 }
 
@@ -99,13 +128,12 @@ func TestResolveModelContentLength_TenantModelUUID(t *testing.T) {
 // provider catalog's context_length for a UUID reference.
 func TestResolveModelContentLength_ExtraOverrideUUID(t *testing.T) {
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	ctx := t.Context()
 
 	seedOpenAIChatModel(t, db, `{"max_tokens": 32000}`)
 
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 32000 {
-		t.Fatalf("ResolveModelContentLength(uuid+extra) = %d, want 32000 (custom override wins over catalog 128000)", got)
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 32000 {
+		t.Fatalf("resolveTestContextLength(uuid+extra) = %d, want 32000 (custom override wins over catalog 128000)", got)
 	}
 }
 
@@ -114,13 +142,12 @@ func TestResolveModelContentLength_ExtraOverrideUUID(t *testing.T) {
 // tenant's provider/instance/model rows.
 func TestResolveModelContentLength_ExtraOverrideComposite(t *testing.T) {
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	ctx := t.Context()
 
 	seedOpenAIChatModel(t, db, `{"max_tokens": 32000}`)
 
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 32000 {
-		t.Fatalf("ResolveModelContentLength(composite+extra) = %d, want 32000", got)
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 32000 {
+		t.Fatalf("resolveTestContextLength(composite+extra) = %d, want 32000", got)
 	}
 }
 
@@ -130,13 +157,12 @@ func TestResolveModelContentLength_ExtraOverrideComposite(t *testing.T) {
 // override (the catalog cannot provide a value).
 func TestResolveModelContentLength_CustomModelExtraComposite(t *testing.T) {
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	ctx := t.Context()
 
 	seedCustomChatModel(t, db, "my-local-model", `{"max_tokens": 32000}`)
 
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "my-local-model@OpenAI", "", ""); got != 32000 {
-		t.Fatalf("ResolveModelContentLength(custom+extra) = %d, want 32000", got)
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "my-local-model@OpenAI", "", ""); got != 32000 {
+		t.Fatalf("resolveTestContextLength(custom+extra) = %d, want 32000", got)
 	}
 	// Without the override the custom model is unknown to the catalog → 0.
 	if err := db.Model(&entity.TenantModel{}).
@@ -144,7 +170,7 @@ func TestResolveModelContentLength_CustomModelExtraComposite(t *testing.T) {
 		Update("extra", "").Error; err != nil {
 		t.Fatalf("clear custom model extra: %v", err)
 	}
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "my-local-model@OpenAI", "", ""); got != 0 {
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "my-local-model@OpenAI", "", ""); got != 0 {
 		t.Fatalf("custom model without extra = %d, want 0", got)
 	}
 }
@@ -155,7 +181,6 @@ func TestResolveModelContentLength_CustomModelExtraComposite(t *testing.T) {
 // catalog by reference parts (gpt-4o → 128000).
 func TestResolveModelContentLength_InactiveInstanceCompositeFallsBackToCatalog(t *testing.T) {
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	ctx := t.Context()
 
 	seedOpenAIChatModel(t, db, `{"max_tokens": 32000}`)
@@ -165,7 +190,7 @@ func TestResolveModelContentLength_InactiveInstanceCompositeFallsBackToCatalog(t
 		t.Fatalf("set instance inactive: %v", err)
 	}
 
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
 		t.Fatalf("inactive-instance composite = %d, want catalog 128000", got)
 	}
 }
@@ -176,7 +201,6 @@ func TestResolveModelContentLength_InactiveInstanceCompositeFallsBackToCatalog(t
 // catalog by reference parts (gpt-4o → 128000).
 func TestResolveModelContentLength_InactiveModelCompositeFallsBackToCatalog(t *testing.T) {
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	ctx := t.Context()
 
 	seedOpenAIChatModel(t, db, `{"max_tokens": 32000}`)
@@ -186,7 +210,7 @@ func TestResolveModelContentLength_InactiveModelCompositeFallsBackToCatalog(t *t
 		t.Fatalf("set model inactive: %v", err)
 	}
 
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
 		t.Fatalf("inactive-model composite = %d, want catalog 128000", got)
 	}
 }
@@ -196,13 +220,12 @@ func TestResolveModelContentLength_InactiveModelCompositeFallsBackToCatalog(t *t
 // callers persist extra.max_tokens as a string).
 func TestResolveModelContentLength_ExtraOverrideStringForm(t *testing.T) {
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	ctx := t.Context()
 
 	seedOpenAIChatModel(t, db, `{"max_tokens": "32000"}`)
 
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 32000 {
-		t.Fatalf("ResolveModelContentLength(string-form extra) = %d, want 32000", got)
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 32000 {
+		t.Fatalf("resolveTestContextLength(string-form extra) = %d, want 32000", got)
 	}
 }
 
@@ -210,13 +233,12 @@ func TestResolveModelContentLength_ExtraOverrideStringForm(t *testing.T) {
 // verifies that a non-numeric max_tokens string is treated as "no override".
 func TestResolveModelContentLength_NonNumericStringExtraFallsBackToCatalog(t *testing.T) {
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	ctx := t.Context()
 
 	seedOpenAIChatModel(t, db, `{"max_tokens": "huge"}`)
 
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
-		t.Fatalf("ResolveModelContentLength(non-numeric string extra) = %d, want catalog 128000", got)
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
+		t.Fatalf("resolveTestContextLength(non-numeric string extra) = %d, want catalog 128000", got)
 	}
 }
 
@@ -225,13 +247,12 @@ func TestResolveModelContentLength_NonNumericStringExtraFallsBackToCatalog(t *te
 // context_length is used.
 func TestResolveModelContentLength_InvalidExtraFallsBackToCatalog(t *testing.T) {
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	ctx := t.Context()
 
 	seedOpenAIChatModel(t, db, `{bad json`)
 
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
-		t.Fatalf("ResolveModelContentLength(invalid extra) = %d, want catalog 128000", got)
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
+		t.Fatalf("resolveTestContextLength(invalid extra) = %d, want catalog 128000", got)
 	}
 }
 
@@ -239,13 +260,12 @@ func TestResolveModelContentLength_InvalidExtraFallsBackToCatalog(t *testing.T) 
 // non-positive max_tokens override is ignored in favor of the catalog.
 func TestResolveModelContentLength_ZeroExtraFallsBackToCatalog(t *testing.T) {
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	ctx := t.Context()
 
 	seedOpenAIChatModel(t, db, `{"max_tokens": 0}`)
 
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
-		t.Fatalf("ResolveModelContentLength(zero extra) = %d, want catalog 128000", got)
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 128000 {
+		t.Fatalf("resolveTestContextLength(zero extra) = %d, want catalog 128000", got)
 	}
 }
 
@@ -254,7 +274,6 @@ func TestResolveModelContentLength_ZeroExtraFallsBackToCatalog(t *testing.T) {
 // it carries a max_tokens override.
 func TestResolveModelContentLength_InactiveTenantModel(t *testing.T) {
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	ctx := t.Context()
 
 	seedOpenAIChatModel(t, db, `{"max_tokens": 32000}`)
@@ -266,7 +285,7 @@ func TestResolveModelContentLength_InactiveTenantModel(t *testing.T) {
 	}
 
 	// The UUID is not a composite ref, so an inactive row yields 0.
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 0 {
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != 0 {
 		t.Fatalf("inactive tenant model = %d, want 0", got)
 	}
 }
@@ -288,8 +307,10 @@ func seedCustomChatModel(t *testing.T, db *gorm.DB, modelName, extra string) {
 
 func seedChatModel(t *testing.T, db *gorm.DB, providerID, providerName, modelName, extra string) {
 	t.Helper()
+	seedTenantOwner(t, db)
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           providerID,
+		UserID:       "tenant-1",
 		ProviderName: providerName,
 		TenantID:     "tenant-1",
 	}).Error; err != nil {
@@ -316,13 +337,27 @@ func seedChatModel(t *testing.T, db *gorm.DB, providerID, providerName, modelNam
 	}
 }
 
+func seedTenantOwner(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	status := entity.TenantMembershipStatusJoined
+	if err := db.Create(&entity.UserTenant{
+		ID:       "membership-tenant-1",
+		UserID:   "tenant-1",
+		TenantID: "tenant-1",
+		Role:     "owner",
+		Status:   &status,
+	}).Error; err != nil {
+		t.Fatalf("create tenant owner: %v", err)
+	}
+}
+
 func openModelContextTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
@@ -335,17 +370,16 @@ func openModelContextTestDB(t *testing.T) *gorm.DB {
 func TestResolveModelContentLength_StoredMistralOCRProvider(t *testing.T) {
 	const want = 262144 // mistral-large-latest context_length in conf/models/mistral.json
 
-	if got := ResolveModelContentLength(t.Context(), nil, "", "mistral-large-latest@default@Mistral OCR", "", ""); got != want {
+	if got := resolveTestContextLength(t.Context(), nil, "", "mistral-large-latest@default@Mistral OCR", "", ""); got != want {
 		t.Fatalf("composite without tenant row = %d, want %d", got, want)
 	}
-	if got := ResolveModelContentLength(t.Context(), nil, "", "", "Mistral OCR", "mistral-large-latest"); got != want {
+	if got := resolveTestContextLength(t.Context(), nil, "", "", "Mistral OCR", "mistral-large-latest"); got != want {
 		t.Fatalf("driver fallback = %d, want %d", got, want)
 	}
 
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	seedChatModel(t, db, "provider-mistral-ocr", "Mistral OCR", "mistral-large-latest", "")
-	if got := ResolveModelContentLength(t.Context(), db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != want {
+	if got := resolveTestContextLength(t.Context(), db, "tenant-1", "0123456789abcdef0123456789abcdef", "", ""); got != want {
 		t.Fatalf("tenant model id = %d, want %d", got, want)
 	}
 }
@@ -359,16 +393,17 @@ func TestResolveModelContentLength_StoredMistralOCRProvider(t *testing.T) {
 // "model@instance@provider" reference keeps resolving that instance.
 func TestResolveModelContentLength_LegacyCompositeNeverUsesNonDefaultInstance(t *testing.T) {
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	ctx := t.Context()
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-openai",
+		UserID:       "tenant-1",
 		ProviderName: "OpenAI",
 		TenantID:     "tenant-1",
 	}).Error; err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
+	seedTenantOwner(t, db)
 	if err := db.Create(&entity.TenantModelInstance{
 		ID:           "instance-prod",
 		ProviderID:   "provider-openai",
@@ -391,12 +426,12 @@ func TestResolveModelContentLength_LegacyCompositeNeverUsesNonDefaultInstance(t 
 
 	// The implicit "default" instance does not exist, so the "prod" instance's
 	// tenant override must not answer a two-part reference.
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
-		t.Fatalf("ResolveModelContentLength(gpt-4o@OpenAI) = %d, want 128000 (the default instance is unavailable; another instance must not be substituted)", got)
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
+		t.Fatalf("resolveTestContextLength(gpt-4o@OpenAI) = %d, want 128000 (the default instance is unavailable; another instance must not be substituted)", got)
 	}
 	// An explicit instance reference still resolves that instance.
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@prod@OpenAI", "", ""); got != 32000 {
-		t.Fatalf("ResolveModelContentLength(gpt-4o@prod@OpenAI) = %d, want 32000 (explicit instance reference)", got)
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "gpt-4o@prod@OpenAI", "", ""); got != 32000 {
+		t.Fatalf("resolveTestContextLength(gpt-4o@prod@OpenAI) = %d, want 32000 (explicit instance reference)", got)
 	}
 }
 
@@ -406,16 +441,17 @@ func TestResolveModelContentLength_LegacyCompositeNeverUsesNonDefaultInstance(t 
 // instance keeps its own override for explicit references.
 func TestResolveModelContentLength_LegacyCompositeDoesNotGuessBetweenActiveInstances(t *testing.T) {
 	db := openModelContextTestDB(t)
-	pushDB(t, db)
 	ctx := t.Context()
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-openai",
+		UserID:       "tenant-1",
 		ProviderName: "OpenAI",
 		TenantID:     "tenant-1",
 	}).Error; err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
+	seedTenantOwner(t, db)
 	for _, instance := range []*entity.TenantModelInstance{
 		{ID: "instance-prod", ProviderID: "provider-openai", InstanceName: "prod", Status: "active"},
 		{ID: "instance-staging", ProviderID: "provider-openai", InstanceName: "staging", Status: "active"},
@@ -441,13 +477,13 @@ func TestResolveModelContentLength_LegacyCompositeDoesNotGuessBetweenActiveInsta
 		}
 	}
 
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
-		t.Fatalf("ResolveModelContentLength(gpt-4o@OpenAI) = %d, want 128000 (no default instance; no instance may be guessed)", got)
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
+		t.Fatalf("resolveTestContextLength(gpt-4o@OpenAI) = %d, want 128000 (no default instance; no instance may be guessed)", got)
 	}
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@prod@OpenAI", "", ""); got != 32000 {
-		t.Fatalf("ResolveModelContentLength(gpt-4o@prod@OpenAI) = %d, want 32000", got)
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "gpt-4o@prod@OpenAI", "", ""); got != 32000 {
+		t.Fatalf("resolveTestContextLength(gpt-4o@prod@OpenAI) = %d, want 32000", got)
 	}
-	if got := ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@staging@OpenAI", "", ""); got != 16000 {
-		t.Fatalf("ResolveModelContentLength(gpt-4o@staging@OpenAI) = %d, want 16000", got)
+	if got := resolveTestContextLength(ctx, db, "tenant-1", "gpt-4o@staging@OpenAI", "", ""); got != 16000 {
+		t.Fatalf("resolveTestContextLength(gpt-4o@staging@OpenAI) = %d, want 16000", got)
 	}
 }

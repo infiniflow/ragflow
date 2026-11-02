@@ -45,6 +45,9 @@ jest.mock('@/components/message-input/next', () => ({
     MockNextMessageInput(props),
 }));
 jest.mock('@/components/message-item', () => () => null);
+jest.mock('@/components/virtual-message-list', () => ({
+  VirtualMessageList: () => null,
+}));
 jest.mock('@/components/pdf-drawer', () => () => null);
 jest.mock('@/components/pdf-drawer/hooks', () => ({
   useClickDrawer: () => ({
@@ -61,7 +64,6 @@ jest.mock('@/hooks/logic-hooks', () => ({
     value: 'Question',
     setValue: jest.fn(),
   }),
-  useScrollToBottom: () => ({ scrollRef: { current: null } }),
 }));
 jest.mock('@/hooks/use-chat-request', () => ({
   useFetchChat: () => ({

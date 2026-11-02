@@ -22,7 +22,7 @@ import (
 	"ragflow/internal/common"
 )
 
-func TestSetTenantInfoRejectsInvalidSettingTypesBeforeDatabaseLookup(t *testing.T) {
+func TestSetModelSettingsRejectsInvalidSettingTypesBeforeDatabaseLookup(t *testing.T) {
 	tests := []struct {
 		name string
 		raw  map[string]interface{}
@@ -36,16 +36,16 @@ func TestSetTenantInfoRejectsInvalidSettingTypesBeforeDatabaseLookup(t *testing.
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			code, err := (&UserService{}).SetTenantInfo(context.Background(), "user-1", &SetTenantInfoRequest{Raw: tt.raw})
+			code, err := (&UserTenantService{}).SetModelSettings(context.Background(), "user-1", &SetModelSettingsRequest{Raw: tt.raw})
 			if code != common.CodeArgumentError || err == nil {
-				t.Fatalf("SetTenantInfo() = (%v, %v), want argument error", code, err)
+				t.Fatalf("SetModelSettings() = (%v, %v), want argument error", code, err)
 			}
 		})
 	}
 }
 
-func TestTenantModelSettingUpdatesAllowsNullOnlyForNullableColumns(t *testing.T) {
-	updates, err := tenantModelSettingUpdates(map[string]interface{}{
+func TestModelSettingUpdatesAllowsNullOnlyForNullableColumns(t *testing.T) {
+	updates, err := modelSettingUpdates(map[string]interface{}{
 		"llm_id":             "chat@provider",
 		"tenant_llm_id":      nil,
 		"tts_id":             nil,
@@ -56,7 +56,7 @@ func TestTenantModelSettingUpdatesAllowsNullOnlyForNullableColumns(t *testing.T)
 		"tenant_decision_id": nil,
 	})
 	if err != nil {
-		t.Fatalf("tenantModelSettingUpdates() error = %v", err)
+		t.Fatalf("modelSettingUpdates() error = %v", err)
 	}
 	if len(updates) != 8 {
 		t.Fatalf("len(updates) = %d, want 8", len(updates))
