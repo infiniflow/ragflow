@@ -182,7 +182,16 @@ func tableText(table *entity.TableData) string {
 			rows = append(rows, strings.Join(cells, " "))
 		}
 	}
-	return strings.Join(rows, "\n")
+	text := strings.Join(rows, "\n")
+	// MergeCaptions moves a standalone caption into TableData.Caption and
+	// removes its section, so the fallback must carry it or the caption is lost.
+	if caption := strings.TrimSpace(table.Caption); caption != "" {
+		if text == "" {
+			return caption
+		}
+		return caption + "\n" + text
+	}
+	return text
 }
 
 // cropSection crops the first position, which is the table region. Caption

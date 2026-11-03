@@ -268,6 +268,44 @@ func TestParseRejectsOneColumnTable(t *testing.T) {
 	}
 }
 
+func TestParseKeepsCaptionWhenTableRejected(t *testing.T) {
+	img, boxes, texts := newTestImage(240, 180, []testCell{
+		{image.Rect(20, 40, 80, 50), "Table 1", color.RGBA{R: 128, G: 128, B: 128, A: 255}},
+		{image.Rect(20, 70, 60, 90), "Name", color.RGBA{R: 255, A: 255}},
+		{image.Rect(20, 120, 50, 140), "A", color.RGBA{B: 255, A: 255}},
+	})
+	analyzer := &testAnalyzer{
+		boxes:   boxes,
+		texts:   texts,
+		regions: []deepdoctype.DLARegion{{X0: 0, Y0: 60, X1: 240, Y1: 160, Label: "table", Confidence: 0.9}},
+		cells: []deepdoctype.TSRCell{
+			{X0: 0, Y0: 0, X1: 240, Y1: 130, Label: "table"},
+			{X0: 10, Y0: 40, X1: 230, Y1: 60, Label: "table row"},
+			{X0: 10, Y0: 90, X1: 230, Y1: 110, Label: "table row"},
+		},
+	}
+
+	blocks, err := Parse(t.Context(), img, analyzer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, block := range blocks {
+		if block.Kind == BlockTable {
+			t.Fatalf("one-column table must not become a table block: %+v", block)
+		}
+	}
+	var text strings.Builder
+	for _, block := range blocks {
+		text.WriteString(block.Text)
+		text.WriteByte('\n')
+	}
+	for _, want := range []string{"Table 1", "Name", "A"} {
+		if !strings.Contains(text.String(), want) {
+			t.Fatalf("text fallback %q does not contain %q", text.String(), want)
+		}
+	}
+}
+
 func TestParseNilImage(t *testing.T) {
 	if _, err := Parse(context.Background(), nil, &testAnalyzer{}); err == nil {
 		t.Fatal("expected an error for a nil image")
