@@ -838,7 +838,7 @@ func dispatchMonkeyOCRPDF(
 	}
 
 	extraction := mineruExtractionOptions{formulaEnable: true, tableEnable: true}
-	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction)
+	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR stream: %w", err)
 	}
