@@ -25,6 +25,7 @@ import (
 
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 )
 
@@ -78,7 +79,7 @@ func TestMaybeDispatchImageEmitsTableItem(t *testing.T) {
 	analyzer := &pictureTableAnalyzer{}
 	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) { return analyzer, true }
 
-	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "table.png", tablePicturePNG(t), map[string]any{"tenant_id": "t1"}, defaultSetups(), false, visionSettings{})
+	result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "table.png", tablePicturePNG(t), map[string]any{"tenant_id": "t1"}, defaultSetups(), false, visionSettings{})
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
 	}
