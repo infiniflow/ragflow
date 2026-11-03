@@ -22,26 +22,8 @@ import (
 )
 
 func TestExtractorTagsShareExtractionConcurrency(t *testing.T) {
-	if !tokenizer.IsInitialized() {
-		if err := tokenizer.Init(&tokenizer.PoolConfig{MinSize: 1, MaxSize: 1}); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(tokenizer.Close)
-	}
-	db := withFileComponentTestDB(t)
-	store := withMemoryStorage(t)
 	pushExtractorTagChatStub(t, map[string]string{"__static__": `{"finance": 8}`})
 	pushExtractorTagTargetResolverStub(t)
-	SetExtractorContextLengthOverride(func(context.Context, string) int { return 0 })
-	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
-	location := "tags.csv"
-	file := entity.File{ID: t.Name(), TenantID: "tenant-tags", CreatedBy: "tenant-tags", ParentID: "tags", Name: "tags.csv", Location: &location}
-	if err := db.Create(&file).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Put(t.Context(), "tags", location, []byte("banking economy,finance\ncooking recipes,food")); err != nil {
-		t.Fatal(err)
-	}
 
 	previous := extractorPool
 	pool := utility.NewWorkerPool[extractorJob, struct{}](1, 4,
@@ -57,15 +39,14 @@ func TestExtractorTagsShareExtractionConcurrency(t *testing.T) {
 	<-started
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{}.Defaults()}
-	c.Param.Tags.TagFileID = file.ID
 	c.Param.Tags.TopN = 1
 	chunks := []map[string]any{{"text": "unrelated astronomy observations"}, {"text": "unrelated mountain geology"}}
-	ctx, cancel := context.WithTimeout(extractorStateCtx(t, "tenant-tags"), 5*time.Second)
+	indexed := &MemoryTagIndex{allTags: map[string]float64{"finance": 1}}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		_, err := c.runAutoTags(ctx, db, extractorInputs{chunks: chunks, lang: "english", llmID: "test@test", modelID: "test@test"}, progress.Window{})
-		done <- err
+		done <- c.runLLMTags(ctx, nil, extractorInputs{llmID: "test@test", modelID: "test@test"}, chunks, indexed, nil, progress.Window{})
 	}()
 
 	// The occupied shared slot must hold up tags, rather than letting their
