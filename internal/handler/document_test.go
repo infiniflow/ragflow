@@ -530,8 +530,8 @@ func TestDocumentReadHandlersForbidden(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &responseFields); err != nil {
 				t.Fatal(err)
 			}
-			if _, ok := responseFields["data"]; !ok {
-				t.Fatalf("permission error response is missing data field: %s", w.Body.String())
+			if _, ok := responseFields["data"]; ok {
+				t.Fatalf("permission error response must omit absent data: %s", w.Body.String())
 			}
 			if fake.metadataKBID != "" {
 				t.Fatal("GetMetadataSummary should not be called without dataset access")
@@ -909,7 +909,7 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 	}
 }
 
-func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
+func TestUploadDocumentsHandler_LocalPartialFailureOmitsData(t *testing.T) {
 	db := setupUploadHandlerDB(t, "normal")
 	orig := dao.DB
 	dao.DB = db
@@ -942,9 +942,8 @@ func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
 	if resp["code"] != float64(common.CodeServerError) {
 		t.Fatalf("expected server error code for partial upload, got %v", resp)
 	}
-	data := resp["data"].([]interface{})
-	if len(data) != 1 {
-		t.Fatalf("expected one successful document, got %v", data)
+	if _, ok := resp["data"]; ok {
+		t.Fatalf("error response must omit data: %v", resp)
 	}
 	if !strings.Contains(resp["message"].(string), "bad.exe") {
 		t.Fatalf("expected failed file in message, got %v", resp["message"])
@@ -1122,11 +1121,8 @@ func TestDocumentHandlerIngestMatchesPythonResponseShape(t *testing.T) {
 	if resp["code"] != float64(common.CodeSuccess) {
 		t.Fatalf("expected top-level code 0, got %v", resp["code"])
 	}
-	if resp["data"] != true {
-		t.Fatalf("expected top-level data=true, got %#v", resp["data"])
-	}
-	if _, ok := resp["data"].(map[string]interface{}); ok {
-		t.Fatalf("response must not nest code/message under data: %#v", resp["data"])
+	if data, exists := resp["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 	if fake.ingestUserID != "user-1" {
 		t.Fatalf("expected user-1, got %q", fake.ingestUserID)
@@ -1152,7 +1148,7 @@ func TestDocumentIngestRoutePassesPythonBodyToService(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["code"] != float64(common.CodeSuccess) || resp["data"] != true {
+	if _, exists := resp["data"]; resp["code"] != float64(common.CodeSuccess) || exists {
 		t.Fatalf("unexpected response: %s", w.Body.String())
 	}
 	if fake.ingestUserID != "user-1" {
@@ -1232,8 +1228,8 @@ func TestDocumentHandlerIngest_CancelDispatchesToService(t *testing.T) {
 	if resp["code"] != float64(common.CodeSuccess) {
 		t.Fatalf("expected code 0, got %v", resp["code"])
 	}
-	if resp["data"] != true {
-		t.Fatalf("expected data true, got %#v", resp["data"])
+	if data, exists := resp["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 	if fake.ingestReq == nil || len(fake.ingestReq.DocIDs) != 1 || fake.ingestReq.DocIDs[0] != "doc-1" {
 		t.Fatalf("unexpected ingestReq: %#v", fake.ingestReq)

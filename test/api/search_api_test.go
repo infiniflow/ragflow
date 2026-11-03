@@ -160,8 +160,8 @@ func TestRESTSearchLifecycle(t *testing.T) {
 	}
 
 	deleted := restOK(t, restCall(t, TestConfig, http.MethodDelete, "/searches/"+id, nil, nil))
-	if deleted["data"] != true {
-		t.Fatalf("delete returned %v, want true", deleted["data"])
+	if data, exists := deleted["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 	restCode(t, restCall(t, TestConfig, http.MethodGet, "/searches/"+id, nil, nil), http.StatusOK, 404)
 	// Deletion is a hard delete, so a repeat must be invisible rather than a no-op success.

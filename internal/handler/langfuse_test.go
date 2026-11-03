@@ -236,8 +236,8 @@ func TestLangfuseHandler_DeleteAPIKey_Success(t *testing.T) {
 	if payload["code"] != float64(common.CodeSuccess) {
 		t.Fatalf("payload=%v", payload)
 	}
-	if payload["data"] != true {
-		t.Fatalf("expected data true, got %v", payload["data"])
+	if data, exists := payload["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 }
 
