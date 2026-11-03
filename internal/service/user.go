@@ -225,6 +225,7 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	rootFile := &entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
+		UserID:    userID,
 		TenantID:  userID,
 		CreatedBy: userID,
 		Name:      "/",

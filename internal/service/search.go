@@ -184,6 +184,7 @@ func (s *SearchService) CreateSearch(ctx context.Context, name string, descripti
 	// Create search entity
 	search := &entity.Search{
 		ID:           searchID,
+		UserID:       identity.UserID,
 		TenantID:     identity.TenantID,
 		Name:         uniqueName,
 		CreatedBy:    identity.UserID,

@@ -439,6 +439,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateConversationReferences(ctx, DB); err != nil {
 			return fmt.Errorf("failed to move references into messages: %w", err)
 		}
+		if err = migrateResourceUserIDs(ctx, DB); err != nil {
+			return fmt.Errorf("failed to backfill resource user IDs: %w", err)
+		}
 		common.Info("Database schema migrated successfully")
 	} else {
 		for _, column := range []string{"backlog_doc_ids", "inflight_doc_ids"} {

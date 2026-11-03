@@ -359,6 +359,9 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 // updates dataset/document counters on insert. The document's ID and timestamps
 // are populated by the caller / model hooks before insertion.
 func (s *DocumentService) InsertDocument(ctx context.Context, doc *entity.Document) error {
+	if doc.UserID == "" {
+		doc.UserID = doc.CreatedBy
+	}
 	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(doc).Error; err != nil {
 			return fmt.Errorf("failed to create document: %w", err)

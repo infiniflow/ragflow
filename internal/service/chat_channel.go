@@ -110,6 +110,7 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, userID, name
 	}
 	row := &entity.ChatChannel{
 		ID:       common.GenerateUUID(),
+		UserID:   userID,
 		TenantID: tenantID,
 		Name:     name,
 		Channel:  channelType,
