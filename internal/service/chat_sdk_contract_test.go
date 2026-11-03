@@ -44,10 +44,10 @@ func TestChatConfigurationRejectsInvalidTypes(t *testing.T) {
 				var err error
 				if operation == "create" {
 					payload["name"] = "validation"
-					_, _, err = svc.Create(ctx, "user-1", payload)
+					_, _, err = svc.Create(ctx, payload)
 				} else {
 					createChatRESTUpdateServiceTestChat(t, db, "chat", "user-1")
-					_, err = svc.PatchChat(ctx, "user-1", "chat", payload)
+					_, err = svc.PatchChat(ctx, "chat", payload)
 				}
 				if err == nil {
 					t.Fatalf("accepted invalid configuration: %#v", payload)

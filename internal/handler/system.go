@@ -86,11 +86,6 @@ func (h *SystemHandler) GetConfig(c *gin.Context) {
 
 // GetStatus get RAGFlow status
 func (h *SystemHandler) GetStatus(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	ctx := c.Request.Context()
 	status, err := h.systemService.GetStatus(ctx)
