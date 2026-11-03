@@ -263,7 +263,12 @@ func (r *SyncRunner) collectResults(ctx context.Context, taskID string, pendingB
 		if jobResult.err != nil && firstErr == nil {
 			firstErr = jobResult.err
 		}
-		if firstErr == nil && jobResult.checkpoint != nil {
+		// Hold the persisted anchor before the first fetch skip: the ledger
+		// lives only in memory, so a checkpoint saved past a skipped document
+		// would let a rescheduled run resume beyond it and age that document
+		// out of the window without ever retrying its fetch. Resuming from the
+		// earlier anchor relists it instead.
+		if firstErr == nil && jobResult.checkpoint != nil && len(*fetchSkipped) == 0 {
 			checkpointState.Checkpoint = cloneSyncCheckpoint(jobResult.checkpoint)
 			checkpointState.NextCommitSeq++
 			applyStatsToCheckpointState(checkpointState, *stats)

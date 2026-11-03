@@ -2066,3 +2066,70 @@ func TestFetchSkippedDocumentIsRelistedByNextSync(t *testing.T) {
 		t.Fatalf("watermark did not resume advancing: got %v, want > %v", finalTask.PollRangeStart, failedAt)
 	}
 }
+
+// TestFetchSkipHoldsCheckpointBeforeSkippedBatch verifies the persisted
+// checkpoint anchor stops at the last batch before a fetch skip. The run-wide
+// skip ledger lives only in memory, so an anchor saved past a skipped document
+// would let a rescheduled run resume beyond it and age that document out of
+// the window without ever retrying its fetch; resuming from the earlier anchor
+// relists it instead.
+func TestFetchSkipHoldsCheckpointBeforeSkippedBatch(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	_ = db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	taskContext, err := taskDAO.GetTaskContext(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("get context: %v", err)
+	}
+	connector := &connectormock.Connector{
+		// The third NextBatch call fails so the run aborts after the skipped
+		// batch, mirroring a reschedule after a mid-run cancellation.
+		SyncErrAt: 3,
+		SyncBatches: []syncerconnector.SyncBatch{
+			{Documents: []syncerconnector.SourceDocument{{SourceID: "source-ok", Blob: []byte("x"), UpdatedAt: time.Now()}}, Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "before-skip"}},
+			{Documents: []syncerconnector.SourceDocument{{SourceID: "source-bad", FetchRef: &syncerconnector.FetchReference{Key: "bad"}, UpdatedAt: time.Now()}}, Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "past-skip"}},
+			{Documents: []syncerconnector.SourceDocument{{SourceID: "source-late", Blob: []byte("y"), UpdatedAt: time.Now()}}, Checkpoint: &syncerconnector.SyncCheckpoint{Cursor: "after"}},
+		},
+		FetchErrs: map[string]error{"bad": fmt.Errorf("%w: 404 not found", syncerconnector.ErrDocumentSkipped)},
+	}
+	sink := &fakeSink{}
+	checkpoints := newMemorySyncCheckpointStore()
+	coordinator := newCoordinatorWithCheckpoints(taskDAO, taskService, newTestRegistry(map[string]*connectormock.Connector{"conn-1": connector}), sink, nil, fakeStore{}, checkpoints)
+
+	if _, err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err == nil {
+		t.Fatal("execute = nil error, want the aborted batch error")
+	}
+	persisted, err := checkpoints.LoadSyncCheckpoint(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("load checkpoint: %v", err)
+	}
+	if persisted == nil {
+		t.Fatal("checkpoint missing after aborted run")
+	}
+	if persisted.Checkpoint == nil || persisted.Checkpoint.Cursor != "before-skip" {
+		cursor := "<nil>"
+		if persisted.Checkpoint != nil {
+			cursor = persisted.Checkpoint.Cursor
+		}
+		t.Fatalf("persisted anchor = %s, want before-skip (the anchor must not advance past a fetch skip)", cursor)
+	}
+
+	// A rescheduled run reloads that anchor, so the skipped document is
+	// relisted and retried once its fetch recovers.
+	delete(connector.FetchErrs, "bad")
+	connector.SyncErrAt = 0
+	if _, err := coordinator.Execute(t.Context(), taskContext, testLockLease()); err != nil {
+		t.Fatalf("retry execute: %v", err)
+	}
+	sawBad := false
+	for _, call := range sink.calls {
+		if call.SourceDocument.SourceID == "source-bad" {
+			sawBad = true
+		}
+	}
+	if !sawBad {
+		t.Fatalf("retry run never upserted source-bad; sink calls = %d", len(sink.calls))
+	}
+}
