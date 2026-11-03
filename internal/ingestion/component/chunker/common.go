@@ -125,21 +125,9 @@ func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string 
 		return []string{text}
 	}
 	if !keepDelim {
-		// Drop mode: keep only the text between delimiters, skipping any
-		// delimiter that sits at the very start (no preceding text).
 		var out []string
-		cursor := 0
-		for _, idx := range idxs {
-			start, end := idx[0], idx[1]
-			if start == cursor {
-				cursor = end
-				continue
-			}
-			out = append(out, text[cursor:start])
-			cursor = end
-		}
-		if cursor < len(text) {
-			out = append(out, text[cursor:])
+		for _, part := range splitDroppedDelimiterRanges(len(text), idxs) {
+			out = append(out, text[part[0]:part[1]])
 		}
 		return out
 	}
@@ -157,6 +145,21 @@ func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string 
 		out = append(out, tail)
 	}
 	return out
+}
+
+func splitDroppedDelimiterRanges(length int, matches [][]int) [][2]int {
+	var ranges [][2]int
+	cursor := 0
+	for _, match := range matches {
+		if match[0] > cursor {
+			ranges = append(ranges, [2]int{cursor, match[0]})
+		}
+		cursor = match[1]
+	}
+	if cursor < length {
+		ranges = append(ranges, [2]int{cursor, length})
+	}
+	return ranges
 }
 
 // foldWhitespaceSegments attaches blank runs to neighboring text without

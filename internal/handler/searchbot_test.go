@@ -534,7 +534,7 @@ func TestAskHandler_NoChatModel(t *testing.T) {
 		strings.NewReader(`{"question": "test", "kb_ids": ["kb1"]}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("user", &entity.User{ID: "user-1"})
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1"}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", ""))
 	h.Ask(c)
 	body := buf.String()
 	if !strings.Contains(body, "chat model not configured") {

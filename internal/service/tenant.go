@@ -60,7 +60,7 @@ func tenantMemberPermission(ctx context.Context, db *gorm.DB, userID, tenantID s
 		requirement = permission.TenantOwner
 	}
 	checker := permission.NewDatabaseChecker(db)
-	if err := checker.CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, requirement); err != nil {
+	if err := checker.CheckTenant(ctx, tenantID, requirement); err != nil {
 		return nil, 0, err
 	}
 	var communityMembership entity.UserTenant

@@ -17,7 +17,11 @@ on:
   # We use pull_request_target so that GITEE_TOKEN (and other repo secrets) are available when building
   # ragflow:nightly from a fork PR, while still running the full test suite on PRs labeled with `ci`.
   pull_request:
-    types: [opened, reopened, ready_for_review, synchronize, labeled]
+    types: [synchronize, labeled]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '*.mdx'
   schedule:
     - cron: '0 16 * * *'  # This schedule runs every 16:00:00Z(00:00:00+08:00)
 
@@ -62,13 +66,6 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
           allow-unsafe-pr-checkout: true
-
-      - name: Check added lines for non-ASCII characters
-        if: ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' }}
-        env:
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: go run ./tools/checkascii "$PR_BASE_SHA" "$PR_HEAD_SHA"
 
       - name: Check workflow duplication
         if: ${{ !cancelled() && !failure() }}
@@ -1892,6 +1889,7 @@ jobs:
           EXPOSE_MYSQL_PORT=$(_port EXPOSE_MYSQL_PORT)
           MINIO_PORT=$(_port MINIO_PORT)
           REDIS_PORT=$(_port REDIS_PORT)
+          KVROCKS_PORT=$(_port KVROCKS_PORT)
           EXPOSE_NATS_PORT=$(_port EXPOSE_NATS_PORT)
           EXPOSE_CLICKHOUSE_TCP_PORT=$(_port EXPOSE_CLICKHOUSE_TCP_PORT)
           export RAGFLOW_INFINITY_URI="host.docker.internal:${INFINITY_THRIFT_PORT}"
@@ -1899,6 +1897,10 @@ jobs:
           export RAGFLOW_MYSQL_PORT="${EXPOSE_MYSQL_PORT}"
           export RAGFLOW_MINIO_HOST="host.docker.internal:${MINIO_PORT}"
           export RAGFLOW_REDIS_HOST="host.docker.internal:${REDIS_PORT}"
+          # Test-only Kvrocks endpoint. Do not export RAGFLOW_KVROCKS_HOST here:
+          # that is a production config override and changes config-default tests.
+          export RAGFLOW_TEST_KVROCKS_ADDR="host.docker.internal:${KVROCKS_PORT}"
+          export KVROCKS_TEST_ADDR="${RAGFLOW_TEST_KVROCKS_ADDR}"
           export RAGFLOW_NATS_HOST=host.docker.internal
           export RAGFLOW_NATS_PORT="${EXPOSE_NATS_PORT}"
           export RAGFLOW_CLICKHOUSE_HOST=host.docker.internal

@@ -491,9 +491,10 @@ func normalizeIdentity(identity Identity) Identity {
 func identityFromContext(ctx context.Context, identity Identity) Identity {
 	identity = normalizeIdentity(identity)
 	if identity.UserID == "" {
-		if subject, ok := permission.SubjectFromContext(ctx); ok && strings.TrimSpace(subject.UserID) != "" &&
-			(strings.TrimSpace(subject.TenantID) == "" || strings.TrimSpace(subject.TenantID) == identity.TenantID) {
-			identity.UserID = strings.TrimSpace(subject.UserID)
+		userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+		contextTenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx))
+		if userID != "" && (contextTenantID == "" || contextTenantID == identity.TenantID) {
+			identity.UserID = userID
 		}
 	}
 	return identity
@@ -512,7 +513,14 @@ func (f *ModelFactory) authorize(ctx context.Context, access Identity) error {
 	if access.UserID == "" || access.UserID == access.TenantID {
 		return nil
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: access.UserID}, access.TenantID, permission.TenantMember); err != nil {
+	contextUserID := permission.UserIDFromContext(ctx)
+	if contextUserID != "" && access.UserID != "" && contextUserID != access.UserID {
+		return fmt.Errorf("%w: user %s has no access to tenant %s: %w", errModelConfigUnavailable, access.UserID, access.TenantID, permission.ErrIdentityMismatch)
+	}
+	if contextUserID == "" && access.UserID != "" {
+		ctx = permission.WithIdentity(ctx, access.UserID, permission.TenantIDFromContext(ctx))
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, access.TenantID, permission.TenantMember); err != nil {
 		return fmt.Errorf("%w: user %s has no access to tenant %s: %w", errModelConfigUnavailable, access.UserID, access.TenantID, err)
 	}
 	return nil
@@ -750,12 +758,23 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, access Identity
 		return nil, fmt.Errorf("%w: tenant model %q is disabled", errModelConfigUnavailable, modelRef)
 	}
 	if access.UserID != "" {
+		contextUserID := permission.UserIDFromContext(ctx)
+		contextTenantID := permission.TenantIDFromContext(ctx)
+		if (contextUserID != "" && contextUserID != access.UserID) ||
+			(contextTenantID != "" && contextTenantID != access.TenantID) {
+			return nil, fmt.Errorf("%w: model access identity does not match authenticated identity", permission.ErrIdentityMismatch)
+		}
+		if contextUserID == "" || contextTenantID == "" {
+			if contextTenantID == "" {
+				contextTenantID = access.TenantID
+			}
+			ctx = permission.WithIdentity(ctx, access.UserID, contextTenantID)
+		}
 		checker := permission.NewDatabaseChecker(dao.DB)
-		subject := permission.Subject{UserID: access.UserID}
-		if err := checker.CheckResource(ctx, subject, permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID}, permission.OperationRead); err != nil {
+		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID}, permission.OperationRead); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot read model provider %q: %w", errModelConfigUnavailable, access.UserID, provider.ProviderName, err)
 		}
-		if err := checker.CheckResource(ctx, subject, permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID}, permission.OperationUse); err != nil {
+		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID}, permission.OperationUse); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, access.UserID, instance.InstanceName, err)
 		}
 		checkedModels := candidates
@@ -769,7 +788,7 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, access Identity
 			if !strings.EqualFold(candidate.Status, "active") {
 				continue
 			}
-			if err := checker.CheckResource(ctx, subject, permission.ResourceRef{Kind: permission.ResourceKindModel, ID: candidate.ID}, permission.OperationUse); err != nil {
+			if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindModel, ID: candidate.ID}, permission.OperationUse); err != nil {
 				return nil, fmt.Errorf("%w: user %s cannot use model %q: %w", errModelConfigUnavailable, access.UserID, modelRef, err)
 			}
 		}

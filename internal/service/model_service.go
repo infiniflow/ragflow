@@ -112,7 +112,7 @@ type CheckConnectionRequest struct {
 
 func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerName, userID string) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	if err := checkFeatureAction(ctx, userID, "model_provider", permission.ActionEnable); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "model_provider", permission.ActionEnable); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}
@@ -166,7 +166,7 @@ func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context, userID
 	}
 	accessibleProviders, err := permission.NewDatabaseChecker(dao.DB).FilterResources(
 		ctx,
-		permission.Subject{UserID: userID},
+
 		providerRefs,
 		permission.OperationRead,
 	)
@@ -266,7 +266,6 @@ func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, userID, 
 	for _, instance := range instances {
 		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 			ctx,
-			permission.Subject{UserID: userID},
 			permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
 			permission.OperationDelete,
 		); err != nil {
@@ -280,7 +279,6 @@ func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, userID, 
 		for _, model := range models {
 			if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 				ctx,
-				permission.Subject{UserID: userID},
 				permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID},
 				permission.OperationDelete,
 			); err != nil {
@@ -350,7 +348,7 @@ func (m *ModelProviderService) ResolveSavedProviderModelConfig(ctx context.Conte
 		}
 		return SavedProviderModelConfig{}, err
 	}
-	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindModelInstance,
 		ID:   instance.ID,
 	})
@@ -768,7 +766,6 @@ func (m *ModelProviderService) resolveProviderInTenant(ctx context.Context, user
 	}
 	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID},
 		operation,
 	); err != nil {
@@ -840,7 +837,6 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		}
 		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
 	}
-	tenantID := provider.TenantID
 	instanceID := common.GenerateToken()
 
 	extra := make(map[string]string)
@@ -864,7 +860,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		if err := m.modelInstanceDAO.Create(ctx, tx, tenantModelInstance); err != nil {
 			return err
 		}
-		if err := permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{
+		if err := permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{
 			Kind: permission.ResourceKindModelInstance, ID: tenantModelInstance.ID,
 		}); err != nil {
 			return err
@@ -951,7 +947,7 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 		if err := m.modelInstanceDAO.Create(ctx, tx, tenantModelInstance); err != nil {
 			return err
 		}
-		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: provider.TenantID}, permission.ResourceRef{
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{
 			Kind: permission.ResourceKindModelInstance, ID: tenantModelInstance.ID,
 		})
 	})
@@ -1039,7 +1035,7 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 		instanceRefs = append(instanceRefs, permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID})
 	}
 	checker := permission.NewDatabaseChecker(dao.DB)
-	instanceAccesses, err := checker.ResolveAccesses(ctx, permission.Subject{UserID: userID}, instanceRefs)
+	instanceAccesses, err := checker.ResolveAccesses(ctx, instanceRefs)
 	if err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
@@ -1107,7 +1103,7 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 		}
 		return nil, common.CodeNotFound, fmt.Errorf("no instance found for provider '%s' and instance '%s'", providerName, instanceIDOrName)
 	}
-	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindModelInstance,
 		ID:   instance.ID,
 	})
@@ -1174,7 +1170,6 @@ func (m *ModelProviderService) resolveAuthorizedInstance(ctx context.Context, us
 	}
 	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
 		operation,
 	); err != nil {
@@ -1254,14 +1249,13 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		}
 		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 			ctx,
-			permission.Subject{UserID: userID},
 			permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID},
 			permission.OperationRead,
 		); err != nil {
 			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return code, normalizedErr
 		}
-		instanceAccess, err = permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+		instanceAccess, err = permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.ResourceRef{
 			Kind: permission.ResourceKindModelInstance,
 			ID:   instance.ID,
 		})
@@ -1379,7 +1373,6 @@ func (m *ModelProviderService) updateModelVerifyResults(ctx context.Context, use
 	}
 	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
 		permission.OperationUpdate,
 	); err != nil {
@@ -1394,7 +1387,6 @@ func (m *ModelProviderService) updateModelVerifyResults(ctx context.Context, use
 	}
 	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID},
 		permission.OperationRead,
 	); err != nil {
@@ -1413,7 +1405,6 @@ func (m *ModelProviderService) updateModelVerifyResults(ctx context.Context, use
 		}
 		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 			ctx,
-			permission.Subject{UserID: userID},
 			permission.ResourceRef{Kind: permission.ResourceKindModel, ID: modelObj.ID},
 			permission.OperationUpdate,
 		); err != nil {
@@ -1869,7 +1860,7 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, us
 	}
 
 	// Mirror Python's ensure_*_from_env calls.
-	if permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantOwner) == nil {
+	if permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantOwner) == nil {
 		_ = m.ensureMineruFromEnv(ctx, userID, tenantID)
 		_ = m.ensureMonkeyOCRv2FromEnv(ctx, userID, tenantID)
 		_ = m.ensureMonkeyOCRFromEnv(ctx, userID, tenantID)
@@ -1887,7 +1878,7 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, us
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("get tenant owner for model listing: %w", err)
 	}
-	providerScope, err := checker.QueryScope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
+	providerScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
 		Kind:      permission.ResourceKindModelProvider,
 		Operation: permission.OperationRead,
 	})
@@ -1928,7 +1919,7 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, us
 	// the service layer. Model access for a tenant is limited to its owner's
 	// provider configuration; personal model settings remain in the provider
 	// management endpoints.
-	modelScope, err := checker.QueryScope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
+	modelScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
 		Kind:      permission.ResourceKindModel,
 		Operation: permission.OperationRead,
 	})
@@ -2098,7 +2089,7 @@ func (m *ModelProviderService) resolveModelListTenant(ctx context.Context, userI
 			return nil, code, normalizedErr
 		}
 	} else {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantMember); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
 			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return nil, code, normalizedErr
 		}
@@ -2342,7 +2333,6 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	}
 	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
 		permission.OperationUpdate,
 	); err != nil {
@@ -2374,7 +2364,6 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		}
 		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 			ctx,
-			permission.Subject{UserID: userID},
 			permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID},
 			operation,
 		); err != nil {
@@ -2389,7 +2378,6 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		if _, exists := existingModelMap[model.ModelName]; !exists {
 			if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 				ctx,
-				permission.Subject{UserID: userID},
 				permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
 				permission.OperationCreate,
 			); err != nil {
@@ -2544,7 +2532,6 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 		instanceIDs = append(instanceIDs, instance.ID)
 		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 			ctx,
-			permission.Subject{UserID: userID},
 			permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
 			permission.OperationDelete,
 		); err != nil {
@@ -2558,7 +2545,6 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 		for _, model := range models {
 			if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 				ctx,
-				permission.Subject{UserID: userID},
 				permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID},
 				permission.OperationDelete,
 			); err != nil {
@@ -2613,7 +2599,6 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 	}
 	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
 		permission.OperationRead,
 	); err != nil {
@@ -2652,7 +2637,6 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 		if _, ok := requestedNames[obj.ModelName]; ok {
 			if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 				ctx,
-				permission.Subject{UserID: userID},
 				permission.ResourceRef{Kind: permission.ResourceKindModel, ID: obj.ID},
 				permission.OperationDelete,
 			); err != nil {
@@ -2689,7 +2673,6 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 	}
 	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
 		permission.OperationRead,
 	); err != nil {
@@ -2706,7 +2689,7 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 	for _, model := range modelObjs {
 		modelRefs = append(modelRefs, permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID})
 	}
-	resourceAccesses, err := permission.NewDatabaseChecker(dao.DB).ResolveAccesses(ctx, permission.Subject{UserID: userID}, modelRefs)
+	resourceAccesses, err := permission.NewDatabaseChecker(dao.DB).ResolveAccesses(ctx, modelRefs)
 	if err != nil {
 		_, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, normalizedErr
@@ -2838,7 +2821,6 @@ func (m *ModelProviderService) AlterModel(ctx context.Context, providerName, ins
 	}
 	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
 		permission.OperationRead,
 	); err != nil {
@@ -2872,7 +2854,6 @@ func (m *ModelProviderService) AlterModel(ctx context.Context, providerName, ins
 	}
 	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindModel, ID: model.ID},
 		permission.OperationUpdate,
 	); err != nil {
@@ -3071,7 +3052,6 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 	}
 	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindModelInstance, ID: instance.ID},
 		permission.OperationCreate,
 	); err != nil {

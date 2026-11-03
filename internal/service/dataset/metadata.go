@@ -18,7 +18,7 @@ import (
 func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userID, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
 	userID = strings.TrimSpace(userID)
 	datasetID = strings.TrimSpace(datasetID)
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -72,7 +72,7 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userI
 func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	userID = strings.TrimSpace(userID)
-	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -104,7 +104,7 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, us
 	datasetID = strings.TrimSpace(datasetID)
 	userID = strings.TrimSpace(userID)
 
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
