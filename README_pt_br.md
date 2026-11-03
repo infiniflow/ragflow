@@ -91,14 +91,6 @@ Experimente o nosso serviço na nuvem em [https://cloud.ragflow.io](https://clou
 
 Consulte as [notas de versão completas](https://ragflow.io/docs/dev/release_notes) para ver outras atualizações.
 
-## 🎉 Fique Ligado
-
-⭐️ Dê uma estrela no nosso repositório para se manter atualizado com novas funcionalidades e melhorias empolgantes! Receba notificações instantâneas sobre novos lançamentos! 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
 ## 🌟 Principais Funcionalidades
 
 ### 🍭 **"Qualidade entra, qualidade sai"**
