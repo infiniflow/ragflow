@@ -543,16 +543,18 @@ func gpustackModelTypesByName(t *testing.T, baseURL string) map[string][]string 
 func TestGPUStackListModelsUsesCategories(t *testing.T) {
 	withSSRFBypass(t)
 	srv := newGPUStackCategoryServer(t, map[string][]string{
-		"assistant":    {"llm"},
-		"kb-encoder":   {"embedding"},
-		"doc-sorter":   {"reranker"},
-		"voice-in":     {"speech_to_text"},
-		"voice-out":    {"text_to_speech"},
-		"qwen2.5-vl":   {"llm"},
-		"bge-renamed":  {"llm"},
-		"painter":      {"image"},
-		"no-category":  {},
-		"bge-m3-route": {},
+		"assistant":           {"llm"},
+		"kb-encoder":          {"embedding"},
+		"doc-sorter":          {"reranker"},
+		"voice-in":            {"speech_to_text"},
+		"voice-out":           {"text_to_speech"},
+		"qwen2.5-vl":          {"llm"},
+		"rerank-as-embedding": {"embedding"},
+		"whisper-small":       {"llm"},
+		"bge-as-rerank":       {"reranker"},
+		"painter":             {"image"},
+		"no-category":         {},
+		"bge-m3-route":        {},
 	})
 	defer srv.Close()
 
@@ -565,14 +567,72 @@ func TestGPUStackListModelsUsesCategories(t *testing.T) {
 		"voice-out":  {modelTypeTTS},
 		// Vision has no GPUStack category, so it still comes from the name.
 		"qwen2.5-vl": {modelTypeChat, modelTypeVision},
-		// The category beats a name that suggests something else.
-		"bge-renamed": {modelTypeChat},
+		// A specific category beats a name that suggests something else.
+		"rerank-as-embedding": {modelTypeEmbedding},
+		"bge-as-rerank":       {modelTypeRerank},
+		// "llm" is GPUStack's default for unknown architectures, so the name wins.
+		"whisper-small": {modelTypeASR},
 		// Routes without categories fall back to the name.
 		"no-category":  {modelTypeChat},
 		"bge-m3-route": {modelTypeEmbedding},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("types=%v\nwant %v", got, want)
+	}
+}
+
+// CosyVoice has no config.json, so GPUStack files it under "llm" by default.
+func TestGPUStackListModelsDetectsTTSFromVoices(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data := []map[string]interface{}{{"id": "plain"}, {"id": "voice-out"}}
+		switch r.URL.Query().Get("categories") {
+		case "":
+			if r.URL.Query().Get("with_meta") == "true" {
+				data[1]["meta"] = map[string]interface{}{"voices": []string{"Chinese Female"}}
+			}
+		case "llm":
+		default:
+			data = nil
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": data})
+	}))
+	defer srv.Close()
+
+	got := gpustackModelTypesByName(t, srv.URL)
+	want := map[string][]string{"plain": {modelTypeChat}, "voice-out": {modelTypeTTS}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("types=%v, want %v", got, want)
+	}
+}
+
+func TestGPUStackListModelsReadsContextLengthFromMeta(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data := []map[string]interface{}{{"id": "served"}, {"id": "unknown"}}
+		if r.URL.Query().Get("with_meta") == "true" {
+			data[0]["meta"] = map[string]interface{}{"max_model_len": 8192}
+		}
+		if r.URL.Query().Has("categories") {
+			data = nil
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": data})
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	listed, err := newGPUStackForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(listed) != 2 {
+		t.Fatalf("listed=%v", listed)
+	}
+	if listed[0].ContextLength == nil || *listed[0].ContextLength != 8192 {
+		t.Errorf("served context length=%v, want 8192", listed[0].ContextLength)
+	}
+	if listed[1].ContextLength != nil {
+		t.Errorf("unknown context length=%v, want nil", *listed[1].ContextLength)
 	}
 }
 

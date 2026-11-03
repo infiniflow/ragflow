@@ -112,22 +112,33 @@ func (g *GPUStackModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	})
 }
 
-type gpustackModelsResponse struct {
-	Data []ModelListItem `json:"data"`
+type gpustackModelItem struct {
+	ModelListItem
+	Meta struct {
+		Voices      []string `json:"voices"`
+		MaxModelLen *int     `json:"max_model_len"`
+	} `json:"meta"`
 }
 
-// gpustackImageCategory marks image-generation models, which RAGFlow has no
-// model type for.
-const gpustackImageCategory = "image"
+type gpustackModelsResponse struct {
+	Data []gpustackModelItem `json:"data"`
+}
+
+const (
+	// gpustackImageCategory marks image-generation models, which RAGFlow has no
+	// model type for.
+	gpustackImageCategory = "image"
+	gpustackTTSCategory   = "text_to_speech"
+)
 
 // gpustackCategoryModelTypes maps GPUStack model categories to RAGFlow model
 // types.
 var gpustackCategoryModelTypes = map[string]string{
-	"llm":            modelTypeChat,
-	"embedding":      modelTypeEmbedding,
-	"reranker":       modelTypeRerank,
-	"speech_to_text": modelTypeASR,
-	"text_to_speech": modelTypeTTS,
+	"llm":               modelTypeChat,
+	"embedding":         modelTypeEmbedding,
+	"reranker":          modelTypeRerank,
+	"speech_to_text":    modelTypeASR,
+	gpustackTTSCategory: modelTypeTTS,
 }
 
 func (g *GPUStackModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -140,15 +151,31 @@ func (g *GPUStackModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 		return nil, err
 	}
 
-	items, err := g.fetchModels(ctx, url, apiConfig)
+	items, err := g.fetchModels(ctx, url+"?with_meta=true", apiConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	return applyGPUStackCategories(ParseListModel(ModelList{Models: items}), g.fetchModelCategories(ctx, url, apiConfig, items)), nil
+	categories := g.fetchModelCategories(ctx, url, apiConfig, items)
+	listItems := make([]ModelListItem, 0, len(items))
+	for _, item := range items {
+		if item.ContextLength == nil {
+			item.ContextLength = item.Meta.MaxModelLen
+		}
+		listItems = append(listItems, item.ModelListItem)
+		// Only TTS models declare voices, even when GPUStack filed them under "llm".
+		if len(item.Meta.Voices) > 0 {
+			if categories == nil {
+				categories = make(map[string][]string, len(items))
+			}
+			categories[strings.TrimSpace(item.ID)] = []string{gpustackTTSCategory}
+		}
+	}
+
+	return applyGPUStackCategories(ParseListModel(ModelList{Models: listItems}), categories), nil
 }
 
-func (g *GPUStackModel) fetchModels(ctx context.Context, url string, apiConfig *APIConfig) ([]ModelListItem, error) {
+func (g *GPUStackModel) fetchModels(ctx context.Context, url string, apiConfig *APIConfig) ([]gpustackModelItem, error) {
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
@@ -191,7 +218,7 @@ func (g *GPUStackModel) fetchModels(ctx context.Context, url string, apiConfig *
 // The result is best effort: it is nil when a lookup fails or the server ignores
 // the filter, and routes created by hand may have no categories at all. Callers
 // fall back to the types derived from the model name for anything not returned.
-func (g *GPUStackModel) fetchModelCategories(ctx context.Context, url string, apiConfig *APIConfig, items []ModelListItem) map[string][]string {
+func (g *GPUStackModel) fetchModelCategories(ctx context.Context, url string, apiConfig *APIConfig, items []gpustackModelItem) map[string][]string {
 	if len(items) == 0 {
 		return nil
 	}
@@ -227,9 +254,9 @@ func (g *GPUStackModel) fetchModelCategories(ctx context.Context, url string, ap
 	return categories
 }
 
-// applyGPUStackCategories overrides the name-derived types of every model
-// GPUStack reported categories for, and drops models RAGFlow cannot use. Vision
-// is kept from the name-derived types because GPUStack has no category for it.
+// applyGPUStackCategories overrides the name-derived types of models GPUStack
+// reported categories for, and drops models RAGFlow cannot use. Vision is kept
+// from the name-derived types because GPUStack has no category for it.
 func applyGPUStackCategories(listed []ListModelResponse, categories map[string][]string) []ListModelResponse {
 	if categories == nil {
 		return listed
@@ -250,6 +277,12 @@ func applyGPUStackCategories(listed []ListModelResponse, categories map[string][
 			}
 		}
 		if len(modelTypes) == 0 {
+			continue
+		}
+		// GPUStack files architectures it does not recognise under "llm", so that
+		// category alone does not outweigh a more specific type from the name.
+		if len(modelTypes) == 1 && modelTypes[0] == modelTypeChat && !slices.Contains(model.ModelTypes, modelTypeChat) {
+			result = append(result, model)
 			continue
 		}
 		if slices.Contains(modelTypes, modelTypeChat) && slices.Contains(model.ModelTypes, modelTypeVision) {
@@ -454,24 +487,71 @@ func (g *GPUStackModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
+// audioModel reuses the OpenAI audio client. VoxBox, GPUStack's audio backend,
+// answers failures with HTTP 200 and the error in the JSON body.
+func (g *GPUStackModel) audioModel() *OpenAIModel {
+	return &OpenAIModel{baseModel: g.baseModel, skipTTSVoiceValidation: true, detectEmbeddedAudioErrors: true}
+}
+
 func (g *GPUStackModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	audioModel := OpenAIModel{baseModel: g.baseModel}
-	return audioModel.TranscribeAudio(ctx, modelName, file, apiConfig, asrConfig, modelUsage)
+	return g.audioModel().TranscribeAudio(ctx, modelName, file, apiConfig, asrConfig, modelUsage)
 }
 
 func (g *GPUStackModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	audioModel := OpenAIModel{baseModel: g.baseModel}
-	return audioModel.TranscribeAudioWithSender(ctx, modelName, file, apiConfig, asrConfig, modelUsage, sender)
+	return g.audioModel().TranscribeAudioWithSender(ctx, modelName, file, apiConfig, asrConfig, modelUsage, sender)
 }
 
 func (g *GPUStackModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	audioModel := OpenAIModel{baseModel: g.baseModel, skipTTSVoiceValidation: true}
-	return audioModel.AudioSpeech(ctx, modelName, audioContent, apiConfig, ttsConfig, modelUsage)
+	return g.audioModel().AudioSpeech(ctx, modelName, audioContent, apiConfig, g.withDefaultVoice(ctx, modelName, apiConfig, ttsConfig), modelUsage)
 }
 
 func (g *GPUStackModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	audioModel := OpenAIModel{baseModel: g.baseModel, skipTTSVoiceValidation: true}
-	return audioModel.AudioSpeechWithSender(ctx, modelName, audioContent, apiConfig, ttsConfig, modelUsage, sender)
+	return g.audioModel().AudioSpeechWithSender(ctx, modelName, audioContent, apiConfig, g.withDefaultVoice(ctx, modelName, apiConfig, ttsConfig), modelUsage, sender)
+}
+
+// withDefaultVoice fills in the first voice the model declares when the caller
+// chose none: VoxBox requires one, while chat read-aloud never sends it. A failed
+// lookup leaves the config unchanged so the backend reports the problem.
+func (g *GPUStackModel) withDefaultVoice(ctx context.Context, modelName *string, apiConfig *APIConfig, ttsConfig *TTSConfig) *TTSConfig {
+	if ttsConfig != nil {
+		switch voice := ttsConfig.Params["voice"].(type) {
+		case nil:
+		case string:
+			if strings.TrimSpace(voice) != "" {
+				return ttsConfig
+			}
+		default:
+			return ttsConfig
+		}
+	}
+	if modelName == nil || strings.TrimSpace(g.baseModel.URLSuffix.Models) == "" {
+		return ttsConfig
+	}
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Models)
+	if err != nil {
+		return ttsConfig
+	}
+	items, err := g.fetchModels(ctx, url+"?with_meta=true", apiConfig)
+	if err != nil {
+		common.Warn("gpustack: failed to look up model voices", zap.String("model", *modelName), zap.Error(err))
+		return ttsConfig
+	}
+	for _, item := range items {
+		if item.ID != *modelName || len(item.Meta.Voices) == 0 {
+			continue
+		}
+		withVoice := TTSConfig{Params: map[string]interface{}{"voice": item.Meta.Voices[0]}}
+		if ttsConfig != nil {
+			withVoice.Format = ttsConfig.Format
+			for key, value := range ttsConfig.Params {
+				if key != "voice" {
+					withVoice.Params[key] = value
+				}
+			}
+		}
+		return &withVoice
+	}
+	return ttsConfig
 }
 
 func (g *GPUStackModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
