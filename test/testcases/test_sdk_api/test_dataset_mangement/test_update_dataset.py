@@ -49,7 +49,6 @@ class TestDatasetUpdate:
         assert dataset.name == name.strip()
         assert client.list_datasets(id=dataset.id)[0].name == name.strip()
 
-    @pytest.mark.skip(reason="Go internal/service/dataset/update.go uses len(name) bytes, rejecting documented 128-character BMP names")
     def test_name_unicode_character_limit(self, client, add_dataset_func):
         name = "资" * 128
         add_dataset_func.update({"name": name})
@@ -291,7 +290,6 @@ class TestDatasetUpdate:
             pytest.param(
                 -1,
                 "greater than or equal to 0",
-                marks=pytest.mark.skip(reason="internal/service/dataset/update.go reports the upper bound for negative pagerank; preserve the correct lower-bound diagnostic"),
             ),
             (101, "less than or equal to 100"),
             (3.14, "cannot unmarshal"),

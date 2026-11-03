@@ -427,7 +427,7 @@ func TestRESTAgentSupport(t *testing.T) {
 	}
 	restCode(t, restCall(t, TestConfig, http.MethodGet, "/agents/"+uniqueName("missing")+"/webhook/logs", nil, nil), http.StatusOK, 102)
 	for _, body := range []apiObject{{}, {"db_type": "mysql"}, {"db_type": "mysql", "host": "localhost", "port": 3306}} {
-		result := restCall(t, TestConfig, http.MethodPost, "/agents/test_db_connection", body, nil)
+		result := restCall(t, TestConfig, http.MethodPost, "/agents/test-db-connection", body, nil)
 		restCode(t, result, http.StatusOK, 101)
 		if message, _ := result.JSON["message"].(string); !strings.Contains(message, "required argument are missing") {
 			t.Fatalf("missing DB fields did not produce validation error: %v", result.JSON)
@@ -459,7 +459,7 @@ func TestRESTAgentAuthorization(t *testing.T) {
 		{http.MethodDelete, "/agents/" + id + "/sessions/" + sessionID, nil},
 		{http.MethodGet, "/agents/" + id + "/logs/missing", nil},
 		{http.MethodGet, "/agents/" + id + "/webhook/logs", nil},
-		{http.MethodPost, "/agents/test_db_connection", apiObject{}},
+		{http.MethodPost, "/agents/test-db-connection", apiObject{}},
 		{http.MethodPost, "/agents/chat/completions", apiObject{"agent_id": id, "query": "denied"}},
 	} {
 		t.Run(tc.method+"_"+tc.path, func(t *testing.T) {

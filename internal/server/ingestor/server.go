@@ -63,9 +63,16 @@ func logTokenizerCounters() {
 // (OS shutdown signal) or the ingestor receives a shutdown command from the
 // admin, then gracefully stops the ingestor.
 func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args *bootstrap.ServerArgs) error {
+	globalConfig := server.GetConfig()
+	// Initialize the ingestion lifecycle event sink (best-effort; stdout is
+	// always on, ingestor.log.path adds an optional rotated file). Flush it on shutdown.
+	bootstrap.SetIngestLog(serverName)
+	defer common.SyncIngestLog()
+
 	// Initialize tokenizer (rag_analyzer)
 	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
-	if err := tokenizer.Init(&tokenizer.PoolConfig{}); err != nil {
+	err := tokenizer.Init(&tokenizer.PoolConfig{})
+	if err != nil {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
 	}
 	defer tokenizer.Close()
@@ -73,7 +80,8 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	// Fail fast if the cl100k_base BPE table is missing. NumTokensFromString /
 	// TrimContentToTokenLimit now panic rather than degrading silently, so this
 	// trades a mid-request panic for a clear startup failure.
-	if err := tokenizer.InitCL100KEncoder(); err != nil {
+	err = tokenizer.InitCL100KEncoder()
+	if err != nil {
 		common.Fatal("Failed to initialize cl100k_base tokenizer", zap.Error(err))
 	}
 	logTokenizerCounters()
@@ -86,7 +94,6 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	// provisioning error is logged by the Ingestor and the pipeline still
 	// writes available_int=0 compiled chunks; they just won't be merged until
 	// the consumer is available.
-	globalConfig := server.GetConfig()
 	ingestorCfg := globalConfig.GetIngestorConfig()
 	// Resolve the ingestor worker count (K) from CLI > env > config > default(1)
 	// and fail fast on an out-of-range value.

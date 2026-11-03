@@ -154,7 +154,7 @@ func (f *fakeSessionStore) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	return nil
 }
 
-func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, _ []dao.OrderTerm, _, pageSize int, _ ...dao.ConversationHistoryOptions) ([]*entity.ChatSession, int64, error) {
+func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chatID string, sessionIDs []string, sessionID, name, sessionUserID string, _ []dao.OrderTerm, _, pageSize int, _ ...dao.ConversationHistoryOptions) ([]*entity.ChatSession, int64, error) {
 	allowedIDs := make(map[string]struct{}, len(sessionIDs))
 	for _, id := range sessionIDs {
 		allowedIDs[id] = struct{}{}
@@ -168,6 +168,9 @@ func (f *fakeSessionStore) ListByResourceIDs(_ context.Context, _ *gorm.DB, chat
 			continue
 		}
 		if sessionID != "" && s.ID != sessionID {
+			continue
+		}
+		if sessionUserID != "" && (s.UserID == nil || *s.UserID != sessionUserID) {
 			continue
 		}
 		if name != "" {
@@ -451,7 +454,7 @@ type fakeChatModelConfigResolver struct {
 	err      error
 }
 
-func (f *fakeChatModelConfigResolver) ResolveInfo(_ context.Context, access ModelAccess, _ entity.ModelType, modelRef string) (*modelModule.ModelInfo, error) {
+func (f *fakeChatModelConfigResolver) ResolveInfo(_ context.Context, access Identity, _ entity.ModelType, modelRef string) (*modelModule.ModelInfo, error) {
 	f.tenantID = access.TenantID
 	f.llmID = modelRef
 	if f.err != nil {
@@ -460,7 +463,7 @@ func (f *fakeChatModelConfigResolver) ResolveInfo(_ context.Context, access Mode
 	return &modelModule.ModelInfo{ID: "resolved-model-id", Name: "resolved-model"}, nil
 }
 
-func (f *fakeChatModelConfigResolver) ResolveDefaultInfo(_ context.Context, access ModelAccess, _ entity.ModelType) (*modelModule.ModelInfo, error) {
+func (f *fakeChatModelConfigResolver) ResolveDefaultInfo(_ context.Context, access Identity, _ entity.ModelType) (*modelModule.ModelInfo, error) {
 	f.tenantID = access.TenantID
 	if f.err != nil {
 		return nil, f.err
@@ -468,7 +471,7 @@ func (f *fakeChatModelConfigResolver) ResolveDefaultInfo(_ context.Context, acce
 	return &modelModule.ModelInfo{ID: "resolved-model-id", Name: "resolved-model"}, nil
 }
 
-func (f *fakeChatModelConfigResolver) ResolveModelType(ctx context.Context, access ModelAccess, modelRef string) ([]entity.ModelType, error) {
+func (f *fakeChatModelConfigResolver) ResolveModelType(ctx context.Context, access Identity, modelRef string) ([]entity.ModelType, error) {
 	return []entity.ModelType{entity.ModelTypeChat}, nil
 }
 
@@ -585,7 +588,7 @@ func TestListChatSessions_Success(t *testing.T) {
 
 	ctx := t.Context()
 	terms := []dao.OrderTerm{{Column: "create_time", Desc: true}}
-	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, 1, 30, dao.ConversationHistoryOptions{NoHistory: true})
+	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "", terms, 1, 30, dao.ConversationHistoryOptions{NoHistory: true})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -598,7 +601,7 @@ func TestListChatSessions_Success(t *testing.T) {
 		}
 	}
 	for page, wantCount := range map[int]int{4: 10, 5: 1, 6: 0} {
-		resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, page, 10, dao.ConversationHistoryOptions{NoHistory: true})
+		resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "", terms, page, 10, dao.ConversationHistoryOptions{NoHistory: true})
 		if err != nil {
 			t.Fatalf("page %d: %v", page, err)
 		}
@@ -606,11 +609,11 @@ func TestListChatSessions_Success(t *testing.T) {
 			t.Fatalf("page %d: got total=%d and %d sessions, want total=41 and %d sessions", page, resp.Total, len(resp.Sessions), wantCount)
 		}
 	}
-	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", terms, 1, 0, dao.ConversationHistoryOptions{NoHistory: true})
+	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "", terms, 1, 0, dao.ConversationHistoryOptions{NoHistory: true})
 	if err != nil || resp.Total != 41 || len(resp.Sessions) != 0 {
 		t.Fatalf("zero page size: got response=%+v err=%v, want total=41 and no sessions", resp, err)
 	}
-	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "session-01", "", terms, 1, 30, dao.ConversationHistoryOptions{NoHistory: true})
+	resp, err = svc.ListChatSessions(ctx, "user-1", "chat-1", "session-01", "", "", terms, 1, 30, dao.ConversationHistoryOptions{NoHistory: true})
 	if err != nil || resp.Total != 1 || len(resp.Sessions) != 1 {
 		t.Fatalf("ID filter: got response=%+v err=%v, want total=1 and one session", resp, err)
 	}
@@ -626,7 +629,7 @@ func TestListChatSessions_NotOwner(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 1, 30)
+	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 1, 30)
 	if err == nil || err.Error() != "Resource not found" {
 		t.Fatalf("got %v", err)
 	}
@@ -1965,5 +1968,61 @@ func TestChatCompletions_SharedSessionReadonlyForTeammate(t *testing.T) {
 	}
 	if len(store.updateCalled) != 0 {
 		t.Fatalf("update calls=%d, want 0", len(store.updateCalled))
+	}
+}
+
+func TestChatCompletions_CancelledNonStreamDoesNotPersistBlankTurn(t *testing.T) {
+	store := newFakeSessionStore()
+	store.sessions["session-1"] = &entity.ChatSession{
+		ID:       "session-1",
+		DialogID: "chat-1",
+		UserID:   strPtr("user-1"),
+		Message:  json.RawMessage(`[{"role":"user","content":"hello"}]`),
+	}
+	store.dialogs["chat-1"] = &entity.Chat{
+		ID:           "chat-1",
+		TenantID:     "user-1",
+		LLMID:        "chat@factory",
+		LLMSetting:   entity.JSONMap{},
+		PromptConfig: entity.JSONMap{"parameters": []interface{}{}},
+	}
+	store.dialogExists["user-1|chat-1"] = true
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// Pipeline returns an empty channel because context was cancelled
+	ch := make(chan AsyncChatResult)
+	close(ch)
+	pipeline := &fakePipeline{resultChan: ch}
+
+	svc := &ChatSessionService{
+		chatSessionDAO:    store,
+		permissionChecker: store,
+		pipeline:          pipeline,
+	}
+
+	_, _ = svc.ChatCompletions(
+		ctx,
+		"user-1",
+		"chat-1",
+		"session-1",
+		nil,
+		"cancelled question",
+		nil, "", nil, nil,
+		false, false, nil,
+	)
+
+	// The initial user question is saved (1 update), but no assistant turn
+	// should be persisted via updateSessionMessages when context is cancelled.
+	if len(store.updateCalled) != 1 {
+		t.Fatalf("expected 1 updateByID call for user question, got %d", len(store.updateCalled))
+	}
+	for _, call := range store.updateCalled {
+		if hu, ok := call.updates["history_update"].(dao.ConversationHistoryUpdate); ok {
+			if hu.Message["role"] == "assistant" {
+				t.Fatalf("assistant message should not be persisted on cancelled context: %v", hu.Message)
+			}
+		}
 	}
 }

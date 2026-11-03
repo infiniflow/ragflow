@@ -473,7 +473,7 @@ func TestUpdateDataset_VersionChangeResetsParserConfigToNewVersionDefault(t *tes
 	if kb.PipelineVersionID == nil || *kb.PipelineVersionID != verNew {
 		t.Fatalf("PipelineVersionID = %v, want re-pinned %s", kb.PipelineVersionID, verNew)
 	}
-	// C3 (full reset, design A3 整体重置): the pre-switch marker must be gone
+	// C3 (full reset): the pre-switch marker must be gone
 	// (not merged), and the resolved config must come from the NEW version.
 	if v, ok := kb.ParserConfig["__c3_marker__"]; ok && v == "OLD" {
 		t.Fatalf("parser_config still holds pre-switch marker; C3 reset did not run: %v", kb.ParserConfig)

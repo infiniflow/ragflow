@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/rag/prompts"
@@ -177,7 +178,7 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 	// provider/selectors name PaddleOCR, or a bare tenant model UUID (in
 	// either parse_method or layout_recognizer) that resolves to a PaddleOCR
 	// OCR model. A bare UUID carries no provider spelling in the string, so it
-	// is resolved first — mirroring Python's get_composite_model_name_by_id +
+	// is resolved first - mirroring Python's get_composite_model_name_by_id +
 	// normalize_layout_recognizer chain, which converts the raw model UUID
 	// into model@instance@provider before choosing the dispatch path.
 	isPaddleOCRMatch := strings.EqualFold(strings.TrimSpace(method), "paddleocr") ||
@@ -215,6 +216,40 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 			return parser.ParseResult{}, true, err
 		}
 		return res, true, nil
+	}
+
+	// SoMark dispatch: parse_method "somark", a layout_recognizer naming
+	// SoMark, or a bare tenant model UUID (in either parse_method or
+	// layout_recognizer) that resolves to a SoMark OCR model. A resolved
+	// tenant instance overrides the parser's setup/env SoMark configuration
+	// with the instance's base URL and API key and runs the same SoMark
+	// parser path; when the tenant has no SoMark instance the branch falls
+	// through so the setup/env-driven parser path (SOMARK_BASE_URL et al.)
+	// keeps working unchanged.
+	isSoMarkMatch := strings.EqualFold(strings.TrimSpace(method), "somark") ||
+		strings.HasPrefix(layoutLower, "somark") ||
+		strings.Contains(layoutLower, "@somark")
+	soMarkSelector := layout
+	if strings.TrimSpace(soMarkSelector) == "" {
+		soMarkSelector = method
+	}
+	isSoMarkByUUID := false
+	if !isSoMarkMatch && tenantID != "" && strings.TrimSpace(soMarkSelector) != "" &&
+		!parser.IsPDFParseMethod(soMarkSelector) {
+		isSoMarkByUUID = isSoMarkLayoutModelID(ctx, db, tenantID, soMarkSelector)
+	}
+	if isSoMarkMatch || isSoMarkByUUID {
+		if tenantID != "" {
+			dispatchModelID := ""
+			if isSoMarkByUUID || strings.Contains(soMarkSelector, "@") {
+				dispatchModelID = soMarkSelector
+			}
+			if res, handled, err := dispatchSoMarkPDF(ctx, db, filename, binary, tenantID, setup, dispatchModelID); handled {
+				return res, true, err
+			}
+		}
+		// No tenant SoMark instance: fall through to the setup/env-driven
+		// parser path.
 	}
 
 	modelID, useVision := resolvePDFVisionModelID(setup)
@@ -554,7 +589,7 @@ func dispatchMinerUPDF(
 	parseMethod := mineruAPIParseMethod(getStringOr(setup, "mineru_parse_method", ""))
 	// MinerU's language is an OCR engine parameter, not the caption language:
 	// mineru_lang wins, then the family lang, then the engine's own default.
-	// That default used to arrive implicitly through defaultSetups() — which
+	// That default used to arrive implicitly through defaultSetups() - which
 	// also fed captions, so a knowledge base that never chose a language got
 	// Chinese captions (issue #20727). Keeping it here confines it to the engine.
 	lang := firstNonEmpty(getStringOr(setup, "mineru_lang", ""), getStringOr(setup, "lang", ""))
@@ -607,13 +642,14 @@ func dispatchMinerUPDF(
 	}
 
 	sizes, geometryErr := mineruPageSizes(ctx, binary)
-	items, err := mineruExtractJSONItems(zipBytes, sizes)
+	items, mediaWarnings, err := mineruExtractJSONItems(zipBytes, sizes)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
 	}
 
 	res := mineruJSONParseResult(filename, items)
 	appendMineruGeometryWarning(&res, geometryErr)
+	res.Warnings = append(res.Warnings, mediaWarnings...)
 	return res, nil
 }
 
@@ -629,10 +665,11 @@ func finishMinerURemoteResult(ctx context.Context, filename string, binary []byt
 	if len(zipBytes) > 0 {
 		sizes, geometryErr = mineruPageSizes(ctx, binary)
 	}
-	items, extractErr := mineruExtractJSONItems(zipBytes, sizes)
+	items, mediaWarnings, extractErr := mineruExtractJSONItems(zipBytes, sizes)
 	if extractErr == nil && len(items) > 0 {
 		res := mineruJSONParseResult(filename, items)
 		appendMineruGeometryWarning(&res, geometryErr)
+		res.Warnings = append(res.Warnings, mediaWarnings...)
 		return res, nil
 	}
 	if markdown != "" {
@@ -666,7 +703,7 @@ func appendMineruGeometryWarning(res *parser.ParseResult, err error) {
 // dispatch. modelID is the raw selector value: a bare tenant model UUID (no
 // "@") selects that exact model, a composite model@instance@provider name
 // resolves through the provider-instance chain, and an empty value falls back
-// to the tenant's first MinerU OCR model — mirroring Python's by_mineru,
+// to the tenant's first MinerU OCR model - mirroring Python's by_mineru,
 // which falls back to get_first_provider_model_name(tenant_id, "MinerU",
 // LLMType.OCR) for the named "mineru" selector.
 var resolveMinerUModelForDispatch = defaultResolveMinerUModelForDispatch
@@ -698,8 +735,8 @@ func defaultResolveMinerUModelForDispatch(ctx context.Context, db *gorm.DB, tena
 // Known limitation: composite names such as "some-model@instance@PaddleOCR.local"
 // (an explicit local selection) are not recognized here. Any value containing
 // "@" falls through to resolveTenantOCRModelByProvider("PaddleOCR"), which
-// returns the tenant's first active PaddleOCR OCR model — potentially the
-// local one — when both the local ("PaddleOCR.local") and the cloud
+// returns the tenant's first active PaddleOCR OCR model - potentially the
+// local one - when both the local ("PaddleOCR.local") and the cloud
 // ("PaddleOCR") providers are configured. The Python path behaves the same
 // way; if exact selection is required, pass the model's tenant-model UUID
 // instead.
@@ -872,7 +909,6 @@ func mineruStreamParse(ctx context.Context, apiURL string, apiKey string, binary
 }
 
 const (
-	mineruMaxImageBytes = 20 << 20
 	// mineruMaxMiddleBytes bounds middle.json, which carries the full
 	// layout/span payload and can legitimately reach tens of megabytes on
 	// long documents, while still refusing a zip-bomb-sized member.
@@ -885,17 +921,16 @@ const mineruContentBBoxScale = 1000.0
 
 // mineruExtractJSONItems reads MinerU content_list.json, or MinerU 4
 // structured_content.json when the zip has no content list, and emits JSON
-// parser items with captions, embedded zip images, and 1-indexed
-// _pdf_positions so jump-to-source works like DeepDoc. pdfPageSizes comes
-// from the source PDF (pdfium); middle.json in the zip fills any missing
-// pages. content_list bboxes are normalized to 0-1000, so positions require
-// a known page box in PDF points. Structured content boxes are 0-1 and are
-// scaled onto that same 0-1000 space before conversion.
-func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([]map[string]any, error) {
+// parser items with captions and 1-indexed _pdf_positions so jump-to-source
+// works like DeepDoc. Zip figure bytes are not inlined here; the chunker crops
+// from the source PDF using positions. pdfPageSizes comes from the source PDF
+// (pdfium); middle.json in the zip fills any missing pages.
+func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([]map[string]any, []string, error) {
 	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
-		return nil, fmt.Errorf("open zip: %w", err)
+		return nil, nil, fmt.Errorf("open zip: %w", err)
 	}
+	budget := media.NewBudget()
 
 	images := make(map[string]*zip.File)
 	var contentList, middleJSON, structured []byte
@@ -908,7 +943,7 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 			structured, err = mineruReadZipFile(f)
 		}
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		// middle.json is optional: it only carries page_size, which lets
 		// positions be converted to points. A zip without it keeps the
@@ -921,9 +956,12 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 		}
 		if strings.HasPrefix(strings.ToLower(mime.TypeByExtension(path.Ext(name))), "image/") {
 			clean := strings.TrimPrefix(path.Clean(name), "./")
-			images[path.Base(name)] = f
 			images[clean] = f
 			images[name] = f
+			base := path.Base(name)
+			if existing, ok := images[base]; !ok || existing.Name == f.Name {
+				images[base] = f
+			}
 		}
 	}
 
@@ -931,31 +969,44 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 	switch {
 	case len(contentList) > 0:
 		if err = json.Unmarshal(contentList, &rawItems); err != nil {
-			return nil, fmt.Errorf("parse content_list.json: %w", err)
+			return nil, nil, fmt.Errorf("parse content_list.json: %w", err)
 		}
 	case len(structured) > 0:
 		rawItems, err = mineruItemsFromStructuredContent(structured)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	default:
-		return nil, fmt.Errorf("content_list.json not found in MinerU zip")
+		return nil, nil, fmt.Errorf("content_list.json not found in MinerU zip")
 	}
 
 	pageSizes := mergeMineruPageSizes(pdfPageSizes, mineruPageSizesFromMiddleJSON(middleJSON))
 	out := make([]map[string]any, 0, len(rawItems))
+	var zipOnlyOmitted int
 	for _, item := range rawItems {
-		converted := mineruContentItemToJSON(item, images, pageSizes)
+		converted := mineruContentItemToJSONBudget(item, images, pageSizes, budget)
 		if converted != nil {
 			out = append(out, converted)
+			continue
+		}
+		if mineruZipOnlyFigureSkipped(item, images, pageSizes) {
+			zipOnlyOmitted++
 		}
 	}
 	if len(out) == 0 {
-		return nil, fmt.Errorf("MinerU zip contained no usable content_list items")
+		return nil, nil, fmt.Errorf("MinerU zip contained no usable content_list items")
 	}
-	return out, nil
+	warnings := budget.Warnings()
+	if zipOnlyOmitted > 0 {
+		warnings = append(warnings, fmt.Sprintf(
+			"omitted %d MinerU figure(s) with zip bytes but no PDF crop region",
+			zipOnlyOmitted,
+		))
+	}
+	return out, warnings, nil
 }
 
+// mineruReadZipFile reads one MinerU zip member in full for JSON extraction.
 func mineruReadZipFile(f *zip.File) ([]byte, error) {
 	rc, err := f.Open()
 	if err != nil {
@@ -1160,7 +1211,18 @@ func mergeMineruPageSizes(pdfSizes, middleSizes map[int][2]float64) map[int][2]f
 	return out
 }
 
+// mineruContentItemToJSON converts one MinerU content_list item without a
+// media budget. Tests and helpers that do not collect run warnings use this
+// wrapper; production extraction goes through mineruContentItemToJSONBudget.
 func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64) map[string]any {
+	return mineruContentItemToJSONBudget(item, images, pageSizes, nil)
+}
+
+// mineruContentItemToJSONBudget converts one content_list item. Figure bytes
+// from the MinerU zip are not inlined on this JSON path; when budget is set
+// (extract path) structured data-URI payloads are checked against the shared
+// media limits and omitted with warnings instead of being copied into items.
+func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64, budget *media.Budget) map[string]any {
 	typ, _ := item["type"].(string)
 	typ = strings.ToLower(strings.TrimSpace(typ))
 	switch typ {
@@ -1169,7 +1231,6 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, p
 	}
 
 	text := mineruItemText(item, typ)
-	imageURI := ""
 	docType := "text"
 	// External MinerU labels are mapped explicitly. Unknown labels must not
 	// acquire parser block-kind semantics implicitly; list/code are real
@@ -1187,15 +1248,15 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, p
 	case "image", "chart":
 		docType = "image"
 		layout = "figure"
-		if imgPath, _ := item["img_path"].(string); imgPath != "" {
-			imageURI = mineruZipImageDataURI(images, imgPath)
-		}
-		if imageURI == "" {
-			if dataURI, _ := item["image_data_uri"].(string); strings.HasPrefix(dataURI, "data:") {
-				imageURI = dataURI
+		if dataURI, _ := item["image_data_uri"].(string); strings.HasPrefix(dataURI, "data:") {
+			if budget != nil {
+				mineruAccountStructuredDataURI(budget, dataURI)
 			}
 		}
-		if text == "" && imageURI == "" {
+		hasCropRegion := len(mineruItemPositions(item, pageSizes)) > 0
+		// Zip figure bytes are not inlined on this path; keep captionless items
+		// only when they still have a PDF crop box (or non-empty text above).
+		if text == "" && !hasCropRegion {
 			return nil
 		}
 	case "table":
@@ -1223,9 +1284,6 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, p
 			jsonItem[backendDescribedKey] = true
 		}
 	}
-	if imageURI != "" {
-		jsonItem["image"] = imageURI
-	}
 	// Page identity does not depend on geometry: it drives table placement and
 	// page_count even when positions cannot be produced.
 	if pageIdx, ok := mineruJSONInt(item["page_idx"]); ok && pageIdx >= 0 {
@@ -1252,6 +1310,27 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, p
 	return jsonItem
 }
 
+// mineruZipOnlyFigureSkipped reports a captionless MinerU figure that had a zip
+// member but no PDF crop region. Those bytes are intentionally not inlined, so
+// the item is omitted with a parse warning instead of producing an empty chunk.
+func mineruZipOnlyFigureSkipped(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64) bool {
+	typ, _ := item["type"].(string)
+	typ = strings.ToLower(strings.TrimSpace(typ))
+	if typ != "image" && typ != "chart" {
+		return false
+	}
+	if mineruItemText(item, typ) != "" {
+		return false
+	}
+	if len(mineruItemPositions(item, pageSizes)) > 0 {
+		return false
+	}
+	imgPath, _ := item["img_path"].(string)
+	return imgPath != "" && mineruZipImageFile(images, imgPath) != nil
+}
+
+// mineruItemText assembles the searchable text MinerU attaches to one
+// content_list item before it is converted into a parser JSON item.
 func mineruItemText(item map[string]any, typ string) string {
 	var parts []string
 	switch typ {
@@ -1290,6 +1369,8 @@ func mineruItemText(item map[string]any, typ string) string {
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
+// mineruItemPositions converts MinerU page/bbox fields into the shared
+// _pdf_positions matrix used by jump-to-source and on-demand PDF cropping.
 func mineruItemPositions(item map[string]any, pageSizes map[int][2]float64) [][]any {
 	if raw, ok := item["_mineru_positions"].([]any); ok {
 		var out [][]any
@@ -1420,21 +1501,66 @@ func mineruReadBounded(f *zip.File, limit int64) ([]byte, bool) {
 	return data, true
 }
 
-func mineruZipImageDataURI(images map[string]*zip.File, imgPath string) string {
+// mineruZipImageFile resolves a MinerU img_path against the zip image index.
+func mineruZipImageFile(images map[string]*zip.File, imgPath string) *zip.File {
 	imgPath = strings.TrimSpace(strings.ReplaceAll(imgPath, "\\", "/"))
 	if imgPath == "" {
-		return ""
+		return nil
 	}
 	candidates := []string{imgPath, path.Base(imgPath), strings.TrimPrefix(path.Clean(imgPath), "./")}
-	var file *zip.File
 	for _, key := range candidates {
 		if f, ok := images[key]; ok {
-			file = f
-			break
+			return f
 		}
 	}
-	data, ok := mineruReadBounded(file, mineruMaxImageBytes)
+	return nil
+}
+
+// mineruAccountStructuredDataURI applies the shared media budget to a
+// structured image_data_uri without copying it into parser items. Valid payloads
+// above the per-image limit are recorded as omissions; malformed payloads are
+// ignored.
+func mineruAccountStructuredDataURI(budget *media.Budget, dataURI string) {
+	if budget == nil {
+		return
+	}
+	decodedSize, ok := media.DataImageDecodedSize(dataURI)
 	if !ok {
+		return
+	}
+	if decodedSize > media.ImageMaxBytes() {
+		_, _ = budget.ReserveOccurrence(media.Size(decodedSize))
+		return
+	}
+	reservation, admission := budget.ReserveOccurrence(media.UnknownSize)
+	if admission != media.Admitted {
+		return
+	}
+	_ = reservation.Commit(media.Size(decodedSize))
+}
+
+// mineruZipImageDataURI inlines a zip image as a data URI. Production MinerU
+// JSON extraction does not call this; it is used by unit tests and keeps the
+// shared media.Budget semantics when budget is non-nil.
+func mineruZipImageDataURI(images map[string]*zip.File, imgPath string, budget *media.Budget) string {
+	file := mineruZipImageFile(images, imgPath)
+	limit := int64(media.ImageMaxBytes())
+	if file == nil || file.UncompressedSize64 > uint64(limit) {
+		return ""
+	}
+	var reservation *media.Reservation
+	if budget != nil {
+		var admission media.Admission
+		reservation, admission = budget.ReserveOccurrence(media.UnknownSize)
+		if admission != media.Admitted {
+			return ""
+		}
+	}
+	data, ok := mineruReadBounded(file, limit)
+	if !ok {
+		return ""
+	}
+	if budget != nil && !reservation.Commit(media.Size(len(data))) {
 		return ""
 	}
 	mediaType := mime.TypeByExtension(path.Ext(file.Name))
@@ -1444,6 +1570,8 @@ func mineruZipImageDataURI(images map[string]*zip.File, imgPath string) string {
 	return fmt.Sprintf("data:%s;base64,%s", mediaType, base64.StdEncoding.EncodeToString(data))
 }
 
+// mineruJSONParseResult wraps extracted MinerU JSON items in the shared parser
+// ParseResult envelope, including page_count derived from item positions.
 func mineruJSONParseResult(filename string, items []map[string]any) parser.ParseResult {
 	return parser.ParseResult{
 		File: map[string]any{
@@ -1609,8 +1737,8 @@ func isMinerUDriver(driver modelModule.ModelDriver) bool {
 	return false
 }
 
-// isMinerULayoutModelID reports whether selector — a bare tenant model UUID
-// with no "model@instance@provider" composite hint — resolves to an active
+// isMinerULayoutModelID reports whether selector - a bare tenant model UUID
+// with no "model@instance@provider" composite hint - resolves to an active
 // OCR model driven by a MinerU provider (remote mineru.net or local mineru).
 // The raw UUID carries no provider spelling, so it must be resolved before
 // the dispatch path is chosen instead of falling through to the image2text
@@ -1642,8 +1770,8 @@ func isPaddleOCRDriver(driver modelModule.ModelDriver) bool {
 	return false
 }
 
-// isPaddleOCRLayoutModelID reports whether layout — a bare tenant model UUID
-// with no "model@instance@provider" composite hint — resolves to an active
+// isPaddleOCRLayoutModelID reports whether layout - a bare tenant model UUID
+// with no "model@instance@provider" composite hint - resolves to an active
 // OCR model driven by a PaddleOCR provider (cloud "PaddleOCR" or local
 // "PaddleOCR.local"). The web UI stores the tenant model UUID directly in
 // layout_recognizer, so the raw value carries no provider spelling; this
@@ -1664,4 +1792,103 @@ func defaultIsPaddleOCRLayoutModelID(ctx context.Context, db *gorm.DB, tenantID,
 		return false
 	}
 	return isPaddleOCRDriver(driver)
+}
+
+// resolveSoMarkModelForDispatch resolves the OCR model used by the SoMark PDF
+// dispatch. modelID is the raw selector value: a bare tenant model UUID (no
+// "@") selects that exact model, a composite model@instance@provider name
+// resolves through the provider-instance chain, and an empty value falls back
+// to the tenant's first SoMark OCR model.
+var resolveSoMarkModelForDispatch = defaultResolveSoMarkModelForDispatch
+
+func defaultResolveSoMarkModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	modelID = strings.TrimSpace(modelID)
+	if modelID != "" && !strings.Contains(modelID, "@") {
+		resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		return resolved.driver, resolved.model.ModelName, resolved.apiConfig, nil
+	}
+	if modelID != "" {
+		driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		return driver, modelName, apiConfig, err
+	}
+	driver, modelName, apiConfig, _, err := resolveTenantOCRModelByProvider(ctx, db, tenantID, "SoMark")
+	return driver, modelName, apiConfig, err
+}
+
+// isSoMarkLayoutModelID reports whether selector - a bare tenant model UUID
+// with no "model@instance@provider" composite hint - resolves to an active
+// OCR model driven by the SoMark provider. Mirrors the PaddleOCR/MinerU
+// probes: the raw UUID carries no provider spelling, so it must be resolved
+// before the dispatch path is chosen instead of falling through to the
+// image2text VLM path.
+var isSoMarkLayoutModelID = defaultIsSoMarkLayoutModelID
+
+func defaultIsSoMarkLayoutModelID(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+	selector = strings.TrimSpace(selector)
+	if db == nil {
+		return false
+	}
+	if selector == "" || strings.Contains(selector, "@") {
+		return false
+	}
+	driver, _, _, err := defaultResolveSoMarkModelForDispatch(ctx, db, tenantID, selector)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(driver.Name(), "somark")
+}
+
+// dispatchSoMarkPDF runs the SoMark parser path with the tenant model
+// provider instance's endpoint and key overriding the parser setup/env
+// configuration, so instance-driven parsing yields the same structured
+// result (titles, tables, figures with layout) as the env-driven path.
+// handled reports whether the dispatch consumed the request: resolution
+// failures for an explicit model selector are handled errors; when no tenant
+// model was selected, the caller falls through to the setup/env-driven path.
+func dispatchSoMarkPDF(
+	ctx context.Context,
+	db *gorm.DB,
+	filename string,
+	binary []byte,
+	tenantID string,
+	setup schema.ParserSetup,
+	modelID string,
+) (parser.ParseResult, bool, error) {
+	driver, _, apiConfig, err := resolveSoMarkModelForDispatch(ctx, db, tenantID, modelID)
+	if err != nil {
+		if strings.TrimSpace(modelID) != "" {
+			return parser.ParseResult{}, true, fmt.Errorf("parser: resolve selected SoMark model %q: %w", modelID, err)
+		}
+		// No tenant SoMark instance (or unresolvable selector): let the
+		// setup/env-driven parser path handle the request.
+		return parser.ParseResult{}, false, nil
+	}
+	if !strings.EqualFold(driver.Name(), "somark") {
+		return parser.ParseResult{}, true, fmt.Errorf(
+			"parser: SoMark requires a SoMark OCR model; found %q. Please add a SoMark OCR model to your tenant", driver.Name())
+	}
+
+	p := parser.NewPDFParser()
+	p.ConfigureFromSetup(setup)
+	p.ParseMethod = "somark"
+	if somarkDriver, ok := driver.(interface {
+		GetBaseURL(*modelModule.APIConfig) (string, error)
+	}); ok {
+		if baseURL, err := somarkDriver.GetBaseURL(apiConfig); err == nil && strings.TrimSpace(baseURL) != "" {
+			p.SoMarkBaseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+		}
+	}
+	if apiConfig != nil {
+		if apiConfig.ApiKey != nil && strings.TrimSpace(*apiConfig.ApiKey) != "" {
+			p.SoMarkAPIKey = strings.TrimSpace(*apiConfig.ApiKey)
+		}
+	}
+	res := p.ParseWithResult(ctx, filename, binary)
+	if res.Err != nil {
+		return parser.ParseResult{}, true, res.Err
+	}
+	return res, true, nil
 }

@@ -139,14 +139,12 @@ def test_llm_setting(chat_factory, client, llm_setting):
         {"max_tokens": "invalid"},
     ],
 )
-@pytest.mark.skip(reason="Go ChatService.Create accepts invalid generation parameter types without validation")
 def test_invalid_llm_setting(chat_factory, llm_setting):
     with pytest.raises(Exception, match="llm_setting"):
         chat_factory(llm_setting=llm_setting)
 
 
 @pytest.mark.p3
-@pytest.mark.skip(reason="Go ChatService.Create discards non-object llm_setting rather than rejecting it")
 def test_create_rejects_invalid_llm_setting_object(client):
     response = client.post("/chats", {"name": f"sdk-chat-{uuid4().hex}", "llm_setting": "invalid"}).json()
     try:
@@ -216,7 +214,6 @@ def test_prompt_config(chat_factory, client, prompt_config):
         {"quote": "invalid"},
     ],
 )
-@pytest.mark.skip(reason="Go validatePromptConfigParameters only checks duplicate keys; Create persists invalid prompt field types")
 def test_invalid_prompt_fields(chat_factory, prompt_config):
     with pytest.raises(Exception, match="prompt_config"):
         chat_factory(prompt_config=prompt_config)

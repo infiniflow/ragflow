@@ -23,12 +23,8 @@ import (
 	"strings"
 )
 
-const (
-	// MaxImagePayloadBytes bounds compressed image data accepted by media paths.
-	MaxImagePayloadBytes = 32 << 20
-	// maxStreamBuffer caps the copy buffer used while validating a payload.
-	maxStreamBuffer = 32 << 10
-)
+// maxStreamBuffer caps the copy buffer used while validating a payload.
+const maxStreamBuffer = 32 << 10
 
 // NormalizeBase64ImagePayload validates an external image payload within its
 // decoded byte limit and returns standard base64 with padding, no CR/LF, the

@@ -109,7 +109,7 @@ func maybeDispatchImage(
 		return parser.ParseResult{}, true, err
 	}
 	defer release()
-	if len(binary) == 0 || len(binary) > media.MaxImagePayloadBytes {
+	if len(binary) == 0 || len(binary) > media.ImageMaxBytes() {
 		return parser.ParseResult{}, true, fmt.Errorf("parser: image payload exceeds size limits")
 	}
 	// SVG carries its text in the document, so it is read rather than

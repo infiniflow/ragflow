@@ -25,8 +25,10 @@ RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 # Strip symbols from Go binaries (set via --strip / -s)
 STRIP_SYMBOLS=""
 
-# Extra Go build tags appended to every build (comma separated). This tree has
-# no enterprise edition, so 'ee' is rejected below rather than forwarded.
+# Extra Go build tags appended to every build (comma separated). This tree
+# carries the enterprise sources, so RAGFLOW_GO_TAGS=ee selects them through the
+# //go:build ee constraints; without it the same command lines build the
+# community edition.
 EXTRA_GO_TAGS="${RAGFLOW_GO_TAGS:-}"
 GO_BUILD_TAGS="cgo,static,sonic"
 [ -n "$EXTRA_GO_TAGS" ] && GO_BUILD_TAGS="$GO_BUILD_TAGS,$EXTRA_GO_TAGS"
@@ -39,14 +41,6 @@ if [ -n "$EXTRA_GO_TAGS" ]; then
     EXTRA_TAGS_COMMA=",$EXTRA_GO_TAGS"
     EXTRA_TAGS_SPACE=" $EXTRA_GO_TAGS"
 fi
-# This tree ships no enterprise sources, so the ee tag selects nothing: fail
-# loudly instead of building a binary without them.
-case ",$EXTRA_GO_TAGS," in
-    *",ee,"*)
-        echo "error: RAGFLOW_GO_TAGS contains 'ee', but this tree has no enterprise sources" >&2
-        exit 1
-        ;;
-esac
 
 # Native static library settings. These are the user-cache paths (~/ragflow-native-libs/).
 # If /opt/ragflow-native-libs/ exists (pre-seeded in CI runner image), it takes priority
@@ -825,7 +819,7 @@ build_go() {
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
         go build -tags "$GO_BUILD_TAGS" "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
-        cmd/ragflow_server.go cmd/stub.go
+        ./cmd
     set +x
 
 
@@ -931,11 +925,10 @@ setup_cgo_env() {
     #     closure is small. --dynamic-list exports just OrtGetApiBase (the only
     #     symbol dlopen needs) and leaves Go's runtime symbols untouched, unlike
     #     a "local: *" version script which breaks PIE absolute relocations.
-    #   macOS (ld64): no GNU ld flags exist, so pull the archives in with
-    #     -force_load and export them with -export_dynamic. This path is written
-    #     but NOT yet verified on real Apple-Silicon hardware — the dlopen(NULL)
-    #     resolution of OrtGetApiBase under -export_dynamic must be confirmed
-    #     there. (待 Mac 验证)
+    #   macOS (ld64): ld64 uses -u _OrtGetApiBase to pull the OrtGetApiBase
+    #     symbol from the static archive without -force_load (which would pull
+    #     all unused objects and missing transitive dependencies), and exports
+    #     it via -export_dynamic so runtime dlopen(NULL) resolves it.
     #
     # Seed the static ORT archives from the system pre-bake (/opt, laid down
     # by the CI runner image) into the user cache before the link check
@@ -964,20 +957,11 @@ setup_cgo_env() {
     done
 
     if [ "$TARGET_OS" = "darwin" ]; then
-        # ld64 has no --undefined / --dynamic-list spelled the GNU way.
-        # Force-load each archive so ORT's lazily-registered execution
-        # providers are pulled in, and export the symbols so the runtime
-        # dlopen(NULL) can resolve OrtGetApiBase.
-        #
-        # NOTE: the macOS link path is NOT yet verified on a real Apple
-        # Silicon machine — the dlopen(NULL) symbol resolution of
-        # OrtGetApiBase under -export_dynamic must be confirmed there.
-        # (待 Mac 验证)
-        local ort_force=""
-        for f in $ort_a_versioned; do
-            ort_force="$ort_force -Wl,-force_load,$f"
-        done
-        export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,-export_dynamic${ort_force} -lc++"
+        # ld64 uses -u _OrtGetApiBase (with leading underscore) to force-pull
+        # OrtGetApiBase without -force_load, avoiding dragging in unneeded
+        # objects from libonnxruntime.a. Export dynamic symbols so the runtime
+        # dlopen(NULL) resolves OrtGetApiBase.
+        export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,-export_dynamic -Wl,-u,_OrtGetApiBase $ort_a_versioned -lc++"
     else
         # Export exactly one symbol (OrtGetApiBase) for the binding's
         # dlopen(NULL)+dlsym lookup via --dynamic-list (NOT --version-script
@@ -1021,6 +1005,7 @@ setup_cgo_env() {
             export CGO_LDFLAGS="$CGO_LDFLAGS \
                 -framework CoreGraphics -framework CoreFoundation \
                 -framework Security -framework SystemConfiguration \
+                -framework Foundation \
                 -liconv -lresolv -lc++"
             ;;
     esac

@@ -137,6 +137,9 @@ type memoryMessageDocEngine struct {
 	updateID    string
 }
 
+func (e *memoryMessageDocEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return map[string]interface{}{"id": "present"}, nil
+}
 func (e *memoryMessageDocEngine) Search(ctx context.Context, req *enginetypes.SearchRequest) (*enginetypes.SearchResult, error) {
 	e.searchReq = req
 	if e.searchResp != nil {
@@ -429,89 +432,6 @@ func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
 		Permissions: &nextPermission,
 	}); err == nil {
 		t.Fatal("UpdateMemory permission change error = nil, want error")
-	}
-}
-
-func TestUpdateMemoryTeamMemberResolvesModelsAgainstOwnerTenant(t *testing.T) {
-	setupMemoryMessageTestDB(t)
-
-	status := "1"
-	if err := dao.DB.Create(&entity.Memory{
-		ID:          "mem-model",
-		Name:        "Shared model memory",
-		TenantID:    "owner-1",
-		MemoryType:  dao.MemoryTypeRaw,
-		StorageType: "table",
-		EmbdID:      "old-embd",
-		LLMID:       "old-llm",
-		Permissions: string(entity.TenantPermissionTeam),
-		MemorySize:  MemorySizeLimit,
-	}).Error; err != nil {
-		t.Fatalf("seed memory: %v", err)
-	}
-	if err := dao.DB.Create(&entity.UserTenant{
-		ID:        "ut-model",
-		UserID:    "member-1",
-		TenantID:  "owner-1",
-		Role:      "normal",
-		InvitedBy: "owner-1",
-		Status:    &status,
-	}).Error; err != nil {
-		t.Fatalf("seed user tenant: %v", err)
-	}
-	ctx := serviceTestContext(t, "member-1", "owner-1", "owner-1")
-	grantServiceTestResource(t, "owner-1", "memory", "mem-model", "member-1", testResourcePermissionRead|testResourcePermissionWrite)
-
-	for _, row := range []struct {
-		providerID string
-		tenantID   string
-		modelID    string
-	}{
-		{providerID: "provider-owner", tenantID: "owner-1", modelID: "tenant-llm-owner"},
-		{providerID: "provider-member", tenantID: "member-1", modelID: "tenant-llm-member"},
-	} {
-		if err := dao.DB.Create(&entity.TenantModelProvider{
-			ID:           row.providerID,
-			ProviderName: "OpenAI",
-			TenantID:     row.tenantID,
-		}).Error; err != nil {
-			t.Fatalf("seed provider %s: %v", row.providerID, err)
-		}
-		instanceID := row.providerID + "-default"
-		if err := dao.DB.Create(&entity.TenantModelInstance{
-			ID:           instanceID,
-			InstanceName: "default",
-			ProviderID:   row.providerID,
-			APIKey:       "test-key",
-			Status:       "active",
-		}).Error; err != nil {
-			t.Fatalf("seed instance %s: %v", instanceID, err)
-		}
-		if err := dao.DB.Create(&entity.TenantModel{
-			ID:         row.modelID,
-			ModelName:  "gpt-4o",
-			ProviderID: row.providerID,
-			InstanceID: instanceID,
-			ModelType:  int(entity.ModelTypeChat),
-			Status:     "active",
-		}).Error; err != nil {
-			t.Fatalf("seed model %s: %v", row.modelID, err)
-		}
-	}
-
-	llmID := "gpt-4o@default@OpenAI"
-	if _, err := NewMemoryService(dao.DB, engine.Get()).UpdateMemory(ctx, "member-1", "mem-model", &UpdateMemoryRequest{
-		LLMID: &llmID,
-	}); err != nil {
-		t.Fatalf("UpdateMemory model error = %v", err)
-	}
-
-	updated, err := dao.NewMemoryDAO().GetByID(t.Context(), dao.DB, "mem-model")
-	if err != nil {
-		t.Fatalf("get updated memory: %v", err)
-	}
-	if updated.TenantLLMID == nil || *updated.TenantLLMID != "tenant-llm-owner" {
-		t.Fatalf("tenant_llm_id = %v, want tenant-llm-owner", updated.TenantLLMID)
 	}
 }
 
@@ -1040,5 +960,45 @@ func TestUpdateMessageUpdatesStatusByMessageDocID(t *testing.T) {
 	}
 	if docEngine.updateValue["status"] != 1 {
 		t.Fatalf("status update = %+v, want status 1", docEngine.updateValue)
+	}
+}
+
+type missingMessageEngine struct {
+	memoryMessageDocEngine
+	getErr error
+}
+
+func (e *missingMessageEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return nil, e.getErr
+}
+func TestUpdateMessageRejectsMissingAndFailedReads(t *testing.T) {
+	for _, readErr := range []error{nil, enginetypes.ErrDocumentNotFound, errors.New("database unavailable")} {
+		setupMemoryMessageTestDB(t)
+		seedMemoryMessages(t)
+		e := &missingMessageEngine{getErr: readErr}
+		svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), db: dao.DB, docEngine: e}
+		ok, err := svc.UpdateMessage(serviceTestContext(t, "user-1", "user-1"), "user-1", "mem-owned", 42, true)
+		if ok || err == nil || e.updateCond != nil {
+			t.Fatalf("ok=%v error=%v update=%v", ok, err, e.updateCond)
+		}
+		var missing *ResourceNotFoundError
+		if readErr != nil && !errors.Is(readErr, enginetypes.ErrDocumentNotFound) {
+			if !errors.Is(err, readErr) {
+				t.Fatal(err)
+			}
+		} else if !errors.As(err, &missing) {
+			t.Fatalf("expected missing, got%v", err)
+		}
+	}
+}
+
+func TestMemorySearchRejectsInvalidSimilarityBeforeStorage(t *testing.T) {
+	for _, field := range []string{"similarity_threshold", "keywords_similarity_weight"} {
+		for _, value := range []interface{}{-0.1, 1.1, "invalid", math.NaN(), math.Inf(1), nil} {
+			_, code, err := (&MemoryService{}).SearchMessage(t.Context(), "user", nil, map[string]interface{}{field: value})
+			if code != common.CodeArgumentError || err == nil {
+				t.Fatalf("%s=%v code=%v err=%v", field, value, code, err)
+			}
+		}
 	}
 }

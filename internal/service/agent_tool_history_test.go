@@ -17,6 +17,8 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	mcpclient "ragflow/internal/mcp/client"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/utility"
 )
 
@@ -51,6 +53,9 @@ func TestRunAgent_ToolHistoryPersists(t *testing.T) {
 				t.Fatal(err)
 			}
 			pushServiceDB(t, db)
+			if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "user-1"); err != nil {
+				t.Fatalf("prepare agent tool history permission fixture: %v", err)
+			}
 			previousInvoker := component.GetDefaultChatInvokerForTest()
 			component.SetDefaultChatInvoker(nil)
 			t.Cleanup(func() { component.SetDefaultChatInvoker(previousInvoker) })
@@ -63,6 +68,9 @@ func TestRunAgent_ToolHistoryPersists(t *testing.T) {
 
 			var toolCalls, toolResults, summaryCalls atomic.Int32
 			ctx, cancel := context.WithCancel(t.Context())
+			// The auth middleware attaches the permission subject in production;
+			// the enterprise policy resolves the canvas through its tenant.
+			ctx = permission.WithSubject(ctx, permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
 			defer cancel()
 			mcp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodDelete {

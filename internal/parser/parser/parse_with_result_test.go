@@ -246,7 +246,7 @@ func TestWalkHTMLBlocksWithState_SkipsHeadLooseText(t *testing.T) {
 	head.AppendChild(&html.Node{Type: html.TextNode, Data: "Head metadata"})
 
 	var items []map[string]any
-	state := &htmlWalkState{}
+	state := &htmlWalkState{budget: newMediaBudgetForTest()}
 	walkHTMLBlocksWithState(head, &items, state)
 	if len(items) != 0 {
 		t.Fatalf("JSON len = %d, want 0: %#v", len(items), items)

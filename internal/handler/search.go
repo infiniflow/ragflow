@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
@@ -84,12 +85,11 @@ func getOwnerIDs(c *gin.Context) []string {
 // @Success 200 {object} service.ListSearchAppsResponse
 // @Router /api/v1/searches [get]
 func (h *SearchHandler) ListSearches(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-	userID := user.ID
 
 	// Parse query parameters
 	keywords := c.Query("keywords")
@@ -131,7 +131,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 
 	// List search apps with filtering
 	ctx := c.Request.Context()
-	result, err := h.searchService.ListSearches(ctx, userID, keywords, page, pageSize, terms, ownerIDs)
+	result, err := h.searchService.ListSearches(ctx, keywords, page, pageSize, terms, ownerIDs)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
 			return
@@ -159,37 +159,37 @@ type CreateSearchRequest struct {
 }
 
 func (h *SearchHandler) CreateSearch(c *gin.Context) {
-	quotaUser, ok := billingQuotaUser(c)
-	if !ok {
+	user, errorCode, err := billingQuotaUser(c)
+	if err != nil {
+		common.ErrorWithCode(c, errorCode, err.Error())
 		return
 	}
-	if !billingEnforceApps(c, quotaUser.ID) {
+	if !billingEnforceApps(c, user.ID) {
 		return
 	}
 
 	// Get current user from context (same as Python current_user)
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-	userID := user.ID
 
 	// Parse request body (same as Python get_request_json())
 	var req CreateSearchRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err = c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
-	if err := common.ValidateName(req.Name); err != nil {
+	if err = common.ValidateName(req.Name); err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
 	// Create search (same as Python SearchService.save within DB.atomic())
 	ctx := c.Request.Context()
-	result, err := h.searchService.CreateSearch(ctx, userID, req.Name, req.Description)
+	result, err := h.searchService.CreateSearch(ctx, req.Name, req.Description)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return
@@ -210,12 +210,11 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 // @Router /api/v1/searches/{search_id} [get]
 func (h *SearchHandler) GetSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-	userID := user.ID
 
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
@@ -226,7 +225,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 
 	// Get search detail with permission check
 	ctx := c.Request.Context()
-	search, err := h.searchService.GetSearchDetail(ctx, userID, searchID)
+	search, err := h.searchService.GetSearchDetail(ctx, searchID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -267,12 +266,11 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 // @Router /api/v1/searches/{search_id} [delete]
 func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-	userID := user.ID
 
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
@@ -283,7 +281,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 
 	// Delete search with permission check
 	ctx := c.Request.Context()
-	err := h.searchService.DeleteSearch(ctx, userID, searchID)
+	err := h.searchService.DeleteSearch(ctx, searchID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -309,12 +307,11 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 // @Router /api/v1/searches/{search_id} [put]
 func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-	userID := user.ID
 
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
@@ -338,7 +335,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 
 	// Update search
 	ctx := c.Request.Context()
-	updatedSearch, err := h.searchService.UpdateSearch(ctx, userID, searchID, &req)
+	updatedSearch, err := h.searchService.UpdateSearch(ctx, searchID, &req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -380,7 +377,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 }
 
 func (h *SearchHandler) Completion(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -398,7 +395,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		searchSvc = service.NewSearchService()
 	}
 	ctx := c.Request.Context()
-	plan, code, err := searchSvc.PrepareCompletion(ctx, user.ID, c.Param("search_id"), &req)
+	plan, code, err := searchSvc.PrepareCompletion(ctx, c.Param("search_id"), &req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -438,23 +435,32 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		return
 	}
 
-	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, TenantID: plan.UserID, ModelID: plan.ModelID}
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, Identity: plan.Identity, ModelID: plan.ModelID}
+
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	c.Request = c.Request.WithContext(ctx)
 
 	hadError := false
-	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.DatasetIDs, plan.Options) {
+	for delta := range h.askService.StreamWithOptions(ctx, adapter, plan.Question, plan.DatasetIDs, plan.Options) {
+		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
-			writer.Write(c, sseAnswer(delta.Value, nil, false))
+			ok = writer.Write(c, sseAnswer(delta.Value, nil, false))
 		case service.AskDeltaMarker:
-			writer.Write(c, sseMarker(delta.Value))
+			ok = writer.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:
 			hadError = true
-			writer.Write(c, sseError(delta.Value))
+			ok = writer.Write(c, sseError(delta.Value))
 		case service.AskDeltaFinal:
-			writer.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+			ok = writer.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+		}
+		if !ok || ctx.Err() != nil {
+			cancel()
+			break
 		}
 	}
-	if !hadError {
+	if !hadError && ctx.Err() == nil {
 		writer.Write(c, "data: {\"code\": 0, \"message\": \"success\", \"data\": true}\n\n")
 	}
 }

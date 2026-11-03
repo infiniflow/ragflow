@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -132,7 +133,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 		return
 	}
 	options.NoHistory = includeHistory == "false" || includeHistory == "False"
-	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), terms, page, pageSize, options)
+	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), c.Query("user_id"), terms, page, pageSize, options)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -273,12 +274,14 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		c.Header("Connection", "keep-alive")
 		c.Header("X-Accel-Buffering", "no")
 
+		ctx, cancel := context.WithCancel(c.Request.Context())
+		defer cancel()
+
 		streamChan := make(chan string, 32)
-		reqCtx := c.Request.Context()
 		go func() {
 			defer close(streamChan)
 			_, _ = h.chatSessionService.ChatCompletions(
-				reqCtx, userID,
+				ctx, userID,
 				req.ChatID, sessionID,
 				req.Messages, req.Question, req.Files,
 				req.LLMID, genConfig, kwargs,
@@ -288,12 +291,16 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		}()
 
 		c.Stream(func(w io.Writer) bool {
-			data, ok := <-streamChan
-			if !ok {
+			select {
+			case <-ctx.Done():
 				return false
+			case data, ok := <-streamChan:
+				if !ok {
+					return false
+				}
+				_, err := c.Writer.Write([]byte(data))
+				return err == nil
 			}
-			c.Writer.Write([]byte(data))
-			return true
 		})
 	} else {
 		// The non-stream path computes the whole answer before its first

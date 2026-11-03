@@ -275,6 +275,7 @@ func TestLLM_Invoke_CompositeModel_CustomContextOverride(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-comp-1",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -337,6 +338,7 @@ func TestLLM_Invoke_UUIDModel_CustomContextOverride(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-uuid-2",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -400,6 +402,7 @@ func TestLLM_Invoke_UUIDModel_ResolvesContentLength(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-uuid-1",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -459,6 +462,7 @@ func TestLLM_ResolvesTenantModelID(t *testing.T) {
 
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-1",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "DeepSeek",
 	}).Error; err != nil {
@@ -577,7 +581,7 @@ func TestLLM_Invoke_UnresolvableModelFallsBackTo8192(t *testing.T) {
 
 // TestLLM_Invoke_UsesModelContentLengthBudget verifies that the message
 // fitting budget in Invoke is the chat model's context window
-// (content_length) resolved via dao.ResolveModelContentLength — NOT the
+// (content_length) resolved via modelcontext.ResolveModelContentLength - NOT the
 // canvas max_tokens / the 8192 fallback. A user prompt far larger than the
 // 8192 fallback (but well inside gpt-4o@openai's 128k window) must be passed
 // through to the invoker untrimmed.

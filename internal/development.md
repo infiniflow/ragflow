@@ -87,7 +87,6 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 >
 > ```bash
 > RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_dev_deps.py
-> PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
 > # Native libs are fetched for the *host* platform by download_dev_deps.py
 > # (override with RAGFLOW_TARGET_OS / RAGFLOW_TARGET_ARCH). ONNX Runtime static
 > # libs are published for linux-x86_64, linux-aarch64, osx-arm64 and
@@ -95,36 +94,44 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > # so the production DeepDoc backend links on all four. On Linux the link force-pulls
 > # OrtGetApiBase and exports just it (--undefined=OrtGetApiBase + --dynamic-list,
 > # no --whole-archive) with -fuse-ld=lld + -lstdc++; on macOS (ld64) it uses
-> # -force_load + -export_dynamic + -lc++ instead, since ld64 has no GNU ld
-> # equivalents. The macOS path is written but NOT yet verified on real
-> # Apple-Silicon hardware — confirm the dlopen(NULL) resolution of OrtGetApiBase
-> # there. (待 Mac 验证)
+> # -u _OrtGetApiBase + -export_dynamic + -lc++ instead (using ld64's -u rather
+> # than -force_load to avoid pulling in unused objects from the static archive).
 >
 > # Resolve the version-stamped ORT archive path FIRST, in its own unquoted
 > # assignment: the shell does not expand `*` inside the double-quoted
 > # CGO_LDFLAGS below. If this lists more than one match, delete the stale
 > # version dir — build.sh refuses to link two ORT versions.
-> # The glob must pin the target platform: the extracted dir is
-> # onnxruntime-<os>-<arch>-static_lib-<version> (see ort_static_lib_prefix in
-> # build.sh). A bare */ would also match ORT built for another OS/arch in a
-> # shared cache. For linux_amd64 the prefix is onnxruntime-linux-x64-static_lib-;
-> # for linux_arm64 use onnxruntime-linux-aarch64-static_lib-; for macOS use
-> # onnxruntime-osx-arm64-static_lib- (darwin_arm64) or
-> # onnxruntime-osx-universal-static_lib- (darwin_amd64, Intel Macs).
-> ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/onnxruntime-linux-x64-static_lib-*/lib/libonnxruntime.a)"
+> # Derive target platform and ORT prefix matching build.sh:
+> TARGET_OS="${RAGFLOW_TARGET_OS:-$(uname -s)}"
+> TARGET_ARCH="${RAGFLOW_TARGET_ARCH:-$(uname -m)}"
+> case "$TARGET_OS" in
+>   Linux|linux)   TARGET_OS="linux" ;;
+>   Darwin|darwin) TARGET_OS="darwin" ;;
+> esac
+> case "$TARGET_ARCH" in
+>   x86_64|amd64)  TARGET_ARCH="amd64" ;;
+>   arm64|aarch64) TARGET_ARCH="arm64" ;;
+> esac
+> PLATFORM="${TARGET_OS}_${TARGET_ARCH}"
+> case "$TARGET_OS-$TARGET_ARCH" in
+>   linux-amd64)   ORT_PREFIX="onnxruntime-linux-x64-static_lib-" ;;
+>   linux-arm64)   ORT_PREFIX="onnxruntime-linux-aarch64-static_lib-" ;;
+>   darwin-arm64)  ORT_PREFIX="onnxruntime-osx-arm64-static_lib-" ;;
+>   darwin-amd64)  ORT_PREFIX="onnxruntime-osx-universal-static_lib-" ;;
+>   *)             ORT_PREFIX="onnxruntime-*-static_lib-" ;;
+> esac
+> ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/${ORT_PREFIX}*/lib/libonnxruntime.a)"
 >
-> # Link flags differ between Linux (GNU ld) and macOS (ld64). On macOS the
-> # path below is written but NOT yet verified on real Apple-Silicon hardware
-> # (see "待 Mac 验证" above) — prefer `build.sh` which derives the same flags.
-> if [ "$(uname -s)" = "Darwin" ]; then
->   ORT_LINK="-Wl,-export_dynamic"
->   for a in ${ORT_A}; do ORT_LINK="${ORT_LINK} -Wl,-force_load,${a}"; done
->   ORT_LINK="${ORT_LINK} -lc++"
+> # Link flags differ between Linux (GNU ld) and macOS (ld64).
+> # Prefer `build.sh` which derives the same flags automatically.
+> if [ "$TARGET_OS" = "darwin" ]; then
+>   ORT_LINK="-Wl,-export_dynamic -Wl,-u,_OrtGetApiBase ${ORT_A} -lc++"
 >   # System libs mirror setup_cgo_env in build.sh for darwin: the frameworks are
 >   # required by ONNX Runtime's Core ML / system integrations, and -liconv /
 >   # -lresolv back the string/network code paths the static archive references.
 >   SYS_LIBS="-framework CoreGraphics -framework CoreFoundation \
 >     -framework Security -framework SystemConfiguration \
+>     -framework Foundation \
 >     -liconv -lresolv -lm -lpthread -ldl -lutil -lc -lc++"
 > else
 >   # The binding reaches ORT with dlopen(NULL)+dlsym("OrtGetApiBase"), so
@@ -157,9 +164,8 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > only symbol that must be visible process-wide is `OrtGetApiBase`: it is
 > force-pulled with `-Wl,--undefined=OrtGetApiBase` and exported via
 > `--dynamic-list` (no `--whole-archive`, so unreferenced kernels are dropped).
-> On macOS (ld64) the archives are instead pulled in with `-force_load` and
-> exported with `-export_dynamic`, since ld64 has no GNU ld equivalents; this
-> path is written but NOT yet verified on real Apple-Silicon hardware. In both
+> On macOS (ld64) `OrtGetApiBase` is force-pulled with `-Wl,-u,_OrtGetApiBase`
+> and exported with `-export_dynamic`. In both
 > cases `OrtGetApiBase` is resolved at runtime through `dlopen(NULL)`. The org
 > `onnxruntime_go` binding
 > (github.com/infiniflow/onnxruntime_go, the mirror of yalue/onnxruntime_go) only
@@ -300,18 +306,45 @@ docker compose -f docker/docker-compose-base.yml --profile infinity up -d
   deployment disables the Valkey/Redis service so there is no clash). Export these
   before running `./bin/ragflow_server ...` on the host, or load them from
   `docker/.env-go`:
-```bash
-export KVROCKS_HOST=127.0.0.1
-export KVROCKS_PORT=6379
-```
+  ```bash
+  export KVROCKS_HOST=127.0.0.1
+  export KVROCKS_PORT=6379
+  ```
   In docker the Go services override these to `kvrocks:6379` automatically
   (see `docker-compose-go.yml`). If Kvrocks is unreachable at startup the
   process fails fast with `failed to connect to Kvrocks`.
-  HTML ingestion uses Kvrocks to hand inline images from the parser to the
-  chunker; the ingestor also validates the injected Kvrocks client at startup.
-  HTML image payloads default to a 32 MiB per-image limit; set
-  `RAGFLOW_HTML_IMAGE_MAX_BYTES` to a positive byte count to change it.
+  HTML, EPUB, DOCX, PPTX and XLSX ingestion use Kvrocks to hand embedded images
+  from the parser to the chunker; the ingestor also validates the injected
+  Kvrocks client at startup.
+  Image payloads share a default 32 MiB per-image limit across data URIs,
+  ZIP-entry extraction, picture parsing, vision encoding and media-cache writes.
+  Set `RAGFLOW_MEDIA_IMAGE_MAX_BYTES` to a positive byte count to change it.
+  Native PDF region cropping retains its separate page/raster limits.
+  The parser budget and media cache apply the same numeric run caps: 1024 items
+  and 1 GiB of decoded image bytes per run. The parser counts distinct source
+  references; the cache counts distinct SHA-256 payloads. Set
+  `RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN` and `RAGFLOW_MEDIA_MAX_BYTES_PER_RUN` to
+  positive values to change them. Quota state is keyed by ingestion task and
+  persists across retries of that task until cleanup or the 24-hour media TTL.
+  Office parsers deduplicate sources by payload digest. DOC/PPT share their
+  Office family path; BIFF8 XLS does not extract embedded pictures. Office IR
+  and Excelize expose already materialized image bytes, so these budgets bound
+  emitted/cached payloads, not native extraction or ZIP decoding peak memory.
+  DOC/DOCX and PPT/PPTX identify image MIME types from payload signatures;
+  XLSX-content spreadsheets use an extension allowlist, including EMZ/WMZ
+  which the byte-only Office detector does not recognize. Unsupported images
+  are skipped with warnings.
+  File text extraction and email attachment re-chunking use text-only parsers;
+  Office images skipped by limits produce warnings without placeholder items.
+  Debug previews use a temporary `pipeline_<document-id>` run scope and purge
+  their cache state when the preview finishes.
 
+  Validate Office media handoff against the services configured in
+  `conf/service_conf.yaml` (real MySQL, Kvrocks and MinIO):
+
+  ```bash
+  RAGFLOW_REAL_OFFICE_MEDIA_TEST=1 bash build.sh --test-integration-go ./internal/ingestion/pipeline -run '^TestOfficeMediaRealServices$' -v
+  ```
 
 - Start RAGFlow
 Note: Database migrations must complete before starting any server mode.

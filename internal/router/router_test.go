@@ -280,6 +280,42 @@ func TestRouterSetupRegistersChatMindMapRoute(t *testing.T) {
 	}
 }
 
+// TestRouterSetupPipelinesRoutesRequireAuth asserts that the pipeline
+// catalog endpoints are mounted behind the strict AuthMiddleware (the
+// authorized group), not the public apiNoAuth group. Built-in templates
+// are static data, but gating the /pipelines namespace behind auth keeps
+// it ready for per-tenant user pipelines (dataflow canvases) that will
+// later need ownership checks. An unauthenticated request must be
+// rejected with 401; if the route is moved back to apiNoAuth it would
+// return 200 and this test fails.
+func TestRouterSetupPipelinesRoutesRequireAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalLogger := common.Logger
+	common.Logger = zap.NewNop()
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	engine := gin.New()
+	r := &Router{
+		authHandler:     handler.NewAuthHandler(),
+		pipelineHandler: handler.NewPipelineHandler(),
+	}
+	r.Setup(engine)
+
+	paths := []string{
+		"/api/v1/pipelines?type=builtin",
+		"/api/v1/pipelines/general",
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			engine.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, path, nil))
+			if resp.Code != http.StatusUnauthorized {
+				t.Fatalf("GET %s: status=%d body=%s; want 401 (route must be behind auth middleware)", path, resp.Code, resp.Body.String())
+			}
+		})
+	}
+}
+
 func TestRouterSetupRegistersDocumentImageRoutesWithBetaAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

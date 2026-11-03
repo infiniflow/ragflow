@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -1861,7 +1862,7 @@ func setupChatPipelineToolSupportTestDB(t *testing.T) *gorm.DB {
 	activeStatus := "1"
 	rows := []interface{}{
 		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-zhipu", TenantID: "tenant-1", ProviderName: "ZHIPU-AI"},
+		&entity.TenantModelProvider{ID: "provider-zhipu", UserID: "user-1", TenantID: "tenant-1", ProviderName: "ZHIPU-AI"},
 		&entity.TenantModelInstance{ID: "instance-zhipu", ProviderID: "provider-zhipu", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-tools-on", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-plus", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
 		&entity.TenantModel{ID: "model-tools-off", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-flash", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":false}`},
@@ -1940,7 +1941,7 @@ func TestResolveModelConfigRejectsImage2TextOnlyModel(t *testing.T) {
 	svc := NewChatPipelineService()
 
 	_, err := svc.ModelFactory.resolveConfig(
-		t.Context(), ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-image2text-tools",
+		t.Context(), Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-image2text-tools",
 	)
 	if err == nil {
 		t.Fatal("ResolveModelConfig accepted an image2text-only model as chat")
@@ -2249,5 +2250,35 @@ func TestSynthesizeTTS_CleansTextBeforeCallingDriver(t *testing.T) {
 				t.Errorf("audio = %v, want audio present = %v", audio, wantCall)
 			}
 		})
+	}
+}
+
+func TestAsyncChat_ContextCancellationTerminatesGoroutine(t *testing.T) {
+	db := setupChatPipelineVisionTestDB(t)
+	seedChatPipelineVisionTenant(t, db, "glm-4-flash@ZHIPU-AI")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // pre-cancel context to simulate client disconnect
+
+	chat := dialForTest("glm-4-flash@ZHIPU-AI")
+	results, err := NewChatPipelineService().AsyncChat(ctx, "user-1", chat,
+		[]map[string]interface{}{{"role": "user", "content": "Question"}}, true, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Do NOT drain results with a background goroutine.
+	// AsyncChat must detect pre-cancelled context, exit, and close results.
+	timeout := time.After(2 * time.Second)
+	for {
+		select {
+		case _, ok := <-results:
+			if !ok {
+				// success: AsyncChat goroutine exited cleanly without leaking
+				return
+			}
+		case <-timeout:
+			t.Fatal("AsyncChat goroutine leaked: did not terminate when context was cancelled")
+		}
 	}
 }
