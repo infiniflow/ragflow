@@ -176,7 +176,7 @@ func TestDeleteSessions_SuccessByIDs(t *testing.T) {
 		pipeline:          &fakePipeline{},
 	}
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
 	result, message, code, err := svc.DeleteSessions(ctx, "user-1", "chat-1", map[string]interface{}{"ids": []interface{}{"s1"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -206,7 +206,7 @@ func TestDeleteSessions_DeleteAllAndInvalidID(t *testing.T) {
 	}
 
 	// Empty payload -> success with empty result map.
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
 	if _, _, code, err := svc.DeleteSessions(ctx, "user-1", "chat-1", map[string]interface{}{}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("empty payload: code=%v err=%v", code, err)
 	}

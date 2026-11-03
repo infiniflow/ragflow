@@ -251,7 +251,7 @@ func TestPublicWebhookRunsAsCredentialIdentityWithoutUserToken(t *testing.T) {
 		t.Fatal("webhook did not start the agent")
 	}
 	if permission.TenantIDFromContext(loader.runContext) != tenantID {
-		t.Fatalf("run tenant = %q, want %q", subject.TenantID, tenantID)
+		t.Fatalf("run tenant = %q, want %q", permission.TenantIDFromContext(loader.runContext), tenantID)
 	}
 	input := loader.runPayload["input"].(map[string]any)
 	query := input["query"].(map[string]any)

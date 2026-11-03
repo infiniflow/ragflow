@@ -545,7 +545,7 @@ func (s *FileService) MoveFiles(ctx context.Context, userID string, srcFileIDs [
 		if file.TenantID == "" {
 			return errors.New("tenant not found")
 		}
-		if err := s.checkFileTreeAccess(ctx, userID, file, permission.OperationUpdate); err != nil {
+		if err := s.checkFileTreeAccess(ctx, file, permission.OperationUpdate); err != nil {
 			return err
 		}
 	}

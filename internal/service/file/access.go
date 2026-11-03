@@ -46,7 +46,7 @@ func tenantFileContext(ctx context.Context, userID, tenantID string) (context.Co
 	return permission.WithIdentity(ctx, userID, tenantID), nil
 }
 
-func (s *FileService) checkFileTreeAccess(ctx context.Context, userID string, file *entity.File, operation permission.Operation) error {
+func (s *FileService) checkFileTreeAccess(ctx context.Context, file *entity.File, operation permission.Operation) error {
 	if file == nil {
 		return permission.ErrResourceNotFound
 	}

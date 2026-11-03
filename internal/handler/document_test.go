@@ -216,7 +216,7 @@ func (f *fakeDocumentService) GetDocumentArtifact(ctx context.Context, filename,
 		ForceAttachment: false,
 	}, nil
 }
-func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, userID, docID string) (*document.DocumentPreview, error) {
+func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error) {
 	if docID == "not-found" {
 		return nil, document.ErrPreviewDocumentNotFound
 	}
@@ -319,8 +319,7 @@ func (f *fakeDocumentService) GetDocumentImageForDocument(ctx context.Context, u
 	f.imageID = imageID
 	return f.imageData, f.imageErr
 }
-func (f *fakeDocumentService) GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error) {
-	f.imageUserID = userID
+func (f *fakeDocumentService) GetDocumentThumbnail(ctx context.Context, docID string) ([]byte, error) {
 	f.imageDocumentID = docID
 	return f.imageData, f.imageErr
 }
@@ -1780,6 +1779,7 @@ func TestStopParseDocumentsHandler_NotAccessible(t *testing.T) {
 	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
 	// Use a user that doesn't have access to ds-1
 	c.Set("user_id", "other-user")
+	setGinContextSubject(c, "other-user", "tenant-owner")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.StopParseDocuments(c)

@@ -554,12 +554,13 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 	default:
 		ctxFS, cancelFS := context.WithTimeout(ctx, 60*time.Second)
 		defer cancelFS()
-		err := s.fileService.DeleteFiles(ctxFS, actingUserID, []string{folderID})
+		ctxFS = permission.WithIdentity(ctxFS, actingUserID, tenantID)
+		err := s.fileService.DeleteFiles(ctxFS, []string{folderID})
 		if err != nil {
 			common.Error(fmt.Sprintf("Failed to delete space folder via Go FileService during async delete, spaceID=%s, error=%v", spaceID, err), nil)
 			// Retry once with a delay (same ctxFS, still valid)
 			time.Sleep(5 * time.Second)
-			if retryErr := s.fileService.DeleteFiles(ctxFS, actingUserID, []string{folderID}); retryErr != nil {
+			if retryErr := s.fileService.DeleteFiles(ctxFS, []string{folderID}); retryErr != nil {
 				common.Error(fmt.Sprintf("Retry failed to delete space folder, marking space as deleted anyway, spaceID=%s, error=%v", spaceID, retryErr), nil)
 				// Mark as deleted even if folder deletion fails - orphaned folders can be cleaned up later
 			} else {

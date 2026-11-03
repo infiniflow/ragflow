@@ -65,11 +65,11 @@ type documentServiceIface interface {
 	GetThumbnails(ctx context.Context, userID string, docIDs []string) (map[string]string, error)
 	GetDocumentImage(ctx context.Context, userID, imageID string) ([]byte, error)
 	GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error)
-	GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error)
+	GetDocumentThumbnail(ctx context.Context, docID string) ([]byte, error)
 	GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error)
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error)
 	GetDocumentArtifact(ctx context.Context, filename, userID string) (*document.ArtifactResponse, error)
-	GetDocumentPreview(ctx context.Context, userID, docID string) (*document.DocumentPreview, error)
+	GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error)
 	UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
 	UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error)
 	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error)
@@ -223,12 +223,12 @@ func (h *DocumentHandler) GetDocumentImageForDocument(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentThumbnail(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-	data, err := h.documentService.GetDocumentThumbnail(c.Request.Context(), user.ID, c.Param("id"))
+	data, err := h.documentService.GetDocumentThumbnail(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Image not found.")
 		return
@@ -296,7 +296,7 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -310,7 +310,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	preview, err := h.documentService.GetDocumentPreview(ctx, user.ID, docID)
+	preview, err := h.documentService.GetDocumentPreview(ctx, docID)
 	if err != nil {
 		switch {
 		case errors.Is(err, document.ErrPreviewDocumentNotFound):
@@ -324,7 +324,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 			// which names the object-store bucket/key -- in the server
 			// log only.
 			common.Error("GetDocumentPreview failed", err,
-				zap.String("doc_id", docID), zap.String("user_id", user.ID))
+				zap.String("doc_id", docID), zap.String("user_id", permission.UserIDFromContext(ctx)))
 			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to load document preview")
 		}
 		return

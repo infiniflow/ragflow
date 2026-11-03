@@ -69,7 +69,7 @@ func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, userI
 
 // GetDocumentThumbnail resolves the storage key exclusively from authorized
 // document metadata.
-func (s *DocumentService) GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error) {
+func (s *DocumentService) GetDocumentThumbnail(ctx context.Context, docID string) ([]byte, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil || doc == nil || service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationRead) != nil || doc.Thumbnail == nil || *doc.Thumbnail == "" || strings.HasPrefix(*doc.Thumbnail, imgBase64Prefix) {
 		return nil, ErrDocumentImageNotFound
@@ -261,7 +261,7 @@ func shouldForceArtifactAttachment(ext, contentType string) bool {
 	return ok
 }
 
-func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID string) (*DocumentPreview, error) {
+func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) (*DocumentPreview, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil || doc == nil {
 		return nil, ErrPreviewDocumentNotFound

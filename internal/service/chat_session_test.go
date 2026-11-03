@@ -904,7 +904,7 @@ func TestUpdateMessageFeedback_AppliesChunkFeedbackWithResolvedTenantAndContext(
 		pipeline:          &fakePipeline{},
 		docEngine:         docEngine,
 	}
-	ctx := context.WithValue(t.Context(), feedbackContextKey{}, "request-context")
+	ctx := context.WithValue(permission.WithIdentity(t.Context(), "user-1", "tenant-owner"), feedbackContextKey{}, "request-context")
 
 	resp, code, err := svc.UpdateMessageFeedback(ctx, "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{
 		"thumbup": true,
@@ -958,7 +958,7 @@ func TestUpdateMessageFeedback_ToggleUsesResolvedTenantForUndoAndApply(t *testin
 		docEngine:         docEngine,
 	}
 
-	resp, code, err := svc.UpdateMessageFeedback(t.Context(), "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{
+	resp, code, err := svc.UpdateMessageFeedback(permission.WithIdentity(t.Context(), "user-1", "tenant-owner"), "user-1", "chat-1", "session-1", "msg-1", map[string]interface{}{
 		"thumbup":  false,
 		"feedback": "not useful",
 	})

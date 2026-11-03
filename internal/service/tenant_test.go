@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 )
 
 func setupTenantPermissionTestDB(t *testing.T) *gorm.DB {
