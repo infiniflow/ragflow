@@ -117,7 +117,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	var kbRecords []*entity.Knowledgebase
 	seenTenants := make(map[string]bool)
 	for _, datasetID := range datasetIDs {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
 			common.Warn("SearchDatasets access denied", zap.String("datasetID", datasetID), zap.String("userID", userID))
 			_, permissionErr := permissionresponse.Normalize(err)
 			return nil, permissionErr

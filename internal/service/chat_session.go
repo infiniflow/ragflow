@@ -56,7 +56,7 @@ type chatSessionStore interface {
 
 type chatSessionPermissionChecker interface {
 	resourceScopeChecker
-	FilterResources(context.Context, permission.Subject, []permission.ResourceRef, permission.Operation) ([]permission.ResourceRef, error)
+	FilterResources(context.Context, []permission.ResourceRef, permission.Operation) ([]permission.ResourceRef, error)
 }
 
 type chatPipelineRunner interface {
@@ -133,7 +133,7 @@ type ChatSessionPayload struct {
 
 // ListChatSessions lists chat sessions for a dialog
 func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name, sessionUserID string, terms []dao.OrderTerm, page, pageSize int, options ...dao.ConversationHistoryOptions) (*ListChatSessionsResponse, error) {
-	if err := s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
+	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
 		_, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, normalizedErr
 	}
@@ -155,7 +155,7 @@ func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatI
 	for _, session := range sessions {
 		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: session.ID})
 	}
-	accessible, err := checker.FilterResources(ctx, permission.Subject{UserID: userID}, refs, permission.OperationRead)
+	accessible, err := checker.FilterResources(ctx, refs, permission.OperationRead)
 	if err != nil {
 		_, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, normalizedErr
@@ -176,7 +176,7 @@ func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatI
 
 // GetSession returns one chat session after ownership validation.
 func (s *ChatSessionService) GetSession(ctx context.Context, userID, chatID, sessionID string, options ...dao.ConversationHistoryOptions) (*ChatSessionPayload, common.ErrorCode, error) {
-	if err := s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
+	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
@@ -191,7 +191,7 @@ func (s *ChatSessionService) GetSession(ctx context.Context, userID, chatID, ses
 	if session.DialogID != chatID {
 		return nil, common.CodeDataError, errors.New("session does not belong to this chat")
 	}
-	if err = s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationRead); err != nil {
+	if err = s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationRead); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
@@ -206,7 +206,7 @@ func (s *ChatSessionService) GetSession(ctx context.Context, userID, chatID, ses
 
 // CreateSession create a session in a dialog
 func (s *ChatSessionService) CreateSession(ctx context.Context, userID, chatID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
-	if err := s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationCreate); err != nil {
+	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationCreate); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
@@ -267,7 +267,7 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, userID, chatID s
 
 // DeleteSessions delete a session in a dialog
 func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID string, req map[string]interface{}) (interface{}, string, common.ErrorCode, error) {
-	if err := s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
+	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, "", code, normalizedErr
 	}
@@ -281,7 +281,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 		deleteAll, _ := req["delete_all"].(bool)
 		if deleteAll {
 			chatRef := permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}
-			sessionScope, err := s.permissionChecker.Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
+			sessionScope, err := s.permissionChecker.Scope(ctx, permission.ScopeQuery{
 				Kind:      permission.ResourceKindChatSession,
 				Parent:    chatRef,
 				Operation: permission.OperationDelete,
@@ -327,7 +327,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 			continue
 		}
 
-		if werr := s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sid}, permission.OperationDelete); werr != nil {
+		if werr := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sid}, permission.OperationDelete); werr != nil {
 			_, normalizedErr := permissionresponse.NormalizeHidden(werr)
 			errorsList = append(errorsList, fmt.Sprintf("%s: %s", normalizedErr, sid))
 			continue
@@ -355,7 +355,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 		return nil, "", common.CodeDataError, errors.New(strings.Join(allErrors, "; "))
 	}
 
-	return true, "success", common.CodeSuccess, nil
+	return nil, "success", common.CodeSuccess, nil
 }
 
 func stringSliceFromValue(value interface{}) ([]string, bool) {
@@ -448,7 +448,7 @@ func checkDuplicateChatSessionIDs(ids []string) ([]string, []string) {
 
 // UpdateSession updates one chat session after Python-style field validation.
 func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, sessionID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
-	if err := s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
+	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
@@ -461,7 +461,7 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, 
 		return nil, common.CodeServerError, err
 	}
 
-	if err = s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationUpdate); err != nil {
+	if err = s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationUpdate); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
@@ -520,7 +520,7 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, 
 }
 
 func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, chatID, sessionID, msgID string) (*ChatSessionPayload, common.ErrorCode, error) {
-	if err := s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
+	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
@@ -533,7 +533,7 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 		return nil, common.CodeDataError, errors.New("session not found")
 	}
 
-	if werr := s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationUpdate); werr != nil {
+	if werr := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationUpdate); werr != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(werr)
 		return nil, code, normalizedErr
 	}
@@ -580,7 +580,7 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 }
 
 func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, chatID, sessionID, msgID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
-	if err := s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
+	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
@@ -595,7 +595,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 		return nil, common.CodeDataError, errors.New("session not found")
 	}
 
-	if err = s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationUpdate); err != nil {
+	if err = s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationUpdate); err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
@@ -1169,7 +1169,7 @@ func (s *ChatSessionService) ChatCompletions(
 	var dialog *entity.Chat
 	var session *entity.ChatSession
 	if chatID != "" {
-		if err = s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRun); err != nil {
+		if err = s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRun); err != nil {
 			code, normalizedErr := permissionresponse.NormalizeHidden(err)
 			return fail(common.NewCodedError(code, normalizedErr.Error()))
 		}
@@ -1185,7 +1185,7 @@ func (s *ChatSessionService) ChatCompletions(
 			if session.DialogID != chatID {
 				return fail(common.NewCodedError(common.CodeDataError, "Session does not belong to this chat!"))
 			}
-			if err = s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationRun); err != nil {
+			if err = s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatSession, ID: sessionID}, permission.OperationRun); err != nil {
 				code, normalizedErr := permissionresponse.NormalizeHidden(err)
 				return fail(common.NewCodedError(code, normalizedErr.Error()))
 			}

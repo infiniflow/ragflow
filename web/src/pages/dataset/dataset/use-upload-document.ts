@@ -64,7 +64,7 @@ export const useHandleUploadDocument = (pipelineId?: string) => {
       if (
         (isSuccess || isPartialSuccess) &&
         parseOnCreation &&
-        ret.data?.length > 0
+        (ret.data?.length ?? 0) > 0
       ) {
         const runnableDocuments = (ret.data as IDocumentInfo[]).filter(
           (doc) => findDocumentParseGaps([doc]).length === 0,

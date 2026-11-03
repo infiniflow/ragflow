@@ -51,8 +51,8 @@ var ReadOnlyFields = map[string]struct{}{
 }
 
 type resourceScopeChecker interface {
-	CheckResource(context.Context, permission.Subject, permission.ResourceRef, permission.Operation) error
-	Scope(context.Context, permission.Subject, permission.ScopeQuery) (permission.Scope, error)
+	CheckResource(context.Context, permission.ResourceRef, permission.Operation) error
+	Scope(context.Context, permission.ScopeQuery) (permission.Scope, error)
 }
 
 // ChatService chat service
@@ -108,7 +108,7 @@ type ListChatsResponse struct {
 
 // ListChats list chats for a user
 func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords, id, name string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string) (*ListChatsResponse, error) {
-	chatScope, err := s.permissionChecker.Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
+	chatScope, err := s.permissionChecker.Scope(ctx, permission.ScopeQuery{
 		Kind:      permission.ResourceKindChat,
 		Operation: permission.OperationRead,
 	})
@@ -147,7 +147,7 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords, i
 	chatsWithKBNames := make([]*ChatWithKBNames, 0, len(chats))
 	checker := permission.NewDatabaseChecker(dao.DB)
 	for _, chat := range chats {
-		access, err := checker.ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+		access, err := checker.ResolveAccess(ctx, permission.ResourceRef{
 			Kind: permission.ResourceKindChat,
 			ID:   chat.ID,
 		})
@@ -202,7 +202,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		code, normalized := permissionresponse.Normalize(err)
 		return nil, code, normalized
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, "chat", permission.ActionWrite); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "chat", permission.ActionWrite); err != nil {
 		code, normalized := permissionresponse.Normalize(err)
 		return nil, code, normalized
 	}
@@ -359,7 +359,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		if err := s.chatDAO.Create(ctx, tx, chat); err != nil {
 			return err
 		}
-		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chat.ID})
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chat.ID})
 	}); err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("failed to create chat: %w", err)
 	}
@@ -414,7 +414,7 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 	}
 
 	for _, datasetID := range normalizedIDs {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
 			_, permissionErr := permissionresponse.Normalize(err)
 			return nil, permissionErr
 		}
@@ -440,7 +440,7 @@ func validateChatDatasetAccess(ctx context.Context, userID string, kbIDs entity.
 		if !ok || strings.TrimSpace(datasetID) == "" {
 			continue
 		}
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
 			_, permissionErr := permissionresponse.Normalize(err)
 			return permissionErr
 		}
@@ -820,7 +820,7 @@ const (
 )
 
 func (s *ChatService) getChatForOperation(ctx context.Context, userID, chatID string, operation permission.Operation) (*entity.Chat, error) {
-	if err := s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, operation); err != nil {
+	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, operation); err != nil {
 		return nil, err
 	}
 	return s.chatDAO.GetByIDAndStatus(ctx, dao.DB, chatID, string(entity.StatusValid))
@@ -1154,7 +1154,7 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 			continue
 		}
 		datasetID := fmt.Sprint(item)
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
 			_, permissionErr := permissionresponse.Normalize(err)
 			return nil, permissionErr
 		}
@@ -1341,7 +1341,7 @@ func checkDuplicateChatIDs(ids []string) ([]string, []string) {
 func (s *ChatService) BulkDeleteChats(ctx context.Context, userID string, req *BulkDeleteChatsRequest) (map[string]interface{}, error) {
 	ids := req.IDs
 	if len(ids) == 0 && req.DeleteAll {
-		chatScope, err := s.permissionChecker.Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
+		chatScope, err := s.permissionChecker.Scope(ctx, permission.ScopeQuery{
 			Kind:      permission.ResourceKindChat,
 			Operation: permission.OperationDelete,
 		})
@@ -1410,7 +1410,7 @@ type GetChatResponse struct {
 
 // GetChat gets chat detail by ID with permission check
 func (s *ChatService) GetChat(ctx context.Context, userID string, chatID string) (*GetChatResponse, error) {
-	if err := s.permissionChecker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
+	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
 		return nil, err
 	}
 
@@ -1418,7 +1418,7 @@ func (s *ChatService) GetChat(ctx context.Context, userID string, chatID string)
 	if err != nil {
 		return nil, err
 	}
-	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindChat,
 		ID:   chat.ID,
 	})

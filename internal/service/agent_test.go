@@ -833,7 +833,7 @@ func TestRunAgent_StorageErrorFromCanvasAccess(t *testing.T) {
 		t.Fatalf("failed to close sql.DB: %v", cErr)
 	}
 
-	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"})
+	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
 	svc := NewAgentService()
 	_, err := svc.RunAgent(
 		ctx,
@@ -888,7 +888,7 @@ func TestLoadCanvasForUser_StorageErrorWrap(t *testing.T) {
 		t.Fatalf("failed to close sql.DB: %v", cErr)
 	}
 
-	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"})
+	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
 	svc := NewAgentService()
 	_, err := svc.loadCanvasForUser(ctx, "user-1", "canvas-1", permission.OperationRead)
 	if err == nil {
@@ -1311,7 +1311,7 @@ func TestAgentModelValidationUsesCanvasTenant(t *testing.T) {
 		t.Fatalf("grant canvas access: %v", err)
 	}
 
-	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: tenantOwnerID, TenantID: tenantID})
+	ctx := permission.WithIdentity(t.Context(), tenantOwnerID, tenantID)
 	svc := NewAgentService()
 	if _, code, err := svc.CreateAgentSession(ctx, &CreateAgentSessionRequest{UserID: tenantOwnerID, AgentID: canvasRow.ID}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateAgentSession with tenant model = (%d, %v), want success", code, err)
@@ -2145,7 +2145,7 @@ func seedAgentServiceCreateContext(t *testing.T) context.Context {
 			t.Fatalf("create Agent permission test table: %v", err)
 		}
 	}
-	return permission.WithSubject(t.Context(), permission.Subject{UserID: "user-1", TenantID: "tenant-agent"})
+	return permission.WithIdentity(t.Context(), "user-1", "tenant-agent")
 }
 
 func TestCreateAgentRequiresAuthenticatedUserID(t *testing.T) {

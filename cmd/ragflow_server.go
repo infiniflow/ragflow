@@ -466,6 +466,9 @@ func main() {
 		common.Error("Failed to initialize audit logger", err)
 		os.Exit(1)
 	}
+	defer func() {
+		common.SyncAudit()
+	}()
 
 	// set server name and log file path
 	server.SetServerName(serverName)

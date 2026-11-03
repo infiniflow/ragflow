@@ -473,10 +473,11 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 	return resources, nil
 }
 
-func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, kind ResourceKind, parent ResourceRef) ([]ResourceRef, error) {
+func (s *databaseSource) ListResourceRefs(ctx context.Context, kind ResourceKind, parent ResourceRef) ([]ResourceRef, error) {
 	if s == nil || s.db == nil {
 		return nil, ErrSourceUnavailable
 	}
+	userID := UserIDFromContext(ctx)
 	var ids []string
 	switch kind {
 	case ResourceKindDataset:
@@ -486,7 +487,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		var tenantIDs []string
 		if err := s.db.WithContext(ctx).Model(&entity.UserTenant{}).
 			Distinct("tenant_id").
-			Where("user_id = ? AND status = ?", subject.UserID, string(entity.StatusValid)).
+			Where("user_id = ? AND status = ?", userID, string(entity.StatusValid)).
 			Pluck("tenant_id", &tenantIDs).Error; err != nil {
 			return nil, err
 		}
@@ -512,11 +513,11 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		if parent.ID != "" || parent.Kind != "" {
 			return nil, fmt.Errorf("%w: canvases cannot have a parent scope", ErrInvalidPermission)
 		}
-		tenantIDs, err := s.activeTenantIDsForUser(ctx, subject.UserID)
+		tenantIDs, err := s.activeTenantIDsForUser(ctx, userID)
 		if err != nil {
 			return nil, err
 		}
-		ownerIDs := append(append(make([]string, 0, len(tenantIDs)+1), tenantIDs...), subject.UserID)
+		ownerIDs := append(append(make([]string, 0, len(tenantIDs)+1), tenantIDs...), userID)
 		if err := s.db.WithContext(ctx).Model(&entity.UserCanvas{}).
 			Where("user_id IN ? OR tenant_id IN ?", ownerIDs, tenantIDs).
 			Pluck("id", &ids).Error; err != nil {
@@ -538,11 +539,11 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		var tenantIDs []string
 		if err := s.db.WithContext(ctx).Model(&entity.UserTenant{}).
 			Distinct("tenant_id").
-			Where("user_id = ? AND status = ?", subject.UserID, string(entity.StatusValid)).
+			Where("user_id = ? AND status = ?", userID, string(entity.StatusValid)).
 			Pluck("tenant_id", &tenantIDs).Error; err != nil {
 			return nil, err
 		}
-		ownerIDs := append(tenantIDs, subject.UserID)
+		ownerIDs := append(tenantIDs, userID)
 		if err := s.db.WithContext(ctx).Model(&entity.Memory{}).
 			Where("tenant_id IN ?", ownerIDs).
 			Pluck("id", &ids).Error; err != nil {
@@ -553,7 +554,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 			return nil, fmt.Errorf("%w: files and folders require a folder parent scope", ErrInvalidPermission)
 		}
 		parentQuery := s.db.WithContext(ctx).Model(&entity.File{}).
-			Where("id = ? AND tenant_id = ? AND type = ?", parent.ID, subject.UserID, "folder")
+			Where("id = ? AND tenant_id = ? AND type = ?", parent.ID, userID, "folder")
 		var parentFile entity.File
 		if err := parentQuery.First(&parentFile).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -577,7 +578,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 			return nil, fmt.Errorf("%w: search apps cannot have a parent scope", ErrInvalidPermission)
 		}
 		if err := s.db.WithContext(ctx).Model(&entity.Search{}).
-			Where("status = ? AND created_by = ?", string(entity.StatusValid), subject.UserID).
+			Where("status = ? AND created_by = ?", string(entity.StatusValid), userID).
 			Pluck("id", &ids).Error; err != nil {
 			return nil, err
 		}
@@ -586,7 +587,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 			return nil, fmt.Errorf("%w: chats cannot have a parent scope", ErrInvalidPermission)
 		}
 		if err := s.db.WithContext(ctx).Model(&entity.Chat{}).
-			Where("tenant_id = ? AND status = ?", subject.UserID, string(entity.StatusValid)).
+			Where("tenant_id = ? AND status = ?", userID, string(entity.StatusValid)).
 			Pluck("id", &ids).Error; err != nil {
 			return nil, err
 		}
@@ -612,7 +613,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		if parent.ID != "" || parent.Kind != "" {
 			return nil, fmt.Errorf("%w: chat channels cannot have a parent scope", ErrInvalidPermission)
 		}
-		tenantIDs, err := s.tenantIDsForSubject(ctx, subject)
+		tenantIDs, err := s.tenantIDsForCurrentUser(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -631,11 +632,11 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		var tenantIDs []string
 		if err := s.db.WithContext(ctx).Model(&entity.UserTenant{}).
 			Distinct("tenant_id").
-			Where("user_id = ? AND status = ?", subject.UserID, string(entity.StatusValid)).
+			Where("user_id = ? AND status = ?", userID, string(entity.StatusValid)).
 			Pluck("tenant_id", &tenantIDs).Error; err != nil {
 			return nil, err
 		}
-		tenantIDs = uniqueStringValues(append(tenantIDs, subject.UserID))
+		tenantIDs = uniqueStringValues(append(tenantIDs, userID))
 		if err := s.db.WithContext(ctx).Model(&entity.Connector{}).
 			Where("tenant_id IN ?", tenantIDs).
 			Pluck("id", &ids).Error; err != nil {
@@ -654,7 +655,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		if parent.ID != "" || parent.Kind != "" {
 			return nil, fmt.Errorf("%w: model providers cannot have a parent scope", ErrInvalidPermission)
 		}
-		tenantIDs, err := s.tenantIDsForSubject(ctx, subject)
+		tenantIDs, err := s.tenantIDsForCurrentUser(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -674,7 +675,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		if parent.ID != "" {
 			query = query.Where("tenant_model_instance.provider_id = ?", parent.ID)
 		} else {
-			tenantIDs, err := s.tenantIDsForSubject(ctx, subject)
+			tenantIDs, err := s.tenantIDsForCurrentUser(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -707,7 +708,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		case ResourceKindModelInstance:
 			query = query.Where("tenant_model.instance_id = ?", parent.ID)
 		default:
-			tenantIDs, err := s.tenantIDsForSubject(ctx, subject)
+			tenantIDs, err := s.tenantIDsForCurrentUser(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -724,7 +725,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		if parent.ID != "" || parent.Kind != "" {
 			return nil, fmt.Errorf("%w: %s resources cannot have a parent scope", ErrInvalidPermission, kind)
 		}
-		tenantIDs, err := s.tenantIDsForSubject(ctx, subject)
+		tenantIDs, err := s.tenantIDsForCurrentUser(ctx)
 		if err != nil {
 			return nil, err
 		}

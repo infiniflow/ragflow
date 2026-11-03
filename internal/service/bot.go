@@ -68,7 +68,7 @@ func NewBotService(agentSvc *AgentService) *BotService {
 func (s *BotService) ChatbotInfo(ctx context.Context, userID, dialogID string) (
 	title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error,
 ) {
-	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: dialogID}, permission.OperationRead); err != nil {
+	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: dialogID}, permission.OperationRead); err != nil {
 		ec, err = permissionresponse.NormalizeHidden(err)
 		return "", "", "", "", false, ec, err
 	}
@@ -248,7 +248,7 @@ func (s *BotService) loadCanvas(ctx context.Context, userID, agentID string, ope
 	if userID == "" {
 		return nil, dao.ErrUserCanvasNotFound
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: agentID}, operation); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: agentID}, operation); err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return nil, dao.ErrUserCanvasNotFound
 		}
