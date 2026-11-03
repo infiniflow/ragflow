@@ -4,6 +4,7 @@ import {
 } from '@/components/bulk-operate-bar';
 import { FileUploadDialog } from '@/components/file-upload-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
+import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -11,9 +12,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
 import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import {
@@ -33,9 +34,15 @@ import { DatasetTable } from './dataset-table';
 import { useBulkOperateDataset } from './use-bulk-operate-dataset';
 import { useCreateEmptyDocument } from './use-create-empty-document';
 import { useSelectDatasetFilters } from './use-select-filters';
+import {
+  ShowPrivilegeModalContext,
+  useShowPrivilegeDialog,
+} from '@/ee/pages/dataset/dataset/use-show-privilege-dialog';
 import { useHandleUploadDocument } from './use-upload-document';
 
 export default function Dataset() {
+  const datasetEditButtonDisabled = useDatasetEditButtonDisabled();
+
   const { t } = useTranslation();
   const { knowledgeBase } = useKnowledgeBaseContext();
   const {
@@ -91,10 +98,18 @@ export default function Dataset() {
 
   useClearSelectionOnPageChange(pagination, clearRowSelection);
 
+  const {
+    handShowPrivilegeModal,
+    hidePrivilegeModal,
+    privilegeModal,
+    recordWithSourceType,
+  } = useShowPrivilegeDialog();
+
   const { list } = useBulkOperateDataset({
     documents,
     rowSelection,
     setRowSelection,
+    handShowPrivilegeModal,
   });
 
   const { selectedIds: selectedRowKeys } = useSelectedIds(
@@ -167,7 +182,7 @@ export default function Dataset() {
             <CancelParsingDropdown />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button size="default">
+                <Button size="default" disabled={datasetEditButtonDisabled}>
                   <LucidePlus />
                   {t('knowledgeDetails.addFile')}
                 </Button>
@@ -176,7 +191,6 @@ export default function Dataset() {
                 <DropdownMenuItem onClick={showDocumentUploadModal}>
                   {t('fileManager.uploadFile')}
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={showCreateModal}>
                   {t('knowledgeDetails.emptyFiles')}
                 </DropdownMenuItem>
@@ -195,16 +209,18 @@ export default function Dataset() {
       </CardHeader>
 
       <CardContent className="px-5 py-0">
-        <DatasetTable
-          documents={documents}
-          pagination={pagination}
-          setPagination={setPagination}
-          rowSelection={rowSelection}
-          setRowSelection={setRowSelection}
-          showManageMetadataModal={showManageMetadataModal}
-          loading={loading}
-          bulkOperateBarVisible={!rowSelectionIsEmpty}
-        />
+        <ShowPrivilegeModalContext.Provider value={{ handShowPrivilegeModal }}>
+          <DatasetTable
+            documents={documents}
+            pagination={pagination}
+            setPagination={setPagination}
+            rowSelection={rowSelection}
+            setRowSelection={setRowSelection}
+            showManageMetadataModal={showManageMetadataModal}
+            loading={loading}
+            bulkOperateBarVisible={!rowSelectionIsEmpty}
+          ></DatasetTable>
+        </ShowPrivilegeModalContext.Provider>
 
         {documentUploadVisible && (
           <FileUploadDialog
@@ -256,6 +272,14 @@ export default function Dataset() {
           />
         )}
       </CardContent>
+      {/* </section> */}
+      {privilegeModal && (
+        <PrivilegeManagementDialog
+          hideModal={hidePrivilegeModal}
+          initialValues={recordWithSourceType}
+        ></PrivilegeManagementDialog>
+      )}
+      {/* </> */}
     </Card>
   );
 }
