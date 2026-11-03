@@ -48,8 +48,8 @@ type Channel interface {
 
 // StreamingChannel is a channel that can deliver a reply while it is generated.
 // SendStream receives the cumulative display text on text; closing text finishes
-// the message. An error means nothing was delivered, so the caller still has to
-// send the complete answer through Send.
+// the message. An error means streaming did not complete, so the caller sends the
+// complete answer through Send.
 type StreamingChannel interface {
 	StreamEnabled() bool // StreamEnabled reports whether the account asked for streaming replies
 	SendStream(ctx context.Context, msg OutgoingMessage, text <-chan string) error

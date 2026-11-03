@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -126,26 +127,77 @@ type feishuAPICall struct {
 	body   string
 }
 
-// newFeishuFakeAPI serves the cardkit and IM endpoints the streaming sender uses.
-func newFeishuFakeAPI(t *testing.T, cardCreateCode int) (*httptest.Server, *[]feishuAPICall) {
+// feishuFakeAPI is a scriptable stand-in for the cardkit and IM endpoints the streaming
+// sender uses.
+type feishuFakeAPI struct {
+	cardCreateCode int
+	// contentScript scripts the content updates in order: true answers OK, false
+	// answers an error. Past the end every update succeeds.
+	contentScript []bool
+	settingsFails bool
+
+	mu        sync.Mutex
+	calls     []feishuAPICall
+	contentAt int
+}
+
+func (f *feishuFakeAPI) recorded() []feishuAPICall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]feishuAPICall(nil), f.calls...)
+}
+
+// contentFailsNow consumes one entry of the content script and reports whether this
+// update has to fail.
+func (f *feishuFakeAPI) contentFailsNow() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	index := f.contentAt
+	f.contentAt++
+	if index < len(f.contentScript) {
+		return !f.contentScript[index]
+	}
+	return false
+}
+
+// feishuContentFailures returns a content script that answers the first n updates with an
+// error.
+func feishuContentFailures(n int) []bool {
+	script := make([]bool, n)
+	return script
+}
+
+func newFeishuFakeAPI(t *testing.T, cardCreateCode int) (*httptest.Server, *feishuFakeAPI) {
 	t.Helper()
-	calls := &[]feishuAPICall{}
+	fake := &feishuFakeAPI{cardCreateCode: cardCreateCode}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		*calls = append(*calls, feishuAPICall{method: r.Method, path: r.URL.Path, body: string(body)})
+		fake.mu.Lock()
+		fake.calls = append(fake.calls, feishuAPICall{method: r.Method, path: r.URL.Path, body: string(body)})
+		fake.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.Contains(r.URL.Path, "tenant_access_token"):
 			_, _ = w.Write([]byte(`{"code":0,"msg":"ok","tenant_access_token":"t-1","expire":7200}`))
 		case r.URL.Path == "/open-apis/cardkit/v1/cards":
-			if cardCreateCode != 0 {
-				_, _ = fmt.Fprintf(w, `{"code":%d,"msg":"no permission"}`, cardCreateCode)
+			if fake.cardCreateCode != 0 {
+				_, _ = fmt.Fprintf(w, `{"code":%d,"msg":"no permission"}`, fake.cardCreateCode)
 				return
 			}
 			_, _ = w.Write([]byte(`{"code":0,"msg":"ok","data":{"card_id":"card-1"}}`))
 		case r.URL.Path == "/open-apis/im/v1/messages":
 			_, _ = w.Write([]byte(`{"code":0,"msg":"ok","data":{"message_id":"om-1"}}`))
-		case strings.HasSuffix(r.URL.Path, "/content"), strings.HasSuffix(r.URL.Path, "/settings"):
+		case strings.HasSuffix(r.URL.Path, "/content"):
+			if fake.contentFailsNow() {
+				_, _ = w.Write([]byte(`{"code":230020,"msg":"rate limited"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"code":0,"msg":"ok"}`))
+		case strings.HasSuffix(r.URL.Path, "/settings"):
+			if fake.settingsFails {
+				_, _ = w.Write([]byte(`{"code":230020,"msg":"rate limited"}`))
+				return
+			}
 			_, _ = w.Write([]byte(`{"code":0,"msg":"ok"}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
@@ -153,7 +205,7 @@ func newFeishuFakeAPI(t *testing.T, cardCreateCode int) (*httptest.Server, *[]fe
 		}
 	}))
 	t.Cleanup(server.Close)
-	return server, calls
+	return server, fake
 }
 
 func newFeishuChannelAgainstFakeAPI(server *httptest.Server) *feishuChannel {
@@ -173,7 +225,7 @@ func newFeishuChannelAgainstFakeAPI(server *httptest.Server) *feishuChannel {
 }
 
 func TestFeishuSendStreamCreatesUpdatesAndFinalizesCard(t *testing.T) {
-	server, calls := newFeishuFakeAPI(t, 0)
+	server, fake := newFeishuFakeAPI(t, 0)
 	ch := newFeishuChannelAgainstFakeAPI(server)
 
 	text := make(chan string, 4)
@@ -190,7 +242,7 @@ func TestFeishuSendStreamCreatesUpdatesAndFinalizesCard(t *testing.T) {
 	var contents []string
 	lastContentAt, settingsAt := -1, -1
 	var interactiveCardID string
-	for callIndex, call := range *calls {
+	for callIndex, call := range fake.recorded() {
 		switch {
 		case call.path == "/open-apis/cardkit/v1/cards":
 			cardCreates++
@@ -354,7 +406,7 @@ func TestFeishuSendStreamFailsWhenCardCreationFails(t *testing.T) {
 }
 
 func TestFeishuSendStreamSkipsEmptyText(t *testing.T) {
-	server, calls := newFeishuFakeAPI(t, 0)
+	server, fake := newFeishuFakeAPI(t, 0)
 	ch := newFeishuChannelAgainstFakeAPI(server)
 
 	text := make(chan string)
@@ -363,7 +415,144 @@ func TestFeishuSendStreamSkipsEmptyText(t *testing.T) {
 	if err := ch.SendStream(context.Background(), core.OutgoingMessage{ChatID: "chat-1"}, text); !errors.Is(err, errFeishuNothingStreamed) {
 		t.Fatalf("SendStream error = %v, want the nothing-streamed sentinel", err)
 	}
-	if len(*calls) != 0 {
-		t.Fatalf("SendStream called the API %d times for an empty answer", len(*calls))
+	if len(fake.recorded()) != 0 {
+		t.Fatalf("SendStream called the API %d times for an empty answer", len(fake.recorded()))
+	}
+}
+
+// feishuTextMessages returns the plain text messages the fake API received.
+func feishuTextMessages(calls []feishuAPICall) []string {
+	var texts []string
+	for _, call := range calls {
+		if call.path != "/open-apis/im/v1/messages" {
+			continue
+		}
+		var payload struct {
+			MsgType string `json:"msg_type"`
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(call.body), &payload); err != nil || payload.MsgType != "text" {
+			continue
+		}
+		var content struct {
+			Text string `json:"text"`
+		}
+		if err := json.Unmarshal([]byte(payload.Content), &content); err != nil {
+			continue
+		}
+		texts = append(texts, content.Text)
+	}
+	return texts
+}
+
+func TestFeishuSendStreamRetriesContentUpdate(t *testing.T) {
+	server, fake := newFeishuFakeAPI(t, 0)
+	fake.contentScript = []bool{false, false, true}
+	ch := newFeishuChannelAgainstFakeAPI(server)
+
+	text := make(chan string, 2)
+	text <- "Hello"
+	close(text)
+
+	if err := ch.SendStream(context.Background(), core.OutgoingMessage{ChatID: "chat-1"}, text); err != nil {
+		t.Fatalf("SendStream returned error: %v", err)
+	}
+
+	var sequences []int
+	for _, call := range fake.recorded() {
+		if !strings.HasSuffix(call.path, "/content") {
+			continue
+		}
+		var payload struct {
+			Content  string `json:"content"`
+			Sequence int    `json:"sequence"`
+		}
+		if err := json.Unmarshal([]byte(call.body), &payload); err != nil {
+			t.Fatalf("content body is not json: %v", err)
+		}
+		if payload.Content != "Hello" {
+			t.Fatalf("content = %q, want the complete answer", payload.Content)
+		}
+		sequences = append(sequences, payload.Sequence)
+	}
+	if len(sequences) < 3 {
+		t.Fatalf("content updates = %v, want at least the two failures and the success", sequences)
+	}
+	if sequences[0] != sequences[1] || sequences[1] != sequences[2] {
+		t.Fatalf("sequences = %v, want the retries to reuse one sequence", sequences)
+	}
+	if texts := feishuTextMessages(fake.recorded()); len(texts) != 0 {
+		t.Fatalf("plain text messages = %v, want none when the retry succeeds", texts)
+	}
+}
+
+func TestFeishuSendStreamReturnsErrorWhenUpdateKeepsFailing(t *testing.T) {
+	server, fake := newFeishuFakeAPI(t, 0)
+	ch := newFeishuChannelAgainstFakeAPI(server)
+
+	answer := strings.Repeat("a", 20)
+	// Let the first update land, then break every later one.
+	fake.contentScript = append([]bool{true}, feishuContentFailures(30)...)
+
+	text := make(chan string, 2)
+	text <- answer
+	close(text)
+
+	if err := ch.SendStream(context.Background(), core.OutgoingMessage{ChatID: "chat-1"}, text); err == nil {
+		t.Fatal("SendStream succeeded although retries were exhausted")
+	}
+	if texts := feishuTextMessages(fake.recorded()); len(texts) != 0 {
+		t.Fatalf("plain text messages = %v, want the bridge to send the complete answer", texts)
+	}
+}
+
+func TestFeishuSendStreamFailsWhenNoContentUpdateSucceeds(t *testing.T) {
+	server, fake := newFeishuFakeAPI(t, 0)
+	fake.contentScript = feishuContentFailures(30)
+	ch := newFeishuChannelAgainstFakeAPI(server)
+
+	text := make(chan string, 2)
+	text <- "Hello"
+	close(text)
+
+	if err := ch.SendStream(context.Background(), core.OutgoingMessage{ChatID: "chat-1"}, text); err == nil {
+		t.Fatal("SendStream succeeded although no update reached the card")
+	}
+	if texts := feishuTextMessages(fake.recorded()); len(texts) != 0 {
+		t.Fatalf("plain text messages = %v, want the caller to send the whole answer", texts)
+	}
+}
+
+func TestFeishuSendStreamKeepsAnswerWhenSettingsFail(t *testing.T) {
+	server, fake := newFeishuFakeAPI(t, 0)
+	fake.settingsFails = true
+	ch := newFeishuChannelAgainstFakeAPI(server)
+
+	text := make(chan string, 2)
+	text <- "Hello"
+	close(text)
+
+	if err := ch.SendStream(context.Background(), core.OutgoingMessage{ChatID: "chat-1"}, text); err != nil {
+		t.Fatalf("SendStream returned error: %v", err)
+	}
+
+	var last string
+	for _, call := range fake.recorded() {
+		if !strings.HasSuffix(call.path, "/content") {
+			continue
+		}
+		var payload struct {
+			Content string `json:"content"`
+		}
+		if err := json.Unmarshal([]byte(call.body), &payload); err != nil {
+			t.Fatalf("content body is not json: %v", err)
+		}
+		last = payload.Content
+	}
+	if last != "Hello" {
+		t.Fatalf("last content = %q, want the complete answer", last)
+	}
+	if texts := feishuTextMessages(fake.recorded()); len(texts) != 0 {
+		t.Fatalf("plain text messages = %v, want none when only the settings call fails", texts)
 	}
 }

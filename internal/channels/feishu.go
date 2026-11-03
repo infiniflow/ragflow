@@ -46,7 +46,10 @@ const (
 	feishuQueueSize       = 64
 	feishuWorkerIdle      = 5 * time.Minute
 	feishuStreamTick      = 100 * time.Millisecond
-	feishuStreamStep      = 2
+	feishuStreamStep      = 1
+	feishuStreamAttempts  = 3
+	feishuStreamBackoff   = 300 * time.Millisecond
+	feishuStreamCallLimit = 10 * time.Second
 	feishuStreamElementID = "ragflow_stream"
 )
 
@@ -255,38 +258,39 @@ func (c *feishuChannel) SendStream(ctx context.Context, msg core.OutgoingMessage
 		if value == "" || value == sent {
 			return nil
 		}
-		sequence++
-		resp, err := c.rest.Cardkit.V1.CardElement.Content(ctx, larkcardkit.NewContentCardElementReqBuilder().
-			CardId(cardID).
-			ElementId(feishuStreamElementID).
-			Body(larkcardkit.NewContentCardElementReqBodyBuilder().
-				Content(value).
-				Sequence(sequence).
-				Uuid(common.GenerateToken()).
-				Build()).
-			Build())
+		next := sequence + 1
+		uuid := common.GenerateToken()
+		err := feishuRetry(ctx, func(callCtx context.Context) error {
+			resp, err := c.rest.Cardkit.V1.CardElement.Content(callCtx, larkcardkit.NewContentCardElementReqBuilder().
+				CardId(cardID).
+				ElementId(feishuStreamElementID).
+				Body(larkcardkit.NewContentCardElementReqBodyBuilder().
+					Content(value).
+					Sequence(next).
+					Uuid(uuid).
+					Build()).
+				Build())
+			if err != nil {
+				return err
+			}
+			return feishuResponseError("card content", resp.Code, resp.Msg)
+		})
 		if err != nil {
 			return err
 		}
-		if err := feishuResponseError("card content", resp.Code, resp.Msg); err != nil {
-			return err
-		}
+		sequence = next
 		sent = value
 		return nil
 	}
-	// The card is visible from here on, so a later failure is reported by closing the
-	// card instead of posting the answer a second time.
-	abandon := func(action string, err error) error {
+	// fail reports an update that stayed broken after the retries. The bridge then sends
+	// the complete answer as a normal message, including text that was already streamed.
+	fail := func(action string, err error) error {
 		common.Error("feishu: "+action, err, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
-		if sent != "" {
-			if finishErr := c.finishStreamCard(ctx, cardID, &sequence); finishErr != nil {
-				common.Error("feishu: card settings failed", finishErr, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
-			}
-			return nil
+		if finishErr := c.finishStreamCard(ctx, cardID, &sequence); finishErr != nil {
+			common.Error("feishu: card settings failed", finishErr, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
 		}
 		return err
 	}
-
 	ticker := time.NewTicker(feishuStreamTick)
 	defer ticker.Stop()
 	for {
@@ -304,7 +308,7 @@ func (c *feishuChannel) SendStream(ctx context.Context, msg core.OutgoingMessage
 		case <-ticker.C:
 			if sent != latest {
 				if err := flush(nextStreamText(sent, latest, feishuStreamStep)); err != nil {
-					return abandon("card content failed", err)
+					return fail("card content failed", err)
 				}
 				continue
 			}
@@ -318,19 +322,17 @@ func (c *feishuChannel) SendStream(ctx context.Context, msg core.OutgoingMessage
 	}
 }
 
-// nextStreamText returns the text to display this tick: the shown text plus at most step
-// more runes. The per-tick budget keeps every append small enough for the platform
-// typewriter to finish it, so the card never repaints in one block. A target that no
-// longer extends the shown text is returned as is.
+// nextStreamText returns the text to display this tick, advancing by at most step runes.
+// A rewritten target starts from its first rune so it cannot trigger a full block update.
 func nextStreamText(shown, target string, step int) string {
 	if step < 1 {
 		step = 1
 	}
-	if !strings.HasPrefix(target, shown) {
-		return target
-	}
 	runes := []rune(target)
-	at := len([]rune(shown))
+	at := 0
+	if strings.HasPrefix(target, shown) {
+		at = len([]rune(shown))
+	}
 	if len(runes)-at <= step {
 		return target
 	}
@@ -387,21 +389,55 @@ func (c *feishuChannel) createStreamCard(ctx context.Context) (string, error) {
 	return stringValue(resp.Data.CardId), nil
 }
 
+// feishuRetry runs call up to feishuStreamAttempts times, bounding every attempt so a
+// stalled request cannot consume the whole reply, and backing off between attempts.
+func feishuRetry(ctx context.Context, call func(context.Context) error) error {
+	var err error
+	for attempt := 1; attempt <= feishuStreamAttempts; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, feishuStreamCallLimit)
+		err = call(attemptCtx)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if attempt == feishuStreamAttempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt) * feishuStreamBackoff):
+		}
+	}
+	return err
+}
+
 // finishStreamCard turns streaming mode off so the card stops rendering as in progress.
 func (c *feishuChannel) finishStreamCard(ctx context.Context, cardID string, sequence *int) error {
-	*sequence = *sequence + 1
-	resp, err := c.rest.Cardkit.V1.Card.Settings(ctx, larkcardkit.NewSettingsCardReqBuilder().
-		CardId(cardID).
-		Body(larkcardkit.NewSettingsCardReqBodyBuilder().
-			Settings(`{"config":{"streaming_mode":false}}`).
-			Sequence(*sequence).
-			Uuid(common.GenerateToken()).
-			Build()).
-		Build())
+	next := *sequence + 1
+	uuid := common.GenerateToken()
+	err := feishuRetry(ctx, func(callCtx context.Context) error {
+		resp, err := c.rest.Cardkit.V1.Card.Settings(callCtx, larkcardkit.NewSettingsCardReqBuilder().
+			CardId(cardID).
+			Body(larkcardkit.NewSettingsCardReqBodyBuilder().
+				Settings(`{"config":{"streaming_mode":false}}`).
+				Sequence(next).
+				Uuid(uuid).
+				Build()).
+			Build())
+		if err != nil {
+			return err
+		}
+		return feishuResponseError("card settings", resp.Code, resp.Msg)
+	})
 	if err != nil {
 		return err
 	}
-	return feishuResponseError("card settings", resp.Code, resp.Msg)
+	*sequence = next
+	return nil
 }
 
 // run keeps the SDK WebSocket client active until the channel stops.
