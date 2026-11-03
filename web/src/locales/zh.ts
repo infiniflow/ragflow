@@ -545,6 +545,13 @@ export default {
       runningStatus3: '成功',
       runningStatus4: '失败',
       runningStatusQueued: '排队中',
+      cancelParsingTasks: '取消解析任务',
+      filesParsing: '{{count}} 个文件解析中',
+      filesPending: '{{count}} 个文件排队中',
+      cancelParsingConfirmTitle: '取消解析',
+      cancelParsingConfirm: '确定取消正在解析的 {{count}} 个文件吗？',
+      cancelPendingConfirm: '确定取消排队中的 {{count}} 个文件吗？',
+      cancelTasksSuccess: '已取消 {{count}} 个解析任务',
       pageRanges: '页码范围',
       pageRangesTip:
         '页码范围：定义需要解析的页面范围。 不包含在这些范围内的页面将被忽略。',

@@ -572,6 +572,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 	memory := &entity.Memory{
 		ID:               newID,
 		Name:             memoryName,
+		UserID:           userID,
 		TenantID:         tenantID,
 		MemoryType:       memoryTypeInt,
 		StorageType:      "table",
