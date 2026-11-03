@@ -837,7 +837,6 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		}
 		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
 	}
-	tenantID := provider.TenantID
 	instanceID := common.GenerateToken()
 
 	extra := make(map[string]string)

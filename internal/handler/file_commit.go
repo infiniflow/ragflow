@@ -88,7 +88,7 @@ func CommitFolderResolver(h *FileCommitHandler, entityType, urlParam string) gin
 			return
 		}
 		ctx := c.Request.Context()
-		user, errorCode, errorMessage := GetUser(c)
+		_, errorCode, errorMessage := GetUser(c)
 		if errorCode != common.CodeSuccess {
 			common.ErrorWithCode(c, errorCode, errorMessage)
 			c.Abort()
@@ -672,7 +672,7 @@ func (h *FileCommitHandler) GetCommitFileContent(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspace-files/{file_id}/versions [get]
 func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return

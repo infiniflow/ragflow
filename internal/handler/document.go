@@ -120,7 +120,7 @@ func NewDocumentHandler(documentService documentServiceIface, datasetService *da
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [get]
 func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -352,7 +352,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [put]
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -407,7 +407,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [delete]
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -633,8 +633,6 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	pageSizeStr := c.Query("page_size")
 	page, _ := strconv.Atoi(pageStr)
 	pageSize, _ := strconv.Atoi(pageSizeStr)
-
-	userID := c.GetString("user_id")
 
 	if orderby := c.Query("orderby"); orderby != "" {
 		switch orderby {
@@ -1596,7 +1594,6 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetString("user_id")
 	if orderby := c.Query("orderby"); orderby != "" {
 		switch orderby {
 		case "create_time", "update_time", "name":
@@ -1621,7 +1618,7 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 }
 
 func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -1829,7 +1826,7 @@ func (h *DocumentHandler) UpdateDocumentMetadatas(c *gin.Context) {
 }
 
 func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return

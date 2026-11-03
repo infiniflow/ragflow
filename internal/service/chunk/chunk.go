@@ -445,7 +445,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	// Infinity/OceanBase chunks already carry real vectors and are left unchanged.
 	hydrateChunkVectors(ctx, s.docEngine, filteredChunks, req.Datasets, tenantIDs)
 
-	common.Info("RetrievalTest completed", zap.String("userID", subject.UserID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question), zap.Int64("chunkCount", int64(len(filteredChunks))))
+	common.Info("RetrievalTest completed", zap.String("userID", permission.UserIDFromContext(ctx)), zap.Any("kbID", req.Datasets), zap.String("question", req.Question), zap.Int64("chunkCount", int64(len(filteredChunks))))
 
 	return &service.RetrievalTestResponse{
 		Chunks:  filteredChunks,
