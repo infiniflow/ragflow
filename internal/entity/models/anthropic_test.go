@@ -602,6 +602,52 @@ func TestAnthropicListModelsAndCheckConnection(t *testing.T) {
 	}
 }
 
+func TestAnthropicListModelsFollowsPagination(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	var afterIDs []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+			return
+		}
+		if got := r.URL.Query().Get("limit"); got != "1000" {
+			t.Errorf("expected limit=1000, got %q", got)
+		}
+		afterID := r.URL.Query().Get("after_id")
+		afterIDs = append(afterIDs, afterID)
+		switch afterID {
+		case "":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data":     []map[string]interface{}{{"id": "claude-a"}, {"id": "claude-b"}},
+				"has_more": true,
+				"last_id":  "claude-b",
+			})
+		case "claude-b":
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"data":     []map[string]interface{}{{"id": "claude-c"}},
+				"has_more": false,
+				"last_id":  "claude-c",
+			})
+		default:
+			t.Errorf("unexpected after_id %q", afterID)
+		}
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	models, err := newAnthropicForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if got := joinModelNames(models, ","); got != "claude-a,claude-b,claude-c" {
+		t.Errorf("models=%s", got)
+	}
+	if strings.Join(afterIDs, "|") != "|claude-b" {
+		t.Errorf("after_id sequence=%v", afterIDs)
+	}
+}
+
 func TestAnthropicListModelsRejectsProviderError(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()

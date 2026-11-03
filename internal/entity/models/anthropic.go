@@ -24,7 +24,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
+	"strconv"
 	"strings"
 )
 
@@ -516,6 +518,10 @@ func parseAnthropicChatResponse(body []byte, _ *ChatConfig) (chatResponseParts, 
 	}, nil
 }
 
+// anthropicModelsPageSize is the largest page the models endpoint allows; the
+// default is 20, which silently truncated the list for accounts with more.
+const anthropicModelsPageSize = 1000
+
 func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -526,15 +532,57 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
 	baseURLConfig.BaseURL = apiConfig.BaseURL
 
-	url, err := a.baseModel.EndpointURL(baseURLConfig, a.baseModel.URLSuffix.Models)
+	endpoint, err := a.baseModel.EndpointURL(baseURLConfig, a.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
+	}
+
+	models := make([]ListModelResponse, 0)
+	afterID := ""
+	for {
+		page, err := a.listModelsPage(ctx, endpoint, apiKey, afterID)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range page.Data {
+			if item.ID != "" {
+				models = append(models, ListModelResponse{
+					Name: item.ID,
+				})
+			}
+		}
+		if !page.HasMore || page.LastID == "" || page.LastID == afterID {
+			return models, nil
+		}
+		afterID = page.LastID
+	}
+}
+
+type anthropicModelsPage struct {
+	Data []struct {
+		ID string `json:"id"`
+	} `json:"data"`
+	HasMore bool   `json:"has_more"`
+	LastID  string `json:"last_id"`
+}
+
+func (a *AnthropicModel) listModelsPage(ctx context.Context, endpoint, apiKey, afterID string) (*anthropicModelsPage, error) {
+	query := url.Values{}
+	query.Set("limit", strconv.Itoa(anthropicModelsPageSize))
+	if afterID != "" {
+		query.Set("after_id", afterID)
+	}
+	pageURL := endpoint
+	if strings.Contains(pageURL, "?") {
+		pageURL += "&" + query.Encode()
+	} else {
+		pageURL += "?" + query.Encode()
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -554,23 +602,11 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 		return nil, fmt.Errorf("anthropic models API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var result struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
+	var result anthropicModelsPage
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	models := make([]ListModelResponse, 0, len(result.Data))
-	for _, item := range result.Data {
-		if item.ID != "" {
-			models = append(models, ListModelResponse{
-				Name: item.ID,
-			})
-		}
-	}
-	return models, nil
+	return &result, nil
 }
 
 func (a *AnthropicModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
