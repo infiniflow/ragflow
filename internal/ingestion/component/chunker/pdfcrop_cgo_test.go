@@ -572,8 +572,8 @@ func TestCropImageChunks_DistinctIdsForSameTextMedia(t *testing.T) {
 }
 
 // TestCropImageChunks_SkipsEmptyTextMedia verifies that a media chunk whose
-// finalized text is empty — no caption, no vision description, no media
-// context — is NOT cropped or uploaded. Such a chunk is not retrievable
+// finalized text is empty - no caption, no vision description, no media
+// context - is NOT cropped or uploaded. Such a chunk is not retrievable
 // (its embedding would be the empty-string vector) and, under the old
 // behavior, collapsed every captionless image/table in a document onto the
 // same canonical id ChunkID(docID, ""), overwriting each other's MinIO
@@ -592,13 +592,13 @@ func TestCropImageChunks_SkipsEmptyTextMedia(t *testing.T) {
 	t.Cleanup(func() { ChunkImageUploader = orig })
 
 	eng := mockCropEngine{}
-	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	posA := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	posB := jsonPositions(t, []float64{1, 200, 300, 400, 500})
+	posC := jsonPositions(t, []float64{2, 10, 80, 20, 90})
 	emptyMedia := []schema.ChunkDoc{
-		{DocType: "image", PDFPositions: pos},                                     // no text
-		{DocType: "table", PDFPositions: pos},                                     // no text
-		{DocType: "image", Text: "@@1\t2##", PDFPositions: pos},                   // position tag only, no body
-		{DocType: "table", ContextAbove: "", ContextBelow: "", PDFPositions: pos}, // explicit empty
-		{DocType: "image", PDFPositions: pos},                                     // doc-type fallback, no text
+		{DocType: "image", PDFPositions: posA},
+		{DocType: "table", PDFPositions: posB},
+		{DocType: "image", Text: "@@1\t2##", PDFPositions: posC},
 	}
 	out := cropImageChunks(ctx, eng, emptyMedia)
 	if len(out) != len(emptyMedia) {
@@ -618,7 +618,7 @@ func TestCropImageChunks_SkipsEmptyTextMedia(t *testing.T) {
 
 	// Sanity: a captioned media chunk is still cropped and uploaded.
 	captioned := []schema.ChunkDoc{
-		{DocType: "image", Text: "a real figure caption", PDFPositions: pos},
+		{DocType: "image", Text: "a real figure caption", PDFPositions: posA},
 	}
 	out2 := cropImageChunks(ctx, eng, captioned)
 	if len(out2) != 1 {
@@ -635,6 +635,28 @@ func TestCropImageChunks_SkipsEmptyTextMedia(t *testing.T) {
 	}
 	if out2[0].Image != "" {
 		t.Errorf("captioned chunk Image = %q, want cleared after upload", out2[0].Image)
+	}
+}
+
+func TestFinalizeGeneralChunks_DropsUncroppedPositionOnlyMedia(t *testing.T) {
+	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	uncropped := []schema.ChunkDoc{{DocType: "image", PDFPositions: pos}}
+	if kept := finalizeGeneralChunks(uncropped, nil); len(kept) != 0 {
+		t.Fatalf("finalize kept %d, want uncropped position-only media dropped", len(kept))
+	}
+}
+
+func TestCanonicalChunkIDUsesRegionForCaptionlessPositionedMedia(t *testing.T) {
+	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	ck := schema.ChunkDoc{
+		DocType:      "image",
+		PDFPositions: pos,
+		Image:        "data:image/png;base64,QUFBQQ==",
+	}
+	regionID := canonicalChunkID("doc1", ck)
+	payloadID := common.ChunkID("doc1", mediaChunkIdentity(ck.Image, "", nil))
+	if regionID == payloadID {
+		t.Fatalf("region id %q must differ from payload hash id %q", regionID, payloadID)
 	}
 }
 

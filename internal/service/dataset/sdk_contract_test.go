@@ -29,7 +29,7 @@ func TestSDKDatasetUnicodeCharacterLimit(t *testing.T) {
 			pushServiceDB(t, db)
 			insertCreateDatasetTenant(t, "tenant-1")
 			name := strings.Repeat("数", n)
-			_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{Name: name, ParseType: new(1), ParserID: new("general")}, testDatasetSubject("tenant-1"))
+			_, code, err := testDatasetCreateService(t).CreateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), &service.CreateDatasetRequest{Name: name, ParseType: new(1), ParserID: new("general")})
 			if (err == nil) != (n == 128) {
 				t.Fatalf("create characters=%d code=%d err=%v", n, code, err)
 			}

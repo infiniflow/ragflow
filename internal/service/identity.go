@@ -33,15 +33,15 @@ type Identity struct {
 // Explicit Identity values remain available to background work without a
 // request context.
 func ResolveIdentity(ctx context.Context) (Identity, error) {
-	subject, ok := permission.SubjectFromContext(ctx)
-	if !ok || strings.TrimSpace(subject.UserID) == "" {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
 		return Identity{}, permission.ErrUnauthenticated
 	}
 
-	tenantID, err := requireCurrentTenantID(ctx, subject.UserID)
+	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		return Identity{}, err
 	}
 
-	return Identity{UserID: strings.TrimSpace(subject.UserID), TenantID: tenantID}, nil
+	return Identity{UserID: userID, TenantID: tenantID}, nil
 }

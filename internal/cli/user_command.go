@@ -52,12 +52,21 @@ func (c *CLI) APIShowVersionCommand(commandCount int, cmd *Command) (ResponseIf,
 		return nil, fmt.Errorf("failed to show version: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result KeyValueResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
+	var payload struct {
+		Code int `json:"code"`
+		Data struct {
+			Version string `json:"version"`
+		} `json:"data"`
+	}
+	if err = json.Unmarshal(resp.Body, &payload); err != nil {
 		return nil, fmt.Errorf("show version failed: invalid JSON (%w)", err)
 	}
-	result.Key = "version"
-	result.Duration = resp.Duration
+	result := KeyValueResponse{
+		Code:     payload.Code,
+		Key:      "version",
+		Value:    payload.Data.Version,
+		Duration: resp.Duration,
+	}
 
 	return &result, nil
 }
@@ -2939,16 +2948,18 @@ func (c *CLI) DevRemoveChunksCommand(commandCount int, cmd *Command) (ResponseIf
 	var result SimpleResponse
 	result.Code = int(code)
 	if result.Code == 0 {
-		deletedCount := int64(0)
-		switch data := resJSON["data"].(type) {
-		case float64:
-			deletedCount = int64(data)
-		case map[string]interface{}:
-			var count float64
-			if count, ok = data["deleted_count"].(float64); ok {
-				deletedCount = int64(count)
-			}
+		var payload struct {
+			Data *struct {
+				DeletedCount *int64 `json:"deleted_count"`
+			} `json:"data"`
 		}
+		if err := json.Unmarshal(resp.Body, &payload); err != nil {
+			return nil, fmt.Errorf("invalid chunk deletion response: %w", err)
+		}
+		if payload.Data == nil || payload.Data.DeletedCount == nil || *payload.Data.DeletedCount < 0 {
+			return nil, fmt.Errorf("invalid response format: data.deleted_count must be a non-negative integer")
+		}
+		deletedCount := *payload.Data.DeletedCount
 		result.Message = fmt.Sprintf("Success to remove chunks from document %s: %d chunks deleted", docID, deletedCount)
 	} else {
 		result.Message = fmt.Sprintf("Failed to remove chunks: %v", resJSON)

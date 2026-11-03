@@ -13,6 +13,7 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	ingestionpipeline "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/observability"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -125,6 +126,7 @@ type IngestionTaskService struct {
 	userCanvasDAO    *dao.UserCanvasDAO
 	taskPublisher    TaskPublisher
 	logSettings      IngestionLogSettings
+	eventEmitter     observability.IngestionEventEmitter
 	// purgeTaskState removes the deleted task's run-scoped chunk and media
 	// cache state. Nil resolves to the process-wide implementation.
 	purgeTaskState func(context.Context, string) error
@@ -139,6 +141,7 @@ func NewIngestionTaskService() *IngestionTaskService {
 		userCanvasDAO:    dao.NewUserCanvasDAO(),
 		taskPublisher:    NewMessageQueueTaskPublisher(),
 		logSettings:      DefaultIngestionLogSettings(),
+		eventEmitter:     &observability.CommonLogEmitter{},
 	}
 }
 
@@ -147,6 +150,42 @@ func (s *IngestionTaskService) SetTaskPublisher(taskPublisher TaskPublisher) {
 		return
 	}
 	s.taskPublisher = taskPublisher
+}
+
+// SetEventEmitter swaps the lifecycle event sink. A nil argument is ignored so
+// callers cannot accidentally disable emission by passing nil.
+func (s *IngestionTaskService) SetEventEmitter(emitter observability.IngestionEventEmitter) {
+	if emitter == nil {
+		return
+	}
+	s.eventEmitter = emitter
+}
+
+// emitLifecycleEvent builds and emits a structured observability event for a
+// task lifecycle transition. It is best-effort: any lookup failure or a nil
+// emitter is silently ignored so the parse pipeline is never disrupted by
+// observability. Enrichment reads the document (file name/type/size/parser) and
+// the bound pipeline run (run number, begin/end, progress) and forwards them to
+// observability.BuildIngestLog, which owns the field mapping onto common.IngestionLog.
+func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *entity.IngestionTask, typ, status, errorInfo string) {
+	if s.eventEmitter == nil || task == nil {
+		return
+	}
+	var doc *entity.Document
+	if s.documentDAO != nil {
+		doc, _ = s.documentDAO.GetByID(ctx, dao.DB, task.DocumentID)
+	}
+	logID := task.PipelineLogID
+	if (logID == nil || *logID == "") && s.documentDAO != nil {
+		if fresh, err := s.GetTask(ctx, task.ID); err == nil {
+			logID = fresh.PipelineLogID
+		}
+	}
+	var run *entity.PipelineOperationLog
+	if logID != nil && *logID != "" && s.pipelineLogDAO != nil {
+		run, _ = s.pipelineLogDAO.GetByID(ctx, dao.DB, *logID)
+	}
+	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(task, doc, run, typ, status, errorInfo))
 }
 
 func (s *IngestionTaskService) ListByUser(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
@@ -265,6 +304,7 @@ func (s *IngestionTaskService) TransitionTaskToRunning(ctx context.Context, task
 		// close the open row. Close it here or it stays RUNNING forever.
 		s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
 		s.recordRunTerminal(ctx, task, "Task stopped by user.")
+		s.emitLifecycleEvent(ctx, task, "stopped", common.STOPPED, "Task stopped by user.")
 		return task, nil
 	case common.RUNNING, common.COMPLETED, common.STOPPED, common.FAILED:
 		return task, nil
@@ -290,16 +330,38 @@ func (s *IngestionTaskService) PrepareValidatedRun(ctx context.Context, task *en
 	}
 	s.advanceOpenLog(ctx, task, logFromUnstartOrScheduled, string(entity.TaskStatusRunning))
 	s.recordRunMessage(ctx, task, "Task is running...")
+	// Emit the running lifecycle event only after the document's worker-claim
+	// time has been stamped, so the event's BeginTime (and wait_duration_s)
+	// reflect this run rather than a zero or previous-run value. Emitting here
+	// (guarded by a successful claim in the caller) keeps one running event per
+	// actual run start.
+	s.emitLifecycleEvent(ctx, task, "running", common.RUNNING, "")
 }
 
+// ErrTaskNotInScope indicates RequestStopScoped was asked to stop a task whose
+// current status is not among the caller-supplied allowed statuses. It is not a
+// failure of the stop operation itself; callers treat it as a no-op for that task
+// and may still count an already-stopped task as an idempotent success.
+var ErrTaskNotInScope = errors.New("task status is not within the requested cancel scope")
+
+// RequestStop stops a task unconditionally (as long as its status is one it can
+// act on: CREATED/SCHEDULED/RUNNING). It is the per-task cancel path.
 func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
 	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
+	return s.stopActiveTask(ctx, task)
+}
+
+// stopActiveTask performs the state transition for a task already loaded and known
+// to be in a stoppable state. It centralizes the CREATED/SCHEDULED -> STOPPED and
+// RUNNING -> STOPPING logic so RequestStop (unconditional) and RequestStopScoped
+// (scope-checked) share one implementation and cannot drift apart.
+func (s *IngestionTaskService) stopActiveTask(ctx context.Context, task *entity.IngestionTask) (*entity.IngestionTask, error) {
 	switch task.Status {
 	case common.CREATED, common.SCHEDULED:
-		stopped, err := s.transitionFrom(ctx, taskID, []string{common.CREATED, common.SCHEDULED}, common.STOPPED)
+		stopped, err := s.transitionFrom(ctx, task.ID, []string{common.CREATED, common.SCHEDULED}, common.STOPPED)
 		if err != nil {
 			return nil, err
 		}
@@ -308,9 +370,10 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 		// CANCEL here, otherwise the detail page keeps a queued entry.
 		s.advanceOpenLog(ctx, stopped, logFromUnstartOrScheduled, string(entity.TaskStatusCancel))
 		s.recordRunTerminal(ctx, stopped, "Task stopped by user.")
+		s.emitLifecycleEvent(ctx, stopped, "stopped", common.STOPPED, "Task stopped by user.")
 		return stopped, nil
 	case common.RUNNING:
-		task, err = s.transition(ctx, taskID, common.STOPPING)
+		task, err := s.transition(ctx, task.ID, common.STOPPING)
 		if err != nil {
 			return nil, err
 		}
@@ -318,12 +381,41 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 		// running worker's pollCancel detects the stop on its next 500ms
 		// tick instead of the slower DB fallback path.
 		if rc := kvrocks.Get(); rc != nil {
-			rc.Set(ctx, fmt.Sprintf("%s-cancel", taskID), "x", 1*time.Hour)
+			rc.Set(ctx, fmt.Sprintf("%s-cancel", task.ID), "x", 1*time.Hour)
 		}
 		return task, nil
 	default:
 		return task, nil
 	}
+}
+
+// RequestStopScoped stops a task only when its current status is among allowed.
+// The scope check runs after the task is loaded (GetTask) and before any
+// transition, so a status that drifts between the caller's list/lookup query and
+// this call cannot cause an out-of-scope stop: the TOCTOU window the caller's
+// earlier read opened is closed here, atomically with the CAS that performs the
+// transition. A status outside allowed returns the loaded task and
+// ErrTaskNotInScope without any state change. An empty allowed set permits no
+// status, so every task is out of scope.
+func (s *IngestionTaskService) RequestStopScoped(ctx context.Context, taskID string, allowed []string) (*entity.IngestionTask, error) {
+	task, err := s.GetTask(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if !statusInSet(task.Status, allowed) {
+		return task, ErrTaskNotInScope
+	}
+	return s.stopActiveTask(ctx, task)
+}
+
+// statusInSet reports whether status equals one of the members of set.
+func statusInSet(status string, set []string) bool {
+	for _, s := range set {
+		if s == status {
+			return true
+		}
+	}
+	return false
 }
 
 // SupersedeUnstartedTask closes a queued run before a replacement parse is
@@ -348,6 +440,7 @@ func (s *IngestionTaskService) supersedeUnstartedTask(ctx context.Context, taskI
 		if err := s.settleTaskRun(ctx, stopped, entity.TaskStatusCancel, terminalMessage); err != nil {
 			return nil, err
 		}
+		s.emitLifecycleEvent(ctx, stopped, "stopped", common.STOPPED, terminalMessage)
 		return stopped, nil
 	case common.RUNNING, common.STOPPING:
 		return nil, fmt.Errorf("task %s is %s and cannot be superseded", taskID, task.Status)
@@ -402,11 +495,27 @@ func (s *IngestionTaskService) MarkCompleted(ctx context.Context, taskID string)
 	if task.Status == common.COMPLETED || task.Status == common.STOPPED || task.Status == common.FAILED {
 		return nil // already terminal, idempotent — mirrors MarkStopped
 	}
-	_, err = s.transition(ctx, taskID, common.COMPLETED)
-	return err
+	updated, err := s.transition(ctx, taskID, common.COMPLETED)
+	if err != nil {
+		return err
+	}
+	s.emitLifecycleEvent(ctx, updated, "completed", common.COMPLETED, "")
+	return nil
 }
 
-func (s *IngestionTaskService) MarkFailed(ctx context.Context, taskID string) error {
+// MarkFailed transitions a task to FAILED and emits a lifecycle event carrying
+// the terminal reason. This is the public entry point used by the ingestor,
+// which has the failure reason (timeout/panic/run-identity error) available at
+// the call site; passing it here is what populates the event's ErrorInfo.
+func (s *IngestionTaskService) MarkFailed(ctx context.Context, taskID, reason string) error {
+	return s.markFailed(ctx, taskID, reason)
+}
+
+// markFailed transitions a task to FAILED and emits a lifecycle event carrying
+// the terminal reason. The public MarkFailed forwards the reason supplied by
+// the ingestor (timeout/panic/run-identity error); internal paths such as
+// settlePublishFailure pass an explicit reason too.
+func (s *IngestionTaskService) markFailed(ctx context.Context, taskID, reason string) error {
 	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
 		return err
@@ -414,8 +523,12 @@ func (s *IngestionTaskService) MarkFailed(ctx context.Context, taskID string) er
 	if task.Status == common.FAILED || task.Status == common.COMPLETED || task.Status == common.STOPPED {
 		return nil // already terminal, idempotent — mirrors MarkStopped
 	}
-	_, err = s.transition(ctx, taskID, common.FAILED)
-	return err
+	updated, err := s.transition(ctx, taskID, common.FAILED)
+	if err != nil {
+		return err
+	}
+	s.emitLifecycleEvent(ctx, updated, "failed", common.FAILED, reason)
+	return nil
 }
 
 // MarkStopped transitions the task from STOPPING to STOPPED (terminal).
@@ -429,8 +542,12 @@ func (s *IngestionTaskService) MarkStopped(ctx context.Context, taskID string) e
 	if task.Status == common.STOPPED || task.Status == common.COMPLETED || task.Status == common.FAILED {
 		return nil
 	}
-	_, err = s.transition(ctx, taskID, common.STOPPED)
-	return err
+	updated, err := s.transition(ctx, taskID, common.STOPPED)
+	if err != nil {
+		return err
+	}
+	s.emitLifecycleEvent(ctx, updated, "stopped", common.STOPPED, "")
+	return nil
 }
 
 func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID *string) (*dao.TaskInfo, error) {
@@ -457,15 +574,17 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 			}
 		}
 	}
-	// A queued task becomes STOPPED before its run is settled. If settlement
-	// failed, a retry must finish it before the task row is deleted.
-	if task.Status == common.STOPPED && task.PipelineLogID != nil && *task.PipelineLogID != "" {
+	// A terminal task normally closes its own run, but that terminal write is
+	// best-effort: when it was lost the ledger stays open with no worker left to
+	// settle it. Settlement is idempotent, so finish it before deleting the row
+	// — the same rule PrepareDocumentTaskForCleanup applies to document cleanup.
+	if runStatus, message, ok := terminalRunSettlement(task.Status); ok && task.PipelineLogID != nil && *task.PipelineLogID != "" {
 		run, runErr := s.pipelineLogDAO.GetByID(ctx, dao.DB, *task.PipelineLogID)
 		if runErr != nil && !errors.Is(runErr, gorm.ErrRecordNotFound) {
 			return nil, runErr
 		}
 		if run != nil && run.RunCount != nil && *run.RunCount > 0 {
-			if err := s.settleTaskRun(ctx, task, entity.TaskStatusCancel, "Task superseded by a new parse request."); err != nil {
+			if err := s.settleTaskRun(ctx, task, runStatus, message); err != nil {
 				return nil, err
 			}
 		}
@@ -492,6 +611,21 @@ func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID
 		)
 	}
 	return info, nil
+}
+
+// terminalRunSettlement maps a terminal task to the run status and terminal
+// message its ledger should carry.
+func terminalRunSettlement(taskStatus string) (entity.TaskStatus, string, bool) {
+	switch taskStatus {
+	case common.STOPPED:
+		return entity.TaskStatusCancel, "Task superseded by a new parse request.", true
+	case common.COMPLETED:
+		return entity.TaskStatusDone, taskTerminalMessageComplete, true
+	case common.FAILED:
+		return entity.TaskStatusFail, taskTerminalMessageFailed, true
+	default:
+		return "", "", false
+	}
 }
 
 func (s *IngestionTaskService) GetTask(ctx context.Context, taskID string) (*entity.IngestionTask, error) {
@@ -655,6 +789,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 			if err = s.ensureRunIdentity(ctx, existing, kbCache); err != nil {
 				return nil, fmt.Errorf("ensure run identity for task %s: %w", existing.ID, err)
 			}
+			s.emitLifecycleEvent(ctx, existing, "created", common.CREATED, "")
 			if err = s.enqueueTask(existing.ID); err != nil {
 				s.settlePublishFailure(ctx, existing)
 				return nil, err
@@ -681,6 +816,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 				}
 				return nil, fmt.Errorf("ensure run identity for task %s: %w", existing.ID, err)
 			}
+			s.emitLifecycleEvent(ctx, existing, "created", common.CREATED, "")
 			if err = s.enqueueTask(existing.ID); err != nil {
 				s.settlePublishFailure(ctx, existing)
 				return nil, err
@@ -701,6 +837,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 		}
 		return nil, fmt.Errorf("ensure run identity for task %s: %w", created.ID, err)
 	}
+	s.emitLifecycleEvent(ctx, created, "created", common.CREATED, "")
 	if err = s.enqueueTask(created.ID); err != nil {
 		s.settlePublishFailure(ctx, created)
 		return nil, err
@@ -740,6 +877,7 @@ func (s *IngestionTaskService) markScheduledAfterPublish(ctx context.Context, ta
 		}
 		s.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule))
 		s.recordRunMessage(ctx, task, "Task is queued...")
+		s.emitLifecycleEvent(ctx, task, "scheduled", common.SCHEDULED, "")
 		return task, nil
 	}
 
@@ -793,7 +931,7 @@ func (s *IngestionTaskService) settlePublishFailure(ctx context.Context, task *e
 	if task == nil {
 		return
 	}
-	if err := s.MarkFailed(ctx, task.ID); err != nil {
+	if err := s.markFailed(ctx, task.ID, "Task publish failed."); err != nil {
 		common.Error(fmt.Sprintf("mark task %s failed after publish failure", task.ID), err)
 		return
 	}
@@ -1044,11 +1182,35 @@ func (s *IngestionTaskService) RecordMessage(ctx context.Context, pipelineLogID,
 	return s.insertEvent(ctx, ingestionEventMessage, pipelineLogID, taskID, "", 0, message)
 }
 
+// persistProcessEndAt records the authoritative terminal end time for a run.
+// It is idempotent: if a real process_end_at is already persisted, the existing
+// value is left untouched, so a later terminal event cannot rewrite the recorded
+// completion instant. Best-effort: errors are logged, never returned, because a
+// failure here must not fail the terminal settlement.
+func (s *IngestionTaskService) persistProcessEndAt(ctx context.Context, pipelineLogID string) {
+	if dao.DB == nil {
+		return
+	}
+	if updErr := dao.DB.WithContext(ctx).
+		Model(&entity.PipelineOperationLog{}).
+		Where("id = ?", pipelineLogID).
+		Where("process_end_at IS NULL").
+		Update("process_end_at", time.Now()).Error; updErr != nil {
+		common.Warn(fmt.Sprintf("persist process_end_at for run %s: %v", pipelineLogID, updErr))
+	}
+}
+
 // RecordTerminal writes the terminal explanation associated with a run.
 func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string) error {
 	if err := s.ensureTerminalEvent(ctx, pipelineLogID, taskID, message); err != nil {
 		return err
 	}
+	// Persist the authoritative terminal end time so ingestion observability
+	// events and any downstream duration query read a real value instead of
+	// falling back to the transition time. Idempotent: a run whose end time
+	// was already recorded keeps it, so a repeated terminal settlement (e.g.
+	// overlapping failure/timeout events) cannot rewrite the completion instant.
+	s.persistProcessEndAt(context.WithoutCancel(ctx), pipelineLogID)
 	foldContext := context.WithoutCancel(ctx)
 	foldStarted := time.Now()
 	foldResult, foldErr := s.foldIngestionRun(foldContext, pipelineLogID, s.logSettings.MaxRowsPerRun)

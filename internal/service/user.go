@@ -340,8 +340,8 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 	return user, common.CodeSuccess, nil
 }
 
-// GetUserByID get user by ID
-func (s *UserService) GetUserByID(ctx context.Context, id uint) (*UserResponse, common.ErrorCode, error) {
+// GetUserByID get user by ID (a 32-char hex UUID string).
+func (s *UserService) GetUserByID(ctx context.Context, id string) (*UserResponse, common.ErrorCode, error) {
 	user, err := s.userDAO.GetByID(ctx, dao.DB, id)
 	if err != nil {
 		return nil, common.CodeNotFound, err
@@ -777,7 +777,7 @@ func (s *UserService) resolveAPITokenIdentity(ctx context.Context, apiToken *ent
 		return nil, common.CodeUnauthorized, fmt.Errorf("API token is missing user identity")
 	}
 
-	user, err := s.userDAO.GetByIDString(ctx, dao.DB, *apiToken.UserID)
+	user, err := s.userDAO.GetByID(ctx, dao.DB, *apiToken.UserID)
 	if err != nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for API token")
 	}

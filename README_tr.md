@@ -93,14 +93,6 @@ Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-kendi-sunucusunda-bar�
 
 Diğer güncellemeler için [tam sürüm notlarına](https://ragflow.io/docs/dev/release_notes) bakın.
 
-## 🎉 Bizi Takip Edin
-
-⭐️ Heyecan verici yeni özellikler ve iyileştirmelerden haberdar olmak için depomuzı yıldızlayın! Yeni sürümler için anında bildirim alın! 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
 ## 🌟 Temel Özellikler
 
 ### 🍭 **"Kaliteli girdi, kaliteli çıktı"**

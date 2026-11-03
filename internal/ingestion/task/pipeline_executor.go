@@ -881,8 +881,7 @@ var ErrMissingRunIdentity = errors.New("pipeline log id is required")
 // ErrPipelineVersionMissing is the single multi-version Missing sentinel. It is
 // defined once in the dao package (dao.ErrPipelineVersionMissing) and re-exported
 // here so the service and task layers share one identity (review: merge the
-// duplicate service/task sentinels into one implementation). The wrapped message
-// still carries the user-facing hint "pipeline 版本不存在，请重新选择版本".
+// duplicate service/task sentinels into one implementation).
 var ErrPipelineVersionMissing = dao.ErrPipelineVersionMissing
 
 // RecordPipelineLog persists a pipeline operation log without requiring

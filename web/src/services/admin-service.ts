@@ -171,12 +171,12 @@ type ResponseData<D = NonNullable<unknown>> = {
 
 export const login = (params: { email: string; password: string }) =>
   request.post<ResponseData<AdminService.LoginData>>(adminLogin, params);
-export const logout = () => request.post<ResponseData<boolean>>(adminLogout);
+export const logout = () => request.post<ResponseData<void>>(adminLogout);
 export const listUsers = () =>
   request.get<ResponseData<AdminService.ListUsersItem[]>>(adminListUsers, {});
 
 export const createUser = (email: string, password: string) =>
-  request.post<ResponseData<boolean>>(adminCreateUser, {
+  request.post<ResponseData<Record<string, unknown>>>(adminCreateUser, {
     username: email,
     password,
   });
