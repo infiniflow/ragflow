@@ -70,3 +70,13 @@ Publishing another version does not switch the version already selected by a Dat
 To export, open an editable pipeline and choose **Management > Export**. The browser downloads the current canvas configuration as a JSON file.
 
 To import, select **Agent > Ingestion pipeline**, choose **Import JSON file** from the creation menu, enter **Name**, upload the pipeline JSON under **DSL**, and click **Save**. Open the imported card and check models, compilation template groups, and other referenced resources. These resources are not transferred by importing JSON. Save the draft, publish a version, and validate it in a test Dataset before use.
+
+## Sharing Scope
+
+1. Open the pipeline under **Agent > Ingestion pipeline**.
+2. Click **Management > Settings** in the upper-right corner.
+3. In the **Edit** dialog, find **Permissions**.
+4. Select **me** to keep it private, or **Team** to share it with your team.
+5. Click **Save**.
+
+See [Team resource permissions](../../team/resource_sharing/resource_sharing_and_permissions.md#member-permissions) for member access after sharing.

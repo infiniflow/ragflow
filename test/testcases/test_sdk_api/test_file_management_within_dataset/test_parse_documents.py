@@ -322,8 +322,16 @@ def test_terminal_status_from_previous_parse_run_is_not_reused(monkeypatch):
     "ingestion_status, progress, expected_status",
     [
         ("COMPLETED", 1.0, "DONE"),
-        ("FAILED", -1.0, "FAIL"),
-        ("STOPPED", 0.0, "CANCEL"),
+        pytest.param(
+            "FAILED",
+            -1.0,
+            "FAIL",
+        ),
+        pytest.param(
+            "STOPPED",
+            0.0,
+            "CANCEL",
+        ),
     ],
 )
 def test_parse_documents_returns_documented_terminal_status(monkeypatch, ingestion_status, progress, expected_status):

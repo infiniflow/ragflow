@@ -48,15 +48,14 @@ func (s *DocumentService) ApplyDatasetParserConfig(ctx context.Context, userID, 
 			return err
 		}
 		checker := permission.NewDatabaseChecker(tx)
-		subject := permission.Subject{UserID: userID, TenantID: kb.TenantID}
 		ref := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}
-		if err := checker.CheckResource(ctx, subject, ref, permission.OperationUpdate); err != nil {
+		if err := checker.CheckResource(ctx, ref, permission.OperationUpdate); err != nil {
 			var normalized error
 			code, normalized = permissionresponse.NormalizeHidden(err)
 			return normalized
 		}
 		if kb.PipelineID != nil && strings.TrimSpace(*kb.PipelineID) != "" {
-			if err := checker.CheckDependency(ctx, subject, ref,
+			if err := checker.CheckDependency(ctx, ref,
 				permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: *kb.PipelineID},
 				permission.OperationUpdate, permission.OperationUse); err != nil {
 				var normalized error

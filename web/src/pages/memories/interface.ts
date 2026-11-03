@@ -26,8 +26,10 @@ export interface ICreateMemoryProps {
 export interface IMemory extends ICreateMemoryProps {
   id: string;
   avatar: string;
+  operator_permission?: number;
   tenant_id: string;
-  owner_name: string;
+  nickname?: string;
+  owner_name?: string;
   storage_type: StorageType;
   permissions: Permissions;
   description: string;
@@ -63,7 +65,6 @@ export interface DeleteMemoryProps {
 
 export interface DeleteMemoryResponse {
   code: number;
-  data: boolean;
   message: string;
 }
 

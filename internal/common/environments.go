@@ -192,6 +192,8 @@ const (
 	EnvAllowAnyHost                      = "ALLOW_ANY_HOST"
 	EnvTavilyAPIKey                      = "TAVILY_API_KEY"
 	EnvQueritAPIKey                      = "QUERIT_API_KEY"
+	EnvDeepLAPIKey                       = "DEEPL_API_KEY"
+	EnvQWeatherAPIKey                    = "QWEATHER_API_KEY"
 	EnvHome                              = "HOME"
 	EnvUserProfile                       = "USERPROFILE"
 	EnvHTTPProxy                         = "http_proxy"
@@ -227,6 +229,7 @@ const (
 	EnvMineruAPIKey                      = "MINERU_API_KEY"
 	EnvMineruBackend                     = "MINERU_BACKEND"
 	EnvMineruServerURL                   = "MINERU_SERVER_URL"
+	EnvMineruTimeout                     = "MINERU_TIMEOUT"
 	EnvMonkeyOCRv2ServerURL              = "MONKEYOCRV2_SERVER_URL"
 	EnvMonkeyOCRv2Timeout                = "MONKEYOCRV2_TIMEOUT"
 	EnvMonkeyOCRAPIServer                = "MONKEYOCR_APISERVER"
@@ -285,6 +288,10 @@ const (
 	EnvGmailWebOAuthRedirectURI          = "GMAIL_WEB_OAUTH_REDIRECT_URI"
 	EnvGoogleDriveWebOAuthRedirectURI    = "GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI"
 	EnvSpacyModelDir                     = "SPACY_MODEL_DIR"
+
+	// EnvExtractorConcurrency bounds concurrent chunk extraction jobs across
+	// all Extractor invocations in one process.
+	EnvExtractorConcurrency = "EXTRACTOR_CONCURRENCY"
 
 	// EnvExtractorChatTimeout sets the Extractor LLM call timeout in seconds,
 	// including retries and backoff. It does not apply to tag extraction.

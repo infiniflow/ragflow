@@ -29,13 +29,12 @@ import (
 )
 
 // billingQuotaUser resolves the caller that the plan quota applies to.
-func billingQuotaUser(c *gin.Context) (*entity.User, bool) {
+func billingQuotaUser(c *gin.Context) (*entity.User, common.ErrorCode, error) {
 	user, code, message := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ErrorWithCode(c, code, message)
-		return nil, false
+		return nil, code, errors.New(message)
 	}
-	return user, true
+	return user, code, nil
 }
 
 // billingEnforceApps admits every new application: the community edition has
@@ -66,7 +65,7 @@ func issueUserAccessToken(user *entity.User, secretKey string) (string, error) {
 // edition. The route stays registered so clients see "not implemented" rather
 // than "not found".
 func eeNotImplemented(c *gin.Context, feature string) {
-	common.ErrorWithCode(c, common.CodeNotImplemented, feature+" not implemented")
+	common.RespondError(c, common.CodeNotImplemented, feature+" not implemented")
 }
 
 func (h *SystemHandler) GetEnableAdmin(c *gin.Context) { eeNotImplemented(c, "EnableAdmin") }
@@ -91,11 +90,11 @@ func (h *UserHandler) GetMeta(c *gin.Context) { eeNotImplemented(c, "GetMeta") }
 func (h *UserHandler) GetLoginChannelsDeprecated(c *gin.Context) {
 	channels, code, err := h.userService.GetLoginChannels()
 	if err != nil {
-		common.ResponseWithCodeData(c, code, []interface{}{}, "Load channels failure, error: "+err.Error())
+		common.RespondError(c, code, "Load channels failure, error: "+err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, channels, "success")
+	common.RespondSuccessList(c, channels, "success")
 }
 func (h *ProviderHandler) CreateModelGroup(c *gin.Context) { eeNotImplemented(c, "CreateModelGroup") }
 func (h *ProviderHandler) DeleteModelGroup(c *gin.Context) { eeNotImplemented(c, "DeleteModelGroup") }

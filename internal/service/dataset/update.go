@@ -200,7 +200,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			if isPipeline && effectivePipelineID != nil && strings.TrimSpace(*effectivePipelineID) != "" {
 				accessErr := permission.NewLockingDatabaseChecker(tx).CheckDependency(
 					ctx,
-					permission.Subject{UserID: userID, TenantID: lockedKB.TenantID},
 					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: lockedKB.ID},
 					permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effectivePipelineID)},
 					permission.OperationUpdate,
@@ -221,7 +220,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			if permissionValue != lockedKB.Permission {
 				accessErr := permission.NewLockingDatabaseChecker(tx).CheckResource(
 					ctx,
-					permission.Subject{UserID: userID},
 					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
 					permission.OperationShare,
 				)
@@ -271,14 +269,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			} else {
 				tenantEmbdID = ""
 			}
-			modelAccess := service.ModelAccess{UserID: userID, TenantID: lockedKB.TenantID}
-			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, modelAccess)
+			identity := service.Identity{UserID: userID, TenantID: lockedKB.TenantID}
+			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, identity)
 			if !ok {
 				txCode = common.CodeDataError
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				target, err := service.NewModelFactory().ResolveInfo(ctx, modelAccess, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelFactory().ResolveInfo(ctx, identity, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
 					tenantEmbdID = target.ID
 				}
@@ -376,7 +374,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 		// Design C5/G3: an empty pipeline_version_id in Pipeline mode is REJECTED
 		// (no longer silently cleared or auto-backfilled to the canvas latest).
 		// The Save fails with ErrPipelineVersionEmpty so the UI can show the red
-		// Missing badge and the "版本信息缺失" error. BuiltIn mode (no canvas
+		// Missing badge and the "mission version info" error. BuiltIn mode (no canvas
 		// bound) is exempt and may carry an empty version.
 		isEffPipeline := canvasCtx != nil && strings.TrimSpace(*canvasCtx) != ""
 		if req.PipelineVersionID != nil {
@@ -438,6 +436,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			var membership entity.UserTenant
 			if tenantErr := tx.Where("user_id = ? AND tenant_id = ? AND status = ?", userID, lockedKB.TenantID, entity.TenantMembershipStatusJoined).Take(&membership).Error; tenantErr == nil {
 				llmID = membership.LLMID
+				if membership.TenantLLMID != nil && strings.TrimSpace(*membership.TenantLLMID) != "" {
+					llmID = strings.TrimSpace(*membership.TenantLLMID)
+				}
 			}
 			effectiveParserConfig = service.ApplyComponentScopedParserConfig(
 				effectiveParserConfig,
@@ -561,7 +562,6 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 
 	err = permission.NewLockingDatabaseChecker(tx).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
 		permission.OperationUpdate,
 	)

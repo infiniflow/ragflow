@@ -50,6 +50,7 @@ import kbService, {
   documentFilter,
   listDocument,
   renameDocument,
+  stopAllDocuments,
   uploadDocument,
 } from '@/services/knowledge-service';
 import { restAPIv1 } from '@/utils/api';
@@ -370,6 +371,7 @@ export const useFetchDocumentsByIds = (
 // get document filter
 export const useGetDocumentFilter = (): {
   filter: IDocumentInfoFilter;
+  statusCounts: Record<string, number>;
   onOpenChange: (open: boolean) => void;
 } => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
@@ -404,6 +406,9 @@ export const useGetDocumentFilter = (): {
           suffix: {},
           metadata: {},
         },
+    // Per-status exact counts (UNSTART/CREATED/SCHEDULED/RUNNING/...) before
+    // the display-bucket adaptation, for callers that act on a single status.
+    statusCounts: data?.filter?.ingestion_status ?? {},
     onOpenChange: handleOpenChange,
   };
 };
@@ -549,6 +554,12 @@ export const useRunDocument = () => {
             queryKey: DocumentKeys.all(),
           });
         }
+        // The status facet is independent of the list's optimistic state.
+        // Refresh it as soon as the start succeeds so the dataset-wide cancel
+        // control appears without waiting for the next list poll.
+        queryClient.invalidateQueries({
+          queryKey: DocumentKeys.allFilters(),
+        });
         message.success(i18n.t('message.operated'));
       } else {
         queryClient.invalidateQueries({
@@ -575,6 +586,48 @@ export const useRunDocument = () => {
   );
 
   return { runDocumentByIds, loading, data };
+};
+
+// Cancel every parsing task whose status is in runStatuses (dataset-wide,
+// server-side document resolution). Mirrors the per-document cancel flow of
+// useRunDocument: drop in-flight list refetches first so a pre-cancel
+// response cannot land after the mutation, then invalidate the list and the
+// status facet counts so both refresh immediately.
+export const useStopAllDocuments = () => {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentApiAction.StopAllDocuments],
+    mutationFn: async ({
+      datasetId,
+      runStatuses,
+    }: {
+      datasetId: string;
+      runStatuses: string[];
+    }) => {
+      await queryClient.cancelQueries({ queryKey: DocumentKeys.all() });
+      const { data } = await stopAllDocuments(datasetId, runStatuses);
+      if (data.code === 0) {
+        message.success(
+          i18n.t('knowledgeDetails.cancelTasksSuccess', {
+            count: data.data?.success_count ?? 0,
+          }),
+        );
+      }
+      queryClient.invalidateQueries({ queryKey: DocumentKeys.all() });
+      queryClient.invalidateQueries({ queryKey: DocumentKeys.allFilters() });
+      return data;
+    },
+    onError: () => {
+      queryClient.invalidateQueries({ queryKey: DocumentKeys.all() });
+    },
+  });
+
+  return { stopAllDocuments: mutateAsync, loading, data };
 };
 
 export const useRemoveDocument = () => {

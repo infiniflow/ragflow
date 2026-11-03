@@ -44,13 +44,12 @@ import (
 func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
+		common.RespondError(c, code, msg)
 		return
 	}
 	fileID := c.Query("id")
 	if fileID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-			"`id` is required.")
+		common.RespondError(c, common.CodeArgumentError, "`id` is required.")
 		return
 	}
 
@@ -65,7 +64,7 @@ func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
 	// both the python and Go code paths.
 	blob, err := h.fileService.DownloadAgentFile(ctx, user.ID, fileID)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -77,8 +76,7 @@ func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
 	// value.
 	safe := filepath.Base(fileID)
 	if safe == "" || safe == "." || safe == "/" || strings.ContainsAny(safe, "\r\n\"") {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-			"invalid file id.")
+		common.RespondError(c, common.CodeArgumentError, "invalid file id.")
 		return
 	}
 	c.Header("Content-Disposition", fmt.Sprintf(

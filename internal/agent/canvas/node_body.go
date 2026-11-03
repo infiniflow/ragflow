@@ -218,7 +218,7 @@ func withExceptionHandler(cpnID string, params map[string]any, body nodeBodyFn) 
 				return out, nil
 			}
 		}
-		return out, invokeErr
+		return out, err
 	}
 }
 

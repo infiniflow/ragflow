@@ -43,7 +43,7 @@ func (s *DocumentService) GetDocumentImage(ctx context.Context, userID, imageID 
 // composite image ID belongs to an indexed chunk of an accessible document.
 func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc == nil || service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, doc.KbID, permission.OperationRead) != nil {
+	if err != nil || doc == nil || service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationRead) != nil {
 		return nil, ErrDocumentImageNotFound
 	}
 	bucket, objectKey, ok := strings.Cut(imageID, "-")
@@ -69,9 +69,9 @@ func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, userI
 
 // GetDocumentThumbnail resolves the storage key exclusively from authorized
 // document metadata.
-func (s *DocumentService) GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error) {
+func (s *DocumentService) GetDocumentThumbnail(ctx context.Context, docID string) ([]byte, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc == nil || service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, doc.KbID, permission.OperationRead) != nil || doc.Thumbnail == nil || *doc.Thumbnail == "" || strings.HasPrefix(*doc.Thumbnail, imgBase64Prefix) {
+	if err != nil || doc == nil || service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationRead) != nil || doc.Thumbnail == nil || *doc.Thumbnail == "" || strings.HasPrefix(*doc.Thumbnail, imgBase64Prefix) {
 		return nil, ErrDocumentImageNotFound
 	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -235,7 +235,7 @@ func (s *DocumentService) sandboxArtifactAccessible(ctx context.Context, filenam
 		return false
 	}
 	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(ctx, filename, userID) {
-		if service.CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, dialogID, permission.OperationRead) == nil {
+		if permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: dialogID}, permission.OperationRead) == nil {
 			return true
 		}
 	}
@@ -261,7 +261,7 @@ func shouldForceArtifactAttachment(ext, contentType string) bool {
 	return ok
 }
 
-func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID string) (*DocumentPreview, error) {
+func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) (*DocumentPreview, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil || doc == nil {
 		return nil, ErrPreviewDocumentNotFound
@@ -269,7 +269,7 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID 
 
 	// Keep access denial indistinguishable from a missing document so callers
 	// cannot probe document IDs.
-	if service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, doc.KbID, permission.OperationRead) != nil {
+	if service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationRead) != nil {
 		return nil, ErrPreviewDocumentNotFound
 	}
 
@@ -319,9 +319,12 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID 
 // document via the office_oxide-backed DOCParser. The parser only emits JSON
 // payloads, so the preview text is flattened from the JSON items.
 func extractDOCPreviewText(ctx context.Context, filename string, data []byte) (string, error) {
-	p, err := parser.GetTextOnlyParser(utility.FileTypeDOC)
+	p, actual, err := parser.GetTextOnlyParser(utility.FileTypeDOC, data)
 	if err != nil {
 		return "", err
+	}
+	if actual != utility.FileTypeDOC {
+		common.Warn(fmt.Sprintf("file %q: requested format doc; detected %s; continuing with the %s parser", filename, actual, actual))
 	}
 	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {

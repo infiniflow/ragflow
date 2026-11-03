@@ -23,7 +23,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	datasetsvc "ragflow/internal/service/dataset"
 )
@@ -308,7 +307,7 @@ func TestIngest_ApplyKB_RealCreatedDatasetChain(t *testing.T) {
 	// resolved embedding model id, keeping CreateDataset on its real path
 	// (no embedding override).
 	if err := dao.DB.Model(&entity.UserTenant{}).Where("user_id = ? AND tenant_id = ?", "user-1", "tenant-1").Update(
-		"tenant_embd_id", "embd-1",
+		"tenant_embd_id", "embd-default",
 	).Error; err != nil {
 		t.Fatalf("set membership embd id: %v", err)
 	}
@@ -336,7 +335,7 @@ func TestIngest_ApplyKB_RealCreatedDatasetChain(t *testing.T) {
 				},
 			},
 		},
-	}, permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%v", err, code)
 	}

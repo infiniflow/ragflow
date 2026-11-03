@@ -277,6 +277,8 @@ const apiEndpoints = {
   documentRename: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentIngest: `${restAPIv1}/documents/ingest`,
+  stopAllDocuments: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/stop`,
   documentCreate: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=empty`,
   documentChangeParser: (datasetId: string, documentId: string) =>

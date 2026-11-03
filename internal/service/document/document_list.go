@@ -151,7 +151,7 @@ func (s *DocumentService) GetThumbnails(ctx context.Context, userID string, docI
 
 	result := make(map[string]string, len(documents))
 	for _, document := range documents {
-		if document == nil || service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, document.ID, document.KbID, permission.OperationRead) != nil {
+		if document == nil || service.CheckDocumentAccess(ctx, document.ID, document.KbID, permission.OperationRead) != nil {
 			continue
 		}
 

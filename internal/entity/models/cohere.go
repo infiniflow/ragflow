@@ -655,26 +655,26 @@ func (c *CoHereModel) TranscribeAudio(ctx context.Context, modelName *string, fi
 }
 
 func (c *CoHereModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", c.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", c.Name())
 }
 
 // AudioSpeech convert text to audio
 func (c *CoHereModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", c.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", c.Name())
 }
 
 func (c *CoHereModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", c.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", c.Name())
 }
 
 // OCRFile OCR file
 func (c *CoHereModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", c.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", c.Name())
 }
 
 // ParseFile parse file
 func (c *CoHereModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", c.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", c.Name())
 }
 
 func (c *CoHereModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -737,7 +737,7 @@ func (c *CoHereModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 }
 
 func (c *CoHereModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", c.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", c.Name())
 }
 
 func (c *CoHereModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -746,13 +746,13 @@ func (c *CoHereModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 }
 
 func (c *CoHereModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", c.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", c.Name())
 }
 
 func (c *CoHereModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", c.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", c.Name())
 }
 
 func (c *CoHereModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", c.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", c.Name())
 }

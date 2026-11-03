@@ -18,6 +18,7 @@ package common
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -515,6 +516,18 @@ var AssertURLSchemeSafe = func(rawURL string) error {
 }
 
 var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error) {
+	return assertURLSafe(rawURL, LookupHost)
+}
+
+// AssertURLSafeWithContext validates every resolved address while allowing
+// cancellation and deadlines to interrupt DNS resolution.
+var AssertURLSafeWithContext = func(ctx context.Context, rawURL string) (hostname, resolvedIP string, err error) {
+	return assertURLSafe(rawURL, func(host string) ([]string, error) {
+		return net.DefaultResolver.LookupHost(ctx, host)
+	})
+}
+
+func assertURLSafe(rawURL string, lookup func(string) ([]string, error)) (hostname, resolvedIP string, err error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
 		return "", "", fmt.Errorf("invalid url")
@@ -533,7 +546,7 @@ var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error)
 	}
 
 	allowAny := allowAnyHost()
-	addresses, err := LookupHost(hostname)
+	addresses, err := lookup(hostname)
 	if err != nil {
 		return "", "", fmt.Errorf("could not resolve hostname '%s': %w", hostname, err)
 	}
@@ -716,89 +729,6 @@ func allZero(b []byte) bool {
 	return true
 }
 
-type response struct {
-	Code    ErrorCode   `json:"code"`
-	Data    interface{} `json:"data"`
-	Message string      `json:"message"`
-	Total   interface{} `json:"total,omitempty"`
-}
-
-// errorResponse error response
-type errorResponse struct {
-	Code    ErrorCode `json:"code"`
-	Message string    `json:"message"`
-}
-
-func responseMessage(code ErrorCode, message string) string {
-	if message != "" {
-		return message
-	}
-	if code == CodeSuccess {
-		return "success"
-	}
-	return code.Message()
-}
-
-// SuccessWithData returns success response with data
-func SuccessWithData(c *gin.Context, data interface{}, message string) {
-	c.JSON(http.StatusOK, response{
-		Code:    CodeSuccess,
-		Data:    data,
-		Message: responseMessage(CodeSuccess, message),
-	})
-}
-
-// SuccessWithDataAndTotal returns success response with data and total number
-func SuccessWithDataAndTotal(c *gin.Context, data, total interface{}, message string) {
-	c.JSON(http.StatusOK, response{
-		Code:    CodeSuccess,
-		Data:    data,
-		Total:   total,
-		Message: responseMessage(CodeSuccess, message),
-	})
-}
-
-// SuccessNoData returns success response without data
-func SuccessNoData(c *gin.Context, message string) {
-	c.JSON(http.StatusOK, response{
-		Code:    CodeSuccess,
-		Data:    nil,
-		Message: responseMessage(CodeSuccess, message),
-	})
-}
-
-// SuccessWithMessage returns success response with message only
-func SuccessWithMessage(c *gin.Context, message string) {
-	c.JSON(http.StatusOK, response{
-		Code:    CodeSuccess,
-		Message: responseMessage(CodeSuccess, message),
-	})
-}
-
-// ErrorWithCode returns error response with code and message
-func ErrorWithCode(c *gin.Context, code ErrorCode, message string) {
-	c.JSON(http.StatusOK, errorResponse{
-		Code:    code,
-		Message: responseMessage(code, message),
-	})
-}
-
-func ResponseWithCodeData(c *gin.Context, code ErrorCode, data interface{}, message string) {
-	c.JSON(http.StatusOK, response{
-		Code:    code,
-		Data:    data,
-		Message: responseMessage(code, message),
-	})
-}
-
-func ResponseWithHttpCodeData(c *gin.Context, httpCode int, code ErrorCode, data interface{}, message string) {
-	c.JSON(httpCode, response{
-		Code:    code,
-		Data:    data,
-		Message: responseMessage(code, message),
-	})
-}
-
 func ParseRequestIntPositive(c *gin.Context, parameter, parameterName string, defaultValue int) (int, error) {
 	var parameterInt int
 	var err error
@@ -815,15 +745,4 @@ func ParseRequestIntPositive(c *gin.Context, parameter, parameterName string, de
 		return defaultValue, fmt.Errorf("%w: %s must be a positive integer or zero", err, parameterName)
 	}
 	return parameterInt, nil
-}
-
-// ResponseWithDetail returns an error envelope with a structured detail
-// payload. Billing resource failures expose detail.current / detail.limit so
-// the web upgrade modal can render the shortage.
-func ResponseWithDetail(c *gin.Context, code ErrorCode, message string, detail interface{}) {
-	c.JSON(http.StatusOK, struct {
-		Code    ErrorCode   `json:"code"`
-		Message interface{} `json:"message"`
-		Detail  interface{} `json:"detail,omitempty"`
-	}{Code: code, Message: message, Detail: detail})
 }

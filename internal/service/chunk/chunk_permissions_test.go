@@ -25,7 +25,7 @@ func TestRetrievalTestChecksDatasetUsePermission(t *testing.T) {
 	_, err := (&ChunkService{kbDAO: dao.NewKnowledgebaseDAO()}).RetrievalTest(ctx, &service.RetrievalTestRequest{
 		Question: "query",
 		Datasets: []string{"kb-1"},
-	}, "outsider")
+	})
 	if !permissionresponse.IsPermissionError(err) || !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("RetrievalTest() error = %v, want permission denial", err)
 	}
@@ -57,7 +57,7 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 			if err := testsupport.PrepareEnterprisePermissionFixture(db, "owner", "owner", "member"); err != nil {
 				t.Fatalf("prepare permission fixture: %v", err)
 			}
-			ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: tt.userID, TenantID: "owner"})
+			ctx := permission.WithIdentity(t.Context(), tt.userID, "owner")
 			for _, op := range []struct {
 				name string
 				run  func(*ChunkService) error

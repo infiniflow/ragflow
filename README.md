@@ -92,14 +92,6 @@ For local deployment, see [Local Deployment](#-local-deployment).
 
 See the [full release notes](https://ragflow.io/docs/dev/release_notes) for more updates.
 
-## 🎉 Stay Tuned
-
-⭐️ Star our repository to stay up-to-date with exciting new features and improvements! Get instant notifications for new releases! 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
 ## 🌟 Key Features
 
 ### 🍭 **"Quality in, quality out"**
@@ -229,7 +221,7 @@ Local deployment supports both Docker deployment and launching from source. Dock
    ```
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
-   > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number), because the default HTTP serving port `80` can be omitted when using the default configuration.
+   > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**without** port number), because the default HTTP serving port `80` can be omitted when using the default configuration.
 
 6. After signing in, add an LLM, embedding, and reranker on the model provider page, including the model name, service address, and API key.
 
