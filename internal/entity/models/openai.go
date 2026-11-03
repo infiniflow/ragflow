@@ -295,7 +295,7 @@ func (o *OpenAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 
 // Balance is not exposed by the OpenAI API, so this returns "no such method".
 func (o *OpenAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", o.Name())
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the API key.
@@ -739,22 +739,22 @@ func writeOpenAIMultipartField(writer *multipart.Writer, key string, value inter
 
 // OCRFile OCR file
 func (o *OpenAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", o.Name())
 }
 
 // ParseFile parse file
 func (o *OpenAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", o.Name())
 }
 
 func (o *OpenAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", o.Name())
 }
 
 func (o *OpenAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", o.Name())
 }
 
 func (o *OpenAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", o.Name())
 }
