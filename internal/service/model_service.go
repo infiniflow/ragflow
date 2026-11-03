@@ -1702,6 +1702,11 @@ func verifyASRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 // providers return an error or empty text for such a trivial image;
 // we accept any non-error response as a successful connectivity check.
 func verifyOCRModel(ctx context.Context, driver modelModule.ModelDriver, modelName string, apiConfig *modelModule.APIConfig) error {
+	if verifier, ok := driver.(interface {
+		VerifyOCRConnection(context.Context, *modelModule.APIConfig) error
+	}); ok {
+		return verifier.VerifyOCRConnection(ctx, apiConfig)
+	}
 	// Send a minimal 1×1 white PNG through the OCR pipeline to verify
 	// connectivity. Most OCRModel drivers only check server reachability
 	// rather than performing full document parsing.

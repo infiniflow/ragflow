@@ -109,11 +109,23 @@ func (s *SoMarkModel) AudioSpeechWithSender(ctx context.Context, modelName *stri
 }
 
 type soMarkSubmitResponse struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    struct {
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data"`
+}
+
+func (r soMarkSubmitResponse) taskID() string {
+	var data struct {
 		TaskID string `json:"task_id"`
-	} `json:"data"`
+	}
+	if json.Unmarshal(r.Data, &data) == nil && strings.TrimSpace(data.TaskID) != "" {
+		return strings.TrimSpace(data.TaskID)
+	}
+	var taskID string
+	if json.Unmarshal(r.Data, &taskID) == nil {
+		return strings.TrimSpace(taskID)
+	}
+	return ""
 }
 
 type soMarkPollResponse struct {
@@ -203,10 +215,11 @@ func (s *SoMarkModel) soMarkSubmit(ctx context.Context, submitURL string, conten
 	if payload.Code != 0 {
 		return "", fmt.Errorf("SoMark submit business error code=%d message=%s", payload.Code, payload.Message)
 	}
-	if payload.Data.TaskID == "" {
+	taskID := payload.taskID()
+	if taskID == "" {
 		return "", fmt.Errorf("SoMark submit returned no task_id")
 	}
-	return payload.Data.TaskID, nil
+	return taskID, nil
 }
 
 // soMarkPoll polls the async task until it reaches SUCCESS and returns the
@@ -430,7 +443,42 @@ func (s *SoMarkModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[st
 }
 
 func (s *SoMarkModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	return fmt.Errorf("%s, no such method", s.Name())
+	return s.VerifyOCRConnection(ctx, apiConfig)
+}
+
+// VerifyOCRConnection checks SoMark credentials and endpoint reachability by
+// submitting the same tiny probe image used by generic OCR verification. The
+// async service may reject parsing a 1x1 image after accepting the request, so
+// verification intentionally stops after a task is accepted instead of
+// waiting for that probe task to finish.
+func (s *SoMarkModel) VerifyOCRConnection(ctx context.Context, apiConfig *APIConfig) error {
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+	submitURL, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.OCR)
+	if err != nil {
+		return err
+	}
+	apiKey := ""
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		apiKey = *apiConfig.ApiKey
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	_, err = s.soMarkSubmit(ctx, submitURL, soMarkVerificationPNG, apiKey)
+	return err
+}
+
+var soMarkVerificationPNG = []byte{
+	0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+	0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+	0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+	0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+	0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
+	0x54, 0x08, 0xD7, 0x63, 0x60, 0x60, 0xF8, 0x0F,
+	0x00, 0x01, 0x01, 0x00, 0x05, 0x18, 0xD8, 0x32,
+	0x48, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+	0x44, 0xAE, 0x42, 0x60, 0x82,
 }
 
 func (s *SoMarkModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
