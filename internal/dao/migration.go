@@ -447,16 +447,6 @@ func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 				return fmt.Errorf("add pipeline_operation_log.run_count: %w", err)
 			}
 		}
-		if !migrator.HasColumn(&entity.PipelineOperationLog{}, "process_end_at") {
-			if err := db.WithContext(ctx).Exec(
-				"ALTER TABLE pipeline_operation_log ADD COLUMN process_end_at datetime NULL",
-			).Error; err != nil && !isDuplicateColumnError(err) {
-				return fmt.Errorf("add pipeline_operation_log.process_end_at: %w", err)
-			}
-		}
-		if err := createIngestionLogIndexIfMissing(migrator, &entity.PipelineOperationLog{}, "idx_pipeline_operation_log_process_end_at", "add pipeline_operation_log.process_end_at index"); err != nil {
-			return err
-		}
 		if err := createIngestionLogIndexIfMissing(migrator, &entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run", "add pipeline_operation_log document/run index"); err != nil {
 			return err
 		}
