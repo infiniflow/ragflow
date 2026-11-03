@@ -2005,7 +2005,7 @@ func chunkTestContext(t *testing.T, userID, tenantID string, memberIDs ...string
 	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, members...); err != nil {
 		t.Fatalf("prepare permission fixture: %v", err)
 	}
-	return permission.WithSubject(t.Context(), permission.Subject{UserID: userID, TenantID: tenantID})
+	return permission.WithIdentity(t.Context(), userID, tenantID)
 }
 
 func newParseTestService(t *testing.T) *ChunkService {

@@ -73,7 +73,7 @@ type ChatMindMapRequest struct {
 func (h *ChatHandler) ListChats(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -110,7 +110,7 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 		switch orderBy {
 		case "create_time", "update_time", "name":
 		default:
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderBy))
+			common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("invalid orderby field: %s", orderBy))
 			return
 		}
 	}
@@ -130,11 +130,11 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, false) {
 			return
 		}
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
+		common.Respond(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // Create creates a chat.
@@ -147,7 +147,7 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 func (h *ChatHandler) Create(c *gin.Context) {
 	user, errorCode, err := billingQuotaUser(c)
 	if err != nil {
-		common.ErrorWithCode(c, errorCode, err.Error())
+		common.RespondError(c, errorCode, err.Error())
 		return
 	}
 	if !billingEnforceApps(c, user.ID) {
@@ -156,7 +156,7 @@ func (h *ChatHandler) Create(c *gin.Context) {
 
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -164,7 +164,7 @@ func (h *ChatHandler) Create(c *gin.Context) {
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.UseNumber()
 	if err = decoder.Decode(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 	if req == nil {
@@ -174,11 +174,11 @@ func (h *ChatHandler) Create(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, code, err := h.chatService.Create(ctx, user.ID, req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // MindMap generates a query mind map for chat search results.
@@ -191,17 +191,17 @@ func (h *ChatHandler) Create(c *gin.Context) {
 func (h *ChatHandler) MindMap(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	var req ChatMindMapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	if strings.TrimSpace(req.Question) == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 
@@ -229,7 +229,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 
 	kbIDs := mergeMindMapKbIDs(stringSliceFromConfig(searchConfig, "kb_ids"), req.KbIDs)
 	if len(kbIDs) == 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 
@@ -245,23 +245,23 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 	})
 	if err != nil {
 		common.Warn("mindmap failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
+		common.RespondError(c, common.CodeOperatingError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, mindMap, "success")
+	common.RespondSuccess(c, mindMap, "success")
 }
 
 func (h *ChatHandler) DeleteChat(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
 
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
 
@@ -270,29 +270,29 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // BulkDeleteChats soft deletes multiple chats owned by the current user.
 func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
 	if c.Request.Body == nil || c.Request.ContentLength == 0 {
-		common.SuccessWithData(c, map[string]interface{}{}, "success")
+		common.RespondSuccess(c, map[string]interface{}{}, "success")
 		return
 	}
 
 	var req service.BulkDeleteChatsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -303,21 +303,21 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 				if respondPermissionErrorIf(c, err, true) {
 					return
 				}
-				common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+				common.RespondError(c, common.CodeDataError, err.Error())
 				return
 			}
 
-			common.SuccessWithData(c, true, "success")
+			common.RespondSuccess(c, nil, "success")
 			return
 		}
 
-		common.SuccessWithData(c, map[string]interface{}{}, "success")
+		common.RespondSuccess(c, map[string]interface{}{}, "success")
 		return
 	}
 
 	result, err := h.chatService.BulkDeleteChats(ctx, userID, &req)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -328,7 +328,7 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 		}
 	}
 
-	common.SuccessWithData(c, result, message)
+	common.RespondSuccess(c, result, message)
 }
 
 // GetChat get chat detail
@@ -345,7 +345,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	// Get current user from context (same as Python current_user)
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	userID := user.ID
@@ -353,7 +353,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	// Get chat_id from path parameter (same as Python <chat_id>)
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
 
@@ -365,7 +365,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 			return
 		}
 		// Not found error
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -406,19 +406,19 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	}
 
 	// Return success response
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetAgenticRAGConfig returns defaults and effective Agentic RAG settings.
 func (h *ChatHandler) GetAgenticRAGConfig(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
 	settings, err := h.chatService.GetAgenticRAGConfig(c.Request.Context(), user.ID, chatID)
@@ -426,10 +426,10 @@ func (h *ChatHandler) GetAgenticRAGConfig(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, settings, "success")
+	common.RespondSuccess(c, settings, "success")
 }
 
 // UpdateChat updates a chat by ID using REST PUT semantics.
@@ -445,19 +445,19 @@ func (h *ChatHandler) PatchChat(c *gin.Context) {
 func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "chat_id is required")
+		common.RespondError(c, common.CodeBadRequest, "chat_id is required")
 		return
 	}
 
 	var req map[string]interface{}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
@@ -473,9 +473,9 @@ func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
 		if respondPermissionErrorIf(c, err, false) {
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }

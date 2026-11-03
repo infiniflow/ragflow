@@ -458,6 +458,11 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// Set log level
 	bootstrap.SetLogger(serverName, arguments)
 
+	// Initialize the ingestion lifecycle event sink (best-effort; stdout is
+	// always on, ingestor.log.path adds an optional rotated file). Flush it on shutdown.
+	bootstrap.SetIngestLog(serverName)
+	defer common.SyncIngestLog()
+
 	// Start server in a goroutine
 	go func() {
 		serve(serverName, srv, apiListener)

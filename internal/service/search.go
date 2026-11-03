@@ -74,7 +74,7 @@ type SearchShareDetail struct {
 
 // ListSearches list search apps with advanced filtering (equivalent to list_search_app)
 func (s *SearchService) ListSearches(ctx context.Context, keywords string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string) (*ListSearchAppsResponse, error) {
-	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{}, permission.ScopeQuery{
+	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.ScopeQuery{
 		Kind:      permission.ResourceKindSearchApp,
 		Operation: permission.OperationRead,
 	})
@@ -94,7 +94,7 @@ func (s *SearchService) ListSearches(ctx context.Context, keywords string, page,
 	searchApps := make([]map[string]interface{}, len(searches))
 	checker := permission.NewDatabaseChecker(dao.DB)
 	for i, search := range searches {
-		access, err := checker.ResolveAccess(ctx, permission.Subject{}, permission.ResourceRef{
+		access, err := checker.ResolveAccess(ctx, permission.ResourceRef{
 			Kind: permission.ResourceKindSearchApp,
 			ID:   search.ID,
 		})
@@ -157,7 +157,7 @@ func (s *SearchService) CreateSearch(ctx context.Context, name string, descripti
 	if err != nil {
 		return nil, err
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: identity.UserID}, "search", permission.ActionWrite); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "search", permission.ActionWrite); err != nil {
 		return nil, err
 	}
 	if err := common.ValidateName(name); err != nil {
@@ -203,7 +203,7 @@ func (s *SearchService) CreateSearch(ctx context.Context, name string, descripti
 		if err := s.searchDAO.Create(ctx, tx, search); err != nil {
 			return err
 		}
-		return grantCreatedResourceOwner(ctx, tx, identity.UserID, identity.TenantID, permission.ResourceKindSearchApp, search.ID)
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindSearchApp, ID: search.ID})
 	}); err != nil {
 		return nil, fmt.Errorf("failed to create search: %w", err)
 	}
@@ -214,7 +214,7 @@ func (s *SearchService) CreateSearch(ctx context.Context, name string, descripti
 }
 
 func (s *SearchService) GetSearchDetail(ctx context.Context, searchID string) (*entity.Search, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{}, permission.ResourceRef{
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindSearchApp,
 		ID:   searchID,
 	}, permission.OperationRead); err != nil {
@@ -257,7 +257,7 @@ func (s *SearchService) GetSearchShareDetail(ctx context.Context, searchID strin
 
 // DeleteSearch deletes a search app by ID
 func (s *SearchService) DeleteSearch(ctx context.Context, searchID string) error {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{}, permission.ResourceRef{
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindSearchApp,
 		ID:   searchID,
 	}, permission.OperationDelete); err != nil {
@@ -315,7 +315,7 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, searchID string, 
 	}
 
 	for _, datasetID := range datasetIDs {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{}, permission.ResourceRef{
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 			Kind: permission.ResourceKindDataset,
 			ID:   datasetID,
 		}, permission.OperationUse); err != nil {
@@ -522,7 +522,7 @@ type UpdateSearchRequest struct {
 }
 
 func (s *SearchService) UpdateSearch(ctx context.Context, searchID string, req *UpdateSearchRequest) (*entity.Search, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{}, permission.ResourceRef{
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindSearchApp,
 		ID:   searchID,
 	}, permission.OperationUpdate); err != nil {
@@ -596,7 +596,7 @@ func (s *SearchService) UpdateSearch(ctx context.Context, searchID string, req *
 
 // GetDetail returns Search App configuration to a caller that is executing it.
 func (s *SearchService) GetDetail(ctx context.Context, searchID string) (map[string]interface{}, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{}, permission.ResourceRef{
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindSearchApp,
 		ID:   searchID,
 	}, permission.OperationRun); err != nil {
@@ -618,7 +618,7 @@ func (s *SearchService) GetDetail(ctx context.Context, searchID string) (map[str
 		"update_time":   search.UpdateTime,
 		"search_config": map[string]interface{}(search.SearchConfig),
 	}
-	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{}, permission.ResourceRef{
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindSearchApp,
 		ID:   search.ID,
 	})

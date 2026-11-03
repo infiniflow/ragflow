@@ -258,7 +258,7 @@ func TestUpdateDatasetDocument_CleansParserConfigWithNewVersion(t *testing.T) {
 
 // T26/C3 (document): switching the pinned version of a pipeline document WITHOUT
 // supplying parser_config resets the document's component params to the new
-// version default (design section 5 + T26/A3 整体重置). The previous config must
+// version default. The previous config must
 // not be merged in.
 func TestUpdateDatasetDocument_VersionSwitchResetsParserConfigToNewDefault(t *testing.T) {
 	db := setupServiceTestDB(t)

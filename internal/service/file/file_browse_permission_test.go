@@ -40,7 +40,7 @@ func seedFileBrowsing(t *testing.T) {
 func TestTenantMemberSeesOnlyReadableFilesAndPaths(t *testing.T) {
 	seedFileBrowsing(t)
 	svc := testFileService()
-	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "reader", TenantID: "owner"})
+	ctx := permission.WithIdentity(t.Context(), "reader", "owner")
 	list, err := svc.ListFilesForTenant(ctx, "reader", "owner", "", 1, 1, nil, "")
 	if err != nil {
 		t.Fatalf("list shared tenant files: %v", err)
@@ -75,16 +75,18 @@ func TestTenantMemberSeesOnlyReadableFilesAndPaths(t *testing.T) {
 func TestTenantFileBrowsingRejectsNonmember(t *testing.T) {
 	seedFileBrowsing(t)
 	svc := testFileService()
-	if _, err := svc.ListFilesForTenant(t.Context(), "outsider", "owner", "", 1, 100, nil, ""); err == nil {
+	outsiderCtx := permission.WithIdentity(t.Context(), "outsider", "owner")
+	if _, err := svc.ListFilesForTenant(outsiderCtx, "outsider", "owner", "", 1, 100, nil, ""); err == nil {
 		t.Fatal("nonmember listed another tenant's files")
 	}
-	if _, err := svc.GetAllParentFoldersForTenant(t.Context(), "outsider", "owner", "tags"); err == nil {
+	if _, err := svc.GetAllParentFoldersForTenant(outsiderCtx, "outsider", "owner", "tags"); err == nil {
 		t.Fatal("nonmember resolved another tenant's file path")
 	}
 	if err := dao.DB.Model(&entity.UserTenant{}).Where("id = ?", "reader-membership").Update("status", "0").Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ListFilesForTenant(t.Context(), "reader", "owner", "", 1, 100, nil, ""); err == nil {
+	readerCtx := permission.WithIdentity(t.Context(), "reader", "owner")
+	if _, err := svc.ListFilesForTenant(readerCtx, "reader", "owner", "", 1, 100, nil, ""); err == nil {
 		t.Fatal("inactive member listed another tenant's files")
 	}
 }
@@ -92,10 +94,11 @@ func TestTenantFileBrowsingRejectsNonmember(t *testing.T) {
 func TestTenantFileBrowsingRejectsForeignEntries(t *testing.T) {
 	seedFileBrowsing(t)
 	svc := testFileService()
-	if _, err := svc.ListFilesForTenant(t.Context(), "reader", "owner", "foreign-root", 1, 100, nil, ""); !errors.Is(err, permission.ErrResourceNotFound) {
+	readerCtx := permission.WithIdentity(t.Context(), "reader", "owner")
+	if _, err := svc.ListFilesForTenant(readerCtx, "reader", "owner", "foreign-root", 1, 100, nil, ""); !errors.Is(err, permission.ErrResourceNotFound) {
 		t.Fatalf("foreign folder error = %v, want resource not found", err)
 	}
-	if _, err := svc.GetAllParentFoldersForTenant(t.Context(), "reader", "owner", "foreign-tags"); !errors.Is(err, permission.ErrResourceNotFound) {
+	if _, err := svc.GetAllParentFoldersForTenant(readerCtx, "reader", "owner", "foreign-tags"); !errors.Is(err, permission.ErrResourceNotFound) {
 		t.Fatalf("foreign file error = %v, want resource not found", err)
 	}
 }

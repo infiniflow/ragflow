@@ -44,7 +44,7 @@ import (
 type mockKBService struct {
 	KBServiceIface
 	getKnowledgebaseByIDFn func(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
-	checkAccessFn          func(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error
+	checkAccessFn          func(ctx context.Context, datasetID string, operation permission.Operation) error
 }
 
 func (m *mockKBService) GetKnowledgebaseByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
@@ -56,9 +56,9 @@ func (m *mockKBService) GetKnowledgebaseByID(ctx context.Context, kbID string) (
 	}, nil
 }
 
-func (m *mockKBService) CheckAccess(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error {
+func (m *mockKBService) CheckResource(ctx context.Context, resource permission.ResourceRef, operation permission.Operation) error {
 	if m.checkAccessFn != nil {
-		return m.checkAccessFn(ctx, subject, datasetID, operation)
+		return m.checkAccessFn(ctx, resource.ID, operation)
 	}
 	return nil
 }
@@ -155,13 +155,15 @@ func (m *mockDocEngine) GetChunk(ctx context.Context, _, _ string, _ []string) (
 // --- Helper ---
 
 func setupDifyTest(userID string) (*DifyRetrievalHandler, *gin.Engine) {
+	kbSvc := &mockKBService{}
 	h := &DifyRetrievalHandler{
-		kbSvc:        &mockKBService{},
-		modelFactory: mockModelFactory{},
-		metadataSvc:  &mockMetadataService{},
-		retrievalSvc: &mockRetrievalService{},
-		docDAO:       &mockDocDAO{},
-		docEngine:    &mockDocEngine{},
+		kbSvc:             kbSvc,
+		permissionChecker: kbSvc,
+		modelFactory:      mockModelFactory{},
+		metadataSvc:       &mockMetadataService{},
+		retrievalSvc:      &mockRetrievalService{},
+		docDAO:            &mockDocDAO{},
+		docEngine:         &mockDocEngine{},
 	}
 
 	gin.SetMode(gin.TestMode)
@@ -205,8 +207,11 @@ func TestDifyRetrieval_HealthCheck(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["data"] != true {
-		t.Errorf("expected data=true, got %v", resp["data"])
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected success, got %v", resp)
+	}
+	if data, exists := resp["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 }
 
@@ -380,14 +385,16 @@ func TestDifyRetrieval_NoAuth(t *testing.T) {
 
 func TestDifyRetrieval_Unauthorized(t *testing.T) {
 	h, r := setupDifyTest("user1")
-	h.kbSvc = &mockKBService{
-		checkAccessFn: func(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error {
+	kbSvc := &mockKBService{
+		checkAccessFn: func(ctx context.Context, datasetID string, operation permission.Operation) error {
 			if operation != permission.OperationUse {
 				t.Errorf("dataset operation = %q, want %q", operation, permission.OperationUse)
 			}
 			return permission.ErrPermissionDenied
 		},
 	}
+	h.kbSvc = kbSvc
+	h.permissionChecker = kbSvc
 	w := httptest.NewRecorder()
 	body := `{"knowledge_id": "kb1", "query": "test"}`
 	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
@@ -412,6 +419,59 @@ func TestDifyRetrieval_WithMetadataFilter(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDifyRetrieval_EmptyMetadataConditionDoesNotUseSentinel(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	var docIDs []string
+	h.retrievalSvc = &mockRetrievalService{
+		retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
+			docIDs = append([]string(nil), req.DocIDs...)
+			return &nlp.RetrievalResult{
+				Chunks: []map[string]interface{}{
+					{"doc_id": "doc1", "docnm_kwd": "Test Doc", "content_with_weight": "test content", "similarity": 0.85},
+				},
+			}, nil
+		},
+	}
+	body := `{"knowledge_id":"kb1","query":"test","metadata_condition":{"logic":"and","conditions":[]}}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(docIDs) != 0 {
+		t.Fatalf("DocIDs = %v, want an unscoped search", docIDs)
+	}
+}
+
+func TestDifyRetrieval_UnmatchedMetadataConditionUsesSentinel(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	var docIDs []string
+	h.retrievalSvc = &mockRetrievalService{
+		retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
+			docIDs = append([]string(nil), req.DocIDs...)
+			return &nlp.RetrievalResult{Chunks: []map[string]interface{}{}}, nil
+		},
+	}
+	h.metadataSvc = &mockMetadataService{
+		getFlattedMetaFn: func(ctx context.Context, kbIDs []string) (common.MetaData, error) {
+			return common.MetaData{}, nil
+		},
+	}
+	body := `{"knowledge_id":"kb1","query":"test","metadata_condition":{"conditions":[{"name":"author","comparison_operator":"is","value":"nobody"}],"logic":"and"}}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(docIDs) != 1 || docIDs[0] != service.NoMatchDocIDSentinel {
+		t.Fatalf("DocIDs = %v, want no-match sentinel", docIDs)
 	}
 }
 

@@ -19,7 +19,6 @@ import (
 	"context"
 	"strings"
 
-	"gorm.io/gorm"
 	"ragflow/internal/dao"
 	"ragflow/internal/permission"
 )
@@ -28,16 +27,18 @@ func requireCurrentTenantID(ctx context.Context, userID string) (string, error) 
 	if strings.TrimSpace(userID) == "" {
 		return "", permission.ErrUnauthenticated
 	}
-	if subject, ok := permission.SubjectFromContext(ctx); ok {
-		if subject.UserID != "" && subject.UserID != userID {
-			return "", permission.ErrInvalidSubject
+	contextUserID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if contextUserID != "" && contextUserID != userID {
+		return "", permission.ErrIdentityMismatch
+	}
+	if tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx)); tenantID != "" {
+		if contextUserID == "" {
+			ctx = permission.WithIdentity(ctx, userID, tenantID)
 		}
-		if tenantID := strings.TrimSpace(subject.TenantID); tenantID != "" {
-			if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantMember); err != nil {
-				return "", err
-			}
-			return tenantID, nil
+		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
+			return "", err
 		}
+		return tenantID, nil
 	}
 	tenantID, handled, err := resolveDefaultTenantIDEE(ctx, userID)
 	if err != nil {
@@ -47,12 +48,4 @@ func requireCurrentTenantID(ctx context.Context, userID string) (string, error) 
 		return tenantID, nil
 	}
 	return strings.TrimSpace(userID), nil
-}
-
-func checkFeatureAction(ctx context.Context, userID string, feature permission.Feature, action permission.Action) error {
-	return permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, feature, action)
-}
-
-func grantCreatedResourceOwner(ctx context.Context, tx *gorm.DB, userID, tenantID string, kind permission.ResourceKind, resourceID string) error {
-	return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: kind, ID: resourceID})
 }

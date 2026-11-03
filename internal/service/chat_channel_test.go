@@ -271,7 +271,7 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 
 	svc := NewChatChannelService()
 
-	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "user-2", TenantID: "tenant-2"})
+	ctx := permission.WithIdentity(t.Context(), "user-2", "tenant-2")
 	deleted, code, err := svc.DeleteChatChannel(ctx, "user-2", "cc-1")
 	if code != common.CodeNotFound || err == nil {
 		t.Fatalf("expected hidden resource-not-found response, got code=%v err=%v", code, err)

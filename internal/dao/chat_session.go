@@ -301,8 +301,7 @@ func (dao *ChatSessionDAO) ListAgentSessions(ctx context.Context, db *gorm.DB, p
 	if params.Keywords != "" {
 		keywords := strings.ToLower(params.Keywords)
 		keywordPattern := "%" + keywords + "%"
-		messageMatch := "EXISTS (SELECT 1 FROM " + apiConversationMessageTable + " AS cm WHERE cm.conversation_id = api_4_conversation.id AND LOWER(cm.content) LIKE ?)"
-		query = query.Where("(LOWER(id) LIKE ? OR LOWER(name) LIKE ? OR "+messageMatch+")", keywordPattern, keywordPattern, keywordPattern)
+		query = query.Where("(LOWER(id) LIKE ? OR LOWER(name) LIKE ?)", keywordPattern, keywordPattern)
 	}
 
 	dateColumn := "create_date"
