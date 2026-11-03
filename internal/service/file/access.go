@@ -16,34 +16,34 @@ func checkFileAccess(ctx context.Context, userID string, file *entity.File, oper
 	if file.Type == FileTypeFolder {
 		kind = permission.ResourceKindFolder
 	}
-	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 		Kind: kind,
 		ID:   file.ID,
 	}, operation)
 }
 
-func fileRequestSubject(ctx context.Context, identity string) (string, string, error) {
-	subject, ok := permission.SubjectFromContext(ctx)
-	if !ok {
+func fileRequestIdentity(ctx context.Context, identity string) (string, string, error) {
+	userID := permission.UserIDFromContext(ctx)
+	tenantID := permission.TenantIDFromContext(ctx)
+	if userID == "" && tenantID == "" {
 		return identity, identity, nil
 	}
-	if subject.UserID == "" || subject.UserID != identity {
-		return "", "", permission.ErrInvalidSubject
+	if userID == "" || userID != identity {
+		return "", "", permission.ErrIdentityMismatch
 	}
-	tenantID := subject.TenantID
 	if tenantID == "" {
 		tenantID = identity
 	}
-	return subject.UserID, tenantID, nil
+	return userID, tenantID, nil
 }
 
 func tenantFileContext(ctx context.Context, userID, tenantID string) (context.Context, error) {
-	if subject, ok := permission.SubjectFromContext(ctx); ok {
-		if subject.UserID != "" && subject.UserID != userID || subject.TenantID != "" && subject.TenantID != tenantID {
-			return nil, permission.ErrInvalidSubject
-		}
+	contextUserID := permission.UserIDFromContext(ctx)
+	contextTenantID := permission.TenantIDFromContext(ctx)
+	if contextUserID != "" && contextUserID != userID || contextTenantID != "" && contextTenantID != tenantID {
+		return nil, permission.ErrIdentityMismatch
 	}
-	return permission.WithSubject(ctx, permission.Subject{UserID: userID, TenantID: tenantID}), nil
+	return permission.WithIdentity(ctx, userID, tenantID), nil
 }
 
 func (s *FileService) checkFileTreeAccess(ctx context.Context, userID string, file *entity.File, operation permission.Operation) error {
@@ -74,7 +74,7 @@ func (s *FileService) checkFileTreeAccess(ctx context.Context, userID string, fi
 			}
 			refs = append(refs, permission.ResourceRef{Kind: kind, ID: entry.ID})
 		}
-		accessible, err := checker.FilterResources(ctx, permission.Subject{UserID: userID}, refs, operation)
+		accessible, err := checker.FilterResources(ctx, refs, operation)
 		if err != nil {
 			return err
 		}

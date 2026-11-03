@@ -30,15 +30,15 @@ type emptyChatSessionScopeChecker struct {
 	checkErr error
 }
 
-func (c emptyChatSessionScopeChecker) CheckResource(context.Context, permission.Subject, permission.ResourceRef, permission.Operation) error {
+func (c emptyChatSessionScopeChecker) CheckResource(context.Context, permission.ResourceRef, permission.Operation) error {
 	return c.checkErr
 }
 
-func (emptyChatSessionScopeChecker) Scope(context.Context, permission.Subject, permission.ScopeQuery) (permission.Scope, error) {
+func (emptyChatSessionScopeChecker) Scope(context.Context, permission.ScopeQuery) (permission.Scope, error) {
 	return permission.Scope{Mode: permission.ScopeNone}, nil
 }
 
-func (c emptyChatSessionScopeChecker) FilterResources(context.Context, permission.Subject, []permission.ResourceRef, permission.Operation) ([]permission.ResourceRef, error) {
+func (c emptyChatSessionScopeChecker) FilterResources(context.Context, []permission.ResourceRef, permission.Operation) ([]permission.ResourceRef, error) {
 	return nil, c.checkErr
 }
 

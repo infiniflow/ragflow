@@ -18,8 +18,9 @@ import (
 
 func TestFileService_CreateFolder_RejectsSlashInName(t *testing.T) {
 	svc := testFileService()
+	ctx := permission.WithIdentity(context.Background(), "tenant1", "")
 	for _, name := range []string{"/", "a/b", "dir/sub/"} {
-		_, err := svc.CreateFolder(context.Background(), "tenant1", name, "pf1", FileTypeFolder)
+		_, err := svc.CreateFolder(ctx, "tenant1", name, "pf1", FileTypeFolder)
 		if err == nil || !strings.Contains(err.Error(), `cannot contain "/"`) {
 			t.Fatalf("CreateFolder(%q) error = %v, want slash validation error", name, err)
 		}
@@ -235,7 +236,7 @@ func fileTestContext(t *testing.T, userID, tenantID string, memberIDs ...string)
 	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, members...); err != nil {
 		t.Fatalf("prepare permission fixture: %v", err)
 	}
-	return permission.WithSubject(t.Context(), permission.Subject{UserID: userID, TenantID: tenantID})
+	return permission.WithIdentity(t.Context(), userID, tenantID)
 }
 
 func insertFolderTestFile(t *testing.T, id, parentID, name string) {
@@ -274,7 +275,7 @@ func TestFileService_AncestryMissingIDReturnsNotFound(t *testing.T) {
 	setupFolderTestDB(t)
 
 	svc := testFileService()
-	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+	ctx := permission.WithIdentity(t.Context(), "user-1", "tenant-1")
 	for name, call := range map[string]func() error{
 		"GetParentFolder":     func() error { _, err := svc.GetParentFolder(ctx, "user-1", "missing-file"); return err },
 		"GetAllParentFolders": func() error { _, err := svc.GetAllParentFolders(ctx, "user-1", "missing-file"); return err },
@@ -298,7 +299,7 @@ func TestFileService_DatabaseErrorIsNotReportedAsNotFound(t *testing.T) {
 	}
 
 	svc := testFileService()
-	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+	ctx := permission.WithIdentity(t.Context(), "user-1", "tenant-1")
 	for name, call := range map[string]func() error{
 		"ListFiles":           func() error { _, err := svc.ListFiles(ctx, "tenant-1", "any", 1, 10, nil, ""); return err },
 		"GetParentFolder":     func() error { _, err := svc.GetParentFolder(ctx, "user-1", "any"); return err },

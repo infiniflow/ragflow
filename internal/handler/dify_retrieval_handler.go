@@ -130,7 +130,7 @@ type difyRecord struct {
 // --- Handler ---
 
 type resourcePermissionChecker interface {
-	CheckResource(context.Context, permission.Subject, permission.ResourceRef, permission.Operation) error
+	CheckResource(context.Context, permission.ResourceRef, permission.Operation) error
 }
 
 // DifyRetrievalHandler handles Dify-compatible retrieval requests.
@@ -221,7 +221,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		return
 	}
 
-	if err := h.permissionChecker.CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: req.KnowledgeID}, permission.OperationUse); err != nil {
+	if err := h.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: req.KnowledgeID}, permission.OperationUse); err != nil {
 		respondHTTPPermissionError(c, err, false)
 		return
 	}

@@ -77,7 +77,7 @@ type DeleteAgentSessionsResponse struct {
 // CheckCanvasAccess returns true when the user is the canvas owner or
 // holds team-level permission for the owner's tenant.
 func (s *AgentService) CheckCanvasAccess(ctx context.Context, userID, canvasID string) (bool, error) {
-	err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationRead)
+	err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationRead)
 	if errors.Is(err, permission.ErrResourceNotFound) {
 		return false, dao.ErrUserCanvasNotFound
 	}
@@ -351,8 +351,7 @@ func (s *AgentService) DeleteAgentSessionItem(ctx context.Context, userID, agent
 	if sessionID == "" {
 		return false, common.CodeArgumentError, errors.New("session_id is required")
 	}
-	subject := permission.Subject{UserID: userID}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, subject, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: agentID}, permission.OperationUse); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: agentID}, permission.OperationUse); err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return false, common.CodeOperatingError, errors.New("agent not found or no permission")
 		}
@@ -384,7 +383,7 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID 
 		return nil, common.CodeArgumentError, errors.New("agent_id is required")
 	}
 
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: agentID}, permission.OperationUse); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: agentID}, permission.OperationUse); err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return nil, common.CodeDataError, fmt.Errorf("you don't have permission to delete sessions for agent %s", agentID)
 		}
@@ -460,7 +459,7 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID 
 
 // ListAgentTags list agent tags
 func (s *AgentService) ListAgentTags(ctx context.Context, userID, canvasCategory string) ([]AgentTagCount, common.ErrorCode, error) {
-	canvasScope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
+	canvasScope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.ScopeQuery{
 		Kind:      permission.ResourceKindCanvas,
 		Operation: permission.OperationRead,
 	})
@@ -558,7 +557,7 @@ func normalizeAgentTags(rawTags interface{}) (string, error) {
 
 // UpdateAgentTags normalises tags and persists them on a single canvas.
 func (s *AgentService) UpdateAgentTags(ctx context.Context, userID, canvasID string, tags interface{}) (bool, common.ErrorCode, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationUpdate); err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return false, common.CodeOperatingError, errors.New("agent not found or no permission")
 		}
@@ -625,7 +624,7 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		return nil, common.CodeArgumentError, errors.New("create agent session: user_id is required")
 	}
 
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: req.UserID}, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: req.AgentID}, permission.OperationRun); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: req.AgentID}, permission.OperationRun); err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
 		}

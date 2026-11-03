@@ -137,8 +137,7 @@ func NewChunkService() *ChunkService {
 //  7. knowledge graph retrieval (not implemented)
 //  8. Apply retrieval by children to group child chunks under parent chunks
 func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest) (*service.RetrievalTestResponse, error) {
-	subject, _ := permission.SubjectFromContext(ctx)
-	common.Info("RetrievalTest started", zap.String("userID", subject.UserID), zap.Any("kbID", req.Datasets), zap.String("question", req.Question))
+	common.Info("RetrievalTest started", zap.String("userID", permission.UserIDFromContext(ctx)), zap.Any("kbID", req.Datasets), zap.String("question", req.Question))
 
 	common.Debug(fmt.Sprintf("RetrievalTest request:\n"+
 		"    kbID=%v\n"+
@@ -172,7 +171,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	var tenantIDs []string
 	var kbRecords []*entity.Knowledgebase
 	for _, datasetID := range req.Datasets {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{}, permission.ResourceRef{
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 			Kind: permission.ResourceKindDataset,
 			ID:   datasetID,
 		}, permission.OperationUse); err != nil {
@@ -636,7 +635,7 @@ func (s *ChunkService) cancelAllTasksOfDoc(ctx context.Context, doc *entity.Docu
 }
 
 func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -711,7 +710,7 @@ func (s *ChunkService) checkDatasetAccess(ctx context.Context, datasetID, userID
 	if s.checkDatasetAccessFunc != nil {
 		return s.checkDatasetAccessFunc(datasetID, userID)
 	}
-	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, operation)
+	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, operation)
 }
 
 func (s *ChunkService) getKnowledgebaseByID(ctx context.Context, datasetID string) (*entity.Knowledgebase, error) {

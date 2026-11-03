@@ -986,7 +986,7 @@ func TestDatasetServiceDeleteDatasetsRejectsUnauthorizedID(t *testing.T) {
 	ctx := withDatasetTestContext(t.Context(), "tenant-2", "tenant-1")
 	svc := NewDatasetService()
 	normalizedID := "11111111111141118111111111111111"
-	_, code, err := svc.DeleteDatasets(ctx, []string{normalizedID}, false, permission.Subject{UserID: "tenant-2"})
+	_, code, err := svc.DeleteDatasets(ctx, []string{normalizedID}, false)
 	if err == nil {
 		t.Fatal("expected unauthorized error")
 	}
@@ -1004,7 +1004,7 @@ func TestDatasetServiceDeleteDatasetsRejectsAllUnauthorized(t *testing.T) {
 
 	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	svc := NewDatasetService()
-	_, code, err := svc.DeleteDatasets(ctx, []string{"d94a8dc02c9711f0930f7fbc369eab6d"}, false, testDatasetSubject("tenant-1"))
+	_, code, err := svc.DeleteDatasets(ctx, []string{"d94a8dc02c9711f0930f7fbc369eab6d"}, false)
 	if err == nil {
 		t.Fatal("expected unauthorized error")
 	}
@@ -1023,7 +1023,7 @@ func TestDatasetServiceDeleteAllDatasetsRequiresTenantOwner(t *testing.T) {
 	insertDatasetUpdateTeamMember(t, "member-1", "tenant-1")
 
 	_, code, err := NewDatasetService().DeleteDatasets(
-		withDatasetTestContext(t.Context(), "member-1", "tenant-1"), nil, true, permission.Subject{UserID: "member-1", TenantID: "tenant-1"},
+		withDatasetTestContext(t.Context(), "member-1", "tenant-1"), nil, true,
 	)
 	if err == nil {
 		t.Fatal("expected delete-all to be denied for a non-owner tenant member")

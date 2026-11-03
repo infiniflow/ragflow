@@ -55,15 +55,15 @@ type recordingTaskPublisher struct {
 }
 
 func documentTestContext(ctx context.Context) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+	return permission.WithIdentity(ctx, "user-1", "tenant-1")
 }
 
 func documentTestContextFor(ctx context.Context, tenantID string) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{UserID: tenantID, TenantID: tenantID})
+	return permission.WithIdentity(ctx, tenantID, tenantID)
 }
 
 func documentTestActorContext(ctx context.Context, userID, tenantID string) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{UserID: userID, TenantID: tenantID})
+	return permission.WithIdentity(ctx, userID, tenantID)
 }
 
 type runningTaskPublisher struct {

@@ -391,9 +391,9 @@ func setupHandlerAccessContext(method, path, body string) (*gin.Context, *httpte
 }
 
 func setGinContextSubject(c *gin.Context, userID, tenantID string) {
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
-		UserID: userID, TenantID: tenantID,
-	}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(),
+		userID, tenantID,
+	))
 }
 
 func setupDocumentPermissionDB(t *testing.T, accessible bool) {
@@ -489,9 +489,9 @@ func TestDocumentReadHandlersForbidden(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c, w := setupGinContextWithUser(tt.method, tt.path, tt.body)
-			c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
-				UserID: "user-1", TenantID: "tenant-owner",
-			}))
+			c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(),
+				"user-1", "tenant-owner",
+			))
 			c.Params = tt.params
 			tt.handler(c)
 			if w.Code != tt.status {

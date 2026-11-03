@@ -40,8 +40,8 @@ func TestAgentWebhookCredentialUsesBoundPrincipalAndCanBeRotated(t *testing.T) {
 	}
 
 	svc := NewAgentWebhookCredentialService(db)
-	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "caller-1", TenantID: tenantID})
-	firstToken, err := svc.Issue(ctx, permission.Subject{UserID: "caller-1", TenantID: tenantID}, canvas)
+	ctx := permission.WithIdentity(t.Context(), "caller-1", tenantID)
+	firstToken, err := svc.Issue(ctx, canvas)
 	if err != nil {
 		t.Fatalf("issue credential: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestAgentWebhookCredentialUsesBoundPrincipalAndCanBeRotated(t *testing.T) {
 		t.Fatalf("resolved principal = (%q, %q), want (caller-1, %q)", resolved.UserID, resolved.TenantID, tenantID)
 	}
 
-	secondToken, err := svc.Issue(ctx, permission.Subject{UserID: "caller-1", TenantID: tenantID}, canvas)
+	secondToken, err := svc.Issue(ctx, canvas)
 	if err != nil {
 		t.Fatalf("rotate credential: %v", err)
 	}
