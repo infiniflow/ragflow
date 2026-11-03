@@ -55,6 +55,62 @@ func ClampMinerUTimeout(d time.Duration) time.Duration {
 	return d
 }
 
+// parseMinerUTimeoutSetupValue extracts and clamps a duration from setup values,
+// safeguarding against integer and floating-point multiplication overflow before conversion.
+func parseMinerUTimeoutSetupValue(raw any) (time.Duration, bool) {
+	if raw == nil {
+		return 0, false
+	}
+	maxSec := MaxMinerURequestTimeout.Seconds()
+	switch v := raw.(type) {
+	case int:
+		if v <= 0 {
+			return 0, false
+		}
+		if float64(v) > maxSec {
+			return MaxMinerURequestTimeout, true
+		}
+		return ClampMinerUTimeout(time.Duration(v) * time.Second), true
+	case int64:
+		if v <= 0 {
+			return 0, false
+		}
+		if float64(v) > maxSec {
+			return MaxMinerURequestTimeout, true
+		}
+		return ClampMinerUTimeout(time.Duration(v) * time.Second), true
+	case float64:
+		if v <= 0 {
+			return 0, false
+		}
+		if v > maxSec {
+			return MaxMinerURequestTimeout, true
+		}
+		return ClampMinerUTimeout(time.Duration(v * float64(time.Second))), true
+	case string:
+		s := strings.TrimSpace(v)
+		if s == "" {
+			return 0, false
+		}
+		if sec, err := strconv.Atoi(s); err == nil && sec > 0 {
+			if float64(sec) > maxSec {
+				return MaxMinerURequestTimeout, true
+			}
+			return ClampMinerUTimeout(time.Duration(sec) * time.Second), true
+		}
+		if secF, err := strconv.ParseFloat(s, 64); err == nil && secF > 0 {
+			if secF > maxSec {
+				return MaxMinerURequestTimeout, true
+			}
+			return ClampMinerUTimeout(time.Duration(secF * float64(time.Second))), true
+		}
+		if d, err := time.ParseDuration(s); err == nil && d > 0 {
+			return ClampMinerUTimeout(d), true
+		}
+	}
+	return 0, false
+}
+
 // ErrPDFEngineUnavailable is returned by PDFParser.ParseWithResult
 // when the current build cannot construct the DeepDOC PDF backend.
 // The normal reason is a non-cgo build, because the pdfoxide bridge
@@ -191,33 +247,11 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["mineru_server_url"].(string); ok && v != "" {
 		p.MinerUServerURL = v
 	}
-	if v, ok := setup["mineru_timeout"].(int); ok && v > 0 {
-		p.MinerUPollTimeout = time.Duration(v) * time.Second
+	if d, ok := parseMinerUTimeoutSetupValue(setup["mineru_timeout"]); ok {
+		p.MinerUPollTimeout = d
 		p.MinerUTimeoutConfigured = true
-	}
-	if v, ok := setup["mineru_timeout"].(float64); ok && v > 0 {
-		p.MinerUPollTimeout = time.Duration(v * float64(time.Second))
-		p.MinerUTimeoutConfigured = true
-	}
-	if v, ok := setup["mineru_timeout"].(string); ok && strings.TrimSpace(v) != "" {
-		v = strings.TrimSpace(v)
-		if sec, err := strconv.Atoi(v); err == nil && sec > 0 {
-			p.MinerUPollTimeout = time.Duration(sec) * time.Second
-			p.MinerUTimeoutConfigured = true
-		} else if secF, err := strconv.ParseFloat(v, 64); err == nil && secF > 0 {
-			p.MinerUPollTimeout = time.Duration(secF * float64(time.Second))
-			p.MinerUTimeoutConfigured = true
-		} else if d, err := time.ParseDuration(v); err == nil && d > 0 {
-			p.MinerUPollTimeout = d
-			p.MinerUTimeoutConfigured = true
-		}
-	}
-	if v, ok := setup["mineru_timeout_seconds"].(int); ok && v > 0 {
-		p.MinerUPollTimeout = time.Duration(v) * time.Second
-		p.MinerUTimeoutConfigured = true
-	}
-	if v, ok := setup["mineru_timeout_seconds"].(float64); ok && v > 0 {
-		p.MinerUPollTimeout = time.Duration(v * float64(time.Second))
+	} else if d, ok := parseMinerUTimeoutSetupValue(setup["mineru_timeout_seconds"]); ok {
+		p.MinerUPollTimeout = d
 		p.MinerUTimeoutConfigured = true
 	}
 	if v, ok := setup["docling_server_url"].(string); ok && v != "" {

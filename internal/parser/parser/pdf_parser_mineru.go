@@ -44,35 +44,63 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 	if _, ok := models.ValidMinerUBackends[backend]; !ok {
 		return ParseResult{Err: models.ValidateMinerUConfig(backend, serverURL)}
 	}
+	configured := parser.MinerUTimeoutConfigured
 	timeout := parser.MinerUPollTimeout
-	if timeout <= 0 {
-		timeout = minerUPollTimeout
-	}
-	if !parser.MinerUTimeoutConfigured {
+	if !configured {
+		maxSec := MaxMinerURequestTimeout.Seconds()
 		if envVal := strings.TrimSpace(common.GetEnv(common.EnvMineruTimeout)); envVal != "" {
 			if sec, err := strconv.Atoi(envVal); err == nil && sec > 0 {
-				timeout = time.Duration(sec) * time.Second
+				if float64(sec) > maxSec {
+					timeout = MaxMinerURequestTimeout
+				} else {
+					timeout = time.Duration(sec) * time.Second
+				}
+				configured = true
 			} else if secF, err := strconv.ParseFloat(envVal, 64); err == nil && secF > 0 {
-				timeout = time.Duration(secF * float64(time.Second))
+				if secF > maxSec {
+					timeout = MaxMinerURequestTimeout
+				} else {
+					timeout = time.Duration(secF * float64(time.Second))
+				}
+				configured = true
 			} else if d, err := time.ParseDuration(envVal); err == nil && d > 0 {
 				timeout = d
+				configured = true
 			}
 		} else if envSec := strings.TrimSpace(common.GetEnv("MINERU_TIMEOUT_SECONDS")); envSec != "" {
 			if sec, err := strconv.Atoi(envSec); err == nil && sec > 0 {
-				timeout = time.Duration(sec) * time.Second
+				if float64(sec) > maxSec {
+					timeout = MaxMinerURequestTimeout
+				} else {
+					timeout = time.Duration(sec) * time.Second
+				}
+				configured = true
+			} else if secF, err := strconv.ParseFloat(envSec, 64); err == nil && secF > 0 {
+				if secF > maxSec {
+					timeout = MaxMinerURequestTimeout
+				} else {
+					timeout = time.Duration(secF * float64(time.Second))
+				}
+				configured = true
 			}
 		}
 	}
-	timeout = ClampMinerUTimeout(timeout)
+	if configured {
+		timeout = ClampMinerUTimeout(timeout)
+	}
 
 	if models.IsMinerUCloudBase(apiServer) {
 		if err := models.ValidateMinerUConfigForAPI(backend, serverURL, true); err != nil {
 			return ParseResult{Err: err}
 		}
 		cloudCtx := ctx
-		if timeout > 0 {
+		cloudTimeout := models.DefaultMinerUV1ParseTimeout
+		if configured {
+			cloudTimeout = timeout
+		}
+		if cloudTimeout > 0 {
 			var cancel context.CancelFunc
-			cloudCtx, cancel = context.WithTimeout(ctx, timeout)
+			cloudCtx, cancel = context.WithTimeout(ctx, cloudTimeout)
 			defer cancel()
 		}
 		parsed, err := models.ParseMinerUCloud(cloudCtx, apiServer, apiKey, filename, data, backend, "", "")
@@ -82,10 +110,14 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 		return minerUMarkdownResult(ctx, filename, parsed)
 	}
 
+	v1Timeout := models.DefaultMinerUV1ParseTimeout
+	if configured {
+		v1Timeout = timeout
+	}
 	probeCtx := ctx
-	if timeout > 0 {
+	if v1Timeout > 0 {
 		var cancelProbe context.CancelFunc
-		probeCtx, cancelProbe = context.WithTimeout(ctx, timeout)
+		probeCtx, cancelProbe = context.WithTimeout(ctx, v1Timeout)
 		defer cancelProbe()
 	}
 	v1, err := models.MinerUSupportsV1(probeCtx, apiServer, apiKey)
@@ -96,7 +128,7 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 		return ParseResult{Err: err}
 	}
 	if v1 {
-		parsed, err := models.ParseMinerUV1(ctx, apiServer, apiKey, filename, data, backend, "", timeout)
+		parsed, err := models.ParseMinerUV1(ctx, apiServer, apiKey, filename, data, backend, "", v1Timeout)
 		if err != nil {
 			return ParseResult{Err: fmt.Errorf("parser: MinerU V1: %w", err)}
 		}
@@ -119,7 +151,11 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU submit: %w", err)}
 	}
-	content, err := pollMinerUTask(ctx, driver, task.TaskID, apiConfig, timeout)
+	pollTimeout := minerUPollTimeout
+	if configured {
+		pollTimeout = timeout
+	}
+	content, err := pollMinerUTask(ctx, driver, task.TaskID, apiConfig, pollTimeout)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU result: %w", err)}
 	}

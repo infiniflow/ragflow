@@ -374,8 +374,8 @@ func TestPDFParser_ConfigureFromSetup_MinerUTimeout(t *testing.T) {
 		"parse_method":   "MinerU",
 		"mineru_timeout": "1800",
 	})
-	if pdf2.MinerUPollTimeout != 1800*time.Second {
-		t.Fatalf("MinerUPollTimeout = %v, want 1800s", pdf2.MinerUPollTimeout)
+	if pdf2.MinerUPollTimeout != 1800*time.Second || !pdf2.MinerUTimeoutConfigured {
+		t.Fatalf("MinerUPollTimeout = %v, configured = %t, want 1800s true", pdf2.MinerUPollTimeout, pdf2.MinerUTimeoutConfigured)
 	}
 
 	pdf3 := NewPDFParser()
@@ -394,6 +394,45 @@ func TestPDFParser_ConfigureFromSetup_MinerUTimeout(t *testing.T) {
 	})
 	if pdf4.MinerUPollTimeout != 900*time.Second || !pdf4.MinerUTimeoutConfigured {
 		t.Fatalf("MinerUPollTimeout numeric float = %v, configured = %t", pdf4.MinerUPollTimeout, pdf4.MinerUTimeoutConfigured)
+	}
+
+	// mineru_timeout takes precedence over mineru_timeout_seconds
+	pdf5 := NewPDFParser()
+	pdf5.ConfigureFromSetup(map[string]any{
+		"parse_method":           "MinerU",
+		"mineru_timeout":         1800,
+		"mineru_timeout_seconds": 60,
+	})
+	if pdf5.MinerUPollTimeout != 1800*time.Second || !pdf5.MinerUTimeoutConfigured {
+		t.Fatalf("MinerUPollTimeout precedence = %v, configured = %t, want 1800s true", pdf5.MinerUPollTimeout, pdf5.MinerUTimeoutConfigured)
+	}
+
+	// Huge duration numbers should clamp to MaxMinerURequestTimeout without integer overflow
+	pdfHugeInt := NewPDFParser()
+	pdfHugeInt.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": 10000000000,
+	})
+	if pdfHugeInt.MinerUPollTimeout != MaxMinerURequestTimeout || !pdfHugeInt.MinerUTimeoutConfigured {
+		t.Fatalf("huge int timeout = %v, want %v", pdfHugeInt.MinerUPollTimeout, MaxMinerURequestTimeout)
+	}
+
+	pdfHugeFloat := NewPDFParser()
+	pdfHugeFloat.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": 10000000000.0,
+	})
+	if pdfHugeFloat.MinerUPollTimeout != MaxMinerURequestTimeout || !pdfHugeFloat.MinerUTimeoutConfigured {
+		t.Fatalf("huge float timeout = %v, want %v", pdfHugeFloat.MinerUPollTimeout, MaxMinerURequestTimeout)
+	}
+
+	pdfHugeStr := NewPDFParser()
+	pdfHugeStr.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": "10000000000",
+	})
+	if pdfHugeStr.MinerUPollTimeout != MaxMinerURequestTimeout || !pdfHugeStr.MinerUTimeoutConfigured {
+		t.Fatalf("huge str timeout = %v, want %v", pdfHugeStr.MinerUPollTimeout, MaxMinerURequestTimeout)
 	}
 }
 

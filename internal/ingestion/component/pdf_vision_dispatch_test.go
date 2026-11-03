@@ -170,6 +170,15 @@ func TestMinerURequestTimeout(t *testing.T) {
 	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "48h"}, nil); got != 24*time.Hour {
 		t.Fatalf("oversized timeout clamped=%v, want 24h", got)
 	}
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": 10000000000}, nil); got != 24*time.Hour {
+		t.Fatalf("huge int seconds clamped=%v, want 24h", got)
+	}
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "10000000000"}, nil); got != 24*time.Hour {
+		t.Fatalf("huge str seconds clamped=%v, want 24h", got)
+	}
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": 1800, "mineru_timeout_seconds": 60}, nil); got != 1800*time.Second {
+		t.Fatalf("mineru_timeout precedence=%v, want 1800s", got)
+	}
 }
 
 func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
