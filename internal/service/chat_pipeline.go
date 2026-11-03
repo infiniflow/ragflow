@@ -2565,10 +2565,11 @@ func (s *ChatPipelineService) enrichChunksWithMetadata(ctx context.Context, kbin
 }
 
 // kbPrompt builds knowledge prompt blocks from retrieved chunks, keeping
-// blocks until their tokens, headers included, pass 97% of maxTokens.
+// blocks until their tokens, headers included, pass 97% of maxTokens. A
+// non-positive maxTokens leaves no room for any block.
 func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens int) []string {
 	chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
-	if !ok || len(chunksRaw) == 0 {
+	if !ok || len(chunksRaw) == 0 || maxTokens <= 0 {
 		return nil
 	}
 
@@ -4570,7 +4571,9 @@ func completionReserve(cfg *modelModule.ChatConfig, modelMaxOutput, modelMaxToke
 // of modelMaxTokens: what the system prompt, the citation rules sent after it
 // (when quoting) and the completion reserve leave. The system prompt is measured
 // as formatPrompt renders it from kwargs, with the knowledge left out, so a
-// prompt parameter carrying a large value is counted.
+// prompt parameter carrying a large value is counted. formatPrompt writes the
+// passages at every {knowledge} of the template, and AsyncChat appends them once
+// to a template without one, so the room is split across those insertions.
 func (s *ChatPipelineService) knowledgeTokenBudget(modelMaxTokens int, systemTemplate string, kwargs map[string]interface{}, quote bool, reserve int) int {
 	params := maps.Clone(kwargs)
 	delete(params, "knowledge")
@@ -4578,7 +4581,8 @@ func (s *ChatPipelineService) knowledgeTokenBudget(modelMaxTokens int, systemTem
 	if quote {
 		used += graph.NumTokensFromString(ragprompts.CitationPrompt(""))
 	}
-	return max(modelMaxTokens-used, 0)
+	insertions := max(strings.Count(systemTemplate, "{knowledge}"), 1)
+	return max(modelMaxTokens-used, 0) / insertions
 }
 
 func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool, error) {

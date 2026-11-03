@@ -1739,6 +1739,38 @@ func TestKnowledgeTokenBudgetSubtractsTemplateCitationAndReserve(t *testing.T) {
 	}
 }
 
+func TestKnowledgeTokenBudgetSplitsAcrossKnowledgeInsertions(t *testing.T) {
+	s := NewChatPipelineService()
+	for _, tc := range []struct {
+		name, template, rendered string
+		insertions               int
+	}{
+		{"no placeholder, appended once", "Answer from the knowledge base.", "Answer from the knowledge base.", 1},
+		{"one placeholder", "Answer from the knowledge base.\n{knowledge}", "Answer from the knowledge base.\n ", 1},
+		{"two placeholders", "Answer from the knowledge base.\n{knowledge}\nAgain:\n{knowledge}", "Answer from the knowledge base.\n \nAgain:\n ", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			want := (32768 - graph.NumTokensFromString(tc.rendered) - 4096) / tc.insertions
+			if got := s.knowledgeTokenBudget(32768, tc.template, nil, false, 4096); got != want {
+				t.Errorf("budget = %d, want %d", got, want)
+			}
+		})
+	}
+}
+
+func TestKBPromptKeepsNoPassageWithoutBudget(t *testing.T) {
+	s := NewChatPipelineService()
+	kbinfos := map[string]interface{}{"chunks": []map[string]interface{}{
+		{"content_with_weight": "The regional council approved the budget amendment.", "docnm_kwd": "a.pdf"},
+		{"content_with_weight": "The amendment takes effect next year.", "docnm_kwd": "b.pdf"},
+	}}
+	for _, budget := range []int{0, -1} {
+		if got := s.kbPrompt(kbinfos, budget); len(got) != 0 {
+			t.Errorf("kbPrompt(budget %d) kept %d passages, want none", budget, len(got))
+		}
+	}
+}
+
 const fullWindowTemplate = "You are a helpful assistant. Answer from the knowledge base.\n{knowledge}"
 
 // fillWindowAndClamp runs the request-building steps of AsyncChat's phase 10 on a
