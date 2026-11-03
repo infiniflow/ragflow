@@ -17,6 +17,7 @@
 import { lazy, memo, Suspense } from 'react';
 import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 import FallbackComponent from './components/fallback-component';
+import { QueryPreservingNavigate } from './components/query-preserving-navigate';
 import { IS_ENTERPRISE } from './pages/admin/utils';
 
 export enum Routes {
@@ -51,6 +52,7 @@ export enum Routes {
   Api = '/api',
   Mcp = '/mcp',
   Team = '/team',
+  Integrations = '/integrations',
   Plan = '/plan',
   Model = '/model',
   Prompt = '/prompt',
@@ -179,8 +181,17 @@ const routeConfigOptions = [
     Component: () => import('@/layouts/root-layout'),
     children: [
       {
-        path: Routes.Datasets,
-        Component: () => import('@/pages/datasets'),
+        Component: () => import('@/layouts/nav-group-layout'),
+        children: [
+          {
+            path: Routes.Datasets,
+            Component: () => import('@/pages/datasets'),
+          },
+          {
+            path: Routes.Memories,
+            Component: () => import('@/pages/memories'),
+          },
+        ],
       },
       {
         path: Routes.DatasetBase,
@@ -209,12 +220,17 @@ const routeConfigOptions = [
         ],
       },
       {
-        path: Routes.Chats,
-        Component: () => import('@/pages/next-chats'),
-      },
-      {
-        path: Routes.Searches,
-        Component: () => import('@/pages/next-searches'),
+        Component: () => import('@/layouts/nav-group-layout'),
+        children: [
+          {
+            path: Routes.Chats,
+            Component: () => import('@/pages/next-chats'),
+          },
+          {
+            path: Routes.Searches,
+            Component: () => import('@/pages/next-searches'),
+          },
+        ],
       },
       {
         path: `${Routes.Search}/:id`,
@@ -229,10 +245,6 @@ const routeConfigOptions = [
         path: Routes.AgentTemplates,
         layout: false,
         Component: () => import('@/pages/agents/agent-templates'),
-      },
-      {
-        path: Routes.Memories,
-        Component: () => import('@/pages/memories'),
       },
       {
         path: `${Routes.Memory}`,
@@ -257,56 +269,103 @@ const routeConfigOptions = [
         Component: () => import('@/pages/skills'),
       },
       {
+        path: Routes.Integrations,
+        element: (
+          <Navigate to={`${Routes.Integrations}${Routes.Model}`} replace />
+        ),
+      },
+      {
+        Component: () => import('@/layouts/settings-page-layout'),
+        children: [
+          {
+            path: `${Routes.Integrations}${Routes.Model}`,
+            Component: () => import('@/pages/user-setting/setting-model'),
+          },
+          {
+            path: `${Routes.Integrations}${Routes.DataSource}`,
+            Component: () => import('@/pages/user-setting/data-source'),
+          },
+          {
+            path: `${Routes.Integrations}${Routes.ChatChannel}`,
+            Component: () => import('@/pages/user-setting/chat-channel'),
+          },
+          {
+            path: `${Routes.Integrations}${Routes.Mcp}`,
+            Component: () => import('@/pages/user-setting/mcp'),
+          },
+          {
+            path: Routes.Team,
+            Component: () => import('@/pages/user-setting/setting-team'),
+          },
+        ],
+      },
+      {
+        path: `${Routes.Integrations}${Routes.DataSource}${Routes.DataSourceDetailPage}`,
+        Component: () =>
+          import('@/pages/user-setting/data-source/data-source-detail-page'),
+      },
+      {
         path: Routes.UserSetting,
         Component: () => import('@/pages/user-setting'),
         layout: false,
         children: [
           {
             path: Routes.UserSetting,
-            element: <Navigate to={`/user-setting/model`} replace />,
+            element: <Navigate to={`${Routes.UserSetting}/profile`} replace />,
           },
           {
             path: `${Routes.UserSetting}/profile`,
             Component: () => import('@/pages/user-setting/profile'),
-          },
-          /*
-          {
-            path: `${Routes.UserSetting}/locale`,
-            Component: () => import('@/pages/user-setting/setting-locale'),
-          },
-          */
-          {
-            path: `${Routes.UserSetting}/model`,
-            Component: () => import('@/pages/user-setting/setting-model'),
-          },
-          {
-            path: `${Routes.UserSetting}/team`,
-            Component: () => import('@/pages/user-setting/setting-team'),
           },
           {
             path: `${Routes.UserSetting}${Routes.Api}`,
             Component: () => import('@/pages/user-setting/setting-api'),
           },
           {
-            path: `${Routes.UserSetting}${Routes.Mcp}`,
-            Component: () => import('@/pages/user-setting/mcp'),
+            path: `${Routes.UserSetting}${Routes.Model}`,
+            element: (
+              <QueryPreservingNavigate
+                to={`${Routes.Integrations}${Routes.Model}`}
+              />
+            ),
           },
-
+          {
+            path: `${Routes.UserSetting}${Routes.Team}`,
+            element: <QueryPreservingNavigate to={Routes.Team} />,
+          },
+          {
+            path: `${Routes.UserSetting}${Routes.Mcp}`,
+            element: (
+              <QueryPreservingNavigate
+                to={`${Routes.Integrations}${Routes.Mcp}`}
+              />
+            ),
+          },
           {
             path: `${Routes.UserSetting}${Routes.DataSource}`,
-            Component: () => import('@/pages/user-setting/data-source'),
+            element: (
+              <QueryPreservingNavigate
+                to={`${Routes.Integrations}${Routes.DataSource}`}
+              />
+            ),
           },
           {
             path: `${Routes.UserSetting}${Routes.ChatChannel}`,
-            Component: () => import('@/pages/user-setting/chat-channel'),
+            element: (
+              <QueryPreservingNavigate
+                to={`${Routes.Integrations}${Routes.ChatChannel}`}
+              />
+            ),
           },
         ],
       },
       {
         path: `${Routes.UserSetting}${Routes.DataSource}${Routes.DataSourceDetailPage}`,
-        layout: false,
-        Component: () =>
-          import('@/pages/user-setting/data-source/data-source-detail-page'),
+        element: (
+          <QueryPreservingNavigate
+            to={`${Routes.Integrations}${Routes.DataSource}${Routes.DataSourceDetailPage}`}
+          />
+        ),
       },
     ],
   },

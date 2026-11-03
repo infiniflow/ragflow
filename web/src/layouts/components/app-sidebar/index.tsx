@@ -1,0 +1,38 @@
+import { EnterpriseHeaderUpgradeBadge } from '@/ee/layouts/components/header-enterprise';
+import { Routes } from '@/routes';
+import { Link } from 'react-router';
+import { IntegrationsNavGroup, NavItemLink } from './nav-item';
+import { NavItems } from './navigation';
+import { UserFooter } from './user-footer';
+
+export function AppSidebar() {
+  return (
+    <aside className="flex h-full w-16 shrink-0 flex-col overflow-hidden bg-bg-base md:w-60">
+      <div className="flex shrink-0 items-center justify-center gap-2 px-3 py-4 md:justify-start">
+        <Link
+          to={Routes.Root}
+          aria-label="RAGFlow"
+          className="flex size-10 shrink-0 items-center justify-center"
+        >
+          <img src="/logo.svg" alt="RAGFlow logo" className="size-10" />
+        </Link>
+        <EnterpriseHeaderUpgradeBadge />
+      </div>
+
+      <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3 md:px-3">
+        <ul className="flex flex-col gap-1">
+          {NavItems.map((item) => (
+            <li key={item.key}>
+              <NavItemLink item={item} />
+            </li>
+          ))}
+          <li>
+            <IntegrationsNavGroup />
+          </li>
+        </ul>
+      </nav>
+
+      <UserFooter />
+    </aside>
+  );
+}

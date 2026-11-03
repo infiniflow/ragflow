@@ -248,7 +248,7 @@ export const useNavigatePage = () => {
   const navigateToDataSourceDetail = useCallback(
     (id?: string) => {
       navigate(
-        `${Routes.UserSetting}${Routes.DataSource}${Routes.DataSourceDetailPage}?id=${id}`,
+        `${Routes.Integrations}${Routes.DataSource}${Routes.DataSourceDetailPage}?id=${id}`,
       );
     },
     [navigate],
@@ -275,7 +275,7 @@ export const useNavigatePage = () => {
   );
 
   const navigateToModelSetting = useCallback(() => {
-    navigate(`${Routes.UserSetting}${Routes.Model}`);
+    navigate(`${Routes.Integrations}${Routes.Model}`);
   }, [navigate]);
 
   return {

@@ -7,7 +7,7 @@ export function BellButton({ className }: { className?: string }) {
   return (
     <Button
       asLink
-      to={`${Routes.UserSetting}${Routes.Team}`}
+      to={Routes.Team}
       variant="ghost"
       size="icon"
       className={cn('group size-10 shrink-0 lg:size-8', className)}

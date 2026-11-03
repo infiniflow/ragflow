@@ -35,6 +35,7 @@ const Routes = {
   Api: '/api',
   Mcp: '/mcp',
   Team: '/team',
+  Integrations: '/integrations',
   Plan: '/plan',
   Model: '/model',
   Prompt: '/prompt',
