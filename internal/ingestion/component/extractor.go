@@ -101,7 +101,7 @@ const extractorTemperature = 0.2
 
 // defaultExtractorConcurrency bounds concurrent chunk extraction jobs
 // process-wide to reduce provider rate-limit pressure.
-const defaultExtractorConcurrency = 2
+const defaultExtractorConcurrency = 10
 
 // extractorJob is one chunk's auto-extraction unit of work.
 type extractorJob func() error
