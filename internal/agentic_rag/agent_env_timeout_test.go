@@ -17,8 +17,13 @@
 package agentic_rag
 
 import (
+	"io"
+	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"ragflow/internal/common"
 )
 
 func TestDurationFromEnv(t *testing.T) {
@@ -38,5 +43,39 @@ func TestDurationFromEnv(t *testing.T) {
 
 	if finalizeTimeout <= 0 || claimAnswerTimeout <= 0 {
 		t.Fatalf("package budgets must stay positive: finalize=%s claim=%s", finalizeTimeout, claimAnswerTimeout)
+	}
+}
+
+// TestDurationFromEnvWarnsOnStderrBeforeLoggerInit verifies the malformed
+// override warning reaches stderr while the logger is still nil: the two
+// package budgets are parsed during package initialization, before the server
+// installs its logger, and WarnCtx returns without logging on a nil logger.
+func TestDurationFromEnvWarnsOnStderrBeforeLoggerInit(t *testing.T) {
+	t.Setenv("AGENTIC_TEST_TIMEOUT", "soon")
+	saved := common.Logger
+	common.Logger = nil
+	t.Cleanup(func() { common.Logger = saved })
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	savedStderr := os.Stderr
+	os.Stderr = w
+	got := durationFromEnv("AGENTIC_TEST_TIMEOUT", 90*time.Second)
+	w.Close()
+	os.Stderr = savedStderr
+
+	if got != 90*time.Second {
+		t.Fatalf("override = %s, want the 90s default", got)
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("read captured stderr: %v", err)
+	}
+	for _, want := range []string{"AGENTIC_TEST_TIMEOUT", `"soon"`, "1m30s"} {
+		if !strings.Contains(string(out), want) {
+			t.Fatalf("stderr warning missing %s: %q", want, string(out))
+		}
 	}
 }

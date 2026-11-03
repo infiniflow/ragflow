@@ -895,8 +895,15 @@ func durationFromEnv(name string, fallback time.Duration) time.Duration {
 		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
 			return d
 		}
-		common.WarnCtx(context.Background(), "agentic_rag: ignoring malformed duration override",
-			zap.String("env", name), zap.String("value", raw), zap.Duration("default", fallback))
+		// Package-level vars evaluate before main installs the logger, so
+		// WarnCtx would drop this warning on every startup path; stderr is
+		// the only channel that exists that early.
+		if common.Logger != nil {
+			common.WarnCtx(context.Background(), "agentic_rag: ignoring malformed duration override",
+				zap.String("env", name), zap.String("value", raw), zap.Duration("default", fallback))
+		} else {
+			fmt.Fprintf(os.Stderr, "agentic_rag: ignoring malformed duration override %s=%q, using default %s\n", name, raw, fallback)
+		}
 	}
 	return fallback
 }
