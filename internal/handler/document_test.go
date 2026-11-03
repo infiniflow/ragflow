@@ -222,7 +222,7 @@ func (f *fakeDocumentService) GetDocumentArtifact(ctx context.Context, filename,
 		ForceAttachment: false,
 	}, nil
 }
-func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, userID, docID string) (*document.DocumentPreview, error) {
+func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error) {
 	if docID == "not-found" {
 		return nil, document.ErrPreviewDocumentNotFound
 	}
@@ -338,8 +338,7 @@ func (f *fakeDocumentService) GetDocumentImageForDocument(ctx context.Context, u
 	f.imageID = imageID
 	return f.imageData, f.imageErr
 }
-func (f *fakeDocumentService) GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error) {
-	f.imageUserID = userID
+func (f *fakeDocumentService) GetDocumentThumbnail(ctx context.Context, docID string) ([]byte, error) {
 	f.imageDocumentID = docID
 	return f.imageData, f.imageErr
 }
@@ -410,9 +409,9 @@ func setupHandlerAccessContext(method, path, body string) (*gin.Context, *httpte
 }
 
 func setGinContextSubject(c *gin.Context, userID, tenantID string) {
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
-		UserID: userID, TenantID: tenantID,
-	}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(),
+		userID, tenantID,
+	))
 }
 
 func setupDocumentPermissionDB(t *testing.T, accessible bool) {
@@ -508,9 +507,9 @@ func TestDocumentReadHandlersForbidden(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c, w := setupGinContextWithUser(tt.method, tt.path, tt.body)
-			c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
-				UserID: "user-1", TenantID: "tenant-owner",
-			}))
+			c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(),
+				"user-1", "tenant-owner",
+			))
 			c.Params = tt.params
 			tt.handler(c)
 			if w.Code != tt.status {
@@ -1799,6 +1798,7 @@ func TestStopParseDocumentsHandler_NotAccessible(t *testing.T) {
 	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
 	// Use a user that doesn't have access to ds-1
 	c.Set("user_id", "other-user")
+	setGinContextSubject(c, "other-user", "tenant-owner")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.StopParseDocuments(c)

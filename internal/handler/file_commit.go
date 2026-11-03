@@ -88,7 +88,7 @@ func CommitFolderResolver(h *FileCommitHandler, entityType, urlParam string) gin
 			return
 		}
 		ctx := c.Request.Context()
-		user, errorCode, errorMessage := GetUser(c)
+		_, errorCode, errorMessage := GetUser(c)
 		if errorCode != common.CodeSuccess {
 			common.ErrorWithCode(c, errorCode, errorMessage)
 			c.Abort()
@@ -102,7 +102,7 @@ func CommitFolderResolver(h *FileCommitHandler, entityType, urlParam string) gin
 			if c.Request.Method == "GET" || c.Request.Method == "HEAD" {
 				operation = permission.OperationRead
 			}
-			if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: id}, operation); err != nil {
+			if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: id}, operation); err != nil {
 				respondPermissionError(c, err, true)
 				c.Abort()
 				return
@@ -147,7 +147,7 @@ func (h *FileCommitHandler) folderAccessible(c *gin.Context, userID, folderID st
 	if err != nil || folder == nil || folder.Type != "folder" {
 		return false
 	}
-	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindFolder,
 		ID:   folder.ID,
 	}, permission.OperationRead) == nil
@@ -672,7 +672,7 @@ func (h *FileCommitHandler) GetCommitFileContent(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspace-files/{file_id}/versions [get]
 func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -686,7 +686,7 @@ func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	file, err := h.fileDAO.GetByID(ctx, dao.DB, fileID)
-	if err != nil || file == nil || permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{
+	if err != nil || file == nil || permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindFile,
 		ID:   fileID,
 	}, permission.OperationRead) != nil {

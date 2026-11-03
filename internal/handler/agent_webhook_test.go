@@ -72,7 +72,7 @@ type fakeAgentWebhookCredentialManager struct {
 	revokedUser  string
 }
 
-func (f *fakeAgentWebhookCredentialManager) Issue(_ context.Context, _ permission.Subject, _ *entity.UserCanvas) (string, error) {
+func (f *fakeAgentWebhookCredentialManager) Issue(_ context.Context, _ *entity.UserCanvas) (string, error) {
 	return f.issueToken, f.issueErr
 }
 
@@ -250,8 +250,8 @@ func TestPublicWebhookRunsAsCredentialIdentityWithoutUserToken(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("webhook did not start the agent")
 	}
-	if subject, ok := permission.SubjectFromContext(loader.runContext); !ok || subject.TenantID != tenantID {
-		t.Fatalf("run tenant = %q, want %q", subject.TenantID, tenantID)
+	if permission.TenantIDFromContext(loader.runContext) != tenantID {
+		t.Fatalf("run tenant = %q, want %q", permission.TenantIDFromContext(loader.runContext), tenantID)
 	}
 	input := loader.runPayload["input"].(map[string]any)
 	query := input["query"].(map[string]any)

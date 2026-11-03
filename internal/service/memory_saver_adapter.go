@@ -54,14 +54,27 @@ func (a *memorySaverAdapter) Save(ctx context.Context, req component.MemorySaveR
 		}
 		canvasID, _ := state.GetSysString("canvas_id")
 		userID, _ := state.GetSysString("user_id")
+		tenantID, _ := state.GetSysString("tenant_id")
 		canvasID = strings.TrimSpace(canvasID)
 		userID = strings.TrimSpace(userID)
+		tenantID = strings.TrimSpace(tenantID)
 		authorizationUserID = userID
 		if canvasID == "" {
 			return fmt.Errorf("%w: canvas id is required to use memory from an agent", permission.ErrInvalidPermission)
 		}
 		if userID == "" {
 			return permission.ErrUnauthenticated
+		}
+		contextUserID := permission.UserIDFromContext(ctx)
+		contextTenantID := permission.TenantIDFromContext(ctx)
+		if contextUserID != "" && contextUserID != userID {
+			return permission.ErrIdentityMismatch
+		}
+		if contextTenantID != "" && tenantID != "" && contextTenantID != tenantID {
+			return permission.ErrIdentityMismatch
+		}
+		if contextUserID == "" || contextTenantID == "" {
+			ctx = permission.WithIdentity(ctx, userID, tenantID)
 		}
 		checker := permission.NewDatabaseChecker(a.svc.db)
 		entry := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
@@ -70,7 +83,7 @@ func (a *memorySaverAdapter) Save(ctx context.Context, req component.MemorySaveR
 			if memoryID == "" {
 				continue
 			}
-			if err := checker.CheckDependency(ctx, permission.Subject{UserID: userID}, entry,
+			if err := checker.CheckDependency(ctx, entry,
 				permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID},
 				permission.OperationRun, permission.OperationUse); err != nil {
 				return fmt.Errorf("memory %q: %w", memoryID, err)

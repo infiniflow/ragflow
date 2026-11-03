@@ -552,8 +552,8 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 
 func identityForTemplateTenant(ctx context.Context, tenantID string) Identity {
 	access := Identity{UserID: tenantID, TenantID: tenantID}
-	if subject, ok := permission.SubjectFromContext(ctx); ok && strings.TrimSpace(subject.UserID) != "" {
-		access.UserID = subject.UserID
+	if userID := strings.TrimSpace(permission.UserIDFromContext(ctx)); userID != "" {
+		access.UserID = userID
 	}
 	return access
 }

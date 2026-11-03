@@ -328,10 +328,7 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		}
 	}
 
-	result, code, err := h.datasetsService.CreateDataset(ctx, &req, permission.Subject{
-		UserID:   user.ID,
-		TenantID: tenantID,
-	})
+	result, code, err := h.datasetsService.CreateDataset(ctx, &req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		operationLog.Code = int(code)
@@ -844,15 +841,7 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-
-	tenantID := strings.TrimSpace(c.GetString("tenant_id"))
-	if tenantID == "" {
-		tenantID = user.ID
-	}
-	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll, permission.Subject{
-		UserID:   user.ID,
-		TenantID: tenantID,
-	})
+	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		operationLog.Code = int(code)
@@ -1130,7 +1119,7 @@ func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/metadata/flattened [get]
 func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -1158,7 +1147,7 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 	ctx := c.Request.Context()
 	// Check access for each dataset
 	for _, datasetID := range datasetIDs {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 			respondPermissionError(c, err, false)
 			return
 		}

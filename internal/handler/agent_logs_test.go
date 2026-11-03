@@ -124,7 +124,7 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
 		t.Fatalf("prepare agent log permission fixture: %v", err)
 	}
-	ctx = permission.WithSubject(ctx, permission.Subject{UserID: "u1", TenantID: "u1"})
+	ctx = permission.WithIdentity(ctx, "u1", "u1")
 
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
@@ -258,7 +258,7 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
 		t.Fatalf("prepare agent log permission fixture: %v", err)
 	}
-	ctx = permission.WithSubject(ctx, permission.Subject{UserID: "u1", TenantID: "u1"})
+	ctx = permission.WithIdentity(ctx, "u1", "u1")
 
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
@@ -663,7 +663,7 @@ func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
 		t.Fatalf("prepare agent log permission fixture: %v", err)
 	}
-	ctx = permission.WithSubject(ctx, permission.Subject{UserID: "u1", TenantID: "u1"})
+	ctx = permission.WithIdentity(ctx, "u1", "u1")
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
 	mr, err := miniredis.Run()

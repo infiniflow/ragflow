@@ -77,9 +77,9 @@ func setupGinContextWithUserAndDB(t *testing.T, method, path string) (*gin.Conte
 	c.Request = httptest.NewRequest(method, path, nil)
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
-		UserID: "user-1", TenantID: "user-1",
-	}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(),
+		"user-1", "user-1",
+	))
 
 	db := setupHandlerAgentsTestDB(t)
 	orig := dao.DB
@@ -170,7 +170,7 @@ func TestListAgentVersionsHandler_NoPermission(t *testing.T) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "user-a", "user-a"); err != nil {
 		t.Fatalf("prepare agent permission fixture: %v", err)
 	}
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-a", TenantID: "user-a"}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-a", "user-a"))
 	c.Set("user", &entity.User{ID: "user-a"})
 	c.Set("user_id", "user-a")
 	c.Params = gin.Params{{Key: "canvas_id", Value: "canvas-b"}}
@@ -209,7 +209,7 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "user-1", "user-1"); err != nil {
 		t.Fatalf("prepare agent permission fixture: %v", err)
 	}
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", "user-1"))
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
 	c.Params = gin.Params{{Key: "canvas_id", Value: "non-existent"}}
@@ -457,9 +457,9 @@ func seedAgentCreationContext(t *testing.T, c *gin.Context, db *gorm.DB) {
 			t.Fatalf("create Agent permission test table: %v", err)
 		}
 	}
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
-		UserID: "user-1", TenantID: "tenant-1",
-	}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(),
+		"user-1", "tenant-1",
+	))
 }
 
 // sptr returns a pointer to the given string.

@@ -424,7 +424,7 @@ func (h *FileHandler) DeleteFiles(c *gin.Context) {
 		return
 	}
 
-	if err := h.fileService.DeleteFiles(c.Request.Context(), user.ID, req.IDs); err != nil {
+	if err := h.fileService.DeleteFiles(c.Request.Context(), req.IDs); err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}

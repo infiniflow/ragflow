@@ -84,7 +84,7 @@ func TestCreateDataset_BindsLatestPipelineVersion(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 
 	canvasID := "0123456789abcdef0123456789abcdef"
 	versionID := "version0000000000000000000000aa"
@@ -99,7 +99,7 @@ func TestCreateDataset_BindsLatestPipelineVersion(t *testing.T) {
 		PipelineID:        &canvasID,
 		PipelineVersionID: &versionID,
 		ParseType:         &parseType,
-	}, testDatasetSubject("tenant-1"))
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%d", err, code)
 	}
@@ -117,7 +117,7 @@ func TestCreateDataset_BuiltInHasNoPipelineVersion(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 
 	parseType := 1
 	parserID := "general"
@@ -125,7 +125,7 @@ func TestCreateDataset_BuiltInHasNoPipelineVersion(t *testing.T) {
 		Name:      "ds-builtin",
 		ParserID:  &parserID,
 		ParseType: &parseType,
-	}, testDatasetSubject("tenant-1"))
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%d", err, code)
 	}
@@ -276,7 +276,7 @@ func TestCreateDataset_BindsExplicitPipelineVersion(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 
 	canvasID := "0123456789abcdef0123456789abcdef"
 	verOld := "version0000000000000000000000aa"
@@ -291,7 +291,7 @@ func TestCreateDataset_BindsExplicitPipelineVersion(t *testing.T) {
 		PipelineID:        &canvasID,
 		PipelineVersionID: &verOld, // explicitly pin the older version
 		ParseType:         &parseType,
-	}, testDatasetSubject("tenant-1"))
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%d", err, code)
 	}
@@ -310,7 +310,7 @@ func TestCreateDataset_RejectsForeignPipelineVersion(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 
 	canvas1 := "0123456789abcdef0123456789abcdef"
 	canvas2 := "fedcba9876543210fedcba9876543210"
@@ -327,7 +327,7 @@ func TestCreateDataset_RejectsForeignPipelineVersion(t *testing.T) {
 		PipelineID:        &canvas1,
 		PipelineVersionID: &verForeign, // belongs to canvas2
 		ParseType:         &parseType,
-	}, testDatasetSubject("tenant-1"))
+	})
 	if err == nil && code == common.CodeSuccess {
 		t.Fatalf("expected rejection of foreign pipeline version, got success")
 	}
