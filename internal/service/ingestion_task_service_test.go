@@ -2573,7 +2573,6 @@ func TestIngestionTaskServiceMarkFailedCarriesReason(t *testing.T) {
 	}
 }
 
-// TestIngestionTaskServicePersistProcessEndAtIdempotent verifies that
 // TestPrepareValidatedRunEmitsRunningEventWithFreshClaimTime verifies that the
 // running lifecycle event is emitted AFTER PrepareValidatedRun stamps the
 // document's worker-claim time. Previously the running event was emitted in

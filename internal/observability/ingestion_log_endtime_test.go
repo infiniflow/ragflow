@@ -7,9 +7,9 @@ import (
 	"ragflow/internal/entity"
 )
 
-// TestBuildIngestLogDerivesEndTimeFromBeginAndDuration covers the requirement that
-// process_end_at need not be persisted: when ProcessEndAt is nil, the authoritative end
-// time is recovered from ProcessBeginAt + ProcessDuration.
+// TestBuildIngestLogDerivesEndTimeFromBeginAndDuration covers the requirement
+// that process_end_at need not be persisted: the authoritative end time is
+// recovered from ProcessBeginAt + ProcessDuration.
 func TestBuildIngestLogDerivesEndTimeFromBeginAndDuration(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	begin := base.Add(10 * time.Second)
@@ -19,7 +19,6 @@ func TestBuildIngestLogDerivesEndTimeFromBeginAndDuration(t *testing.T) {
 		CreateDate:      ptrTime(base),
 		ProcessBeginAt:  ptrTime(begin),
 		ProcessDuration: duration,
-		// ProcessEndAt intentionally nil (not persisted).
 	}
 	task := &entity.IngestionTask{ID: "task-1"}
 	doc := &entity.Document{Name: ptrStr("d"), CreateDate: ptrTime(base)}
@@ -50,28 +49,5 @@ func TestBuildIngestLogZeroDurationFallsBackToEventTime(t *testing.T) {
 	ev := BuildIngestLog(task, doc, run, "completed", "COMPLETED", "")
 	if !ev.EndTime.Equal(ev.EventTime) {
 		t.Fatalf("EndTime = %v, want EventTime %v (duration 0 fallback)", ev.EndTime, ev.EventTime)
-	}
-}
-
-// TestBuildIngestLogInMemoryProcessEndAtTakesPrecedence guards the "in-memory field is
-// still usable" requirement: an explicitly set in-memory ProcessEndAt must win over the
-// derived value.
-func TestBuildIngestLogInMemoryProcessEndAtTakesPrecedence(t *testing.T) {
-	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	begin := base.Add(10 * time.Second)
-	explicitEnd := base.Add(5 * time.Second)
-	run := &entity.PipelineOperationLog{
-		RunCount:        ptrInt(1),
-		CreateDate:      ptrTime(base),
-		ProcessBeginAt:  ptrTime(begin),
-		ProcessDuration: 30,
-		ProcessEndAt:    ptrTime(explicitEnd),
-	}
-	task := &entity.IngestionTask{ID: "task-1"}
-	doc := &entity.Document{Name: ptrStr("d"), CreateDate: ptrTime(base)}
-
-	ev := BuildIngestLog(task, doc, run, "completed", "COMPLETED", "")
-	if !ev.EndTime.Equal(explicitEnd) {
-		t.Fatalf("in-memory ProcessEndAt should win: EndTime = %v, want %v", ev.EndTime, explicitEnd)
 	}
 }

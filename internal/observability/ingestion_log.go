@@ -37,7 +37,10 @@ func ComputeDurations(enqueue, begin, end time.Time) (float64, float64) {
 		wait = begin.Sub(enqueue).Seconds()
 	}
 	parse := 0.0
-	if end.After(begin) {
+	// A zero begin means the worker-claim time is unknown (e.g. the document
+	// lookup failed and claimTime returned nil). There is no parse window, so the
+	// duration must clamp to 0 rather than blow up to end - year-0001.
+	if !begin.IsZero() && end.After(begin) {
 		parse = end.Sub(begin).Seconds()
 	}
 	return wait, parse
@@ -118,11 +121,10 @@ func BuildIngestLog(task *entity.IngestionTask, doc *entity.Document, run *entit
 		if run.CreateDate != nil {
 			ev.EnqueueTime = run.CreateDate.UTC()
 		}
-		if run.ProcessEndAt != nil {
-			ev.EndTime = run.ProcessEndAt.UTC()
-		} else if run.ProcessBeginAt != nil && run.ProcessDuration > 0 {
-			// process_end_at is not persisted; recover the authoritative end time from
-			// the persisted begin time and duration so parse duration is still accurate.
+		if run.ProcessBeginAt != nil && run.ProcessDuration > 0 {
+			// The process_end_at column was removed; recover the authoritative end
+			// time from the persisted begin time and duration so parse duration is
+			// still accurate without a dedicated column.
 			ev.EndTime = run.ProcessBeginAt.Add(time.Duration(run.ProcessDuration * float64(time.Second))).UTC()
 		}
 		// BeginTime only for running/terminal events; created/scheduled must not
@@ -130,9 +132,10 @@ func BuildIngestLog(task *entity.IngestionTask, doc *entity.Document, run *entit
 		if ct := claimTime(doc, run); ct != nil && isBeginRelevant(eventType) {
 			ev.BeginTime = ct.UTC()
 		}
-		// ProcessEndAt is not always persisted on the run; for a terminal event
-		// whose run actually started, fall back to the transition time so parse
-		// duration is still reported (a still-queued stop gets no duration).
+		// When the end time still could not be derived (the run had no
+		// ProcessDuration, e.g. a stop on a still-queued task), fall back to the
+		// transition time for a terminal event so a parse duration is still reported
+		// if a begin time is present.
 		if ev.EndTime.IsZero() && !ev.BeginTime.IsZero() &&
 			(eventType == "completed" || eventType == "failed" || eventType == "stopped") {
 			ev.EndTime = ev.EventTime
