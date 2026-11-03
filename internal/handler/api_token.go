@@ -30,30 +30,12 @@ import (
 )
 
 func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
-	// Get current user from context
-	user, exists := c.Get("user")
-	if !exists {
-		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, 401, nil, "Unauthorized")
-		return
-	}
-
-	userModel, ok := user.(*entity.User)
-	if !ok {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Invalid user data")
-		return
-	}
-
-	// Get user's tenant with owner role
-	userTenantDAO := dao.NewUserTenantDAO()
 	ctx := c.Request.Context()
-
-	tenants, err := userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userModel.ID, "owner")
-	if err != nil || len(tenants) == 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Tenant not found")
+	_, tenantID, code, err := currentAPIKeyOwner(c)
+	if err != nil {
+		respondAPIKeyContextError(c, code, err)
 		return
 	}
-
-	tenantID := tenants[0].TenantID
 
 	// Get keys for the tenant
 	keys, err := h.systemService.ListAPIKeys(ctx, tenantID)
@@ -66,30 +48,12 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 }
 
 func (h *SystemHandler) CreateKey(c *gin.Context) {
-	// Get current user from context
-	user, exists := c.Get("user")
-	if !exists {
-		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, 401, nil, "Unauthorized")
-		return
-	}
-
-	userModel, ok := user.(*entity.User)
-	if !ok {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Invalid user data")
-		return
-	}
-
-	// Get user's tenant with owner role
-	userTenantDAO := dao.NewUserTenantDAO()
 	ctx := c.Request.Context()
-
-	tenants, err := userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userModel.ID, "owner")
-	if err != nil || len(tenants) == 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Tenant not found")
+	user, tenantID, code, err := currentAPIKeyOwner(c)
+	if err != nil {
+		respondAPIKeyContextError(c, code, err)
 		return
 	}
-
-	tenantID := tenants[0].TenantID
 
 	// Parse request. An empty body is valid (all fields are optional);
 	// ShouldBind reports io.EOF for it.
@@ -100,7 +64,7 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 	}
 
 	// Create key
-	key, err := h.systemService.CreateAPIKey(ctx, tenantID, &req)
+	key, err := h.systemService.CreateAPIKey(ctx, user.ID, tenantID, &req)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to create key")
 		return
@@ -110,30 +74,12 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 }
 
 func (h *SystemHandler) DeleteKey(c *gin.Context) {
-	// Get current user from context
-	user, exists := c.Get("user")
-	if !exists {
-		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, 401, nil, "Unauthorized")
-		return
-	}
-
-	userModel, ok := user.(*entity.User)
-	if !ok {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Invalid user data")
-		return
-	}
 	ctx := c.Request.Context()
-
-	// Get user's tenant with owner role
-	userTenantDAO := dao.NewUserTenantDAO()
-
-	tenants, err := userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userModel.ID, "owner")
-	if err != nil || len(tenants) == 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Tenant not found")
+	_, tenantID, code, err := currentAPIKeyOwner(c)
+	if err != nil {
+		respondAPIKeyContextError(c, code, err)
 		return
 	}
-
-	tenantID := tenants[0].TenantID
 
 	// Get key from path parameter
 	key := c.Param("key")
@@ -149,4 +95,36 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, true, "success")
+}
+
+func currentAPIKeyOwner(c *gin.Context) (*entity.User, string, common.ErrorCode, error) {
+	userValue, exists := c.Get("user")
+	if !exists {
+		return nil, "", common.CodeUnauthorized, errors.New("Unauthorized")
+	}
+	user, ok := userValue.(*entity.User)
+	if !ok {
+		return nil, "", common.CodeServerError, errors.New("Invalid user data")
+	}
+
+	tenantID := c.GetString("tenant_id")
+	if tenantID == "" {
+		// Community Edition keeps the single-tenant user ID as its scope.
+		tenantID = user.ID
+	}
+	membership, err := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(c.Request.Context(), dao.DB, user.ID, tenantID)
+	if err != nil || membership.Role != "owner" {
+		return nil, "", common.CodeForbidden, errors.New("Only the tenant owner can manage API keys")
+	}
+	return user, tenantID, common.CodeSuccess, nil
+}
+
+func respondAPIKeyContextError(c *gin.Context, code common.ErrorCode, err error) {
+	status := http.StatusForbidden
+	if code == common.CodeUnauthorized {
+		status = http.StatusUnauthorized
+	} else if code == common.CodeServerError {
+		status = http.StatusInternalServerError
+	}
+	common.ResponseWithHttpCodeData(c, status, code, nil, err.Error())
 }

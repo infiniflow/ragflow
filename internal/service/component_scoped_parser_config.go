@@ -79,7 +79,36 @@ func ApplyComponentScopedParserConfig(
 func cloneJSONMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
-		out[k] = v
+		out[k] = cloneValue(v)
 	}
 	return out
+}
+
+func cloneValue(v any) any {
+	switch val := v.(type) {
+	case nil:
+		return nil
+	case map[string]any:
+		return cloneJSONMap(val)
+	case entity.JSONMap:
+		out := make(map[string]any, len(val))
+		for k, vv := range val {
+			out[k] = cloneValue(vv)
+		}
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, vv := range val {
+			out[i] = cloneValue(vv)
+		}
+		return out
+	case []map[string]any:
+		out := make([]map[string]any, len(val))
+		for i, vv := range val {
+			out[i] = cloneValue(vv).(map[string]any)
+		}
+		return out
+	default:
+		return v
+	}
 }

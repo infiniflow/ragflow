@@ -170,6 +170,9 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		Size:      &size,
 		Keywords:  c.Query("keywords"),
 	}
+	if ids := queryStringList(c, "id"); len(ids) > 0 {
+		req.ChunkIDs = ids
+	}
 	available, ok, err := parseAvailableQuery(c.Query("available"))
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
@@ -481,26 +484,30 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 
 	// Build UpdateChunkRequest from rawBody
 	var req service.UpdateChunkRequest
-	if content, ok := rawBody["content"].(string); ok {
-		req.Content = &content
+	content, err := optionalBodyString(rawBody, "content", "`content` must be a string")
+	if err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
 	}
-	if importantKwd, ok := rawBody["important_keywords"].([]interface{}); ok {
-		req.ImportantKwd = make([]string, len(importantKwd))
-		for i, v := range importantKwd {
-			if s, ok := v.(string); ok {
-				req.ImportantKwd[i] = s
-			}
+	req.Content = content
+	for _, field := range []string{"important_keywords", "questions"} {
+		values, err := addChunkStringListField(rawFields, field, "`"+field+"` is required to be a list", "`"+field+"` must be a list of strings")
+		if err != nil {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
+			return
+		}
+		if field == "important_keywords" {
+			req.ImportantKwd = values
+		} else {
+			req.Questions = values
 		}
 	}
-	if questions, ok := rawBody["questions"].([]interface{}); ok {
-		req.Questions = make([]string, len(questions))
-		for i, v := range questions {
-			if s, ok := v.(string); ok {
-				req.Questions[i] = s
-			}
+	if raw, exists := rawBody["available"]; exists {
+		available, ok := raw.(bool)
+		if !ok {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "`available` must be a boolean")
+			return
 		}
-	}
-	if available, ok := rawBody["available"].(bool); ok {
 		req.Available = &available
 	}
 	if positions, ok := rawBody["positions"].([]interface{}); ok {
@@ -569,10 +576,10 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 		return
 	}
 
-	// Get document_id from URL path
+	datasetID := c.Param("dataset_id")
 	docID := c.Param("document_id")
-	if docID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "document_id is required")
+	if datasetID == "" || docID == "" {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "dataset_id and document_id are required")
 		return
 	}
 
@@ -582,12 +589,8 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 		return
 	}
 
+	req.DatasetID = datasetID
 	req.DocID = docID
-
-	if req.DocID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "doc_id is required")
-		return
-	}
 
 	ctx := c.Request.Context()
 	deletedCount, err := h.chunkService.RemoveChunks(ctx, &req, user.ID)

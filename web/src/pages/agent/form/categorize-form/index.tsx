@@ -1,10 +1,11 @@
-import { LargeModelFormField } from '@/components/large-model-form-field';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
+import { ModelTreeSelectFormField } from '@/components/model-tree-select';
 import { Form } from '@/components/ui/form';
 import { Separator } from '@/components/ui/separator';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo } from 'react';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 import { initialCategorizeValues } from '../../constant';
 import { useOwnerTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
@@ -20,6 +21,7 @@ import { useWatchFormChange } from './use-watch-change';
 const outputList = buildOutputList(initialCategorizeValues.outputs);
 
 function CategorizeForm({ node }: INextOperatorForm) {
+  const { t } = useTranslation();
   const values = useValues(node);
 
   const FormSchema = useCreateCategorizeFormSchema();
@@ -37,9 +39,13 @@ function CategorizeForm({ node }: INextOperatorForm) {
     <Form {...form}>
       <FormWrapper>
         <QueryVariable></QueryVariable>
-        <LargeModelFormField
+        <ModelTreeSelectFormField
+          name="llm_id"
+          label={t('chat.model')}
+          modelTypes={['chat', 'vision', 'decision']}
+          providers={[]}
           ownerTenantId={ownerTenantId}
-        ></LargeModelFormField>
+        />
         <MessageHistoryWindowSizeFormField
           min={0}
         ></MessageHistoryWindowSizeFormField>

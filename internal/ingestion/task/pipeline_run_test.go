@@ -23,6 +23,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/schema"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 )
 
@@ -72,7 +73,7 @@ func TestExtractPipelinePayload_UnwrapsSingleTerminalOutput(t *testing.T) {
 	if got := payload["output_format"]; got != "chunks" {
 		t.Fatalf("output_format = %v, want chunks", got)
 	}
-	chunks, ok := payload["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(payload["chunks"])
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}

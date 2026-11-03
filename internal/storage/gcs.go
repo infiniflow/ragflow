@@ -75,18 +75,16 @@ func (m *GCSStorage) Health(ctx context.Context) bool {
 
 // Put uploads an object to GCS
 func (m *GCSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
+	uploadCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	obj := m.client.Bucket(bucket).Object(fnm)
-	w := obj.NewWriter(ctx)
+	w := obj.NewWriter(uploadCtx)
 
 	if _, err := w.Write(binary); err != nil {
 		return err
 	}
-	if err := w.Close(); err != nil {
-		return err
-	}
-
-	return nil
+	return w.Close()
 }
 
 // Get retrieves an object from GCS

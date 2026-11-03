@@ -131,6 +131,9 @@ func buildUserFillUpInterruptInfo(ctx context.Context, params map[string]any) ma
 func UserFillUpNodeBody(cpnID string, params map[string]any) func(ctx context.Context, input map[string]any) (map[string]any, error) {
 	inputSpec := BuildInputSpec(params)
 	body := func(ctx context.Context, input map[string]any) (map[string]any, error) {
+		if err := runtime.ValidateUserFillUpOptions(params, false); err != nil {
+			return nil, runtime.NewUserFacingError(err.Error())
+		}
 		// Resume branch: the orchestrator decorated ctx with
 		// compose.ResumeWithData(ctx, interruptID, userInput).
 		// isResumeFlow is true when THIS node is the explicit target;

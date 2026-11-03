@@ -353,13 +353,13 @@ func TestRenderNonMergedByteIdentical(t *testing.T) {
 	}
 }
 
-// RenderTableText strips tags; a merged table yields the same stripped text as
-// the equivalent non-merged table (text-level output is unchanged by spans).
-func TestRenderTextMergedSameAsNonMerged(t *testing.T) {
+// CellTexts is span-agnostic: a merged table yields the same cell texts as the
+// equivalent non-merged table (the Covered slot contributes no text).
+func TestCellTextsMergedSameAsNonMerged(t *testing.T) {
 	merged, _ := ParseTableHTML(`<table><tr><td colspan="2">wide</td><td>narrow</td></tr></table>`)
 	plain, _ := ParseTableHTML(`<table><tr><td>wide</td><td>narrow</td></tr></table>`)
-	if RenderTableText(merged) != RenderTableText(plain) {
-		t.Fatalf("merged text %q != plain text %q", RenderTableText(merged), RenderTableText(plain))
+	if !reflect.DeepEqual(merged.CellTexts(), plain.CellTexts()) {
+		t.Fatalf("merged %v != plain %v", merged.CellTexts(), plain.CellTexts())
 	}
 }
 

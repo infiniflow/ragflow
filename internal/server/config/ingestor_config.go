@@ -28,18 +28,36 @@ import (
 	"github.com/spf13/viper"
 )
 
+type IngestLogConfig struct {
+	Type       string `mapstructure:"type"`        // file, database; default "file"
+	Format     string `mapstructure:"format"`      // json, text (reserved for future use); default "json"
+	Path       string `mapstructure:"path"`        // per-binary file override; empty = use cmd/* hardcoded default
+	MaxSize    int    `mapstructure:"max_size"`    // MB before rotation; default 1000
+	MaxBackups int    `mapstructure:"max_backups"` // retained rotated files; default 20
+	MaxAge     int    `mapstructure:"max_age"`     // days; default 60
+}
+
 type IngestorConfig struct {
-	// MaxConcurrentWorkers bounds how many ingestion tasks the ingestor runs in
+	// ConcurrentWorkers bounds how many ingestion tasks the ingestor runs in
 	// parallel — it is the NATS consumer worker count. Valid range [1, 256],
-	// enforced at startup by the CLI/env/config resolver (ResolveIngestor*); a
+	// enforced at startup by the CLI/env/config resolver (GetIngestor*); a
 	// value outside that range is a fatal startup error. Default 1.
-	MaxConcurrentWorkers int `mapstructure:"max_concurrent_workers"`
+	ConcurrentWorkers int `mapstructure:"concurrent_workers"`
+	// ConcurrentWorkersSet is true when concurrent_workers was explicitly
+	// present in the config file. It lets the server distinguish "unset" (fall
+	// back to the default of 1) from an explicit value such as 0 or a negative
+	// number, which is invalid for the worker count and must be rejected rather
+	// than silently defaulted.
+	ConcurrentWorkersSet bool
 	// PageConcurrency bounds the total number of PDF pages parsed concurrently
 	// across the whole process (it sizes the single shared page worker pool that
 	// all ingestor workers submit to), not a per-document or per-worker limit.
 	// Valid range [1, 16], enforced at startup by the CLI/env/config resolver; a
 	// value outside that range is a fatal startup error. Default 2.
 	PageConcurrency int `mapstructure:"page_concurrency"`
+	// PageConcurrencySet is true when page_concurrency was explicitly present in
+	// the config file, mirroring ConcurrentWorkersSet.
+	PageConcurrencySet bool
 	// CompilerPoolSize bounds the process-wide knowledge-compilation worker
 	// pool that drives the cross-doc KNN / LLM-merge / write stages. 0/negative
 	// falls back to runtime.NumCPU() (or KC_COMPILE_CONCURRENCY if set).
@@ -51,7 +69,7 @@ type IngestorConfig struct {
 	// cores inference may occupy is at most deepDocInferenceCPUCores. K must be a
 	// positive integer and may not exceed the machine's CPU core count. Default
 	// 1. Read from the file-only ingestor.inference_concurrency key; env/CLI
-	// precedence is applied later by ResolveDeepDocInferenceConcurrency.
+	// precedence is applied later by GetDeepDocInferenceConcurrency.
 	deepDocInferenceConcurrency int
 	// deepDocInferenceConcurrencySet is true when inference_concurrency was
 	// explicitly present in the config file. It lets the server distinguish
@@ -68,13 +86,15 @@ type IngestorConfig struct {
 	deepDocInferenceCPUCores int
 	// deepDocInferenceCPUCoresSet is true when inference_cpu_cores was present.
 	deepDocInferenceCPUCoresSet bool
+
+	logConfig IngestLogConfig
 }
 
 // Ingestor concurrency bounds, shared by the CLI/env/config resolver so the
 // configured values can be validated against a single source of truth.
 const (
 	// MinIngestorWorkers / MaxIngestorWorkers are the inclusive bounds for
-	// ingestor.max_concurrent_workers (the NATS consumer count K).
+	// ingestor.concurrent_workers (the NATS consumer count K).
 	MinIngestorWorkers = 1
 	MaxIngestorWorkers = 256
 	// MinPageConcurrency / MaxPageConcurrency are the inclusive bounds for
@@ -85,7 +105,7 @@ const (
 
 func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 	// Default Ingestor config.
-	c.ingestor.MaxConcurrentWorkers = 1
+	c.ingestor.ConcurrentWorkers = 1
 	c.ingestor.PageConcurrency = 2
 	c.ingestor.CompilerPoolSize = 0
 	c.ingestor.deepDocInferenceConcurrency = 1
@@ -101,11 +121,13 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 		return nil
 	}
 
-	if sub.IsSet("max_concurrent_workers") {
-		c.ingestor.MaxConcurrentWorkers = sub.GetInt("max_concurrent_workers")
+	if sub.IsSet("concurrent_workers") {
+		c.ingestor.ConcurrentWorkers = sub.GetInt("concurrent_workers")
+		c.ingestor.ConcurrentWorkersSet = true
 	}
 	if sub.IsSet("page_concurrency") {
 		c.ingestor.PageConcurrency = sub.GetInt("page_concurrency")
+		c.ingestor.PageConcurrencySet = true
 	}
 	if sub.IsSet("compiler_pool_size") {
 		c.ingestor.CompilerPoolSize = sub.GetInt("compiler_pool_size")
@@ -116,8 +138,8 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 	// sub.GetInt would also consult the auto-derived env vars
 	// RAGFLOW_INGESTOR_INFERENCE_CONCURRENCY / RAGFLOW_INGESTOR_INFERENCE_CPU_CORES
 	// and could override or (on a non-integer value) clobber the YAML setting.
-	// Env precedence belongs exclusively to ResolveDeepDocInferenceConcurrency /
-	// ResolveDeepDocInferenceCPUCores (os.Getenv), so the config tier must be
+	// Env precedence belongs exclusively to GetDeepDocInferenceConcurrency /
+	// GetDeepDocInferenceCPUCores (os.Getenv), so the config tier must be
 	// the raw file value. Repoint the env prefix at an impossible token to
 	// deterministically disable AutomaticEnv for this read. A present-but
 	// non-integer value is a hard error (cast.ToIntE) rather than a silent 0.
@@ -139,17 +161,24 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 		c.ingestor.deepDocInferenceCPUCoresSet = true
 	}
 
+	if sub.IsSet("log") {
+		err := c.ingestor.logConfig.ParseIngestLogConfig(sub.Sub("log"))
+		if err != nil {
+			return fmt.Errorf("invalid ingestor.log: %w", err)
+		}
+	}
+
 	return nil
 }
 
-// ResolveDeepDocInferenceConcurrency resolves the effective DeepDoc inference
+// GetDeepDocInferenceConcurrency resolves the effective DeepDoc inference
 // concurrency K. Precedence (highest wins): CLI flag > environment variable
 // RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY > ingestor.inference_concurrency
 // (config file) > default (1). It returns the resolved value, whether it was
 // explicitly set by any layer (config, env, or CLI) as opposed to the built-in
 // default, and any error. An explicit value that is non-integer, non-positive,
 // or otherwise invalid is reported as an error rather than silently ignored.
-func (c *Config) ResolveDeepDocInferenceConcurrency(cli *int) (int, bool, error) {
+func (c *Config) GetDeepDocInferenceConcurrency(argValue *int) (int, bool, error) {
 	val := c.ingestor.deepDocInferenceConcurrency
 	explicit := c.ingestor.deepDocInferenceConcurrencySet
 	if explicit && val <= 0 {
@@ -172,21 +201,21 @@ func (c *Config) ResolveDeepDocInferenceConcurrency(cli *int) (int, bool, error)
 	}
 	// The CLI parser rejects a non-positive --deepdoc-inference-concurrency up
 	// front, so the parsed value is already positive; no extra >0 guard needed.
-	if cli != nil && *cli > 0 {
-		val = *cli
+	if argValue != nil && *argValue > 0 {
+		val = *argValue
 		explicit = true
 	}
 	return val, explicit, nil
 }
 
-// ResolveDeepDocInferenceCPUCores resolves the requested CPU-core budget N for
+// GetDeepDocInferenceCPUCores resolves the requested CPU-core budget N for
 // DeepDoc in-process inference. Precedence (highest wins): CLI flag > environment
 // variable RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES > ingestor.inference_cpu_cores
 // (config file) > default (0, meaning "derive from K"). It returns the raw value
 // (0 still means "all cores" when explicit), whether N was explicitly set by any
 // layer, and any error. A non-integer or negative value is reported as an error;
 // an explicit 0 is valid and means "use all available cores".
-func (c *Config) ResolveDeepDocInferenceCPUCores(cli *int) (int, bool, error) {
+func (c *Config) GetDeepDocInferenceCPUCores(argValue *int) (int, bool, error) {
 	val := c.ingestor.deepDocInferenceCPUCores
 	explicit := c.ingestor.deepDocInferenceCPUCoresSet
 	if explicit && val < 0 {
@@ -205,13 +234,78 @@ func (c *Config) ResolveDeepDocInferenceCPUCores(cli *int) (int, bool, error) {
 	}
 	// The CLI parser accepts a non-negative --deepdoc-inference-cpu-cores (0 =
 	// all cores), so the parsed value is already >= 0.
-	if cli != nil {
-		val = *cli
+	if argValue != nil {
+		val = *argValue
 		explicit = true
 	}
 	return val, explicit, nil
 }
 
+// GetIngestorConcurrentWorkers applies the precedence
+// CLI flag > environment variable > config file > default(1) and returns
+// the resolved ingestor worker count (K), validating it against the
+// inclusive range [MinIngestorWorkers, MaxIngestorWorkers]. An out-of-range
+// or noninteger value at any layer is a fatal startup error. An explicitly
+// configured zero or negative value is rejected (not silently defaulted):
+// the config-layer presence is tracked by ConcurrentWorkersSet so an absent
+// key falls back to the default while an explicit 0/-N fails fast.
+func (c *Config) GetIngestorConcurrentWorkers(argValue *int) (int, error) {
+	val := c.ingestor.ConcurrentWorkers
+	set := c.ingestor.ConcurrentWorkersSet
+	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorConcurrentWorkers)); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorConcurrentWorkers, v, err)
+		}
+		val, set = n, true
+	}
+	if argValue != nil {
+		val, set = *argValue, true
+	}
+	if !set {
+		val = MinIngestorWorkers
+	}
+	if val < MinIngestorWorkers || val > MaxIngestorWorkers {
+		return 0, fmt.Errorf("ingestor concurrent_workers %d out of range [%d, %d]",
+			val, MinIngestorWorkers, MaxIngestorWorkers)
+	}
+	return val, nil
+}
+
+// GetIngestorPageConcurrency applies the precedence
+// CLI flag > environment variable > config file > default(2) and returns
+// the resolved per-document page concurrency (N), validating it against
+// the inclusive range [MinPageConcurrency, MaxPageConcurrency]. An
+// out-of-range or noninteger value at any layer is a fatal startup error.
+// As with GetIngestorConcurrentWorkers, an explicitly configured zero or
+// negative page_concurrency is rejected rather than silently defaulted.
+func (c *Config) GetIngestorPageConcurrency(argValue *int) (int, error) {
+	val := c.ingestor.PageConcurrency
+	set := c.ingestor.PageConcurrencySet
+	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorPageConcurrency)); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorPageConcurrency, v, err)
+		}
+		val, set = n, true
+	}
+	if argValue != nil {
+		val, set = *argValue, true
+	}
+	if !set {
+		val = 2 // default page concurrency
+	}
+	if val < MinPageConcurrency || val > MaxPageConcurrency {
+		return 0, fmt.Errorf("ingestor page_concurrency %d out of range [%d, %d]",
+			val, MinPageConcurrency, MaxPageConcurrency)
+	}
+	return val, nil
+}
+
 func (c *Config) GetIngestorConfig() *IngestorConfig {
 	return &c.ingestor
+}
+
+func (c *Config) GetIngestLogConfig() *IngestLogConfig {
+	return &c.ingestor.logConfig
 }

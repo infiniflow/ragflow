@@ -26,7 +26,7 @@ func TestDatasetServiceListDatasetsFiltersByIDs(t *testing.T) {
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Alpha")
 	insertDatasetUpdateKB(t, "kb-2", "tenant-1", "Beta")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	data, total, code, err := testDatasetListService(t).ListDatasets(ctx,
 		"", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}},
 		"", nil, "", "tenant-1", []string{"kb-1"}, "",
@@ -59,13 +59,14 @@ func TestDatasetServiceListDatasetsIDsAccessibleViaTeamTenant(t *testing.T) {
 		t.Fatalf("insert owner tenant: %v", err)
 	}
 	insertDatasetUpdateTeamMember(t, "user-1", "owner-1")
+	grantDatasetTestResource(t, "owner-1", "kb", "kb-team", "user-1", "read")
 	if err := dao.DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", "kb-team").
 		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
 		t.Fatalf("update kb permission: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "owner-1")
 	data, total, code, err := testDatasetListService(t).ListDatasets(ctx,
 		"", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}},
 		"", nil, "", "user-1", []string{"kb-team"}, "",
@@ -84,7 +85,6 @@ func TestDatasetServiceListDatasetsIDsAccessibleViaTeamTenant(t *testing.T) {
 func TestDatasetServiceListDatasetsAndFiltersUseAuthorizedScope(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
-	insertDatasetUpdateKB(t, "kb-own", "user-1", "Own")
 	insertDatasetUpdateKB(t, "kb-team", "owner-1", "Team")
 	insertDatasetUpdateKB(t, "kb-private", "owner-1", "Private")
 	insertDatasetUpdateTeamMember(t, "user-1", "owner-1")
@@ -93,8 +93,9 @@ func TestDatasetServiceListDatasetsAndFiltersUseAuthorizedScope(t *testing.T) {
 		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
 		t.Fatalf("share team dataset: %v", err)
 	}
+	grantDatasetTestResource(t, "owner-1", "kb", "kb-team", "user-1", "read")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "owner-1")
 	data, total, code, err := testDatasetListService(t).ListDatasets(ctx,
 		"", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}},
 		"", []string{"owner-1"}, "", "user-1", nil, "",
@@ -110,12 +111,12 @@ func TestDatasetServiceListDatasetsAndFiltersUseAuthorizedScope(t *testing.T) {
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListDatasetFilters = (%#v, %v, %v), want success", filters, code, err)
 	}
-	if filters["total"] != int64(2) {
-		t.Fatalf("ListDatasetFilters total = %#v, want 2 visible datasets", filters["total"])
+	if filters["total"] != int64(1) {
+		t.Fatalf("ListDatasetFilters total = %#v, want one visible dataset", filters["total"])
 	}
 	owners, ok := filters["filter"].(map[string]interface{})["owner"].([]*entity.DatasetOwnerFilter)
-	if !ok || len(owners) != 2 {
-		t.Fatalf("ListDatasetFilters owners = %#v, want own and shared tenant groups", filters["filter"])
+	if !ok || len(owners) != 1 {
+		t.Fatalf("ListDatasetFilters owners = %#v, want one visible owner group", filters["filter"])
 	}
 }
 
@@ -140,9 +141,11 @@ func TestDatasetServiceListDatasetsForCanvasUsesCallerOwnerIntersection(t *testi
 	if err := dao.DB.Create(&canvas).Error; err != nil {
 		t.Fatalf("create shared canvas: %v", err)
 	}
+	grantDatasetTestResource(t, "owner-1", "kb", "kb-shared", "user-1", "read")
+	grantDatasetTestResource(t, "owner-1", "canvas", "canvas-shared", "user-1", "read")
 
 	service := testDatasetListService(t)
-	data, total, code, err := service.ListDatasets(t.Context(), "", "", 1, 30,
+	data, total, code, err := service.ListDatasets(withDatasetTestContext(t.Context(), "user-1", "owner-1"), "", "", 1, 30,
 		[]dao.OrderTerm{{Column: "create_time", Desc: true}}, "", nil, "", "user-1", nil, "canvas-shared")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListDatasets(canvas) = (%#v, %d, %v), want success", data, code, err)
@@ -151,7 +154,7 @@ func TestDatasetServiceListDatasetsForCanvasUsesCallerOwnerIntersection(t *testi
 		t.Fatalf("canvas dataset list = %#v (total=%d), want only kb-shared", data, total)
 	}
 
-	data, total, code, err = service.ListDatasets(t.Context(), "", "", 1, 30,
+	data, total, code, err = service.ListDatasets(withDatasetTestContext(t.Context(), "user-1", "owner-1"), "", "", 1, 30,
 		[]dao.OrderTerm{{Column: "create_time", Desc: true}}, "", nil, "", "user-1",
 		[]string{"kb-caller-only", "kb-shared", "kb-owner-only"}, "canvas-shared")
 	if err != nil || code != common.CodeSuccess {
@@ -165,20 +168,27 @@ func TestDatasetServiceListDatasetsForCanvasUsesCallerOwnerIntersection(t *testi
 func TestDatasetServiceListDatasetsPaginatesInsidePermissionScope(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
-	insertDatasetUpdateKB(t, "kb-own", "user-1", "Own")
+	insertDatasetUpdateKB(t, "kb-own", "owner-1", "Own")
 	insertDatasetUpdateKB(t, "kb-team", "owner-1", "Shared")
 	insertDatasetUpdateKB(t, "kb-private", "owner-1", "Private")
 	insertDatasetUpdateKB(t, "kb-outside", "other-owner", "Outside")
 	insertDatasetUpdateTeamMember(t, "user-1", "owner-1")
 	if err := dao.DB.Model(&entity.Knowledgebase{}).
+		Where("id = ?", "kb-own").
+		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
+		t.Fatalf("share first dataset with tenant: %v", err)
+	}
+	if err := dao.DB.Model(&entity.Knowledgebase{}).
 		Where("id = ?", "kb-team").
 		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
 		t.Fatalf("share team dataset: %v", err)
 	}
+	grantDatasetTestResource(t, "owner-1", "kb", "kb-own", "user-1", "read")
+	grantDatasetTestResource(t, "owner-1", "kb", "kb-team", "user-1", "read")
 
 	service := testDatasetListService(t)
 	terms := []dao.OrderTerm{{Column: "name"}}
-	pageOne, total, code, err := service.ListDatasets(t.Context(), "", "", 1, 1, terms, "", nil, "", "user-1", nil, "")
+	pageOne, total, code, err := service.ListDatasets(withDatasetTestContext(t.Context(), "user-1", "owner-1"), "", "", 1, 1, terms, "", nil, "", "user-1", nil, "")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListDatasets(page 1) = (%#v, %d, %v), want success", pageOne, code, err)
 	}
@@ -186,7 +196,7 @@ func TestDatasetServiceListDatasetsPaginatesInsidePermissionScope(t *testing.T) 
 		t.Fatalf("page 1 = %#v (total=%d), want kb-own and two accessible datasets", pageOne, total)
 	}
 
-	pageTwo, secondTotal, code, err := service.ListDatasets(t.Context(), "", "", 2, 1, terms, "", nil, "", "user-1", nil, "")
+	pageTwo, secondTotal, code, err := service.ListDatasets(withDatasetTestContext(t.Context(), "user-1", "owner-1"), "", "", 2, 1, terms, "", nil, "", "user-1", nil, "")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListDatasets(page 2) = (%#v, %d, %v), want success", pageTwo, code, err)
 	}
@@ -198,8 +208,9 @@ func TestDatasetServiceListDatasetsPaginatesInsidePermissionScope(t *testing.T) 
 func TestDatasetServiceListDatasetFiltersReturnsEmptyOwnerList(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
+	ensureDatasetTestMembership(t, "user-without-datasets", "user-without-datasets", "owner")
 
-	filters, code, err := testDatasetListService(t).ListDatasetFilters(t.Context(), "user-without-datasets", "")
+	filters, code, err := testDatasetListService(t).ListDatasetFilters(withDatasetTestContext(t.Context(), "user-without-datasets", "user-without-datasets"), "user-without-datasets", "")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListDatasetFilters = (%#v, %v, %v), want success", filters, code, err)
 	}
@@ -231,7 +242,7 @@ func TestDatasetServiceListDatasetsRejectsIDAndIDsTogether(t *testing.T) {
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Alpha")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "tenant-1")
 	_, _, code, err := testDatasetListService(t).ListDatasets(ctx,
 		"kb-1", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}},
 		"", nil, "", "tenant-1", []string{"kb-1"}, "",
@@ -254,7 +265,7 @@ func TestDatasetServiceListDatasetsFiltersInaccessibleIDs(t *testing.T) {
 	insertDatasetUpdateKB(t, "kb-valid", "user-1", "Valid")
 	insertDatasetUpdateKB(t, "kb-private", "owner-1", "Private")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "user-1")
 	data, total, code, err := testDatasetListService(t).ListDatasets(ctx,
 		"", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}},
 		"", nil, "", "user-1", []string{"kb-valid", "kb-private", "kb-missing"}, "",
@@ -275,7 +286,7 @@ func TestDatasetServiceListDatasetsReturnsEmptyForAllInaccessibleIDs(t *testing.
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-private", "owner-1", "Private")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "user-1")
 	data, total, code, err := testDatasetListService(t).ListDatasets(ctx,
 		"", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}},
 		"", nil, "", "user-1", []string{"kb-private", "kb-missing"}, "",

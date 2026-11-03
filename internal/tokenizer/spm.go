@@ -21,7 +21,7 @@ package tokenizer
 // BAAI/bge-m3, intfloat/multilingual-e5-*, moka-ai/m3e-*, Alibaba-NLP/gte-
 // multilingual-base and jina-embeddings-v3 all tokenize with the same
 // XLM-RoBERTa SentencePiece model (Unigram, 250k pieces, byte_fallback), which
-// is the vocabulary shipped in ragflow_deps - so one asset and one implementation
+// is the vocabulary shipped in deps - so one asset and one implementation
 // cover the whole family. See internal/tokenizer/embedding_token_limits.md.
 //
 // What is faithful and what is approximate:
@@ -784,7 +784,7 @@ var expectedSPMHashes = map[string]string{
 
 // xlmrSPMAssetNames are the file names the loader accepts, in priority order.
 var xlmrSPMAssetNames = []string{
-	"ragflow_deps/huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model",
+	"deps/huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model",
 	"sentencepiece.bpe.model",
 	"xlmr_spm.model",
 }
@@ -850,7 +850,7 @@ func readTokenizerAsset(names []string, pinKey string, pins map[string]string) (
 		}
 		return candidate, raw, nil
 	}
-	return "", nil, fmt.Errorf("no tokenizer asset found; run `uv run ragflow_deps/download_deps.py` or set %s to a directory holding them; tried: %s",
+	return "", nil, fmt.Errorf("no tokenizer asset found; run `uv run deps/download_deps.py` or set %s to a directory holding them; tried: %s",
 		common.EnvModelAssetsDir, strings.Join(tried, ", "))
 }
 

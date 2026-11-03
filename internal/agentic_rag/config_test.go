@@ -208,9 +208,13 @@ func TestShippedConfigIsADirectAnswerTemplate(t *testing.T) {
 	for _, want := range []string{
 		"grep_chunks", "search_bm25_chunks", "search_semantic_chunks",
 		"list_chunks", "[ID:", "Evidence-First",
-		"If web_search is available", "at least one web keyword query",
-		"list_chunks cannot read web chunks", "corpus- or web-backed fact",
-		"Always search configured datasets", "web results supplement dataset evidence",
+		"Always search configured datasets",
+		// The shipped prompt keeps web_search available but subordinate: a
+		// web-first instruction made the agent answer from snippets without
+		// reading the corpus document it had already located.
+		"web_search", "Only when the corpus has no document covering the question",
+		"Web search supplements the corpus", "A web snippet locates a source too",
+		"corpus- or web-backed fact",
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("prompt must mention %q", want)

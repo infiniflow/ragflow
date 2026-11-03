@@ -10,7 +10,7 @@ sidebar_custom_props: {
 
 # Basic Information Configuration
 
-When creating or editing a knowledge compilation template, you need to complete the basic information configuration first. Basic information determines the template name, the model used, and the basic compilation method. All knowledge compilation template types include these configuration items.
+When creating or editing a knowledge compilation template, you need to complete the basic information configuration first. Basic information determines the template name and the basic compilation method. Select the extraction model separately in the pipeline's Compiler component. All knowledge compilation template types include these configuration items.
 
 ## Template Name
 
@@ -20,11 +20,17 @@ Sets the name of the knowledge compilation template so different templates can b
 
 The template description explains the function, applicable scenarios, and main processing content of the current template, making later viewing and management easier.
 
-## Default Extraction Model
+## Open the Template Editor
 
-The default extraction model specifies the model used during knowledge compilation. The system uses this model to understand and analyze document content, and completes information extraction and structured generation according to the rules defined in the template.
+1. Open **Agent** and select **Compilation operator**.
+2. Choose **Create from blank**. The **Add template** page opens directly.
 
-Select an appropriate model based on actual business requirements and model capabilities. You can refer to the related description in the "Template Selection Recommendations" section.
+   ![Compilation operator category and Create from blank entry](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/usage-flow-standard-usage-flow.jpg)
+
+3. Enter **Name**, optionally enter **Description**, then choose **Template**.
+4. Complete **Global rules** and the settings that appear for the selected template type, then click **Save**. Use **Back** to return to the list without saving a new template.
+
+Select the saved template group under **Operator** in the pipeline's **Compiler** component. Configure the compilation model there.
 
 ## Template
 
@@ -33,7 +39,7 @@ Selects the knowledge artifact type to generate through knowledge compilation. T
 - Graph
 - Tree
 - PageIndex
-- MindMap
+- Mindmap
 - Timeline
 - Wiki
 
@@ -45,14 +51,12 @@ Sets the requirements that the current knowledge compilation template must follo
 
 The content controlled by global rules differs between templates. For example, Graph can use global rules to constrain entity and relationship extraction, while Wiki can use global rules to control content organization and generation requirements. For specific configuration methods, refer to the corresponding template chapter.
 
-## Re-Split Parser Output
+## Re-chunk parser output
 
-Controls whether Compiler reorganizes and splits Parser output before executing knowledge compilation.
+For Graph, Mindmap, PageIndex, and Timeline templates, **Re-chunk parser output** controls whether source chunks are regrouped before compilation. Turn it on to show **Rechunking rules** and review or edit the grouping instructions. Specify how adjacent chunks may be combined and how topic and section boundaries should be preserved. The supplied rules preserve source order and require every source chunk to be used exactly once.
 
-After this option is enabled, Compiler reorganizes Parser output based on the processing requirements of the current knowledge compilation template before executing subsequent knowledge compilation. If disabled, compilation is performed directly based on Parser output.
+These settings affect compilation and do not replace the Chunker component. Click **Save** to save the template, then reparse a sample with the pipeline that references it to check the result.
 
-This setting only affects the knowledge compilation process and does not replace Chunker in the Ingestion Pipeline.
-
-Whether this feature is enabled must be determined when configuring the knowledge compilation template. After the template is saved, the setting takes effect when the template is used for knowledge compilation.
+Tree has its own **Re-chunk by tree leaves** setting; Wiki does not show the shared **Re-chunk parser output** control. See [template-specific configuration](./built_in_templates_and_dedicated_configuration.md) for the settings available to each type.
 
 ![Re-Split Parser Output](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/basic-info-config-rechunk-parser-output.jpg)

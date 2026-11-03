@@ -23,18 +23,22 @@ func (r *RetryFailureReporter) FailureMessage(attempt, total int, delay time.Dur
 	if r == nil {
 		return "", false
 	}
+	level := "[WARN]"
+	if final {
+		level = "[ERROR]"
+	}
 	compact := CompactError(err)
 	if compact != r.lastError {
 		r.lastError = compact
 		r.failures = 1
-		return formatRetryFailure(attempt, total, delay, compact), true
+		return fmt.Sprintf("%s LLM call failed (attempt %d/%d): %s%s", level, attempt, total, compact, retryDelaySuffix(delay)), true
 	}
 	r.failures++
 	if final {
-		return fmt.Sprintf("[ERROR] LLM call failed after %d attempts (%d repeated failures): %s", attempt, r.failures-1, compact), true
+		return fmt.Sprintf("%s LLM call failed after %d attempts (%d repeated failures): %s", level, attempt, r.failures-1, compact), true
 	}
 	if r.failures > 1 && (r.failures-1)%retryFailureReportEvery == 0 {
-		return fmt.Sprintf("[ERROR] LLM call failed: %d repeated failures (latest attempt %d/%d): %s%s", r.failures-1, attempt, total, compact, retryDelaySuffix(delay)), true
+		return fmt.Sprintf("%s LLM call failed: %d repeated failures (latest attempt %d/%d): %s%s", level, r.failures-1, attempt, total, compact, retryDelaySuffix(delay)), true
 	}
 	return "", false
 }
@@ -49,10 +53,6 @@ func (r *RetryFailureReporter) RecoveryMessage(attempt int) (string, bool) {
 	r.lastError = ""
 	r.failures = 0
 	return message, true
-}
-
-func formatRetryFailure(attempt, total int, delay time.Duration, compact string) string {
-	return fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s%s", attempt, total, compact, retryDelaySuffix(delay))
 }
 
 func retryDelaySuffix(delay time.Duration) string {

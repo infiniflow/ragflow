@@ -165,8 +165,8 @@ func sortedTaskTypes(seen map[string]struct{}) []string {
 	return taskTypes
 }
 
-func startDatasetCompileLog(ctx context.Context, tenantID, datasetID, claimToken string, entries []BacklogEntry) error {
-	if kcDB == nil || claimToken == "" {
+func (c *Consumer) startDatasetCompileLog(ctx context.Context, tenantID, datasetID, claimToken string, entries []BacklogEntry) error {
+	if c.db == nil || claimToken == "" {
 		return nil
 	}
 	now := time.Now()
@@ -187,7 +187,7 @@ func startDatasetCompileLog(ctx context.Context, tenantID, datasetID, claimToken
 			}
 		}
 	}
-	return kcDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, taskType := range sortedTaskTypesFromGroups(groups) {
 			entryData := make([]any, 0, len(groups[taskType]))
 			for _, entry := range groups[taskType] {
@@ -231,37 +231,37 @@ func startDatasetCompileLog(ctx context.Context, tenantID, datasetID, claimToken
 	})
 }
 
-func updateDatasetCompileLog(ctx context.Context, claimToken string, taskTypes []string, progress float64, message string) error {
-	if kcDB == nil || claimToken == "" {
+func (c *Consumer) updateDatasetCompileLog(ctx context.Context, claimToken string, taskTypes []string, progress float64, message string) error {
+	if c.db == nil || claimToken == "" {
 		return nil
 	}
 	for _, taskType := range taskTypes {
-		if err := updateDatasetCompileLogForType(ctx, datasetCompileLogID(claimToken, taskType), progress, message); err != nil {
+		if err := c.updateDatasetCompileLogForType(ctx, datasetCompileLogID(claimToken, taskType), progress, message); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func updateDatasetCompileLogForType(ctx context.Context, logID string, progress float64, message string) error {
-	return recordDatasetCompileLogEvent(ctx, logID, progress, common.RUNNING, dao.EventTypeMessage, message)
+func (c *Consumer) updateDatasetCompileLogForType(ctx context.Context, logID string, progress float64, message string) error {
+	return c.recordDatasetCompileLogEvent(ctx, logID, progress, common.RUNNING, dao.EventTypeMessage, message)
 }
 
-func finishDatasetCompileLog(ctx context.Context, claimToken string, taskTypes []string, operationStatus, message string, progress float64) error {
-	if kcDB == nil || claimToken == "" {
+func (c *Consumer) finishDatasetCompileLog(ctx context.Context, claimToken string, taskTypes []string, operationStatus, message string, progress float64) error {
+	if c.db == nil || claimToken == "" {
 		return nil
 	}
 	for _, taskType := range taskTypes {
 		logID := datasetCompileLogID(claimToken, taskType)
-		if err := recordDatasetCompileLogEvent(ctx, logID, progress, datasetLogOperationStatus(operationStatus), dao.EventTypeTerminal, message); err != nil {
+		if err := c.recordDatasetCompileLogEvent(ctx, logID, progress, datasetLogOperationStatus(operationStatus), dao.EventTypeTerminal, message); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func recordDatasetCompileLogEvent(ctx context.Context, logID string, progress float64, operationStatus string, eventType int, message string) error {
-	return kcDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (c *Consumer) recordDatasetCompileLogEvent(ctx context.Context, logID string, progress float64, operationStatus string, eventType int, message string) error {
+	return c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var log entity.PipelineOperationLog
 		if err := tx.WithContext(ctx).Where("id = ?", logID).First(&log).Error; err != nil {
 			return err

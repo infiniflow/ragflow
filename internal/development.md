@@ -25,6 +25,34 @@ sudo ln -s /usr/bin/clang-20 /usr/bin/clang
 sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
 ```
 
+> **ARM64 (aarch64) build hosts need more than the above** (empirical minimum,
+> verified on a Snapdragon X Elite host with a trixie-based container):
+> - glibc ≥ 2.38 — the prebuilt native libs reference `__isoc23_*` symbols;
+>   Debian bookworm (glibc 2.36) fails linking with
+>   `undefined reference to __isoc23_strtoll`.
+> - GCC ≥ 13 (libstdc++ ≥ 13) — symbols like
+>   `std::__cxx11::basic_string::_M_replace_cold` need GCC 13+; bookworm's
+>   GCC 12 fails.
+> - `libsimde-dev` — SIMDe supplies the x86 SSE/AVX headers the C++ sources
+>   include (`simde/x86/sse4.1.h`, …); without it `./build.sh --cpp` fails at
+>   the include stage.
+> - cmake ≥ 4.0 — the DeepDoc C++ project requires cmake 4.x; Ubuntu 24.04's
+>   default-repo cmake is older than that (§1.1's kitware route installs a
+>   current one).
+> - lld ≥ 20 — **lld-18 is not enough**. With lld-18 the Go binaries link
+>   successfully but then hang at startup: 100% CPU spin, zero output, before
+>   any Go init runs (`GODEBUG=inittrace=1` prints nothing). Root cause:
+>   build.sh's versioned-symlink cache-busting paths (e.g.
+>   `office_oxide-v0.1.12/lib/liboffice_oxide.a`) make lld-18 pull in ~4 MB of
+>   duplicate archive members, and the duplicated C++ static initializers spin
+>   forever. The same flags with lld-20 produce a correct, smaller binary
+>   (12.5 MB vs 16.7 MB).
+>
+> The `apt install clang-20 lld-20` above only works on distros that ship them
+> (e.g. Debian trixie); Ubuntu 24.04's default lld is 18. On 24.04 use a
+> trixie-based container or the LLVM apt repository — an ARM64 host that
+> silently keeps lld-18 hits the startup hang described above.
+
 ### 1.3 Install golang
 
 ```shell
@@ -44,43 +72,79 @@ uv run tools/scripts/download_dev_deps.py   # local-dev one-stop: native .a + cl
 
 Install `uv` before running the downloaders; it installs each script's declared Python dependencies.
 
-`download_dev_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `ragflow_deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `ragflow_deps/download_deps.py` provisions the same runtime resources plus the stagehand driver (installed into the SDK's cache, using the SDK version from `go.mod`) and skips the native `.a`; run it only when building the dependency image or in CI. Native archives support Linux x86_64.
+`download_dev_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `deps/download_deps.py` provisions the same runtime resources and skips the native `.a`; run it only when building the dependency image or in CI. Native archives are fetched per target platform (linux/darwin on amd64/arm64; override with `RAGFLOW_TARGET_OS` / `RAGFLOW_TARGET_ARCH`).
 
-Build the Go resource image from `ragflow_deps/` after preparing these files:
+Build the Go resource image from `deps/` after preparing these files:
 
 ```shell
-cd ragflow_deps
+cd deps
 docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
 cd ..
 ```
 
-The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stagehand binaries. DeepDoc weights are prepared under `ragflow_deps/huggingface.co/InfiniFlow/deepdoc/` for packaging and under `internal/rag/res/deepdoc/` for local use.
+The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. DeepDoc weights are prepared under `deps/huggingface.co/InfiniFlow/deepdoc/` for packaging and under `internal/rag/res/deepdoc/` for local use.
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
 > ```bash
 > RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_dev_deps.py
-> PLATFORM="linux_amd64"  # macOS (darwin_*) is temporarily unsupported; linux_arm64 is not a supported native build target
-> # NOTE: the ONNX Runtime static lib fetched by download_dev_deps.py is
-> # linux-x64 ONLY (onnxruntime-linux-x64-static_lib-*). On darwin_* / non-amd64
-> # PLATFORM values the production DeepDoc backend cannot be linked, so those
-> # PLATFORM examples cover office_oxide/pdfium/pdf_oxide only — ORT is a
-> # Linux-amd64 link dependency here. macOS is temporarily not supported by the
-> # Go backend; use a Linux x86-64 host for a supported native build.
+> # Native libs are fetched for the *host* platform by download_dev_deps.py
+> # (override with RAGFLOW_TARGET_OS / RAGFLOW_TARGET_ARCH). ONNX Runtime static
+> # libs are published for linux-x86_64, linux-aarch64, osx-arm64 and
+> # osx-universal (Intel Macs use the universal archive — there is no osx-x86_64),
+> # so the production DeepDoc backend links on all four. On Linux the link force-pulls
+> # OrtGetApiBase and exports just it (--undefined=OrtGetApiBase + --dynamic-list,
+> # no --whole-archive) with -fuse-ld=lld + -lstdc++; on macOS (ld64) it uses
+> # -u _OrtGetApiBase + -export_dynamic + -lc++ instead (using ld64's -u rather
+> # than -force_load to avoid pulling in unused objects from the static archive).
 >
 > # Resolve the version-stamped ORT archive path FIRST, in its own unquoted
 > # assignment: the shell does not expand `*` inside the double-quoted
 > # CGO_LDFLAGS below. If this lists more than one match, delete the stale
 > # version dir — build.sh refuses to link two ORT versions.
-> ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/*/lib/libonnxruntime.a)"
+> # Derive target platform and ORT prefix matching build.sh:
+> TARGET_OS="${RAGFLOW_TARGET_OS:-$(uname -s)}"
+> TARGET_ARCH="${RAGFLOW_TARGET_ARCH:-$(uname -m)}"
+> case "$TARGET_OS" in
+>   Linux|linux)   TARGET_OS="linux" ;;
+>   Darwin|darwin) TARGET_OS="darwin" ;;
+> esac
+> case "$TARGET_ARCH" in
+>   x86_64|amd64)  TARGET_ARCH="amd64" ;;
+>   arm64|aarch64) TARGET_ARCH="arm64" ;;
+> esac
+> PLATFORM="${TARGET_OS}_${TARGET_ARCH}"
+> case "$TARGET_OS-$TARGET_ARCH" in
+>   linux-amd64)   ORT_PREFIX="onnxruntime-linux-x64-static_lib-" ;;
+>   linux-arm64)   ORT_PREFIX="onnxruntime-linux-aarch64-static_lib-" ;;
+>   darwin-arm64)  ORT_PREFIX="onnxruntime-osx-arm64-static_lib-" ;;
+>   darwin-amd64)  ORT_PREFIX="onnxruntime-osx-universal-static_lib-" ;;
+>   *)             ORT_PREFIX="onnxruntime-*-static_lib-" ;;
+> esac
+> ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/${ORT_PREFIX}*/lib/libonnxruntime.a)"
 >
-> # The binding reaches ORT with dlopen(NULL)+dlsym("OrtGetApiBase"), so
-> # OrtGetApiBase is the only symbol that must be visible process-wide. Export
-> # just it — not via a "local: *" version script, which hides Go's runtime type
-> # symbols and breaks PIE absolute relocations. There is deliberately no
-> # --whole-archive, so unreferenced kernels are dropped. Write the dynamic
-> # list to .cache/ (gitignored), matching build.sh.
-> mkdir -p .cache
-> printf '{\n  OrtGetApiBase;\n};\n' > .cache/ort_dynamic_list.txt
+> # Link flags differ between Linux (GNU ld) and macOS (ld64).
+> # Prefer `build.sh` which derives the same flags automatically.
+> if [ "$TARGET_OS" = "darwin" ]; then
+>   ORT_LINK="-Wl,-export_dynamic -Wl,-u,_OrtGetApiBase ${ORT_A} -lc++"
+>   # System libs mirror setup_cgo_env in build.sh for darwin: the frameworks are
+>   # required by ONNX Runtime's Core ML / system integrations, and -liconv /
+>   # -lresolv back the string/network code paths the static archive references.
+>   SYS_LIBS="-framework CoreGraphics -framework CoreFoundation \
+>     -framework Security -framework SystemConfiguration \
+>     -framework Foundation \
+>     -liconv -lresolv -lm -lpthread -ldl -lutil -lc -lc++"
+> else
+>   # The binding reaches ORT with dlopen(NULL)+dlsym("OrtGetApiBase"), so
+>   # OrtGetApiBase is the only symbol that must be visible process-wide. Export
+>   # just it via --dynamic-list — not a "local: *" version script, which hides
+>   # Go's runtime type symbols and breaks PIE absolute relocations. There is
+>   # deliberately no --whole-archive, so unreferenced kernels are dropped.
+>   # The dynamic list lives in .cache/ (gitignored), matching build.sh.
+>   mkdir -p .cache
+>   printf '{\n  OrtGetApiBase;\n};\n' > .cache/ort_dynamic_list.txt
+>   ORT_LINK="-Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=.cache/ort_dynamic_list.txt ${ORT_A} -lstdc++"
+>   SYS_LIBS="-fuse-ld=lld -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
+> fi
 >
 > export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
 > export CGO_LDFLAGS="\
@@ -89,18 +153,20 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
 >     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
 >     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
->     -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=.cache/ort_dynamic_list.txt ${ORT_A} -lstdc++ \
->     -fuse-ld=lld \
->     -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
+>     ${ORT_LINK} \
+>     ${SYS_LIBS}"
 > ```
 >
 > All four native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
 >
 > **ONNX Runtime is mandatory for the production binary.** The in-process (Go)
-> DeepDoc backend is statically linked against `libonnxruntime.a` (no
-> `--whole-archive`; `OrtGetApiBase` is force-pulled with
-> `-Wl,--undefined=OrtGetApiBase` and exported via `--dynamic-list`), and
-> `OrtGetApiBase` is resolved at runtime through `dlopen(NULL)`. The org
+> DeepDoc backend is statically linked against `libonnxruntime.a`. On Linux the
+> only symbol that must be visible process-wide is `OrtGetApiBase`: it is
+> force-pulled with `-Wl,--undefined=OrtGetApiBase` and exported via
+> `--dynamic-list` (no `--whole-archive`, so unreferenced kernels are dropped).
+> On macOS (ld64) `OrtGetApiBase` is force-pulled with `-Wl,-u,_OrtGetApiBase`
+> and exported with `-export_dynamic`. In both
+> cases `OrtGetApiBase` is resolved at runtime through `dlopen(NULL)`. The org
 > `onnxruntime_go` binding
 > (github.com/infiniflow/onnxruntime_go, the mirror of yalue/onnxruntime_go) only
 > needs `-ldl` to *compile*, so a binary built **without** ORT links
@@ -133,10 +199,11 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 
 > **Note**: `build.sh` also guards ONNX Runtime **archive integrity** and the
 > **link cache**, because a silently-stale `.a` is easy to miss:
-> - `check_onnxruntime_deps` compares the local release ZIP under `ragflow_deps/`
->   (`onnxruntime-v<ver>-linux-x86_64.zip`) against the SHA-256 digest pinned in
+> - `check_onnxruntime_deps` compares the local release ZIP under `deps/`
+>   (`onnxruntime-v<ver>-<target>.zip`, e.g. `-linux-x86_64` / `-osx-arm64`)
+>   against the SHA-256 digest pinned in
 >   `build.sh`, without a network request. The downloader separately checks the
->   published `onnxruntime-v<ver>-linux-x86_64.zip.sha256` sidecar. A local ZIP
+>   published `onnxruntime-v<ver>-<target>.zip.sha256` sidecar. A local ZIP
 >   mismatch only emits a warning with the expected/actual SHA-256 and the
 >   refresh command (`rm -f <zip>` + `uv run tools/scripts/download_dev_deps.py`);
 >   the build continues checking and linking the extracted static libraries. CI seeds
@@ -212,7 +279,7 @@ missing from the model directory.
   If you instead see a fatal `no in-process DeepDoc backend serving`, it has
   two possible causes: ORT was not linked into the binary, or the model
   directory is missing one of the five required files listed above. Check the
-  weights first, then re-run `uv run ragflow_deps/download_deps.py` and rebuild
+  weights first, then re-run `uv run deps/download_deps.py` and rebuild
   (§1.4 explains the ORT link failure; `build.sh` fails fast with
   `Error: ONNX Runtime static libraries are not linked` before that happens).
 
@@ -239,14 +306,45 @@ docker compose -f docker/docker-compose-base.yml --profile infinity up -d
   deployment disables the Valkey/Redis service so there is no clash). Export these
   before running `./bin/ragflow_server ...` on the host, or load them from
   `docker/.env-go`:
-```bash
-export KVROCKS_HOST=127.0.0.1
-export KVROCKS_PORT=6379
-```
+  ```bash
+  export KVROCKS_HOST=127.0.0.1
+  export KVROCKS_PORT=6379
+  ```
   In docker the Go services override these to `kvrocks:6379` automatically
   (see `docker-compose-go.yml`). If Kvrocks is unreachable at startup the
   process fails fast with `failed to connect to Kvrocks`.
+  HTML, EPUB, DOCX, PPTX and XLSX ingestion use Kvrocks to hand embedded images
+  from the parser to the chunker; the ingestor also validates the injected
+  Kvrocks client at startup.
+  Image payloads share a default 32 MiB per-image limit across data URIs,
+  ZIP-entry extraction, picture parsing, vision encoding and media-cache writes.
+  Set `RAGFLOW_MEDIA_IMAGE_MAX_BYTES` to a positive byte count to change it.
+  Native PDF region cropping retains its separate page/raster limits.
+  The parser budget and media cache apply the same numeric run caps: 1024 items
+  and 1 GiB of decoded image bytes per run. The parser counts distinct source
+  references; the cache counts distinct SHA-256 payloads. Set
+  `RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN` and `RAGFLOW_MEDIA_MAX_BYTES_PER_RUN` to
+  positive values to change them. Quota state is keyed by ingestion task and
+  persists across retries of that task until cleanup or the 24-hour media TTL.
+  Office parsers deduplicate sources by payload digest. DOC/PPT share their
+  Office family path; BIFF8 XLS does not extract embedded pictures. Office IR
+  and Excelize expose already materialized image bytes, so these budgets bound
+  emitted/cached payloads, not native extraction or ZIP decoding peak memory.
+  DOC/DOCX and PPT/PPTX identify image MIME types from payload signatures;
+  XLSX-content spreadsheets use an extension allowlist, including EMZ/WMZ
+  which the byte-only Office detector does not recognize. Unsupported images
+  are skipped with warnings.
+  File text extraction and email attachment re-chunking use text-only parsers;
+  Office images skipped by limits produce warnings without placeholder items.
+  Debug previews use a temporary `pipeline_<document-id>` run scope and purge
+  their cache state when the preview finishes.
 
+  Validate Office media handoff against the services configured in
+  `conf/service_conf.yaml` (real MySQL, Kvrocks and MinIO):
+
+  ```bash
+  RAGFLOW_REAL_OFFICE_MEDIA_TEST=1 bash build.sh --test-integration-go ./internal/ingestion/pipeline -run '^TestOfficeMediaRealServices$' -v
+  ```
 
 - Start RAGFlow
 Note: Database migrations must complete before starting any server mode.

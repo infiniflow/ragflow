@@ -70,16 +70,7 @@ func insertDatasetMetadataConfigKB(t *testing.T, datasetID, tenantID string) {
 
 func insertDatasetMetadataConfigTeamMember(t *testing.T, userID, tenantID string) {
 	t.Helper()
-	if err := dao.DB.Create(&entity.UserTenant{
-		ID:        userID + "-" + tenantID,
-		UserID:    userID,
-		TenantID:  tenantID,
-		Role:      "normal",
-		InvitedBy: tenantID,
-		Status:    sptr("1"),
-	}).Error; err != nil {
-		t.Fatalf("insert user tenant: %v", err)
-	}
+	ensureDatasetTestMembership(t, userID, tenantID, "normal")
 }
 
 func insertDatasetMetadataConfigDoc(t *testing.T, docID, datasetID string, parserConfig entity.JSONMap) {
@@ -115,7 +106,7 @@ func TestDatasetServiceUpdateDocumentMetadataConfig(t *testing.T) {
 	insertDatasetMetadataConfigKB(t, "kb-1", "user-1")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{"pages": []interface{}{1, 2}})
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "user-1")
 	metadata := map[string]interface{}{"author": "Alice", "year": float64(2026)}
 	doc, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
 		ctx,
@@ -168,7 +159,7 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRequiresMetadata(t *testing.T
 	insertDatasetMetadataConfigKB(t, "kb-1", "user-1")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{})
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "user-1")
 	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
 		ctx,
 		"user-1",
@@ -191,9 +182,10 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRejectsNonOwner(t *testing.T)
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetMetadataConfigKB(t, "kb-1", "owner-1")
+	ensureDatasetTestMembership(t, "user-1", "owner-1", "normal")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{})
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "owner-1")
 	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
 		ctx,
 		"user-1",
@@ -223,9 +215,10 @@ func TestDatasetServiceUpdateDocumentMetadataConfigAllowsTeamMember(t *testing.T
 		t.Fatalf("update kb permission: %v", err)
 	}
 	insertDatasetMetadataConfigTeamMember(t, "user-1", "owner-1")
+	grantDatasetTestResource(t, "owner-1", "kb", "kb-1", "user-1", "read", "write")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{})
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "user-1", "owner-1")
 	doc, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
 		ctx,
 		"user-1",
@@ -270,7 +263,7 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 		t.Fatalf("seed parser_config: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	result, code, err := (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
@@ -416,7 +409,7 @@ func TestDatasetServiceGetMetadataConfig(t *testing.T) {
 	insertCreateDatasetTenant(t, "tenant-1")
 	insertDatasetMetadataConfigKB(t, "kb-1", "tenant-1")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	_, code, err := (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
@@ -469,7 +462,7 @@ func TestUpdateMetadataConfig_TenantLookupFailureDoesNotPersist(t *testing.T) {
 	// kb-1 points at a tenant that does not exist, so tenantDAO.GetByID fails.
 	insertDatasetMetadataConfigKB(t, "kb-1", "missing-tenant")
 
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "missing-tenant", "missing-tenant")
 	result, code, err := (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
@@ -499,7 +492,7 @@ func TestUpdateMetadataConfig_ExplicitEnabledPreservedWhenEmpty(t *testing.T) {
 	insertDatasetMetadataConfigKB(t, "kb-1", "tenant-1")
 
 	enabled := true
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	result, code, err := (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
@@ -538,7 +531,7 @@ func TestUpdateDocumentMetadataConfig_KBAndTenantLookupFailure(t *testing.T) {
 	pushServiceDB(t, db)
 	insertDatasetMetadataConfigKB(t, "kb-ok", "owner-1")
 	insertDatasetMetadataConfigDoc(t, "doc-ok", "kb-ok", entity.JSONMap{})
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "owner-1", "owner-1")
 
 	// Missing KB -> database layer should surface as CodeServerError / not found
 	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
@@ -552,8 +545,9 @@ func TestUpdateDocumentMetadataConfig_KBAndTenantLookupFailure(t *testing.T) {
 	// KB exists but tenant lookup fails (kb.TenantID points to missing tenant)
 	insertDatasetMetadataConfigKB(t, "kb-bad-tenant", "missing-tenant")
 	insertDatasetMetadataConfigDoc(t, "doc2", "kb-bad-tenant", entity.JSONMap{})
+	missingTenantCtx := withDatasetTestContext(t.Context(), "missing-tenant", "missing-tenant")
 	_, code, err = testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
-		ctx, "missing-tenant", "kb-bad-tenant", "doc2",
+		missingTenantCtx, "missing-tenant", "kb-bad-tenant", "doc2",
 		map[string]interface{}{"metadata": map[string]interface{}{"a": "b"}},
 	)
 	if code != common.CodeServerError || err == nil {

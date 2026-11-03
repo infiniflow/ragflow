@@ -326,6 +326,7 @@ func TestWeComApplicationSendCachesAccessToken(t *testing.T) {
 		}
 	}))
 	defer server.Close()
+	allowChannelURLForTest(t, server.URL)
 
 	encodingAESKey, _ := testWeComAESKey()
 	channel, err := newWeComChannel(wecomAccount{
@@ -401,6 +402,7 @@ func TestWeComWebSocketSubscribesHandlesAndSends(t *testing.T) {
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	allowChannelURLForTest(t, wsURL)
 	channel, err := newWeComChannel(wecomAccount{
 		AccountID:      "account-1",
 		ConnectionType: "websocket",

@@ -26,24 +26,24 @@ type AdminConfig struct {
 }
 
 func (c *Config) ParseAdminConfig(v *viper.Viper) error {
-	// Default Admin config
+	// Defaults; overridden from the ROOT viper using the FULL dotted key. The
+	// previous guard `if !v.IsSet("admin") { return }` checked the PARENT
+	// key, which an env var maps to the child key `admin.http_port`, so the
+	// guard was false for a lone env override and the server kept binding
+	// 9381. Reading the full key from the root viper (which carries the
+	// RAGFLOW prefix/replacer/AutomaticEnv from server.Init) honours both the
+	// YAML file and the env layer — including the env-only case. The admin
+	// port env var is RAGFLOW_ADMIN_HTTP_PORT (no prefix doubling, unlike the
+	// ragflow section), so the root read already consults it.
 	c.admin.Host = "localhost"
 	c.admin.HTTPPort = 9381
 
-	if !v.IsSet("admin") {
-		return nil
-	}
-	sub := v.Sub("admin")
-	if sub == nil {
-		return nil
+	if v.IsSet("admin.host") {
+		c.admin.Host = v.GetString("admin.host")
 	}
 
-	if sub.IsSet("host") {
-		c.admin.Host = sub.GetString("host")
-	}
-
-	if sub.IsSet("http_port") {
-		c.admin.HTTPPort = sub.GetInt("http_port")
+	if v.IsSet("admin.http_port") {
+		c.admin.HTTPPort = v.GetInt("admin.http_port")
 	}
 
 	return nil
@@ -51,4 +51,12 @@ func (c *Config) ParseAdminConfig(v *viper.Viper) error {
 
 func (c *Config) GetAdminServerConfig() AdminConfig {
 	return c.admin
+}
+
+// SetAdminHTTPPort stores a resolved admin server port in the global
+// config. GetAdminServerConfig returns a copy, so this setter (not a write
+// into the returned struct) is how a CLI/env override reaches the config
+// the admin server actually binds.
+func (c *Config) SetAdminHTTPPort(port int) {
+	c.admin.HTTPPort = port
 }

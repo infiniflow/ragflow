@@ -1,6 +1,6 @@
 // Package component — Categorize (T3).
 //
-// LLM-based classifier. The component asks the model to pick exactly
+// Model-based classifier. The component asks the model to pick exactly
 // one of the configured categories, returns the chosen category name
 // plus a uniform score map (1.0 for the chosen category, 0.0 for the
 // rest). The MultiBranch wiring in canvas/multibranch.go consumes
@@ -18,9 +18,10 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 )
 
-// CategorizeComponent is an LLM classifier.
+// CategorizeComponent classifies with a chat or decision model.
 type CategorizeComponent struct {
 	param CategorizeParam
 }
@@ -62,13 +63,13 @@ func NewCategorizeComponent(p CategorizeParam) *CategorizeComponent {
 // Name returns the registered component name.
 func (c *CategorizeComponent) Name() string { return "Categorize" }
 
-// Invoke calls the chat model, parses the response for a category, and
+// Invoke calls the selected model, parses the response for a category, and
 // returns the chosen category (or the default if the model returned
 // something outside the configured set).
 func (c *CategorizeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	p := mergeCategorizeParam(c.param, inputs)
 	var err error
-	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL, entity.ModelTypeChat|entity.ModelTypeDecision)
 	if err != nil {
 		return nil, err
 	}
@@ -87,29 +88,39 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 		p.DefaultCategory = p.Categories[0]
 	}
 
-	inv := getDefaultChatInvoker()
-	sysPrompt := p.SysPrompt
-	if sysPrompt == "" {
-		sysPrompt = buildCategorizeSystemPrompt(p)
-	}
 	query := resolveCategorizeQuery(ctx, p, inputs)
-	userPrompt := buildCategorizePrompt(categorizeHistory(ctx, p.MessageHistoryWindowSize, query))
-	msgs := []schema.Message{
-		{Role: schema.System, Content: sysPrompt},
-		{Role: schema.User, Content: userPrompt},
+	history := categorizeHistory(ctx, p.MessageHistoryWindowSize, query)
+	var chosen string
+	var score map[string]float64
+	if strings.EqualFold(p.Driver, "SystemOne") {
+		chosen, err = categorizeWithDecision(ctx, p, query, history)
+		if err == nil {
+			score = make(map[string]float64, len(p.Categories))
+			for _, category := range p.Categories {
+				score[category] = 0
+			}
+			score[chosen] = 1
+		}
+	} else {
+		sysPrompt := p.SysPrompt
+		if sysPrompt == "" {
+			sysPrompt = buildCategorizeSystemPrompt(p)
+		}
+		resp, invokeErr := getDefaultChatInvoker().Invoke(ctx, db, ChatInvokeRequest{
+			Driver: p.Driver, ModelName: p.ModelID, APIKey: p.APIKey, BaseURL: p.BaseURL,
+			Messages: []schema.Message{
+				{Role: schema.System, Content: sysPrompt},
+				{Role: schema.User, Content: buildCategorizePrompt(history)},
+			},
+		})
+		err = invokeErr
+		if err == nil {
+			chosen, score = pickCategory(resp.Content, p.Categories, p.DefaultCategory)
+		}
 	}
-	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
-		Driver:    p.Driver,
-		ModelName: p.ModelID,
-		APIKey:    p.APIKey,
-		BaseURL:   p.BaseURL,
-		Messages:  msgs,
-	})
 	if err != nil {
 		return nil, fmt.Errorf("component: Categorize.Invoke: %w", err)
 	}
-
-	chosen, score := pickCategory(resp.Content, p.Categories, p.DefaultCategory)
 	next := []string{}
 	if route := p.CategoryRoutes[chosen]; route != "" {
 		next = []string{route}

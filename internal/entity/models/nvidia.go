@@ -755,3 +755,7 @@ func (n *NvidiaModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 func (n *NvidiaModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
+
+func (n *NvidiaModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", n.Name())
+}

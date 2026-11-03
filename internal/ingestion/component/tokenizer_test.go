@@ -76,7 +76,7 @@ func TestTokenizerComponent_Invoke_HappyPath(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	gotChunks, ok := out["chunks"].([]map[string]any)
+	gotChunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks type = %T, want []map[string]any", out["chunks"])
 	}
@@ -142,7 +142,7 @@ func TestTokenizerComponent_Invoke_Unicode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	gotChunks, _ := out["chunks"].([]map[string]any)
+	gotChunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(gotChunks) != len(inputs) {
 		t.Fatalf("chunks len = %d, want %d", len(gotChunks), len(inputs))
 	}
@@ -172,7 +172,7 @@ func TestTokenizerComponent_Invoke_TextPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(got) != 1 {
 		t.Fatalf("chunks len = %d, want 1", len(got))
 	}
@@ -198,7 +198,7 @@ func TestTokenizerComponent_Invoke_JSONPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(got) != 2 {
 		t.Fatalf("chunks len = %d, want 2", len(got))
 	}
@@ -253,7 +253,7 @@ func TestTokenizerComponent_Invoke_FullTextOnly(t *testing.T) {
 	if out["embedding_token_consumption"] != nil {
 		t.Errorf("embedding_token_consumption should be absent, got %v", out["embedding_token_consumption"])
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(got) == 0 || got[0]["content_ltks"] == nil {
 		t.Errorf("content_ltks missing: %v", got)
 	}
@@ -282,7 +282,7 @@ func TestTokenizerComponent_Invoke_KeywordSplitCommaOnly(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Invoke(%q): %v", keywords, err)
 		}
-		got, _ := out["chunks"].([]map[string]any)
+		got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 		if len(got) != 1 {
 			t.Fatalf("chunks len = %d, want 1", len(got))
 		}
@@ -325,7 +325,7 @@ func TestTokenizerComponent_Invoke_FullTextAndEmbedding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(got) != 1 {
 		t.Fatalf("chunks len = %d, want 1", len(got))
 	}
@@ -472,7 +472,7 @@ func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
 		t.Errorf("elapsed %v exceeds 5s ceiling", elapsed)
 	}
 
-	got, ok := out["chunks"].([]map[string]any)
+	got, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(got) != 1 {
 		t.Fatalf("chunks output malformed: %v", out["chunks"])
 	}
@@ -513,7 +513,7 @@ func TestTokenizerComponent_Embedding_MergesTitleAndContentVectors(t *testing.T)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	want0 := []float64{1.9, 3.8}
 	want1 := []float64{3.7, 5.6}
 	if !floatSliceClose(got[0]["q_2_vec"].([]float64), want0) {
@@ -549,7 +549,7 @@ func TestTokenizerComponent_Embedding_UsesFilenameWeight(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	want := []float64{3.5, 3.5}
 	if !floatSliceClose(got[0]["q_2_vec"].([]float64), want) {
 		t.Fatalf("q_2_vec = %v, want %v", got[0]["q_2_vec"], want)
@@ -583,7 +583,7 @@ func TestTokenizerComponent_Embedding_EmptyNameWarnsAndUsesContentVector(t *test
 	if got := logs.FilterMessageSnippet("empty name provided from upstream").Len(); got != 1 {
 		t.Fatalf("empty-name warnings = %d, want 1 (entries: %v)", got, logs.All())
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	want := []float64{2, 4}
 	if !floatSliceClose(got[0]["q_2_vec"].([]float64), want) {
 		t.Fatalf("q_2_vec = %v, want %v", got[0]["q_2_vec"], want)
@@ -665,7 +665,7 @@ func TestTokenizerComponent_Embedding_SkipsEmptyCleanedTextsButReturnsZeroWhenAl
 	if got := out["embedding_token_consumption"]; got != 0 {
 		t.Fatalf("embedding_token_consumption = %v, want 0", got)
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	for i, ck := range got {
 		if _, ok := ck["q_2_vec"]; ok {
 			t.Fatalf("chunk[%d] should not have vector: %v", i, ck)
@@ -762,8 +762,16 @@ func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testin
 	if err != nil {
 		t.Fatalf("Invoke B: %v", err)
 	}
-	vecA := outA["chunks"].([]map[string]any)[0]["q_2_vec"].([]float64)
-	vecB := outB["chunks"].([]map[string]any)[0]["q_2_vec"].([]float64)
+	chunksA, okA := schema.ChunkCarrierToMaps(outA["chunks"])
+	if !okA || len(chunksA) == 0 {
+		t.Fatalf("A: no chunks emitted: %v", outA["chunks"])
+	}
+	vecA, _ := chunksA[0]["q_2_vec"].([]float64)
+	chunksB, okB := schema.ChunkCarrierToMaps(outB["chunks"])
+	if !okB || len(chunksB) == 0 {
+		t.Fatalf("B: no chunks emitted: %v", outB["chunks"])
+	}
+	vecB, _ := chunksB[0]["q_2_vec"].([]float64)
 	if reflect.DeepEqual(vecA, vecB) {
 		t.Fatalf("instance resolvers leaked: vecA=%v vecB=%v", vecA, vecB)
 	}

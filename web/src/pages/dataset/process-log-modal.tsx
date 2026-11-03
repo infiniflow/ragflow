@@ -79,10 +79,17 @@ export const replaceText = (text: string) => {
 
   const replacedText = reactStringReplace(
     nextText,
-    /(\[ERROR\].+\s)/g,
+    /(\[(?:ERROR|WARN)\][^\r\n]*)/g,
     (match, i) => {
       return (
-        <span key={i} className={'text-red-600'}>
+        <span
+          key={i}
+          className={
+            match.startsWith('[WARN]')
+              ? 'text-state-warning'
+              : 'text-state-error'
+          }
+        >
           {match}
         </span>
       );

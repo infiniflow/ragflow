@@ -5,8 +5,19 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/parser/tableutil"
 )
+
+// cellTextsContain reports whether any cell of the structured table contains sub.
+func cellTextsContain(td *entity.TableData, sub string) bool {
+	for _, row := range td.CellTexts() {
+		for _, cell := range row {
+			if strings.Contains(cell, sub) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // Consumers of doc_type_kwd "table" parse the item text as <table> markup
 // (the QA chunker reads its <tr> rows), so a table item that carries other
@@ -38,16 +49,20 @@ func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 		wantDocType string
 	}{
 		{"opendataloader html", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "html": tableHTML})
+			items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "html": tableHTML}, nil)
+			return items
 		}, "table"},
 		{"opendataloader content only", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "content": pipeText})
+			items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "content": pipeText}, nil)
+			return items
 		}, "text"},
 		{"opendataloader cells only", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "cells": cells})
+			items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "cells": cells}, nil)
+			return items
 		}, "table"},
 		{"opendataloader blank cells keep content", func() []map[string]any {
-			return openDataLoaderItems(map[string]any{"type": "table", "content": pipeText, "cells": blankCells})
+			items, _ := openDataLoaderItemsWithGeometry(map[string]any{"type": "table", "content": pipeText, "cells": blankCells}, nil)
+			return items
 		}, "text"},
 		{"tcadp html content", func() []map[string]any {
 			return tcadpAnyToItems(map[string]any{"type": "table", "content": tableHTML})
@@ -62,11 +77,13 @@ func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 			return tcadpAnyToItems(map[string]any{"type": "table", "content": pipeText, "table_data": blankRows})
 		}, "text"},
 		{"somark html", func() []map[string]any {
-			return []map[string]any{soMarkBlockToItem(map[string]any{"type": "table", "content": tableHTML}, false)}
+			items, _ := soMarkBlockToItems(t.Context(), map[string]any{"type": "table", "content": tableHTML}, false, &htmlWalkState{budget: newMediaBudgetForTest()})
+			return items
 		}, "table"},
 		{"somark markdown", func() []map[string]any {
-			return []map[string]any{soMarkBlockToItem(map[string]any{"type": "table", "content": markdownTable}, false)}
-		}, "text"},
+			items, _ := soMarkBlockToItems(t.Context(), map[string]any{"type": "table", "content": markdownTable}, false, &htmlWalkState{budget: newMediaBudgetForTest()})
+			return items
+		}, "table"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -91,8 +108,8 @@ func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 				if len(td.CellTexts()) == 0 {
 					t.Fatalf("structured table has no rows: %#v", td)
 				}
-				if got := tableutil.RenderTableText(td); !strings.Contains(got, "What is RAGFlow?") {
-					t.Fatalf("structured table missing cell text %q: %#v", got, td)
+				if !cellTextsContain(td, "What is RAGFlow?") {
+					t.Fatalf("structured table missing cell text %q: %#v", "What is RAGFlow?", td)
 				}
 			}
 		})

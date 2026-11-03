@@ -266,6 +266,7 @@ func TestCitationGroundingHasSubstantiveText(t *testing.T) {
 		{"The reimbursement request requires manager approval.", true},
 		{"The reimbursement request requires manager approval. [ID:0]", true},
 		{"The reimbursement request requires manager approval. [ID:simple-0]", true},
+		{"[ID:oops more [link] end", true},
 		{"答案[ID:0]", true},
 		{"答案[ID:ck-1]", true},
 	}

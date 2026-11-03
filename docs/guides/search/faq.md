@@ -17,7 +17,7 @@ Chat is designed for knowledge-based question answering. In addition to retrievi
 
 **Why can't I find content that already exists in the knowledge base?**
 
-The relevant chunks may not meet the **Similarity threshold**, or the query may differ significantly from the wording in the source content. Try lowering the similarity threshold, adjusting the **Vector similarity weight**, or using more specific keywords.
+The relevant chunks may not meet the **Similarity threshold**, or the query may differ significantly from the wording in the source content. Try lowering the similarity threshold, adjusting the **Keyword similarity weight**, or using more specific keywords.
 
 Also make sure that the target knowledge base has been added to the current Search and that the relevant documents have been successfully parsed and indexed.
 
@@ -25,13 +25,13 @@ Also make sure that the target knowledge base has been added to the current Sear
 
 Try increasing the **Similarity threshold** to filter out less relevant results.
 
-If your query relies mainly on keywords, proper nouns, or identifiers, you can also decrease the **Vector similarity weight** to give full-text retrieval more weight in hybrid retrieval.
+If your query relies mainly on keywords, proper nouns, or identifiers, you can also increase the **Keyword similarity weight** to give full-text retrieval more weight in hybrid retrieval.
 
-**How should I set the Vector similarity weight?**
+**How should I set the Keyword similarity weight?**
 
 This parameter controls the balance between vector retrieval and full-text retrieval.
 
-For semantic search scenarios, you can increase the Vector weight. If you mainly search for product names, identifiers, technical terms, or other content that requires exact matching, you can increase the Full-text weight. In most cases, it is recommended to start with the default value and adjust it based on actual search results.
+Decrease **Keyword similarity weight** to favor semantic matching. Increase it for product names, identifiers, technical terms, and exact matches. Start with the default value and adjust it based on search results.
 
 **Why does Search become slower after I enable the Rerank model?**
 

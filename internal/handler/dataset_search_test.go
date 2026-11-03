@@ -198,6 +198,32 @@ func TestDatasetsHandlerSearchDatasetsSuccess(t *testing.T) {
 	}
 }
 
+func TestDatasetsHandlerSearchDatasetsIgnoresUnknownFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, extra := range []string{``, `,"force_refresh":true`, `,"force_refresh":false`, `,"force_refresh":"unused"`, `,"unknown":"unused"`} {
+		t.Run(extra, func(t *testing.T) {
+			fake := &fakeSearchDatasetsService{resp: &service.SearchDatasetsResponse{Total: 2}}
+			h := &DatasetsHandler{searchDatasetsService: fake}
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/retrieval", strings.NewReader(`{"question":"hello","dataset_ids":["ds-1"]`+extra+`}`))
+			req.Header.Set("Content-Type", "application/json")
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = req
+			c.Set("user", &entity.User{ID: "user-1"})
+
+			h.SearchDatasets(c)
+
+			body := decodeSearchResponse(t, rec)
+			if rec.Code != http.StatusOK || body["code"] != float64(common.CodeSuccess) {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			if fake.req == nil || fake.req.Question != "hello" || len(fake.req.DatasetIDs) != 1 || fake.req.DatasetIDs[0] != "ds-1" {
+				t.Fatalf("request = %#v", fake.req)
+			}
+		})
+	}
+}
+
 func TestDatasetsHandlerSearchDatasetsValidationErrorsUseArgumentEnvelope(t *testing.T) {
 	tests := []struct {
 		name string

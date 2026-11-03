@@ -325,12 +325,11 @@ func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualifie
 	if opts.Name != "" {
 		query = query.Where(column("name")+" = ?", opts.Name)
 	}
-	if opts.DocIDFilterApplied {
-		if len(opts.DocIDs) == 0 {
-			query = query.Where("1 = 0")
-		} else {
-			query = query.Where(column("id")+" IN ?", opts.DocIDs)
-		}
+	// The document ID clause is not gated on DocIDFilterApplied here: with the
+	// flag false and IDs present, applying them narrows the query instead of
+	// silently widening it, which is the safe direction to fail in.
+	if len(opts.DocIDs) > 0 {
+		query = query.Where(column("id")+" IN ?", opts.DocIDs)
 	}
 	// Note: create_time_from / create_time_to are NOT applied at DB level.
 	// They are filtered post-query in the handler so total reflects the
@@ -398,12 +397,13 @@ func (dao *DocumentDAO) GetChunkingConfig(ctx context.Context, db *gorm.DB, docI
 			knowledgebase.language,
 			knowledgebase.embd_id,
 			tenant.id AS tenant_id,
-			tenant.img2txt_id,
-			tenant.asr_id,
-			tenant.llm_id
+			user_tenant.img2txt_id,
+			user_tenant.asr_id,
+			user_tenant.llm_id
 		`).
 		Joins("JOIN knowledgebase ON document.kb_id = knowledgebase.id").
 		Joins("JOIN tenant ON knowledgebase.tenant_id = tenant.id").
+		Joins("LEFT JOIN user_tenant ON user_tenant.id = (SELECT id FROM user_tenant WHERE tenant_id = tenant.id AND status = '1' AND (role = 'owner' OR user_id = tenant.id) ORDER BY CASE WHEN role = 'owner' THEN 0 ELSE 1 END LIMIT 1)").
 		Where("document.id = ?", docID).
 		Take(&row).Error
 	if err != nil {
@@ -433,12 +433,6 @@ func (dao *DocumentDAO) GetChunkingConfig(ctx context.Context, db *gorm.DB, docI
 		config["language"] = nil
 	}
 	return config, nil
-}
-
-// DeleteByTenantID deletes all documents by tenant ID (hard delete)
-func (dao *DocumentDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Document{})
-	return result.RowsAffected, result.Error
 }
 
 // GetAllDocIDsByKBIDs gets all document IDs by knowledge base IDs

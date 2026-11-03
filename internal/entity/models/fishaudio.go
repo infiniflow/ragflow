@@ -296,9 +296,11 @@ func (f *FishAudioModel) AudioSpeechWithSender(ctx context.Context, modelName *s
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		buf := make([]byte, 1024)
-		n, _ := resp.Body.Read(buf)
-		return fmt.Errorf("FishAudio stream API error: %d - %s", resp.StatusCode, string(buf[:n]))
+		body, err := readStreamTTSErrorBody(resp.Body)
+		if err != nil {
+			return fmt.Errorf("FishAudio stream API error: %d - %s: %w", resp.StatusCode, string(body), err)
+		}
+		return fmt.Errorf("FishAudio stream API error: %d - %s", resp.StatusCode, string(body))
 	}
 
 	if _, err := ParseSSEStream[struct {
@@ -449,5 +451,9 @@ func (f *FishAudioModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([
 }
 
 func (f *FishAudioModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
+}
+
+func (f *FishAudioModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", f.Name())
 }

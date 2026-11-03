@@ -17,6 +17,7 @@ package knowledge_compile
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,7 +57,7 @@ const (
 // §11.4). It carries the doc id plus the original event kind so the consumer
 // can re-apply the same tombstone handling as the broker-based design without
 // re-reading the queue. The backlog is an ordered log; the last event for a
-// given doc (by append order) wins, so no sequence number is needed.
+// given doc (by queue position) wins.
 //
 // Variants records the compile types (tree/structure/wiki/mindmap) produced by
 // the doc-level compile for this doc, so the consumer can group a claimed batch
@@ -167,27 +168,6 @@ func newScheduler(db *gorm.DB, mq engine.MessageQueue, holder string, ttl time.D
 	return &mysqlScheduler{db: db, mq: mq, holder: holder, leaseTTL: ttl, claimBatchSize: defaultClaimBatch}
 }
 
-// ---- JSON helpers (the *_doc_ids columns are TEXT holding []BacklogEntry) ----
-
-func marshalEntries(es []BacklogEntry) string {
-	if len(es) == 0 {
-		return "[]"
-	}
-	b, _ := json.Marshal(es)
-	return string(b)
-}
-
-func parseEntries(s string) []BacklogEntry {
-	if s == "" || s == "[]" {
-		return nil
-	}
-	var es []BacklogEntry
-	if err := json.Unmarshal([]byte(s), &es); err != nil || len(es) == 0 {
-		return nil
-	}
-	return es
-}
-
 func minInt(a, b int) int {
 	if a < b {
 		return a
@@ -213,7 +193,54 @@ func (s *mysqlScheduler) Provision(ctx context.Context) error {
 	if s.db == nil {
 		return nil
 	}
-	return s.db.WithContext(ctx).AutoMigrate(&entity.KnowledgeCompileDataset{})
+	return s.db.WithContext(ctx).AutoMigrate(
+		&entity.KnowledgeCompileDataset{},
+		&entity.KnowledgeCompileBacklog{},
+		&entity.KnowledgeCompileInflight{},
+	)
+}
+
+// appendQueueEntries requires the caller to hold the dataset scheduling row
+// lock. Positions preserve append order without deduplicating document events.
+func appendQueueEntries(tx *gorm.DB, table, datasetID string, entries []entity.KnowledgeCompileEntry) error {
+	if len(entries) == 0 {
+		return nil
+	}
+	var lastPosition int64
+	if err := tx.Table(table).Where("dataset_id = ?", datasetID).
+		Select("COALESCE(MAX(queue_position), 0)").Scan(&lastPosition).Error; err != nil {
+		return err
+	}
+	for i := range entries {
+		entries[i].DatasetID = datasetID
+		entries[i].QueuePosition = lastPosition + int64(i) + 1
+	}
+	return tx.Table(table).CreateInBatches(&entries, defaultClaimBatch).Error
+}
+
+// requeueInflight appends the inflight queue after the existing backlog, as
+// cancellation and lease recovery do. The caller holds the dataset row lock.
+func requeueInflight(tx *gorm.DB, datasetID string) (int64, error) {
+	backlogTable := (entity.KnowledgeCompileBacklog{}).TableName()
+	inflightTable := (entity.KnowledgeCompileInflight{}).TableName()
+	var lastPosition int64
+	if err := tx.Table(backlogTable).Where("dataset_id = ?", datasetID).
+		Select("COALESCE(MAX(queue_position), 0)").Scan(&lastPosition).Error; err != nil {
+		return 0, err
+	}
+	// Both table names are fixed entity names. Copying within SQL also bounds
+	// memory when recovering an unusually large inflight queue.
+	res := tx.Exec("INSERT INTO "+backlogTable+
+		" (dataset_id, doc_id, queue_position, event_type, variants, task_types) "+
+		"SELECT dataset_id, doc_id, queue_position + ?, event_type, variants, task_types FROM "+inflightTable+
+		" WHERE dataset_id = ?", lastPosition, datasetID)
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	if err := tx.Where("dataset_id = ?", datasetID).Delete(&entity.KnowledgeCompileInflight{}).Error; err != nil {
+		return 0, err
+	}
+	return res.RowsAffected, nil
 }
 
 // Publish appends one doc event to the dataset's durable backlog and wakes idle
@@ -257,10 +284,8 @@ func (s *mysqlScheduler) publishEntry(ctx context.Context, tenantID, datasetID s
 		// dataset_id find it (M19: a raw-string Where alone leaves DatasetID
 		// blank on the created row).
 		row := entity.KnowledgeCompileDataset{
-			DatasetID:      datasetID,
-			TenantID:       tenantID,
-			BacklogDocIDs:  "[]",
-			InflightDocIDs: "[]",
+			DatasetID: datasetID,
+			TenantID:  tenantID,
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("dataset_id = ?", datasetID).
@@ -270,9 +295,10 @@ func (s *mysqlScheduler) publishEntry(ctx context.Context, tenantID, datasetID s
 		if row.TenantID == "" {
 			row.TenantID = tenantID
 		}
-		backlog := parseEntries(row.BacklogDocIDs)
-		backlog = append(backlog, entry)
-		row.BacklogDocIDs = marshalEntries(backlog)
+		if err := appendQueueEntries(tx, (entity.KnowledgeCompileBacklog{}).TableName(), datasetID,
+			[]entity.KnowledgeCompileEntry{{DocID: entry.DocID, EventType: entry.EventType, Variants: entry.Variants, TaskTypes: entry.TaskTypes}}); err != nil {
+			return err
+		}
 		// Surface a pending state unless a worker is already running (a live lease
 		// means the consumer is mid-merge on this KB; a pending transition would
 		// wrongly hide that). completed -> pending when new work arrives.
@@ -312,9 +338,7 @@ func (s *mysqlScheduler) WithDatasetLock(ctx context.Context, datasetID string, 
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		row := entity.KnowledgeCompileDataset{
-			DatasetID:      datasetID,
-			BacklogDocIDs:  "[]",
-			InflightDocIDs: "[]",
+			DatasetID: datasetID,
 		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("dataset_id = ?", datasetID).
@@ -344,16 +368,32 @@ func (s *mysqlScheduler) claimRow(ctx context.Context, tx *gorm.DB, datasetID st
 	if liveLease {
 		return ClaimResult{}, false, nil // a live lease means some worker is already processing this KB
 	}
-	backlog := parseEntries(row.BacklogDocIDs)
+	var backlog []entity.KnowledgeCompileEntry
+	if err := tx.Table((entity.KnowledgeCompileBacklog{}).TableName()).
+		Where("dataset_id = ?", datasetID).Order("queue_position ASC").
+		Limit(s.claimBatchSize).Find(&backlog).Error; err != nil {
+		return ClaimResult{}, false, err
+	}
 	if len(backlog) == 0 {
 		return ClaimResult{}, false, nil
 	}
-	n := minInt(s.claimBatchSize, len(backlog))
-	batch := backlog[:n]
-	inflight := parseEntries(row.InflightDocIDs)
-	inflight = append(inflight, batch...)
-	row.BacklogDocIDs = marshalEntries(backlog[n:])
-	row.InflightDocIDs = marshalEntries(inflight)
+	positions := make([]int64, len(backlog))
+	batch := make([]BacklogEntry, len(backlog))
+	for i, entry := range backlog {
+		positions[i] = entry.QueuePosition
+		batch[i] = BacklogEntry{DocID: entry.DocID, EventType: entry.EventType, Variants: entry.Variants, TaskTypes: entry.TaskTypes}
+	}
+	if err := appendQueueEntries(tx, (entity.KnowledgeCompileInflight{}).TableName(), datasetID, backlog); err != nil {
+		return ClaimResult{}, false, err
+	}
+	if err := tx.Where("dataset_id = ? AND queue_position IN ?", datasetID, positions).
+		Delete(&entity.KnowledgeCompileBacklog{}).Error; err != nil {
+		return ClaimResult{}, false, err
+	}
+	var remaining int64
+	if err := tx.Model(&entity.KnowledgeCompileBacklog{}).Where("dataset_id = ?", datasetID).Count(&remaining).Error; err != nil {
+		return ClaimResult{}, false, err
+	}
 	row.ClaimOwner = s.holder
 	row.ClaimToken = generateHolder()
 	exp := now.Add(s.leaseTTL)
@@ -370,7 +410,7 @@ func (s *mysqlScheduler) claimRow(ctx context.Context, tx *gorm.DB, datasetID st
 		zap.String("dataset_id", row.DatasetID),
 		zap.String("tenant_id", row.TenantID),
 		zap.Int("batch_size", len(batch)),
-		zap.Int("backlog_remaining", len(backlog)-n),
+		zap.Int64("backlog_remaining", remaining),
 		zap.String("token", row.ClaimToken),
 		zap.Any("batch", batch))
 	return ClaimResult{DatasetID: row.DatasetID, TenantID: row.TenantID, Entries: batch, Token: row.ClaimToken}, true, nil
@@ -410,15 +450,30 @@ func (s *mysqlScheduler) Ack(ctx context.Context, datasetID, token string, batch
 		if row.ClaimToken != token {
 			return ErrClaimTokenMismatch
 		}
-		inflight := parseEntries(row.InflightDocIDs)
-		inflight = removeEntries(inflight, batch)
-		row.InflightDocIDs = marshalEntries(inflight)
-		if len(inflight) == 0 {
+		if len(batch) > 0 {
+			pairs := make([][]interface{}, len(batch))
+			for i, entry := range batch {
+				pairs[i] = []interface{}{entry.DocID, entry.EventType}
+			}
+			if err := tx.Where("dataset_id = ? AND (doc_id, event_type) IN ?", datasetID, pairs).
+				Delete(&entity.KnowledgeCompileInflight{}).Error; err != nil {
+				return err
+			}
+		}
+		var inflight int64
+		if err := tx.Model(&entity.KnowledgeCompileInflight{}).Where("dataset_id = ?", datasetID).Count(&inflight).Error; err != nil {
+			return err
+		}
+		if inflight == 0 {
 			row.ClaimOwner = ""
 			row.ClaimToken = ""
 			row.ClaimExpiresAt = nil
 		}
-		remaining = len(parseEntries(row.BacklogDocIDs))
+		var backlog int64
+		if err := tx.Model(&entity.KnowledgeCompileBacklog{}).Where("dataset_id = ?", datasetID).Count(&backlog).Error; err != nil {
+			return err
+		}
+		remaining = int(backlog)
 		// Backlog still has work -> pending; drained to empty -> completed.
 		if remaining > 0 {
 			row.State = DatasetStatePending
@@ -553,14 +608,12 @@ func (s *mysqlScheduler) CancelInflight(ctx context.Context, datasetID, token st
 		if !liveLease {
 			return nil
 		}
-		inflight := parseEntries(row.InflightDocIDs)
-		backlog := parseEntries(row.BacklogDocIDs)
-		backlog = append(backlog, inflight...)
-		row.InflightDocIDs = "[]"
+		if _, err := requeueInflight(tx, datasetID); err != nil {
+			return err
+		}
 		row.ClaimOwner = ""
 		row.ClaimToken = ""
 		row.ClaimExpiresAt = nil
-		row.BacklogDocIDs = marshalEntries(backlog)
 		row.State = DatasetStatePending
 		return tx.Save(&row).Error
 	})
@@ -601,10 +654,14 @@ func (s *mysqlScheduler) TryClaim(ctx context.Context) (ClaimResult, bool, error
 	}
 	var res ClaimResult
 	var acquired bool
+	// Candidate reads precede the dataset lock. Read committed ensures the
+	// queue reads after that lock see events committed while it was acquired.
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		now := time.Now()
 		// 1) a ready dataset (backlog, no live lease) — claim it directly.
-		if id, ok := s.findClaimableID(ctx, tx, now); ok {
+		if id, ok, err := s.findClaimableID(ctx, tx, now); err != nil {
+			return err
+		} else if ok {
 			cr, ok, e := s.claimRow(ctx, tx, id)
 			if e != nil {
 				return e
@@ -624,7 +681,7 @@ func (s *mysqlScheduler) TryClaim(ctx context.Context) (ClaimResult, bool, error
 			return nil
 		}
 		return nil
-	})
+	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return ClaimResult{}, false, err
 	}
@@ -632,19 +689,18 @@ func (s *mysqlScheduler) TryClaim(ctx context.Context) (ClaimResult, bool, error
 }
 
 // findClaimableID returns one dataset id with non-empty backlog and no live
-// lease, or ok=false when none exists. It runs inside caller's transaction so
-// the returned id is still locked when the caller claims it.
-func (s *mysqlScheduler) findClaimableID(ctx context.Context, tx *gorm.DB, now time.Time) (string, bool) {
+// lease, or ok=false when none exists. claimRow locks and rechecks the selected
+// dataset before moving any queue entries.
+func (s *mysqlScheduler) findClaimableID(ctx context.Context, tx *gorm.DB, now time.Time) (string, bool, error) {
 	var id string
+	backlog := tx.Model(&entity.KnowledgeCompileBacklog{}).Select("1").
+		Where("dataset_id = knowledge_compile_docs.dataset_id")
 	err := tx.Model(&entity.KnowledgeCompileDataset{}).
-		Where("(claim_expires_at IS NULL OR claim_expires_at <= ?) AND backlog_doc_ids <> '[]' AND backlog_doc_ids <> '' AND backlog_doc_ids IS NOT NULL", now).
+		Where("(claim_expires_at IS NULL OR claim_expires_at <= ?) AND EXISTS (?)", now, backlog).
 		Order("priority DESC, updated_at ASC").
 		Limit(1).
 		Pluck("dataset_id", &id).Error
-	if err != nil || id == "" {
-		return "", false
-	}
-	return id, true
+	return id, id != "", err
 }
 
 // reclaimOne moves one expired inflight batch back to backlog (crash recovery)
@@ -653,8 +709,10 @@ func (s *mysqlScheduler) findClaimableID(ctx context.Context, tx *gorm.DB, now t
 // caller claims it.
 func (s *mysqlScheduler) reclaimOne(ctx context.Context, tx *gorm.DB, now time.Time) (string, bool, error) {
 	var rows []entity.KnowledgeCompileDataset
+	inflight := tx.Model(&entity.KnowledgeCompileInflight{}).Select("1").
+		Where("dataset_id = knowledge_compile_docs.dataset_id")
 	if err := tx.Model(&entity.KnowledgeCompileDataset{}).
-		Where("claim_expires_at IS NOT NULL AND claim_expires_at <= ? AND inflight_doc_ids <> '[]' AND inflight_doc_ids <> ''", now).
+		Where("claim_expires_at IS NOT NULL AND claim_expires_at <= ? AND EXISTS (?)", now, inflight).
 		Find(&rows).Error; err != nil {
 		return "", false, err
 	}
@@ -670,14 +728,13 @@ func (s *mysqlScheduler) reclaimOne(ctx context.Context, tx *gorm.DB, now time.T
 		if cur.ClaimExpiresAt != nil && cur.ClaimExpiresAt.After(now) {
 			continue
 		}
-		inflight := parseEntries(cur.InflightDocIDs)
-		if len(inflight) == 0 {
+		reclaimed, err := requeueInflight(tx, cur.DatasetID)
+		if err != nil {
+			return "", false, err
+		}
+		if reclaimed == 0 {
 			continue
 		}
-		backlog := parseEntries(cur.BacklogDocIDs)
-		backlog = append(backlog, inflight...)
-		cur.BacklogDocIDs = marshalEntries(backlog)
-		cur.InflightDocIDs = "[]"
 		cur.ClaimOwner = ""
 		cur.ClaimToken = ""
 		cur.ClaimExpiresAt = nil
@@ -688,7 +745,7 @@ func (s *mysqlScheduler) reclaimOne(ctx context.Context, tx *gorm.DB, now time.T
 		common.Warn("knowledge_compile: reclaimed expired inflight lease",
 			zap.String("dataset_id", cur.DatasetID),
 			zap.String("tenant_id", cur.TenantID),
-			zap.Int("reclaimed_entries", len(inflight)))
+			zap.Int64("reclaimed_entries", reclaimed))
 		return cur.DatasetID, true, nil
 	}
 	return "", false, nil

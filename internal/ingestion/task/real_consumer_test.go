@@ -59,7 +59,8 @@ func TestRealProducerConsumer(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	db.Create(&entity.Tenant{ID: "t1", LLMID: "gpt-4", Status: testutil.StrPtr("1")})
+	db.Create(&entity.Tenant{ID: "t1", Status: testutil.StrPtr("1")})
+	db.Create(&entity.UserTenant{ID: "owner-t1", UserID: "t1", TenantID: "t1", Role: "owner", Status: testutil.StrPtr("1"), LLMID: "gpt-4"})
 	db.Create(&entity.Knowledgebase{ID: "kb1", TenantID: "t1", EmbdID: "e1", Status: testutil.StrPtr("1"), ParserConfig: entity.JSONMap{}})
 	docName := "doc-real.pdf"
 	db.Create(&entity.Document{ID: "doc-real", KbID: "kb1", ParserID: "naive", ParserConfig: entity.JSONMap{}, Name: &docName})
@@ -142,14 +143,14 @@ func TestRealProducerConsumer(t *testing.T) {
 		t.Fatalf("set pipeline_id: %v", err)
 	}
 
-	tc, err := LoadFromIngestionTask(context.Background(), task)
+	tc, err := LoadFromIngestionTask(context.Background(), dao.DB, task)
 	if err != nil {
 		t.Fatalf("LoadFromIngestionTask: %v", err)
 	}
 	t.Logf("Consumer: Loaded Doc=%s Parser=%s KB=%s Tenant=%s",
 		tc.Doc.ID, tc.Doc.ParserID, tc.KB.ID, tc.Tenant.ID)
 
-	svc, err := NewPipelineExecutor(tc, tc.PipelineID, 0)
+	svc, err := NewPipelineExecutor(tc, tc.PipelineID, 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}

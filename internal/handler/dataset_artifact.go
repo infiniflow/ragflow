@@ -73,8 +73,8 @@ func (h *DatasetArtifactHandler) datasetOwner(c *gin.Context, datasetID string) 
 		common.ErrorWithCode(c, common.CodeNotFound, "dataset not found")
 		return nil, "", ""
 	}
-	if err := h.datasetSvc.CheckAccess(c.Request.Context(), permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
-		respondPermissionFailure(c, err, false)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(c.Request.Context(), permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+		respondPermissionError(c, err, false)
 		return nil, "", ""
 	}
 	return user, kb.TenantID, msg

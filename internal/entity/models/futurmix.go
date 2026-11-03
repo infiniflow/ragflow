@@ -189,3 +189,7 @@ func (f *FuturMixModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]
 func (f *FuturMixModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
+
+func (f *FuturMixModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
+}

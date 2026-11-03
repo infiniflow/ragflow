@@ -21,6 +21,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 
 	"go.uber.org/zap"
@@ -86,4 +87,42 @@ func logServedChunks(ctx context.Context, tool, query string, hits []snippetHit)
 	for _, hit := range hits {
 		common.DebugCtx(ctx, "agentic_rag: retrieval served chunk", servedChunkFields(ctx, tool, query, hit)...)
 	}
+}
+
+// serveLogContentRunes bounds the deep-read body copied into the log. Deep-read
+// text is the payload itself, not a triage view, so the bound is the segment
+// budget rather than the snippet budget.
+const serveLogContentRunes = 6000
+
+// servedDeepReadFields builds the debug fields for one deep-read passage that
+// actually reached the model (i.e. AFTER the sufficiency filter). It is the
+// deep-read twin of servedChunkFields, and it exists for the same reason: the
+// generic tool-result line truncates the payload, so without it "the sentence
+// carrying the answer was never served" cannot be told apart from "it was
+// served and the model still missed it". ref_attr records the [ID:n] the
+// passage was stamped with, so a citation can be mapped back to the text.
+func servedDeepReadFields(docID string, c runtime.RetrievalChunk, refAttr string) []zap.Field {
+	content := c.Content
+	if r := []rune(content); len(r) > serveLogContentRunes {
+		content = string(r[:serveLogContentRunes]) + "…"
+	}
+	return []zap.Field{
+		zap.String("side", "deep_read"),
+		zap.String("doc_id", docID),
+		zap.String("chunk_id", c.ID),
+		zap.String("doc_name", c.DocumentName),
+		zap.Int("chunk_index", c.ChunkIndex),
+		zap.String("ref_attr", strings.TrimSpace(refAttr)),
+		zap.Int("content_runes", utf8.RuneCountInString(c.Content)),
+		zap.String("content", content),
+	}
+}
+
+// logServedDeepRead writes one debug line per deep-read passage (a no-op unless
+// the logger runs at debug level).
+func logServedDeepRead(ctx context.Context, docID string, c runtime.RetrievalChunk, refAttr string) {
+	if common.Logger == nil || common.Logger.Check(zap.DebugLevel, "agentic_rag: retrieval served deep read") == nil {
+		return
+	}
+	common.DebugCtx(ctx, "agentic_rag: retrieval served deep read", servedDeepReadFields(docID, c, refAttr)...)
 }
