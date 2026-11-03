@@ -173,6 +173,12 @@ type fakeDocumentService struct {
 	imageUserID            string
 	imageID                string
 	imageDocumentID        string
+
+	cancelAllCalled      bool
+	cancelAllDataset     string
+	cancelAllRunStatuses []string
+	stopAllResult        map[string]interface{}
+	stopAllErr           error
 }
 
 func TestMapDocumentListItemIncludesLatestIngestionEvent(t *testing.T) {
@@ -272,6 +278,19 @@ func (f *fakeDocumentService) ParseDocuments(ctx context.Context, datasetID, use
 }
 func (f *fakeDocumentService) StopParseDocuments(ctx context.Context, datasetID string, docIDs []string) (map[string]interface{}, error) {
 	return f.stopResult, f.stopErr
+}
+
+func (f *fakeDocumentService) StopParseDocumentsAll(ctx context.Context, datasetID string, runStatuses []string) (map[string]interface{}, error) {
+	f.cancelAllCalled = true
+	f.cancelAllDataset = datasetID
+	f.cancelAllRunStatuses = runStatuses
+	if f.stopAllErr != nil {
+		return nil, f.stopAllErr
+	}
+	if f.stopAllResult == nil {
+		return map[string]interface{}{"success_count": 0}, nil
+	}
+	return f.stopAllResult, nil
 }
 func (f *fakeDocumentService) ListDocuments(ctx context.Context, page, pageSize int) ([]*document.DocumentResponse, int64, error) {
 	return nil, 0, nil
