@@ -67,3 +67,126 @@ func TestGCSStoragePutCancelsUpload(t *testing.T) {
 		})
 	}
 }
+
+// fakeGCS records each request and answers listings with the given object names.
+func fakeGCS(t *testing.T, listed []string) (*gcs.Client, *[]string) {
+	t.Helper()
+	var seen []string
+	client, err := gcs.NewClient(t.Context(), option.WithoutAuthentication(), option.WithHTTPClient(&http.Client{
+		Transport: gcsRoundTripper(func(req *http.Request) (*http.Response, error) {
+			if req.Body != nil {
+				_, _ = io.Copy(io.Discard, req.Body)
+				_ = req.Body.Close()
+			}
+			line := req.Method + " " + req.URL.Path
+			if name := req.URL.Query().Get("name"); name != "" {
+				line += " name=" + name
+			}
+			if prefix := req.URL.Query().Get("prefix"); prefix != "" {
+				line += " prefix=" + prefix
+			}
+			seen = append(seen, line)
+			body := `{}`
+			if req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/o") {
+				items := make([]string, 0, len(listed))
+				for _, name := range listed {
+					items = append(items, `{"name":"`+name+`","bucket":"shared"}`)
+				}
+				body = `{"items":[` + strings.Join(items, ",") + `]}`
+			}
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+		}),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = client.Close() })
+	return client, &seen
+}
+
+func TestGCSStorageResolve(t *testing.T) {
+	for _, tt := range []struct {
+		name               string
+		bucket, prefix     string
+		wantBucket, wantFn string
+	}{
+		{name: "bucket per dataset", wantBucket: "kb1", wantFn: "a.txt"},
+		{name: "single bucket", bucket: "shared", wantBucket: "shared", wantFn: "kb1/a.txt"},
+		{name: "single bucket with prefix", bucket: "shared", prefix: "rf", wantBucket: "shared", wantFn: "rf/kb1/a.txt"},
+		{name: "single bucket with slashes around the prefix", bucket: "shared", prefix: "/rf/", wantBucket: "shared", wantFn: "rf/kb1/a.txt"},
+		{name: "prefix without a bucket is not used", prefix: "rf", wantBucket: "kb1", wantFn: "a.txt"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			s := &GCSStorage{}
+			s.config.Bucket, s.config.PrefixPath = tt.bucket, tt.prefix
+			if b, fn := s.resolve("kb1", "a.txt"); b != tt.wantBucket || fn != tt.wantFn {
+				t.Fatalf("resolve = %s, %s; want %s, %s", b, fn, tt.wantBucket, tt.wantFn)
+			}
+		})
+	}
+}
+
+func TestGCSStorageSingleBucketPutWritesUnderDatasetPrefix(t *testing.T) {
+	client, seen := fakeGCS(t, nil)
+	s := &GCSStorage{client: client}
+	s.config.Bucket = "shared"
+	if err := s.Put(t.Context(), "kb1", "a.txt", []byte("x")); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if len(*seen) != 1 || !strings.Contains((*seen)[0], "/b/shared/o") || !strings.HasSuffix((*seen)[0], "name=kb1/a.txt") {
+		t.Fatalf("requests = %q, want one upload of kb1/a.txt into bucket shared", *seen)
+	}
+}
+
+func TestGCSStorageSingleBucketRemoveBucketDeletesOnlyThePrefix(t *testing.T) {
+	client, seen := fakeGCS(t, []string{"kb1/a.txt", "kb1/b.txt"})
+	s := &GCSStorage{client: client}
+	s.config.Bucket = "shared"
+	if err := s.RemoveBucket(t.Context(), "kb1"); err != nil {
+		t.Fatalf("RemoveBucket: %v", err)
+	}
+	want := []string{
+		"GET /storage/v1/b/shared/o prefix=kb1/",
+		"DELETE /storage/v1/b/shared/o/kb1/a.txt",
+		"DELETE /storage/v1/b/shared/o/kb1/b.txt",
+	}
+	if strings.Join(*seen, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("requests:\n%s\nwant:\n%s", strings.Join(*seen, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestGCSStorageSingleBucketRemoveEmptyBucket(t *testing.T) {
+	client, seen := fakeGCS(t, nil)
+	s := &GCSStorage{client: client}
+	s.config.Bucket = "shared"
+	if err := s.RemoveEmptyBucket(t.Context(), "folder1"); err != nil {
+		t.Fatalf("RemoveEmptyBucket of an empty prefix: %v", err)
+	}
+	for _, line := range *seen {
+		if strings.HasPrefix(line, "DELETE") {
+			t.Fatalf("deleted %q; the shared bucket must stay", line)
+		}
+	}
+
+	client, _ = fakeGCS(t, []string{"folder1/x"})
+	s.client = client
+	if err := s.RemoveEmptyBucket(t.Context(), "folder1"); err == nil {
+		t.Fatal("RemoveEmptyBucket of a non-empty prefix succeeded")
+	}
+}
+
+func TestGCSStorageSingleBucketListObjectsIsRelative(t *testing.T) {
+	client, seen := fakeGCS(t, []string{"kb1/a.txt", "kb1/sub/b.txt"})
+	s := &GCSStorage{client: client}
+	s.config.Bucket = "shared"
+	got, err := s.ListObjects(t.Context(), "kb1")
+	if err != nil {
+		t.Fatalf("ListObjects: %v", err)
+	}
+	if len(*seen) != 1 || (*seen)[0] != "GET /storage/v1/b/shared/o prefix=kb1/" {
+		t.Fatalf("requests = %q, want one listing of prefix kb1/ in bucket shared", *seen)
+	}
+	if strings.Join(got, ",") != "a.txt,sub/b.txt" {
+		t.Fatalf("ListObjects = %q", got)
+	}
+}
