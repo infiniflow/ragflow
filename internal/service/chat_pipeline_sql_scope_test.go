@@ -165,21 +165,32 @@ func TestAddKBFilterRejectsAmbiguousBackslashQuotes(t *testing.T) {
 			t.Fatalf("SECURITY: %s accepted ambiguous quote: %q", engineName, got)
 		}
 	}
+	for _, engineName := range []string{"oceanbase", "seekdb"} {
+		for _, sql := range []string{
+			"SELECT doc_id FROM t WHERE a = 'x\\'y'",
+			"SELECT doc_id FROM t WHERE a = \"x\\\"y\"",
+			"SELECT doc_id FROM t WHERE a = 'x\\' OR 1=1) OR (1=1 -- '\n AND b = 'y'",
+		} {
+			if got, ok := addKBFilter(sql, engineName, kbs); ok {
+				t.Fatalf("%s accepted quote with mode-dependent escape: %q", engineName, got)
+			}
+		}
+	}
 
-	// PostgreSQL escape strings and MySQL-family ordinary strings do treat \'
-	// as an escaped quote, so these balanced predicates remain usable.
+	// PostgreSQL E-strings have explicit escape semantics. Doubled quotes have
+	// the same boundary with or without MySQL's NO_BACKSLASH_ESCAPES mode.
 	for _, tc := range []struct {
 		engineName string
 		sql        string
 	}{
 		{"vastbase", "SELECT doc_id FROM t WHERE a = E'x\\'y'"},
 		{"serenedb", "SELECT doc_id FROM t WHERE a = E'x\\'y'"},
-		{"oceanbase", "SELECT doc_id FROM t WHERE a = 'x\\'y'"},
-		{"seekdb", "SELECT doc_id FROM t WHERE a = 'x\\'y'"},
+		{"oceanbase", "SELECT doc_id FROM t WHERE a = 'x''y'"},
+		{"seekdb", "SELECT doc_id FROM t WHERE a = 'x''y'"},
 	} {
 		got, ok := addKBFilter(tc.sql, tc.engineName, kbs)
 		if !ok {
-			t.Fatalf("%s rejected valid backslash escape: %q", tc.engineName, got)
+			t.Fatalf("%s rejected valid quoted literal: %q", tc.engineName, got)
 		}
 		mustContainScope(t, got, "AND (kb_id = '"+scopeAllowedKB+"')")
 	}
@@ -198,6 +209,8 @@ func TestAddKBFilterRejectsMySQLCommentSyntax(t *testing.T) {
 		"SELECT doc_id FROM t WHERE a=1 # note",
 		"SELECT doc_id FROM t /*! UNION SELECT doc_id FROM t */",
 		"SELECT doc_id FROM t WHERE a=1 /*!50000 OR 1=1 */",
+		"SELECT doc_id FROM t WHERE 1--1) OR (1=1",
+		"SELECT doc_id FROM t WHERE 1--",
 	}
 	for _, engineName := range []string{"oceanbase", "seekdb"} {
 		for _, sql := range shapes {
@@ -205,6 +218,9 @@ func TestAddKBFilterRejectsMySQLCommentSyntax(t *testing.T) {
 				t.Fatalf("SECURITY: %s accepted MySQL-only comment syntax: %q -> %q", engineName, sql, got)
 			}
 		}
+	}
+	if got, ok := addKBFilter("SELECT doc_id FROM t WHERE a=1 -- note", "oceanbase", kbs); !ok {
+		t.Fatalf("oceanbase rejected a valid line comment: %q", got)
 	}
 
 	// PostgreSQL-family engines treat "#" as an operator, so the same text is
@@ -261,6 +277,30 @@ func TestAddKBFilterSkipsDollarQuotedLiterals(t *testing.T) {
 	}
 }
 
+func TestAddKBFilterNonASCIIDollarQuoteTags(t *testing.T) {
+	kbs := []*entity.Knowledgebase{{ID: scopeAllowedKB}}
+	for _, engineName := range []string{"vastbase", "serenedb"} {
+		if got, ok := addKBFilter("SELECT doc_id FROM t WHERE title = $é$ ORDER BY ($é$ OR 1=1)", engineName, kbs); ok {
+			t.Fatalf("%s accepted an unbalanced predicate: %q", engineName, got)
+		}
+		got, ok := addKBFilter("SELECT doc_id FROM t WHERE title = $é$ ORDER BY ($é$ OR 1=1", engineName, kbs)
+		if !ok {
+			t.Fatalf("%s rejected a balanced dollar quote: %q", engineName, got)
+		}
+		mustContainScope(t, got, "WHERE (title = $é$ ORDER BY ($é$ OR 1=1) AND (kb_id = '"+scopeAllowedKB+"')")
+	}
+}
+
+func TestAddKBFilterNonASCIIIdentifiersDoNotOpenDollarQuotes(t *testing.T) {
+	kbs := []*entity.Knowledgebase{{ID: scopeAllowedKB}}
+	sql := "SELECT doc_id FROM t WHERE é$x$ = 1 OR 1=1) OR (1=1 AND b$x$ = 2"
+	for _, engineName := range []string{"vastbase", "serenedb"} {
+		if got, ok := addKBFilter(sql, engineName, kbs); ok {
+			t.Fatalf("%s accepted an unbalanced predicate: %q", engineName, got)
+		}
+	}
+}
+
 // The engine removes backticks after filtering, which can turn a quoted
 // identifier into SQL syntax that escapes the added predicate.
 func TestAddKBFilterRejectsBackticks(t *testing.T) {
@@ -272,6 +312,20 @@ func TestAddKBFilterRejectsBackticks(t *testing.T) {
 	}
 	if got, ok := addKBFilter("SELECT doc_id FROM t WHERE title = 'a`b'", "vastbase", kbs); !ok {
 		t.Fatalf("vastbase rejected a backtick inside a string: %q", got)
+	}
+}
+
+func TestAddKBFilterScopesAfterElasticsearchPercentRemoval(t *testing.T) {
+	kbs := []*entity.Knowledgebase{{ID: scopeAllowedKB}}
+	for _, engineName := range []string{"elasticsearch", "opensearch"} {
+		got, ok := addKBFilter("SELECT doc_id FROM t -%- ORDER BY doc_id", engineName, kbs)
+		if !ok || !strings.Contains(got, "-- ORDER BY doc_id\nWHERE kb_id = '"+scopeAllowedKB+"'") {
+			t.Fatalf("%s line comment did not keep the filter live: %q", engineName, got)
+		}
+		got, ok = addKBFilter("SELECT doc_id FROM t /%* ORDER BY doc_id *%/", engineName, kbs)
+		if !ok || !strings.Contains(got, "/* ORDER BY doc_id */ WHERE kb_id = '"+scopeAllowedKB+"'") {
+			t.Fatalf("%s block comment did not keep the filter live: %q", engineName, got)
+		}
 	}
 }
 

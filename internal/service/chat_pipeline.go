@@ -3551,7 +3551,7 @@ type scalarWord struct {
 }
 
 func isScalarWordStart(c byte) bool {
-	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= 0x80
 }
 
 func isScalarWordByte(c byte) bool {
@@ -3633,6 +3633,11 @@ func scanScalarWords(sqlText string, dialect sqlScanDialect) (words []scalarWord
 			continue
 		}
 		if c == '-' && i+1 < len(sqlText) && sqlText[i+1] == '-' {
+			// MySQL-family SQL treats "--" as a comment only when followed by
+			// whitespace or a control character. Otherwise it is SQL syntax.
+			if dialect.hashLineComments && (i+2 >= len(sqlText) || sqlText[i+2] > ' ') {
+				return nil, nil, false
+			}
 			start := i
 			i += 2
 			for i < len(sqlText) && sqlText[i] != '\n' && sqlText[i] != '\r' {
@@ -3688,6 +3693,11 @@ func scanScalarWords(sqlText string, dialect sqlScanDialect) (words []scalarWord
 			closed := false
 			for i < len(sqlText) {
 				if sqlText[i] == '\\' && i+1 < len(sqlText) {
+					// OceanBase's SQL mode may make backslash an ordinary
+					// character. Refuse quote boundaries that depend on it.
+					if dialect.backslashEscapes && sqlText[i+1] == quote {
+						return nil, nil, false
+					}
 					if escapes {
 						i += 2
 						continue
@@ -3803,6 +3813,12 @@ func addKBFilter(sqlText, engineName string, kbs []*entity.Knowledgebase) (strin
 			parts[i] = fmt.Sprintf("kb_id = '%s'", kid)
 		}
 		kbFilter = "(" + strings.Join(parts, " OR ") + ")"
+	}
+
+	// ES removes '%' before execution. Do the same before locating SQL clauses
+	// so that removal cannot create comments after the filter is injected.
+	if engineName == "elasticsearch" || engineName == "opensearch" {
+		sqlText = strings.ReplaceAll(sqlText, "%", "")
 	}
 
 	words, lineComments, ok := scanScalarWords(sqlText, sqlScanDialectFor(engineName))
