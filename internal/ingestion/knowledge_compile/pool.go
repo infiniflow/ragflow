@@ -52,7 +52,7 @@ var compilerPool = utility.NewWorkerPool[CompilerJob, struct{}](
 
 // compilerConcurrency resolves the global pool size. It defaults to the host
 // vCPU count, overridable via KC_COMPILE_CONCURRENCY (mirroring the extractor
-// pool's MAX_CONCURRENT_CHATS tuning knob).
+// pool's EXTRACTOR_CONCURRENCY tuning knob).
 func compilerConcurrency() int {
 	if v := os.Getenv("KC_COMPILE_CONCURRENCY"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -67,7 +67,7 @@ func compilerConcurrency() int {
 }
 
 // SetCompilerConcurrency overrides the global pool size at runtime (e.g. from
-// service init or tests). Mirrors SetExtractorConcurrency.
+// service init or tests).
 func SetCompilerConcurrency(n int) {
 	if n > 0 {
 		compilerPool.Resize(n)

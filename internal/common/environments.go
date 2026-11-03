@@ -288,6 +288,10 @@ const (
 	EnvGoogleDriveWebOAuthRedirectURI    = "GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI"
 	EnvSpacyModelDir                     = "SPACY_MODEL_DIR"
 
+	// EnvExtractorConcurrency bounds concurrent chunk extraction jobs across
+	// all Extractor invocations in one process.
+	EnvExtractorConcurrency = "EXTRACTOR_CONCURRENCY"
+
 	// EnvExtractorChatTimeout sets the Extractor LLM call timeout in seconds,
 	// including retries and backoff. It does not apply to tag extraction.
 	EnvExtractorChatTimeout = "EXTRACTOR_CHAT_TIMEOUT"
