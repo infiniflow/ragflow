@@ -33,7 +33,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -268,6 +267,10 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	outputs, err := runtime.TrackElapsed(name, func() (map[string]any, error) {
 		return comp.Invoke(invokeCtx, dao.DB, inputs)
 	})
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, "invoke: "+err.Error())
+		return
+	}
 	var data any = outputs
 	if capture != nil {
 		data = struct {
@@ -275,15 +278,7 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 			ModelInputs models.ModelInputs `json:"model_inputs"`
 		}{Outputs: outputs, ModelInputs: capture.Finalize()}
 	}
-	if err != nil {
-		if capture == nil {
-			data = nil
-		}
-		common.Respond(c, http.StatusOK, common.CodeServerError, data, "invoke: "+err.Error())
-		return
-	}
-
-	common.Respond(c, http.StatusOK, common.CodeSuccess, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 // mapDSLError translates a dsl extractor error into a 102 envelope.

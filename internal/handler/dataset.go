@@ -1006,7 +1006,7 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // CheckEmbedding Check embedding model compatibility by sampling random chunks,
@@ -1043,10 +1043,6 @@ func (h *DatasetsHandler) CheckEmbedding(c *gin.Context) {
 	ctx := c.Request.Context()
 	data, code, err := h.datasetsService.CheckEmbedding(ctx, userID, datasetID, &req)
 	if err != nil {
-		if code == common.CodeNotEffective {
-			common.Respond(c, http.StatusOK, code, data, err.Error())
-			return
-		}
 		common.RespondError(c, code, err.Error())
 		return
 	}
@@ -1207,7 +1203,7 @@ func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, code, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 // SearchDatasets searches chunks across datasets based on a question

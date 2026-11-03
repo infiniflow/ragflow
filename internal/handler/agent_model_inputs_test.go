@@ -137,8 +137,8 @@ func TestDebugAgentModelInputsMatchProviderMessages(t *testing.T) {
 	}
 }
 
-// TestDebugAgentModelInputsDefaultAndErrorContracts checks unchanged default
-// outputs and error codes, with opt-in diagnostics retained on provider failure.
+// TestDebugAgentModelInputsDefaultAndErrorContracts checks default outputs and
+// that provider failures omit data with or without opt-in diagnostics.
 func TestDebugAgentModelInputsDefaultAndErrorContracts(t *testing.T) {
 	var fail atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -165,18 +165,8 @@ func TestDebugAgentModelInputsDefaultAndErrorContracts(t *testing.T) {
 	fail.Store(true)
 	without := runModelInputDebug(t, handler, "false")
 	with := runModelInputDebug(t, handler, "true")
-	if without.Code == 0 || without.Code != with.Code || without.Message != with.Message || without.Data != nil {
+	if without.Code == 0 || without.Code != with.Code || without.Message != with.Message || without.Data != nil || with.Data != nil {
 		t.Fatalf("error contract changed: without=%+v with=%+v", without, with)
-	}
-	var data struct {
-		Outputs     map[string]any     `json:"outputs"`
-		ModelInputs models.ModelInputs `json:"model_inputs"`
-	}
-	if err := json.Unmarshal(with.Data, &data); err != nil {
-		t.Fatal(err)
-	}
-	if data.Outputs != nil || len(data.ModelInputs.Calls) != 1 || data.ModelInputs.Calls[0].Status != "captured" {
-		t.Fatalf("failed provider input was lost: %s", with.Data)
 	}
 }
 

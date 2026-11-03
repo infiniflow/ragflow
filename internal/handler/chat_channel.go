@@ -16,7 +16,6 @@ package handler
 
 import (
 	"context"
-	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -237,7 +236,7 @@ func (h *ChatChannelHandler) DeleteChatChannel(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func unwrapChatChannelPayload(payload map[string]interface{}) map[string]interface{} {

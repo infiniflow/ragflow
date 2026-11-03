@@ -292,7 +292,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	}
 
 	// Return success response (same as Python get_json_result(data=True))
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // UpdateSearch update a search app
@@ -347,7 +347,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 		default:
 			// Check if it's a "cannot find search" error
 			if len(errMsg) > 18 && errMsg[:18] == "cannot find search" {
-				common.Respond(c, http.StatusOK, common.CodeDataError, false, errMsg)
+				common.RespondError(c, common.CodeDataError, errMsg)
 			} else {
 				common.RespondError(c, common.CodeDataError, errMsg)
 			}

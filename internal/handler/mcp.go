@@ -202,7 +202,7 @@ func (h *MCPHandler) DeleteMCPServer(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // mcpErrorResponse maps the import / test sentinel errors to the response

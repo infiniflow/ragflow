@@ -274,7 +274,7 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // BulkDeleteChats soft deletes multiple chats owned by the current user.
@@ -307,7 +307,7 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 				return
 			}
 
-			common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+			common.RespondSuccess(c, true, "success")
 			return
 		}
 

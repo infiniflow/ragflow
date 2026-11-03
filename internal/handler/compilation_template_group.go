@@ -17,7 +17,6 @@
 package handler
 
 import (
-	"net/http"
 	"strconv"
 
 	"ragflow/internal/common"
@@ -235,5 +234,5 @@ func (h *CompilationTemplateGroupHandler) Delete(c *gin.Context) {
 		common.RespondError(c, common.CodeNotFound, "Cannot find compilation template group "+id+".")
 		return
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }

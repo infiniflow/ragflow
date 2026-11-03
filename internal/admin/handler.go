@@ -1134,7 +1134,11 @@ func (h *Handler) Reports(c *gin.Context) {
 
 	// Handle the heartbeat
 	errCode, data, message := h.service.HandleHeartbeat(&req)
-	common.Respond(c, http.StatusOK, errCode, data, message)
+	if errCode != common.CodeSuccess {
+		common.RespondError(c, errCode, message)
+		return
+	}
+	common.RespondSuccess(c, data, message)
 }
 
 func (h *Handler) ListAllModels(c *gin.Context) {
@@ -1200,7 +1204,7 @@ func (h *Handler) PingStore(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if storageImpl.Health(ctx) {
-		common.Respond(c, http.StatusOK, common.CodeSuccess, "SUCCESS", "success")
+		common.RespondSuccess(c, "SUCCESS", "success")
 	} else {
 		common.RespondError(c, common.CodeServerError, "storage health check failed")
 	}
@@ -1210,7 +1214,7 @@ func (h *Handler) PingCache(c *gin.Context) {
 	ctx := c.Request.Context()
 	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
-		common.Respond(c, http.StatusOK, common.CodeSuccess, "SUCCESS", "success")
+		common.RespondSuccess(c, "SUCCESS", "success")
 	} else {
 		common.RespondError(c, common.CodeServerError, "cache health check failed")
 	}
@@ -1231,7 +1235,7 @@ func (h *Handler) PingEngine(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, "SUCCESS", "success")
+	common.RespondSuccess(c, "SUCCESS", "success")
 }
 
 func (h *Handler) GetHardwareInfo(c *gin.Context) {

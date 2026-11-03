@@ -617,11 +617,11 @@ func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 		if code == common.CodeServerError {
 			message = "Partial failure"
 		}
-		common.Respond(c, http.StatusOK, code, result, message)
+		common.RespondError(c, code, message)
 		return
 	}
 
-	common.Respond(c, http.StatusOK, code, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // ListDocuments document list
@@ -659,19 +659,19 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 
 	opts, errMsg := parseDocumentListOptions(c, datasetID)
 	if errMsg != "" {
-		common.Respond(c, http.StatusOK, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, errMsg)
+		common.RespondError(c, common.CodeDataError, errMsg)
 		return
 	}
 	opts, errMsg = h.applyDocumentMetadataFilter(c, opts)
 	if errMsg != "" {
-		common.Respond(c, http.StatusOK, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, errMsg)
+		common.RespondError(c, common.CodeDataError, errMsg)
 		return
 	}
 
 	if c.Query("type") == "filter" {
 		filters, total, err := h.documentService.GetDocumentFiltersByDatasetID(ctx, opts)
 		if err != nil {
-			common.Respond(c, http.StatusOK, common.CodeExceptionError, map[string]interface{}{"total": 0, "filter": map[string]interface{}{}}, "failed to get document filters")
+			common.RespondError(c, common.CodeExceptionError, "failed to get document filters")
 			return
 		}
 		common.RespondSuccess(c, gin.H{"total": total, "filter": filters}, "success")
@@ -683,7 +683,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	// so that total reflects the unfiltered count, matching the Python API contract.
 	documents, total, err := h.documentService.ListDocumentsByDatasetIDWithOptions(ctx, opts, page, pageSize)
 	if err != nil {
-		common.Respond(c, http.StatusOK, 1, map[string]interface{}{"total": 0, "docs": []interface{}{}}, "failed to get documents")
+		common.RespondError(c, 1, "failed to get documents")
 		return
 	}
 
@@ -693,7 +693,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		idOpts.Name = ""
 		_, idTotal, idErr := h.documentService.ListDocumentsByDatasetIDWithOptions(ctx, idOpts, 1, 1)
 		if idErr == nil && idTotal == 0 {
-			common.Respond(c, http.StatusOK, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, fmt.Sprintf("you don't own the document %s", docID))
+			common.RespondError(c, common.CodeDataError, fmt.Sprintf("you don't own the document %s", docID))
 			return
 		}
 	}
@@ -703,7 +703,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		nameOpts.DocIDFilterApplied = false
 		_, nameTotal, nameErr := h.documentService.ListDocumentsByDatasetIDWithOptions(ctx, nameOpts, 1, 1)
 		if nameErr == nil && nameTotal == 0 {
-			common.Respond(c, http.StatusOK, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, fmt.Sprintf("you don't own the document %s", opts.Name))
+			common.RespondError(c, common.CodeDataError, fmt.Sprintf("you don't own the document %s", opts.Name))
 			return
 		}
 	}
@@ -1103,7 +1103,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 	}
 	ctx := c.Request.Context()
 	data, errMsgs := h.documentService.UploadLocalDocuments(ctx, kb, tenantID, files, c.PostForm("parent_path"), override)
-	if len(data) == 0 && len(errMsgs) > 0 {
+	if len(errMsgs) > 0 {
 		common.RespondError(c, common.CodeServerError, strings.Join(errMsgs, "\n"))
 		return
 	}
@@ -1113,20 +1113,12 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 	}
 
 	if strings.ToLower(c.DefaultQuery("return_raw_files", "false")) == "true" {
-		if len(errMsgs) > 0 {
-			common.Respond(c, http.StatusOK, common.CodeServerError, data, strings.Join(errMsgs, "\n"))
-			return
-		}
 		common.RespondSuccessList(c, data, "success")
 		return
 	}
 	mapped := make([]map[string]interface{}, len(data))
 	for i, d := range data {
 		mapped[i] = mapDocKeysWithRunStatus(d)
-	}
-	if len(errMsgs) > 0 {
-		common.Respond(c, http.StatusOK, common.CodeServerError, mapped, strings.Join(errMsgs, "\n"))
-		return
 	}
 	common.RespondSuccessList(c, mapped, "success")
 }
@@ -1401,7 +1393,7 @@ func (h *DocumentHandler) Ingest(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 type ListIngestionsRequest struct {
@@ -1808,7 +1800,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	} else {
 		payload = data
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, payload, "success")
+	common.RespondSuccess(c, payload, "success")
 }
 
 type documentMetadataBatchRequest struct {

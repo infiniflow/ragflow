@@ -495,10 +495,10 @@ func (h *agentHandlerTestable) listAgents(c *gin.Context) {
 	}
 	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "", nil)
 	if err != nil {
-		common.Respond(c, http.StatusOK, code, false, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
@@ -514,7 +514,7 @@ func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
 	if templates == nil {
 		templates = []*entity.CanvasTemplate{}
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, templates, "success")
+	common.RespondSuccess(c, templates, "success")
 }
 
 func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*service.ListAgentsResponse, common.ErrorCode, error) {

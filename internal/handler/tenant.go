@@ -95,7 +95,7 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 		},
 	})
 	if err != nil {
-		common.Respond(c, http.StatusOK, code, false, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
@@ -122,7 +122,7 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 
 	defaultModels, err := h.userTenantService.ListDefaultModels(ctx, user.ID)
 	if err != nil {
-		common.Respond(c, http.StatusOK, common.CodeExceptionError, false, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
 
@@ -153,12 +153,12 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 
 	tenantInfo, err := h.userTenantService.GetCurrentTenantInfo(ctx, user.ID)
 	if err != nil {
-		common.Respond(c, http.StatusOK, common.CodeExceptionError, false, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
 
 	if tenantInfo == nil {
-		common.Respond(c, http.StatusOK, common.CodeDataError, false, "Tenant not found!")
+		common.RespondError(c, common.CodeDataError, "Tenant not found!")
 		return
 	}
 
@@ -182,7 +182,7 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 
 	tenantList, err := h.tenantService.GetTenantList(ctx, user.ID)
 	if err != nil {
-		common.Respond(c, http.StatusOK, common.CodeExceptionError, false, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
 
@@ -638,7 +638,7 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // AcceptTenantInvite accepts a pending invitation, transitioning membership status to joined.
@@ -685,7 +685,7 @@ func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 func matchesActiveTenant(c *gin.Context, tenantID string) bool {

@@ -322,7 +322,7 @@ func (h *AgentHandler) RevokeWebhookCredential(c *gin.Context) {
 		jsonInternalError(c, err)
 		return
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 func (h *AgentHandler) webhookCredentialManager() agentWebhookCredentialManager {

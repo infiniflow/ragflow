@@ -891,7 +891,7 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 	}
 }
 
-func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
+func TestUploadDocumentsHandler_LocalPartialFailureOmitsData(t *testing.T) {
 	db := setupUploadHandlerDB(t, "normal")
 	orig := dao.DB
 	dao.DB = db
@@ -924,9 +924,8 @@ func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
 	if resp["code"] != float64(common.CodeServerError) {
 		t.Fatalf("expected server error code for partial upload, got %v", resp)
 	}
-	data := resp["data"].([]interface{})
-	if len(data) != 1 {
-		t.Fatalf("expected one successful document, got %v", data)
+	if _, ok := resp["data"]; ok {
+		t.Fatalf("error response must omit data: %v", resp)
 	}
 	if !strings.Contains(resp["message"].(string), "bad.exe") {
 		t.Fatalf("expected failed file in message, got %v", resp["message"])

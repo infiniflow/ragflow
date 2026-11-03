@@ -93,31 +93,27 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	var req service.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, http.StatusOK, common.CodeBadRequest, false, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	user, code, err := h.userService.Register(ctx, &req)
 	if err != nil {
-		var data interface{} = false
-		if code == common.CodeExceptionError {
-			data = nil
-		}
-		common.Respond(c, http.StatusOK, code, data, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 	operationLog.UserID = user.ID
 
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
-		common.Respond(c, http.StatusOK, common.CodeServerError, false, err.Error())
+		common.RespondError(c, common.CodeServerError, err.Error())
 		operationLog.Code = int(common.CodeBadRequest)
 		operationLog.Error = err
 		return
 	}
 	authToken, err := issueUserAccessToken(user, secretKey)
 	if err != nil {
-		common.Respond(c, http.StatusOK, common.CodeServerError, false, "Failed to generate auth token")
+		common.RespondError(c, common.CodeServerError, "Failed to generate auth token")
 		operationLog.Code = int(common.CodeBadRequest)
 		operationLog.Error = err
 		return
@@ -158,7 +154,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	var req service.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, http.StatusOK, common.CodeBadRequest, false, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		operationLog.Code = int(common.CodeBadRequest)
 		operationLog.Error = err
 		return
@@ -168,7 +164,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	user, code, err := h.userService.Login(ctx, &req)
 	if err != nil {
-		common.Respond(c, http.StatusOK, code, false, err.Error())
+		common.RespondError(c, code, err.Error())
 		operationLog.Code = int(code)
 		operationLog.Error = err
 		return
@@ -179,14 +175,14 @@ func (h *UserHandler) Login(c *gin.Context) {
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		errMessage := fmt.Errorf("failed to get secret key: %s", err.Error())
-		common.Respond(c, http.StatusOK, common.CodeServerError, false, errMessage.Error())
+		common.RespondError(c, common.CodeServerError, errMessage.Error())
 		operationLog.Code = int(common.CodeServerError)
 		operationLog.Error = errMessage
 		return
 	}
 	authToken, err := issueUserAccessToken(user, secretKey)
 	if err != nil {
-		common.Respond(c, http.StatusOK, common.CodeServerError, false, "Failed to generate auth token")
+		common.RespondError(c, common.CodeServerError, "Failed to generate auth token")
 		operationLog.Code = int(common.CodeServerError)
 		operationLog.Error = err
 		return
@@ -229,7 +225,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, http.StatusOK, common.CodeBadRequest, false, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		operationLog.Code = int(common.CodeBadRequest)
 		operationLog.Error = err
 		return
@@ -239,7 +235,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 
 	if !local.IsAdminAvailable() {
 		adminStatus := local.GetAdminStatus()
-		common.Respond(c, http.StatusOK, common.CodeAuthenticationError, "No", adminStatus.Reason)
+		common.RespondError(c, common.CodeAuthenticationError, adminStatus.Reason)
 		operationLog.Code = int(common.CodeAuthenticationError)
 		operationLog.Error = errors.New(adminStatus.Reason)
 		return
@@ -247,7 +243,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 
 	user, code, err := h.userService.LoginByEmail(ctx, &req)
 	if err != nil {
-		common.Respond(c, http.StatusOK, code, false, err.Error())
+		common.RespondError(c, code, err.Error())
 		operationLog.Code = int(code)
 		operationLog.Error = err
 		return
@@ -255,7 +251,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	operationLog.UserID = user.ID
 
 	if user.IsSuperuser != nil && *user.IsSuperuser {
-		common.Respond(c, http.StatusOK, common.CodeForbidden, false, "super admin should not login to this page.")
+		common.RespondError(c, common.CodeForbidden, "super admin should not login to this page.")
 		operationLog.Code = int(common.CodeForbidden)
 		operationLog.Error = fmt.Errorf("super admin should not login to this page")
 		return
@@ -264,14 +260,14 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		errorMessage := fmt.Errorf("failed to get secret key: %s", err.Error())
-		common.Respond(c, http.StatusOK, common.CodeServerError, false, errorMessage.Error())
+		common.RespondError(c, common.CodeServerError, errorMessage.Error())
 		operationLog.Code = int(common.CodeServerError)
 		operationLog.Error = errorMessage
 		return
 	}
 	authToken, err := issueUserAccessToken(user, secretKey)
 	if err != nil {
-		common.Respond(c, http.StatusOK, common.CodeServerError, false, "Failed to generate auth token")
+		common.RespondError(c, common.CodeServerError, "Failed to generate auth token")
 		operationLog.Code = int(common.CodeServerError)
 		operationLog.Error = err
 		return
@@ -300,7 +296,7 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 
 	user, code, err := h.userService.GetUserByID(ctx, id)
 	if err != nil {
-		common.Respond(c, http.StatusOK, code, false, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
@@ -364,13 +360,13 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	// Logout user
 	code, err = h.userService.Logout(ctx, user)
 	if err != nil {
-		common.Respond(c, http.StatusOK, code, false, err.Error())
+		common.RespondError(c, code, err.Error())
 		operationLog.Code = int(code)
 		operationLog.Error = err
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // Info get user profile information
@@ -413,22 +409,18 @@ func (h *UserHandler) Setting(c *gin.Context) {
 	// Parse request
 	var req service.UpdateSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, http.StatusOK, common.CodeBadRequest, false, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	// Update user settings
 	code, err := h.userService.UpdateUserSettings(ctx, user, &req)
 	if err != nil {
-		if code == common.CodeExceptionError {
-			common.Respond(c, http.StatusOK, common.CodeExceptionError, false, err.Error())
-			return
-		}
-		common.Respond(c, http.StatusOK, code, false, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // ChangePassword change user password
@@ -450,18 +442,18 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 	// Parse request
 	var req service.ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, http.StatusOK, common.CodeBadRequest, false, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	// Change password
 	code, err := h.userService.ChangePassword(ctx, user, &req)
 	if err != nil {
-		common.Respond(c, http.StatusOK, code, false, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "password changed successfully")
+	common.RespondSuccess(c, true, "password changed successfully")
 }
 
 // SetTenantInfo update tenant information
@@ -551,7 +543,7 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 func joinStrings(values []string) string {

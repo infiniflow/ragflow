@@ -25,7 +25,7 @@ func RespondSuccessList[T any](c *gin.Context, data []T, message string, options
 	Respond(c, http.StatusOK, CodeSuccess, data, message, options...)
 }
 
-// RespondSuccess writes a successful response with optional object data.
+// RespondSuccess writes a successful response with optional data.
 func RespondSuccess(c *gin.Context, data any, message string, options ...ResponseOptions) {
 	Respond(c, http.StatusOK, CodeSuccess, data, message, options...)
 }
@@ -36,8 +36,8 @@ func RespondError(c *gin.Context, code ErrorCode, message string, options ...Res
 }
 
 // Respond writes a response with an HTTP status and application code. A zero
-// HTTP status defaults to 200. Use it for scalar or mixed data, errors with a
-// payload, or responses that need an explicit HTTP status.
+// HTTP status defaults to 200. Use RespondSuccess or RespondError for HTTP 200
+// responses, and Respond for responses that need another HTTP status.
 func Respond(c *gin.Context, httpStatus int, code ErrorCode, data any, message string, options ...ResponseOptions) {
 	if message == "" {
 		message = code.Message()

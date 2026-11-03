@@ -10,11 +10,12 @@ common.RespondSuccess(c, item, "success")
 common.RespondError(c, common.CodeBadRequest, "Missing name")
 ```
 
-`Respond` takes the HTTP status before the application code. It handles scalar
-or mixed payloads, errors with data, and explicit HTTP statuses:
+For HTTP 200, use `RespondSuccess` when the application code is `CodeSuccess`
+and `RespondError` otherwise. `RespondError` omits `data`. `Respond` takes the
+HTTP status before the application code for responses with other HTTP statuses:
 
 ```go
-common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+common.RespondSuccess(c, true, "success")
 common.Respond(c, httpStatus, code, data, message)
 ```
 

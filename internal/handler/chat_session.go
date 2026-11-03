@@ -450,7 +450,7 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, result, message)
+	common.RespondSuccess(c, result, message)
 }
 
 func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {

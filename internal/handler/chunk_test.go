@@ -576,7 +576,7 @@ func TestChunkStopParsingRouteRequiresDocumentIDs(t *testing.T) {
 	}
 }
 
-func TestChunkStopParsing_InvalidStateIncludesPythonErrorCode(t *testing.T) {
+func TestChunkStopParsing_InvalidStateOmitsData(t *testing.T) {
 	r, mock := setupChunkStopParsingTest("user1")
 	mock.stopParsingFn = func(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
 		return &service.StopParsingResponse{
@@ -599,12 +599,8 @@ func TestChunkStopParsing_InvalidStateIncludesPythonErrorCode(t *testing.T) {
 	if resp["code"] != float64(common.CodeDataError) {
 		t.Fatalf("expected data error, got %v: %s", resp["code"], w.Body.String())
 	}
-	data, ok := resp["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected data object, got %T", resp["data"])
-	}
-	if data["error_code"] != "DOC_STOP_PARSING_INVALID_STATE" {
-		t.Fatalf("unexpected error_code: %v", data["error_code"])
+	if _, ok := resp["data"]; ok {
+		t.Fatalf("error response must omit data: %v", resp)
 	}
 	if resp["message"] != "can't stop parsing document that has not started or already completed" {
 		t.Fatalf("unexpected message: %v", resp["message"])

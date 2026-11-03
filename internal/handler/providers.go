@@ -121,7 +121,7 @@ func (h *ProviderHandler) AddProvider(c *gin.Context) {
 
 	var req AddProviderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, http.StatusOK, common.CodeBadRequest, false, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 

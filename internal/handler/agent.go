@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net/http"
 	"ragflow/internal/engine/kvrocks"
 	"strconv"
 	"strings"
@@ -179,7 +178,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	if c.Query("type") == "filter" {
 		filters, code, err := h.agentService.ListAgentFilters(c.Request.Context(), user.ID, strings.TrimSpace(c.Query("canvas_category")))
 		if err != nil {
-			common.Respond(c, http.StatusOK, code, false, err.Error())
+			common.RespondError(c, code, err.Error())
 			return
 		}
 		common.RespondSuccess(c, filters, "success")
@@ -245,7 +244,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		tags,
 	)
 	if err != nil {
-		common.Respond(c, http.StatusOK, code, false, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
@@ -432,7 +431,7 @@ func (h *AgentHandler) DeleteAgent(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // ListTemplates lists every canvas template available to authenticated users.
@@ -611,24 +610,16 @@ func (h *AgentHandler) runCanvasPipelineDebug(ctx context.Context, user *entity.
 	return result, runErr
 }
 
-// respondWithDebugResult writes the outcome of a dataflow debug run. On a run
-// failure it keeps a non-success code (errors must not be masked as success)
-// but still carries message_id in the error envelope's data, because
-// runCanvasPipelineDebug already flushed the failure log to Redis — the front-end
-// needs that key to poll the failure timeline. On success it returns the
-// message_id (the polling key) together with the produced chunks. Empty chunk
-// slices become `[]` rather than `null` so the response shape stays stable.
+// respondWithDebugResult writes the outcome of a dataflow debug run. On success
+// it returns the message_id (the polling key) together with the produced chunks.
+// Empty chunk slices become `[]` rather than `null` so the response shape stays stable.
 // This is the single wire-shape helper for the chat/completions DataFlow debug
 // entry point, and it matches the contract the front-end expects:
 // `data.data.message_id` drives the log-poll loop and `data.data.chunks`
 // renders the debug output.
 func respondWithDebugResult(c *gin.Context, result *task.PipelineResult, err error) {
 	if err != nil {
-		messageID := ""
-		if result != nil {
-			messageID = result.MessageID
-		}
-		common.Respond(c, http.StatusOK, common.CodeServerError, gin.H{"message_id": messageID}, err.Error())
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 	messageID := ""
@@ -697,7 +688,7 @@ func (h *AgentHandler) CancelSessionRun(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // publishAgentRequest is the wire shape for POST /api/v1/agents/:canvas_id/publish.
@@ -827,7 +818,7 @@ func (h *AgentHandler) DeleteVersion(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // PatchVersion patches mutable metadata (alias/title/description) of a single
@@ -865,7 +856,7 @@ func (h *AgentHandler) PatchVersion(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // ApplyVersion restores a saved workflow as the current agent draft.
@@ -889,7 +880,7 @@ func (h *AgentHandler) ApplyVersion(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // --- PR2: missing routes wired up to the existing service layer ---
@@ -963,7 +954,7 @@ func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 		common.RespondError(c, errCode, errMsg.Error())
 		return
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // ListAgentSessions GET /api/v1/agents/:canvas_id/sessions
@@ -1094,7 +1085,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 			common.RespondError(c, code, err.Error())
 			return
 		}
-		common.Respond(c, http.StatusOK, common.CodeSuccess, ok, "success")
+		common.RespondSuccess(c, ok, "success")
 		return
 	}
 	idsParam := c.Query("ids")
@@ -1564,7 +1555,7 @@ func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // parseAgentLogs decodes the debug-log payload stored in Redis by the pipeline
@@ -1676,7 +1667,7 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	if rerr == nil {
 		data = parseAgentLogs(payload)
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 // GetAgentWebhookLogs GET /api/v1/agents/:canvas_id/webhook/logs

@@ -118,7 +118,7 @@ func (h *SystemHandler) GetVersion(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, version.Version, "success")
+	common.RespondSuccess(c, version.Version, "success")
 }
 
 // GetLogLevel returns the current log level. The response uses the

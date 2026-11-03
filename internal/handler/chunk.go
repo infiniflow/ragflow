@@ -133,7 +133,7 @@ func (h *ChunkHandler) Parse(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, code, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 // ListChunks retrieves chunks for a document from path/query parameters.
@@ -266,11 +266,7 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 	ctx := c.Request.Context()
 	resp, code, err := h.chunkService.StopParsing(ctx, user.ID, datasetID, req)
 	if err != nil {
-		var data interface{}
-		if resp != nil {
-			data = resp.Data
-		}
-		common.Respond(c, http.StatusOK, code, data, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
@@ -283,7 +279,7 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 		data = resp.Data
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, data, message)
+	common.RespondSuccess(c, data, message)
 }
 
 // SwitchChunks enable or disable a chunk
@@ -345,7 +341,7 @@ func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 func parseStringSlice(raw interface{}) ([]string, bool) {
@@ -602,7 +598,7 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, deletedCount, "success")
+	common.RespondSuccess(c, deletedCount, "success")
 }
 
 func addChunkStringField(rawBody map[string]json.RawMessage, field string) (string, error) {

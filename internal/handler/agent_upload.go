@@ -142,5 +142,5 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	} else {
 		payload = results
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, payload, "success")
+	common.RespondSuccess(c, payload, "success")
 }

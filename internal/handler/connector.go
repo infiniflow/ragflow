@@ -113,9 +113,9 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 	case errors.Is(err, service.ErrConnectorNotFound):
 		common.RespondError(c, common.CodeDataError, "Can't find this Connector!")
 	case errors.Is(err, service.ErrConnectorTestUnsupported):
-		common.Respond(c, http.StatusOK, common.CodeNotImplemented, false, err.Error())
+		common.RespondError(c, common.CodeNotImplemented, err.Error())
 	case errors.Is(err, service.ErrConnectorSourceNotImplemented):
-		common.Respond(c, http.StatusOK, common.CodeNotImplemented, false, err.Error())
+		common.RespondError(c, common.CodeNotImplemented, err.Error())
 	default:
 		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 	}
@@ -411,17 +411,17 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 			rateErr *syncerconnector.RateLimitTriedTooManyTimesError
 		)
 		if errors.As(err, &valErr) || errors.As(err, &credErr) || errors.As(err, &rateErr) {
-			common.Respond(c, http.StatusOK, common.CodeDataError, false, err.Error())
+			common.RespondError(c, common.CodeDataError, err.Error())
 			return
 		}
-		common.Respond(c, http.StatusOK, common.CodeServerError, false, err.Error())
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 	if connectorErrorResponse(c, err) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, true, "success")
+	common.RespondSuccess(c, true, "success")
 }
 
 // DeleteConnector delete connector
@@ -444,7 +444,7 @@ func (h *ConnectorHandler) DeleteConnector(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, ok, "success")
+	common.RespondSuccess(c, ok, "success")
 }
 
 // RebuildConnector rebuild connector
@@ -483,7 +483,7 @@ func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
 		return
 	}
 
-	common.Respond(c, http.StatusOK, common.CodeSuccess, ok, "success")
+	common.RespondSuccess(c, ok, "success")
 }
 
 // ResumeFailedSync resumes a failed connector sync task from checkpoint. (when network outage)
@@ -513,7 +513,7 @@ func (h *ConnectorHandler) ResumeFailedSync(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.Respond(c, http.StatusOK, common.CodeSuccess, ok, "success")
+	common.RespondSuccess(c, ok, "success")
 }
 
 func (h *ConnectorHandler) StartGoogleWebOAuth(c *gin.Context) {
@@ -607,7 +607,7 @@ func (h *ConnectorHandler) StartBoxWebOAuth(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.Respond(c, http.StatusOK, code, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }
 
 func (h *ConnectorHandler) BoxWebOAuthCallback(c *gin.Context) {
@@ -641,5 +641,5 @@ func (h *ConnectorHandler) PollBoxWebOAuthResult(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.Respond(c, http.StatusOK, code, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }
