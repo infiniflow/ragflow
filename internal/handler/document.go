@@ -1583,7 +1583,7 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 		return
 	}
 
-	if len(req.DocumentIDs) == 0 {
+	if !req.CancelAll && len(req.DocumentIDs) == 0 {
 		common.RespondError(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
