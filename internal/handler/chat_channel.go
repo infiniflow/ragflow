@@ -169,7 +169,7 @@ func (h *ChatChannelHandler) DeleteChatChannel(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.chatChannelService.DeleteChatChannel(ctx, channelID)
+	_, code, err := h.chatChannelService.DeleteChatChannel(ctx, channelID)
 	if code != common.CodeSuccess || err != nil {
 		writeChatChannelError(c, code, chatChannelErrMsg(code, err))
 		return

@@ -1007,7 +1007,7 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
 	if sessionID != "" {
-		ok, code, err := h.agentService.DeleteAgentSessionItem(ctx, canvasID, sessionID)
+		_, code, err := h.agentService.DeleteAgentSessionItem(ctx, canvasID, sessionID)
 		if err != nil {
 			common.RespondError(c, code, err.Error())
 			return
