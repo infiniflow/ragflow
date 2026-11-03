@@ -204,7 +204,7 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 		// A delete change for a file that is still in the folder is caller
 		// input, not a server fault.
 		if errors.Is(err, file.ErrDeleteLiveFile) {
-			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+			common.RespondError(c, common.CodeBadRequest, err.Error())
 			return
 		}
 		jsonInternalError(c, err)
