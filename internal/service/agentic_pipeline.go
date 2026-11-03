@@ -44,6 +44,18 @@ const agenticRunTimeout = 15 * time.Minute
 // operator who removed or renamed the template.
 const defaultAgenticTemplateID = "smart-reasoning"
 
+func resolveChatAgenticTemplate(chat *entity.Chat, kwargs map[string]interface{}) (agentic_rag.Template, error) {
+	mode, _ := kwargs["agent_mode"].(string)
+	if mode == "" {
+		mode = defaultAgenticTemplateID
+	}
+	override, err := agentic_rag.ParseOverride(chat.PromptConfig["agentic_rag"])
+	if err != nil {
+		return agentic_rag.Template{}, err
+	}
+	return agentic_rag.ResolveTemplate(mode, override)
+}
+
 // agenticRag drives ONE conversation turn through the smart-reasoning agent
 // (internal/agentic_rag): an eino-ADK ReAct explorer whose toolset is the
 // corpus itself (grep / lexical / semantic locate, list_chunks deep read).
@@ -56,6 +68,10 @@ const defaultAgenticTemplateID = "smart-reasoning"
 // StartToThink/EndToThink, and exactly one Final result carrying the answer
 // with its reference payload built from the answer's own chunk_id citations
 // (see buildAgenticReference).
+// defaultAgenticTokenBudget is the per-run token ceiling. It bounds the cost of
+// a runaway search; 0 disables the ceiling.
+const defaultAgenticTokenBudget = 500_000
+
 func (s *ChatPipelineService) agenticRag(
 	ctx context.Context,
 	userID string,
@@ -65,6 +81,10 @@ func (s *ChatPipelineService) agenticRag(
 	kwargs map[string]interface{},
 	quote bool,
 ) (<-chan AsyncChatResult, error) {
+	tmpl, err := resolveChatAgenticTemplate(chat, kwargs)
+	if err != nil {
+		return nil, err
+	}
 	out := make(chan AsyncChatResult, 16)
 	// Wire the document-metadata resolver the metadata_search tool needs. The
 	// eino agentic_rag package must not import service (service imports it), so
@@ -82,10 +102,7 @@ func (s *ChatPipelineService) agenticRag(
 	//
 	// AsyncChat only dispatches here with a non-empty KB scope, so the
 	// citation lookup below is always kb_id-bounded.
-	mode, _ := kwargs["agent_mode"].(string)
-	if mode == "" {
-		mode = defaultAgenticTemplateID
-	}
+	mode := tmpl.ID
 
 	go func() {
 		defer close(out)
@@ -97,11 +114,22 @@ func (s *ChatPipelineService) agenticRag(
 		// those handles against the same numbering.
 		registry := agentic_rag.NewEvidenceRegistry()
 		runCtx = agentic_rag.WithEvidenceRegistry(runCtx, registry)
+		// The turn's question, published on the run context because the
+		// sufficiency filter needs it per passage while the retrieval tools are
+		// never given it.
+		query := lastUserQuestion(messages)
+		runCtx = agentic_rag.WithQuery(runCtx, query)
+		// The run's token ceiling. Exceeding it cancels this run and the
+		// terminating fallback answers from the evidence already gathered, so a
+		// runaway search costs a bounded amount instead of an unbounded one.
+		if limit := common.GetEnvInt(common.EnvAgenticTokenBudget, defaultAgenticTokenBudget); limit > 0 {
+			runCtx = common.WithTokenBudget(runCtx, int64(limit))
+			defer common.LogTokenBudget(runCtx)
+		}
 		// Per-turn token accounting. Every LLM call inside the run records its
 		// usage into this sink (models.EinoChatModel does it for both the
-		// non-streaming and streaming paths), which is the only place the cost of
-		// an agentic turn exists: chat completions carries no usage field, so a
-		// caller cannot recover it from the answer.
+		// non-streaming and streaming paths). Its totals are emitted on the final
+		// result and stored with the assistant message.
 		runCtx = tokenizer.WithRunUsage(runCtx)
 		runCtx = tokenizer.WithRunAttrs(runCtx, &tokenizer.RunAttrs{UserID: userID})
 		turnStarted := time.Now()
@@ -113,15 +141,27 @@ func (s *ChatPipelineService) agenticRag(
 		// its compile step; the agentic path has no canvas, so attach it here.
 		runState := runtime.NewCanvasState("", chat.ID)
 		if userID != "" {
-			runState.Sys["user_id"] = userID
-			runState.Sys["tenant_id"] = chat.TenantID
+			runState.SetSys("user_id", userID)
+			runState.SetSys("tenant_id", chat.TenantID)
 		}
 		runCtx = runtime.WithState(runCtx, runState)
+		// A result is abandoned only when the CALLER is gone. runCtx is not the
+		// delivery signal: the token budget cancels it precisely so that the
+		// terminating fallback can answer from the evidence already gathered, so
+		// treating that cancellation as "nobody is listening" dropped the very
+		// answer the run had just built and shipped an empty reply. Delivery is
+		// tried first and unconditionally, because out is buffered and the
+		// consumer always drains it.
 		emitResult := func(result AsyncChatResult) bool {
 			select {
 			case out <- result:
 				return true
-			case <-runCtx.Done():
+			default:
+			}
+			select {
+			case out <- result:
+				return true
+			case <-ctx.Done():
 				return false
 			}
 		}
@@ -156,7 +196,7 @@ func (s *ChatPipelineService) agenticRag(
 		// like the regular AsyncChat path does, then let the template pin its
 		// sampling when it declares one (smart-reasoning pins 0.5).
 		chatCfg := BuildChatConfig(chat, kwargs)
-		if temp := agentic_rag.TemplateTemperature(mode); temp != nil {
+		if temp := tmpl.Temperature; temp != nil {
 			pinned := *chatCfg
 			pinned.Temperature = temp
 			chatCfg = &pinned
@@ -196,7 +236,9 @@ func (s *ChatPipelineService) agenticRag(
 			SynthModel:      synth,
 			Messages:        agentMessages,
 			TemplateID:      mode,
+			Template:        &tmpl,
 			TenantID:        chat.TenantID,
+			UserID:          userID,
 			DatasetIDs:      chatDatasetIDs(chat),
 			DocIDs:          docIDs,
 			ConversationKey: chat.ID,
@@ -276,6 +318,12 @@ func (s *ChatPipelineService) agenticRag(
 		} else if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
 			common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
 		}
+		// What the turn cost, on the wire for the same reason the log line
+		// exists: nothing else tells the client. The chat page renders it under
+		// the answer, and a caller comparing runs reads it instead of grepping
+		// the server log.
+		promptTokens, completionTokens, totalTokens, _ := tokenizer.GetRunUsage(runCtx).Snapshot()
+
 		// Persist the same thinking and final answer the stream renders, with
 		// the final answer's citation handles compacted against its reference.
 		emitResult(AsyncChatResult{
@@ -283,6 +331,12 @@ func (s *ChatPipelineService) agenticRag(
 			Reference:             reference,
 			Final:                 true,
 			AnswerIsAuthoritative: true,
+			Usage: &ChatTurnUsage{
+				PromptTokens:     promptTokens,
+				CompletionTokens: completionTokens,
+				TotalTokens:      totalTokens,
+			},
+			ElapsedMs: float64(time.Since(turnStarted).Milliseconds()),
 		})
 	}()
 
@@ -291,11 +345,10 @@ func (s *ChatPipelineService) agenticRag(
 
 // agenticUsageFields renders a turn's LLM cost as structured log fields.
 //
-// The chat-completions response carries no usage, and conversation storage has
-// no token column, so this log line is the only per-question cost record: it is
-// what a benchmark run aggregates and what a support investigation greps. The
-// per-call breakdown goes to the debug log to keep the INFO line one line per
-// turn.
+// The final response and stored message carry token totals. The log also records
+// call counts and per-phase totals for benchmarks and support investigations.
+// The per-call breakdown goes to the debug log to keep the INFO line one line
+// per turn.
 //
 // usage_missing_calls counts calls whose provider reported no usable split.
 // They are counted rather than silently folded into the totals, so "cheap"
@@ -362,7 +415,7 @@ func agenticUsageFields(ctx context.Context, usage *tokenizer.RunUsage) []zap.Fi
 // model choice to every chat model owned by the tenant: a failover chain is
 // exactly the list the dialog's author chose, and nothing else.
 func (s *ChatPipelineService) agenticModelChain(ctx context.Context, userID string, chat *entity.Chat) ([]*modelModule.ChatModel, error) {
-	access := ModelAccess{UserID: userID, TenantID: chat.TenantID}
+	access := Identity{UserID: userID, TenantID: chat.TenantID}
 	primary, err := s.agenticPrimaryModel(ctx, access, chat)
 	if err != nil {
 		return nil, err
@@ -392,7 +445,7 @@ func (s *ChatPipelineService) agenticModelChain(ctx context.Context, userID stri
 
 // agenticPrimaryModel resolves the dialog's own model, or the tenant default
 // when it selected none.
-func (s *ChatPipelineService) agenticPrimaryModel(ctx context.Context, access ModelAccess, chat *entity.Chat) (*modelModule.ChatModel, error) {
+func (s *ChatPipelineService) agenticPrimaryModel(ctx context.Context, access Identity, chat *entity.Chat) (*modelModule.ChatModel, error) {
 	var (
 		model *modelModule.ChatModel
 		err   error

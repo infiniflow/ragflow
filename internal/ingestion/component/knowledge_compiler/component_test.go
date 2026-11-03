@@ -1415,7 +1415,7 @@ func TestOverlayTemplateConfigPlanPrecedence(t *testing.T) {
 
 // TestKnowledgeCompiler_BuildInputsAcceptsMapSliceChunks locks the chunk-carrier
 // contract: the upstream chunker hands chunks over as []map[string]any (see the
-// chunk map shape {"id","text","ck_type","doc_type_kwd","tk_nums"} observed from
+// chunk map shape {"id","text","doc_type_kwd","tk_nums"} observed from
 // the running pipeline), not as []any of map. buildInputs must accept both
 // shapes; a strict []any assertion alone would silently drop every chunk and
 // leave the knowledge compiler with empty input (compiling nothing yet still
@@ -1423,8 +1423,8 @@ func TestOverlayTemplateConfigPlanPrecedence(t *testing.T) {
 func TestKnowledgeCompiler_BuildInputsAcceptsMapSliceChunks(t *testing.T) {
 	in, err := buildInputs(map[string]any{
 		"chunks": []map[string]any{
-			{"id": "c1", "text": "《三国演义》", "ck_type": "text"},
-			{"id": "c2", "text": "滚滚长江东逝水", "ck_type": "text"},
+			{"id": "c1", "text": "《三国演义》"},
+			{"id": "c2", "text": "滚滚长江东逝水"},
 		},
 	}, common.Param{})
 	if err != nil {

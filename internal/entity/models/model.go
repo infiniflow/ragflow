@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 // ReasoningSimple represents simple reasoning capability
@@ -237,10 +238,21 @@ func decodeProviderConfig(data []byte) (Provider, error) {
 	return provider, nil
 }
 
-var providerManager *ProviderManager
+// providerManager holds the published catalog. The catalog is immutable once
+// built, so publishing it through an atomic pointer gives every reader a fully
+// initialized snapshot without a lock.
+var providerManager atomic.Pointer[ProviderManager]
 
+// GetProviderManager returns the published provider catalog, or nil when no
+// catalog has been published yet.
 func GetProviderManager() *ProviderManager {
-	return providerManager
+	return providerManager.Load()
+}
+
+// setProviderManager publishes a catalog built by InitProviderManager. Tests
+// use it to install and restore fixture catalogs.
+func setProviderManager(pm *ProviderManager) {
+	providerManager.Store(pm)
 }
 
 // InitProviderManager creates a new ProviderManager by reading all JSON files from a directory
@@ -355,11 +367,11 @@ func InitProviderManager(dirPath string) error {
 		}
 	}
 
-	providerManager = &ProviderManager{
+	setProviderManager(&ProviderManager{
 		Providers:        providers,
 		AllModels:        allModels.Models,
 		Alias2ModelIndex: alias2ModelIndex,
-	}
+	})
 	return nil
 }
 

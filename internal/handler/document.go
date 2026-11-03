@@ -40,6 +40,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
+	"ragflow/internal/service/billing"
 	"ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 )
@@ -54,6 +55,7 @@ type documentServiceIface interface {
 	DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error)
 	ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopParseDocuments(ctx context.Context, datasetID string, docIDs []string) (map[string]interface{}, error)
+	StopParseDocumentsAll(ctx context.Context, datasetID string, runStatuses []string) (map[string]interface{}, error)
 	ListDocuments(ctx context.Context, page, pageSize int) ([]*document.DocumentResponse, int64, error)
 	ListDocumentsByDatasetID(ctx context.Context, kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
 	ListDocumentsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
@@ -64,16 +66,17 @@ type documentServiceIface interface {
 	GetThumbnails(ctx context.Context, userID string, docIDs []string) (map[string]string, error)
 	GetDocumentImage(ctx context.Context, userID, imageID string) ([]byte, error)
 	GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error)
-	GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error)
+	GetDocumentThumbnail(ctx context.Context, docID string) ([]byte, error)
 	GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error)
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error)
 	GetDocumentArtifact(ctx context.Context, filename, userID string) (*document.ArtifactResponse, error)
-	GetDocumentPreview(ctx context.Context, userID, docID string) (*document.DocumentPreview, error)
+	GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error)
 	UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
 	UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error)
 	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error)
 	DownloadDocument(ctx context.Context, datasetID, docID string) (*document.DownloadDocumentResp, error)
 	UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error)
+	ApplyDatasetParserConfig(ctx context.Context, userID, datasetID string) (*document.ApplyDatasetParserConfigResponse, common.ErrorCode, error)
 	BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.MetadataSelector, updates []document.MetadataUpdate, deletes []document.MetadataDelete) (*document.BatchUpdateMetadatasResponse, common.ErrorCode, error)
 	ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
 	IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
@@ -118,61 +121,55 @@ func NewDocumentHandler(documentService documentServiceIface, datasetService *da
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [get]
 func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	id := c.Param("id")
 	if id == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid document id",
-		})
+		common.RespondError(c, common.CodeBadRequest, "invalid document id")
 		return
 	}
 
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "document not found",
-		})
+		common.RespondError(c, common.CodeNotFound, "document not found")
 		return
 	}
 
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationRead); err != nil {
-		respondHTTPPermissionError(c, err, false)
+	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationRead); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"data": doc,
-	})
+	common.RespondSuccess(c, doc, "")
 }
 
 // GetThumbnail Get thumbnails for documents.
 func (h *DocumentHandler) GetThumbnail(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	docIDs := parseThumbnailDocIDs(c)
 	if len(docIDs) == 0 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, `Lack of "Document ID"`)
+		common.RespondError(c, common.CodeArgumentError, `Lack of "Document ID"`)
 		return
 	}
 
 	ctx := c.Request.Context()
 	result, err := h.documentService.GetThumbnails(ctx, user.ID, docIDs)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func parseThumbnailDocIDs(c *gin.Context) []string {
@@ -199,14 +196,14 @@ func parseThumbnailDocIDs(c *gin.Context) []string {
 func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	imageID := c.Param("image_id")
 	ctx := c.Request.Context()
 	data, err := h.documentService.GetDocumentImage(ctx, user.ID, imageID)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Image not found.")
+		common.RespondError(c, common.CodeDataError, "Image not found.")
 		return
 	}
 	h.writeDocumentImage(c, data)
@@ -215,26 +212,26 @@ func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
 func (h *DocumentHandler) GetDocumentImageForDocument(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	data, err := h.documentService.GetDocumentImageForDocument(c.Request.Context(), user.ID, c.Param("id"), c.Param("image_id"))
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Image not found.")
+		common.RespondError(c, common.CodeDataError, "Image not found.")
 		return
 	}
 	h.writeDocumentImage(c, data)
 }
 
 func (h *DocumentHandler) GetDocumentThumbnail(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
-	data, err := h.documentService.GetDocumentThumbnail(c.Request.Context(), user.ID, c.Param("id"))
+	data, err := h.documentService.GetDocumentThumbnail(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Image not found.")
+		common.RespondError(c, common.CodeDataError, "Image not found.")
 		return
 	}
 	h.writeDocumentImage(c, data)
@@ -243,7 +240,7 @@ func (h *DocumentHandler) GetDocumentThumbnail(c *gin.Context) {
 func (h *DocumentHandler) writeDocumentImage(c *gin.Context, data []byte) {
 	contentType := documentImageContentType(data)
 	if contentType == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Image not found.")
+		common.RespondError(c, common.CodeDataError, "Image not found.")
 		return
 	}
 	c.Header("Cache-Control", "no-store")
@@ -270,7 +267,7 @@ func documentImageContentType(data []byte) string {
 func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
+		common.RespondError(c, code, msg)
 		return
 	}
 	filename := c.Param("filename")
@@ -281,10 +278,10 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 		case errors.Is(err, document.ErrArtifactInvalidFilename),
 			errors.Is(err, document.ErrArtifactInvalidFileType),
 			errors.Is(err, document.ErrArtifactNotFound):
-			common.ErrorWithCode(c, common.CodeDataError, err.Error())
+			common.RespondError(c, common.CodeDataError, err.Error())
 
 		default:
-			common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+			common.RespondError(c, common.CodeExceptionError, err.Error())
 		}
 		return
 	}
@@ -300,27 +297,27 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	docID := c.Param("id")
 
 	if docID == "" {
-		common.ResponseWithCodeData(c, common.CodeParamError, nil, "id is required")
+		common.RespondError(c, common.CodeParamError, "id is required")
 		return
 	}
 
 	ctx := c.Request.Context()
-	preview, err := h.documentService.GetDocumentPreview(ctx, user.ID, docID)
+	preview, err := h.documentService.GetDocumentPreview(ctx, docID)
 	if err != nil {
 		switch {
 		case errors.Is(err, document.ErrPreviewDocumentNotFound):
-			common.ErrorWithCode(c, common.CodeDataError, "document not found")
+			common.RespondError(c, common.CodeDataError, "document not found")
 		case errors.Is(err, document.ErrPreviewFileEmpty):
-			common.ErrorWithCode(c, common.CodeDataError, "This file is empty.")
+			common.RespondError(c, common.CodeDataError, "This file is empty.")
 		default:
 			// Surface the failure as a distinct server error (storage
 			// unreachable, missing object, bad address) instead of masking
@@ -328,8 +325,8 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 			// which names the object-store bucket/key -- in the server
 			// log only.
 			common.Error("GetDocumentPreview failed", err,
-				zap.String("doc_id", docID), zap.String("user_id", user.ID))
-			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to load document preview")
+				zap.String("doc_id", docID), zap.String("user_id", permission.UserIDFromContext(ctx)))
+			common.RespondError(c, common.CodeServerError, "Failed to load document preview")
 		}
 		return
 	}
@@ -356,9 +353,9 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [put]
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -373,10 +370,10 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found!")
+		common.Respond(c, http.StatusBadRequest, 1, nil, "document not found!")
 		return
 	}
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -391,14 +388,14 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 
 	if errorCode, err = h.documentService.UpdateDocument(ctx, id, &req); err != nil {
 		if errorCode == common.CodeServerError {
-			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, errorCode, nil, err.Error())
+			common.Respond(c, http.StatusInternalServerError, errorCode, nil, err.Error())
 		} else {
-			common.ErrorWithCode(c, errorCode, err.Error())
+			common.RespondError(c, errorCode, err.Error())
 		}
 		return
 	}
 
-	common.SuccessWithMessage(c, "updated successfully")
+	common.RespondSuccess(c, nil, "updated successfully")
 }
 
 // DeleteDocument delete document
@@ -411,9 +408,9 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [delete]
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -428,10 +425,10 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found!")
+		common.Respond(c, http.StatusBadRequest, 1, nil, "document not found!")
 		return
 	}
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationDeleteContent); err != nil {
+	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationDeleteContent); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -450,20 +447,40 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 
 // DeleteDocuments handles DELETE /api/v1/datasets/:dataset_id/documents
 func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "delete_dataset_documents",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_id is required")
+		common.RespondError(c, common.CodeArgumentError, "dataset_id is required")
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = errors.New("dataset_id is required")
 		return
 	}
 
-	bodyBytes, _, ok := parseJSONRequestObject(c)
-	if !ok {
+	bodyBytes, _, err := parseJSONRequestObject(c)
+	if err != nil {
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = err
 		return
 	}
 
@@ -471,8 +488,10 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 		IDs       *[]string `json:"ids"`
 		DeleteAll bool      `json:"delete_all,omitempty"`
 	}
-	if err := json.Unmarshal(bodyBytes, &req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+	if err = json.Unmarshal(bodyBytes, &req); err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = err
 		return
 	}
 
@@ -487,7 +506,9 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 			}
 		}
 		if len(duplicates) > 0 {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Field: <ids> - Message: <Duplicate ids: '%s'> - Value: <%s>", strings.Join(duplicates, ", "), string(bodyBytes)))
+			common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("field: <ids> - message: <duplicate ids: '%s'> - value: <%s>", strings.Join(duplicates, ", "), string(bodyBytes)))
+			operationLog.Code = int(common.CodeArgumentError)
+			operationLog.Error = fmt.Errorf("field: <ids> - message: <duplicate ids: '%s'> - value: <%s>", strings.Join(duplicates, ", "), string(bodyBytes))
 			return
 		}
 	}
@@ -497,12 +518,27 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 		ids = *req.IDs
 	}
 	if len(ids) > 0 && req.DeleteAll {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "should not provide both ids and delete_all")
+		common.RespondError(c, common.CodeDataError, "should not provide both ids and delete_all")
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = errors.New("should not provide both ids and delete_all")
 		return
 	}
 	if len(ids) == 0 && !req.DeleteAll {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "should either provide doc ids or set delete_all(true)")
+		common.RespondError(c, common.CodeDataError, "should either provide doc ids or set delete_all(true)")
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = errors.New("should either provide doc ids or set delete_all(true)")
 		return
+	}
+	operationLog.Resources = make(map[string]any)
+	if len(ids) > 0 {
+		operationLog.Resources = map[string]any{
+			"document_ids": ids,
+		}
+	}
+	if req.DeleteAll {
+		operationLog.Resources = map[string]any{
+			"delete_all": req.DeleteAll,
+		}
 	}
 
 	userID := c.GetString("user_id")
@@ -510,32 +546,36 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 	deleted, err := h.documentService.DeleteDocuments(ctx, ids, req.DeleteAll, datasetID, userID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
+			operationLog.Code = int(common.CodePermissionError)
+			operationLog.Error = err
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = err
 		return
 	}
 
-	common.SuccessWithData(c, map[string]interface{}{"deleted": deleted}, "success")
+	common.RespondSuccess(c, map[string]interface{}{"deleted": deleted}, "success")
 }
 
 // BatchUpdateDocumentStatus Batch update status of documents within a dataset.
 func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 	user, code, errorMessage := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, errorMessage)
+		common.RespondError(c, code, errorMessage)
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "invalid user id")
+		common.RespondError(c, common.CodeArgumentError, "invalid user id")
 		return
 	}
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_id is required")
+		common.RespondError(c, common.CodeArgumentError, "dataset_id is required")
 		return
 	}
 
@@ -544,20 +584,19 @@ func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 		Status      interface{}   `json:"status"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
 	if req.DocumentIDs == nil || len(req.DocumentIDs) == 0 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, `"doc_ids" must be a non-empty list.`)
+		common.RespondError(c, common.CodeArgumentError, `"doc_ids" must be a non-empty list.`)
 		return
 	}
 	documentIDs := make([]string, 0, len(req.DocumentIDs))
 	for _, rawDocID := range req.DocumentIDs {
 		docID, ok := rawDocID.(string)
 		if !ok || strings.TrimSpace(docID) == "" {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-				`"doc_ids" must contain non-empty document IDs.`)
+			common.RespondError(c, common.CodeArgumentError, `"doc_ids" must contain non-empty document IDs.`)
 			return
 		}
 		documentIDs = append(documentIDs, docID)
@@ -568,7 +607,7 @@ func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 		status = fmt.Sprint(req.Status)
 	}
 	if status != "0" && status != "1" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf(`"Status" must be either 0 or 1:%s!`, status))
+		common.RespondError(c, common.CodeArgumentError, fmt.Sprintf(`"Status" must be either 0 or 1:%s!`, status))
 		return
 	}
 
@@ -579,11 +618,11 @@ func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 		if code == common.CodeServerError {
 			message = "Partial failure"
 		}
-		common.ResponseWithCodeData(c, code, result, message)
+		common.RespondError(c, code, message)
 		return
 	}
 
-	common.ResponseWithCodeData(c, code, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // ListDocuments document list
@@ -595,19 +634,17 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	page, _ := strconv.Atoi(pageStr)
 	pageSize, _ := strconv.Atoi(pageSizeStr)
 
-	userID := c.GetString("user_id")
-
 	if orderby := c.Query("orderby"); orderby != "" {
 		switch orderby {
 		case "create_time", "update_time", "name":
 		default:
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
+			common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("invalid orderby field: %s", orderby))
 			return
 		}
 	}
 
 	ctx := c.Request.Context()
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -621,22 +658,22 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 
 	opts, errMsg := parseDocumentListOptions(c, datasetID)
 	if errMsg != "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, errMsg)
+		common.RespondError(c, common.CodeDataError, errMsg)
 		return
 	}
 	opts, errMsg = h.applyDocumentMetadataFilter(c, opts)
 	if errMsg != "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, errMsg)
+		common.RespondError(c, common.CodeDataError, errMsg)
 		return
 	}
 
 	if c.Query("type") == "filter" {
 		filters, total, err := h.documentService.GetDocumentFiltersByDatasetID(ctx, opts)
 		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeExceptionError, map[string]interface{}{"total": 0, "filter": map[string]interface{}{}}, "failed to get document filters")
+			common.RespondError(c, common.CodeExceptionError, "failed to get document filters")
 			return
 		}
-		common.SuccessWithData(c, gin.H{"total": total, "filter": filters}, "success")
+		common.RespondSuccess(c, gin.H{"total": total, "filter": filters}, "success")
 		return
 	}
 
@@ -645,7 +682,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	// so that total reflects the unfiltered count, matching the Python API contract.
 	documents, total, err := h.documentService.ListDocumentsByDatasetIDWithOptions(ctx, opts, page, pageSize)
 	if err != nil {
-		common.ResponseWithCodeData(c, 1, map[string]interface{}{"total": 0, "docs": []interface{}{}}, "failed to get documents")
+		common.RespondError(c, 1, "failed to get documents")
 		return
 	}
 
@@ -655,7 +692,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		idOpts.Name = ""
 		_, idTotal, idErr := h.documentService.ListDocumentsByDatasetIDWithOptions(ctx, idOpts, 1, 1)
 		if idErr == nil && idTotal == 0 {
-			common.ResponseWithCodeData(c, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, fmt.Sprintf("you don't own the document %s", docID))
+			common.RespondError(c, common.CodeDataError, fmt.Sprintf("you don't own the document %s", docID))
 			return
 		}
 	}
@@ -665,7 +702,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		nameOpts.DocIDFilterApplied = false
 		_, nameTotal, nameErr := h.documentService.ListDocumentsByDatasetIDWithOptions(ctx, nameOpts, 1, 1)
 		if nameErr == nil && nameTotal == 0 {
-			common.ResponseWithCodeData(c, common.CodeDataError, map[string]interface{}{"total": 0, "docs": []interface{}{}}, fmt.Sprintf("you don't own the document %s", opts.Name))
+			common.RespondError(c, common.CodeDataError, fmt.Sprintf("you don't own the document %s", opts.Name))
 			return
 		}
 	}
@@ -712,7 +749,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		// otherwise an active task on another page could be missed.
 		hasActiveTasks = true
 	}
-	common.SuccessWithData(c, gin.H{"total": total, "docs": docs, "has_active_tasks": hasActiveTasks}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "docs": docs, "has_active_tasks": hasActiveTasks}, "success")
 }
 
 func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentListOptions, string) {
@@ -988,7 +1025,7 @@ func invalidRunStatuses(statuses []string) []string {
 func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	tenantID := user.ID
@@ -998,10 +1035,10 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 	ctx := c.Request.Context()
 	kb, err := h.datasetService.GetKnowledgebaseByID(ctx, datasetID)
 	if err != nil || kb == nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("Can't find the dataset with ID %s!", datasetID))
+		common.RespondError(c, common.CodeDataError, fmt.Sprintf("Can't find the dataset with ID %s!", datasetID))
 		return
 	}
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: user.ID}, kb.ID, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1014,26 +1051,33 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 	case "local":
 		h.uploadLocalDocuments(c, kb, tenantID)
 	default:
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, `"type" must be one of "local", "web", or "empty".`)
+		common.RespondError(c, common.CodeArgumentError, `"type" must be one of "local", "web", or "empty".`)
 	}
 }
 
 func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
 	form, err := c.MultipartForm()
 	if err != nil || form == nil || len(form.File["file"]) == 0 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "No file part!")
+		common.RespondError(c, common.CodeArgumentError, "No file part!")
 		return
 	}
 	files := form.File["file"]
+	var totalSize int64
+	for _, fh := range files {
+		if fh != nil {
+			totalSize += fh.Size
+		}
+	}
+	if !billingEnforceStorage(c, tenantID, totalSize) {
+		return
+	}
 	for _, fh := range files {
 		if fh == nil || fh.Filename == "" {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-				"No file selected!")
+			common.RespondError(c, common.CodeArgumentError, "No file selected!")
 			return
 		}
 		if len([]byte(fh.Filename)) > 255 {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-				"File name must be 255 bytes or less.")
+			common.RespondError(c, common.CodeArgumentError, "File name must be 255 bytes or less.")
 			return
 		}
 	}
@@ -1058,32 +1102,24 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 	}
 	ctx := c.Request.Context()
 	data, errMsgs := h.documentService.UploadLocalDocuments(ctx, kb, tenantID, files, c.PostForm("parent_path"), override)
-	if len(data) == 0 && len(errMsgs) > 0 {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, strings.Join(errMsgs, "\n"))
+	if len(errMsgs) > 0 {
+		common.RespondError(c, common.CodeServerError, strings.Join(errMsgs, "\n"))
 		return
 	}
 	if len(data) == 0 {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "There seems to be an issue with your file format. please verify it is correct and not corrupted.")
+		common.RespondError(c, common.CodeDataError, "There seems to be an issue with your file format. please verify it is correct and not corrupted.")
 		return
 	}
 
 	if strings.ToLower(c.DefaultQuery("return_raw_files", "false")) == "true" {
-		if len(errMsgs) > 0 {
-			common.ResponseWithCodeData(c, common.CodeServerError, data, strings.Join(errMsgs, "\n"))
-			return
-		}
-		common.SuccessNoMessage(c, data)
+		common.RespondSuccessList(c, data, "success")
 		return
 	}
 	mapped := make([]map[string]interface{}, len(data))
 	for i, d := range data {
 		mapped[i] = mapDocKeysWithRunStatus(d)
 	}
-	if len(errMsgs) > 0 {
-		common.ResponseWithCodeData(c, common.CodeServerError, mapped, strings.Join(errMsgs, "\n"))
-		return
-	}
-	common.SuccessNoMessage(c, mapped)
+	common.RespondSuccessList(c, mapped, "success")
 }
 
 func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
@@ -1094,53 +1130,53 @@ func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowled
 	// a non-empty but malformed body should report the syntax error, not a
 	// misleading "File name can't be empty."
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid JSON body: "+err.Error())
+		common.RespondError(c, common.CodeArgumentError, "Invalid JSON body: "+err.Error())
 		return
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "File name can't be empty.")
+		common.RespondError(c, common.CodeArgumentError, "File name can't be empty.")
 		return
 	}
 	if len([]byte(name)) > 255 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "File name must be 255 bytes or less.")
+		common.RespondError(c, common.CodeArgumentError, "File name must be 255 bytes or less.")
 		return
 	}
 	ctx := c.Request.Context()
 	data, code, err := h.documentService.UploadEmptyDocument(ctx, kb, tenantID, name)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.SuccessNoMessage(c, mapDocKeysWithRunStatus(data))
+	common.RespondSuccess(c, mapDocKeysWithRunStatus(data), "success")
 }
 
 func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
 	name := strings.TrimSpace(c.PostForm("name"))
 	rawURL := c.PostForm("url")
 	if name == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, `Lack of "name"`)
+		common.RespondError(c, common.CodeArgumentError, `Lack of "name"`)
 		return
 	}
 	if rawURL == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, `Lack of "url"`)
+		common.RespondError(c, common.CodeArgumentError, `Lack of "url"`)
 		return
 	}
 	if len([]byte(name)) > 255 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "File name must be 255 bytes or less.")
+		common.RespondError(c, common.CodeArgumentError, "File name must be 255 bytes or less.")
 		return
 	}
 	if !isValidHTTPURL(rawURL) {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "The URL format is invalid")
+		common.RespondError(c, common.CodeArgumentError, "The URL format is invalid")
 		return
 	}
 	ctx := c.Request.Context()
 	data, code, err := h.documentService.UploadWebDocument(ctx, kb, tenantID, name, rawURL)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.SuccessNoMessage(c, mapDocKeysWithRunStatus(data))
+	common.RespondSuccess(c, mapDocKeysWithRunStatus(data), "success")
 }
 
 // mapDocKeysWithRunStatus renames a freshly-created document's raw keys to the
@@ -1179,7 +1215,7 @@ func isValidHTTPURL(raw string) bool {
 func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -1187,17 +1223,32 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 	docID := c.Param("document_id")
 
 	if docID == "" {
-		common.ErrorWithCode(c, common.CodeDataError, "Specify document_id please.")
+		common.RespondError(c, common.CodeDataError, "Specify document_id please.")
 		return
 	}
 	if datasetID == "" {
-		common.ErrorWithCode(c, common.CodeDataError, fmt.Sprintf("The dataset not own the document %s.", docID))
+		common.RespondError(c, common.CodeDataError, fmt.Sprintf("The dataset not own the document %s.", docID))
 		return
 	}
 	ctx := c.Request.Context()
 	// Authorize the caller before serving file bytes. Answer exactly like the
-	// missing-document case so dataset existence is not leaked.
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+	// missing-document case so document existence is not leaked.
+	doc, err := h.documentService.GetDocumentByID(ctx, docID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			common.RespondError(c, common.CodeNotFound, "Resource not found")
+			return
+		}
+		common.Error("DownloadDocument failed to load document", err,
+			zap.String("dataset_id", datasetID), zap.String("document_id", docID), zap.String("user_id", user.ID))
+		common.RespondError(c, common.CodeServerError, "Failed to download document")
+		return
+	}
+	if doc == nil || doc.KbID != datasetID {
+		common.RespondError(c, common.CodeNotFound, "Resource not found")
+		return
+	}
+	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationRead); err != nil {
 		respondPermissionError(c, err, true)
 		return
 	}
@@ -1205,12 +1256,12 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 
 	if err != nil {
 		if errors.Is(err, document.ErrDocumentNotFound) {
-			common.ErrorWithCode(c, common.CodeNotFound, "Resource not found")
+			common.RespondError(c, common.CodeNotFound, "Resource not found")
 			return
 		}
 		common.Error("DownloadDocument failed", err,
 			zap.String("dataset_id", datasetID), zap.String("document_id", docID), zap.String("user_id", user.ID))
-		common.ErrorWithCode(c, common.CodeServerError, "Failed to download document")
+		common.RespondError(c, common.CodeServerError, "Failed to download document")
 		return
 	}
 
@@ -1253,6 +1304,7 @@ func mapDocumentListItem(doc *entity.DocumentListItem, metaFields map[string]int
 		"parser_id":              doc.ParserID,
 		"chunk_method":           doc.ParserID,
 		"pipeline_id":            stringValue(doc.PipelineID),
+		"pipeline_version_id":    stringValue(doc.PipelineVersionID),
 		"pipeline_name":          stringValue(doc.PipelineName),
 		"nickname":               stringValue(doc.Nickname),
 		"parser_config":          decodeJSONMap(string(doc.ParserConfig)),
@@ -1319,28 +1371,28 @@ func stringValue(value *string) string {
 func (h *DocumentHandler) Ingest(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authentication")
+		common.RespondError(c, common.CodeAuthenticationError, "no authentication")
 		return
 	}
 
 	var req document.IngestDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	ctx := c.Request.Context()
 	if code, err := h.documentService.Ingest(ctx, userID, &req); err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 type ListIngestionsRequest struct {
@@ -1350,7 +1402,7 @@ type ListIngestionsRequest struct {
 func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 	var req ListIngestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -1360,18 +1412,18 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 	var err error
 	ctx := c.Request.Context()
 	if req.DatasetID != nil {
-		if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, *req.DatasetID, permission.OperationRead); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: *req.DatasetID}, permission.OperationRead); err != nil {
 			respondPermissionError(c, err, false)
 			return
 		}
 	}
 	parseResult, err = h.documentService.ListIngestionTasks(ctx, userID, req.DatasetID, 0, 0)
 	if err != nil {
-		common.ResponseWithCodeData(c, IngestionTaskErrorCode(err), nil, err.Error())
+		common.RespondError(c, IngestionTaskErrorCode(err), err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, parseResult, "success")
+	common.RespondSuccessList(c, parseResult, "success")
 }
 
 type StartParseDocumentsRequest struct {
@@ -1379,16 +1431,29 @@ type StartParseDocumentsRequest struct {
 }
 
 func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "start_ingestion_task",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	datasetID := c.Param("dataset_id")
 
 	var req StartParseDocumentsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "`document_ids` is required")
+		common.RespondError(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
 	// Gin's `required` accepts an empty non-nil slice; reject it explicitly.
 	if len(req.DocumentIDs) == 0 {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "`document_ids` is required")
+		common.RespondError(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
 
@@ -1397,20 +1462,22 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 		switch orderby {
 		case "create_time", "update_time", "name":
 		default:
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
+			common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("invalid orderby field: %s", orderby))
 			return
 		}
 	}
 
+	operationLog.UserID = userID
+
 	ctx := c.Request.Context()
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
 
 	parseResult, err := h.documentService.IngestDocuments(ctx, datasetID, userID, req.DocumentIDs)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
 
@@ -1420,7 +1487,7 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 			successCount++
 		}
 	}
-	common.SuccessWithData(c, map[string]interface{}{"success_count": successCount}, "success")
+	common.RespondSuccess(c, map[string]interface{}{"success_count": successCount}, "success")
 }
 
 type StopIngestionsRequest struct {
@@ -1430,7 +1497,7 @@ type StopIngestionsRequest struct {
 func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
 	var req StopIngestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -1438,10 +1505,10 @@ func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
 	ctx := c.Request.Context()
 	parseResult, err := h.documentService.StopIngestionTasks(ctx, req.Tasks, userID)
 	if err != nil {
-		common.ResponseWithCodeData(c, IngestionTaskErrorCode(err), nil, err.Error())
+		common.RespondError(c, IngestionTaskErrorCode(err), err.Error())
 		return
 	}
-	common.SuccessWithData(c, parseResult, "success")
+	common.RespondSuccessList(c, parseResult, "success")
 }
 
 type RemoveIngestionsRequest struct {
@@ -1451,12 +1518,12 @@ type RemoveIngestionsRequest struct {
 func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 	var req RemoveIngestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	if req.Tasks == nil || len(req.Tasks) == 0 {
-		common.ErrorWithCode(c, common.CodeLackResources, "task_ids is required")
+		common.RespondError(c, common.CodeLackResources, "task_ids is required")
 		return
 	}
 
@@ -1465,10 +1532,10 @@ func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 
 	deletedTasks, err := h.documentService.RemoveIngestionTasks(ctx, req.Tasks, userID)
 	if err != nil {
-		common.ResponseWithCodeData(c, IngestionTaskErrorCode(err), nil, err.Error())
+		common.RespondError(c, IngestionTaskErrorCode(err), err.Error())
 		return
 	}
-	common.SuccessWithData(c, deletedTasks, "success")
+	common.RespondSuccessList(c, deletedTasks, "success")
 }
 
 type ParseDocumentRequest struct {
@@ -1480,27 +1547,29 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 
 	var req ParseDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	userID := c.GetString("user_id")
 	ctx := c.Request.Context()
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
 
 	parseResult, err := h.documentService.ParseDocuments(ctx, datasetID, userID, req.Documents)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, parseResult, "success")
+	common.RespondSuccessList(c, parseResult, "success")
 }
 
 type StopParseDocumentRequest struct {
-	DocumentIDs []string `json:"document_ids" binding:"required"`
+	DocumentIDs []string `json:"document_ids"`
+	CancelAll   bool     `json:"cancel_all"`
+	RunStatuses []string `json:"run_statuses"`
 }
 
 func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
@@ -1508,54 +1577,83 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 
 	var req StopParseDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, "`document_ids` is required")
+		common.RespondError(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
 
-	if len(req.DocumentIDs) == 0 {
-		common.ErrorWithCode(c, common.CodeDataError, "`document_ids` is required")
+	if !req.CancelAll && len(req.DocumentIDs) == 0 {
+		common.RespondError(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
 
-	userID := c.GetString("user_id")
+	// cancel_all and an explicit document list are mutually exclusive. Use a nil
+	// check rather than len > 0 so that an explicit empty array
+	// (`document_ids: []`) is still rejected instead of silently falling through
+	// to a full-dataset cancel.
+	if req.CancelAll && req.DocumentIDs != nil {
+		common.RespondError(c, common.CodeArgumentError, "`cancel_all` and `document_ids` are mutually exclusive")
+		return
+	}
+
 	if orderby := c.Query("orderby"); orderby != "" {
 		switch orderby {
 		case "create_time", "update_time", "name":
 		default:
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
+			common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("invalid orderby field: %s", orderby))
 			return
 		}
 	}
 
 	ctx := c.Request.Context()
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		respondPermissionError(c, err, false)
+		return
+	}
+
+	if req.CancelAll {
+		for _, s := range req.RunStatuses {
+			if !common.IsValidRunStatus(s) {
+				common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("invalid run_status: %s", s))
+				return
+			}
+		}
+		result, err := h.documentService.StopParseDocumentsAll(ctx, datasetID, req.RunStatuses)
+		if err != nil {
+			common.RespondError(c, common.CodeExceptionError, err.Error())
+			return
+		}
+		common.RespondSuccess(c, result, "success")
+		return
+	}
+
+	if len(req.DocumentIDs) == 0 {
+		common.RespondError(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
 
 	result, err := h.documentService.StopParseDocuments(ctx, datasetID, req.DocumentIDs)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
-		common.ErrorWithCode(c, common.CodeServerError, "dataset_id is required")
+		common.RespondError(c, common.CodeServerError, "dataset_id is required")
 		return
 	}
 	ctx := c.Request.Context()
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
-		respondPermissionFailure(c, err, false)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -1566,39 +1664,39 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 
 	summary, err := h.documentService.GetMetadataSummary(ctx, datasetID, docIDS)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "Failed to get metadata summary"+err.Error())
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, "Failed to get metadata summary"+err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, gin.H{"summary": summary}, "success")
+	common.RespondSuccess(c, gin.H{"summary": summary}, "success")
 }
 
 func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_id is required")
+		common.RespondError(c, common.CodeArgumentError, "dataset_id is required")
 		return
 	}
 	documentID := strings.TrimSpace(c.Param("document_id"))
 	if documentID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "document_id is required")
+		common.RespondError(c, common.CodeArgumentError, "document_id is required")
 		return
 	}
 
 	body, err := c.GetRawData()
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	present := make(map[string]bool, len(raw))
@@ -1623,10 +1721,10 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 					}
 				}
 			}
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("Field: <%s> - Message: <Input should be a valid %s> - Value: <%s>", typeErr.Field, pythonJSONKindName(typeErr), value))
+			common.RespondError(c, common.CodeDataError, fmt.Sprintf("Field: <%s> - Message: <Input should be a valid %s> - Value: <%s>", typeErr.Field, pythonJSONKindName(typeErr), value))
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	if present["parser_config"] && req.ParserConfig != nil {
@@ -1640,30 +1738,30 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 			)
 		}
 		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+			common.RespondError(c, common.CodeDataError, err.Error())
 			return
 		}
 	}
 	ctx := c.Request.Context()
 	data, code, err := h.documentService.UpdateDatasetDocument(ctx, user.ID, datasetID, documentID, &req, present)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.SuccessNoMessage(c, data)
+	common.RespondSuccess(c, data, "success")
 }
 
 func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	form, err := c.MultipartForm()
 	if err != nil && !strings.Contains(err.Error(), "request Content-Type isn't multipart/form-data") {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Failed to parse multipart form: "+err.Error())
+		common.RespondError(c, common.CodeArgumentError, "Failed to parse multipart form: "+err.Error())
 		return
 	}
 
@@ -1674,28 +1772,55 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	rawURL := strings.TrimSpace(c.Query("url"))
 
 	if len(fileHeaders) > 0 && rawURL != "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Provide either multipart file(s) or ?url=..., not both.")
+		common.RespondError(c, common.CodeArgumentError, "Provide either multipart file(s) or ?url=..., not both.")
 		return
 	}
 	if len(fileHeaders) == 0 && rawURL == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Missing input: provide multipart file(s) or url")
+		common.RespondError(c, common.CodeArgumentError, "Missing input: provide multipart file(s) or url")
 		return
 	}
 
 	ctx := c.Request.Context()
+
+	// Storage quota: reject the whole upload before any file is persisted.
+	if len(fileHeaders) > 0 {
+		var totalSize int64
+		for _, header := range fileHeaders {
+			totalSize += header.Size
+		}
+		if totalSize > 0 {
+			if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+				if quotaErr := billingService.CheckResources(ctx, user.ID, billing.ResourceDelta{Storage: totalSize}); quotaErr != nil {
+					var insufficient *billing.InsufficientResourceError
+					if errors.As(quotaErr, &insufficient) {
+						common.RespondError(c, common.CodeBillingStorageInsufficient, quotaErr.Error(), common.ResponseOptions{Detail: gin.H{
+							"resource": "storage",
+							"current":  insufficient.Current,
+							"limit":    insufficient.Limit,
+							"filename": fileHeaders[0].Filename,
+						}})
+						return
+					}
+					common.RespondError(c, common.CodeServerError, quotaErr.Error())
+					return
+				}
+			}
+		}
+	}
+
 	if rawURL != "" {
 		data, code, err := h.fileService.UploadDocumentInfoByURL(ctx, user.ID, rawURL)
 		if err != nil {
-			common.ErrorWithCode(c, code, err.Error())
+			common.RespondError(c, code, err.Error())
 			return
 		}
-		common.SuccessWithData(c, data, "success")
+		common.RespondSuccess(c, data, "success")
 		return
 	}
 
 	data, code, err := h.fileService.UploadDocumentInfos(ctx, user.ID, fileHeaders)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
@@ -1705,7 +1830,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	} else {
 		payload = data
 	}
-	common.SuccessWithData(c, payload, "success")
+	common.RespondSuccess(c, payload, "success")
 }
 
 type documentMetadataBatchRequest struct {
@@ -1723,42 +1848,42 @@ func (h *DocumentHandler) UpdateDocumentMetadatas(c *gin.Context) {
 }
 
 func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_id is required")
+		common.RespondError(c, common.CodeArgumentError, "dataset_id is required")
 		return
 	}
 	ctx := c.Request.Context()
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
 
 	var rawBody map[string]interface{}
 	if err := c.ShouldBindJSON(&rawBody); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Invalid request payload: expected object, got "+inferJSONType(err))
+		common.RespondError(c, common.CodeDataError, "Invalid request payload: expected object, got "+inferJSONType(err))
 		return
 	}
 
 	selector, errMsg := parseMetadataSelector(rawBody["selector"])
 	if errMsg != "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, errMsg)
+		common.RespondError(c, common.CodeDataError, errMsg)
 		return
 	}
 	updates, errMsg := parseMetadataUpdates(rawBody["updates"])
 	if errMsg != "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, errMsg)
+		common.RespondError(c, common.CodeDataError, errMsg)
 		return
 	}
 	deletes, errMsg := parseMetadataDeletes(rawBody["deletes"])
 	if errMsg != "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, errMsg)
+		common.RespondError(c, common.CodeDataError, errMsg)
 		return
 	}
 
@@ -1770,10 +1895,10 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 
 	resp, code, err := h.documentService.BatchUpdateDocumentMetadatas(ctx, datasetID, req.Selector, req.Updates, req.Deletes)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.SuccessWithData(c, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }
 
 func inferJSONType(err error) string {

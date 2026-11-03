@@ -12,27 +12,10 @@
 //	See the License for the specific language governing permissions and
 //	limitations under the License.
 //
-// ManualChunker is the Go port of Python's `manual` doc-type chunk method
-// (rag/app/manual.py). Like GroupTitleChunker it merges adjacent text records
-// into heading-bounded groups, but it first re-sorts the records into physical
-// reading order before grouping.
-//
-// Why the resort matters: for multi-column / manually-laid-out PDFs the parser
-// emits records in READING order (column-by-column), so a naive grouping
-// interleaves the left column's later content with the right column's earlier
-// content. ManualChunker re-orders records by (page, top, left) — mirroring
-// Python's
-//
-//	sorted(sections, key=lambda x: (x[-1][0][0], x[-1][0][3], x[-1][0][1]))
-//
-// so grouping then follows the true top-down, left-to-right layout.
-//
-// Crucially, docx (and any coordinate-free payload) emits records in
-// document-logical order with NO positions — exactly as Python's manual docx
-// branch, which performs no resort. When no record carries coordinates,
-// ManualChunker skips the sort entirely and reuses the identical grouping
-// pipeline as GroupTitleChunker, so its output is bit-for-bit equal (locked by
-// TestManualChunker_NoPositionsEqualsGroupChunker). No parser change is needed.
+// ManualChunker groups adjacent records by heading after sorting PDF records
+// by page, top and left. Records with parser-established order or without
+// coordinates retain their input positions. Geometry is the ordering fallback
+// when the producer has not declared an authoritative reading sequence.
 package chunker
 
 import (
@@ -42,8 +25,11 @@ import (
 	"sort"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/parser/parser"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -61,17 +47,28 @@ type ManualChunkerComponent struct {
 // params as TitleChunker (method is pinned to "group"); the position resort is
 // automatic based on whether the upstream payload carries coordinates.
 func NewManualChunker(params map[string]any) (runtime.Component, error) {
-	// method is pinned to "group": ManualChunker's entire value-add is the
-	// physical-position resort, which only fires inside the group path.
-	// A caller must not downgrade it to "naive"/"title" (that would skip the
-	// resort and silently diverge from Python's manual.py), so method is
-	// deliberately ignored here even if passed in params.
-	conf := map[string]any{"method": "group"}
+	// method, chunk_token_cap, and include_heading_content are pinned for
+	// ManualChunker. The chunker's entire value-add is the physical-position
+	// resort inside the group method, so method must stay "group". The cap
+	// and the heading-content flag are title-chunker-family params that the
+	// group path does not honour (see chunkFromRecords: it passes tokenCap=0
+	// and only the hierarchy path reads include_heading_content). The
+	// operator form is not promised to apply them; we strip them here
+	// instead of accepting and silently ignoring them downstream. See issue
+	// #20139.
+	conf := map[string]any{"method": "group", "chunk_token_cap": 0}
+	dropped := make([]string, 0, 3)
 	for k, v := range params {
-		if k == "method" {
+		switch k {
+		case "method", "chunk_token_cap", "include_heading_content":
+			dropped = append(dropped, k)
 			continue
 		}
 		conf[k] = v
+	}
+	if len(dropped) > 0 {
+		common.Warn("ManualChunker: ignoring operator-form params that do not apply to this chunker",
+			zap.Strings("dropped", dropped))
 	}
 	p := defaultsTitle()
 	p.Update(conf)
@@ -139,9 +136,9 @@ func hasPdfPositions(records []lineRecord) bool {
 
 // sortRecordsByPosition re-orders records into physical reading order
 // (page, then top, then left) using a stable sort, so records that share a
-// key keep their original relative order. Records without coordinates act as
-// immovable barriers: they keep their original relative order and are never
-// compared against positioned records.
+// key keep their original relative order. Records with explicit parser order
+// or without coordinates act as immovable barriers: they retain their input
+// positions and are never compared against positioned records.
 //
 // The slice is split into maximal contiguous runs of positioned records and
 // each run is sorted independently. This is required because a single
@@ -166,7 +163,7 @@ func sortRecordsByPosition(records []lineRecord) {
 		runStart = -1
 	}
 	for i := 0; i <= len(records); i++ {
-		positioned := i < len(records)
+		positioned := i < len(records) && !records[i].preserveOrder
 		if positioned {
 			_, positioned = firstPositionRow(records[i])
 		}
@@ -186,6 +183,10 @@ func sortRecordsByPosition(records []lineRecord) {
 // structured `_pdf_positions` key first and falls back to the legacy
 // `positions` key. Callers (pdfPosRowLess) index offsets 0/1/3, so we enforce
 // len(row) >= 5 here.
+//
+// The matrix is decoded through parser.PDFPositionRowsFromJSON, so the matrix
+// form and the legacy flat 5-tuple are both understood and the chunker shares
+// one position decoder with the parser boundary and the crop path.
 func firstPositionRow(r lineRecord) ([]float64, bool) {
 	var raw json.RawMessage
 	switch {
@@ -196,15 +197,11 @@ func firstPositionRow(r lineRecord) ([]float64, bool) {
 	default:
 		return nil, false
 	}
-	var mat [][]float64
-	if err := json.Unmarshal(raw, &mat); err != nil || len(mat) == 0 {
+	rows := parser.PDFPositionRowsFromJSON(raw)
+	if len(rows) == 0 {
 		return nil, false
 	}
-	row := mat[0]
-	if len(row) < 5 {
-		return nil, false
-	}
-	return row, true
+	return rows[0], true
 }
 
 // init registers ManualChunker under CategoryIngestion.

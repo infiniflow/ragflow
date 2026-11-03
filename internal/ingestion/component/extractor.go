@@ -55,17 +55,20 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/modelcontext"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 )
 
-const componentNameExtractor = "Extractor"
+// componentNameExtractor is the canonical Extractor component name; the value
+// lives in the schema package so the pipeline layer can reference the same
+// identity.
+const componentNameExtractor = schema.ComponentNameExtractor
 
 // defaultExtractorChatTimeout bounds one Extractor LLM call, including
 // retries and backoff. Tag extraction has its own timeout.
@@ -641,6 +644,8 @@ func extractorChunkList(v any) ([]map[string]any, bool) {
 	switch list := v.(type) {
 	case []map[string]any:
 		return list, true
+	case []schema.ChunkDoc:
+		return schema.ChunkDocsToMaps(list), true
 	case []any:
 		out := make([]map[string]any, 0, len(list))
 		for _, item := range list {
@@ -1535,14 +1540,12 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 	var modelName string
 	var apiConfig *models.APIConfig
 	if isBareTenantModelID(compositeLLMID) {
-		// UUID path: resolveModelConfigByID does a single GetByID and
-		// returns a clear error if the record doesn't exist.  No need
-		// for a separate pre-check — resolveModelConfig's redundant
-		// GetByID dispatch check is also bypassed.
-		driver, modelName, apiConfig, _, err = resolveModelConfigByID(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
+		// Resolve the exact tenant model without a separate existence check.
+		resolved, err := resolveModelConfigByID(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
 		if err != nil {
 			return extractorChatConfig{}, fmt.Errorf("extractor: tenant model %q not found or not usable: %w", compositeLLMID, err)
 		}
+		driver, modelName, apiConfig = resolved.driver, resolved.model.ModelName, resolved.apiConfig
 	} else {
 		// Composite "model@provider" path: delegate to the shared dispatcher.
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
@@ -1551,6 +1554,14 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 		}
 	}
 
+	return newExtractorChatConfig(driver, modelName, apiConfig), nil
+}
+
+// newExtractorChatConfig builds the chat config from a resolved driver and its
+// API settings: the driver name lowercased as the llm_factory, with the
+// credentials dereferenced defensively (a nil apiConfig or nil fields mean
+// "not configured", not a panic).
+func newExtractorChatConfig(driver models.ModelDriver, modelName string, apiConfig *models.APIConfig) extractorChatConfig {
 	apiKey := ""
 	baseURL := ""
 	if apiConfig != nil {
@@ -1566,7 +1577,7 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 		modelName: modelName,
 		apiKey:    apiKey,
 		baseURL:   baseURL,
-	}, nil
+	}
 }
 
 // resolveExtractorChatDefaultConfig resolves the tenant's default chat
@@ -1588,22 +1599,7 @@ func resolveExtractorChatDefaultConfig(ctx context.Context, db *gorm.DB) extract
 		return extractorChatConfig{}
 	}
 
-	apiKey := ""
-	baseURL := ""
-	if apiConfig != nil {
-		if apiConfig.ApiKey != nil {
-			apiKey = *apiConfig.ApiKey
-		}
-		if apiConfig.BaseURL != nil {
-			baseURL = *apiConfig.BaseURL
-		}
-	}
-	return extractorChatConfig{
-		driver:    strings.ToLower(driver.Name()),
-		modelName: modelName,
-		apiKey:    apiKey,
-		baseURL:   baseURL,
-	}
+	return newExtractorChatConfig(driver, modelName, apiConfig)
 }
 
 // isBareTenantModelID reports whether s is a 32-character hex string
@@ -1658,9 +1654,6 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 	if fn := getExtractorContextLengthOverride(); fn != nil {
 		return fn(ctx, llmID)
 	}
-	if db == nil {
-		db = dao.DB
-	}
 	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return 0
@@ -1676,7 +1669,7 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 	if llmID == "" {
 		return 0
 	}
-	return dao.ResolveModelContentLength(ctx, db, tid, llmID, "", "")
+	return modelcontext.ResolveModelContentLength(ctx, db, tid, llmID, "", "")
 }
 
 // defaultChatModelRef returns the tenant's default chat model reference —
@@ -1687,14 +1680,14 @@ func defaultChatModelRef(ctx context.Context, db *gorm.DB, tenantID string) stri
 		// No database to read the tenant's default chat model from.
 		return ""
 	}
-	tenant, err := dao.NewTenantDAO().GetByID(ctx, db, tenantID)
-	if err != nil || tenant == nil {
+	membership, err := resolveDefaultModelMembership(ctx, db, tenantID)
+	if err != nil || membership == nil {
 		return ""
 	}
-	if tenant.TenantLLMID != nil && *tenant.TenantLLMID != "" {
-		return *tenant.TenantLLMID
+	if membership.TenantLLMID != nil && *membership.TenantLLMID != "" {
+		return *membership.TenantLLMID
 	}
-	return tenant.LLMID
+	return membership.LLMID
 }
 
 // extractorContextFitBudget returns 97% of the model's context window as the

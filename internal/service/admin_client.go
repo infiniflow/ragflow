@@ -158,7 +158,13 @@ func (h *AdminClient) SendHeartbeat() error {
 			common.Warn(fmt.Sprintf("Heartbeat response error: %s, code: %d", responseCode.Message(), responseCode))
 		}
 
-		return errors.New(responseCode.Message())
+		var errorMessage string
+		errorMessage, ok = responseBody["message"].(string)
+		if !ok {
+			errorMessage = responseCode.Message()
+		}
+
+		return errors.New(errorMessage)
 	}
 	licenseStatusCode = responseCode
 

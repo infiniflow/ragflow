@@ -111,7 +111,7 @@ type Environments struct {
 	TavilyAPIKey                      string `mapstructure:"tavily_api_key"`
 	QueritAPIKey                      string `mapstructure:"querit_api_key"`
 	KeenableAPIURL                    string `mapstructure:"keenable_api_url"`        // KEENABLE_API_URL
-	MCPAllowPrivateHosts              bool   `mapstructure:"mcp_allow_private_hosts"` // RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS
+	MCPAllowPrivateHosts              bool   `mapstructure:"mcp_allow_private_hosts"` // ALLOW_ANY_HOST
 }
 
 type DefaultSuperUser struct {
@@ -171,7 +171,7 @@ func (c *Config) GetEnvironments() error {
 	databaseType := common.GetEnvSmall(common.EnvDBType)
 	if databaseType != "" {
 		switch databaseType {
-		case "mysql", "oceanbase":
+		case "mysql", "oceanbase", "vastbase":
 			c.environments.DatabaseType = databaseType
 		default:
 			return fmt.Errorf("invalid database type: %s", databaseType)
@@ -184,6 +184,8 @@ func (c *Config) GetEnvironments() error {
 		switch storageType {
 		case "minio", "s3", "oss", "gcs":
 			c.environments.StorageType = storageType
+		case "aws_s3":
+			c.environments.StorageType = "s3"
 		default:
 			return fmt.Errorf("invalid storage type: %s", storageType)
 		}
@@ -210,12 +212,18 @@ func (c *Config) GetEnvironments() error {
 		c.environments.DefaultSuperUser.Email = superUserEmail
 	}
 
-	superUserPassword := common.GetEnv(common.EnvDefaultSuperuserPassword)
+	// DEFAULT_SUPERUSER_PASSWORD is canonical. ADMIN_DEFAULT_PASSWORD is the
+	// same alias creation uses when the canonical name is empty. A generated
+	// bootstrap-file password is not filled in here.
+	superUserPassword := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserPassword))
+	if superUserPassword == "" {
+		superUserPassword = strings.TrimSpace(common.GetEnv(common.EnvAdminDefaultPassword))
+	}
 	if superUserPassword != "" {
 		c.environments.DefaultSuperUser.Password = superUserPassword
 	}
 
-	superUserNickname := common.GetEnv(common.EnvDefaultSuperuserNickname)
+	superUserNickname := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserNickname))
 	if superUserNickname != "" {
 		c.environments.DefaultSuperUser.Nickname = superUserNickname
 	}
@@ -290,10 +298,7 @@ func (c *Config) GetEnvironments() error {
 		c.environments.HomePath = homePath
 	}
 
-	mcpAllowPrivateHosts := common.GetEnvSmall(common.EnvMCPAllowPrivateHosts)
-	if mcpAllowPrivateHosts != "" {
-		c.environments.MCPAllowPrivateHosts = mcpAllowPrivateHosts == "true" || mcpAllowPrivateHosts == "1" || mcpAllowPrivateHosts == "yes"
-	}
+	c.environments.MCPAllowPrivateHosts = common.AllowConfiguredPrivateHost()
 
 	userProfile := common.GetEnv(common.EnvUserProfile)
 	if userProfile != "" {
@@ -622,7 +627,7 @@ func (c *Config) GetEnvDefaultSuperUserEmail() string {
 }
 
 func (c *Config) GetEnvDefaultSuperUserNick() string {
-	return c.environments.DefaultSuperUser.Email
+	return c.environments.DefaultSuperUser.Nickname
 }
 
 func (c *Config) GetEnvDictionaryPath() string {

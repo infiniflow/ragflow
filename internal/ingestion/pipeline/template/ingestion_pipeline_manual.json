@@ -54,7 +54,6 @@
                             }
                         },
                         "doc": {
-                            "output_format": "json",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -64,7 +63,6 @@
                         },
                         "docx": {
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -75,7 +73,6 @@
                         },
                         "pdf": {
                             "flatten_media_to_text": false,
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -459,7 +456,6 @@
                                 {
                                     "fileFormat": "pdf",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"
@@ -467,7 +463,6 @@
                                 },
                                 {
                                     "fileFormat": "doc",
-                                    "output_format": "json",
                                     "preprocess": [
                                         "main_content"
                                     ]
@@ -475,7 +470,6 @@
                                 {
                                     "fileFormat": "docx",
                                     "flatten_media_to_text": false,
-                                    "output_format": "json",
                                     "preprocess": [
                                         "main_content"
                                     ]

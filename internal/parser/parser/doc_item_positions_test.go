@@ -56,7 +56,7 @@ func TestPositionKindMethod(t *testing.T) {
 }
 
 // PDF path positions arrive as [][]any (int page + float64 coords) from
-// normalizePDFPositions. wireToPositions must build AbsoluteBox and round-trip
+// normalizeDeepDocPositions. wireToPositions must build AbsoluteBox and round-trip
 // byte-exact, with the page preserved as int.
 func TestWireToPositionsAbsoluteAny(t *testing.T) {
 	raw := [][]any{{1, 2.0, 3.0, 4.0, 5.0}}

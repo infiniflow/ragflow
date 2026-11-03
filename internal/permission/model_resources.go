@@ -105,18 +105,13 @@ func (s *databaseSource) loadTenantOwnerIDs(ctx context.Context, tenantIDs []str
 	return ownersByTenant, nil
 }
 
-func (s *databaseSource) tenantIDsForSubject(ctx context.Context, subject Subject) ([]string, error) {
-	var tenantIDs []string
-	err := s.db.WithContext(ctx).Model(&entity.UserTenant{}).
-		Distinct("tenant_id").
-		Where("user_id = ? AND status = ? AND role IN ?", subject.UserID, string(entity.StatusValid), []string{
-			string(RoleOwner), string(RoleAdmin), string(RoleNormal),
-		}).
-		Pluck("tenant_id", &tenantIDs).Error
+func (s *databaseSource) tenantIDsForCurrentUser(ctx context.Context) ([]string, error) {
+	userID := UserIDFromContext(ctx)
+	tenantIDs, err := s.activeTenantIDsForUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	return uniqueStringValues(append(tenantIDs, subject.UserID)), nil
+	return uniqueStringValues(append(tenantIDs, userID)), nil
 }
 
 // modelProviderResource builds permission metadata for a model provider.

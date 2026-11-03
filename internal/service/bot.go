@@ -35,6 +35,7 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 // BotService coordinates chatbot + agentbot reads and the matching
@@ -67,21 +68,21 @@ func NewBotService(agentSvc *AgentService) *BotService {
 func (s *BotService) ChatbotInfo(ctx context.Context, userID, dialogID string) (
 	title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error,
 ) {
-	if err = checkChatPermission(ctx, nil, userID, dialogID, permission.OperationRead); err != nil {
-		ec, err = normalizeChatPermissionError(err)
+	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: dialogID}, permission.OperationRead); err != nil {
+		ec, err = permissionresponse.NormalizeHidden(err)
 		return "", "", "", "", false, ec, err
 	}
 
 	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			ec, err = normalizeChatPermissionError(permission.ErrResourceNotFound)
+			ec, err = permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return "", "", "", "", false, ec, err
 		}
 		return "", "", "", "", false, common.CodeServerError, err
 	}
 	if dialog == nil {
-		ec, err = normalizeChatPermissionError(permission.ErrResourceNotFound)
+		ec, err = permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return "", "", "", "", false, ec, err
 	}
 	pc := dialog.PromptConfig
@@ -247,7 +248,7 @@ func (s *BotService) loadCanvas(ctx context.Context, userID, agentID string, ope
 	if userID == "" {
 		return nil, dao.ErrUserCanvasNotFound
 	}
-	if err := CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, agentID, operation); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: agentID}, operation); err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return nil, dao.ErrUserCanvasNotFound
 		}

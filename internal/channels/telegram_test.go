@@ -170,6 +170,7 @@ func TestTelegramSendUsesReplyParameters(t *testing.T) {
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1}}`))
 	}))
 	defer server.Close()
+	allowChannelURLForTest(t, server.URL)
 
 	ch := newTelegramChannel(telegramAccount{
 		AccountID:  "account-1",
@@ -222,6 +223,7 @@ func TestTelegramStartAndStopPollsUpdates(t *testing.T) {
 		}
 	}))
 	defer server.Close()
+	allowChannelURLForTest(t, server.URL)
 
 	ch := newTelegramChannel(telegramAccount{
 		AccountID:  "account-1",

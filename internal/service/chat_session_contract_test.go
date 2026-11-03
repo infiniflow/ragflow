@@ -30,12 +30,16 @@ type emptyChatSessionScopeChecker struct {
 	checkErr error
 }
 
-func (c emptyChatSessionScopeChecker) CheckResource(context.Context, permission.Subject, permission.ResourceRef, permission.Operation) error {
+func (c emptyChatSessionScopeChecker) CheckResource(context.Context, permission.ResourceRef, permission.Operation) error {
 	return c.checkErr
 }
 
-func (emptyChatSessionScopeChecker) Scope(context.Context, permission.Subject, permission.ScopeQuery) (permission.Scope, error) {
+func (emptyChatSessionScopeChecker) Scope(context.Context, permission.ScopeQuery) (permission.Scope, error) {
 	return permission.Scope{Mode: permission.ScopeNone}, nil
+}
+
+func (c emptyChatSessionScopeChecker) FilterResources(context.Context, []permission.ResourceRef, permission.Operation) ([]permission.ResourceRef, error) {
+	return nil, c.checkErr
 }
 
 // ---------------------------------------------------------------------------
@@ -146,7 +150,7 @@ func TestListChatSessionsChecksChatPermissionWhenThereAreNoSessions(t *testing.T
 		permissionChecker: emptyChatSessionScopeChecker{checkErr: permission.ErrPermissionDenied},
 	}
 
-	result, err := svc.ListChatSessions(t.Context(), "outsider", "chat-1", "", "", nil, 1, 20)
+	result, err := svc.ListChatSessions(t.Context(), "outsider", "chat-1", "", "", "", nil, 1, 20)
 	if result != nil {
 		t.Fatalf("expected no response for unauthorized chat, got %+v", result)
 	}
@@ -172,7 +176,7 @@ func TestDeleteSessions_SuccessByIDs(t *testing.T) {
 		pipeline:          &fakePipeline{},
 	}
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
 	result, message, code, err := svc.DeleteSessions(ctx, "user-1", "chat-1", map[string]interface{}{"ids": []interface{}{"s1"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -183,7 +187,7 @@ func TestDeleteSessions_SuccessByIDs(t *testing.T) {
 	if message != "success" {
 		t.Fatalf("message=%q", message)
 	}
-	if result != true {
+	if result != nil {
 		t.Fatalf("result=%v", result)
 	}
 	if len(store.sessions) != 1 {
@@ -202,7 +206,7 @@ func TestDeleteSessions_DeleteAllAndInvalidID(t *testing.T) {
 	}
 
 	// Empty payload -> success with empty result map.
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
 	if _, _, code, err := svc.DeleteSessions(ctx, "user-1", "chat-1", map[string]interface{}{}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("empty payload: code=%v err=%v", code, err)
 	}

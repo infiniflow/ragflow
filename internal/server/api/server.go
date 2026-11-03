@@ -55,15 +55,13 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
+	"ragflow/internal/ingestion/task"
 	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
 )
 
 func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) error {
-	// Initialize admin status (default: unavailable=1)
-	local.InitAdminStatus(1, "admin server not connected")
-
 	// Initialize tokenizer (rag_analyzer)
 	// tokenizer.Init fills DictPath from env var or default, so
 	// tokenizerCfg.DictPath carries the resolved path for downstream use.
@@ -108,6 +106,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 
 	// Initialize service layer
 	userService := service.NewUserService()
+	userTenantService := service.NewUserTenantService()
 	documentService := document.NewDocumentService()
 	datasetsService := dataset.NewDatasetService()
 	metadataService := service.NewMetadataService()
@@ -122,17 +121,24 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	statsService := service.NewStatsService()
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
-	searchService.SetTenantService(tenantService)
 	fileService := file.NewFileService(documentService)
-	memoryService := service.NewMemoryService()
+	memoryService := service.NewMemoryService(dao.DB, engine.Get(), service.WithMemoryKvrocks(kvrocks.Get()), service.WithMemoryMQEngine(engine.GetMessageQueueEngine()))
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
 	modelFactory := service.NewModelFactory()
-	modelCallService := service.NewModelCallServiceWithProviderService(modelProviderService, modelFactory)
+	modelCallService := service.NewModelCallService()
 
 	// Wire the real MemorySaver so the Message component can persist
 	// conversation turns to memory stores declared in the canvas DSL.
 	component.SetMemorySaver(service.NewMemorySaverAdapter(memoryService))
+	// Bind the relational handle and document engine into the production
+	// embedder and knowledge-compiler resolvers. The API process shares the
+	// task-package composition root with the ingestor: without these, the
+	// embedder resolver would read a nil db and fail at run time when the API
+	// process runs ingestion runs (e.g. in a combined --api --ingestor deploy
+	// where the ingestor bindings do not apply).
+	task.InitEmbedderResolver(dao.DB)
+	task.InitKnowledgeCompilerDeps(dao.DB, engine.Get())
 
 	// Initialize doc engine for skill search
 	docEngine := engine.Get()
@@ -148,21 +154,21 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 		documentDAO,
 		agenttool.RetrievalModelConstructors{
 			Embedding: func(ctx context.Context, tenantID, modelRef string) (*modelModule.EmbeddingModel, error) {
-				access := service.ModelAccess{TenantID: tenantID}
+				access := service.Identity{TenantID: tenantID}
 				if strings.TrimSpace(modelRef) == "" {
 					return modelFactory.NewDefaultEmbeddingModel(ctx, access)
 				}
 				return modelFactory.NewEmbeddingModel(ctx, access, modelRef)
 			},
 			Chat: func(ctx context.Context, tenantID, modelRef string) (*modelModule.ChatModel, error) {
-				access := service.ModelAccess{TenantID: tenantID}
+				access := service.Identity{TenantID: tenantID}
 				if strings.TrimSpace(modelRef) == "" {
 					return modelFactory.NewDefaultChatModel(ctx, access)
 				}
 				return modelFactory.NewChatModel(ctx, access, modelRef)
 			},
 			Rerank: func(ctx context.Context, tenantID, modelRef string) (*modelModule.RerankModel, error) {
-				return modelFactory.NewRerankModel(ctx, service.ModelAccess{TenantID: tenantID}, modelRef)
+				return modelFactory.NewRerankModel(ctx, service.Identity{TenantID: tenantID}, modelRef)
 			},
 		},
 		retrievalEnhancer,
@@ -196,8 +202,8 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
-	userHandler := handler.NewUserHandler(userService)
-	tenantHandler := handler.NewTenantHandler(tenantService, userService, datasetsService)
+	userHandler := handler.NewUserHandler(userService, userTenantService)
+	tenantHandler := handler.NewTenantHandler(tenantService, userTenantService, datasetsService)
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService, fileService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
 	systemHandler := handler.NewSystemHandler(systemService)
@@ -446,8 +452,15 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
 	common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
 
+	// Initialize admin status (default: unavailable=1)
+	local.InitAdminStatus()
+
 	// Set log level
 	bootstrap.SetLogger(serverName, arguments)
+
+	// Initialize the ingestion lifecycle event sink (best-effort; stdout is
+	// always on, ingestor.log.path adds an optional rotated file). Flush it on shutdown.
+	bootstrap.SetIngestLog(serverName)
 
 	// Start server in a goroutine
 	go func() {

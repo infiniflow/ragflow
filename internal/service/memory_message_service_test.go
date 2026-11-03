@@ -26,6 +26,8 @@ import (
 	"testing"
 	"time"
 
+	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
 )
@@ -78,7 +80,7 @@ func TestQueueSaveToMemoryTaskClassifiesMemoryLookupErrors(t *testing.T) {
 		cleanup := testutil.ReplaceDBForTest(t, db)
 		defer cleanup()
 
-		res, err := NewMemoryMessageService(NewMemoryService()).queueSaveToMemoryTask(
+		res, err := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get())).queueSaveToMemoryTask(
 			t.Context(), []string{"missing-memory"}, MemoryMessage{AgentID: "agent-1"},
 		)
 		if err != nil {
@@ -94,7 +96,7 @@ func TestQueueSaveToMemoryTaskClassifiesMemoryLookupErrors(t *testing.T) {
 		cleanup := testutil.ReplaceDBForTest(t, db)
 		defer cleanup()
 
-		res, err := NewMemoryMessageService(NewMemoryService()).queueSaveToMemoryTask(
+		res, err := NewMemoryMessageService(NewMemoryService(dao.DB, engine.Get())).queueSaveToMemoryTask(
 			t.Context(), []string{"memory-1"}, MemoryMessage{AgentID: "agent-1"},
 		)
 		if err != nil {
@@ -125,7 +127,7 @@ func TestQueueSaveToMemoryTaskMarksDurableTaskFailedWhenRawStorageFails(t *testi
 	}).Error; err != nil {
 		t.Fatalf("create memory: %v", err)
 	}
-	memorySvc := NewMemoryService()
+	memorySvc := NewMemoryService(dao.DB, engine.Get())
 	memorySvc.docEngine = nil
 	svc := NewMemoryMessageService(memorySvc)
 	publisher := &recordingTaskPublisher{}
@@ -264,8 +266,8 @@ func TestBuildMemoryTaskRecordsShape(t *testing.T) {
 // be added when the project's Redis client lands.)
 func TestGenerateRawMessageID_Unique(t *testing.T) {
 	ctx := t.Context()
-	a := generateRawMessageID(ctx)
-	b := generateRawMessageID(ctx)
+	a := generateRawMessageID(ctx, nil)
+	b := generateRawMessageID(ctx, nil)
 	if a == b {
 		// Allow a 1-second tie when the clock hasn't ticked.
 		// GenerateRawMessageID uses Unix seconds; two calls

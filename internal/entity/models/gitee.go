@@ -705,15 +705,18 @@ func (g *GiteeModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[str
 	}
 
 	// Parse response
-	var result map[string]interface{}
+	var result struct {
+		Balance *float64 `json:"balance"`
+	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	balance := result["balance"].(float64)
+	if result.Balance == nil {
+		return nil, fmt.Errorf("invalid balance response: balance must be a number")
+	}
 
 	var response = map[string]interface{}{
-		"balance":  balance,
+		"balance":  *result.Balance,
 		"currency": "CNY",
 	}
 

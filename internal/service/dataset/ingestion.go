@@ -48,7 +48,7 @@ func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID, use
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
-	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -171,7 +171,7 @@ func (d *DatasetService) ListIngestionMessages(ctx context.Context, datasetID, u
 	if limit < 0 || limit > maxIngestionMessagesLimit {
 		return nil, common.CodeArgumentError, fmt.Errorf("limit must be between 1 and %d", maxIngestionMessagesLimit)
 	}
-	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -233,7 +233,7 @@ func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID, userID str
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
-	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -250,11 +250,10 @@ func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID, userID str
 		return nil, common.CodeServerError, fmt.Errorf("list dataset connectors for sync logs: %w", err)
 	}
 	checker := permission.NewDatabaseChecker(dao.DB)
-	subject := permission.Subject{UserID: userID}
 	taskIDs := make([]string, 0)
 	for _, connector := range connectors {
 		connectorRef := permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connector.ID}
-		scope, scopeErr := checker.Scope(ctx, subject, permission.ScopeQuery{
+		scope, scopeErr := checker.Scope(ctx, permission.ScopeQuery{
 			Kind:      permission.ResourceKindSyncTask,
 			Parent:    connectorRef,
 			Operation: permission.OperationRead,
@@ -262,6 +261,11 @@ func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID, userID str
 			EntryOp:   permission.OperationUse,
 		})
 		if scopeErr != nil {
+			if errors.Is(scopeErr, permission.ErrPermissionDenied) ||
+				errors.Is(scopeErr, permission.ErrMembershipNotFound) ||
+				errors.Is(scopeErr, permission.ErrResourceNotFound) {
+				continue
+			}
 			code, permissionErr := permissionresponse.Normalize(scopeErr)
 			return nil, code, permissionErr
 		}
@@ -287,7 +291,7 @@ func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userI
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
-	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -352,7 +356,7 @@ func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, userID,
 	if logID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Log ID"`)
 	}
-	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}

@@ -55,11 +55,35 @@ type engineWikiContributionStore struct {
 	engine engine.DocEngine
 }
 
+// newWikiContributionStore returns the engine-backed store. A nil engine is a
+// wiring mistake: the store then fails fast on every access instead of
+// silently degrading to an in-memory map, which would diff contributions
+// against empty state and ack a batch that merged nothing.
 func newWikiContributionStore(docEngine engine.DocEngine) wikiContributionStore {
 	if docEngine == nil {
-		return &memoryWikiContributionStore{items: map[string]wikiDocumentContribution{}}
+		return unconfiguredWikiContributionStore{}
 	}
 	return &engineWikiContributionStore{engine: docEngine}
+}
+
+// unconfiguredWikiContributionStore fails fast when the consumer was assembled
+// without a doc engine (see WithDocEngine).
+type unconfiguredWikiContributionStore struct{}
+
+func (unconfiguredWikiContributionStore) Get(context.Context, string, string, string) (wikiDocumentContribution, bool, error) {
+	return wikiDocumentContribution{}, false, errEngineNotConfigured
+}
+
+func (unconfiguredWikiContributionStore) Put(context.Context, string, string, wikiDocumentContribution) error {
+	return errEngineNotConfigured
+}
+
+func (unconfiguredWikiContributionStore) Delete(context.Context, string, string, string) error {
+	return errEngineNotConfigured
+}
+
+func (unconfiguredWikiContributionStore) ClearDataset(context.Context, string, string) error {
+	return errEngineNotConfigured
 }
 
 func (s *engineWikiContributionStore) Get(ctx context.Context, tenantID, datasetID, documentID string) (wikiDocumentContribution, bool, error) {
@@ -280,7 +304,11 @@ type wikiContributionDiffResult struct {
 
 func (c *Consumer) prepareWikiContributionDiff(ctx context.Context, tenantID, datasetID string, completed []BacklogEntry, deleted []string) (wikiContributionDiffResult, error) {
 	if c.contributions == nil {
-		c.contributions = newWikiContributionStore(nil)
+		// NewConsumer always installs a store (the unconfigured sentinel when
+		// WithDocEngine was not passed); a nil here means the Consumer struct
+		// was assembled by hand. Fail fast rather than silently diffing
+		// against empty state.
+		return wikiContributionDiffResult{}, errEngineNotConfigured
 	}
 	result := wikiContributionDiffResult{
 		productsByDoc: make(map[string][]kccommon.Product, len(completed)),

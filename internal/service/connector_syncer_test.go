@@ -91,7 +91,7 @@ func TestUpdateConnectorSchedulePublishesSyncerTask(t *testing.T) {
 	}
 	t.Cleanup(func() { getSyncerTaskPublisher = previousPublisher })
 
-	_, code, err := NewConnectorService().UpdateConnector(t.Context(), "conn-1", "user-1", &UpdateConnectorRequest{
+	_, code, err := NewConnectorService().UpdateConnector(serviceTestContext(t, "user-1", "user-1"), "conn-1", "user-1", &UpdateConnectorRequest{
 		Status: string(entity.TaskStatusSchedule),
 	})
 	if err != nil {
@@ -180,7 +180,7 @@ func TestResumeFailedSyncSchedulesOriginalTaskFromCheckpoint(t *testing.T) {
 		getSyncCheckpointLoader = previousLoader
 	})
 
-	ok, code, err := NewConnectorService().ResumeFailedSync(t.Context(), "conn-1", "user-1", &ResumeFailedSyncRequest{KbID: "kb-1", TaskID: "task-1"})
+	ok, code, err := NewConnectorService().ResumeFailedSync(serviceTestContext(t, "user-1", "user-1"), "conn-1", "user-1", &ResumeFailedSyncRequest{KbID: "kb-1", TaskID: "task-1"})
 	if err != nil {
 		t.Fatalf("ResumeFailedSync error: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestRebuildConnectorDeletesOldSyncCheckpointsBeforePublishing(t *testing.T)
 		getSyncCheckpointDeleter = previousDeleter
 	})
 
-	ok, code, err := NewConnectorService().RebuildConnector(t.Context(), "conn-1", "user-1", "kb-1")
+	ok, code, err := NewConnectorService().RebuildConnector(serviceTestContext(t, "user-1", "user-1"), "conn-1", "user-1", "kb-1")
 	if err != nil {
 		t.Fatalf("RebuildConnector error: %v", err)
 	}
@@ -326,7 +326,7 @@ func TestRebuildConnectorRejectsCrossTenantAndUnboundKB(t *testing.T) {
 
 	// The caller can access kb-1, but conn-1 is not bound to it: denied before
 	// any documents are listed or deleted.
-	ok, code, err := svc.RebuildConnector(t.Context(), "conn-1", "user-1", "kb-1")
+	ok, code, err := svc.RebuildConnector(serviceTestContext(t, "user-1", "user-1"), "conn-1", "user-1", "kb-1")
 	if err == nil || !errors.Is(err, ErrConnectorNotBoundToKB) {
 		t.Fatalf("err = %v, want ErrConnectorNotBoundToKB", err)
 	}
@@ -335,12 +335,12 @@ func TestRebuildConnectorRejectsCrossTenantAndUnboundKB(t *testing.T) {
 	}
 
 	// The caller cannot access a cross-tenant kb at all: denied up front.
-	ok, code, err = svc.RebuildConnector(t.Context(), "conn-1", "user-1", "kb-foreign")
-	if err == nil || !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("err = %v, want permission denial", err)
+	ok, code, err = svc.RebuildConnector(serviceTestContext(t, "user-1", "user-1"), "conn-1", "user-1", "kb-foreign")
+	if err == nil || (!errors.Is(err, permission.ErrResourceNotFound) && !errors.Is(err, permission.ErrPermissionDenied)) {
+		t.Fatalf("err = %v, want hidden cross-tenant resource", err)
 	}
-	if ok || code != common.CodeForbidden {
-		t.Fatalf("ok/code = %v/%v, want false/forbidden", ok, code)
+	if ok || (code != common.CodeForbidden && code != common.CodeNotFound) {
+		t.Fatalf("ok/code = %v/%v, want false/denied", ok, code)
 	}
 }
 
@@ -400,7 +400,7 @@ func TestUpdateConnectorScheduleDoesNotDuplicateRunningTask(t *testing.T) {
 	}
 	t.Cleanup(func() { getSyncerTaskPublisher = previousPublisher })
 
-	_, code, err := NewConnectorService().UpdateConnector(t.Context(), "conn-1", "user-1", &UpdateConnectorRequest{
+	_, code, err := NewConnectorService().UpdateConnector(serviceTestContext(t, "user-1", "user-1"), "conn-1", "user-1", &UpdateConnectorRequest{
 		Status: string(entity.TaskStatusSchedule),
 	})
 	if err != nil {

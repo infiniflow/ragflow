@@ -26,10 +26,16 @@ import (
 	"gorm.io/gorm"
 )
 
-const permissionMigrationTargetVersion = "v1.0.0-rc3.dev1"
+const permissionMigrationTargetVersion = "v1.0.0-rc3.dev4"
 
 // migratePermissions applies the permission schema migration and records its version.
 func migratePermissions(ctx context.Context, db *gorm.DB) error {
+	// Enterprise migrations have their own marker. Run this hook before checking
+	// the shared marker so a community migration cannot skip enterprise data work.
+	if err := migratePermissionDataEE(ctx, db); err != nil {
+		return fmt.Errorf("migrate enterprise permission data: %w", err)
+	}
+
 	version, err := GetDatabaseMigrationVersion(ctx, db)
 	if err != nil {
 		return fmt.Errorf("read database migration version: %w", err)
@@ -37,8 +43,8 @@ func migratePermissions(ctx context.Context, db *gorm.DB) error {
 	if shouldSkipMigration(version, permissionMigrationTargetVersion) {
 		return nil
 	}
-	if err := migratePermissionDataEE(ctx, db); err != nil {
-		return fmt.Errorf("migrate enterprise permission data: %w", err)
+	if err := migrateLegacyTenantInvitationStatuses(ctx, db); err != nil {
+		return err
 	}
 	if err := migrateInvitedByNullable(ctx, db); err != nil {
 		return err
@@ -54,6 +60,21 @@ func migratePermissions(ctx context.Context, db *gorm.DB) error {
 	}
 	if err := setDatabaseMigrationVersion(ctx, db, permissionMigrationTargetVersion); err != nil {
 		return fmt.Errorf("mark permission migration version: %w", err)
+	}
+	return nil
+}
+
+func migrateLegacyTenantInvitationStatuses(ctx context.Context, db *gorm.DB) error {
+	scoped := db.WithContext(ctx)
+	migrator := scoped.Migrator()
+	if !migrator.HasTable(&entity.UserTenant{}) || !migrator.HasColumn(&entity.UserTenant{}, "role") || !migrator.HasColumn(&entity.UserTenant{}, "status") {
+		return nil
+	}
+	result := scoped.Model(&entity.UserTenant{}).
+		Where("role = ? AND (status = ? OR status IS NULL)", "invite", entity.TenantMembershipStatusJoined).
+		Updates(map[string]interface{}{"role": "", "status": entity.TenantMembershipStatusInvited})
+	if result.Error != nil {
+		return fmt.Errorf("migrate legacy Tenant invitations to pending status: %w", result.Error)
 	}
 	return nil
 }

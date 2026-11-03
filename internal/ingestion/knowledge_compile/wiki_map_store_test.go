@@ -147,7 +147,7 @@ func (e *wikiMapStoreEngine) InsertChunks(_ context.Context, chunks []map[string
 
 func TestWikiMapVersionStoreUsesNonSearchableDocStoreRows(t *testing.T) {
 	engine := &wikiMapStoreEngine{rows: map[string]map[string]interface{}{}}
-	store := NewWikiMapVersionStoreWithVectorSizeResolver(engine, nil)
+	store := NewWikiMapVersionStoreWithVectorSizeResolver(nil, engine, nil)
 	version := kccommon.WikiMapVersion{
 		Key:                 "version-a",
 		TenantID:            "tenant-1",
@@ -219,7 +219,7 @@ func TestWikiMapVersionStoreSkipsExistingInfinityStoreBootstrap(t *testing.T) {
 		chunkStoreExists: true,
 	}
 	resolverCalls := 0
-	store := NewWikiMapVersionStoreWithVectorSizeResolver(engine, func(context.Context) (int, error) {
+	store := NewWikiMapVersionStoreWithVectorSizeResolver(nil, engine, func(context.Context) (int, error) {
 		resolverCalls++
 		return 0, nil
 	})
@@ -238,7 +238,7 @@ func TestWikiMapVersionStoreSkipsExistingInfinityStoreBootstrap(t *testing.T) {
 
 func TestWikiMapVersionStoreCreatesMissingInfinityStore(t *testing.T) {
 	engine := &wikiMapStoreEngine{rows: map[string]map[string]interface{}{}, engineType: "infinity"}
-	store := NewWikiMapVersionStoreWithVectorSizeResolver(engine, func(context.Context) (int, error) {
+	store := NewWikiMapVersionStoreWithVectorSizeResolver(nil, engine, func(context.Context) (int, error) {
 		return 768, nil
 	})
 	// The table is the dataset's chunk table, so it is created with the
@@ -264,7 +264,7 @@ func TestWikiMapVersionStoreCreatesMissingInfinityStore(t *testing.T) {
 
 func TestWikiMapActiveStateRequiresResolverOnlyWhenInfinityStoreMissing(t *testing.T) {
 	engine := &wikiMapStoreEngine{rows: map[string]map[string]interface{}{}, engineType: "infinity"}
-	store := NewWikiMapVersionStoreWithVectorSizeResolver(engine, nil).(kccommon.WikiMapActiveStateStore)
+	store := NewWikiMapVersionStoreWithVectorSizeResolver(nil, engine, nil).(kccommon.WikiMapActiveStateStore)
 	state := kccommon.WikiMapActiveState{
 		Key: "active-a", TenantID: "tenant-1", DatasetID: "kb-1",
 		DocumentID: "doc-1", Payload: []byte(`{}`),

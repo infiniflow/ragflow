@@ -60,7 +60,7 @@ func TestVerifyRegistration_P1(t *testing.T) {
 
 	// Case-insensitive lookup on a real component to prove the
 	// registry's name normalization works at lookup time.
-	if c, err := New("Message", nil); err != nil || c == nil {
+	if c, err := New("Message", map[string]any{"text": "registered"}); err != nil || c == nil {
 		t.Errorf("New(Message) failed: c=%v err=%v", c, err)
 	}
 

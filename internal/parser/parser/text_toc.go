@@ -9,7 +9,9 @@ import (
 // rag/nlp/__init__.py:945 — case-insensitive match against
 // contents/目录/目次/table of contents/致谢/acknowledge after
 // stripping all spaces (ASCII + fullwidth).
-var tocHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|table of contents|致谢|acknowledge)$`)
+// The heading is matched after whitespacePattern has removed its spaces, so a
+// multi-word heading is listed without them: "Table of Contents" reads "tableofcontents".
+var tocHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|tableofcontents|致谢|acknowledge)$`)
 
 // whitespacePattern matches ASCII spaces and fullwidth space (U+3000)
 // for normalization before heading match.

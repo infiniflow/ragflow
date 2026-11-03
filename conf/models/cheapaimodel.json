@@ -1,0 +1,67 @@
+{
+  "name": "cheapaimodel",
+  "url": {
+    "default": "https://api.cheapaimodel.ai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "cheapaimodel",
+  "models": [
+    {
+      "name": "deepseek-v4-1-flash",
+      "context_length": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5.3",
+      "context_length": 1000000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5.3-flash",
+      "context_length": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k3",
+      "context_length": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "grok-4.7",
+      "context_length": 500000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}

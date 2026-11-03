@@ -67,25 +67,19 @@ func (dao *FileDAO) GetByIDAndTenant(ctx context.Context, db *gorm.DB, id, tenan
 // When keywords is empty, only direct children of pfID are listed; when
 // keywords is non-empty, the search covers the whole subtree under pfID so
 // files and folders nested in sub-folders can be found too.
-func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, terms []OrderTerm, keywords string, excludeSkills bool) ([]*entity.File, int64, error) {
+func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, terms []OrderTerm, keywords string, excludeSkills bool, visibilityScopes ...func(*gorm.DB) *gorm.DB) ([]*entity.File, int64, error) {
 	var files []*entity.File
 	var total int64
-
-	query := db.WithContext(ctx).Model(&entity.File{}).
-		Where("tenant_id = ? AND id != ?", tenantID, pfID)
-
-	if keywords != "" {
-		descendantIDs, err := dao.GetSubtreeIDs(ctx, db, tenantID, pfID)
-		if err != nil {
-			return nil, 0, err
-		}
-		query = query.Where("parent_id IN ?", descendantIDs).
-			Where("LOWER(name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
-	} else {
-		query = query.Where("parent_id = ?", pfID)
+	query, err := dao.fileListQuery(ctx, db, tenantID, pfID, keywords, excludeSkills)
+	if err != nil {
+		return nil, 0, err
 	}
-	if excludeSkills {
-		query = query.Where("NOT (parent_id = ? AND name = ?)", pfID, SkillsFolderName)
+	if len(visibilityScopes) > 0 {
+		if visibilityScopes[0] == nil {
+			query = query.Where("1 = 0")
+		} else {
+			query = visibilityScopes[0](query)
+		}
 	}
 
 	// Count total
@@ -113,6 +107,68 @@ func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID s
 	}
 
 	return files, total, nil
+}
+
+func (dao *FileDAO) fileListQuery(ctx context.Context, db *gorm.DB, tenantID, pfID, keywords string, excludeSkills bool) (*gorm.DB, error) {
+	query := db.WithContext(ctx).Model(&entity.File{}).
+		Where("tenant_id = ? AND id != ?", tenantID, pfID)
+	if keywords != "" {
+		descendantIDs, err := dao.GetSubtreeIDs(ctx, db, tenantID, pfID)
+		if err != nil {
+			return nil, err
+		}
+		query = query.Where("parent_id IN ?", descendantIDs).
+			Where("LOWER(name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+	} else {
+		query = query.Where("parent_id = ?", pfID)
+	}
+	if excludeSkills {
+		query = query.Where("NOT (parent_id = ? AND name = ?)", pfID, SkillsFolderName)
+	}
+	return query, nil
+}
+
+// ListDescendants loads every direct and nested entry under a folder. It walks
+// folder levels in batches so the caller can authorize a whole tree without a
+// database round trip for every node. Parent IDs are chunked to stay below
+// database parameter limits.
+func (dao *FileDAO) ListDescendants(ctx context.Context, db *gorm.DB, folderID string) ([]entity.File, error) {
+	const parentBatchSize = 500
+	if folderID == "" {
+		return nil, nil
+	}
+	seen := map[string]struct{}{folderID: {}}
+	frontier := []string{folderID}
+	descendants := make([]entity.File, 0)
+	for len(frontier) > 0 {
+		next := make([]string, 0)
+		for start := 0; start < len(frontier); start += parentBatchSize {
+			end := start + parentBatchSize
+			if end > len(frontier) {
+				end = len(frontier)
+			}
+			var children []entity.File
+			if err := db.WithContext(ctx).Model(&entity.File{}).
+				Select("id", "parent_id", "type").
+				Where("parent_id IN ?", frontier[start:end]).
+				Find(&children).Error; err != nil {
+				return nil, err
+			}
+			for i := range children {
+				child := children[i]
+				if _, exists := seen[child.ID]; exists {
+					continue
+				}
+				seen[child.ID] = struct{}{}
+				descendants = append(descendants, child)
+				if child.Type == "folder" {
+					next = append(next, child.ID)
+				}
+			}
+		}
+		frontier = next
+	}
+	return descendants, nil
 }
 
 // GetSubtreeIDs returns pfID itself plus the IDs of all entries nested under
@@ -346,12 +402,12 @@ func (dao *FileDAO) GetIDListByID(ctx context.Context, db *gorm.DB, id string, n
 }
 
 // CreateFolder creates a folder in the database
-func (dao *FileDAO) CreateFolder(ctx context.Context, db *gorm.DB, parentID, tenantID, name, fileType string) (*entity.File, error) {
+func (dao *FileDAO) CreateFolder(ctx context.Context, db *gorm.DB, parentID, tenantID, createdBy, name, fileType string) (*entity.File, error) {
 	file := &entity.File{
 		ID:         common.GenerateToken(),
 		ParentID:   parentID,
 		TenantID:   tenantID,
-		CreatedBy:  tenantID,
+		CreatedBy:  createdBy,
 		Name:       name,
 		Type:       fileType,
 		Size:       0,

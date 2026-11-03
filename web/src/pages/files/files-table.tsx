@@ -36,6 +36,7 @@ import {
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
+import { cn } from '@/lib/utils';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
 import { pick } from 'lodash';
@@ -183,8 +184,13 @@ export function FilesTable({
             <TooltipTrigger asChild>
               <Button
                 variant="static"
-                onClick={handleNameClick}
-                className="max-w-full p-0 flex justify-start gap-2 text-text-primary"
+                onClick={isFolder ? handleNameClick : undefined}
+                className={cn(
+                  'max-w-full p-0 flex justify-start gap-2 text-text-primary',
+                  // Only folders navigate; files are inert, so drop the pointer
+                  // affordance to make that distinction visible.
+                  isFolder ? 'cursor-pointer' : 'cursor-default',
+                )}
               >
                 <FileIcon name={name} type={isSkillsFolder ? 'skills' : type} />
 

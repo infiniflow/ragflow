@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
 	"strings"
 )
@@ -34,6 +35,33 @@ type MinimaxModel struct {
 	baseModel BaseModel
 }
 
+// minimaxCredentials extracts the API key and group ID from the stored
+// api_key. When a group ID is set, the model settings form stores api_key as
+// a JSON object:
+//
+//	{"api_key": "...", "group_id": "..."}
+//
+// Otherwise api_key is the plain key and no group ID is sent. MiniMax
+// authenticates the group through the GroupId query parameter, so a bundle
+// that is never unwrapped sends the whole JSON object as the Bearer token and
+// every call fails authentication.
+func minimaxCredentials(apiConfig *APIConfig) (apiKey, groupID string) {
+	if apiConfig == nil || apiConfig.ApiKey == nil {
+		return "", ""
+	}
+	key := strings.TrimSpace(*apiConfig.ApiKey)
+	if strings.HasPrefix(key, "{") {
+		var bundle struct {
+			APIKey  string `json:"api_key"`
+			GroupID string `json:"group_id"`
+		}
+		if err := json.Unmarshal([]byte(key), &bundle); err == nil {
+			return strings.TrimSpace(bundle.APIKey), strings.TrimSpace(bundle.GroupID)
+		}
+	}
+	return key, ""
+}
+
 // NewMinimaxModel creates a new Minimax model instance
 func NewMinimaxModel(baseURL map[string]string, urlSuffix URLSuffix) *MinimaxModel {
 	return &MinimaxModel{
@@ -41,8 +69,46 @@ func NewMinimaxModel(baseURL map[string]string, urlSuffix URLSuffix) *MinimaxMod
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
 			httpClient: common.GetSSRFHTTPClient(),
+			// The Bearer token is the bundle's api_key, not the stored
+			// JSON object.
+			authHeader: func(cfg *APIConfig) (string, string) {
+				apiKey, _ := minimaxCredentials(cfg)
+				return "Authorization", "Bearer " + apiKey
+			},
 		},
 	}
+}
+
+// APIConfigCheck requires the bundle's api_key, not the raw stored value, so
+// an instance that only filled in the group ID fails here instead of sending
+// an empty Bearer token.
+func (m *MinimaxModel) APIConfigCheck(apiConfig *APIConfig) error {
+	if m.baseModel.AllowEmptyAPIKey {
+		return nil
+	}
+	apiKey, _ := minimaxCredentials(apiConfig)
+	if apiKey == "" {
+		return fmt.Errorf("api key is required")
+	}
+	return nil
+}
+
+// endpointURL resolves suffix against the configured base URL and attaches the
+// GroupId query parameter when the stored credentials carry one.
+func (m *MinimaxModel) endpointURL(apiConfig *APIConfig, suffix string) (string, error) {
+	endpoint, err := m.baseModel.EndpointURL(apiConfig, suffix)
+	if err != nil {
+		return "", err
+	}
+	_, groupID := minimaxCredentials(apiConfig)
+	if groupID == "" {
+		return endpoint, nil
+	}
+	separator := "?"
+	if strings.Contains(endpoint, "?") {
+		separator = "&"
+	}
+	return endpoint + separator + "GroupId=" + url.QueryEscape(groupID), nil
 }
 
 func (m *MinimaxModel) NewInstance(baseURL map[string]string) ModelDriver {
@@ -106,7 +172,7 @@ func extractMinimaxErrorBody(body []byte) string {
 
 // ChatWithMessages sends multiple messages with roles and returns response
 func (m *MinimaxModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
-	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+	if err := m.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 	modelName, err := validateMinimaxModelName(modelName)
@@ -117,7 +183,7 @@ func (m *MinimaxModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
+	url, err := m.endpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +228,7 @@ func (m *MinimaxModel) ChatWithMessages(ctx context.Context, modelName string, m
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+	if err := m.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
 	modelName, err := validateMinimaxModelName(modelName)
@@ -176,7 +242,7 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return fmt.Errorf("sender is required")
 	}
 
-	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
+	url, err := m.endpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
@@ -262,12 +328,12 @@ func (m *MinimaxModel) Embed(ctx context.Context, modelName *string, request Emb
 }
 
 func (m *MinimaxModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
-	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+	if err := m.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+	apiKey, _ := minimaxCredentials(apiConfig)
 
-	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Models)
+	url, err := m.endpointURL(apiConfig, m.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
@@ -338,14 +404,15 @@ func (m *MinimaxModel) TranscribeAudioWithSender(ctx context.Context, modelName 
 
 // AudioSpeech convert text to audio
 func (m *MinimaxModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+	if err := m.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("text content is empty")
 	}
+	apiKey, _ := minimaxCredentials(apiConfig)
 
-	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.TTS)
+	url, err := m.endpointURL(apiConfig, m.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +447,7 @@ func (m *MinimaxModel) AudioSpeech(ctx context.Context, modelName *string, audio
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -427,18 +494,19 @@ func (m *MinimaxModel) AudioSpeech(ctx context.Context, modelName *string, audio
 }
 
 func (m *MinimaxModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+	if err := m.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
 	if audioContent == nil || *audioContent == "" {
 		return fmt.Errorf("text content is empty")
 	}
+	apiKey, _ := minimaxCredentials(apiConfig)
 
 	ttsSuffix := m.baseModel.URLSuffix.TTS
 	if ttsSuffix == "" {
 		ttsSuffix = "v1/t2a_v2"
 	}
-	url, err := m.baseModel.EndpointURL(apiConfig, ttsSuffix)
+	url, err := m.endpointURL(apiConfig, ttsSuffix)
 	if err != nil {
 		return err
 	}
@@ -476,7 +544,7 @@ func (m *MinimaxModel) AudioSpeechWithSender(ctx context.Context, modelName *str
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
 
 	resp, err := m.baseModel.httpClient.Do(req)
 	if err != nil {
