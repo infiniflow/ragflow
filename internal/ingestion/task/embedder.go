@@ -707,7 +707,7 @@ func init() {
 			return kb.EmbdID, nil
 		},
 		func(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error) {
-			embeddingModel, err := modelFactory.NewEmbeddingModel(ctx, service.ModelAccess{TenantID: tenantID}, embdID)
+			embeddingModel, err := modelFactory.NewEmbeddingModel(ctx, service.Identity{TenantID: tenantID}, embdID)
 			if err != nil {
 				return nil, err
 			}

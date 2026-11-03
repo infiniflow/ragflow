@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
-	"strconv"
 	"time"
 
 	"ragflow/internal/service"
@@ -35,13 +34,15 @@ import (
 
 // UserHandler user handler
 type UserHandler struct {
-	userService *service.UserService
+	userService       *service.UserService
+	userTenantService *service.UserTenantService
 }
 
 // NewUserHandler create user handler
-func NewUserHandler(userService *service.UserService) *UserHandler {
+func NewUserHandler(userService *service.UserService, userTenantService *service.UserTenantService) *UserHandler {
 	return &UserHandler{
-		userService: userService,
+		userService:       userService,
+		userTenantService: userTenantService,
 	}
 }
 
@@ -106,7 +107,6 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
@@ -163,7 +163,8 @@ func (h *UserHandler) Login(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
-	operationLog.UserName = req.Username
+	operationLog.Resources = make(map[string]any)
+	operationLog.Resources["user_name"] = req.Username
 
 	user, code, err := h.userService.Login(ctx, &req)
 	if err != nil {
@@ -233,7 +234,8 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
-	operationLog.UserName = req.Email
+	operationLog.Resources = make(map[string]any)
+	operationLog.Resources["user_name"] = req.Email
 
 	if !local.IsAdminAvailable() {
 		adminStatus := local.GetAdminStatus()
@@ -294,14 +296,9 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 // @Router /api/v1/users/{id} [get]
 func (h *UserHandler) GetUserByID(c *gin.Context) {
 	ctx := c.Request.Context()
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 32)
-	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, false, "invalid user id")
-		return
-	}
+	id := c.Param("id")
 
-	user, code, err := h.userService.GetUserByID(ctx, uint(id))
+	user, code, err := h.userService.GetUserByID(ctx, id)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
@@ -363,7 +360,6 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	}
 	user := identity.User
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	// Logout user
 	code, err = h.userService.Logout(ctx, user)
@@ -473,7 +469,7 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 // @Description Update tenant model configuration
 // @Tags users
 // @Security ApiKeyAuth
-// @Param request body service.SetTenantInfoRequest true "tenant info"
+// @Param request body service.SetModelSettingsRequest true "tenant model settings"
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/set_tenant_info [post]
 func (h *UserHandler) SetTenantInfo(c *gin.Context) {
@@ -499,7 +495,6 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	requiredKeys := []string{"tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id"}
 	missingArgumentMessage := "required argument are missing: tenant_id,asr_id,embd_id,img2txt_id,llm_id; "
@@ -525,7 +520,7 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		return
 	}
 
-	req := service.SetTenantInfoRequest{Raw: payload}
+	req := service.SetModelSettingsRequest{Raw: payload}
 	if value, ok := payload["tenant_id"].(string); ok {
 		req.TenantID = &value
 	}
@@ -548,7 +543,7 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		req.TTSID = &value
 	}
 
-	code, err := h.userService.SetTenantInfo(ctx, user.ID, &req)
+	code, err := h.userTenantService.SetModelSettings(ctx, user.ID, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		operationLog.Code = int(code)

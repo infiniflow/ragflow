@@ -74,9 +74,9 @@ func resolveDefaultTenantIDEE(context.Context, string) (string, bool, error) {
 	return "", false, nil
 }
 
-// resolveUserAuthTenant keeps the token's tenant unchanged.
-func resolveUserAuthTenant(_ context.Context, _ *entity.User, tenantID string) (string, error) {
-	return tenantID, nil
+// resolveUserAuthTenant discards tenant context because community credentials identify only a user.
+func resolveUserAuthTenant(_ context.Context, _ *entity.User, _ string) (string, error) {
+	return "", nil
 }
 
 // LoginChannel is one authentication channel advertised to the login page.

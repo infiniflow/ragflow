@@ -157,6 +157,9 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 			return nil, fmt.Errorf("failed to marshal json: %w", err)
 		}
 		req, err = http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create submit request: %w", err)
+		}
 		req.Header.Set("Content-Type", "application/json")
 	} else {
 		body := &bytes.Buffer{}
@@ -173,6 +176,9 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 		writer.Close()
 
 		req, err = http.NewRequestWithContext(ctx, "POST", url, body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create submit request: %w", err)
+		}
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 	}
 

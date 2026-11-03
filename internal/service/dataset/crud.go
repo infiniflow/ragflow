@@ -229,12 +229,20 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 
 	var parserConfigMap map[string]interface{} = parserConfig
 
-	embdID, tenantEmbdID, err := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeEmbedding)
-	if err != nil {
-		return nil, common.CodeServerError, err
+	modelFactory := service.NewModelFactory()
+	identity := service.Identity{UserID: userID, TenantID: tenantID}
+	embdID, tenantEmbdID := "", ""
+	if embeddingModel == "" {
+		embeddingInfo, embeddingErr := modelFactory.ResolveDefaultInfo(ctx, identity, entity.ModelTypeEmbedding)
+		if embeddingErr == nil {
+			embdID = service.ModelReference(embeddingInfo)
+			tenantEmbdID = embeddingInfo.ID
+		} else if !errors.Is(embeddingErr, service.ErrNoDefaultModel) {
+			return nil, common.CodeServerError, embeddingErr
+		}
 	}
 	if embeddingModel != "" {
-		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, service.ModelAccess{UserID: userID, TenantID: tenantID})
+		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, identity)
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
@@ -242,7 +250,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		tenantEmbdID = ""
 	}
 	if embdID != "" && tenantEmbdID == "" {
-		target, err := service.NewModelFactory().ResolveInfo(ctx, service.ModelAccess{UserID: userID, TenantID: tenantID}, entity.ModelTypeEmbedding, embdID)
+		target, err := modelFactory.ResolveInfo(ctx, identity, entity.ModelTypeEmbedding, embdID)
 		if err == nil {
 			tenantEmbdID = target.ID
 		} else {
@@ -259,9 +267,12 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	}
 	name = dedupedName
 
-	llmID, _, err := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeChat)
-	if err != nil {
-		return nil, common.CodeServerError, err
+	llmID := ""
+	chatInfo, chatErr := modelFactory.ResolveDefaultInfo(ctx, identity, entity.ModelTypeChat)
+	if chatErr == nil {
+		llmID = service.ModelReference(chatInfo)
+	} else if !errors.Is(chatErr, service.ErrNoDefaultModel) {
+		return nil, common.CodeServerError, chatErr
 	}
 	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 
@@ -328,7 +339,7 @@ func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID strin
 	}
 	datasetID = normalizedID
 
-	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, permissionErr
 	}
@@ -340,7 +351,7 @@ func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID strin
 	}
 
 	data := datasetToMap(ctx, kb)
-	operatorPermission, err := service.ResolveOperatorPermission(ctx, userID, permission.ResourceRef{
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
 		Kind: permission.ResourceKindDataset,
 		ID:   kb.ID,
 	})
@@ -348,7 +359,7 @@ func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID strin
 		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, permissionErr
 	}
-	data["operator_permission"] = operatorPermission
+	data["operator_permission"] = access.PermissionMask
 
 	size, err := d.documentDAO.SumSizeByDatasetID(ctx, dao.DB, datasetID)
 	if err != nil {

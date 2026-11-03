@@ -76,8 +76,9 @@ func TestMinerUTableRetainsCaptionAndFootnote(t *testing.T) {
 	if !ok || table == nil || table.Caption != "Caption" || len(table.CellTexts()) != 1 || len(table.CellTexts()[0]) != 1 || table.CellTexts()[0][0] != "Cell" || table.Page != 2 {
 		t.Fatalf("structured table missing: %#v", item)
 	}
-	if item["text"] != "Footnote" {
-		t.Fatalf("notes lost or table duplicated: %#v", item)
+	text, _ := item["text"].(string)
+	if !strings.Contains(text, "Footnote") || !strings.Contains(text, "Cell") {
+		t.Fatalf("notes lost or table cells missing: %#v", item)
 	}
 }
 

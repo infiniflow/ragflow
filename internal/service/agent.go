@@ -508,9 +508,16 @@ func (s *AgentService) ListAgentFilters(ctx context.Context, userID, canvasCateg
 		return s.listCompilationGroupFilters(ctx, userID)
 	}
 
-	canvasIDs, err := AccessibleCanvasIDs(ctx, permission.Subject{UserID: userID}, permission.OperationRead)
+	canvasScope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
+		Kind:      permission.ResourceKindCanvas,
+		Operation: permission.OperationRead,
+	})
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to scope accessible canvases: %w", err)
+	}
+	canvasIDs := canvasScope.ResourceIDs
+	if canvasScope.Mode == permission.ScopeNone {
+		canvasIDs = []string{}
 	}
 	owners, err := s.canvasDAO.GetOwnerFilterByCanvasIDs(ctx, dao.DB, canvasIDs, canvasCategory)
 	if err != nil {
@@ -636,11 +643,18 @@ func toAgentItem(c *dao.UserCanvasListItem) *AgentItem {
 // then delegates to the DAO.
 func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string, canvasCategory, canvasType string, tags []string) (*ListAgentsResponse, common.ErrorCode, error) {
 	subject := permission.Subject{UserID: userID}
-	canvasIDs, err := AccessibleCanvasIDs(ctx, subject, permission.OperationRead)
+	checker := permission.NewDatabaseChecker(dao.DB)
+	canvasScope, err := checker.Scope(ctx, subject, permission.ScopeQuery{
+		Kind:      permission.ResourceKindCanvas,
+		Operation: permission.OperationRead,
+	})
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to scope accessible canvases: %w", err)
 	}
-	checker := permission.NewDatabaseChecker(dao.DB)
+	canvasIDs := canvasScope.ResourceIDs
+	if canvasScope.Mode == permission.ScopeNone {
+		canvasIDs = []string{}
+	}
 	if len(ownerIDs) > 0 {
 		for _, id := range ownerIDs {
 			if id == userID {
@@ -1103,7 +1117,7 @@ func (s *AgentService) loadCanvasForUser(ctx context.Context, userID, canvasID s
 	if userID == "" {
 		return nil, dao.ErrUserCanvasNotFound
 	}
-	if err := CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, canvasID, operation); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, operation); err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return nil, dao.ErrUserCanvasNotFound
 		}
@@ -1165,7 +1179,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 	ownerUserID := canvasInstance.UserID
 
 	if v, ok := patch["permission"]; ok {
-		shareErr := CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, canvasID, permission.OperationShare)
+		shareErr := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationShare)
 		if shareErr != nil {
 			if !errors.Is(shareErr, permission.ErrPermissionDenied) {
 				return fmt.Errorf("check agent sharing permission: %w", shareErr)
@@ -1377,7 +1391,7 @@ func (s *AgentService) ResetAgent(ctx context.Context, userID, canvasID string) 
 // orphan version rows. Canvas delete access is decided by the permission
 // policy, including its sharing rules.
 func (s *AgentService) DeleteAgent(ctx context.Context, userID, canvasID string) error {
-	if err := CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, canvasID, permission.OperationDelete); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationDelete); err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return ErrAgentNotOwner
 		}
@@ -2046,7 +2060,7 @@ func validateAgentChatModelReferences(ctx context.Context, userID, tenantID stri
 		if !ok {
 			modelRef, _ = node.Obj.Params["llm_id"].(string)
 		}
-		if _, err := modelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, entity.ModelTypeChat, modelRef); err != nil {
+		if _, err := modelFactory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, entity.ModelTypeChat, modelRef); err != nil {
 			if draft && (errors.Is(err, errModelConfigUnavailable) || errors.Is(err, gorm.ErrRecordNotFound)) && !errors.Is(err, permission.ErrPermissionDenied) && !errors.Is(err, permission.ErrResourceNotFound) {
 				continue
 			}

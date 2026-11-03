@@ -35,21 +35,22 @@ import (
 	dataset "ragflow/internal/service/dataset"
 
 	"go.uber.org/zap"
+	"ragflow/internal/dao"
 )
 
 // TenantHandler tenant handler
 type TenantHandler struct {
-	tenantService  *service.TenantService
-	userService    *service.UserService
-	datasetService *dataset.DatasetService
+	tenantService     *service.TenantService
+	userTenantService *service.UserTenantService
+	datasetService    *dataset.DatasetService
 }
 
 // NewTenantHandler create tenant handler
-func NewTenantHandler(tenantService *service.TenantService, userService *service.UserService, datasetService *dataset.DatasetService) *TenantHandler {
+func NewTenantHandler(tenantService *service.TenantService, userTenantService *service.UserTenantService, datasetService *dataset.DatasetService) *TenantHandler {
 	return &TenantHandler{
-		tenantService:  tenantService,
-		userService:    userService,
-		datasetService: datasetService,
+		tenantService:     tenantService,
+		userTenantService: userTenantService,
+		datasetService:    datasetService,
 	}
 }
 
@@ -84,9 +85,17 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 	}
 
 	ctx := c.Request.Context()
-	err := h.tenantService.SetTenantDefaultModels(ctx, user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType, req.ModelID)
+	code, err := h.userTenantService.SetModelSettings(ctx, user.ID, &service.SetModelSettingsRequest{
+		DefaultModel: &service.DefaultModelSelection{
+			ModelProvider: req.ModelProvider,
+			ModelInstance: req.ModelInstance,
+			ModelName:     req.ModelName,
+			ModelType:     req.ModelType,
+			ModelID:       req.ModelID,
+		},
+	})
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
+		common.ResponseWithCodeData(c, code, false, err.Error())
 		return
 	}
 
@@ -98,7 +107,7 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 	common.SuccessNoData(c, "success")
 }
 
-// GetDefaultModels returns the tenant's default model selections. The
+// GetDefaultModels returns the user's model selections for the current tenant. The
 // response wraps the model list under `data.models` to mirror the
 // Python `list_tenant_default_models` contract (api/apps/restful_apis/
 // models_api.py:84). The frontend hook `useFetchDefaultModels`
@@ -111,7 +120,7 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
-	defaultModels, err := h.tenantService.ListTenantDefaultModels(ctx, user.ID)
+	defaultModels, err := h.userTenantService.ListDefaultModels(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -142,7 +151,7 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
-	tenantInfo, err := h.tenantService.GetTenantInfo(ctx, user.ID)
+	tenantInfo, err := h.userTenantService.GetCurrentTenantInfo(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -268,7 +277,7 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	// Check authorization - user must have access to this kb
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KBID, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: req.KBID}, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -316,7 +325,7 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	}
 
 	// Check authorization
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KBID, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: req.KBID}, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -518,7 +527,6 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
@@ -598,7 +606,6 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
@@ -662,7 +669,6 @@ func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 		return
 	}
 	operationLog.UserID = user.ID
-	operationLog.UserName = user.Email
 
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {

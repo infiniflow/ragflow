@@ -94,6 +94,7 @@ export function MinerUOptionsFormField({ namePrefix }: { namePrefix: string }) {
       >
         {(field) => (
           <SelectWithSearch
+            allowClear
             value={field.value || ''}
             onChange={field.onChange}
             options={LanguageOptions}

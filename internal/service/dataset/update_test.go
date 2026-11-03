@@ -1314,6 +1314,44 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 	}
 }
 
+func TestUpdateDatasetUsesTenantModelIDForExtractorDefault(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	if err := db.Model(&entity.UserTenant{}).
+		Where("user_id = ? AND tenant_id = ?", "tenant-1", "tenant-1").
+		Updates(map[string]interface{}{
+			"llm_id":        "glm-4-flash@CI@ZHIPU-AI",
+			"tenant_llm_id": "chat-model-id",
+		}).Error; err != nil {
+		t.Fatalf("set default chat model: %v", err)
+	}
+
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"pdf": map[string]interface{}{"parse_method": "deepdoc"},
+			},
+		},
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset failed: code=%d err=%v", code, err)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated dataset: %v", err)
+	}
+	extractor, ok := persisted.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("extractor parser config = %#v", persisted.ParserConfig["Extractor:AutoExtractDefault"])
+	}
+	if extractor["llm_id"] != "chat-model-id" {
+		t.Fatalf("extractor llm_id = %#v, want tenant model ID", extractor["llm_id"])
+	}
+}
+
 // extractorNodeMetadataInTest returns the metadata object stored on the first
 // Extractor node of a parser_config (the component-scoped form).
 func extractorNodeMetadataInTest(t *testing.T, cfg map[string]interface{}) map[string]interface{} {
