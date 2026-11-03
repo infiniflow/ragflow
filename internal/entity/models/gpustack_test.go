@@ -5,6 +5,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
+	"reflect"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -495,6 +499,166 @@ func TestGPUStackListModelsHappyPath(t *testing.T) {
 	}
 	if err := model.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
+	}
+}
+
+// newGPUStackCategoryServer serves /v1/models like GPUStack: every route without
+// a filter, or only the routes carrying one of the requested categories.
+func newGPUStackCategoryServer(t *testing.T, routes map[string][]string) *httptest.Server {
+	t.Helper()
+	names := make([]string, 0, len(routes))
+	for name := range routes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		requested := r.URL.Query()["categories"]
+		data := []map[string]interface{}{}
+		for _, name := range names {
+			if len(requested) == 0 || slices.Contains(routes[name], requested[0]) {
+				data = append(data, map[string]interface{}{"id": name})
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": data})
+	}))
+}
+
+func gpustackModelTypesByName(t *testing.T, baseURL string) map[string][]string {
+	t.Helper()
+	apiKey := "test-key"
+	listed, err := newGPUStackForTest(baseURL).ListModels(t.Context(), &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	types := make(map[string][]string, len(listed))
+	for _, model := range listed {
+		types[model.Name] = model.ModelTypes
+	}
+	return types
+}
+
+func TestGPUStackListModelsUsesCategories(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newGPUStackCategoryServer(t, map[string][]string{
+		"assistant":    {"llm"},
+		"kb-encoder":   {"embedding"},
+		"doc-sorter":   {"reranker"},
+		"voice-in":     {"speech_to_text"},
+		"voice-out":    {"text_to_speech"},
+		"qwen2.5-vl":   {"llm"},
+		"bge-renamed":  {"llm"},
+		"painter":      {"image"},
+		"no-category":  {},
+		"bge-m3-route": {},
+	})
+	defer srv.Close()
+
+	got := gpustackModelTypesByName(t, srv.URL)
+	want := map[string][]string{
+		"assistant":  {modelTypeChat},
+		"kb-encoder": {modelTypeEmbedding},
+		"doc-sorter": {modelTypeRerank},
+		"voice-in":   {modelTypeASR},
+		"voice-out":  {modelTypeTTS},
+		// Vision has no GPUStack category, so it still comes from the name.
+		"qwen2.5-vl": {modelTypeChat, modelTypeVision},
+		// The category beats a name that suggests something else.
+		"bge-renamed": {modelTypeChat},
+		// Routes without categories fall back to the name.
+		"no-category":  {modelTypeChat},
+		"bge-m3-route": {modelTypeEmbedding},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("types=%v\nwant %v", got, want)
+	}
+}
+
+func TestGPUStackListModelsSingleCategoryCluster(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newGPUStackCategoryServer(t, map[string][]string{"a": {"embedding"}, "b": {"embedding"}})
+	defer srv.Close()
+
+	got := gpustackModelTypesByName(t, srv.URL)
+	want := map[string][]string{"a": {modelTypeEmbedding}, "b": {modelTypeEmbedding}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("types=%v, want %v", got, want)
+	}
+}
+
+func TestGPUStackListModelsIgnoresUnappliedCategoryFilter(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{{"id": "bge-m3"}, {"id": "bge-reranker-v2-m3"}, {"id": "qwen3-8b"}},
+		})
+	}))
+	defer srv.Close()
+
+	got := gpustackModelTypesByName(t, srv.URL)
+	want := map[string][]string{
+		"bge-m3":             {modelTypeEmbedding},
+		"bge-reranker-v2-m3": {modelTypeRerank},
+		"qwen3-8b":           {modelTypeChat},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("types=%v, want %v", got, want)
+	}
+}
+
+func TestGPUStackListModelsSurvivesCategoryLookupFailure(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("categories") {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{{"id": "bge-m3"}}})
+	}))
+	defer srv.Close()
+
+	got := gpustackModelTypesByName(t, srv.URL)
+	if !reflect.DeepEqual(got, map[string][]string{"bge-m3": {modelTypeEmbedding}}) {
+		t.Errorf("types=%v", got)
+	}
+}
+
+func TestGPUStackListModelsReportsAuthFailure(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"code":401,"message":"Invalid authentication credentials"}`, http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	apiKey := "wrong"
+	_, err := newGPUStackForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &apiKey})
+	if err == nil || !strings.Contains(err.Error(), "401") {
+		t.Errorf("err=%v, want the 401 surfaced", err)
+	}
+}
+
+func TestGPUStackEmbedRecordsUsage(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":    "embd-1",
+			"data":  []map[string]interface{}{{"embedding": []float64{0.1}, "index": 0}},
+			"usage": map[string]interface{}{"prompt_tokens": 8, "total_tokens": 8},
+		})
+	})
+	defer srv.Close()
+
+	model := "bge-m3"
+	apiKey := "test-key"
+	usage := &common.ModelUsage{}
+	_, err := configuredGPUStackForTest(t, srv.URL).Embed(t.Context(), &model, EmbedRequest{Texts: []string{"hello"}}, &APIConfig{ApiKey: &apiKey}, nil, usage)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if usage.TotalTokens != 8 || usage.Type != "embedding" || usage.RequestID != "embd-1" {
+		t.Errorf("usage=%+v", usage)
 	}
 }
 

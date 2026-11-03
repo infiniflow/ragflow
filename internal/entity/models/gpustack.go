@@ -24,7 +24,11 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
+	"slices"
+	"sort"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 // GPUStackModel implements ModelDriver for GPUStack
@@ -108,12 +112,22 @@ func (g *GPUStackModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	})
 }
 
-type gpustackModelInfo struct {
-	ID string `json:"id"`
-}
-
 type gpustackModelsResponse struct {
 	Data []ModelListItem `json:"data"`
+}
+
+// gpustackImageCategory marks image-generation models, which RAGFlow has no
+// model type for.
+const gpustackImageCategory = "image"
+
+// gpustackCategoryModelTypes maps GPUStack model categories to RAGFlow model
+// types.
+var gpustackCategoryModelTypes = map[string]string{
+	"llm":            modelTypeChat,
+	"embedding":      modelTypeEmbedding,
+	"reranker":       modelTypeRerank,
+	"speech_to_text": modelTypeASR,
+	"text_to_speech": modelTypeTTS,
 }
 
 func (g *GPUStackModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -126,6 +140,15 @@ func (g *GPUStackModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 		return nil, err
 	}
 
+	items, err := g.fetchModels(ctx, url, apiConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return applyGPUStackCategories(ParseListModel(ModelList{Models: items}), g.fetchModelCategories(ctx, url, apiConfig, items)), nil
+}
+
+func (g *GPUStackModel) fetchModels(ctx context.Context, url string, apiConfig *APIConfig) ([]ModelListItem, error) {
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
@@ -156,8 +179,86 @@ func (g *GPUStackModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
+	return parsed.Data, nil
+}
 
-	return ParseListModel(ModelList{Models: parsed.Data}), nil
+// fetchModelCategories returns the GPUStack categories of each listed model.
+//
+// A GPUStack model is served under a route name its operator chose, so the name
+// says nothing reliable about what the model does. /v1/models does not return
+// categories but can filter by them, so each category is asked for in turn.
+//
+// The result is best effort: it is nil when a lookup fails or the server ignores
+// the filter, and routes created by hand may have no categories at all. Callers
+// fall back to the types derived from the model name for anything not returned.
+func (g *GPUStackModel) fetchModelCategories(ctx context.Context, url string, apiConfig *APIConfig, items []ModelListItem) map[string][]string {
+	if len(items) == 0 {
+		return nil
+	}
+
+	queried := make([]string, 0, len(gpustackCategoryModelTypes)+1)
+	for category := range gpustackCategoryModelTypes {
+		queried = append(queried, category)
+	}
+	queried = append(queried, gpustackImageCategory)
+	sort.Strings(queried)
+
+	categories := make(map[string][]string, len(items))
+	unfiltered := 0
+	for _, category := range queried {
+		matched, err := g.fetchModels(ctx, url+"?categories="+category, apiConfig)
+		if err != nil {
+			common.Warn("gpustack: failed to list models by category", zap.String("category", category), zap.Error(err))
+			return nil
+		}
+		// One full listing is a cluster serving only that category. Two mean
+		// the server is not applying the filter.
+		if len(matched) == len(items) {
+			unfiltered++
+			if unfiltered > 1 {
+				return nil
+			}
+		}
+		for _, item := range matched {
+			id := strings.TrimSpace(item.ID)
+			categories[id] = append(categories[id], category)
+		}
+	}
+	return categories
+}
+
+// applyGPUStackCategories overrides the name-derived types of every model
+// GPUStack reported categories for, and drops models RAGFlow cannot use. Vision
+// is kept from the name-derived types because GPUStack has no category for it.
+func applyGPUStackCategories(listed []ListModelResponse, categories map[string][]string) []ListModelResponse {
+	if categories == nil {
+		return listed
+	}
+
+	result := make([]ListModelResponse, 0, len(listed))
+	for _, model := range listed {
+		modelCategories := categories[model.Name]
+		if len(modelCategories) == 0 {
+			result = append(result, model)
+			continue
+		}
+
+		modelTypes := make([]string, 0, len(modelCategories))
+		for _, category := range modelCategories {
+			if modelType, ok := gpustackCategoryModelTypes[category]; ok {
+				modelTypes = append(modelTypes, modelType)
+			}
+		}
+		if len(modelTypes) == 0 {
+			continue
+		}
+		if slices.Contains(modelTypes, modelTypeChat) && slices.Contains(model.ModelTypes, modelTypeVision) {
+			modelTypes = append(modelTypes, modelTypeVision)
+		}
+		model.ModelTypes = normalizeModelTypes(modelTypes)
+		result = append(result, model)
+	}
+	return result
 }
 
 func (g *GPUStackModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -173,7 +274,9 @@ type gpustackEmbeddingData struct {
 
 // gpustackEmbeddingResponse is the JSON body returned by GPUStack embeddings API.
 type gpustackEmbeddingResponse struct {
-	Data []gpustackEmbeddingData `json:"data"`
+	ID    string                  `json:"id"`
+	Data  []gpustackEmbeddingData `json:"data"`
+	Usage *TokenUsage             `json:"usage"`
 }
 
 // Embed requests embedding vectors via GPUStack's v1/embeddings endpoint.
@@ -277,6 +380,7 @@ func (g *GPUStackModel) Embed(
 			return nil, fmt.Errorf("gpustack: missing embedding for input index %d", i)
 		}
 	}
+	recordResponseUsage(modelUsage, parsed.ID, parsed.Usage, "embedding")
 	return embeddings, nil
 }
 
