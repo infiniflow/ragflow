@@ -40,20 +40,21 @@ const (
 
 // ListAgentSessionsRequest are the parameters for ListAgentSessions.
 type ListAgentSessionsRequest struct {
-	SessionID        string
-	UserID           string
-	Page             int
-	PageSize         int
-	Keywords         string
-	FromDate         string
-	ToDate           string
-	OrderBy          string
-	Desc             bool
-	ExpUserID        string
-	IncludeDSL       bool
-	NoHistory        bool
-	IncludeReference bool
-	IncludePrompt    bool
+	SessionID           string
+	UserID              string
+	Page                int
+	PageSize            int
+	Keywords            string
+	FromDate            string
+	ToDate              string
+	OrderBy             string
+	Desc                bool
+	ExpUserID           string
+	IncludeDSL          bool
+	NoHistory           bool
+	IncludeReference    bool
+	IncludePrompt       bool
+	IncludeArchivedLogs bool
 }
 
 // ListAgentSessionsResponse is the response body for ListAgentSessions.
@@ -268,8 +269,7 @@ func (s *AgentService) ListAgentSessions(ctx context.Context, userID, _ string, 
 	}
 
 	sessionDAO := dao.NewChatSessionDAO()
-
-	if req.ExpUserID != "" {
+	if req.ExpUserID != "" && !req.IncludeArchivedLogs {
 		total, rows, err := sessionDAO.ListAgentSessionNames(ctx, dao.DB, agentID, req.ExpUserID, req.Page, req.PageSize)
 		if err != nil {
 			return nil, common.CodeServerError, err
@@ -286,7 +286,7 @@ func (s *AgentService) ListAgentSessions(ctx context.Context, userID, _ string, 
 		return nil, common.CodeArgumentError, err
 	}
 
-	total, sessions, err := sessionDAO.ListAgentSessions(ctx, dao.DB, dao.ListAgentSessionsParams{
+	params := dao.ListAgentSessionsParams{
 		AgentID:        agentID,
 		Page:           req.Page,
 		PageSize:       req.PageSize,
@@ -301,7 +301,14 @@ func (s *AgentService) ListAgentSessions(ctx context.Context, userID, _ string, 
 		FromDate:       fromDate,
 		ToDate:         toDate,
 		ExpUserID:      req.ExpUserID,
-	})
+	}
+	var total int64
+	var sessions []*entity.API4Conversation
+	if req.IncludeArchivedLogs {
+		total, sessions, err = s.api4ConversationDAO.ListAgentLogs(ctx, dao.DB, params, params.HistoryOptions)
+	} else {
+		total, sessions, err = sessionDAO.ListAgentSessions(ctx, dao.DB, params)
+	}
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -366,7 +373,7 @@ func (s *AgentService) DeleteAgentSessionItem(ctx context.Context, userID, agent
 	if conv == nil {
 		return false, common.CodeSuccess, nil
 	}
-	row, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(ctx, dao.DB, sessionID, agentID)
+	row, err := s.api4ConversationDAO.ArchiveAndDeleteBySessionIDAndAgentID(ctx, dao.DB, sessionID, agentID)
 	if err != nil {
 		return false, common.CodeServerError, err
 	}
@@ -426,8 +433,13 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID 
 			continue
 		}
 
-		if _, err = s.api4ConversationDAO.DeleteBySessionIDAndAgentID(ctx, dao.DB, sessionID, agentID); err != nil {
+		deleted, err := s.api4ConversationDAO.ArchiveAndDeleteBySessionIDAndAgentID(ctx, dao.DB, sessionID, agentID)
+		if err != nil {
 			return nil, common.CodeServerError, err
+		}
+		if deleted == 0 {
+			errorsList = append(errorsList, fmt.Sprintf("The agent doesn't own the session %s", sessionID))
+			continue
 		}
 		successCount++
 	}

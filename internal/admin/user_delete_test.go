@@ -121,7 +121,7 @@ func setupUserDeletionDB(t *testing.T) *gorm.DB {
 		&entity.User{}, &entity.Tenant{}, &entity.UserTenant{},
 		&entity.Knowledgebase{}, &entity.Document{}, &entity.Task{}, &entity.File{}, &entity.File2Document{},
 		&entity.Chat{}, &entity.ChatSession{}, &entity.ConversationMessage{}, &entity.ConversationReference{},
-		&entity.API4Conversation{}, &entity.API4ConversationMessage{}, &entity.API4ConversationReference{},
+		&entity.API4Conversation{}, &entity.API4ConversationLog{}, &entity.API4ConversationMessage{}, &entity.API4ConversationReference{},
 		&entity.ChatChannel{}, &entity.UserCanvas{}, &entity.UserCanvasVersion{},
 		&entity.Search{}, &entity.Memory{}, &entity.MemoryTask{}, &entity.MCPServer{},
 		&entity.SkillSearchConfig{},
@@ -180,6 +180,7 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	insert("INSERT INTO user_canvas (id, user_id, tags, canvas_category) VALUES (?, ?, ?, ?)", "agent", "user-1", "", "agent_canvas")
 	insert("INSERT INTO user_canvas_version (id, user_canvas_id) VALUES (?, ?)", "agent-version", "agent")
 	insert("INSERT INTO api_4_conversation (id, dialog_id, user_id) VALUES (?, ?, ?)", "agent-conversation", "agent", "external-user")
+	insert("INSERT INTO api_4_conversation_log (id, dialog_id, user_id) VALUES (?, ?, ?)", "agent-conversation-log", "agent", "external-user")
 	insert("INSERT INTO chat_channel (id, tenant_id, name, channel, config) VALUES (?, ?, ?, ?, ?)", "channel", "user-1", "Channel", "telegram", "{}")
 	insert("INSERT INTO memory (id, tenant_id, name, embd_id, llm_id, permissions, forgetting_policy) VALUES (?, ?, ?, ?, ?, ?, ?)", "memory", "user-1", "Memory", "embd", "llm", "me", "FIFO")
 	insert("INSERT INTO tenant_model_provider (id, provider_name, tenant_id) VALUES (?, ?, ?)", "provider", "custom", "user-1")
@@ -209,7 +210,7 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	for _, item := range [][2]string{
 		{"knowledgebase", "own-kb"}, {"document", "joined-doc"}, {"file", "own-file"}, {"file", "joined-file"},
 		{"search", "own-search"}, {"search", "joined-search"}, {"dialog", "own-chat"},
-		{"conversation", "own-conversation"}, {"conversation", "joined-conversation"}, {"api_4_conversation", "own-api-conversation"}, {"api_4_conversation", "agent-conversation"},
+		{"conversation", "own-conversation"}, {"conversation", "joined-conversation"}, {"api_4_conversation", "own-api-conversation"}, {"api_4_conversation", "agent-conversation"}, {"api_4_conversation_log", "agent-conversation-log"},
 		{"user_canvas", "agent"}, {"user_canvas_version", "agent-version"}, {"chat_channel", "channel"},
 		{"memory", "memory"}, {"tenant_model_provider", "provider"}, {"tenant_model_instance", "instance"},
 		{"tenant_model", "model"}, {"file_commit", "own-commit"},

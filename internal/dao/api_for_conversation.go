@@ -18,8 +18,11 @@ package dao
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"ragflow/internal/entity"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -171,7 +174,7 @@ func (dao *API4ConversationDAO) ListIDsByAgentID(ctx context.Context, db *gorm.D
 	return ids, err
 }
 
-// DeleteBySessionIDAndAgentID deletes API4Conversations by sessionID and agentID
+// DeleteBySessionIDAndAgentID deletes API4Conversations by sessionID and agentID.
 func (dao *API4ConversationDAO) DeleteBySessionIDAndAgentID(ctx context.Context, db *gorm.DB, sessionID, agentID string) (int64, error) {
 	var rowsAffected int64
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -187,6 +190,197 @@ func (dao *API4ConversationDAO) DeleteBySessionIDAndAgentID(ctx context.Context,
 		return result.Error
 	})
 	return rowsAffected, err
+}
+
+// ArchiveAndDeleteBySessionIDAndAgentID moves a session's historical log out
+// of chat history before deleting its conversation and message rows.
+func (dao *API4ConversationDAO) ArchiveAndDeleteBySessionIDAndAgentID(ctx context.Context, db *gorm.DB, sessionID, agentID string) (int64, error) {
+	var rowsAffected int64
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var conversation entity.API4Conversation
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ? AND dialog_id = ?", sessionID, agentID).Take(&conversation).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if err := hydrateAPIConversations(ctx, tx, []*entity.API4Conversation{&conversation}, ConversationHistoryOptions{
+			IncludeReference: true,
+			IncludePrompt:    true,
+			IncludeUsage:     true,
+			IncludeElapsedMs: true,
+		}); err != nil {
+			return err
+		}
+		message, err := json.Marshal(conversation.Message)
+		if err != nil {
+			return fmt.Errorf("marshal conversation log: %w", err)
+		}
+		log := entity.API4ConversationLog{
+			ID: conversation.ID, Name: conversation.Name, DialogID: conversation.DialogID,
+			UserID: conversation.UserID, ExpUserID: conversation.ExpUserID, Message: string(message),
+			Tokens: conversation.Tokens, Source: conversation.Source, DSL: conversation.DSL,
+			Duration: conversation.Duration, Round: conversation.Round, ThumbUp: conversation.ThumbUp,
+			Errors: conversation.Errors, VersionTitle: conversation.VersionTitle,
+			CreateTime: conversation.CreateTime, CreateDate: conversation.CreateDate,
+			UpdateTime: conversation.UpdateTime, UpdateDate: conversation.UpdateDate,
+		}
+		if err := tx.Create(&log).Error; err != nil {
+			return fmt.Errorf("archive conversation log: %w", err)
+		}
+		if err := deleteHistory(ctx, tx, []string{apiConversationMessageTable}, []string{sessionID}); err != nil {
+			return err
+		}
+		result := tx.Where("id = ? AND dialog_id = ?", sessionID, agentID).Delete(&entity.API4Conversation{})
+		rowsAffected = result.RowsAffected
+		return result.Error
+	})
+	return rowsAffected, err
+}
+
+// Move rows hidden by the previous deletion flag into independent logs.
+func archiveDeletedAgentSessions(ctx context.Context, db *gorm.DB) error {
+	if !db.Migrator().HasColumn(&entity.API4Conversation{}, "is_deleted") {
+		return nil
+	}
+	var rows []entity.API4Conversation
+	if err := db.WithContext(ctx).Select("id", "dialog_id").Where("is_deleted = ?", true).Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, row := range rows {
+		if _, err := NewAPI4ConversationDAO().ArchiveAndDeleteBySessionIDAndAgentID(ctx, db, row.ID, row.DialogID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type agentLogListRow struct {
+	ID           string         `gorm:"column:id"`
+	Name         *string        `gorm:"column:name"`
+	DialogID     string         `gorm:"column:dialog_id"`
+	UserID       string         `gorm:"column:user_id"`
+	ExpUserID    *string        `gorm:"column:exp_user_id"`
+	Message      string         `gorm:"column:message"`
+	Tokens       int            `gorm:"column:tokens"`
+	Source       *string        `gorm:"column:source"`
+	DSL          entity.JSONMap `gorm:"column:dsl"`
+	Duration     float64        `gorm:"column:duration"`
+	Round        int            `gorm:"column:round"`
+	ThumbUp      int            `gorm:"column:thumb_up"`
+	Errors       *string        `gorm:"column:errors"`
+	VersionTitle *string        `gorm:"column:version_title"`
+	CreateTime   *int64         `gorm:"column:create_time"`
+	CreateDate   *time.Time     `gorm:"column:create_date"`
+	UpdateTime   *int64         `gorm:"column:update_time"`
+	UpdateDate   *time.Time     `gorm:"column:update_date"`
+	IsArchived   bool           `gorm:"column:is_archived"`
+}
+
+// ListAgentLogs returns active conversations and archived logs as one paginated list.
+func (dao *API4ConversationDAO) ListAgentLogs(ctx context.Context, db *gorm.DB, params ListAgentSessionsParams, historyOptions ConversationHistoryOptions) (int64, []*entity.API4Conversation, error) {
+	union := `(SELECT id, name, dialog_id, user_id, exp_user_id, '' AS message, tokens, source, dsl, duration, round, thumb_up, errors, version_title, create_time, create_date, update_time, update_date, 0 AS is_archived FROM api_4_conversation
+UNION ALL
+SELECT id, name, dialog_id, user_id, exp_user_id, message, tokens, source, dsl, duration, round, thumb_up, errors, version_title, create_time, create_date, update_time, update_date, 1 AS is_archived FROM api_4_conversation_log) AS agent_logs`
+	query := db.WithContext(ctx).Table(union).Where("dialog_id = ?", params.AgentID)
+	if params.SessionID != "" {
+		query = query.Where("id = ?", params.SessionID)
+	}
+	if params.UserID != "" {
+		query = query.Where("user_id = ?", params.UserID)
+	}
+	if params.ExpUserID != "" {
+		query = query.Where("exp_user_id = ?", params.ExpUserID)
+	}
+	dateColumn := "create_date"
+	if params.OrderBy == "update_time" || params.OrderBy == "update_date" {
+		dateColumn = "update_date"
+	}
+	if params.FromDate != nil {
+		query = query.Where(dateColumn+" >= ?", *params.FromDate)
+	}
+	if params.ToDate != nil {
+		query = query.Where(dateColumn+" <= ?", *params.ToDate)
+	}
+	if params.Keywords != "" {
+		pattern := "%" + strings.ToLower(params.Keywords) + "%"
+		query = query.Where(`(LOWER(id) LIKE ? OR LOWER(name) LIKE ? OR
+(is_archived = 1 AND LOWER(message) LIKE ?) OR
+(is_archived = 0 AND EXISTS (SELECT 1 FROM api_4_conversation_message AS cm WHERE cm.conversation_id = agent_logs.id AND LOWER(cm.content) LIKE ?)))`, pattern, pattern, pattern, pattern)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, nil, err
+	}
+	orderBy := normalizeAgentSessionOrderBy(params.OrderBy)
+	if params.Desc {
+		orderBy += " DESC"
+	} else {
+		orderBy += " ASC"
+	}
+	page, pageSize := params.Page, params.PageSize
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+	var rows []agentLogListRow
+	if err := query.Order(orderBy).Order("id ASC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&rows).Error; err != nil {
+		return 0, nil, err
+	}
+	sessions := make([]*entity.API4Conversation, 0, len(rows))
+	active := make([]*entity.API4Conversation, 0, len(rows))
+	for _, row := range rows {
+		session := &entity.API4Conversation{
+			ID: row.ID, Name: row.Name, DialogID: row.DialogID, UserID: row.UserID,
+			ExpUserID: row.ExpUserID, Tokens: row.Tokens, Source: row.Source, DSL: row.DSL,
+			Duration: row.Duration, Round: row.Round, ThumbUp: row.ThumbUp, Errors: row.Errors,
+			VersionTitle: row.VersionTitle,
+			BaseModel:    entity.BaseModel{CreateTime: row.CreateTime, CreateDate: row.CreateDate, UpdateTime: row.UpdateTime, UpdateDate: row.UpdateDate},
+		}
+		if row.IsArchived {
+			session.Message = json.RawMessage(row.Message)
+			if err := filterArchivedAgentLogMessage(&session.Message, historyOptions); err != nil {
+				return 0, nil, err
+			}
+		} else {
+			active = append(active, session)
+		}
+		sessions = append(sessions, session)
+	}
+	if !params.NoHistory && len(active) > 0 {
+		if err := hydrateAPIConversations(ctx, db, active, historyOptions); err != nil {
+			return 0, nil, err
+		}
+	}
+	return total, sessions, nil
+}
+
+func filterArchivedAgentLogMessage(raw *json.RawMessage, options ConversationHistoryOptions) error {
+	if options.IncludeReference && options.IncludePrompt && options.IncludeUsage && options.IncludeElapsedMs {
+		return nil
+	}
+	var messages []map[string]json.RawMessage
+	if err := json.Unmarshal(*raw, &messages); err != nil {
+		return err
+	}
+	for _, message := range messages {
+		for field, include := range map[string]bool{
+			"reference": options.IncludeReference, "prompt": options.IncludePrompt,
+			"usage": options.IncludeUsage, "elapsed_ms": options.IncludeElapsedMs,
+		} {
+			if !include {
+				delete(message, field)
+			}
+		}
+	}
+	filtered, err := json.Marshal(messages)
+	if err != nil {
+		return err
+	}
+	*raw = filtered
+	return nil
 }
 
 // DeleteByDialogIDs deletes API4Conversations by dialog IDs (hard delete)

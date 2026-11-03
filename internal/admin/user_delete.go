@@ -436,7 +436,7 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 		return nil
 	}
 	owner := data.ownedTenantID
-	var chatIDs, canvasIDs, conversationIDs, apiConversationIDs []string
+	var chatIDs, canvasIDs, conversationIDs, apiConversationIDs, apiConversationLogIDs []string
 	var evaluationDatasetIDs, evaluationRunIDs, connectorIDs, providerIDs, instanceIDs, modelIDs []string
 	var ingestionTaskIDs, pipelineLogIDs, memoryTaskIDs, commitIDs []string
 	var err error
@@ -473,8 +473,16 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 	apiDialogIDs := append(append([]string{}, chatIDs...), canvasIDs...)
 	if len(apiDialogIDs) > 0 {
 		apiConversationIDs, err = selectIDs(&entity.API4Conversation{}, "dialog_id IN ? OR user_id = ?", apiDialogIDs, userID)
+		if err != nil {
+			return err
+		}
+		apiConversationLogIDs, err = selectIDs(&entity.API4ConversationLog{}, "dialog_id IN ? OR user_id = ?", apiDialogIDs, userID)
 	} else {
 		apiConversationIDs, err = selectIDs(&entity.API4Conversation{}, "user_id = ?", userID)
+		if err != nil {
+			return err
+		}
+		apiConversationLogIDs, err = selectIDs(&entity.API4ConversationLog{}, "user_id = ?", userID)
 	}
 	if err != nil {
 		return err
@@ -565,6 +573,9 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 		return err
 	}
 	if err := removeIDs("API conversations", &entity.API4Conversation{}, "id", apiConversationIDs); err != nil {
+		return err
+	}
+	if err := removeIDs("API conversation logs", &entity.API4ConversationLog{}, "id", apiConversationLogIDs); err != nil {
 		return err
 	}
 	if err := removeIDs("chat channels", &entity.ChatChannel{}, "chat_id", chatIDs); err != nil {

@@ -919,6 +919,9 @@ func setupAgentSessionServiceTest(t *testing.T) {
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
 		&entity.API4Conversation{},
+		&entity.API4ConversationLog{},
+		&entity.API4ConversationMessage{},
+		&entity.API4ConversationReference{},
 		// The merged /agents list reads compilation template groups (and their
 		// children) alongside canvases, so those tables must exist too.
 		&entity.CompilationTemplateGroup{},
@@ -1348,6 +1351,11 @@ func TestDeleteAgentSessionItemServiceDeletesMatchingSession(t *testing.T) {
 	createAgentSessionTestConversation(t, "session-other", "canvas-other", "user-1", 2000)
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
+	if err := dao.NewAPI4ConversationDAO().UpdateHistory(ctx, dao.DB, "session-1", "canvas-1", "user-1", nil, dao.ConversationHistoryUpdate{
+		Message: map[string]interface{}{"id": "second-answer", "role": "assistant", "content": "second answer", "reference": map[string]interface{}{"chunks": []interface{}{map[string]interface{}{"id": "evidence"}}}, "usage": map[string]interface{}{"total_tokens": 12}, "elapsed_ms": 45},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	deleted, code, err := NewAgentService().DeleteAgentSessionItem(ctx, "user-1", "canvas-1", "session-1")
 	if err != nil {
 		t.Fatalf("DeleteAgentSessionItem failed: %v", err)
@@ -1364,7 +1372,46 @@ func TestDeleteAgentSessionItemServiceDeletesMatchingSession(t *testing.T) {
 		t.Fatalf("failed to count deleted session: %v", err)
 	}
 	if count != 0 {
-		t.Fatalf("expected session-1 to be deleted, count=%d", count)
+		t.Fatalf("expected session-1 conversation to be deleted, count=%d", count)
+	}
+	if err = dao.DB.WithContext(ctx).Model(&entity.API4ConversationLog{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
+		t.Fatalf("failed to count archived log: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected archived session-1 log, count=%d", count)
+	}
+	if session, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "canvas-1", "session-1"); err == nil || code != common.CodeNotFound || session != nil {
+		t.Fatalf("deleted session remains accessible through chat history: session=%+v code=%d err=%v", session, code, err)
+	}
+	history, code, err := NewAgentService().ListAgentSessions(ctx, "user-1", "user-1", "canvas-1", ListAgentSessionsRequest{})
+	if err != nil || code != common.CodeSuccess || history.Total != 0 {
+		t.Fatalf("deleted session remains in chat history list: response=%+v code=%d err=%v", history, code, err)
+	}
+	logs, code, err := NewAgentService().ListAgentSessions(ctx, "user-1", "user-1", "canvas-1", ListAgentSessionsRequest{
+		IncludeArchivedLogs: true, IncludeReference: true, IncludePrompt: true, Page: 1, PageSize: 10,
+	})
+	if err != nil || code != common.CodeSuccess || logs.Total != 1 || len(logs.Data) != 1 || logs.Data[0]["id"] != "session-1" {
+		t.Fatalf("archived log unavailable: response=%+v code=%d err=%v", logs, code, err)
+	}
+	messages, ok := logs.Data[0]["message"].([]map[string]interface{})
+	if !ok || len(messages) != 2 || messages[0]["content"] != "hello" || messages[0]["prompt"] != "hidden" || messages[1]["id"] != "second-answer" || messages[1]["reference"] == nil || messages[1]["usage"] == nil || messages[1]["elapsed_ms"] != float64(45) {
+		t.Fatalf("archived log details missing: %T %v", logs.Data[0]["message"], logs.Data[0]["message"])
+	}
+	for _, req := range []ListAgentSessionsRequest{
+		{IncludeArchivedLogs: true, Keywords: "second answer", PageSize: 1},
+		{IncludeArchivedLogs: true, SessionID: "session-1", PageSize: 1},
+	} {
+		filtered, code, err := NewAgentService().ListAgentSessions(ctx, "user-1", "user-1", "canvas-1", req)
+		if err != nil || code != common.CodeSuccess || filtered.Total != 1 || len(filtered.Data) != 1 {
+			t.Fatalf("archived log filter failed: response=%+v code=%d err=%v", filtered, code, err)
+		}
+		messages := filtered.Data[0]["message"].([]map[string]interface{})
+		if _, ok := messages[0]["prompt"]; ok {
+			t.Fatal("archived log returned prompt without opt-in")
+		}
+	}
+	if _, code, err := NewAgentService().ListAgentSessions(serviceTestContext(t, "intruder", "intruder"), "intruder", "intruder", "canvas-1", ListAgentSessionsRequest{IncludeArchivedLogs: true}); err == nil || code != common.CodeOperatingError {
+		t.Fatalf("unauthorized archive listing permitted: code=%d err=%v", code, err)
 	}
 
 	if err = dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).Where("id = ?", "session-other").Count(&count).Error; err != nil {
@@ -1402,6 +1449,24 @@ func TestDeleteAgentSessionItemServiceNoopForSessionFromAnotherAgent(t *testing.
 	}
 }
 
+func TestDeleteAgentSessionArchiveFailureKeepsConversation(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
+	createAgentSessionTestConversation(t, "session-1", "canvas-1", "user-1", 1000)
+	if err := dao.DB.Create(&entity.API4ConversationLog{ID: "session-1", DialogID: "canvas-1", UserID: "user-1", Message: "[]"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx := serviceTestContext(t, "user-1", "user-1")
+	deleted, code, err := NewAgentService().DeleteAgentSessionItem(ctx, "user-1", "canvas-1", "session-1")
+	if err == nil || code != common.CodeServerError || deleted {
+		t.Fatalf("archive conflict should stop deletion: deleted=%v code=%d err=%v", deleted, code, err)
+	}
+	session, code, err := NewAgentService().GetAgentSession(ctx, "user-1", "canvas-1", "session-1")
+	if err != nil || code != common.CodeSuccess || len(parseAgentSessionMessages(session.Message)) != 1 {
+		t.Fatalf("failed archive deleted chat data: session=%+v code=%d err=%v", session, code, err)
+	}
+}
+
 func TestDeleteAgentSessionsServiceDeleteAll(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
@@ -1430,7 +1495,19 @@ func TestDeleteAgentSessionsServiceDeleteAll(t *testing.T) {
 		t.Fatalf("failed to count own sessions: %v", err)
 	}
 	if ownCount != 0 {
-		t.Fatalf("expected all canvas-1 sessions to be deleted, count=%d", ownCount)
+		t.Fatalf("expected all canvas-1 conversations to be deleted, count=%d", ownCount)
+	}
+	if err = dao.DB.WithContext(ctx).Model(&entity.API4ConversationLog{}).Where("dialog_id = ?", "canvas-1").Count(&ownCount).Error; err != nil {
+		t.Fatalf("failed to count archived logs: %v", err)
+	}
+	if ownCount != 2 {
+		t.Fatalf("expected bulk deletion to retain both logs, count=%d", ownCount)
+	}
+	logs, code, err := NewAgentService().ListAgentSessions(ctx, "user-1", "user-1", "canvas-1", ListAgentSessionsRequest{
+		IncludeArchivedLogs: true, Page: 1, PageSize: 10,
+	})
+	if err != nil || code != common.CodeSuccess || logs.Total != 2 || len(logs.Data) != 2 {
+		t.Fatalf("bulk-deleted logs unavailable: response=%+v code=%d err=%v", logs, code, err)
 	}
 
 	var otherCount int64
@@ -1471,7 +1548,10 @@ func TestDeleteAgentSessionsServiceDuplicateIDsPartial(t *testing.T) {
 		t.Fatalf("failed to count deleted session: %v", err)
 	}
 	if count != 0 {
-		t.Fatalf("expected session-1 to be deleted, count=%d", count)
+		t.Fatalf("expected session-1 conversation to be deleted, count=%d", count)
+	}
+	if err = dao.DB.WithContext(ctx).Model(&entity.API4ConversationLog{}).Where("id = ?", "session-1").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("expected duplicate delete to preserve one log, count=%d err=%v", count, err)
 	}
 }
 
@@ -2998,7 +3078,10 @@ func TestDeleteAgentSessionItem_SharedCanvasGrantsDeleteAccess(t *testing.T) {
 		t.Fatalf("failed to count session: %v", err)
 	}
 	if count != 0 {
-		t.Fatalf("session should be deleted, count=%d", count)
+		t.Fatalf("session conversation should be deleted, count=%d", count)
+	}
+	if err = dao.DB.Model(&entity.API4ConversationLog{}).Where("id = ?", "session-1").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("session log should remain, count=%d err=%v", count, err)
 	}
 }
 

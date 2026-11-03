@@ -317,6 +317,7 @@ export interface IAgentLogsResponse {
 }
 export interface IAgentLogsRequest {
   include_history?: boolean;
+  include_archived_logs?: boolean;
   include_reference?: boolean;
   include_prompt?: boolean;
   keywords?: string;

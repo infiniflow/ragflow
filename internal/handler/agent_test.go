@@ -59,7 +59,9 @@ func setupHandlerAgentsTestDB(t *testing.T) *gorm.DB {
 		&entity.UserCanvasVersion{},
 		&entity.UserTenant{},
 		&entity.API4Conversation{},
+		&entity.API4ConversationLog{},
 		&entity.API4ConversationMessage{},
+		&entity.API4ConversationReference{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}

@@ -993,20 +993,21 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		return
 	}
 	resp, code, err := h.agentService.ListAgentSessions(ctx, user.ID, user.ID, canvasID, service.ListAgentSessionsRequest{
-		Page:             page,
-		PageSize:         pageSize,
-		Keywords:         keywords,
-		FromDate:         fromDate,
-		ToDate:           toDate,
-		OrderBy:          orderby,
-		Desc:             desc,
-		SessionID:        sessionID,
-		UserID:           queryUserID,
-		ExpUserID:        expUserID,
-		IncludeDSL:       includeDSL,
-		IncludeReference: options.IncludeReference,
-		IncludePrompt:    options.IncludePrompt,
-		NoHistory:        c.Query("include_history") == "false" || c.Query("include_history") == "False",
+		Page:                page,
+		PageSize:            pageSize,
+		Keywords:            keywords,
+		FromDate:            fromDate,
+		ToDate:              toDate,
+		OrderBy:             orderby,
+		Desc:                desc,
+		SessionID:           sessionID,
+		UserID:              queryUserID,
+		ExpUserID:           expUserID,
+		IncludeDSL:          includeDSL,
+		IncludeReference:    options.IncludeReference,
+		IncludePrompt:       options.IncludePrompt,
+		NoHistory:           c.Query("include_history") == "false" || c.Query("include_history") == "False",
+		IncludeArchivedLogs: c.Query("include_archived_logs") == "true" || c.Query("include_archived_logs") == "True",
 	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())

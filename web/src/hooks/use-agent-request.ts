@@ -1002,6 +1002,7 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
     queryFn: async () => {
       const { data } = await fetchAgentLogsByCanvasId(id as string, {
         ...searchParams,
+        include_archived_logs: true,
         include_reference: true,
       });
 
@@ -1460,6 +1461,7 @@ export const useExportAgentLog = () => {
     mutationFn: async (searchParams: IAgentLogsRequest) => {
       const { data } = await fetchAgentLogsByCanvasId(id as string, {
         ...searchParams,
+        include_archived_logs: true,
       });
 
       return data?.data ?? [];

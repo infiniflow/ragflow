@@ -258,6 +258,7 @@ func autoMigrateModels() []interface{} {
 		&entity.Task{},
 		&entity.APIToken{},
 		&entity.API4Conversation{},
+		&entity.API4ConversationLog{},
 		&entity.API4ConversationMessage{},
 		&entity.Knowledgebase{},
 		&entity.InvitationCode{},
@@ -581,6 +582,7 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		&entity.KnowledgeCompileInflight{},
 		&entity.ConversationMessage{},
 		&entity.API4ConversationMessage{},
+		&entity.API4ConversationLog{},
 	}
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {
@@ -591,5 +593,5 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 			return fmt.Errorf("failed to auto-migrate runtime table %s: %w", tableName, err)
 		}
 	}
-	return nil
+	return archiveDeletedAgentSessions(ctx, db)
 }
