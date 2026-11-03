@@ -1585,8 +1585,8 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 
 	if len(req.DocumentIDs) == 0 {
 		common.RespondError(c, common.CodeDataError, "`document_ids` is required")
-    return
-  }
+		return
+	}
 
 	// cancel_all and an explicit document list are mutually exclusive. Use a nil
 	// check rather than len > 0 so that an explicit empty array
