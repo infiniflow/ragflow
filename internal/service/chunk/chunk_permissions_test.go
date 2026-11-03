@@ -57,7 +57,7 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 			if err := testsupport.PrepareEnterprisePermissionFixture(db, "owner", "owner", "member"); err != nil {
 				t.Fatalf("prepare permission fixture: %v", err)
 			}
-			ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: tt.userID, TenantID: "owner"})
+			ctx := permission.WithIdentity(t.Context(), tt.userID, "owner")
 			for _, op := range []struct {
 				name string
 				run  func(*ChunkService) error

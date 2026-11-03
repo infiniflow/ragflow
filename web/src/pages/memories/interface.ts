@@ -63,7 +63,6 @@ export interface DeleteMemoryProps {
 
 export interface DeleteMemoryResponse {
   code: number;
-  data: boolean;
   message: string;
 }
 

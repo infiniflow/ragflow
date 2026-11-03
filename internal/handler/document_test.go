@@ -173,6 +173,12 @@ type fakeDocumentService struct {
 	imageUserID            string
 	imageID                string
 	imageDocumentID        string
+
+	cancelAllCalled      bool
+	cancelAllDataset     string
+	cancelAllRunStatuses []string
+	stopAllResult        map[string]interface{}
+	stopAllErr           error
 }
 
 func TestMapDocumentListItemIncludesLatestIngestionEvent(t *testing.T) {
@@ -216,7 +222,7 @@ func (f *fakeDocumentService) GetDocumentArtifact(ctx context.Context, filename,
 		ForceAttachment: false,
 	}, nil
 }
-func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, userID, docID string) (*document.DocumentPreview, error) {
+func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error) {
 	if docID == "not-found" {
 		return nil, document.ErrPreviewDocumentNotFound
 	}
@@ -273,6 +279,19 @@ func (f *fakeDocumentService) ParseDocuments(ctx context.Context, datasetID, use
 func (f *fakeDocumentService) StopParseDocuments(ctx context.Context, datasetID string, docIDs []string) (map[string]interface{}, error) {
 	return f.stopResult, f.stopErr
 }
+
+func (f *fakeDocumentService) StopParseDocumentsAll(ctx context.Context, datasetID string, runStatuses []string) (map[string]interface{}, error) {
+	f.cancelAllCalled = true
+	f.cancelAllDataset = datasetID
+	f.cancelAllRunStatuses = runStatuses
+	if f.stopAllErr != nil {
+		return nil, f.stopAllErr
+	}
+	if f.stopAllResult == nil {
+		return map[string]interface{}{"success_count": 0}, nil
+	}
+	return f.stopAllResult, nil
+}
 func (f *fakeDocumentService) ListDocuments(ctx context.Context, page, pageSize int) ([]*document.DocumentResponse, int64, error) {
 	return nil, 0, nil
 }
@@ -319,8 +338,7 @@ func (f *fakeDocumentService) GetDocumentImageForDocument(ctx context.Context, u
 	f.imageID = imageID
 	return f.imageData, f.imageErr
 }
-func (f *fakeDocumentService) GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error) {
-	f.imageUserID = userID
+func (f *fakeDocumentService) GetDocumentThumbnail(ctx context.Context, docID string) ([]byte, error) {
 	f.imageDocumentID = docID
 	return f.imageData, f.imageErr
 }
@@ -391,9 +409,9 @@ func setupHandlerAccessContext(method, path, body string) (*gin.Context, *httpte
 }
 
 func setGinContextSubject(c *gin.Context, userID, tenantID string) {
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
-		UserID: userID, TenantID: tenantID,
-	}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(),
+		userID, tenantID,
+	))
 }
 
 func setupDocumentPermissionDB(t *testing.T, accessible bool) {
@@ -489,9 +507,9 @@ func TestDocumentReadHandlersForbidden(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c, w := setupGinContextWithUser(tt.method, tt.path, tt.body)
-			c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
-				UserID: "user-1", TenantID: "tenant-owner",
-			}))
+			c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(),
+				"user-1", "tenant-owner",
+			))
 			c.Params = tt.params
 			tt.handler(c)
 			if w.Code != tt.status {
@@ -512,8 +530,8 @@ func TestDocumentReadHandlersForbidden(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &responseFields); err != nil {
 				t.Fatal(err)
 			}
-			if _, ok := responseFields["data"]; !ok {
-				t.Fatalf("permission error response is missing data field: %s", w.Body.String())
+			if _, ok := responseFields["data"]; ok {
+				t.Fatalf("permission error response must omit absent data: %s", w.Body.String())
 			}
 			if fake.metadataKBID != "" {
 				t.Fatal("GetMetadataSummary should not be called without dataset access")
@@ -891,7 +909,7 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 	}
 }
 
-func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
+func TestUploadDocumentsHandler_LocalPartialFailureOmitsData(t *testing.T) {
 	db := setupUploadHandlerDB(t, "normal")
 	orig := dao.DB
 	dao.DB = db
@@ -924,9 +942,8 @@ func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
 	if resp["code"] != float64(common.CodeServerError) {
 		t.Fatalf("expected server error code for partial upload, got %v", resp)
 	}
-	data := resp["data"].([]interface{})
-	if len(data) != 1 {
-		t.Fatalf("expected one successful document, got %v", data)
+	if _, ok := resp["data"]; ok {
+		t.Fatalf("error response must omit data: %v", resp)
 	}
 	if !strings.Contains(resp["message"].(string), "bad.exe") {
 		t.Fatalf("expected failed file in message, got %v", resp["message"])
@@ -1104,11 +1121,8 @@ func TestDocumentHandlerIngestMatchesPythonResponseShape(t *testing.T) {
 	if resp["code"] != float64(common.CodeSuccess) {
 		t.Fatalf("expected top-level code 0, got %v", resp["code"])
 	}
-	if resp["data"] != true {
-		t.Fatalf("expected top-level data=true, got %#v", resp["data"])
-	}
-	if _, ok := resp["data"].(map[string]interface{}); ok {
-		t.Fatalf("response must not nest code/message under data: %#v", resp["data"])
+	if data, exists := resp["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 	if fake.ingestUserID != "user-1" {
 		t.Fatalf("expected user-1, got %q", fake.ingestUserID)
@@ -1134,7 +1148,7 @@ func TestDocumentIngestRoutePassesPythonBodyToService(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["code"] != float64(common.CodeSuccess) || resp["data"] != true {
+	if _, exists := resp["data"]; resp["code"] != float64(common.CodeSuccess) || exists {
 		t.Fatalf("unexpected response: %s", w.Body.String())
 	}
 	if fake.ingestUserID != "user-1" {
@@ -1214,8 +1228,8 @@ func TestDocumentHandlerIngest_CancelDispatchesToService(t *testing.T) {
 	if resp["code"] != float64(common.CodeSuccess) {
 		t.Fatalf("expected code 0, got %v", resp["code"])
 	}
-	if resp["data"] != true {
-		t.Fatalf("expected data true, got %#v", resp["data"])
+	if data, exists := resp["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 	if fake.ingestReq == nil || len(fake.ingestReq.DocIDs) != 1 || fake.ingestReq.DocIDs[0] != "doc-1" {
 		t.Fatalf("unexpected ingestReq: %#v", fake.ingestReq)
@@ -1780,6 +1794,7 @@ func TestStopParseDocumentsHandler_NotAccessible(t *testing.T) {
 	c, w := setupGinContextWithUser("POST", "/api/v1/datasets/ds-1/documents/stop", `{"document_ids": ["doc-1"]}`)
 	// Use a user that doesn't have access to ds-1
 	c.Set("user_id", "other-user")
+	setGinContextSubject(c, "other-user", "tenant-owner")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.StopParseDocuments(c)

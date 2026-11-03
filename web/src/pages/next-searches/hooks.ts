@@ -170,7 +170,6 @@ interface DeleteSearchProps {
 
 interface DeleteSearchResponse {
   code: number;
-  data: boolean;
   message: string;
 }
 

@@ -500,7 +500,7 @@ func resolveRetrievalDatasetID(ctx context.Context, db *gorm.DB, kbName string) 
 				}
 				accessible, accessErr := permission.NewDatabaseChecker(db).FilterResources(
 					ctx,
-					permission.Subject{UserID: userID},
+
 					refs,
 					permission.OperationUse,
 				)

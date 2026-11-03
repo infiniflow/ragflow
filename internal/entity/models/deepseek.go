@@ -99,36 +99,8 @@ func (d *DeepSeekModel) ChatWithMessages(ctx context.Context, modelName string, 
 	}
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		var thinkingFlag string
-		effort := "high"
-		if chatModelConfig.Effort != nil {
-			effort = *chatModelConfig.Effort
-		}
-		switch effort {
-		case "none":
-			thinkingFlag = "disabled"
-		case "low":
-			thinkingFlag = "disabled"
-		case "medium":
-			thinkingFlag = "disabled"
-		case "high":
-			thinkingFlag = "enabled"
-			reqBody["reasoning_effort"] = "high"
-		case "default":
-			thinkingFlag = "enabled"
-			reqBody["reasoning_effort"] = "high"
-		case "max":
-			thinkingFlag = "enabled"
-			reqBody["reasoning_effort"] = "max"
-		}
-		reqBody["thinking"] = map[string]interface{}{
-			"type": thinkingFlag,
-		}
-	} else {
-		reqBody["thinking"] = map[string]interface{}{
-			"type": "disabled",
-		}
+	if err := applyDeepSeekThinkingConfig(reqBody, chatModelConfig); err != nil {
+		return nil, err
 	}
 
 	body, err := d.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
@@ -155,38 +127,8 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	}
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		var thinkingFlag string
-		effort := "high"
-		if chatModelConfig.Effort != nil {
-			effort = *chatModelConfig.Effort
-		}
-		switch effort {
-		case "none":
-			thinkingFlag = "disabled"
-		case "low":
-			thinkingFlag = "disabled"
-		case "medium":
-			thinkingFlag = "disabled"
-		case "high":
-			thinkingFlag = "enabled"
-			reqBody["reasoning_effort"] = "high"
-		case "default":
-			thinkingFlag = "enabled"
-			reqBody["reasoning_effort"] = "high"
-		case "max":
-			thinkingFlag = "enabled"
-			reqBody["reasoning_effort"] = "max"
-		default:
-			return fmt.Errorf("invalid effort level")
-		}
-		reqBody["thinking"] = map[string]interface{}{
-			"type": thinkingFlag,
-		}
-	} else {
-		reqBody["thinking"] = map[string]interface{}{
-			"type": "disabled",
-		}
+	if err := applyDeepSeekThinkingConfig(reqBody, chatModelConfig); err != nil {
+		return err
 	}
 
 	// Request token usage in streaming response. DeepSeek only includes
@@ -196,6 +138,34 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	return d.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
 		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 	})
+}
+
+func applyDeepSeekThinkingConfig(reqBody map[string]any, config *ChatConfig) error {
+	reqBody["thinking"] = map[string]any{"type": "disabled"}
+	if config == nil || config.Thinking == nil || !*config.Thinking {
+		return nil
+	}
+
+	effort := "high"
+	if config.Effort != nil {
+		effort = *config.Effort
+	}
+	switch effort {
+	case "none":
+		return nil
+	case "minimal", "low":
+		effort = "low"
+	case "medium", "high", "xhigh", "default":
+		effort = "high"
+	case "max", "ultra":
+		effort = "max"
+	default:
+		return fmt.Errorf("invalid effort level %q for DeepSeek", effort)
+	}
+
+	reqBody["thinking"] = map[string]any{"type": "enabled"}
+	reqBody["reasoning_effort"] = effort
+	return nil
 }
 
 // Embed embeds a list of texts into embeddings

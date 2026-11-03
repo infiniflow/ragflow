@@ -18,7 +18,6 @@ package service
 
 import (
 	"testing"
-	_ "unsafe"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -27,10 +26,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 )
-
-//go:linkname daoModelProviderManager ragflow/internal/dao.modelProviderManager
-var daoModelProviderManager *models.ProviderManager
 
 func setupTenantPermissionTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -63,7 +60,7 @@ func TestListMembersAuthCheck(t *testing.T) {
 	seedTenantMembership(t, db, "member", "user-abc", "tenant-xyz", "normal")
 	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
 	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-abc", "tenant-xyz")
 	_, code, err := s.ListMembers(ctx, "user-abc", "tenant-xyz")
 	if err == nil {
 		t.Fatal("expected error for non-owner, got nil")
@@ -79,7 +76,7 @@ func TestAddMemberAuthCheck(t *testing.T) {
 	seedTenantMembership(t, db, "member", "user-abc", "tenant-xyz", "normal")
 	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
 	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-abc", "tenant-xyz")
 	_, code, err := s.AddMember(ctx, "user-abc", "tenant-xyz", &AddMemberRequest{Email: "a@b.com"})
 	if err == nil {
 		t.Fatal("expected error for non-owner, got nil")
@@ -94,7 +91,7 @@ func TestAddMemberEmailRequired(t *testing.T) {
 	db := setupTenantPermissionTestDB(t)
 	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
 	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "owner-user", "tenant-xyz")
 	_, code, err := s.AddMember(ctx, "owner-user", "tenant-xyz", &AddMemberRequest{Email: ""})
 	if err == nil {
 		t.Fatal("expected error for empty email, got nil")
@@ -109,7 +106,7 @@ func TestRemoveMemberAuthCheck(t *testing.T) {
 	db := setupTenantPermissionTestDB(t)
 	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
 	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-abc", "tenant-xyz")
 	code, err := s.RemoveMember(ctx, "user-abc", "tenant-xyz", "user-def")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -124,7 +121,7 @@ func TestRemoveMemberSelfAllowed(t *testing.T) {
 	db := setupTenantPermissionTestDB(t)
 	seedTenantMembership(t, db, "member", "user-abc", "tenant-xyz", "normal")
 	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-abc", "tenant-xyz")
 	code, err := s.RemoveMember(ctx, "user-abc", "tenant-xyz", "user-abc")
 	if code != common.CodeSuccess {
 		t.Errorf("expected CodeSuccess, got %v: %v", code, err)
@@ -149,7 +146,7 @@ func TestDeclineOwnTenantInviteAllowed(t *testing.T) {
 	}
 	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
 
-	code, err := s.RemoveMember(t.Context(), "invitee-user", "tenant-xyz", "invitee-user")
+	code, err := s.RemoveMember(permission.WithIdentity(t.Context(), "invitee-user", "tenant-xyz"), "invitee-user", "tenant-xyz", "invitee-user")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("RemoveMember(invitation self-decline) = (%v, %v), want success", code, err)
 	}
@@ -167,7 +164,7 @@ func TestRemoveMemberCannotRemoveTenantOwner(t *testing.T) {
 	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
 	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
 
-	code, err := s.RemoveMember(t.Context(), "owner-user", "tenant-xyz", "owner-user")
+	code, err := s.RemoveMember(permission.WithIdentity(t.Context(), "owner-user", "tenant-xyz"), "owner-user", "tenant-xyz", "owner-user")
 	if err == nil || code != common.CodeArgumentError {
 		t.Fatalf("RemoveMember(owner) = (%v, %v), want argument error", code, err)
 	}
@@ -216,7 +213,6 @@ func TestSetModelSettings_WithModelID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to init provider manager: %v", err)
 	}
-	daoModelProviderManager = models.GetProviderManager()
 
 	// 2. Migrate tables
 	err = db.AutoMigrate(

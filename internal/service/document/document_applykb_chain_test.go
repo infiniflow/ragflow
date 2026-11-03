@@ -23,7 +23,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	datasetsvc "ragflow/internal/service/dataset"
 )
@@ -336,7 +335,7 @@ func TestIngest_ApplyKB_RealCreatedDatasetChain(t *testing.T) {
 				},
 			},
 		},
-	}, permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%v", err, code)
 	}
