@@ -79,7 +79,7 @@ func TestNewMCPServerResponsePreservesNullDescriptionAndFormatsDates(t *testing.
 	}
 }
 
-func TestMCPDetailDataErrorOmitsDataFieldLikePython(t *testing.T) {
+func TestMCPDetailDataErrorOmitsData(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -100,6 +100,6 @@ func TestMCPDetailDataErrorOmitsDataFieldLikePython(t *testing.T) {
 		t.Fatalf("message = %v", body["message"])
 	}
 	if _, ok := body["data"]; ok {
-		t.Fatalf("body unexpectedly contains data field: %s", recorder.Body.String())
+		t.Fatalf("expected data to be omitted: %s", recorder.Body.String())
 	}
 }

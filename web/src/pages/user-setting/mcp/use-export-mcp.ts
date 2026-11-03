@@ -31,7 +31,7 @@ export function useExportMcp(mcp?: IMcpServer) {
         return;
       }
       const data = await exportMcpServer(ids);
-      if (data.code === 0) {
+      if (data.code === 0 && data.data) {
         downloadJsonFile(data.data, `${mcp?.name || 'mcp'}.json`);
       }
     },

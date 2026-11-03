@@ -78,14 +78,14 @@ func attachmentRequestMeta(c *gin.Context) attachmentRequestMetadata {
 // _stream_agent_attachment().
 func (h *AgentHandler) streamAgentAttachment(c *gin.Context, tenantID, attachmentID string, inline bool) {
 	if h.fileService == nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, "file service not configured")
+		common.RespondError(c, common.CodeServerError, "file service not configured")
 		return
 	}
 
 	ctx := c.Request.Context()
 	blob, err := h.fileService.DownloadAgentFile(ctx, tenantID, attachmentID)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Attachment not found!")
+		common.RespondError(c, common.CodeDataError, "Attachment not found!")
 		return
 	}
 
@@ -111,12 +111,12 @@ func (h *AgentHandler) streamAgentAttachment(c *gin.Context, tenantID, attachmen
 func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
+		common.RespondError(c, code, msg)
 		return
 	}
 	attachmentID := c.Param("attachment_id")
 	if attachmentID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`attachment_id` is required.")
+		common.RespondError(c, common.CodeArgumentError, "`attachment_id` is required.")
 		return
 	}
 	// Note (review F9): the plan explicitly defers attachment-id
@@ -131,7 +131,7 @@ func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 	// never crosses the service boundary.
 	safe := filepath.Base(attachmentID)
 	if safe == "" || safe == "." || safe == "/" || strings.ContainsAny(safe, "\r\n\"") {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "invalid attachment id.")
+		common.RespondError(c, common.CodeArgumentError, "invalid attachment id.")
 		return
 	}
 
@@ -150,17 +150,17 @@ func (h *AgentHandler) DownloadAttachment(c *gin.Context) {
 func (h *AgentHandler) PreviewAttachment(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
+		common.RespondError(c, code, msg)
 		return
 	}
 	attachmentID := c.Param("attachment_id")
 	if attachmentID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`attachment_id` is required.")
+		common.RespondError(c, common.CodeArgumentError, "`attachment_id` is required.")
 		return
 	}
 	safe := filepath.Base(attachmentID)
 	if safe == "" || safe == "." || safe == "/" || strings.ContainsAny(safe, "\r\n\"") {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "invalid attachment id.")
+		common.RespondError(c, common.CodeArgumentError, "invalid attachment id.")
 		return
 	}
 
