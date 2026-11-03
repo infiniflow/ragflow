@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"sort"
 	"strings"
@@ -1719,29 +1720,36 @@ func TestBuildLLMModelConfigCarriesMaxOutput(t *testing.T) {
 }
 
 func TestKnowledgeTokenBudgetSubtractsTemplateCitationAndReserve(t *testing.T) {
+	s := NewChatPipelineService()
 	template := "You are a helpful assistant. Answer from the knowledge base.\n{knowledge}"
-	templateTokens := graph.NumTokensFromString(template)
+	kwargs := map[string]interface{}{"knowledge": strings.Repeat("caller knowledge ", 500)}
+	templateTokens := graph.NumTokensFromString("You are a helpful assistant. Answer from the knowledge base.\n ")
 	citationTokens := graph.NumTokensFromString(ragprompts.CitationPrompt(""))
-	if got, want := knowledgeTokenBudget(32768, template, true, 4096), 32768-templateTokens-citationTokens-4096; got != want {
+	if got, want := s.knowledgeTokenBudget(32768, template, kwargs, true, 4096), 32768-templateTokens-citationTokens-4096; got != want {
 		t.Errorf("quoted budget = %d, want %d", got, want)
 	}
-	if got, want := knowledgeTokenBudget(32768, template, false, 4096), 32768-templateTokens-4096; got != want {
+	if got, want := s.knowledgeTokenBudget(32768, template, kwargs, false, 4096), 32768-templateTokens-4096; got != want {
 		t.Errorf("unquoted budget = %d, want %d", got, want)
 	}
-	if got := knowledgeTokenBudget(100, strings.Repeat("word ", 200), false, 25); got != 0 {
+	if _, ok := kwargs["knowledge"]; !ok {
+		t.Error("knowledgeTokenBudget must not change the caller's kwargs")
+	}
+	if got := s.knowledgeTokenBudget(100, strings.Repeat("word ", 200), nil, false, 25); got != 0 {
 		t.Errorf("a template larger than the window must leave no budget, got %d", got)
 	}
 }
 
+const fullWindowTemplate = "You are a helpful assistant. Answer from the knowledge base.\n{knowledge}"
+
 // fillWindowAndClamp runs the request-building steps of AsyncChat's phase 10 on a
 // retrieval far larger than the window: passages sized by knowledgeTokenBudget,
-// system prompt formatted, citation rules appended, messages fitted at 95% of the
-// window, completion clamped. The passages are about 550 tokens each, near the
-// default chunk size. It returns the room left for the completion.
-func fillWindowAndClamp(t *testing.T, window int, cfg *modelModule.ChatConfig, maxOutput int) int {
+// system prompt formatted with the prompt parameters in params, citation rules
+// appended, messages fitted at 95% of the window, completion clamped. The
+// passages are about 550 tokens each, near the default chunk size. It returns
+// the room left for the completion.
+func fillWindowAndClamp(t *testing.T, window int, cfg *modelModule.ChatConfig, maxOutput int, template string, params map[string]interface{}) int {
 	t.Helper()
 	s := NewChatPipelineService()
-	const template = "You are a helpful assistant. Answer from the knowledge base.\n{knowledge}"
 	chunks := make([]map[string]interface{}, 0, 200)
 	for i := 0; i < 200; i++ {
 		chunks = append(chunks, map[string]interface{}{
@@ -1752,11 +1760,15 @@ func fillWindowAndClamp(t *testing.T, window int, cfg *modelModule.ChatConfig, m
 	kbinfos := map[string]interface{}{"chunks": chunks}
 
 	reserve := completionReserve(cfg, maxOutput, window)
-	knowledges := s.kbPrompt(kbinfos, knowledgeTokenBudget(window, template, true, reserve))
+	kwargs := maps.Clone(params)
+	if kwargs == nil {
+		kwargs = map[string]interface{}{}
+	}
+	knowledges := s.kbPrompt(kbinfos, s.knowledgeTokenBudget(window, template, kwargs, true, reserve))
 	if len(knowledges) == 0 || len(knowledges) == len(chunks) {
 		t.Fatalf("kept %d of %d passages; the retrieval must be cut by the budget", len(knowledges), len(chunks))
 	}
-	kwargs := map[string]interface{}{"knowledge": "\n------\n" + strings.Join(knowledges, "\n\n------\n\n")}
+	kwargs["knowledge"] = "\n------\n" + strings.Join(knowledges, "\n\n------\n\n")
 	messages := []map[string]interface{}{
 		{"role": "system", "content": s.formatPrompt(template, kwargs)},
 		{"role": "user", "content": "Which budget amendments did the regional council approve this year?"},
@@ -1770,21 +1782,32 @@ func fillWindowAndClamp(t *testing.T, window int, cfg *modelModule.ChatConfig, m
 }
 
 func TestFullWindowRetrievalKeepsDefaultCompletionReserve(t *testing.T) {
-	if room := fillWindowAndClamp(t, 32768, &modelModule.ChatConfig{}, 0); room < defaultCompletionReserve {
+	if room := fillWindowAndClamp(t, 32768, &modelModule.ChatConfig{}, 0, fullWindowTemplate, nil); room < defaultCompletionReserve {
 		t.Errorf("completion room = %d tokens, want at least the %d-token reserve", room, defaultCompletionReserve)
 	}
 }
 
 func TestFullWindowRetrievalKeepsModelMaxOutputReserve(t *testing.T) {
-	if room := fillWindowAndClamp(t, 32768, &modelModule.ChatConfig{}, 131072); room < 32768/4 {
+	if room := fillWindowAndClamp(t, 32768, &modelModule.ChatConfig{}, 131072, fullWindowTemplate, nil); room < 32768/4 {
 		t.Errorf("completion room = %d tokens, want at least a quarter of the window (%d)", room, 32768/4)
+	}
+}
+
+func TestFullWindowRetrievalKeepsReserveWithLargePromptParameter(t *testing.T) {
+	const template = "You are a helpful assistant. Answer from the knowledge base.\nCase file:\n{case_file}\n{knowledge}"
+	params := map[string]interface{}{"case_file": strings.Repeat("The applicant filed an appeal against the permit decision. ", 600)}
+	if tokens := graph.NumTokensFromString(params["case_file"].(string)); tokens < 4000 {
+		t.Fatalf("case_file is %d tokens, want a parameter of several thousand", tokens)
+	}
+	if room := fillWindowAndClamp(t, 32768, &modelModule.ChatConfig{}, 0, template, params); room < defaultCompletionReserve {
+		t.Errorf("completion room = %d tokens, want at least the %d-token reserve", room, defaultCompletionReserve)
 	}
 }
 
 func TestFullWindowRetrievalHonoursChatMaxTokens(t *testing.T) {
 	maxTokens := 6000
 	cfg := BuildChatConfig(&entity.Chat{LLMSetting: entity.JSONMap{"max_tokens": float64(maxTokens)}}, nil)
-	fillWindowAndClamp(t, 32768, cfg, 2048)
+	fillWindowAndClamp(t, 32768, cfg, 2048, fullWindowTemplate, nil)
 	if cfg.MaxTokens == nil {
 		t.Fatalf("max_tokens sent to the model is unset, want exactly %d", maxTokens)
 	}

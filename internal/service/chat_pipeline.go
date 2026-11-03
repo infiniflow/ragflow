@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
@@ -877,13 +878,13 @@ func (s *ChatPipelineService) AsyncChat(
 				kbinfos["chunks"] = served
 			}
 		}
-		// The passages get what the window leaves after the system template, the
+		// The passages get what the window leaves after the system prompt, the
 		// citation rules appended to it and the completion reserve.
 		chatCfg := BuildChatConfig(chat, kwargs)
 		systemTemplate, _ := promptConfig["system"].(string)
 		modelMaxOutput, _ := llmModelConfig["max_output"].(int)
 		reserve := completionReserve(chatCfg, modelMaxOutput, modelMaxTokens)
-		knowledges = s.kbPrompt(kbinfos, knowledgeTokenBudget(modelMaxTokens, systemTemplate, quote, reserve))
+		knowledges = s.kbPrompt(kbinfos, s.knowledgeTokenBudget(modelMaxTokens, systemTemplate, kwargs, quote, reserve))
 		common.Info("Phase 10: Build LLM Request")
 		common.Debug("Knowledge prompt",
 			zap.String("question", strings.Join(questions, " ")),
@@ -4566,10 +4567,14 @@ func completionReserve(cfg *modelModule.ChatConfig, modelMaxOutput, modelMaxToke
 }
 
 // knowledgeTokenBudget is the room the retrieved passages may take in a window
-// of modelMaxTokens: what the system template, the citation rules sent after it
-// (when quoting) and the completion reserve leave.
-func knowledgeTokenBudget(modelMaxTokens int, systemTemplate string, quote bool, reserve int) int {
-	used := graph.NumTokensFromString(systemTemplate) + reserve
+// of modelMaxTokens: what the system prompt, the citation rules sent after it
+// (when quoting) and the completion reserve leave. The system prompt is measured
+// as formatPrompt renders it from kwargs, with the knowledge left out, so a
+// prompt parameter carrying a large value is counted.
+func (s *ChatPipelineService) knowledgeTokenBudget(modelMaxTokens int, systemTemplate string, kwargs map[string]interface{}, quote bool, reserve int) int {
+	params := maps.Clone(kwargs)
+	delete(params, "knowledge")
+	used := graph.NumTokensFromString(s.formatPrompt(systemTemplate, params)) + reserve
 	if quote {
 		used += graph.NumTokensFromString(ragprompts.CitationPrompt(""))
 	}
