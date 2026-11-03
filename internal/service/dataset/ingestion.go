@@ -44,7 +44,7 @@ type IngestionMessagesResponse struct {
 	Terminal      bool                         `json:"terminal"`
 }
 
-func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
@@ -149,7 +149,7 @@ func (d *DatasetService) getDownloadStatus(ctx context.Context, datasetID string
 
 // ListIngestionMessages returns events owned by the requested immutable
 // pipeline log.
-func (d *DatasetService) ListIngestionMessages(ctx context.Context, datasetID, userID, logID string, limit int, afterID, beforeID *int) (*IngestionMessagesResponse, common.ErrorCode, error) {
+func (d *DatasetService) ListIngestionMessages(ctx context.Context, datasetID, logID string, limit int, afterID, beforeID *int) (*IngestionMessagesResponse, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeArgumentError, errors.New(`lack of "Dataset ID"`)
 	}
@@ -229,7 +229,7 @@ func isReadableIngestionLog(log *entity.PipelineOperationLog) bool {
 }
 
 // ListSyncLogs returns paginated sync logs for connectors currently linked to an accessible dataset.
-func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID, userID string, page, pageSize int) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID string, page, pageSize int) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
@@ -287,7 +287,7 @@ func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID, userID str
 	}, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userID string, page, pageSize int, terms []dao.OrderTerm, operationStatus []string, createDateFrom, createDateTo, logType, keywords, documentID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID string, page, pageSize int, terms []dao.OrderTerm, operationStatus []string, createDateFrom, createDateTo, logType, keywords, documentID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
@@ -349,7 +349,7 @@ func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userI
 	}, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, userID, logID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, logID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}

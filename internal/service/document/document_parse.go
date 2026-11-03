@@ -112,7 +112,7 @@ func (s *DocumentService) deletePreparedDocumentTask(ctx context.Context, docID 
 // KB config (ApplyKB), validates storage, and enqueues an ingestion task.
 // Extracted from Ingest so other entry points (e.g. ChunkService.Parse)
 // can reuse the same start-parse flow.
-func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts StartParseOptions) error {
+func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, opts StartParseOptions) error {
 	// Validate storage first so we don't clear prior results and then fail
 	// because the document can't be read, leaving the document with neither
 	// old nor new parse results.
@@ -134,7 +134,7 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 		}
 	}
 
-	responses, err := s.IngestDocuments(ctx, doc.KbID, userID, []string{doc.ID})
+	responses, err := s.IngestDocuments(ctx, doc.KbID, []string{doc.ID})
 	if err != nil {
 		return err
 	}
@@ -431,7 +431,7 @@ func (s *DocumentService) clearKBChunkNumWhenRerun(doc *entity.Document) error {
 	}).Error
 }
 
-func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
 	// deduplicate the document id
 	uniqueDocIDs := common.Deduplicate(docIDs)
 	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {

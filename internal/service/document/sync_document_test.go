@@ -47,7 +47,7 @@ func setupSyncDocumentTest(t *testing.T, existing bool) (*DocumentService, *gorm
 	t.Cleanup(func() { factory.SetStorage(original) })
 	svc := testDocumentService(t)
 	input := service.DocumentUpsertInput{
-		TaskContext: service.SyncTaskContext{Knowledgebase: *kb, Connector: entity.Connector{TenantID: "tenant-1"}},
+		TaskContext: service.SyncTaskContext{Knowledgebase: *kb, Connector: entity.Connector{UserID: "tenant-1", TenantID: "tenant-1"}},
 		SourceType:  "github_connector-1",
 		DocumentID:  "doc-sync",
 		SourceDocument: syncerconnector.SourceDocument{

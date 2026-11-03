@@ -1210,7 +1210,7 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenInsertFails(t *testing.T) {
 	svc := testDocumentService(t)
 	_, err := svc.Upsert(ctx, service.DocumentUpsertInput{
 		TaskContext: service.SyncTaskContext{
-			Connector: entity.Connector{TenantID: "tenant-1"},
+			Connector: entity.Connector{UserID: "tenant-1", TenantID: "tenant-1"},
 			Knowledgebase: entity.Knowledgebase{
 				ID:           "missing-kb",
 				TenantID:     "tenant-1",
@@ -1264,7 +1264,7 @@ func TestSyncDocumentUpsertWithNilDatasetParserConfig(t *testing.T) {
 
 	result, err := testDocumentService(t).Upsert(ctx, service.DocumentUpsertInput{
 		TaskContext: service.SyncTaskContext{
-			Connector:     entity.Connector{TenantID: "tenant-1"},
+			Connector:     entity.Connector{UserID: "tenant-1", TenantID: "tenant-1"},
 			Knowledgebase: kb,
 		},
 		SourceType: "github",
@@ -1326,7 +1326,7 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenUpdateFails(t *testing.T) {
 	mockStorage.afterPut = cancel
 	_, err := svc.Upsert(ctx, service.DocumentUpsertInput{
 		TaskContext: service.SyncTaskContext{
-			Connector: entity.Connector{TenantID: "tenant-1"},
+			Connector: entity.Connector{UserID: "tenant-1", TenantID: "tenant-1"},
 			Knowledgebase: entity.Knowledgebase{
 				ID:           "kb-sync",
 				TenantID:     "tenant-1",
@@ -1583,7 +1583,7 @@ func TestDeleteDocuments_DeleteAll(t *testing.T) {
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
 
-	deleted, err := svc.DeleteDocuments(ctx, nil, true, "kb-1", "user-1")
+	deleted, err := svc.DeleteDocuments(ctx, nil, true, "kb-1")
 	if err != nil {
 		t.Fatalf("DeleteDocuments failed: %v", err)
 	}
@@ -1613,7 +1613,7 @@ func TestDeleteDocuments_ByIDs(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	deleted, err := svc.DeleteDocuments(ctx, []string{"doc-1", "doc-2"}, false, "kb-1", "user-1")
+	deleted, err := svc.DeleteDocuments(ctx, []string{"doc-1", "doc-2"}, false, "kb-1")
 	if err != nil {
 		t.Fatalf("DeleteDocuments failed: %v", err)
 	}
@@ -1641,7 +1641,7 @@ func TestDeleteDocuments_WrongDataset(t *testing.T) {
 	svc := testDocumentService(t)
 	ctx := t.Context()
 
-	_, err := svc.DeleteDocuments(ctx, []string{"doc-1"}, false, "kb-1", "user-1")
+	_, err := svc.DeleteDocuments(ctx, []string{"doc-1"}, false, "kb-1")
 	if err == nil {
 		t.Fatal("expected error for doc not belonging to dataset")
 	}
@@ -1657,7 +1657,7 @@ func TestDeleteDocuments_NotAccessible(t *testing.T) {
 	ctx := t.Context()
 
 	// user-1 has no user_tenant entry → accessible returns false
-	_, err := svc.DeleteDocuments(ctx, []string{"doc-1"}, false, "kb-1", "user-1")
+	_, err := svc.DeleteDocuments(ctx, []string{"doc-1"}, false, "kb-1")
 	if err == nil {
 		t.Fatal("expected error for inaccessible dataset")
 	}
@@ -1673,7 +1673,7 @@ func TestDeleteDocuments_EmptyIDs(t *testing.T) {
 
 	// Empty ids, no deleteAll → returns 0, no error
 	ctx := t.Context()
-	deleted, err := svc.DeleteDocuments(ctx, []string{}, false, "kb-1", "user-1")
+	deleted, err := svc.DeleteDocuments(ctx, []string{}, false, "kb-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1694,7 +1694,7 @@ func TestDeleteDocuments_Deduplicate(t *testing.T) {
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
 
-	deleted, err := svc.DeleteDocuments(ctx, []string{"doc-1", "doc-1", "doc-1"}, false, "kb-1", "user-1")
+	deleted, err := svc.DeleteDocuments(ctx, []string{"doc-1", "doc-1", "doc-1"}, false, "kb-1")
 	if err != nil {
 		t.Fatalf("DeleteDocuments failed: %v", err)
 	}
@@ -1784,7 +1784,7 @@ func TestStartParseDocuments_ApplyKBMergesDatasetParserConfig(t *testing.T) {
 		t.Fatalf("load doc: %v", err)
 	}
 
-	if err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{ApplyKB: true}); err != nil {
+	if err = svc.StartParseDocuments(ctx, doc, kb, StartParseOptions{ApplyKB: true}); err != nil {
 		t.Fatalf("StartParseDocuments: %v", err)
 	}
 
@@ -1885,7 +1885,7 @@ func TestIngest_ApplyKBPersistsDatasetParserConfig(t *testing.T) {
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 	ctx := documentTestContext(t.Context())
 
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs:  []string{"doc-1"},
 		Run:     string(entity.TaskStatusRunning),
 		Delete:  true,
@@ -1985,7 +1985,7 @@ func TestStartParseDocuments_ApplyKBUsesDatasetDefaults(t *testing.T) {
 		t.Fatalf("load doc: %v", err)
 	}
 
-	if err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{ApplyKB: true}); err != nil {
+	if err = svc.StartParseDocuments(ctx, doc, kb, StartParseOptions{ApplyKB: true}); err != nil {
 		t.Fatalf("StartParseDocuments: %v", err)
 	}
 
@@ -2080,7 +2080,7 @@ func TestIngest_ApplyKBDisabledLeavesParserConfigUnchanged(t *testing.T) {
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 	ctx := documentTestContext(t.Context())
 
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs:  []string{"doc-1"},
 		Run:     string(entity.TaskStatusRunning),
 		Delete:  true,
@@ -2176,7 +2176,7 @@ func TestStartParseDocuments_ApplyKBPersistFailureNamesDocument(t *testing.T) {
 		t.Fatalf("load doc: %v", err)
 	}
 
-	err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{ApplyKB: true})
+	err = svc.StartParseDocuments(ctx, doc, kb, StartParseOptions{ApplyKB: true})
 	if err == nil {
 		t.Fatal("expected an error when the merged parser config cannot be persisted")
 	}
@@ -2272,7 +2272,7 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 		t.Fatalf("load doc: %v", err)
 	}
 
-	if err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{}); err != nil {
+	if err = svc.StartParseDocuments(ctx, doc, kb, StartParseOptions{}); err != nil {
 		t.Fatalf("StartParseDocuments: %v", err)
 	}
 
@@ -2359,13 +2359,13 @@ func TestStartParseDocumentsSerializesConcurrentReruns(t *testing.T) {
 
 	firstDone := make(chan error, 1)
 	go func() {
-		firstDone <- firstService.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{RerunWithDelete: true})
+		firstDone <- firstService.StartParseDocuments(ctx, doc, kb, StartParseOptions{RerunWithDelete: true})
 	}()
 	<-firstTaskLookup
 
 	secondDone := make(chan error, 1)
 	go func() {
-		secondDone <- secondService.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{RerunWithDelete: true})
+		secondDone <- secondService.StartParseDocuments(ctx, doc, kb, StartParseOptions{RerunWithDelete: true})
 	}()
 
 	secondPublishedBeforeFirstCompletes := false
@@ -2408,10 +2408,10 @@ func TestStartParseDocumentsSupersedesQueuedRun(t *testing.T) {
 		t.Fatalf("load document: %v", err)
 	}
 
-	if err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{}); err != nil {
+	if err = svc.StartParseDocuments(ctx, doc, kb, StartParseOptions{}); err != nil {
 		t.Fatalf("start first parse: %v", err)
 	}
-	if err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{RerunWithDelete: true}); err != nil {
+	if err = svc.StartParseDocuments(ctx, doc, kb, StartParseOptions{RerunWithDelete: true}); err != nil {
 		t.Fatalf("rerun queued parse: %v", err)
 	}
 
@@ -2865,7 +2865,7 @@ func TestArtifactHelpers(t *testing.T) {
 func TestGetDocumentArtifact_InvalidFilename(t *testing.T) {
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	_, err := svc.GetDocumentArtifact(ctx, "../test.txt", "user-1")
+	_, err := svc.GetDocumentArtifact(ctx, "../test.txt")
 	if !errors.Is(err, ErrArtifactInvalidFilename) {
 		t.Errorf("expected ErrArtifactInvalidFilename, got %v", err)
 	}
@@ -2874,7 +2874,7 @@ func TestGetDocumentArtifact_InvalidFilename(t *testing.T) {
 func TestGetDocumentArtifact_InvalidFileType(t *testing.T) {
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	_, err := svc.GetDocumentArtifact(ctx, "test.exe", "user-1")
+	_, err := svc.GetDocumentArtifact(ctx, "test.exe")
 	if !errors.Is(err, ErrArtifactInvalidFileType) {
 		t.Errorf("expected ErrArtifactInvalidFileType, got %v", err)
 	}
@@ -3079,7 +3079,7 @@ func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := documentTestActorContext(t.Context(), "user-2", "tenant-1")
-	_, code, err := svc.UpdateDatasetDocument(ctx, "user-2", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{}, map[string]bool{})
+	_, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1", &UpdateDatasetDocumentRequest{}, map[string]bool{})
 	if err == nil {
 		t.Fatal("expected ownership error")
 	}
@@ -3100,7 +3100,7 @@ func TestUpdateDatasetDocumentRejectsCounterMutation(t *testing.T) {
 	chunkCount := int64(6)
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ChunkCount: &chunkCount,
 	}, map[string]bool{"chunk_count": true})
 	if err == nil {
@@ -3138,7 +3138,7 @@ func TestUpdateDatasetDocumentRejectsZeroImmutableFields(t *testing.T) {
 				t.Fatalf("prepare document: %v", err)
 			}
 
-			_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &tt.request, tt.present)
+			_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", &tt.request, tt.present)
 			if err == nil {
 				t.Fatalf("expected %s mutation error", tt.name)
 			}
@@ -3287,7 +3287,7 @@ func TestUpdateDatasetDocumentSavesVisionModelAcrossFileTypes(t *testing.T) {
 				} else {
 					req.ChunkMethod = &file.parserID
 				}
-				resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+				resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", req, present)
 				if err != nil || code != common.CodeSuccess {
 					t.Fatalf("save vision model: code=%v err=%v", code, err)
 				}
@@ -3321,7 +3321,7 @@ func TestUpdateDatasetDocumentRejectedParserConfigPreservesNames(t *testing.T) {
 	insertTestFile(t, "file-1", "folder-1", "old.pdf", new("old.pdf"))
 	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
 
-	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		Name: new("must_not_persist.pdf"),
 		ParserConfig: map[string]any{
 			"Parser:HipSignsRhyme": map[string]any{
@@ -3362,7 +3362,7 @@ func TestUpdateDatasetDocumentRenameUpdatesDocumentAndFile(t *testing.T) {
 	newName := "new.pdf"
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		Name: &newName,
 	}, map[string]bool{"name": true})
 	if err != nil {
@@ -3428,7 +3428,7 @@ func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
 			engine := &rerunDeleteDocEngine{}
 			svc := testDocumentService(t)
 			svc.docEngine = engine
-			resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &request, present)
+			resp, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1", &request, present)
 			if err != nil || code != common.CodeSuccess {
 				t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 			}
@@ -3863,7 +3863,7 @@ func TestIngest_RunningTask_SkippedWhenBatchStartingParse(t *testing.T) {
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 	ctx := documentTestContext(t.Context())
 
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs: []string{"doc-1", "doc-2", "doc-3"},
 		Run:    string(entity.TaskStatusRunning),
 		Delete: true,
@@ -3906,7 +3906,7 @@ func TestIngest_AllActiveTasks_ReturnsSuccessIdempotent(t *testing.T) {
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 	ctx := documentTestContext(t.Context())
 
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs: []string{"doc-1", "doc-2"},
 		Run:    string(entity.TaskStatusRunning),
 		Delete: true,
@@ -3939,7 +3939,7 @@ func TestIngest_CompletedTask_SkippedWhenDeleteIsFalse(t *testing.T) {
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 	ctx := documentTestContext(t.Context())
 
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs: []string{"doc-1", "doc-2"},
 		Run:    string(entity.TaskStatusRunning),
 		Delete: false,
@@ -3981,7 +3981,7 @@ func TestIngest_FailedAndStoppedTasks_Restarted(t *testing.T) {
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 	ctx := documentTestContext(t.Context())
 
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs: []string{"doc-1", "doc-2"},
 		Run:    string(entity.TaskStatusRunning),
 		Delete: false,
@@ -4010,7 +4010,7 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(nil, nil)
 	ctx := documentTestContext(t.Context())
-	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		MetaFields: map[string]any{"new": "value"},
 	}, map[string]bool{"meta_fields": true})
 	if err == nil {
@@ -4351,7 +4351,7 @@ func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverParserID(t *testing.T
 	parseType := 2
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		PipelineID:        &pipelineID,
 		PipelineVersionID: sptr("v-pre-0001"),
 		ParseType:         &parseType,
@@ -4387,7 +4387,7 @@ func TestUpdateDatasetDocumentParseTypeBuiltin(t *testing.T) {
 	pipelineIDEmpty := ""
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		ParserID:   &parserID,
 		PipelineID: &pipelineIDEmpty,
@@ -4424,7 +4424,7 @@ func TestUpdateDatasetDocumentParseTypePipeline(t *testing.T) {
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
 	seedDocVersion(t, db, pipelineID, "v-ptp-0001", 0)
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:         &parseType,
 		PipelineID:        &pipelineID,
 		PipelineVersionID: sptr("v-ptp-0001"),
@@ -4455,7 +4455,7 @@ func TestUpdateDatasetDocumentParseTypePipelineRejectsParserID(t *testing.T) {
 	pipelineID := "1234567890abcdef1234567890abcdef"
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		ParserID:   &parserID,
 		PipelineID: &pipelineID,
@@ -4485,7 +4485,7 @@ func TestUpdateDatasetDocumentParentChildConfigReachesCanvasChunker(t *testing.T
 	// submitted parent_child would be dropped on a switch; this test verifies the
 	// config reaches the canvas chunker when no switch occurs.
 	bindDocCanvas(t, db, "kb-1", "doc-1", pipelineID, "v-pcc-0001")
-	resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParserConfig: map[string]any{
 			"GeneralChunker:SixApplesFall": map[string]any{
 				"parent_child": map[string]any{
@@ -4520,7 +4520,7 @@ func TestUpdateDatasetDocumentRejectsInvalidPages(t *testing.T) {
 	parserID := "manual"
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType: &parseType,
 		ParserID:  &parserID,
 		ParserConfig: map[string]any{
@@ -4545,7 +4545,7 @@ func TestUpdateDatasetDocumentParentChildConfigReachesGeneralChunker(t *testing.
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
 
-	resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParserConfig: map[string]any{
 			"GeneralChunker:SixApplesFall": map[string]any{
 				"parent_child": map[string]any{
@@ -4583,7 +4583,7 @@ func TestUpdateDatasetDocumentEnabledUpdatesStatus(t *testing.T) {
 	enabled := 0
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		Enabled: &enabled,
 	}, map[string]bool{"enabled": true})
 	if err != nil {
@@ -4754,7 +4754,7 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 	}
 
 	// Case 0: the owner can fetch the artifact referenced by their session.
-	artifact, err := svc.GetDocumentArtifact(ctx, "result.png", "user-1")
+	artifact, err := svc.GetDocumentArtifact(ctx, "result.png")
 	if err != nil {
 		t.Fatalf("owner: want artifact, got %v", err)
 	}
@@ -4763,12 +4763,12 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 	}
 
 	// Case 1: empty user -> not allowed.
-	if _, err := svc.GetDocumentArtifact(ctx, "result.png", ""); !errors.Is(err, ErrArtifactNotFound) {
+	if _, err := svc.GetDocumentArtifact(ctx, "result.png"); !errors.Is(err, ErrArtifactNotFound) {
 		t.Errorf("empty user: want ErrArtifactNotFound, got %v", err)
 	}
 
 	// Case 2: another user without any session reference -> not allowed.
-	if _, err := svc.GetDocumentArtifact(ctx, "result.png", "user-2"); !errors.Is(err, ErrArtifactNotFound) {
+	if _, err := svc.GetDocumentArtifact(ctx, "result.png"); !errors.Is(err, ErrArtifactNotFound) {
 		t.Errorf("unrelated user: want ErrArtifactNotFound, got %v", err)
 	}
 
@@ -4791,7 +4791,7 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed conv 2: %v", err)
 	}
-	if _, err := svc.GetDocumentArtifact(ctx, "result.png", "user-2"); !errors.Is(err, ErrArtifactNotFound) {
+	if _, err := svc.GetDocumentArtifact(ctx, "result.png"); !errors.Is(err, ErrArtifactNotFound) {
 		t.Errorf("user-2 with unrelated session: want ErrArtifactNotFound, got %v", err)
 	}
 }
@@ -4861,7 +4861,7 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	got, err := svc.GetThumbnails(ctx, "user-1", []string{"doc-file", "doc-base64", "doc-other", "missing-doc"})
+	got, err := svc.GetThumbnails(ctx, []string{"doc-file", "doc-base64", "doc-other", "missing-doc"})
 	if err != nil {
 		t.Fatalf("GetThumbnails failed: %v", err)
 	}
@@ -4900,7 +4900,7 @@ func TestGetDocumentImageRejectsUnindexedObjectBeforeStorage(t *testing.T) {
 	svc := NewDocumentService()
 	svc.docEngine = engine
 
-	if _, err := svc.GetDocumentImage(ctx, "user-1", kbID+"-raw.pdf"); !errors.Is(err, ErrDocumentImageNotFound) {
+	if _, err := svc.GetDocumentImage(ctx, kbID+"-raw.pdf"); !errors.Is(err, ErrDocumentImageNotFound) {
 		t.Fatalf("GetDocumentImage() error = %v", err)
 	}
 	if store.getCalls != 0 {
@@ -4934,7 +4934,7 @@ func TestGetDocumentImageForDocumentAllowsIndexedSharedBucketImage(t *testing.T)
 	svc := NewDocumentService()
 	svc.docEngine = engine
 
-	got, err := svc.GetDocumentImageForDocument(ctx, "user-1", "doc-1", imageID)
+	got, err := svc.GetDocumentImageForDocument(ctx, "doc-1", imageID)
 	if err != nil {
 		t.Fatalf("GetDocumentImageForDocument() error = %v", err)
 	}
@@ -5004,7 +5004,7 @@ func TestStartParseDocuments_FailsBeforeClearing(t *testing.T) {
 	}
 
 	svc := testDocumentService(t)
-	err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{RerunWithDelete: true})
+	err = svc.StartParseDocuments(ctx, doc, kb, StartParseOptions{RerunWithDelete: true})
 	if err == nil {
 		t.Fatal("expected error from GetDocumentStorageAddress, got nil")
 	}
@@ -5030,7 +5030,7 @@ func TestIngest_CancelDoesNotDeleteIngestionTask(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	_, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	_, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
 		Run:    string(entity.TaskStatusCancel),
 		Delete: true,
@@ -5059,7 +5059,7 @@ func TestIngest_CancelUnstartedDocument(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
 		Run:    string(entity.TaskStatusCancel),
 	})
@@ -5087,7 +5087,7 @@ func TestIngest_CancelCompletedDocument(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
 		Run:    string(entity.TaskStatusCancel),
 	})
@@ -5115,7 +5115,7 @@ func TestIngest_CancelUnstartedWithInFlightTask(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
 		Run:    string(entity.TaskStatusCancel),
 	})
@@ -5147,7 +5147,7 @@ func TestIngest_CancelAgainWhenAlreadyStopped(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
 		Run:    string(entity.TaskStatusCancel),
 	})
@@ -5172,7 +5172,7 @@ func TestIngest_CancelScheduledTask_TransitionsToStopped(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := documentTestContext(t.Context())
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
 		Run:    string(entity.TaskStatusCancel),
 	})
@@ -5231,7 +5231,7 @@ func TestIngest_CancelRunningTask_LifecycleToStopped(t *testing.T) {
 	ctx := documentTestContext(t.Context())
 
 	// 1. First cancel call: transitions RUNNING -> STOPPING
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
 		Run:    string(entity.TaskStatusCancel),
 	})
@@ -5259,7 +5259,7 @@ func TestIngest_CancelRunningTask_LifecycleToStopped(t *testing.T) {
 	}
 
 	// 2. Duplicate cancel while in STOPPING must succeed as an idempotent no-op
-	code, err = svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err = svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
 		Run:    string(entity.TaskStatusCancel),
 	})
@@ -5311,7 +5311,7 @@ func TestIngest_DeleteOnlyCleansTasks(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.purgeTaskState = func(context.Context, string) error { return nil }
 	ctx := documentTestContext(t.Context())
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
 		Run:    "0",
 		Delete: true,

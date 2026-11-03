@@ -27,6 +27,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -223,7 +224,7 @@ func (s *DocumentService) afterSyncDocumentUpsert(ctx context.Context, input ser
 	}
 	// do auto_parse if enabled
 	if input.AutoParse {
-		if err := s.StartParseDocuments(ctx, doc, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID, StartParseOptions{RerunWithDelete: rerun}); err != nil {
+		if err := s.StartParseDocuments(permission.WithIdentity(ctx, input.TaskContext.Connector.UserID, permission.TenantIDFromContext(ctx)), doc, &input.TaskContext.Knowledgebase, StartParseOptions{RerunWithDelete: rerun}); err != nil {
 			return err
 		}
 	}
@@ -264,7 +265,7 @@ func (s *DocumentService) ensureSyncDocumentPostWrite(ctx context.Context, input
 	if task != nil {
 		return nil
 	}
-	return s.StartParseDocuments(ctx, doc, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID, StartParseOptions{})
+	return s.StartParseDocuments(permission.WithIdentity(ctx, input.TaskContext.Connector.UserID, permission.TenantIDFromContext(ctx)), doc, &input.TaskContext.Knowledgebase, StartParseOptions{})
 }
 
 // updateSyncDocumentFile updates the file-manager row linked to a synced document.

@@ -29,7 +29,7 @@ type ApplyDatasetParserConfigResponse struct {
 
 // ApplyDatasetParserConfig resets document parser settings without changing
 // parsed content or scheduling ingestion. Dataset grants cover its documents.
-func (s *DocumentService) ApplyDatasetParserConfig(ctx context.Context, userID, datasetID string) (*ApplyDatasetParserConfigResponse, common.ErrorCode, error) {
+func (s *DocumentService) ApplyDatasetParserConfig(ctx context.Context, datasetID string) (*ApplyDatasetParserConfigResponse, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("dataset_id is required")
