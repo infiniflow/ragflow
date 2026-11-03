@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -152,24 +153,13 @@ func (h *Handler) AuthCheck(c *gin.Context) {
 	common.SuccessNoData(c, "Admin is authorized")
 }
 
-// ListUsersRequest list users request
-type ListUsersRequest struct {
-	Enterprise *bool   `json:"enterprise"`
-	UserStatus *string `json:"user_status"`
-	OrderBy    *string `json:"order_by"`
-	Top        *int    `json:"top"`
-	Days       *int    `json:"days"`
-	Quota      *int    `json:"quota"`
-	Plan       *string `json:"plan"`
-}
-
 // ListUsers handle list users
 func (h *Handler) ListUsers(c *gin.Context) {
 
 	name := c.DefaultQuery("keyword", "")
 	status := c.DefaultQuery("status", "")
 	role := c.DefaultQuery("role", "")
-	sort := c.DefaultQuery("sort", "")     // descending or ascending
+	sort := c.DefaultQuery("sort", "")     // asc or desc
 	orderBy := c.DefaultQuery("order", "") // order by field
 	pageInt, err := common.ParseRequestIntPositive(c, c.Query("page"), "page", 1)
 	if err != nil {
@@ -185,6 +175,9 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	topInt, err := common.ParseRequestIntPositive(c, c.Query("top"), "top", 0)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+	if !validateAdminUserListPagination(c, pageInt, pageSizeInt, topInt) {
 		return
 	}
 	// quota is optional: nil when the query param is absent, &v when present
@@ -221,11 +214,40 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid RAGFlow type")
 		return
 	}
+	if errors.Is(err, errInvalidUserListQuery) {
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
 	common.SuccessWithDataAndTotal(c, users, total, "List users")
+}
+
+func validateAdminUserListPagination(c *gin.Context, page, pageSize, top int) bool {
+	if page < 1 || pageSize < 1 {
+		common.ErrorWithCode(c, common.CodeBadRequest, "page and page_size must be positive integers")
+		return false
+	}
+	query := c.Request.URL.Query()
+	if query.Has("top") {
+		if top < 1 {
+			common.ErrorWithCode(c, common.CodeBadRequest, "top must be a positive integer")
+			return false
+		}
+		if query.Has("page") || query.Has("page_size") {
+			common.ErrorWithCode(c, common.CodeBadRequest, "top cannot be combined with page or page_size")
+			return false
+		}
+		switch strings.ToLower(strings.TrimSpace(c.Query("order"))) {
+		case "storage", "documents", "index":
+		default:
+			common.ErrorWithCode(c, common.CodeBadRequest, "top is only supported for storage, documents and index")
+			return false
+		}
+	}
+	return true
 }
 
 // CreateUserHTTPRequest create user request

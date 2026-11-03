@@ -1390,6 +1390,7 @@ func seedExtractorContextModel(t *testing.T, db *gorm.DB, tenantLLMID string) {
 	}
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-openai",
+		UserID:       "tenant-1",
 		ProviderName: "OpenAI",
 		TenantID:     "tenant-1",
 	}).Error; err != nil {

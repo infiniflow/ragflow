@@ -106,7 +106,7 @@ Configuration steps:
 5. Write the task in **User prompt**, and insert variables by typing `/`.
 6. Add Retrieval, Execute SQL, or other tools offered by **Tools**, select MCP tools, or add sub-agents under **Agent**. For a fixed HTTP call, connect a separate **HTTP Request** workflow node.
 7. Review the `content` output, or enable structured output and configure its schema when needed.
-8. Click **Save**, then **Run** to check the result.
+8. Click **Save draft**, then **Run** to check the result.
 
 ![Agent Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_component_1.jpg)
 
@@ -187,7 +187,7 @@ Configuration steps:
 
 **Rerank candidate count** controls the number of retrieval candidates available for reranking. The default shown in the panel is `64`. This is separate from **Top N**, which limits the results passed to downstream components.
 
-The initial **Similarity threshold** is `0.2` (displayed as `20` in the percentage-based control), and the initial **Top N** is `8`. The recommendations below are tuning suggestions rather than defaults. **Meta data** filters can also constrain retrieval; check the selected datasets and filter conditions when relevant content is missing.
+The initial **Similarity threshold** displayed in the UI is `20`, meaning 20%, and the initial **Top N** is `8`. The recommendations below are tuning suggestions rather than defaults. **Meta data** filters can also constrain retrieval; check the selected datasets and filter conditions when relevant content is missing.
 
 **Top N** specifies the number of chunks sent to subsequent components. Too few chunks may result in insufficient information, while too many chunks may increase response time and context pressure.
 
@@ -196,7 +196,7 @@ Enabling a **Rerank model** usually improves the sorting of knowledge retrieval 
 
 ### Configuration Suggestions
 
-The following values are only initial configuration references. Actual results are affected by the embedding model, document quality, chunking method, and business questions. Adjust them based on knowledge retrieval test results.
+Similarity threshold values below use the UI percentage scale: enter `20`, `50`, or `80` for 20%, 50%, or 80%. The following values are only initial configuration references. Actual results are affected by the embedding model, document quality, chunking method, and business questions. Adjust them based on knowledge retrieval test results.
 
 Retrieval parameters directly affect answer coverage, accuracy, and response time. You can start with the settings in the following table, and then optimize them based on real questions.
 
@@ -205,6 +205,6 @@ Retrieval parameters directly affect answer coverage, accuracy, and response tim
 | Top N | 3-5 | FAQ and short knowledge entries | Faster responses for clear answers. |
 | Top N | 5-10 | Product documentation and help centers | A suggested range to test with representative questions. |
 | Top N | 10-20 | Legal contracts and long document analysis | More context with higher token consumption. |
-| Similarity threshold | 0.2 | Loose recall | Questions with diverse expressions. |
-| Similarity threshold | 0.5 | General Q&A | A stricter tuning example; the initial value is 0.2. |
-| Similarity threshold | 0.8 | Strict precise matching | Scenarios that require exact terminology matching. |
+| Similarity threshold | 20 | Loose recall | Questions with diverse expressions. |
+| Similarity threshold | 50 | General Q&A | A stricter tuning example; the initial UI value is 20 (20%). |
+| Similarity threshold | 80 | Strict precise matching | Scenarios that require exact terminology matching. |

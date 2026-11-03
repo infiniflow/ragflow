@@ -41,7 +41,7 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID s
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -62,7 +62,7 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID s
 		return nil, common.CodeServerError, errors.New("doc engine not initialized")
 	}
 
-	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(ctx, service.ModelAccess{TenantID: kb.TenantID}, embeddingID)
+	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(ctx, service.Identity{TenantID: kb.TenantID}, embeddingID)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -281,7 +281,7 @@ func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 	return samples, nil
 }
 
-func (d *DatasetService) verifyEmbeddingAvailability(ctx context.Context, embdID string, access service.ModelAccess) (bool, string) {
+func (d *DatasetService) verifyEmbeddingAvailability(ctx context.Context, embdID string, access service.Identity) (bool, string) {
 	_, err := service.NewModelFactory().ResolveInfo(ctx, access, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return false, err.Error()

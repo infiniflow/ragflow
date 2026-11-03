@@ -233,6 +233,35 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	}
 }
 
+// TestBuildTushareTool_NodeParams pins the node-level credential channel:
+// the token comes from tool_params, an empty set still builds (Invoke reports
+// the missing configuration), and a non-string token is rejected.
+func TestBuildTushareTool_NodeParams(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("tushare", map[string]any{"token": "T-node"})
+	if err != nil {
+		t.Fatalf("BuildByName(tushare) with token: %v", err)
+	}
+	tool, ok := built.(*TushareTool)
+	if !ok {
+		t.Fatalf("tool type = %T, want *TushareTool", built)
+	}
+	if tool.defaults.Token != "T-node" {
+		t.Fatalf("defaults.Token = %q, want T-node", tool.defaults.Token)
+	}
+
+	if _, err = BuildByName("tushare", map[string]any{}); err != nil {
+		t.Fatalf("BuildByName(tushare) without params: %v", err)
+	}
+
+	if _, err = BuildByName("tushare", map[string]any{"token": 1}); err == nil {
+		t.Fatal("expected a type error for a non-string token")
+	} else if !strings.Contains(err.Error(), "string node-level param token") {
+		t.Fatalf("err = %q, want the node-level token type error", err.Error())
+	}
+}
+
 func TestBuildAll_ExeSQLRequiresNodeParams(t *testing.T) {
 	_, err := BuildAll([]string{"execute_sql"}, nil)
 	if err == nil {

@@ -115,10 +115,6 @@ const (
 	EnvDBType                            = "DB_TYPE"
 	EnvDevice                            = "DEVICE"
 	EnvStorageImpl                       = "STORAGE_IMPL"
-	EnvStageHandCacheCap                 = "STAGEHAND_CACHE_CAP"
-	EnvStageHandCacheTTLSeconds          = "STAGEHAND_CACHE_TTL_SECONDS"
-	EnvStageHandCacheSweepInterval       = "STAGEHAND_CACHE_SWEEP_INTERVAL"
-	EnvStageHandExtractResultFile        = "STAGEHAND_EXTRACT_RESULT_FILE"
 	EnvAgentRunAccessKeyID               = "AGENTRUN_ACCESS_KEY_ID"
 	EnvAgentRunAccessKeySecret           = "AGENTRUN_ACCESS_KEY_SECRET"
 	EnvAgentRunAccountID                 = "AGENTRUN_ACCOUNT_ID"
@@ -169,7 +165,6 @@ const (
 	EnvOpenAIBaseURL                     = "OPENAI_BASE_URL"
 	EnvOpenAIModel                       = "OPENAI_MODEL"
 	EnvLLMDebug                          = "LLM_DEBUG"
-	EnvStageHandExtractSchemaJSON        = "STAGEHAND_EXTRACT_SCHEMA_JSON"
 	EnvSandboxProviderType               = "SANDBOX_PROVIDER_TYPE"
 	EnvSandboxExecutorManagerURL         = "SANDBOX_EXECUTOR_MANAGER_URL"
 	EnvSandboxExecutorManagerTimeout     = "SANDBOX_EXECUTOR_MANAGER_TIMEOUT"
@@ -197,6 +192,8 @@ const (
 	EnvAllowAnyHost                      = "ALLOW_ANY_HOST"
 	EnvTavilyAPIKey                      = "TAVILY_API_KEY"
 	EnvQueritAPIKey                      = "QUERIT_API_KEY"
+	EnvDeepLAPIKey                       = "DEEPL_API_KEY"
+	EnvQWeatherAPIKey                    = "QWEATHER_API_KEY"
 	EnvHome                              = "HOME"
 	EnvUserProfile                       = "USERPROFILE"
 	EnvHTTPProxy                         = "http_proxy"
@@ -267,6 +264,7 @@ const (
 	EnvFirecrawlRelayTimeout             = "FIRECRAWL_RELAY_TIMEOUT"
 	EnvRAGFlowSecretKey                  = "RAGFLOW_SECRET_KEY"
 	EnvEnableRegister                    = "ENABLE_REGISTER"
+	EnvDisablePasswordLogin              = "DISABLE_PASSWORD_LOGIN"
 	EnvMinioHost                         = "MINIO_HOST"
 	EnvMinioRegion                       = "MINIO_REGION"
 	EnvLang                              = "LANG"
@@ -310,11 +308,11 @@ const (
 	// ingestor.inference_concurrency config key and is itself overridden by the
 	// --deepdoc-inference-concurrency CLI flag.
 	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
-	// EnvIngestorMaxConcurrentWorkers bounds how many ingestion tasks the
+	// EnvIngestorConcurrentWorkers bounds how many ingestion tasks the
 	// ingestor runs in parallel (the NATS consumer worker count). It overrides
-	// the ingestor.max_concurrent_workers config key and is itself overridden
-	// by the --ingestor-max-concurrent-workers CLI flag.
-	EnvIngestorMaxConcurrentWorkers = "RAGFLOW_INGESTOR_MAX_CONCURRENT_WORKERS"
+	// the ingestor.concurrent_workers config key and is itself overridden
+	// by the --ingestor-concurrent-workers CLI flag.
+	EnvIngestorConcurrentWorkers = "RAGFLOW_INGESTOR_CONCURRENT_WORKERS"
 	// EnvIngestorPageConcurrency bounds how many pages of a single document are
 	// parsed concurrently inside one ingestor worker. It overrides the
 	// ingestor.page_concurrency config key and is itself overridden by the
@@ -325,6 +323,13 @@ const (
 	// ingestor.inference_cpu_cores config key and is itself overridden by the
 	// --deepdoc-inference-cpu-cores CLI flag.
 	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
+
+	// Media extraction limits. The parser media budget and the run media cache
+	// read these per call: the per-image payload limit, the number of distinct
+	// images one run may cache, and the total decoded bytes one run may cache.
+	EnvMediaImageMaxBytes   = "RAGFLOW_MEDIA_IMAGE_MAX_BYTES"
+	EnvMediaMaxImagesPerRun = "RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN"
+	EnvMediaMaxBytesPerRun  = "RAGFLOW_MEDIA_MAX_BYTES_PER_RUN"
 
 	// Typed-decision model. Unset RAGFLOW_DECISION_DIR leaves the feature off:
 	// every caller degrades to unfiltered behaviour, so a deployment without the

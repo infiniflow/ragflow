@@ -37,7 +37,7 @@ func TestPDFVisionDispatchFinalizeHonorsRemoveHeaderFooter(t *testing.T) {
 				"parse_method":         "mineru",
 				"remove_header_footer": tc.remove,
 			}
-			items, err := mineruExtractJSONItems(zipBytes, setupRemoveHeaderFooter(setup))
+			items, _, err := mineruExtractJSONItems(zipBytes, nil, setupRemoveHeaderFooter(setup))
 			if err != nil {
 				t.Fatalf("mineruExtractJSONItems: %v", err)
 			}

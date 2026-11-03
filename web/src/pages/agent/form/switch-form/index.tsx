@@ -11,6 +11,7 @@ import { useBuildSwitchOperatorOptions } from '@/hooks/logic-hooks/use-build-ope
 import { useBuildSwitchLogicOperatorOptions } from '@/hooks/logic-hooks/use-build-options';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { reconnectEdge } from '@xyflow/react';
 import { t } from 'i18next';
 import { X } from 'lucide-react';
 import { memo, useCallback, useMemo } from 'react';
@@ -24,6 +25,8 @@ import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { useFilterQueryVariableOptionsByTypes } from '../../hooks/use-get-begin-query';
 import { IOperatorForm } from '../../interface';
+import useGraphStore from '../../store';
+import { generateSwitchHandleText, getOperatorIndex } from '../../utils';
 import { FormWrapper } from '../components/form-wrapper';
 import { GroupedSelectWithSecondaryMenu } from '../components/select-with-secondary-menu';
 import { useValues } from './use-values';
@@ -252,6 +255,44 @@ function SwitchForm({ node }: IOperatorForm) {
     control: form.control,
   });
 
+  const removeCondition = useCallback(
+    (index: number) => {
+      if (node?.id) {
+        const { edges, setEdges } = useGraphStore.getState();
+        setEdges(
+          edges
+            .filter(
+              (edge) =>
+                edge.source !== node.id ||
+                edge.sourceHandle !== generateSwitchHandleText(index),
+            )
+            .map((edge) => {
+              const branchIndex =
+                Number(getOperatorIndex(edge.sourceHandle ?? '')) - 1;
+              if (
+                edge.source !== node.id ||
+                !Number.isInteger(branchIndex) ||
+                branchIndex <= index
+              )
+                return edge;
+              return reconnectEdge(
+                edge,
+                {
+                  source: edge.source,
+                  target: edge.target,
+                  sourceHandle: generateSwitchHandleText(branchIndex - 1),
+                  targetHandle: edge.targetHandle ?? null,
+                },
+                [edge],
+              )[0];
+            }),
+        );
+      }
+      remove(index);
+    },
+    [node?.id, remove],
+  );
+
   const switchLogicOperatorOptions = useBuildSwitchLogicOperatorOptions();
 
   useWatchFormChange(node?.id, form);
@@ -274,7 +315,7 @@ function SwitchForm({ node }: IOperatorForm) {
                   <Button
                     variant={'secondary'}
                     className="-translate-y-1"
-                    onClick={() => remove(index)}
+                    onClick={() => removeCondition(index)}
                   >
                     {t('common.remove')} <X />
                   </Button>
@@ -294,7 +335,7 @@ function SwitchForm({ node }: IOperatorForm) {
                 )}
                 <ConditionCards
                   name={name}
-                  removeParent={remove}
+                  removeParent={removeCondition}
                   parentIndex={index}
                   parentLength={fields.length}
                 ></ConditionCards>

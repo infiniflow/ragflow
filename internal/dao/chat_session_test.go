@@ -50,11 +50,10 @@ func createAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, userID
 
 	updateDate := time.UnixMilli(updateTime).Local()
 	session := &entity.API4Conversation{
-		ID:        id,
-		DialogID:  agentID,
-		UserID:    userID,
-		Message:   json.RawMessage(`[{"role":"assistant","content":"hello"}]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       id,
+		DialogID: agentID,
+		UserID:   userID,
+		Message:  json.RawMessage(`[{"role":"assistant","content":"hello"}]`),
 		BaseModel: entity.BaseModel{
 			CreateTime: &updateTime,
 			CreateDate: &updateDate,
@@ -72,12 +71,11 @@ func createNamedAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, u
 
 	updateDate := time.UnixMilli(updateTime).Local()
 	session := &entity.API4Conversation{
-		ID:        id,
-		Name:      &name,
-		DialogID:  agentID,
-		UserID:    userID,
-		Message:   message,
-		Reference: json.RawMessage(`[]`),
+		ID:       id,
+		Name:     &name,
+		DialogID: agentID,
+		UserID:   userID,
+		Message:  message,
 		BaseModel: entity.BaseModel{
 			CreateTime: &updateTime,
 			CreateDate: &updateDate,
@@ -95,11 +93,10 @@ func createChatSessionForDAOTest(t *testing.T, db *gorm.DB, id, chatID, name str
 
 	updateDate := time.UnixMilli(updateTime).Local()
 	session := &entity.ChatSession{
-		ID:        id,
-		DialogID:  chatID,
-		Name:      &name,
-		Message:   json.RawMessage(`[{"role":"assistant","content":"hello"}]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       id,
+		DialogID: chatID,
+		Name:     &name,
+		Message:  json.RawMessage(`[{"role":"assistant","content":"hello"}]`),
 		BaseModel: entity.BaseModel{
 			CreateTime: &updateTime,
 			CreateDate: &updateDate,

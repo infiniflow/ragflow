@@ -54,17 +54,26 @@ func NewMinioStorage(config config.MinioConfig) (*MinioStorage, error) {
 	return storage, nil
 }
 
-func (m *MinioStorage) connect() error {
-	var transport http.RoundTripper
+func newMinioTransport(cfg config.MinioConfig) (*http.Transport, error) {
+	transport, err := minio.DefaultTransport(cfg.Secure)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create default transport: %w", err)
+	}
 
-	// Configure transport for SSL/TLS verification
-	if m.config.Secure {
-		verify := m.config.Verify
-		transport = &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: !verify,
-			},
+	if cfg.Secure {
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
 		}
+		transport.TLSClientConfig.InsecureSkipVerify = !cfg.Verify
+	}
+
+	return transport, nil
+}
+
+func (m *MinioStorage) connect() error {
+	transport, err := newMinioTransport(m.config)
+	if err != nil {
+		return fmt.Errorf("failed to create MinIO transport: %w", err)
 	}
 
 	client, err := minio.New(m.config.Host, &minio.Options{

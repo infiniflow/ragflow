@@ -227,18 +227,11 @@ func (c *JiraConnector) buildJQL(start *time.Time, end time.Time) string {
 		sort.Strings(labels)
 		clauses = append(clauses, "labels NOT IN ("+strings.Join(labels, ", ")+")")
 	}
-	if start != nil {
-		adjusted := *start
-		if c.timeBuffer > 0 {
-			adjusted = adjusted.Add(-c.timeBuffer)
-			if adjusted.Before(time.Unix(0, 0)) {
-				adjusted = time.Unix(0, 0).UTC()
-			}
-		}
-		clauses = append(clauses, fmt.Sprintf("updated >= %q", c.formatJQLTime(adjusted)))
+	if lower := c.jiraQueryLowerBound(start); lower != nil {
+		clauses = append(clauses, fmt.Sprintf("updated >= %q", c.formatJQLTime(*lower)))
 	}
 	if !end.IsZero() {
-		clauses = append(clauses, fmt.Sprintf("updated <= %q", c.formatJQLTime(end)))
+		clauses = append(clauses, fmt.Sprintf("updated < %q", c.formatJQLTime(end.Add(time.Minute))))
 	}
 	jql := strings.Join(clauses, " AND ")
 	if orderBy == "" {
@@ -253,6 +246,27 @@ func (c *JiraConnector) buildJQL(start *time.Time, end time.Time) string {
 func (c *JiraConnector) formatJQLTime(t time.Time) string {
 	offsetSeconds := int(c.timezoneOffset * 3600)
 	return t.UTC().In(time.FixedZone("jira", offsetSeconds)).Format("2006-01-02 15:04")
+}
+
+// jiraQueryLowerBound is the `updated >=` bound buildJQL sends, and the bound
+// page filtering must apply. JQL accepts minute precision, so the value is
+// floored to the minute. Filtering at the unbuffered start instead would make
+// the time buffer widen only the server response and then throw the extra rows
+// away; because the previous run's upper bound is floored the same way, an
+// issue updated inside the waterline minute would be covered by neither run.
+func (c *JiraConnector) jiraQueryLowerBound(start *time.Time) *time.Time {
+	if start == nil || start.IsZero() {
+		return nil
+	}
+	adjusted := start.UTC()
+	if c.timeBuffer > 0 {
+		adjusted = adjusted.Add(-c.timeBuffer)
+		if adjusted.Before(time.Unix(0, 0)) {
+			adjusted = time.Unix(0, 0).UTC()
+		}
+	}
+	floor := adjusted.Truncate(time.Minute)
+	return &floor
 }
 
 func splitJiraOrderBy(query string) (string, string) {
@@ -635,7 +649,12 @@ func (s *jiraSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 				continue
 			}
 			updatedAt := issue.Fields.Updated.Time()
-			if s.windowStart != nil && !s.fromBeginning && !updatedAt.IsZero() && !updatedAt.After(*s.windowStart) {
+			if !s.fromBeginning && !updatedAt.IsZero() {
+				if lower := s.connector.jiraQueryLowerBound(s.windowStart); lower != nil && updatedAt.Before(*lower) {
+					continue
+				}
+			}
+			if !s.windowEnd.IsZero() && !updatedAt.IsZero() && updatedAt.After(s.windowEnd) {
 				continue
 			}
 			doc, ok := s.connector.issueDocument(issue)

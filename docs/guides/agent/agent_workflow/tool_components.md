@@ -22,7 +22,6 @@ In the tables below, **No** means manual input is optional; keep any default sho
 | Academic search | Google Scholar, ArXiv, PubMed, BGPT | Retrieve papers, medical literature, and research materials. |
 | Data and financial queries | Execute SQL, Yahoo Finance, WenCai | Query databases, market data, or financial screening results. |
 | Content output | Email, Document Generator | Send emails or generate downloadable documents. |
-| Web content extraction | Browser | Extract page content using natural-language instructions. |
 
 ## Web Page and Information Retrieval
 
@@ -785,29 +784,3 @@ Use `download` to display the generated file in a Message. The other outputs ide
 2. In Document Generator, set **Content** to `# Sample report`, **Output Format** to **PDF**, and **Filename** to `sample-report.pdf`. Keep the other settings at their defaults.
 3. In Message, open the variable selector and insert Document Generator's `download` output.
 4. Save and click **Run**. The conversation should show a downloadable file named `sample-report.pdf`; open it to check that it contains the heading Sample report.
-
-### Browser (Browser)
-
-Browser uses a configured chat model and a natural-language instruction to extract web page content.
-
-#### Parameter Description
-
-| Field | Type | Required | Default Value | Description |
-| --- | --- | --- | --- | --- |
-| Model | Selection | Yes | None | Select a configured chat model from the dropdown. |
-| prompts | string | Yes | `{sys.query}` | Extraction instruction. Canvas variables are supported. |
-| headless | boolean | No | true | Whether to run the browser without a visible window. |
-
-#### Configuration Example
-
-| Configuration Item | Example Value |
-| --- | --- |
-| Model | Select an available chat model |
-| Prompt | Extract the main navigation labels from https://www.ragflow.io and return a concise bullet list. |
-| Headless | true |
-
-#### Output Result
-
-`content` contains the extracted text. Insert this field into a downstream Agent prompt or Message.
-
-Test a small extraction task and check the returned content before connecting downstream components.

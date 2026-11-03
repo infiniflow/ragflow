@@ -120,13 +120,19 @@ func dropPDFItemsOnTOCOutlinePages(items []map[string]any, pages0 map[int]bool) 
 }
 
 func onTOCPage(item map[string]any, pages0 map[int]bool) bool {
-	if page := int(numberValue(item["page_number"])); page > 0 && pages0[page-1] {
-		return true
-	}
-	for page := range collectPDFPageNumbers(item) {
-		if pages0[page-1] {
-			return true
+	pages := collectPDFPageNumbers(item)
+	if len(pages) == 0 {
+		if page := int(numberValue(item["page_number"])); page > 0 {
+			pages = map[int]struct{}{page: {}}
 		}
 	}
-	return false
+	if len(pages) == 0 {
+		return false
+	}
+	for page := range pages {
+		if !pages0[page-1] {
+			return false
+		}
+	}
+	return true
 }

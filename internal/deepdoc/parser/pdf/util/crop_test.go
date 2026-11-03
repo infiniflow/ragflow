@@ -721,3 +721,64 @@ func TestTSRRegionMarginPx(t *testing.T) {
 		t.Errorf("TSRRegionMarginPx = %v, want %v (10pt * ZM)", TSRRegionMarginPx, want)
 	}
 }
+
+func TestCropMediaSectionPositionsSpansPagesOfMixedHeight(t *testing.T) {
+	// Bottom is local to the last page, so the span adds the height of the
+	// first page, not the last. Each case keeps 100 rows of each page.
+	red, blue := color.RGBA{255, 0, 0, 255}, color.RGBA{0, 0, 255, 255}
+	cases := []struct {
+		name        string
+		first, last int
+		top, bottom float64
+	}{
+		{"tall first page", 800, 600, 700, 100},
+		{"short first page", 600, 800, 500, 100},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pageImages := map[int]image.Image{
+				0: makeTestPageImage(200, tc.first, red),
+				1: makeTestPageImage(200, tc.last, blue),
+			}
+			positions := []pdf.Position{{PageNumbers: []int{0, 1}, Left: 20, Right: 120, Top: tc.top, Bottom: tc.bottom}}
+			b64 := CropMediaSectionPositions(positions, pageImages, 1)
+			if b64 == "" {
+				t.Fatal("expected non-empty result")
+			}
+			decoded, _ := base64.StdEncoding.DecodeString(b64)
+			img := decodePNG(t, decoded)
+			if bounds := img.Bounds(); bounds.Dx() != 100 || bounds.Dy() != 212 {
+				t.Fatalf("spanning media crop bounds = %v, want 100x212", bounds)
+			}
+			if r, _, _, _ := img.At(0, 50).RGBA(); uint8(r>>8) < 200 {
+				t.Error("top rows should be page-0 red")
+			}
+			if _, _, b, _ := img.At(0, 150).RGBA(); uint8(b>>8) < 200 {
+				t.Error("bottom rows should be page-1 blue")
+			}
+		})
+	}
+}
+
+func TestCropSectionByDLA_MultiPageMixedHeight(t *testing.T) {
+	// No DLA regions, so each page falls back to the section bbox. At
+	// scale 3, Top 100 is row 300 of the 450px page 0 and Bottom 50 is
+	// row 150 of the 300px page 1: 150 + 6 + 150 rows.
+	pageImages := map[int]image.Image{
+		0: makeTestPageImage(300, 450, color.RGBA{255, 0, 0, 255}),
+		1: makeTestPageImage(300, 300, color.RGBA{0, 0, 255, 255}),
+	}
+	sec := pdf.Section{
+		Positions:  []pdf.Position{{PageNumbers: []int{0, 1}, Left: 20, Right: 50, Top: 100, Bottom: 50}},
+		LayoutType: "figure",
+	}
+	result := CropSectionByDLA(sec, nil, pageImages)
+	if result == "" {
+		t.Fatal("expected non-empty multi-page crop")
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(result)
+	img := decodePNG(t, decoded)
+	if bounds := img.Bounds(); bounds.Dx() != 90 || bounds.Dy() != 306 {
+		t.Fatalf("DLA multi-page crop bounds = %v, want 90x306", bounds)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"gorm.io/gorm"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -30,13 +31,6 @@ func insertCreateDatasetTenant(t *testing.T, tenantID string) {
 		}
 	}
 	ensureDatasetTestMembership(t, tenantID, tenantID, "owner")
-	if err := dao.DB.Model(&entity.UserTenant{}).
-		Where("user_id = ? AND tenant_id = ?", tenantID, tenantID).
-		Updates(map[string]interface{}{
-			"llm_id": "llm-default", "embd_id": "embd-default", "tenant_embd_id": "embd-1", "asr_id": "asr-default",
-		}).Error; err != nil {
-		t.Fatalf("configure owner model defaults: %v", err)
-	}
 }
 
 func testDatasetCreateService(t *testing.T) *DatasetService {
@@ -144,6 +138,7 @@ func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
+	seedCreateDatasetDefaultChatModel(t, db, "tenant-1")
 	ctx := t.Context()
 
 	chunkMethod := "general"
@@ -170,6 +165,24 @@ func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 	}
 	if extractor["llm_id"] != "llm-default" {
 		t.Fatalf("extractor llm_id = %#v, want llm-default", extractor["llm_id"])
+	}
+}
+
+func seedCreateDatasetDefaultChatModel(t *testing.T, db *gorm.DB, tenantID string) {
+	t.Helper()
+	if err := db.Model(&entity.UserTenant{}).
+		Where("user_id = ? AND tenant_id = ?", tenantID, tenantID).
+		Update("llm_id", "llm-default").Error; err != nil {
+		t.Fatalf("configure default chat model: %v", err)
+	}
+	for _, row := range []any{
+		&entity.TenantModelProvider{ID: "provider-default-chat", UserID: tenantID, TenantID: tenantID, ProviderName: "OpenAI"},
+		&entity.TenantModelInstance{ID: "instance-default-chat", ProviderID: "provider-default-chat", InstanceName: "default", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "llm-default", ProviderID: "provider-default-chat", InstanceID: "instance-default-chat", ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: "{}"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed default chat model %T: %v", row, err)
+		}
 	}
 }
 
@@ -431,6 +444,47 @@ func TestCreateDataset_RejectsInvalidEmbeddingModel(t *testing.T) {
 				t.Fatalf("unexpected error: got %q, want %q", err.Error(), tc.expectedMessage)
 			}
 		})
+	}
+}
+
+func TestCreateDataset_ExplicitEmbeddingDoesNotResolveInvalidDefault(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	if err := db.Model(&entity.UserTenant{}).
+		Where("user_id = ? AND tenant_id = ?", "tenant-1", "tenant-1").
+		Updates(map[string]interface{}{"embd_id": "invalid-default", "tenant_embd_id": "missing-default"}).Error; err != nil {
+		t.Fatalf("configure invalid default embedding: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelProvider{
+		ID: "provider-explicit", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create model provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID: "instance-explicit", ProviderID: "provider-explicit", InstanceName: "default", Status: "active", Extra: "{}",
+	}).Error; err != nil {
+		t.Fatalf("create model instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID: "model-explicit", ProviderID: "provider-explicit", InstanceID: "instance-explicit",
+		ModelName: "embedding-test", ModelType: int(entity.ModelTypeEmbedding), Status: "active", Extra: "{}",
+	}).Error; err != nil {
+		t.Fatalf("create embedding model: %v", err)
+	}
+
+	embeddingModel := "embedding-test@default@OpenAI"
+	result, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
+		Name: "explicit-embedding", ParserID: sptr("general"), ParseType: iptr(1), EmbeddingModel: &embeddingModel,
+	}, testDatasetSubject("tenant-1"))
+	if err != nil {
+		t.Fatalf("CreateDataset with explicit embedding = %v, want success", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("CreateDataset code = %d, want success", code)
+	}
+	if result["embedding_model"] != embeddingModel {
+		t.Fatalf("embedding_model = %#v, want %q", result["embedding_model"], embeddingModel)
 	}
 }
 

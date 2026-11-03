@@ -549,10 +549,12 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 		&entity.UserCanvas{},
 		&entity.API4Conversation{},
 	}
-	models = append(models, documentTestExtraModels()...)
 	if err = db.AutoMigrate(models...); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -583,6 +585,8 @@ func seedDocumentPreviewMemberAccess(t *testing.T, db *gorm.DB) {
 	}).Error; err != nil {
 		t.Fatalf("insert Tenant member: %v", err)
 	}
+	// The enterprise policy resolves shared datasets through an explicit grant
+	// plus a feature role; the community edition needs neither (no-op stub).
 	seedDocumentPreviewMemberAccessEE(t, db)
 }
 
@@ -791,6 +795,29 @@ func insertTestIngestionTaskWithStatus(t *testing.T, id, userID, docID, datasetI
 	}
 }
 
+func insertTestOpenTaskRun(t *testing.T, taskID, logID, userID, docID, datasetID string) {
+	t.Helper()
+	insertTestIngestionTaskWithStatus(t, taskID, userID, docID, datasetID, common.CREATED)
+
+	runCount := 1
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              logID,
+		DocumentID:      docID,
+		TenantID:        "tenant-1",
+		KbID:            datasetID,
+		ParserID:        "naive",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusUnstart),
+		RunCount:        &runCount,
+	}).Error; err != nil {
+		t.Fatalf("insert open pipeline run: %v", err)
+	}
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("pipeline_log_id", logID).Error; err != nil {
+		t.Fatalf("bind open pipeline run: %v", err)
+	}
+}
+
 func insertTestFile2Document(t *testing.T, id, fileID, docID string) {
 	t.Helper()
 	f2d := &entity.File2Document{
@@ -865,7 +892,7 @@ func TestDeleteDocumentFull_Basic(t *testing.T) {
 	}
 }
 
-func TestDeleteDocumentFullPurgesTaskStateBeforeDeletingTask(t *testing.T) {
+func TestDeleteDocumentFullDeletesTaskBeforePurgingState(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -881,11 +908,11 @@ func TestDeleteDocumentFullPurgesTaskStateBeforeDeletingTask(t *testing.T) {
 	}
 	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
 		t.Fatalf("reload ingestion task: %v", err)
-	} else if task == nil {
-		t.Fatal("ingestion task was deleted despite resumable state cleanup failure")
+	} else if task != nil {
+		t.Fatal("ingestion task was not deleted before state cleanup")
 	}
 	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
-		t.Fatalf("document was deleted despite resumable state cleanup failure: %v", err)
+		t.Fatalf("document was deleted before state cleanup succeeded: %v", err)
 	}
 }
 
@@ -907,7 +934,7 @@ func TestDeleteDocumentFullKeepsDocumentWhenChunkDeletionFails(t *testing.T) {
 	}
 }
 
-func TestRemoveDocumentKeepFilePurgesTaskStateBeforeDeletingDocument(t *testing.T) {
+func TestRemoveDocumentKeepFileDeletesTaskBeforePurgingState(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -923,11 +950,133 @@ func TestRemoveDocumentKeepFilePurgesTaskStateBeforeDeletingDocument(t *testing.
 	}
 	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
 		t.Fatalf("reload ingestion task: %v", err)
-	} else if task == nil {
-		t.Fatal("ingestion task was deleted despite resumable state cleanup failure")
+	} else if task != nil {
+		t.Fatal("ingestion task was not deleted before state cleanup")
 	}
 	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
-		t.Fatalf("document was deleted despite resumable state cleanup failure: %v", err)
+		t.Fatalf("document was deleted before state cleanup succeeded: %v", err)
+	}
+}
+
+func TestDocumentCleanupRecordsCallerSpecificTaskCancellationReason(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*DocumentService, *entity.Document) error
+		want string
+	}{
+		{
+			name: "delete document",
+			run: func(svc *DocumentService, _ *entity.Document) error {
+				return svc.deleteDocumentFull(t.Context(), "doc-1")
+			},
+			want: taskTerminalMessageDocumentDeleted,
+		},
+		{
+			name: "remove document keep file",
+			run: func(svc *DocumentService, _ *entity.Document) error {
+				return svc.RemoveDocumentKeepFile(t.Context(), "doc-1")
+			},
+			want: taskTerminalMessageDocumentRemoved,
+		},
+		{
+			name: "clear parse results",
+			run: func(svc *DocumentService, doc *entity.Document) error {
+				return svc.clearDocumentParseResults(t.Context(), doc, "tenant-1", taskTerminalMessageSuperseded)
+			},
+			want: taskTerminalMessageSuperseded,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+			insertTestOpenTaskRun(t, "task-1", "parse-run-1", "user-1", "doc-1", "kb-1")
+
+			svc := testDocumentService(t)
+			svc.purgeTaskState = func(context.Context, string) error { return nil }
+			doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+			if err != nil {
+				t.Fatalf("load document: %v", err)
+			}
+			if err := tt.run(svc, doc); err != nil {
+				t.Fatalf("%s: %v", tt.name, err)
+			}
+
+			var terminal entity.IngestionTaskLog
+			if err := db.Where("pipeline_log_id = ? AND event_type = ?", "parse-run-1", dao.EventTypeTerminal).
+				First(&terminal).Error; err != nil {
+				t.Fatalf("load terminal event: %v", err)
+			}
+			if terminal.Message != tt.want {
+				t.Fatalf("terminal message = %q, want %q", terminal.Message, tt.want)
+			}
+		})
+	}
+}
+
+func TestDocumentCleanupRejectsActiveTask(t *testing.T) {
+	for _, status := range []string{common.RUNNING, common.STOPPING} {
+		t.Run(status, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+			insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+			insertTestIngestionTaskWithStatus(t, "task-active", "user-1", "doc-1", "kb-1", status)
+
+			svc := testDocumentService(t)
+			doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+			if err != nil {
+				t.Fatalf("load document: %v", err)
+			}
+
+			tests := []struct {
+				name string
+				run  func() error
+			}{
+				{
+					name: "delete document",
+					run:  func() error { return svc.deleteDocumentFull(t.Context(), "doc-1") },
+				},
+				{
+					name: "remove document keep file",
+					run:  func() error { return svc.RemoveDocumentKeepFile(t.Context(), "doc-1") },
+				},
+				{
+					name: "clear parse results",
+					run: func() error {
+						return svc.clearDocumentParseResults(t.Context(), doc, "tenant-1", taskTerminalMessageSuperseded)
+					},
+				},
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					purged := map[string]bool{}
+					svc.purgeTaskState = func(_ context.Context, taskID string) error {
+						purged[taskID] = true
+						return nil
+					}
+					if err := tt.run(); err == nil {
+						t.Fatalf("cleanup succeeded with an active %s task", status)
+					}
+					if len(purged) != 0 {
+						t.Fatalf("purged task state %v before rejecting an active task", purged)
+					}
+					if _, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, "task-active"); err != nil {
+						t.Fatalf("task was removed after rejected cleanup: %v", err)
+					}
+					stored, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+					if err != nil {
+						t.Fatalf("document was removed after rejected cleanup: %v", err)
+					}
+					if stored.TokenNum != 10 || stored.ChunkNum != 5 {
+						t.Fatalf("document counters changed after rejected cleanup: token=%d chunk=%d", stored.TokenNum, stored.ChunkNum)
+					}
+				})
+			}
+		})
 	}
 }
 
@@ -1277,7 +1426,6 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	if doc["content_hash"] != "06b05ab6733a618578af5f94892f3950" {
 		t.Fatalf("content_hash=%v", doc["content_hash"])
 	}
-	assertUploadedDocumentOwnerGrant(t, ctx, doc["id"].(string))
 	cfg := doc["parser_config"].(map[string]interface{})
 	if cfg["existing"] != "value" || cfg["table_column_mode"] != "assist" {
 		t.Fatalf("parser_config=%v", cfg)
@@ -1348,6 +1496,15 @@ func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
 
 func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 	t.Helper()
+	modelID := func(defaultID string) string {
+		if userID == "user-1" && tenantID == "tenant-1" {
+			return defaultID
+		}
+		return fmt.Sprintf("%s-%s-%s", defaultID, userID, tenantID)
+	}
+	chatModelID := modelID("llm-default")
+	embeddingModelID := modelID("embd-default")
+	asrModelID := modelID("asr-default")
 	// Insert user if not exists (email is NOT NULL, password is nullable pointer)
 	var existingUser entity.User
 	if err := dao.DB.Where("id = ?", userID).First(&existingUser).Error; err != nil {
@@ -1373,9 +1530,9 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 			TenantID: tenantID,
 			Role:     "owner",
 			Status:   sptr(entity.TenantMembershipStatusJoined),
-			LLMID:    "llm-default",
-			EmbdID:   "embd-default",
-			ASRID:    "asr-default",
+			LLMID:    chatModelID,
+			EmbdID:   embeddingModelID,
+			ASRID:    asrModelID,
 		}
 		if err = dao.DB.Create(ut).Error; err != nil {
 			t.Fatalf("insert test user_tenant: %v", err)
@@ -1383,8 +1540,27 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 	}
 	if err := dao.DB.Model(&entity.UserTenant{}).
 		Where("user_id = ? AND tenant_id = ?", userID, tenantID).
-		Updates(map[string]interface{}{"llm_id": "llm-default", "embd_id": "embd-default", "asr_id": "asr-default"}).Error; err != nil {
+		Updates(map[string]interface{}{"llm_id": chatModelID, "embd_id": embeddingModelID, "asr_id": asrModelID}).Error; err != nil {
 		t.Fatalf("set test owner model defaults: %v", err)
+	}
+	providerID := fmt.Sprintf("test-default-provider-%s-%s", userID, tenantID)
+	instanceID := fmt.Sprintf("test-default-instance-%s-%s", userID, tenantID)
+	provider := &entity.TenantModelProvider{ID: providerID, UserID: userID, TenantID: tenantID, ProviderName: "OpenAI"}
+	if err := dao.DB.Where("id = ?", providerID).FirstOrCreate(provider).Error; err != nil {
+		t.Fatalf("seed test default provider: %v", err)
+	}
+	instance := &entity.TenantModelInstance{ID: instanceID, ProviderID: providerID, InstanceName: "default", Status: "active", Extra: "{}"}
+	if err := dao.DB.Where("id = ?", instanceID).FirstOrCreate(instance).Error; err != nil {
+		t.Fatalf("seed test default instance: %v", err)
+	}
+	for _, model := range []*entity.TenantModel{
+		{ID: chatModelID, ProviderID: providerID, InstanceID: instanceID, ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: "{}"},
+		{ID: embeddingModelID, ProviderID: providerID, InstanceID: instanceID, ModelName: "text-embedding-3-small", ModelType: int(entity.ModelTypeEmbedding), Status: "active", Extra: "{}"},
+		{ID: asrModelID, ProviderID: providerID, InstanceID: instanceID, ModelName: "whisper-1", ModelType: int(entity.ModelTypeSpeech2Text), Status: "active", Extra: "{}"},
+	} {
+		if err := dao.DB.Where("id = ?", model.ID).FirstOrCreate(model).Error; err != nil {
+			t.Fatalf("seed test default model %s: %v", model.ID, err)
+		}
 	}
 	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, userID); err != nil {
 		t.Fatalf("prepare document permission fixture: %v", err)
@@ -3215,14 +3391,15 @@ func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
 		present      map[string]bool
 		wantParser   string
 		wantPipeline string
-		// reset marks a pipeline switch, which (by design A3 整体重置) must reset
-		// parser_config to the canvas DSL defaults, discarding the submitted config.
-		reset bool
 	}{
 		{name: "config only", wantParser: "naive"},
 		{name: "same builtin", request: UpdateDatasetDocumentRequest{ParseType: &builtin, ParserID: sptr("naive")}, present: map[string]bool{"parse_type": true, "parser_id": true}, wantParser: "naive"},
 		{name: "different builtin", request: UpdateDatasetDocumentRequest{ParseType: &builtin, ParserID: sptr("manual")}, present: map[string]bool{"parse_type": true, "parser_id": true}, wantParser: "manual"},
-		{name: "pipeline", request: UpdateDatasetDocumentRequest{ParseType: &pipeline, PipelineID: &pipelineID, PipelineVersionID: sptr("v-doc-pipe-0001")}, present: map[string]bool{"parse_type": true, "pipeline_id": true, "pipeline_version_id": true}, wantParser: "naive", wantPipeline: pipelineID, reset: true},
+		// A pipeline switch with a submitted parser_config keeps the submitted
+		// values, reconciled against the new pipeline's DSL (the form resets
+		// itself on a switch, so the submitted config is the user's edit of the
+		// new pipeline).
+		{name: "pipeline", request: UpdateDatasetDocumentRequest{ParseType: &pipeline, PipelineID: &pipelineID, PipelineVersionID: sptr("v-doc-pipe-0001")}, present: map[string]bool{"parse_type": true, "pipeline_id": true, "pipeline_version_id": true}, wantParser: "naive", wantPipeline: pipelineID},
 		{name: "chunk method", request: UpdateDatasetDocumentRequest{ChunkMethod: sptr("manual")}, present: map[string]bool{"chunk_method": true}, wantParser: "manual"},
 	}
 	for _, tc := range cases {
@@ -3268,28 +3445,15 @@ func TestUpdateDatasetDocumentParserConfigPreservesParseResults(t *testing.T) {
 			if doc.TokenNum != 10 || doc.ChunkNum != 5 || doc.Progress != 0.75 || doc.ProcessDuration != 42 {
 				t.Fatalf("persisted parse results changed: %+v", doc)
 			}
-			if tc.reset {
-				// A pipeline switch resets parser_config to the canvas DSL
-				// defaults (design A3 整体重置). The submitted
-				// Extractor keywords.top_n=5 must be discarded and replaced by the
-				// DSL default (0), proving the reset took effect.
-				extractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
-				if !ok {
-					t.Fatalf("canvas DSL default parser_config missing Extractor after pipeline switch: %#v", doc.ParserConfig)
-				}
-				keywords, ok := extractor["keywords"].(map[string]interface{})
-				if !ok || keywords["top_n"] != float64(0) {
-					t.Fatalf("submitted keywords.top_n should be reset to DSL default (0), got %#v (config=%#v)", keywords["top_n"], doc.ParserConfig)
-				}
-			} else {
-				extractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
-				if !ok {
-					t.Fatalf("extractor config not saved: %#v", doc.ParserConfig)
-				}
-				keywords, ok := extractor["keywords"].(map[string]interface{})
-				if !ok || keywords["top_n"] != float64(5) {
-					t.Fatalf("parser config not saved: %#v", doc.ParserConfig)
-				}
+			// The submitted Extractor keywords.top_n=5 must survive (reconciled
+			// onto the target DSL), including on a pipeline switch.
+			extractor, ok := doc.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("extractor config not saved: %#v", doc.ParserConfig)
+			}
+			keywords, ok := extractor["keywords"].(map[string]interface{})
+			if !ok || keywords["top_n"] != float64(5) {
+				t.Fatalf("parser config not saved: %#v", doc.ParserConfig)
 			}
 			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 			if err != nil {
@@ -3326,7 +3490,7 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.docEngine = engine
 
-	if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1"); err != nil {
+	if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
 		t.Fatalf("clearDocumentParseResults failed: %v", err)
 	}
 
@@ -3368,7 +3532,7 @@ func TestClearDocumentParseResultsDeletesDocumentGeneratedChunks(t *testing.T) {
 		t.Fatalf("load document: %v", err)
 	}
 
-	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); err != nil {
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
 		t.Fatalf("clearDocumentParseResults failed: %v", err)
 	}
 	if !engine.generatedDeleted {
@@ -3401,7 +3565,7 @@ func TestClearDocumentParseResultsDeletesSourceChunkImages(t *testing.T) {
 		t.Fatalf("load document: %v", err)
 	}
 
-	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); err != nil {
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
 		t.Fatalf("clearDocumentParseResults failed: %v", err)
 	}
 	if imageStore.ObjExist(t.Context(), "kb-1", "image-001") {
@@ -3409,7 +3573,7 @@ func TestClearDocumentParseResultsDeletesSourceChunkImages(t *testing.T) {
 	}
 }
 
-func TestClearDocumentParseResultsPurgesTaskStateBeforeDeletingTask(t *testing.T) {
+func TestClearDocumentParseResultsDeletesTaskBeforePurgingState(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
@@ -3424,15 +3588,15 @@ func TestClearDocumentParseResultsPurgesTaskStateBeforeDeletingTask(t *testing.T
 		t.Fatalf("load document: %v", err)
 	}
 
-	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); !errors.Is(err, purgeErr) {
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1", taskTerminalMessageSuperseded); !errors.Is(err, purgeErr) {
 		t.Fatalf("clearDocumentParseResults error = %v, want purge error", err)
 	}
 	remaining, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1")
 	if err != nil {
 		t.Fatalf("reload ingestion task: %v", err)
 	}
-	if remaining == nil {
-		t.Fatal("task was deleted despite resumable state cleanup failure")
+	if remaining != nil {
+		t.Fatal("task was not deleted before state cleanup")
 	}
 }
 
@@ -3502,10 +3666,10 @@ func TestClearDocumentParseResultsIsIdempotentForStaleDocSnapshot(t *testing.T) 
 	}
 
 	svc := testDocumentService(t)
-	if err = svc.clearDocumentParseResults(ctx, staleDoc, "tenant-1"); err != nil {
+	if err = svc.clearDocumentParseResults(ctx, staleDoc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
 		t.Fatalf("first clearDocumentParseResults failed: %v", err)
 	}
-	if err = svc.clearDocumentParseResults(ctx, staleDoc, "tenant-1"); err != nil {
+	if err = svc.clearDocumentParseResults(ctx, staleDoc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
 		t.Fatalf("second clearDocumentParseResults failed: %v", err)
 	}
 
@@ -3538,7 +3702,7 @@ func TestClearDocumentParseResults_RejectsNonTerminalIngestionTask(t *testing.T)
 			}
 			svc := testDocumentService(t)
 
-			if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1"); err == nil {
+			if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1", taskTerminalMessageSuperseded); err == nil {
 				t.Fatalf("expected error for %s ingestion task, got nil", status)
 			}
 			// The non-terminal task must NOT be deleted.
@@ -3575,13 +3739,24 @@ func TestClearDocumentParseResultsDoesNotClearResultsWhenTaskStartsRunning(t *te
 	if err != nil {
 		t.Fatalf("get document: %v", err)
 	}
-	if err = testDocumentService(t).clearDocumentParseResults(ctx, doc, "tenant-1"); err == nil || !strings.Contains(err.Error(), "started running") {
+	purgeCalls := 0
+	svc := testDocumentService(t)
+	svc.purgeTaskState = func(context.Context, string) error {
+		purgeCalls++
+		return nil
+	}
+	if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1", taskTerminalMessageSuperseded); err == nil || !strings.Contains(err.Error(), "started running") {
 		t.Fatalf("expected reparse cleanup to reject a task that started running, got %v", err)
+	}
+	if purgeCalls != 0 {
+		t.Fatalf("purged task state %d time(s) after the conditional task delete failed", purgeCalls)
 	}
 	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
 	if err != nil {
 		t.Fatalf("reload task: %v", err)
 	}
+	// The task won the race and remains active, so the conditional delete did
+	// not remove it.
 	if task.Status != common.RUNNING {
 		t.Fatalf("task status = %q, want %q", task.Status, common.RUNNING)
 	}
@@ -3620,7 +3795,7 @@ func TestClearDocumentParseResults_DeletesTerminalIngestionTask(t *testing.T) {
 			}
 			svc := testDocumentService(t)
 
-			if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1"); err != nil {
+			if err = svc.clearDocumentParseResults(ctx, doc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
 				t.Fatalf("clearDocumentParseResults for %s task: %v", status, err)
 			}
 			task, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
@@ -4306,7 +4481,7 @@ func TestUpdateDatasetDocumentParentChildConfigReachesCanvasChunker(t *testing.T
 	seedDocVersion(t, db, pipelineID, "v-pcc-0001", 0)
 	// Bind the document to the pipeline first, so the update below is a plain
 	// parser_config patch on an already-canvas document. A pipeline switch must
-	// reset parser_config to the canvas DSL defaults (design A3 整体重置), so the
+	// reset parser_config to the canvas DSL defaults, so the
 	// submitted parent_child would be dropped on a switch; this test verifies the
 	// config reaches the canvas chunker when no switch occurs.
 	bindDocCanvas(t, db, "kb-1", "doc-1", pipelineID, "v-pcc-0001")
@@ -5130,9 +5305,10 @@ func TestIngest_DeleteOnlyCleansTasks(t *testing.T) {
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
-	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+	insertTestOpenTaskRun(t, "task-1", "parse-run-1", "user-1", "doc-1", "kb-1")
 
 	svc := testDocumentService(t)
+	svc.purgeTaskState = func(context.Context, string) error { return nil }
 	ctx := documentTestContext(t.Context())
 	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1"},
@@ -5152,6 +5328,15 @@ func TestIngest_DeleteOnlyCleansTasks(t *testing.T) {
 	}
 	if task != nil {
 		t.Fatal("expected task to be deleted in delete-only mode")
+	}
+
+	var terminal entity.IngestionTaskLog
+	if err := db.Where("pipeline_log_id = ? AND event_type = ?", "parse-run-1", dao.EventTypeTerminal).
+		First(&terminal).Error; err != nil {
+		t.Fatalf("load terminal event: %v", err)
+	}
+	if terminal.Message != taskTerminalMessageParseResultsDeleted {
+		t.Fatalf("terminal message = %q, want delete-only reason", terminal.Message)
 	}
 
 	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
@@ -5251,5 +5436,76 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 	_, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err == nil {
 		t.Fatal("document should have been deleted but still exists")
+	}
+}
+
+func TestDownloadEmptyDocumentAndMissingBlob(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	store := useFakeStorage(t)
+	insertTestPreviewDoc(t, db, store, "empty-doc", "kb-empty", "")
+	svc := testDocumentService(t)
+	got, err := svc.DownloadDocument(t.Context(), "kb-empty", "empty-doc")
+	if err != nil || got == nil || len(got.Data) != 0 {
+		t.Fatalf("empty download = %#v, %v", got, err)
+	}
+	clear(store.objects)
+	if _, err := svc.DownloadDocument(t.Context(), "kb-empty", "empty-doc"); err == nil {
+		t.Fatal("missing blob must fail")
+	}
+}
+
+type renameStoreEngine struct {
+	fakeChatDocEngine
+	exists   bool
+	storeErr error
+	err      error
+	updates  int
+}
+
+func (e *renameStoreEngine) GetType() string { return "elasticsearch" }
+func (e *renameStoreEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
+	return e.exists, e.storeErr
+}
+func (e *renameStoreEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {
+	e.updates++
+	return e.err
+}
+func TestRenameDocumentChunkStore(t *testing.T) {
+	for _, tc := range []struct {
+		chunks   int64
+		exists   bool
+		storeErr error
+		name     string
+		err      error
+		updates  int
+	}{
+		{name: "unparsed"}, {name: "zero count indexed", exists: true, updates: 1}, {name: "store error", storeErr: errors.New("store unavailable")}, {name: "parsed", chunks: 1, updates: 1}, {name: "engine error", chunks: 1, err: errors.New("unavailable"), updates: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertNamedTestDoc(t, "doc-1", "kb-1", "old.txt", 0, tc.chunks)
+			svc := testDocumentService(t)
+			engine := &renameStoreEngine{err: tc.err, exists: tc.exists, storeErr: tc.storeErr}
+			svc.docEngine = engine
+			doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = svc.updateDocumentNameOnly(t.Context(), doc, kb, "new.txt")
+			wantErr := tc.err
+			if tc.storeErr != nil {
+				wantErr = tc.storeErr
+			}
+			if !errors.Is(err, wantErr) || engine.updates != tc.updates {
+				t.Fatalf("rename error=%v updates=%d", err, engine.updates)
+			}
+		})
 	}
 }

@@ -1,4 +1,6 @@
 ---
+title: Quickstart
+sidebar_label: Quickstart
 sidebar_position: 2
 slug: /
 sidebar_custom_props: {
@@ -14,7 +16,7 @@ This quick start guide describes a general process from:
 - Establishing an AI chat based on your datasets.
 
 :::danger IMPORTANT
-This guide deploys RAGFlow using Docker images and the Docker Compose configuration provided in the repository. Docker images are available for Linux x86-64 and ARM64 starting with v1.0.0-rc2. Docker automatically selects the image matching your host architecture when you use the release tag.
+This guide deploys RAGFlow using Docker images and the Docker Compose configuration provided in the repository. Docker images are available for Linux x86-64 and ARM64 starting with v1.0.0-rc3. Docker automatically selects the image matching your host architecture when you use the release tag.
 :::
 
 ## Prerequisites
@@ -48,12 +50,12 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
    # Enter the Docker deployment directory.
    cd ragflow/docker
    # Check out the latest release tag; replace it with another version if needed.
-   git checkout v1.0.0-rc2
+   git checkout v1.0.0-rc3
    # Start the RAGFlow services and their dependencies in the background.
    docker compose -f docker-compose.yml up -d
    ```
 
-   To deploy another version, replace `v1.0.0-rc2` with a tag from the [Releases](https://github.com/infiniflow/ragflow/releases) page. Before starting the services, ensure `RAGFLOW_IMAGE` in `docker/.env` uses the matching image tag.
+   To deploy another version, replace `v1.0.0-rc3` with a tag from the [Releases](https://github.com/infiniflow/ragflow/releases) page. Before starting the services, ensure `RAGFLOW_IMAGE` in `docker/.env` uses the matching image tag.
 
    The `docker/.env` file controls `DOC_ENGINE`, service ports, and dependency credentials. Change the default passwords before deploying to a network-accessible host.
 
@@ -106,7 +108,7 @@ You can upload files to a dataset in RAGFlow and parse them into chunks. A datas
 To create your first dataset:
 
 1. Select **Datasets** in the navigation bar, then click **Create dataset**.
-2. Enter **Name**, select **Embedding model**, and choose **Parse type**. For a first dataset, select **Built-in** and a parsing method suitable for your files. To use **Pipeline**, first create an **Ingestion Pipeline** in **Agent > Ingestion Pipeline**, then select it in the creation dialog.
+2. Enter **Name**, select **Embedding model**, then choose a built-in template or a saved ingestion pipeline from **Parse mode**. For a first dataset, use **General**.
 3. Click **Save**, open the dataset, and review its **Configuration** before uploading files.
 
    See [Dataset List and Creation](./guides/dataset/dataset_list_and_creation.md) and [Dataset Configuration](./guides/dataset/configuration.md) for details.
@@ -142,9 +144,6 @@ RAGFlow features visibility and explainability, allowing you to view the chunkin
 
 4. In Retrieval testing, ask a quick question in **Test text** to double check if your configurations work:
 
-   _As you can tell from the following, RAGFlow responds with truthful citations._
-
-   ![retrieval test](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/retrieval_test.jpg)
 
 ## Set up an AI chat
 

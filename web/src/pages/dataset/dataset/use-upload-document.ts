@@ -10,10 +10,11 @@ import { getUnSupportedFilesCount } from '@/utils/document-util';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { buildUploadGapModalContent } from './parser-gap-content';
+import { useDatasetPipelineMissing } from './use-dataset-pipeline-missing';
 import { useParserGapValidation } from './use-parser-gap-validation';
 import { hasUnsupportedTypeGap } from './utils';
 
-export const useHandleUploadDocument = () => {
+export const useHandleUploadDocument = (pipelineId?: string) => {
   const { t } = useTranslation();
   const {
     visible: documentUploadVisible,
@@ -23,6 +24,7 @@ export const useHandleUploadDocument = () => {
   const { uploadDocument, loading } = useUploadDocument();
   const { runDocumentByIds } = useRunDocument();
   const { findParseGaps, findDocumentParseGaps } = useParserGapValidation();
+  const pipelineMissing = useDatasetPipelineMissing(pipelineId);
 
   const proceedUpload = useCallback(
     async ({
@@ -97,14 +99,9 @@ export const useHandleUploadDocument = () => {
     ],
   );
 
-  const onDocumentUploadOk = useCallback(
+  const validateGapsAndUpload = useCallback(
     async (values: UploadFormSchemaType) => {
-      const { fileList } = values;
-      if (fileList.length === 0) {
-        return;
-      }
-
-      const names = fileList.map((file) =>
+      const names = values.fileList.map((file) =>
         file instanceof File ? file.name : file.file.name,
       );
       const gaps = findParseGaps(names);
@@ -134,6 +131,35 @@ export const useHandleUploadDocument = () => {
       return proceedUpload(values);
     },
     [findParseGaps, proceedUpload, t],
+  );
+
+  const onDocumentUploadOk = useCallback(
+    async (values: UploadFormSchemaType) => {
+      if (values.fileList.length === 0) {
+        return;
+      }
+
+      // The configured pipeline can no longer parse, so parse-on-creation
+      // would silently do nothing. Confirm first; on "Continue upload" the
+      // parsing is dropped. The gap check still runs because the backend
+      // reseeds parser configs at upload regardless.
+      if (values.parseOnCreation && pipelineMissing) {
+        Modal.warning({
+          title: t('knowledgeDetails.uploadPipelineDeletedTitle'),
+          content: t('knowledgeDetails.uploadPipelineDeletedContent'),
+          okText: t('knowledgeDetails.continueUpload'),
+          cancelText: t('common.cancel'),
+          closable: false,
+          onOk: () => {
+            validateGapsAndUpload({ ...values, parseOnCreation: false });
+          },
+        });
+        return;
+      }
+
+      return validateGapsAndUpload(values);
+    },
+    [pipelineMissing, validateGapsAndUpload, t],
   );
 
   return {

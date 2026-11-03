@@ -10,6 +10,9 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 )
 
+// stubPDFOutlines replaces the bookmark reader for one test and reports how
+// many times it was consulted. The seam is package-global, so tests using it
+// must not run in parallel.
 func stubPDFOutlines(t *testing.T, outlines []deepdoctype.Outline) *int {
 	t.Helper()
 	calls := 0
@@ -22,10 +25,15 @@ func stubPDFOutlines(t *testing.T, outlines []deepdoctype.Outline) *int {
 	return &calls
 }
 
+// remotePDFResult is the file meta a remote engine produces: pdfFileMeta seeds
+// an empty outline.
 func remotePDFResult(filename string) ParseResult {
 	return pdfItemsToResult(filename, []map[string]any{{"text": "body", "page_number": 1}}, 3)
 }
 
+// TestAttachPDFOutlinesFillsRemoteOutline pins the #21221 fix for the remote
+// PDF engines: their result carries an empty outline, so the bookmarks read
+// from the source PDF are what the title chunker uses for heading levels.
 func TestAttachPDFOutlinesFillsRemoteOutline(t *testing.T) {
 	stubPDFOutlines(t, []deepdoctype.Outline{{Title: "1 Introduction", Level: 0, PageNumber: 2}})
 	result := AttachPDFOutlines(remotePDFResult("remote.pdf"), []byte("%PDF-1.4 fake"))
@@ -38,6 +46,8 @@ func TestAttachPDFOutlinesFillsRemoteOutline(t *testing.T) {
 	}
 }
 
+// TestAttachPDFOutlinesKeepsEngineOutline asserts the engine that already read
+// the bookmarks stays authoritative and is not re-read.
 func TestAttachPDFOutlinesKeepsEngineOutline(t *testing.T) {
 	calls := stubPDFOutlines(t, []deepdoctype.Outline{{Title: "Ignored", Level: 0, PageNumber: 1}})
 	result := AttachPDFOutlines(ParseResult{
@@ -51,6 +61,9 @@ func TestAttachPDFOutlinesKeepsEngineOutline(t *testing.T) {
 	}
 }
 
+// TestAttachPDFOutlinesKeepsEmptyOutlineWhenAbsent covers a PDF without
+// bookmarks: the key stays an empty slice, never a nil the consumers would have
+// to special-case. An errored or file-less result is untouched.
 func TestAttachPDFOutlinesKeepsEmptyOutlineWhenAbsent(t *testing.T) {
 	stubPDFOutlines(t, nil)
 	result := AttachPDFOutlines(remotePDFResult("plain.pdf"), []byte("%PDF-1.4 fake"))
@@ -58,16 +71,27 @@ func TestAttachPDFOutlinesKeepsEmptyOutlineWhenAbsent(t *testing.T) {
 	if !ok || len(outline) != 0 {
 		t.Fatalf("File[outline] = %#v (ok=%v), want empty []map[string]any", result.File["outline"], ok)
 	}
+
 	if failed := AttachPDFOutlines(ParseResult{Err: errors.New("parse failed")}, []byte("%PDF")); failed.File != nil {
 		t.Fatalf("errored result gained a file meta: %#v", failed.File)
 	}
+	if got := AttachPDFOutlines(ParseResult{}, []byte("%PDF")); got.File != nil {
+		t.Fatalf("result without file meta gained one: %#v", got.File)
+	}
 }
 
-func TestFinalizePDFResultAttachesOutline(t *testing.T) {
+// TestParseWithResultAttachesOutline pins the attachment on the built-in parse
+// method boundary (ParseWithResult). The dispatched tenant and vision engines
+// normalize outside this package and have their own call site, pinned by
+// TestPDFDispatchAttachesPDFOutlines in the component package. The bookmark
+// reader is stubbed here, so only a structurally valid PDF is needed as input.
+func TestParseWithResultAttachesOutline(t *testing.T) {
 	stubPDFOutlines(t, []deepdoctype.Outline{{Title: "Appendix", Level: 1, PageNumber: 2}})
 	p := &PDFParser{ParseMethod: "plain_text"}
-	raw := remotePDFResult("bookmarked.pdf")
-	result := p.FinalizePDFResult([]byte("%PDF"), p.NormalizeResult(t.Context(), "bookmarked.pdf", raw))
+	result := p.ParseWithResult(t.Context(), "bookmarked.pdf", bookmarkedPDF(t))
+	if result.Err != nil {
+		t.Fatalf("ParseWithResult: %v", result.Err)
+	}
 	outline, ok := result.File["outline"].([]map[string]any)
 	if !ok || len(outline) != 1 || outline[0]["title"] != "Appendix" {
 		t.Fatalf("File[outline] = %#v, want the stubbed bookmark", result.File["outline"])
@@ -108,6 +132,9 @@ func TestFinalizePDFResultRemoveTOCContentsHeading(t *testing.T) {
 	}
 }
 
+// bookmarkedPDF builds a two-page PDF whose outline is Chapter 1 (page 1) with
+// a Section 1.1 child (page 2), then Chapter 2 (page 2). It is hand-written so
+// the native extraction test has a deterministic fixture with no binary asset.
 func bookmarkedPDF(t *testing.T) []byte {
 	t.Helper()
 	page := func(contentsRef int) string {
@@ -119,16 +146,16 @@ func bookmarkedPDF(t *testing.T) []byte {
 	}
 	objects := []string{
 		"<< /Type /Catalog /Pages 2 0 R /Outlines 3 0 R >>",
-		"<< /Type /Pages /Kids [4 0 R 5 0 R] /Count 2 >>",
-		"<< /Type /Outlines /First 6 0 R /Last 8 0 R /Count 3 >>",
+		"<< /Type /Pages /Kids [5 0 R 7 0 R] /Count 2 >>",
+		"<< /Type /Outlines /First 4 0 R /Last 6 0 R /Count 2 >>",
+		"<< /Title (Chapter 1) /Parent 3 0 R /First 8 0 R /Last 8 0 R /Count 1 /Next 6 0 R /Dest [5 0 R /XYZ null null null] >>",
 		page(10),
+		"<< /Title (Chapter 2) /Parent 3 0 R /Prev 4 0 R /Dest [7 0 R /XYZ null null null] >>",
 		page(11),
-		"<< /Title (Chapter 1) /Parent 3 0 R /First 7 0 R /Last 7 0 R /Count 1 /Dest [4 0 R /XYZ null null null] >>",
-		"<< /Title (Section 1.1) /Parent 6 0 R /Dest [5 0 R /XYZ null null null] >>",
-		"<< /Title (Chapter 2) /Parent 3 0 R /Dest [5 0 R /XYZ null null null] >>",
-		body("Page one"),
-		body("Page two"),
+		"<< /Title (Section 1.1) /Parent 4 0 R /Dest [7 0 R /XYZ null null null] >>",
 		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+		body("page one"),
+		body("page two"),
 	}
 	var buf bytes.Buffer
 	buf.WriteString("%PDF-1.4\n")

@@ -174,7 +174,7 @@ func TestDatasetsHandlerListDatasetsRejectsDuplicateIDs(t *testing.T) {
 	if body.Code != int(common.CodeArgumentError) {
 		t.Fatalf("code=%d want=%d", body.Code, common.CodeArgumentError)
 	}
-	expected := fmt.Sprintf("Duplicate ids: '%s'", listDatasetsTestKBID)
+	expected := fmt.Sprintf("duplicate ids: '%s'", listDatasetsTestKBID)
 	if body.Message != expected {
 		t.Fatalf("message=%q want=%q", body.Message, expected)
 	}
