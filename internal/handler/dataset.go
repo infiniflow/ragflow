@@ -1119,11 +1119,6 @@ func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/metadata/flattened [get]
 func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
 	datasetIDsStr := c.Query("dataset_ids")
 	if datasetIDsStr == "" {

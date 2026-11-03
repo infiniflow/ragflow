@@ -608,7 +608,7 @@ func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, map[
 func (f *fullFakeAgentService) DeleteAgent(context.Context, string, string) error {
 	return nil
 }
-func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string, string, any) (<-chan canvas.RunEvent, error) {
+func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string, any, []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	ch := make(chan canvas.RunEvent)
 	close(ch)
 	return ch, nil
@@ -876,7 +876,7 @@ type stubChatRunner struct {
 	userInput        any
 }
 
-func (s *stubChatRunner) RunAgent(ctx context.Context, _, _, sessionID, _ string, userInput any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (s *stubChatRunner) RunAgent(ctx context.Context, _, sessionID, _ string, userInput any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	s.sessionID = sessionID
 	s.trustedSessionID = service.AgentSessionIDFromContext(ctx)
 	s.userInput = userInput
@@ -1133,7 +1133,7 @@ type emptySessionCaptureRunner struct {
 	trustedSessionID string
 }
 
-func (r *emptySessionCaptureRunner) RunAgent(ctx context.Context, _, _, sessionID, _ string, _ any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (r *emptySessionCaptureRunner) RunAgent(ctx context.Context, _, sessionID, _ string, _ any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	r.sessionID = sessionID
 	r.trustedSessionID = service.AgentSessionIDFromContext(ctx)
 	ch := make(chan canvas.RunEvent)
@@ -1296,7 +1296,7 @@ type captureChatRunner struct {
 	capturedFiles *[]map[string]interface{}
 }
 
-func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _ string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _ string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	*c.captured = userInput
 	if c.capturedFiles != nil {
 		*c.capturedFiles = files

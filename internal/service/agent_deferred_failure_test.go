@@ -115,7 +115,6 @@ func TestRunAgent_DeferredAgentModelFailureStaysInChatStream(t *testing.T) {
 	svc := NewAgentServiceWithOptions(nil, nil, tracker)
 	events, err := svc.RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-deferred-fail"),
-		"user-1",
 		"canvas-deferred-fail",
 		"session-deferred-fail",
 		"",

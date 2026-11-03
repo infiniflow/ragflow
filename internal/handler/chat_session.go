@@ -72,13 +72,6 @@ func sessionHistoryQuery(c *gin.Context) (dao.ConversationHistoryOptions, error)
 // @Success 200 {object} service.ListChatSessionsResponse
 // @Router /api/v1/chats/<chat_id>/sessions [get]
 func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
 	// Get chat_id from query parameter
 	chatID := c.Param("chat_id")
 	if chatID == "" {
@@ -133,7 +126,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 		return
 	}
 	options.NoHistory = includeHistory == "false" || includeHistory == "False"
-	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), c.Query("user_id"), terms, page, pageSize, options)
+	result, err := h.chatSessionService.ListChatSessions(ctx, chatID, c.Query("id"), c.Query("name"), c.Query("user_id"), terms, page, pageSize, options)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -179,13 +172,6 @@ type ChatCompletionsRequest struct {
 // @Success 200 {string} text/event-stream "Streaming SSE response"
 // @Router /api/v1/chat/completions [post]
 func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
 	var rawBody map[string]interface{}
 	if err := c.ShouldBindJSON(&rawBody); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
@@ -281,7 +267,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		go func() {
 			defer close(streamChan)
 			_, _ = h.chatSessionService.ChatCompletions(
-				ctx, userID,
+				ctx,
 				req.ChatID, sessionID,
 				req.Messages, req.Question, req.Files,
 				req.LLMID, genConfig, kwargs,
@@ -312,7 +298,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		clearResponseWriteDeadline(c)
 		var result map[string]interface{}
 		result, err = h.chatSessionService.ChatCompletions(
-			c.Request.Context(), userID,
+			c.Request.Context(),
 			req.ChatID, sessionID,
 			req.Messages, req.Question, req.Files,
 			req.LLMID, genConfig, kwargs,
@@ -333,13 +319,6 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 }
 
 func (h *ChatSessionHandler) GetSession(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	userID := user.ID
 	chatID, sessionID := c.Param("chat_id"), c.Param("session_id")
 
 	ctx := c.Request.Context()
@@ -348,7 +327,7 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
 		return
 	}
-	result, code, err := h.chatSessionService.GetSession(ctx, userID, chatID, sessionID, options)
+	result, code, err := h.chatSessionService.GetSession(ctx, chatID, sessionID, options)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -361,18 +340,6 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 
 // CreateSession create a session in a dialog
 func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "user_id is required")
-		return
-	}
-
 	chatID := strings.TrimSpace(c.Param("chat_id"))
 	if chatID == "" {
 		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "chat_id is required")
@@ -394,7 +361,7 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.chatSessionService.CreateSession(ctx, userID, chatID, req)
+	result, code, err := h.chatSessionService.CreateSession(ctx, chatID, req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -408,21 +375,9 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 
 // DeleteSessions delete a session in a dialog
 func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
 	chatID := strings.TrimSpace(c.Param("chat_id"))
 	if chatID == "" {
 		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "chat_id is required")
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "user_id is required")
 		return
 	}
 
@@ -441,7 +396,7 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, message, code, err := h.chatSessionService.DeleteSessions(ctx, userID, chatID, req)
+	result, message, code, err := h.chatSessionService.DeleteSessions(ctx, chatID, req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -454,13 +409,6 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 }
 
 func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	userID := user.ID
 	chatID, sessionID := c.Param("chat_id"), c.Param("session_id")
 
 	// An empty payload is a valid no-op (mirrors Python's update_session).
@@ -471,7 +419,7 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.chatSessionService.UpdateSession(ctx, userID, chatID, sessionID, req)
+	result, code, err := h.chatSessionService.UpdateSession(ctx, chatID, sessionID, req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -483,16 +431,10 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 }
 
 func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
 	chatID, sessionID, msgID := c.Param("chat_id"), c.Param("session_id"), c.Param("msg_id")
 
 	ctx := c.Request.Context()
-	result, code, err := h.chatSessionService.DeleteSessionMessage(ctx, userID, chatID, sessionID, msgID)
+	result, code, err := h.chatSessionService.DeleteSessionMessage(ctx, chatID, sessionID, msgID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -504,13 +446,6 @@ func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 }
 
 func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	userID := user.ID
 	chatID, sessionID, msgID := c.Param("chat_id"), c.Param("session_id"), c.Param("msg_id")
 
 	req := map[string]interface{}{}
@@ -528,7 +463,7 @@ func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.chatSessionService.UpdateMessageFeedback(c.Request.Context(), userID, chatID, sessionID, msgID, req)
+	result, code, err := h.chatSessionService.UpdateMessageFeedback(c.Request.Context(), chatID, sessionID, msgID, req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return

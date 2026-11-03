@@ -43,11 +43,6 @@ type ChatRecommendationRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chat/recommendation [post]
 func (h *ChatHandler) Recommendation(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
 	var req ChatRecommendationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
