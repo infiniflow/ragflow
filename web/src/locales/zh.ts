@@ -1267,8 +1267,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         cancel: '取消',
         availableTitle: 'GPUStack 中可添加',
         addedTitle: '已添加的模型',
-        modelsLoadFailed:
-          '无法加载此实例的模型，请刷新页面后重试。',
+        modelsLoadFailed: '无法加载此实例的模型，请刷新页面后重试。',
         notRunning: '未运行',
         notRunningTip: 'GPUStack 目前没有提供这个模型，调用会失败。',
         tokens: '{{count}} tokens',
