@@ -132,7 +132,7 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 		// Authorize the named files against the rows this transaction is about
 		// to write, holding them so a concurrent move cannot relocate a file
 		// between the ancestry check and the update below.
-		if err := s.authorizeCommitFiles(ctx, tx, folderID, changes); err != nil {
+		if err := s.authorizeCommitFiles(ctx, tx, folderID, changes, treeState); err != nil {
 			return err
 		}
 
@@ -301,13 +301,15 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 // files[].file_id is independent client input and the writes below address file
 // rows by ID alone, so an unchecked ID retargets another workspace or tenant
 // (IDOR, CWE-639). A change may record the deletion of a file that was already
-// removed, so an unknown ID is rejected only for operations that write the file
-// row.
+// removed or moved away, so such a delete-only ID is validated against the
+// previous tree state instead of the file table: every ID that ever entered the
+// folder history has a tree entry, and one that does not would mint a tombstone
+// for an arbitrary ID that the global per-file version history then exposes.
 //
 // It runs inside the commit transaction and locks the rows it reads: a
 // concurrent move would otherwise be able to relocate a file (or one of its
 // ancestors) after the parent chain was checked and before the write.
-func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, tx *gorm.DB, folderID string, changes []entity.FileChange) error {
+func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, tx *gorm.DB, folderID string, changes []entity.FileChange, treeState map[string]interface{}) error {
 	var folder entity.File
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", folderID).First(&folder).Error; err != nil {
 		return fmt.Errorf("resolve commit folder %s: %w", folderID, err)
@@ -344,6 +346,15 @@ func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, tx *gorm.D
 			if operation != "delete" {
 				return fmt.Errorf("%w: file %s not found in folder %s", permission.ErrPermissionDenied, id, folderID)
 			}
+		}
+		// Delete-only for an ID with no live row: the tombstone below is
+		// written without touching the file table, so the ID must be one this
+		// folder actually committed before (a file since removed or moved
+		// away). An ID absent from the previous tree never belonged to this
+		// history, and minting a tombstone for it would surface in the global
+		// per-file version history.
+		if _, ok := treeState[id]; !ok {
+			return fmt.Errorf("%w: file %s not found in folder %s", permission.ErrPermissionDenied, id, folderID)
 		}
 	}
 
