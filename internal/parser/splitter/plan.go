@@ -93,7 +93,32 @@ func PlanAdaptiveChapters(totalPages int, outlines []doctype.Outline, opts Split
 		return planFixedWindows(totalPages, opts.MaxPages)
 	}
 
-	// Determine minimum level in the outline tree.
+	minLevel, topOutlines := findTopLevelOutlines(validOutlines)
+	if len(topOutlines) == 0 {
+		return planFixedWindows(totalPages, opts.MaxPages)
+	}
+
+	rawSections := buildInitialSections(topOutlines, totalPages)
+	coalescer := newSectionCoalescer(opts)
+
+	for _, sec := range rawSections {
+		if sec.end-sec.start+1 > opts.MaxPages {
+			coalescer.flush()
+			subSlices := partitionOversizedSection(sec, validOutlines, minLevel+1, opts)
+			coalescer.slices = append(coalescer.slices, subSlices...)
+		} else {
+			coalescer.add(sec.start, sec.end, sec.title)
+		}
+	}
+
+	slices := coalescer.result()
+	if len(slices) == 0 {
+		return planFixedWindows(totalPages, opts.MaxPages)
+	}
+	return buildContinuousPlans(slices, totalPages)
+}
+
+func findTopLevelOutlines(validOutlines []doctype.Outline) (int, []doctype.Outline) {
 	minLevel := math.MaxInt
 	for _, o := range validOutlines {
 		if o.Level < minLevel {
@@ -114,20 +139,20 @@ func PlanAdaptiveChapters(totalPages int, outlines []doctype.Outline, opts Split
 			}
 		}
 	}
-	if len(l1) == 0 {
-		return planFixedWindows(totalPages, opts.MaxPages)
-	}
+	return minLevel, l1
+}
 
-	var rawSections []rawSection
-	for i, item := range l1 {
+func buildInitialSections(outlines []doctype.Outline, totalPages int) []rawSection {
+	var sections []rawSection
+	for i, item := range outlines {
 		sp := item.PageNumber - 1
 		if i == 0 {
 			// Include pre-chapter pages (cover, front matter) in the first chapter.
 			sp = 0
 		}
 		ep := totalPages - 1
-		if i+1 < len(l1) {
-			nextPage := l1[i+1].PageNumber - 1
+		if i+1 < len(outlines) {
+			nextPage := outlines[i+1].PageNumber - 1
 			if nextPage > sp {
 				ep = nextPage - 1
 			} else {
@@ -137,180 +162,143 @@ func PlanAdaptiveChapters(totalPages int, outlines []doctype.Outline, opts Split
 		if ep < sp {
 			ep = sp
 		}
-		rawSections = append(rawSections, rawSection{
+		sections = append(sections, rawSection{
 			start: sp,
 			end:   ep,
 			title: sanitizeTitle(item.Title),
 		})
 	}
+	return sections
+}
 
-	var slices []rawSection
-	var curStart, curEnd *int
-	var curTitles []string
+func partitionOversizedSection(sec rawSection, validOutlines []doctype.Outline, subLevel int, opts SplitOptions) []rawSection {
+	sp, ep, title := sec.start, sec.end, sec.title
 
-	flush := func() {
-		if curStart != nil && curEnd != nil {
-			title := strings.Join(curTitles, " + ")
-			if title == "" {
-				title = fmt.Sprintf("Pages %d-%d", *curStart+1, *curEnd+1)
-			}
-			slices = append(slices, rawSection{
-				start: *curStart,
-				end:   *curEnd,
-				title: title,
-			})
-			curStart = nil
-			curEnd = nil
-			curTitles = nil
+	var subItems []doctype.Outline
+	for _, o := range validOutlines {
+		if o.Level == subLevel && (sp+1) <= o.PageNumber && o.PageNumber <= (ep+1) {
+			subItems = append(subItems, o)
 		}
 	}
 
-	for _, sec := range rawSections {
-		sp := sec.start
-		ep := sec.end
-		title := sec.title
-		cnt := ep - sp + 1
+	if len(subItems) == 0 {
+		c := newSectionCoalescer(opts)
+		c.addFixedWindows(sp, ep, title)
+		return c.result()
+	}
 
-		if cnt > opts.MaxPages {
-			flush()
-
-			// Check for sub-headings within [sp+1, ep+1]
-			var subItems []doctype.Outline
-			for _, o := range validOutlines {
-				if o.Level == minLevel+1 && (sp+1) <= o.PageNumber && o.PageNumber <= (ep+1) {
-					subItems = append(subItems, o)
-				}
-			}
-
-			if len(subItems) > 0 {
-				var subStart, subEnd *int
-				var subTitles []string
-				flushSub := func() {
-					if subStart != nil && subEnd != nil {
-						sTitle := strings.Join(subTitles, " + ")
-						if sTitle == "" {
-							sTitle = fmt.Sprintf("Pages %d-%d", *subStart+1, *subEnd+1)
-						}
-						slices = append(slices, rawSection{
-							start: *subStart,
-							end:   *subEnd,
-							title: sTitle,
-						})
-						subStart = nil
-						subEnd = nil
-						subTitles = nil
-					}
-				}
-
-				for sIdx, sItem := range subItems {
-					subSp := sItem.PageNumber - 1
-					if sIdx == 0 && subSp > sp {
-						subSp = sp
-					}
-					subEp := ep
-					if sIdx+1 < len(subItems) {
-						nextSub := subItems[sIdx+1].PageNumber - 1
-						if nextSub > subSp {
-							subEp = nextSub - 1
-						} else {
-							subEp = subSp
-						}
-					}
-					if subEp < subSp {
-						subEp = subSp
-					}
-					subTitle := sanitizeTitle(sItem.Title)
-					if title != "" && !strings.Contains(subTitle, title) {
-						subTitle = title + ": " + subTitle
-					}
-					subCnt := subEp - subSp + 1
-
-					if subCnt > opts.MaxPages {
-						flushSub()
-						for w := subSp; w <= subEp; w += opts.MaxPages {
-							wEnd := w + opts.MaxPages - 1
-							if wEnd > subEp {
-								wEnd = subEp
-							}
-							slices = append(slices, rawSection{
-								start: w,
-								end:   wEnd,
-								title: fmt.Sprintf("%s (P%d-%d)", subTitle, w+1, wEnd+1),
-							})
-						}
-					} else {
-						if subStart == nil {
-							startVal := subSp
-							endVal := subEp
-							subStart = &startVal
-							subEnd = &endVal
-							subTitles = []string{subTitle}
-						} else {
-							subCurLen := *subEnd - *subStart + 1
-							subCombinedLen := subEp - *subStart + 1
-							shouldCoalesce := subCombinedLen <= opts.MaxPages && (subCurLen < opts.MinPages || subCnt < opts.MinPages || subCombinedLen <= opts.MinPages)
-							if shouldCoalesce {
-								*subEnd = subEp
-								subTitles = append(subTitles, subTitle)
-							} else {
-								flushSub()
-								startVal := subSp
-								endVal := subEp
-								subStart = &startVal
-								subEnd = &endVal
-								subTitles = []string{subTitle}
-							}
-						}
-					}
-				}
-				flushSub()
-				continue
-			}
-
-			// No sub-headings: partition section into regular windows
-			for w := sp; w <= ep; w += opts.MaxPages {
-				wEnd := w + opts.MaxPages - 1
-				if wEnd > ep {
-					wEnd = ep
-				}
-				slices = append(slices, rawSection{
-					start: w,
-					end:   wEnd,
-					title: fmt.Sprintf("%s (P%d-%d)", title, w+1, wEnd+1),
-				})
-			}
-			continue
+	subCoalescer := newSectionCoalescer(opts)
+	for sIdx, sItem := range subItems {
+		subSp := sItem.PageNumber - 1
+		if sIdx == 0 && subSp > sp {
+			subSp = sp
 		}
-
-		// cnt <= opts.MaxPages
-		if curStart == nil {
-			startVal := sp
-			endVal := ep
-			curStart = &startVal
-			curEnd = &endVal
-			curTitles = []string{title}
-		} else {
-			curLen := *curEnd - *curStart + 1
-			combinedLen := ep - *curStart + 1
-			shouldCoalesce := combinedLen <= opts.MaxPages && (curLen < opts.MinPages || cnt < opts.MinPages || combinedLen <= opts.MinPages)
-			if shouldCoalesce {
-				*curEnd = ep
-				curTitles = append(curTitles, title)
+		subEp := ep
+		if sIdx+1 < len(subItems) {
+			nextSub := subItems[sIdx+1].PageNumber - 1
+			if nextSub > subSp {
+				subEp = nextSub - 1
 			} else {
-				flush()
-				startVal := sp
-				endVal := ep
-				curStart = &startVal
-				curEnd = &endVal
-				curTitles = []string{title}
+				subEp = subSp
 			}
 		}
-	}
-	flush()
+		if subEp < subSp {
+			subEp = subSp
+		}
+		subTitle := sanitizeTitle(sItem.Title)
+		if title != "" && !strings.Contains(subTitle, title) {
+			subTitle = title + ": " + subTitle
+		}
 
-	// Post-processing: ensure continuous gap-free coverage from 0 to totalPages-1
+		if subEp-subSp+1 > opts.MaxPages {
+			subCoalescer.addFixedWindows(subSp, subEp, subTitle)
+		} else {
+			subCoalescer.add(subSp, subEp, subTitle)
+		}
+	}
+	return subCoalescer.result()
+}
+
+type sectionCoalescer struct {
+	opts      SplitOptions
+	slices    []rawSection
+	curStart  *int
+	curEnd    *int
+	curTitles []string
+}
+
+func newSectionCoalescer(opts SplitOptions) *sectionCoalescer {
+	return &sectionCoalescer{opts: opts}
+}
+
+func (c *sectionCoalescer) flush() {
+	if c.curStart != nil && c.curEnd != nil {
+		title := strings.Join(c.curTitles, " + ")
+		if title == "" {
+			title = fmt.Sprintf("Pages %d-%d", *c.curStart+1, *c.curEnd+1)
+		}
+		c.slices = append(c.slices, rawSection{
+			start: *c.curStart,
+			end:   *c.curEnd,
+			title: title,
+		})
+		c.curStart = nil
+		c.curEnd = nil
+		c.curTitles = nil
+	}
+}
+
+func (c *sectionCoalescer) add(sp, ep int, title string) {
+	cnt := ep - sp + 1
+	if c.curStart == nil {
+		startVal := sp
+		endVal := ep
+		c.curStart = &startVal
+		c.curEnd = &endVal
+		c.curTitles = []string{title}
+		return
+	}
+
+	curLen := *c.curEnd - *c.curStart + 1
+	combinedLen := ep - *c.curStart + 1
+	shouldCoalesce := combinedLen <= c.opts.MaxPages &&
+		(curLen < c.opts.MinPages || cnt < c.opts.MinPages || combinedLen <= c.opts.MinPages)
+	if shouldCoalesce {
+		*c.curEnd = ep
+		c.curTitles = append(c.curTitles, title)
+	} else {
+		c.flush()
+		startVal := sp
+		endVal := ep
+		c.curStart = &startVal
+		c.curEnd = &endVal
+		c.curTitles = []string{title}
+	}
+}
+
+func (c *sectionCoalescer) addFixedWindows(sp, ep int, baseTitle string) {
+	c.flush()
+	for w := sp; w <= ep; w += c.opts.MaxPages {
+		wEnd := w + c.opts.MaxPages - 1
+		if wEnd > ep {
+			wEnd = ep
+		}
+		c.slices = append(c.slices, rawSection{
+			start: w,
+			end:   wEnd,
+			title: fmt.Sprintf("%s (P%d-%d)", baseTitle, w+1, wEnd+1),
+		})
+	}
+}
+
+func (c *sectionCoalescer) result() []rawSection {
+	c.flush()
+	return c.slices
+}
+
+func buildContinuousPlans(slices []rawSection, totalPages int) []ChapterPlan {
 	if len(slices) == 0 {
-		return planFixedWindows(totalPages, opts.MaxPages)
+		return nil
 	}
 
 	var plans []ChapterPlan
@@ -343,13 +331,11 @@ func PlanAdaptiveChapters(totalPages int, outlines []doctype.Outline, opts Split
 		curr = end + 1
 	}
 
-	// Final check: if curr < totalPages, extend final plan
 	if curr < totalPages && len(plans) > 0 {
 		last := &plans[len(plans)-1]
 		last.EndPage = totalPages - 1
 		last.PageCount = last.EndPage - last.StartPage + 1
 	}
-
 	return plans
 }
 
