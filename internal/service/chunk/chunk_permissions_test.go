@@ -25,7 +25,7 @@ func TestRetrievalTestChecksDatasetUsePermission(t *testing.T) {
 	_, err := (&ChunkService{kbDAO: dao.NewKnowledgebaseDAO()}).RetrievalTest(ctx, &service.RetrievalTestRequest{
 		Question: "query",
 		Datasets: []string{"kb-1"},
-	}, "outsider")
+	})
 	if !permissionresponse.IsPermissionError(err) || !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("RetrievalTest() error = %v, want permission denial", err)
 	}

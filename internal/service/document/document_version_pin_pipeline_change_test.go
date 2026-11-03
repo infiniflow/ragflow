@@ -25,8 +25,7 @@ import (
 // TestUpdateDatasetDocument_PipelineChangeWithoutVersionRejected verifies the C5/G3
 // contract: switching a document to a different dataflow canvas WITHOUT supplying a
 // concrete pipeline_version_id is REJECTED (design section 3: empty version is no
-// longer silently backfilled to the canvas latest). The UI must surface the red
-// Missing badge and the "版本信息缺失" error instead.
+// longer silently backfilled to the canvas latest).
 func TestUpdateDatasetDocument_PipelineChangeWithoutVersionRejected(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

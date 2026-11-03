@@ -17,7 +17,6 @@
 package parser
 
 import (
-	"encoding/base64"
 	"fmt"
 	"regexp"
 	"sort"
@@ -598,7 +597,16 @@ func deprecatedHTML4Excel(setup map[string]any, parserName string) {
 // worksheet as structured parser items. Excelize exposes both kinds through
 // GetPictureCells/GetPictures; walking the reported anchor cells avoids
 // scanning the worksheet's entire coordinate space.
-func extractXLSXImages(f *excelize.File, sheet string, budget *embeddedMediaBudget) ([]map[string]any, []string) {
+//
+// Image bytes are written to the run media cache and the item carries only a
+// media_ref. A nil sink is the text-only path: images and their anchors are
+// skipped. An unsupported extension or a payload rejected by the budget or the
+// cache limit skips that image with a warning, leaving the surrounding sheet
+// items intact.
+func extractXLSXImages(f *excelize.File, sheet string, sink *officeMediaSink) ([]map[string]any, []string) {
+	if sink == nil {
+		return nil, nil
+	}
 	cells, err := f.GetPictureCells(sheet)
 	if err != nil {
 		return nil, []string{fmt.Sprintf("XLSX image discovery failed for sheet %q: %v", sheet, err)}
@@ -609,8 +617,10 @@ func extractXLSXImages(f *excelize.File, sheet string, budget *embeddedMediaBudg
 
 	items := make([]map[string]any, 0, len(cells))
 	warnings := make([]string, 0)
-cellLoop:
 	for _, cell := range cells {
+		if sink.err != nil {
+			break
+		}
 		pictures, err := f.GetPictures(sheet, cell)
 		if err != nil {
 			warnings = append(warnings, fmt.Sprintf("XLSX image extraction failed for sheet %q cell %s: %v", sheet, cell, err))
@@ -625,36 +635,26 @@ cellLoop:
 				warnings = append(warnings, fmt.Sprintf("XLSX image skipped for sheet %q cell %s: unsupported extension %q", sheet, cell, picture.Extension))
 				continue
 			}
-			included, keepWalking := true, true
-			if budget != nil {
-				included, keepWalking = budget.include(picture.File)
-			}
-			if !keepWalking {
-				break cellLoop
+			ref, ok := sink.put(picture.File, mimeType)
+			if !ok {
+				continue
 			}
 			alt := cell
 			if picture.Format != nil && picture.Format.AltText != "" {
 				alt = picture.Format.AltText
 			}
 			row, col := axisToRC(cell)
-			item := map[string]any{
+			items = append(items, map[string]any{
 				"text":         alt,
 				"doc_type_kwd": "image",
+				"media_ref":    ref,
 				"sheet":        sheet,
 				"cell":         cell,
 				"row_start":    row,
 				"row_end":      row,
 				"col_start":    col,
 				"col_end":      col,
-			}
-			if included {
-				encoded := base64.StdEncoding.EncodeToString(picture.File)
-				item["image"] = "data:" + mimeType + ";base64," + encoded
-			} else {
-				item["image"] = nil
-				item["media_omitted"] = true
-			}
-			items = append(items, item)
+			})
 		}
 	}
 	return items, warnings

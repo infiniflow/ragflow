@@ -9,7 +9,8 @@ export default {
       delete: '删除',
       deleteModalTitle: '确定删除吗?',
       deleteThem: '确定要删除吗？',
-      removeModalTitle: '确定移除吗？',
+      removeIt: '确定移除吗？',
+      removeThem: '确定移除吗？',
       ok: '确认',
       cancel: '取消',
       yes: '是',
@@ -45,7 +46,6 @@ export default {
       viewLess: '收起',
       comingSoon: '即将推出',
       download: '下载',
-      figure: '引文',
       close: '关闭',
       preview: '预览',
       move: '移动',
@@ -359,6 +359,9 @@ export default {
     },
     knowledgeDetails: {
       continueUpload: '继续上传',
+      uploadPipelineDeletedTitle: '解析 Pipeline 不可用',
+      uploadPipelineDeletedContent:
+        '该数据集配置的解析 Pipeline 已被删除或没有已发布版本，无法在上传时自动解析。请在数据集设置中重新配置 Pipeline，或继续上传后为文件单独配置解析方式。',
       reselectParser: '重新选择解析方法',
       goAddModel: '前往添加模型',
       uploadMissingModelsTitle: '部分文件缺少解析所需的模型',
@@ -627,6 +630,8 @@ export default {
       builtInPipelines: '内置解析流程',
       parserSelectPlaceholder: '选择解析方式',
       parserOptionUnavailable: '不可用',
+      parserOptionUnavailableMessage:
+        '所选的解析方式或流水线版本已不可用，请重新选择。',
       randomSeedTip:
         '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
       datasetDescription: '你的知识库描述。',
@@ -708,8 +713,12 @@ export default {
       parsingMode: '解析方式',
       manualSetup: '自定义Ingestion pipeline',
       builtIn: '内置解析模板',
+      applyParserSettingsTitle: '将解析设置应用到现有文件？',
       parserSettingsChangeWarning:
-        '更新后的解析设置仅对新上传的文件生效。如需对现有文件生效，请修改这些文件的解析设置并重新解析。',
+        '默认情况下，更新后的解析设置仅应用于新上传的文件。选择“是”可将设置同时应用于此知识库中的所有现有文件，并替换各文件的自定义解析设置。您仍需手动重新解析这些文件，设置才会对其内容生效。选择“否”可保留现有文件的解析设置。',
+      parserSettingsApplied: '解析设置已应用。请手动重新解析文件以更新其内容。',
+      parserSettingsApplyFailed:
+        '知识库设置已保存，但现有文件尚未更新。选择“是”可重试。',
       noConfigChunkerHint:
         '内置的 {{name}} 解析器会自动处理分块，因此无需额外配置。',
       titleDescription: '在这里更新知识库配置，特别是大语言模型和提示词。',
@@ -972,7 +981,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       messagePlaceholder: '请输入消息...',
       exit: '退出',
       multipleModels: '多模型',
-      applyModelConfigs: '应用模型配置',
+      applyModelConfigs: '在单模型对话中使用此模型及其设置',
       conversations: '会话',
       chatApps: '聊天',
       createChat: '创建聊天',
@@ -1039,7 +1048,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       model: '模型',
       modelTip: '大语言聊天模型',
       tokensSpent:
-        '消耗 {{total}} tokens（输入 {{prompt}} + 输出 {{completion}}）',
+        '消耗 {{total}} tokens（输入 {{prompt}}, 输出 {{completion}}）',
       turnElapsed: '耗时 {{seconds}}s',
       decisionModel: '决策模型',
       decisionModelTip:
@@ -1092,7 +1101,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       agenticTemplateTooLong: '模板长度不能超过 32768 个字符',
       resetToDefault: '重置为默认',
       thinkingTip:
-        '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
+        '仅控制官方模型供应商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
       quoteTip: '是否应该显示原文出处？',
       selfRag: 'Self-RAG',
@@ -1170,9 +1179,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       webSearchApiKeyRequired:
         '所选服务必须填写 API Key —— 否则不会发起联网搜索，聊天框里也不会出现联网开关。',
       // 密钥输入框的标签。{{provider}} 是 provider 的品牌名，故意不翻译，
-      // 因此一个模板即可覆盖全部 9 个 provider。
+      // 因此一个模板即可覆盖全部 provider。
       webSearchApiKeyLabel: '{{provider}} API Key',
       // 每个 provider 一组 Tip/Message，按 provider id 字典序排列。
+      anysearchApiKeyTip:
+        '可选。AnySearch 无需密钥即可使用；填写密钥可使用账户额度。服务限额仍然适用。',
+      anysearchApiKeyMessage: '可选 - 留空则使用匿名搜索',
       braveApiKeyTip:
         '选择 Brave Search 后，将使用其搜索结果补充知识库检索。Brave 的所有端点都需要 Key。',
       braveApiKeyMessage: '请输入你的 Brave Search API Key',
@@ -1715,7 +1727,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       maxTokensMinMessage: '最大令牌数不能小于 0。',
       password: '密码',
       passwordDescription: '请输入您当前的密码以更改您的密码。',
-      model: '模型提供商',
+      model: '模型供应商',
       systemModelDescription: '请在开始之前完成这些设置',
       dataSources: '数据源',
       team: '团队',
@@ -1755,6 +1767,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       apiKey: 'API Key',
       apiKeyMessage: '请输入API Key',
       apiKeyPlaceholder: '请输入API Key',
+      credentialClearToRemove: '清空此字段并保存即可移除已保存的凭据',
       apiKeyTip: 'API Key可以通过注册相应的LLM供应商来获取。',
       aimlapiGetKey: '获取 API Key',
       aimlapiCheckStatus: '检查状态',
@@ -1767,7 +1780,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       hideModels: '隐藏模型',
       baseUrl: 'Base URL',
       baseUrlTip:
-        '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间提供商都会提供带有 API 密钥的基本 URL。',
+        '如果您的 API 密钥来自 OpenAI，请忽略它。 任何其他中间供应商都会提供带有 API 密钥的基本 URL。',
       tongyiBaseUrlTip:
         '对于中国用户，不需要填写或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。对于国际用户，使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1。',
       siliconBaseUrlTip:
@@ -1793,6 +1806,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       mineruApiserver: 'MinerU API 服务器',
       mineruApiserverMessage: '请输入 MinerU API 服务器地址！',
       mineruApiserverPlaceholder: '例如：http://host.docker.internal:9987',
+      mineruApiToken: 'MinerU API Token',
+      mineruApiTokenPlaceholder: 'mineru.net API 管理页创建的 Token（可选）',
+      mineruApiTokenTip:
+        '填写后走官方精准解析（/api/v4，支持 vlm）。留空则使用免登录的 Agent 轻量接口。自建 MinerU 不需要填写。',
       mineruOutputDir: 'MinerU 输出目录',
       mineruOutputDirMessage: '请输入 MinerU 输出目录！',
       mineruOutputDirPlaceholder: '/tmp/mineru',
@@ -1828,7 +1845,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        '所有新创建的知识库使用的默认 Embedding 模型。如未显示可选模型，请检查你是否在使用 RAGFlow slim 版(不含 Embedding 模型)；或前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
+        '所有新创建的知识库使用的默认 Embedding 模型。如未显示可选模型，前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       img2txtModel: 'VLM',
       img2txtModelTip:
         '所有新创建的知识库都将使用默认的 VLM 模型。 它可以描述图片或视频。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
@@ -1920,7 +1937,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '请输入 Google Cloud Service Account Key in base64 format',
       addGoogleRegion: 'Google Cloud 区域',
       GoogleRegionMessage: '请输入 Google Cloud 区域',
-      modelProvidersWarn: `请先在<b>模型提供商</b>中添加 Embedding 模型和 LLM，然后在“设置默认模型”中设置它们。`,
+      modelProvidersWarn: `请先在<b>模型供应商</b>中添加 Embedding 模型和 LLM，然后在“设置默认模型”中设置它们。`,
       apiVersion: 'API版本',
       apiVersionMessage: '请输入API版本!',
       add: '添加',
@@ -2029,6 +2046,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       batchAddModels: '添加全部模型',
       batchRemoveModels: '移除全部模型',
       batchVerifyModels: '验证全部模型',
+      moreActions: '更多操作',
       editCustomModelTitle: '编辑模型',
       modelMaxTokens: '最大上下文长度',
       modelTypes: {
@@ -2194,6 +2212,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       modified: '更新成功',
       created: '创建成功',
       deleted: '删除成功',
+      deleteIncomplete: '无法确认删除已全部完成。请检查剩余文档后重试。',
       noLangfuseConfigToDelete: '没有可删除的 Langfuse 配置',
       renamed: '重命名成功',
       operated: '操作成功',
@@ -2420,20 +2439,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       toolTimeout: '工具调用超时',
       toolTimeoutTip:
         '单次工具调用（含 MCP 工具）的超时秒数。长时间运行的工具请调大该值。',
-      maxSteps: '最大步数',
-      headless: '无头模式',
-      enableDefaultExtensions: '启用默认扩展',
-      enableDefaultExtensionsTip:
-        '启用 browser-use 默认扩展（uBlock、Cookie 处理、ClearURLs）。关闭后可避免运行时下载扩展。',
-      chromiumSandbox: 'Chromium 沙箱',
-      chromiumSandboxTip:
-        '是否启用 Chromium 沙箱。Docker root 环境通常需要关闭，普通宿主机环境建议开启。',
-      persistSession: '持久化登录态',
-      persistSessionTip:
-        '开启后将复用该 Browser 节点的浏览器会话，避免重复登录。',
-      uploadSources: '上传来源',
-      uploadSourcesTip:
-        '支持文件 ID、文件 URL 或变量。可用逗号分隔多个值，也支持 JSON 数组格式（如 ["id1","https://example.com/a.pdf"]）。',
       advancedSettings: '高级设置',
       addTools: '添加工具',
       sysPromptDefultValue: `
@@ -2479,21 +2484,24 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         version: '版本',
         label: '流水线版本',
         latest: '最新版本',
+        noPublished: '暂无已发布版本',
         filterByAlias: '按别名筛选',
         alias: '别名',
-        pinnedTooltip:
-          '该数据集已固定到特定版本。智能体新发布的版本不会影响它。',
-        outdated: '固定的版本不是最新版本。点击了解详情；我们不会自动升级它。',
+        addAlias: '添加别名',
+        editAlias: '编辑别名',
+        editAliasDescription:
+          '为该版本设置一个便于识别的别名，方便后续快速查找。',
+        outdated: '当前配置的数据管道版本不是最新版本，也不会自动更新。',
         delete: '删除版本',
         deleteConfirmTitle: '删除该版本？',
         deleteConfirmContent:
           '若数据集或文件正绑定此版本，删除后将导致对应文件无法解析。此操作不可撤销。',
-        restore: '恢复为当前版本',
+        deleteAgentConfirmContent:
+          '若该智能体已嵌入网站或对外提供服务，删除最新发布版本将导致线上服务回退到更早的版本或中断。删除不影响当前画布内容，但操作不可撤销。',
+        restore: '恢复为当前草稿',
         restoreConfirmTitle: '恢复此版本为当前智能体？',
         restoreConfirmContent:
           '当前智能体 DSL 将被此版本替换。再次保存会创建新版本。',
-        missingContent:
-          '所固定的流水线版本已不存在，该文件无法解析。请重新选择版本（或选择最新版本）后继续。',
       },
       cite: '显示引文',
       citeTip: '引用',
@@ -2524,6 +2532,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       operation: '操作',
       run: '运行',
       save: '保存',
+      saveDraft: '保存草稿',
       title: 'ID：',
       beginDescription: '这是流程开始的地方',
       answerDescription: `该组件用作机器人与人类之间的接口。它接收用户的输入并显示机器人的计算结果。`,
@@ -2603,9 +2612,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
-      browser: 'Browser',
-      browserDescription:
-        '使用 Browser 自动执行浏览器任务。支持模型与提示词配置，上传来源支持文件 ID 与 URL，并可将下载文件保存到指定目录。',
       subtitle: '副标题',
       logoImage: '标志图片',
       logoPosition: '标志位置',
@@ -3110,12 +3116,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '在此处编写您的 SQL 查询。您可以使用变量、原始 SQL，或使用变量语法混合使用两者。',
       frameworkPrompts: '框架',
       release: '发布',
-      production: '正式版',
-      productionTooltip: '此版本已发布到生产环境。可通过 API 或嵌入页面访问。',
       confirmPublish: '确认发布',
       publishIngestionPipeline: '您即将发布此 Ingestion pipeline。',
       publishAgent: '您即将发布此智能体',
-      linkedDataset: '已关联的知识库：',
       lastPublished: '上次发布时间',
       createFromBlank: '从空白创建',
       createFromTemplate: '从模板创建',
@@ -3130,9 +3133,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         compilationOperator: '编译算子',
         workflow: '工作流',
       },
-      parser: '解析器',
+      parser: 'Parser',
       parserDescription: '从文件中提取原始文本和结构以供下游处理。',
-      tokenizer: '索引器',
+      tokenizer: 'Indexer',
       tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '配置有误，请先修正',
       apiKeyRequired: '请输入 API Key',
@@ -3165,22 +3168,22 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '根据所选的搜索方法，将文本转换为所需的数据结构（例如，用于嵌入搜索的 Embedding）。',
       generalChunkerDescription:
         '通用文本分块方式，适用于大多数文档类型，可灵活控制块大小、重叠和上下文范围。',
-      tokenChunker: '按 Token 分块',
+      tokenChunker: 'Token Chunker',
       tokenChunkerDescription:
         '根据分词器长度将文本拆分成块，并带有可选的分隔符和重叠。',
       titleChunkerDescription:
         '按标题层级拆分文档。通过正则表达式定义各级标题，再选择层级或分组模式控制切片方式。',
-      titleChunker: '按标题分块',
+      titleChunker: 'Title Chunker',
       manualChunkerDescription:
         '手册类文档分块方式，适用于产品手册、用户指南等，可根据文档结构进行分块并保留必要的上下文。',
       oneChunkerDescription: '此 Chunker 无需额外配置。',
       qAChunkerDescription: '此 Chunker 无需额外配置。',
       tableChunkerDescription: '此 Chunker 无需额外配置。',
       pageChunkerDescription: '此 Chunker 无需额外配置。',
-      extractor: '提取器',
+      extractor: 'Transformer',
       extractorDescription:
         '使用 LLM 从文档块（例如摘要、分类等）中提取结构化见解。',
-      compiler: '编译器',
+      compiler: 'Compiler',
       compilerDescription: '使用知识编译模板将文档块编译为知识工件。',
       outputFormat: '输出格式',
       fileFormatOptions: {
@@ -3458,6 +3461,8 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       arabic: '阿拉伯语',
       turkish: '土耳其语',
       dutch: '荷兰语',
+      slovak: '斯洛伐克语',
+      czech: '捷克语',
     },
     pagination: {
       total: '总共 {{total}} 条',
@@ -3541,6 +3546,169 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       skillsTitle: '尚未创建 Skills 空间',
       notFoundSkills: '未查询到 Skills 空间',
       addNow: '立即添加',
+    },
+
+    admin: {
+      confirm: '确认',
+      close: '关闭',
+      yes: '是',
+      no: '否',
+      delete: '删除',
+      cancel: '取消',
+      reset: '重置',
+      import: '导入',
+      description: '描述',
+      noDescription: '无描述',
+      none: '无',
+
+      resourceType: {
+        dataset: '数据集',
+        chat: '对话',
+        agent: 'Agent',
+        search: '搜索',
+        file: '文件',
+        team: '团队',
+        memory: '记忆',
+      },
+
+      permissionType: {
+        enable: '启用',
+        read: '读取',
+        write: '写入',
+        share: '共享',
+      },
+
+      serviceStatus: '服务',
+      userManagement: '用户',
+      sandboxSettings: '沙箱',
+      registrationWhitelist: '白名单',
+      roles: '角色',
+      monitoring: '监控',
+
+      sandboxSettingsPage: {
+        description: '配置代码执行沙箱供应商。沙箱由 Agent 中的代码组件使用。',
+        providerSelection: '供应商选择',
+        providerSelectionDescription: '为代码执行选择沙箱供应商',
+
+        namedProviderConfiguration: '{{name}} 配置',
+        namedProviderConfigurationDescription: '配置 {{name}} 的连接设置。',
+
+        saveConfiguration: '保存配置',
+        saving: '保存中...',
+
+        testConnectionResultModal: {
+          title: '连接测试结果',
+          testing: '正在测试与沙箱供应商的连接...',
+          success: '已成功连接沙箱供应商',
+          failed: '连接沙箱供应商失败',
+
+          exitCode: '退出码',
+          executionTime: '执行时间',
+          stdout: '标准输出',
+          stderr: '错误输出 / 堆栈跟踪',
+        },
+
+        testConnection: '测试连接',
+        testing: '测试中...',
+      },
+
+      selectFile: '选择文件',
+      noFileSelected: '未选择文件',
+
+      back: '返回',
+      active: '启用',
+      inactive: '禁用',
+      enable: '启用',
+      disable: '禁用',
+      all: '全部',
+      actions: '操作',
+      newUser: '新建用户',
+      email: '邮箱',
+      name: '名称',
+      nickname: '昵称',
+      status: '状态',
+      id: 'ID',
+      serviceType: '服务类型',
+      host: '主机',
+      port: '端口',
+
+      role: '角色',
+      user: '用户',
+      userType: '用户类型',
+      superuser: '超级用户',
+      normalUser: '普通',
+
+      createTime: '创建时间',
+      lastLoginTime: '最后登录时间',
+      lastUpdateTime: '最后更新时间',
+
+      isAnonymous: '是否匿名',
+      isSuperuser: '是否超级用户',
+
+      deleteUser: '删除用户',
+      deleteUserConfirmation: '确定要删除该用户吗？',
+
+      createNewUser: '新建用户',
+      changePassword: '修改密码',
+      newPassword: '新密码',
+      confirmNewPassword: '确认新密码',
+      password: '密码',
+      confirmPassword: '确认密码',
+
+      invalidEmail: '请输入有效的邮箱地址！',
+      passwordRequired: '请输入密码！',
+      passwordMinLength: '密码长度必须大于 8 个字符。',
+      confirmPasswordRequired: '请确认密码！',
+      confirmPasswordDoNotMatch: '两次输入的密码不一致！',
+
+      read: '读取',
+      write: '写入',
+      share: '共享',
+      create: '创建',
+
+      extraInfo: '额外信息',
+      serviceDetail: '服务 {{name}} 详情',
+      taskExecutorDetail: '任务执行器详情',
+
+      whitelistManagement: '白名单管理',
+      exportAsExcel: '导出 Excel',
+      importFromExcel: '导入 Excel',
+      createEmail: '新建邮箱',
+      deleteEmail: '删除邮箱',
+      editEmail: '编辑邮箱',
+      deleteWhitelistEmailConfirmation:
+        '确定要从白名单中删除该邮箱吗？此操作不可撤销。',
+
+      importWhitelist: '导入白名单（Excel）',
+      importSelectExcelFile: 'Excel 文件（.xlsx）',
+      importOverwriteExistingEmails: '覆盖已存在的邮箱',
+      importValidExcelFile: '请选择有效的 Excel 文件',
+      importFileRequired: '请选择要导入的文件',
+      importFileTips: '文件必须包含名为 <code>email</code> 的单一表头列。',
+
+      chunkNum: '分块',
+      docNum: '文档',
+      tokenNum: '已用 Token',
+      language: '语言',
+      createDate: '创建日期',
+      updateDate: '更新日期',
+      permission: '权限',
+
+      agentTitle: 'Agent 标题',
+
+      newRole: '新建角色',
+      addNewRole: '添加新角色',
+      roleName: '角色名称',
+      roleNameRequired: '角色名称为必填项',
+      resources: '资源',
+
+      editRoleDescription: '编辑角色描述',
+      deleteRole: '删除角色',
+      deleteRoleConfirmation: '确定要删除该角色吗？此操作不可撤销。',
+
+      alive: '存活',
+      timeout: '超时',
+      fail: '失败',
     },
 
     explore: {

@@ -1055,6 +1055,12 @@ func toFloat64(v interface{}) (float64, bool) {
 		return float64(val), true
 	case int32:
 		return float64(val), true
+	case string:
+		// The engine's field projection stringifies non-string values
+		// (pagerank_fea arrives as "7"), and Python's rerank coerces the same
+		// string through np.array(..., dtype=float).
+		f, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
+		return f, err == nil
 	default:
 		return 0, false
 	}

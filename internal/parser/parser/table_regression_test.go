@@ -67,9 +67,10 @@ func TestTableRegressionMarkdownFlattenBesideTable(t *testing.T) {
 }
 
 func TestTableRegressionPPTXNestedImageRun(t *testing.T) {
-	ir := `{"sections":[{"elements":[{"type":"paragraph","content":[{"type":"text","text":"before"},{"type":"image","content":[{"type":"text_box","content":[{"type":"image","data":"aGVsbG8="}]}]},{"type":"text","text":"after"}]}]}]}`
+	ir := `{"sections":[{"elements":[{"type":"paragraph","content":[{"type":"text","text":"before"},{"type":"image","content":[{"type":"text_box","content":[{"type":"image","data":"` + officeTestImageB64(t, 23) + `"}]}]},{"type":"text","text":"after"}]}]}]}`
 
-	after, err := buildPPTXJSONSections(ir, nil)
+	sink, _ := officeMediaTestSink(t, officeMediaFormatPPTX)
+	after, err := buildPPTXJSONSections(ir, sink)
 	if err != nil || len(after) != 3 || after[0]["text"] != "before" || after[2]["text"] != "after" {
 		t.Fatalf("text/image order lost: %#v err=%v", after, err)
 	}
@@ -77,10 +78,14 @@ func TestTableRegressionPPTXNestedImageRun(t *testing.T) {
 	for _, item := range after {
 		if item["doc_type_kwd"] == "image" {
 			images++
+			requireOfficeMediaRef(t, item)
 		}
 	}
 	if images != 1 {
 		t.Error("image inside a nested run was dropped")
+	}
+	if sink.err != nil {
+		t.Fatalf("sink error: %v", sink.err)
 	}
 }
 
@@ -88,7 +93,7 @@ func TestTableRegressionSoMarkTableImageIDs(t *testing.T) {
 	markup := "<table><tr><td>Logo</td><td><img src=\"data:image/png;base64,aGVsbG8=\"></td></tr></table>"
 	items, _, _ := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{map[string]any{"blocks": []any{
 		map[string]any{"type": "table", "content": markup}, map[string]any{"type": "table", "content": markup},
-	}}}}}}, false)
+	}}}}}}, false, nil)
 
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -105,20 +110,22 @@ func TestTableRegressionSoMarkTableImageIDs(t *testing.T) {
 }
 
 func TestTableRegressionSoMarkDocumentImageBudget(t *testing.T) {
+	const limit = 256
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "256")
 	markup := "| Field | Value |\n|---|---|\n| Logo | ![logo](data:image/png;base64,aGVsbG8=) |"
-	blocks := make([]any, maxEmbeddedMediaItems+1)
+	blocks := make([]any, limit+1)
 	for i := range blocks {
 		blocks[i] = map[string]any{"type": "table", "content": markup}
 	}
-	items, _, warnings := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{map[string]any{"blocks": blocks}}}}}, false)
+	items, _, warnings := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{map[string]any{"blocks": blocks}}}}}, false, nil)
 	images := 0
 	for _, item := range items {
 		if item["doc_type_kwd"] == "image" && item["image"] != nil {
 			images++
 		}
 	}
-	t.Logf("retained images=%d document item limit=%d", images, maxEmbeddedMediaItems)
-	if images != maxEmbeddedMediaItems || !strings.Contains(strings.Join(warnings, "\n"), "256-item") {
+	t.Logf("retained images=%d run item limit=%d", images, limit)
+	if images != limit || !strings.Contains(strings.Join(warnings, "\n"), "256-item") {
 		t.Errorf("retained=%d warnings=%v, want document-wide item limit", images, warnings)
 	}
 }
@@ -135,19 +142,21 @@ func TestTableRegressionHTMLTheadWithTDRetainsDefaultHeader(t *testing.T) {
 }
 
 func TestTableRegressionMarkdownRawHTMLImageBudget(t *testing.T) {
-	source := "<table><tr><td>" + strings.Repeat("<img src=\"data:image/png;base64,aGVsbG8=\">", maxEmbeddedMediaItems+1) + "</td></tr></table>\n\n"
+	const limit = 256
+	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "256")
+	source := "<table><tr><td>" + strings.Repeat("<img src=\"data:image/png;base64,aGVsbG8=\">", limit+1) + "</td></tr></table>\n\n"
 	doc := markdownNew().Parse([]byte(source))
-	budget := newEmbeddedMediaBudget()
+	budget := newMediaBudgetForTest()
 	var items []map[string]any
-	walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, &htmlWalkState{mediaBudget: budget})
+	walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, &htmlWalkState{budget: budget})
 	images := 0
 	for _, item := range items {
 		if item["doc_type_kwd"] == "image" && item["image"] != nil {
 			images++
 		}
 	}
-	t.Logf("retained images=%d budget attempts=%d document item limit=%d", images, budget.items, maxEmbeddedMediaItems)
-	if images != maxEmbeddedMediaItems || budget.items != maxEmbeddedMediaItems || !budget.countExhausted {
+	t.Logf("retained images=%d budget attempts=%d run item limit=%d", images, budget.Count(), limit)
+	if images != limit || budget.Count() != limit || !strings.Contains(strings.Join(budget.Warnings(), "\n"), "256-item run limit") {
 		t.Errorf("raw HTML budget not enforced: retained=%d budget=%+v", images, budget)
 	}
 }
@@ -338,7 +347,7 @@ func TestSoMarkPreservesImageResolutionWarnings(t *testing.T) {
 	items, _, warnings := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{map[string]any{"blocks": []any{
 		map[string]any{"type": "table", "content": source},
 		map[string]any{"type": "table", "content": "| A | B |\n|---|---|\n| x | y |"},
-	}}}}}}, false)
+	}}}}}}, false, nil)
 	if len(items) != 2 {
 		t.Fatalf("items=%#v", items)
 	}

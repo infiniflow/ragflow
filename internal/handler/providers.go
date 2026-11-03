@@ -178,28 +178,51 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		return
 	}
 
-	apiKey := strings.TrimSpace(c.Query("api_key"))
+	apiKey, apiKeyProvided := c.GetQuery("api_key")
+	apiKey = strings.TrimSpace(apiKey)
 	baseURL := strings.TrimSpace(c.Query("base_url"))
-	if instanceName := strings.TrimSpace(c.Query("instance_name")); instanceName != "" && (apiKey == "" || baseURL == "") {
-		instanceModels, err := h.modelProviderService.ListSupportedModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"))
+	region := strings.TrimSpace(c.Query("region"))
+	instanceName := strings.TrimSpace(c.Query("instance_name"))
+	if strings.EqualFold(c.Query("use_saved_credentials"), "true") {
+		if instanceName == "" {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Saved credentials require an instance name")
+			return
+		}
+		var baseURLOverride, regionOverride *string
+		if value, ok := c.GetQuery("base_url"); ok {
+			baseURLOverride = &value
+		}
+		if value, ok := c.GetQuery("region"); ok {
+			regionOverride = &value
+		}
+		apiKeyConfig := json.RawMessage(c.Query("api_key_config"))
+		instanceModels, err := h.fetchSavedProviderModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"), service.SavedProviderModelOptions{
+			APIKeyConfig: apiKeyConfig,
+			BaseURL:      baseURLOverride,
+			Region:       regionOverride,
+		})
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeDataError, err.Error())
+			return
+		}
+		common.SuccessWithData(c, instanceModels, "success")
+		return
+	}
+	_, baseURLProvided := c.GetQuery("base_url")
+	_, regionProvided := c.GetQuery("region")
+	if instanceName != "" && !apiKeyProvided && !baseURLProvided && !regionProvided {
+		instanceModels, err := h.fetchSavedProviderModels(c.Request.Context(), providerName, instanceName, c.GetString("user_id"), service.SavedProviderModelOptions{})
 		if err == nil {
-			for _, model := range instanceModels {
-				if _, ok := model["max_tokens"]; !ok {
-					if contextLength, ok := model["context_length"]; ok && contextLength != nil {
-						model["max_tokens"] = contextLength
-					}
-				}
-			}
 			common.SuccessWithData(c, instanceModels, "success")
 			return
 		}
-		if apiKey == "" && baseURL == "" {
+		if apiKey == "" && baseURL == "" && region == "" {
 			common.ErrorWithCode(c, common.CodeDataError, err.Error())
 			return
 		}
 	}
 
-	result, err := FetchProviderModels(c.Request.Context(), providerName, apiKey, baseURL)
+	result, err := FetchProviderModels(c.Request.Context(), providerName, apiKey, baseURL, region)
 	if err != nil {
 		var codedErr *common.CodedError
 		if errors.As(err, &codedErr) {
@@ -212,10 +235,19 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
+func (h *ProviderHandler) fetchSavedProviderModels(ctx context.Context, providerName, instanceName, userID string, options service.SavedProviderModelOptions) ([]map[string]interface{}, error) {
+	config, err := h.modelProviderService.ResolveSavedProviderModelConfig(ctx, providerName, instanceName, userID, options)
+	if err != nil {
+		return nil, err
+	}
+
+	return FetchProviderModels(ctx, providerName, config.APIKey, config.BaseURL, config.Region)
+}
+
 // FetchProviderModels returns the bundled model catalog, optionally enriched
 // with models discovered from the configured provider endpoint. Admin uses the
 // same catalog behavior while resolving its system-scoped provider data.
-func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL string) ([]map[string]interface{}, error) {
+func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL, region string) ([]map[string]interface{}, error) {
 	// 1. Get static models from config (maybe nil when models list is empty)
 	staticModels, _ := dao.GetModelProviderManager().ListModels(providerName)
 	if staticModels == nil {
@@ -225,6 +257,10 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL stri
 	// 2. Attempt live API fetch when the provider has enough connection data.
 	apiKey = strings.TrimSpace(apiKey)
 	baseURL = strings.TrimSpace(baseURL)
+	region = strings.TrimSpace(region)
+	if region == "" {
+		region = "default"
+	}
 	var remoteModels []map[string]interface{}
 	remoteFetched := false
 	// remoteFetchErr records why a requested live fetch produced nothing, so it
@@ -246,7 +282,7 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL stri
 		}
 	}
 
-	canFetchRemote := baseURL != ""
+	canFetchRemote := baseURL != "" || apiKey != ""
 	if bedrockProvider {
 		// Bedrock's existing SigV4 modes keep using the static catalog. Only
 		// API-key auth needs a live catalog scoped to the supplied credential.
@@ -255,14 +291,12 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL stri
 	if canFetchRemote {
 		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 		if providerInfo != nil && providerInfo.ModelDriver != nil {
-			region := "default"
-			baseURLByRegion := map[string]string{region: baseURL}
-			driver := providerInfo.ModelDriver.NewInstance(baseURLByRegion)
+			driver := providerInfo.ModelDriver
+			if baseURL != "" {
+				driver = driver.NewInstance(map[string]string{region: baseURL})
+			}
 			if driver != nil {
-				apiConfig := &models.APIConfig{
-					ApiKey: &apiKey,
-					Region: &region,
-				}
+				apiConfig := &models.APIConfig{ApiKey: &apiKey, Region: &region}
 				if liveModels, err := driver.ListModels(ctx, apiConfig); err == nil {
 					remoteFetched = true
 					for _, m := range liveModels {
@@ -280,6 +314,8 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL stri
 					}
 				} else if bedrockAPIKeyAuth {
 					return nil, common.NewCodedError(common.CodeServerError, err.Error())
+				} else if strings.EqualFold(providerName, "MinerU") {
+					return nil, common.NewCodedError(common.CodeDataError, err.Error())
 				} else {
 					remoteFetchErr = err
 				}
@@ -589,7 +625,7 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, service.NormalizeAPIKey(req.APIKey), req.Region, req.BaseURL, req.InstanceID, userID, req.ModelInfo)
+	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, req, userID)
 	if err != nil {
 		common.ErrorWithCode(c, errCode, err.Error())
 		return
@@ -619,12 +655,12 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 		return
 	}
 
-	apikey, _ := instanceInfo["api_key"].(string)
-	region, _ := instanceInfo["region"].(string)
-	baseURL, _ := instanceInfo["base_url"].(string)
 	instanceID, _ := instanceInfo["id"].(string)
 
-	errorCode, err := h.modelProviderService.CheckConnection(ctx, providerName, apikey, region, baseURL, instanceID, userID, nil)
+	errorCode, err := h.modelProviderService.CheckConnection(ctx, providerName, service.CheckConnectionRequest{
+		UseSavedCredentials: true,
+		InstanceID:          instanceID,
+	}, userID)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -717,7 +753,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, service.NormalizeAPIKey(req.APIKey), req.BaseURL, req.Region, *req.ModelInfo)
+	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, req.APIKey, req.ClearAPIKey, req.BaseURL, req.Region, *req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -773,7 +809,7 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 	if keywords == "true" {
 		// list supported models
 
-		modelList, err := h.modelProviderService.ListSupportedModels(ctx, providerName, instanceName, c.GetString("user_id"))
+		modelList, err := h.fetchSavedProviderModels(ctx, providerName, instanceName, c.GetString("user_id"), service.SavedProviderModelOptions{})
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
@@ -1022,10 +1058,8 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		Verbosity:   req.Verbosity,
 	}
 
-	userID := c.GetString("user_id")
 	email := c.GetString("email")
 	modelUsage := common.ModelUsage{
-		UserID:    userID,
 		UserEmail: email,
 		Type:      "chat",
 		StartAt:   time.Now(),
@@ -1081,7 +1115,6 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 		errorCode, err := h.modelCallService.ChatToModelStreamWithSender(
 			ctx,
 			modelRef,
-			userID,
 			messages,
 			&chatConfig,
 			&modelUsage,
@@ -1108,7 +1141,6 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	response, errorCode, err = h.modelCallService.ChatToModelWithMessages(
 		ctx,
 		modelRef,
-		userID,
 		messages,
 		&chatConfig,
 		&modelUsage,
@@ -1167,7 +1199,6 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
 	modelRef := ""
 	if req.ModelID != nil {
 		modelRef = *req.ModelID
@@ -1184,7 +1215,7 @@ func (h *ProviderHandler) EmbedText(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelCallService.EmbedText(ctx, modelRef, userID, req.Texts, &embeddingConfig)
+	response, errorCode, err = h.modelCallService.EmbedText(ctx, modelRef, req.Texts, &embeddingConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1234,7 +1265,6 @@ func (h *ProviderHandler) RerankDocument(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
 	modelRef := ""
 	if req.ModelID != nil {
 		modelRef = *req.ModelID
@@ -1251,7 +1281,7 @@ func (h *ProviderHandler) RerankDocument(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelCallService.RerankDocument(ctx, modelRef, userID, req.Query, req.Documents, &rerankConfig)
+	response, errorCode, err = h.modelCallService.RerankDocument(ctx, modelRef, req.Query, req.Documents, &rerankConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1302,7 +1332,6 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
 	modelRef := ""
 	if req.ModelID != nil {
 		modelRef = *req.ModelID
@@ -1349,7 +1378,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 		}
 
 		// Stream response using sender function ( the best performance, no channel)
-		errorCode, err := h.modelCallService.TranscribeAudioStream(ctx, modelRef, userID, req.File, &asrConfig, sender)
+		errorCode, err := h.modelCallService.TranscribeAudioStream(ctx, modelRef, req.File, &asrConfig, sender)
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())
 		}
@@ -1361,7 +1390,7 @@ func (h *ProviderHandler) TranscribeAudio(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelCallService.TranscribeAudio(ctx, modelRef, userID, req.File, &asrConfig)
+	response, errorCode, err = h.modelCallService.TranscribeAudio(ctx, modelRef, req.File, &asrConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1411,7 +1440,6 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
 	modelRef := ""
 	if req.ModelID != nil {
 		modelRef = *req.ModelID
@@ -1458,7 +1486,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 		}
 
 		// Stream response using sender function ( the best performance, no channel)
-		errorCode, err := h.modelCallService.AudioSpeechStream(ctx, modelRef, userID, req.Text, &ttsConfig, sender)
+		errorCode, err := h.modelCallService.AudioSpeechStream(ctx, modelRef, req.Text, &ttsConfig, sender)
 		if errorCode != common.CodeSuccess {
 			c.SSEvent("error", err.Error())
 		}
@@ -1470,7 +1498,7 @@ func (h *ProviderHandler) AudioSpeech(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelCallService.AudioSpeech(ctx, modelRef, userID, req.Text, &ttsConfig)
+	response, errorCode, err = h.modelCallService.AudioSpeech(ctx, modelRef, req.Text, &ttsConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1519,8 +1547,6 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
-
 	modelRef := ""
 	if req.ModelID != nil {
 		modelRef = *req.ModelID
@@ -1535,7 +1561,7 @@ func (h *ProviderHandler) OCRFile(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelCallService.OCRFile(ctx, modelRef, userID, req.Content, req.URL, &OCRConfig)
+	response, errorCode, err = h.modelCallService.OCRFile(ctx, modelRef, req.Content, req.URL, &OCRConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1587,8 +1613,6 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
-
 	modelRef := ""
 	if req.ModelID != nil {
 		modelRef = *req.ModelID
@@ -1609,7 +1633,7 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 	var errorCode common.ErrorCode
 	var err error
 
-	response, errorCode, err = h.modelCallService.ParseFile(ctx, modelRef, userID, req.Content, req.URL, &parseFileConfig)
+	response, errorCode, err = h.modelCallService.ParseFile(ctx, modelRef, req.Content, req.URL, &parseFileConfig)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -1618,22 +1642,9 @@ func (h *ProviderHandler) ParseFile(c *gin.Context) {
 	common.SuccessWithData(c, response, "success")
 }
 
-// ListTenantAddedModels is the response handler for GET /api/v1/models.
-// It is the Go port of Python's
-// api/apps/restful_apis/models_api.py:get_added_models and feeds
-// web/src/hooks/use-llm-request.tsx → useFetchAllAddedModels. The data
-// shape is the array form (one row per (provider × instance × llm) with
-// model_type: string[]), matching the IAddedModel interface in
-// web/src/interfaces/database/llm.ts:64-71.
-//
-// The previous contract routed this path to TenantHandler.GetModels →
-// TenantService.ListTenantDefaultModels, which only enumerates the 6-7
-// default tenant fields and returned `[]` for any tenant without
-// defaults, breaking the front-end's "View Models" list. The Go port
-// has no writers for tenant_model, so this endpoint must be driven by
-// the factory catalog cross-referenced with the tenant's instance list —
-// see service.ModelProviderService.ListTenantAddedModels.
-func (h *ProviderHandler) ListTenantAddedModels(c *gin.Context) {
+// ListModelsForUserInTenant handles GET /api/v1/models for the authenticated
+// user and selected tenant context.
+func (h *ProviderHandler) ListModelsForUserInTenant(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
@@ -1644,11 +1655,11 @@ func (h *ProviderHandler) ListTenantAddedModels(c *gin.Context) {
 	tenantID := c.Query("tenant_id")
 	ctx := c.Request.Context()
 
-	addedModels, code, err := h.modelProviderService.ListTenantAddedModels(ctx, user.ID, tenantID, modelType)
+	models, code, err := h.modelProviderService.ListModelsForUserInTenant(ctx, user.ID, tenantID, modelType)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, addedModels, "success")
+	common.SuccessWithData(c, models, "success")
 }

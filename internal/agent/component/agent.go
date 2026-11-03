@@ -43,14 +43,6 @@ import (
 const maxSubAgentDepth = 8
 const defaultAgentDeferredTimeout = 10 * time.Minute
 
-// agentPatternless matches `<model>@<provider>` and
-// `<model>@<instance>@<provider>` (the trailing `@<provider>` is
-// always the last segment — the segment just before the last `@`
-// is treated as the bare model name for upstream API calls). The
-// browser component has the same idea at browser.go:88-92, but
-// keeps the regex greedy for its 2-part fixture; we keep both
-// behaviors here via the in-function split below.
-
 // agentProviderLastSegmentSplit takes a composite llm_id and
 // returns (bareModelName, providerName, true) — or ("", "", false)
 // when no `@<provider>` suffix exists. The bare model name is
@@ -221,6 +213,9 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 
 	opt, future := react.WithMessageFuture()
 	ctx = setArtifactCollector(ctx, future)
+	// Nested agents inherit the context, but each run owns its tool history.
+	toolCalls := &toolCallCollector{}
+	ctx = context.WithValue(ctx, toolCallCollectorKey{}, toolCalls)
 	// Start the model-stream collector BEFORE agent.Stream. The checker
 	// (scanAllStreamForToolCall) must consume the whole round before the
 	// graph releases its output stream, so agent.Stream does not return
@@ -262,11 +257,14 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		return nil, emitErr
 	}
 	if len(chunks) == 0 {
-		return &schema.Message{Role: schema.Assistant}, nil
+		return &schema.Message{Role: schema.Assistant, ToolCalls: toolCalls.calls}, nil
 	}
 	msg, err := schema.ConcatMessages(chunks)
 	if err != nil {
 		return nil, err
+	}
+	if len(toolCalls.calls) > 0 {
+		msg.ToolCalls = toolCalls.calls
 	}
 	return msg, nil
 }
@@ -324,13 +322,22 @@ func (m *roundLimitedChatModel) roundInput(input []*schema.Message) []*schema.Me
 // runEinoReActAgent starts emitAgentModelStreams before agent.Stream to keep
 // thinking deltas streaming in real time while this function drains the
 // round.
-func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*schema.Message]) (bool, error) {
+func scanAllStreamForToolCall(ctx context.Context, stream *schema.StreamReader[*schema.Message]) (bool, error) {
 	defer stream.Close()
 
 	hasToolCall := false
+	var toolCallChunks []*schema.Message
 	for {
 		msg, err := stream.Recv()
 		if err == io.EOF {
+			if collector, ok := ctx.Value(toolCallCollectorKey{}).(*toolCallCollector); ok && len(toolCallChunks) > 0 {
+				// Indices restart each model turn; merge only this turn's deltas.
+				message, err := schema.ConcatMessages(toolCallChunks)
+				if err != nil {
+					return false, err
+				}
+				collector.calls = append(collector.calls, message.ToolCalls...)
+			}
 			return hasToolCall, nil
 		}
 		if err != nil {
@@ -338,6 +345,7 @@ func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*sc
 		}
 		if msg != nil && len(msg.ToolCalls) > 0 {
 			hasToolCall = true
+			toolCallChunks = append(toolCallChunks, msg)
 		}
 	}
 }
@@ -1297,6 +1305,12 @@ type artifactEntry struct {
 // artifactCollectorKey is the context key used to share the
 // MessageFuture between Agent.Invoke and runEinoReActAgent.
 type artifactCollectorKey struct{}
+
+type toolCallCollectorKey struct{}
+
+type toolCallCollector struct {
+	calls []schema.ToolCall
+}
 
 type artifactCollector struct {
 	future    react.MessageFuture

@@ -22,14 +22,12 @@ import (
 	"reflect"
 	"testing"
 
-	"gorm.io/gorm"
-
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
 
 func TestApplyVersionDraftSave(t *testing.T) {
-	for _, scenario := range []string{"repeat", "version_save_failure", "canceled"} {
+	for _, scenario := range []string{"repeat", "canceled"} {
 		t.Run(scenario, func(t *testing.T) {
 			setupAgentSessionServiceTest(t)
 			current := entity.UserCanvas{
@@ -58,16 +56,7 @@ func TestApplyVersionDraftSave(t *testing.T) {
 
 			ctx := serviceTestContext(t, "user-1", "user-1")
 			var wantErr error
-			if scenario == "version_save_failure" {
-				wantErr = errors.New("version write failed")
-				if err := dao.DB.Callback().Create().Before("gorm:create").Register("fail_version_save", func(tx *gorm.DB) {
-					if tx.Statement.Table == "user_canvas_version" {
-						tx.AddError(wantErr)
-					}
-				}); err != nil {
-					t.Fatal(err)
-				}
-			} else if scenario == "canceled" {
+			if scenario == "canceled" {
 				var cancel context.CancelFunc
 				ctx, cancel = context.WithCancel(ctx)
 				cancel()
@@ -78,23 +67,12 @@ func TestApplyVersionDraftSave(t *testing.T) {
 			if !errors.Is(err, wantErr) {
 				t.Fatalf("ApplyVersion error = %v, want %v", err, wantErr)
 			}
-			wantDSL, wantRelease, wantCount := current.DSL, true, 2
+			wantDSL, wantRelease := current.DSL, true
 			if wantErr == nil {
-				latest, err := dao.NewUserCanvasVersionDAO().GetLatest(ctx, dao.DB, current.ID)
-				if err != nil {
-					t.Fatal(err)
-				}
 				if err := svc.ApplyVersion(ctx, "user-1", current.ID, version.ID); err != nil {
 					t.Fatalf("repeated ApplyVersion failed: %v", err)
 				}
-				after, err := dao.NewUserCanvasVersionDAO().GetLatest(ctx, dao.DB, current.ID)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if after.ID != latest.ID || after.Release {
-					t.Fatal("repeated apply did not reuse the latest draft")
-				}
-				wantDSL, wantRelease, wantCount = version.DSL, false, 3
+				wantDSL, wantRelease = version.DSL, false
 			}
 			persisted, err := dao.NewUserCanvasDAO().GetByID(t.Context(), dao.DB, current.ID)
 			if err != nil {
@@ -103,12 +81,15 @@ func TestApplyVersionDraftSave(t *testing.T) {
 			if !reflect.DeepEqual(persisted.DSL, wantDSL) || persisted.Release != wantRelease {
 				t.Fatalf("unexpected agent after apply: dsl=%v release=%v", persisted.DSL, persisted.Release)
 			}
+			// Restoring must never write user_canvas_version: the restored DSL
+			// already exists as a historical row, so a new one would be a pure
+			// duplicate counting against the per-canvas version cap.
 			versions, err := dao.NewUserCanvasVersionDAO().ListByCanvasID(t.Context(), dao.DB, current.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(versions) != wantCount {
-				t.Fatalf("version count = %d, want %d", len(versions), wantCount)
+			if len(versions) != 2 {
+				t.Fatalf("version count = %d, want 2: apply must not create version rows", len(versions))
 			}
 		})
 	}

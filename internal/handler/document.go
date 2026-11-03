@@ -40,6 +40,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
+	"ragflow/internal/service/billing"
 	"ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 )
@@ -74,6 +75,7 @@ type documentServiceIface interface {
 	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error)
 	DownloadDocument(ctx context.Context, datasetID, docID string) (*document.DownloadDocumentResp, error)
 	UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error)
+	ApplyDatasetParserConfig(ctx context.Context, userID, datasetID string) (*document.ApplyDatasetParserConfigResponse, common.ErrorCode, error)
 	BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.MetadataSelector, updates []document.MetadataUpdate, deletes []document.MetadataDelete) (*document.BatchUpdateMetadatasResponse, common.ErrorCode, error)
 	ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
 	IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
@@ -444,20 +446,40 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 
 // DeleteDocuments handles DELETE /api/v1/datasets/:dataset_id/documents
 func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "delete_dataset_documents",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_id is required")
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = errors.New("dataset_id is required")
 		return
 	}
 
-	bodyBytes, _, ok := parseJSONRequestObject(c)
-	if !ok {
+	bodyBytes, _, err := parseJSONRequestObject(c)
+	if err != nil {
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = err
 		return
 	}
 
@@ -465,8 +487,10 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 		IDs       *[]string `json:"ids"`
 		DeleteAll bool      `json:"delete_all,omitempty"`
 	}
-	if err := json.Unmarshal(bodyBytes, &req); err != nil {
+	if err = json.Unmarshal(bodyBytes, &req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = err
 		return
 	}
 
@@ -481,7 +505,9 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 			}
 		}
 		if len(duplicates) > 0 {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Field: <ids> - Message: <Duplicate ids: '%s'> - Value: <%s>", strings.Join(duplicates, ", "), string(bodyBytes)))
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("field: <ids> - message: <duplicate ids: '%s'> - value: <%s>", strings.Join(duplicates, ", "), string(bodyBytes)))
+			operationLog.Code = int(common.CodeArgumentError)
+			operationLog.Error = fmt.Errorf("field: <ids> - message: <duplicate ids: '%s'> - value: <%s>", strings.Join(duplicates, ", "), string(bodyBytes))
 			return
 		}
 	}
@@ -492,11 +518,26 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 	}
 	if len(ids) > 0 && req.DeleteAll {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "should not provide both ids and delete_all")
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = errors.New("should not provide both ids and delete_all")
 		return
 	}
 	if len(ids) == 0 && !req.DeleteAll {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "should either provide doc ids or set delete_all(true)")
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = errors.New("should either provide doc ids or set delete_all(true)")
 		return
+	}
+	operationLog.Resources = make(map[string]any)
+	if len(ids) > 0 {
+		operationLog.Resources = map[string]any{
+			"document_ids": ids,
+		}
+	}
+	if req.DeleteAll {
+		operationLog.Resources = map[string]any{
+			"delete_all": req.DeleteAll,
+		}
 	}
 
 	userID := c.GetString("user_id")
@@ -504,9 +545,13 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 	deleted, err := h.documentService.DeleteDocuments(ctx, ids, req.DeleteAll, datasetID, userID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
+			operationLog.Code = int(common.CodePermissionError)
+			operationLog.Error = err
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = err
 		return
 	}
 
@@ -601,7 +646,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -995,7 +1040,7 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("Can't find the dataset with ID %s!", datasetID))
 		return
 	}
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: user.ID}, kb.ID, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1019,6 +1064,15 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		return
 	}
 	files := form.File["file"]
+	var totalSize int64
+	for _, fh := range files {
+		if fh != nil {
+			totalSize += fh.Size
+		}
+	}
+	if !billingEnforceStorage(c, tenantID, totalSize) {
+		return
+	}
 	for _, fh := range files {
 		if fh == nil || fh.Filename == "" {
 			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
@@ -1370,7 +1424,7 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 	var err error
 	ctx := c.Request.Context()
 	if req.DatasetID != nil {
-		if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, *req.DatasetID, permission.OperationRead); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: *req.DatasetID}, permission.OperationRead); err != nil {
 			respondPermissionError(c, err, false)
 			return
 		}
@@ -1389,6 +1443,19 @@ type StartParseDocumentsRequest struct {
 }
 
 func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "start_ingestion_task",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	datasetID := c.Param("dataset_id")
 
 	var req StartParseDocumentsRequest
@@ -1412,8 +1479,10 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 		}
 	}
 
+	operationLog.UserID = userID
+
 	ctx := c.Request.Context()
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1496,7 +1565,7 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 	ctx := c.Request.Context()
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1538,7 +1607,7 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1564,7 +1633,7 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1693,6 +1762,33 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+
+	// Storage quota: reject the whole upload before any file is persisted.
+	if len(fileHeaders) > 0 {
+		var totalSize int64
+		for _, header := range fileHeaders {
+			totalSize += header.Size
+		}
+		if totalSize > 0 {
+			if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+				if quotaErr := billingService.CheckResources(ctx, user.ID, billing.ResourceDelta{Storage: totalSize}); quotaErr != nil {
+					var insufficient *billing.InsufficientResourceError
+					if errors.As(quotaErr, &insufficient) {
+						common.ResponseWithDetail(c, common.CodeBillingStorageInsufficient, quotaErr.Error(), gin.H{
+							"resource": "storage",
+							"current":  insufficient.Current,
+							"limit":    insufficient.Limit,
+							"filename": fileHeaders[0].Filename,
+						})
+						return
+					}
+					common.ErrorWithCode(c, common.CodeServerError, quotaErr.Error())
+					return
+				}
+			}
+		}
+	}
+
 	if rawURL != "" {
 		data, code, err := h.fileService.UploadDocumentInfoByURL(ctx, user.ID, rawURL)
 		if err != nil {
@@ -1745,7 +1841,7 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}

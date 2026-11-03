@@ -7,6 +7,7 @@ import {
   ICategorizeForm,
   ICategorizeItem,
   ICategorizeItemResult,
+  ISwitchForm,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
 import { buildSelectOptions } from '@/utils/component-util';
@@ -33,6 +34,7 @@ import {
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
+  SwitchElseTo,
   TitleChunkerMethod,
   TypesWithArray,
   WebhookSecurityAuthType,
@@ -134,6 +136,10 @@ function buildAgentTools(edges: Edge[], nodes: Node[], nodeId: string) {
     id: string;
   };
 }
+
+export const generateSwitchHandleText = (idx: number) => {
+  return `Case ${idx + 1}`;
+};
 
 function filterTargetsBySourceHandleId(edges: Edge[], handleId: string) {
   return edges.filter((x) => x.sourceHandle === handleId).map((x) => x.target);
@@ -736,6 +742,28 @@ export const buildDslComponentsByGraph = (
           params = buildCategorize(edges, nodes, id);
           break;
 
+        case Operator.Switch: {
+          const switchParams = params as ISwitchForm;
+          const branchEdges = edges.filter((edge) => edge.source === id);
+          params = {
+            ...switchParams,
+            conditions: (switchParams.conditions ?? []).map(
+              (condition, index) => ({
+                ...condition,
+                to: filterTargetsBySourceHandleId(
+                  branchEdges,
+                  generateSwitchHandleText(index),
+                ),
+              }),
+            ),
+            [SwitchElseTo]: filterTargetsBySourceHandleId(
+              branchEdges,
+              SwitchElseTo,
+            ),
+          };
+          break;
+        }
+
         case Operator.Parser:
           params = transformParserParams(params);
           break;
@@ -908,10 +936,6 @@ export const isKeysEqual = (currentKeys: string[], previousKeys: string[]) => {
 
 export const getOperatorIndex = (handleTitle: string) => {
   return handleTitle.split(' ').at(-1);
-};
-
-export const generateSwitchHandleText = (idx: number) => {
-  return `Case ${idx + 1}`;
 };
 
 export const getNodeDragHandle = (nodeType?: string) => {

@@ -308,7 +308,7 @@ func TestTitleFamilyEmptyTextImageUploadsThroughDecorator(t *testing.T) {
 	// No doc_id in the payload (it would trigger the on-demand PDF crop path,
 	// which needs a database), so the id hashes the empty document id plus the
 	// captionless image's own identity (mediaChunkIdentity).
-	wantChunkID := common.ChunkID("", mediaChunkIdentity(payload, ""))
+	wantChunkID := common.ChunkID("", mediaChunkIdentity(payload, "", nil))
 	if ck["id"] != wantChunkID {
 		t.Errorf("id = %v, want %q", ck["id"], wantChunkID)
 	}

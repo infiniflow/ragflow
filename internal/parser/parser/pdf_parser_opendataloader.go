@@ -12,7 +12,13 @@ import (
 	"ragflow/internal/deepdoc/parser/pdf/table"
 	"sort"
 	"strings"
+	"time"
 )
+
+// openDataLoaderTimeoutSeconds bounds the single submit call. OpenDataLoader
+// parses synchronously, so a stalled server otherwise holds an ingestion worker
+// open until the transport's own 20-minute header timeout.
+const openDataLoaderTimeoutSeconds = 600
 
 // parsePDFWithOpenDataLoader normalizes the selected server's JSON or Markdown
 // output. Explicit tenant configuration never borrows a global endpoint or key.
@@ -36,7 +42,15 @@ func parsePDFWithOpenDataLoader(ctx context.Context, filename string, data []byt
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, strings.TrimRight(baseURL, "/")+"/file_parse", bodyReader)
+	timeout := time.Duration(parser.OpenDataLoaderTimeout) * time.Second
+	if timeout <= 0 {
+		timeout = openDataLoaderTimeoutSeconds * time.Second
+	}
+	// Derive from the pipeline context so a cancelled or expiring run stops
+	// waiting on the server, and cap it by the configured timeout.
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/file_parse", bodyReader)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader request: %w", err)}
 	}

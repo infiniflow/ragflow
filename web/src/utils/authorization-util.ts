@@ -56,9 +56,6 @@ const createCredentialStorage = (keys: CredentialKeys) => ({
     const userInfoStr = localStorage.getItem(keys.userInfo);
     return userInfoStr ? JSON.parse(userInfoStr) : null;
   },
-  setAuthorization: (value: string) => {
-    localStorage.setItem(keys.authorization, value);
-  },
   saveLoginCredentials: (credentials: LoginCredentials) => {
     localStorage.setItem(keys.authorization, credentials.authorization);
     localStorage.setItem(keys.token, credentials.token);

@@ -2,7 +2,6 @@ package service
 
 import (
 	"encoding/json"
-	"errors"
 	"math"
 	"strings"
 	"testing"
@@ -13,7 +12,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/permission"
 )
 
 func setupChatRESTUpdateServiceTestDB(t *testing.T) *gorm.DB {
@@ -58,6 +56,7 @@ func setupChatRESTUpdateServiceTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-a",
+		UserID:       "user-1",
 		TenantID:     "user-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {
@@ -137,8 +136,8 @@ func TestChatServiceCreateRejectsForeignKBIDs(t *testing.T) {
 		"name":   "chat with foreign dataset",
 		"kb_ids": []interface{}{"kb-private"},
 	})
-	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("Create error = %v, want permission denied", err)
+	if !isAccessDeniedOrHidden(err) {
+		t.Fatalf("Create error = %v, want access denied or hidden resource", err)
 	}
 }
 
@@ -150,8 +149,8 @@ func TestChatServicePatchRejectsForeignKBIDs(t *testing.T) {
 	_, err := NewChatService().PatchChat(serviceTestContext(t, "user-1", "user-1"), "user-1", "chat-1", map[string]interface{}{
 		"kb_ids": []interface{}{"kb-private"},
 	})
-	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("PatchChat error = %v, want permission denied", err)
+	if !isAccessDeniedOrHidden(err) {
+		t.Fatalf("PatchChat error = %v, want access denied or hidden resource", err)
 	}
 	chat, loadErr := dao.NewChatDAO().GetByID(t.Context(), db, "chat-1")
 	if loadErr != nil {

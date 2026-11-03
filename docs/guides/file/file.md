@@ -23,11 +23,15 @@ RAGFlow file management lets you build your own file system through nested folde
 3. Enter the folder name in the **Name** input field. The name cannot be empty. It is recommended to use a short name that reflects the business source.
 4. Click **Save**.
 
+![Open the new folder action](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_folder_1.jpg)
+
+![Enter a folder name](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_folder_2.jpg)
+
 ## Upload Files or Folders
 
 After clicking **Add File** in the upper-right corner of the page, select **Upload File** to open the upload window. The upload control contains two tabs: **File** and **Folder**. You can select one or more files, or upload an entire folder.
 
-![Upload files](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_files.jpg)
+![Open the Upload File action](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_file_1.jpg)
 
 ### Upload File
 
@@ -37,7 +41,7 @@ After clicking **Add File** in the upper-right corner of the page, select **Uplo
 4. Confirm the list of files to be uploaded. If you selected a file by mistake, click the delete button on the right side of the file row to remove it.
 5. Click **Confirm** or **Save**, then wait for the upload progress to complete.
 
-![Upload file 1](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_file_1.jpg)
+![Review selected files in the upload dialog](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_file_2.jpg)
 
 ### Upload Folder
 
