@@ -326,7 +326,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 			// log only.
 			common.Error("GetDocumentPreview failed", err,
 				zap.String("doc_id", docID), zap.String("user_id", permission.UserIDFromContext(ctx)))
-			common.RespondError(c, common.CodeServerError, nil, "Failed to load document preview")
+			common.RespondError(c, common.CodeServerError, "Failed to load document preview")
 		}
 		return
 	}
