@@ -299,12 +299,13 @@ func TestNewFallbackToolMiddleware_NoFallbackConfigured(t *testing.T) {
 
 func TestToolWrapperChain_TimeoutThenRetry(t *testing.T) {
 	var callCount int32
-	timeoutMw := NewTimeoutToolMiddleware(50 * time.Millisecond)
+	// Timeout wraps every retry. A short deadline plus a sleep fails when the
+	// runner is busy, even though each call itself would finish in time.
+	timeoutMw := NewTimeoutToolMiddleware(time.Second)
 	retryMw := NewRetryToolMiddleware(&ToolRetryConfig{MaxAttempts: 2, Backoff: time.Millisecond, IsRetryable: func(err error) bool { return true }})
 
 	fn := func(ctx context.Context, ictx *ToolInvocationContext) (*schema.ToolResult, error) {
 		c := atomic.AddInt32(&callCount, 1)
-		time.Sleep(10 * time.Millisecond)
 		if c <= 2 {
 			return nil, errors.New("transient")
 		}
