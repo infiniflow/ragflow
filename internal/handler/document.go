@@ -1616,21 +1616,21 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 	if req.CancelAll {
 		for _, s := range req.RunStatuses {
 			if !common.IsValidRunStatus(s) {
-				common.ErrorWithCode(c, common.CodeArgumentError, fmt.Sprintf("invalid run_status: %s", s))
+				common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("invalid run_status: %s", s))
 				return
 			}
 		}
 		result, err := h.documentService.StopParseDocumentsAll(ctx, datasetID, req.RunStatuses)
 		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+			common.RespondError(c, common.CodeExceptionError, err.Error())
 			return
 		}
-		common.SuccessWithData(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 
 	if len(req.DocumentIDs) == 0 {
-		common.ErrorWithCode(c, common.CodeDataError, "`document_ids` is required")
+		common.RespondError(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
 
