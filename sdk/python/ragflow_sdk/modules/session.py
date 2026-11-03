@@ -158,10 +158,13 @@ class Session(Base):
         if self.__session_type == "agent":
             event = json_data.get("event")
             message_id = json_data.get("message_id")
-            json_data = json_data["data"]
+            if isinstance(json_data.get("data"), dict):
+                json_data = json_data["data"]
             answer = json_data.get("content", "")
+            if not message_id:
+                message_id = json_data.get("id") or json_data.get("message_id")
         elif self.__session_type == "chat":
-            answer = json_data["answer"]
+            answer = json_data.get("answer", "")
             message_id = json_data.get("id")
         reference = json_data.get("reference", {})
         temp_dict = {"id": message_id, "content": answer, "role": "assistant"}
