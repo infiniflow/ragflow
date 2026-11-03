@@ -60,6 +60,7 @@ export const enum LLMApiAction {
   AddProviderInstance = 'addProviderInstance',
   VerifyProviderConnection = 'verifyProviderConnection',
   ListProviderModels = 'listProviderModels',
+  DiscoverProviderModels = 'discoverProviderModels',
   AddInstanceModel = 'addInstanceModel',
   EditInstanceModel = 'editInstanceModel',
   DeleteProviderInstance = 'deleteProviderInstance',
@@ -423,6 +424,35 @@ export const useListProviderModels = () => {
   });
 
   return { loading, listProviderModels: mutateAsync };
+};
+
+/**
+ * Lists the models a provider serves, with the credential in the request body
+ * rather than the URL. Failures are returned to the caller instead of raising
+ * the global notification, so they can be explained next to the form.
+ */
+export const useDiscoverProviderModels = () => {
+  const { isPending: loading, mutateAsync } = useMutation({
+    mutationKey: [LLMApiAction.DiscoverProviderModels],
+    mutationFn: async ({
+      provider_name,
+      ...body
+    }: {
+      provider_name: string;
+      api_key?: string;
+      base_url?: string;
+      use_saved_credentials?: boolean;
+      instance_name?: string;
+    }) => {
+      const { data } = await llmService.discoverProviderModels(
+        { provider_name, data: body, skipGlobalErrorNotification: true },
+        true,
+      );
+      return data;
+    },
+  });
+
+  return { loading, discoverProviderModels: mutateAsync };
 };
 
 export const useAddInstanceModel = () => {
