@@ -268,6 +268,41 @@ func TestParseKeepsSingleColumnTable(t *testing.T) {
 	}
 }
 
+func TestParseKeepsTextWhenTableStructureMissing(t *testing.T) {
+	img, boxes, texts := newTestImage(240, 140, []testCell{
+		{image.Rect(20, 20, 60, 40), "Name", color.RGBA{R: 255, A: 255}},
+		{image.Rect(20, 80, 50, 100), "A", color.RGBA{B: 255, A: 255}},
+	})
+	analyzer := &testAnalyzer{
+		boxes:   boxes,
+		texts:   texts,
+		regions: []deepdoctype.DLARegion{{X0: 0, Y0: 0, X1: 240, Y1: 120, Label: "table", Confidence: 0.9}},
+		// No TSR cells: the table region keeps its plain OCR text.
+	}
+
+	blocks, err := Parse(t.Context(), img, analyzer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, block := range blocks {
+		if block.Kind == BlockTable {
+			t.Fatalf("table structure is missing; got a table block: %+v", block)
+		}
+	}
+	var text strings.Builder
+	for _, block := range blocks {
+		if block.Kind == BlockText {
+			text.WriteString(block.Text)
+			text.WriteByte('\n')
+		}
+	}
+	for _, want := range []string{"Name", "A"} {
+		if !strings.Contains(text.String(), want) {
+			t.Fatalf("text %q does not contain %q", text.String(), want)
+		}
+	}
+}
+
 func TestParseNilImage(t *testing.T) {
 	if _, err := Parse(context.Background(), nil, &testAnalyzer{}); err == nil {
 		t.Fatal("expected an error for a nil image")

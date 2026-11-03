@@ -114,15 +114,21 @@ func blocksFromSections(img image.Image, sections []deepdoctype.Section) []Block
 	for _, section := range sections {
 		if section.LayoutType == deepdoctype.LayoutTypeTable {
 			table, err := tableutil.ParseTableHTML(section.Text)
-			if err != nil || table == nil || len(table.Grid) == 0 {
+			if err == nil && table != nil && len(table.Grid) > 0 {
+				blocks = append(blocks, Block{
+					Kind:       BlockTable,
+					Table:      table,
+					TableImage: cropSection(img, section.Positions),
+				})
 				continue
 			}
-			blocks = append(blocks, Block{
-				Kind:       BlockTable,
-				Table:      table,
-				TableImage: cropSection(img, section.Positions),
-			})
-			continue
+			// A DLA table region can keep its plain OCR text when TSR produced
+			// no cells: no table HTML replaces the boxes, but they still carry
+			// LayoutType=table. Preserve that text instead of dropping it.
+			lower := strings.ToLower(section.Text)
+			if strings.Contains(lower, "<table") || strings.Contains(lower, "<tr") {
+				continue
+			}
 		}
 		if text := strings.TrimSpace(section.Text); text != "" {
 			blocks = append(blocks, Block{Kind: BlockText, Text: text})
