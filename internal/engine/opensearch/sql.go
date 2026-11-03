@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package opensearch
 
 import (
@@ -22,6 +38,9 @@ import (
 const (
 	osSQLRequestTimeout = 2 * time.Second
 	osSQLFetchSize      = 128
+	// osSQLMaxPages bounds cursor pagination so a misbehaving cluster cannot
+	// keep the caller in an endless fetch loop.
+	osSQLMaxPages = 1000
 )
 
 const osSQLRetryAttempts = 2
@@ -115,22 +134,47 @@ func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, k
 }
 
 func (e *Engine) runSQLOnce(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
-	ctx, cancel := context.WithTimeout(ctx, osSQLRequestTimeout)
+	var (
+		out    []map[string]interface{}
+		cursor string
+	)
+	for page := 0; page < osSQLMaxPages; page++ {
+		rows, next, err := e.runSQLPage(ctx, sqlText, cursor, format)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rows...)
+		if next == "" {
+			return out, nil
+		}
+		cursor = next
+	}
+	return out, nil
+}
+
+// runSQLPage executes one `/_plugins/_sql` round trip. The first page sends the
+// query with fetch_size; later pages send the returned cursor. Each page gets
+// its own timeout so a slow page does not consume the whole query budget.
+func (e *Engine) runSQLPage(ctx context.Context, sqlText string, cursor string, format string) ([]map[string]interface{}, string, error) {
+	pageCtx, cancel := context.WithTimeout(ctx, osSQLRequestTimeout)
 	defer cancel()
 
-	body := map[string]interface{}{
-		"query":      sqlText,
-		"fetch_size": osSQLFetchSize,
+	body := map[string]interface{}{}
+	if cursor == "" {
+		body["query"] = sqlText
+		body["fetch_size"] = osSQLFetchSize
+	} else {
+		body["cursor"] = cursor
 	}
 	buf, err := json.Marshal(body)
 	if err != nil {
-		return nil, fmt.Errorf("marshal body: %w", err)
+		return nil, "", fmt.Errorf("marshal body: %w", err)
 	}
 
 	// OpenSearch SQL endpoint (ES uses /_sql; OpenSearch uses /_plugins/_sql).
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "/_plugins/_sql", bytes.NewReader(buf))
+	req, err := http.NewRequestWithContext(pageCtx, http.MethodPost, "/_plugins/_sql", bytes.NewReader(buf))
 	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
+		return nil, "", fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if format != "" {
@@ -141,30 +185,31 @@ func (e *Engine) runSQLOnce(ctx context.Context, sqlText string, format string) 
 
 	res, err := e.client.Perform(req)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
+		return nil, "", fmt.Errorf("request failed: %w", err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode >= 400 {
 		errBody, _ := io.ReadAll(res.Body)
-		return nil, fmt.Errorf("status=%d body=%s", res.StatusCode, string(errBody))
+		return nil, "", fmt.Errorf("status=%d body=%s", res.StatusCode, string(errBody))
 	}
 
 	// Parse the OpenSearch SQL response: schema + datarows (ES uses columns +
-	// rows, a different shape).
+	// rows, a different shape). Cursor is present while more pages remain.
 	var resp struct {
 		Schema []struct {
 			Name string `json:"name"`
 			Type string `json:"type"`
 		} `json:"schema"`
 		DataRows [][]interface{} `json:"datarows"`
+		Cursor   string          `json:"cursor"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
+		return nil, "", fmt.Errorf("decode response: %w", err)
 	}
 
 	if len(resp.DataRows) == 0 {
-		return nil, nil
+		return nil, resp.Cursor, nil
 	}
 
 	// Convert to chunk-shaped maps. Column names map 1:1 to JSON keys.
@@ -178,7 +223,7 @@ func (e *Engine) runSQLOnce(ctx context.Context, sqlText string, format string) 
 		}
 		out = append(out, cm)
 	}
-	return out, nil
+	return out, resp.Cursor, nil
 }
 
 // isTimeoutError detects connection-level and per-attempt timeouts

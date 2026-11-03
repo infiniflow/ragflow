@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package opensearch
 
 import (
@@ -9,6 +25,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"ragflow/internal/common"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/server/config"
 	"ragflow/internal/utility"
 	"strconv"
@@ -17,6 +35,7 @@ import (
 
 	"github.com/opensearch-project/opensearch-go/v4"
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
+	"go.uber.org/zap"
 )
 
 type Engine struct {
@@ -75,7 +94,10 @@ func NewEngine(ctx context.Context, osConfig config.OpenSearchConfig) (*Engine, 
 		hybridPipelineName: "ragflow_hybrid_pipeline",
 	}
 
-	if err = engine.initHybridSearch(newCtx, infoResp.Version.Number); err == nil {
+	if err = engine.initHybridSearch(newCtx, infoResp.Version.Number); err != nil {
+		common.Warn("OpenSearch hybrid search is disabled",
+			zap.String("version", infoResp.Version.Number), zap.Error(err))
+	} else {
 		engine.hybridSearchEnabled = true
 	}
 
@@ -283,7 +305,10 @@ func (e *Engine) doSearch(ctx context.Context, indices []string, body io.Reader,
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read search response: %w", err)
+	}
 	if resp.StatusCode == http.StatusNotFound && isIndexNotFoundBody(respBody) {
 		return nil, &indexNotFoundError{index: strings.Join(indices, ",")}
 	}
@@ -316,7 +341,10 @@ func (e *Engine) doBulk(ctx context.Context, body io.Reader, refresh string) (ma
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read bulk response: %w", err)
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("bulk error (status %d): %s", resp.StatusCode, string(respBody))
 	}
@@ -347,7 +375,10 @@ func (e *Engine) doIndex(ctx context.Context, index, docID string, body io.Reade
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read index response: %w", err)
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("index error (status %d): %s", resp.StatusCode, string(respBody))
 	}
@@ -359,18 +390,21 @@ func (e *Engine) doIndex(ctx context.Context, index, docID string, body io.Reade
 	return result, nil
 }
 
-func (e *Engine) doUpdate(ctx context.Context, index, docID string, body io.Reader, refresh string) (map[string]interface{}, error) {
+func (e *Engine) doUpdate(ctx context.Context, index, docID string, body io.Reader, refresh string, params map[string]string) (map[string]interface{}, error) {
 	path := fmt.Sprintf("/%s/_update/%s", index, docID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, path, body)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if refresh != "" {
-		q := req.URL.Query()
-		q.Set("refresh", refresh)
-		req.URL.RawQuery = q.Encode()
+	q := req.URL.Query()
+	for k, v := range params {
+		q.Set(k, v)
 	}
+	if refresh != "" {
+		q.Set("refresh", refresh)
+	}
+	req.URL.RawQuery = q.Encode()
 
 	resp, err := e.client.Perform(req)
 	if err != nil {
@@ -378,7 +412,13 @@ func (e *Engine) doUpdate(ctx context.Context, index, docID string, body io.Read
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read update response: %w", err)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: %s", types.ErrDocumentNotFound, docID)
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("update error (status %d): %s", resp.StatusCode, string(respBody))
 	}
@@ -403,7 +443,10 @@ func (e *Engine) doDelete(ctx context.Context, index, docID string) (map[string]
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read delete response: %w", err)
+	}
 	if resp.StatusCode >= 400 && resp.StatusCode != 404 {
 		return nil, fmt.Errorf("delete error (status %d): %s", resp.StatusCode, string(respBody))
 	}
@@ -434,7 +477,10 @@ func (e *Engine) doUpdateByQuery(ctx context.Context, indices []string, body io.
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read update_by_query response: %w", err)
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("update_by_query error (status %d): %s", resp.StatusCode, string(respBody))
 	}
@@ -465,7 +511,10 @@ func (e *Engine) doDeleteByQuery(ctx context.Context, indices []string, body io.
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read delete_by_query response: %w", err)
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("delete_by_query error (status %d): %s", resp.StatusCode, string(respBody))
 	}
@@ -492,7 +541,10 @@ func (e *Engine) doIndicesCreate(ctx context.Context, index string, body io.Read
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read indices create response: %w", err)
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("indices create error (status %d): %s", resp.StatusCode, string(respBody))
 	}
@@ -517,7 +569,10 @@ func (e *Engine) doIndicesGetMapping(ctx context.Context, indices []string) (map
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read mapping response: %w", err)
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("get mapping error (status %d): %s", resp.StatusCode, string(respBody))
 	}
@@ -543,7 +598,10 @@ func (e *Engine) doIndicesPutMapping(ctx context.Context, indices []string, body
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read put mapping response: %w", err)
+	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("put mapping error (status %d): %s", resp.StatusCode, string(respBody))
 	}

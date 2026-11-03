@@ -197,6 +197,9 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 		infinityConfig := globalConfig.GetInfinityConfig()
 		exportedInfinityConfigs := infinityConfig.ExportConfigs()
 		allConfigs = append(allConfigs, exportedInfinityConfigs)
+	case "opensearch":
+		openSearchConfig := globalConfig.GetOpenSearchConfig()
+		allConfigs = append(allConfigs, openSearchConfig.ExportConfigs())
 	case "oceanbase":
 		oceanBaseConfig := globalConfig.GetOceanBaseConfig()
 		allConfigs = append(allConfigs, oceanBaseConfig.ExportConfigs())

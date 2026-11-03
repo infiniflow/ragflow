@@ -733,6 +733,8 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 		docHost, docPort = serviceEndpoint(globalConfig.GetInfinityConfig().URI, 0)
 	} else if docEngineImpl.GetType() == "elasticsearch" {
 		docHost, docPort = serviceEndpoint(globalConfig.GetElasticsearchConfig().Hosts, 0)
+	} else if docEngineImpl.GetType() == "opensearch" {
+		docHost, docPort = serviceEndpoint(globalConfig.GetOpenSearchConfig().Hosts, 0)
 	}
 	err := docEngineImpl.Ping(ctx)
 	if err == nil {

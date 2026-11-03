@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package opensearch
 
 import (
@@ -73,9 +89,7 @@ func (e *Engine) indexExists(ctx context.Context, indexName string) (bool, error
 		return false, fmt.Errorf("failed to check index existence: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.Body != nil {
-		io.Copy(io.Discard, resp.Body)
-	}
+	bodyBytes, _ := io.ReadAll(resp.Body)
 
 	switch resp.StatusCode {
 	case http.StatusOK:
@@ -83,7 +97,6 @@ func (e *Engine) indexExists(ctx context.Context, indexName string) (bool, error
 	case http.StatusNotFound:
 		return false, nil
 	default:
-		bodyBytes, _ := io.ReadAll(resp.Body)
 		return false, fmt.Errorf("opensearch returned error status %d for index %s: %s", resp.StatusCode, indexName, string(bodyBytes))
 	}
 }

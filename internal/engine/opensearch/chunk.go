@@ -119,7 +119,7 @@ func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID strin
 		return fmt.Errorf("index creation not acknowledged")
 	}
 
-	common.Info("Successfully created Elasticsearch index", zap.String("index_name", baseName))
+	common.Info("Successfully created OpenSearch index", zap.String("index_name", baseName))
 	return nil
 }
 
@@ -153,7 +153,7 @@ func (e *Engine) InsertChunksNoRefresh(ctx context.Context, chunks []map[string]
 // is fixed at index creation need; Elasticsearch analyses client-side and
 // ignores it.
 func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string, refresh string) ([]string, error) {
-	common.Info("ElasticsearchConnection.InsertChunks called", zap.String("index_name", baseName), zap.Int("chunkCount", len(chunks)))
+	common.Info("OpenSearchConnection.InsertChunks called", zap.String("index_name", baseName), zap.Int("chunkCount", len(chunks)))
 
 	if len(chunks) == 0 {
 		return []string{}, nil
@@ -171,7 +171,7 @@ func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface
 	}
 
 	// Bulk requests are executed in bounded batches so a single large document
-	// (thousands of chunks) never sends a payload above the Elasticsearch HTTP
+	// (thousands of chunks) never sends a payload above the OpenSearch HTTP
 	// body limit (default http.max_content_length = 100MB), which surfaces as a
 	// 413 Request Entity Too Large. We flush a batch by chunk count AND byte
 	// size to stay well within the limit.
@@ -213,9 +213,9 @@ func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface
 			if len(reasons) > 5 {
 				reasons = reasons[:5]
 			}
-			common.Error("Elasticsearch bulk request had item errors",
+			common.Error("OpenSearch bulk request had item errors",
 				fmt.Errorf("index %s: %d failed items; first reasons: %v", baseName, len(reasons), reasons))
-			return fmt.Errorf("elasticsearch bulk request had %d item errors (index %s); first reasons: %v",
+			return fmt.Errorf("opensearch bulk request had %d item errors (index %s); first reasons: %v",
 				len(reasons), baseName, reasons)
 		}
 		return nil
@@ -279,14 +279,14 @@ func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface
 		return nil, err
 	}
 
-	common.Info("ElasticsearchConnection.InsertChunks result", zap.String("index_name", baseName), zap.Int("count", len(chunks)))
+	common.Info("OpenSearchConnection.InsertChunks result", zap.String("index_name", baseName), zap.Int("count", len(chunks)))
 	return []string{}, nil
 }
 
 // UpdateChunks updates chunks by condition
 func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, baseName string, datasetID string) error {
 	fullIndexName := baseName
-	common.Info("ElasticsearchConnection.UpdateChunks called", zap.String("index_name", fullIndexName), zap.Any("condition", condition), zap.Any("new_value", newValue))
+	common.Info("OpenSearchConnection.UpdateChunks called", zap.String("index_name", fullIndexName), zap.Any("condition", condition), zap.Any("new_value", newValue))
 
 	if fullIndexName == "" {
 		return fmt.Errorf("index name cannot be empty")
@@ -378,12 +378,19 @@ func (e *Engine) AdjustChunkPagerank(ctx context.Context, indexName, chunkID, kb
 	if err != nil {
 		return fmt.Errorf("failed to marshal pagerank adjust request: %w", err)
 	}
-	updateResp, err := e.doUpdate(ctx, indexName, chunkID, bytes.NewReader(body), "")
+	// Concurrent feedback on the same chunk must not surface as a 409, so ask
+	// the engine to retry the scripted update on version conflicts.
+	updateResp, err := e.doUpdate(ctx, indexName, chunkID, bytes.NewReader(body), "", map[string]string{
+		"retry_on_conflict": "3",
+	})
 	if err != nil {
 		return err
 	}
 	if errMsg, ok := updateResp["error"]; ok {
 		return fmt.Errorf("update error: %v", errMsg)
+	}
+	if result, _ := updateResp["result"].(string); result == "noop" {
+		return fmt.Errorf("chunk %s does not belong to dataset %s", chunkID, kbID)
 	}
 	return nil
 }
@@ -400,7 +407,7 @@ func (e *Engine) updateSingleMemoryMessage(ctx context.Context, indexName, messa
 	if err != nil {
 		return fmt.Errorf("failed to marshal memory message update request: %w", err)
 	}
-	_, err = e.doUpdate(ctx, indexName, messageDocID, bytes.NewReader(body), "wait_for")
+	_, err = e.doUpdate(ctx, indexName, messageDocID, bytes.NewReader(body), "wait_for", nil)
 	if err != nil {
 		return err
 	}
@@ -435,7 +442,7 @@ func mapMemoryMessageESConditionFields(condition map[string]interface{}) map[str
 
 // updateSingleChunk handles single document update
 func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID string, newValue map[string]interface{}) error {
-	common.Debug("ElasticsearchConnection.updateSingleChunk called", zap.String("indexName", indexName), zap.String("chunkID", chunkID))
+	common.Debug("OpenSearchConnection.updateSingleChunk called", zap.String("indexName", indexName), zap.String("chunkID", chunkID))
 
 	// First find the document by id field to get the actual _id
 	searchReq := map[string]interface{}{
@@ -496,7 +503,7 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 			},
 		}
 		body, _ = json.Marshal(scriptBody)
-		_, err := e.doUpdate(ctx, indexName, actualID, bytes.NewReader(body), "")
+		_, err := e.doUpdate(ctx, indexName, actualID, bytes.NewReader(body), "", nil)
 		if err != nil {
 			return err
 		}
@@ -510,7 +517,7 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 			},
 		}
 		body, _ = json.Marshal(scriptBody)
-		_, err := e.doUpdate(ctx, indexName, actualID, bytes.NewReader(body), "")
+		_, err := e.doUpdate(ctx, indexName, actualID, bytes.NewReader(body), "", nil)
 		if err != nil {
 			return err
 		}
@@ -534,7 +541,7 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 				},
 			}
 			body, _ = json.Marshal(scriptBody)
-			_, err := e.doUpdate(ctx, indexName, actualID, bytes.NewReader(body), "")
+			_, err := e.doUpdate(ctx, indexName, actualID, bytes.NewReader(body), "", nil)
 			if err != nil {
 				return err
 			}
@@ -548,13 +555,13 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 		}
 		updateBody := map[string]interface{}{"doc": doc}
 		body, _ := json.Marshal(updateBody)
-		_, err := e.doUpdate(ctx, indexName, actualID, bytes.NewReader(body), "wait_for")
+		_, err := e.doUpdate(ctx, indexName, actualID, bytes.NewReader(body), "wait_for", nil)
 		if err != nil {
 			return err
 		}
 	}
 
-	common.Debug("ElasticsearchConnection.updateSingleChunk completed", zap.String("indexName", indexName), zap.String("chunkID", chunkID))
+	common.Debug("OpenSearchConnection.updateSingleChunk completed", zap.String("indexName", indexName), zap.String("chunkID", chunkID))
 	return nil
 }
 
@@ -601,7 +608,7 @@ func mustNotExistsClauses(value interface{}) []map[string]interface{} {
 
 // updateChunksByQuery handles multi-document update
 func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, condition map[string]interface{}, newValue map[string]interface{}) error {
-	common.Debug("ElasticsearchConnection.updateChunksByQuery called", zap.String("indexName", indexName))
+	common.Debug("OpenSearchConnection.updateChunksByQuery called", zap.String("indexName", indexName))
 	condition = types.CompilationFilter(condition)
 
 	// Build bool query from condition
@@ -736,7 +743,7 @@ func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, cond
 	if err != nil {
 		return err
 	}
-	common.Debug("ElasticsearchConnection.updateChunksByQuery completed", zap.String("indexName", indexName))
+	common.Debug("OpenSearchConnection.updateChunksByQuery completed", zap.String("indexName", indexName))
 	return nil
 }
 
@@ -845,7 +852,7 @@ func formatOrderedTagFeas(v any) (json.RawMessage, bool) {
 func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
 	// For ES, index name is just indexName (e.g., "ragflow_{tenantID}"), not indexName_datasetID
 	fullIndexName := indexName
-	common.Info("Deleting chunks from Elasticsearch index", zap.String("index_name", fullIndexName), zap.Any("condition", condition))
+	common.Info("Deleting chunks from OpenSearch index", zap.String("index_name", fullIndexName), zap.Any("condition", condition))
 
 	// Check if index exists
 	exists, err := e.indexExists(ctx, fullIndexName)
@@ -968,7 +975,7 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	return deleted, nil
 }
 
-// SearchResponse Elasticsearch search response
+// SearchResponse OpenSearch search response
 type SearchResponse struct {
 	Hits struct {
 		Total struct {
@@ -1004,7 +1011,7 @@ func mapToSearchResponse(m map[string]interface{}) (SearchResponse, error) {
 // Search executes a unified search across the requested indices. Ordinary
 // searches fail when any index request fails, without returning partial results.
 func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
-	types.LogSearchRequest("Elasticsearch", req)
+	types.LogSearchRequest("OpenSearch", req)
 
 	// Validate inputs and set defaults
 	if len(req.IndexNames) == 0 {
@@ -1208,8 +1215,8 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 	// Determine use_search_after for deep pagination
 	//
-	// ES rejects from + size combinations where from + size > index.max_result_window
-	// (default 10,000) — see https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html.
+	// OpenSearch rejects from + size combinations where from + size > index.max_result_window
+	// (default 10,000) — see https://docs.opensearch.org/latest/search-plugins/searching-data/paginate/.
 	// For those requests we must drop `from` and walk the result set with
 	// `search_after` instead. The preconditions mirror the Python reference
 	// (rag/utils/es_conn.py):
@@ -1230,6 +1237,14 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		queryBody["from"] = offset
 	}
 
+	// Ask for an exact hit total. Without this OpenSearch caps hits.total at
+	// 10,000 and reports it as a lower bound, so callers that render a result
+	// count would show a truncated number. The search_after path requests it
+	// only on its first page (see executeSearchRequest).
+	if !useSearchAfter {
+		queryBody["track_total_hits"] = true
+	}
+
 	// Set _source and fields for vector fields
 	hasTextMatch := matchText != nil
 	selectFields := req.SelectFields
@@ -1248,15 +1263,6 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 					queryBody["_source"] = append(queryBody["_source"].([]string), common.TAG_FLD)
 				}
 			}
-		}
-		var vectorFields []string
-		for _, f := range selectFields {
-			if strings.HasSuffix(f, "_vec") {
-				vectorFields = append(vectorFields, f)
-			}
-		}
-		if len(vectorFields) > 0 {
-			queryBody["fields"] = vectorFields
 		}
 	} else {
 		// No explicit SelectFields - use match_all, but add pagerank_fld/tag_fld for scoring if needed
@@ -1298,18 +1304,18 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		for _, indexName := range req.IndexNames {
 			searchChunks, indexTotal, esErr := e.searchOneIndex(ctx, indexName, payload, hybrid)
 			if esErr != nil {
-				return nil, fmt.Errorf("elasticsearch: search index %q: %w", indexName, esErr)
+				return nil, fmt.Errorf("opensearch: search index %q: %w", indexName, esErr)
 			}
 			if hybrid {
 				// A window the backend could not fill is a candidate shortfall
 				// upstream; only then is the request body worth its size.
-				common.InfoCtx(ctx, "Elasticsearch hybrid response",
+				common.InfoCtx(ctx, "OpenSearch hybrid response",
 					zap.String("index", indexName),
 					zap.Int64("total", indexTotal),
 					zap.Int("returned", len(searchChunks)),
 					zap.Int("window", limit))
 				if limit > 0 && len(searchChunks) < limit {
-					common.InfoCtx(ctx, "Elasticsearch hybrid body (window not filled)",
+					common.InfoCtx(ctx, "OpenSearch hybrid body (window not filled)",
 						zap.Strings("indexes", req.IndexNames),
 						zap.String("body", elideQueryVector(payload)))
 				}
@@ -1430,9 +1436,10 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	// Regexp search is intentionally a first-page operation. Callers that need
 	// deep reading use chunk anchors rather than offset pagination.
 	queryBody := map[string]interface{}{
-		"query": boolQuery,
-		"size":  maxResults,
-		"from":  0,
+		"query":            boolQuery,
+		"size":             maxResults,
+		"from":             0,
+		"track_total_hits": true,
 	}
 
 	// When an explicit sort is requested (e.g. a document's reading order), push
@@ -1463,8 +1470,8 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	}
 	esResp, err := mapToSearchResponse(searchResult)
 	if err != nil {
-		common.Warn("Elasticsearch regexp failed to parse response", zap.String("index", indexName), zap.Error(err))
-		return nil, fmt.Errorf("elasticsearch regexp parse error on index %q: %w", indexName, err)
+		common.Warn("OpenSearch regexp failed to parse response", zap.String("index", indexName), zap.Error(err))
+		return nil, fmt.Errorf("opensearch regexp parse error on index %q: %w", indexName, err)
 	}
 
 	allResults := convertESResponse(&esResp, "")
@@ -1563,7 +1570,7 @@ func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload [
 	}
 	esResp, err := mapToSearchResponse(searchResult)
 	if err != nil {
-		common.Warn("Elasticsearch failed to parse response", zap.String("index", indexName), zap.Error(err))
+		common.Warn("OpenSearch failed to parse response", zap.String("index", indexName), zap.Error(err))
 		return nil, 0, err
 	}
 
@@ -1573,7 +1580,7 @@ func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload [
 // searchAfterFetcher issues one ES search request with the given batch
 // size and search_after cursor, returning the decoded response. Defined
 // as a function type so the pagination logic below can be unit-tested
-// with a mock fetcher instead of a real Elasticsearch client.
+// with a mock fetcher instead of a real OpenSearch client.
 type searchAfterFetcher func(
 	ctx context.Context,
 	baseQuery map[string]interface{},
@@ -1768,6 +1775,9 @@ func (e *Engine) executeSearchRequest(
 	if len(cursor) > 0 {
 		queryBody["search_after"] = cursor
 	}
+	if trackTotalHits {
+		queryBody["track_total_hits"] = true
+	}
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(queryBody); err != nil {
@@ -1780,7 +1790,7 @@ func (e *Engine) executeSearchRequest(
 	}
 	esResp, err := mapToSearchResponse(searchResult)
 	if err != nil {
-		return SearchResponse{}, fmt.Errorf("elasticsearch failed to parse response: %w", err)
+		return SearchResponse{}, fmt.Errorf("opensearch failed to parse response: %w", err)
 	}
 	return esResp, nil
 }
@@ -1802,8 +1812,8 @@ func sortValuesEqual(a, b []interface{}) bool {
 }
 
 // mapMemoryMessageToESDoc converts a logical memory message into the
-// Elasticsearch storage document, mirroring Python
-// memory/utils/es_conn.py:map_message_to_es_fields. Elasticsearch has no
+// OpenSearch storage document, mirroring Python
+// memory/utils/es_conn.py:map_message_to_es_fields. OpenSearch has no
 // server-side rag tokenizer, so tokenized_content_ltks is computed here
 // before write; on Infinity the equivalent insert path stores content
 // verbatim and lets Infinity tokenize on save.
@@ -2401,9 +2411,9 @@ func (e *Engine) getMemoryMessage(ctx context.Context, indexName, docID string) 
 	return message, nil
 }
 
-// GetFields extracts the requested fields from ES search response chunks
+// GetFields extracts the requested fields from OpenSearch search response chunks
 //
-// Unlike Infinity, Elasticsearch does NOT use convertSelectFields before querying.
+// Unlike Infinity, OpenSearch does NOT use convertSelectFields before querying.
 // The original requested field names ARE the database column names:
 //   - "content_with_weight" is stored and returned as "content_with_weight"
 //   - No field name mapping is needed in GetFields
@@ -2422,7 +2432,7 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 	}
 
 	for _, chunk := range chunks {
-		docID, ok := elasticsearchChunkID(chunk)
+		docID, ok := openSearchChunkID(chunk)
 		if !ok {
 			continue
 		}
@@ -2507,7 +2517,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 				separator = "###"
 			}
 			for tag := range strings.SplitSeq(valueStr, separator) {
-				countElasticsearchAggregationTag(tagCounts, tag)
+				countOpenSearchAggregationTag(tagCounts, tag)
 			}
 			continue
 		}
@@ -2515,7 +2525,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 		if valueList, ok := value.([]interface{}); ok {
 			for _, item := range valueList {
 				if itemStr, ok := item.(string); ok {
-					countElasticsearchAggregationTag(tagCounts, itemStr)
+					countOpenSearchAggregationTag(tagCounts, itemStr)
 				}
 			}
 		}
@@ -2549,7 +2559,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 func (e *Engine) GetChunkIDs(chunks []map[string]interface{}) []string {
 	ids := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
-		if id, ok := elasticsearchChunkID(chunk); ok {
+		if id, ok := openSearchChunkID(chunk); ok {
 			ids = append(ids, id)
 		}
 	}
@@ -2559,10 +2569,10 @@ func (e *Engine) GetChunkIDs(chunks []map[string]interface{}) []string {
 // GetHighlight returns highlighted text for matching keywords
 func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
 	result := make(map[string]string)
-	pattern := compileElasticsearchHighlightPattern(keywords)
+	pattern := compileOpenSearchHighlightPattern(keywords)
 
 	for _, chunk := range chunks {
-		docID, ok := elasticsearchChunkID(chunk)
+		docID, ok := openSearchChunkID(chunk)
 		if !ok {
 			continue
 		}
@@ -2581,7 +2591,7 @@ func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string
 	return result
 }
 
-func elasticsearchChunkID(chunk map[string]interface{}) (string, bool) {
+func openSearchChunkID(chunk map[string]interface{}) (string, bool) {
 	if id, ok := chunk["id"].(string); ok && id != "" {
 		return id, true
 	}
@@ -2591,13 +2601,13 @@ func elasticsearchChunkID(chunk map[string]interface{}) (string, bool) {
 	return "", false
 }
 
-func countElasticsearchAggregationTag(counts map[string]int, tag string) {
+func countOpenSearchAggregationTag(counts map[string]int, tag string) {
 	if tag = strings.TrimSpace(tag); tag != "" {
 		counts[tag]++
 	}
 }
 
-func compileElasticsearchHighlightPattern(keywords []string) *regexp.Regexp {
+func compileOpenSearchHighlightPattern(keywords []string) *regexp.Regexp {
 	nonEmpty := make([]string, 0, len(keywords))
 	for _, kw := range keywords {
 		if kw != "" {
@@ -2694,7 +2704,12 @@ func (e *Engine) KNNScores(ctx context.Context, chunks []map[string]interface{},
 		return nil, fmt.Errorf("failed to marshal KNN query: %w", err)
 	}
 
-	searchResult, err := e.doPlainSearch(ctx, indexNames, bytes.NewReader(body), nil)
+	// Partial results would silently drop cosine scores for candidates whose
+	// shard failed, so require a complete answer (mirrors the Elasticsearch
+	// engine's AllowPartialSearchResults(false)).
+	searchResult, err := e.doPlainSearch(ctx, indexNames, bytes.NewReader(body), map[string]string{
+		"allow_partial_search_results": "false",
+	})
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}

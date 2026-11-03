@@ -169,14 +169,14 @@ func (w engineWriter) DeleteMergedWikiPages(ctx context.Context, tenant, kb stri
 
 // datasetStructureSupported reports whether the running doc engine can filter
 // the dataset-structure fields (type_kwd + scope_kwd + raw
-// compile_kwd) this feature writes/deletes. Only infinity and elasticsearch
-// support them today; OceanBase/SeekDB/SereneDB have explicit schemas that lack
+// compile_kwd) this feature writes/deletes. Infinity, Elasticsearch, and
+// OpenSearch support them today; OceanBase/SeekDB/SereneDB have explicit schemas that lack
 // these filter keys and would reject the query or silently drop unknown fields.
 // The guard is checked at every dataset-structure write/delete/rebuild entry so
 // those engines never leave partial state or hit an unknown-filter error (plan §5).
 func datasetStructureSupported() bool {
 	switch engine.GetEngineType() {
-	case "infinity", "elasticsearch":
+	case "infinity", "elasticsearch", "opensearch":
 		return true
 	case "":
 		// Engine not initialized (unit tests inject a fake engine directly via

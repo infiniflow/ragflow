@@ -25,7 +25,7 @@ import (
 
 type DocEngineConfig struct {
 	ES         ElasticsearchConfig `mapstructure:"es"`
-	OpenSearch OpenSearchConfig    `mapstructure:"opensearch"`
+	OpenSearch OpenSearchConfig    `mapstructure:"os"`
 	Infinity   InfinityConfig      `mapstructure:"infinity"`
 	OceanBase  OceanBaseConfig     `mapstructure:"oceanbase"`
 	SeekDB     OceanBaseConfig     `mapstructure:"seekdb"`
@@ -383,10 +383,10 @@ func (c *Config) parseOpenSearchConfig(v *viper.Viper) {
 	c.docEngine.OpenSearch.Username = "admin"
 	c.docEngine.OpenSearch.Password = "infini_rag_flow_OS_01"
 
-	if !v.IsSet("opensearch") {
+	if !v.IsSet("os") {
 		return
 	}
-	sub := v.Sub("opensearch")
+	sub := v.Sub("os")
 	if sub == nil {
 		return
 	}

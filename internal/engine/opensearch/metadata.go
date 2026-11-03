@@ -1,3 +1,19 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
 package opensearch
 
 import (
@@ -651,7 +667,12 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 
 	common.Debug("FilterDocIdsByMetaPushdown executing search query", zap.Any("query", requestBody))
 
-	res, err := e.doPlainSearch(ctx, indexNames, bytes.NewReader(buf.Bytes()), nil)
+	// A partial answer would look like a definitive (possibly too small) ID
+	// set, so require every shard to respond (mirrors the Elasticsearch
+	// engine's AllowPartialSearchResults(false)).
+	res, err := e.doPlainSearch(ctx, indexNames, bytes.NewReader(buf.Bytes()), map[string]string{
+		"allow_partial_search_results": "false",
+	})
 	if err != nil {
 		return nil
 	}
@@ -756,7 +777,10 @@ func (e *Engine) doPlainSearch(ctx context.Context, indices []string, body io.Re
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read search response: %w", err)
+	}
 	if resp.StatusCode == http.StatusNotFound && isIndexNotFoundBody(respBody) {
 		return nil, &indexNotFoundError{index: strings.Join(indices, ",")}
 	}
