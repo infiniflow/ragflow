@@ -288,12 +288,13 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 	var failures []string
 	read := 0
 	state := &htmlWalkState{
-		refOnly:     true,
-		ctx:         ctx,
-		mediaCache:  media.CacheFromContext(ctx),
-		budget:      media.NewBudget(),
-		mediaFormat: "epub",
-		skipImages:  textOnly,
+		refOnly:                true,
+		preferLocalImageSource: true,
+		ctx:                    ctx,
+		mediaCache:             media.CacheFromContext(ctx),
+		budget:                 media.NewBudget(),
+		mediaFormat:            "epub",
+		skipImages:             textOnly,
 	}
 	if textOnly {
 		// Preserve alt text without resolving or caching image bytes, matching

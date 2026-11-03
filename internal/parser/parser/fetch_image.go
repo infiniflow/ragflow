@@ -28,10 +28,49 @@ import (
 	"ragflow/internal/utility"
 )
 
+// normalizeRemoteImageSource reports whether src is an HTTP(S) image source
+// and returns it in fetchable form. Scheme matching is case-insensitive, and a
+// protocol-relative source resolves against HTTPS, matching how a browser
+// loads one from an HTTPS page.
+func normalizeRemoteImageSource(src string) (string, bool) {
+	src = strings.TrimSpace(src)
+	if strings.HasPrefix(src, "//") {
+		src = "https:" + src
+	}
+	parsed, err := url.Parse(src)
+	if err != nil || parsed.Host == "" {
+		return "", false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https":
+		return src, true
+	}
+	return "", false
+}
+
 // isRemoteImageSource reports whether src is an HTTP(S) image source.
 func isRemoteImageSource(src string) bool {
+	_, ok := normalizeRemoteImageSource(src)
+	return ok
+}
+
+// unsupportedRemoteImageSource reports whether src is an absolute URL that
+// names a remote resource over a scheme the parser cannot fetch. Local
+// references, data URIs and non-hierarchical schemes such as cid: are not
+// remote image sources and stay silent.
+func unsupportedRemoteImageSource(src string) bool {
 	src = strings.TrimSpace(src)
-	return strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://")
+	parsed, err := url.Parse(src)
+	if err != nil || parsed.Scheme == "" {
+		return false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "http", "https", "data":
+		return false
+	}
+	// Require an authority so a local path (including a Windows drive path
+	// such as C:\images\a.png) is not mistaken for a remote source.
+	return len(parsed.Scheme) > 1 && parsed.Host != ""
 }
 
 // remoteImageMIME labels downloaded bytes for the run media cache. A response

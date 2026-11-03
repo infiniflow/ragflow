@@ -564,6 +564,30 @@ func TestEPUBParserCachesZipImageBytes(t *testing.T) {
 	}
 }
 
+func TestEPUBParserPrefersLocalImageSourceOverRemoteSrcset(t *testing.T) {
+	ctx, cache := recordingMediaContext()
+	res := parseTestEPUBContext(t, ctx, []epubTestChapter{{
+		name:    "ch1.xhtml",
+		content: epubTestHTML(`<img alt="cover" src="Images/cover.png" srcset="https://cdn.example.com/cover@2x.png 2x">`),
+	}}, []epubTestImage{{name: "Images/cover.png", content: "cover-bytes"}})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.Warnings) != 0 {
+		t.Fatalf("warnings = %v, want none", res.Warnings)
+	}
+	if len(cache.puts) != 1 || string(cache.puts[0].data) != "cover-bytes" {
+		t.Fatalf("cache puts = %+v, want the local ZIP entry", cache.puts)
+	}
+	images := epubTestImageItems(t, res)
+	if len(images) != 1 {
+		t.Fatalf("image items = %#v, want one", images)
+	}
+	if images[0]["text"] != "cover" {
+		t.Fatalf("image item = %#v, want the local image alt text", images[0])
+	}
+}
+
 func TestEPUBParserResolvesPercentEncodedAndFragmentImageHrefs(t *testing.T) {
 	ctx, cache := recordingMediaContext()
 	res := parseTestEPUBContext(t, ctx, []epubTestChapter{{
@@ -608,6 +632,33 @@ func TestEPUBParserSkipsImagesOutsideTheZipRoot(t *testing.T) {
 				t.Fatalf("missing unresolved-image warning: %v", res.Warnings)
 			}
 		})
+	}
+}
+
+func TestEPUBParserFTPImageCountsAsUnresolvedOnly(t *testing.T) {
+	ctx, cache := recordingMediaContext()
+	res := parseTestEPUBContext(t, ctx, []epubTestChapter{{
+		name:    "ch1.xhtml",
+		content: epubTestHTML(`<img src="ftp://example.com/cover.png" alt="cover">`),
+	}}, nil)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if cache.putCalls != 0 {
+		t.Fatalf("cache writes = %+v, want none", cache.puts)
+	}
+	if images := epubTestImageItems(t, res); len(images) != 0 {
+		t.Fatalf("image items = %#v, want none", images)
+	}
+	if len(res.Warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly one unresolved-image warning", res.Warnings)
+	}
+	warnings := epubTestWarningText(res)
+	if !strings.Contains(warnings, "unresolved image reference") {
+		t.Fatalf("missing unresolved-image warning: %v", res.Warnings)
+	}
+	if strings.Contains(warnings, "unsupported remote source") {
+		t.Fatalf("resolver-owned source also produced an unsupported-scheme warning: %v", res.Warnings)
 	}
 }
 

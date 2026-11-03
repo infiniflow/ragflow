@@ -148,13 +148,14 @@ func decodeHTMLToUTF8(data []byte) ([]byte, string) {
 }
 
 type htmlWalkState struct {
-	tableSequence       int
-	mediaOrder          int
-	skippedInlineImages int
-	skippedRemoteImages int
-	unresolvedImages    int
-	budget              *media.Budget
-	mediaSink           *media.Sink
+	tableSequence           int
+	mediaOrder              int
+	skippedInlineImages     int
+	skippedRemoteImages     int
+	unsupportedRemoteImages int
+	unresolvedImages        int
+	budget                  *media.Budget
+	mediaSink               *media.Sink
 	// refOnly defers image bytes to content-addressed references instead of
 	// carrying the normalized data URI on the item. HTML, EPUB and Markdown
 	// ingestion set it; formats that still inline image bytes leave it false.
@@ -163,7 +164,12 @@ type htmlWalkState struct {
 	// cache while refOnly is set. The HTML parser enables it; text-only
 	// parsing sets skipImages instead so it never reaches the network.
 	fetchRemoteImages bool
-	ctx               context.Context
+	// preferLocalImageSource keeps a non-remote <img src> (archive path or data
+	// URI) ahead of remote lazy-load/srcset candidates. EPUB sets it because
+	// its resolver maps relative paths into the ZIP and cannot fetch remote
+	// URLs.
+	preferLocalImageSource bool
+	ctx                    context.Context
 	// fetchCtx bounds remote image downloads for one document. A nil value
 	// falls back to ctx.
 	fetchCtx   context.Context
@@ -192,6 +198,9 @@ func (s *htmlWalkState) warnings() []string {
 	if s.skippedRemoteImages > 0 {
 		warnings = append(warnings, fmt.Sprintf("document parser skipped %d remote image(s) that could not be downloaded", s.skippedRemoteImages))
 	}
+	if s.unsupportedRemoteImages > 0 {
+		warnings = append(warnings, fmt.Sprintf("document parser skipped %d image(s) with an unsupported remote source (only HTTP and HTTPS are fetched)", s.unsupportedRemoteImages))
+	}
 	if s.unresolvedImages > 0 {
 		warnings = append(warnings, fmt.Sprintf("document parser skipped %d unresolved image reference(s)", s.unresolvedImages))
 	}
@@ -204,6 +213,21 @@ func (s *htmlWalkState) cacheFormat() string {
 		return s.mediaFormat
 	}
 	return "html"
+}
+
+// noteUnsupportedImageSource records a URL-shaped source the parser cannot
+// fetch. Text-only parsing never attempts images, and a resolver-owned source
+// already reports its own unresolved-reference warning, so both stay silent.
+func (s *htmlWalkState) noteUnsupportedImageSource(src string) {
+	if s.err != nil || s.skipImages {
+		return
+	}
+	if s.resolveMedia != nil || s.resolveImage != nil {
+		return
+	}
+	if unsupportedRemoteImageSource(src) {
+		s.unsupportedRemoteImages++
+	}
 }
 
 func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool) {
@@ -289,7 +313,11 @@ func (s *htmlWalkState) storeDataURIMedia(key, src string) (*entity.MediaRef, bo
 // parser warning. A cache or task-context failure is returned to the caller
 // through the walk state.
 func (s *htmlWalkState) resolveRemoteMedia(fetchCtx context.Context, src string) (*entity.MediaRef, bool) {
-	src = strings.TrimSpace(src)
+	normalized, ok := normalizeRemoteImageSource(src)
+	if !ok {
+		return nil, false
+	}
+	src = normalized
 	if err := s.ctx.Err(); err != nil {
 		s.err = err
 		return nil, false
@@ -592,12 +620,13 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 			return
 		}
 		if n.Data == "img" {
-			src := htmlAttribute(n, "src")
+			src := state.selectImageSource(n)
 			normalized, ref, ok := state.imageSource(src)
 			if !ok {
-				if state.resolveImage != nil || state.resolveMedia != nil || state.skipImages {
-					w.writeText(htmlAttribute(n, "alt"))
-				}
+				state.noteUnsupportedImageSource(src)
+				// A skipped image keeps its alt text so the picture leaves a
+				// readable trace instead of disappearing from the prose.
+				w.writeText(htmlAttribute(n, "alt"))
 				return
 			}
 			flushLeafText(w, out, layout, trim)
@@ -707,24 +736,24 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) []htmlTableImage {
 				columnCounts[row]++
 				column = columnCounts[row]
 			case "img":
-				src := htmlAttribute(node, "src")
+				src := state.selectImageSource(node)
 				normalized, ref, ok := state.imageSource(src)
 				if !ok {
 					if state.err != nil {
 						return
 					}
-					if state.resolveImage != nil || state.resolveMedia != nil || state.skipImages {
-						// ParseTableHTML's cellText ignores <img>, so replace
-						// an unresolved table image with its Markdown reference.
-						alt := htmlAttribute(node, "alt")
-						replacement := alt
-						if shouldPreserveImageReference(src) {
-							replacement = "![" + alt + "](" + src + ")"
-						}
-						node.Type, node.Data, node.Attr = html.TextNode, replacement, nil
-					} else if media.IsDataImageSource(src) {
-						removeHTMLImageSource(node)
+					state.noteUnsupportedImageSource(src)
+					// ParseTableHTML's cellText ignores <img>, so replace an
+					// unresolved table image with its alt text, keeping a local
+					// reference in Markdown form. An unsupported remote URL is
+					// not a usable reference, so it leaves only its alt text.
+					alt := htmlAttribute(node, "alt")
+					replacement := alt
+					if strings.TrimSpace(src) != "" && shouldPreserveImageReference(src) &&
+						!unsupportedRemoteImageSource(src) {
+						replacement = "![" + alt + "](" + src + ")"
 					}
+					node.Type, node.Data, node.Attr = html.TextNode, replacement, nil
 				} else {
 					images = append(images, htmlTableImage{
 						src:    normalized,
