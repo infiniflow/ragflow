@@ -1377,7 +1377,6 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         emptyBody:
           'GPUStack only exposes models that are running and have a route. Deploy a model with "Enable model route" turned on, then refresh.',
         emptyLink: 'Read the integration guide',
-        instanceName: 'Instance name',
         addModels: 'Add {{count}} models',
         addSelected: 'Add {{count}} selected',
         adding: 'Adding...',
@@ -1387,6 +1386,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         cancel: 'Cancel',
         availableTitle: 'Available in GPUStack',
         addedTitle: 'Added models',
+        modelsLoadFailed:
+          "Could not load this instance's models. Reload the page and try again.",
         notRunning: 'Not running',
         notRunningTip:
           'GPUStack is not serving this model right now, so calls to it will fail.',

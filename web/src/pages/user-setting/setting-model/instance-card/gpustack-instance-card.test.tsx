@@ -9,6 +9,7 @@ const mockAddModel = jest.fn();
 const mockPatchModel = jest.fn();
 const mockUpdateInstance = jest.fn();
 let mockInstanceModels: any[] = [];
+let mockInstanceModelsState = { loading: false, isSuccess: true };
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -28,10 +29,15 @@ jest.mock('@/hooks/use-llm-request', () => ({
   useAddInstanceModel: () => ({ addInstanceModel: mockAddModel }),
   useDeleteInstanceModels: () => ({ deleteInstanceModels: jest.fn() }),
   usePatchInstanceModel: () => ({ patchInstanceModel: mockPatchModel }),
-  useFetchInstanceModels: () => ({ data: mockInstanceModels }),
+  useFetchInstanceModels: () => ({
+    data: mockInstanceModels,
+    ...mockInstanceModelsState,
+  }),
 }));
 jest.mock('../hooks', () => ({
-  useFetchInstanceNameSet: () => ({ instanceNameSet: new Set<string>() }),
+  useFetchInstanceNameSet: () => ({
+    instanceNameSet: new Set<string>(['taken']),
+  }),
 }));
 jest.mock('./hooks', () => ({
   useDeleteInstance: () => jest.fn(),
@@ -61,13 +67,20 @@ const served = [
 ];
 const instance = { id: 'id-1', instance_name: 'saved' } as any;
 
-async function connect() {
+function fillForm(name = 'my-gpustack') {
+  fireEvent.change(screen.getByTestId('gpustack-instance-name'), {
+    target: { value: name },
+  });
   fireEvent.change(screen.getByTestId('gpustack-base-url'), {
     target: { value: 'http://10.0.0.5:8090' },
   });
   fireEvent.change(screen.getByTestId('gpustack-api-key'), {
     target: { value: 'secret' },
   });
+}
+
+async function connect() {
+  fillForm();
   await act(async () => {
     fireEvent.click(screen.getByTestId('gpustack-connect'));
   });
@@ -76,6 +89,7 @@ async function connect() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockInstanceModels = [];
+  mockInstanceModelsState = { loading: false, isSuccess: true };
 });
 
 describe('GPUStackInstanceCard draft', () => {
@@ -89,9 +103,38 @@ describe('GPUStackInstanceCard draft', () => {
       />,
     );
 
-  it('needs a URL and key before connecting', () => {
+  it('needs a name, URL and key before connecting', () => {
     renderDraft();
     expect(screen.getByTestId('gpustack-connect')).toBeDisabled();
+    fillForm(' ');
+    expect(screen.getByTestId('gpustack-connect')).toBeDisabled();
+    fillForm();
+    expect(screen.getByTestId('gpustack-connect')).toBeEnabled();
+  });
+
+  it('rejects a name that is already in use', () => {
+    renderDraft();
+    fillForm('taken');
+    expect(screen.getByText('instanceNameExists')).toBeInTheDocument();
+    expect(screen.getByTestId('gpustack-connect')).toBeDisabled();
+  });
+
+  it('drops a pending result when the credentials change', async () => {
+    let resolve: (value: unknown) => void = () => {};
+    mockDiscover.mockReturnValue(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
+    renderDraft();
+    await connect();
+    fireEvent.change(screen.getByTestId('gpustack-api-key'), {
+      target: { value: 'other' },
+    });
+    await act(async () => {
+      resolve({ code: 0, data: served });
+    });
+    expect(screen.queryByTestId('gpustack-add-models')).toBeNull();
   });
 
   it('lists models with the entered credential, keeping failures local', async () => {
@@ -121,7 +164,7 @@ describe('GPUStackInstanceCard draft', () => {
 
     expect(mockAddInstance).toHaveBeenCalledWith({
       llm_factory: 'GPUStack',
-      instance_name: 'gpustack-10-0-0-5-8090',
+      instance_name: 'my-gpustack',
       api_key: 'secret',
       base_url: 'http://10.0.0.5:8090',
       model_info: [
@@ -288,4 +331,20 @@ describe('GPUStackInstanceCard saved', () => {
     expect(body).not.toHaveProperty('api_key');
     expect(screen.queryByTestId('gpustack-save-connection')).toBeNull();
   });
+
+  it.each([
+    ['loading', { loading: true, isSuccess: true }, false],
+    ['failed to load', { loading: false, isSuccess: false }, true],
+  ])(
+    'cannot save while the models have %s',
+    async (_name, state, explained) => {
+      mockInstanceModelsState = state;
+      await renderSaved();
+      fireEvent.click(screen.getByTestId('gpustack-edit'));
+      expect(screen.getByTestId('gpustack-save-connection')).toBeDisabled();
+      expect(!!screen.queryByTestId('gpustack-models-load-failed')).toBe(
+        explained,
+      );
+    },
+  );
 });

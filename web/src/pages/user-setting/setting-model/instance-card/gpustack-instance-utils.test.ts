@@ -1,6 +1,5 @@
 import {
   classifyConnectionError,
-  deriveInstanceName,
   diffModels,
   groupModelsByKind,
   isLoopbackUrl,
@@ -52,27 +51,6 @@ describe('groupModelsByKind', () => {
       { name: 'c', kind: 'chat' as const },
     ]);
     expect(groups.map((group) => group.kind)).toEqual(['chat', 'rerank']);
-  });
-});
-
-describe('deriveInstanceName', () => {
-  it('names the connection after the host', () => {
-    expect(deriveInstanceName('http://10.0.0.5:8090/v1', new Set())).toBe(
-      'gpustack-10-0-0-5-8090',
-    );
-  });
-
-  it('avoids names already taken', () => {
-    expect(
-      deriveInstanceName(
-        'http://gs.local',
-        new Set(['gpustack-gs-local', 'gpustack-gs-local-2']),
-      ),
-    ).toBe('gpustack-gs-local-3');
-  });
-
-  it('survives an invalid URL', () => {
-    expect(deriveInstanceName('not a url', new Set())).toBe('gpustack');
   });
 });
 

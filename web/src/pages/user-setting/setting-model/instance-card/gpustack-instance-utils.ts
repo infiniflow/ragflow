@@ -80,28 +80,6 @@ export function groupModelsByKind<T extends { kind: GPUStackModelKind }>(
   })).filter((group) => group.models.length > 0);
 }
 
-/** Name a connection after the server it points at, avoiding `existing`. */
-export function deriveInstanceName(
-  baseUrl: string,
-  existing: Set<string>,
-): string {
-  let host = '';
-  try {
-    host = new URL(baseUrl.trim()).host;
-  } catch {
-    host = '';
-  }
-  const slug = host
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  const base = slug ? `gpustack-${slug}` : 'gpustack';
-  if (!existing.has(base)) return base;
-  let suffix = 2;
-  while (existing.has(`${base}-${suffix}`)) suffix += 1;
-  return `${base}-${suffix}`;
-}
-
 /** RAGFlow runs in a container, where localhost is not the host machine. */
 export function isLoopbackUrl(baseUrl: string): boolean {
   try {

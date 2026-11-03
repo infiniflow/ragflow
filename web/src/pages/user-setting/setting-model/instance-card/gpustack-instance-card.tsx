@@ -63,7 +63,6 @@ import {
   GPUStackModel,
   GPUStackModelKind,
   classifyConnectionError,
-  deriveInstanceName,
   diffModels,
   groupModelsByKind,
   isLoopbackUrl,
@@ -283,7 +282,7 @@ export const GPUStackInstanceCard = forwardRef<
   const [editing, setEditing] = useState(false);
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
-  const [nameOverride, setNameOverride] = useState<string | null>(null);
+  const [instanceName, setInstanceName] = useState('');
   const [discovered, setDiscovered] = useState<GPUStackModel[] | null>(null);
   const [error, setError] = useState('');
   const [deselected, setDeselected] = useState<Set<string>>(new Set());
@@ -299,7 +298,11 @@ export const GPUStackInstanceCard = forwardRef<
     isDraft,
     open,
   );
-  const { data: instanceModels } = useFetchInstanceModels(
+  const {
+    data: instanceModels,
+    loading: instanceModelsLoading,
+    isSuccess: instanceModelsLoaded,
+  } = useFetchInstanceModels(
     providerName,
     isDraft ? '' : instance.instance_name,
   );
@@ -321,13 +324,15 @@ export const GPUStackInstanceCard = forwardRef<
     if (!isDraft && savedBaseUrl) setBaseUrl(savedBaseUrl);
   }, [isDraft, savedBaseUrl]);
 
-  const defaultName = useMemo(
-    () => deriveInstanceName(baseUrl, instanceNameSet),
-    [baseUrl, instanceNameSet],
-  );
-  const instanceName = nameOverride ?? defaultName;
+  const trimmedName = instanceName.trim();
+  const nameTaken = instanceNameSet.has(trimmedName);
+  const nameValid = !!trimmedName && !nameTaken;
 
+  // Bumped when the inputs change, so a slower response for the old ones is
+  // dropped instead of being saved with the new credentials.
+  const discoverRequest = useRef(0);
   const discover = useCallback(async () => {
+    const request = ++discoverRequest.current;
     setError('');
     try {
       const ret = await listProviderModels({
@@ -340,6 +345,7 @@ export const GPUStackInstanceCard = forwardRef<
               instance_name: instance.instance_name,
             }),
       });
+      if (request !== discoverRequest.current) return;
       if (ret?.code !== 0) {
         setDiscovered(null);
         setError(ret?.message || String(ret?.code));
@@ -347,6 +353,7 @@ export const GPUStackInstanceCard = forwardRef<
       }
       setDiscovered((ret.data ?? []).map(toGPUStackModel));
     } catch (e) {
+      if (request !== discoverRequest.current) return;
       setDiscovered(null);
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -402,20 +409,28 @@ export const GPUStackInstanceCard = forwardRef<
   }, []);
 
   const getSavePayload = useCallback(() => {
-    if (!isDraft || selectedModels.length === 0) return null;
+    if (!isDraft || !nameValid || selectedModels.length === 0) return null;
     return {
       payload: {
         llm_factory: providerName,
-        instance_name: instanceName,
+        instance_name: trimmedName,
         api_key: apiKey,
         base_url: baseUrl.trim(),
         model_info: selectedModels.map(toModelInfo),
       },
-      instanceName,
+      instanceName: trimmedName,
       isDraft: true,
       apiKind: 'add' as const,
     };
-  }, [apiKey, baseUrl, instanceName, isDraft, providerName, selectedModels]);
+  }, [
+    apiKey,
+    baseUrl,
+    isDraft,
+    nameValid,
+    providerName,
+    selectedModels,
+    trimmedName,
+  ]);
 
   useImperativeHandle(
     ref,
@@ -522,6 +537,7 @@ export const GPUStackInstanceCard = forwardRef<
   );
 
   const resetDiscovery = useCallback(() => {
+    discoverRequest.current += 1;
     setDiscovered(null);
     setError('');
     setDeselected(new Set());
@@ -543,10 +559,14 @@ export const GPUStackInstanceCard = forwardRef<
     [isDraft, resetDiscovery],
   );
   const handleNameChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
-    setNameOverride(e.target.value);
+    setInstanceName(e.target.value);
   }, []);
   const toggleOpen = useCallback(() => setOpen((value) => !value), []);
   const toggleEditing = useCallback(() => setEditing((value) => !value), []);
+
+  // Saving sends the full model list and the server deletes anything missing
+  // from it, so never save the placeholder list used before the models load.
+  const instanceModelsReady = instanceModelsLoaded && !instanceModelsLoading;
 
   const connectionForm = (
     <div className="flex flex-col gap-3">
@@ -589,12 +609,31 @@ export const GPUStackInstanceCard = forwardRef<
   );
 
   if (isDraft) {
-    const canConnect = !!baseUrl.trim() && !!apiKey && !discovering;
+    const canConnect =
+      nameValid && !!baseUrl.trim() && !!apiKey && !discovering;
     return (
       <div
         className="rounded-lg bg-bg-card p-5 mb-5 flex flex-col gap-4"
         data-testid="instance-card-draft"
       >
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-text-primary">
+          <span>
+            <span className="text-state-error mr-0.5">*</span>
+            {t('instanceName')}
+          </span>
+          <Input
+            value={instanceName}
+            onChange={handleNameChange}
+            placeholder={t('instanceNamePlaceholder')}
+            autoComplete="off"
+            data-testid="gpustack-instance-name"
+          />
+          {nameTaken && (
+            <span className="text-xs font-normal text-state-error">
+              {t('instanceNameExists')}
+            </span>
+          )}
+        </label>
         {connectionForm}
         <div className="flex items-center gap-2">
           <Button
@@ -632,23 +671,10 @@ export const GPUStackInstanceCard = forwardRef<
             <p className="text-xs text-text-secondary">
               {t('gpustack.typeHint')}
             </p>
-            <label className="flex flex-col gap-1.5 text-sm font-medium text-text-primary">
-              {t('gpustack.instanceName')}
-              <Input
-                value={instanceName}
-                onChange={handleNameChange}
-                data-testid="gpustack-connection-name"
-              />
-            </label>
             <div>
               <Button
                 onClick={addConnection}
-                disabled={
-                  saving ||
-                  selectedModels.length === 0 ||
-                  !instanceName.trim() ||
-                  instanceNameSet.has(instanceName)
-                }
+                disabled={saving || selectedModels.length === 0 || !nameValid}
                 data-testid="gpustack-add-models"
               >
                 {saving && <Loader2 className="size-4 animate-spin" />}
@@ -736,10 +762,19 @@ export const GPUStackInstanceCard = forwardRef<
           {editing && (
             <div className="flex flex-col gap-3">
               {connectionForm}
+              {!instanceModelsLoaded && !instanceModelsLoading && (
+                <p
+                  role="alert"
+                  className="text-sm text-state-error"
+                  data-testid="gpustack-models-load-failed"
+                >
+                  {t('gpustack.modelsLoadFailed')}
+                </p>
+              )}
               <div>
                 <Button
                   onClick={saveConnection}
-                  disabled={saving || !baseUrl.trim()}
+                  disabled={saving || !baseUrl.trim() || !instanceModelsReady}
                   data-testid="gpustack-save-connection"
                 >
                   {t('gpustack.saveInstance')}
