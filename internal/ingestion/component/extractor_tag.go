@@ -11,8 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
@@ -27,6 +25,7 @@ import (
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -57,8 +56,6 @@ const (
 	// rankDecayWeightPower is the power exponent applied to relative tag weight.
 	rankDecayWeightPower = 0.4
 )
-
-const taggerLLMConcurrency = 8
 
 var taggerTimeout = 60 * time.Second
 
@@ -412,26 +409,20 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 		}
 		if driver != "" && model != "" {
 			inv := getExtractorChatInvoker()
-			sem := make(chan struct{}, taggerLLMConcurrency)
-			var wg sync.WaitGroup
-			var tagged atomic.Int64
-			total := int64(len(docsToTag))
-
-			for i := range docsToTag {
-				wg.Add(1)
-				go func(idx int) {
-					defer wg.Done()
-					defer func() { w.Report(ctx, float64(tagged.Add(1))/float64(total)) }()
-					select {
-					case sem <- struct{}{}:
-						defer func() { <-sem }()
-					case <-ctx.Done():
-						return
-					}
-					llmTagChunk(ctx, db, inv, docsToTag[idx], indexed.allTags, examples, in.cache, in.llmID, in.modelID, driver, model, apiKey, baseURL, topN, indexed)
-				}(i)
+			futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(docsToTag))
+			for _, chunk := range docsToTag {
+				f, err := extractorPool.Submit(ctx, func() error {
+					llmTagChunk(ctx, db, inv, chunk, indexed.allTags, examples, in.cache, in.llmID, in.modelID, driver, model, apiKey, baseURL, topN, indexed)
+					return nil
+				})
+				if err != nil {
+					return nil, err
+				}
+				futs = append(futs, f)
 			}
-			wg.Wait()
+			if err := awaitFutures(ctx, futs, w); err != nil {
+				return nil, err
+			}
 		}
 	}
 

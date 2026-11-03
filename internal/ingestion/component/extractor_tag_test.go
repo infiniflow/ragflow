@@ -15,9 +15,88 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
+
+func TestExtractorTagsShareExtractionConcurrency(t *testing.T) {
+	if !tokenizer.IsInitialized() {
+		if err := tokenizer.Init(&tokenizer.PoolConfig{MinSize: 1, MaxSize: 1}); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(tokenizer.Close)
+	}
+	db := withFileComponentTestDB(t)
+	store := withMemoryStorage(t)
+	pushExtractorTagChatStub(t, map[string]string{"__static__": `{"finance": 8}`})
+	pushExtractorTagTargetResolverStub(t)
+	SetExtractorContextLengthOverride(func(context.Context, string) int { return 0 })
+	t.Cleanup(func() { SetExtractorContextLengthOverride(nil) })
+	location := "tags.csv"
+	file := entity.File{ID: t.Name(), TenantID: "tenant-tags", CreatedBy: "tenant-tags", ParentID: "tags", Name: "tags.csv", Location: &location}
+	if err := db.Create(&file).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Put(t.Context(), "tags", location, []byte("banking economy,finance\ncooking recipes,food")); err != nil {
+		t.Fatal(err)
+	}
+
+	previous := extractorPool
+	pool := utility.NewWorkerPool[extractorJob, struct{}](1, 4,
+		func(_ context.Context, job extractorJob) (struct{}, error) { return struct{}{}, job() })
+	extractorPool = pool
+	t.Cleanup(func() { pool.StopWait(); extractorPool = previous })
+	release := make(chan struct{})
+	defer close(release)
+	started := make(chan struct{})
+	if _, err := pool.Submit(t.Context(), func() error { close(started); <-release; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{}.Defaults()}
+	c.Param.Tags.TagFileID = file.ID
+	c.Param.Tags.TopN = 1
+	chunks := []map[string]any{{"text": "unrelated astronomy observations"}, {"text": "unrelated mountain geology"}}
+	ctx, cancel := context.WithTimeout(extractorStateCtx(t, "tenant-tags"), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := c.runAutoTags(ctx, db, extractorInputs{chunks: chunks, lang: "english", llmID: "test@test", modelID: "test@test"}, progress.Window{})
+		done <- err
+	}()
+
+	// The occupied shared slot must hold up tags, rather than letting their
+	// own pool bypass extraction work already in flight.
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for pool.Stats().SubmittedTotal < 3 {
+		select {
+		case err := <-done:
+			t.Fatalf("tagging bypassed the occupied extraction pool: %v", err)
+		case <-ctx.Done():
+			t.Fatal("tagging did not queue in the shared extraction pool")
+		case <-ticker.C:
+		}
+	}
+	release <- struct{}{}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("tagging did not finish after the extraction slot was released")
+	}
+	for i, chunk := range chunks {
+		weights, ok := chunk[common.TAG_FLD].(OrderedTagWeights)
+		if !ok || weights["finance"] != 8 {
+			t.Fatalf("chunk %d tags = %v, want finance=8", i, chunk[common.TAG_FLD])
+		}
+	}
+}
 
 type stubExtractorTagChat struct {
 	responses map[string]string
