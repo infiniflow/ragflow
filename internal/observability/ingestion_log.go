@@ -25,7 +25,7 @@ type CommonLogEmitter struct{}
 
 // EmitIngestLog forwards the event to the common ingest-log sink.
 func (e *CommonLogEmitter) EmitIngestLog(_ context.Context, log common.IngestionLog) {
-	common.LogIngestEvent(log)
+	common.LogIngest(&log)
 }
 
 // ComputeDurations derives wait (begin-enqueue) and parse (end-begin) seconds.
