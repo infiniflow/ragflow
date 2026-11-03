@@ -81,19 +81,19 @@
   min-height: 0;
 }
 
-/* ===== BASE — with #root prefix for max specificity ===== */
-#root .nim-ltr {
+/* ===== BASE ===== */
+.nim-ltr {
   text-align: left;
 }
-#root .nim-rtl {
+.nim-rtl {
   text-align: right;
 }
-#root .nim-paragraph {
+.nim-paragraph {
   margin: 0;
   position: relative;
 }
 
-#root .nim-content-editable {
+.nim-content-editable {
   outline: none;
   min-height: 200px;
   padding: 16px 24px;
@@ -103,7 +103,7 @@
   flex: 1;
 }
 
-#root .nim-placeholder {
+.nim-placeholder {
   color: var(--nim-text-faint);
   overflow: hidden;
   position: absolute;
@@ -117,76 +117,76 @@
 }
 
 /* ===== HEADINGS ===== */
-#root .nim-h1 {
+.nim-h1 {
   font-size: 28px;
   color: var(--nim-text);
   font-weight: 500;
   margin: 0;
 }
-#root .nim-h2 {
+.nim-h2 {
   font-size: 20px;
   color: var(--nim-text-muted);
   font-weight: 600;
   margin: 0;
 }
-#root .nim-h3 {
+.nim-h3 {
   font-size: 16px;
   color: var(--nim-text-muted);
   margin: 0;
 }
-#root .nim-h4 {
+.nim-h4 {
   font-size: 14px;
   color: var(--nim-text-muted);
   margin: 0;
 }
-#root .nim-h5 {
+.nim-h5 {
   font-size: 12px;
   color: var(--nim-text-muted);
   margin: 0;
 }
-#root .nim-h6 {
+.nim-h6 {
   font-size: 10px;
   color: var(--nim-text-muted);
   margin: 0;
 }
 
 /* ===== TEXT FORMATTING ===== */
-#root .nim-text-bold {
+.nim-text-bold {
   font-weight: bold;
 }
-#root .nim-text-italic {
+.nim-text-italic {
   font-style: italic;
 }
-#root .nim-text-underline {
+.nim-text-underline {
   text-decoration: underline;
 }
-#root .nim-text-strikethrough {
+.nim-text-strikethrough {
   text-decoration: line-through;
 }
-#root .nim-text-underline-strikethrough {
+.nim-text-underline-strikethrough {
   text-decoration: underline line-through;
 }
-#root .nim-text-subscript {
+.nim-text-subscript {
   font-size: 0.8em;
   vertical-align: sub !important;
 }
-#root .nim-text-superscript {
+.nim-text-superscript {
   font-size: 0.8em;
   vertical-align: super;
 }
-#root .nim-text-code {
+.nim-text-code {
   background-color: var(--nim-code-bg);
   padding: 1px 0.25rem;
   font-family: Menlo, Consolas, Monaco, monospace;
   font-size: 94%;
 }
-#root .nim-text-highlight {
+.nim-text-highlight {
   background: var(--nim-highlight-bg);
   border-bottom: 2px solid var(--nim-highlight-border);
 }
 
 /* ===== QUOTE ===== */
-#root .nim-quote {
+.nim-quote {
   margin: 0;
   margin-left: 20px;
   margin-bottom: 10px;
@@ -199,17 +199,17 @@
 }
 
 /* ===== LINK ===== */
-#root .nim-link {
+.nim-link {
   color: var(--nim-link);
   text-decoration: none;
 }
-#root .nim-link:hover {
+.nim-link:hover {
   text-decoration: underline;
   cursor: pointer;
 }
 
 /* ===== CODE BLOCKS ===== */
-#root .nim-code {
+.nim-code {
   background-color: var(--nim-code-bg);
   font-family: Menlo, Consolas, Monaco, monospace;
   display: block;
@@ -225,7 +225,7 @@
   border: 1px solid var(--nim-code-border);
   border-radius: 8px;
 }
-#root .nim-code:before {
+.nim-code:before {
   content: attr(data-gutter);
   position: absolute;
   background-color: var(--nim-code-gutter);
@@ -240,79 +240,79 @@
 }
 
 /* ===== SYNTAX HIGHLIGHTING ===== */
-#root .nim-token-comment {
+.nim-token-comment {
   color: var(--nim-code-comment);
   font-style: italic;
 }
-#root .nim-token-punctuation {
+.nim-token-punctuation {
   color: var(--nim-code-punctuation);
 }
-#root .nim-token-property {
+.nim-token-property {
   color: var(--nim-code-property);
 }
-#root .nim-token-selector {
+.nim-token-selector {
   color: var(--nim-code-selector);
 }
-#root .nim-token-operator {
+.nim-token-operator {
   color: var(--nim-code-operator);
 }
-#root .nim-token-attr {
+.nim-token-attr {
   color: var(--nim-code-attr);
 }
-#root .nim-token-variable {
+.nim-token-variable {
   color: var(--nim-code-variable);
 }
-#root .nim-token-function {
+.nim-token-function {
   color: var(--nim-code-function);
 }
-#root .nim-token-inserted {
+.nim-token-inserted {
   color: #9ccc65;
 }
-#root .nim-token-deleted {
+.nim-token-deleted {
   color: #ef5350;
 }
 
 /* ===== LISTS ===== */
-#root .nim-ol1 {
+.nim-ol1 {
   padding: 0;
   margin: 0;
   list-style: decimal inside;
 }
-#root .nim-ol2 {
+.nim-ol2 {
   padding: 0;
   margin: 0;
   list-style: upper-alpha inside;
 }
-#root .nim-ol3 {
+.nim-ol3 {
   padding: 0;
   margin: 0;
   list-style: lower-alpha inside;
 }
-#root .nim-ol4 {
+.nim-ol4 {
   padding: 0;
   margin: 0;
   list-style: upper-roman inside;
 }
-#root .nim-ol5 {
+.nim-ol5 {
   padding: 0;
   margin: 0;
   list-style: lower-roman inside;
 }
-#root .nim-ul {
+.nim-ul {
   padding: 0;
   margin: 0;
   list-style: disc inside;
   max-width: var(--max-text-width);
 }
-#root .nim-list-item {
+.nim-list-item {
   margin: 0 24px;
 }
-#root .nim-list-item::marker {
+.nim-list-item::marker {
   color: var(--nim-text);
 }
 
-#root .nim-list-item-checked,
-#root .nim-list-item-unchecked {
+.nim-list-item-checked,
+.nim-list-item-unchecked {
   position: relative;
   margin-left: 8px;
   margin-right: 8px;
@@ -321,11 +321,11 @@
   list-style-type: none;
   outline: none;
 }
-#root .nim-list-item-checked {
+.nim-list-item-checked {
   text-decoration: line-through;
 }
-#root .nim-list-item-unchecked:before,
-#root .nim-list-item-checked:before {
+.nim-list-item-unchecked:before,
+.nim-list-item-checked:before {
   content: '';
   width: 16px;
   height: 16px;
@@ -336,16 +336,16 @@
   background-size: cover;
   position: absolute;
 }
-#root .nim-list-item-unchecked:before {
+.nim-list-item-unchecked:before {
   border: 1px solid var(--nim-text-muted);
   border-radius: 2px;
 }
-#root .nim-list-item-checked:before {
+.nim-list-item-checked:before {
   border: 1px solid var(--nim-primary);
   border-radius: 2px;
   background-color: var(--nim-primary);
 }
-#root .nim-list-item-checked:after {
+.nim-list-item-checked:after {
   content: '';
   cursor: pointer;
   border-color: #fff;
@@ -359,35 +359,35 @@
   transform: rotate(45deg);
   border-width: 0 2px 2px 0;
 }
-#root .nim-nested-list-item {
+.nim-nested-list-item {
   list-style-type: none;
 }
-#root .nim-nested-list-item:before,
-#root .nim-nested-list-item:after {
+.nim-nested-list-item:before,
+.nim-nested-list-item:after {
   display: none;
 }
 
 /* ===== HORIZONTAL RULE ===== */
-#root .nim-hr {
+.nim-hr {
   padding: 2px 2px;
   border: none;
   margin: 1em 0;
   cursor: pointer;
 }
-#root .nim-hr:after {
+.nim-hr:after {
   content: '';
   display: block;
   height: 2px;
   background-color: var(--nim-border);
   line-height: 2px;
 }
-#root .nim-hr.nim-hr-selected {
+.nim-hr.nim-hr-selected {
   outline: 2px solid var(--nim-primary);
   user-select: none;
 }
 
 /* ===== HASHTAG ===== */
-#root .nim-hashtag {
+.nim-hashtag {
   background-color: color-mix(in srgb, var(--nim-primary) 15%, transparent);
   border-radius: 4px;
   padding-left: 3px;
@@ -447,26 +447,26 @@
 }
 
 /* ===== EDITOR CONTAINER ===== */
-#root .nim-editor-container {
+.nim-editor-container {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-#root .nim-editor-scroller {
+.nim-editor-scroller {
   flex: 1;
   overflow-y: auto;
   position: relative;
   display: flex;
   flex-direction: column;
 }
-#root .nim-editor {
+.nim-editor {
   flex: 1;
   position: relative;
 }
 
 /* ===== MODE SWITCH ===== */
-#root .nim-mode-bar {
+.nim-mode-bar {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -475,7 +475,7 @@
   background: var(--nim-bg-secondary);
   flex-shrink: 0;
 }
-#root .nim-mode-btn {
+.nim-mode-btn {
   padding: 4px 10px;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -487,24 +487,24 @@
   font-family: inherit;
   transition: 0.1s;
 }
-#root .nim-mode-btn:hover {
+.nim-mode-btn:hover {
   background: var(--nim-bg-hover);
   color: var(--nim-text);
 }
-#root .nim-mode-btn.active {
+.nim-mode-btn.active {
   background: var(--nim-bg-selected);
   border-color: var(--nim-primary);
   color: var(--nim-primary);
 }
 
 /* ===== Lexical plugin containers ===== */
-#root .nimbalyst-editor .editor-shell {
+.nimbalyst-editor .editor-shell {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
 }
-#root .nimbalyst-editor .editor-container {
+.nimbalyst-editor .editor-container {
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -513,26 +513,26 @@
 }
 
 /* ===== TABLES ===== */
-#root .nim-table-scrollable-wrapper {
+.nim-table-scrollable-wrapper {
   overflow-x: auto;
   margin: 0px 25px 30px 0px;
 }
 
-#root .nim-table-scrollable-wrapper > .nim-table {
+.nim-table-scrollable-wrapper > .nim-table {
   margin-top: 0;
   margin-bottom: 0;
 }
 
-#root .nim-table-alignment-center {
+.nim-table-alignment-center {
   margin-left: auto;
   margin-right: auto;
 }
 
-#root .nim-table-alignment-right {
+.nim-table-alignment-right {
   margin-left: auto;
 }
 
-#root .nim-table {
+.nim-table {
   border-collapse: collapse;
   border-spacing: 0;
   overflow-y: scroll;
@@ -542,11 +542,11 @@
   margin-bottom: 30px;
 }
 
-#root .nim-table-scrollable-wrapper.nim-table-frozen-row {
+.nim-table-scrollable-wrapper.nim-table-frozen-row {
   overflow-x: clip;
 }
 
-#root .nim-table-frozen-row tr:nth-of-type(1) > td {
+.nim-table-frozen-row tr:nth-of-type(1) > td {
   overflow: clip;
   background-color: var(--nim-table-cell);
   position: sticky;
@@ -554,7 +554,7 @@
   top: 44px;
 }
 
-#root .nim-table-frozen-row tr:nth-of-type(1) > th {
+.nim-table-frozen-row tr:nth-of-type(1) > th {
   overflow: clip;
   background-color: var(--nim-table-header);
   position: sticky;
@@ -562,8 +562,8 @@
   top: 44px;
 }
 
-#root .nim-table-frozen-row tr:nth-of-type(1) > th:after,
-#root .nim-table-frozen-row tr:nth-of-type(1) > td:after {
+.nim-table-frozen-row tr:nth-of-type(1) > th:after,
+.nim-table-frozen-row tr:nth-of-type(1) > td:after {
   content: '';
   position: absolute;
   left: 0;
@@ -572,21 +572,21 @@
   border-bottom: 1px solid var(--nim-table-border);
 }
 
-#root .nim-table-frozen-column tr > td:first-child {
+.nim-table-frozen-column tr > td:first-child {
   background-color: var(--nim-table-cell);
   position: sticky;
   z-index: 2;
   left: 0;
 }
 
-#root .nim-table-frozen-column tr > th:first-child {
+.nim-table-frozen-column tr > th:first-child {
   background-color: var(--nim-table-header);
   position: sticky;
   z-index: 2;
   left: 0;
 }
 
-#root .nim-table-frozen-column tr > :first-child::after {
+.nim-table-frozen-column tr > :first-child::after {
   content: '';
   position: absolute;
   left: 0;
@@ -596,24 +596,23 @@
   border-right: 1px solid var(--nim-table-border);
 }
 
-#root .nim-table-row-striping tr:nth-child(even),
-#root
-  .nim-table-frozen-column
+.nim-table-row-striping tr:nth-child(even),
+.nim-table-frozen-column
   .nim-table.nim-table-row-striping
   tr:nth-child(even)
   > td:first-child {
   background-color: var(--nim-table-stripe);
 }
 
-#root .nim-table-selection *::selection {
+.nim-table-selection *::selection {
   background-color: transparent;
 }
 
-#root .nim-table-selected {
+.nim-table-selected {
   outline: 2px solid var(--nim-primary);
 }
 
-#root .nim-table-cell {
+.nim-table-cell {
   border: 1px solid var(--nim-table-border);
   color: var(--nim-text);
   vertical-align: top;
@@ -625,11 +624,11 @@
   min-width: 50px;
 }
 
-#root .nim-table-cell > * {
+.nim-table-cell > * {
   overflow: inherit;
 }
 
-#root .nim-table-cell-resizer {
+.nim-table-cell-resizer {
   position: absolute;
   right: -4px;
   height: 100%;
@@ -639,17 +638,17 @@
   top: 0;
 }
 
-#root .nim-table-cell-header {
+.nim-table-cell-header {
   background-color: var(--nim-table-header);
   color: var(--nim-text);
   text-align: start;
 }
 
-#root .nim-table-cell-selected {
+.nim-table-cell-selected {
   caret-color: transparent;
 }
 
-#root .nim-table-cell-selected::after {
+.nim-table-cell-selected::after {
   position: absolute;
   left: 0;
   right: 0;
@@ -662,7 +661,7 @@
 }
 
 /* Table add buttons (simplified) */
-#root .nim-table-add-columns,
-#root .nim-table-add-rows {
+.nim-table-add-columns,
+.nim-table-add-rows {
   display: none; /* Hide by default - shown only during table editing */
 }
