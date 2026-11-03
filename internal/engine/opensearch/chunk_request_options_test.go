@@ -59,7 +59,6 @@ func newCaptureEngine(t *testing.T, transport *requestCaptureTransport) *Engine 
 	t.Helper()
 	client, err := opensearch.NewClient(opensearch.Config{
 		Addresses:    []string{"http://capture.test"},
-		Context:      t.Context(),
 		DisableRetry: true,
 		Transport:    transport,
 	})

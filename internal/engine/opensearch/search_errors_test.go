@@ -40,7 +40,6 @@ func newSearchErrorEngine(t *testing.T, transport searchErrorTransport) *Engine 
 	t.Helper()
 	client, err := opensearch.NewClient(opensearch.Config{
 		Addresses:    []string{"http://search.test"},
-		Context:      t.Context(),
 		DisableRetry: true,
 		Transport:    transport,
 	})

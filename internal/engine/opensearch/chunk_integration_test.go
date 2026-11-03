@@ -7,15 +7,9 @@ import (
 	"os"
 	"testing"
 
-	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/server/config"
 )
-
-func TestMain(m *testing.M) {
-	_ = common.InitLogger("info", common.FileOutput{}, "opensearch_it")
-	os.Exit(m.Run())
-}
 
 // Integration tests against a real OpenSearch cluster (the docker one on
 // localhost:1201 by default). Run with:
