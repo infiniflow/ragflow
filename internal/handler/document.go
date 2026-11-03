@@ -55,6 +55,7 @@ type documentServiceIface interface {
 	DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error)
 	ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopParseDocuments(ctx context.Context, datasetID string, docIDs []string) (map[string]interface{}, error)
+	StopParseDocumentsAll(ctx context.Context, datasetID string, runStatuses []string) (map[string]interface{}, error)
 	ListDocuments(ctx context.Context, page, pageSize int) ([]*document.DocumentResponse, int64, error)
 	ListDocumentsByDatasetID(ctx context.Context, kbID, keywords string, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
 	ListDocumentsByDatasetIDWithOptions(ctx context.Context, opts dao.DocumentListOptions, page, pageSize int) ([]*entity.DocumentListItem, int64, error)
@@ -1579,7 +1580,9 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 }
 
 type StopParseDocumentRequest struct {
-	DocumentIDs []string `json:"document_ids" binding:"required"`
+	DocumentIDs []string `json:"document_ids"`
+	CancelAll   bool     `json:"cancel_all"`
+	RunStatuses []string `json:"run_statuses"`
 }
 
 func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
@@ -1591,8 +1594,12 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 		return
 	}
 
-	if len(req.DocumentIDs) == 0 {
-		common.ErrorWithCode(c, common.CodeDataError, "`document_ids` is required")
+	// cancel_all and an explicit document list are mutually exclusive. Use a nil
+	// check rather than len > 0 so that an explicit empty array
+	// (`document_ids: []`) is still rejected instead of silently falling through
+	// to a full-dataset cancel.
+	if req.CancelAll && req.DocumentIDs != nil {
+		common.ErrorWithCode(c, common.CodeArgumentError, "`cancel_all` and `document_ids` are mutually exclusive")
 		return
 	}
 
@@ -1609,6 +1616,27 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 	ctx := c.Request.Context()
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		respondPermissionError(c, err, false)
+		return
+	}
+
+	if req.CancelAll {
+		for _, s := range req.RunStatuses {
+			if !common.IsValidRunStatus(s) {
+				common.ErrorWithCode(c, common.CodeArgumentError, fmt.Sprintf("invalid run_status: %s", s))
+				return
+			}
+		}
+		result, err := h.documentService.StopParseDocumentsAll(ctx, datasetID, req.RunStatuses)
+		if err != nil {
+			common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+			return
+		}
+		common.SuccessWithData(c, result, "success")
+		return
+	}
+
+	if len(req.DocumentIDs) == 0 {
+		common.ErrorWithCode(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
 
