@@ -61,6 +61,9 @@ type OperationLog struct {
 func Audit(operationLog *OperationLog, fields ...zap.Field) {
 }
 
+func SyncAudit() {
+}
+
 // ingestLogger receives the serialized ingest events. It defaults to a no-op so a
 // binary that never calls InitIngestLog emits nothing and never panics.
 var ingestLogger atomic.Pointer[zap.Logger]
