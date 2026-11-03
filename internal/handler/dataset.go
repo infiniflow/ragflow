@@ -1006,7 +1006,7 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // CheckEmbedding Check embedding model compatibility by sampling random chunks,

@@ -409,5 +409,5 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 // HealthCheck Health check returns a simple health check response.
 func (h *DifyRetrievalHandler) HealthCheck(c *gin.Context) {
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }

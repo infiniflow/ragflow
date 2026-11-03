@@ -15,7 +15,7 @@ and `RespondError` otherwise. `RespondError` omits `data`. `Respond` takes the
 HTTP status before the application code for responses with other HTTP statuses:
 
 ```go
-common.RespondSuccess(c, true, "success")
+common.RespondSuccess(c, nil, "success")
 common.Respond(c, httpStatus, code, data, message)
 ```
 
@@ -29,9 +29,13 @@ common.RespondSuccessList(c, items, "success", total)
 common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Missing name")
 ```
 
-Boolean, string, and integer payloads remain in `data`. A plain nil payload
-omits `data`; typed nil pointers, maps, and slices serialize as `data: null`.
-Empty objects and lists, `false`, `0`, and empty strings remain present.
+Use objects or lists for result data and plain nil for operation acknowledgments.
+The system version is returned as `gin.H{"version": version}`. Return chunk-deletion counts as
+`gin.H{"deleted_count": count}`. Callers determine success from the envelope code.
+`Respond` checks Go kinds using reflection and accepts structs, maps, slices,
+arrays, and pointers to those types. Other kinds and typed nils are silently
+omitted. Empty objects and lists remain present. The helper does not pre-encode
+data or validate its JSON shape; accepted types retain their custom JSON encoding.
 
 ## 1. Prepare dependencies
 

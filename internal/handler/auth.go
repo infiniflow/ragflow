@@ -207,7 +207,7 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			adminStatus := local.GetAdminStatus()
 			errMsg := fmt.Sprintf("server error: %s", adminStatus.Reason)
 			common.Warn(errMsg)
-			common.Respond(c, http.StatusServiceUnavailable, common.CodeUnauthorized, "No", errMsg)
+			common.Respond(c, http.StatusServiceUnavailable, common.CodeUnauthorized, nil, errMsg)
 			c.Abort()
 			return
 		}

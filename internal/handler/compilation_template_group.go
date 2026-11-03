@@ -234,5 +234,5 @@ func (h *CompilationTemplateGroupHandler) Delete(c *gin.Context) {
 		common.RespondError(c, common.CodeNotFound, "Cannot find compilation template group "+id+".")
 		return
 	}
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }

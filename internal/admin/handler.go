@@ -1204,7 +1204,7 @@ func (h *Handler) PingStore(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if storageImpl.Health(ctx) {
-		common.RespondSuccess(c, "SUCCESS", "success")
+		common.RespondSuccess(c, nil, "success")
 	} else {
 		common.RespondError(c, common.CodeServerError, "storage health check failed")
 	}
@@ -1214,7 +1214,7 @@ func (h *Handler) PingCache(c *gin.Context) {
 	ctx := c.Request.Context()
 	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
-		common.RespondSuccess(c, "SUCCESS", "success")
+		common.RespondSuccess(c, nil, "success")
 	} else {
 		common.RespondError(c, common.CodeServerError, "cache health check failed")
 	}
@@ -1235,7 +1235,7 @@ func (h *Handler) PingEngine(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, "SUCCESS", "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func (h *Handler) GetHardwareInfo(c *gin.Context) {

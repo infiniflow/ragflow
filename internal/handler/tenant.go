@@ -638,7 +638,7 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // AcceptTenantInvite accepts a pending invitation, transitioning membership status to joined.
@@ -685,7 +685,7 @@ func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func matchesActiveTenant(c *gin.Context, tenantID string) bool {

@@ -421,7 +421,7 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // DeleteConnector delete connector
@@ -438,13 +438,13 @@ func (h *ConnectorHandler) DeleteConnector(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	ok, code, err := h.connectorService.DeleteConnector(ctx, c.Param("connector_id"), user.ID)
+	_, code, err := h.connectorService.DeleteConnector(ctx, c.Param("connector_id"), user.ID)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.RespondSuccess(c, ok, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // RebuildConnector rebuild connector
@@ -477,13 +477,13 @@ func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	ok, code, err := h.connectorService.RebuildConnector(ctx, c.Param("connector_id"), user.ID, req.KbID)
+	_, code, err := h.connectorService.RebuildConnector(ctx, c.Param("connector_id"), user.ID, req.KbID)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.RespondSuccess(c, ok, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // ResumeFailedSync resumes a failed connector sync task from checkpoint. (when network outage)
@@ -508,12 +508,12 @@ func (h *ConnectorHandler) ResumeFailedSync(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	ok, code, err := h.connectorService.ResumeFailedSync(ctx, c.Param("connector_id"), user.ID, &req)
+	_, code, err := h.connectorService.ResumeFailedSync(ctx, c.Param("connector_id"), user.ID, &req)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccess(c, ok, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func (h *ConnectorHandler) StartGoogleWebOAuth(c *gin.Context) {

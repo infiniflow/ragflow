@@ -291,8 +291,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 		return
 	}
 
-	// Return success response (same as Python get_json_result(data=True))
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // UpdateSearch update a search app

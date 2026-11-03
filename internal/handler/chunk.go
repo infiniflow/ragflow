@@ -341,7 +341,7 @@ func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func parseStringSlice(raw interface{}) ([]string, bool) {
@@ -598,7 +598,7 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, deletedCount, "success")
+	common.RespondSuccess(c, gin.H{"deleted_count": deletedCount}, "success")
 }
 
 func addChunkStringField(rawBody map[string]json.RawMessage, field string) (string, error) {

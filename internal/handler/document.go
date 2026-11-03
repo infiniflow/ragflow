@@ -1393,7 +1393,7 @@ func (h *DocumentHandler) Ingest(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 type ListIngestionsRequest struct {

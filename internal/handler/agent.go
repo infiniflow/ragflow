@@ -431,7 +431,7 @@ func (h *AgentHandler) DeleteAgent(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // ListTemplates lists every canvas template available to authenticated users.
@@ -688,7 +688,7 @@ func (h *AgentHandler) CancelSessionRun(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // publishAgentRequest is the wire shape for POST /api/v1/agents/:canvas_id/publish.
@@ -818,7 +818,7 @@ func (h *AgentHandler) DeleteVersion(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // PatchVersion patches mutable metadata (alias/title/description) of a single
@@ -856,7 +856,7 @@ func (h *AgentHandler) PatchVersion(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // ApplyVersion restores a saved workflow as the current agent draft.
@@ -880,7 +880,7 @@ func (h *AgentHandler) ApplyVersion(c *gin.Context) {
 		common.RespondError(c, ec, em)
 		return
 	}
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // --- PR2: missing routes wired up to the existing service layer ---
@@ -954,7 +954,7 @@ func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 		common.RespondError(c, errCode, errMsg.Error())
 		return
 	}
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // ListAgentSessions GET /api/v1/agents/:canvas_id/sessions
@@ -1080,12 +1080,12 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
 	if sessionID != "" {
-		ok, code, err := h.agentService.DeleteAgentSessionItem(ctx, user.ID, canvasID, sessionID)
+		_, code, err := h.agentService.DeleteAgentSessionItem(ctx, user.ID, canvasID, sessionID)
 		if err != nil {
 			common.RespondError(c, code, err.Error())
 			return
 		}
-		common.RespondSuccess(c, ok, "success")
+		common.RespondSuccess(c, nil, "success")
 		return
 	}
 	idsParam := c.Query("ids")
@@ -1555,7 +1555,7 @@ func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // parseAgentLogs decodes the debug-log payload stored in Redis by the pipeline

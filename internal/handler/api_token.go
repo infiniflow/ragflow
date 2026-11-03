@@ -94,7 +94,7 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func currentAPIKeyOwner(c *gin.Context) (*entity.User, string, common.ErrorCode, error) {

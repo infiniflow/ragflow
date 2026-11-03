@@ -230,13 +230,13 @@ func (h *ChatChannelHandler) DeleteChatChannel(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.chatChannelService.DeleteChatChannel(ctx, userID, channelID)
+	_, code, err := h.chatChannelService.DeleteChatChannel(ctx, userID, channelID)
 	if code != common.CodeSuccess || err != nil {
 		writeChatChannelError(c, code, chatChannelErrMsg(code, err))
 		return
 	}
 
-	common.RespondSuccess(c, result, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func unwrapChatChannelPayload(payload map[string]interface{}) map[string]interface{} {

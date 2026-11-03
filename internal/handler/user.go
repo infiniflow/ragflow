@@ -366,7 +366,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // Info get user profile information
@@ -420,7 +420,7 @@ func (h *UserHandler) Setting(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // ChangePassword change user password
@@ -453,7 +453,7 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, true, "password changed successfully")
+	common.RespondSuccess(c, nil, "password changed successfully")
 }
 
 // SetTenantInfo update tenant information
@@ -543,7 +543,7 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func joinStrings(values []string) string {

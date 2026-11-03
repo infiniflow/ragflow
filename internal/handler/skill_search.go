@@ -308,7 +308,7 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // InitializeIndex handles the initialize skill search index request

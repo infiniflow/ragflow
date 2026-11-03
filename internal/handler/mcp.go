@@ -196,13 +196,13 @@ func (h *MCPHandler) DeleteMCPServer(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	result, code, err := h.mcpService.DeleteMCPServer(ctx, user.ID, c.Param("mcp_id"))
+	_, code, err := h.mcpService.DeleteMCPServer(ctx, user.ID, c.Param("mcp_id"))
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.RespondSuccess(c, result, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // mcpErrorResponse maps the import / test sentinel errors to the response

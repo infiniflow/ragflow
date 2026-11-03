@@ -207,8 +207,11 @@ func TestDifyRetrieval_HealthCheck(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["data"] != true {
-		t.Errorf("expected data=true, got %v", resp["data"])
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected success, got %v", resp)
+	}
+	if data, exists := resp["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 }
 

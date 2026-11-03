@@ -1,12 +1,18 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 import {
+  useAgreeTenant,
   useDeleteLangfuseConfig,
+  useDeleteTenantUser,
   useFetchSystemVersion,
+  useRemoveSystemToken,
 } from './use-user-setting-request';
 
 const mockGetSystemVersion = jest.fn();
 const mockDeleteLangfuseConfig = jest.fn();
+const mockRemoveToken = jest.fn();
+const mockDeleteTenantUser = jest.fn();
+const mockAgreeTenant = jest.fn();
 const mockSuccess = jest.fn();
 const mockWarning = jest.fn();
 
@@ -15,7 +21,13 @@ jest.mock('@/services/user-service', () => ({
   default: {
     getSystemVersion: () => mockGetSystemVersion(),
     deleteLangfuseConfig: () => mockDeleteLangfuseConfig(),
+    removeToken: (...args: unknown[]) => mockRemoveToken(...args),
+    getTenantInfo: async () => ({
+      data: { code: 0, data: { tenant_id: 'tenant-1' } },
+    }),
   },
+  deleteTenantUser: (...args: unknown[]) => mockDeleteTenantUser(...args),
+  agreeTenant: (...args: unknown[]) => mockAgreeTenant(...args),
 }));
 jest.mock('@/services/knowledge-service', () => ({
   __esModule: true,
@@ -52,9 +64,9 @@ function createWrapper() {
 
 beforeEach(() => jest.clearAllMocks());
 
-it('reads the system version from data', async () => {
+it('reads the system version from data.version', async () => {
   mockGetSystemVersion.mockResolvedValue({
-    data: { code: 0, message: 'success', data: 'v1.2.3' },
+    data: { code: 0, message: 'success', data: { version: 'v1.2.3' } },
   });
   const { result } = renderHook(() => useFetchSystemVersion());
 
@@ -66,21 +78,59 @@ it('reads the system version from data', async () => {
   expect(result.current.loading).toBe(false);
 });
 
-it.each([
-  ['success', true, 'deleted'],
-  ['Have not record any Langfuse keys.', null, 'noLangfuseConfigToDelete'],
-])('handles Langfuse deletion message %s', async (message, data, key) => {
-  mockDeleteLangfuseConfig.mockResolvedValue({
-    data: { code: 0, message, ...(data === null ? {} : { data }) },
-  });
-  const { result } = renderHook(() => useDeleteLangfuseConfig(), {
-    wrapper: createWrapper(),
-  });
+it.each(['success', 'Have not record any Langfuse keys.'])(
+  'handles Langfuse deletion without data: %s',
+  async (message) => {
+    mockDeleteLangfuseConfig.mockResolvedValue({
+      data: { code: 0, message },
+    });
+    const { result } = renderHook(() => useDeleteLangfuseConfig(), {
+      wrapper: createWrapper(),
+    });
 
-  await act(async () => {
-    expect(await result.current.deleteLangfuseConfig()).toBe(0);
-  });
+    await act(async () => {
+      expect(await result.current.deleteLangfuseConfig()).toBe(0);
+    });
 
-  const notification = message === 'success' ? mockSuccess : mockWarning;
-  expect(notification).toHaveBeenCalledWith(`message.${key}`);
-});
+    expect(mockSuccess).toHaveBeenCalledWith('message.deleted');
+    expect(mockWarning).not.toHaveBeenCalled();
+  },
+);
+
+it.each([0, 102])(
+  'uses code %s for acknowledgments without data',
+  async (code) => {
+    const response = {
+      data: { code, message: code === 0 ? 'success' : 'failed' },
+    };
+    mockRemoveToken.mockResolvedValue(response);
+    mockDeleteTenantUser.mockResolvedValue(response);
+    mockAgreeTenant.mockResolvedValue(response);
+    const { result } = renderHook(
+      () => ({
+        tokens: useRemoveSystemToken(),
+        members: useDeleteTenantUser(),
+        invites: useAgreeTenant(),
+      }),
+      { wrapper: createWrapper() },
+    );
+
+    await act(async () => {
+      expect(await result.current.tokens.removeToken('token-1')).toBe(code);
+      expect(
+        await result.current.members.deleteTenantUser({
+          userId: 'user-1',
+          tenantId: 'tenant-1',
+        }),
+      ).toBe(code);
+      expect(await result.current.invites.agreeTenant('tenant-1')).toBe(code);
+    });
+
+    expect(mockRemoveToken).toHaveBeenCalledWith({}, 'token-1');
+    expect(mockDeleteTenantUser).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
+      userId: 'user-1',
+    });
+    expect(mockAgreeTenant).toHaveBeenCalledWith('tenant-1');
+  },
+);

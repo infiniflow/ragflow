@@ -2,6 +2,7 @@ package common
 
 import (
 	"net/http"
+	"reflect"
 
 	"github.com/gin-gonic/gin"
 )
@@ -43,6 +44,8 @@ func RespondError(c *gin.Context, code ErrorCode, message string, options ...Res
 // Respond writes a response with an HTTP status and application code. A zero
 // HTTP status defaults to 200. Use RespondSuccess or RespondError for HTTP 200
 // responses, and Respond for responses that need another HTTP status.
+// Data accepts structs, maps, slices, arrays, and pointers to those types.
+// Other values and typed nils are silently omitted without pre-encoding data.
 func Respond(c *gin.Context, httpStatus int, code ErrorCode, data any, message string, options ...ResponseOptions) {
 	if message == "" {
 		message = code.Message()
@@ -54,7 +57,21 @@ func Respond(c *gin.Context, httpStatus int, code ErrorCode, data any, message s
 	if httpStatus == 0 {
 		httpStatus = http.StatusOK
 	}
-	body := response{Code: code, Message: message, Data: data}
+	body := response{Code: code, Message: message}
+	value := reflect.ValueOf(data)
+	for value.IsValid() && value.Kind() == reflect.Pointer {
+		value = value.Elem()
+	}
+	if value.IsValid() {
+		switch value.Kind() {
+		case reflect.Struct, reflect.Array:
+			body.Data = data
+		case reflect.Map, reflect.Slice:
+			if !value.IsNil() {
+				body.Data = data
+			}
+		}
+	}
 	for _, option := range options {
 		if option.Total != nil {
 			body.Total = option.Total

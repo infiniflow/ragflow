@@ -11,9 +11,13 @@ A complete reference for RAGFlow's RESTful API, including migration notes for RA
 
 In the standard response envelope, `message` is always a non-empty string. Successful responses default to `"success"`; error responses contain a description of the error.
 
-`data` is optional and is omitted for a plain nil payload. Typed nil values can
-produce `"data": null`. Empty objects and arrays, `false`, `0`, and empty strings
-are still returned as valid payloads.
+`data` is optional. Operation acknowledgments omit it; check `code` for success
+and `message` for the result description. Result payloads use objects or arrays.
+The system version returns `data: {"version": "the version"}`. Chunk deletion
+returns `data: {"deleted_count": N}`, including zero when nothing was deleted.
+Scalar inputs and nil payloads are omitted. Empty objects and arrays remain present.
+Types with custom JSON encoding retain that encoding.
+Streaming completion frames use their own contract, including boolean terminal markers.
 
 ---
 
@@ -1691,7 +1695,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -2080,9 +2084,13 @@ Success:
 
 ```json
 {
-    "code": 0
+    "code": 0,
+    "message": "success",
+    "data": {"deleted_count": 1}
 }
 ```
+
+`data.deleted_count` is the number of chunks deleted. It is `0` when no chunks matched the request.
 
 Failure:
 
@@ -2240,7 +2248,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -3077,7 +3085,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -5356,7 +5364,10 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
+    "data": {
+        "id": "58af890a2a8911f0a71a11b922ed82d6",
+        "title": "Test Agent"
+    },
     "message": "success"
 }
 ```
@@ -5426,7 +5437,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
+    "data": {"update_time": 1720000000000},
     "message": "success"
 }
 ```
@@ -5487,7 +5498,6 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
     "message": "success"
 }
 ```
@@ -5541,7 +5551,6 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
     "message": "success"
 }
 ```
@@ -5594,7 +5603,6 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
     "message": "success"
 }
 ```
@@ -7386,7 +7394,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -8341,7 +8349,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 

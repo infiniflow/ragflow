@@ -355,7 +355,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 		return nil, "", common.CodeDataError, errors.New(strings.Join(allErrors, "; "))
 	}
 
-	return true, "success", common.CodeSuccess, nil
+	return nil, "success", common.CodeSuccess, nil
 }
 
 func stringSliceFromValue(value interface{}) ([]string, bool) {

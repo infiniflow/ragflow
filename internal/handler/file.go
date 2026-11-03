@@ -434,7 +434,7 @@ func (h *FileHandler) DeleteFiles(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, true, common.CodeSuccess.Message())
+	common.RespondSuccess(c, nil, common.CodeSuccess.Message())
 }
 
 // MoveFileRequest represents the request body for move files operation
@@ -512,7 +512,7 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, true, common.CodeSuccess.Message())
+	common.RespondSuccess(c, nil, common.CodeSuccess.Message())
 }
 
 // Download handles file download
@@ -696,7 +696,7 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		return
 	}
 
-	common.RespondSuccess(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // linkToDatasetsErrorCode maps File2DocumentService sentinel errors to

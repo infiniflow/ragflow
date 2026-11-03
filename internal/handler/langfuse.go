@@ -113,15 +113,10 @@ func (h *LangfuseHandler) DeleteAPIKey(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
-	ok, code, message, err := h.langfuseService.DeleteAPIKey(ctx, user.ID)
+	_, code, message, err := h.langfuseService.DeleteAPIKey(ctx, user.ID)
 	if err != nil {
 		common.RespondError(c, code, message)
 		return
 	}
-	// No record: mirror get_json_result(message=...) with data=nil.
-	if message != "" {
-		common.RespondSuccess(c, nil, message)
-		return
-	}
-	common.RespondSuccess(c, ok, "success")
+	common.RespondSuccess(c, nil, message)
 }
