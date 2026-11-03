@@ -152,6 +152,7 @@ class Session(Base):
             yield self._structure_answer(json_data["data"])
 
     def _structure_answer(self, json_data):
+        """Construct a Message object from streaming or non-streaming response payloads."""
         answer = ""
         event = None
         message_id = None
