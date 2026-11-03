@@ -41,16 +41,15 @@ type PipelineOperationLog struct {
 	Progress       float64    `gorm:"column:progress;default:0;index" json:"progress"`
 	ProgressMsg    *string    `gorm:"column:progress_msg;type:longtext" json:"progress_msg,omitempty"`
 	ProcessBeginAt *time.Time `gorm:"column:process_begin_at;index" json:"process_begin_at,omitempty"`
-	// ProcessEndAt is set when the run reaches a terminal state (completed /
-	// failed / stopped). It is the authoritative end time used to compute parse
-	// duration for ingestion observability events.
-	ProcessEndAt    *time.Time `gorm:"column:process_end_at;index" json:"process_end_at,omitempty"`
-	ProcessDuration float64    `gorm:"column:process_duration;default:0" json:"process_duration"`
-	DSL             JSONMap    `gorm:"column:dsl;type:longtext" json:"dsl,omitempty"`
-	TaskType        string     `gorm:"column:task_type;size:32;not null;default:''" json:"task_type"`
-	OperationStatus string     `gorm:"column:operation_status;size:32;not null" json:"operation_status"`
-	Avatar          *string    `gorm:"column:avatar;type:longtext" json:"avatar,omitempty"`
-	Status          *string    `gorm:"column:status;size:1;index" json:"status,omitempty"`
+	// ProcessDuration is the persisted terminal run duration in seconds. The
+	// authoritative end time is recovered as ProcessBeginAt + ProcessDuration when
+	// needed, so no separate process_end_at column is required.
+	ProcessDuration float64 `gorm:"column:process_duration;default:0" json:"process_duration"`
+	DSL             JSONMap `gorm:"column:dsl;type:longtext" json:"dsl,omitempty"`
+	TaskType        string  `gorm:"column:task_type;size:32;not null;default:''" json:"task_type"`
+	OperationStatus string  `gorm:"column:operation_status;size:32;not null" json:"operation_status"`
+	Avatar          *string `gorm:"column:avatar;type:longtext" json:"avatar,omitempty"`
+	Status          *string `gorm:"column:status;size:1;index" json:"status,omitempty"`
 	BaseModel
 }
 
