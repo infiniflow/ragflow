@@ -254,7 +254,7 @@ func TestRunAgent_ToolHistoryPersists(t *testing.T) {
 			}
 			tracker, _ := newAgentCancelTracker(t)
 			svc := NewAgentServiceWithOptions(nil, nil, tracker)
-			events, err := svc.RunAgent(WithAgentSessionID(ctx, sessionID), "user-1", canvasID, sessionID, "", "Find the manual", nil)
+			events, err := svc.RunAgent(WithAgentSessionID(ctx, sessionID), canvasID, sessionID, "", "Find the manual", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -349,7 +349,7 @@ func TestRunAgent_ToolHistoryPersists(t *testing.T) {
 				t.Errorf("persisted memory missing summary: %s", raw)
 			}
 			// A fresh direct-answer turn reuses persisted DSL but must not re-summarize old calls.
-			events, err = svc.RunAgent(WithAgentSessionID(ctx, sessionID), "user-1", canvasID, sessionID, "", "direct on next turn", nil)
+			events, err = svc.RunAgent(WithAgentSessionID(ctx, sessionID), canvasID, sessionID, "", "direct on next turn", nil)
 			if err != nil {
 				t.Fatal(err)
 			}

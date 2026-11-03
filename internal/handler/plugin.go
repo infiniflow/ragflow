@@ -46,10 +46,6 @@ func NewPluginHandler(pluginService *service.PluginService) *PluginHandler {
 // @Success  200 {object} map[string]interface{}
 // @Router   /v1/plugin/tools [get]
 func (h *PluginHandler) ListLLMTools(c *gin.Context) {
-	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	common.RespondSuccessList(c, h.pluginService.ListLLMTools(), "success")
 }

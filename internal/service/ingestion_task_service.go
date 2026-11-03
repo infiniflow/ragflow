@@ -1182,35 +1182,11 @@ func (s *IngestionTaskService) RecordMessage(ctx context.Context, pipelineLogID,
 	return s.insertEvent(ctx, ingestionEventMessage, pipelineLogID, taskID, "", 0, message)
 }
 
-// persistProcessEndAt records the authoritative terminal end time for a run.
-// It is idempotent: if a real process_end_at is already persisted, the existing
-// value is left untouched, so a later terminal event cannot rewrite the recorded
-// completion instant. Best-effort: errors are logged, never returned, because a
-// failure here must not fail the terminal settlement.
-func (s *IngestionTaskService) persistProcessEndAt(ctx context.Context, pipelineLogID string) {
-	if dao.DB == nil {
-		return
-	}
-	if updErr := dao.DB.WithContext(ctx).
-		Model(&entity.PipelineOperationLog{}).
-		Where("id = ?", pipelineLogID).
-		Where("process_end_at IS NULL").
-		Update("process_end_at", time.Now()).Error; updErr != nil {
-		common.Warn(fmt.Sprintf("persist process_end_at for run %s: %v", pipelineLogID, updErr))
-	}
-}
-
 // RecordTerminal writes the terminal explanation associated with a run.
 func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string) error {
 	if err := s.ensureTerminalEvent(ctx, pipelineLogID, taskID, message); err != nil {
 		return err
 	}
-	// Persist the authoritative terminal end time so ingestion observability
-	// events and any downstream duration query read a real value instead of
-	// falling back to the transition time. Idempotent: a run whose end time
-	// was already recorded keeps it, so a repeated terminal settlement (e.g.
-	// overlapping failure/timeout events) cannot rewrite the completion instant.
-	s.persistProcessEndAt(context.WithoutCancel(ctx), pipelineLogID)
 	foldContext := context.WithoutCancel(ctx)
 	foldStarted := time.Now()
 	foldResult, foldErr := s.foldIngestionRun(foldContext, pipelineLogID, s.logSettings.MaxRowsPerRun)

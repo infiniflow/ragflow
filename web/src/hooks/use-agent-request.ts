@@ -18,6 +18,7 @@ import { FileUploadProps } from '@/components/file-upload';
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { AgentCategory, AgentGlobals } from '@/constants/agent';
+import { Permission } from '@/ee/constants/team';
 import { ListDeletionKey } from '@/constants/list-deletion';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import {
@@ -105,6 +106,10 @@ export const enum AgentApiAction {
   CreateAgentSession = 'createAgentSession',
   DeleteAgentSession = 'deleteAgentSession',
   FetchSessionByIdManually = 'fetchSessionByIdManually',
+  FetchCanvasPresence = 'fetchCanvasPresence',
+  JoinCanvasPresence = 'joinCanvasPresence',
+  HeartbeatCanvasPresence = 'heartbeatCanvasPresence',
+  LeaveCanvasPresence = 'leaveCanvasPresence',
   FetchAgentLog = 'fetchAgentLog',
   FetchSharedAgent = 'fetchSharedAgent',
   FetchAgentTags = 'fetchAgentTags',
@@ -379,7 +384,7 @@ export const useFetchAgentTags = (canvasCategory?: string) => {
         },
         true,
       );
-      return data?.data ?? [];
+      return Array.isArray(data?.data) ? data.data : [];
     },
   });
   return { data, loading };
@@ -1014,22 +1019,34 @@ export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
 
 export const AgentSessionKeys = {
   all: [AgentApiAction.FetchSessionsByCanvasId] as const,
-  list: (canvasId?: string, tenantId?: string) =>
-    [...AgentSessionKeys.all, canvasId, tenantId] as const,
+  list: (
+    canvasId?: string,
+    tenantId?: string,
+    operatorPermission?: Permission,
+  ) =>
+    [...AgentSessionKeys.all, canvasId, tenantId, operatorPermission] as const,
 };
 
 export const useFetchSessionsByCanvasId = () => {
   const { id: canvasId } = useParams();
   const { data: tenantInfo } = useFetchTenantInfo();
+  const { data: agentDetail } = useFetchAgent();
+  const operatorPermission = agentDetail?.operator_permission;
 
   return useSessionList<IAgentLogResponse>({
-    queryKey: AgentSessionKeys.list(canvasId, tenantInfo.tenant_id),
-    enabled: !!canvasId && !isEmpty(tenantInfo),
+    queryKey: AgentSessionKeys.list(
+      canvasId,
+      tenantInfo.tenant_id,
+      operatorPermission,
+    ),
+    enabled:
+      !!canvasId && !isEmpty(tenantInfo) && operatorPermission !== undefined,
     fetchPage: async (params) => {
+      const shouldListAllSessions = operatorPermission !== Permission.Read;
       const { data } = await fetchAgentLogsByCanvasId(canvasId!, {
         ...params,
         include_history: false,
-        exp_user_id: tenantInfo.tenant_id,
+        ...(shouldListAllSessions ? {} : { exp_user_id: tenantInfo.tenant_id }),
       });
 
       return { total: data?.total ?? 0, items: data?.data ?? [] };

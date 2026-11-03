@@ -121,11 +121,6 @@ func NewDocumentHandler(documentService documentServiceIface, datasetService *da
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [get]
 func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	id := c.Param("id")
 	if id == "" {
@@ -224,11 +219,6 @@ func (h *DocumentHandler) GetDocumentImageForDocument(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentThumbnail(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 	data, err := h.documentService.GetDocumentThumbnail(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, "Image not found.")
@@ -297,11 +287,6 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	docID := c.Param("id")
 
@@ -353,11 +338,6 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [put]
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	id := c.Param("id")
 	if id == "" {
@@ -386,7 +366,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		return
 	}
 
-	if errorCode, err = h.documentService.UpdateDocument(ctx, id, &req); err != nil {
+	if errorCode, err := h.documentService.UpdateDocument(ctx, id, &req); err != nil {
 		if errorCode == common.CodeServerError {
 			common.Respond(c, http.StatusInternalServerError, errorCode, nil, err.Error())
 		} else {
@@ -408,11 +388,6 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [delete]
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	id := c.Param("id")
 	if id == "" {
@@ -1640,11 +1615,6 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 }
 
 func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
@@ -1848,11 +1818,6 @@ func (h *DocumentHandler) UpdateDocumentMetadatas(c *gin.Context) {
 }
 
 func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {

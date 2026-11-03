@@ -88,12 +88,6 @@ func CommitFolderResolver(h *FileCommitHandler, entityType, urlParam string) gin
 			return
 		}
 		ctx := c.Request.Context()
-		_, errorCode, errorMessage := GetUser(c)
-		if errorCode != common.CodeSuccess {
-			common.RespondError(c, errorCode, errorMessage)
-			c.Abort()
-			return
-		}
 		// Authorize, not just existence: the commit surface exposes artifact
 		// contents and history, so it needs the same access check the dataset
 		// routes apply.
@@ -672,11 +666,6 @@ func (h *FileCommitHandler) GetCommitFileContent(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspace-files/{file_id}/versions [get]
 func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	fileID := c.Param("file_id")
 	if fileID == "" {

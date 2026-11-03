@@ -99,49 +99,31 @@ var (
 // and question extraction calls (generator.py:230,245).
 const extractorTemperature = 0.2
 
-// defaultExtractorConcurrency bounds concurrent LLM extraction calls
-// process-wide. It mirrors Python's chat_limiter bound
-// (agent/component/base.py:353 asyncio.Semaphore(MAX_CONCURRENT_CHATS,
-// default 10)) so the Go port rate-limits auto-keywords / auto-questions /
-// auto-metadata extraction the same way Python does.
+// defaultExtractorConcurrency bounds concurrent chunk extraction jobs
+// process-wide to reduce provider rate-limit pressure.
 const defaultExtractorConcurrency = 10
 
 // extractorJob is one chunk's auto-extraction unit of work.
 type extractorJob func() error
 
-// extractorPool is the process-wide bounded worker pool that drives
-// cross-chunk concurrency for auto-keywords / auto-questions /
-// auto-metadata extraction. It mirrors the parser/structure/mindmap
-// WorkerPool usage, but is held globally so every Extractor
-// invocation shares one rate limiter instead of spinning up one pool
-// per batch. The pool only bounds concurrency (it is never StopWait'd),
-// so per-invocation completion is tracked by runAutoExtractions with its
-// own sync.WaitGroup + first-error collection — concurrent Invoke calls
-// therefore do not disturb each other.
+// extractorPool bounds chunk extraction concurrency across all Extractor
+// invocations in this process: keywords, LLM tags, questions, summary, and
+// metadata share the same workers. Each invocation waits for its own futures.
 var extractorPool = utility.NewWorkerPool[extractorJob, struct{}](
 	extractorConcurrency(),
 	extractorConcurrency()*4,
 	func(_ context.Context, j extractorJob) (struct{}, error) { return struct{}{}, j() },
 )
 
-// extractorConcurrency resolves the pool size from MAX_CONCURRENT_CHATS
-// (Python parity) with a safe default of defaultExtractorConcurrency.
+// extractorConcurrency resolves the pool size from EXTRACTOR_CONCURRENCY
+// with a safe default of defaultExtractorConcurrency.
 func extractorConcurrency() int {
-	if v := os.Getenv("MAX_CONCURRENT_CHATS"); v != "" {
+	if v := os.Getenv(common.EnvExtractorConcurrency); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
 		}
 	}
 	return defaultExtractorConcurrency
-}
-
-// SetExtractorConcurrency overrides the global extractor pool size at
-// runtime (e.g. from service init or tests). Mirrors tuning Python's
-// chat_limiter bound.
-func SetExtractorConcurrency(n int) {
-	if n > 0 {
-		extractorPool.Resize(n)
-	}
 }
 
 // extractorTopNPattern matches the {{ topn }} placeholder accepted in

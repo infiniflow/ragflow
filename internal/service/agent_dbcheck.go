@@ -34,6 +34,7 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 )
 
 // TestDBConnectionRequest is the request body for AgentService.TestDBConnection.
@@ -226,7 +227,8 @@ func dbConnectionPort(port interface{}) string {
 // short timeout to keep the API responsive when targets are unreachable.
 // The "required argument are missing" message has a trailing semicolon
 // and space to stay byte-identical with the Python implementation.
-func (s *AgentService) TestDBConnection(ctx context.Context, userID string, req *TestDBConnectionRequest) (common.ErrorCode, error) {
+func (s *AgentService) TestDBConnection(ctx context.Context, req *TestDBConnectionRequest) (common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
 	if missing := missingDBConnectionFields(req); len(missing) > 0 {
 		return common.CodeArgumentError, fmt.Errorf("required argument are missing: %s; ", strings.Join(missing, ","))
 	}

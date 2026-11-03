@@ -154,6 +154,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, userID string, req Cre
 	server := &entity.MCPServer{
 		ID:          common.GenerateUUID(),
 		Name:        req.Name,
+		UserID:      userID,
 		TenantID:    tenantID,
 		URL:         req.URL,
 		ServerType:  req.ServerType,
@@ -826,6 +827,7 @@ func (s *MCPService) ImportServers(ctx context.Context, userID string, servers m
 
 		server := &entity.MCPServer{
 			ID:         common.GenerateUUID(),
+			UserID:     userID,
 			TenantID:   tenantID,
 			Name:       newName,
 			URL:        url,

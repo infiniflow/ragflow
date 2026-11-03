@@ -36,7 +36,7 @@ const markdownMediaDataURI = "data:image/png;base64,aGVsbG8="
 
 func markdownIngestionParser(t *testing.T) ParseResultProducer {
 	t.Helper()
-	p, err := GetParser(utility.FileTypeMarkdown)
+	p, _, err := GetParser(utility.FileTypeMarkdown, nil)
 	if err != nil {
 		t.Fatalf("GetParser(FileTypeMarkdown): %v", err)
 	}
@@ -592,7 +592,7 @@ func TestMarkdownTextParserSkipsImages(t *testing.T) {
 	var hits atomic.Int32
 	server := imageTestServer(t, "\x89PNG\r\n\x1a\nremote", &hits)
 
-	p, err := GetTextOnlyParser(utility.FileTypeMarkdown)
+	p, _, err := GetTextOnlyParser(utility.FileTypeMarkdown, nil)
 	if err != nil {
 		t.Fatalf("GetTextOnlyParser(FileTypeMarkdown): %v", err)
 	}

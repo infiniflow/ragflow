@@ -83,6 +83,9 @@ func TestAgentVersionActions(t *testing.T) {
 					wantCode = common.CodeOperatingError
 				case "unauthenticated":
 					delete(c.Keys, "user")
+					delete(c.Keys, "user_id")
+					delete(c.Keys, "tenant_id")
+					c.Request = c.Request.WithContext(t.Context())
 					wantCode = common.CodeUnauthorized
 				case "nil_dsl":
 					version.DSL = nil

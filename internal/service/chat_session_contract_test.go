@@ -59,8 +59,8 @@ func TestCreateSession_Success(t *testing.T) {
 		pipeline:          &fakePipeline{},
 	}
 
-	ctx := t.Context()
-	resp, code, err := svc.CreateSession(ctx, "user-1", "chat-1", map[string]interface{}{"name": "valid"})
+	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
+	resp, code, err := svc.CreateSession(ctx, "chat-1", map[string]interface{}{"name": "valid"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -89,9 +89,9 @@ func TestCreateSession_RejectsEmptyOrNonStringName(t *testing.T) {
 		pipeline:          &fakePipeline{},
 	}
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
 	for _, name := range []interface{}{"", "   ", 1} {
-		_, code, err := svc.CreateSession(ctx, "user-1", "chat-1", map[string]interface{}{"name": name})
+		_, code, err := svc.CreateSession(ctx, "chat-1", map[string]interface{}{"name": name})
 		if err == nil || err.Error() != "`name` can not be empty" {
 			t.Fatalf("name=%#v err=%v", name, err)
 		}
@@ -112,9 +112,9 @@ func TestCreateSession_TruncatesLongName(t *testing.T) {
 		pipeline:          &fakePipeline{},
 	}
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
 	longName := strings.Repeat("a", 300)
-	resp, code, err := svc.CreateSession(ctx, "user-1", "chat-1", map[string]interface{}{"name": longName})
+	resp, code, err := svc.CreateSession(ctx, "chat-1", map[string]interface{}{"name": longName})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -134,8 +134,8 @@ func TestCreateSession_NotOwner(t *testing.T) {
 		pipeline:          &fakePipeline{},
 	}
 
-	ctx := t.Context()
-	_, code, err := svc.CreateSession(ctx, "user-1", "chat-1", map[string]interface{}{"name": "x"})
+	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
+	_, code, err := svc.CreateSession(ctx, "chat-1", map[string]interface{}{"name": "x"})
 	if err == nil || err.Error() != "Resource not found" {
 		t.Fatalf("err=%v", err)
 	}
@@ -150,7 +150,7 @@ func TestListChatSessionsChecksChatPermissionWhenThereAreNoSessions(t *testing.T
 		permissionChecker: emptyChatSessionScopeChecker{checkErr: permission.ErrPermissionDenied},
 	}
 
-	result, err := svc.ListChatSessions(t.Context(), "outsider", "chat-1", "", "", "", nil, 1, 20)
+	result, err := svc.ListChatSessions(t.Context(), "chat-1", "", "", "", nil, 1, 20)
 	if result != nil {
 		t.Fatalf("expected no response for unauthorized chat, got %+v", result)
 	}
@@ -177,7 +177,7 @@ func TestDeleteSessions_SuccessByIDs(t *testing.T) {
 	}
 
 	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
-	result, message, code, err := svc.DeleteSessions(ctx, "user-1", "chat-1", map[string]interface{}{"ids": []interface{}{"s1"}})
+	result, message, code, err := svc.DeleteSessions(ctx, "chat-1", map[string]interface{}{"ids": []interface{}{"s1"}})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -207,13 +207,13 @@ func TestDeleteSessions_DeleteAllAndInvalidID(t *testing.T) {
 
 	// Empty payload -> success with empty result map.
 	ctx := permission.WithIdentity(t.Context(), "user-1", "user-1")
-	if _, _, code, err := svc.DeleteSessions(ctx, "user-1", "chat-1", map[string]interface{}{}); err != nil || code != common.CodeSuccess {
+	if _, _, code, err := svc.DeleteSessions(ctx, "chat-1", map[string]interface{}{}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("empty payload: code=%v err=%v", code, err)
 	}
 
 	// delete_all removes every session for the chat.
 	store.sessions["s1"] = &entity.ChatSession{ID: "s1", DialogID: "chat-1"}
-	if _, _, code, err := svc.DeleteSessions(ctx, "user-1", "chat-1", map[string]interface{}{"delete_all": true}); err != nil || code != common.CodeSuccess {
+	if _, _, code, err := svc.DeleteSessions(ctx, "chat-1", map[string]interface{}{"delete_all": true}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("delete_all: code=%v err=%v", code, err)
 	}
 	if len(store.sessions) != 0 {
@@ -222,7 +222,7 @@ func TestDeleteSessions_DeleteAllAndInvalidID(t *testing.T) {
 
 	// Unknown id -> DataError reporting the unowned session.
 	store.sessions["s1"] = &entity.ChatSession{ID: "s1", DialogID: "chat-1"}
-	_, _, code, err := svc.DeleteSessions(ctx, "user-1", "chat-1", map[string]interface{}{"ids": []interface{}{"missing"}})
+	_, _, code, err := svc.DeleteSessions(ctx, "chat-1", map[string]interface{}{"ids": []interface{}{"missing"}})
 	if err == nil || !strings.Contains(err.Error(), "The chat doesn't own the session missing") {
 		t.Fatalf("invalid id: err=%v", err)
 	}
@@ -240,7 +240,7 @@ func TestDeleteSessions_NotOwner(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	_, _, code, err := svc.DeleteSessions(ctx, "user-1", "chat-1", map[string]interface{}{"ids": []interface{}{"s1"}})
+	_, _, code, err := svc.DeleteSessions(ctx, "chat-1", map[string]interface{}{"ids": []interface{}{"s1"}})
 	if err == nil || err.Error() != "Resource not found" {
 		t.Fatalf("err=%v", err)
 	}

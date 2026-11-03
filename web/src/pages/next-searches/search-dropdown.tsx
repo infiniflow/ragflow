@@ -25,6 +25,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { SearchDropdownGuard } from '@/ee/pages/next-searches/search-dropdown-guard';
 import { PenLine, Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -34,9 +35,11 @@ export function SearchDropdown({
   children,
   dataset,
   showSearchRenameModal,
+  showPrivilegeModal,
 }: PropsWithChildren & {
   dataset: ISearchAppProps;
   showSearchRenameModal: (dataset: ISearchAppProps) => void;
+  showPrivilegeModal(): void;
 }) {
   const { t } = useTranslation();
   const { deleteSearch } = useDeleteSearch();
@@ -56,34 +59,44 @@ export function SearchDropdown({
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent>
-        <DropdownMenuItem onClick={handleShowChatRenameModal}>
-          {t('common.rename')} <PenLine />
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <ConfirmDeleteDialog
-          onOk={handleDelete}
-          title={t('deleteModal.delSearch')}
-          content={{
-            node: (
-              <ConfirmDeleteDialogNode
-                avatar={{ avatar: dataset.avatar, name: dataset.name }}
-                name={dataset.name}
-              />
-            ),
-          }}
-        >
-          <DropdownMenuItem
-            className="text-state-error"
-            onSelect={(e) => {
-              e.preventDefault();
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-            }}
-          >
-            {t('common.delete')} <Trash2 />
-          </DropdownMenuItem>
-        </ConfirmDeleteDialog>
+        <SearchDropdownGuard
+          dataset={dataset}
+          showPrivilegeModal={showPrivilegeModal}
+          manageItems={
+            <DropdownMenuItem onClick={handleShowChatRenameModal}>
+              {t('common.rename')} <PenLine />
+            </DropdownMenuItem>
+          }
+          deleteItems={
+            <>
+              <DropdownMenuSeparator />
+              <ConfirmDeleteDialog
+                onOk={handleDelete}
+                title={t('deleteModal.delSearch')}
+                content={{
+                  node: (
+                    <ConfirmDeleteDialogNode
+                      avatar={{ avatar: dataset.avatar, name: dataset.name }}
+                      name={dataset.name}
+                    />
+                  ),
+                }}
+              >
+                <DropdownMenuItem
+                  className="text-state-error"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                  }}
+                >
+                  {t('common.delete')} <Trash2 />
+                </DropdownMenuItem>
+              </ConfirmDeleteDialog>
+            </>
+          }
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   );
