@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 )
 
 // IndexDocument indexes a single document
@@ -73,8 +74,13 @@ func (e *Engine) BulkIndex(ctx context.Context, indexName string, docs []interfa
 			return nil, fmt.Errorf("document missing _id field")
 		}
 
-		// Delete _id field to avoid duplication
-		delete(docMap, "_id")
+		// Copy without _id so the caller's map stays intact for a retry.
+		body := make(map[string]interface{}, len(docMap))
+		for k, v := range docMap {
+			if k != "_id" {
+				body[k] = v
+			}
+		}
 
 		// Add index operation
 		meta := map[string]interface{}{
@@ -82,7 +88,7 @@ func (e *Engine) BulkIndex(ctx context.Context, indexName string, docs []interfa
 			"_id":    docID,
 		}
 		metaData, _ := json.Marshal(meta)
-		docData, _ := json.Marshal(docMap)
+		docData, _ := json.Marshal(body)
 
 		buf.Write(metaData)
 		buf.WriteByte('\n')
@@ -106,7 +112,7 @@ func (e *Engine) BulkIndex(ctx context.Context, indexName string, docs []interfa
 						if opMap, ok := op.(map[string]interface{}); ok {
 							if errInfo, ok := opMap["error"].(map[string]interface{}); ok {
 								if reason, ok := errInfo["reason"].(string); ok {
-									return nil, fmt.Errorf("bulk index error: %s", reason)
+									return nil, fmt.Errorf("bulk index error for _id %v: %s", opMap["_id"], reason)
 								}
 							}
 						}
@@ -117,9 +123,11 @@ func (e *Engine) BulkIndex(ctx context.Context, indexName string, docs []interfa
 		return nil, fmt.Errorf("bulk index has errors")
 	}
 
+	took, _ := result["took"].(float64)
+	hasErrors, _ := result["errors"].(bool)
 	response := &BulkResponse{
-		Took:    int64(result["took"].(float64)),
-		Errors:  result["errors"].(bool),
+		Took:    int64(took),
+		Errors:  hasErrors,
 		Indexed: len(docs),
 	}
 
@@ -143,7 +151,7 @@ func (e *Engine) GetDocument(ctx context.Context, indexName, docID string) (inte
 	}
 
 	// Get document
-	path := fmt.Sprintf("/%s/_doc/%s", indexName, docID)
+	path := fmt.Sprintf("/%s/_doc/%s", url.PathEscape(indexName), url.PathEscape(docID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return nil, err
@@ -186,7 +194,7 @@ func (e *Engine) DeleteDocument(ctx context.Context, indexName, docID string) er
 	}
 
 	// Delete document
-	path := fmt.Sprintf("/%s/_doc/%s", indexName, docID)
+	path := fmt.Sprintf("/%s/_doc/%s", url.PathEscape(indexName), url.PathEscape(docID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, path, nil)
 	if err != nil {
 		return err

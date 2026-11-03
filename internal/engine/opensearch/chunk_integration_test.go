@@ -142,7 +142,7 @@ func TestOpenSearchChunkLifecycle(t *testing.T) {
 		t.Fatalf("Search text: %v", err)
 	}
 	if len(textRes.Chunks) != 1 || textRes.Chunks[0]["id"] != "c1" {
-		t.Fatalf("text search: got %d chunks, first id %v; want 1 chunk c1", len(textRes.Chunks), textRes.Chunks[0]["id"])
+		t.Fatalf("text search: got chunks %v; want 1 chunk c1", textRes.Chunks)
 	}
 
 	// Pure vector search: c1 (vector 0) must rank first for a query near it.
@@ -153,7 +153,7 @@ func TestOpenSearchChunkLifecycle(t *testing.T) {
 		t.Fatalf("Search vector: %v", err)
 	}
 	if len(vecRes.Chunks) != 2 || vecRes.Chunks[0]["id"] != "c1" {
-		t.Fatalf("vector search: got %d chunks, first id %v; want 2 chunks c1 first", len(vecRes.Chunks), vecRes.Chunks[0]["id"])
+		t.Fatalf("vector search: got chunks %v; want 2 chunks c1 first", vecRes.Chunks)
 	}
 
 	// Hybrid search (text + vector + weighted-sum fusion) through the
@@ -167,7 +167,7 @@ func TestOpenSearchChunkLifecycle(t *testing.T) {
 		t.Fatalf("Search hybrid: %v", err)
 	}
 	if len(hybRes.Chunks) != 2 || hybRes.Chunks[0]["id"] != "c1" {
-		t.Fatalf("hybrid search: got %d chunks, first id %v; want 2 chunks c1 first", len(hybRes.Chunks), hybRes.Chunks[0]["id"])
+		t.Fatalf("hybrid search: got chunks %v; want 2 chunks c1 first", hybRes.Chunks)
 	}
 
 	// KNN second-pass scores: c1 is the nearest neighbour.
@@ -231,7 +231,9 @@ func TestOpenSearchSQL(t *testing.T) {
 		t.Fatalf("InsertChunks: %v", err)
 	}
 
-	rows, err := eng.RunSQL(t.Context(), osTestIndex, "SELECT id, title_tks FROM "+osTestIndex, []string{osTestKBID}, "")
+	// The shared caller always passes ES's "json" format; the engine must
+	// translate it to the JDBC format OpenSearch's SQL plugin decodes.
+	rows, err := eng.RunSQL(t.Context(), osTestIndex, "SELECT id, title_tks FROM "+osTestIndex, []string{osTestKBID}, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}

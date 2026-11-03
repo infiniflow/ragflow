@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sync/atomic"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -59,7 +60,7 @@ func TestMetadataPushdownSearchesAllTenantIndices(t *testing.T) {
 		{name: "missing dataset falls back", missingKB: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			searches := 0
+			var searches atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodHead {
 					if tc.missingIndex && r.URL.Path == "/ragflow_doc_meta_b" {
@@ -67,7 +68,7 @@ func TestMetadataPushdownSearchesAllTenantIndices(t *testing.T) {
 					}
 					return
 				}
-				searches++
+				searches.Add(1)
 				if r.URL.Path != "/ragflow_doc_meta_a,ragflow_doc_meta_b/_search" {
 					t.Errorf("search path = %s, want both tenant indices once", r.URL.Path)
 				}
@@ -86,7 +87,7 @@ func TestMetadataPushdownSearchesAllTenantIndices(t *testing.T) {
 			} else if !reflect.DeepEqual(got, []string{"doc-a", "doc-b"}) {
 				t.Fatalf("doc IDs = %v, want both tenants' documents", got)
 			}
-			if (tc.missingIndex || tc.missingKB) && searches != 0 {
+			if (tc.missingIndex || tc.missingKB) && searches.Load() != 0 {
 				t.Fatal("searched despite incomplete tenant scope")
 			}
 		})

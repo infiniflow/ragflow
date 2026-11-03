@@ -57,6 +57,11 @@ OpenSearch is supported as an alternative to Elasticsearch. Hybrid (BM25 + vecto
      hosts: 'http://opensearch39:9201'
      username: 'admin'
      password: 'infini_rag_flow_OS_01'
+     # insecure_skip_verify: true   # HTTPS only, self-signed dev clusters
    ```
+
+   For an `https://` cluster the server certificate is verified against the
+   system trust store. Set `insecure_skip_verify: true` only for a development
+   cluster with a self-signed certificate.
 
 3. Start the deployment and reindex the documents, as in the Infinity steps above. The index template in **conf/os_mapping.json** declares `knn_vector` fields for the common embedding dimensions (128–10240); an embedding model whose dimension is not listed there cannot be indexed until a matching template is added.

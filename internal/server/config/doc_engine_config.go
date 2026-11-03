@@ -37,6 +37,10 @@ type OpenSearchConfig struct {
 	Hosts    string `mapstructure:"hosts"`
 	Username string `mapstructure:"username"`
 	Password string `mapstructure:"password"`
+	// InsecureSkipVerify disables TLS certificate verification. It is off by
+	// default; enable it only for a development cluster with a self-signed
+	// certificate.
+	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify"`
 }
 
 // OceanBaseConfig mirrors the existing oceanbase/seekdb service_conf.yaml
@@ -402,6 +406,10 @@ func (c *Config) parseOpenSearchConfig(v *viper.Viper) {
 	if sub.IsSet("password") {
 		c.docEngine.OpenSearch.Password = sub.GetString("password")
 	}
+
+	if sub.IsSet("insecure_skip_verify") {
+		c.docEngine.OpenSearch.InsecureSkipVerify = sub.GetBool("insecure_skip_verify")
+	}
 }
 
 func (c *Config) GetOpenSearchConfig() OpenSearchConfig {
@@ -414,6 +422,7 @@ func (o OpenSearchConfig) ExportConfigs() map[string]interface{} {
 	osConfigs["hosts"] = o.Hosts
 	osConfigs["username"] = o.Username
 	osConfigs["password"] = o.Password
+	osConfigs["insecure_skip_verify"] = o.InsecureSkipVerify
 	return osConfigs
 }
 

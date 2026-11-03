@@ -40,17 +40,12 @@ func assertStoredField(t *testing.T, doc map[string]interface{}, key string, wan
 	}
 }
 
-// TestInsertChunks_WritesIngestionShape is the T0 unit-tier read-back baseline
-// (issue #17371). It stands up an in-memory fake OpenSearch, captures the
-// bulk request that InsertChunks sends, and asserts the stored document keeps
-// the index-physical field names that the ingestion pipeline currently emits
+// TestInsertChunks_WritesIngestionShape stands up an in-memory fake OpenSearch,
+// captures the bulk request that InsertChunks sends, and asserts the stored
+// document keeps the index-physical field names the ingestion pipeline emits
 // (docnm_kwd, content_with_weight, create_timestamp_flt, question_kwd,
 // important_kwd, page_num_int, position_int, kb_id overridden to datasetID).
-//
-// This guards the engine write boundary: when the suffixing is later moved
-// from ingestion into this boundary (T2), the document we send to OpenSearch
-// must stay byte-identical. No real cluster is required, so it runs in the
-// default unit tier.
+// No real cluster is required, so it runs in the default unit tier.
 func TestInsertChunks_WritesIngestionShape(t *testing.T) {
 	var bulkBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +61,7 @@ func TestInsertChunks_WritesIngestionShape(t *testing.T) {
 
 	engine := newTestEngine(t, srv.URL)
 
-	// Mirrors the shape produced by indexdoc.ProcessChunksForPipeline after T1
+	// Mirrors the shape produced by indexdoc.ProcessChunksForPipeline
 	// (kb_id is a plain string). InsertChunks overrides kb_id with datasetID,
 	// so the stored value is the datasetID regardless of the input form. The
 	// input kb_id ("producer-kb-1") is intentionally DISTINCT from datasetID

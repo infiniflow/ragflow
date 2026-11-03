@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
@@ -53,8 +54,11 @@ func NewEngine(ctx context.Context, osConfig config.OpenSearchConfig) (*Engine, 
 		MaxConnsPerHost:       500,
 		IdleConnTimeout:       60 * time.Second,
 		ResponseHeaderTimeout: 30 * time.Second,
-		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
-		ForceAttemptHTTP2:     true,
+		TLSClientConfig: &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			InsecureSkipVerify: osConfig.InsecureSkipVerify,
+		},
+		ForceAttemptHTTP2: true,
 	}
 
 	osCfg := opensearch.Config{
@@ -357,7 +361,7 @@ func (e *Engine) doBulk(ctx context.Context, body io.Reader, refresh string) (ma
 }
 
 func (e *Engine) doIndex(ctx context.Context, index, docID string, body io.Reader, refresh string) (map[string]interface{}, error) {
-	path := fmt.Sprintf("/%s/_doc/%s", index, docID)
+	path := fmt.Sprintf("/%s/_doc/%s", url.PathEscape(index), url.PathEscape(docID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, path, body)
 	if err != nil {
 		return nil, err
@@ -391,7 +395,7 @@ func (e *Engine) doIndex(ctx context.Context, index, docID string, body io.Reade
 }
 
 func (e *Engine) doUpdate(ctx context.Context, index, docID string, body io.Reader, refresh string, params map[string]string) (map[string]interface{}, error) {
-	path := fmt.Sprintf("/%s/_update/%s", index, docID)
+	path := fmt.Sprintf("/%s/_update/%s", url.PathEscape(index), url.PathEscape(docID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, path, body)
 	if err != nil {
 		return nil, err
@@ -431,7 +435,7 @@ func (e *Engine) doUpdate(ctx context.Context, index, docID string, body io.Read
 }
 
 func (e *Engine) doDelete(ctx context.Context, index, docID string) (map[string]interface{}, error) {
-	path := fmt.Sprintf("/%s/_doc/%s", index, docID)
+	path := fmt.Sprintf("/%s/_doc/%s", url.PathEscape(index), url.PathEscape(docID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, path, nil)
 	if err != nil {
 		return nil, err

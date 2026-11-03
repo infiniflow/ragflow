@@ -242,20 +242,19 @@ func TestSearchAfterPaginateSkipsDeepOffset(t *testing.T) {
 // the end of the index, the loop must stop, not loop forever waiting
 // for non-empty hits. We simulate a small index that runs out mid-skip.
 func TestSearchAfterPaginateExhaustsIndex(t *testing.T) {
-	// 500 total hits, offset=400, limit=10.
-	// Skip phase: one batch of 500 (the whole index). remainingSkip
-	// becomes 400-500 = -100, loop ends.
+	// 500 total hits, offset=1000, limit=10. The skip phase asks for
+	// 1000 hits but the cluster only has 500, so it sees a short batch
+	// and stops; the take phase then finds the index exhausted.
 	m := &mockFetcher{
 		scripted: []SearchResponse{
 			makeResponse(500, 0, 500),
-			// We don't expect a second call; if we get one the
-			// loop failed to terminate. Return empty to make
-			// that visible.
+			// We don't expect a response here to contain hits; the
+			// mock returns an empty response so the take phase stops.
 		},
 		scriptedTotal: 500,
 	}
 	ctx := t.Context()
-	got, total, err := searchAfterPaginate(ctx, map[string]interface{}{}, 400, 10, m.fetch)
+	got, total, err := searchAfterPaginate(ctx, map[string]interface{}{}, 1000, 10, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -303,19 +302,20 @@ func TestSearchAfterPaginateEmptyResult(t *testing.T) {
 // stop, rather than spinning. This is a defensive break in case
 // search_after returns identical hits on consecutive requests.
 func TestSearchAfterPaginateStopOnUnchangedCursor(t *testing.T) {
-	// First response advances the cursor; second response is the
-	// same cursor — loop should stop, NOT call a third time.
+	// The skip phase ends with cursor-1; the first take-phase response
+	// repeats that cursor, so the loop must stop, NOT call a third time.
 	resp1 := makeResponse(1000, 0, 5000)
 	resp1.Hits.Hits[999].Sort = []interface{}{"cursor-1"}
-	resp2 := makeResponse(1000, 1000, 0)
-	resp2.Hits.Hits[999].Sort = []interface{}{"cursor-1"} // same as resp1's last
+	resp2 := makeResponse(10, 1000, 0)
+	resp2.Hits.Hits[9].Sort = []interface{}{"cursor-1"} // same as resp1's last
 	m := &mockFetcher{
 		scripted:      []SearchResponse{resp1, resp2},
 		scriptedTotal: 5000,
 	}
-	// offset=500, limit=10.
+	// offset=1000 (one full-size skip batch), limit=20 so the take
+	// phase reaches the cursor check instead of stopping at the limit.
 	ctx := t.Context()
-	_, _, err := searchAfterPaginate(ctx, map[string]interface{}{}, 500, 10, m.fetch)
+	_, _, err := searchAfterPaginate(ctx, map[string]interface{}{}, 1000, 20, m.fetch)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -478,22 +478,6 @@ func TestBuildBoolQueryFromConditionIDFilter(t *testing.T) {
 		"id": 42,
 	})
 }
-
-// paginationGRID mirrors the (page_size, top) grid from
-// rag/nlp/search.py::Dealer._rerank_window tests. It covers the common page
-// sizes that do NOT divide 64 (the exact case the legacy min(..., 64) clamp
-// broke) plus tiny / large / page-aligned tops.
-var paginationGRID = func() []struct{ size, topK int } {
-	sizes := []int{1, 5, 7, 10, 30, 50, 64}
-	tops := []int{0, 5, 30, 50, 55, 64, 100, 1024}
-	out := make([]struct{ size, topK int }, 0, len(sizes)*len(tops))
-	for _, s := range sizes {
-		for _, t := range tops {
-			out = append(out, struct{ size, topK int }{s, t})
-		}
-	}
-	return out
-}()
 
 func TestFormatOrderedTagFeas(t *testing.T) {
 	tagFeas := map[string]any{

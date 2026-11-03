@@ -92,7 +92,12 @@ func Preprocess(sql string) string {
 // RunSQL posts SQL to `/_plugins/_sql`, translates the response into
 // chunk-shaped maps. Returns (nil, nil) on empty rows; (nil, error) when
 // retries exhausted.
-func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error) {
+//
+// The caller's format is ignored: OpenSearch only decodes SQL responses in
+// JDBC format (`schema`/`datarows`) and only paginates cursors in that format,
+// while the shared caller passes ES's "json". Sending it through would make
+// the plugin reject the request with "unknown response format: json".
+func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, _ string) ([]map[string]interface{}, error) {
 	if e == nil || e.client == nil {
 		return nil, fmt.Errorf("OpenSearch RunSQL: client not initialized")
 	}
@@ -106,7 +111,7 @@ func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, k
 
 	var lastErr error
 	for attempt := 0; attempt < osSQLRetryAttempts; attempt++ {
-		rows, err := e.runSQLOnce(ctx, sqlText, format)
+		rows, err := e.runSQLOnce(ctx, sqlText)
 		if err == nil {
 			return rows, nil
 		}
@@ -133,13 +138,13 @@ func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, k
 	return nil, fmt.Errorf("OpenSearch RunSQL: timeout after %d attempts: %w", osSQLRetryAttempts, lastErr)
 }
 
-func (e *Engine) runSQLOnce(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
+func (e *Engine) runSQLOnce(ctx context.Context, sqlText string) ([]map[string]interface{}, error) {
 	var (
 		out    []map[string]interface{}
 		cursor string
 	)
 	for page := 0; page < osSQLMaxPages; page++ {
-		rows, next, err := e.runSQLPage(ctx, sqlText, cursor, format)
+		rows, next, err := e.runSQLPage(ctx, sqlText, cursor)
 		if err != nil {
 			return nil, err
 		}
@@ -155,7 +160,9 @@ func (e *Engine) runSQLOnce(ctx context.Context, sqlText string, format string) 
 // runSQLPage executes one `/_plugins/_sql` round trip. The first page sends the
 // query with fetch_size; later pages send the returned cursor. Each page gets
 // its own timeout so a slow page does not consume the whole query budget.
-func (e *Engine) runSQLPage(ctx context.Context, sqlText string, cursor string, format string) ([]map[string]interface{}, string, error) {
+// Requests always use the JDBC format, the only one the plugin decodes into
+// schema/datarows and the only one that supports cursor pagination.
+func (e *Engine) runSQLPage(ctx context.Context, sqlText string, cursor string) ([]map[string]interface{}, string, error) {
 	pageCtx, cancel := context.WithTimeout(ctx, osSQLRequestTimeout)
 	defer cancel()
 
@@ -177,11 +184,9 @@ func (e *Engine) runSQLPage(ctx context.Context, sqlText string, cursor string, 
 		return nil, "", fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if format != "" {
-		q := req.URL.Query()
-		q.Set("format", format)
-		req.URL.RawQuery = q.Encode()
-	}
+	q := req.URL.Query()
+	q.Set("format", "jdbc")
+	req.URL.RawQuery = q.Encode()
 
 	res, err := e.client.Perform(req)
 	if err != nil {

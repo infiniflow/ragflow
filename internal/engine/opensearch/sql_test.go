@@ -41,10 +41,11 @@ import (
 // capturedRequest holds the request body the test server saw, for
 // assertions.
 type capturedRequest struct {
-	mu     sync.Mutex
-	path   string
-	body   string
-	method string
+	mu       sync.Mutex
+	path     string
+	body     string
+	method   string
+	rawQuery string
 }
 
 // newCapturingServer returns an httptest.Server that captures each
@@ -58,6 +59,7 @@ func newCapturingServer(t *testing.T, replyStatus int, replyBody string) (*httpt
 		capRequest.method = r.Method
 		capRequest.path = r.URL.Path
 		capRequest.body = string(body)
+		capRequest.rawQuery = r.URL.RawQuery
 		capRequest.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(replyStatus)
@@ -289,7 +291,8 @@ func TestRunSQL_NonTimeoutErrorSurfacesImmediately(t *testing.T) {
 }
 
 // TestRunSQL_RequestBodyHasFetchSizeAndFormat verifies the request body
-// includes fetch_size=128.
+// includes fetch_size=128 and that the caller's ES-style "json" format is
+// replaced with the JDBC format OpenSearch actually understands.
 func TestRunSQL_RequestBodyHasFetchSizeAndFormat(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleOSResponse)
 	e := newTestEngine(t, srv.URL)
@@ -300,7 +303,12 @@ func TestRunSQL_RequestBodyHasFetchSizeAndFormat(t *testing.T) {
 	}
 	cap.mu.Lock()
 	got := cap.body
+	query := cap.rawQuery
 	cap.mu.Unlock()
+
+	if query != "format=jdbc" {
+		t.Errorf("query: got %q, want %q", query, "format=jdbc")
+	}
 
 	var body map[string]interface{}
 	if err := json.Unmarshal([]byte(got), &body); err != nil {

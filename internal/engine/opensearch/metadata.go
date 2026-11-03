@@ -142,9 +142,27 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 		return nil, fmt.Errorf("failed to execute bulk request: %w", err)
 	}
 
-	// Check for errors in bulk response
-	if errors, ok := bulkResponse["errors"].(bool); ok && errors {
-		common.Warn("Bulk request had some errors")
+	// A bulk request can index some documents and reject others, so a
+	// top-level "errors": true must surface the failed items to the caller
+	// instead of only producing a warning.
+	if hasErrors, ok := bulkResponse["errors"].(bool); ok && hasErrors {
+		items, _ := bulkResponse["items"].([]interface{})
+		for _, item := range items {
+			itemMap, _ := item.(map[string]interface{})
+			for _, op := range itemMap {
+				opMap, _ := op.(map[string]interface{})
+				errInfo, ok := opMap["error"].(map[string]interface{})
+				if !ok {
+					continue
+				}
+				common.Error("Bulk metadata insert failed",
+					fmt.Errorf("reason: %v", errInfo["reason"]),
+					zap.Any("_id", opMap["_id"]),
+					zap.String("index_name", indexName))
+				return nil, fmt.Errorf("bulk metadata insert failed for _id %v: %v", opMap["_id"], errInfo["reason"])
+			}
+		}
+		return nil, fmt.Errorf("bulk metadata insert reported errors")
 	}
 
 	common.Info("OpenSearchConnection.InsertMetadata result", zap.String("index_name", indexName), zap.Int("count", len(metadata)))
