@@ -120,6 +120,10 @@ func BuildIngestLog(task *entity.IngestionTask, doc *entity.Document, run *entit
 		}
 		if run.ProcessEndAt != nil {
 			ev.EndTime = run.ProcessEndAt.UTC()
+		} else if run.ProcessBeginAt != nil && run.ProcessDuration > 0 {
+			// process_end_at is not persisted; recover the authoritative end time from
+			// the persisted begin time and duration so parse duration is still accurate.
+			ev.EndTime = run.ProcessBeginAt.Add(time.Duration(run.ProcessDuration * float64(time.Second))).UTC()
 		}
 		// BeginTime only for running/terminal events; created/scheduled must not
 		// leak a (possibly stale) claim time from a previous run.

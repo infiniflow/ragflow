@@ -41,10 +41,11 @@ type PipelineOperationLog struct {
 	Progress       float64    `gorm:"column:progress;default:0;index" json:"progress"`
 	ProgressMsg    *string    `gorm:"column:progress_msg;type:longtext" json:"progress_msg,omitempty"`
 	ProcessBeginAt *time.Time `gorm:"column:process_begin_at;index" json:"process_begin_at,omitempty"`
-	// ProcessEndAt is set when the run reaches a terminal state (completed /
-	// failed / stopped). It is the authoritative end time used to compute parse
-	// duration for ingestion observability events.
-	ProcessEndAt    *time.Time `gorm:"column:process_end_at;index" json:"process_end_at,omitempty"`
+	// ProcessEndAt is an in-memory-only field holding the run's terminal end time
+	// (completed / failed / stopped). It is NOT persisted: the authoritative end time is
+	// recovered from ProcessBeginAt + ProcessDuration when needed, so the schema needs no
+	// separate process_end_at column.
+	ProcessEndAt    *time.Time `gorm:"-" json:"process_end_at,omitempty"`
 	ProcessDuration float64    `gorm:"column:process_duration;default:0" json:"process_duration"`
 	DSL             JSONMap    `gorm:"column:dsl;type:longtext" json:"dsl,omitempty"`
 	TaskType        string     `gorm:"column:task_type;size:32;not null;default:''" json:"task_type"`
