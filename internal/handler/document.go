@@ -66,11 +66,11 @@ type documentServiceIface interface {
 	GetThumbnails(ctx context.Context, userID string, docIDs []string) (map[string]string, error)
 	GetDocumentImage(ctx context.Context, userID, imageID string) ([]byte, error)
 	GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error)
-	GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error)
+	GetDocumentThumbnail(ctx context.Context, docID string) ([]byte, error)
 	GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error)
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error)
 	GetDocumentArtifact(ctx context.Context, filename, userID string) (*document.ArtifactResponse, error)
-	GetDocumentPreview(ctx context.Context, userID, docID string) (*document.DocumentPreview, error)
+	GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error)
 	UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
 	UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error)
 	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error)
@@ -121,7 +121,7 @@ func NewDocumentHandler(documentService documentServiceIface, datasetService *da
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [get]
 func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
@@ -140,7 +140,7 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 		return
 	}
 
-	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: user.ID}, doc.ID, doc.KbID, permission.OperationRead); err != nil {
+	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationRead); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -224,12 +224,12 @@ func (h *DocumentHandler) GetDocumentImageForDocument(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentThumbnail(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
-	data, err := h.documentService.GetDocumentThumbnail(c.Request.Context(), user.ID, c.Param("id"))
+	data, err := h.documentService.GetDocumentThumbnail(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, "Image not found.")
 		return
@@ -297,7 +297,7 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
@@ -311,7 +311,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	preview, err := h.documentService.GetDocumentPreview(ctx, user.ID, docID)
+	preview, err := h.documentService.GetDocumentPreview(ctx, docID)
 	if err != nil {
 		switch {
 		case errors.Is(err, document.ErrPreviewDocumentNotFound):
@@ -325,8 +325,8 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 			// which names the object-store bucket/key -- in the server
 			// log only.
 			common.Error("GetDocumentPreview failed", err,
-				zap.String("doc_id", docID), zap.String("user_id", user.ID))
-			common.RespondError(c, common.CodeServerError, "Failed to load document preview")
+				zap.String("doc_id", docID), zap.String("user_id", permission.UserIDFromContext(ctx)))
+			common.RespondError(c, common.CodeServerError, nil, "Failed to load document preview")
 		}
 		return
 	}
@@ -353,7 +353,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [put]
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
@@ -373,7 +373,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		common.Respond(c, http.StatusBadRequest, 1, nil, "document not found!")
 		return
 	}
-	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: user.ID}, doc.ID, doc.KbID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -408,7 +408,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [delete]
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
@@ -428,7 +428,7 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 		common.Respond(c, http.StatusBadRequest, 1, nil, "document not found!")
 		return
 	}
-	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: user.ID}, doc.ID, doc.KbID, permission.OperationDeleteContent); err != nil {
+	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationDeleteContent); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -634,8 +634,6 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	page, _ := strconv.Atoi(pageStr)
 	pageSize, _ := strconv.Atoi(pageSizeStr)
 
-	userID := c.GetString("user_id")
-
 	if orderby := c.Query("orderby"); orderby != "" {
 		switch orderby {
 		case "create_time", "update_time", "name":
@@ -646,7 +644,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1040,7 +1038,7 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, fmt.Sprintf("Can't find the dataset with ID %s!", datasetID))
 		return
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1250,7 +1248,7 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 		common.RespondError(c, common.CodeNotFound, "Resource not found")
 		return
 	}
-	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: user.ID}, doc.ID, doc.KbID, permission.OperationRead); err != nil {
+	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationRead); err != nil {
 		respondPermissionError(c, err, true)
 		return
 	}
@@ -1414,7 +1412,7 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 	var err error
 	ctx := c.Request.Context()
 	if req.DatasetID != nil {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: *req.DatasetID}, permission.OperationRead); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: *req.DatasetID}, permission.OperationRead); err != nil {
 			respondPermissionError(c, err, false)
 			return
 		}
@@ -1472,7 +1470,7 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 	operationLog.UserID = userID
 
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1555,7 +1553,7 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1597,7 +1595,6 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetString("user_id")
 	if orderby := c.Query("orderby"); orderby != "" {
 		switch orderby {
 		case "create_time", "update_time", "name":
@@ -1608,7 +1605,7 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1643,7 +1640,7 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 }
 
 func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
@@ -1655,7 +1652,7 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1851,7 +1848,7 @@ func (h *DocumentHandler) UpdateDocumentMetadatas(c *gin.Context) {
 }
 
 func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
@@ -1863,7 +1860,7 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}

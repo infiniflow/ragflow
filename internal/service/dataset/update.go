@@ -200,7 +200,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			if isPipeline && effectivePipelineID != nil && strings.TrimSpace(*effectivePipelineID) != "" {
 				accessErr := permission.NewLockingDatabaseChecker(tx).CheckDependency(
 					ctx,
-					permission.Subject{UserID: userID, TenantID: lockedKB.TenantID},
 					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: lockedKB.ID},
 					permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effectivePipelineID)},
 					permission.OperationUpdate,
@@ -221,7 +220,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			if permissionValue != lockedKB.Permission {
 				accessErr := permission.NewLockingDatabaseChecker(tx).CheckResource(
 					ctx,
-					permission.Subject{UserID: userID},
 					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
 					permission.OperationShare,
 				)
@@ -564,7 +562,6 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 
 	err = permission.NewLockingDatabaseChecker(tx).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
 		permission.OperationUpdate,
 	)

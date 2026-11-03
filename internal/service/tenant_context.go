@@ -27,16 +27,18 @@ func requireCurrentTenantID(ctx context.Context, userID string) (string, error) 
 	if strings.TrimSpace(userID) == "" {
 		return "", permission.ErrUnauthenticated
 	}
-	if subject, ok := permission.SubjectFromContext(ctx); ok {
-		if subject.UserID != "" && subject.UserID != userID {
-			return "", permission.ErrInvalidSubject
+	contextUserID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if contextUserID != "" && contextUserID != userID {
+		return "", permission.ErrIdentityMismatch
+	}
+	if tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx)); tenantID != "" {
+		if contextUserID == "" {
+			ctx = permission.WithIdentity(ctx, userID, tenantID)
 		}
-		if tenantID := strings.TrimSpace(subject.TenantID); tenantID != "" {
-			if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantMember); err != nil {
-				return "", err
-			}
-			return tenantID, nil
+		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
+			return "", err
 		}
+		return tenantID, nil
 	}
 	tenantID, handled, err := resolveDefaultTenantIDEE(ctx, userID)
 	if err != nil {

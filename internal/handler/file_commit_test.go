@@ -196,7 +196,7 @@ func fileCommitRouter(h *FileCommitHandler, userID string) *gin.Engine {
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: userID})
-		c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: userID, TenantID: userID}))
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), userID, userID))
 	})
 	r.POST("/api/v1/folders/:folder_id/commits", h.CreateCommit)
 	r.GET("/api/v1/folders/:folder_id/commits", h.ListCommits)

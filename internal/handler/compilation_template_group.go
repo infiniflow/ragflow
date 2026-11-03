@@ -74,7 +74,7 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 	if tenantID == "" {
 		tenantID = user.ID
 	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(
-		c.Request.Context(), permission.Subject{UserID: user.ID}, tenantID, permission.TenantMember,
+		c.Request.Context(), tenantID, permission.TenantMember,
 	); err != nil {
 		respondPermissionError(c, err, false)
 		return

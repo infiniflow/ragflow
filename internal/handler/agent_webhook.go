@@ -100,7 +100,7 @@ type canvasLoader interface {
 }
 
 type agentWebhookCredentialManager interface {
-	Issue(ctx context.Context, subject permission.Subject, canvas *entity.UserCanvas) (string, error)
+	Issue(ctx context.Context, canvas *entity.UserCanvas) (string, error)
 	Resolve(ctx context.Context, canvasID, token string) (*entity.AgentWebhookCredential, error)
 	Revoke(ctx context.Context, canvasID, userID string) error
 }
@@ -144,7 +144,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 			return
 		}
 		userID = credential.UserID
-		ctx = permission.WithSubject(ctx, permission.Subject{UserID: credential.UserID, TenantID: credential.TenantID})
+		ctx = permission.WithIdentity(ctx, credential.UserID, credential.TenantID)
 		// The URL credential is transport authentication, not Agent input.
 		query := c.Request.URL.Query()
 		query.Del("credential")
@@ -293,9 +293,9 @@ func (h *AgentHandler) CreateWebhookCredential(c *gin.Context) {
 		common.RespondError(c, responseCode, responseMessage)
 		return
 	}
-	credential, err := h.webhookCredentialManager().Issue(ctx, permission.Subject{UserID: user.ID}, canvas)
+	credential, err := h.webhookCredentialManager().Issue(ctx, canvas)
 	if err != nil {
-		if errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrMembershipNotFound) || errors.Is(err, permission.ErrInvalidSubject) {
+		if errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrMembershipNotFound) || errors.Is(err, permission.ErrIdentityMismatch) {
 			common.Respond(c, http.StatusForbidden, common.CodeForbidden, nil, "You do not have permission to create a webhook credential for this agent.")
 			return
 		}
