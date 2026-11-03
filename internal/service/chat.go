@@ -355,6 +355,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	req["name"] = name
 
 	chat := buildCreateChatEntity(req, tenantID)
+	chat.UserID = userID
 	if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.chatDAO.Create(ctx, tx, chat); err != nil {
 			return err

@@ -148,6 +148,7 @@ func (s *SkillSpaceService) getSkillsFolderID(ctx context.Context, tenantID stri
 	folder := &entity.File{
 		ID:         folderID,
 		ParentID:   rootFolder.ID,
+		UserID:     tenantID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
 		Name:       "skills",
@@ -266,6 +267,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 	folder := &entity.File{
 		ID:         folderID,
 		ParentID:   skillsFolderID,
+		UserID:     userID,
 		TenantID:   tenantID,
 		CreatedBy:  userID,
 		Name:       spaceName,
@@ -277,6 +279,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 	// Create the space
 	space := &entity.SkillSpace{
 		ID:          spaceID,
+		UserID:      userID,
 		TenantID:    tenantID,
 		Name:        spaceName,
 		FolderID:    folderID,

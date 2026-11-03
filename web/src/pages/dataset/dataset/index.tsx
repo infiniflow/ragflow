@@ -29,6 +29,7 @@ import { MetadataType } from '../components/metedata/constant';
 import { useManageMetadata } from '../components/metedata/hooks/use-manage-modal';
 import { ManageMetadataModal } from '../components/metedata/manage-modal';
 import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
+import { CancelParsingDropdown } from './cancel-parsing-dropdown';
 import { DatasetTable } from './dataset-table';
 import { useBulkOperateDataset } from './use-bulk-operate-dataset';
 import { useCreateEmptyDocument } from './use-create-empty-document';
@@ -177,22 +178,25 @@ export default function Dataset() {
             </div>
           }
         >
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="default" disabled={datasetEditButtonDisabled}>
-                <LucidePlus />
-                {t('knowledgeDetails.addFile')}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-auto min-w-40" align="end">
-              <DropdownMenuItem onClick={showDocumentUploadModal}>
-                {t('fileManager.uploadFile')}
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={showCreateModal}>
-                {t('knowledgeDetails.emptyFiles')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-2">
+            <CancelParsingDropdown />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="default" disabled={datasetEditButtonDisabled}>
+                  <LucidePlus />
+                  {t('knowledgeDetails.addFile')}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-auto min-w-40" align="end">
+                <DropdownMenuItem onClick={showDocumentUploadModal}>
+                  {t('fileManager.uploadFile')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={showCreateModal}>
+                  {t('knowledgeDetails.emptyFiles')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </ListFilterBar>
 
         {rowSelectionIsEmpty || (

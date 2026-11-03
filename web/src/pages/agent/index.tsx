@@ -35,7 +35,6 @@ import {
   Compass,
   History,
   LaptopMinimalCheck,
-  Logs,
   MessageSquareCode,
   ScreenShare,
   Settings,
@@ -385,14 +384,6 @@ export default function Agent() {
                 {t('flow.historyVersion')}
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
-              {isPipeline || (
-                <AgentDropdownMenuItem
-                  onClick={() => navigateToAgentLogs(id as string)()}
-                >
-                  <Logs />
-                  {t('flow.log')}
-                </AgentDropdownMenuItem>
-              )}
               <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />

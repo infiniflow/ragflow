@@ -247,6 +247,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 			doc := &entity.Document{
 				ID:                common.GenerateUUID(),
 				KbID:              kb.ID,
+				UserID:            userID,
 				ParserID:          parserID,
 				PipelineID:        pipelineID,
 				PipelineVersionID: kb.PipelineVersionID,

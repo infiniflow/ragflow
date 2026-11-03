@@ -283,6 +283,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		ID:                kbID,
 		PipelineVersionID: pipelineVersionID,
 		Name:              name,
+		UserID:            userID,
 		TenantID:          tenantID,
 		CreatedBy:         userID,
 		ParserID:          parserID,
