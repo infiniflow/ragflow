@@ -349,6 +349,11 @@ func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.Can
 	if len(names) == 0 {
 		return map[string]any{"result": script}
 	}
+	// Resolve every name up front, then substitute in a single pass over the
+	// original script. Substituting name by name would rescan what an earlier
+	// iteration inserted: with x = "{{ y }}" and y = "bar", "{{x}} and {{y}}"
+	// would come out as "bar and bar" instead of "{{ y }} and bar".
+	replacements := make(map[string]string, len(names))
 	for _, n := range names {
 		var value any
 		if v, ok := inputs[n]; ok {
@@ -358,14 +363,24 @@ func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.Can
 		} else {
 			value = ""
 		}
-		// placeholderPattern admits optional whitespace inside the braces, so the
-		// substitution has to honour every spelling it accepts ("{{x}}", "{{ x }}")
-		// rather than only the canonical one.
-		pattern := regexp.MustCompile(`\{\{\s*` + regexp.QuoteMeta(n) + `\s*\}\}`)
-		replacement := formatValue(value)
-		// A value is data, not a replacement template: "$1" must stay literal.
-		script = pattern.ReplaceAllStringFunc(script, func(string) string { return replacement })
+		replacements[n] = formatValue(value)
 	}
+	// placeholderPattern admits optional whitespace inside the braces, so the
+	// substitution honours every spelling it accepts ("{{x}}", "{{ x }}") rather
+	// than only the canonical one.
+	//
+	// ReplaceAllStringFunc keeps a value's own "$1" literal: it is data, not a
+	// replacement template.
+	script = placeholderPattern.ReplaceAllStringFunc(script, func(match string) string {
+		sub := placeholderPattern.FindStringSubmatch(match)
+		if sub == nil {
+			return match
+		}
+		if replacement, ok := replacements[sub[1]]; ok {
+			return replacement
+		}
+		return match
+	})
 	return map[string]any{"result": script}
 }
 
