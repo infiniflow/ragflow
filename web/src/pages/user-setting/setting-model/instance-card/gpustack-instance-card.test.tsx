@@ -9,7 +9,13 @@ const mockAddModel = jest.fn();
 const mockPatchModel = jest.fn();
 const mockUpdateInstance = jest.fn();
 let mockInstanceModels: any[] = [];
-let mockInstanceModelsState = { loading: false, isSuccess: true };
+const loadedModelsState = {
+  loading: false,
+  isSuccess: true,
+  isFetchedAfterMount: true,
+};
+let mockInstanceModelsState = loadedModelsState;
+let mockDiscovering = false;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -19,7 +25,7 @@ jest.mock('react-i18next', () => ({
 }));
 jest.mock('@/hooks/use-llm-request', () => ({
   useListProviderModels: () => ({
-    loading: false,
+    loading: mockDiscovering,
     listProviderModels: mockDiscover,
   }),
   useAddProviderInstance: () => ({ addProviderInstance: mockAddInstance }),
@@ -89,7 +95,8 @@ async function connect() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockInstanceModels = [];
-  mockInstanceModelsState = { loading: false, isSuccess: true };
+  mockInstanceModelsState = loadedModelsState;
+  mockDiscovering = false;
 });
 
 describe('GPUStackInstanceCard draft', () => {
@@ -117,6 +124,23 @@ describe('GPUStackInstanceCard draft', () => {
     fillForm('taken');
     expect(screen.getByText('instanceNameExists')).toBeInTheDocument();
     expect(screen.getByTestId('gpustack-connect')).toBeDisabled();
+  });
+
+  it('cannot add while discovering again', async () => {
+    mockDiscover.mockResolvedValue({ code: 0, data: served });
+    const draft = () => (
+      <GPUStackInstanceCard
+        providerName="GPUStack"
+        instance={{ id: '', instance_name: '' } as any}
+        isDraft
+      />
+    );
+    const { rerender } = render(draft());
+    await connect();
+    expect(screen.getByTestId('gpustack-add-models')).toBeEnabled();
+    mockDiscovering = true;
+    rerender(draft());
+    expect(screen.getByTestId('gpustack-add-models')).toBeDisabled();
   });
 
   it('drops a pending result when the credentials change', async () => {
@@ -333,8 +357,13 @@ describe('GPUStackInstanceCard saved', () => {
   });
 
   it.each([
-    ['loading', { loading: true, isSuccess: true }, false],
-    ['failed to load', { loading: false, isSuccess: false }, true],
+    ['loading', { ...loadedModelsState, loading: true }, false],
+    [
+      'not fetched',
+      { ...loadedModelsState, isFetchedAfterMount: false },
+      false,
+    ],
+    ['failed to load', { ...loadedModelsState, isSuccess: false }, true],
   ])(
     'cannot save while the models have %s',
     async (_name, state, explained) => {

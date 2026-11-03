@@ -242,6 +242,7 @@ export const useFetchInstanceModels = (
     data,
     isFetching: loading,
     isSuccess,
+    isFetchedAfterMount,
   } = useQuery<IInstanceModel[]>({
     queryKey: LlmKeys.instanceModels(providerName, instanceName),
     initialData: [],
@@ -259,7 +260,7 @@ export const useFetchInstanceModels = (
     },
   });
 
-  return { data, loading, isSuccess };
+  return { data, loading, isSuccess, isFetchedAfterMount };
 };
 
 export type LlmItem = { name: string; logo: string } & IMyLlmValue;

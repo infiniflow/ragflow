@@ -302,6 +302,7 @@ export const GPUStackInstanceCard = forwardRef<
     data: instanceModels,
     loading: instanceModelsLoading,
     isSuccess: instanceModelsLoaded,
+    isFetchedAfterMount: instanceModelsFetched,
   } = useFetchInstanceModels(
     providerName,
     isDraft ? '' : instance.instance_name,
@@ -409,7 +410,9 @@ export const GPUStackInstanceCard = forwardRef<
   }, []);
 
   const getSavePayload = useCallback(() => {
-    if (!isDraft || !nameValid || selectedModels.length === 0) return null;
+    if (!isDraft || !nameValid || discovering || !selectedModels.length) {
+      return null;
+    }
     return {
       payload: {
         llm_factory: providerName,
@@ -425,6 +428,7 @@ export const GPUStackInstanceCard = forwardRef<
   }, [
     apiKey,
     baseUrl,
+    discovering,
     isDraft,
     nameValid,
     providerName,
@@ -566,7 +570,9 @@ export const GPUStackInstanceCard = forwardRef<
 
   // Saving sends the full model list and the server deletes anything missing
   // from it, so never save the placeholder list used before the models load.
-  const instanceModelsReady = instanceModelsLoaded && !instanceModelsLoading;
+  // That list counts as a success, and a paused fetch offline is not "loading".
+  const instanceModelsReady =
+    instanceModelsFetched && instanceModelsLoaded && !instanceModelsLoading;
 
   const connectionForm = (
     <div className="flex flex-col gap-3">
@@ -674,7 +680,12 @@ export const GPUStackInstanceCard = forwardRef<
             <div>
               <Button
                 onClick={addConnection}
-                disabled={saving || selectedModels.length === 0 || !nameValid}
+                disabled={
+                  saving ||
+                  discovering ||
+                  selectedModels.length === 0 ||
+                  !nameValid
+                }
                 data-testid="gpustack-add-models"
               >
                 {saving && <Loader2 className="size-4 animate-spin" />}
