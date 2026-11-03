@@ -1,6 +1,8 @@
 package models
 
 import (
+	"bytes"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -34,8 +36,13 @@ func TestSoMarkVerifyOCRConnectionStopsAfterTaskAccepted(t *testing.T) {
 				if part.FormName() == "api_key" {
 					apiKey = string(value)
 				}
-				if part.FormName() == "file" && !strings.HasPrefix(string(value), "\x89PNG\r\n\x1a\n") {
-					t.Errorf("probe file does not contain a PNG")
+				if part.FormName() == "file" {
+					probe, decodeErr := png.Decode(bytes.NewReader(value))
+					if decodeErr != nil {
+						t.Errorf("decode verification PNG: %v", decodeErr)
+					} else if bounds := probe.Bounds(); bounds.Dx() != 1 || bounds.Dy() != 1 {
+						t.Errorf("verification PNG bounds = %v, want 1x1", bounds)
+					}
 				}
 			}
 			if apiKey != "somark-test-key" {
