@@ -41,6 +41,8 @@ An invitation awaiting acceptance does not grant access. Private resources remai
 
 Members lose team-based access when the owner makes the resource private, they leave the team, or the owner removes them.
 
+Document creators retain permission to read, update, and delete their own documents, even after team-based access ends. This does not grant access to the entire Dataset or documents created by other members.
+
 Joining another team does not share resources from a member's own workspace with that team.
 
 ## Member Permissions

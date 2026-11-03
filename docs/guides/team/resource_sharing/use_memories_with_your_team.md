@@ -16,7 +16,7 @@ See [Memory configuration: Sharing Scope](../../memory/configure_memory.md#shari
 
 Use **Forget** to stop a message from appearing in retrieval results without immediately deleting its record.
 
-Members can also delete the shared Memory. This removes the Memory and its messages for everyone using it. Only the owner can change its sharing scope.
+Members can also delete the shared Memory. Once deleted, it is no longer available to any team member. Only the owner can change its sharing scope.
 
 ## Models Used by Shared Memories
 
