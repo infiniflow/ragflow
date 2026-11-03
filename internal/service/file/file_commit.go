@@ -338,38 +338,29 @@ func (s *FileCommitService) authorizeCommitFiles(ctx context.Context, tx *gorm.D
 	for _, file := range files {
 		existing[file.ID] = file
 	}
+	scoped := make(map[string]*entity.File, len(existing))
 	for _, id := range ids {
-		if _, ok := existing[id]; ok {
-			continue
-		}
+		hasNonDelete := false
 		for _, operation := range operations[id] {
 			if operation != "delete" {
-				return fmt.Errorf("%w: file %s not found in folder %s", permission.ErrPermissionDenied, id, folderID)
+				hasNonDelete = true
+				break
 			}
 		}
-		// Delete-only for an ID with no live row: the tombstone below is
-		// written without touching the file table, so the ID must be one this
-		// folder actually committed before (a file since removed or moved
-		// away). An ID absent from the previous tree never belonged to this
-		// history, and minting a tombstone for it would surface in the global
-		// per-file version history.
-		if _, ok := treeState[id]; !ok {
-			return fmt.Errorf("%w: file %s not found in folder %s", permission.ErrPermissionDenied, id, folderID)
-		}
-	}
-
-	// A delete-only change records a tombstone in tree_state and never writes
-	// the file row, so its ID may already be gone, or its live row may have
-	// drifted to another folder since the commit that introduced it. Scope
-	// validation applies only to operations that write the file row; a live
-	// row still inside the folder is rejected later by the ErrDeleteLiveFile
-	// check.
-	scoped := make(map[string]*entity.File, len(existing))
-	for id, file := range existing {
-		for _, operation := range operations[id] {
-			if operation != "delete" {
-				scoped[id] = file
-				break
+		if hasNonDelete {
+			file, ok := existing[id]
+			if !ok {
+				return fmt.Errorf("%w: file %s not found in folder %s", permission.ErrPermissionDenied, id, folderID)
+			}
+			scoped[id] = file
+		} else {
+			// A delete-only change records a tombstone in tree_state and never
+			// writes the file row, so the ID must be one this folder actually
+			// committed before (a file since removed or moved away). An ID
+			// absent from the previous tree never belonged to this history,
+			// whether it still has a live row elsewhere or not.
+			if _, ok := treeState[id]; !ok {
+				return fmt.Errorf("%w: file %s not found in folder %s", permission.ErrPermissionDenied, id, folderID)
 			}
 		}
 	}

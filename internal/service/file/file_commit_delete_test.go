@@ -175,3 +175,32 @@ func TestCreateCommit_RejectsDeleteOfUnknownFile(t *testing.T) {
 		t.Fatalf("expected no tombstone for the unknown file, found %d commit items", commits)
 	}
 }
+
+// An existing file outside the target folder that never entered this folder's
+// history (absent from treeState) must be rejected on delete, even though its
+// live row exists in the file table.
+func TestCreateCommit_RejectsDeleteOfOutOfFolderFileAbsentFromTree(t *testing.T) {
+	db := newCommitDeleteTestDB(t)
+	tree := `{"f1":{"hash":"h1","location":".objects/h1","name":"a.txt","size":3,"status":"1","parent_id":"folder-1"}}`
+	parent := &entity.FileCommit{ID: "c1", FolderID: "folder-1", Message: "init", AuthorID: "u1", TreeState: &tree}
+	if err := db.Create(parent).Error; err != nil {
+		t.Fatalf("seed parent commit: %v", err)
+	}
+	seedFolder(t, db, "folder-1", "")
+	seedFolder(t, db, "other-folder", "")
+	seedLiveFile(t, db, "alien-file", "other-folder")
+
+	if _, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "delete alien", []entity.FileChange{
+		{FileID: "alien-file", FileName: "alien.txt", Operation: "delete"},
+	}); !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("delete of out-of-folder file absent from tree: err = %v, want permission.ErrPermissionDenied", err)
+	}
+
+	var commits int64
+	if err := db.Model(&entity.FileCommitItem{}).Where("file_id = ?", "alien-file").Count(&commits).Error; err != nil {
+		t.Fatalf("count commit items: %v", err)
+	}
+	if commits != 0 {
+		t.Fatalf("expected no tombstone for alien file, found %d commit items", commits)
+	}
+}
