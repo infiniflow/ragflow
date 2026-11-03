@@ -811,3 +811,40 @@ func TestDeleteChunksSurfacesPartialFailures(t *testing.T) {
 		})
 	}
 }
+
+// TestDeleteMetadataSurfacesPartialFailures guards the metadata side of the
+// same contract: delete_by_query answering 200 with timed_out or failures set
+// must surface as an error, otherwise RemoveDocumentKeepFile can leave orphan
+// ragflow_doc_meta_<tenant> rows (#20659).
+func TestDeleteMetadataSurfacesPartialFailures(t *testing.T) {
+	cases := map[string]string{
+		"timed_out": `{"deleted":2,"timed_out":true,"failures":[]}`,
+		"failures":  `{"deleted":2,"timed_out":false,"failures":[{"index":"ragflow_doc_meta_tenant","status":500}]}`,
+	}
+	for name, response := range cases {
+		t.Run(name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("X-Elastic-Product", "Elasticsearch")
+				if r.Method == http.MethodHead {
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(response))
+			}))
+			defer server.Close()
+			client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+			if err != nil {
+				t.Fatalf("new elasticsearch client: %v", err)
+			}
+			engine := &Engine{client: client}
+			deleted, err := engine.DeleteMetadata(t.Context(), map[string]interface{}{"kb_id": "kb-1", "id": "doc-1"}, "tenant")
+			if err == nil {
+				t.Fatal("DeleteMetadata returned nil error for a partial delete_by_query response")
+			}
+			if deleted != 2 {
+				t.Fatalf("deleted=%d, want 2", deleted)
+			}
+		})
+	}
+}

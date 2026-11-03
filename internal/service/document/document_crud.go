@@ -284,7 +284,11 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 		}
 	}
 
-	if err := s.deleteDocEngineData(ctx, docID, kb.TenantID, doc.KbID); err != nil {
+	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
+	if typeErr != nil {
+		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
+	}
+	if err := s.deleteDocEngineData(ctx, docID, kb.TenantID, doc.KbID, variants, taskTypes); err != nil {
 		return err
 	}
 	if err = s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
@@ -313,7 +317,8 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	if err != nil {
 		return err
 	}
-	if _, _, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID); typeErr != nil {
+	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
+	if typeErr != nil {
 		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
 	}
 	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
@@ -334,7 +339,7 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		}
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
 	}
-	if err := s.deleteDocEngineData(ctx, docID, kb.TenantID, doc.KbID); err != nil {
+	if err := s.deleteDocEngineData(ctx, docID, kb.TenantID, doc.KbID, variants, taskTypes); err != nil {
 		return err
 	}
 	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
@@ -395,20 +400,21 @@ func (s *DocumentService) resolveDocAndKB(ctx context.Context, docID string) (*e
 }
 
 // deleteDocEngineData removes chunks and metadata from the document engine.
-// No-op when the engine is nil.
-func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenantID, kbID string) error {
+// No-op when the engine is nil. Callers pass the resolved compile variants and
+// task types so the file-delete hot path does not search for them twice.
+func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenantID, kbID string, variants, taskTypes []string) error {
 	if s.docEngine == nil {
 		return nil
 	}
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, tenantID, kbID, docID)
-	if typeErr != nil {
-		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
-	}
 	deleteCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
 	_, delErr := s.docEngine.DeleteChunks(deleteCtx, map[string]interface{}{"doc_id": docID}, indexName, kbID)
 	if delErr != nil && deleteCtx.Err() == nil {
-		_, delErr = s.docEngine.DeleteChunks(deleteCtx, map[string]interface{}{"doc_id": docID}, indexName, kbID)
+		// Retry once under a fresh deadline: reusing deleteCtx would start the
+		// second attempt with whatever time the first attempt left over.
+		retryCtx, retryCancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+		_, delErr = s.docEngine.DeleteChunks(retryCtx, map[string]interface{}{"doc_id": docID}, indexName, kbID)
+		retryCancel()
 	}
 	cancel()
 	if delErr != nil {

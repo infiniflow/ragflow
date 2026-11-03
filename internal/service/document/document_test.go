@@ -4697,6 +4697,37 @@ func TestRemoveDocumentKeepFileKeepsRowOnMetadataFailure(t *testing.T) {
 	}
 }
 
+// TestDeleteDocumentFullKeepsDocumentWhenMetadataDeletionFails pins the
+// shared-helper contract on the full path too: a metadata cleanup failure
+// surfaces before the document row is removed, so a retry can complete the
+// delete instead of leaving orphan ragflow_doc_meta_<tenant> records.
+func TestDeleteDocumentFullKeepsDocumentWhenMetadataDeletionFails(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 30, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
+	engine := &keepFileCleanupDocEngine{deleteMetadataError: fmt.Errorf("metadata unavailable")}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
+	if err := svc.deleteDocumentFull(t.Context(), "doc-1"); err == nil {
+		t.Fatal("expected metadata error")
+	}
+	if _, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document row must remain after metadata failure: %v", err)
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kb.DocNum != 1 {
+		t.Fatalf("doc_num=%d, want 1", kb.DocNum)
+	}
+	if engine.deleteMetadataCalls != 1 {
+		t.Fatalf("metadata calls=%d, want 1", engine.deleteMetadataCalls)
+	}
+}
+
 func TestRemoveDocumentKeepFileRetriesEngineFailure(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
