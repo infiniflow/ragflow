@@ -76,6 +76,20 @@ export function formatStandardDate(date: ConfigType) {
   return parsedDate.format('YYYY-MM-DD');
 }
 
+export function formatIsoDateTime(timestamp_ms: number): string {
+  if (!timestamp_ms) {
+    return '';
+  }
+  return dayjs(timestamp_ms).format('YYYY-MM-DDTHH:mm:ssZ');
+}
+
+export function formatDateToLocal(date: ConfigType) {
+  if (!date) {
+    return '';
+  }
+  return dayjs(date).format('DD/MM/YYYY HH:mm:ss');
+}
+
 export function formatSecondsToHumanReadable(seconds: number): string {
   if (isNaN(seconds) || seconds < 0) {
     return '0s';

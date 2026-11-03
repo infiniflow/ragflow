@@ -91,6 +91,7 @@ export interface ISearchAppProps {
   id: string;
   name: string;
   nickname: string;
+  operator_permission?: number;
   status: string;
   tenant_avatar: any;
   tenant_id: string;
