@@ -319,9 +319,12 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) 
 // document via the office_oxide-backed DOCParser. The parser only emits JSON
 // payloads, so the preview text is flattened from the JSON items.
 func extractDOCPreviewText(ctx context.Context, filename string, data []byte) (string, error) {
-	p, err := parser.GetTextOnlyParser(utility.FileTypeDOC)
+	p, actual, err := parser.GetTextOnlyParser(utility.FileTypeDOC, data)
 	if err != nil {
 		return "", err
+	}
+	if actual != utility.FileTypeDOC {
+		common.Warn(fmt.Sprintf("file %q: requested format doc; detected %s; continuing with the %s parser", filename, actual, actual))
 	}
 	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
