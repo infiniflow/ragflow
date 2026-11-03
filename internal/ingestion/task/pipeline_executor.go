@@ -78,6 +78,8 @@ type PipelineExecutor struct {
 	docBulkSize int
 	deps        *ingestion.Deps
 
+	resolvedVersionID string
+
 	indexWriter      *chunkIndexWriter
 	deleteChunksFunc DeleteChunksFunc
 	loadDSLFunc      func(ctx context.Context, canvasID string) (string, string, error)
@@ -238,6 +240,9 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 	if correctedID != "" {
 		s.canvasID = correctedID
+	}
+	if s.resolvedVersionID != "" && !s.taskCtx.IsDebug() {
+		s.persistResolvedPipeline(context.WithoutCancel(ctx))
 	}
 
 	pipelineOutput, pipelineDSL, err := s.runPipelineFunc(ctx, dsl)
@@ -863,7 +868,8 @@ type PipelineLogInput struct {
 	// (ingestion_task.pipeline_log_id). The public writer requires it and updates
 	// exactly that row, never creating a second one — so a superseded run whose
 	// row was deleted cannot adopt the replacement run's row.
-	PipelineLogID string
+	PipelineLogID     string
+	PipelineVersionID string
 	// TerminalDuration, when set, is this run's final duration in seconds,
 	// measured from the document's process_begin_at. updateOpenLogRow records
 	// it instead of the reloaded document's last mid-run value, so
@@ -1010,6 +1016,9 @@ func updateOpenLogRow(ctx context.Context, db *gorm.DB, input PipelineLogInput, 
 	if doc.Name != nil {
 		updates["document_name"] = *doc.Name
 	}
+	if input.PipelineVersionID != "" && pipelineID != nil {
+		updates["pipeline_version_id"] = input.PipelineVersionID
+	}
 	if input.TerminalDuration != nil {
 		updates["process_duration"] = *input.TerminalDuration
 	}
@@ -1045,17 +1054,28 @@ func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, d
 		pipelineLogID = *s.taskCtx.IngestionTask.PipelineLogID
 	}
 	if err := recordPipelineLog(ctx, db, PipelineLogInput{
-		TenantID:         s.Tenant().ID,
-		KbID:             s.KB().ID,
-		DocumentID:       docID,
-		PipelineID:       pipelineID,
-		DSL:              dsl,
-		Status:           status,
-		Document:         s.taskCtx.Doc,
-		PipelineLogID:    pipelineLogID,
-		TerminalDuration: terminalDuration,
+		TenantID:          s.Tenant().ID,
+		KbID:              s.KB().ID,
+		DocumentID:        docID,
+		PipelineID:        pipelineID,
+		DSL:               dsl,
+		Status:            status,
+		Document:          s.taskCtx.Doc,
+		PipelineLogID:     pipelineLogID,
+		PipelineVersionID: s.resolvedVersionID,
+		TerminalDuration:  terminalDuration,
 	}); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
+	}
+}
+
+func (s *PipelineExecutor) persistResolvedPipeline(ctx context.Context) {
+	task := s.taskCtx.IngestionTask
+	if task == nil || task.PipelineLogID == nil || *task.PipelineLogID == "" || s.deps == nil || s.deps.DB == nil {
+		return
+	}
+	if err := dao.NewPipelineOperationLogDAO().SetResolvedPipeline(ctx, s.deps.DB, *task.PipelineLogID, s.canvasID, s.resolvedVersionID); err != nil {
+		common.Warn(fmt.Sprintf("persist pipeline %s version %s for run %s: %v", s.canvasID, s.resolvedVersionID, *task.PipelineLogID, err))
 	}
 }
 
@@ -1066,6 +1086,7 @@ func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID strin
 	if canvasID == "" {
 		return "", "", fmt.Errorf("pipeline executor: empty canvas id")
 	}
+	s.resolvedVersionID = ""
 	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, s.deps.DB, canvasID)
 	if err != nil {
 		return "", "", fmt.Errorf("load canvas %s: %w", canvasID, err)
@@ -1086,10 +1107,11 @@ func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID strin
 		// resolves that exact version; an empty pin resolves the latest published
 		// version. A missing or mis-owned version returns ErrPipelineVersionMissing
 		// so the parse task fails and the file enters an unparseable Missing state.
-		raw, verr := dao.LoadCanvasVersionDSL(ctx, s.deps.DB, canvasID, s.taskCtx.PipelineVersionID)
+		raw, resolvedVersionID, verr := dao.LoadCanvasVersionDSL(ctx, s.deps.DB, canvasID, s.taskCtx.PipelineVersionID)
 		if verr != nil {
 			return "", "", verr
 		}
+		s.resolvedVersionID = resolvedVersionID
 		return string(raw), canvasID, nil
 	}
 

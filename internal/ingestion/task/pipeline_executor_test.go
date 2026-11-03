@@ -408,6 +408,51 @@ func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
 	}
 }
 
+func TestRecordPipelineLogKeepsResolvedVersionWhenTerminalWriterHasNone(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+	version := "ver-1"
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:                "run-1",
+		DocumentID:        "doc-1",
+		TenantID:          "tenant-1",
+		KbID:              "kb-1",
+		OperationStatus:   string(entity.TaskStatusRunning),
+		PipelineVersionID: &version,
+	}).Error; err != nil {
+		t.Fatalf("seed pipeline log: %v", err)
+	}
+
+	docName := "terminal.pdf"
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:   "tenant-1",
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     string(entity.TaskStatusFail),
+		Document: entity.Document{
+			ID:           "doc-1",
+			KbID:         "kb-1",
+			ParserID:     "naive",
+			ParserConfig: entity.JSONMap{},
+			SourceType:   "local",
+			Type:         "pdf",
+			Name:         &docName,
+			Suffix:       ".pdf",
+		},
+		PipelineLogID: "run-1",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "id = ?", "run-1").Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if log.PipelineVersionID == nil || *log.PipelineVersionID != version {
+		t.Fatalf("PipelineVersionID = %v, want the mid-run version %q", log.PipelineVersionID, version)
+	}
+}
+
 func TestRecordPipelineLogRejectsMissingRunIdentity(t *testing.T) {
 	err := RecordPipelineLog(t.Context(), nil, PipelineLogInput{DocumentID: "doc-1", Status: "3"})
 	if !errors.Is(err, ErrMissingRunIdentity) {
@@ -1472,3 +1517,70 @@ func TestBuildLogDSL_PreviewKeepsOutputs(t *testing.T) {
 		t.Error("persisted log DSL must NOT carry business data even when a ResultSink preview exists")
 	}
 }
+
+func TestExecutePersistsResolvedVersionBeforeRun(t *testing.T) {
+	restore := setupPipelineExecutorTestDB(t)
+	defer restore()
+	db := dao.DB
+	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.UserCanvasVersion{}); err != nil {
+		t.Fatalf("migrate canvas tables: %v", err)
+	}
+	release := true
+	if err := db.Create(&entity.UserCanvas{
+		ID:             "canvas-1",
+		UserID:         "user-1",
+		CanvasCategory: "dataflow_canvas",
+	}).Error; err != nil {
+		t.Fatalf("seed canvas: %v", err)
+	}
+	if err := db.Create(&entity.UserCanvasVersion{
+		ID:           "ver-1",
+		UserCanvasID: "canvas-1",
+		DSL:          entity.JSONMap{"nodes": []any{}, "edges": []any{}},
+		Release:      release,
+		BaseModel:    entity.BaseModel{CreateTime: int64PtrForTest(1000)},
+	}).Error; err != nil {
+		t.Fatalf("seed canvas version: %v", err)
+	}
+
+	logID := "run-1"
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              logID,
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		DocumentName:    "test-doc.pdf",
+		DocumentSuffix:  ".pdf",
+		DocumentType:    "pdf",
+		SourceFrom:      "local",
+		OperationStatus: string(entity.TaskStatusRunning),
+		TaskType:        string(entity.PipelineTaskTypeParse),
+	}).Error; err != nil {
+		t.Fatalf("seed pipeline log: %v", err)
+	}
+
+	taskCtx := makeTaskCtx()
+	taskCtx.IngestionTask.PipelineLogID = &logID
+	exec := mustNewPipelineExecutor(t, taskCtx, "canvas-1", 0)
+	exec.WithRunPipelineFunc(func(context.Context, string) (map[string]any, string, error) {
+		return nil, "", errors.New("pipeline failed")
+	})
+
+	if _, err := exec.Execute(t.Context()); err == nil {
+		t.Fatal("expected the injected pipeline failure")
+	}
+
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", logID).Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.PipelineID == nil || *run.PipelineID != "canvas-1" {
+		t.Fatalf("PipelineID = %v, want canvas-1 after a failed run", run.PipelineID)
+	}
+	if run.PipelineVersionID == nil || *run.PipelineVersionID != "ver-1" {
+		t.Fatalf("PipelineVersionID = %v, want the latest resolved version after a failed run", run.PipelineVersionID)
+	}
+}
+
+func int64PtrForTest(v int64) *int64 { return &v }

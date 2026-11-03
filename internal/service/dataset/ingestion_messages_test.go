@@ -462,3 +462,43 @@ func TestListIngestionLogsRejectsUnknownLogType(t *testing.T) {
 		})
 	}
 }
+
+func TestListIngestionLogsExposesPipelineVersionID(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
+		t.Fatalf("migrate pipeline operation log: %v", err)
+	}
+	insertCompilationOwnerKB(t, "kb-1", "user-1")
+	runCount := 1
+	versionID := "ver-1"
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:                "run-1",
+		DocumentID:        "doc-1",
+		TenantID:          "user-1",
+		KbID:              "kb-1",
+		ParserID:          "naive",
+		DocumentName:      "doc.txt",
+		DocumentSuffix:    ".txt",
+		DocumentType:      "text",
+		SourceFrom:        "local",
+		TaskType:          string(entity.PipelineTaskTypeParse),
+		OperationStatus:   string(entity.TaskStatusDone),
+		RunCount:          &runCount,
+		PipelineVersionID: &versionID,
+	}).Error; err != nil {
+		t.Fatalf("insert versioned run: %v", err)
+	}
+
+	result, code, err := NewDatasetService().ListIngestionLogs(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", 1, 30, nil, nil, "", "", "file", "", "")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListIngestionLogs = (%+v, %v, %v), want success", result, code, err)
+	}
+	logs, ok := result["logs"].([]map[string]interface{})
+	if !ok || len(logs) != 1 {
+		t.Fatalf("logs = %#v, want one row", result["logs"])
+	}
+	if got := logs[0]["pipeline_version_id"]; got != versionID {
+		t.Fatalf("pipeline_version_id = %v, want %q", got, versionID)
+	}
+}
