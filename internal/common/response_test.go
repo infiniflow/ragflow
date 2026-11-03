@@ -45,8 +45,18 @@ func TestResponseHelpers(t *testing.T) {
 		{"integer", func(c *gin.Context) { RespondSuccess(c, int64(0), "") }, 200, `{"code":0,"message":"success","data":0}`},
 		{"error message", func(c *gin.Context) { RespondError(c, CodeDataError, "Missing document") }, 200, `{"code":102,"message":"Missing document"}`},
 		{"pagination", func(c *gin.Context) {
-			RespondSuccessList(c, []string{}, "", ResponseOptions{Total: 0})
+			RespondSuccessList(c, []string{}, "", 0)
 		}, 200, `{"code":0,"message":"success","data":[],"total":0}`},
+		{"paginated list", func(c *gin.Context) {
+			RespondSuccessList(c, []string{"one"}, "listed", 42)
+		}, 200, `{"code":0,"message":"listed","data":["one"],"total":42}`},
+		{"large total", func(c *gin.Context) {
+			var total int64 = 1 << 40
+			RespondSuccessList(c, []string{}, "", total)
+		}, 200, `{"code":0,"message":"success","data":[],"total":1099511627776}`},
+		{"nil list with total", func(c *gin.Context) {
+			RespondSuccessList(c, nilSlice, "", 0)
+		}, 200, `{"code":0,"message":"success","data":null,"total":0}`},
 		{"detail", func(c *gin.Context) {
 			RespondError(c, CodeBillingStorageInsufficient, "", ResponseOptions{Detail: map[string]int{"limit": 100}})
 		}, 200, `{"code":2003,"message":"Billing storage insufficient","detail":{"limit":100}}`},

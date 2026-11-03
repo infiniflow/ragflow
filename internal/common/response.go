@@ -20,9 +20,14 @@ type response struct {
 	Detail  any       `json:"detail,omitempty"`
 }
 
-// RespondSuccessList writes a successful response with list data.
-func RespondSuccessList[T any](c *gin.Context, data []T, message string, options ...ResponseOptions) {
-	Respond(c, http.StatusOK, CodeSuccess, data, message, options...)
+// RespondSuccessList writes a successful response with list data and an optional total.
+// Supply at most one total; omitting it leaves total out of the response.
+func RespondSuccessList[T any](c *gin.Context, data []T, message string, total ...int64) {
+	var options ResponseOptions
+	if len(total) > 0 {
+		options.Total = total[0]
+	}
+	Respond(c, http.StatusOK, CodeSuccess, data, message, options)
 }
 
 // RespondSuccess writes a successful response with optional data.

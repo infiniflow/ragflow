@@ -1004,7 +1004,7 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.RespondSuccessList(c, resp.Data, "success", common.ResponseOptions{Total: resp.Total})
+	common.RespondSuccessList(c, resp.Data, "success", resp.Total)
 }
 
 // CreateAgentSession POST /api/v1/agents/:canvas_id/sessions

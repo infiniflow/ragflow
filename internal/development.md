@@ -19,11 +19,13 @@ common.RespondSuccess(c, true, "success")
 common.Respond(c, httpStatus, code, data, message)
 ```
 
-The convenience helpers use HTTP 200. Supply `ResponseOptions` only when a
-response needs a top-level total or error details:
+The convenience helpers use HTTP 200. Pass an optional `int64` total directly to
+`RespondSuccessList` for pagination. Omit it when no total is available; an explicit
+zero remains present in the response. Use `ResponseOptions` with the other helpers
+for envelope metadata such as error details:
 
 ```go
-common.RespondSuccessList(c, items, "success", common.ResponseOptions{Total: total})
+common.RespondSuccessList(c, items, "success", total)
 common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Missing name")
 ```
 

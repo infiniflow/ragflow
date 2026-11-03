@@ -222,7 +222,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
-	common.RespondSuccessList(c, users, "List users", common.ResponseOptions{Total: total})
+	common.RespondSuccessList(c, users, "List users", total)
 }
 
 func validateAdminUserListPagination(c *gin.Context, page, pageSize, top int) bool {
