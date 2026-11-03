@@ -90,10 +90,9 @@ func TestBuildIngestLogRunningKeepsValidClaimTime(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	runOpen := base
 	claim := base.Add(10 * time.Minute)
-	end := base.Add(20 * time.Minute)
 	task := &entity.IngestionTask{ID: "t", DocumentID: "d", DatasetID: "kb", UserID: "u"}
 	doc := &entity.Document{Name: ptrStr("r"), Suffix: ".pdf", Type: "pdf", Size: 10, ParserID: "pdf", ProcessBeginAt: ptrTime(claim)}
-	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(runOpen), ProcessEndAt: ptrTime(end)}
+	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(runOpen), ProcessBeginAt: ptrTime(runOpen), ProcessDuration: 1200}
 
 	ev := BuildIngestLog(task, doc, run, "running", "RUNNING", "")
 	if !ev.BeginTime.Equal(claim) {
