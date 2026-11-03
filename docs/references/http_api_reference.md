@@ -13,11 +13,6 @@ In the standard response envelope, `message` is always a non-empty string. Succe
 
 `data` is optional. Operation acknowledgments omit it; check `code` for success
 and `message` for the result description. Result payloads use objects or arrays.
-The system version returns `data: {"version": "the version"}`. Chunk deletion
-returns `data: {"deleted_count": N}`, including zero when nothing was deleted.
-Scalar inputs and nil payloads are omitted. Empty objects and arrays remain present.
-Types with custom JSON encoding retain that encoding.
-Streaming completion frames use their own contract, including boolean terminal markers.
 
 ---
 
