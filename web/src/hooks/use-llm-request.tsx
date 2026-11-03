@@ -60,7 +60,6 @@ export const enum LLMApiAction {
   AddProviderInstance = 'addProviderInstance',
   VerifyProviderConnection = 'verifyProviderConnection',
   ListProviderModels = 'listProviderModels',
-  DiscoverProviderModels = 'discoverProviderModels',
   AddInstanceModel = 'addInstanceModel',
   EditInstanceModel = 'editInstanceModel',
   DeleteProviderInstance = 'deleteProviderInstance',
@@ -388,6 +387,7 @@ export const useListProviderModels = () => {
         use_saved_credentials,
         api_key_config,
         instance_name,
+        skipGlobalErrorNotification,
       } = params;
       // GET /api/v1/providers/<provider_name>/models
       // The API accepts api_key and base_url as optional query parameters.
@@ -416,7 +416,13 @@ export const useListProviderModels = () => {
         queryParams.instance_name = instance_name;
       }
       const { data } = await llmService.listProviderModels(
-        { provider_name, params: queryParams },
+        {
+          provider_name,
+          params: queryParams,
+          ...(skipGlobalErrorNotification
+            ? { skipGlobalErrorNotification }
+            : {}),
+        },
         true,
       );
       return data;
@@ -424,35 +430,6 @@ export const useListProviderModels = () => {
   });
 
   return { loading, listProviderModels: mutateAsync };
-};
-
-/**
- * Lists the models a provider serves, with the credential in the request body
- * rather than the URL. Failures are returned to the caller instead of raising
- * the global notification, so they can be explained next to the form.
- */
-export const useDiscoverProviderModels = () => {
-  const { isPending: loading, mutateAsync } = useMutation({
-    mutationKey: [LLMApiAction.DiscoverProviderModels],
-    mutationFn: async ({
-      provider_name,
-      ...body
-    }: {
-      provider_name: string;
-      api_key?: string;
-      base_url?: string;
-      use_saved_credentials?: boolean;
-      instance_name?: string;
-    }) => {
-      const { data } = await llmService.discoverProviderModels(
-        { provider_name, data: body, skipGlobalErrorNotification: true },
-        true,
-      );
-      return data;
-    },
-  });
-
-  return { loading, discoverProviderModels: mutateAsync };
 };
 
 export const useAddInstanceModel = () => {

@@ -25,13 +25,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useTranslate } from '@/hooks/common-hooks';
 import {
   useAddInstanceModel,
   useAddProviderInstance,
   useDeleteInstanceModels,
-  useDiscoverProviderModels,
   useFetchInstanceModels,
+  useListProviderModels,
   usePatchInstanceModel,
   useUpdateProviderInstance,
 } from '@/hooks/use-llm-request';
@@ -48,6 +47,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import {
+  ChangeEvent,
   forwardRef,
   useCallback,
   useEffect,
@@ -56,6 +56,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useFetchInstanceNameSet } from '../hooks';
 import {
   GPUSTACK_MODEL_KINDS,
@@ -136,6 +137,89 @@ interface ModelGroupsProps {
   t: TranslateFn;
 }
 
+interface ModelRowProps extends Omit<ModelGroupsProps, 'models'> {
+  model: GPUStackModel & { running?: boolean };
+}
+
+function ModelRow({
+  model,
+  selected,
+  onToggle,
+  onKindChange,
+  onRemove,
+  t,
+}: ModelRowProps) {
+  const handleToggle = useCallback(
+    () => onToggle?.(model.name),
+    [model.name, onToggle],
+  );
+  const handleKindChange = useCallback(
+    (kind: string) => onKindChange(model.name, kind as GPUStackModelKind),
+    [model.name, onKindChange],
+  );
+  const handleRemove = useCallback(
+    () => onRemove?.(model.name),
+    [model.name, onRemove],
+  );
+
+  return (
+    <li className="flex items-center gap-3 px-3 py-2">
+      {selected && onToggle && (
+        <Checkbox
+          checked={selected.has(model.name)}
+          onCheckedChange={handleToggle}
+          aria-label={t('gpustack.select', { name: model.name })}
+        />
+      )}
+      <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
+        {model.name}
+      </span>
+      {model.running === false && (
+        <span
+          className="shrink-0 rounded px-1.5 py-0.5 text-xs text-state-warning border border-state-warning"
+          title={t('gpustack.notRunningTip')}
+        >
+          {t('gpustack.notRunning')}
+        </span>
+      )}
+      {model.kind !== 'asr' && model.kind !== 'tts' && (
+        <span className="shrink-0 text-xs text-text-secondary">
+          {t('gpustack.tokens', {
+            count: model.maxTokens.toLocaleString(),
+          })}
+        </span>
+      )}
+      <Select value={model.kind} onValueChange={handleKindChange}>
+        <SelectTrigger
+          className="w-40 shrink-0"
+          aria-label={t('gpustack.changeType', { name: model.name })}
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {GPUSTACK_MODEL_KINDS.map((kind) => (
+            <SelectItem key={kind} value={kind}>
+              {t(`gpustack.kind_${kind}`)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {onRemove && (
+        <ConfirmDeleteDialog onOk={handleRemove}>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="shrink-0"
+            aria-label={t('gpustack.remove', { name: model.name })}
+          >
+            <Minus className="size-4" />
+          </Button>
+        </ConfirmDeleteDialog>
+      )}
+    </li>
+  );
+}
+
 function ModelGroups({
   models,
   selected,
@@ -157,68 +241,15 @@ function ModelGroups({
           </h4>
           <ul className="rounded-lg border border-border-button divide-y divide-border-button">
             {group.models.map((model) => (
-              <li
+              <ModelRow
                 key={model.name}
-                className="flex items-center gap-3 px-3 py-2"
-              >
-                {selected && onToggle && (
-                  <Checkbox
-                    checked={selected.has(model.name)}
-                    onCheckedChange={() => onToggle(model.name)}
-                    aria-label={t('gpustack.select', { name: model.name })}
-                  />
-                )}
-                <span className="min-w-0 flex-1 truncate text-sm text-text-primary">
-                  {model.name}
-                </span>
-                {model.running === false && (
-                  <span
-                    className="shrink-0 rounded px-1.5 py-0.5 text-xs text-state-warning border border-state-warning"
-                    title={t('gpustack.notRunningTip')}
-                  >
-                    {t('gpustack.notRunning')}
-                  </span>
-                )}
-                {model.kind !== 'asr' && model.kind !== 'tts' && (
-                  <span className="shrink-0 text-xs text-text-secondary">
-                    {t('gpustack.tokens', {
-                      count: model.maxTokens.toLocaleString(),
-                    })}
-                  </span>
-                )}
-                <Select
-                  value={model.kind}
-                  onValueChange={(kind) =>
-                    onKindChange(model.name, kind as GPUStackModelKind)
-                  }
-                >
-                  <SelectTrigger
-                    className="w-40 shrink-0"
-                    aria-label={t('gpustack.changeType', { name: model.name })}
-                  >
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {GPUSTACK_MODEL_KINDS.map((kind) => (
-                      <SelectItem key={kind} value={kind}>
-                        {t(`gpustack.kind_${kind}`)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {onRemove && (
-                  <ConfirmDeleteDialog onOk={() => onRemove(model.name)}>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      className="shrink-0"
-                      aria-label={t('gpustack.remove', { name: model.name })}
-                    >
-                      <Minus className="size-4" />
-                    </Button>
-                  </ConfirmDeleteDialog>
-                )}
-              </li>
+                model={model}
+                selected={selected}
+                onToggle={onToggle}
+                onKindChange={onKindChange}
+                onRemove={onRemove}
+                t={t}
+              />
             ))}
           </ul>
         </section>
@@ -247,7 +278,7 @@ export const GPUStackInstanceCard = forwardRef<
   { providerName, instance, isDraft = false, onDelete, onSaved, defaultOpen },
   ref,
 ) {
-  const { t } = useTranslate('setting');
+  const { t } = useTranslation('translation', { keyPrefix: 'setting' });
   const [open, setOpen] = useState(isDraft || !!defaultOpen);
   const [editing, setEditing] = useState(false);
   const [baseUrl, setBaseUrl] = useState('');
@@ -272,8 +303,7 @@ export const GPUStackInstanceCard = forwardRef<
     providerName,
     isDraft ? '' : instance.instance_name,
   );
-  const { loading: discovering, discoverProviderModels } =
-    useDiscoverProviderModels();
+  const { loading: discovering, listProviderModels } = useListProviderModels();
   const { addProviderInstance } = useAddProviderInstance();
   const { updateProviderInstance } = useUpdateProviderInstance();
   const { addInstanceModel } = useAddInstanceModel();
@@ -300,19 +330,16 @@ export const GPUStackInstanceCard = forwardRef<
   const discover = useCallback(async () => {
     setError('');
     try {
-      const ret = await discoverProviderModels(
-        isDraft
-          ? {
-              provider_name: providerName,
-              api_key: apiKey,
-              base_url: baseUrl.trim(),
-            }
+      const ret = await listProviderModels({
+        provider_name: providerName,
+        skipGlobalErrorNotification: true,
+        ...(isDraft
+          ? { api_key: apiKey, base_url: baseUrl.trim() }
           : {
-              provider_name: providerName,
               use_saved_credentials: true,
               instance_name: instance.instance_name,
-            },
-      );
+            }),
+      });
       if (ret?.code !== 0) {
         setDiscovered(null);
         setError(ret?.message || String(ret?.code));
@@ -326,9 +353,9 @@ export const GPUStackInstanceCard = forwardRef<
   }, [
     apiKey,
     baseUrl,
-    discoverProviderModels,
     instance.instance_name,
     isDraft,
+    listProviderModels,
     providerName,
   ]);
 
@@ -501,16 +528,33 @@ export const GPUStackInstanceCard = forwardRef<
     setKindOverrides({});
   }, []);
 
+  const handleBaseUrlChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      setBaseUrl(e.target.value);
+      if (isDraft) resetDiscovery();
+    },
+    [isDraft, resetDiscovery],
+  );
+  const handleApiKeyChange = useCallback(
+    (e: ChangeEvent<HTMLInputElement>) => {
+      setApiKey(e.target.value);
+      if (isDraft) resetDiscovery();
+    },
+    [isDraft, resetDiscovery],
+  );
+  const handleNameChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    setNameOverride(e.target.value);
+  }, []);
+  const toggleOpen = useCallback(() => setOpen((value) => !value), []);
+  const toggleEditing = useCallback(() => setEditing((value) => !value), []);
+
   const connectionForm = (
     <div className="flex flex-col gap-3">
       <label className="flex flex-col gap-1.5 text-sm font-medium text-text-primary">
         {t('gpustack.serverUrl')}
         <Input
           value={baseUrl}
-          onChange={(e) => {
-            setBaseUrl(e.target.value);
-            if (isDraft) resetDiscovery();
-          }}
+          onChange={handleBaseUrlChange}
           placeholder={URL_PLACEHOLDER}
           autoComplete="off"
           data-testid="gpustack-base-url"
@@ -532,10 +576,7 @@ export const GPUStackInstanceCard = forwardRef<
         <Input
           type="password"
           value={apiKey}
-          onChange={(e) => {
-            setApiKey(e.target.value);
-            if (isDraft) resetDiscovery();
-          }}
+          onChange={handleApiKeyChange}
           placeholder={isDraft ? '' : t('gpustack.apiKeyKeep')}
           autoComplete="new-password"
           data-testid="gpustack-api-key"
@@ -592,10 +633,10 @@ export const GPUStackInstanceCard = forwardRef<
               {t('gpustack.typeHint')}
             </p>
             <label className="flex flex-col gap-1.5 text-sm font-medium text-text-primary">
-              {t('gpustack.connectionName')}
+              {t('gpustack.instanceName')}
               <Input
                 value={instanceName}
-                onChange={(e) => setNameOverride(e.target.value)}
+                onChange={handleNameChange}
                 data-testid="gpustack-connection-name"
               />
             </label>
@@ -628,10 +669,12 @@ export const GPUStackInstanceCard = forwardRef<
       data-testid={`instance-card-${instance.instance_name}`}
     >
       <div className="flex items-center gap-2">
-        <button
+        <Button
           type="button"
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
-          onClick={() => setOpen((value) => !value)}
+          variant="static"
+          size="auto"
+          className="min-w-0 flex-1 shrink justify-start text-left"
+          onClick={toggleOpen}
           aria-expanded={open}
         >
           {open ? (
@@ -652,7 +695,7 @@ export const GPUStackInstanceCard = forwardRef<
               {t('gpustack.connectedShort', { count: discovered.length })}
             </span>
           )}
-        </button>
+        </Button>
         {open && (
           <>
             <Button
@@ -670,10 +713,10 @@ export const GPUStackInstanceCard = forwardRef<
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setEditing((value) => !value)}
+              onClick={toggleEditing}
               data-testid="gpustack-edit"
             >
-              {t('gpustack.editConnection')}
+              {t('gpustack.editInstance')}
             </Button>
           </>
         )}
@@ -699,7 +742,7 @@ export const GPUStackInstanceCard = forwardRef<
                   disabled={saving || !baseUrl.trim()}
                   data-testid="gpustack-save-connection"
                 >
-                  {t('gpustack.saveConnection')}
+                  {t('gpustack.saveInstance')}
                 </Button>
               </div>
             </div>

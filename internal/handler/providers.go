@@ -235,56 +235,6 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
-// DiscoverModelsRequest is the body of POST /providers/:name/models/discovery.
-type DiscoverModelsRequest struct {
-	APIKey              string `json:"api_key"`
-	BaseURL             string `json:"base_url"`
-	Region              string `json:"region"`
-	UseSavedCredentials bool   `json:"use_saved_credentials"`
-	InstanceName        string `json:"instance_name"`
-}
-
-// DiscoverModels lists the models a provider serves. It does what ListModels
-// does, but takes the credential in the body so it stays out of URLs and logs.
-func (h *ProviderHandler) DiscoverModels(c *gin.Context) {
-	providerName := c.Param("provider_id_or_name")
-	if providerName == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Provider name is required")
-		return
-	}
-	var req DiscoverModelsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, err.Error())
-		return
-	}
-
-	var result []map[string]interface{}
-	var err error
-	if req.UseSavedCredentials {
-		if strings.TrimSpace(req.InstanceName) == "" {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Saved credentials require an instance name")
-			return
-		}
-		result, err = h.fetchSavedProviderModels(c.Request.Context(), providerName, req.InstanceName, c.GetString("user_id"), service.SavedProviderModelOptions{})
-	} else {
-		if strings.TrimSpace(req.BaseURL) == "" {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Base URL is required")
-			return
-		}
-		result, err = FetchProviderModels(c.Request.Context(), providerName, req.APIKey, req.BaseURL, req.Region)
-	}
-	if err != nil {
-		var codedErr *common.CodedError
-		if errors.As(err, &codedErr) {
-			common.ErrorWithCode(c, codedErr.Code, codedErr.Message)
-		} else {
-			common.ErrorWithCode(c, common.CodeServerError, err.Error())
-		}
-		return
-	}
-	common.SuccessWithData(c, result, "success")
-}
-
 func (h *ProviderHandler) fetchSavedProviderModels(ctx context.Context, providerName, instanceName, userID string, options service.SavedProviderModelOptions) ([]map[string]interface{}, error) {
 	config, err := h.modelProviderService.ResolveSavedProviderModelConfig(ctx, providerName, instanceName, userID, options)
 	if err != nil {

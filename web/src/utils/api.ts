@@ -54,8 +54,6 @@ const apiEndpoints = {
     `${restAPIv1}/providers/${provider_name}/connection`,
   listProviderModels: ({ provider_name }: { provider_name: string }) =>
     `${restAPIv1}/providers/${provider_name}/models`,
-  discoverProviderModels: ({ provider_name }: { provider_name: string }) =>
-    `${restAPIv1}/providers/${provider_name}/models/discovery`,
   listProviderInstances: ({ provider_name }: { provider_name: string }) =>
     `${restAPIv1}/providers/${provider_name}/instances`,
   listInstanceModels: ({

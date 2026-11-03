@@ -10,16 +10,16 @@ const mockPatchModel = jest.fn();
 const mockUpdateInstance = jest.fn();
 let mockInstanceModels: any[] = [];
 
-jest.mock('@/hooks/common-hooks', () => ({
-  useTranslate: () => ({
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
       options?.count !== undefined ? `${key}:${options.count}` : key,
   }),
 }));
 jest.mock('@/hooks/use-llm-request', () => ({
-  useDiscoverProviderModels: () => ({
+  useListProviderModels: () => ({
     loading: false,
-    discoverProviderModels: mockDiscover,
+    listProviderModels: mockDiscover,
   }),
   useAddProviderInstance: () => ({ addProviderInstance: mockAddInstance }),
   useUpdateProviderInstance: () => ({
@@ -94,12 +94,13 @@ describe('GPUStackInstanceCard draft', () => {
     expect(screen.getByTestId('gpustack-connect')).toBeDisabled();
   });
 
-  it('sends the credential in the discovery body', async () => {
+  it('lists models with the entered credential, keeping failures local', async () => {
     mockDiscover.mockResolvedValue({ code: 0, data: served });
     renderDraft();
     await connect();
     expect(mockDiscover).toHaveBeenCalledWith({
       provider_name: 'GPUStack',
+      skipGlobalErrorNotification: true,
       api_key: 'secret',
       base_url: 'http://10.0.0.5:8090',
     });
@@ -205,6 +206,7 @@ describe('GPUStackInstanceCard saved', () => {
 
     expect(mockDiscover).toHaveBeenCalledWith({
       provider_name: 'GPUStack',
+      skipGlobalErrorNotification: true,
       use_saved_credentials: true,
       instance_name: 'saved',
     });
