@@ -12,10 +12,9 @@ func TestBuildIngestLogPrefersWorkerClaimTime(t *testing.T) {
 	enqueue := base
 	openTime := base.Add(1 * time.Minute)
 	claimTime := base.Add(10 * time.Minute)
-	end := base.Add(20 * time.Minute)
 	task := &entity.IngestionTask{ID: "t", DocumentID: "d", DatasetID: "kb", UserID: "u"}
 	doc := &entity.Document{Name: ptrStr("r"), Suffix: ".pdf", Type: "pdf", Size: 10, ParserID: "pdf", ProcessBeginAt: ptrTime(claimTime)}
-	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(enqueue), ProcessBeginAt: ptrTime(openTime), ProcessEndAt: ptrTime(end)}
+	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(enqueue), ProcessBeginAt: ptrTime(openTime)}
 
 	log := BuildIngestLog(task, doc, run, "completed", "COMPLETED", "")
 	if !log.BeginTime.Equal(claimTime) {
@@ -30,7 +29,7 @@ func TestBuildIngestLogPopulatesDurationMS(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	task := &entity.IngestionTask{ID: "t", DocumentID: "d", DatasetID: "kb", UserID: "u"}
 	doc := &entity.Document{Name: ptrStr("r"), Suffix: ".pdf", Type: "pdf", Size: 10, ParserID: "pdf", ProcessBeginAt: ptrTime(base.Add(10 * time.Minute))}
-	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(base), ProcessBeginAt: ptrTime(base.Add(1 * time.Minute)), ProcessEndAt: ptrTime(base.Add(20 * time.Minute))}
+	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(base), ProcessBeginAt: ptrTime(base.Add(1 * time.Minute)), ProcessDuration: 600}
 
 	log := BuildIngestLog(task, doc, run, "completed", "COMPLETED", "")
 	want := int64(log.ParseDurationS * 1000)
