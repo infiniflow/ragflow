@@ -7,6 +7,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -40,6 +41,7 @@ func TestCreateCommit_DeleteRecordsTombstoneWhenLiveFileIsGone(t *testing.T) {
 	if err := db.Create(parent).Error; err != nil {
 		t.Fatalf("seed parent commit: %v", err)
 	}
+	seedFolder(t, db, "folder-1", "")
 
 	commit, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "remove a.txt", []entity.FileChange{
 		{FileID: "f1", FileName: "a.txt", Operation: "delete"},
@@ -105,6 +107,7 @@ func TestCreateCommit_RejectsDeleteOfLiveFile(t *testing.T) {
 	if err := db.Create(parent).Error; err != nil {
 		t.Fatalf("seed parent commit: %v", err)
 	}
+	seedFolder(t, db, "folder-1", "")
 	seedLiveFile(t, db, "f2", "folder-1")
 	seedFolder(t, db, "sub-1", "folder-1")
 	seedLiveFile(t, db, "f4", "sub-1")
@@ -136,11 +139,68 @@ func TestCreateCommit_AllowsDeleteOfFileOutsideFolder(t *testing.T) {
 	if err := db.Create(parent).Error; err != nil {
 		t.Fatalf("seed parent commit: %v", err)
 	}
+	seedFolder(t, db, "folder-1", "")
 	seedLiveFile(t, db, "f3", "other-folder")
 
 	if _, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "remove f3", []entity.FileChange{
 		{FileID: "f3", FileName: "c.txt", Operation: "delete"},
 	}); err != nil {
 		t.Fatalf("delete of a file outside the folder: %v", err)
+	}
+}
+
+// A delete-only change mints a tombstone without touching the file table, so
+// an ID that never entered this folder's history must be rejected: the global
+// per-file version history would otherwise expose a fabricated tombstone.
+func TestCreateCommit_RejectsDeleteOfUnknownFile(t *testing.T) {
+	db := newCommitDeleteTestDB(t)
+	tree := `{"f1":{"hash":"h1","location":".objects/h1","name":"a.txt","size":3,"status":"1","parent_id":"folder-1"}}`
+	parent := &entity.FileCommit{ID: "c1", FolderID: "folder-1", Message: "init", AuthorID: "u1", TreeState: &tree}
+	if err := db.Create(parent).Error; err != nil {
+		t.Fatalf("seed parent commit: %v", err)
+	}
+	seedFolder(t, db, "folder-1", "")
+
+	if _, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "remove ghost", []entity.FileChange{
+		{FileID: "no-such-file", FileName: "ghost.txt", Operation: "delete"},
+	}); !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("delete of unknown file: err = %v, want permission.ErrPermissionDenied", err)
+	}
+
+	var commits int64
+	if err := db.Model(&entity.FileCommitItem{}).Where("file_id = ?", "no-such-file").Count(&commits).Error; err != nil {
+		t.Fatalf("count commit items: %v", err)
+	}
+	if commits != 0 {
+		t.Fatalf("expected no tombstone for the unknown file, found %d commit items", commits)
+	}
+}
+
+// An existing file outside the target folder that never entered this folder's
+// history (absent from treeState) must be rejected on delete, even though its
+// live row exists in the file table.
+func TestCreateCommit_RejectsDeleteOfOutOfFolderFileAbsentFromTree(t *testing.T) {
+	db := newCommitDeleteTestDB(t)
+	tree := `{"f1":{"hash":"h1","location":".objects/h1","name":"a.txt","size":3,"status":"1","parent_id":"folder-1"}}`
+	parent := &entity.FileCommit{ID: "c1", FolderID: "folder-1", Message: "init", AuthorID: "u1", TreeState: &tree}
+	if err := db.Create(parent).Error; err != nil {
+		t.Fatalf("seed parent commit: %v", err)
+	}
+	seedFolder(t, db, "folder-1", "")
+	seedFolder(t, db, "other-folder", "")
+	seedLiveFile(t, db, "alien-file", "other-folder")
+
+	if _, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "delete alien", []entity.FileChange{
+		{FileID: "alien-file", FileName: "alien.txt", Operation: "delete"},
+	}); !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("delete of out-of-folder file absent from tree: err = %v, want permission.ErrPermissionDenied", err)
+	}
+
+	var commits int64
+	if err := db.Model(&entity.FileCommitItem{}).Where("file_id = ?", "alien-file").Count(&commits).Error; err != nil {
+		t.Fatalf("count commit items: %v", err)
+	}
+	if commits != 0 {
+		t.Fatalf("expected no tombstone for alien file, found %d commit items", commits)
 	}
 }
