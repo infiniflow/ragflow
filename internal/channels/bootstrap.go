@@ -260,6 +260,29 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 
 	channelService := service.NewChatChannelService()
 	ch.SetMessageHandler(func(ctx context.Context, msg core.IncomingMessage) error {
+		outgoing := core.OutgoingMessage{ChatID: msg.ChatID, ReplyToMessageID: msg.MessageID}
+
+		// A streaming channel owns its own message lifecycle: the deltas go to
+		// SendStream and the bridge only falls back to Send when nothing reached
+		// the user.
+		var onDelta func(string)
+		var text chan string
+		var sent chan error
+		if streamer, ok := ch.(core.StreamingChannel); ok && streamer.StreamEnabled() {
+			text = make(chan string, 64)
+			sent = make(chan error, 1)
+			go func() {
+				sent <- streamer.SendStream(ctx, outgoing, text)
+			}()
+			onDelta = func(value string) {
+				// Every delta carries the text so far, so a dropped one is harmless.
+				select {
+				case text <- value:
+				default:
+				}
+			}
+		}
+
 		answer, err := channelService.HandleIncomingMessage(ctx, service.ChatChannelIncomingMessage{
 			Channel:   msg.Channel,
 			AccountID: msg.AccountID,
@@ -268,15 +291,25 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 			MessageID: msg.MessageID,
 			SenderID:  msg.SenderID,
 			Text:      msg.Text,
-		})
+		}, onDelta)
+
+		if text != nil {
+			close(text)
+			streamErr := <-sent
+			if streamErr == nil {
+				return err
+			}
+			if err == nil && answer == "" {
+				// The model produced nothing, so there is nothing to deliver.
+				return nil
+			}
+			common.Warn("chat channel stream failed, sending the answer as one message", zap.Error(streamErr), zap.String("channel", ch.ChannelID()), zap.String("account_id", accountID))
+		}
 		if err != nil || answer == "" {
 			return err
 		}
-		return ch.Send(ctx, core.OutgoingMessage{
-			ChatID:           msg.ChatID,
-			Text:             answer,
-			ReplyToMessageID: msg.MessageID,
-		})
+		outgoing.Text = answer
+		return ch.Send(ctx, outgoing)
 	})
 	if err = ch.Start(ctx); err != nil {
 		return err

@@ -272,6 +272,13 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
           { label: 'Lark (international)', value: 'lark' },
         ],
       },
+      {
+        label: 'Streaming',
+        name: 'config.credential.stream',
+        type: FormFieldType.Switch,
+        required: false,
+        defaultValue: false,
+      },
     ],
     [ChatChannelKey.GOOGLECHAT]: [
       {
@@ -767,6 +774,9 @@ ChatChannelFormDefaultValues[
 ].config.credential.connection_type = 'webhook';
 ChatChannelFormDefaultValues[ChatChannelKey.FEISHU].config.credential.domain =
   'feishu';
+ChatChannelFormDefaultValues[
+  ChatChannelKey.FEISHU
+].config.credential.stream = false;
 export const getChatChannelFields = (
   key?: ChatChannelKey,
 ): FormFieldConfig[] => {

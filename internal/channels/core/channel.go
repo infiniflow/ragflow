@@ -45,3 +45,12 @@ type Channel interface {
 	Stop(ctx context.Context) error                      // Stop cancels channel event
 	Send(ctx context.Context, msg OutgoingMessage) error // Send posts an outgoing RAGFlow answer to the channel
 }
+
+// StreamingChannel is a channel that can deliver a reply while it is generated.
+// SendStream receives the cumulative display text on text; closing text finishes
+// the message. An error means nothing was delivered, so the caller still has to
+// send the complete answer through Send.
+type StreamingChannel interface {
+	StreamEnabled() bool // StreamEnabled reports whether the account asked for streaming replies
+	SendStream(ctx context.Context, msg OutgoingMessage, text <-chan string) error
+}
