@@ -54,6 +54,12 @@ type OperationLog struct {
 func Audit(operationLog *OperationLog, fields ...zap.Field) {
 }
 
+// SyncAudit is the OSS no-op flush for the audit logger. The real sink lives in
+// the EE build; the OSS binary keeps only the instrumentation seam so the
+// server entrypoint's deferred flush (cmd/ragflow_server.go) compiles and runs.
+func SyncAudit() {
+}
+
 // InitIngestLog is the OSS no-op hook for ingestion lifecycle event sinks. The OSS
 // build does not collect these events; the real sink lives in the EE build via the
 // LogIngest seam. The signature is retained so the IngestionEventEmitter /
