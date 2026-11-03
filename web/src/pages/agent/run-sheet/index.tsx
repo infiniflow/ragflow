@@ -54,7 +54,7 @@ const RunSheet = ({
     <Sheet onOpenChange={hideModal} open modal={false}>
       <SheetContent className={cn('top-20 px-0 flex flex-col')}>
         <SheetHeader>
-          <SheetTitle>{t('flow.testRun')}</SheetTitle>
+          <SheetTitle className='px-2'>{t('flow.testRun')}</SheetTitle>
         </SheetHeader>
         <DebugContent
           ok={onOk}
