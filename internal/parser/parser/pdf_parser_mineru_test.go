@@ -377,6 +377,24 @@ func TestPDFParser_ConfigureFromSetup_MinerUTimeout(t *testing.T) {
 	if pdf2.MinerUPollTimeout != 1800*time.Second {
 		t.Fatalf("MinerUPollTimeout = %v, want 1800s", pdf2.MinerUPollTimeout)
 	}
+
+	pdf3 := NewPDFParser()
+	pdf3.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": 1200,
+	})
+	if pdf3.MinerUPollTimeout != 1200*time.Second || !pdf3.MinerUTimeoutConfigured {
+		t.Fatalf("MinerUPollTimeout numeric int = %v, configured = %t", pdf3.MinerUPollTimeout, pdf3.MinerUTimeoutConfigured)
+	}
+
+	pdf4 := NewPDFParser()
+	pdf4.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": 900.0,
+	})
+	if pdf4.MinerUPollTimeout != 900*time.Second || !pdf4.MinerUTimeoutConfigured {
+		t.Fatalf("MinerUPollTimeout numeric float = %v, configured = %t", pdf4.MinerUPollTimeout, pdf4.MinerUTimeoutConfigured)
+	}
 }
 
 func TestClampMinerUTimeout(t *testing.T) {

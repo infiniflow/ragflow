@@ -104,6 +104,7 @@ type PDFParser struct {
 	MinerUBackend                     string
 	MinerUServerURL                   string
 	MinerUPollTimeout                 time.Duration
+	MinerUTimeoutConfigured           bool
 	DoclingServerURL                  string
 	DoclingAPIKey                     string
 	DoclingDoOCR                      *bool
@@ -190,21 +191,34 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["mineru_server_url"].(string); ok && v != "" {
 		p.MinerUServerURL = v
 	}
+	if v, ok := setup["mineru_timeout"].(int); ok && v > 0 {
+		p.MinerUPollTimeout = time.Duration(v) * time.Second
+		p.MinerUTimeoutConfigured = true
+	}
+	if v, ok := setup["mineru_timeout"].(float64); ok && v > 0 {
+		p.MinerUPollTimeout = time.Duration(v * float64(time.Second))
+		p.MinerUTimeoutConfigured = true
+	}
 	if v, ok := setup["mineru_timeout"].(string); ok && strings.TrimSpace(v) != "" {
 		v = strings.TrimSpace(v)
 		if sec, err := strconv.Atoi(v); err == nil && sec > 0 {
 			p.MinerUPollTimeout = time.Duration(sec) * time.Second
+			p.MinerUTimeoutConfigured = true
 		} else if secF, err := strconv.ParseFloat(v, 64); err == nil && secF > 0 {
 			p.MinerUPollTimeout = time.Duration(secF * float64(time.Second))
+			p.MinerUTimeoutConfigured = true
 		} else if d, err := time.ParseDuration(v); err == nil && d > 0 {
 			p.MinerUPollTimeout = d
+			p.MinerUTimeoutConfigured = true
 		}
 	}
 	if v, ok := setup["mineru_timeout_seconds"].(int); ok && v > 0 {
 		p.MinerUPollTimeout = time.Duration(v) * time.Second
+		p.MinerUTimeoutConfigured = true
 	}
 	if v, ok := setup["mineru_timeout_seconds"].(float64); ok && v > 0 {
 		p.MinerUPollTimeout = time.Duration(v * float64(time.Second))
+		p.MinerUTimeoutConfigured = true
 	}
 	if v, ok := setup["docling_server_url"].(string); ok && v != "" {
 		p.DoclingServerURL = v

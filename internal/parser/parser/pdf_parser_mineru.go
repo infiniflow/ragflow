@@ -48,17 +48,19 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 	if timeout <= 0 {
 		timeout = minerUPollTimeout
 	}
-	if envVal := strings.TrimSpace(common.GetEnv(common.EnvMineruTimeout)); envVal != "" && (parser.MinerUPollTimeout <= 0 || parser.MinerUPollTimeout == minerUPollTimeout) {
-		if sec, err := strconv.Atoi(envVal); err == nil && sec > 0 {
-			timeout = time.Duration(sec) * time.Second
-		} else if secF, err := strconv.ParseFloat(envVal, 64); err == nil && secF > 0 {
-			timeout = time.Duration(secF * float64(time.Second))
-		} else if d, err := time.ParseDuration(envVal); err == nil && d > 0 {
-			timeout = d
-		}
-	} else if envSec := strings.TrimSpace(common.GetEnv("MINERU_TIMEOUT_SECONDS")); envSec != "" && (parser.MinerUPollTimeout <= 0 || parser.MinerUPollTimeout == minerUPollTimeout) {
-		if sec, err := strconv.Atoi(envSec); err == nil && sec > 0 {
-			timeout = time.Duration(sec) * time.Second
+	if !parser.MinerUTimeoutConfigured {
+		if envVal := strings.TrimSpace(common.GetEnv(common.EnvMineruTimeout)); envVal != "" {
+			if sec, err := strconv.Atoi(envVal); err == nil && sec > 0 {
+				timeout = time.Duration(sec) * time.Second
+			} else if secF, err := strconv.ParseFloat(envVal, 64); err == nil && secF > 0 {
+				timeout = time.Duration(secF * float64(time.Second))
+			} else if d, err := time.ParseDuration(envVal); err == nil && d > 0 {
+				timeout = d
+			}
+		} else if envSec := strings.TrimSpace(common.GetEnv("MINERU_TIMEOUT_SECONDS")); envSec != "" {
+			if sec, err := strconv.Atoi(envSec); err == nil && sec > 0 {
+				timeout = time.Duration(sec) * time.Second
+			}
 		}
 	}
 	timeout = ClampMinerUTimeout(timeout)
@@ -79,7 +81,14 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 		}
 		return minerUMarkdownResult(ctx, filename, parsed)
 	}
-	v1, err := models.MinerUSupportsV1(ctx, apiServer, apiKey)
+
+	probeCtx := ctx
+	if timeout > 0 {
+		var cancelProbe context.CancelFunc
+		probeCtx, cancelProbe = context.WithTimeout(ctx, timeout)
+		defer cancelProbe()
+	}
+	v1, err := models.MinerUSupportsV1(probeCtx, apiServer, apiKey)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: MinerU probe: %w", err)}
 	}
