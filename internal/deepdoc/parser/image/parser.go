@@ -34,11 +34,6 @@ import (
 	"ragflow/internal/parser/tableutil"
 )
 
-const (
-	minTableRows = 2
-	minTableCols = 2
-)
-
 // BlockKind identifies one structured block in reading order.
 type BlockKind uint8
 
@@ -119,17 +114,14 @@ func blocksFromSections(img image.Image, sections []deepdoctype.Section) []Block
 	for _, section := range sections {
 		if section.LayoutType == deepdoctype.LayoutTypeTable {
 			table, err := tableutil.ParseTableHTML(section.Text)
-			if err == nil && validTableData(table) {
-				blocks = append(blocks, Block{
-					Kind:       BlockTable,
-					Table:      table,
-					TableImage: cropSection(img, section.Positions),
-				})
+			if err != nil || table == nil || len(table.Grid) == 0 {
 				continue
 			}
-			if text := tableText(table); text != "" {
-				blocks = append(blocks, Block{Kind: BlockText, Text: text})
-			}
+			blocks = append(blocks, Block{
+				Kind:       BlockTable,
+				Table:      table,
+				TableImage: cropSection(img, section.Positions),
+			})
 			continue
 		}
 		if text := strings.TrimSpace(section.Text); text != "" {
@@ -137,61 +129,6 @@ func blocksFromSections(img image.Image, sections []deepdoctype.Section) []Block
 		}
 	}
 	return blocks
-}
-
-// validTableData keeps degenerate one-column regions from becoming table
-// items. A standalone image is often a tightly cropped screenshot, where a DLA
-// false positive is more likely than on a document page.
-func validTableData(table *entity.TableData) bool {
-	if table == nil || len(table.Grid) < minTableRows {
-		return false
-	}
-	width := 0
-	nonEmpty := false
-	for _, row := range table.Grid {
-		if len(row) > width {
-			width = len(row)
-		}
-		for _, cell := range row {
-			if !cell.Covered && strings.TrimSpace(cell.Text) != "" {
-				nonEmpty = true
-			}
-		}
-	}
-	return width >= minTableCols && nonEmpty
-}
-
-// tableText recovers the cell text of a table that failed validation so the
-// content stays indexable instead of disappearing with the table section.
-func tableText(table *entity.TableData) string {
-	if table == nil {
-		return ""
-	}
-	rows := make([]string, 0, len(table.Grid))
-	for _, row := range table.Grid {
-		cells := make([]string, 0, len(row))
-		for _, cell := range row {
-			if cell.Covered {
-				continue
-			}
-			if text := strings.TrimSpace(cell.Text); text != "" {
-				cells = append(cells, text)
-			}
-		}
-		if len(cells) > 0 {
-			rows = append(rows, strings.Join(cells, " "))
-		}
-	}
-	text := strings.Join(rows, "\n")
-	// MergeCaptions moves a standalone caption into TableData.Caption and
-	// removes its section, so the fallback must carry it or the caption is lost.
-	if caption := strings.TrimSpace(table.Caption); caption != "" {
-		if text == "" {
-			return caption
-		}
-		return caption + "\n" + text
-	}
-	return text
 }
 
 // cropSection crops the first position, which is the table region. Caption
