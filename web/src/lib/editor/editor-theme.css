@@ -66,10 +66,7 @@
 /* ===== Editor container base styles (inherits --nim-* from :root/html inline) ===== */
 .nimbalyst-editor {
   font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    '.SFNSText-Regular',
+    system-ui, -apple-system, BlinkMacSystemFont, '.SFNSText-Regular',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
