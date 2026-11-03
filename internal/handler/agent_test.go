@@ -616,16 +616,16 @@ func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string,
 func (f *fullFakeAgentService) PublishAgent(context.Context, string, string, *service.PublishAgentRequest) (*entity.UserCanvasVersion, error) {
 	return f.version, nil
 }
-func (f *fullFakeAgentService) ListVersions(context.Context, string, string) ([]*entity.UserCanvasVersion, error) {
+func (f *fullFakeAgentService) ListVersions(context.Context, string) ([]*entity.UserCanvasVersion, error) {
 	return f.versions, nil
 }
-func (f *fullFakeAgentService) GetVersion(context.Context, string, string, string) (*entity.UserCanvasVersion, error) {
+func (f *fullFakeAgentService) GetVersion(context.Context, string, string) (*entity.UserCanvasVersion, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
 	return f.version, nil
 }
-func (f *fullFakeAgentService) DeleteVersion(context.Context, string, string, string) error {
+func (f *fullFakeAgentService) DeleteVersion(context.Context, string, string) error {
 	return f.getErr
 }
 

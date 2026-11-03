@@ -85,11 +85,11 @@ func TestMessageDraftRoundTripAndExecution(t *testing.T) {
 				if err == nil || !strings.Contains(err.Error(), "content does not support empty") {
 					t.Fatalf("compile error=%v", err)
 				}
-				if err := svc.UpdateAgent(t.Context(), row.ID, map[string]any{"dsl": messageDraftDSL(tt.params), "release": true}); err == nil {
-					t.Fatal("release accepted incomplete Message")
+				if err := svc.UpdateAgent(ctx, row.ID, map[string]any{"dsl": messageDraftDSL(tt.params), "release": true}); err == nil || !strings.Contains(err.Error(), "content does not support empty") {
+					t.Fatalf("release validation error = %v, want incomplete Message error", err)
 				}
-				if _, err := svc.PublishAgent(t.Context(), row.ID, &PublishAgentRequest{DSL: messageDraftDSL(tt.params)}); err == nil {
-					t.Fatal("publish accepted incomplete Message")
+				if _, err := svc.PublishAgent(ctx, row.ID, &PublishAgentRequest{DSL: messageDraftDSL(tt.params)}); err == nil || !strings.Contains(err.Error(), "content does not support empty") {
+					t.Fatalf("publish validation error = %v, want incomplete Message error", err)
 				}
 				return
 			}

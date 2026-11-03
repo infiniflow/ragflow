@@ -1926,7 +1926,8 @@ func TestDeleteSessionMessage_SharedSessionReadonlyForTeammate(t *testing.T) {
 func TestUpdateMessageFeedback_SharedSessionReadonlyForTeammate(t *testing.T) {
 	svc, _ := newSharedChatReadonlyService()
 
-	_, code, err := svc.UpdateMessageFeedback(t.Context(), "chat-1", "session-1", "msg-1", map[string]interface{}{"thumbup": true})
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
+	_, code, err := svc.UpdateMessageFeedback(ctx, "chat-1", "session-1", "msg-1", map[string]interface{}{"thumbup": true})
 	if err == nil || err.Error() != "Resource not found" {
 		t.Fatalf("err=%v", err)
 	}

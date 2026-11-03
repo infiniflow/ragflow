@@ -311,7 +311,7 @@ func TestListVersions_Success(t *testing.T) {
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	svc := NewAgentService()
-	versions, err := svc.ListVersions(ctx, "user-1", "canvas-1")
+	versions, err := svc.ListVersions(ctx, "canvas-1")
 	if err != nil {
 		t.Fatalf("ListVersions failed: %v", err)
 	}
@@ -356,7 +356,7 @@ func TestListVersions_Empty(t *testing.T) {
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	svc := NewAgentService()
-	versions, err := svc.ListVersions(ctx, "user-1", "canvas-empty")
+	versions, err := svc.ListVersions(ctx, "canvas-empty")
 	if err != nil {
 		t.Fatalf("ListVersions failed: %v", err)
 	}
@@ -469,7 +469,7 @@ func TestGetVersion_Success(t *testing.T) {
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	svc := NewAgentService()
-	v, err := svc.GetVersion(ctx, "user-1", "canvas-1", "v1")
+	v, err := svc.GetVersion(ctx, "canvas-1", "v1")
 	if err != nil {
 		t.Fatalf("GetVersion failed: %v", err)
 	}
@@ -503,7 +503,7 @@ func TestGetVersion_WrongCanvas(t *testing.T) {
 
 	ctx := serviceTestContext(t, "user-other", "user-other")
 	svc := NewAgentService()
-	_, err := svc.GetVersion(ctx, "user-other", "canvas-other", "v1")
+	_, err := svc.GetVersion(ctx, "canvas-other", "v1")
 	if err == nil {
 		t.Error("expected error for version belonging to another canvas")
 	}
@@ -528,7 +528,7 @@ func TestGetVersion_NotFound(t *testing.T) {
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	svc := NewAgentService()
-	_, err := svc.GetVersion(ctx, "user-1", "canvas-1", "non-existent")
+	_, err := svc.GetVersion(ctx, "canvas-1", "non-existent")
 	if err == nil {
 		t.Error("expected error for non-existent version")
 	}

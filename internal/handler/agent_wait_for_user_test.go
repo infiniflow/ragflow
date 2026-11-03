@@ -117,13 +117,13 @@ func (f *waitFakeAgentService) RunAgent(ctx context.Context, canvasID, sessionID
 func (f *waitFakeAgentService) PublishAgent(context.Context, string, string, *service.PublishAgentRequest) (*entity.UserCanvasVersion, error) {
 	return &entity.UserCanvasVersion{}, nil
 }
-func (f *waitFakeAgentService) ListVersions(context.Context, string, string) ([]*entity.UserCanvasVersion, error) {
+func (f *waitFakeAgentService) ListVersions(context.Context, string) ([]*entity.UserCanvasVersion, error) {
 	return nil, nil
 }
-func (f *waitFakeAgentService) GetVersion(context.Context, string, string, string) (*entity.UserCanvasVersion, error) {
+func (f *waitFakeAgentService) GetVersion(context.Context, string, string) (*entity.UserCanvasVersion, error) {
 	return &entity.UserCanvasVersion{}, nil
 }
-func (f *waitFakeAgentService) DeleteVersion(context.Context, string, string, string) error {
+func (f *waitFakeAgentService) DeleteVersion(context.Context, string, string) error {
 	return nil
 }
 

@@ -1507,7 +1507,7 @@ func buildVersionTitle(agentTitle string, ts time.Time) string {
 // newest first. The parent-canvas access check is enforced before the
 // version list is loaded so unauthorized users cannot enumerate version
 // ids of canvases they cannot read.
-func (s *AgentService) ListVersions(ctx context.Context, userID, canvasID string) ([]*entity.UserCanvasVersion, error) {
+func (s *AgentService) ListVersions(ctx context.Context, canvasID string) ([]*entity.UserCanvasVersion, error) {
 	if _, err := s.loadCanvasForUser(ctx, canvasID, permission.OperationRead); err != nil {
 		return nil, err
 	}
@@ -1519,7 +1519,7 @@ func (s *AgentService) ListVersions(ctx context.Context, userID, canvasID string
 // exist or belongs to a different canvas, and
 // dao.ErrUserCanvasNotFound when the parent canvas is not visible to
 // the requesting user.
-func (s *AgentService) GetVersion(ctx context.Context, userID, canvasID, versionID string) (*entity.UserCanvasVersion, error) {
+func (s *AgentService) GetVersion(ctx context.Context, canvasID, versionID string) (*entity.UserCanvasVersion, error) {
 	if versionID == "" {
 		return nil, dao.ErrUserCanvasVersionNotFound
 	}
@@ -1540,7 +1540,7 @@ func (s *AgentService) GetVersion(ctx context.Context, userID, canvasID, version
 // Returns dao.ErrUserCanvasVersionNotFound when the row does not exist
 // (or belongs to a different canvas) and dao.ErrUserCanvasNotFound when
 // the parent canvas is not visible to the requesting user.
-func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, versionID string) error {
+func (s *AgentService) DeleteVersion(ctx context.Context, canvasID, versionID string) error {
 	if versionID == "" {
 		return dao.ErrUserCanvasVersionNotFound
 	}
@@ -1579,7 +1579,7 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 // dao.ErrUserCanvasVersionNotFound when the row does not exist or belongs to a
 // different canvas, and dao.ErrUserCanvasNotFound when the parent canvas is not
 // updatable by the requesting user.
-func (s *AgentService) UpdateVersion(ctx context.Context, userID, canvasID, versionID string, patch dao.UserCanvasVersionPatch) error {
+func (s *AgentService) UpdateVersion(ctx context.Context, canvasID, versionID string, patch dao.UserCanvasVersionPatch) error {
 	if versionID == "" {
 		return dao.ErrUserCanvasVersionNotFound
 	}
@@ -1603,8 +1603,8 @@ func (s *AgentService) UpdateVersion(ctx context.Context, userID, canvasID, vers
 // user_canvas_version: the restored DSL already exists as a historical row,
 // so a new one would be a pure duplicate counting against the per-canvas
 // version cap.
-func (s *AgentService) ApplyVersion(ctx context.Context, userID, canvasID, versionID string) error {
-	version, err := s.GetVersion(ctx, userID, canvasID, versionID)
+func (s *AgentService) ApplyVersion(ctx context.Context, canvasID, versionID string) error {
+	version, err := s.GetVersion(ctx, canvasID, versionID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) || errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
 			return err

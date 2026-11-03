@@ -125,20 +125,21 @@ func TestChatAgenticConfigRejectsInvalidWrites(t *testing.T) {
 			db := setupChatRESTUpdateServiceTestDB(t)
 			createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 			svc := NewChatService()
+			ctx := serviceTestContext(t, "user-1", "user-1")
 			for _, method := range []string{"create", "put", "patch"} {
 				payload := map[string]any{"prompt_config": map[string]any{"agentic_rag": override}}
 				var err error
 				switch method {
 				case "create":
 					payload["name"] = "Invalid configuration"
-					_, _, err = svc.Create(t.Context(), payload)
+					_, _, err = svc.Create(ctx, payload)
 				case "put":
-					_, err = svc.UpdateChat(t.Context(), "chat-1", payload)
+					_, err = svc.UpdateChat(ctx, "chat-1", payload)
 				case "patch":
-					_, err = svc.PatchChat(t.Context(), "chat-1", payload)
+					_, err = svc.PatchChat(ctx, "chat-1", payload)
 				}
-				if err == nil {
-					t.Fatalf("%s accepted invalid override %#v", method, override)
+				if err == nil || !strings.Contains(err.Error(), "agentic_rag") {
+					t.Fatalf("%s validation error = %v for invalid override %#v", method, err, override)
 				}
 			}
 			chat, err := svc.chatDAO.GetByID(t.Context(), dao.DB, "chat-1")
