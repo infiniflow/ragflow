@@ -56,6 +56,9 @@ services:
       - plugins.security.disabled=false
       - plugins.security.ssl.http.enabled=false
       - plugins.security.ssl.transport.enabled=true
+      - cluster.routing.allocation.disk.watermark.low=5gb
+      - cluster.routing.allocation.disk.watermark.high=3gb
+      - cluster.routing.allocation.disk.watermark.flood_stage=2gb
       - http.port=9201
     mem_limit: ${MEM_LIMIT}
     ulimits:
