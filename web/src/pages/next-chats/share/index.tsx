@@ -4,10 +4,10 @@ import MessageItem from '@/components/message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useSyncThemeFromParams } from '@/components/theme-provider';
+import { VirtualMessageList } from '@/components/virtual-message-list';
 import { MessageType } from '@/constants/chat';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import i18n, { changeLanguageAsync } from '@/locales/config';
-import { buildMessageUuidWithRole } from '@/utils/chat';
 import React, { forwardRef } from 'react';
 import { useSendButtonDisabled } from '../hooks/use-button-disabled';
 import {
@@ -36,7 +36,7 @@ const ChatContainer = () => {
     derivedMessages,
     hasError,
     stopOutputMessage,
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     removeAllMessagesExceptFirst,
   } = useSendSharedMessage();
@@ -72,31 +72,29 @@ const ChatContainer = () => {
             }
             ref={messageContainerRef}
           >
-            <div>
-              {derivedMessages?.map((message, i) => {
-                return (
-                  <MessageItem
-                    visibleAvatar={visibleAvatar}
-                    key={buildMessageUuidWithRole(message)}
-                    avatarDialog={avatarDialogSrc}
-                    item={message}
-                    nickname="You"
-                    reference={messageReferences.get(message) ?? EmptyReference}
-                    loading={
-                      message.role === MessageType.Assistant &&
-                      sendLoading &&
-                      derivedMessages?.length - 1 === i
-                    }
-                    index={i}
-                    isLast={i === derivedMessages.length - 1}
-                    clickDocumentButton={clickDocumentButton}
-                    showLikeButton={false}
-                    showLoudspeaker={false}
-                  ></MessageItem>
-                );
-              })}
-            </div>
-            <div ref={scrollRef} />
+            <VirtualMessageList
+              className="w-full"
+              items={derivedMessages}
+              virtualizer={virtualizer}
+              renderItem={(message, i) => (
+                <MessageItem
+                  visibleAvatar={visibleAvatar}
+                  avatarDialog={avatarDialogSrc}
+                  item={message}
+                  nickname="You"
+                  reference={messageReferences.get(message) ?? EmptyReference}
+                  loading={
+                    message.role === MessageType.Assistant &&
+                    sendLoading &&
+                    derivedMessages.length - 1 === i
+                  }
+                  index={i}
+                  clickDocumentButton={clickDocumentButton}
+                  showLikeButton={false}
+                  showLoudspeaker={false}
+                />
+              )}
+            />
           </div>
           <div className="flex w-full justify-center md:mb-8">
             <div className="w-full md:w-5/6">

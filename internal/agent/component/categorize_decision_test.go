@@ -24,7 +24,7 @@ func setupCategorizeDecisionModel(t *testing.T, baseURL string) *gorm.DB {
 	dao.GetModelProviderManager()
 	db := setupComponentTestDB(t)
 	for _, row := range []any{
-		&entity.TenantModelProvider{ID: "decision-provider", TenantID: "tenant-1", ProviderName: "SystemOne"},
+		&entity.TenantModelProvider{ID: "decision-provider", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "SystemOne"},
 		&entity.TenantModelInstance{ID: "decision-instance", ProviderID: "decision-provider", InstanceName: "default", APIKey: "test-key", Status: "active", Extra: fmt.Sprintf(`{"base_url":%q}`, baseURL)},
 		&entity.TenantModel{ID: categorizeDecisionModelID, ProviderID: "decision-provider", InstanceID: "decision-instance", ModelName: "decision-model-preview", ModelType: int(entity.ModelTypeDecision), Status: "active"},
 	} {

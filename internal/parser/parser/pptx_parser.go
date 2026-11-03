@@ -91,12 +91,6 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	method := strings.ToLower(strings.TrimSpace(p.ParseMethod))
 	switch method {
 	case "tcadp":
-		// TCADP file_type is intentionally derived from the parser's
-		// configured family (p.format == "pptx" → "PPTX", "ppt" → "PPT"),
-		// not from magic-byte sniffing. The pipeline routes purely on
-		// extension → parser family, and TCADP reconstructs by family.
-		// The OLE fallback below therefore only applies to the local
-		// office_oxide path.
 		return parseWithTCADP(ctx,
 			filename, data, strings.ToUpper(p.format),
 			p.TCADPAPIServer, p.TCADPAPIKey,
@@ -109,27 +103,7 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// meaningless for PPTX; treat as default path.
 	}
 
-	// office_oxide's OpenFromBytes takes the container format as given
-	// and does no magic-byte detection, so a legacy .ppt uploaded with a
-	// .pptx extension would be parsed as ZIP/OOXML and fail. Sniff the
-	// real container and pass the matching format so mislabeled files
-	// still parse (mirrors the magic-byte correction office_oxide::Open
-	// performs on file paths).
-	// File["format"] in the success case reflects effFormat, i.e. the
-	// real container ("ppt" for OLE fallback, "pptx" for OOXML fallback),
-	// not just the extension.
-	effFormat := p.format
-	switch officeContainer(data) {
-	case "ole":
-		if effFormat == "pptx" {
-			effFormat = "ppt"
-		}
-	case "ooxml":
-		if effFormat == "ppt" {
-			effFormat = "pptx"
-		}
-	}
-	irJSON, _, plainText, _, err := pptxExtract(data, effFormat)
+	irJSON, _, plainText, _, err := pptxExtract(data, p.format)
 	if err != nil {
 		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
 			return ParseResult{Err: fmt.Errorf("%w: %s", ErrOfficeCGORequired, filename)}
@@ -148,7 +122,7 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 			return ParseResult{Err: fmt.Errorf("presentation ir-json: empty result")}
 		}
 		return ParseResult{
-			File: map[string]any{"name": filename, "format": effFormat},
+			File: map[string]any{"name": filename, "format": p.format},
 			JSON: MapsToItems(itemsFromPlainText(plainText)),
 		}
 	}
@@ -179,7 +153,7 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 
 	return ParseResult{
-		File:     map[string]any{"name": filename, "format": effFormat},
+		File:     map[string]any{"name": filename, "format": p.format},
 		JSON:     MapsToItems(items),
 		Warnings: sink.warnings(),
 	}

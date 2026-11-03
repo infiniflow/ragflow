@@ -25,12 +25,12 @@ func DeploymentUploadMaxBytes() int64 {
 
 // UploadFile uploads files to a folder
 func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string, files []*multipart.FileHeader, maxBytes int64) ([]map[string]interface{}, error) {
-	userID, currentTenantID, err := fileRequestSubject(ctx, tenantID)
+	userID, currentTenantID, err := fileRequestIdentity(ctx, tenantID)
 	if err != nil {
 		return nil, err
 	}
 	tenantID = currentTenantID
-	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, "file", permission.ActionWrite); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
 		return nil, err
 	}
 	if parentID == "" {
@@ -146,6 +146,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		fileRecord := &entity.File{
 			ID:         common.GenerateToken(),
 			ParentID:   lastFolder.ID,
+			UserID:     userID,
 			TenantID:   tenantID,
 			CreatedBy:  userID,
 			Name:       uniqueName,
@@ -159,7 +160,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 			if err := s.fileDAO.Insert(ctx, tx, fileRecord); err != nil {
 				return err
 			}
-			return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: permission.ResourceKindFile, ID: fileRecord.ID})
+			return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindFile, ID: fileRecord.ID})
 		}); err != nil {
 			_ = storageImpl.Remove(ctx, lastFolder.ID, location)
 			return nil, fmt.Errorf("failed to insert file record: %w", err)

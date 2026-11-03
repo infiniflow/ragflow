@@ -11,6 +11,9 @@ A complete reference for RAGFlow's RESTful API, including migration notes for RA
 
 In the standard response envelope, `message` is always a non-empty string. Successful responses default to `"success"`; error responses contain a description of the error.
 
+`data` is optional. Operation acknowledgments omit it; check `code` for success
+and `message` for the result description. Result payloads use objects or arrays.
+
 ---
 
 ## ERROR CODES
@@ -1687,7 +1690,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -2076,9 +2079,13 @@ Success:
 
 ```json
 {
-    "code": 0
+    "code": 0,
+    "message": "success",
+    "data": {"deleted_count": 1}
 }
 ```
+
+`data.deleted_count` is the number of chunks deleted. It is `0` when no chunks matched the request.
 
 Failure:
 
@@ -2236,7 +2243,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -2682,7 +2689,8 @@ curl --request POST \
   - `"refine_multiturn"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
-  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"anysearch"`, `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
+  - `"anysearch_api_key"`: `string` The optional [AnySearch](https://anysearch.com/console/api-keys) API key. Set `web_search_provider` to `"anysearch"` when using this field. Omit it or leave it blank for anonymous search; service limits apply.
   - `"tavily_api_key"`: `string`
   - `"brave_api_key"`: `string` The Brave Search API key. Set `web_search_provider` to `"brave"` when using this field.
   - `"exa_api_key"`: `string` The Exa API key. Set `web_search_provider` to `"exa"` when using this field.
@@ -3072,7 +3080,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -5194,7 +5202,6 @@ Failure:
 ```json
 {
     "code": 401,
-    "data": null,
     "message": "<Unauthorized '401: Unauthorized'>"
 }
 ```
@@ -5352,7 +5359,10 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
+    "data": {
+        "id": "58af890a2a8911f0a71a11b922ed82d6",
+        "title": "Test Agent"
+    },
     "message": "success"
 }
 ```
@@ -5422,7 +5432,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
+    "data": {"update_time": 1720000000000},
     "message": "success"
 }
 ```
@@ -5483,7 +5493,6 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
     "message": "success"
 }
 ```
@@ -5537,7 +5546,6 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
     "message": "success"
 }
 ```
@@ -5590,7 +5598,6 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
     "message": "success"
 }
 ```
@@ -5989,7 +5996,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6031,7 +6037,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "success"
 }
 ```
@@ -6041,7 +6046,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Resource not found"
 }
 ```
@@ -6170,7 +6174,6 @@ Failure
 ```
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6248,7 +6251,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "All add to task."
 }
 ```
@@ -6258,7 +6260,6 @@ Failure
 ```json
 {
     "code": 500,
-    "data": null,
     "message": "Some messages failed to add. Detail: {fail information}"
 }
 ```
@@ -6303,7 +6304,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "success"
 }
 ```
@@ -6313,7 +6313,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6368,7 +6367,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "success"
 }
 ```
@@ -6378,7 +6376,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6626,7 +6623,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -7393,7 +7389,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -8348,7 +8344,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 

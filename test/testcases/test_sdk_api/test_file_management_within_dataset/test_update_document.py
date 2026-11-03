@@ -26,15 +26,15 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "name, expected_message",
         [
-            ("new_name.txt", ""),
-            (f"{'a' * 251}.txt", ""),
+            pytest.param("new_name.txt", ""),
+            pytest.param(f"{'a' * 251}.txt", ""),
             (0, "Field: <name> - Message: <Input should be a valid string> - Value: <0>"),
             (None, "Field: <name> - Message: <Input should be a valid string> - Value: <None>"),
             ("", "the extension of file can't be changed"),
             ("ragflow_test_upload_0", "the extension of file can't be changed"),
             ("ragflow_test_upload_1.txt", "duplicated document name in the same dataset"),
             ("RAGFLOW_TEST_UPLOAD_1.TXT", "duplicated document name in the same dataset"),
-            ("RAGFLOW_TEST_UPLOAD_0.TXT", ""),
+            pytest.param("RAGFLOW_TEST_UPLOAD_0.TXT", ""),
         ],
     )
     def test_name(self, add_documents, name, expected_message):

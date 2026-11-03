@@ -16,7 +16,7 @@ Released on Oct 30, 2026.
 1.0.0-rc3 is the third and final release candidate before the official v1.0.0 release. It fixes several issues found in rc2 and introduces new features and enhancements.
 
 Key updates:
-1. Introduced the Decision Model for decision making in agentic conversations and Categorize component in agents.
+1. Introduced the decision model for evidence sufficiency judgment within the agentic tool loop, and the Categorize component for agents.
 2. Added support for multiple versions of ingestion pipeline DSL.
 3. Chat history now stores and displays prompts, token usage, and execution time.
 4. Compatible with existing v1.0.0-rc2 schema, allowing a direct upgrade.
@@ -1298,7 +1298,7 @@ Ensure that you [upgrade **both** your code **and** Docker image to this release
 #### Added documents
 
 - [Configurations](https://ragflow.io/docs/dev/configurations)
-- [Manage team members](./guides/team/team_management/index.md)
+- [Manage team members](guides/team/team_management/manage_team_members.md)
 - Run health check on RAGFlow's dependencies
 
 ## v0.13.0

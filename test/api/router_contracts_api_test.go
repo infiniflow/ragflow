@@ -22,9 +22,8 @@ func requireRouteNotFound(t *testing.T, r restResult, path string) {
 	if r.JSON["message"] != want {
 		t.Fatalf("expected message %q, got %v, payload: %v", want, r.JSON["message"], r.JSON)
 	}
-	data, ok := r.JSON["data"]
-	if !ok || data != nil {
-		t.Fatalf("expected data null, got %v, payload: %v", r.JSON["data"], r.JSON)
+	if data, exists := r.JSON["data"]; exists {
+		t.Fatalf("data must be omitted, got %v, payload: %v", data, r.JSON)
 	}
 }
 

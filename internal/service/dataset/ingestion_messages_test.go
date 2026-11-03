@@ -151,13 +151,11 @@ func TestListSyncLogsReturnsOnlyCurrentlyLinkedDatasetConnectors(t *testing.T) {
 	}
 
 	ctx := withDatasetTestContext(t.Context(), "user-1", "user-1")
-	subject := permission.Subject{UserID: "user-1"}
 	checker := permission.NewDatabaseChecker(db)
-	if err := checker.CheckResource(ctx, subject, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: "kb-1"}, permission.OperationRead); err != nil {
+	if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: "kb-1"}, permission.OperationRead); err != nil {
 		t.Fatalf("check dataset access fixture: %v", err)
 	}
-	if err := checker.CheckDependency(ctx, subject,
-		permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: "connector-1"},
+	if err := checker.CheckDependency(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: "connector-1"},
 		permission.ResourceRef{Kind: permission.ResourceKindSyncTask, ID: "sync-kb-1"},
 		permission.OperationUse, permission.OperationRead); err != nil {
 		t.Fatalf("check linked sync log access fixture: %v", err)

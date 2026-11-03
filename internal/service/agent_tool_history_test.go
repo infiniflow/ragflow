@@ -70,7 +70,7 @@ func TestRunAgent_ToolHistoryPersists(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			// The auth middleware attaches the permission subject in production;
 			// the enterprise policy resolves the canvas through its tenant.
-			ctx = permission.WithSubject(ctx, permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+			ctx = permission.WithIdentity(ctx, "user-1", "tenant-1")
 			defer cancel()
 			mcp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodDelete {
@@ -254,7 +254,7 @@ func TestRunAgent_ToolHistoryPersists(t *testing.T) {
 			}
 			tracker, _ := newAgentCancelTracker(t)
 			svc := NewAgentServiceWithOptions(nil, nil, tracker)
-			events, err := svc.RunAgent(WithAgentSessionID(ctx, sessionID), "user-1", canvasID, sessionID, "", "Find the manual", nil)
+			events, err := svc.RunAgent(WithAgentSessionID(ctx, sessionID), canvasID, sessionID, "", "Find the manual", nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -349,7 +349,7 @@ func TestRunAgent_ToolHistoryPersists(t *testing.T) {
 				t.Errorf("persisted memory missing summary: %s", raw)
 			}
 			// A fresh direct-answer turn reuses persisted DSL but must not re-summarize old calls.
-			events, err = svc.RunAgent(WithAgentSessionID(ctx, sessionID), "user-1", canvasID, sessionID, "", "direct on next turn", nil)
+			events, err = svc.RunAgent(WithAgentSessionID(ctx, sessionID), canvasID, sessionID, "", "direct on next turn", nil)
 			if err != nil {
 				t.Fatal(err)
 			}

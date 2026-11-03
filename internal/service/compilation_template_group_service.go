@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
@@ -132,9 +133,11 @@ func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, tenan
 	}
 
 	groupID := common.GenerateUUID()
+	creatorID := identityForTemplateTenant(ctx, tenantID).UserID
 	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		group := &entity.CompilationTemplateGroup{
 			ID:          groupID,
+			UserID:      creatorID,
 			TenantID:    tenantID,
 			Name:        groupName,
 			Description: strptr(req.Description),
@@ -269,7 +272,7 @@ func (s *CompilationTemplateGroupService) buildGroupItem(ctx context.Context, te
 			Name:        c.Name,
 			Description: derefString(c.Description),
 			Kind:        c.Kind,
-			Config:      fillConfigDefaultLLM(ctx, c.Config, c.TenantID),
+			Config:      fillConfigDefaultLLM(ctx, c.Config, identityForTemplateTenant(ctx, tenantID)),
 			CreateTime:  timeStr(c.CreateTime),
 			UpdateTime:  timeStr(c.UpdateTime),
 		})
@@ -392,13 +395,14 @@ func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db
 			}
 		}
 		desc := child.Description
-		config := fillConfigDefaultLLM(ctx, child.Config, &tenantID)
+		config := fillConfigDefaultLLM(ctx, child.Config, identityForTemplateTenant(ctx, tenantID))
 		if config == nil {
 			config = entity.JSONMap{}
 		}
 		valid := string(entity.StatusValid)
 		tmpl := &entity.CompilationTemplate{
 			ID:       common.GenerateUUID(),
+			UserID:   identityForTemplateTenant(ctx, tenantID).UserID,
 			TenantID: &tenantID,
 			GroupID:  &groupID,
 			Name:     name,
@@ -496,7 +500,7 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 
 	// Pass 3: apply updates and inserts.
 	for _, item := range resolved {
-		config := fillConfigDefaultLLM(ctx, item.child.Config, &tenantID)
+		config := fillConfigDefaultLLM(ctx, item.child.Config, identityForTemplateTenant(ctx, tenantID))
 		if config == nil {
 			config = entity.JSONMap{}
 		}
@@ -523,6 +527,7 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 		valid := string(entity.StatusValid)
 		tmpl := &entity.CompilationTemplate{
 			ID:       newID,
+			UserID:   identityForTemplateTenant(ctx, tenantID).UserID,
 			TenantID: &tenantID,
 			GroupID:  &groupID,
 			Name:     newName,
@@ -547,6 +552,14 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 		oldNames[c.ID] = c.Name
 	}
 	return s.assertUniqueChildNames(ctx, db, groupID, oldNames)
+}
+
+func identityForTemplateTenant(ctx context.Context, tenantID string) Identity {
+	access := Identity{UserID: tenantID, TenantID: tenantID}
+	if userID := strings.TrimSpace(permission.UserIDFromContext(ctx)); userID != "" {
+		access.UserID = userID
+	}
+	return access
 }
 
 // assertUniqueChildNames rejects a group whose valid children collide on a

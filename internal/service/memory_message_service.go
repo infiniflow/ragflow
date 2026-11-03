@@ -355,7 +355,7 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 	for i, message := range messages {
 		contents[i], _ = message["content"].(string)
 	}
-	embeddingModel, err := NewModelFactory().NewEmbeddingModel(ctx, ModelAccess{TenantID: mem.TenantID}, mem.EmbdID)
+	embeddingModel, err := NewModelFactory().NewEmbeddingModel(ctx, Identity{TenantID: mem.TenantID}, mem.EmbdID)
 	if err != nil {
 		return err
 	}

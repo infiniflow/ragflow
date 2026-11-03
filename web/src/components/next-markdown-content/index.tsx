@@ -57,6 +57,7 @@ import {
   type CitationKey,
 } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
+import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { useLoadingPause } from '@/hooks/use-loading-pause';
@@ -438,9 +439,11 @@ function MarkdownContent({
                 </bdi>
               </HoverCardTrigger>
               {chunkItem && (
-                <HoverCardContent className="max-w-3xl">
-                  {renderPopoverContent(chunkKey)}
-                </HoverCardContent>
+                <HoverCardPrimitive.Portal>
+                  <HoverCardContent className="max-w-3xl">
+                    {renderPopoverContent(chunkKey)}
+                  </HoverCardContent>
+                </HoverCardPrimitive.Portal>
               )}
             </HoverCard>
           );

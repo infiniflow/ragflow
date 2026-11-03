@@ -55,15 +55,15 @@ type recordingTaskPublisher struct {
 }
 
 func documentTestContext(ctx context.Context) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+	return permission.WithIdentity(ctx, "user-1", "tenant-1")
 }
 
 func documentTestContextFor(ctx context.Context, tenantID string) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{UserID: tenantID, TenantID: tenantID})
+	return permission.WithIdentity(ctx, tenantID, tenantID)
 }
 
 func documentTestActorContext(ctx context.Context, userID, tenantID string) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{UserID: userID, TenantID: tenantID})
+	return permission.WithIdentity(ctx, userID, tenantID)
 }
 
 type runningTaskPublisher struct {
@@ -549,6 +549,9 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 		&entity.UserCanvas{},
 		&entity.API4Conversation{},
 	}
@@ -1493,6 +1496,15 @@ func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
 
 func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 	t.Helper()
+	modelID := func(defaultID string) string {
+		if userID == "user-1" && tenantID == "tenant-1" {
+			return defaultID
+		}
+		return fmt.Sprintf("%s-%s-%s", defaultID, userID, tenantID)
+	}
+	chatModelID := modelID("llm-default")
+	embeddingModelID := modelID("embd-default")
+	asrModelID := modelID("asr-default")
 	// Insert user if not exists (email is NOT NULL, password is nullable pointer)
 	var existingUser entity.User
 	if err := dao.DB.Where("id = ?", userID).First(&existingUser).Error; err != nil {
@@ -1518,9 +1530,9 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 			TenantID: tenantID,
 			Role:     "owner",
 			Status:   sptr(entity.TenantMembershipStatusJoined),
-			LLMID:    "llm-default",
-			EmbdID:   "embd-default",
-			ASRID:    "asr-default",
+			LLMID:    chatModelID,
+			EmbdID:   embeddingModelID,
+			ASRID:    asrModelID,
 		}
 		if err = dao.DB.Create(ut).Error; err != nil {
 			t.Fatalf("insert test user_tenant: %v", err)
@@ -1528,8 +1540,27 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 	}
 	if err := dao.DB.Model(&entity.UserTenant{}).
 		Where("user_id = ? AND tenant_id = ?", userID, tenantID).
-		Updates(map[string]interface{}{"llm_id": "llm-default", "embd_id": "embd-default", "asr_id": "asr-default"}).Error; err != nil {
+		Updates(map[string]interface{}{"llm_id": chatModelID, "embd_id": embeddingModelID, "asr_id": asrModelID}).Error; err != nil {
 		t.Fatalf("set test owner model defaults: %v", err)
+	}
+	providerID := fmt.Sprintf("test-default-provider-%s-%s", userID, tenantID)
+	instanceID := fmt.Sprintf("test-default-instance-%s-%s", userID, tenantID)
+	provider := &entity.TenantModelProvider{ID: providerID, UserID: userID, TenantID: tenantID, ProviderName: "OpenAI"}
+	if err := dao.DB.Where("id = ?", providerID).FirstOrCreate(provider).Error; err != nil {
+		t.Fatalf("seed test default provider: %v", err)
+	}
+	instance := &entity.TenantModelInstance{ID: instanceID, ProviderID: providerID, InstanceName: "default", Status: "active", Extra: "{}"}
+	if err := dao.DB.Where("id = ?", instanceID).FirstOrCreate(instance).Error; err != nil {
+		t.Fatalf("seed test default instance: %v", err)
+	}
+	for _, model := range []*entity.TenantModel{
+		{ID: chatModelID, ProviderID: providerID, InstanceID: instanceID, ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: "{}"},
+		{ID: embeddingModelID, ProviderID: providerID, InstanceID: instanceID, ModelName: "text-embedding-3-small", ModelType: int(entity.ModelTypeEmbedding), Status: "active", Extra: "{}"},
+		{ID: asrModelID, ProviderID: providerID, InstanceID: instanceID, ModelName: "whisper-1", ModelType: int(entity.ModelTypeSpeech2Text), Status: "active", Extra: "{}"},
+	} {
+		if err := dao.DB.Where("id = ?", model.ID).FirstOrCreate(model).Error; err != nil {
+			t.Fatalf("seed test default model %s: %v", model.ID, err)
+		}
 	}
 	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, userID); err != nil {
 		t.Fatalf("prepare document permission fixture: %v", err)
@@ -2855,7 +2886,7 @@ func TestGetDocumentPreview_DocumentNotFound(t *testing.T) {
 	svc := testDocumentService(t)
 
 	ctx := t.Context()
-	_, err := svc.GetDocumentPreview(ctx, "user-1", "nonexistent")
+	_, err := svc.GetDocumentPreview(ctx, "nonexistent")
 	if !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Errorf("expected ErrPreviewDocumentNotFound, got %v", err)
 	}
@@ -2905,7 +2936,7 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 	ctx := documentTestContext(t.Context())
 
 	// Dataset owner reads the original file.
-	p, err := svc.GetDocumentPreview(ctx, "user-1", "doc-prev")
+	p, err := svc.GetDocumentPreview(ctx, "doc-prev")
 	if err != nil {
 		t.Fatalf("owner preview: %v", err)
 	}
@@ -2916,13 +2947,13 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 	// A member of the dataset's tenant reads it too.
 	seedDocumentPreviewMemberAccess(t, db)
 	memberCtx := documentTestActorContext(t.Context(), "user-2", "tenant-1")
-	if _, err = svc.GetDocumentPreview(memberCtx, "user-2", "doc-prev"); err != nil {
+	if _, err = svc.GetDocumentPreview(memberCtx, "doc-prev"); err != nil {
 		t.Fatalf("team member preview: %v", err)
 	}
 
 	// An unrelated user gets the same answer as for a missing document.
 	strangerCtx := documentTestActorContext(t.Context(), "user-3", "tenant-1")
-	_, err = svc.GetDocumentPreview(strangerCtx, "user-3", "doc-prev")
+	_, err = svc.GetDocumentPreview(strangerCtx, "doc-prev")
 	if !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Fatalf("stranger preview: expected ErrPreviewDocumentNotFound, got %v", err)
 	}
@@ -2938,10 +2969,10 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 	}
 	insertTestPreviewDoc(t, db, mockStorage, "doc-prev-me", "kb-prev-me", "private body")
 
-	if _, err = svc.GetDocumentPreview(ctx, "user-2", "doc-prev-me"); !errors.Is(err, ErrPreviewDocumentNotFound) {
+	if _, err = svc.GetDocumentPreview(memberCtx, "doc-prev-me"); !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Fatalf("team member on private dataset: expected ErrPreviewDocumentNotFound, got %v", err)
 	}
-	p, err = svc.GetDocumentPreview(ctx, "user-1", "doc-prev-me")
+	p, err = svc.GetDocumentPreview(ctx, "doc-prev-me")
 	if err != nil {
 		t.Fatalf("owner preview private dataset: %v", err)
 	}
@@ -2958,7 +2989,7 @@ func TestGetDocumentPreview_EmptyObject(t *testing.T) {
 	insertTestPreviewDoc(t, db, mockStorage, "doc-prev-empty", "kb-prev-empty", "")
 
 	svc := testDocumentService(t)
-	_, err := svc.GetDocumentPreview(documentTestContext(t.Context()), "user-1", "doc-prev-empty")
+	_, err := svc.GetDocumentPreview(documentTestContext(t.Context()), "doc-prev-empty")
 	if !errors.Is(err, ErrPreviewFileEmpty) {
 		t.Fatalf("expected ErrPreviewFileEmpty, got %v", err)
 	}
@@ -2981,7 +3012,7 @@ func TestGetDocumentPreview_MissingObjectSurfacesStorageError(t *testing.T) {
 	}
 
 	svc := testDocumentService(t)
-	_, err := svc.GetDocumentPreview(documentTestContext(t.Context()), "user-1", "doc-prev-miss")
+	_, err := svc.GetDocumentPreview(documentTestContext(t.Context()), "doc-prev-miss")
 	if err == nil {
 		t.Fatal("expected storage read error")
 	}
@@ -4450,7 +4481,7 @@ func TestUpdateDatasetDocumentParentChildConfigReachesCanvasChunker(t *testing.T
 	seedDocVersion(t, db, pipelineID, "v-pcc-0001", 0)
 	// Bind the document to the pipeline first, so the update below is a plain
 	// parser_config patch on an already-canvas document. A pipeline switch must
-	// reset parser_config to the canvas DSL defaults (design A3 整体重置), so the
+	// reset parser_config to the canvas DSL defaults, so the
 	// submitted parent_child would be dropped on a switch; this test verifies the
 	// config reaches the canvas chunker when no switch occurs.
 	bindDocCanvas(t, db, "kb-1", "doc-1", pipelineID, "v-pcc-0001")
@@ -4934,13 +4965,14 @@ func TestGetDocumentThumbnailAuthorizesBeforeStorage(t *testing.T) {
 	}
 	svc := testDocumentService(t)
 
-	if _, err := svc.GetDocumentThumbnail(ctx, "other-user", "doc-thumb"); !errors.Is(err, ErrDocumentImageNotFound) {
+	strangerCtx := documentTestActorContext(t.Context(), "other-user", "owner-1")
+	if _, err := svc.GetDocumentThumbnail(strangerCtx, "doc-thumb"); !errors.Is(err, ErrDocumentImageNotFound) {
 		t.Fatalf("unauthorized GetDocumentThumbnail() error = %v", err)
 	}
 	if store.getCalls != 0 {
 		t.Fatalf("storage Get called %d times after authorization denial", store.getCalls)
 	}
-	got, err := svc.GetDocumentThumbnail(ctx, "user-1", "doc-thumb")
+	got, err := svc.GetDocumentThumbnail(ctx, "doc-thumb")
 	if err != nil || !bytes.Equal(got, image) {
 		t.Fatalf("authorized GetDocumentThumbnail() = %q, %v", got, err)
 	}
@@ -5398,13 +5430,253 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 	docSvc := testDocumentService(t)
 	fileSvc := file.NewFileService(docSvc)
 
-	if err := fileSvc.DeleteFiles(ctx, "user-1", []string{"file-1"}); err != nil {
+	if err := fileSvc.DeleteFiles(ctx, []string{"file-1"}); err != nil {
 		t.Fatalf("DeleteFiles failed: %v", err)
 	}
 
 	_, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err == nil {
 		t.Fatal("document should have been deleted but still exists")
+	}
+}
+
+// keepFileCleanupDocEngine records DeleteChunks + DeleteMetadata calls so the
+// keep-file cleanup path can assert that engine data is purged even when the
+// underlying file record + storage blob are explicitly preserved.
+type keepFileCleanupDocEngine struct {
+	fakeChatDocEngine
+	deleteChunksError     error
+	deleteChunksFailOnce  bool
+	deleteMetadataError   error
+	deleteChunksCalls     int
+	deleteChunksCondition map[string]interface{}
+	deleteChunksIndexName string
+	deleteChunksDatasetID string
+	deleteMetadataCalls   int
+	deleteMetadataCond    map[string]interface{}
+}
+
+func (e *keepFileCleanupDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
+	e.deleteChunksCalls++
+	e.deleteChunksCondition = condition
+	e.deleteChunksIndexName = indexName
+	e.deleteChunksDatasetID = datasetID
+	if e.deleteChunksFailOnce && e.deleteChunksCalls > 1 {
+		return 1, nil
+	}
+	return 1, e.deleteChunksError
+}
+
+func (e *keepFileCleanupDocEngine) DeleteMetadata(_ context.Context, condition map[string]interface{}, _ string) (int64, error) {
+	e.deleteMetadataCalls++
+	e.deleteMetadataCond = condition
+	return 0, e.deleteMetadataError
+}
+
+// TestRemoveDocumentKeepFileCleansUpEngineData regression-locks the
+// cycle-108 fix: RemoveDocumentKeepFile must purge chunks + metadata from
+// the engine, mirroring deleteDocumentFull. Pre-fix, the function left
+// orphans in the chunk store and ragflow_doc_meta_<tenant> table, which
+// MetadataService.GetFlattedMetaByKBs could still surface.
+func TestRemoveDocumentKeepFileCleansUpEngineData(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 30, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	engine := &keepFileCleanupDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
+
+	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); err != nil {
+		t.Fatalf("RemoveDocumentKeepFile failed: %v", err)
+	}
+
+	if engine.deleteChunksCalls != 1 {
+		t.Fatalf("DeleteChunks calls = %d, want 1", engine.deleteChunksCalls)
+	}
+	if got := engine.deleteChunksIndexName; got != "ragflow_tenant-1" {
+		t.Fatalf("DeleteChunks indexName = %q, want %q", got, "ragflow_tenant-1")
+	}
+	if got := engine.deleteChunksDatasetID; got != "kb-1" {
+		t.Fatalf("DeleteChunks datasetID = %q, want %q", got, "kb-1")
+	}
+	if got := engine.deleteChunksCondition["doc_id"]; got != "doc-1" {
+		t.Fatalf("DeleteChunks condition[doc_id] = %v, want %q", got, "doc-1")
+	}
+
+	if engine.deleteMetadataCalls != 1 {
+		t.Fatalf("DeleteMetadata calls=%d, want 1", engine.deleteMetadataCalls)
+	}
+	if engine.deleteMetadataCond["id"] != "doc-1" || engine.deleteMetadataCond["kb_id"] != "kb-1" {
+		t.Fatalf("metadata condition=%v", engine.deleteMetadataCond)
+	}
+
+	// Verify document row removed.
+	if _, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1"); err == nil {
+		t.Fatal("document row should be removed")
+	}
+
+	// Verify ingestion task removed.
+	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("reload ingestion task: %v", err)
+	} else if task != nil {
+		t.Fatal("ingestion task should be removed")
+	}
+
+	// Verify KB counters decremented.
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatalf("reload kb: %v", err)
+	}
+	if kb.DocNum != 0 {
+		t.Fatalf("doc_num = %d, want 0", kb.DocNum)
+	}
+}
+
+// TestRemoveDocumentKeepFilePreservesFileRecord regression-locks the
+// explicit "keep file" intent: the function must NOT touch the file row,
+// the file2document mapping, or the storage blob. Pre-fix, the bug was
+// about orphan data; this test pins the inverse: the file path stays
+// untouched.
+func TestRemoveDocumentKeepFilePreservesFileRecord(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 30, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	loc := "path/to/blob"
+	insertTestFile(t, "file-1", "dataset-folder-1", "test.pdf", &loc)
+	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
+	store := newFakeUploadStorage()
+	if err := store.Put(t.Context(), "kb-1", loc, []byte("document")); err != nil {
+		t.Fatalf("store document blob: %v", err)
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	engine := &keepFileCleanupDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+
+	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); err != nil {
+		t.Fatalf("RemoveDocumentKeepFile failed: %v", err)
+	}
+
+	// File record should still exist.
+	files, _ := dao.NewFileDAO().GetByIDs(t.Context(), db, []string{"file-1"})
+	if len(files) != 1 {
+		t.Fatalf("file record should survive, got %d", len(files))
+	}
+	// file2document mapping should still exist.
+	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(t.Context(), db, "doc-1")
+	if len(mappings) != 1 {
+		t.Fatalf("file2document mapping should survive, got %d", len(mappings))
+	}
+	// Storage blob should still exist.
+	if !store.ObjExist(t.Context(), "kb-1", loc) {
+		t.Fatal("storage blob should survive")
+	}
+}
+
+func TestRemoveDocumentKeepFileKeepsRowOnEngineFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 30, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
+	svc := testDocumentService(t)
+	svc.docEngine = &keepFileCleanupDocEngine{deleteChunksError: fmt.Errorf("partial delete")}
+	svc.metadataSvc = nil
+	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); err == nil {
+		t.Fatal("expected engine error")
+	}
+	if _, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document row must remain: %v", err)
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kb.DocNum != 1 {
+		t.Fatalf("doc_num=%d, want 1", kb.DocNum)
+	}
+	if got := svc.docEngine.(*keepFileCleanupDocEngine).deleteChunksCalls; got != 2 {
+		t.Fatalf("failed cleanup calls=%d, want bounded retry of 2", got)
+	}
+}
+
+func TestRemoveDocumentKeepFileKeepsRowOnMetadataFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 30, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
+	engine := &keepFileCleanupDocEngine{deleteMetadataError: fmt.Errorf("metadata unavailable")}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
+	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); err == nil {
+		t.Fatal("expected metadata error")
+	}
+	if _, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document row must remain: %v", err)
+	}
+	if engine.deleteMetadataCalls != 1 {
+		t.Fatalf("metadata calls=%d", engine.deleteMetadataCalls)
+	}
+}
+
+// TestDeleteDocumentFullKeepsDocumentWhenMetadataDeletionFails pins the
+// shared-helper contract on the full path too: a metadata cleanup failure
+// surfaces before the document row is removed, so a retry can complete the
+// delete instead of leaving orphan ragflow_doc_meta_<tenant> records.
+func TestDeleteDocumentFullKeepsDocumentWhenMetadataDeletionFails(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 30, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
+	engine := &keepFileCleanupDocEngine{deleteMetadataError: fmt.Errorf("metadata unavailable")}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
+	if err := svc.deleteDocumentFull(t.Context(), "doc-1"); err == nil {
+		t.Fatal("expected metadata error")
+	}
+	if _, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document row must remain after metadata failure: %v", err)
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kb.DocNum != 1 {
+		t.Fatalf("doc_num=%d, want 1", kb.DocNum)
+	}
+	if engine.deleteMetadataCalls != 1 {
+		t.Fatalf("metadata calls=%d, want 1", engine.deleteMetadataCalls)
+	}
+}
+
+func TestRemoveDocumentKeepFileRetriesEngineFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 30, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
+	engine := &keepFileCleanupDocEngine{deleteChunksError: fmt.Errorf("partial delete"), deleteChunksFailOnce: true}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = nil
+	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if engine.deleteChunksCalls != 2 {
+		t.Fatalf("calls=%d, want 2", engine.deleteChunksCalls)
+	}
+	if _, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1"); err == nil {
+		t.Fatal("document row should be removed after cleanup succeeds")
 	}
 }
 

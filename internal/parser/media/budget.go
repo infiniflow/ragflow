@@ -50,6 +50,10 @@ type Budget struct {
 	oversizedImages int
 	totalOverflows  int
 	countExhausted  bool
+	// bytesExhausted records that an unknown-size payload was rejected by the
+	// total-byte limit. Later unknown-size sources are rejected before their
+	// bytes are read, so a run cannot download past the byte budget.
+	bytesExhausted bool
 }
 
 type budgetItem struct {
@@ -62,6 +66,9 @@ type budgetItem struct {
 type Reservation struct {
 	budget *Budget
 	item   *budgetItem
+	// unknown records that the reservation was made without a declared size,
+	// so a total-byte rejection here means the byte budget is spent.
+	unknown bool
 }
 
 // NewBudget returns a run budget using the current configured limits.
@@ -81,6 +88,13 @@ func (b *Budget) Reserve(declared Size) (*Reservation, Admission) {
 	if declared != UnknownSize && declared < 0 {
 		return nil, RejectedInvalid
 	}
+	if declared == UnknownSize && b.bytesExhausted {
+		// The byte budget is already spent; reject before the caller reads
+		// or downloads the payload. The count slot stays available, matching
+		// the declared-size rejection below.
+		b.noteByteRejection(declared)
+		return nil, RejectedByBytes
+	}
 	if declared != UnknownSize && !b.canAdmitBytes(declared) {
 		b.noteByteRejection(declared)
 		return nil, RejectedByBytes
@@ -91,7 +105,7 @@ func (b *Budget) Reserve(declared Size) (*Reservation, Admission) {
 	}
 	item := &budgetItem{}
 	b.itemsUsed++
-	return &Reservation{budget: b, item: item}, Admitted
+	return &Reservation{budget: b, item: item, unknown: declared == UnknownSize}, Admitted
 }
 
 // ReserveOccurrence admits a source-less payload. The occurrence consumes one
@@ -126,6 +140,14 @@ func (r *Reservation) Commit(actual Size) bool {
 		return false
 	}
 	if !r.budget.admitBytes(r.item, actual) {
+		// An unknown-size payload that fits the per-image limit but not the
+		// run budget spends the budget: later sources of unknown size would
+		// only be downloaded to fail the same check. A per-image oversize
+		// says nothing about the remaining run budget, so it does not set
+		// the flag.
+		if r.unknown && int64(actual) <= r.budget.limits.ImageMaxBytes {
+			r.budget.bytesExhausted = true
+		}
 		return false
 	}
 	r.item.included = true

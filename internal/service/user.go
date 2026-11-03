@@ -225,6 +225,7 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	rootFile := &entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
+		UserID:    userID,
 		TenantID:  userID,
 		CreatedBy: userID,
 		Name:      "/",
@@ -340,8 +341,8 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 	return user, common.CodeSuccess, nil
 }
 
-// GetUserByID get user by ID
-func (s *UserService) GetUserByID(ctx context.Context, id uint) (*UserResponse, common.ErrorCode, error) {
+// GetUserByID get user by ID (a 32-char hex UUID string).
+func (s *UserService) GetUserByID(ctx context.Context, id string) (*UserResponse, common.ErrorCode, error) {
 	user, err := s.userDAO.GetByID(ctx, dao.DB, id)
 	if err != nil {
 		return nil, common.CodeNotFound, err
@@ -743,138 +744,6 @@ func (s *UserService) ChangePassword(ctx context.Context, user *entity.User, req
 	return common.CodeSuccess, nil
 }
 
-// SetTenantInfoRequest represents the request for setting tenant info
-type SetTenantInfoRequest struct {
-	TenantID  *string                `json:"tenant_id"`
-	ASRID     *string                `json:"asr_id"`
-	EmbdID    *string                `json:"embd_id"`
-	Img2TxtID *string                `json:"img2txt_id"`
-	LLMID     *string                `json:"llm_id"`
-	RerankID  *string                `json:"rerank_id"`
-	TTSID     *string                `json:"tts_id"`
-	Raw       map[string]interface{} `json:"-"`
-}
-
-// SetTenantInfo updates default models on the caller's current Tenant membership.
-func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *SetTenantInfoRequest) (common.ErrorCode, error) {
-	if req == nil {
-		return common.CodeArgumentError, fmt.Errorf("model settings are required")
-	}
-	updates, err := tenantModelSettingUpdates(req.Raw)
-	if err != nil {
-		return common.CodeArgumentError, err
-	}
-	tenantID, err := requireCurrentTenantID(ctx, userID)
-	if err != nil {
-		return common.CodeForbidden, err
-	}
-	if req.TenantID != nil && strings.TrimSpace(*req.TenantID) != "" && strings.TrimSpace(*req.TenantID) != tenantID {
-		return common.CodeForbidden, fmt.Errorf("tenant_id must match the active Tenant context")
-	}
-	userTenantDAO := dao.NewUserTenantDAO()
-	membership, err := userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
-	if err != nil {
-		return common.CodeForbidden, err
-	}
-	if len(updates) > 0 {
-		if err := dao.DB.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", membership.ID).Updates(updates).Error; err != nil {
-			return common.CodeExceptionError, err
-		}
-	}
-	return common.CodeSuccess, nil
-}
-
-func tenantModelSettingUpdates(raw map[string]interface{}) (map[string]interface{}, error) {
-	updates := make(map[string]interface{}, len(raw))
-	for key, value := range raw {
-		if key == "tenant_id" {
-			if _, ok := value.(string); !ok {
-				return nil, fmt.Errorf("tenant_id must be a string")
-			}
-			continue
-		}
-		nullable := false
-		switch key {
-		case "llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id":
-		case "tenant_llm_id", "tenant_embd_id", "tenant_asr_id", "tenant_img2txt_id", "tenant_rerank_id",
-			"tts_id", "tenant_tts_id", "ocr_id", "tenant_ocr_id", "decision_id", "tenant_decision_id":
-			nullable = true
-		default:
-			return nil, fmt.Errorf("unsupported model setting %q", key)
-		}
-		if value == nil {
-			if !nullable {
-				return nil, fmt.Errorf("%s cannot be null", key)
-			}
-			updates[key] = nil
-			continue
-		}
-		if _, ok := value.(string); !ok {
-			return nil, fmt.Errorf("%s must be a string", key)
-		}
-		updates[key] = value
-	}
-	return updates, nil
-}
-
-// UserTenantService user tenant service
-// Provides business logic for user-tenant relationship management
-type UserTenantService struct {
-	userTenantDAO *dao.UserTenantDAO
-}
-
-// NewUserTenantService creates a new UserTenantService instance
-/**
- * Returns:
- *   - *UserTenantService: a new UserTenantService instance
- */
-func NewUserTenantService() *UserTenantService {
-	return &UserTenantService{
-		userTenantDAO: dao.NewUserTenantDAO(),
-	}
-}
-
-// UserTenantRelation represents a user-tenant relationship response
-// This structure matches the Python implementation's return format
-type UserTenantRelation struct {
-	ID       string `json:"id"`
-	UserID   string `json:"user_id"`
-	TenantID string `json:"tenant_id"`
-	Role     string `json:"role"`
-}
-
-// GetUserTenantRelationByUserIDWithContext retrieves all user-tenant relationships for a given user ID with context.
-func (s *UserTenantService) GetUserTenantRelationByUserIDWithContext(ctx context.Context, userID string) ([]*UserTenantRelation, error) {
-	relations, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make([]*UserTenantRelation, len(relations))
-	for i, rel := range relations {
-		result[i] = convertToUserTenantRelation(rel)
-	}
-
-	return result, nil
-}
-
-// convertToUserTenantRelation converts model.UserTenant to UserTenantRelation
-/**
- * Parameters:
- *   - userTenant: the model.UserTenant to convert
- *
- * Returns:
- *   - *UserTenantRelation: the converted UserTenantRelation
- */
-func convertToUserTenantRelation(userTenant *entity.UserTenant) *UserTenantRelation {
-	return &UserTenantRelation{
-		ID:       userTenant.ID,
-		UserID:   userTenant.UserID,
-		TenantID: userTenant.TenantID,
-		Role:     userTenant.Role,
-	}
-}
-
 // ResolveAPIToken validates an API key and resolves its authentication identity.
 func (s *UserService) ResolveAPIToken(ctx context.Context, authorization string) (*AuthIdentity, common.ErrorCode, error) {
 	token, err := parseAuthorizationToken(authorization)
@@ -909,7 +778,7 @@ func (s *UserService) resolveAPITokenIdentity(ctx context.Context, apiToken *ent
 		return nil, common.CodeUnauthorized, fmt.Errorf("API token is missing user identity")
 	}
 
-	user, err := s.userDAO.GetByIDString(ctx, dao.DB, *apiToken.UserID)
+	user, err := s.userDAO.GetByID(ctx, dao.DB, *apiToken.UserID)
 	if err != nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for API token")
 	}

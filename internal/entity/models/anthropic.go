@@ -161,9 +161,25 @@ func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *C
 		}
 		inputSchema := map[string]any{"type": "object", "properties": map[string]any{}}
 		if parameters, present := function["parameters"]; present {
-			inputSchema, ok = parameters.(map[string]any)
-			if !ok || inputSchema == nil {
+			if parameters == nil {
 				return fmt.Errorf("anthropic: tool %q parameters must be an object", name)
+			}
+			switch p := parameters.(type) {
+			case map[string]any:
+				if p == nil {
+					return fmt.Errorf("anthropic: tool %q parameters must be an object", name)
+				}
+				inputSchema = p
+			default:
+				data, err := json.Marshal(p)
+				if err != nil {
+					return fmt.Errorf("anthropic: tool %q parameters cannot be marshaled: %w", name, err)
+				}
+				var m map[string]any
+				if err := json.Unmarshal(data, &m); err != nil || m == nil {
+					return fmt.Errorf("anthropic: tool %q parameters must be an object", name)
+				}
+				inputSchema = m
 			}
 		}
 		nativeTool := map[string]any{"name": name, "input_schema": inputSchema}
@@ -751,49 +767,49 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 }
 
 func (a *AnthropicModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", a.Name())
 }
 
 func (a *AnthropicModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", a.Name())
 }
 
 func (a *AnthropicModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", a.Name())
 }
 
 func (a *AnthropicModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", a.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", a.Name())
 }
 
 func (a *AnthropicModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", a.Name())
 }
 
 func (a *AnthropicModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", a.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", a.Name())
 }
 
 func (a *AnthropicModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", a.Name())
 }
 
 func (a *AnthropicModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", a.Name())
 }
 
 func (a *AnthropicModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", a.Name())
 }
 
 func (a *AnthropicModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", a.Name())
 }
 
 func (a *AnthropicModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", a.Name())
 }
 
 func (a *AnthropicModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", a.Name())
 }
