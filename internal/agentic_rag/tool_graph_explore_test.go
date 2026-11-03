@@ -28,9 +28,10 @@ import (
 
 // fakeKgService records the request and returns a canned walk result.
 type fakeKgService struct {
-	gotReq KgExploreRequest
-	result KgExploreResult
-	err    error
+	gotReq     KgExploreRequest
+	gotOutline KgDocOutlineRequest
+	result     KgExploreResult
+	err        error
 }
 
 func (f *fakeKgService) Explore(_ context.Context, req KgExploreRequest) (KgExploreResult, error) {
@@ -41,7 +42,8 @@ func (f *fakeKgService) Explore(_ context.Context, req KgExploreRequest) (KgExpl
 // DocOutline completes KgService. This fake only ever backs the explore tool's
 // tests, so it carries the fake's canned error (nil by default) and returns no
 // skeleton.
-func (f *fakeKgService) DocOutline(context.Context, KgDocOutlineRequest) (KgExploreResult, error) {
+func (f *fakeKgService) DocOutline(_ context.Context, req KgDocOutlineRequest) (KgExploreResult, error) {
+	f.gotOutline = req
 	return KgExploreResult{}, f.err
 }
 
@@ -550,5 +552,58 @@ func TestKgAdapterDocOutlineProbeFailureIsNotAbsence(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "engine down") {
 		t.Errorf("error = %v, want the probe failure", err)
+	}
+}
+
+func TestGraphExploreToolAppliesBoundDocumentScope(t *testing.T) {
+	fake := &fakeKgService{}
+	installFakeKgService(t, fake)
+
+	tool := NewGraphExploreTool("tenant-1", []string{"kb1"})
+	ctx := withDocumentScope(kgExploreContext(t), []string{"d1"})
+	if _, err := tool.InvokableRun(ctx, `{"query":"q"}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if len(fake.gotReq.DocScope) != 1 || fake.gotReq.DocScope[0] != "d1" {
+		t.Errorf("walk doc scope = %v, want [d1]", fake.gotReq.DocScope)
+	}
+}
+
+func TestGraphExploreToolRejectsDocumentOutsideBoundScope(t *testing.T) {
+	fake := &fakeKgService{}
+	installFakeKgService(t, fake)
+
+	tool := NewGraphExploreTool("tenant-1", []string{"kb1"})
+	ctx := withDocumentScope(kgExploreContext(t), []string{"d1"})
+	out, err := tool.InvokableRun(ctx, `{"query":"q","doc_scope":["d2"]}`)
+	if err != nil {
+		t.Fatalf("out-of-scope document must not abort the loop: %v", err)
+	}
+	if !strings.Contains(out, toolErrorMarker) || !strings.Contains(out, "outside the conversation") {
+		t.Errorf("expected a <tool_error> naming the bound scope, got:\n%s", out)
+	}
+	if fake.gotReq.Query != "" {
+		t.Errorf("the walk must not run for an out-of-scope document, got %+v", fake.gotReq)
+	}
+}
+
+func TestGraphExploreToolWithEmptyDocumentScopeSkipsTheWalk(t *testing.T) {
+	fake := &fakeKgService{}
+	installFakeKgService(t, fake)
+
+	tool := NewGraphExploreTool("tenant-1", []string{"kb1"})
+	ctx := WithConversationKey(withDocumentScope(kgExploreContext(t), []string{}), "test-graph-empty-doc-scope")
+	out, err := tool.InvokableRun(ctx, `{"query":"q"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if fake.gotReq.Query != "" {
+		t.Errorf("an empty document scope must not reach the backend, got %+v", fake.gotReq)
+	}
+	if !strings.Contains(out, "<note") {
+		t.Errorf("empty document scope must render an empty walk, got:\n%s", out)
+	}
+	if !navToolEnabled(ctx, graphExploreToolName) {
+		t.Error("an empty document scope must NOT disable graph_explore")
 	}
 }

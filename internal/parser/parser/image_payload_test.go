@@ -2,8 +2,10 @@ package parser
 
 import (
 	"context"
-	"strings"
+	"encoding/base64"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 func TestParsersNormalizeInlineImagePayload(t *testing.T) {
@@ -31,12 +33,16 @@ func TestParsersNormalizeInlineImagePayload(t *testing.T) {
 		for _, format := range []string{"html", "html_table", "markdown"} {
 			t.Run(tc.name+"/"+format, func(t *testing.T) {
 				uri := "data:image/png;base64," + tc.payload
+				var source []byte
 				var result ParseResult
+				ctx, cache := recordingMediaContext()
 				switch format {
 				case "html":
-					result = NewHTMLParser().ParseWithResult(context.Background(), "image.html", []byte(`<p><img alt="caption" src="`+uri+`"></p>`))
+					source = []byte(`<p><img alt="caption" src="` + uri + `"></p>`)
+					result = NewHTMLParser().ParseWithResult(ctx, "image.html", source)
 				case "html_table":
-					result = NewHTMLParser().ParseWithResult(context.Background(), "image.html", []byte(`<table><tr><td><img alt="caption" src="`+uri+`"></td></tr></table>`))
+					source = []byte(`<table><tr><td><img alt="caption" src="` + uri + `"></td></tr></table>`)
+					result = NewHTMLParser().ParseWithResult(ctx, "image.html", source)
 				case "markdown":
 					result = markdown.ParseWithResult(context.Background(), "image.md", []byte("![caption](<"+uri+">)"))
 				}
@@ -45,14 +51,25 @@ func TestParsersNormalizeInlineImagePayload(t *testing.T) {
 				}
 				images := 0
 				for _, item := range result.JSON {
-					image, _ := item.ToMap()["image"].(string)
+					m := item.ToMap()
+					var image string
+					if format == "markdown" {
+						image, _ = m["image"].(string)
+					} else {
+						ref := entity.MediaRefFromAny(m["media_ref"])
+						if ref == nil {
+							continue
+						}
+						data, err := cache.Get(ctx, *ref)
+						if err != nil {
+							t.Fatalf("resolve: %v", err)
+						}
+						image = base64.StdEncoding.EncodeToString(data)
+					}
 					if image == "" {
 						continue
 					}
 					images++
-					if format != "markdown" {
-						image = strings.TrimPrefix(image, "data:image/png;base64,")
-					}
 					if image != tc.want {
 						t.Errorf("image payload = %q, want %q", image, tc.want)
 					}
@@ -69,33 +86,5 @@ func TestParsersNormalizeInlineImagePayload(t *testing.T) {
 				}
 			})
 		}
-	}
-}
-
-func TestNormalizeBase64ImagePayloadByteLimit(t *testing.T) {
-	for _, tc := range []struct {
-		name, payload string
-		limit         int
-		want          string
-		wantSize      int64
-	}{
-		{"negative_limit", "YQ", -1, "", 0},
-		{"zero_limit", "YQ", 0, "", 0},
-		{"exact_limit_padded", "YWI=", 2, "YWI=", 2},
-		{"exact_limit_unpadded", "YWI", 2, "YWI=", 2},
-		{"exact_limit_wrapped", "YW\r\nI", 2, "YWI=", 2},
-		{"over_limit_padded", "YWI=", 1, "", 0},
-		{"over_limit_unpadded", "YWI", 1, "", 0},
-		{"over_encoded_limit", "YWJjZA==", 2, "", 0},
-		{"data_after_padding", "G0==JbjQ", 16, "", 0},
-		{"data_after_padding_long", "aMRFPqfZALtY6rw50P==Pn5d", 16, "", 0},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got, size, ok := normalizeBase64ImagePayload(tc.payload, tc.limit)
-			if got != tc.want || ok != (tc.want != "") || size != tc.wantSize {
-				t.Errorf("normalizeBase64ImagePayload(%q, %d) = (%q, %d, %v), want (%q, %d, %v)",
-					tc.payload, tc.limit, got, size, ok, tc.want, tc.wantSize, tc.want != "")
-			}
-		})
 	}
 }

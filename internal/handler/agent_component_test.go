@@ -31,6 +31,7 @@ import (
 	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // componentCtx builds a Gin context for one of the
@@ -46,6 +47,10 @@ func componentCtx(t *testing.T, method, path, body string) (*gin.Context, *httpt
 		c.Request.Header.Set("Content-Type", "application/json")
 	}
 	c.Set("user", &entity.User{ID: "u-1"})
+	// The auth middleware attaches the permission subject in production; the
+	// enterprise policy needs the tenant from it, so mirror that here.
+	c.Request = c.Request.WithContext(permission.WithSubject(
+		c.Request.Context(), permission.Subject{UserID: "u-1", TenantID: "u-1"}))
 	return c, w
 }
 

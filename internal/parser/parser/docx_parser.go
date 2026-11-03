@@ -36,6 +36,7 @@ var docxExtract = deepdocoffice.OpenAndExtract
 // so they compile and test without native libraries.
 type DOCXParser struct {
 	libType            string
+	textOnly           bool
 	RemoveTOC          bool
 	RemoveHeaderFooter bool
 }
@@ -59,8 +60,8 @@ func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 }
 
 // ParseWithResult produces structured JSON items from a docx document.
-// It emits bounded image items and attaches figure metadata to the file
-// result.
+// Embedded images are stored in the run media cache and emitted as media_ref;
+// text-only parsers skip them instead.
 //
 // File["format"] in the returned ParseResult reflects the effective
 // container format after magic-byte sniffing (e.g. "doc" for an OLE
@@ -95,15 +96,9 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		"format": format,
 	}
 
-	// Extract IR JSON for section building and embedded-image extraction.
-	// The budget bounds image payloads so the downstream VLM enhancement
-	// stays within limits.
-	budget := newEmbeddedMediaBudget()
-	if irJSON != "" {
-		figures := extractDOCXFiguresFromIR(irJSON, budget)
-		if len(figures) > 0 {
-			fileMeta["figures"] = buildFiguresMap(figures)
-		}
+	var sink *officeMediaSink
+	if !p.textOnly {
+		sink = newOfficeMediaSink(ctx, officeMediaFormatDOCX)
 	}
 
 	// The result is built entirely from the structured IR, so an empty IR
@@ -121,7 +116,10 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if capErr != nil {
 		tableCaptions = nil
 	}
-	sections := buildDOCXJSONSectionsWithCaptions(irJSON, budget, tableCaptions)
+	sections := buildDOCXJSONSectionsWithCaptions(irJSON, sink, tableCaptions)
+	if sink != nil && sink.err != nil {
+		return ParseResult{Err: sink.err}
+	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
@@ -145,7 +143,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	return ParseResult{
 		File:     fileMeta,
 		JSON:     MapsToItems(sections),
-		Warnings: budget.warnings(),
+		Warnings: sink.warnings(),
 	}
 }
 

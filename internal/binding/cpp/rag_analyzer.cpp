@@ -682,8 +682,11 @@ RAGAnalyzer::RAGAnalyzer(const std::string &path)
 }
 
 RAGAnalyzer::RAGAnalyzer(const RAGAnalyzer &other)
-    : own_dict_(false), trie_(other.trie_), pos_table_(other.pos_table_), wordnet_lemma_(other.wordnet_lemma_), stemmer_(std::make_unique<Stemmer>()),
-      opencc_(other.opencc_), lowercase_string_buffer_(term_string_buffer_limit_), fine_grained_(other.fine_grained_) {
+    : dict_path_(other.dict_path_), own_dict_(false), trie_(other.trie_), pos_table_(other.pos_table_), wordnet_lemma_(other.wordnet_lemma_),
+      stemmer_(std::make_unique<Stemmer>()),
+      // OpenCC keeps mutable conversion buffers, so each analyzer needs its own converter.
+      opencc_(other.opencc_ ? std::make_unique<::OpenCC>((fs::path(other.dict_path_) / OPENCC_PATH).string()) : nullptr),
+      lowercase_string_buffer_(term_string_buffer_limit_), fine_grained_(other.fine_grained_) {
     InitStemmer(STEM_LANG_ENGLISH);
 }
 
@@ -692,7 +695,6 @@ RAGAnalyzer::~RAGAnalyzer() {
         delete trie_;
         delete pos_table_;
         delete wordnet_lemma_;
-        delete opencc_;
     }
 }
 
@@ -813,7 +815,7 @@ int32_t RAGAnalyzer::Load() {
     }
     try {
         printf("Load opencc file: %s\n", opencc_path.string().c_str());
-        opencc_ = new ::OpenCC(opencc_path.string());
+        opencc_ = std::make_unique<::OpenCC>(opencc_path.string());
     } catch (const std::exception &e) {
         printf("Fail to open opencc: %s\n", opencc_path.string().c_str());
         return -7;

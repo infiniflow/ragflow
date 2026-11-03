@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ class Agent(Base):
     class Dsl(Base):
         def __init__(self, rag, res_dict):
             self.answer = []
-            self.components = {"begin": {"downstream": ["Answer:China"], "obj": {"component_name": "Begin", "params": {}}, "upstream": []}}
+            self.components = {"begin": {"downstream": [], "obj": {"component_name": "Begin", "params": {}}, "upstream": []}}
             self.graph = {
                 "edges": [],
                 "nodes": [{"data": {"label": "Begin", "name": "begin"}, "id": "begin", "position": {"x": 50, "y": 200}, "sourcePosition": "left", "targetPosition": "right", "type": "beginNode"}],

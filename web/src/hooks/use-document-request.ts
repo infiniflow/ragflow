@@ -590,10 +590,15 @@ export const useRemoveDocument = () => {
       const ids = Array.isArray(documentIds) ? documentIds : [documentIds];
       const { data } = await deleteDocument(datasetId!, ids);
       if (data.code === 0) {
-        message.success(i18n.t('message.deleted'));
         queryClient.invalidateQueries({
           queryKey: DocumentKeys.all(),
         });
+        // The bulk count confirms completed cleanup, but cannot identify failed IDs.
+        if (Array.isArray(documentIds) && data.data?.deleted !== ids.length) {
+          message.warning(i18n.t('message.deleteIncomplete'));
+          return;
+        }
+        message.success(i18n.t('message.deleted'));
       }
       return data.code;
     },

@@ -19,7 +19,10 @@ const restAPIv1 = `/api/v1`;
 
 export { restAPIv1, webAPI };
 
-export default {
+import merge from 'lodash/merge';
+import apiPrivate from '@/ee/utils/api-private';
+
+const apiEndpoints = {
   // user
   login: `${restAPIv1}/auth/login`,
   logout: `${restAPIv1}/auth/logout`,
@@ -349,7 +352,7 @@ export default {
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   agentChatCompletion: `${restAPIv1}/agents/chat/completions`,
   resetAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
-  testDbConnect: `${restAPIv1}/agents/test_db_connection`,
+  testDbConnect: `${restAPIv1}/agents/test-db-connection`,
   getInputElements: `${webAPI}/canvas/input_elements`,
   debug: (agentId: string, componentId: string) =>
     `${restAPIv1}/agents/${agentId}/components/${componentId}/debug`,
@@ -445,8 +448,8 @@ export default {
     `${restAPIv1}/searches/${params.search_id}`,
   askShare: `${restAPIv1}/searchbots/ask`,
   mindmapShare: `${restAPIv1}/searchbots/mindmap`,
-  getRelatedQuestionsShare: `${restAPIv1}/searchbots/related_questions`,
-  retrievalTestShare: `${restAPIv1}/searchbots/retrieval_test`,
+  getRelatedQuestionsShare: `${restAPIv1}/searchbots/related-questions`,
+  retrievalTestShare: `${restAPIv1}/searchbots/retrieval`,
 
   // memory
   createMemory: `${restAPIv1}/memories`,
@@ -541,3 +544,10 @@ export default {
   skillIndex: `${restAPIv1}/skills/index`,
   skillReindex: `${restAPIv1}/skills/reindex`,
 };
+
+// Enterprise customization overlays: the enterprise repository carries a real
+// implementation of the same-path file `web/src/ee/utils/api-private.ts`;
+// upstream ships it as an empty object so this import resolves in both trees.
+// Enterprise endpoints must live only in the ee/ file, never here. Keys in
+// the overlay override or extend `apiEndpoints`.
+export default merge(apiEndpoints, apiPrivate);

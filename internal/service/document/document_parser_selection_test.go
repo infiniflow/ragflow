@@ -8,7 +8,6 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	syncerconnector "ragflow/internal/syncer/connector"
@@ -150,19 +149,7 @@ func tableParserConfig() entity.JSONMap {
 
 func seedDocumentParserTenant(t *testing.T, tenantID, ownerID string) {
 	t.Helper()
-	if err := dao.DB.Create(&entity.Tenant{ID: tenantID}).Error; err != nil {
-		t.Fatalf("insert tenant: %v", err)
-	}
-	status := string(entity.StatusValid)
-	if err := dao.DB.Create(&entity.UserTenant{
-		ID: "owner-" + tenantID, UserID: ownerID, TenantID: tenantID, Role: "owner", Status: &status,
-		LLMID: "llm-default", EmbdID: "embd-default", ASRID: "asr-default",
-	}).Error; err != nil {
-		t.Fatalf("insert tenant owner membership: %v", err)
-	}
-	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, ownerID); err != nil {
-		t.Fatalf("prepare parser tenant permission fixture: %v", err)
-	}
+	insertUserTenantForAccessCheck(t, ownerID, tenantID)
 }
 
 // TestResolveDocumentParser_Priority pins the resolution order: the dataset's

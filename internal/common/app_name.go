@@ -22,6 +22,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // maxNameRetries bounds how many numbered suffixes UniqueName may try before
@@ -64,8 +65,15 @@ func splitNameCounter(stem string) (string, int, bool) {
 // exists reports whether a candidate already collides. A lookup error is
 // returned to the caller instead of being treated as "free".
 func UniqueName(name string, maxLen int, exists func(candidate string) (bool, error)) (string, error) {
-	return uniqueName(name, maxLen, false, exists)
+	return uniqueName(name, maxLen, false, exists, lenBytes)
 }
+
+// UniqueNameCharacters applies a Unicode character limit when choosing a name.
+func UniqueNameCharacters(name string, maxLen int, exists func(string) (bool, error)) (string, error) {
+	return uniqueName(name, maxLen, false, exists, utf8.RuneCountInString)
+}
+
+func lenBytes(name string) int { return len(name) }
 
 // UniqueFileName is UniqueName for file and document names: the suffix is
 // inserted before the file extension instead of at the end of the name.
@@ -73,18 +81,18 @@ func UniqueName(name string, maxLen int, exists func(candidate string) (bool, er
 //	UniqueFileName("report.pdf", 0, ...)    -> "report(1).pdf"
 //	UniqueFileName("report(1).pdf", 0, ...) -> "report(2).pdf"
 func UniqueFileName(name string, maxLen int, exists func(candidate string) (bool, error)) (string, error) {
-	return uniqueName(name, maxLen, true, exists)
+	return uniqueName(name, maxLen, true, exists, lenBytes)
 }
 
 // uniqueName appends an incrementing "(N)" suffix until exists reports the
 // candidate as free. keepExtension inserts the suffix before the file
 // extension instead of at the end of the name.
-func uniqueName(name string, maxLen int, keepExtension bool, exists func(candidate string) (bool, error)) (string, error) {
+func uniqueName(name string, maxLen int, keepExtension bool, exists func(candidate string) (bool, error), length func(string) int) (string, error) {
 	if maxLen <= 0 {
 		maxLen = AppNameLimit
 	}
 	current := name
-	if err := validateNameLimit(current, maxLen); err != nil {
+	if err := validateNameLength(current, maxLen, length(current)); err != nil {
 		return "", err
 	}
 	for i := 0; i < maxNameRetries; i++ {
@@ -107,7 +115,7 @@ func uniqueName(name string, maxLen int, keepExtension bool, exists func(candida
 			base = stem
 		}
 		current = fmt.Sprintf("%s(%d)%s", base, counter+1, ext)
-		if err := validateNameLimit(current, maxLen); err != nil {
+		if err := validateNameLength(current, maxLen, length(current)); err != nil {
 			return "", err
 		}
 	}
@@ -144,15 +152,18 @@ func ValidateName(name string) error {
 
 // validateNameLimit rejects empty names and names longer than maxLen bytes.
 func validateNameLimit(name string, maxLen int) error {
+	return validateNameLength(name, maxLen, len(name))
+}
+
+func validateNameLength(name string, maxLen, length int) error {
 	// Validate name is not empty after trimming
 	trimmedName := strings.TrimSpace(name)
 	if trimmedName == "" {
 		return fmt.Errorf("name cannot be empty or whitespace")
 	}
 
-	// Validate name length in bytes (not characters) - same as Python len(search_name.encode("utf-8"))
-	if len([]byte(name)) > maxLen {
-		return fmt.Errorf("name length is %d which is large than %d", len([]byte(name)), maxLen)
+	if length > maxLen {
+		return fmt.Errorf("name length is %d which is large than %d", length, maxLen)
 	}
 
 	return nil

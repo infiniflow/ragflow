@@ -1266,7 +1266,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
         'Le modèle de chat par défaut pour chaque base de connaissances nouvellement créée.',
       embeddingModel: "Modèle d'embedding",
       embeddingModelTip:
-        "Le modèle d'embedding par défaut pour chaque base de connaissances nouvellement créée. Si vous ne trouvez pas de modèle d'embedding dans la liste déroulante, vérifiez si vous utilisez l'édition RAGFlow slim (qui n'inclut pas les modèles d'embedding) ou consultez la page Fournisseurs de modèles pour voir si votre fournisseur de modèle supporte ce modèle.",
+        "Le modèle d'embedding par défaut pour chaque base de connaissances nouvellement créée. Si vous ne trouvez pas de modèle d'embedding dans la liste déroulante, consultez la page Fournisseurs de modèles pour voir si votre fournisseur de modèle supporte ce modèle.",
       img2txtModel: 'Modèle Img2txt',
       img2txtModelTip:
         'Le modèle img2txt par défaut pour chaque base de connaissances nouvellement créée. Il décrit une image ou une vidéo. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez la page Fournisseurs de modèles pour voir si votre fournisseur le supporte.',
@@ -3122,10 +3122,10 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
         share: 'Partage',
       },
 
-      serviceStatus: 'État des services',
-      userManagement: 'Gestion des utilisateurs',
-      sandboxSettings: 'Paramètres du bac à sable',
-      registrationWhitelist: "Liste blanche d'inscription",
+      serviceStatus: 'Services',
+      userManagement: 'Utilisateurs',
+      sandboxSettings: 'Bac à sable',
+      registrationWhitelist: 'Liste blanche',
       roles: 'Rôles',
       monitoring: 'Surveillance',
 
@@ -3232,7 +3232,7 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
       importWhitelist: 'Importer la liste blanche (Excel)',
       importSelectExcelFile: 'Fichier Excel (.xlsx)',
       importOverwriteExistingEmails: 'Écraser les e-mails existants',
-      importInvalidExcelFile: 'Veuillez sélectionner un fichier Excel valide',
+      importValidExcelFile: 'Veuillez sélectionner un fichier Excel valide',
       importFileRequired: 'Veuillez sélectionner un fichier à importer',
       importFileTips:
         "Le fichier doit contenir une seule colonne d'en-tête nommée <code>email</code>.",

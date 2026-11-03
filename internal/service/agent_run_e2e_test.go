@@ -18,7 +18,7 @@
 // production chain.
 //
 // These tests pin the production chain end-to-end: loadCanvasForUser
-// → versionDAO.GetLatest → decodeCanvasFromDSL → canvas.Compile →
+// → draft DSL resolution → decodeCanvasFromDSL → canvas.Compile →
 // cc.Workflow.Invoke → orchestrator answer extraction. They also
 // cover the boot-wiring surface (Kvrocks-backed CheckPointStore +
 // RunTracker) and the failure paths (compile error, invoke
@@ -61,9 +61,9 @@ import (
 )
 
 // makeCanvasWithDSL inserts a canvas + tenant + user + a published
-// version whose DSL is the supplied map. The returned version id is
-// what RunAgent consumes when the caller does not pass an explicit
-// version (it falls through to GetLatest).
+// version, with the supplied DSL on both the canvas row (the editable
+// draft) and the version row. RunAgent without an explicit version id
+// executes the draft, so the canvas-row DSL is what these tests run.
 func makeCanvasWithDSL(t *testing.T, canvasID, userID, tenantID, versionID string, dsl map[string]any) {
 	t.Helper()
 	dao.DB.Where("id = ?", userID).FirstOrCreate(&entity.User{ID: userID, Nickname: "owner", Email: userID + "@test.com"})
@@ -79,6 +79,7 @@ func makeCanvasWithDSL(t *testing.T, canvasID, userID, tenantID, versionID strin
 		Permission:     "me",
 		CanvasType:     sptr("agent"),
 		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap(dsl),
 	})
 	dao.DB.Create(&entity.UserCanvasVersion{
 		ID:           versionID,
@@ -209,7 +210,7 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 		"user-1",
 		"canvas-hello",
 		"session-hello",
-		"", // latest version
+		"", // draft DSL
 		"world", nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
@@ -286,11 +287,10 @@ func TestRunAgent_SessionHistoryFeedsSysHistoryAndPersists(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-history", "user-1", "tenant-1", "v-history", dsl)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-history",
-		DialogID:  "canvas-history",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       "session-history",
+		DialogID: "canvas-history",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -471,12 +471,11 @@ func TestRunAgent_RejectsSessionOwnedByAnotherUser(t *testing.T) {
 	makeCanvasWithDSL(t, "canvas-session-owner", "user-1", "tenant-1", "v-session-owner", dsl)
 	foreignMessage := json.RawMessage(`[{"role":"assistant","content":"foreign"}]`)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-foreign",
-		DialogID:  "canvas-session-owner",
-		UserID:    "user-2",
-		Message:   foreignMessage,
-		Reference: json.RawMessage(`[]`),
-		DSL:       entity.JSONMap(dsl),
+		ID:       "session-foreign",
+		DialogID: "canvas-session-owner",
+		UserID:   "user-2",
+		Message:  foreignMessage,
+		DSL:      entity.JSONMap(dsl),
 	}); err != nil {
 		t.Fatalf("create foreign session: %v", err)
 	}
@@ -570,12 +569,11 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-fillup", "user-1", "tenant-1", "v-fillup", dsl)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-fillup",
-		DialogID:  "canvas-fillup",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-		DSL:       entity.JSONMap(dsl),
+		ID:       "session-fillup",
+		DialogID: "canvas-fillup",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
+		DSL:      entity.JSONMap(dsl),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -707,12 +705,11 @@ func TestRunAgent_InterruptPersistsPartialAssistantHistory(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-partial", "user-1", "tenant-1", "v-partial", dsl)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-partial",
-		DialogID:  "canvas-partial",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-		DSL:       entity.JSONMap(dsl),
+		ID:       "session-partial",
+		DialogID: "canvas-partial",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
+		DSL:      entity.JSONMap(dsl),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -1912,7 +1909,7 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 		"user-1",
 		"canvas-cp",
 		"session-cp",
-		"", // latest version
+		"", // draft DSL
 		"world", nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)

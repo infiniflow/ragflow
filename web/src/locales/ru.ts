@@ -2674,10 +2674,10 @@ export default {
         share: 'Поделиться',
       },
 
-      serviceStatus: 'Статус сервиса',
-      userManagement: 'Управление пользователями',
-      sandboxSettings: 'Настройки песочницы',
-      registrationWhitelist: 'Белый список регистрации',
+      serviceStatus: 'Сервисы',
+      userManagement: 'Пользователи',
+      sandboxSettings: 'Песочница',
+      registrationWhitelist: 'Белый список',
       roles: 'Роли',
       monitoring: 'Мониторинг',
 
@@ -2783,7 +2783,7 @@ export default {
       importWhitelist: 'Импорт белого списка (Excel)',
       importSelectExcelFile: 'Excel файл (.xlsx)',
       importOverwriteExistingEmails: 'Перезаписать существующие emails',
-      importInvalidExcelFile: 'Пожалуйста, выберите действительный Excel файл',
+      importValidExcelFile: 'Пожалуйста, выберите действительный Excel файл',
       importFileRequired: 'Пожалуйста, выберите файл для импорта',
       importFileTips:
         'Файл должен содержать один заголовочный столбец с именем <code>email</code>.',

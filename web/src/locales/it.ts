@@ -1591,7 +1591,7 @@ Esempio: Virtual Hosted Style`,
       chatModelTip: 'Il LLM predefinito per ogni nuovo dataset creato.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'Il modello di embedding predefinito per ogni nuovo dataset creato. Se non riesci a trovare un modello di embedding dal menu a discesa, controlla se stai usando la versione slim di RAGFlow (che non include modelli di embedding) o controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.',
+        'Il modello di embedding predefinito per ogni nuovo dataset creato. Se non riesci a trovare un modello di embedding dal menu a discesa, controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.',
       img2txtModel: 'VLM',
       img2txtModelTip:
         "Il VLM predefinito per ogni nuovo dataset creato. Descrive un'immagine o un video. Se non riesci a trovare un modello dal menu a discesa, controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.",
@@ -3014,10 +3014,10 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
         share: 'Condividi',
       },
 
-      serviceStatus: 'Stato servizio',
-      userManagement: 'Gestione utenti',
-      sandboxSettings: 'Impostazioni sandbox',
-      registrationWhitelist: 'Whitelist registrazione',
+      serviceStatus: 'Servizi',
+      userManagement: 'Utenti',
+      sandboxSettings: 'Sandbox',
+      registrationWhitelist: 'Whitelist',
       roles: 'Ruoli',
       monitoring: 'Monitoraggio',
 
@@ -3121,7 +3121,7 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
       importWhitelist: 'Importa whitelist (Excel)',
       importSelectExcelFile: 'File Excel (.xlsx)',
       importOverwriteExistingEmails: 'Sovrascrivi email esistenti',
-      importInvalidExcelFile: 'Seleziona un file Excel valido',
+      importValidExcelFile: 'Seleziona un file Excel valido',
       importFileRequired: 'Seleziona un file da importare',
       importFileTips:
         'Il file deve contenere una singola colonna di intestazione chiamata <code>email</code>.',

@@ -2,6 +2,21 @@
   "version": 1,
   "rules": [
     {
+      "id": "english-table-caption-cross-reference-kept",
+      "tag": "go_intentional",
+      "kind": "classification",
+      "applies_to": [
+        "*"
+      ],
+      "fields": [
+        "CaptionKind",
+        "IsCaptionBox",
+        "MergeCaptions"
+      ],
+      "permanent": true,
+      "reason": "Python's is_caption uses the start-anchored pattern (?i)^Table\\s+\\d+ alone, so a body sentence that BEGINS with a table cross-reference ('Table 1, we present ...', 'Table 9 reports ...') is classified as a caption and _extract_table_figure moves it into the nearest table's <caption>, deleting it as a standalone section. Go requires a caption boundary after the number (table_cells.go captionBoundary): punctuation separator, an uppercase/digit/CJK start, a parenthesised continuation or panel label, or end of line. A comma, possessive, or lowercase sentence continuation keeps the line as body text. Real captions without a colon ('Table 2 Performance comparison'), with a letter suffix ('Table 1a. Results'), or with a Roman/multi-digit panel label ('Table 1 (iv) ...', 'Table 1 (12) ...') still classify. Deliberate go_intentional divergence, locked by TestCaptionKind_EnglishTableCrossReferenceNotCaption, TestCaptionKind_EnglishTableCaptionBoundaries and TestMergeCaptions_EnglishTable1OpeningParagraphKept. Figure captions are unchanged (sentence-style figure captions remain captions). A layout-type hint still names the kind for captions without a marker ('Quarterly revenue breakdown'), but it cannot override the boundary rule for a line that starts with 'Table N' followed by prose; such a box stays body text (TestCaptionKind_LabeledCrossReferenceNotCaption, TestMergeCaptions_LabeledCrossReferenceStaysBodyText). IsCaptionBox keeps the pattern-only verdict because cell filling, no-merge marking, and caption-row stripping depend on it. KNOWN LIMITATION: the boundary keys on the first character, so a cross-reference that continues with a proper noun ('Table 3 Smith et al. report ...') classifies as a caption, indistinguishable from a caption title that starts with one ('Table 3 Smith-Kappa-Rosenberg parameters') without part-of-speech tagging; the sentence is then merged into the nearest table's <caption>, so its text survives in the output rather than being dropped. Pinned by TestCaptionKind_ProperNounContinuationIsCaption and TestMergeCaptions_ProperNounCrossReferenceLandsInCaption."
+    },
+    {
       "id": "table-cell-fill-filled-threshold-0.85",
       "tag": "go_intentional",
       "kind": "threshold",
@@ -88,15 +103,15 @@
       ],
       "fields": [
         "CaptionKind",
-        "reTableCaptionText",
-        "reCaption",
+        "tableCaptionText",
+        "IsCaptionBox",
         "MergeCaptions"
       ],
       "owner_fix_side": "go",
       "status": "resolved",
-      "resolution": "reTableCaptionText and reCaption now start-anchor their English 'Table N' / 'Figure N' / 'Fig N' alternatives (^), mirroring Python's is_caption which uses re.match (start-anchored). A body paragraph that only MENTIONS 'Table 1' mid-sentence ('...Table 1 shows revenuebycategory.') is no longer misclassified as a caption, so MergeCaptions no longer drops it; 14 now emits title + paragraph + 2 tables (textSim 81.7% -> 90.0%, boxes ...->4). Regression: TestCaptionKind_MidSentenceTableMentionNotCaption, TestIsCaptionBox_MidSentenceTableMention, TestMergeCaptions_KeepsInterleavedParagraph, plus the end-to-end TestPipelineParity14InterleavedParagraphDropped (now GREEN).",
+      "resolution": "tableCaptionText/IsCaptionBox now start-anchor their English 'Table N' / 'Figure N' / 'Fig N' alternatives (^), aligning with Python's re.match for mid-sentence mentions. A body paragraph that only MENTIONS 'Table 1' mid-sentence ('...Table 1 shows revenuebycategory.') is no longer misclassified as a caption, so MergeCaptions no longer drops it; 14 now emits title + paragraph + 2 tables (textSim 81.7% -> 90.0%, boxes ...->4). A later change also rejects line-initial cross-references ('Table 1, we present …') via the caption boundary; see rule english-table-caption-cross-reference-kept. Regression: TestCaptionKind_MidSentenceTableMentionNotCaption, TestIsCaptionBox_MidSentenceTableMention, TestMergeCaptions_KeepsInterleavedParagraph, plus the end-to-end TestPipelineParity14InterleavedParagraphDropped (now GREEN).",
       "tracking": "Original fields guessed the loss in processPageBoxes/NaiveVerticalMerge/BoxesToSections. Step-through of buildLayout proved the paragraph box survives every stage (Dedup, AssignColumn, TextMerge, FinalReadingOrderMerge, NaiveVerticalMerge, ExtractTableAndReplace, ConsolidateFigures, BoxesToSections) and is only dropped in MergeCaptions: CaptionKind mislabeled it a table caption (unanchored 'Table N' match), findNearestParent returned -1 (nearest section is the title, not a table), so the caption-without-target branch removed it. Root cause is caption DETECTION, not assembly.",
-      "reason": "14_text_table_interleaved.pdf has a body paragraph ('The following analysis compares product performance across different market segments. Table 1 shows revenuebycategory.') interleaved BEFORE Table 1. Python extracts it as a separate text section; Go's pipeline dropped it entirely (Go output had only the title + the two tables). This was a real CONTENT loss, not an HTML-emission/format difference: the text was absent from Go's sections, and gridSim=100% still held because the paragraph is outside any table cell. RESOLVED: the drop was caused by unanchored 'Table N' caption detection (reTableCaptionText/reCaption matched 'Table 1' anywhere in the string), mislabeling the paragraph a caption that MergeCaptions then removed; anchoring to the start aligns Go with Python's re.match is_caption and retains the paragraph. 14's RESIDUAL gap is now caption emission only (rule table-html-emission-format). Originally exposed by TestPipelineParity14InterleavedParagraphDropped (was RED, now GREEN)."
+      "reason": "14_text_table_interleaved.pdf has a body paragraph ('The following analysis compares product performance across different market segments. Table 1 shows revenuebycategory.') interleaved BEFORE Table 1. Python extracts it as a separate text section; Go's pipeline dropped it entirely (Go output had only the title + the two tables). This was a real CONTENT loss, not an HTML-emission/format difference: the text was absent from Go's sections, and gridSim=100% still held because the paragraph is outside any table cell. RESOLVED: the drop was caused by unanchored 'Table N' caption detection (the table-caption detection matched 'Table 1' anywhere in the string), mislabeling the paragraph a caption that MergeCaptions then removed; anchoring to the start retains the paragraph. Line-initial cross-references ('Table 1, we present …') are now also kept as body text via the caption boundary. 14's RESIDUAL gap is now caption emission only (rule table-html-emission-format). Originally exposed by TestPipelineParity14InterleavedParagraphDropped (was RED, now GREEN)."
     },
     {
       "id": "english-page-ocr-source-divergence",

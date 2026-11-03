@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/ingestion/task/indexdoc"
+	parserlib "ragflow/internal/parser/parser"
 	"ragflow/internal/parser/tableutil"
 )
 
@@ -898,11 +899,101 @@ func TestGeneralChunkerDOCXCustomDelimiterGroupsMultiParagraphRecords(t *testing
 	if len(texts) != 2 {
 		t.Fatalf("texts = %q, want two record chunks", texts)
 	}
-	if !strings.Contains(texts[0], "问：first question") || !strings.Contains(texts[0], "名　　称：item one") || !strings.Contains(texts[0], "答：first answer") {
+	// A custom delimiter is a split instruction, not content: the leading
+	// record prefix is dropped (Python naive_merge_docx/_build_cks parity).
+	if strings.Contains(texts[0], "问：") || !strings.Contains(texts[0], "first question") || !strings.Contains(texts[0], "名　　称：item one") || !strings.Contains(texts[0], "答：first answer") {
 		t.Fatalf("first record = %q", texts[0])
 	}
-	if !strings.Contains(texts[1], "问：second question") || !strings.Contains(texts[1], "答：second answer") {
+	if strings.Contains(texts[1], "问：") || !strings.Contains(texts[1], "second question") || !strings.Contains(texts[1], "答：second answer") {
 		t.Fatalf("second record = %q", texts[1])
+	}
+}
+
+func TestGeneralChunkerDOCXDropsCustomDelimiterRecordPrefix(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 512,
+		"delimiters":       []string{"`AAA`"},
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "first section", "doc_type_kwd": "text"},
+			{"text": "AAA", "doc_type_kwd": "text"},
+			{"text": "second section", "doc_type_kwd": "text"},
+			{"text": "AAA", "doc_type_kwd": "text"},
+			{"text": "before AAA after", "doc_type_kwd": "text"},
+			{"text": "AAA", "doc_type_kwd": "text"},
+			{"text": "third section", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	texts := outputTexts(t, out)
+	for _, text := range texts {
+		if strings.Contains(text, "AAA") {
+			t.Fatalf("custom delimiter survived: %q", text)
+		}
+	}
+	if !reflect.DeepEqual(texts, []string{"first section", "second section", "before", "after", "third section"}) {
+		t.Fatalf("texts = %q", texts)
+	}
+}
+
+func TestGeneralChunkerDOCXDropsTrailingDelimiterOnlyRecord(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   512,
+		"overlapped_percent": 50,
+		"delimiters":         []string{"`AAA`"},
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "AAAfirst", "doc_type_kwd": "text"},
+			{"text": "AAA", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	// The delimiter-only record must not survive as an empty unit: overlap
+	// would otherwise synthesize a spurious chunk from the previous tail.
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"first"}) {
+		t.Fatalf("texts = %q, want [first]", texts)
+	}
+}
+
+func TestGeneralChunkerDOCXPrefersDelimiterMatchBeforeTrimming(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 512,
+		"delimiters":       []string{"`  A`", "`A123`"},
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "  A123hello", "doc_type_kwd": "text"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	// The delimiter that includes the leading whitespace matches the original
+	// text first, so "123" stays in the indexed content.
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"123hello"}) {
+		t.Fatalf("texts = %q, want [123hello]", texts)
 	}
 }
 
@@ -1540,5 +1631,47 @@ func TestGeneralContextSourceTextProjectsMergedRows(t *testing.T) {
 				t.Fatalf("context = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestGeneralChunkerMarkdownPreservesUnresolvedImageReferences(t *testing.T) {
+	markdown, err := parserlib.NewMarkdownParser(parserlib.GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "# Title\n\n![figure](images/fig-1.png)\n\n![](images/bare.png)\n\n" +
+		"| A | B |\n|---|---|\n| x | ![table](images/table.png) |\n"
+	parsed := markdown.ParseWithResult(t.Context(), "doc.md", []byte(source))
+	if parsed.Err != nil {
+		t.Fatalf("ParseWithResult: %v", parsed.Err)
+	}
+	comp, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
+		"name": "doc.md", "file_type": "md", "output_format": "json", "json": parsed.JSON,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) == 0 {
+		t.Fatal("chunks are empty")
+	}
+	var text strings.Builder
+	for _, chunk := range chunks {
+		body, _ := chunk["text"].(string)
+		text.WriteString(body)
+		text.WriteByte('\n')
+	}
+	for _, want := range []string{
+		"![figure](images/fig-1.png)",
+		"![](images/bare.png)",
+		"![table](images/table.png)",
+	} {
+		if !strings.Contains(text.String(), want) {
+			t.Errorf("chunk text = %q, want it to contain %q", text.String(), want)
+		}
 	}
 }

@@ -40,8 +40,32 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 
 	backend := models.ResolveMinerUBackend(parser.MinerUBackend, parser.MinerUAPIKey)
 	serverURL := models.ResolveMinerUServerURL(parser.MinerUServerURL, parser.MinerUAPIKey)
-	if err := models.ValidateMinerUConfig(backend, serverURL); err != nil {
+	if _, ok := models.ValidMinerUBackends[backend]; !ok {
+		return ParseResult{Err: models.ValidateMinerUConfig(backend, serverURL)}
+	}
+	if models.IsMinerUCloudBase(apiServer) {
+		if err := models.ValidateMinerUConfigForAPI(backend, serverURL, true); err != nil {
+			return ParseResult{Err: err}
+		}
+		parsed, err := models.ParseMinerUCloud(ctx, apiServer, apiKey, filename, data, backend, "", "")
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("parser: MinerU cloud: %w", err)}
+		}
+		return minerUMarkdownResult(ctx, filename, parsed)
+	}
+	v1, err := models.MinerUSupportsV1(ctx, apiServer, apiKey)
+	if err != nil {
+		return ParseResult{Err: fmt.Errorf("parser: MinerU probe: %w", err)}
+	}
+	if err := models.ValidateMinerUConfigForAPI(backend, serverURL, v1); err != nil {
 		return ParseResult{Err: err}
+	}
+	if v1 {
+		parsed, err := models.ParseMinerUV1(ctx, apiServer, apiKey, filename, data, backend, "", 0)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("parser: MinerU V1: %w", err)}
+		}
+		return minerUMarkdownResult(ctx, filename, parsed)
 	}
 	timeout := parser.MinerUPollTimeout
 	if timeout <= 0 {
@@ -75,14 +99,47 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 	return pdfMarkdownToResult(ctx, filename, content, pageCount)
 }
 
+func minerUMarkdownResult(ctx context.Context, filename string, parsed *models.MinerUV1Result) ParseResult {
+	content := ""
+	if parsed != nil {
+		content = parsed.Markdown
+	}
+	if strings.TrimSpace(content) == "" {
+		return ParseResult{Err: fmt.Errorf("parser: MinerU result is empty")}
+	}
+	return pdfMarkdownToResult(ctx, filename, content, 1)
+}
+
 func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID string, apiConfig *models.APIConfig, timeout time.Duration) (string, error) {
 	if timeout <= 0 {
 		timeout = minerUPollTimeout
 	}
 	deadline := time.Now().Add(timeout)
+	// Each status call can wait up to its own request timeout, which is longer
+	// than a short poll budget can be. Bound the call by the poll deadline too,
+	// otherwise a slow status response outlives the budget and its content is
+	// returned as if the poll had succeeded in time.
+	pollCtx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
 	var lastErr error
 	for {
-		task, err := driver.ShowTask(ctx, taskID, apiConfig)
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		task, err := driver.ShowTask(pollCtx, taskID, apiConfig)
+		if pollCtx.Err() != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return "", ctxErr
+			}
+			cause := lastErr
+			if cause == nil {
+				cause = err
+			}
+			if cause == nil {
+				cause = context.DeadlineExceeded
+			}
+			return "", fmt.Errorf("timed out after %s waiting for MinerU task %s: %w", timeout, taskID, cause)
+		}
 		if err == nil {
 			for _, segment := range task.Segments {
 				if strings.TrimSpace(segment.Content) != "" {
@@ -93,12 +150,22 @@ func pollMinerUTask(ctx context.Context, driver *models.MinerULocalModel, taskID
 		} else {
 			lastErr = err
 		}
-		if time.Now().After(deadline) {
-			if lastErr == nil {
-				lastErr = fmt.Errorf("timed out waiting for MinerU task %s", taskID)
-			}
-			return "", lastErr
+		// A cancelled run has to leave the poll at once. Sleeping the scan
+		// interval, let alone the remaining timeout, keeps an ingestion worker
+		// polling a server it will never accept a result from.
+		wait := time.Until(deadline)
+		if wait <= 0 {
+			return "", fmt.Errorf("timed out after %s waiting for MinerU task %s: %w", timeout, taskID, lastErr)
 		}
-		time.Sleep(minerUPollInterval)
+		if wait > minerUPollInterval {
+			wait = minerUPollInterval
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", ctx.Err()
+		case <-timer.C:
+		}
 	}
 }

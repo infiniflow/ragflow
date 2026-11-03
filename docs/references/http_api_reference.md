@@ -7,7 +7,7 @@ sidebar_custom_props: {
 ---
 # HTTP API
 
-A complete reference for RAGFlow's RESTful API, including migration notes for the 1.0 Go backend. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
+A complete reference for RAGFlow's RESTful API, including migration notes for RAGFlow 1.0. Before proceeding, please ensure you [have your RAGFlow API key ready for authentication](https://ragflow.io/docs/dev/acquire_ragflow_api_key).
 
 In the standard response envelope, `message` is always a non-empty string. Successful responses default to `"success"`; error responses contain a description of the error.
 
@@ -53,23 +53,19 @@ RAGFlow responses may contain both an HTTP status code and a business code in th
 
 ## Migrate to 1.0
 
-RAGFlow 1.0 moves the public REST API from the Python backend to Go. The canonical endpoints documented below remain available.
+RAGFlow 1.0 updates the public REST API. Use the canonical endpoints documented below.
 
 The following changes require client updates:
 
-| Area | RAGFlow 1.0 Go change | Client action |
+| Area | RAGFlow 1.0 change | Client action |
 |------|------------------------|---------------|
 | Dataset parser selection | Dataset create and update use `parse_type` with `parser_id` (BuiltIn) or `pipeline_id` (Pipeline); responses use the canonical value `general` instead of the legacy `chunk_method: "naive"`. | Replace `chunk_method` with `"parse_type": 1` and `"parser_id": "<builtin parser>"`. For the general parser, send `"parser_id": "general"`. |
-| Dataset parser configuration | Go stores and returns component-scoped parser settings. Most legacy top-level `parser_config` fields are not mapped into that component structure. | Read the returned component map and send component-scoped keys when changing parser settings. |
-| Errors and authentication | Some validation business codes, messages, and authentication HTTP statuses differ from Python. | Branch on documented codes rather than exact message text. |
-
-:::note
-Go responses include `X-API-Source: go`, which can be used to verify the serving backend during rollout.
-:::
+| Dataset parser configuration | RAGFlow stores and returns component-scoped parser settings. Most legacy top-level `parser_config` fields are not mapped into that component structure. | Read the returned component map and send component-scoped keys when changing parser settings. |
+| Errors and authentication | Some validation business codes, messages, and authentication HTTP statuses differ from earlier releases. | Branch on documented codes rather than exact message text. |
 
 ### Removed API aliases
 
-The following paths remain available only on the Python backend. They are not registered by the RAGFlow 1.0 Go backend.
+The following endpoint aliases are not available in RAGFlow 1.0. Use their replacements below.
 
 | Removed endpoint                                                                  | Replacement endpoint                                                                |
 |-----------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
@@ -260,7 +256,7 @@ Failure:
 ### Create OpenAI-compatible agent completion
 
 :::caution REMOVED ALIAS
-RAGFlow 1.0 Go does not serve `POST /api/v1/agents_openai/{agent_id}/chat/completions`. Use the endpoint below and move `agent_id` into the request body.
+RAGFlow 1.0 does not serve `POST /api/v1/agents_openai/{agent_id}/chat/completions`. Use the endpoint below and move `agent_id` into the request body.
 :::
 
 **POST** `/api/v1/agents/chat/completions`
@@ -2524,7 +2520,7 @@ curl --request POST \
   Selects which searchable knowledge-compilation chunks to include: `"dataset"` for dataset artifacts, `"document"` for document artifacts, or `"all"` for both. Defaults to `"dataset"` when omitted, `null`, or an empty string. Ordinary source chunks remain eligible. When `"include_knowledge_compilation"` is `false`, all compiled chunks are excluded regardless of scope. Unsupported scope values and non-string values return an argument error. Intermediate wiki rows and disabled chunks remain excluded.
   With `"document_ids"` or metadata filtering, document artifacts and source chunks are limited to the selected documents; dataset artifacts must reference a selected document in their `source_doc_ids`. This parameter is also supported by `POST /api/v1/datasets/search` and `POST /api/v1/datasets/{dataset_id}/search`.
 - `"use_kg"`: `boolean`
-  Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
+  Defaults to `false`. For this endpoint (`POST /api/v1/retrieval`), setting this to `true` does not enable multi-hop graph retrieval; the request continues through ordinary hybrid retrieval. The same limitation applies to `POST /api/v1/datasets/search` and `POST /api/v1/datasets/{dataset_id}/search`. To control whether searchable knowledge-compilation chunks are included in ordinary retrieval, use `"include_knowledge_compilation"` and `"knowledge_compilation_scope"`. Knowledge graph generation and viewing through Knowledge Compilation are separate capabilities.
 - `"rerank_id"`: `string`
   The ID of the rerank model.
 - `"keyword"`: `boolean`
@@ -2686,7 +2682,8 @@ curl --request POST \
   - `"refine_multiturn"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
-  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"anysearch"`, `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
+  - `"anysearch_api_key"`: `string` The optional [AnySearch](https://anysearch.com/console/api-keys) API key. Set `web_search_provider` to `"anysearch"` when using this field. Omit it or leave it blank for anonymous search; service limits apply.
   - `"tavily_api_key"`: `string`
   - `"brave_api_key"`: `string` The Brave Search API key. Set `web_search_provider` to `"brave"` when using this field.
   - `"exa_api_key"`: `string` The Exa API key. Set `web_search_provider` to `"exa"` when using this field.
@@ -3207,6 +3204,11 @@ curl --request GET \
 
 When `id` or `name` is provided, exact filtering takes precedence over `keywords`.
 
+- `include_reference`: (*Query parameter*) `boolean`, defaults to `false`.
+  Include reference objects in answer messages when history is included.
+- `include_prompt`: (*Query parameter*) `boolean`, defaults to `false`.
+  Include recorded prompt strings in answer messages when history is included.
+
 #### Response
 
 Success:
@@ -3494,7 +3496,6 @@ Success:
                 }
             ],
             "name": "new session",
-            "reference": [],
             "update_date": "Fri, 11 Oct 2024 08:46:43 GMT",
             "update_time": 1728636403974,
             "user_id": ""
@@ -3520,6 +3521,27 @@ Failure:
 
 Gets a specific session of a specified chat assistant, including its messages, references, and avatar.
 
+Completed assistant entries in `messages` include recorded `usage` (an object
+with `prompt_tokens`, `completion_tokens`, and `total_tokens`) and `elapsed_ms`
+(a number in milliseconds). Large answer fields are opt-in:
+
+- `include_reference`: boolean, defaults to `false`. Set to `true` to return a
+  `reference` object containing `chunks` and `doc_aggs` inside each answer.
+- `include_prompt`: boolean, defaults to `false`. Set to `true` to return the
+  recorded prompt string inside each answer.
+
+These query parameters apply only to chat and agent session list and detail
+endpoints. Fields omitted by these flags are excluded from SQL as well as the
+response. Invalid boolean values return an argument error on these read endpoints.
+Create, update, message deletion, and feedback endpoints ignore these query
+parameters and omit `reference` and `prompt` from their responses.
+There is no session-level reference array.
+
+The UI requests references for citations and source previews, and prompts for
+answer details. Older messages omit unavailable usage, timing, or prompt fields.
+Generation history SQL omits `reference`, `prompt`, `usage`, and `elapsed_ms`, and
+these fields are excluded from LLM input. Agentic answers have no recorded prompt.
+
 #### Request
 
 - Method: GET
@@ -3531,7 +3553,7 @@ Gets a specific session of a specified chat assistant, including its messages, r
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id} \
+     --url 'http://{address}/api/v1/chats/{chat_id}/sessions/{session_id}?include_reference=true&include_prompt=true' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -3558,9 +3580,19 @@ Success:
             {
                 "content": "Hi! I am your assistant, can I help you?",
                 "role": "assistant"
+            },
+            {
+                "id": "turn-1",
+                "role": "user",
+                "content": "What does the document say?"
+            },
+            {
+                "id": "turn-1",
+                "role": "assistant",
+                "content": "Here is the answer.",
+                "reference": {"chunks": [], "doc_aggs": []}
             }
-        ],
-        "reference": []
+        ]
     }
 }
 ```
@@ -3616,8 +3648,7 @@ Success: returns the updated session object.
     "data": {
         "chat_id": "2ca4b22e878011ef88fe0242ac120005",
         "id": "4606b4ec87ad11efbc4f0242ac120006",
-        "messages": [],
-        "reference": []
+        "messages": []
     }
 }
 ```

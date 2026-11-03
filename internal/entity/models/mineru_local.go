@@ -104,7 +104,13 @@ func (m *MinerULocalModel) OCRFile(ctx context.Context, modelName *string, conte
 }
 
 func (m *MinerULocalModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	if err := m.CheckConnection(ctx, apiConfig); err != nil {
+		return nil, err
+	}
+	return []ListModelResponse{{
+		Name:       "MinerU-model",
+		ModelTypes: []string{"ocr"},
+	}}, nil
 }
 
 func (m *MinerULocalModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
@@ -134,24 +140,26 @@ func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APICo
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	// MinerU 4.0 serves GET /v1/health; 3.x serves GET /health. Probe V1
-	// first so a 4.0-only service (no /health) still verifies, then fall
-	// back. 401/403 mean the credentials are wrong; any other HTTP answer
-	// (including 404 on a server without that path) still proves reachability
-	// once at least one probe got a response.
+	// mineru.net is the hosted product. It has no /v1/health; reachability of
+	// the site is the check. A self-hosted URL must answer with MinerU's
+	// health JSON. A reachable server that is not MinerU, including one that
+	// answers 404, is a failure.
+	if IsMinerUCloudBase(u.String()) {
+		return minerUCloudReachable(ctx, m.baseModel.httpClient, u)
+	}
 	v1URL := *u
 	v1URL.Path = "/v1/health"
-	v1Code, v1Err := minerUProbeGET(ctx, m.baseModel.httpClient, v1URL.String(), token)
-	if v1Err == nil && v1Code != http.StatusNotFound && v1Code != http.StatusMethodNotAllowed {
-		if v1Code == http.StatusUnauthorized || v1Code == http.StatusForbidden {
-			return fmt.Errorf("authentication failed (HTTP %d)", v1Code)
-		}
+	v1Code, v1Body, v1Err := minerUGET(ctx, m.baseModel.httpClient, v1URL.String(), token)
+	if v1Err == nil && (v1Code == http.StatusUnauthorized || v1Code == http.StatusForbidden) {
+		return fmt.Errorf("authentication failed (HTTP %d)", v1Code)
+	}
+	if v1Err == nil && minerUHealthOK(v1Code, v1Body) {
 		return nil
 	}
 
 	legacy := *u
 	legacy.Path = "/health"
-	code, err := minerUProbeGET(ctx, m.baseModel.httpClient, legacy.String(), token)
+	code, body, err := minerUGET(ctx, m.baseModel.httpClient, legacy.String(), token)
 	if err != nil {
 		if v1Err != nil {
 			return fmt.Errorf("connection failed: %w", v1Err)
@@ -160,6 +168,62 @@ func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APICo
 	}
 	if code == http.StatusUnauthorized || code == http.StatusForbidden {
 		return fmt.Errorf("authentication failed (HTTP %d)", code)
+	}
+	if minerUHealthOK(code, body) {
+		return nil
+	}
+	if v1Err != nil {
+		return fmt.Errorf("not a MinerU service: %s: %w", v1URL.String(), v1Err)
+	}
+	return fmt.Errorf("not a MinerU service: %s HTTP %d, %s HTTP %d", v1URL.String(), v1Code, legacy.String(), code)
+}
+
+func minerUGET(ctx context.Context, client *http.Client, rawURL, token string) (int, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return resp.StatusCode, nil, err
+	}
+	return resp.StatusCode, body, nil
+}
+
+func minerUHealthOK(code int, body []byte) bool {
+	if code < http.StatusOK || code >= http.StatusMultipleChoices {
+		return false
+	}
+	var payload struct {
+		Status  string `json:"status"`
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(payload.Status)) {
+	case "ok", "healthy":
+		return true
+	}
+	return strings.TrimSpace(payload.Version) != ""
+}
+
+func minerUCloudReachable(ctx context.Context, client *http.Client, u *url.URL) error {
+	origin := u.Scheme + "://" + u.Host + "/"
+	code, _, err := minerUGET(ctx, client, origin, "")
+	if err != nil {
+		return fmt.Errorf("connection failed: %w", err)
+	}
+	if code < http.StatusOK || code >= http.StatusMultipleChoices {
+		return fmt.Errorf("not a MinerU service: %s HTTP %d", origin, code)
 	}
 	return nil
 }

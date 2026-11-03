@@ -19,6 +19,12 @@ jest.mock('@/hooks/use-agent-request', () => ({
     loading: false,
     isError: false,
   }),
+  // The three hooks below back useParserTreeData, which the form hook
+  // consults for the missing-option validation.
+  useFetchBuiltinPipelines: () => ({ options: [], loading: false }),
+  useFetchAgentList: () => ({ data: { canvas: [], total: 0 }, loading: false }),
+  useFetchCanvasVersions: (canvasIds: string[]) =>
+    canvasIds.map(() => ({ isSuccess: true, data: mockVersions })),
 }));
 
 // Cut the chain parser-config-validation -> compilation-form -> locales/config

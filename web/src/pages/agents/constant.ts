@@ -54,9 +54,9 @@ export const FlowTypeConfig: Record<
 };
 
 export const AgentTabs = [
-  FlowType.Compiler,
-  FlowType.Flow,
   FlowType.Agent,
+  FlowType.Flow,
+  FlowType.Compiler,
 ] as const;
 
 /**

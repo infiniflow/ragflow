@@ -19,7 +19,7 @@ Build RAGFlow from source into a local Docker image for development and testing.
 - Access to `infiniflow/ragflow_deps:latest` and the build image for your target architecture: `infiniflow/github_action_runner:latest` for x86-64 or `infiniflow/github_action_runner:latest-arm64` for ARM64.
 - Internet access during the build to download system packages, fonts, tokenizer resources, npm dependencies, and Go modules. Pulling the dependency images in advance is not sufficient for an offline build.
 
-RAGFlow provides prebuilt Docker images for Linux x86-64 and ARM64 starting with v1.0.0-rc2. To deploy a published image, follow the [Quickstart](../quickstart.mdx). The instructions below cover building a Docker image from source on a Linux host matching the target architecture.
+RAGFlow provides prebuilt Docker images for Linux x86-64 and ARM64 starting with v1.0.0-rc3. To deploy a published image, follow the [Quickstart](../quickstart.mdx). The instructions below cover building a Docker image from source on a Linux host matching the target architecture.
 
 For the default Elasticsearch document engine on Linux, set `vm.max_map_count` to at least 262144 on the Docker host.
 
@@ -47,7 +47,7 @@ Run the build from the repository root. Keep the `.git` directory in the build c
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow
-git checkout v1.0.0-rc2
+git checkout v1.0.0-rc3
 ```
 
 Use the same release tag as the README deployment instructions so the image and local Compose files match. For development, check out the branch or commit you intend to test instead, and keep its Docker deployment files with the built image.
