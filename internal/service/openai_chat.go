@@ -110,16 +110,14 @@ type OpenAIStreamEvent struct {
 // keeping handler-level concerns (message filtering, generation config merge,
 // reference metadata enrichment) on the service itself.
 type OpenAIChatService struct {
-	chatSvc      *ChatService
-	tenantLLMSvc *TenantLLMService
-	pipeline     *ChatPipelineService
+	chatSvc  *ChatService
+	pipeline *ChatPipelineService
 }
 
 func NewOpenAIChatService() *OpenAIChatService {
 	return &OpenAIChatService{
-		chatSvc:      NewChatService(),
-		tenantLLMSvc: NewTenantLLMService(),
-		pipeline:     NewChatPipelineService(),
+		chatSvc:  NewChatService(),
+		pipeline: NewChatPipelineService(),
 	}
 }
 
@@ -243,7 +241,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
 			code, permissionErr := permissionresponse.NormalizeHidden(err)
-			common.ResponseWithCodeData(c, code, nil, permissionErr.Error())
+			common.RespondError(c, code, permissionErr.Error())
 			return
 		}
 		s.writeDataError(c, err.Error())
@@ -252,7 +250,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	dialog := dialogResp.Chat
 	if err := validateChatDatasetAccess(ctx, userID, dialog.KBIDs); err != nil {
 		code, permissionErr := permissionresponse.NormalizeHidden(err)
-		common.ResponseWithCodeData(c, code, nil, permissionErr.Error())
+		common.RespondError(c, code, permissionErr.Error())
 		return
 	}
 	resolvedModel := req.Model
@@ -263,13 +261,8 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 	if req.Model != "model" {
-		if _, mErr := s.pipeline.ModelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat, resolvedModel); mErr != nil {
+		if _, mErr := s.pipeline.ModelFactory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat, resolvedModel); mErr != nil {
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
-			return
-		}
-		apiKey, apiErr := s.tenantLLMSvc.GetAPIKeyFromInstance(ctx, dialog.TenantID, req.Model)
-		if apiErr != nil || apiKey == "" {
-			s.writeDataError(c, fmt.Sprintf("Cannot use specified model %s.", req.Model))
 			return
 		}
 		dialog.LLMID = resolvedModel
@@ -927,12 +920,12 @@ func streamChatCompletionSSE(
 
 // writeArgError writes a 101 JSON error envelope (malformed request).
 func (s *OpenAIChatService) writeArgError(c *gin.Context, msg string) {
-	common.ResponseWithCodeData(c, common.CodeArgumentError, nil, msg)
+	common.RespondError(c, common.CodeArgumentError, msg)
 }
 
 // writeDataError writes a 102 JSON error envelope (service failure).
 func (s *OpenAIChatService) writeDataError(c *gin.Context, msg string) {
-	common.ResponseWithCodeData(c, common.CodeDataError, nil, msg)
+	common.RespondError(c, common.CodeDataError, msg)
 }
 
 func getCreatedOrDefault(created *int64) int64 {

@@ -112,16 +112,19 @@ func (a *MemoryAdapter) Search(
 	if user := strings.TrimSpace(req.UserID); user != "" {
 		filter["user_id"] = user
 	}
+	params := map[string]any{
+		"query":                      query,
+		"keywords_similarity_weight": keywordWeight,
+		"top_n":                      req.TopN,
+	}
+	if req.SimilarityThreshold != nil {
+		params["similarity_threshold"] = *req.SimilarityThreshold
+	}
 	messages, _, err := a.svc.SearchMessage(
 		ctx,
 		actorID,
 		filter,
-		map[string]any{
-			"query":                      query,
-			"similarity_threshold":       req.SimilarityThreshold,
-			"keywords_similarity_weight": keywordWeight,
-			"top_n":                      req.TopN,
-		},
+		params,
 	)
 	if err != nil {
 		return nil, err

@@ -15,11 +15,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { VirtualMessageList } from '@/components/virtual-message-list';
 import { MessageType } from '@/constants/chat';
-import {
-  useHandleMessageInputChange,
-  useScrollToBottom,
-} from '@/hooks/logic-hooks';
+import { useHandleMessageInputChange } from '@/hooks/logic-hooks';
 import {
   useFetchChat,
   useGetChatSearchParams,
@@ -28,7 +26,6 @@ import {
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IClientConversation } from '@/interfaces/database/chat';
-import { buildMessageUuidWithRole } from '@/utils/chat';
 import {
   deriveModelPreset,
   removeUselessFieldsFromValues,
@@ -110,18 +107,19 @@ const ChatCard = forwardRef(function ChatCard(
   const { id: dialogId } = useParams();
   const { updateChat } = useUpdateChat();
 
-  const { derivedMessages, handlePressEnter, sendLoading } =
-    useSendSingleMessage({
-      controller,
-      value,
-      setValue,
-      files,
-      clearFiles,
-    });
-
-  const messageContainerRef = useRef<HTMLDivElement>(null);
-
-  const { scrollRef } = useScrollToBottom(derivedMessages, messageContainerRef);
+  const {
+    derivedMessages,
+    handlePressEnter,
+    sendLoading,
+    messageContainerRef,
+    virtualizer,
+  } = useSendSingleMessage({
+    controller,
+    value,
+    setValue,
+    files,
+    clearFiles,
+  });
 
   const messageReferences = useMessageReferences(derivedMessages);
 
@@ -264,32 +262,31 @@ const ChatCard = forwardRef(function ChatCard(
       </CardHeader>
       <CardContent className="flex-1 min-h-0">
         <div ref={messageContainerRef} className="h-full overflow-auto">
-          <div className="w-full">
-            {derivedMessages?.map((message, i) => {
-              return (
-                <MessageItem
-                  loading={
-                    message.role === MessageType.Assistant &&
-                    sendLoading &&
-                    derivedMessages.length - 1 === i
-                  }
-                  key={buildMessageUuidWithRole(message)}
-                  item={message}
-                  nickname={userInfo.nickname}
-                  avatar={userInfo.avatar}
-                  avatarDialog={currentDialog.icon}
-                  reference={messageReferences.get(message) ?? EmptyReference}
-                  // clickDocumentButton={clickDocumentButton}
-                  index={i}
-                  isLast={i === derivedMessages.length - 1}
-                  sendLoading={sendLoading}
-                  clickDocumentButton={clickDocumentButton}
-                  showLikeButton={false}
-                ></MessageItem>
-              );
-            })}
-          </div>
-          <div ref={scrollRef} />
+          <VirtualMessageList
+            className="w-full"
+            items={derivedMessages ?? []}
+            virtualizer={virtualizer}
+            renderItem={(message, i) => (
+              <MessageItem
+                loading={
+                  message.role === MessageType.Assistant &&
+                  sendLoading &&
+                  derivedMessages.length - 1 === i
+                }
+                item={message}
+                nickname={userInfo.nickname}
+                avatar={userInfo.avatar}
+                avatarDialog={currentDialog.icon}
+                reference={messageReferences.get(message) ?? EmptyReference}
+                // clickDocumentButton={clickDocumentButton}
+                index={i}
+                isLast={i === derivedMessages.length - 1}
+                sendLoading={sendLoading}
+                clickDocumentButton={clickDocumentButton}
+                showLikeButton={false}
+              />
+            )}
+          />
         </div>
       </CardContent>
     </Card>

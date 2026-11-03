@@ -70,7 +70,7 @@ func TestRunAgent_ToolHistoryPersists(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			// The auth middleware attaches the permission subject in production;
 			// the enterprise policy resolves the canvas through its tenant.
-			ctx = permission.WithSubject(ctx, permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+			ctx = permission.WithIdentity(ctx, "user-1", "tenant-1")
 			defer cancel()
 			mcp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodDelete {

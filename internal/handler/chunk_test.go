@@ -72,11 +72,13 @@ func (m *mockChunkSvc) RemoveChunks(ctx context.Context, req *service.RemoveChun
 
 func TestChunkRemoveUsesRouteIDs(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		err  error
-		code int
+		name  string
+		err   error
+		code  int
+		count int64
 	}{
-		{name: "success", code: 0},
+		{name: "success", code: 0, count: 1},
+		{name: "nothing deleted", code: 0, count: 0},
 		{name: "mismatched dataset", err: permission.ErrResourceNotFound, code: 404},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -89,7 +91,7 @@ func TestChunkRemoveUsesRouteIDs(t *testing.T) {
 				if !reflect.DeepEqual(req.ChunkIDs, []string{"chunk-1"}) {
 					t.Fatalf("unexpected chunk IDs: %v", req.ChunkIDs)
 				}
-				return 1, tc.err
+				return tc.count, tc.err
 			}}
 			r, h := setupChunkHandlerWithUser("user-1", mock)
 			r.DELETE("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.RemoveChunks)
@@ -110,6 +112,12 @@ func TestChunkRemoveUsesRouteIDs(t *testing.T) {
 			}
 			if tc.err != nil && (payload["message"] != "Resource not found" || payload["data"] != nil) {
 				t.Fatalf("unexpected resource error: %s", response.Body.String())
+			}
+			if tc.err == nil {
+				data, ok := payload["data"].(map[string]interface{})
+				if !ok || data["deleted_count"] != float64(tc.count) {
+					t.Fatalf("unexpected deletion count: %s", response.Body.String())
+				}
 			}
 		})
 	}
@@ -263,8 +271,11 @@ func TestChunkHandlerSwitchChunksCallsService(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
 		t.Fatalf("invalid JSON response: %v", err)
 	}
-	if res["data"] != true {
-		t.Fatalf("data = %v, want true", res["data"])
+	if res["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected success, got %v", res)
+	}
+	if data, exists := res["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 }
 
@@ -576,7 +587,7 @@ func TestChunkStopParsingRouteRequiresDocumentIDs(t *testing.T) {
 	}
 }
 
-func TestChunkStopParsing_InvalidStateIncludesPythonErrorCode(t *testing.T) {
+func TestChunkStopParsing_InvalidStateOmitsData(t *testing.T) {
 	r, mock := setupChunkStopParsingTest("user1")
 	mock.stopParsingFn = func(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
 		return &service.StopParsingResponse{
@@ -599,12 +610,8 @@ func TestChunkStopParsing_InvalidStateIncludesPythonErrorCode(t *testing.T) {
 	if resp["code"] != float64(common.CodeDataError) {
 		t.Fatalf("expected data error, got %v: %s", resp["code"], w.Body.String())
 	}
-	data, ok := resp["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected data object, got %T", resp["data"])
-	}
-	if data["error_code"] != "DOC_STOP_PARSING_INVALID_STATE" {
-		t.Fatalf("unexpected error_code: %v", data["error_code"])
+	if _, ok := resp["data"]; ok {
+		t.Fatalf("error response must omit data: %v", resp)
 	}
 	if resp["message"] != "can't stop parsing document that has not started or already completed" {
 		t.Fatalf("unexpected message: %v", resp["message"])

@@ -93,7 +93,7 @@ class TestDocumentsDeletion:
         document_ids = [document.id for document in documents]
         with pytest.raises(Exception) as exception_info:
             dataset.delete_documents(ids=document_ids + document_ids)
-        assert "Field: <ids> - Message: <Duplicate ids:" in str(exception_info.value), str(exception_info.value)
+        assert "field: <ids> - message: <duplicate ids:" in str(exception_info.value), str(exception_info.value)
         assert {doc.id for doc in dataset.list_documents()} == set(document_ids)
 
 

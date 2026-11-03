@@ -56,6 +56,7 @@ func setupChatRESTUpdateServiceTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-a",
+		UserID:       "user-1",
 		TenantID:     "user-1",
 		ProviderName: "OpenAI",
 	}).Error; err != nil {

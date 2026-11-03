@@ -145,26 +145,6 @@ func generateRandomHex(n int) string {
 	return hex.EncodeToString(bytes)
 }
 
-// ListUsers returns a page of users and the total number of users.
-func (s *Service) ListUsers(ctx context.Context, pageIndex, pageSize int, name, status, sort, orderBy string) ([]map[string]interface{}, int64, error) {
-	users, total, err := s.userDAO.List(ctx, dao.DB, (pageIndex-1)*pageSize, pageSize, name, status, sort, orderBy)
-	if err != nil {
-		return nil, 0, err
-	}
-
-	result := make([]map[string]interface{}, 0, len(users))
-	for _, user := range users {
-		result = append(result, map[string]interface{}{
-			"email":        user.Email,
-			"nickname":     user.Nickname,
-			"create_date":  user.CreateTime,
-			"is_active":    user.IsActive,
-			"is_superuser": user.IsSuperuser,
-		})
-	}
-	return result, total, nil
-}
-
 // CreateUser create a new user
 // Parameters:
 //   - username: email address of the user
@@ -717,6 +697,9 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 	case "mysql":
 		mysqlStatus := s.getMySQLStatus(ctx)
 		results = append(results, mysqlStatus)
+	case "vastbase":
+		vastbaseConfig := globalConfig.GetVastbaseMetaConfig()
+		results = append(results, s.pingDatabaseStatus(ctx, "vastbase", vastbaseConfig.Host, vastbaseConfig.Port))
 	default:
 		mysqlConfig := globalConfig.GetMySQLConfig()
 		results = append(results, newServiceStatus("database", databaseType, mysqlConfig.Host, mysqlConfig.Port, "not available", time.Now(), "not supported database type"))
@@ -859,6 +842,29 @@ func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
 
 	mysqlConfig := server.GetConfig().GetMySQLConfig()
 	return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "alive", startTime, "")
+}
+
+// pingDatabaseStatus reports the SQL metadata database status for the
+// non-MySQL backends. The connectivity probe is the same SELECT 1 ping the
+// MySQL path uses; only the reported endpoint differs.
+func (s *Service) pingDatabaseStatus(ctx context.Context, name, host string, port int) ServiceStatus {
+	serviceType := "database"
+	startTime := time.Now()
+
+	sqlDB, err := dao.DB.DB()
+	if err != nil {
+		return newServiceStatus(serviceType, name, host, port, "not connected", startTime, err.Error())
+	}
+
+	// The DSN allows a 30s connect_timeout, so an unreachable host would
+	// otherwise hold ListServices for the full dial timeout.
+	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err = sqlDB.PingContext(pingCtx); err != nil {
+		return newServiceStatus(serviceType, name, host, port, "timeout", startTime, err.Error())
+	}
+
+	return newServiceStatus(serviceType, name, host, port, "alive", startTime, "")
 }
 
 // getKvrocksStatus gets the Kvrocks service status.

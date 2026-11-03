@@ -53,7 +53,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 			hasError = true
 			continue
 		}
-		if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, datasetID, permission.OperationUpdate); err != nil {
+		if err := service.CheckDocumentAccess(ctx, doc.ID, datasetID, permission.OperationUpdate); err != nil {
 			result[docID] = map[string]string{"error": "Permission denied"}
 			if permissionresponse.IsPermissionError(err) {
 				permissionDenied = err
@@ -139,7 +139,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 }
 
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, documentID, datasetID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -246,7 +246,6 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	if (sel != nil || present["parser_config"]) && isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
 		accessErr := permission.NewDatabaseChecker(dao.DB).CheckDependency(
 			ctx,
-			permission.Subject{UserID: userID, TenantID: kb.TenantID},
 			permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: doc.ID},
 			permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effPipelineID)},
 			permission.OperationUpdate,
@@ -292,7 +291,10 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 				}
 			}
 			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, parentChildOverrides)
-			llmID, _, _ := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
+			llmID := ""
+			if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+				llmID = service.ModelReference(modelInfo)
+			}
 			cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
 			parserUpdates["parser_config"] = cleaned
 		}
@@ -320,11 +322,12 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			common.Warn("document pipeline/version switch: failed to resolve component params defaults, keeping prior parser_config",
 				zap.String("parserID", effParserID), zap.Error(cpErr))
 		} else {
-			llmID, _, llmErr := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
-			if llmErr != nil {
+			llmID := ""
+			if modelInfo, llmErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); llmErr == nil {
+				llmID = service.ModelReference(modelInfo)
+			} else if !errors.Is(llmErr, service.ErrNoDefaultModel) {
 				common.Warn("document pipeline/version switch: failed to resolve default chat model, falling back to no llm binding",
 					zap.String("tenant_id", kb.TenantID), zap.Error(llmErr))
-				llmID = ""
 			}
 			cleaned := service.ApplyComponentScopedParserConfig(cpDefaults, llmID)
 			parserUpdates["parser_config"] = cleaned

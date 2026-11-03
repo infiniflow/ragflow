@@ -59,7 +59,7 @@ func imageUploadConcurrency() int {
 //   - media_ref only     → materialize one image from the run media cache.
 //   - otherwise          → decode the image, upload the bytes via
 //     uploadOneImage at key=ck["id"], set img_id="<kb_id>-<chunk_id>", and
-//     delete the raw image field (用完即弃).
+//     delete the raw image field.
 //
 // Materializing inside the loop keeps peak memory at one image instead of the
 // whole document. Every cache, integrity, scope, or transport failure aborts

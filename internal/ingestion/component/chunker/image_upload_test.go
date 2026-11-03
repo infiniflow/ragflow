@@ -35,6 +35,7 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 	medialib "ragflow/internal/parser/media"
 	parserlib "ragflow/internal/parser/parser"
+	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -105,6 +106,70 @@ func TestImageUploadDecorator_ParserUnpaddedImages(t *testing.T) {
 				t.Error("raw image retained after upload")
 			}
 		})
+	}
+}
+
+// TestImageUploadDecorator_MarkdownMediaRefMaterializes pins the ingestion
+// seam for Markdown: the parser writes the image bytes to the run media cache
+// and emits only a MediaRef, and the chunk uploader resolves that reference
+// back to the same bytes.
+func TestImageUploadDecorator_MarkdownMediaRefMaterializes(t *testing.T) {
+	want, err := base64.StdEncoding.DecodeString(pngBase64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := &chunkerMediaCache{}
+	ctx := medialib.WithCache(t.Context(), cache)
+	p, err := parserlib.GetParser(utility.FileTypeMarkdown)
+	if err != nil {
+		t.Fatalf("GetParser(FileTypeMarkdown): %v", err)
+	}
+	parsed := p.ParseWithResult(ctx, "media.md", []byte("![caption](data:image/png;base64,"+pngBase64+")"))
+	if parsed.Err != nil {
+		t.Fatalf("ParseWithResult: %v", parsed.Err)
+	}
+	items := parsed.JSON
+	if len(items) != 1 {
+		t.Fatalf("items = %+v, want one image item", items)
+	}
+	item := items[0].ToMap()
+	if entity.MediaRefFromAny(item["media_ref"]) == nil {
+		t.Fatalf("parser did not emit a media_ref: %+v", item)
+	}
+	if _, ok := item["image"]; ok {
+		t.Fatalf("parser retained inline image bytes: %+v", item)
+	}
+
+	var uploaded []byte
+	prev := ChunkImageUploader
+	ChunkImageUploader = func(_ context.Context, kbID, chunkID string, data []byte) (string, error) {
+		uploaded = append([]byte(nil), data...)
+		return kbID + "-" + chunkID, nil
+	}
+	t.Cleanup(func() { ChunkImageUploader = prev })
+	comp, err := NewOneChunker(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := (&imageUploadDecorator{inner: comp}).Invoke(ctx, nil, map[string]any{
+		"name": "media.md", "kb_id": testKBID, "doc_id": testDocID,
+		"output_format": "json", "json": parsed.JSON,
+	})
+	if err != nil {
+		t.Fatalf("markdown media_ref failed at chunk upload: %v", err)
+	}
+	if !bytes.Equal(uploaded, want) {
+		t.Fatalf("uploaded bytes differ from the source PNG: got %d bytes, want %d", len(uploaded), len(want))
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("expected one chunk, got %#v", out)
+	}
+	if chunks[0]["img_id"] != testKBID+"-"+common.ChunkID(testDocID, "caption") {
+		t.Errorf("unexpected image reference: %v", chunks[0]["img_id"])
+	}
+	if _, ok := chunks[0]["media_ref"]; ok {
+		t.Error("media_ref retained after upload")
 	}
 }
 

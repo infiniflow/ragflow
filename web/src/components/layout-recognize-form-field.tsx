@@ -144,9 +144,12 @@ export function LayoutRecognizeFormField({
               >
                 <FormLabel
                   tooltip={t('layoutRecognizeTip')}
-                  className={cn('text-sm text-text-secondary whitespace-wrap', {
-                    ['w-1/4']: horizontal,
-                  })}
+                  className={cn(
+                    'text-sm text-text-secondary whitespace-wrap pb-1',
+                    {
+                      ['w-1/4']: horizontal,
+                    },
+                  )}
                 >
                   {label || t('layoutRecognize')}
                 </FormLabel>

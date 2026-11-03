@@ -25,7 +25,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"gorm.io/gorm"
@@ -986,7 +985,7 @@ func TestDatasetServiceDeleteDatasetsRejectsUnauthorizedID(t *testing.T) {
 	ctx := withDatasetTestContext(t.Context(), "tenant-2", "tenant-1")
 	svc := NewDatasetService()
 	normalizedID := "11111111111141118111111111111111"
-	_, code, err := svc.DeleteDatasets(ctx, []string{normalizedID}, false, permission.Subject{UserID: "tenant-2"})
+	_, code, err := svc.DeleteDatasets(ctx, []string{normalizedID}, false)
 	if err == nil {
 		t.Fatal("expected unauthorized error")
 	}
@@ -1004,7 +1003,7 @@ func TestDatasetServiceDeleteDatasetsRejectsAllUnauthorized(t *testing.T) {
 
 	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	svc := NewDatasetService()
-	_, code, err := svc.DeleteDatasets(ctx, []string{"d94a8dc02c9711f0930f7fbc369eab6d"}, false, testDatasetSubject("tenant-1"))
+	_, code, err := svc.DeleteDatasets(ctx, []string{"d94a8dc02c9711f0930f7fbc369eab6d"}, false)
 	if err == nil {
 		t.Fatal("expected unauthorized error")
 	}
@@ -1023,7 +1022,7 @@ func TestDatasetServiceDeleteAllDatasetsRequiresTenantOwner(t *testing.T) {
 	insertDatasetUpdateTeamMember(t, "member-1", "tenant-1")
 
 	_, code, err := NewDatasetService().DeleteDatasets(
-		withDatasetTestContext(t.Context(), "member-1", "tenant-1"), nil, true, permission.Subject{UserID: "member-1", TenantID: "tenant-1"},
+		withDatasetTestContext(t.Context(), "member-1", "tenant-1"), nil, true,
 	)
 	if err == nil {
 		t.Fatal("expected delete-all to be denied for a non-owner tenant member")
@@ -1311,6 +1310,44 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 	pdf, ok := rhyme["pdf"].(map[string]interface{})
 	if !ok || pdf["parse_method"] != "deepdoc" {
 		t.Fatalf("expected pdf setup persisted, got %#v", rhyme)
+	}
+}
+
+func TestUpdateDatasetUsesTenantModelIDForExtractorDefault(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	if err := db.Model(&entity.UserTenant{}).
+		Where("user_id = ? AND tenant_id = ?", "tenant-1", "tenant-1").
+		Updates(map[string]interface{}{
+			"llm_id":        "glm-4-flash@CI@ZHIPU-AI",
+			"tenant_llm_id": "chat-model-id",
+		}).Error; err != nil {
+		t.Fatalf("set default chat model: %v", err)
+	}
+
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"pdf": map[string]interface{}{"parse_method": "deepdoc"},
+			},
+		},
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset failed: code=%d err=%v", code, err)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated dataset: %v", err)
+	}
+	extractor, ok := persisted.ParserConfig["Extractor:AutoExtractDefault"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("extractor parser config = %#v", persisted.ParserConfig["Extractor:AutoExtractDefault"])
+	}
+	if extractor["llm_id"] != "chat-model-id" {
+		t.Fatalf("extractor llm_id = %#v, want tenant model ID", extractor["llm_id"])
 	}
 }
 

@@ -461,20 +461,17 @@ func TestConnectorHandlerDeleteConnector(t *testing.T) {
 		name     string
 		service  fakeConnectorService
 		wantCode common.ErrorCode
-		wantData interface{}
 		wantMsg  string
 	}{
 		{
 			name:     "success",
 			service:  fakeConnectorService{},
 			wantCode: common.CodeSuccess,
-			wantData: true,
 		},
 		{
 			name:     "unauthorized",
 			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("no authorization")},
 			wantCode: common.CodeAuthenticationError,
-			wantData: nil,
 			wantMsg:  "no authorization",
 		},
 	}
@@ -502,8 +499,8 @@ func TestConnectorHandlerDeleteConnector(t *testing.T) {
 			if body["code"] != float64(tt.wantCode) {
 				t.Fatalf("code=%v body=%v", body["code"], body)
 			}
-			if body["data"] != tt.wantData {
-				t.Fatalf("data=%v body=%v", body["data"], body)
+			if data, exists := body["data"]; exists {
+				t.Fatalf("data must be omitted, got %v", data)
 			}
 			if tt.wantMsg != "" && body["message"] != tt.wantMsg {
 				t.Fatalf("message=%v", body["message"])
