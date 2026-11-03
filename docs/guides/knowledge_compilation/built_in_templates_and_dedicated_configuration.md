@@ -135,7 +135,6 @@ The extracted claims include supporting evidence from the source chunks and are 
 
 Leave this field empty to use the built-in claim extraction rules. Customize it only when you need domain-specific claim extraction requirements.
 
-
 ### Maximum Tokens
 
 Sets the maximum length for node summary generation. A larger value can preserve more summary information and is suitable for more complex documents. A smaller value can generate more concise summaries and is suitable for quickly viewing a document overview.
@@ -158,7 +157,7 @@ This allows the final retrieval chunks to follow the semantic boundaries identif
 
 Only one Tree template in the same template group can enable this option.
 
-![Tree clustering ratio](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/tree-clustering-ratio.jpg)
+![Tree claim extraction, clustering, and re-chunking settings](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/knowledge_tree_claim_clustering.jpg)
 
 ## PageIndex
 
@@ -553,8 +552,7 @@ The system provides the following blueprints:
 | Blueprint | Specifies the template for Wiki page generation. |
 | Instruction | Supplements page generation rules, such as chapter structure, content format, and display requirements. |
 
-![Wiki blueprint configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/built-in-templates-and-dedicated-config-wiki.jpg)
-
+![Wiki mode and Blueprint configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/knowledge_wiki_mode_and_blueprint.jpg)
 
 After a blueprint is selected, the system generates Wiki content according to the preset page structure and rules of the corresponding blueprint. When Custom is selected, you can customize page generation requirements through Instruction, such as chapter structure, content format, and display method.
 
@@ -563,8 +561,6 @@ After a blueprint is selected, the system generates Wiki content according to th
 After configuring a blueprint, you can preview the Wiki page structure corresponding to the current blueprint in the Example area below. The preview content displays the page title, chapter hierarchy, and content requirements of each chapter, helping users understand the page organization method of the selected blueprint before generating the Wiki.
 
 ### Configuration Recommendations
-
-For structurally complex content such as enterprise knowledge bases and product documentation, it is recommended to enable Plan.
 
 Entity types should be adjusted based on the business domain to avoid configuring too many irrelevant entities.
 
