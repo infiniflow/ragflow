@@ -91,11 +91,8 @@ type IngestionLog struct {
 	Operation      map[string]any `json:"operation,omitempty"`
 }
 
-// LogIngestEvent forwards one structured ingestion lifecycle event to the shared
-// LogIngest seam. In the OSS build LogIngest is a no-op, so nothing is collected;
-// the EE build provides the real sink.
-func LogIngestEvent(log IngestionLog) {
-	LogIngest(&log)
+func SyncIngestLog() {
+
 }
 
 // LogIngest is the shared upstream seam. In the OSS build it is a no-op; the EE
