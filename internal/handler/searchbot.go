@@ -134,12 +134,12 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 
 	var req SearchBotRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
 	if req.Question == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
+		common.RespondError(c, common.CodeArgumentError, "question is required")
 		return
 	}
 
@@ -149,11 +149,11 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 			return
 		}
 		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
+		common.RespondError(c, common.CodeOperatingError, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, questions, "success")
+	common.RespondSuccessList(c, questions, "success")
 }
 
 // RetrievalTest performs a retrieval test against specified knowledge bases.
@@ -167,7 +167,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 
 	var req SearchBotRetrievalTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -181,13 +181,13 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	req.KbIDs = filtered
 
 	if len(req.KbIDs) == 0 || req.Question == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_id and question are required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_id and question are required")
 		return
 	}
 
 	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	req.VectorSimilarityWeight = vectorSimilarityWeight
@@ -195,7 +195,7 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	applyRetrievalDefaults(&req)
 
 	if req.TopK != nil && *req.TopK <= 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be greater than 0")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be greater than 0")
 		return
 	}
 
@@ -207,11 +207,11 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 			return
 		}
 		common.Warn("search bot retrieval test failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // Ask performs a retrieval-augmented Q&A with streaming SSE response.
@@ -227,13 +227,13 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 
 	var req SearchBotAskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
 	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	req.Question = question
@@ -247,7 +247,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		filtered = append(filtered, id)
 	}
 	if len(filtered) == 0 || strings.TrimSpace(req.Question) == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 
@@ -273,7 +273,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 			if respondPermissionErrorIf(c, err, true) {
 				return
 			}
-			common.ErrorWithCode(c, common.CodeDataError, err.Error())
+			common.RespondError(c, common.CodeDataError, err.Error())
 			return
 		}
 		searchConfig := searchConfigFromDetail(detail)
@@ -348,7 +348,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 
 	var req SearchBotMindMapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -359,7 +359,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 		}
 	}
 	if len(filtered) == 0 || strings.TrimSpace(req.Question) == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 	if h.chunkSvc == nil {
@@ -404,10 +404,10 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 			return
 		}
 		common.Warn("searchbot mindmap failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
+		common.RespondError(c, common.CodeOperatingError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, mindMap, "success")
+	common.RespondSuccess(c, mindMap, "success")
 }
 
 // SearchBotDetail returns the public share-page bootstrap payload for a
@@ -417,14 +417,14 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 	ctx := c.Request.Context()
 	searchID := strings.TrimSpace(c.Query("search_id"))
 	if searchID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "search_id is required")
+		common.RespondError(c, common.CodeArgumentError, "search_id is required")
 		return
 	}
 
 	userSvc := service.NewUserService()
 	identity, code, err := userSvc.ResolveBetaAPIToken(ctx, c.GetHeader("Authorization"))
 	if err != nil {
-		common.ResponseWithCodeData(c, code, nil, "Authentication error: API key is invalid!")
+		common.RespondError(c, code, "Authentication error: API key is invalid!")
 		return
 	}
 	setAuthIdentity(c, identity)
@@ -443,7 +443,7 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, detail, "success")
+	common.RespondSuccess(c, detail, "success")
 }
 
 // ---- SSE helpers ----

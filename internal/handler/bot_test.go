@@ -994,7 +994,7 @@ func TestBotRoutes_NoRegularAuthRequired(t *testing.T) {
 		// production AuthMiddleware is exercised separately;
 		// here we just need to assert "the path resolves to
 		// something that is NOT a BotHandler".
-		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "no bot route on v1")
+		common.RespondError(c, common.CodeUnauthorized, "no bot route on v1")
 	})
 
 	// (1) regular JWT on apiNoAuth bot path -> 200.
@@ -1063,13 +1063,13 @@ func TestDownloadAttachment_Unauth(t *testing.T) {
 	g.Use(func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
 		if auth == "" {
-			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "Authorization required")
+			common.RespondError(c, common.CodeUnauthorized, "Authorization required")
 			c.Abort()
 			return
 		}
 		identity, code, err := stub.ResolveAccessToken(c.Request.Context(), auth)
 		if err != nil || code != common.CodeSuccess {
-			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "Invalid auth credentials")
+			common.RespondError(c, common.CodeUnauthorized, "Invalid auth credentials")
 			c.Abort()
 			return
 		}

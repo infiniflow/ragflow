@@ -1,5 +1,42 @@
 # RAGFlow Go implementation - Development Guide
 
+## API response helpers
+
+Pass response data directly to the helper:
+
+```go
+common.RespondSuccessList(c, items, "success")
+common.RespondSuccess(c, item, "success")
+common.RespondError(c, common.CodeBadRequest, "Missing name")
+```
+
+For HTTP 200, use `RespondSuccess` when the application code is `CodeSuccess`
+and `RespondError` otherwise. `RespondError` omits `data`. `Respond` takes the
+HTTP status before the application code for responses with other HTTP statuses:
+
+```go
+common.RespondSuccess(c, nil, "success")
+common.Respond(c, httpStatus, code, data, message)
+```
+
+The convenience helpers use HTTP 200. Pass an optional `int64` total directly to
+`RespondSuccessList` for pagination. Omit it when no total is available; an explicit
+zero remains present in the response. Use `ResponseOptions` with the other helpers
+for envelope metadata such as error details:
+
+```go
+common.RespondSuccessList(c, items, "success", total)
+common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Missing name")
+```
+
+Use objects or lists for result data and plain nil for operation acknowledgments.
+The system version is returned as `gin.H{"version": version}`. Return chunk-deletion counts as
+`gin.H{"deleted_count": count}`. Callers determine success from the envelope code.
+`Respond` checks Go kinds using reflection and accepts structs, maps, slices,
+arrays, and pointers to those types. Other kinds and typed nils are silently
+omitted. Empty objects and lists remain present. The helper does not pre-encode
+data or validate its JSON shape; accepted types retain their custom JSON encoding.
+
 ## 1. Prepare dependencies
 
 ### 1.1 Install CMake and build RAGFlow on Ubuntu 24.04

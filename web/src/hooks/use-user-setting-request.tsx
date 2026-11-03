@@ -215,7 +215,7 @@ export const useFetchSystemVersion = () => {
       setLoading(true);
       const { data } = await userService.getSystemVersion();
       if (data.code === 0) {
-        setVersion(data.data);
+        setVersion(data.data.version);
         setLoading(false);
       }
     } catch (error) {
@@ -281,7 +281,7 @@ export const useRemoveSystemToken = () => {
           queryKey: [UserSettingApiAction.FetchSystemTokenList],
         });
       }
-      return data?.data ?? [];
+      return data?.code;
     },
   });
 
@@ -387,7 +387,7 @@ export const useDeleteTenantUser = () => {
           queryKey: [UserSettingApiAction.ListTenant],
         });
       }
-      return data?.data ?? [];
+      return data?.code;
     },
   });
 
@@ -434,7 +434,7 @@ export const useAgreeTenant = () => {
           queryKey: [UserSettingApiAction.ListTenant],
         });
       }
-      return data?.data ?? [];
+      return data?.code;
     },
   });
 
@@ -472,11 +472,7 @@ export const useDeleteLangfuseConfig = () => {
     mutationFn: async () => {
       const { data } = await userService.deleteLangfuseConfig();
       if (data.code === 0) {
-        if (data.data) {
-          message.success(t('message.deleted'));
-        } else {
-          message.warning(t('message.noLangfuseConfigToDelete'));
-        }
+        message.success(t('message.deleted'));
       }
       return data?.code;
     },

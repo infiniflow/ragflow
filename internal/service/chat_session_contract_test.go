@@ -187,7 +187,7 @@ func TestDeleteSessions_SuccessByIDs(t *testing.T) {
 	if message != "success" {
 		t.Fatalf("message=%q", message)
 	}
-	if result != true {
+	if result != nil {
 		t.Fatalf("result=%v", result)
 	}
 	if len(store.sessions) != 1 {

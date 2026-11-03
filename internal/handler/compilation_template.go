@@ -45,10 +45,10 @@ func NewCompilationTemplateHandler(svc *service.CompilationTemplateService) *Com
 func (h *CompilationTemplateHandler) ListBuiltins(c *gin.Context) {
 	templates, err := h.compilationTemplateService.ListBuiltins(c.Request.Context())
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, templates, "success")
+	common.RespondSuccessList(c, templates, "success")
 }
 
 // ListWikiPresets returns the wiki page-structure presets loaded from YAML.
@@ -61,8 +61,8 @@ func (h *CompilationTemplateHandler) ListBuiltins(c *gin.Context) {
 func (h *CompilationTemplateHandler) ListWikiPresets(c *gin.Context) {
 	presets, err := h.compilationTemplateService.LoadWikiPresets()
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, presets, "success")
+	common.RespondSuccessList(c, presets, "success")
 }
