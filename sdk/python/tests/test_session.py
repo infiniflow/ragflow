@@ -99,7 +99,14 @@ def test_ask_agent_non_streaming_end_to_end():
     mock_response = MagicMock()
     mock_response.json.return_value = {
         "code": 0,
-        "data": {"content": "Final workflow conclusion.", "id": "msg_agent_end_to_end", "reference": {"chunks": [{"id": "chk_3", "content": "Evidence doc"}]}},
+        "data": {
+            "event": "message",
+            "message_id": "msg_agent_end_to_end",
+            "data": {
+                "content": "Final workflow conclusion.",
+                "reference": {"chunks": [{"id": "chk_3", "content": "Evidence doc"}]},
+            },
+        },
     }
     mock_rag.post = MagicMock(return_value=mock_response)
 
