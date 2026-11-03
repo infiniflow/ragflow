@@ -21,7 +21,7 @@ func (s *FileService) GetRootFolder(ctx context.Context, tenantID string) (map[s
 	if err != nil {
 		return nil, err
 	}
-	if err := checkFileAccess(ctx, tenantID, file, permission.OperationRead); err != nil {
+	if err = checkFileAccess(ctx, tenantID, file, permission.OperationRead); err != nil {
 		return nil, err
 	}
 	return s.toFileResponse(file), nil
@@ -46,7 +46,7 @@ func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page
 // ListFilesForTenant allows active tenant members to browse the tenant's files.
 func (s *FileService) ListFilesForTenant(ctx context.Context, userID, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
 	if userID != tenantID {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, tenantID, permission.TenantMember); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
 			return nil, err
 		}
 	}
@@ -60,7 +60,7 @@ func (s *FileService) ListFilesForTenant(ctx context.Context, userID, tenantID, 
 
 func (s *FileService) listFiles(ctx context.Context, userID, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
 	if tenantID == "" {
-		return nil, permission.ErrInvalidSubject
+		return nil, permission.ErrInvalidPermission
 	}
 	// If pfID is empty, get root folder and initialize dataset docs
 	if pfID == "" {
@@ -108,7 +108,7 @@ func (s *FileService) listFiles(ctx context.Context, userID, tenantID, pfID stri
 	// folders do not need to materialize every candidate ID.
 	excludeSkills := folder.ID == folder.ParentID
 	checker := permission.NewDatabaseChecker(dao.DB)
-	visibilityScope, err := checker.QueryScope(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ScopeQuery{
+	visibilityScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
 		Kind:      permission.ResourceKindFile,
 		Parent:    permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: folder.ID},
 		Operation: permission.OperationRead,
@@ -134,7 +134,7 @@ func (s *FileService) listFiles(ctx context.Context, userID, tenantID, pfID stri
 		refsByFileID[file.ID] = ref
 		refs = append(refs, ref)
 	}
-	accesses, err := checker.FilterAccesses(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, refs, permission.OperationRead)
+	accesses, err := checker.FilterAccesses(ctx, refs, permission.OperationRead)
 	if err != nil {
 		return nil, err
 	}
@@ -338,10 +338,10 @@ func (s *FileService) GetAllParentFolders(ctx context.Context, userID, fileID st
 // The file and every ancestor must belong to tenantID.
 func (s *FileService) GetAllParentFoldersForTenant(ctx context.Context, userID, tenantID, fileID string) ([]map[string]interface{}, error) {
 	if tenantID == "" {
-		return nil, permission.ErrInvalidSubject
+		return nil, permission.ErrInvalidPermission
 	}
 	if userID != tenantID {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, tenantID, permission.TenantMember); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
 			return nil, err
 		}
 	}
@@ -425,7 +425,7 @@ func (s *FileService) createFolderRecursive(ctx context.Context, parentFolder *e
 		if createErr != nil {
 			return createErr
 		}
-		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: newFolder.ID})
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: newFolder.ID})
 	})
 	if err != nil {
 		return nil, err
@@ -444,18 +444,18 @@ func (s *FileService) getUniqueFilename(ctx context.Context, name, parentID, ten
 
 // CreateFolder creates a new folder or virtual file
 func (s *FileService) CreateFolder(ctx context.Context, userID, name, parentID, fileType string) (map[string]interface{}, error) {
-	userID, tenantID, err := fileRequestSubject(ctx, userID)
+	userID, tenantID, err := fileRequestIdentity(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, "file", permission.ActionWrite); err != nil {
+	if err = permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
 		return nil, err
 	}
 	// "/" is the root folder name and the path separator used by recursive
 	// folder creation, so names containing it collide with the root folder
 	// and break path-based lookups.
 	if strings.Contains(name, "/") {
-		return nil, errors.New(`Folder name cannot contain "/"`)
+		return nil, errors.New(`folder name cannot contain "/"`)
 	}
 
 	if parentID == "" {
@@ -473,7 +473,7 @@ func (s *FileService) CreateFolder(ctx context.Context, userID, name, parentID, 
 	if parentFolder.TenantID != tenantID {
 		return nil, permission.ErrResourceNotFound
 	}
-	if err := checkFileAccess(ctx, userID, parentFolder, permission.OperationCreate); err != nil {
+	if err = checkFileAccess(ctx, userID, parentFolder, permission.OperationCreate); err != nil {
 		return nil, err
 	}
 
@@ -510,7 +510,7 @@ func (s *FileService) CreateFolder(ctx context.Context, userID, name, parentID, 
 		if fileType == FileTypeFolder {
 			kind = permission.ResourceKindFolder
 		}
-		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: kind, ID: folder.ID})
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: kind, ID: folder.ID})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create folder: %w", err)
@@ -545,7 +545,7 @@ func (s *FileService) MoveFiles(ctx context.Context, userID string, srcFileIDs [
 		if file.TenantID == "" {
 			return errors.New("tenant not found")
 		}
-		if err := s.checkFileTreeAccess(ctx, userID, file, permission.OperationUpdate); err != nil {
+		if err := s.checkFileTreeAccess(ctx, file, permission.OperationUpdate); err != nil {
 			return err
 		}
 	}

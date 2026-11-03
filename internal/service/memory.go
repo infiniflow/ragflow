@@ -412,9 +412,16 @@ type MemoryFiltersResponse struct {
 }
 
 func (s *MemoryService) ListMemoryFilters(ctx context.Context, userID string) (*MemoryFiltersResponse, error) {
-	memoryIDs, err := s.accessibleMemoryIDs(ctx, userID, permission.OperationRead)
+	memoryScope, err := permission.NewDatabaseChecker(s.db).Scope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindMemory,
+		Operation: permission.OperationRead,
+	})
 	if err != nil {
 		return nil, err
+	}
+	memoryIDs := memoryScope.ResourceIDs
+	if memoryScope.Mode != permission.ScopeIDs {
+		memoryIDs = []string{}
 	}
 	if len(memoryIDs) == 0 {
 		return &MemoryFiltersResponse{}, nil
@@ -495,7 +502,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 	if err != nil {
 		return nil, err
 	}
-	if err := checkFeatureAction(ctx, userID, "memory", permission.ActionWrite); err != nil {
+	if err := permission.NewDatabaseChecker(s.db).CheckFeature(ctx, "memory", permission.ActionWrite); err != nil {
 		return nil, err
 	}
 	// Resolve tenant model IDs, mirroring Python's ensure_tenant_model_ids_for_params.
@@ -503,7 +510,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 	// tenant_model row) — we leave the tenant_*_id fields nil and proceed.
 	modelFactory := NewModelFactory()
 	if req.LLMID != "" && req.TenantLLMID == nil {
-		info, err := modelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, entity.ModelTypeChat, req.LLMID)
+		info, err := modelFactory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, entity.ModelTypeChat, req.LLMID)
 		if err != nil {
 			common.Warn("CreateMemory: failed to resolve tenant LLM id",
 				zap.String("tenant_id", tenantID), zap.String("llm_id", req.LLMID), zap.Error(err))
@@ -513,7 +520,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 		}
 	}
 	if req.EmbdID != "" && req.TenantEmbdID == nil {
-		info, err := modelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: tenantID}, entity.ModelTypeEmbedding, req.EmbdID)
+		info, err := modelFactory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, entity.ModelTypeEmbedding, req.EmbdID)
 		if err != nil {
 			common.Warn("CreateMemory: failed to resolve tenant embedding id",
 				zap.String("tenant_id", tenantID), zap.String("embd_id", req.EmbdID), zap.Error(err))
@@ -588,7 +595,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 		if err := s.memoryDAO.Create(ctx, tx, memory); err != nil {
 			return err
 		}
-		return grantCreatedResourceOwner(ctx, tx, userID, tenantID, permission.ResourceKindMemory, memory.ID)
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memory.ID})
 	}); err != nil {
 		return nil, errors.New("could not create new memory")
 	}
@@ -619,7 +626,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *Cr
 //	resp, err := service.UpdateMemory("tenant123", "memory456", req)
 func (s *MemoryService) UpdateMemory(ctx context.Context, userID string, memoryID string, req *UpdateMemoryRequest) (*CreateMemoryResponse, error) {
 	updateDict := make(map[string]interface{})
-	if err := s.checkMemoryPermission(ctx, userID, memoryID, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(s.db).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID}, permission.OperationUpdate); err != nil {
 		return nil, err
 	}
 
@@ -656,7 +663,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, userID string, memoryI
 			return nil, fmt.Errorf("unknown permission '%s'", *req.Permissions)
 		}
 		if strings.ToLower(strings.TrimSpace(currentMemory.Permissions)) != string(perm) {
-			if err := s.checkMemoryPermission(ctx, userID, memoryID, permission.OperationShare); err != nil {
+			if err := permission.NewDatabaseChecker(s.db).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID}, permission.OperationShare); err != nil {
 				return nil, err
 			}
 		}
@@ -673,7 +680,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, userID string, memoryI
 	if req.LLMID != nil {
 		updateDict["llm_id"] = *req.LLMID
 		if req.TenantLLMID == nil && *req.LLMID != "" {
-			info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: ownerTenantID}, entity.ModelTypeChat, *req.LLMID)
+			info, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: ownerTenantID}, entity.ModelTypeChat, *req.LLMID)
 			if err != nil {
 				common.Warn("UpdateMemory: failed to resolve tenant LLM id",
 					zap.String("tenant_id", ownerTenantID), zap.String("llm_id", *req.LLMID), zap.Error(err))
@@ -686,7 +693,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, userID string, memoryI
 	if req.EmbdID != nil {
 		updateDict["embd_id"] = *req.EmbdID
 		if req.TenantEmbdID == nil && *req.EmbdID != "" {
-			info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: ownerTenantID}, entity.ModelTypeEmbedding, *req.EmbdID)
+			info, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: ownerTenantID}, entity.ModelTypeEmbedding, *req.EmbdID)
 			if err != nil {
 				common.Warn("UpdateMemory: failed to resolve tenant embedding id",
 					zap.String("tenant_id", ownerTenantID), zap.String("embd_id", *req.EmbdID), zap.Error(err))
@@ -1366,9 +1373,17 @@ func (s *MemoryService) filterAccessibleMemories(ctx context.Context, userID str
 		return []*entity.Memory{}, nil
 	}
 
-	accessibleIDs, err := s.filterMemoryIDs(ctx, userID, memoryIDs, permission.OperationUse)
+	refs := make([]permission.ResourceRef, 0, len(memoryIDs))
+	for _, memoryID := range memoryIDs {
+		refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID})
+	}
+	accessible, err := permission.NewDatabaseChecker(s.db).FilterResources(ctx, refs, permission.OperationUse)
 	if err != nil {
 		return nil, err
+	}
+	accessibleIDs := make([]string, 0, len(accessible))
+	for _, ref := range accessible {
+		accessibleIDs = append(accessibleIDs, ref.ID)
 	}
 	if len(accessibleIDs) == 0 {
 		return []*entity.Memory{}, nil
@@ -1539,7 +1554,7 @@ func memoryFusionWeights(keywordsSimilarityWeight float64) string {
 }
 
 func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
-	embeddingModel, err := NewModelFactory().NewEmbeddingModel(ctx, ModelAccess{TenantID: memory.TenantID}, memory.EmbdID)
+	embeddingModel, err := NewModelFactory().NewEmbeddingModel(ctx, Identity{TenantID: memory.TenantID}, memory.EmbdID)
 	if err != nil {
 		return nil, err
 	}
@@ -1648,7 +1663,7 @@ func (s *MemoryService) memoryWithAccess(ctx context.Context, userID, memoryID s
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if err := s.checkMemoryPermission(ctx, userID, memoryID, operation); err != nil {
+	if err := permission.NewDatabaseChecker(s.db).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID}, operation); err != nil {
 		return nil, err
 	}
 	memory, err := s.memoryDAO.GetByIDWithContext(ctx, s.db, memoryID)
@@ -1681,9 +1696,24 @@ func (s *MemoryService) memoryWithAccess(ctx context.Context, userID, memoryID s
 //
 //	resp, err := service.ListMemories("user123", []string{}, []string{"semantic"}, "table", "test", 1, 10)
 func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int, canvasID string) (*ListMemoryResponse, error) {
-	memoryIDs, err := s.accessibleMemoryIDsForCanvas(ctx, userID, canvasID)
+	canvasID = strings.TrimSpace(canvasID)
+	query := permission.ScopeQuery{
+		Kind:      permission.ResourceKindMemory,
+		Operation: permission.OperationRead,
+	}
+	if canvasID != "" {
+		canvasRef := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
+		query.Operation = permission.OperationUse
+		query.Entry = &canvasRef
+		query.EntryOp = permission.OperationRun
+	}
+	memoryScope, err := permission.NewDatabaseChecker(s.db).Scope(ctx, query)
 	if err != nil {
 		return nil, err
+	}
+	memoryIDs := memoryScope.ResourceIDs
+	if memoryScope.Mode != permission.ScopeIDs {
+		memoryIDs = []string{}
 	}
 	if len(memoryIDs) == 0 {
 		return &ListMemoryResponse{MemoryList: []map[string]interface{}{}}, nil
@@ -1698,7 +1728,7 @@ func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantI
 	modelNameCache := make(map[string]string)
 	checker := permission.NewDatabaseChecker(s.db)
 	for _, m := range memories {
-		access, err := checker.ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+		access, err := checker.ResolveAccess(ctx, permission.ResourceRef{
 			Kind: permission.ResourceKindMemory,
 			ID:   m.ID,
 		})
@@ -1793,7 +1823,7 @@ func (s *MemoryService) GetMemoryConfig(ctx context.Context, userID, memoryID st
 	if err != nil {
 		return nil, err
 	}
-	access, err := permission.NewDatabaseChecker(s.db).ResolveAccess(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+	access, err := permission.NewDatabaseChecker(s.db).ResolveAccess(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindMemory,
 		ID:   memoryID,
 	})

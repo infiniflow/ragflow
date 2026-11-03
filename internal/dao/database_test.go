@@ -19,6 +19,7 @@ package dao
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -27,7 +28,9 @@ import (
 	"ragflow/internal/entity"
 
 	"github.com/glebarez/sqlite"
+	"github.com/lib/pq"
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
@@ -482,6 +485,33 @@ func TestNamedIndexMigratorSkipsPhantomUniqueDrop(t *testing.T) {
 	}
 }
 
+// TestIsPostgresDuplicateObjectErr pins the typed classification the
+// Vastbase convergence skip relies on: only the three duplicate-object
+// SQLSTATEs count as convergence, and errors that merely contain "already
+// exists" in their text — a non-pq error, or a pq error with another code —
+// must surface instead of being suppressed.
+func TestIsPostgresDuplicateObjectErr(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"relation exists", &pq.Error{Code: "42P07", Message: `relation "user" already exists`}, true},
+		{"column exists", &pq.Error{Code: "42701", Message: `column "foo" of relation "user" already exists`}, true},
+		{"object exists", &pq.Error{Code: "42710", Message: `constraint "c" for relation "user" already exists`}, true},
+		{"wrapped relation exists", fmt.Errorf("auto migrate: %w", &pq.Error{Code: "42P07"}), true},
+		{"unique violation", &pq.Error{Code: "23505", Message: "duplicate key value violates unique constraint", Detail: "Key (id)=(1) already exists."}, false},
+		{"text only", errors.New(`relation "user" already exists`), false},
+		{"other pq error", &pq.Error{Code: "42602", Message: "invalid name"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isPostgresDuplicateObjectErr(tc.err); got != tc.want {
+				t.Fatalf("isPostgresDuplicateObjectErr(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestWrappersExposeEverythingWrappedTypeDoes is the guard that made the
 // concrete embedding necessary: embedding gorm's interfaces instead would drop
 // the twenty migrator methods and the three dialector methods that gorm reaches
@@ -497,6 +527,8 @@ func TestWrappersExposeEverythingWrappedTypeDoes(t *testing.T) {
 	}{
 		{"dialector", reflect.TypeOf(&mysql.Dialector{}), reflect.TypeOf(migrationAwareDialector{}), "Migrator"},
 		{"migrator", reflect.TypeOf(mysql.Migrator{}), reflect.TypeOf(namedIndexMigrator{}), "MigrateColumnUnique"},
+		{"dialector", reflect.TypeOf(&postgres.Dialector{}), reflect.TypeOf(vastbaseDialector{}), "Migrator"},
+		{"migrator", reflect.TypeOf(postgres.Migrator{}), reflect.TypeOf(vastbaseMigrator{}), "MigrateColumnUnique"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for i := 0; i < tc.wrapped.NumMethod(); i++ {

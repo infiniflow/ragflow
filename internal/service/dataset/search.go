@@ -117,7 +117,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	var kbRecords []*entity.Knowledgebase
 	seenTenants := make(map[string]bool)
 	for _, datasetID := range datasetIDs {
-		if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
 			common.Warn("SearchDatasets access denied", zap.String("datasetID", datasetID), zap.String("userID", userID))
 			_, permissionErr := permissionresponse.Normalize(err)
 			return nil, permissionErr
@@ -147,7 +147,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
 			return nil, fmt.Errorf("invalid search_id")
 		}
-		searchDetail, err := d.searchService.GetDetail(ctx, userID, searchID)
+		searchDetail, err := d.searchService.GetDetail(ctx, searchID)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
@@ -215,7 +215,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if metadataFilter != nil {
 		method, _ := metadataFilter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
-			access := service.ModelAccess{TenantID: tenantIDs[0]}
+			access := service.Identity{TenantID: tenantIDs[0]}
 			if chatID != "" {
 				chatModelForFilter, err = modelFactory.NewChatModel(ctx, access, chatID)
 				if err != nil {
@@ -260,7 +260,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 	}
 	if keyword {
-		chatModel, err := modelFactory.NewDefaultChatModel(ctx, service.ModelAccess{TenantID: tenantIDs[0]})
+		chatModel, err := modelFactory.NewDefaultChatModel(ctx, service.Identity{TenantID: tenantIDs[0]})
 		if err != nil {
 			common.Warn("Failed to get default chat model for LLM transformations", zap.Error(err))
 		} else {
@@ -280,7 +280,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Determine embedding model
 	var embeddingModel *modelModule.EmbeddingModel
 	if kbRecords[0].EmbdID != "" {
-		embeddingModel, err = modelFactory.NewEmbeddingModel(ctx, service.ModelAccess{TenantID: tenantIDs[0]}, kbRecords[0].EmbdID)
+		embeddingModel, err = modelFactory.NewEmbeddingModel(ctx, service.Identity{TenantID: tenantIDs[0]}, kbRecords[0].EmbdID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
 		}
@@ -289,7 +289,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Get rerank model if rerankID is specified
 	var rerankModel *modelModule.RerankModel
 	if rerankID != "" {
-		rerankModel, err = modelFactory.NewRerankModel(ctx, service.ModelAccess{TenantID: tenantIDs[0]}, rerankID)
+		rerankModel, err = modelFactory.NewRerankModel(ctx, service.Identity{TenantID: tenantIDs[0]}, rerankID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", err)
 		}

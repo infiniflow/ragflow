@@ -28,6 +28,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -36,16 +37,14 @@ import (
 // mockChunkService implements service.Retriever for testing.
 // It captures the last request received so tests can verify field mapping.
 type mockChunkService struct {
-	retrievalTestFn func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
+	retrievalTestFn func(req *service.RetrievalTestRequest) (*service.RetrievalTestResponse, error)
 	LastReq         *service.RetrievalTestRequest
-	LastUserID      string
 }
 
-func (m *mockChunkService) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
+func (m *mockChunkService) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest) (*service.RetrievalTestResponse, error) {
 	m.LastReq = req
-	m.LastUserID = userID
 	if m.retrievalTestFn != nil {
-		return m.retrievalTestFn(req, userID)
+		return m.retrievalTestFn(req)
 	}
 	return &service.RetrievalTestResponse{
 		Chunks: []map[string]interface{}{{"docnm_kwd": "test", "content_with_weight": "content"}},
@@ -97,9 +96,6 @@ func TestSearchBotsRetrieval_Basic(t *testing.T) {
 	}
 	if mockSvc.LastReq.Question != "test question" {
 		t.Errorf("Question = %q, want \"test question\"", mockSvc.LastReq.Question)
-	}
-	if mockSvc.LastUserID != "user1" {
-		t.Errorf("userID = %q, want \"user1\"", mockSvc.LastUserID)
 	}
 }
 
@@ -167,7 +163,7 @@ func TestSearchBotsRetrieval_NoAuth(t *testing.T) {
 func TestSearchBotsRetrieval_ServiceError(t *testing.T) {
 	h, _, r := setupSearchbotsTest("user1")
 	h.chunkSvc = &mockChunkService{
-		retrievalTestFn: func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
+		retrievalTestFn: func(req *service.RetrievalTestRequest) (*service.RetrievalTestResponse, error) {
 			return nil, errors.New("db error")
 		},
 	}
@@ -467,7 +463,7 @@ type fakeChunkRetriever struct {
 	err    error
 }
 
-func (f *fakeChunkRetriever) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
+func (f *fakeChunkRetriever) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest) (*service.RetrievalTestResponse, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -538,6 +534,7 @@ func TestAskHandler_NoChatModel(t *testing.T) {
 		strings.NewReader(`{"question": "test", "kb_ids": ["kb1"]}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("user", &entity.User{ID: "user-1"})
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", ""))
 	h.Ask(c)
 	body := buf.String()
 	if !strings.Contains(body, "chat model not configured") {

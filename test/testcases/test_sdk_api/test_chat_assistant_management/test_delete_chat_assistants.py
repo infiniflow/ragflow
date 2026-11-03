@@ -88,7 +88,7 @@ class TestChatAssistantsDelete:
         chat = chat_factory()
         response = client.delete(f"/chats/{chat.id}", None).json()
         assert response["code"] == 0, response
-        assert response["data"] is True
+        assert "data" not in response, response
         assert client.list_chats(id=chat.id) == []
 
     @pytest.mark.p2

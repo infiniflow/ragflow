@@ -360,7 +360,7 @@ export const useDeleteAgent = () => {
         });
         markListItemsDeleted(ListDeletionKey.AgentList);
       }
-      return data?.data ?? false;
+      return data?.code;
     },
   });
 
@@ -1208,7 +1208,7 @@ export const useCancelDataflow = () => {
       if (ret?.data?.code === 0) {
         message.success('success');
       } else {
-        message.error(ret?.data?.data);
+        message.error(ret?.data?.message);
       }
       return ret?.data?.code;
     },

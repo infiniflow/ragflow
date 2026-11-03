@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 type ChatChannelService struct {
@@ -77,9 +78,16 @@ func getChatChannelRuntimeProvider() ChatChannelRuntimeProvider {
 }
 
 func (s *ChatChannelService) List(ctx context.Context, userID string) ([]*entity.ChatChannelListResponse, error) {
-	channelIDs, err := accessibleChatChannelIDs(ctx, userID, permission.OperationRead)
+	channelScope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindChatChannel,
+		Operation: permission.OperationRead,
+	})
 	if err != nil {
 		return nil, err
+	}
+	channelIDs := channelScope.ResourceIDs
+	if channelScope.Mode != permission.ScopeIDs {
+		channelIDs = []string{}
 	}
 	return s.chatChannelDAO.ListByIDs(ctx, dao.DB, channelIDs)
 }
@@ -92,11 +100,11 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, userID, name
 	if err != nil {
 		return nil, err
 	}
-	if err := checkFeatureAction(ctx, userID, "chat", permission.ActionWrite); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "chat", permission.ActionWrite); err != nil {
 		return nil, err
 	}
 	if chatID != nil && *chatID != "" {
-		if err := checkChatPermission(ctx, nil, userID, *chatID, permission.OperationUse); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: *chatID}, permission.OperationUse); err != nil {
 			return nil, err
 		}
 	}
@@ -114,7 +122,7 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, userID, name
 		if err := s.chatChannelDAO.Create(ctx, tx, row); err != nil {
 			return err
 		}
-		return grantCreatedResourceOwner(ctx, tx, userID, tenantID, permission.ResourceKindChatChannel, row.ID)
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatChannel, ID: row.ID})
 	}); err != nil {
 		return nil, err
 	}
@@ -127,15 +135,15 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, userID, name
 }
 
 func (s *ChatChannelService) GetChatChannel(ctx context.Context, userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
-	if err := checkChatChannelPermission(ctx, userID, channelID, permission.OperationRead); err != nil {
-		code, permissionErr := normalizeChatChannelPermissionError(err)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatChannel, ID: channelID}, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, permissionErr
 	}
 
 	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			code, permissionErr := normalizeChatChannelPermissionError(permission.ErrResourceNotFound)
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, err
@@ -144,14 +152,14 @@ func (s *ChatChannelService) GetChatChannel(ctx context.Context, userID, channel
 }
 
 func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
-	if err := checkChatChannelPermission(ctx, userID, channelID, permission.OperationUpdate); err != nil {
-		code, permissionErr := normalizeChatChannelPermissionError(err)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatChannel, ID: channelID}, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, permissionErr
 	}
 	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			code, permissionErr := normalizeChatChannelPermissionError(permission.ErrResourceNotFound)
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, err
@@ -188,13 +196,14 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 				return nil, common.CodeDataError, errors.New("chat_id must be string or null")
 			}
 			if chatID != "" {
-				if err := checkChatPermission(ctx, nil, userID, chatID, permission.OperationUse); err != nil {
-					code, normalizedErr := normalizeChatPermissionError(err)
+				if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationUse); err != nil {
+					code, normalizedErr := permissionresponse.NormalizeHidden(err)
 					return nil, code, normalizedErr
 				}
 				if channel.TenantID != userID {
-					if err := checkChatPermission(ctx, nil, channel.TenantID, chatID, permission.OperationUse); err != nil {
-						code, normalizedErr := normalizeChatPermissionError(err)
+					ownerCtx := permission.WithIdentity(ctx, channel.TenantID, channel.TenantID)
+					if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ownerCtx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationUse); err != nil {
+						code, normalizedErr := permissionresponse.NormalizeHidden(err)
 						return nil, code, normalizedErr
 					}
 				}
@@ -212,7 +221,7 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 	updated, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			code, permissionErr := normalizeChatChannelPermissionError(permission.ErrResourceNotFound)
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, err
@@ -222,14 +231,14 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 
 // GetChatChannelRuntime returns the live runtime metadata for a WhatsApp chat channel.
 func (s *ChatChannelService) GetChatChannelRuntime(ctx context.Context, userID, channelID string) (map[string]any, common.ErrorCode, error) {
-	if err := checkChatChannelPermission(ctx, userID, channelID, permission.OperationUse); err != nil {
-		code, permissionErr := normalizeChatChannelPermissionError(err)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatChannel, ID: channelID}, permission.OperationUse); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, permissionErr
 	}
 	conn, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			code, permissionErr := normalizeChatChannelPermissionError(permission.ErrResourceNotFound)
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, err
@@ -304,14 +313,14 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 }
 
 func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error) {
-	if err := checkChatChannelPermission(ctx, userID, channelID, permission.OperationDelete); err != nil {
-		code, permissionErr := normalizeChatChannelPermissionError(err)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatChannel, ID: channelID}, permission.OperationDelete); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return false, code, permissionErr
 	}
 	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			code, permissionErr := normalizeChatChannelPermissionError(permission.ErrResourceNotFound)
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return false, code, permissionErr
 		}
 		return false, common.CodeServerError, err

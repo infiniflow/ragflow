@@ -41,7 +41,7 @@ func TestCommunityMCPQueryScopeFiltersBeforeListing(t *testing.T) {
 		{userID: "owner", want: 1},
 		{userID: "member", want: 0},
 	} {
-		scope, err := checker.QueryScope(context.Background(), Subject{UserID: test.userID, TenantID: "tenant-1"}, query)
+		scope, err := checker.QueryScope(WithIdentity(context.Background(), test.userID, "tenant-1"), query)
 		if err != nil {
 			t.Fatalf("QueryScope(%q): %v", test.userID, err)
 		}

@@ -133,9 +133,11 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 	if args.Topic == "" {
 		return "", fmt.Errorf("dataset_navigation: topic is required")
 	}
-	// Per-request max_docs overrides the node default; default to a sane cap.
+	// Per-request max_docs may narrow the budget; it never raises it. The model's
+	// argument JSON is not schema-validated, so the ceiling must be enforced here,
+	// after mergeDefaults, to cover both the request value and the node default.
 	maxDocs := args.MaxDocs
-	if maxDocs <= 0 {
+	if maxDocs <= 0 || maxDocs > datasetNavigationDefaultMaxDocs {
 		maxDocs = datasetNavigationDefaultMaxDocs
 	}
 

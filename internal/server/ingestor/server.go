@@ -64,15 +64,14 @@ func logTokenizerCounters() {
 // admin, then gracefully stops the ingestor.
 func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args *bootstrap.ServerArgs) error {
 	globalConfig := server.GetConfig()
-	ingestLogConfig := globalConfig.GetIngestLogConfig()
-	err := common.InitIngestLog(ingestLogConfig.Type, ingestLogConfig.GetFileOutput(), serverName)
-	if err != nil {
-		common.Fatal("Failed to initialize ingest logger", zap.Error(err))
-	}
+	// Initialize the ingestion lifecycle event sink (best-effort; stdout is
+	// always on, ingestor.log.path adds an optional rotated file). Flush it on shutdown.
+	bootstrap.SetIngestLog(serverName)
+	defer common.SyncIngestLog()
 
 	// Initialize tokenizer (rag_analyzer)
 	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
-	err = tokenizer.Init(&tokenizer.PoolConfig{})
+	err := tokenizer.Init(&tokenizer.PoolConfig{})
 	if err != nil {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
 	}

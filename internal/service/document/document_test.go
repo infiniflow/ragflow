@@ -55,15 +55,15 @@ type recordingTaskPublisher struct {
 }
 
 func documentTestContext(ctx context.Context) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+	return permission.WithIdentity(ctx, "user-1", "tenant-1")
 }
 
 func documentTestContextFor(ctx context.Context, tenantID string) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{UserID: tenantID, TenantID: tenantID})
+	return permission.WithIdentity(ctx, tenantID, tenantID)
 }
 
 func documentTestActorContext(ctx context.Context, userID, tenantID string) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{UserID: userID, TenantID: tenantID})
+	return permission.WithIdentity(ctx, userID, tenantID)
 }
 
 type runningTaskPublisher struct {
@@ -549,6 +549,9 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
 		&entity.UserCanvas{},
 		&entity.API4Conversation{},
 	}
@@ -1493,6 +1496,15 @@ func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
 
 func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 	t.Helper()
+	modelID := func(defaultID string) string {
+		if userID == "user-1" && tenantID == "tenant-1" {
+			return defaultID
+		}
+		return fmt.Sprintf("%s-%s-%s", defaultID, userID, tenantID)
+	}
+	chatModelID := modelID("llm-default")
+	embeddingModelID := modelID("embd-default")
+	asrModelID := modelID("asr-default")
 	// Insert user if not exists (email is NOT NULL, password is nullable pointer)
 	var existingUser entity.User
 	if err := dao.DB.Where("id = ?", userID).First(&existingUser).Error; err != nil {
@@ -1518,9 +1530,9 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 			TenantID: tenantID,
 			Role:     "owner",
 			Status:   sptr(entity.TenantMembershipStatusJoined),
-			LLMID:    "llm-default",
-			EmbdID:   "embd-default",
-			ASRID:    "asr-default",
+			LLMID:    chatModelID,
+			EmbdID:   embeddingModelID,
+			ASRID:    asrModelID,
 		}
 		if err = dao.DB.Create(ut).Error; err != nil {
 			t.Fatalf("insert test user_tenant: %v", err)
@@ -1528,8 +1540,27 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 	}
 	if err := dao.DB.Model(&entity.UserTenant{}).
 		Where("user_id = ? AND tenant_id = ?", userID, tenantID).
-		Updates(map[string]interface{}{"llm_id": "llm-default", "embd_id": "embd-default", "asr_id": "asr-default"}).Error; err != nil {
+		Updates(map[string]interface{}{"llm_id": chatModelID, "embd_id": embeddingModelID, "asr_id": asrModelID}).Error; err != nil {
 		t.Fatalf("set test owner model defaults: %v", err)
+	}
+	providerID := fmt.Sprintf("test-default-provider-%s-%s", userID, tenantID)
+	instanceID := fmt.Sprintf("test-default-instance-%s-%s", userID, tenantID)
+	provider := &entity.TenantModelProvider{ID: providerID, UserID: userID, TenantID: tenantID, ProviderName: "OpenAI"}
+	if err := dao.DB.Where("id = ?", providerID).FirstOrCreate(provider).Error; err != nil {
+		t.Fatalf("seed test default provider: %v", err)
+	}
+	instance := &entity.TenantModelInstance{ID: instanceID, ProviderID: providerID, InstanceName: "default", Status: "active", Extra: "{}"}
+	if err := dao.DB.Where("id = ?", instanceID).FirstOrCreate(instance).Error; err != nil {
+		t.Fatalf("seed test default instance: %v", err)
+	}
+	for _, model := range []*entity.TenantModel{
+		{ID: chatModelID, ProviderID: providerID, InstanceID: instanceID, ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: "{}"},
+		{ID: embeddingModelID, ProviderID: providerID, InstanceID: instanceID, ModelName: "text-embedding-3-small", ModelType: int(entity.ModelTypeEmbedding), Status: "active", Extra: "{}"},
+		{ID: asrModelID, ProviderID: providerID, InstanceID: instanceID, ModelName: "whisper-1", ModelType: int(entity.ModelTypeSpeech2Text), Status: "active", Extra: "{}"},
+	} {
+		if err := dao.DB.Where("id = ?", model.ID).FirstOrCreate(model).Error; err != nil {
+			t.Fatalf("seed test default model %s: %v", model.ID, err)
+		}
 	}
 	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, userID); err != nil {
 		t.Fatalf("prepare document permission fixture: %v", err)
@@ -2855,7 +2886,7 @@ func TestGetDocumentPreview_DocumentNotFound(t *testing.T) {
 	svc := testDocumentService(t)
 
 	ctx := t.Context()
-	_, err := svc.GetDocumentPreview(ctx, "user-1", "nonexistent")
+	_, err := svc.GetDocumentPreview(ctx, "nonexistent")
 	if !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Errorf("expected ErrPreviewDocumentNotFound, got %v", err)
 	}
@@ -2905,7 +2936,7 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 	ctx := documentTestContext(t.Context())
 
 	// Dataset owner reads the original file.
-	p, err := svc.GetDocumentPreview(ctx, "user-1", "doc-prev")
+	p, err := svc.GetDocumentPreview(ctx, "doc-prev")
 	if err != nil {
 		t.Fatalf("owner preview: %v", err)
 	}
@@ -2916,13 +2947,13 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 	// A member of the dataset's tenant reads it too.
 	seedDocumentPreviewMemberAccess(t, db)
 	memberCtx := documentTestActorContext(t.Context(), "user-2", "tenant-1")
-	if _, err = svc.GetDocumentPreview(memberCtx, "user-2", "doc-prev"); err != nil {
+	if _, err = svc.GetDocumentPreview(memberCtx, "doc-prev"); err != nil {
 		t.Fatalf("team member preview: %v", err)
 	}
 
 	// An unrelated user gets the same answer as for a missing document.
 	strangerCtx := documentTestActorContext(t.Context(), "user-3", "tenant-1")
-	_, err = svc.GetDocumentPreview(strangerCtx, "user-3", "doc-prev")
+	_, err = svc.GetDocumentPreview(strangerCtx, "doc-prev")
 	if !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Fatalf("stranger preview: expected ErrPreviewDocumentNotFound, got %v", err)
 	}
@@ -2938,10 +2969,10 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 	}
 	insertTestPreviewDoc(t, db, mockStorage, "doc-prev-me", "kb-prev-me", "private body")
 
-	if _, err = svc.GetDocumentPreview(ctx, "user-2", "doc-prev-me"); !errors.Is(err, ErrPreviewDocumentNotFound) {
+	if _, err = svc.GetDocumentPreview(memberCtx, "doc-prev-me"); !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Fatalf("team member on private dataset: expected ErrPreviewDocumentNotFound, got %v", err)
 	}
-	p, err = svc.GetDocumentPreview(ctx, "user-1", "doc-prev-me")
+	p, err = svc.GetDocumentPreview(ctx, "doc-prev-me")
 	if err != nil {
 		t.Fatalf("owner preview private dataset: %v", err)
 	}
@@ -2958,7 +2989,7 @@ func TestGetDocumentPreview_EmptyObject(t *testing.T) {
 	insertTestPreviewDoc(t, db, mockStorage, "doc-prev-empty", "kb-prev-empty", "")
 
 	svc := testDocumentService(t)
-	_, err := svc.GetDocumentPreview(documentTestContext(t.Context()), "user-1", "doc-prev-empty")
+	_, err := svc.GetDocumentPreview(documentTestContext(t.Context()), "doc-prev-empty")
 	if !errors.Is(err, ErrPreviewFileEmpty) {
 		t.Fatalf("expected ErrPreviewFileEmpty, got %v", err)
 	}
@@ -2981,7 +3012,7 @@ func TestGetDocumentPreview_MissingObjectSurfacesStorageError(t *testing.T) {
 	}
 
 	svc := testDocumentService(t)
-	_, err := svc.GetDocumentPreview(documentTestContext(t.Context()), "user-1", "doc-prev-miss")
+	_, err := svc.GetDocumentPreview(documentTestContext(t.Context()), "doc-prev-miss")
 	if err == nil {
 		t.Fatal("expected storage read error")
 	}
@@ -4450,7 +4481,7 @@ func TestUpdateDatasetDocumentParentChildConfigReachesCanvasChunker(t *testing.T
 	seedDocVersion(t, db, pipelineID, "v-pcc-0001", 0)
 	// Bind the document to the pipeline first, so the update below is a plain
 	// parser_config patch on an already-canvas document. A pipeline switch must
-	// reset parser_config to the canvas DSL defaults (design A3 整体重置), so the
+	// reset parser_config to the canvas DSL defaults, so the
 	// submitted parent_child would be dropped on a switch; this test verifies the
 	// config reaches the canvas chunker when no switch occurs.
 	bindDocCanvas(t, db, "kb-1", "doc-1", pipelineID, "v-pcc-0001")
@@ -4934,13 +4965,14 @@ func TestGetDocumentThumbnailAuthorizesBeforeStorage(t *testing.T) {
 	}
 	svc := testDocumentService(t)
 
-	if _, err := svc.GetDocumentThumbnail(ctx, "other-user", "doc-thumb"); !errors.Is(err, ErrDocumentImageNotFound) {
+	strangerCtx := documentTestActorContext(t.Context(), "other-user", "owner-1")
+	if _, err := svc.GetDocumentThumbnail(strangerCtx, "doc-thumb"); !errors.Is(err, ErrDocumentImageNotFound) {
 		t.Fatalf("unauthorized GetDocumentThumbnail() error = %v", err)
 	}
 	if store.getCalls != 0 {
 		t.Fatalf("storage Get called %d times after authorization denial", store.getCalls)
 	}
-	got, err := svc.GetDocumentThumbnail(ctx, "user-1", "doc-thumb")
+	got, err := svc.GetDocumentThumbnail(ctx, "doc-thumb")
 	if err != nil || !bytes.Equal(got, image) {
 		t.Fatalf("authorized GetDocumentThumbnail() = %q, %v", got, err)
 	}
@@ -5398,7 +5430,7 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 	docSvc := testDocumentService(t)
 	fileSvc := file.NewFileService(docSvc)
 
-	if err := fileSvc.DeleteFiles(ctx, "user-1", []string{"file-1"}); err != nil {
+	if err := fileSvc.DeleteFiles(ctx, []string{"file-1"}); err != nil {
 		t.Fatalf("DeleteFiles failed: %v", err)
 	}
 
