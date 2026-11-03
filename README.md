@@ -92,14 +92,6 @@ For local deployment, see [Local Deployment](#-local-deployment).
 
 See the [full release notes](https://ragflow.io/docs/dev/release_notes) for more updates.
 
-## 🎉 Stay Tuned
-
-⭐️ Star our repository to stay up-to-date with exciting new features and improvements! Get instant notifications for new releases! 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
 ## 🌟 Key Features
 
 ### 🍭 **"Quality in, quality out"**

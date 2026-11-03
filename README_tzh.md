@@ -94,14 +94,6 @@
 
 更多更新請參閱[完整發佈記錄](https://ragflow.io/docs/dev/release_notes)。
 
-## 🎉 關注項目
-
-⭐️ 點擊右上角的 Star 關注 RAGFlow，可以獲取最新發佈的實時通知！🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
 ## 🌟 主要功能
 
 ### 🍭 **"Quality in, quality out"**
