@@ -168,6 +168,10 @@ func isSoMarkQueryStatusMessage(message string) bool {
 	}
 }
 
+func soMarkBusinessError(code int) error {
+	return fmt.Errorf("API request rejected (provider error code=%d)", code)
+}
+
 // soMarkFormFileName picks the multipart filename the SoMark API uses for
 // content-type detection. OCRFile has no filename parameter, so the driver
 // sniffs the well-known magic prefixes; anything else defaults to PDF.
@@ -244,10 +248,7 @@ func (s *SoMarkModel) soMarkSubmit(ctx context.Context, submitURL string, conten
 		return "", fmt.Errorf("SoMark decode submit: %w", err)
 	}
 	if payload.Code != 0 {
-		if message := strings.TrimSpace(payload.Message); message != "" {
-			return "", fmt.Errorf("%s", message)
-		}
-		return "", fmt.Errorf("SoMark submit failed with code %d", payload.Code)
+		return "", soMarkBusinessError(payload.Code)
 	}
 	taskID := payload.taskID()
 	if taskID == "" {
@@ -291,10 +292,7 @@ func (s *SoMarkModel) soMarkPoll(ctx context.Context, pollURL, taskID, apiKey st
 			return nil, fmt.Errorf("SoMark decode poll: %w", err)
 		}
 		if payload.Code != 0 {
-			if message := strings.TrimSpace(payload.Message); message != "" {
-				return nil, fmt.Errorf("%s", message)
-			}
-			return nil, fmt.Errorf("SoMark poll failed with code %d", payload.Code)
+			return nil, soMarkBusinessError(payload.Code)
 		}
 		switch strings.ToUpper(strings.TrimSpace(payload.Data.Status)) {
 		case "SUCCESS":

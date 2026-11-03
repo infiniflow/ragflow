@@ -77,7 +77,7 @@ func TestSoMarkVerifyOCRConnectionStopsAfterTaskAccepted(t *testing.T) {
 func TestSoMarkVerifyOCRConnectionReturnsSubmitError(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"code":1107,"message":"invalid api key"}`))
+		_, _ = w.Write([]byte(`{"code":1107,"message":"无效的API密钥"}`))
 	}))
 	defer server.Close()
 
@@ -87,8 +87,11 @@ func TestSoMarkVerifyOCRConnectionReturnsSubmitError(t *testing.T) {
 	)
 	apiKey := "bad-key"
 	err := driver.VerifyOCRConnection(t.Context(), &APIConfig{ApiKey: &apiKey})
-	if err == nil || !strings.Contains(err.Error(), "invalid api key") {
-		t.Fatalf("VerifyOCRConnection error = %v, want invalid API key error", err)
+	if err == nil || err.Error() != "API request rejected (provider error code=1107)" {
+		t.Fatalf("VerifyOCRConnection error = %v, want normalized provider error", err)
+	}
+	if strings.Contains(err.Error(), "无效的API密钥") {
+		t.Fatalf("VerifyOCRConnection error = %q, must not expose provider-specific localized text", err)
 	}
 }
 
