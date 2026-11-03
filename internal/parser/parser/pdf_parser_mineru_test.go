@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	models "ragflow/internal/entity/models"
 )
@@ -355,5 +356,40 @@ func TestMinerUMarkdownResultUsesMarkdownAndRejectsEmpty(t *testing.T) {
 	empty := minerUMarkdownResult(t.Context(), "sample.pdf", &models.MinerUV1Result{Zip: []byte("zip-bytes")})
 	if empty.Err == nil || !strings.Contains(empty.Err.Error(), "empty") {
 		t.Fatalf("empty result error = %v", empty.Err)
+	}
+}
+
+func TestPDFParser_ConfigureFromSetup_MinerUTimeout(t *testing.T) {
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": "45m",
+	})
+	if pdf.MinerUPollTimeout != 45*time.Minute {
+		t.Fatalf("MinerUPollTimeout = %v, want 45m", pdf.MinerUPollTimeout)
+	}
+
+	pdf2 := NewPDFParser()
+	pdf2.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": "1800",
+	})
+	if pdf2.MinerUPollTimeout != 1800*time.Second {
+		t.Fatalf("MinerUPollTimeout = %v, want 1800s", pdf2.MinerUPollTimeout)
+	}
+}
+
+func TestClampMinerUTimeout(t *testing.T) {
+	if got := ClampMinerUTimeout(0); got != minerUPollTimeout {
+		t.Fatalf("zero fallback = %v, want %v", got, minerUPollTimeout)
+	}
+	if got := ClampMinerUTimeout(100 * time.Millisecond); got != MinMinerURequestTimeout {
+		t.Fatalf("sub-second clamped = %v, want %v", got, MinMinerURequestTimeout)
+	}
+	if got := ClampMinerUTimeout(48 * time.Hour); got != MaxMinerURequestTimeout {
+		t.Fatalf("oversized clamped = %v, want %v", got, MaxMinerURequestTimeout)
+	}
+	if got := ClampMinerUTimeout(15 * time.Minute); got != 15*time.Minute {
+		t.Fatalf("valid duration = %v, want 15m", got)
 	}
 }

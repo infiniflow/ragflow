@@ -1001,12 +1001,23 @@ func mineruAPIParseMethod(raw string) string {
 // MinerU 4 V1 parse budget so both API generations give up at the same point when unset.
 const mineruDefaultTimeout = 30 * time.Minute
 
+// clampMinerUTimeout clamps duration into a safe operational window [1s, 24h],
+// preventing tiny-duration/zero deadline panics or numeric overflow.
+func clampMinerUTimeout(d time.Duration) time.Duration {
+	if d <= 0 {
+		return mineruDefaultTimeout
+	}
+	return parser.ClampMinerUTimeout(d)
+}
+
 // mineruRequestTimeout resolves the MinerU parse timeout with precedence:
 //  1. setup["mineru_timeout"] / setup["mineru_timeout_seconds"] (authoritative; non-empty invalid values
 //     do not fall through to env or API config and fall back to mineruDefaultTimeout)
 //  2. apiConfig provider JSON (mineru_timeout, mineru_timeout_seconds, MINERU_TIMEOUT, MINERU_TIMEOUT_SECONDS)
 //  3. Environment variables (MINERU_TIMEOUT, MINERU_TIMEOUT_SECONDS)
 //  4. mineruDefaultTimeout (30m)
+//
+// Parsed non-default durations are clamped to [1s, 24h] to safeguard against overflow and micro-durations.
 func mineruRequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) time.Duration {
 	value := ""
 	if raw, ok := setup["mineru_timeout"]; ok && raw != nil {
@@ -1037,13 +1048,13 @@ func mineruRequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APICo
 		return mineruDefaultTimeout
 	}
 	if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
-		return time.Duration(seconds) * time.Second
+		return clampMinerUTimeout(time.Duration(seconds) * time.Second)
 	}
 	if seconds, err := strconv.ParseFloat(value, 64); err == nil && seconds > 0 {
-		return time.Duration(seconds * float64(time.Second))
+		return clampMinerUTimeout(time.Duration(seconds * float64(time.Second)))
 	}
 	if d, err := time.ParseDuration(value); err == nil && d > 0 {
-		return d
+		return clampMinerUTimeout(d)
 	}
 	return mineruDefaultTimeout
 }

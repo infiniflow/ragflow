@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,26 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/utility"
 )
+
+const (
+	MinMinerURequestTimeout = 1 * time.Second
+	MaxMinerURequestTimeout = 24 * time.Hour
+)
+
+// ClampMinerUTimeout clamps duration into a safe operational window [1s, 24h],
+// preventing tiny-duration/zero deadline panics or numeric overflow.
+func ClampMinerUTimeout(d time.Duration) time.Duration {
+	if d <= 0 {
+		return minerUPollTimeout
+	}
+	if d < MinMinerURequestTimeout {
+		return MinMinerURequestTimeout
+	}
+	if d > MaxMinerURequestTimeout {
+		return MaxMinerURequestTimeout
+	}
+	return d
+}
 
 // ErrPDFEngineUnavailable is returned by PDFParser.ParseWithResult
 // when the current build cannot construct the DeepDOC PDF backend.
@@ -168,6 +189,16 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["mineru_server_url"].(string); ok && v != "" {
 		p.MinerUServerURL = v
+	}
+	if v, ok := setup["mineru_timeout"].(string); ok && strings.TrimSpace(v) != "" {
+		v = strings.TrimSpace(v)
+		if sec, err := strconv.Atoi(v); err == nil && sec > 0 {
+			p.MinerUPollTimeout = time.Duration(sec) * time.Second
+		} else if secF, err := strconv.ParseFloat(v, 64); err == nil && secF > 0 {
+			p.MinerUPollTimeout = time.Duration(secF * float64(time.Second))
+		} else if d, err := time.ParseDuration(v); err == nil && d > 0 {
+			p.MinerUPollTimeout = d
+		}
 	}
 	if v, ok := setup["mineru_timeout_seconds"].(int); ok && v > 0 {
 		p.MinerUPollTimeout = time.Duration(v) * time.Second

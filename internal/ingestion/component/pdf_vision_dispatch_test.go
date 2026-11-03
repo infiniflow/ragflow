@@ -162,6 +162,14 @@ func TestMinerURequestTimeout(t *testing.T) {
 	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "invalid"}, nil); got != 30*time.Minute {
 		t.Fatalf("invalid setup with MINERU_TIMEOUT env fallback=%v, want 30m", got)
 	}
+
+	// 9. Duration clamping [1s, 24h]
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "500ms"}, nil); got != 1*time.Second {
+		t.Fatalf("sub-second timeout clamped=%v, want 1s", got)
+	}
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "48h"}, nil); got != 24*time.Hour {
+		t.Fatalf("oversized timeout clamped=%v, want 24h", got)
+	}
 }
 
 func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
