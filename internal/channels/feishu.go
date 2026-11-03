@@ -45,7 +45,8 @@ const (
 	feishuMessageTTL      = time.Hour
 	feishuQueueSize       = 64
 	feishuWorkerIdle      = 5 * time.Minute
-	feishuStreamInterval  = 700 * time.Millisecond
+	feishuStreamTick      = 100 * time.Millisecond
+	feishuStreamStep      = 2
 	feishuStreamElementID = "ragflow_stream"
 )
 
@@ -250,8 +251,8 @@ func (c *feishuChannel) SendStream(ctx context.Context, msg core.OutgoingMessage
 
 	sequence := 0
 	latest, sent := first, ""
-	flush := func() error {
-		if latest == "" || latest == sent {
+	flush := func(value string) error {
+		if value == "" || value == sent {
 			return nil
 		}
 		sequence++
@@ -259,7 +260,7 @@ func (c *feishuChannel) SendStream(ctx context.Context, msg core.OutgoingMessage
 			CardId(cardID).
 			ElementId(feishuStreamElementID).
 			Body(larkcardkit.NewContentCardElementReqBodyBuilder().
-				Content(latest).
+				Content(value).
 				Sequence(sequence).
 				Uuid(common.GenerateToken()).
 				Build()).
@@ -270,7 +271,7 @@ func (c *feishuChannel) SendStream(ctx context.Context, msg core.OutgoingMessage
 		if err := feishuResponseError("card content", resp.Code, resp.Msg); err != nil {
 			return err
 		}
-		sent = latest
+		sent = value
 		return nil
 	}
 	// The card is visible from here on, so a later failure is reported by closing the
@@ -286,30 +287,54 @@ func (c *feishuChannel) SendStream(ctx context.Context, msg core.OutgoingMessage
 		return err
 	}
 
-	ticker := time.NewTicker(feishuStreamInterval)
+	ticker := time.NewTicker(feishuStreamTick)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case value, open := <-text:
-			if open {
-				latest = value
+			if !open {
+				// A closed channel returns immediately forever, so stop selecting on it and
+				// let the ticker drain what is still unsent.
+				text = nil
 				continue
 			}
-			if err := flush(); err != nil {
-				return abandon("card content failed", err)
-			}
-			if err := c.finishStreamCard(ctx, cardID, &sequence); err != nil {
-				common.Error("feishu: card settings failed", err, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
-			}
-			return nil
+			latest = value
 		case <-ticker.C:
-			if err := flush(); err != nil {
-				return abandon("card content failed", err)
+			if sent != latest {
+				if err := flush(nextStreamText(sent, latest, feishuStreamStep)); err != nil {
+					return abandon("card content failed", err)
+				}
+				continue
+			}
+			if text == nil {
+				if err := c.finishStreamCard(ctx, cardID, &sequence); err != nil {
+					common.Error("feishu: card settings failed", err, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
+				}
+				return nil
 			}
 		}
 	}
+}
+
+// nextStreamText returns the text to display this tick: the shown text plus at most step
+// more runes. The per-tick budget keeps every append small enough for the platform
+// typewriter to finish it, so the card never repaints in one block. A target that no
+// longer extends the shown text is returned as is.
+func nextStreamText(shown, target string, step int) string {
+	if step < 1 {
+		step = 1
+	}
+	if !strings.HasPrefix(target, shown) {
+		return target
+	}
+	runes := []rune(target)
+	at := len([]rune(shown))
+	if len(runes)-at <= step {
+		return target
+	}
+	return string(runes[:at+step])
 }
 
 // sendMessage posts msgType/content to the chat, as a reply when msg carries a target.

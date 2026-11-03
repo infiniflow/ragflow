@@ -187,8 +187,10 @@ func TestFeishuSendStreamCreatesUpdatesAndFinalizesCard(t *testing.T) {
 
 	var cardCreates, messageCreates, cardSettings int
 	var sequences []int
+	var contents []string
+	lastContentAt, settingsAt := -1, -1
 	var interactiveCardID string
-	for _, call := range *calls {
+	for callIndex, call := range *calls {
 		switch {
 		case call.path == "/open-apis/cardkit/v1/cards":
 			cardCreates++
@@ -253,9 +255,8 @@ func TestFeishuSendStreamCreatesUpdatesAndFinalizesCard(t *testing.T) {
 			if err := json.Unmarshal([]byte(call.body), &payload); err != nil {
 				t.Fatalf("content body is not json: %v", err)
 			}
-			if payload.Content != "Hello" {
-				t.Fatalf("streamed content = %q, want the cumulative text", payload.Content)
-			}
+			contents = append(contents, payload.Content)
+			lastContentAt = callIndex
 			sequences = append(sequences, payload.Sequence)
 		case strings.HasSuffix(call.path, "/settings"):
 			cardSettings++
@@ -268,6 +269,7 @@ func TestFeishuSendStreamCreatesUpdatesAndFinalizesCard(t *testing.T) {
 			if err := json.Unmarshal([]byte(call.body), &payload); err != nil {
 				t.Fatalf("settings body is not json: %v", err)
 			}
+			settingsAt = callIndex
 			sequences = append(sequences, payload.Sequence)
 		}
 	}
@@ -291,6 +293,50 @@ func TestFeishuSendStreamCreatesUpdatesAndFinalizesCard(t *testing.T) {
 	}
 	if cardSettings != 1 {
 		t.Fatalf("card settings calls = %d, want 1", cardSettings)
+	}
+	shown := ""
+	for _, content := range contents {
+		if !strings.HasPrefix(content, shown) {
+			t.Fatalf("content %q does not extend the previous content %q", content, shown)
+		}
+		shown = content
+	}
+	if shown != "Hello" {
+		t.Fatalf("last streamed content = %q, want the complete answer", shown)
+	}
+	if settingsAt < lastContentAt {
+		t.Fatalf("card was finalized at %d before the last content update at %d", settingsAt, lastContentAt)
+	}
+}
+
+func TestNextStreamTextAdvancesByPrefix(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		shown, target string
+		step          int
+		want          string
+	}{
+		{name: "empty shown advances by one step", shown: "", target: "abcdefgh", step: 2, want: "ab"},
+		{name: "next slice advances by one step", shown: "ab", target: "abcdefgh", step: 2, want: "abcd"},
+		{name: "large backlog still advances by one step", shown: "abcd", target: "abcdefghijklmnopqrst", step: 2, want: "abcdef"},
+		{name: "drained target is returned whole", shown: "abcdefgh", target: "abcdefgh", step: 2, want: "abcdefgh"},
+		{name: "short backlog is returned whole", shown: "abcdefg", target: "abcdefgh", step: 2, want: "abcdefgh"},
+		{name: "non prefix target is returned unchanged", shown: "abcd", target: "ab", step: 2, want: "ab"},
+		{name: "step below one advances a single rune", shown: "", target: "abc", step: 0, want: "a"},
+		{name: "multi byte runes are never split", shown: "你好", target: "你好世界", step: 2, want: "你好世界"},
+		{name: "multi byte runes advance by one step", shown: "你好", target: "你好世界再见", step: 2, want: "你好世界"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := nextStreamText(test.shown, test.target, test.step); got != test.want {
+				t.Fatalf("nextStreamText(%q, %q, %d) = %q, want %q", test.shown, test.target, test.step, got, test.want)
+			}
+			if !strings.HasPrefix(test.target, test.shown) {
+				return
+			}
+			if got := nextStreamText(test.shown, test.target, test.step); !strings.HasPrefix(got, test.shown) || !strings.HasPrefix(test.target, got) {
+				t.Fatalf("nextStreamText(%q, %q, %d) = %q, want a prefix extension", test.shown, test.target, test.step, got)
+			}
+		})
 	}
 }
 
