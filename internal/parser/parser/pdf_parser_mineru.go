@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
-	"strconv"
 	"strings"
 	"time"
 
@@ -47,42 +46,13 @@ func parsePDFWithMinerU(ctx context.Context, filename string, data []byte, parse
 	configured := parser.MinerUTimeoutConfigured
 	timeout := parser.MinerUPollTimeout
 	if !configured {
-		maxSec := MaxMinerURequestTimeout.Seconds()
-		if envVal := strings.TrimSpace(common.GetEnv(common.EnvMineruTimeout)); envVal != "" {
-			if sec, err := strconv.Atoi(envVal); err == nil && sec > 0 {
-				if float64(sec) > maxSec {
-					timeout = MaxMinerURequestTimeout
-				} else {
-					timeout = time.Duration(sec) * time.Second
-				}
-				configured = true
-			} else if secF, err := strconv.ParseFloat(envVal, 64); err == nil && secF > 0 {
-				if secF > maxSec {
-					timeout = MaxMinerURequestTimeout
-				} else {
-					timeout = time.Duration(secF * float64(time.Second))
-				}
-				configured = true
-			} else if d, err := time.ParseDuration(envVal); err == nil && d > 0 {
-				timeout = d
-				configured = true
-			}
-		} else if envSec := strings.TrimSpace(common.GetEnv("MINERU_TIMEOUT_SECONDS")); envSec != "" {
-			if sec, err := strconv.Atoi(envSec); err == nil && sec > 0 {
-				if float64(sec) > maxSec {
-					timeout = MaxMinerURequestTimeout
-				} else {
-					timeout = time.Duration(sec) * time.Second
-				}
-				configured = true
-			} else if secF, err := strconv.ParseFloat(envSec, 64); err == nil && secF > 0 {
-				if secF > maxSec {
-					timeout = MaxMinerURequestTimeout
-				} else {
-					timeout = time.Duration(secF * float64(time.Second))
-				}
-				configured = true
-			}
+		envVal := strings.TrimSpace(common.GetEnv(common.EnvMineruTimeout))
+		if envVal == "" {
+			envVal = strings.TrimSpace(common.GetEnv("MINERU_TIMEOUT_SECONDS"))
+		}
+		if d, ok := parseMinerUTimeoutSetupValue(envVal); ok {
+			timeout = d
+			configured = true
 		}
 	}
 	if configured {
