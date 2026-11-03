@@ -705,6 +705,10 @@ func (h *AgentHandler) PublishAgent(c *gin.Context) {
 // @Success 200 {array} entity.UserCanvasVersion
 // @Router /api/v1/agents/{canvas_id}/versions [get]
 func (h *AgentHandler) ListVersions(c *gin.Context) {
+	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+		common.RespondError(c, code, msg)
+		return
+	}
 	canvasID := c.Param("canvas_id")
 	rows, err := h.agentService.ListVersions(c.Request.Context(), canvasID)
 	if err != nil {
@@ -733,6 +737,10 @@ func (h *AgentHandler) ListVersions(c *gin.Context) {
 // @Success 200 {object} entity.UserCanvasVersion
 // @Router /api/v1/agents/{canvas_id}/versions/{version_id} [get]
 func (h *AgentHandler) GetVersion(c *gin.Context) {
+	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+		common.RespondError(c, code, msg)
+		return
+	}
 	canvasID := c.Param("canvas_id")
 	versionID := c.Param("version_id")
 	row, err := h.agentService.GetVersion(c.Request.Context(), canvasID, versionID)
@@ -756,6 +764,10 @@ func (h *AgentHandler) GetVersion(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id}/versions/{version_id} [delete]
 func (h *AgentHandler) DeleteVersion(c *gin.Context) {
+	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+		common.RespondError(c, code, msg)
+		return
+	}
 	canvasID := c.Param("canvas_id")
 	versionID := c.Param("version_id")
 	if err := h.agentService.DeleteVersion(c.Request.Context(), canvasID, versionID); err != nil {
@@ -779,6 +791,10 @@ func (h *AgentHandler) DeleteVersion(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id}/versions/{version_id} [patch]
 func (h *AgentHandler) PatchVersion(c *gin.Context) {
+	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+		common.RespondError(c, code, msg)
+		return
+	}
 	canvasID := c.Param("canvas_id")
 	versionID := c.Param("version_id")
 	var req struct {
@@ -808,6 +824,10 @@ func (h *AgentHandler) PatchVersion(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id}/versions/{version_id}/apply [post]
 func (h *AgentHandler) ApplyVersion(c *gin.Context) {
+	if _, code, msg := GetUser(c); code != common.CodeSuccess {
+		common.RespondError(c, code, msg)
+		return
+	}
 	canvasID := c.Param("canvas_id")
 	versionID := c.Param("version_id")
 	if err := h.agentService.ApplyVersion(c.Request.Context(), canvasID, versionID); err != nil {
