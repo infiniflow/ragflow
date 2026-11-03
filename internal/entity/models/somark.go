@@ -132,9 +132,40 @@ type soMarkPollResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    struct {
-		Status string         `json:"status"`
-		Result map[string]any `json:"result"`
+		Status       string         `json:"status"`
+		Message      string         `json:"message"`
+		Error        string         `json:"error"`
+		ErrorMessage string         `json:"error_message"`
+		Detail       string         `json:"detail"`
+		Reason       string         `json:"reason"`
+		Result       map[string]any `json:"result"`
 	} `json:"data"`
+}
+
+func (r soMarkPollResponse) taskFailureMessage() string {
+	for _, message := range []string{
+		r.Data.ErrorMessage,
+		r.Data.Error,
+		r.Data.Detail,
+		r.Data.Reason,
+		r.Data.Message,
+		r.Message,
+	} {
+		message = strings.TrimSpace(message)
+		if message != "" && !isSoMarkQueryStatusMessage(message) {
+			return message
+		}
+	}
+	return ""
+}
+
+func isSoMarkQueryStatusMessage(message string) bool {
+	switch strings.ToLower(strings.TrimSpace(message)) {
+	case "查询成功", "查询成功！", "query success", "query successful":
+		return true
+	default:
+		return false
+	}
 }
 
 // soMarkFormFileName picks the multipart filename the SoMark API uses for
@@ -213,7 +244,10 @@ func (s *SoMarkModel) soMarkSubmit(ctx context.Context, submitURL string, conten
 		return "", fmt.Errorf("SoMark decode submit: %w", err)
 	}
 	if payload.Code != 0 {
-		return "", fmt.Errorf("SoMark submit business error code=%d message=%s", payload.Code, payload.Message)
+		if message := strings.TrimSpace(payload.Message); message != "" {
+			return "", fmt.Errorf("%s", message)
+		}
+		return "", fmt.Errorf("SoMark submit failed with code %d", payload.Code)
 	}
 	taskID := payload.taskID()
 	if taskID == "" {
@@ -257,7 +291,10 @@ func (s *SoMarkModel) soMarkPoll(ctx context.Context, pollURL, taskID, apiKey st
 			return nil, fmt.Errorf("SoMark decode poll: %w", err)
 		}
 		if payload.Code != 0 {
-			return nil, fmt.Errorf("SoMark poll business error code=%d message=%s", payload.Code, payload.Message)
+			if message := strings.TrimSpace(payload.Message); message != "" {
+				return nil, fmt.Errorf("%s", message)
+			}
+			return nil, fmt.Errorf("SoMark poll failed with code %d", payload.Code)
 		}
 		switch strings.ToUpper(strings.TrimSpace(payload.Data.Status)) {
 		case "SUCCESS":
@@ -266,7 +303,10 @@ func (s *SoMarkModel) soMarkPoll(ctx context.Context, pollURL, taskID, apiKey st
 			}
 			return payload.Data.Result, nil
 		case "FAILED", "ERROR":
-			return nil, fmt.Errorf("SoMark task %s failed with status=%s message=%s", taskID, payload.Data.Status, payload.Message)
+			if message := payload.taskFailureMessage(); message != "" {
+				return nil, fmt.Errorf("SoMark task %s failed with status=%s: %s", taskID, payload.Data.Status, message)
+			}
+			return nil, fmt.Errorf("SoMark task %s failed with status=%s; no task error details were returned", taskID, payload.Data.Status)
 		}
 
 		common.Debug("somark poll: in progress",

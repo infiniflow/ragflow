@@ -108,3 +108,67 @@ func TestSoMarkVerifyOCRConnectionAcceptsStringTaskID(t *testing.T) {
 		t.Fatalf("VerifyOCRConnection with string task_id: %v", err)
 	}
 }
+
+func TestSoMarkPollFailureIgnoresGenericQuerySuccessMessage(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/parse/async":
+			_, _ = w.Write([]byte(`{"code":0,"data":{"task_id":"task-failed"}}`))
+		case "/api/v1/parse/async_check":
+			_, _ = w.Write([]byte(`{"code":0,"message":"查询成功","data":{"status":"FAILED"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	driver := NewSoMarkModel(
+		map[string]string{"default": server.URL + "/api/v1"},
+		URLSuffix{OCR: "parse/async", Tasks: "parse/async_check"},
+	)
+	apiKey := "somark-test-key"
+	modelName := "SoMark-model"
+	_, err := driver.OCRFile(t.Context(), &modelName, []byte("%PDF-1.4"), nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err == nil {
+		t.Fatal("OCRFile error = nil, want failed task error")
+	}
+	if !strings.Contains(err.Error(), "task-failed") || !strings.Contains(err.Error(), "status=FAILED") {
+		t.Fatalf("OCRFile error = %q, want task id and failed status", err)
+	}
+	if strings.Contains(err.Error(), "查询成功") {
+		t.Fatalf("OCRFile error = %q, must not report generic query success as task failure reason", err)
+	}
+	if !strings.Contains(err.Error(), "no task error details") {
+		t.Fatalf("OCRFile error = %q, want clear missing task-error details", err)
+	}
+}
+
+func TestSoMarkPollFailureReturnsTaskErrorDetails(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/parse/async":
+			_, _ = w.Write([]byte(`{"code":0,"data":{"task_id":"task-failed"}}`))
+		case "/api/v1/parse/async_check":
+			_, _ = w.Write([]byte(`{"code":0,"message":"查询成功","data":{"status":"FAILED","error_message":"invalid API key"}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	driver := NewSoMarkModel(
+		map[string]string{"default": server.URL + "/api/v1"},
+		URLSuffix{OCR: "parse/async", Tasks: "parse/async_check"},
+	)
+	apiKey := "somark-test-key"
+	modelName := "SoMark-model"
+	_, err := driver.OCRFile(t.Context(), &modelName, []byte("%PDF-1.4"), nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "invalid API key") {
+		t.Fatalf("OCRFile error = %v, want task error details", err)
+	}
+	if strings.Contains(err.Error(), "查询成功") {
+		t.Fatalf("OCRFile error = %q, must not report generic query success as task failure reason", err)
+	}
+}
