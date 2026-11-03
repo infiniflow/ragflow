@@ -25,7 +25,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const resourceUserIDMigrationTargetVersion = "v1.0.0-1"
+const resourceUserIDMigrationTargetVersion = "v1.0.0.1"
 
 // migrateResourceUserIDs fills owner IDs added to resource tables. Existing
 // created_by values identify the resource owner; tables without created_by

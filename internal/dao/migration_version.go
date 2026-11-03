@@ -263,8 +263,9 @@ func devIdentifierNumber(identifier string) (int, bool) {
 	return value, true
 }
 
-// parseMigrationVersion normalizes a version to the "vMAJOR.MINOR.PATCH" form
-// understood by semver, returning an empty string when it cannot be parsed.
+// parseMigrationVersion normalizes a version to the semver form used for
+// ordering, returning an empty string when it cannot be parsed. A numeric
+// fourth component is a post-release counter: v1.0.0.1 becomes v1.0.0-1.
 func parseMigrationVersion(version string) string {
 	normalized := strings.TrimSpace(version)
 	normalized = strings.TrimPrefix(normalized, "v")
@@ -273,6 +274,17 @@ func parseMigrationVersion(version string) string {
 		return ""
 	}
 	normalized = "v" + normalized
+	if !semver.IsValid(normalized) {
+		parts := strings.Split(normalized, ".")
+		if len(parts) == 4 {
+			if _, err := strconv.Atoi(parts[3]); err == nil {
+				candidate := strings.Join(parts[:3], ".") + "-" + parts[3]
+				if semver.IsValid(candidate) {
+					normalized = candidate
+				}
+			}
+		}
+	}
 	if !semver.IsValid(normalized) {
 		common.Warn("Invalid migration version format", zap.String("version", version))
 		return ""
