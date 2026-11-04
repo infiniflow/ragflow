@@ -379,7 +379,7 @@ func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *e
 	switch {
 	case common.IsActiveTaskStatus(task.Status):
 		return common.CodeDataError, fmt.Errorf(
-			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", task.Status)
+			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating it", task.Status)
 	case common.IsTerminalTaskStatus(task.Status):
 		return common.CodeSuccess, nil
 	default:
