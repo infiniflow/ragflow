@@ -19,10 +19,10 @@ Build a workflow that answers product questions through retrieval and collects c
 2. After **Begin**, add **Categorize**. Use `sys.query` as the query variable and select the chat model.
 3. Add two categories:
 
-| Name | Description | Example |
-| --- | --- | --- |
-| Product help | Product features, setup, and troubleshooting. | How do I reset Model A? |
-| Appointment | Requests to arrange a service appointment. | I want to arrange an installation. |
+| Name         | Description                                   | Example                            |
+|--------------|-----------------------------------------------|------------------------------------|
+| Product help | Product features, setup, and troubleshooting. | How do I reset Model A?            |
+| Appointment  | Requests to arrange a service appointment.    | I want to arrange an installation. |
 
 ### Product help branch
 
@@ -46,10 +46,10 @@ Connect **Appointment → Await Response → Message**. Follow the [form example
 
 Save, then click **Run** and test each path:
 
-| Input | Expected result |
-| --- | --- |
-| How do I reset Model A? | Product help branch; the answer mentions holding reset for five seconds. |
-| Does Model A support Bluetooth? | Product help branch; the answer says the guide does not establish this. |
+| Input                              | Expected result                                                                   |
+|------------------------------------|-----------------------------------------------------------------------------------|
+| How do I reset Model A?            | Product help branch; the answer mentions holding reset for five seconds.          |
+| Does Model A support Bluetooth?    | Product help branch; the answer says the guide does not establish this.           |
 | I want to arrange an installation. | Appointment branch; a form appears and the submitted name and time are displayed. |
 
 If routing is wrong, refine the category descriptions and examples. If retrieval is empty, check parsing status, knowledge-base selection, and the query. If the answer ignores retrieved text, check the Agent's variable references. Publish only after both branches work as intended.

@@ -35,7 +35,6 @@ import (
 type memoryMessageSearcher interface {
 	SearchMessage(
 		ctx context.Context,
-		userID string,
 		filterDict, params map[string]any,
 	) ([]map[string]any, common.ErrorCode, error)
 }
@@ -80,14 +79,23 @@ func (a *MemoryAdapter) Search(
 	if len(memoryIDs) == 0 {
 		return nil, fmt.Errorf("memory retrieval: memory_ids is required")
 	}
-	actorID := strings.TrimSpace(req.TenantID)
-	if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
-		if userID, _ := state.GetSysString("user_id"); strings.TrimSpace(userID) != "" {
+	actorID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx))
+	if actorID == "" {
+		if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
+			userID, _ := state.GetSysString("user_id")
 			actorID = strings.TrimSpace(userID)
+			if tenantID == "" {
+				stateTenantID, _ := state.GetSysString("tenant_id")
+				tenantID = strings.TrimSpace(stateTenantID)
+			}
 		}
 	}
 	if actorID == "" {
-		return nil, fmt.Errorf("memory retrieval: user id is required")
+		return nil, permission.ErrUnauthenticated
+	}
+	if permission.UserIDFromContext(ctx) == "" {
+		ctx = permission.WithIdentity(ctx, actorID, tenantID)
 	}
 	if err := agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindMemory, memoryIDs); err != nil {
 		return nil, err
@@ -120,12 +128,7 @@ func (a *MemoryAdapter) Search(
 	if req.SimilarityThreshold != nil {
 		params["similarity_threshold"] = *req.SimilarityThreshold
 	}
-	messages, _, err := a.svc.SearchMessage(
-		ctx,
-		actorID,
-		filter,
-		params,
-	)
+	messages, _, err := a.svc.SearchMessage(ctx, filter, params)
 	if err != nil {
 		return nil, err
 	}

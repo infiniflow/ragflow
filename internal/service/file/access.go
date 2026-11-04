@@ -8,7 +8,7 @@ import (
 	"ragflow/internal/permission"
 )
 
-func checkFileAccess(ctx context.Context, userID string, file *entity.File, operation permission.Operation) error {
+func checkFileAccess(ctx context.Context, file *entity.File, operation permission.Operation) error {
 	if file == nil {
 		return permission.ErrResourceNotFound
 	}
@@ -35,15 +35,6 @@ func fileRequestIdentity(ctx context.Context, identity string) (string, string, 
 		tenantID = identity
 	}
 	return userID, tenantID, nil
-}
-
-func tenantFileContext(ctx context.Context, userID, tenantID string) (context.Context, error) {
-	contextUserID := permission.UserIDFromContext(ctx)
-	contextTenantID := permission.TenantIDFromContext(ctx)
-	if contextUserID != "" && contextUserID != userID || contextTenantID != "" && contextTenantID != tenantID {
-		return nil, permission.ErrIdentityMismatch
-	}
-	return permission.WithIdentity(ctx, userID, tenantID), nil
 }
 
 func (s *FileService) checkFileTreeAccess(ctx context.Context, file *entity.File, operation permission.Operation) error {
