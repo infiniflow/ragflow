@@ -26,18 +26,16 @@ import (
 
 // AgentVersionMetadata describes a saved version without its DSL.
 type AgentVersionMetadata struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Alias       string `json:"alias"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Alias string `json:"alias"`
 }
 
 // AgentVersionCatalogItem groups a canvas's saved version metadata.
 type AgentVersionCatalogItem struct {
-	ID          string                 `json:"id"`
-	Name        string                 `json:"name"`
-	Description string                 `json:"description"`
-	Versions    []AgentVersionMetadata `json:"versions"`
+	ID       string                 `json:"id"`
+	Name     string                 `json:"name"`
+	Versions []AgentVersionMetadata `json:"versions"`
 }
 
 // ListVersionCatalog returns accessible dataflow canvases and all their saved
@@ -63,7 +61,7 @@ func (s *AgentService) ListVersionCatalog(ctx context.Context) ([]AgentVersionCa
 		indexByID[canvas.ID] = len(items)
 		canvasIDs = append(canvasIDs, canvas.ID)
 		items = append(items, AgentVersionCatalogItem{
-			ID: canvas.ID, Name: derefString(canvas.Title), Description: derefString(canvas.Description),
+			ID: canvas.ID, Name: derefString(canvas.Title),
 			Versions: make([]AgentVersionMetadata, 0),
 		})
 	}
@@ -75,7 +73,7 @@ func (s *AgentService) ListVersionCatalog(ctx context.Context) ([]AgentVersionCa
 		item := &items[indexByID[version.UserCanvasID]]
 		item.Versions = append(item.Versions, AgentVersionMetadata{
 			ID: version.ID, Name: derefString(version.Title),
-			Description: derefString(version.Description), Alias: derefString(version.Alias),
+			Alias: derefString(version.Alias),
 		})
 	}
 	return items, nil

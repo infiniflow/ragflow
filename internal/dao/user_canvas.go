@@ -190,7 +190,7 @@ func (dao *UserCanvasDAO) ListMetadataByIDs(ctx context.Context, db *gorm.DB, ca
 		return []entity.UserCanvas{}, nil
 	}
 	var canvases []entity.UserCanvas
-	err := db.WithContext(ctx).Select("id", "title", "description").
+	err := db.WithContext(ctx).Select("id", "title").
 		Where("id IN ? AND canvas_category = ?", canvasIDs, category).
 		Order("create_time DESC").Order("id ASC").Find(&canvases).Error
 	return canvases, err

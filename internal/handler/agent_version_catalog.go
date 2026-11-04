@@ -43,5 +43,5 @@ func (h *AgentHandler) ListVersionCatalog(c *gin.Context) {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
-	common.RespondSuccessList(c, items, "success")
+	common.RespondSuccessList(c, items, "success", int64(len(items)))
 }

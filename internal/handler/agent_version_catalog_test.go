@@ -63,13 +63,14 @@ func TestListVersionCatalog(t *testing.T) {
 	}
 	(&AgentHandler{agentService: service.NewAgentService()}).ListVersionCatalog(c)
 	var response struct {
-		Code common.ErrorCode                  `json:"code"`
-		Data []service.AgentVersionCatalogItem `json:"data"`
+		Code  common.ErrorCode                  `json:"code"`
+		Data  []service.AgentVersionCatalogItem `json:"data"`
+		Total *int64                            `json:"total"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Code != common.CodeSuccess || len(response.Data) != 2 {
+	if response.Code != common.CodeSuccess || len(response.Data) != 2 || response.Total == nil || *response.Total != 2 {
 		t.Fatalf("unexpected response: %s", w.Body.String())
 	}
 	byID := make(map[string]service.AgentVersionCatalogItem)
@@ -77,10 +78,10 @@ func TestListVersionCatalog(t *testing.T) {
 		byID[item.ID] = item
 	}
 	want := service.AgentVersionCatalogItem{
-		ID: "pipe-1", Name: "Invoices", Description: "Invoice parser",
+		ID: "pipe-1", Name: "Invoices",
 		Versions: []service.AgentVersionMetadata{
 			{ID: "v2", Name: "Version two"},
-			{ID: "v1", Name: "Version one", Description: "First parser", Alias: "production"},
+			{ID: "v1", Name: "Version one", Alias: "production"},
 		},
 	}
 	if !reflect.DeepEqual(byID["pipe-1"], want) {
@@ -96,7 +97,7 @@ func TestListVersionCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, item := range raw.Data {
-		if len(item) != 4 {
+		if len(item) != 3 || item["id"] == nil || item["name"] == nil || item["versions"] == nil {
 			t.Fatalf("unexpected pipeline fields: %v", item)
 		}
 		var rows []map[string]json.RawMessage
@@ -104,15 +105,15 @@ func TestListVersionCatalog(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, row := range rows {
-			if len(row) != 4 || row["id"] == nil || row["name"] == nil || row["description"] == nil || row["alias"] == nil {
+			if len(row) != 3 || row["id"] == nil || row["name"] == nil || row["alias"] == nil {
 				t.Fatalf("unexpected version fields: %v", row)
 			}
 		}
 	}
 	versionQueries := 0
 	for _, query := range queries {
-		if strings.Contains(query, "user_canvas") && (strings.Contains(query, "SELECT *") || strings.Contains(query, "`dsl`")) {
-			t.Errorf("catalog loaded DSL: %s", query)
+		if strings.Contains(query, "user_canvas") && (strings.Contains(query, "SELECT *") || strings.Contains(query, "`dsl`") || strings.Contains(query, "`description`")) {
+			t.Errorf("catalog loaded unnecessary fields: %s", query)
 		}
 		if strings.Contains(query, "FROM `user_canvas_version`") {
 			versionQueries++
@@ -127,13 +128,14 @@ func TestListVersionCatalogEmpty(t *testing.T) {
 	c, w, _ := setupGinContextWithUserAndDB(t, "GET", "/api/v1/agents/versions?category=dataflow")
 	(&AgentHandler{agentService: service.NewAgentService()}).ListVersionCatalog(c)
 	var response struct {
-		Code common.ErrorCode `json:"code"`
-		Data json.RawMessage  `json:"data"`
+		Code  common.ErrorCode `json:"code"`
+		Data  json.RawMessage  `json:"data"`
+		Total *int64           `json:"total"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Code != common.CodeSuccess || string(response.Data) != "[]" {
+	if response.Code != common.CodeSuccess || string(response.Data) != "[]" || response.Total == nil || *response.Total != 0 {
 		t.Fatalf("unexpected response: %s", w.Body.String())
 	}
 }

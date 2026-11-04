@@ -405,13 +405,11 @@ export interface IAgentWebhookCredential {
 export interface IAgentVersionMetadata {
   id: string;
   name: string;
-  description: string;
   alias: string;
 }
 
 export interface IAgentVersionCatalogItem {
   id: string;
   name: string;
-  description: string;
   versions: IAgentVersionMetadata[];
 }

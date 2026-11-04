@@ -32,10 +32,7 @@ const Catalog = [
   {
     id: 'pipe-1',
     name: 'Invoices',
-    description: '',
-    versions: [
-      { id: 'v2', name: 'Version two', description: '', alias: 'production' },
-    ],
+    versions: [{ id: 'v2', name: 'Version two', alias: 'production' }],
   },
 ];
 
@@ -55,7 +52,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   jest
     .mocked(agentService.listAgentVersions)
-    .mockResolvedValue({ data: { code: 0, data: Catalog } } as any);
+    .mockResolvedValue({ data: { code: 0, data: Catalog, total: 1 } } as any);
 });
 
 it('shares one catalog request across the tree and selected version observers', async () => {

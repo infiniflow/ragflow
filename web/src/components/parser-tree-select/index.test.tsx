@@ -18,9 +18,7 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
-const VersionList = [
-  { id: 'v1', name: 'v1 title', description: '', alias: 'jin' },
-];
+const VersionList = [{ id: 'v1', name: 'v1 title', alias: 'jin' }];
 let mockCatalog: any[] = [];
 let mockCatalogLoading = false;
 jest.mock('@/hooks/use-agent-request', () => ({
@@ -39,8 +37,8 @@ jest.mock('@/hooks/use-pipeline-version-request', () => ({
 beforeEach(() => {
   for (const key of Object.keys(mockTreeProps)) delete mockTreeProps[key];
   mockCatalog = [
-    { id: 'pipe-1', name: 'My Flow', description: '', versions: VersionList },
-    { id: 'pipe-2', name: 'Empty Flow', description: '', versions: [] },
+    { id: 'pipe-1', name: 'My Flow', versions: VersionList },
+    { id: 'pipe-2', name: 'Empty Flow', versions: [] },
   ];
   mockCatalogLoading = false;
 });

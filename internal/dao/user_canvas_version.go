@@ -169,7 +169,7 @@ func (dao *UserCanvasVersionDAO) ListMetadataByCanvasIDs(ctx context.Context, db
 		return []entity.UserCanvasVersion{}, nil
 	}
 	var versions []entity.UserCanvasVersion
-	err := db.WithContext(ctx).Select("id", "user_canvas_id", "title", "description", "alias").
+	err := db.WithContext(ctx).Select("id", "user_canvas_id", "title", "alias").
 		Where("user_canvas_id IN ?", canvasIDs).
 		Order("create_time DESC").Order("id ASC").Find(&versions).Error
 	return versions, err
