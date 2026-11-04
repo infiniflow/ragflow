@@ -1016,6 +1016,11 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 		return 0, nil
 	}
 
+	// Scope the delete to the dataset the caller asked for. The tenant index is
+	// shared by every dataset, so without this a condition that omits kb_id
+	// deletes matching chunks in other datasets too.
+	condition = copyFields(condition)
+	condition["kb_id"] = datasetID
 	condition = types.CompilationFilter(condition)
 	// Build bool query from condition
 	var mustClauses []map[string]interface{}
@@ -2324,22 +2329,13 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 		if v == nil || v == "" {
 			continue
 		}
-		if isMemoryIndex && k == "session_id_contains" {
+		if isMemoryIndex && (k == "session_id" || k == "session_id_contains") {
 			if text, ok := v.(string); ok {
 				pattern := strings.NewReplacer(`\`, `\\`, "*", `\*`, "?", `\?`).Replace(text)
 				filterClauses = append(filterClauses, map[string]interface{}{"wildcard": map[string]interface{}{"session_id": "*" + pattern + "*"}})
+				continue
 			}
-			continue
-		}
-		if isMemoryIndex && k == "session_id" {
-			if strVal, ok := v.(string); ok && strVal != "" {
-				filterClauses = append(filterClauses, map[string]interface{}{
-					"query_string": map[string]interface{}{
-						"query":            fmt.Sprintf("*%s*", strVal),
-						"fields":           []string{"session_id"},
-						"analyze_wildcard": true,
-					},
-				})
+			if k == "session_id_contains" {
 				continue
 			}
 		}

@@ -322,6 +322,68 @@ func TestDeleteChunksIDStringSlice(t *testing.T) {
 	assertEqual(t, terms["id"], []interface{}{"doc-a", "doc-b"})
 }
 
+// TestDeleteChunksScopesByDataset pins the engine-side dataset scope. The ES
+// index is shared by every dataset of a tenant, so DeleteChunks must turn the
+// datasetID argument into a kb_id filter even when the caller's condition does
+// not carry one; otherwise a doc_id-only delete reaches other datasets.
+func TestDeleteChunksScopesByDataset(t *testing.T) {
+	cases := []struct {
+		name      string
+		condition map[string]interface{}
+	}{
+		{name: "condition without kb_id", condition: map[string]interface{}{"doc_id": "doc-1"}},
+		{name: "datasetID wins over conflicting kb_id", condition: map[string]interface{}{"doc_id": "doc-1", "kb_id": "kb-2"}},
+		{name: "typed kb_id slice cannot widen the scope", condition: map[string]interface{}{"id": []string{"chunk-1"}, "kb_id": []string{"kb-2"}}},
+		{name: "empty condition stays dataset-scoped", condition: nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var deleteQuery map[string]interface{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("X-Elastic-Product", "Elasticsearch")
+				switch r.Method {
+				case http.MethodHead:
+					w.WriteHeader(http.StatusOK)
+				case http.MethodPost:
+					if r.URL.Path != "/ragflow_tenant/_delete_by_query" {
+						t.Errorf("path=%s, want /ragflow_tenant/_delete_by_query", r.URL.Path)
+						http.Error(w, "unexpected request path", http.StatusNotFound)
+						return
+					}
+					if err := json.NewDecoder(r.Body).Decode(&deleteQuery); err != nil {
+						t.Errorf("decode delete query: %v", err)
+					}
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = w.Write([]byte(`{"deleted":1}`))
+				default:
+					t.Errorf("method=%s", r.Method)
+					http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+				}
+			}))
+			defer server.Close()
+			client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+			if err != nil {
+				t.Fatalf("new elasticsearch client: %v", err)
+			}
+			engine := &Engine{client: client}
+			if _, err = engine.DeleteChunks(t.Context(), tc.condition, "ragflow_tenant", "kb-1"); err != nil {
+				t.Fatalf("DeleteChunks: %v", err)
+			}
+
+			query, _ := json.Marshal(deleteQuery)
+			if string(query) == `{"query":{"match_all":{}}}` {
+				t.Fatalf("empty condition must stay dataset-scoped, got %s", query)
+			}
+			if !strings.Contains(string(query), `"kb_id":"kb-1"`) {
+				t.Fatalf("delete query lost dataset scope kb-1: %s", query)
+			}
+			if strings.Contains(string(query), `"kb_id":"kb-2"`) {
+				t.Fatalf("delete query kept conflicting kb_id kb-2: %s", query)
+			}
+		})
+	}
+}
+
 // TestUpdateChunksPreservesStringSliceCondition guards the document
 // availability switch: the doc-service caller of UpdateChunks
 // (updateDocumentChunkAvailability) passes a typed []string id list, and a
