@@ -201,6 +201,11 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 			common.RespondError(c, common.CodeBadRequest, err.Error())
 			return
 		}
+		// A file_id outside the folder tree is caller input, not a server
+		// fault: answer it like the other file writes instead of a 500.
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		jsonInternalError(c, err)
 		return
 	}

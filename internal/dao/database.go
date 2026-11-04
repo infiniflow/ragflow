@@ -284,6 +284,7 @@ func autoMigrateModels() []interface{} {
 		&entity.EvaluationResult{},
 		&entity.TimeRecord{},
 		&entity.License{},
+		&entity.SkillSpace{},
 		&entity.SkillSearchConfig{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
