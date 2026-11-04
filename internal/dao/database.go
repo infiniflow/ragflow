@@ -460,9 +460,6 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
 	}
-	if err = initializeSystemSettingsEE(ctx, DB); err != nil {
-		return fmt.Errorf("failed to initialize enterprise system settings: %w", err)
-	}
 	if err = SeedSystemSettings(ctx, DB); err != nil {
 		return fmt.Errorf("failed to seed system settings: %w", err)
 	}
