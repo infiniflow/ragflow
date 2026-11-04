@@ -102,6 +102,7 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 
 	// Build bulk request body
 	var buf bytes.Buffer
+	var docIDs []string
 	for _, doc := range metadata {
 		docIDRaw, hasID := doc["id"]
 		kbIDRaw, hasKBID := doc["kb_id"]
@@ -131,6 +132,7 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 		if err := json.NewEncoder(&buf).Encode(doc); err != nil {
 			return nil, fmt.Errorf("failed to encode document: %w", err)
 		}
+		docIDs = append(docIDs, docID)
 	}
 
 	// Execute bulk request
@@ -153,15 +155,37 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 	}
 
 	// Parse bulk response to check for errors
-	var bulkResponse map[string]interface{}
+	var bulkResponse struct {
+		Errors *bool `json:"errors"`
+		Items  []struct {
+			Index struct {
+				ID     string          `json:"_id"`
+				Status int             `json:"status"`
+				Error  json.RawMessage `json:"error"`
+			} `json:"index"`
+		} `json:"items"`
+	}
 	if err := json.NewDecoder(res.Body).Decode(&bulkResponse); err != nil {
 		common.Error("Failed to parse bulk response", err)
 		return nil, fmt.Errorf("failed to parse bulk response: %w", err)
 	}
 
-	// Check for errors in bulk response
-	if errors, ok := bulkResponse["errors"].(bool); ok && errors {
-		common.Warn("Bulk request had some errors")
+	// HTTP 200 only acknowledges the bulk envelope; every item must succeed.
+	if bulkResponse.Errors == nil || len(bulkResponse.Items) != len(docIDs) {
+		return nil, fmt.Errorf("invalid metadata bulk response for index %s: expected %d items, got %d", indexName, len(docIDs), len(bulkResponse.Items))
+	}
+	for i, item := range bulkResponse.Items {
+		result := item.Index
+		if result.Status < 200 || result.Status >= 300 || len(result.Error) > 0 && string(result.Error) != "null" {
+			id := result.ID
+			if id == "" {
+				id = docIDs[i]
+			}
+			return nil, fmt.Errorf("elasticsearch metadata bulk item failed (index %s, document %s, HTTP %d): %s", indexName, id, result.Status, result.Error)
+		}
+	}
+	if *bulkResponse.Errors {
+		return nil, fmt.Errorf("elasticsearch metadata bulk request reported errors (index %s)", indexName)
 	}
 
 	common.Info("ElasticsearchConnection.InsertMetadata result", zap.String("index_name", indexName), zap.Int("count", len(metadata)))
@@ -232,12 +256,26 @@ func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID str
 		return fmt.Errorf("elasticsearch update by query returned error: %s", res.Status())
 	}
 
-	var updateResponse map[string]interface{}
+	var updateResponse struct {
+		Total            *int64            `json:"total"`
+		TimedOut         bool              `json:"timed_out"`
+		VersionConflicts int64             `json:"version_conflicts"`
+		Failures         []json.RawMessage `json:"failures"`
+	}
 	if err := json.NewDecoder(res.Body).Decode(&updateResponse); err != nil {
 		common.Error("Failed to parse update response", err)
 		return fmt.Errorf("failed to parse update response: %w", err)
 	}
-	if total, ok := updateResponse["total"].(float64); ok && total == 0 {
+	if updateResponse.TimedOut {
+		return fmt.Errorf("elasticsearch metadata update timeout (index %s, document %s)", indexName, docID)
+	}
+	if updateResponse.VersionConflicts > 0 || len(updateResponse.Failures) > 0 {
+		return fmt.Errorf("elasticsearch metadata update failed (index %s, document %s): version_conflicts=%d, failures=%s", indexName, docID, updateResponse.VersionConflicts, updateResponse.Failures)
+	}
+	if updateResponse.Total == nil || *updateResponse.Total < 0 {
+		return fmt.Errorf("invalid metadata update response (index %s, document %s): missing or invalid total", indexName, docID)
+	}
+	if *updateResponse.Total == 0 {
 		_, err := e.InsertMetadata(ctx, []map[string]interface{}{
 			{
 				"id":          docID,
