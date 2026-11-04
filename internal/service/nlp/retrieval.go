@@ -85,9 +85,22 @@ type RetrievalResult struct {
 	Total   int64                    // Threshold-valid matches across the retrieval candidate set
 }
 
+// Retrieval window limits. They bound the candidate set one request may ask the
+// shared doc engine (and the reranker) to score, so an oversized request cannot
+// exhaust shared retrieval resources. The KNN limits mirror the HTTP validation
+// in internal/handler/dataset.go, which only covers the dataset endpoints; this
+// is the contract every other entry point (chat, agent tools, saved search
+// configs) shares. maxRerankCandidates is 1024 because Dify retrieval defaults
+// its window to top_k, which is itself capped at 1024.
+const (
+	maxRerankCandidates = 1024
+	maxKNNTopK          = 2048
+	maxKNNNumCandidates = 10000
+)
+
 // Retrieval performs hybrid search + reranking + pagination
 // - Retrieve candidates for reranking
-// - Perform reranking via Rerank()
+// - Perform reranking via scoreSearchResult()
 // - Sort indices by score descending and filter by threshold
 // - Require Page * PageSize to fit within RerankCandidatesCount
 // - Support only the first page when a rerank model is configured
@@ -142,6 +155,15 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	rerankCandidatesCount := *req.RerankCandidatesCount
 	if rerankCandidatesCount <= 0 || req.Page > rerankCandidatesCount/pageSize {
 		return nil, fmt.Errorf("rerank_candidates_count(%d) must be greater than or equal to page(%d) * page_size(%d)", rerankCandidatesCount, req.Page, pageSize)
+	}
+	if rerankCandidatesCount > maxRerankCandidates {
+		return nil, fmt.Errorf("rerank_candidates_count(%d) must not exceed %d", rerankCandidatesCount, maxRerankCandidates)
+	}
+	if *req.KNNTopK > maxKNNTopK {
+		return nil, fmt.Errorf("knn_top_k(%d) must not exceed %d", *req.KNNTopK, maxKNNTopK)
+	}
+	if *req.KNNNumCandidates > maxKNNNumCandidates {
+		return nil, fmt.Errorf("knn_num_candidates(%d) must not exceed %d", *req.KNNNumCandidates, maxKNNNumCandidates)
 	}
 	if req.RerankModel != nil && req.Page != 1 {
 		return nil, fmt.Errorf("Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top %d results.", pageSize)

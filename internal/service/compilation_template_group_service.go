@@ -104,7 +104,15 @@ func (s *CompilationTemplateGroupService) ListSaved(ctx context.Context, tenantI
 
 // GetSaved returns a single group with its nested templates, or nil. Mirrors
 // Python get_saved().
-func (s *CompilationTemplateGroupService) GetSaved(ctx context.Context, tenantID, groupID string) (*GroupListItem, error) {
+func (s *CompilationTemplateGroupService) GetSaved(ctx context.Context, groupID string) (*GroupListItem, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx))
+	if tenantID == "" {
+		tenantID = userID
+	}
 	group, err := s.groupDAO.GetSaved(ctx, dao.DB, tenantID, groupID)
 	if err != nil || group == nil {
 		return nil, err
@@ -116,7 +124,15 @@ func (s *CompilationTemplateGroupService) GetSaved(ctx context.Context, tenantID
 // create_group(). It returns a GroupValidationError for payload/scope problems.
 // The group and all child writes are committed atomically so a mid-way failure
 // cannot leave a partially-populated group behind.
-func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, tenantID string, req *GroupRequest) (*GroupListItem, error) {
+func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, req *GroupRequest) (*GroupListItem, error) {
+	creatorID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if creatorID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx))
+	if tenantID == "" {
+		tenantID = creatorID
+	}
 	if err := validateGroupPayload(req, true); err != nil {
 		return nil, err
 	}
@@ -133,7 +149,6 @@ func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, tenan
 	}
 
 	groupID := common.GenerateUUID()
-	creatorID := identityForTemplateTenant(ctx, tenantID).UserID
 	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		group := &entity.CompilationTemplateGroup{
 			ID:          groupID,
@@ -151,13 +166,21 @@ func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, tenan
 	}); err != nil {
 		return nil, err
 	}
-	return s.GetSaved(ctx, tenantID, groupID)
+	return s.GetSaved(ctx, groupID)
 }
 
 // UpdateGroup applies a partial update to a group and reconciles its child
 // templates. Mirrors Python update_group(). The field update and child
 // reconciliation are committed atomically.
-func (s *CompilationTemplateGroupService) UpdateGroup(ctx context.Context, tenantID, groupID string, req *GroupRequest) (*GroupListItem, error) {
+func (s *CompilationTemplateGroupService) UpdateGroup(ctx context.Context, groupID string, req *GroupRequest) (*GroupListItem, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx))
+	if tenantID == "" {
+		tenantID = userID
+	}
 	existing, err := s.groupDAO.GetSaved(ctx, dao.DB, tenantID, groupID)
 	if err != nil {
 		return nil, err
@@ -197,12 +220,20 @@ func (s *CompilationTemplateGroupService) UpdateGroup(ctx context.Context, tenan
 	}); err != nil {
 		return nil, err
 	}
-	return s.GetSaved(ctx, tenantID, groupID)
+	return s.GetSaved(ctx, groupID)
 }
 
 // DeleteGroup soft-deletes a group and its valid child templates. Mirrors
 // Python delete_group(). Returns (false, nil) when the group is missing.
-func (s *CompilationTemplateGroupService) DeleteGroup(ctx context.Context, tenantID, groupID string) (bool, error) {
+func (s *CompilationTemplateGroupService) DeleteGroup(ctx context.Context, groupID string) (bool, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
+		return false, permission.ErrUnauthenticated
+	}
+	tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx))
+	if tenantID == "" {
+		tenantID = userID
+	}
 	existing, err := s.groupDAO.GetSaved(ctx, dao.DB, tenantID, groupID)
 	if err != nil {
 		return false, err
@@ -231,7 +262,15 @@ func groupValidationErrorf(format string, a ...interface{}) error {
 
 // NameExists reports whether a valid group with the given name exists for the
 // tenant (optionally excluding excludeID), mirroring Python name_exists().
-func (s *CompilationTemplateGroupService) NameExists(ctx context.Context, tenantID, name string, excludeIDs ...string) (bool, error) {
+func (s *CompilationTemplateGroupService) NameExists(ctx context.Context, name string, excludeIDs ...string) (bool, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
+		return false, permission.ErrUnauthenticated
+	}
+	tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx))
+	if tenantID == "" {
+		tenantID = userID
+	}
 	excludeID := ""
 	if len(excludeIDs) > 0 {
 		excludeID = excludeIDs[0]

@@ -76,8 +76,8 @@ func NewMemoryHandler(memoryService *service.MemoryService) *MemoryHandler {
 //   - message: "success" on success, error message on failure
 //   - data: Memory object on success
 //
-// Business Logic (matching Python create_memory):
-//  1. Validate user login status
+// Business Logic:
+//  1. Apply billing and application quotas
 //  2. Parse and validate request parameters
 //  3. Call service layer to create memory
 //  4. Return creation result
@@ -90,15 +90,6 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	if !billingEnforceApps(c, user.ID) {
 		return
 	}
-
-	// Get current logged-in user information
-	// GetUser is a context value set by the authentication middleware
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
 
 	// Parse JSON request body
 	var req service.CreateMemoryRequest
@@ -135,7 +126,7 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// Call service layer to create memory
-	result, err := h.memoryService.CreateMemory(ctx, userID, &req)
+	result, err := h.memoryService.CreateMemory(ctx, &req)
 	if err != nil {
 		errMsg := err.Error()
 		// Determine if it's an argument error and return appropriate error code
@@ -188,14 +179,6 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 		return
 	}
 
-	// Get current logged-in user information
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
 	// Parse JSON request body
 	var req service.UpdateMemoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -206,7 +189,7 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// Call service layer to update memory
-	result, err := h.memoryService.UpdateMemory(ctx, userID, memoryID, &req)
+	result, err := h.memoryService.UpdateMemory(ctx, memoryID, &req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -252,16 +235,10 @@ func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
 		return
 	}
 
-	// Get current logged-in user for access control
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 	ctx := c.Request.Context()
 
 	// Call service layer to delete memory (with access control)
-	err := h.memoryService.DeleteMemory(ctx, user.ID, memoryID)
+	err := h.memoryService.DeleteMemory(ctx, memoryID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -319,14 +296,8 @@ func splitQueryValues(c *gin.Context, key string) []string {
 //   - data.memory_list: Array of Memory objects
 //   - data.total_count: Total record count
 func (h *MemoryHandler) ListMemories(c *gin.Context) {
-	// Get current logged-in user information
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 	if c.Query("type") == "filter" {
-		result, err := h.memoryService.ListMemoryFilters(c.Request.Context(), user.ID)
+		result, err := h.memoryService.ListMemoryFilters(c.Request.Context())
 		if err != nil {
 			common.RespondError(c, common.CodeServerError, err.Error())
 			return
@@ -363,7 +334,7 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// Call service layer to get memory list
-	result, err := h.memoryService.ListMemories(ctx, user.ID, tenantIDs, memoryTypes, storageType, keywords, page, pageSize, c.Query("canvas_id"))
+	result, err := h.memoryService.ListMemories(ctx, tenantIDs, memoryTypes, storageType, keywords, page, pageSize, c.Query("canvas_id"))
 	if err != nil {
 		code := common.CodeServerError
 		if errors.Is(err, permission.ErrUnauthenticated) || errors.Is(err, permission.ErrPermissionDenied) ||
@@ -397,16 +368,10 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 		return
 	}
 
-	// Get current logged-in user for access control
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 	ctx := c.Request.Context()
 
 	// Call service layer to get memory configuration (with access control)
-	result, err := h.memoryService.GetMemoryConfig(ctx, user.ID, memoryID)
+	result, err := h.memoryService.GetMemoryConfig(ctx, memoryID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -447,17 +412,6 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 //   - data.messages: Array of message objects
 //   - data.storage_type: Storage type
 func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.RespondError(c, common.CodeAuthenticationError, "user id is required")
-		return
-	}
 
 	memoryID := strings.TrimSpace(c.Param("memory_id"))
 	if memoryID == "" {
@@ -483,7 +437,7 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 		return
 	}
 
-	data, err := h.memoryService.GetMemoryMessages(c.Request.Context(), userID, memoryID, agentIDs, keywords, page, pageSize)
+	data, err := h.memoryService.GetMemoryMessages(c.Request.Context(), memoryID, agentIDs, keywords, page, pageSize)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -543,17 +497,7 @@ type AddMessageRequest struct {
 //   - agent_response (required): Agent response
 //   - user_id (optional): User ID
 func (h *MemoryHandler) AddMessage(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
-	currentUserID := strings.TrimSpace(user.ID)
-	if currentUserID == "" {
-		common.RespondError(c, common.CodeArgumentError, "user_id is required")
-		return
-	}
+	currentUserID := strings.TrimSpace(permission.UserIDFromContext(c.Request.Context()))
 
 	var reqBody AddMessageRequest
 	if err := c.ShouldBindJSON(&reqBody); err != nil {
@@ -584,7 +528,7 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 		AgentResponse: reqBody.AgentResponse,
 	}
 
-	ok, message, err := h.memoryService.AddMessage(c.Request.Context(), currentUserID, []string(reqBody.MemoryIDs), msg)
+	ok, message, err := h.memoryService.AddMessage(c.Request.Context(), []string(reqBody.MemoryIDs), msg)
 	if err != nil || !ok {
 		common.RespondError(c, common.CodeServerError, "Some messages failed to add. Detail:"+message)
 		return
@@ -604,11 +548,6 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 //   - memory_id: Memory ID
 //   - message_id: Message ID (integer)
 func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
@@ -616,7 +555,7 @@ func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
 		return
 	}
 
-	if err = h.memoryService.ForgetMessage(c.Request.Context(), user.ID, memoryID, messageID); err != nil {
+	if err = h.memoryService.ForgetMessage(c.Request.Context(), memoryID, messageID); err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
@@ -676,17 +615,6 @@ func parseMemoryMessagePath(memoryMessage string) (string, int64, error) {
 // Request Parameters (JSON Body):
 //   - status (required): Message status, boolean
 func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.RespondError(c, common.CodeAuthenticationError, "user id is required")
-		return
-	}
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
@@ -706,7 +634,7 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 		return
 	}
 
-	ok, err = h.memoryService.UpdateMessageStatus(c.Request.Context(), userID, memoryID, messageID, status)
+	ok, err = h.memoryService.UpdateMessageStatus(c.Request.Context(), memoryID, messageID, status)
 	if err != nil || !ok {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -735,17 +663,6 @@ func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
 //
 
 func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.RespondError(c, common.CodeAuthenticationError, "user id is required")
-		return
-	}
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
@@ -753,7 +670,7 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 		return
 	}
 
-	data, err := h.memoryService.GetMessageContent(c.Request.Context(), userID, memoryID, messageID)
+	data, err := h.memoryService.GetMessageContent(c.Request.Context(), memoryID, messageID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -787,17 +704,6 @@ func (h *MemoryHandler) GetMessageContent(c *gin.Context) {
 //   - session_id (optional): Session ID filter
 //   - user_id (optional): User ID filter
 func (h *MemoryHandler) SearchMessage(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.RespondError(c, common.CodeAuthenticationError, "user id is required")
-		return
-	}
 
 	memoryIDs := splitQueryValues(c, "memory_id")
 
@@ -836,7 +742,7 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 		"top_n":                      topN,
 	}
 
-	res, code, err := h.memoryService.SearchMessage(c.Request.Context(), userID, filterDict, params)
+	res, code, err := h.memoryService.SearchMessage(c.Request.Context(), filterDict, params)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -858,17 +764,6 @@ func (h *MemoryHandler) SearchMessage(c *gin.Context) {
 //   - session_id (optional): Session ID filter
 //   - limit (optional): Number of results to return, default 10
 func (h *MemoryHandler) GetMessages(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.RespondError(c, common.CodeAuthenticationError, "user id is required")
-		return
-	}
 
 	memoryIDs := splitQueryValues(c, "memory_id")
 
@@ -884,7 +779,7 @@ func (h *MemoryHandler) GetMessages(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.memoryService.GetMessages(c.Request.Context(), memoryIDs, userID, agentID, sessionID, limit)
+	data, code, err := h.memoryService.GetMessages(c.Request.Context(), memoryIDs, agentID, sessionID, limit)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return

@@ -406,7 +406,7 @@ type CreateInstanceModelInfo struct {
 	Extra      map[string]interface{} `json:"extra"`
 }
 
-var providerInstanceNamePattern = regexp.MustCompile(`^[0-9A-Za-z_-]+$`)
+var providerInstanceNamePattern = regexp.MustCompile(`^[0-9A-Za-z_\p{Han}-]+$`)
 
 // ValidateProviderInstanceName checks the name accepted by provider APIs.
 func ValidateProviderInstanceName(instanceName string) error {
@@ -414,7 +414,7 @@ func ValidateProviderInstanceName(instanceName string) error {
 		return errors.New("instance name is required")
 	}
 	if !providerInstanceNamePattern.MatchString(instanceName) {
-		return errors.New("instance name may only contain digits, underscores, hyphens, and letters")
+		return errors.New("instance name may only contain digits, letters, underscores, hyphens, and Chinese characters")
 	}
 	return nil
 }
@@ -1496,6 +1496,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 			zap.L().Warn("failed to list remote models from provider",
 				zap.Error(listErr),
 			)
+			return modelVerifyResult, fmt.Errorf("failed to list models from provider: %w", listErr)
 		}
 
 		if len(modelsToVerify) == 0 {

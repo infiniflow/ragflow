@@ -31,9 +31,9 @@ type datasetPagerankUpdate struct {
 	datasetID string
 }
 
-func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
-	userID = strings.TrimSpace(userID)
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	if _, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
 		if dao.IsNotFoundErr(err) {
 			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
@@ -184,7 +184,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
-		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID, userID)
+		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID)
 		if authErr != nil {
 			txCode = code
 			return authErr
@@ -547,7 +547,7 @@ func publishDatasetSyncerTasks(taskIDs []string) {
 	}
 }
 
-func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {
+func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID string) (*entity.Knowledgebase, common.ErrorCode, error) {
 	var kb entity.Knowledgebase
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND status = ?", datasetID, string(entity.StatusValid)).
