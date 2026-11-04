@@ -3520,6 +3520,14 @@
             "url": "https://pool.linkrra.com/v1"
         },
         {
+            "name": "UberLLM",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.uberllm.dev/v1"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",
