@@ -28,15 +28,35 @@ import (
 var docExtract = deepdocoffice.OpenAndExtract
 
 type DOCParser struct {
-	textOnly bool
+	textOnly           bool
+	RemoveTOC          bool
+	RemoveHeaderFooter bool
 }
 
 func NewDOCParser() *DOCParser {
 	return &DOCParser{}
 }
 
+func NewDOCTextParser() *DOCParser {
+	return &DOCParser{textOnly: true}
+}
+
 func (p *DOCParser) String() string {
 	return "DOCParser"
+}
+
+// ConfigureFromSetup implements parserSetupConfigurer, receiving the
+// DSL "doc" family setup map.
+func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["remove_toc"].(bool); ok {
+		p.RemoveTOC = v
+	}
+	if v, ok := setup["remove_header_footer"].(bool); ok {
+		p.RemoveHeaderFooter = v
+	}
 }
 
 // ParseWithResult extracts text for the DOC family as structured JSON items.
@@ -69,6 +89,17 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		if sections := buildDOCXJSONSections(irJSON, sink); len(sections) > 0 {
 			if sink != nil && sink.err != nil {
 				return ParseResult{Err: sink.err}
+			}
+			if p.RemoveHeaderFooter {
+				hfTexts := extractDOCXHeaderFooterTexts(data)
+				sections = removeDOCXHeaderFooterSections(sections, hfTexts)
+			}
+			if p.RemoveTOC {
+				outlines := extractDOCXOutlines(irJSON)
+				sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
+			}
+			if len(sections) == 0 {
+				sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 			}
 			return ParseResult{
 				File:     map[string]any{"name": filename, "format": "doc"},
