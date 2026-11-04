@@ -672,7 +672,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	for _, entry := range disabled {
 		retractedDocIDs = append(retractedDocIDs, entry.DocID)
 	}
-	retractedDocIDs = uniqueSortedStrings(retractedDocIDs)
+	retractedDocIDs = common.DeduplicateSorted(retractedDocIDs)
 	wikiDiff, err := c.prepareWikiContributionDiff(ctx, tenant, kb, completed, retractedDocIDs)
 	if err != nil {
 		return err
@@ -1237,7 +1237,7 @@ func completedDocsWithoutNavInput(completed []BacklogEntry, inputs []nav.UpsertD
 			withoutNav = append(withoutNav, entry.DocID)
 		}
 	}
-	return uniqueSortedStrings(withoutNav)
+	return common.DeduplicateSorted(withoutNav)
 }
 
 func copyMeta(input map[string]any) map[string]any {
@@ -1794,8 +1794,8 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 		}
 		b.Description += desc
 	}
-	b.SourceDocIDs = appendUnique(b.SourceDocIDs, []string{p.DocID})
-	b.SourceChunkIDs = appendUnique(b.SourceChunkIDs, metaStringSlice(p.Meta, "source_chunk_ids"))
+	b.SourceDocIDs = common.AppendUnique(b.SourceDocIDs, []string{p.DocID})
+	b.SourceChunkIDs = common.AppendUnique(b.SourceChunkIDs, metaStringSlice(p.Meta, "source_chunk_ids"))
 	// mention_count_int: sum the per-entity mention counts (Python
 	// _struct_merge_graph_entities sums mention_count across the merged entities).
 	// Each entity product carries mention_count ≥ 1 (structure compile.go L231);
@@ -1846,22 +1846,6 @@ func structureProductDescription(content string) string {
 		}
 	}
 	return content
-}
-
-// appendUnique appends only values not already present, preserving order.
-func appendUnique(dst, values []string) []string {
-	seen := make(map[string]bool, len(dst)+len(values))
-	for _, v := range dst {
-		seen[v] = true
-	}
-	for _, v := range values {
-		if v == "" || seen[v] {
-			continue
-		}
-		seen[v] = true
-		dst = append(dst, v)
-	}
-	return dst
 }
 
 // upsertNavLocked places the batch's Tree/PageIndex summaries into the dataset
