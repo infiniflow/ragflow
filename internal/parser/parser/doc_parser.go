@@ -132,11 +132,11 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 			}
 		}
 		var sb strings.Builder
-		for _, it := range items {
-			if s := itemText(it); s != "" {
-				if sb.Len() > 0 {
-					sb.WriteString("\n")
-				}
+		for i, it := range items {
+			if i > 0 {
+				sb.WriteString("\n")
+			}
+			if s, ok := it["text"].(string); ok {
 				sb.WriteString(s)
 			}
 		}

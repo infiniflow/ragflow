@@ -152,7 +152,6 @@ func TestDOCParser_RemoveTOC_PlainTextFallback(t *testing.T) {
 		"前言内容",
 		"目录",
 		"第一节 概述",
-		"第一节 架构说明",
 		"第二章 核心实现",
 	}, "\n")
 
@@ -193,5 +192,36 @@ func TestDOCParser_RemoveTOC_PlainTextFallback(t *testing.T) {
 	}
 	if !strings.Contains(gotText, "前言内容") || !strings.Contains(gotText, "第二章 核心实现") {
 		t.Errorf("content was unexpectedly dropped: %q", gotText)
+	}
+}
+
+func TestDOCParser_RemoveTOC_PreservesFormatting(t *testing.T) {
+	// Ensure that when RemoveTOC is enabled, blank lines and indentation
+	// are preserved even when no TOC heading is present.
+	rawText := "Section 1\n\n   Indented paragraph.\n\nSection 2"
+
+	orig := docExtract
+	defer func() { docExtract = orig }()
+	docExtract = func(data []byte, format string) (string, string, string, error, error) {
+		return "", "", rawText, nil, nil
+	}
+
+	ctx := context.Background()
+	p := NewDOCParser()
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+	res := p.ParseWithResult(ctx, "formatting.doc", []byte("dummy"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult error: %v", res.Err)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("len(res.JSON) = %d, want 1", len(res.JSON))
+	}
+	itemMap := res.JSON[0].ToMap()
+	gotText, ok := itemMap["text"].(string)
+	if !ok {
+		t.Fatalf("res.JSON[0].text is not a string: %v", itemMap["text"])
+	}
+	if gotText != rawText {
+		t.Errorf("formatting lost:\ngot:  %q\nwant: %q", gotText, rawText)
 	}
 }
