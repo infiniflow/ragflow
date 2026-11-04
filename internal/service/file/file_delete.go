@@ -40,13 +40,6 @@ func (s *FileService) DeleteFiles(ctx context.Context, fileIDs []string) error {
 		if err = s.checkFileTreeAccess(ctx, file, permission.OperationDelete); err != nil {
 			return err
 		}
-	}
-
-	for _, fileID := range fileIDs {
-		file := filesByID[fileID]
-		if file.SourceType == FileSourceDataset {
-			continue
-		}
 		if file.Type == FileTypeFolder {
 			descendants, queryErr := s.fileDAO.ListDescendants(ctx, dao.DB, file.ID)
 			if queryErr != nil {
@@ -71,9 +64,17 @@ func (s *FileService) DeleteFiles(ctx context.Context, fileIDs []string) error {
 				}
 			}
 			if bound {
-				common.Warn("Retaining directory tree containing a bound dataset folder", zap.String("folder_id", file.ID))
-				continue
+				return errors.New("folder contains a dataset folder and cannot be deleted")
 			}
+		}
+	}
+
+	for _, fileID := range fileIDs {
+		file := filesByID[fileID]
+		if file.SourceType == FileSourceDataset {
+			continue
+		}
+		if file.Type == FileTypeFolder {
 			if err = s.deleteFolderRecursive(ctx, file); err != nil {
 				return fmt.Errorf("failed to delete folder: %w", err)
 			}

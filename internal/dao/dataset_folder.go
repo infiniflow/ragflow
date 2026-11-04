@@ -16,6 +16,9 @@ import (
 // ErrDatasetFolderConflict indicates that a folder cannot be associated with one dataset.
 var ErrDatasetFolderConflict = errors.New("dataset folder association is ambiguous or conflicts with existing records")
 
+// ErrDatasetFolderBindingRace signals that another transaction established the binding.
+var ErrDatasetFolderBindingRace = errors.New("dataset folder binding changed concurrently")
+
 // isUnreferencedEmptyFolder preserves bindings and history when reclaiming a folder.
 func isUnreferencedEmptyFolder(ctx context.Context, db *gorm.DB, folderID string) (bool, error) {
 	hasRows := func(q *gorm.DB) (bool, error) {
@@ -75,12 +78,14 @@ func findDatasetChild(ctx context.Context, db *gorm.DB, parentID, tenantID, name
 
 func datasetRoot(ctx context.Context, db *gorm.DB, tenantID string, create bool) (*entity.File, error) {
 	var roots []entity.File
-	if err := db.WithContext(ctx).Where("tenant_id = ? AND parent_id = id", tenantID).Limit(2).Find(&roots).Error; err != nil {
+	if err := db.WithContext(ctx).Where("tenant_id = ? AND parent_id = id", tenantID).Order("id ASC").Find(&roots).Error; err != nil {
 		return nil, err
 	}
 	var root *entity.File
-	if len(roots) > 1 {
-		return nil, ErrDatasetFolderConflict
+	for _, candidate := range roots {
+		if candidate.Type != "folder" {
+			return nil, ErrDatasetFolderConflict
+		}
 	}
 	if len(roots) == 0 {
 		if !create {
@@ -97,10 +102,20 @@ func datasetRoot(ctx context.Context, db *gorm.DB, tenantID string, create bool)
 			return nil, ErrDatasetFolderConflict
 		}
 	}
-	parent, err := findDatasetChild(ctx, db, root.ID, tenantID, DatasetFolderName)
-	if err != nil {
+	var parents []entity.File
+	if err := db.WithContext(ctx).Where("parent_id = ? AND tenant_id = ? AND LOWER(name) = LOWER(?)", root.ID, tenantID, DatasetFolderName).Order("create_time ASC, id ASC").Find(&parents).Error; err != nil {
 		return nil, err
 	}
+	for _, candidate := range parents {
+		if candidate.Type != "folder" || (candidate.SourceType != "" && candidate.SourceType != string(entity.FileSourceKnowledgebase)) {
+			return nil, ErrDatasetFolderConflict
+		}
+	}
+	var parent *entity.File
+	if len(parents) > 0 {
+		parent = &parents[0]
+	}
+
 	if parent != nil || !create {
 		return parent, nil
 	}
@@ -214,6 +229,9 @@ func bindDatasetFolder(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebas
 	if result.Error != nil {
 		return result.Error
 	}
+	if result.RowsAffected == 0 {
+		return ErrDatasetFolderBindingRace
+	}
 	if result.RowsAffected != 1 {
 		return ErrDatasetFolderConflict
 	}
@@ -265,6 +283,16 @@ func (dao *FileDAO) BindExistingDatasetFolder(ctx context.Context, db *gorm.DB, 
 
 // EnsureDatasetFolder creates or adopts a directory and saves its binding atomically.
 func (dao *FileDAO) EnsureDatasetFolder(ctx context.Context, db *gorm.DB, request *entity.Knowledgebase) (*entity.File, error) {
+	folder, err := dao.ensureDatasetFolderOnce(ctx, db, request)
+	_, inTransaction := db.Statement.ConnPool.(gorm.TxCommitter)
+	if errors.Is(err, ErrDatasetFolderBindingRace) && !inTransaction {
+		return dao.ensureDatasetFolderOnce(ctx, db, request)
+	}
+	return folder, err
+}
+
+func (dao *FileDAO) ensureDatasetFolderOnce(ctx context.Context, db *gorm.DB, request *entity.Knowledgebase) (*entity.File, error) {
+
 	var result *entity.File
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		current, folder, err := loadDatasetFolder(ctx, tx, request)
