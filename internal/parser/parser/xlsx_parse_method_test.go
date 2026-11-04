@@ -195,13 +195,15 @@ func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	}
 }
 
-// TestXLSParser_ParseMethod_NoUnsupportedError asserts the XLS
-// parser accepts all spreadsheet and dataset-level parse_methods (including
-// "deepdoc", "biff", "biff8", and non-spreadsheet methods like "PaddleOCR",
-// "MinerU", "General") by continuing with the local BIFF8 parser instead of
-// rejecting them as unsupported.
-func TestXLSParser_ParseMethod_NoUnsupportedError(t *testing.T) {
-	for _, method := range []string{"deepdoc", "DeepDOC", "excelize", "biff", "biff8", "PaddleOCR", "MinerU", "General"} {
+// TestXLSParser_ParseMethod_FallsThroughToBIFF8 asserts that every
+// non-TCADP parse_method continues with the local BIFF8 parser and
+// produces spreadsheet output from a valid .xls workbook.
+func TestXLSParser_ParseMethod_FallsThroughToBIFF8(t *testing.T) {
+	data, err := base64.StdEncoding.DecodeString(genuineBIFF8FixtureBase64)
+	if err != nil {
+		t.Fatalf("decode BIFF8 fixture: %v", err)
+	}
+	for _, method := range []string{"", "deepdoc", "DeepDOC", "excelize", "biff", "biff8", "PaddleOCR", "MinerU", "General"} {
 		t.Run(method, func(t *testing.T) {
 			p, err := NewXLSParser("")
 			if err != nil {
@@ -210,9 +212,15 @@ func TestXLSParser_ParseMethod_NoUnsupportedError(t *testing.T) {
 			p.ConfigureFromSetup(map[string]any{"parse_method": method})
 
 			ctx := t.Context()
-			res := p.ParseWithResult(ctx, "test.xls", []byte("not a real xls"))
-			if res.Err != nil && strings.Contains(res.Err.Error(), "unsupported XLS parse method") {
-				t.Fatalf("method %q must not be rejected as unsupported: %v", method, res.Err)
+			res := p.ParseWithResult(ctx, "test.xls", data)
+			if res.Err != nil {
+				t.Fatalf("method %q: ParseWithResult: %v", method, res.Err)
+			}
+			if got := res.File["format"]; got != "xls" {
+				t.Fatalf("method %q: format = %v, want xls", method, got)
+			}
+			if len(res.JSON) == 0 {
+				t.Fatalf("method %q: JSON is empty, want BIFF8 sheet items", method)
 			}
 		})
 	}
