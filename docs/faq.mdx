@@ -528,12 +528,14 @@ Use the following environment variables when MinerU is not configured directly i
 | `MINERU_APISERVER`     | URL of the MinerU API service      | _unset_                             | `MINERU_APISERVER=http://your-mineru-server:8886`                                              |
 | `MINERU_API_KEY`       | API key, when required by MinerU   | _unset_                             | `MINERU_API_KEY=your-key`                                                                       |
 | `MINERU_BACKEND`       | MinerU 3.x backend or 4.0 tier     | `pipeline`                          | `MINERU_BACKEND=pipeline\|standard\|vlm-http-client` |
+| `MINERU_TIMEOUT`       | MinerU request timeout             | `1800` (30m)                        | `MINERU_TIMEOUT=3600`                                                                           |
 
 1. Set `MINERU_APISERVER` to point RAGFlow to your MinerU API server.
 2. Set `MINERU_API_KEY` if your MinerU service requires authentication.
 3. Set `MINERU_BACKEND` to specify the backend sent with the parse request.
+4. Optionally set `MINERU_TIMEOUT` (seconds or duration string like `1h`) to bound the parse request.
 
-For a custom Parser component, the numeric `mineru_timeout_seconds` setup field controls how long RAGFlow polls for the result. Its default is 30 seconds; zero or a negative value also falls back to 30 seconds.
+For native ingestion pipeline component parsing (`dispatchMinerUPDF`), `mineru_timeout` or `mineru_timeout_seconds` in the parser setup overrides this timeout; zero or negative values fall back to the default 30 minutes. Note that the legacy `PDFParser` path (`pdf_parser_mineru.go`) continues to use `mineru_timeout_seconds` with a 30s poll interval default.
 
 :::tip NOTE
 For other environment variables supported by MinerU itself, see the [MinerU environment variable documentation](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description).

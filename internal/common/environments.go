@@ -229,6 +229,7 @@ const (
 	EnvMineruAPIKey                      = "MINERU_API_KEY"
 	EnvMineruBackend                     = "MINERU_BACKEND"
 	EnvMineruServerURL                   = "MINERU_SERVER_URL"
+	EnvMineruTimeout                     = "MINERU_TIMEOUT"
 	EnvMonkeyOCRv2ServerURL              = "MONKEYOCRV2_SERVER_URL"
 	EnvMonkeyOCRv2Timeout                = "MONKEYOCRV2_TIMEOUT"
 	EnvMonkeyOCRAPIServer                = "MONKEYOCR_APISERVER"
