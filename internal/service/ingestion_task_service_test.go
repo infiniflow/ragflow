@@ -2112,6 +2112,53 @@ func TestIngestionTaskServiceRetryAfterTerminalOpensFreshPipelineLog(t *testing.
 	}
 }
 
+func TestIngestionTaskServiceOpensRunWithDocumentPipelineVersion(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	pipelineID := "canvas-1"
+	if err := db.Create(&entity.UserCanvas{
+		ID:             pipelineID,
+		UserID:         "user-1",
+		CanvasCategory: "dataflow_canvas",
+	}).Error; err != nil {
+		t.Fatalf("insert pipeline: %v", err)
+	}
+	versionID := "ver-1"
+	if err := db.Create(&entity.Document{
+		ID:                "doc-1",
+		KbID:              "kb-1",
+		ParserID:          "naive",
+		ParserConfig:      entity.JSONMap{},
+		Suffix:            ".txt",
+		Status:            sptr("1"),
+		PipelineID:        &pipelineID,
+		PipelineVersionID: &versionID,
+	}).Error; err != nil {
+		t.Fatalf("insert versioned document: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	task, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED,
+	})
+	if err != nil {
+		t.Fatalf("CreateAndEnqueue: %v", err)
+	}
+	if task.PipelineLogID == nil {
+		t.Fatal("enqueued task has no pipeline log id")
+	}
+
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", *task.PipelineLogID).Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.PipelineVersionID == nil || *run.PipelineVersionID != versionID {
+		t.Fatalf("PipelineVersionID = %v, want %q", run.PipelineVersionID, versionID)
+	}
+}
+
 func TestIngestionTaskServiceRetryAllocatesNextRunCount(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
