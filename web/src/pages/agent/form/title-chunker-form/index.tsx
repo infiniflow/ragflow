@@ -68,6 +68,8 @@ export const FormSchema = z.object({
   groupRules: rulesSchema,
   hierarchyChunkTokenCap: z.coerce.number().int().min(128).max(8000).optional(),
   groupChunkTokenCap: z.coerce.number().int().min(128).max(8000).optional(),
+  table_context_size: z.number().int().nonnegative().optional(),
+  image_context_size: z.number().int().nonnegative().optional(),
 });
 
 export enum TitleChunkerRulesField {
@@ -254,6 +256,7 @@ function RootChunkAsHeadingItem() {
   );
 }
 
+// TitleChunkerForm also configures Manual's pinned-group variant.
 const TitleChunkerForm = ({
   node,
   onValuesChange,
@@ -375,6 +378,22 @@ const TitleChunkerForm = ({
             )}
           />
         )}
+        <SliderInputFormField
+          name="table_context_size"
+          max={256}
+          min={0}
+          integer
+          label={t('knowledgeConfiguration.tableContextWindow')}
+          tooltip={t('knowledgeConfiguration.tableContextWindowTip')}
+        />
+        <SliderInputFormField
+          name="image_context_size"
+          max={256}
+          min={0}
+          integer
+          label={t('knowledgeConfiguration.imageContextWindow')}
+          tooltip={t('knowledgeConfiguration.imageContextWindowTip')}
+        />
         <RAGFlowFormItem
           name={'hierarchyHierarchy'}
           label={''}

@@ -47,32 +47,12 @@ type TestDBConnectionRequest struct {
 	Password string      `json:"password"`
 }
 
-// AllowAnyHostForTest is a test-only override that disables the SSRF guard
-// in AssertHostIsSafe. Production code must leave it false. Operators allow
-// private database hosts with ALLOW_ANY_HOST; that flag does not relax URL
-// or Invoke checks.
-var AllowAnyHostForTest = false
-
-// allowAnyHost reports the in-memory test override. AssertHostIsSafe checks
-// ALLOW_ANY_HOST separately so URL and Invoke guards stay strict.
-func allowAnyHost() bool {
-	return AllowAnyHostForTest
-}
-
-// AssertHostIsSafe returns the first resolved public IP for host, or an
-// error when the host resolves to any non-public address. The check
-// mirrors the SSRF guard in the Python implementation so external
-// service calls cannot pivot to internal network ranges.
+// AssertHostIsSafe resolves host and returns the first validated IP.
+// Non-public addresses are rejected unless ALLOW_ANY_HOST is enabled.
 func AssertHostIsSafe(host string) (string, error) {
 	host = strings.TrimSpace(host)
 	if host == "" {
 		return "", errors.New("host must not be empty")
-	}
-	if allowAnyHost() {
-		zap.L().Warn("SSRF guard bypass enabled via AllowAnyHostForTest; allowing host without validation",
-			zap.String("host", host),
-		)
-		return host, nil
 	}
 	if pinned, enabled, err := common.PinConfiguredPrivateHost(host); enabled {
 		return pinned, err

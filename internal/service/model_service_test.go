@@ -314,9 +314,7 @@ func TestVerifyProviderModelNamesUnverifiableTypes(t *testing.T) {
 // a real driver. The stand-in used above accepts any request — including one the
 // endpoint would refuse — so it cannot catch verification asking for nothing.
 func TestVerifyProviderModelAsksSystemOneDecisionEndpoint(t *testing.T) {
-	prev := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 
 	asked := false
 	var request struct {
