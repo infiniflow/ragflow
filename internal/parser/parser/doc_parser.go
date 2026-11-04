@@ -91,6 +91,10 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 				return ParseResult{Err: sink.err}
 			}
 			if p.RemoveHeaderFooter {
+				// extractDOCXHeaderFooterTexts operates best-effort: for DOCX files
+				// misnamed with a .doc extension it extracts header/footer XML parts.
+				// For native OLE2 .doc binaries without a ZIP structure, it returns
+				// an empty map and preserves sections safely.
 				hfTexts := extractDOCXHeaderFooterTexts(data)
 				sections = removeDOCXHeaderFooterSections(sections, hfTexts)
 			}
@@ -113,6 +117,30 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	if strings.TrimSpace(text) == "" {
 		return ParseResult{Err: fmt.Errorf("doc extract: no text content")}
+	}
+	if p.RemoveTOC {
+		lines := strings.Split(text, "\n")
+		items := make([]map[string]any, 0, len(lines))
+		for _, line := range lines {
+			items = append(items, map[string]any{"text": line, "doc_type_kwd": "text"})
+		}
+		items = removeContentsTable(items, isEnglishItems(items))
+		if len(items) == 0 {
+			return ParseResult{
+				File: map[string]any{"name": filename, "format": "doc"},
+				JSON: []DocItem{NewTextJSONItem("")},
+			}
+		}
+		var sb strings.Builder
+		for _, it := range items {
+			if s := itemText(it); s != "" {
+				if sb.Len() > 0 {
+					sb.WriteString("\n")
+				}
+				sb.WriteString(s)
+			}
+		}
+		text = sb.String()
 	}
 	return ParseResult{
 		File: map[string]any{"name": filename, "format": "doc"},

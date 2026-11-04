@@ -145,3 +145,53 @@ func TestDOCParser_RemoveHeaderFooter_DoesNotError(t *testing.T) {
 		t.Fatalf("len(res.JSON) = %d, want 1", len(res.JSON))
 	}
 }
+
+func TestDOCParser_RemoveTOC_PlainTextFallback(t *testing.T) {
+	// When irJSON is empty, the parser falls back to plainText / mdText.
+	rawText := strings.Join([]string{
+		"前言内容",
+		"目录",
+		"第一节 概述",
+		"第一节 架构说明",
+		"第二章 核心实现",
+	}, "\n")
+
+	orig := docExtract
+	defer func() { docExtract = orig }()
+	docExtract = func(data []byte, format string) (string, string, string, error, error) {
+		return "", "", rawText, nil, nil
+	}
+
+	ctx := context.Background()
+
+	// 1. With RemoveTOC = false, raw text is returned verbatim.
+	pDisabled := NewDOCParser()
+	resDisabled := pDisabled.ParseWithResult(ctx, "fallback.doc", []byte("dummy"))
+	if resDisabled.Err != nil {
+		t.Fatalf("ParseWithResult disabled error: %v", resDisabled.Err)
+	}
+	if len(resDisabled.JSON) != 1 {
+		t.Fatalf("len(resDisabled.JSON) = %d, want 1", len(resDisabled.JSON))
+	}
+	if got := itemText(resDisabled.JSON[0].ToMap()); got != rawText {
+		t.Errorf("got %q, want %q", got, rawText)
+	}
+
+	// 2. With RemoveTOC = true, removeContentsTable filters out TOC lines.
+	pEnabled := NewDOCParser()
+	pEnabled.ConfigureFromSetup(map[string]any{"remove_toc": true})
+	resEnabled := pEnabled.ParseWithResult(ctx, "fallback.doc", []byte("dummy"))
+	if resEnabled.Err != nil {
+		t.Fatalf("ParseWithResult enabled error: %v", resEnabled.Err)
+	}
+	if len(resEnabled.JSON) != 1 {
+		t.Fatalf("len(resEnabled.JSON) = %d, want 1", len(resEnabled.JSON))
+	}
+	gotText := itemText(resEnabled.JSON[0].ToMap())
+	if strings.Contains(gotText, "目录") || strings.Contains(gotText, "第一节 概述") {
+		t.Errorf("TOC lines were not removed in fallback text: %q", gotText)
+	}
+	if !strings.Contains(gotText, "前言内容") || !strings.Contains(gotText, "第二章 核心实现") {
+		t.Errorf("content was unexpectedly dropped: %q", gotText)
+	}
+}
