@@ -23,6 +23,7 @@ import (
 	"image/png"
 	"testing"
 
+	imageparser "ragflow/internal/deepdoc/parser/image"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
@@ -111,5 +112,30 @@ func TestMaybeDispatchImageEmitsTableItem(t *testing.T) {
 	}
 	if len(result.Warnings) != 0 {
 		t.Fatalf("warnings = %v", result.Warnings)
+	}
+}
+
+func TestImageBlockItemsEmitsFigureItem(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
+	items := imageBlockItems([]imageparser.Block{{
+		Kind:  imageparser.BlockImage,
+		Text:  "chart",
+		Image: img,
+	}})
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want one figure item", len(items))
+	}
+	item := items[0].ToMap()
+	if item["doc_type_kwd"] != "image" {
+		t.Fatalf("doc_type_kwd = %v, want image", item["doc_type_kwd"])
+	}
+	if item["text"] != "chart" {
+		t.Fatalf("text = %v, want chart", item["text"])
+	}
+	if item["layout"] != "figure" {
+		t.Fatalf("layout = %v, want figure", item["layout"])
+	}
+	if item["image"] == nil || item["image"] == "" {
+		t.Fatal("figure item lost its crop preview")
 	}
 }

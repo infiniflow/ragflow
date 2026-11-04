@@ -162,7 +162,7 @@ func TestParseFindsTable(t *testing.T) {
 	if got := table.Grid[1][1].Text; got != "42" {
 		t.Errorf("cell[1][1] = %q", got)
 	}
-	if blocks[0].TableImage == nil {
+	if blocks[0].Image == nil {
 		t.Error("table preview is nil")
 	}
 }
@@ -263,8 +263,71 @@ func TestParseKeepsSingleColumnTable(t *testing.T) {
 	if table.Grid[0][0].Text != "Name" || table.Grid[1][0].Text != "A" {
 		t.Fatalf("table grid = %+v", table.Grid)
 	}
-	if blocks[0].TableImage == nil {
+	if blocks[0].Image == nil {
 		t.Error("table preview is nil")
+	}
+}
+
+func TestParseEmitsFigureImage(t *testing.T) {
+	img, boxes, texts := newTestImage(240, 140, []testCell{
+		{image.Rect(20, 20, 60, 40), "Chart", color.RGBA{R: 10, G: 20, B: 30, A: 255}},
+	})
+	analyzer := &testAnalyzer{
+		boxes:   boxes,
+		texts:   texts,
+		regions: []deepdoctype.DLARegion{{X0: 0, Y0: 0, X1: 240, Y1: 120, Label: "figure", Confidence: 0.9}},
+	}
+
+	blocks, err := Parse(t.Context(), img, analyzer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(blocks) != 1 || blocks[0].Kind != BlockImage {
+		t.Fatalf("blocks = %+v, want one image block", blocks)
+	}
+	if blocks[0].Image == nil {
+		t.Fatal("figure crop is nil")
+	}
+}
+
+func TestParseTableAndFigure(t *testing.T) {
+	img, boxes, texts := newTestImage(300, 140, []testCell{
+		{image.Rect(20, 20, 60, 40), "Name", color.RGBA{R: 255, A: 255}},
+		{image.Rect(20, 80, 50, 100), "A", color.RGBA{B: 255, A: 255}},
+		{image.Rect(220, 20, 260, 40), "Chart", color.RGBA{R: 10, G: 20, B: 30, A: 255}},
+	})
+	analyzer := &testAnalyzer{
+		boxes: boxes,
+		texts: texts,
+		regions: []deepdoctype.DLARegion{
+			{X0: 0, Y0: 0, X1: 180, Y1: 120, Label: "table", Confidence: 0.9},
+			{X0: 200, Y0: 0, X1: 300, Y1: 120, Label: "figure", Confidence: 0.9},
+		},
+		cells: []deepdoctype.TSRCell{
+			{X0: 0, Y0: 0, X1: 180, Y1: 120, Label: "table"},
+			{X0: 10, Y0: 10, X1: 170, Y1: 50, Label: "table row"},
+			{X0: 10, Y0: 60, X1: 170, Y1: 100, Label: "table row"},
+		},
+	}
+
+	blocks, err := Parse(t.Context(), img, analyzer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tables, images int
+	for _, block := range blocks {
+		switch block.Kind {
+		case BlockTable:
+			tables++
+		case BlockImage:
+			images++
+			if block.Image == nil {
+				t.Fatal("figure crop is nil")
+			}
+		}
+	}
+	if tables != 1 || images != 1 {
+		t.Fatalf("blocks = %+v, want one table and one image", blocks)
 	}
 }
 

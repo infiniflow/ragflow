@@ -79,10 +79,10 @@ func maybeDispatchVideo(
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
-// maybeDispatchImage extracts local or selected-model OCR (native text for SVG),
-// emits structured table items when the image contains a table, preserves the
-// original image when it still carries indexable text, and optionally appends
-// global vision enhancement.
+// maybeDispatchImage extracts local or selected-model OCR (native text for SVG)
+// and emits structured table/text/figure items when the page pipeline finds
+// them. Without a table it keeps the single whole-image item; with a table it
+// emits text and table/figure crops instead, matching PDF page output.
 func maybeDispatchImage(
 	ctx context.Context,
 	p parser.ParseResultProducer,
@@ -259,7 +259,7 @@ func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
 func imageBlockText(blocks []imageparser.Block) string {
 	texts := make([]string, 0, len(blocks))
 	for _, block := range blocks {
-		if block.Kind != imageparser.BlockText {
+		if block.Kind != imageparser.BlockText && block.Kind != imageparser.BlockImage {
 			continue
 		}
 		if text := strings.TrimSpace(block.Text); text != "" {
@@ -292,16 +292,24 @@ func imageBlockItems(blocks []imageparser.Block) []parser.DocItem {
 				continue
 			}
 			extra := map[string]any{"layout": "table"}
-			if uri := encodeTableImage(block.TableImage); uri != "" {
+			if uri := encodeMediaImage(block.Image); uri != "" {
 				extra["image"] = uri
 			}
 			items = append(items, parser.TableItem{Table: block.Table, Extra: extra})
+		case imageparser.BlockImage:
+			if uri := encodeMediaImage(block.Image); uri != "" {
+				items = append(items, parser.ImageItem{
+					Text:  block.Text,
+					Image: uri,
+					Extra: map[string]any{"layout": "figure"},
+				})
+			}
 		}
 	}
 	return items
 }
 
-func encodeTableImage(img image.Image) string {
+func encodeMediaImage(img image.Image) string {
 	if img == nil {
 		return ""
 	}

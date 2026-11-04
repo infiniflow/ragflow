@@ -40,15 +40,16 @@ type BlockKind uint8
 const (
 	BlockText BlockKind = iota
 	BlockTable
+	BlockImage
 )
 
-// Block is one text or table block. TableImage is a crop of the table region
+// Block is one text, table, or image block. Image is the table or figure crop
 // for the chunk preview; it is nil for text blocks.
 type Block struct {
-	Kind       BlockKind
-	Text       string
-	Table      *entity.TableData
-	TableImage image.Image
+	Kind  BlockKind
+	Text  string
+	Table *entity.TableData
+	Image image.Image
 }
 
 // pageEngine adapts a decoded image to the PDFEngine interface. ExtractChars is
@@ -107,18 +108,19 @@ func Parse(ctx context.Context, img image.Image, analyzer deepdoctype.DocAnalyze
 }
 
 // blocksFromSections converts the page pipeline's sections into image blocks.
-// Table sections carry table HTML; figure sections keep their text so no OCR
-// content is dropped.
+// Table sections carry table HTML, figure sections carry a crop region, and
+// text sections keep their OCR text.
 func blocksFromSections(img image.Image, sections []deepdoctype.Section) []Block {
 	blocks := make([]Block, 0, len(sections))
 	for _, section := range sections {
-		if section.LayoutType == deepdoctype.LayoutTypeTable {
+		switch section.LayoutType {
+		case deepdoctype.LayoutTypeTable:
 			table, err := tableutil.ParseTableHTML(section.Text)
 			if err == nil && table != nil && len(table.Grid) > 0 {
 				blocks = append(blocks, Block{
-					Kind:       BlockTable,
-					Table:      table,
-					TableImage: cropSection(img, section.Positions),
+					Kind:  BlockTable,
+					Table: table,
+					Image: cropSection(img, section.Positions),
 				})
 				continue
 			}
@@ -129,7 +131,18 @@ func blocksFromSections(img image.Image, sections []deepdoctype.Section) []Block
 			if strings.Contains(lower, "<table") || strings.Contains(lower, "<tr") {
 				continue
 			}
+
+		case deepdoctype.LayoutTypeFigure:
+			if crop := cropSection(img, section.Positions); crop != nil {
+				blocks = append(blocks, Block{
+					Kind:  BlockImage,
+					Text:  strings.TrimSpace(section.Text),
+					Image: crop,
+				})
+				continue
+			}
 		}
+
 		if text := strings.TrimSpace(section.Text); text != "" {
 			blocks = append(blocks, Block{Kind: BlockText, Text: text})
 		}
