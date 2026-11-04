@@ -163,6 +163,18 @@ func (dao *UserCanvasVersionDAO) ListByCanvasID(ctx context.Context, db *gorm.DB
 	return vs, err
 }
 
+// ListMetadataByCanvasIDs loads version metadata without reading DSL blobs.
+func (dao *UserCanvasVersionDAO) ListMetadataByCanvasIDs(ctx context.Context, db *gorm.DB, canvasIDs []string) ([]entity.UserCanvasVersion, error) {
+	if len(canvasIDs) == 0 {
+		return []entity.UserCanvasVersion{}, nil
+	}
+	var versions []entity.UserCanvasVersion
+	err := db.WithContext(ctx).Select("id", "user_canvas_id", "title", "alias").
+		Where("user_canvas_id IN ?", canvasIDs).
+		Order("create_time DESC").Order("id ASC").Find(&versions).Error
+	return versions, err
+}
+
 // GetLatest returns the most recently created version of canvasID, or
 // ErrUserCanvasVersionNotFound when the canvas has never been published.
 func (dao *UserCanvasVersionDAO) GetLatest(ctx context.Context, db *gorm.DB, canvasID string) (*entity.UserCanvasVersion, error) {

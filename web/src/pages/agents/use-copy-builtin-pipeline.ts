@@ -1,16 +1,18 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import message from '@/components/ui/message';
 import { AgentCategory } from '@/constants/agent';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { PipelineVersionKeys } from '@/hooks/use-pipeline-version-request';
 import agentService from '@/services/agent-service';
 import i18n from '@/locales/config';
 
 // useCopyBuiltinPipeline turns a read-only built-in pipeline into a user-owned
 // dataflow canvas: it fetches the built-in DSL via GET /api/v1/pipelines/:id,
 // creates a new canvas with that DSL, and opens it for editing. The agents
-// list refetches on return (gcTime: 0), so no list invalidation is needed.
+// list refetches on return; the metadata catalog is invalidated on creation.
 export function useCopyBuiltinPipeline() {
   const { navigateToAgent } = useNavigatePage();
+  const queryClient = useQueryClient();
   const { mutateAsync, isPending } = useMutation({
     mutationFn: async ({ id, title }: { id: string; title: string }) => {
       try {
@@ -33,6 +35,9 @@ export function useCopyBuiltinPipeline() {
         });
 
         if (created?.code === 0) {
+          queryClient.invalidateQueries({
+            queryKey: PipelineVersionKeys.catalog(),
+          });
           message.success(i18n.t('message.created'));
           navigateToAgent(created.data.id, AgentCategory.DataflowCanvas)();
           return created;
