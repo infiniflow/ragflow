@@ -17,12 +17,19 @@
 import CopyToClipboard from '@/components/copy-to-clipboard';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { Modal } from '@/components/ui/modal/modal';
+import { Spin } from '@/components/ui/spin';
 import { MessageType, SharedFrom } from '@/constants/chat';
 import { useFetchExternalAgentInputs } from '@/hooks/use-agent-request';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
+import { IMessage } from '@/interfaces/database/chat';
 import i18n, { changeLanguageAsync } from '@/locales/config';
+import DebugContent from '@/pages/agent/debug-content';
+import { buildBeginInputListFromObject } from '@/pages/agent/form/begin-form/utils';
+import { useAwaitComponentData } from '@/pages/agent/hooks/use-chat-logic';
 import { useSendNextSharedMessage } from '@/pages/agent/hooks/use-send-shared-message';
 import { removeThinkSection } from '@/utils/chat';
+import isEmpty from 'lodash/isEmpty';
 import { MessageCircle, Minimize2, Send, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -106,6 +113,65 @@ const normalizeWidgetFooterLink = (value: string | null) => {
 const PROLOGUE_MESSAGE_ID = 'prologue';
 
 /**
+ * How long a streaming answer may go without a content update before the
+ * typing indicator reappears (the canvas is working between components,
+ * e.g. the LLM thinking after a Message component emitted its template).
+ */
+const StreamStallTimeoutMs = 1000;
+
+/**
+ * The chatbot flow has no form-submit path (only agent canvases pause on
+ * "Await response" nodes), so the await hook gets a noop there.
+ */
+const noopSendFormMessage = () => {};
+
+interface AwaitInteractionProps {
+  message: IMessage;
+  isActive: boolean;
+  sendLoading: boolean;
+  buildInputList: ReturnType<typeof useAwaitComponentData>['buildInputList'];
+  handleOk: ReturnType<typeof useAwaitComponentData>['handleOk'];
+}
+
+/**
+ * Renders the agent's "Await response" (UserFillUp) interaction, mirroring
+ * web/src/pages/agent/share: the active (latest) await message shows the
+ * input form; resolved ones keep the tips as conversation history.
+ */
+const AwaitInteraction = ({
+  message,
+  isActive,
+  sendLoading,
+  buildInputList,
+  handleOk,
+}: AwaitInteractionProps) => {
+  const { t } = useTranslation();
+
+  if (isActive) {
+    return (
+      <DebugContent
+        parameters={buildInputList(message)}
+        message={message}
+        ok={handleOk(message)}
+        isNext={false}
+        loading={sendLoading}
+        btnText={t('common.submit')}
+      />
+    );
+  }
+
+  if (message?.data?.tips) {
+    return (
+      <p className="text-sm leading-relaxed whitespace-pre-wrap">
+        {message.data.tips}
+      </p>
+    );
+  }
+
+  return null;
+};
+
+/**
  * Renders the embeddable floating chat widget and applies URL-driven widget settings.
  */
 const FloatingChatWidget = () => {
@@ -173,12 +239,53 @@ const FloatingChatWidget = () => {
   const findReferenceByMessageId = (hookResult as any).findReferenceByMessageId;
   // Only the agent flow exposes these. The chat flow receives its prologue
   // through the completions handshake instead, so both stay optional here.
-  const { addNewestOneAnswer, isTaskMode } = hookResult as Partial<
+  const {
+    addNewestOneAnswer,
+    isTaskMode,
+    sendFormMessage,
+    inputsData,
+    ok: submitBeginParams,
+  } = hookResult as Partial<
     Pick<
       ReturnType<typeof useSendNextSharedMessage>,
-      'addNewestOneAnswer' | 'isTaskMode'
+      | 'addNewestOneAnswer'
+      | 'isTaskMode'
+      | 'sendFormMessage'
+      | 'inputsData'
+      | 'ok'
     >
   >;
+
+  // An agent canvas pausing on an "Await response" node surfaces its form
+  // spec on the latest assistant message's `data.inputs`; isWaiting stays
+  // true until the user submits it (sendFormMessage resumes the run).
+  const { buildInputList, handleOk, isWaiting } = useAwaitComponentData({
+    derivedMessages: derivedMessages ?? [],
+    sendFormMessage: sendFormMessage ?? noopSendFormMessage,
+  });
+  const hasAwaitInputs = useCallback(
+    (message: IMessage) => buildInputList(message).length > 0,
+    [buildInputList],
+  );
+
+  // An agent's Begin component inputs reach the completions endpoint only
+  // after `ok` stores them in the send hook, so collect them up front the
+  // same way pages/agent/share does: a forced parameter dialog shown while
+  // the inputs are known but not yet submitted. Only the modes rendering
+  // the chat UI show it — in button/master mode the sibling window-mode
+  // iframe runs its own copy.
+  const beginInputs = inputsData?.inputs;
+  const hasBeginInputs = isFromAgent && !isEmpty(beginInputs);
+  const canShowBeginDialog = mode === 'window' || (mode === 'full' && isOpen);
+  const [beginParamsSubmitted, setBeginParamsSubmitted] = useState(false);
+
+  const handleSubmitBeginParams = useCallback(
+    (params: any[]) => {
+      submitBeginParams?.(params);
+      setBeginParamsSubmitted(true);
+    },
+    [submitBeginParams],
+  );
 
   // Sync our local input with the hook's value when needed
   useEffect(() => {
@@ -187,7 +294,7 @@ const FloatingChatWidget = () => {
     }
   }, [hookValue, inputValue]);
 
-  const { data } = (
+  const { data, loading: infoLoading } = (
     isFromAgent ? useFetchExternalAgentInputs : useFetchExternalChatInfo
   )();
 
@@ -473,8 +580,60 @@ const FloatingChatWidget = () => {
     setIsMinimized(true);
   }, []);
 
+  // Initial loading covers the first external-info fetch and the chatbot
+  // session handshake: no messages exist yet, so a centered spinner (same
+  // pattern as the chat list page) replaces the empty message area and the
+  // input stays disabled — this also closes the race where a fast message
+  // goes out before the Begin-parameter dialog appears.
+  const isInitialLoading =
+    (infoLoading || sendLoading) && (displayMessages?.length ?? 0) === 0;
+
+  // Waiting-for-reply indicator, mirroring the "..." bubble of the agent
+  // debug chat: up from the moment the question goes out until the first
+  // assistant content arrives. In non-streaming mode the in-progress bubble
+  // is filtered out of displayMessages, so it stays up for the whole round
+  // trip; in streaming mode it covers the pre-first-frame gap and, via the
+  // stall detection below, mid-stream pauses between canvas components.
+  const lastDisplayMessage = displayMessages?.at(-1);
+  const latestStreamContent = lastDisplayMessage?.content;
+
+  // A streaming answer whose content stops growing past the timeout means
+  // the canvas is working without emitting (e.g. the LLM thinking after a
+  // Message component echoed the begin variables). The timer resets on
+  // every token, so steady streaming never triggers it; comparing the
+  // captured content instead of resetting state keeps the effect free of
+  // synchronous setState.
+  const [stalledStreamContent, setStalledStreamContent] = useState<
+    string | undefined
+  >();
+
+  useEffect(() => {
+    if (!sendLoading) {
+      return;
+    }
+    const stalledContent = latestStreamContent;
+    const timer = setTimeout(
+      () => setStalledStreamContent(stalledContent),
+      StreamStallTimeoutMs,
+    );
+    return () => clearTimeout(timer);
+  }, [sendLoading, latestStreamContent]);
+
+  const isStreamStalled =
+    sendLoading &&
+    stalledStreamContent !== undefined &&
+    stalledStreamContent === latestStreamContent;
+
+  const isAwaitingReply =
+    sendLoading &&
+    !isInitialLoading &&
+    (!enableStreaming ||
+      lastDisplayMessage?.role === MessageType.User ||
+      isStreamStalled);
+
   const handleSendMessage = useCallback(() => {
-    if (!inputValue.trim() || sendLoading) return;
+    if (!inputValue.trim() || sendLoading || isWaiting || isInitialLoading)
+      return;
 
     // Update the hook's internal state first
     const syntheticEvent = {
@@ -491,7 +650,14 @@ const FloatingChatWidget = () => {
       // Clear our local input after sending
       setInputValue('');
     }, 50);
-  }, [inputValue, sendLoading, handleInputChange, handlePressEnter]);
+  }, [
+    inputValue,
+    sendLoading,
+    isWaiting,
+    isInitialLoading,
+    handleInputChange,
+    handlePressEnter,
+  ]);
 
   const handleKeyPress = useCallback(
     (e: React.KeyboardEvent) => {
@@ -502,6 +668,94 @@ const FloatingChatWidget = () => {
     },
     [handleSendMessage],
   );
+
+  // Assistant bubble body shared by the window and full modes. Messages
+  // carrying an await-form spec render the AwaitInteraction instead of the
+  // markdown body — their content is empty by design (the canvas paused
+  // before producing an answer), which the markdown view would otherwise
+  // misrender as a permanent "Searching..." placeholder.
+  const renderAssistantMessageContent = useCallback(
+    (message: IMessage, index: number) => {
+      if (hasAwaitInputs(message)) {
+        return (
+          <AwaitInteraction
+            message={message}
+            isActive={index === displayMessages.length - 1}
+            sendLoading={sendLoading}
+            buildInputList={buildInputList}
+            handleOk={handleOk}
+          />
+        );
+      }
+
+      return (
+        <>
+          <FloatingChatWidgetMarkdown
+            loading={
+              enableStreaming &&
+              sendLoading &&
+              index === displayMessages.length - 1
+            }
+            content={message.content}
+            reference={
+              findReferenceByMessageId?.(message.id) ||
+              message.reference || {
+                doc_aggs: [],
+                chunks: [],
+                total: 0,
+              }
+            }
+            clickDocumentButton={clickDocumentButton}
+          />
+          <div className="flex justify-end" role="toolbar">
+            <CopyToClipboard
+              text={removeThinkSection(message.content)}
+              className="border-0"
+              size="icon-xs"
+            />
+          </div>
+        </>
+      );
+    },
+    [
+      buildInputList,
+      clickDocumentButton,
+      displayMessages.length,
+      enableStreaming,
+      findReferenceByMessageId,
+      handleOk,
+      hasAwaitInputs,
+      sendLoading,
+    ],
+  );
+
+  // Begin-parameter dialog shared by the window and full modes. Non-closable
+  // like the share page: chatting without these inputs would send empty
+  // Begin variables for the whole conversation. The width follows the small
+  // widget iframe instead of the modal's 700px default.
+  const beginParamsDialog = hasBeginInputs &&
+    canShowBeginDialog &&
+    !beginParamsSubmitted &&
+    submitBeginParams && (
+      <Modal
+        open
+        title={t('flow.beginInput')}
+        closable={false}
+        showfooter={false}
+        maskClosable={false}
+        size="small"
+        className="w-[calc(100vw-2rem)]"
+      >
+        <div className="mb-4">
+          <DebugContent
+            parameters={buildBeginInputListFromObject(beginInputs ?? {})}
+            ok={handleSubmitBeginParams}
+            isNext={false}
+            btnText={t('common.submit')}
+          />
+        </div>
+      </Modal>
+    );
 
   if (!conversationId) {
     return (
@@ -651,13 +905,23 @@ const FloatingChatWidget = () => {
                 }
               }}
             >
+              {isInitialLoading && (
+                <div className="flex h-full items-center justify-center">
+                  <Spin size="large" />
+                </div>
+              )}
               {displayMessages?.map((message, index) => (
                 <div
                   key={index}
                   className={`flex ${message.role === MessageType.User ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[280px] px-4 py-2 rounded-2xl ${
+                    className={`${
+                      message.role === MessageType.Assistant &&
+                      hasAwaitInputs(message)
+                        ? 'w-full'
+                        : 'max-w-[280px]'
+                    } px-4 py-2 rounded-2xl ${
                       message.role === MessageType.User
                         ? 'text-white rounded-br-md'
                         : 'rounded-bl-md'
@@ -677,30 +941,7 @@ const FloatingChatWidget = () => {
                       </p>
                     ) : (
                       <div className="space-y-2">
-                        <FloatingChatWidgetMarkdown
-                          loading={
-                            enableStreaming &&
-                            sendLoading &&
-                            index === displayMessages.length - 1
-                          }
-                          content={message.content}
-                          reference={
-                            findReferenceByMessageId?.(message.id) ||
-                            message.reference || {
-                              doc_aggs: [],
-                              chunks: [],
-                              total: 0,
-                            }
-                          }
-                          clickDocumentButton={clickDocumentButton}
-                        />
-                        <div className="flex justify-end" role="toolbar">
-                          <CopyToClipboard
-                            text={removeThinkSection(message.content)}
-                            className="border-0"
-                            size="icon-xs"
-                          />
-                        </div>
+                        {renderAssistantMessageContent(message, index)}
                       </div>
                     )}
                   </div>
@@ -708,7 +949,7 @@ const FloatingChatWidget = () => {
               ))}
 
               {/* Clean Typing Indicator */}
-              {sendLoading && !enableStreaming && (
+              {isAwaitingReply && (
                 <div className="flex justify-start pl-4">
                   <div className="flex space-x-1">
                     <div
@@ -755,13 +996,20 @@ const FloatingChatWidget = () => {
                     rows={1}
                     className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
                     style={inputStyle}
-                    disabled={hasError || sendLoading}
+                    disabled={
+                      hasError || sendLoading || isWaiting || isInitialLoading
+                    }
                   />
                 </div>
                 <button
                   type="button"
                   onClick={handleSendMessage}
-                  disabled={!inputValue.trim() || sendLoading}
+                  disabled={
+                    !inputValue.trim() ||
+                    sendLoading ||
+                    isWaiting ||
+                    isInitialLoading
+                  }
                   className="p-3 text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   style={{ backgroundColor: widgetAccentColor }}
                 >
@@ -772,6 +1020,7 @@ const FloatingChatWidget = () => {
             </div>
           </div>
         </div>
+        {beginParamsDialog}
         {visible && (
           <PdfSheet
             visible={visible}
@@ -867,13 +1116,23 @@ const FloatingChatWidget = () => {
                   }
                 }}
               >
+                {isInitialLoading && (
+                  <div className="flex h-full items-center justify-center">
+                    <Spin size="large" />
+                  </div>
+                )}
                 {displayMessages?.map((message, index) => (
                   <div
                     key={index}
                     className={`flex ${message.role === MessageType.User ? 'justify-end' : 'justify-start'}`}
                   >
                     <div
-                      className={`max-w-[280px] px-4 py-2 rounded-2xl ${
+                      className={`${
+                        message.role === MessageType.Assistant &&
+                        hasAwaitInputs(message)
+                          ? 'w-full'
+                          : 'max-w-[280px]'
+                      } px-4 py-2 rounded-2xl ${
                         message.role === MessageType.User
                           ? 'text-white rounded-br-md'
                           : 'rounded-bl-md'
@@ -893,30 +1152,7 @@ const FloatingChatWidget = () => {
                         </p>
                       ) : (
                         <div className="space-y-2">
-                          <FloatingChatWidgetMarkdown
-                            loading={
-                              enableStreaming &&
-                              sendLoading &&
-                              index === displayMessages.length - 1
-                            }
-                            content={message.content}
-                            reference={
-                              findReferenceByMessageId?.(message.id) ||
-                              message.reference || {
-                                doc_aggs: [],
-                                chunks: [],
-                                total: 0,
-                              }
-                            }
-                            clickDocumentButton={clickDocumentButton}
-                          />
-                          <div className="flex justify-end" role="toolbar">
-                            <CopyToClipboard
-                              text={removeThinkSection(message.content)}
-                              className="border-0"
-                              size="icon-xs"
-                            />
-                          </div>
+                          {renderAssistantMessageContent(message, index)}
                         </div>
                       )}
                     </div>
@@ -924,7 +1160,7 @@ const FloatingChatWidget = () => {
                 ))}
 
                 {/* Typing Indicator */}
-                {sendLoading && (
+                {isAwaitingReply && (
                   <div className="flex justify-start">
                     <div className="bg-gray-100 rounded-2xl rounded-bl-md px-4 py-3">
                       <div className="flex space-x-1">
@@ -962,13 +1198,20 @@ const FloatingChatWidget = () => {
                       rows={1}
                       className="w-full resize-none border border-gray-300 rounded-2xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:border-transparent"
                       style={inputStyle}
-                      disabled={hasError || sendLoading}
+                      disabled={
+                        hasError || sendLoading || isWaiting || isInitialLoading
+                      }
                     />
                   </div>
                   <button
                     type="button"
                     onClick={handleSendMessage}
-                    disabled={!inputValue.trim() || sendLoading}
+                    disabled={
+                      !inputValue.trim() ||
+                      sendLoading ||
+                      isWaiting ||
+                      isInitialLoading
+                    }
                     className="p-3 text-white rounded-full disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     style={{ backgroundColor: widgetAccentColor }}
                   >
@@ -1006,6 +1249,7 @@ const FloatingChatWidget = () => {
           </div>
         )}
       </div>
+      {beginParamsDialog}
       <PdfSheet
         visible={visible}
         hideModal={hideModal}

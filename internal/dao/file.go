@@ -221,6 +221,7 @@ func (dao *FileDAO) GetRootFolder(ctx context.Context, db *gorm.DB, tenantID str
 	file = entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
+		UserID:    tenantID,
 		TenantID:  tenantID,
 		CreatedBy: tenantID,
 		Name:      "/",
@@ -323,6 +324,9 @@ func (dao *FileDAO) GetAllParentFolders(ctx context.Context, db *gorm.DB, startI
 
 // Create creates a new file
 func (dao *FileDAO) Create(ctx context.Context, db *gorm.DB, file *entity.File) error {
+	if file.UserID == "" {
+		file.UserID = file.CreatedBy
+	}
 	return db.WithContext(ctx).Create(file).Error
 }
 
@@ -406,6 +410,7 @@ func (dao *FileDAO) CreateFolder(ctx context.Context, db *gorm.DB, parentID, ten
 	file := &entity.File{
 		ID:         common.GenerateToken(),
 		ParentID:   parentID,
+		UserID:     createdBy,
 		TenantID:   tenantID,
 		CreatedBy:  createdBy,
 		Name:       name,
@@ -421,6 +426,9 @@ func (dao *FileDAO) CreateFolder(ctx context.Context, db *gorm.DB, parentID, ten
 
 // Insert inserts a new file record
 func (dao *FileDAO) Insert(ctx context.Context, db *gorm.DB, file *entity.File) error {
+	if file.UserID == "" {
+		file.UserID = file.CreatedBy
+	}
 	return db.WithContext(ctx).Create(file).Error
 }
 
@@ -575,6 +583,7 @@ func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   datasetFolderID,
+		UserID:     tenantID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
 		Name:       docName,

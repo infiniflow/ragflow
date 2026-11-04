@@ -308,6 +308,7 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 
 	connector := &entity.Connector{
 		ID:          common.GenerateUUID(),
+		UserID:      userID,
 		TenantID:    tenantID,
 		Name:        req.Name,
 		Source:      req.Source,

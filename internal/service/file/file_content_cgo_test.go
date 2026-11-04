@@ -82,6 +82,25 @@ func TestParseFileContent_DOCXReadsJSONItems(t *testing.T) {
 	}
 }
 
+func TestMisnamedOfficeContentExtraction(t *testing.T) {
+	data := minimalDOCX(t, "Corrected document content")
+	for _, name := range []string{"renamed.doc", "renamed.wps", "renamed.xls"} {
+		t.Run(name, func(t *testing.T) {
+			content := parseFileContent(t.Context(), name, data)
+			if !strings.Contains(content, "Corrected document content") || content == string(data) {
+				t.Fatal("file extraction did not use the corrected parser")
+			}
+			content, err := parseAgentUploadContent(t.Context(), name, data, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(content, "Corrected document content") {
+				t.Fatal("agent extraction did not use the corrected parser")
+			}
+		})
+	}
+}
+
 // TestOfficeContentExtractionWithoutMediaCache pins that previews, uploads and
 // other non-ingestion callers use the text-only Office parsers: an
 // image-bearing .docx must yield readable text instead of failing because no

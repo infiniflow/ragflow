@@ -80,6 +80,222 @@ func TestAgent_NoToolsReAct(t *testing.T) {
 	}
 }
 
+func TestAgent_PopulatesStructuredFromOutputsSchema(t *testing.T) {
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		return &schema.Message{
+			Role:    schema.Assistant,
+			Content: "```json\n{\"records\":[{\"ruleId\":\"r1\",\"verdict\":\"PASS\"}],\"opinion\":{\"conclusion\":\"PASS\"}}\n```",
+		}, nil
+	})
+
+	c := NewAgentComponent(agentParamFromMap(map[string]any{
+		"model_id": "stub",
+		"outputs": map[string]any{
+			"structured": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"records": map[string]any{"type": "array"},
+					"opinion": map[string]any{"type": "object"},
+				},
+				"required": []any{"records"},
+			},
+		},
+	}))
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"user_prompt": "summarize",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	structured, ok := out["structured"].(map[string]any)
+	if !ok {
+		t.Fatalf("structured missing or wrong type: %T (%v)", out["structured"], out["structured"])
+	}
+	if _, ok := structured["records"]; !ok {
+		t.Fatalf("structured.records missing: %#v", structured)
+	}
+	if got, want := out["content"], `{"records":[{"ruleId":"r1","verdict":"PASS"}],"opinion":{"conclusion":"PASS"}}`; got != want {
+		t.Errorf("content=%q, want cleaned JSON %q", got, want)
+	}
+}
+
+func TestAgentOutputStructureFromPreservesSchema(t *testing.T) {
+	schema := agentOutputStructureFrom(map[string]any{
+		"outputs": map[string]any{
+			"structured": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"records": map[string]any{"type": "array"},
+					"opinion": map[string]any{"type": "object"},
+				},
+				"required": []any{"records"},
+			},
+		},
+	})
+	if got, _ := schema["type"].(string); got != "object" {
+		t.Fatalf("expected full schema preserved, got %#v", schema)
+	}
+	keys := structuredExpectedKeySet(schema)
+	if len(keys) != 1 {
+		t.Fatalf("expected only required keys, got %#v", keys)
+	}
+	if _, ok := keys["records"]; !ok {
+		t.Fatalf("records key missing: %#v", keys)
+	}
+}
+
+func TestStructuredExpectedKeySet_PropertiesWithoutRequired(t *testing.T) {
+	keys := structuredExpectedKeySet(map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"id":   map[string]any{"type": "integer"},
+			"note": map[string]any{"type": "string"},
+		},
+	})
+	if len(keys) != 0 {
+		t.Fatalf("properties without required must not imply required keys, got %#v", keys)
+	}
+	parsed, ok := matchAgentOutputStructure(`{"id":1}`, map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"id":   map[string]any{"type": "integer"},
+			"note": map[string]any{"type": "string"},
+		},
+	})
+	if !ok {
+		t.Fatal("optional note missing should still match")
+	}
+	if _, ok := parsed["id"]; !ok {
+		t.Fatalf("parsed=%#v", parsed)
+	}
+}
+
+func TestMatchAgentOutputStructure_RejectsWrongType(t *testing.T) {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"id": map[string]any{"type": "integer"},
+		},
+		"required": []any{"id"},
+	}
+	if _, ok := matchAgentOutputStructure(`{"id":"wrong"}`, schema); ok {
+		t.Fatal("string id must fail integer type check")
+	}
+	if _, ok := matchAgentOutputStructure(`{"id":1}`, schema); !ok {
+		t.Fatal("integer id should pass")
+	}
+}
+
+func TestMatchAgentOutputStructure_RejectsNullForObjectSchema(t *testing.T) {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"id": map[string]any{"type": "integer"},
+		},
+	}
+	if _, ok := matchAgentOutputStructure("null", schema); ok {
+		t.Fatal("null must fail an object schema")
+	}
+	if _, ok := matchAgentOutputStructure("null", map[string]any{
+		"properties": map[string]any{
+			"id": map[string]any{"type": "integer"},
+		},
+	}); !ok {
+		t.Fatal("omitted type must still accept null")
+	}
+	if _, ok := matchAgentOutputStructure("null", map[string]any{
+		"type":       []any{"object", "null"},
+		"properties": map[string]any{"id": map[string]any{"type": "integer"}},
+		"required":   []any{"id"},
+	}); !ok {
+		t.Fatal("type union that includes null must accept null")
+	}
+}
+
+func TestMatchAgentOutputStructure_RejectsAdditionalProperties(t *testing.T) {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"id": map[string]any{"type": "integer"},
+		},
+		"additionalProperties": false,
+	}
+	if _, ok := matchAgentOutputStructure(`{"id":1,"unexpected":true}`, schema); ok {
+		t.Fatal("undeclared key must fail when additionalProperties is false")
+	}
+	if _, ok := matchAgentOutputStructure(`{"id":1}`, schema); !ok {
+		t.Fatal("declared key should pass")
+	}
+}
+
+func TestMatchAgentOutputStructure_AcceptsTypeUnion(t *testing.T) {
+	schema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"note": map[string]any{"type": []any{"string", "null"}},
+		},
+		"required": []any{"note"},
+	}
+	if _, ok := matchAgentOutputStructure(`{"note":1}`, schema); ok {
+		t.Fatal("number must fail a string|null property")
+	}
+	if _, ok := matchAgentOutputStructure(`{"note":"ok"}`, schema); !ok {
+		t.Fatal("string should pass a string|null property")
+	}
+	if _, ok := matchAgentOutputStructure(`{"note":null}`, schema); !ok {
+		t.Fatal("null should pass a string|null property")
+	}
+}
+
+func TestAgent_StructuredDeferredEmitsCleanedContent(t *testing.T) {
+	withAgentRunner(t, func(ctx context.Context, _ AgentParam) (*schema.Message, error) {
+		runtime.EmitAgentMessage(ctx, "", "thinking")
+		return &schema.Message{
+			Role:    schema.Assistant,
+			Content: "```json\n{\"records\":[]}\n```",
+		}, nil
+	})
+
+	ctx := runtime.WithComponentExecutionOptions(t.Context(), runtime.ComponentExecutionOptions{
+		DeferAgentToMessage: true,
+	})
+	c := NewAgentComponent(agentParamFromMap(map[string]any{
+		"model_id": "stub",
+		"outputs": map[string]any{
+			"structured": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"records": map[string]any{"type": "array"},
+				},
+				"required": []any{"records"},
+			},
+		},
+	}))
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "hello"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	deferred, ok := out["content"].(*runtime.DeferredStream)
+	if !ok || deferred == nil {
+		t.Fatalf("content=%T, want *runtime.DeferredStream", out["content"])
+	}
+
+	var streamed strings.Builder
+	final, err := deferred.Open(ctx, func(contentDelta, _ string) {
+		streamed.WriteString(contentDelta)
+	})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	want := `{"records":[]}`
+	if got := streamed.String(); got != want {
+		t.Fatalf("streamed=%q, want cleaned %q", got, want)
+	}
+	if got, _ := final["content"].(string); got != want {
+		t.Fatalf("final content=%q, want %q", got, want)
+	}
+}
+
 func TestScanAllStreamForToolCallWaitsPastTextChunks(t *testing.T) {
 	stream := schema.StreamReaderFromArray([]*schema.Message{
 		{Role: schema.Assistant, Content: "I will calculate this."},
@@ -315,7 +531,7 @@ func TestReactCheckerStreamsThinkingBeforeAgentReturns(t *testing.T) {
 	})
 
 	opt, future := react.WithMessageFuture()
-	emitDone := emitAgentModelStreams(ctx, future, false)
+	emitDone := emitAgentModelStreams(ctx, future, false, false)
 
 	streamCh := make(chan *schema.StreamReader[*schema.Message], 1)
 	errCh := make(chan error, 1)
@@ -1450,6 +1666,47 @@ func TestAgentDisabledTemperatureAndTopP(t *testing.T) {
 		if p.Temperature == nil || *p.Temperature != 0.2 || p.TopP == nil || *p.TopP != 0.75 {
 			t.Fatal("enabled or unflagged temperature/top_p lost")
 		}
+	}
+}
+
+func TestAgent_MultipleRetrievalToolsUseFunctionName(t *testing.T) {
+	p := AgentParam{
+		Tools: []string{"search_archa_metodika", "search_archa_data"},
+		ToolParams: map[string]map[string]any{
+			"search_archa_metodika": {
+				"component_name": "Retrieval",
+				"function_name":  "search_archa_metodika",
+				"description":    "Vyhľadávanie v metodike.",
+				"kb_ids":         []any{"kb-metodika"},
+				"top_n":          float64(10),
+			},
+			"search_archa_data": {
+				"component_name": "Retrieval",
+				"function_name":  "search_archa_data",
+				"description":    "Vyhľadávanie v projektovej dokumentácii.",
+				"kb_ids":         []any{"kb-data"},
+				"top_n":          float64(25),
+			},
+		},
+		MaxRounds: 1,
+	}
+	tools, err := buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("len(tools) = %d, want 2", len(tools))
+	}
+	names := make(map[string]bool)
+	for _, tool := range tools {
+		info, err := tool.Info(t.Context())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		names[info.Name] = true
+	}
+	if !names["search_archa_metodika"] || !names["search_archa_data"] {
+		t.Fatalf("expected distinct retrieval tool names, got %v", names)
 	}
 }
 

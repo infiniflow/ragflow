@@ -40,15 +40,11 @@ On the **Services** page, administrators can view the service `Name`, `Service t
 
 The MySQL dialog displays the health-check record, not a database process list. Use your deployment's database administration tools if you need to inspect SQL sessions or processes.
 
-![View Service Details](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_1.jpg)
-
-![View Service Details](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_2.jpg)
+![MySQL service details](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_2.jpg)
 
 To view **Extra information**, hover over the service row and click the sliders icon in **Actions**. The dialog displays the elapsed value and message included in the status record. Click **Close** to return to the list. A failed dependency check can place its error text in the message field.
 
-![View Service Details](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_3.jpg)
-
-![View Service Details](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_4.jpg)
+![Service extra information](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_4.jpg)
 
 If a service's status is not `alive`, record its name, service type, host, port, and message before troubleshooting the corresponding dependency or process.
 

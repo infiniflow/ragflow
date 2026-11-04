@@ -146,6 +146,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		fileRecord := &entity.File{
 			ID:         common.GenerateToken(),
 			ParentID:   lastFolder.ID,
+			UserID:     userID,
 			TenantID:   tenantID,
 			CreatedBy:  userID,
 			Name:       uniqueName,
