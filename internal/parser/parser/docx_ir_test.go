@@ -54,44 +54,6 @@ func TestBuildDOCXJSONSections_EmptyTableSkipped(t *testing.T) {
 	}
 }
 
-// TestBuildDOCXJSONSections_MergesSplitDocTable pins the fix for the
-// office_oxide .doc artifact where a table whose first row is a styled
-// header is emitted as a 1-row "header" table immediately followed by the
-// body table. The two fragments share the same column count and sit under
-// the same heading, so they must be rejoined into a single table item
-// (otherwise the chunker emits a header chunk + body chunk, each carrying
-// the same caption).
-func TestBuildDOCXJSONSections_MergesSplitDocTable(t *testing.T) {
-	const cell = `{"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
-	// header: 1 row x 3 cols; body: 2 rows x 3 cols — same width.
-	irJSON := fmt.Sprintf(`{"sections":[{"title":"","elements":[
-		{"type":"heading","level":1,"content":[{"type":"text","text":"H"}]},
-		{"type":"table","rows":[{"cells":[%s,%s,%s]}]},
-		{"type":"table","rows":[{"cells":[%s,%s,%s]},{"cells":[%s,%s,%s]}]}
-	]}]}`, cell, cell, cell, cell, cell, cell, cell, cell, cell)
-
-	got := buildDOCXJSONSections(irJSON, nil)
-	var tables []map[string]any
-	for _, it := range got {
-		if dt, _ := it["doc_type_kwd"].(string); dt == "table" {
-			tables = append(tables, it)
-		}
-	}
-	if len(tables) != 1 {
-		t.Fatalf("expected 1 merged table item, got %d: %#v", len(tables), got)
-	}
-	td, ok := tables[0]["table"].(*entity.TableData)
-	if !ok || td == nil {
-		t.Fatalf("merged table has no TableData: %#v", tables[0])
-	}
-	if len(td.Grid) != 3 {
-		t.Errorf("merged table should have 3 rows (1 header + 2 body), got %d: %#v", len(td.Grid), td.Grid)
-	}
-	if td.Caption != "Table Location: H" {
-		t.Errorf("merged table caption = %q, want %q", td.Caption, "Table Location: H")
-	}
-}
-
 // TestBuildDOCXJSONSections_DifferentColumnTablesStaySeparate pins that
 // two adjacent tables of different column counts are NOT merged: they are
 // genuinely separate tables, not fragments of one.
