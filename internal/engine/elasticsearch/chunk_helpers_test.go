@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/elastic/go-elasticsearch/v8"
@@ -1120,5 +1121,40 @@ func TestCloneFilterSnapshotNonBoolQuery(t *testing.T) {
 	snapshot := cloneFilterSnapshot(query)
 	if snapshot["query_string"] == nil {
 		t.Fatalf("snapshot = %#v, want the query_string clause preserved", snapshot)
+	}
+}
+
+func TestDeleteChunksRejectsEmptyDatasetID(t *testing.T) {
+	for _, condition := range []map[string]interface{}{
+		{"kb_id": "kb-2", "doc_id": "doc-1"},
+		{"doc_id": "doc-1"},
+		nil,
+	} {
+		var requests atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			w.Header().Set("X-Elastic-Product", "Elasticsearch")
+			w.Header().Set("Content-Type", "application/json")
+			if r.Method != http.MethodHead {
+				_, _ = w.Write([]byte(`{"deleted":1}`))
+			}
+		}))
+		client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+		if err != nil {
+			server.Close()
+			t.Fatal(err)
+		}
+		engine := &Engine{client: client}
+		deleted, err := engine.DeleteChunks(t.Context(), condition, "ragflow_tenant", "")
+		server.Close()
+		if err == nil {
+			t.Errorf("condition=%v: expected empty datasetID error, got deleted=%d", condition, deleted)
+		}
+		if deleted != 0 {
+			t.Errorf("condition=%v: deleted=%d, want 0", condition, deleted)
+		}
+		if requests.Load() != 0 {
+			t.Errorf("condition=%v: sent %d ES requests, want 0", condition, requests.Load())
+		}
 	}
 }

@@ -1002,6 +1002,9 @@ func formatOrderedTagFeas(v any) (json.RawMessage, bool) {
 
 // DeleteChunks deletes chunks from a dataset index by condition
 func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
+	if datasetID == "" {
+		return 0, fmt.Errorf("dataset_id is required")
+	}
 	// For ES, index name is just indexName (e.g., "ragflow_{tenantID}"), not indexName_datasetID
 	fullIndexName := indexName
 	common.Info("Deleting chunks from Elasticsearch index", zap.String("index_name", fullIndexName), zap.Any("condition", condition))
