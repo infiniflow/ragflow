@@ -93,8 +93,8 @@ type latestIngestionEventLookup interface {
 
 // fileUploadIface defines the FileService upload methods used by DocumentHandler.
 type fileUploadIface interface {
-	UploadDocumentInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error)
-	UploadDocumentInfoByURL(ctx context.Context, userID, rawURL string) (map[string]interface{}, common.ErrorCode, error)
+	UploadDocumentInfos(ctx context.Context, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error)
+	UploadDocumentInfoByURL(ctx context.Context, rawURL string) (map[string]interface{}, common.ErrorCode, error)
 }
 
 // DocumentHandler document handler
@@ -1771,7 +1771,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	}
 
 	if rawURL != "" {
-		data, code, err := h.fileService.UploadDocumentInfoByURL(ctx, user.ID, rawURL)
+		data, code, err := h.fileService.UploadDocumentInfoByURL(ctx, rawURL)
 		if err != nil {
 			common.RespondError(c, code, err.Error())
 			return
@@ -1780,7 +1780,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.fileService.UploadDocumentInfos(ctx, user.ID, fileHeaders)
+	data, code, err := h.fileService.UploadDocumentInfos(ctx, fileHeaders)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
