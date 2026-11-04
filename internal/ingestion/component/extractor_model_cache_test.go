@@ -31,14 +31,11 @@ import (
 // errTestModelCache is a sentinel error used by cache unit tests.
 var errTestModelCache = errors.New("model cache test error")
 
-// TestExtractor_ResolveChatTargetOncePerRun_NonDefault proves the E1 win:
-// within a single ExtractorComponent.Invoke the chat-target resolution must
-// happen exactly ONCE per distinct llm_id and be reused across every chunk,
-// instead of being re-resolved in every callRaw. The override seam is used as
-// a counter because it is consulted inside the (un)cacheable resolver.
-//
-// RED before implementation: without the per-run cache, resolveExtractorChatTarget
-// is invoked once per chunk (N times) — this assertion fails.
+// TestExtractor_ResolveChatTargetOncePerRun_NonDefault asserts that within a
+// single ExtractorComponent.Invoke the chat-target resolution happens exactly
+// ONCE per distinct llm_id and is reused across every chunk, instead of being
+// re-resolved in every callRaw. The override seam is used as a counter because
+// it is consulted inside the underlying resolver.
 func TestExtractor_ResolveChatTargetOncePerRun_NonDefault(t *testing.T) {
 	var resolverCalls atomic.Int32
 	SetExtractorChatTargetResolverOverride(func(llmID string) (string, string, string, string, bool) {
@@ -76,9 +73,8 @@ func TestExtractor_ResolveChatTargetOncePerRun_NonDefault(t *testing.T) {
 }
 
 // TestExtractor_ResolveChatTargetOncePerRun_Default covers the empty-llm_id
-// (tenant default model) path, which is the most LLM-heavy because every chunk
-// previously re-resolved the default model. Before the fix the count was
-// stub.Calls()+1; with E1 it collapses to exactly 1 (the run-level warm).
+// (tenant default model) path: the chat-target resolution must happen exactly
+// once per run and be reused across every chunk.
 func TestExtractor_ResolveChatTargetOncePerRun_Default(t *testing.T) {
 	var resolverCalls atomic.Int32
 	SetExtractorChatTargetResolverOverride(func(llmID string) (string, string, string, string, bool) {
@@ -121,7 +117,7 @@ func TestExtractor_ResolveChatTargetOncePerRun_Default(t *testing.T) {
 // TestExtractor_ResolveChatTargetNoCacheCallsEachTime guards the NO-cache
 // branch: when no per-run cache is present in ctx (e.g. direct callers /
 // other entry points), resolveExtractorChatTarget must keep consulting the
-// resolver exactly once per call — behavior unchanged by E1.
+// resolver exactly once per call.
 func TestExtractor_ResolveChatTargetNoCacheCallsEachTime(t *testing.T) {
 	var resolverCalls atomic.Int32
 	SetExtractorChatTargetResolverOverride(func(llmID string) (string, string, string, string, bool) {

@@ -463,10 +463,11 @@ func getExtractorChatTargetResolverOverride() func(llmID string) (driver, modelN
 	return extractorChatTargetResolverOverride
 }
 
-// extractorResolvedTarget is the memoized result of a chat-target resolution.
+// extractorResolvedTarget is the memoized result of a successful chat-target
+// resolution. Only successful resolutions are cached (see target), so the
+// stored entry never carries an error.
 type extractorResolvedTarget struct {
 	driver, modelName, apiKey, baseURL string
-	err                                error
 }
 
 // extractorModelCache memoizes per-run chat-model resolution. Within a single
@@ -505,14 +506,14 @@ func (m *extractorModelCache) target(ctx context.Context, db *gorm.DB, llmID str
 	m.mu.Lock()
 	if r, ok := m.targets[llmID]; ok {
 		m.mu.Unlock()
-		return r.driver, r.modelName, r.apiKey, r.baseURL, r.err
+		return r.driver, r.modelName, r.apiKey, r.baseURL, nil
 	}
 	m.mu.Unlock()
 
 	driver, modelName, apiKey, baseURL, err = m.resolveTarget(ctx, db, llmID)
 	if err == nil {
 		m.mu.Lock()
-		m.targets[llmID] = extractorResolvedTarget{driver, modelName, apiKey, baseURL, err}
+		m.targets[llmID] = extractorResolvedTarget{driver, modelName, apiKey, baseURL}
 		m.mu.Unlock()
 	}
 	return driver, modelName, apiKey, baseURL, err
@@ -666,7 +667,7 @@ type extractorInputs struct {
 	// that is empty — the tenant-default chat model resolved once per run in
 	// Invoke). Carrying it on the struct lets the per-chunk cache-key builders
 	// reuse the single run-level resolution instead of re-resolving the default
-	// model for every chunk (review finding #3). Empty means "not yet resolved"
+	// model for every chunk. Empty means "not yet resolved"
 	// and triggers a per-call fallback so direct unit-test construction of
 	// extractorInputs keeps working.
 	modelID string
@@ -771,13 +772,12 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	}
 	// Attach a per-run model cache so the chat target and context length are
 	// resolved once per distinct llm_id and reused across every chunk, instead
-	// of being re-resolved in every callRaw / fitExtractorMessages. See
-	// review finding E1.
+	// of being re-resolved in every callRaw / fitExtractorMessages.
 	ctx = withExtractorModelCache(ctx)
 	in := c.resolveInputs(inputs)
 	// Resolve the cache-key model identity once for the whole run and reuse it
 	// across every chunk, rather than re-resolving the (most common) default
-	// model per chunk when keying the per-chunk cache. See review finding #3.
+	// model per chunk when keying the per-chunk cache.
 	in.modelID = extractorCacheModelID(ctx, db, in.llmID)
 	// Warm the cache before fan-out so the (parallel) chunk jobs read a
 	// populated entry: the resolution happens exactly once here, eliminating
@@ -1574,10 +1574,6 @@ func (c *ExtractorComponent) callStructured(ctx context.Context, db *gorm.DB, in
 	return parsed, nil
 }
 
-// resolveExtractorChatTarget resolves the llm_id into driver / model /
-// api_key / base_url. The llm_id may be a bare tenant_model UUID or
-// a composite "model@provider" string. Errors from DAO resolution are
-// propagated so the caller sees the real failure reason.
 // resolveExtractorChatTarget resolves the chat target for llmID, reusing a
 // per-run cache attached to ctx when present. Without the cache it behaves
 // exactly as resolveExtractorChatTargetUncached (the historical per-call path),
@@ -1589,6 +1585,10 @@ func resolveExtractorChatTarget(ctx context.Context, db *gorm.DB, llmID string) 
 	return resolveExtractorChatTargetUncached(ctx, db, llmID)
 }
 
+// resolveExtractorChatTargetUncached resolves the llm_id into driver / model /
+// api_key / base_url without any per-run cache. The llm_id may be a bare
+// tenant_model UUID or a composite "model@provider" string. Errors from DAO
+// resolution are propagated so the caller sees the real failure reason.
 func resolveExtractorChatTargetUncached(ctx context.Context, db *gorm.DB, llmID string) (driver, modelName, apiKey, baseURL string, err error) {
 	if override := getExtractorChatTargetResolverOverride(); override != nil {
 		if driver, modelName, apiKey, baseURL, ok := override(llmID); ok {
@@ -1755,15 +1755,6 @@ func getExtractorContextLengthOverride() func(ctx context.Context, llmID string)
 	return extractorContextLengthOverride
 }
 
-// extractorContextLength returns the chat model's context window
-// (content_length) for the effective chat model used by a call, or 0 when
-// unavailable. Mirrors Python's chat_mdl.max_length. Used as the token
-// budget for message fitting so oversized prompts are trimmed instead of
-// rejected by the provider. When llm_id is empty the call falls back to the
-// tenant default chat model (see resolveExtractorChatTarget), so the same
-// model is resolved here; otherwise the default-model path would never get
-// message fitting. Returns 0 (skip fitting) when the model is unknown (e.g.
-// unit tests with synthetic llm_id or no canvas state).
 // extractorContextLength returns the chat model's context window for llmID,
 // reusing a per-run cache attached to ctx when present. The context-length
 // override seam is still consulted first (unchanged test priority), and without
@@ -1778,6 +1769,15 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 	return extractorContextLengthUncached(ctx, db, llmID)
 }
 
+// extractorContextLengthUncached returns the chat model's context window
+// (content_length) for llmID, or 0 when unavailable. Mirrors Python's
+// chat_mdl.max_length. Used as the token budget for message fitting so
+// oversized prompts are trimmed instead of rejected by the provider. When
+// llm_id is empty the call falls back to the tenant default chat model (see
+// resolveExtractorChatTarget), so the same model is resolved here; otherwise
+// the default-model path would never get message fitting. Returns 0 (skip
+// fitting) when the model is unknown (e.g. unit tests with synthetic llm_id or
+// no canvas state).
 func extractorContextLengthUncached(ctx context.Context, db *gorm.DB, llmID string) int {
 	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {

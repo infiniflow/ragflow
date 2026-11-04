@@ -258,13 +258,12 @@ func TestCallTextCached_NoStoreStillCalls(t *testing.T) {
 	}
 }
 
-// TestExtractor_ResolvesDefaultModelOncePerRun is the regression test for
-// review finding #3 strengthened by E1: on the default-model path (empty
-// llm_id) the chat-target resolution must happen exactly ONCE for the whole
-// run and be reused across every chunk — not re-resolved per chunk, and not
-// even once per callRaw. The run-level warm (withExtractorModelCache in
-// Invoke) resolves the default model a single time; every callRaw and the
-// per-chunk cache-key build then hit the cache.
+// TestExtractor_ResolvesDefaultModelOncePerRun asserts that on the
+// default-model path (empty llm_id) the chat-target resolution happens exactly
+// ONCE for the whole run and is reused across every chunk — not re-resolved
+// per chunk, and not even once per callRaw. The run-level warm
+// (withExtractorModelCache in Invoke) resolves the default model a single
+// time; every callRaw and the per-chunk cache-key build then hit the cache.
 //
 // The invariant: resolverCalls == 1 regardless of how many LLM calls happened.
 func TestExtractor_ResolvesDefaultModelOncePerRun(t *testing.T) {
@@ -284,7 +283,7 @@ func TestExtractor_ResolvesDefaultModelOncePerRun(t *testing.T) {
 	}
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		LLMID:    "", // default-model path — the one #3 is about
+		LLMID:    "", // default-model path
 		Keywords: schema.KeywordExtractConfig{Enabled: true, TopN: 3},
 		Metadata: schema.MetadataExtractConfig{
 			Enabled:  true,
