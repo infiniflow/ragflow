@@ -8,6 +8,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -507,8 +509,12 @@ func TestParseMinerUV1TasksFlow(t *testing.T) {
 	if file["bytes"] != float64(8) {
 		t.Fatalf("bytes = %v, want 8", file["bytes"])
 	}
-	if sum, _ := file["sha256sum"].(string); len(sum) != 64 {
-		t.Fatalf("sha256sum = %v, want 64 hex chars", file["sha256sum"])
+	// The upload payload is asserted earlier in this test (%PDF-1.4); compare the
+	// manifest digest against the exact SHA-256 of that same payload so a wrong
+	// digest of the correct length cannot pass.
+	wantSum := sha256.Sum256([]byte("%PDF-1.4"))
+	if sum, _ := file["sha256sum"].(string); sum != hex.EncodeToString(wantSum[:]) {
+		t.Fatalf("sha256sum = %v, want %x", file["sha256sum"], wantSum)
 	}
 	if file["file_id"] != nil || file["client_file_id"] != nil {
 		t.Fatalf("client must not send file_id/client_file_id: %v", file)
