@@ -152,6 +152,21 @@ export type RFState = {
   collapsedBottomHandles: CollapsedBottomHandles;
   clickedNodeId: string; // currently selected node
   clickedToolId: string; // currently selected tool id
+  // Set by the canvas checklist to focus a node from outside the canvas
+  // (select + center, and open its form unless the issue is an orphan step);
+  // consumed and cleared by AgentCanvas. The nonce retriggers the effect when
+  // the same node is focused twice in a row.
+  nodeFocusRequest: {
+    nodeId: string;
+    toolId?: string;
+    openForm: boolean;
+    nonce: number;
+  } | null;
+  requestNodeFocus: (
+    nodeId: string,
+    options?: { toolId?: string; openForm?: boolean },
+  ) => void;
+  clearNodeFocusRequest: () => void;
   onNodesChange: OnNodesChange<RAGFlowNodeType>;
   onEdgesChange: OnEdgesChange;
   onEdgeMouseEnter?: EdgeMouseHandler<Edge>;
@@ -634,6 +649,20 @@ const useGraphStore = create<RFState>()(
       },
       setClickedNodeId: (id?: string) => {
         set({ clickedNodeId: id });
+      },
+      nodeFocusRequest: null,
+      requestNodeFocus: (nodeId, options) => {
+        set({
+          nodeFocusRequest: {
+            nodeId,
+            toolId: options?.toolId,
+            openForm: options?.openForm ?? true,
+            nonce: Date.now(),
+          },
+        });
+      },
+      clearNodeFocusRequest: () => {
+        set({ nodeFocusRequest: null });
       },
       generateNodeName: (name: string) => {
         const { nodes } = get();

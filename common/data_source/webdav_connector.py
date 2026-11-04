@@ -2,7 +2,7 @@
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 from urllib.parse import urlsplit
 
@@ -16,6 +16,13 @@ from common.data_source.config import DocumentSource, INDEX_BATCH_SIZE, BLOB_STO
 from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError, CredentialExpiredError, InsufficientPermissionsError
 from common.data_source.interfaces import LoadConnector, OnyxExtensionType, PollConnector, SlimConnectorWithPermSync
 from common.data_source.models import Document, GenerateDocumentsOutput, GenerateSlimDocumentOutput, SecondsSinceUnixEpoch, SlimDocument
+
+# WebDAV servers often report Last-Modified on a skewed clock (e.g. timezone
+# misconfiguration). Incremental poll uses the previous cycle end as the lower
+# window bound; without tolerance, skewed mtimes sit permanently below that
+# watermark and new/modified files are silently skipped.
+_INCREMENTAL_MTIME_TOLERANCE = timedelta(hours=24)
+_UNIX_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
@@ -236,9 +243,9 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                     else:
                         modified = datetime.now(timezone.utc)
 
-                    logging.debug(f"File {item_path}: modified={modified}, start={start}, end={end}, include={start < modified <= end}")
+                    logging.debug(f"File {item_path}: modified={modified}, start={start}, end={end}, include={start <= modified <= end}")
                     if filter_by_mtime:
-                        if start < modified <= end:
+                        if start <= modified <= end:
                             files.append((item_path, item))
                         else:
                             logging.debug(f"File {item_path} filtered out by time range")
@@ -386,8 +393,11 @@ class WebDAVConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
 
         start_datetime = datetime.fromtimestamp(start, tz=timezone.utc)
         end_datetime = datetime.fromtimestamp(end, tz=timezone.utc)
+        adjusted_start = start_datetime - _INCREMENTAL_MTIME_TOLERANCE
+        if adjusted_start < _UNIX_EPOCH:
+            adjusted_start = _UNIX_EPOCH
 
-        for batch in self._yield_webdav_documents(start_datetime, end_datetime):
+        for batch in self._yield_webdav_documents(adjusted_start, end_datetime):
             yield batch
 
     def retrieve_all_slim_docs_perm_sync(

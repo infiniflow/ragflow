@@ -117,6 +117,8 @@ async def _stream_chat_completion_sse(
     full_content = ""
     final_answer = None
     final_reference = None
+    final_usage = None
+    final_embedding_usage = None
     in_think = False
     response = {
         "id": completion_id,
@@ -153,6 +155,8 @@ async def _stream_chat_completion_sse(
                 # and `reference` fields.
                 final_answer = ans.get("answer") or full_content
                 final_reference = ans.get("reference", {})
+                final_usage = ans.get("usage") or None
+                final_embedding_usage = ans.get("embedding_usage") or None
                 continue
             if ans.get("start_to_think"):
                 in_think = True
@@ -179,12 +183,17 @@ async def _stream_chat_completion_sse(
     response["choices"][0]["delta"]["content"] = None
     response["choices"][0]["delta"]["reasoning_content"] = None
     response["choices"][0]["finish_reason"] = "stop"
-    prompt_tokens = num_tokens_from_string(prompt)
+    prompt_tokens = (final_usage or {}).get("prompt_tokens") or num_tokens_from_string(prompt)
+    completion_tokens = (final_usage or {}).get("completion_tokens") or token_used
+    total_tokens = (final_usage or {}).get("total_tokens") or (prompt_tokens + completion_tokens)
     response["usage"] = {
         "prompt_tokens": prompt_tokens,
-        "completion_tokens": token_used,
-        "total_tokens": prompt_tokens + token_used,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
     }
+    embedding_tokens = (final_embedding_usage or {}).get("total_tokens")
+    if embedding_tokens:
+        response["retrieval_usage"] = {"embedding_tokens": embedding_tokens}
     if need_reference:
         reference_payload = final_reference if final_reference is not None else last_ans.get("reference", [])
         response["choices"][0]["delta"]["reference"] = _build_reference_chunks(
@@ -338,18 +347,22 @@ async def openai_chat_completions(chat_id):
         break
 
     content = answer["answer"]
+    llm_usage = answer.get("usage") or {}
+    prompt_tokens = llm_usage.get("prompt_tokens") or num_tokens_from_string(prompt)
+    completion_tokens = llm_usage.get("completion_tokens") or num_tokens_from_string(content)
+    total_tokens = llm_usage.get("total_tokens") or (prompt_tokens + completion_tokens)
     response = {
         "id": completion_id,
         "object": "chat.completion",
         "created": int(time.time()),
         "model": requested_model,
         "usage": {
-            "prompt_tokens": num_tokens_from_string(prompt),
-            "completion_tokens": num_tokens_from_string(content),
-            "total_tokens": num_tokens_from_string(prompt) + num_tokens_from_string(content),
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
             "completion_tokens_details": {
                 "reasoning_tokens": context_token_used,
-                "accepted_prediction_tokens": num_tokens_from_string(content),
+                "accepted_prediction_tokens": completion_tokens,
                 "rejected_prediction_tokens": 0,
             },
         },
@@ -365,6 +378,13 @@ async def openai_chat_completions(chat_id):
             }
         ],
     }
+    embedding_tokens = (answer.get("embedding_usage") or {}).get("total_tokens")
+    if embedding_tokens:
+        # Not part of the OpenAI usage schema: retrieval-time embedding calls
+        # for this request, which may share a provider/resource with the chat
+        # model (see dialog_service.async_chat) but are a distinct cost/usage
+        # dimension from "usage" (chat prompt/completion tokens).
+        response["retrieval_usage"] = {"embedding_tokens": embedding_tokens}
     if need_reference:
         response["choices"][0]["message"]["reference"] = _build_reference_chunks(
             answer.get("reference", {}),

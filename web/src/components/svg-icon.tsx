@@ -116,6 +116,7 @@ const svgIcons = [
   LLMFactory.Synthorai,
   LLMFactory.ApiRoute,
   LLMFactory.MWS,
+  LLMFactory.CheaperInference,
 ];
 
 export const LlmIcon = ({

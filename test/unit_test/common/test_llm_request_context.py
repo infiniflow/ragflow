@@ -115,7 +115,7 @@ class TestCompletionArgsUserPrecedence:
         chat_model = pytest.importorskip("rag.llm.chat_model")
         # provider="" keeps every provider-specific branch inert, so only the
         # generic completion_args + user-forwarding path is exercised.
-        fake = types.SimpleNamespace(model_name="m", api_key="k", max_retries=0, provider="")
+        fake = types.SimpleNamespace(model_name="m", api_key="k", max_retries=0, provider="", base_url="")
         return chat_model.LiteLLMBase._construct_completion_args(fake, [], False, False, **kwargs)
 
     def test_context_user_applied_when_caller_omits_it(self):

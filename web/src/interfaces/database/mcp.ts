@@ -1,4 +1,5 @@
 export interface IMcpServer {
+  headers?: Record<string, string>;
   create_date: string;
   description: null;
   id: string;

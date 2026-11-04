@@ -21,7 +21,8 @@ import random
 import re
 import time
 from abc import abstractmethod
-from typing import Callable, TypeVar
+from collections.abc import Callable
+from typing import TypeVar
 
 import infinity
 import pandas as pd
@@ -163,6 +164,25 @@ def _retry_on_meta_contention(
     )
     assert last_exc is not None
     raise last_exc
+
+
+def _flatten_filter_values(values: list) -> list:
+    """Unwrap containers inside a filter value list, keeping scalar entries.
+
+    A caller may re-wrap a ``*_kwd`` value that ``get_fields`` already returned
+    as a list. Interpolating the nested container emits ``k=['x']``, which
+    Infinity rejects with 3030 — and dropping the entry silently would leave
+    rows behind on delete.
+    """
+    if not any(isinstance(item, (list, tuple, set)) for item in values):
+        return values
+    flattened = []
+    for item in values:
+        if isinstance(item, (list, tuple, set)):
+            flattened.extend(item)
+        else:
+            flattened.append(item)
+    return flattened
 
 
 class InfinityConnectionBase(DocStoreConnection):
@@ -394,21 +414,34 @@ class InfinityConnectionBase(DocStoreConnection):
                     raise ValueError(f"No valid delete predicate could be generated for column '{k}'")
             elif k in {"compile_kwd", "type_kwd", "parent_kwd"}:
                 values = v if isinstance(v, list) else [v]
+                values = _flatten_filter_values(values)
                 exact_conditions = []
                 for item in values:
                     if isinstance(item, str):
                         item = item.replace("'", "''")
                         exact_conditions.append(f"{k}='{item}'")
-                    else:
+                    elif isinstance(item, (int, float)) and not isinstance(item, bool):
                         exact_conditions.append(f"{k}={item}")
+                    elif item is not None:
+                        # A caller fed us a value that `get_fields` already
+                        # returned as a list. Interpolating the container
+                        # emits `k=['x']`, which Infinity rejects with 3030
+                        # ("array not found") — and silently dropping it would
+                        # generate a missing predicate instead. Fail loudly.
+                        raise ValueError(f"Cannot build {k} predicate from value {item!r}")
                 if exact_conditions:
                     cond.append("(" + " or ".join(exact_conditions) + ")")
             elif self.field_keyword(k):
                 if isinstance(v, list):
                     inCond = list()
-                    for item in v:
+                    for item in _flatten_filter_values(v):
                         if isinstance(item, str):
                             item = item.replace("'", "''")
+                        elif isinstance(item, (list, tuple, set)):
+                            # Unwrapping covers one level of re-wrapping; a deeper
+                            # one would interpolate as `'['x']'` inside the
+                            # fulltext call and silently stop matching.
+                            raise ValueError(f"Cannot build {k} filter from value {item!r}")
                         inCond.append(f"filter_fulltext('{self.convert_matching_field(k)}', '{item}')")
                     if inCond:
                         strInCond = " or ".join(inCond)
@@ -440,7 +473,7 @@ class InfinityConnectionBase(DocStoreConnection):
                 escaped_v = v.replace("'", "''")
                 cond.append(f"{k}='{escaped_v}'")
             else:
-                cond.append(f"{k}={str(v)}")
+                cond.append(f"{k}={v!s}")
         return " AND ".join(cond) if cond else "1=1"
 
     @staticmethod
@@ -701,7 +734,7 @@ class InfinityConnectionBase(DocStoreConnection):
             _ = db_instance.get_table(table_name)
             return True
         except Exception as e:
-            self.logger.warning(f"INFINITY indexExist {str(e)}")
+            self.logger.warning(f"INFINITY indexExist {e!s}")
             return False
         finally:
             self.connPool.release_conn(inf_conn)

@@ -23,15 +23,15 @@ from rag.app import audio
 
 @pytest.mark.p2
 def test_missing_extension_reports_error():
-    """A file without an extension is reported via the failure callback."""
+    """A file without an extension is reported and raised to the task runner."""
     messages: list[tuple] = []
 
     def callback(prog=None, msg=""):
         messages.append((prog, msg))
 
-    res = audio.chunk("no_extension_file", b"data", tenant_id="t", lang="english", callback=callback)
+    with pytest.raises(RuntimeError, match="No extension detected"):
+        audio.chunk("no_extension_file", b"data", tenant_id="t", lang="english", callback=callback)
 
-    assert res == []
     assert messages and messages[-1][0] == -1
     assert "No extension detected" in messages[-1][1]
 
@@ -43,8 +43,8 @@ def test_unsupported_extension_reports_error():
     def callback(prog=None, msg=""):
         messages.append((prog, msg))
 
-    res = audio.chunk("song.xyz", b"data", tenant_id="t", lang="english", callback=callback)
+    with pytest.raises(RuntimeError, match="Extension .xyz is not supported yet"):
+        audio.chunk("song.xyz", b"data", tenant_id="t", lang="english", callback=callback)
 
-    assert res == []
     assert messages and messages[-1][0] == -1
     assert "not supported yet" in messages[-1][1]

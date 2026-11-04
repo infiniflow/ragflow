@@ -266,8 +266,8 @@ function run_model_provider_migrations() {
     DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
     DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
     if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then
-        # These migrations contain MySQL-only SQL and cannot run against a
-        # GaussDB metadata database.
+        # Postgres-shaped migration SQL is not safe on GaussDB (distributed/ORA
+        # mode). run_migrations.sh also no-ops for GaussDB.
         echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
         return 0
     fi
@@ -276,6 +276,9 @@ function run_model_provider_migrations() {
         echo "Running model provider table migrations (go)..."
         bin/ragflow_server --migrate
     else
+        # run_migrations.sh selects mysql_migration.py or postgres_migration.py
+        # from DB_TYPE so postgres upgrades get model_type merge and tenant_*_id
+        # backfill (#18755 / #18756).
         tools/scripts/run_migrations.sh
     fi
 }

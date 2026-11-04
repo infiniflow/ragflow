@@ -7,7 +7,6 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { NumberInput } from '@/components/ui/input';
 import {
   useFetchKnowledgeBaseConfiguration,
   useFetchTagListByKnowledgeIds,
@@ -18,6 +17,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { FormListItem } from '../../utils';
+import NumberInput from '@/components/originui/number-input';
 
 const FieldKey = 'tag_feas';
 
@@ -120,6 +120,22 @@ export const TagFeatureItem = () => {
                     <FormField
                       control={form.control}
                       name={`${FieldKey}.${name}.frequency`}
+                      rules={{
+                        min: {
+                          value: 1,
+                          message: t(
+                            'knowledgeConfiguration.frequencyMinMessage',
+                            { min: 1 },
+                          ),
+                        },
+                        max: {
+                          value: 10,
+                          message: t(
+                            'knowledgeConfiguration.frequencyMaxMessage',
+                            { max: 10 },
+                          ),
+                        },
+                      }}
                       render={({ field }) => (
                         <FormItem>
                           <FormControl>
@@ -131,6 +147,10 @@ export const TagFeatureItem = () => {
                               )}
                               max={10}
                               min={1}
+                              hideIcons
+                              integer
+                              className="!h-full !m-0"
+                              inputClassName="!h-full"
                             />
                           </FormControl>
                           <FormMessage />

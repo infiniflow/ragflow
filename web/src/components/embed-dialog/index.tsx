@@ -55,7 +55,7 @@ import {
 } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { z } from 'zod';
 import { RAGFlowFormItem } from '../ragflow-form';
-import { SwitchFormField } from '../switch-fom-field';
+import { SwitchFormField } from '../switch-form-field';
 import { useIsDarkTheme } from '../theme-provider';
 import { Input } from '../ui/input';
 
@@ -81,22 +81,15 @@ const FormSchema = z.object({
   widgetFooterTextColor: z.string(),
 });
 
-export type WidgetSettings = Pick<
-  z.infer<typeof FormSchema>,
-  | 'enableStreaming'
-  | 'muteWidget'
-  | 'widgetTitle'
-  | 'widgetSubtitle'
-  | 'widgetFooterText'
-  | 'widgetFooterLink'
-  | 'widgetAccentColor'
-  | 'widgetBackgroundColor'
-  | 'widgetTextColor'
-  | 'widgetHeaderTextColor'
-  | 'widgetFooterTextColor'
->;
+export type WidgetSettings = z.infer<typeof FormSchema>;
 
 export const defaultWidgetSettings: WidgetSettings = {
+  embedType: 'fullscreen',
+  theme: ThemeEnum.Light,
+  visibleAvatar: false,
+  published: false,
+  locale: '',
+  userId: '',
   enableStreaming: false,
   muteWidget: false,
   widgetTitle: '',
@@ -147,11 +140,6 @@ function EmbedDialog({
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
-      visibleAvatar: false,
-      published: false,
-      locale: '',
-      embedType: 'fullscreen' as const,
-      theme: ThemeEnum.Light,
       ...defaultWidgetSettings,
       ...initialWidgetSettings,
     },
@@ -302,19 +290,7 @@ window.addEventListener('message',e=>{
       return;
     }
 
-    await onSaveWidgetSettings({
-      enableStreaming: values.enableStreaming,
-      muteWidget: values.muteWidget,
-      widgetTitle: values.widgetTitle,
-      widgetSubtitle: values.widgetSubtitle,
-      widgetFooterText: values.widgetFooterText,
-      widgetFooterLink: values.widgetFooterLink,
-      widgetAccentColor: values.widgetAccentColor,
-      widgetBackgroundColor: values.widgetBackgroundColor,
-      widgetTextColor: values.widgetTextColor,
-      widgetHeaderTextColor: values.widgetHeaderTextColor,
-      widgetFooterTextColor: values.widgetFooterTextColor,
-    });
+    await onSaveWidgetSettings({ ...defaultWidgetSettings, ...values });
   }, [onSaveWidgetSettings, values]);
 
   return (

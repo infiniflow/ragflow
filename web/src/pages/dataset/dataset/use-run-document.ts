@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { buildParserGapModalContent } from './parser-gap-content';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useParserGapValidation } from './use-parser-gap-validation';
+import { pickByGapKind } from './utils';
 
 export const useHandleRunDocumentByIds = (
   id: string,
@@ -36,12 +37,16 @@ export const useHandleRunDocumentByIds = (
         hideModal();
         Modal.error({
           title: t('knowledgeDetails.parseBlockedTitle'),
-          content: buildParserGapModalContent(
-            t,
-            gaps,
-            'knowledgeDetails.reselectParserToParseHint',
+          content: buildParserGapModalContent(t, gaps, {
+            missingModel: 'knowledgeDetails.addModelToParseHint',
+            unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
+          }),
+          okText: t(
+            pickByGapKind(gaps, {
+              missingModel: 'knowledgeDetails.goAddModel',
+              unsupportedType: 'knowledgeDetails.reselectParser',
+            }),
           ),
-          okText: t('knowledgeDetails.reselectParser'),
           cancelText: t('common.cancel'),
           closable: false,
           onOk: () => {

@@ -24,10 +24,10 @@ class _Storage:
         return b"%PDF-1.4"
 
 
-def _queued_page_spans(monkeypatch, layout_model_name, pages, total_pages=30):
+def _queued_page_spans(monkeypatch, layout_model_name, pages, total_pages=30, layout_recognize="a" * 32):
     """Run queue_tasks on a PDF and return the (from_page, to_page) of each task."""
     captured = []
-    parser_config = {"layout_recognize": "a" * 32}
+    parser_config = {"layout_recognize": layout_recognize}
     if pages is not None:
         parser_config["pages"] = pages
     doc = {
@@ -73,3 +73,22 @@ class TestQueueTasksMinerUPageRanges:
         # The collapse is MinerU-only. DeepDOC reads the file once per task, so
         # it keeps a task per range and splits each range by task_page_size.
         assert _queued_page_spans(monkeypatch, "vlm@DeepDOC", [(1, 10), (20, 30)]) == [(0, 9), (19, 29)]
+
+
+@pytest.mark.p2
+class TestQueueTasksWholeFileParsers:
+    # PaddleOCR, SoMark and TCADP ignore from_page/to_page and send the whole
+    # PDF on every task, so a 120-page PDF must queue one task, not ten.
+    @pytest.mark.parametrize("layout_model_name", ["vl@default@PaddleOCR", "vl@default@SoMark"])
+    def test_tenant_model_queues_one_task(self, monkeypatch, layout_model_name):
+        assert _queued_page_spans(monkeypatch, layout_model_name, None, total_pages=120) == [(0, 120)]
+
+    def test_tcadp_queues_one_task(self, monkeypatch):
+        # The UI stores TCADP as a plain name, not a tenant model id.
+        assert _queued_page_spans(monkeypatch, None, None, total_pages=120, layout_recognize="TCADP Parser") == [(0, 120)]
+
+    def test_two_ranges_become_one_task(self, monkeypatch):
+        assert _queued_page_spans(monkeypatch, "vl@default@PaddleOCR", [(1, 10), (20, 30)]) == [(0, 29)]
+
+    def test_deepdoc_still_splits_by_task_page_size(self, monkeypatch):
+        assert len(_queued_page_spans(monkeypatch, None, None, total_pages=120, layout_recognize="DeepDOC")) == 10

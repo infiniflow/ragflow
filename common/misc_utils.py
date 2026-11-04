@@ -33,6 +33,20 @@ logger = logging.getLogger(__name__)
 _LONG_TIME_THREAD_POOL_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("LONG_TIME_THREAD_POOL_WORKERS", "1")), thread_name_prefix="long-time")
 
 
+def env_flag(name: str, default: bool) -> bool:
+    """Read a boolean environment variable the way the rest of the codebase does.
+
+    Unset keeps the documented default. Anything else is matched against the
+    truthy vocabulary used elsewhere in this file and in common/data_source, so
+    a switch written as "off" or "disabled" turns the feature off instead of
+    being read as its opposite.
+    """
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 def get_uuid():
     return uuid.uuid1().hex
 
@@ -239,7 +253,18 @@ def pip_install_torch():
         return
     logging.info("Installing pytorch")
     pkg_names = ["torch>=2.5.0,<3.0.0"]
-    subprocess.check_call([sys.executable, "-m", "pip", "install", *pkg_names])
+    # onnxruntime-gpu (pinned in pyproject.toml) needs its CUDA major version to
+    # match torch's. Installing from PyPI's default index pulls whichever CUDA
+    # toolkit torch's latest release bundles, which can drift out of sync and
+    # leave onnxruntime unable to load CUDAExecutionProvider (silent CPU
+    # fallback). Default to a known-compatible CUDA 12.1 build; override via
+    # TORCH_CUDA_INDEX_URL (set to "" to fall back to the default index) if
+    # your environment needs a different index or CUDA minor version.
+    index_url = os.environ.get("TORCH_CUDA_INDEX_URL", "https://download.pytorch.org/whl/cu121")
+    cmd = [sys.executable, "-m", "pip", "install", *pkg_names]
+    if index_url:
+        cmd += ["--index-url", index_url]
+    subprocess.check_call(cmd)
 
 
 async def thread_pool_exec(func, *args, **kwargs):

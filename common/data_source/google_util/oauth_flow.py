@@ -5,6 +5,7 @@ from typing import Any, Callable
 
 from common.data_source.config import DocumentSource
 from common.data_source.google_util.constant import GOOGLE_SCOPES
+from common.misc_utils import env_flag
 
 
 def _get_requested_scopes(source: DocumentSource) -> list[str]:
@@ -59,7 +60,7 @@ def _run_local_server_flow(client_config: dict[str, Any], source: DocumentSource
         scopes=scopes,
     )
 
-    open_browser = os.environ.get("GOOGLE_OAUTH_OPEN_BROWSER", "true").lower() != "false"
+    open_browser = env_flag("GOOGLE_OAUTH_OPEN_BROWSER", True)
     preferred_port = os.environ.get("GOOGLE_OAUTH_LOCAL_SERVER_PORT")
     port = int(preferred_port) if preferred_port else 0
     timeout_secs = _get_oauth_timeout_secs()
@@ -77,7 +78,7 @@ def _run_local_server_flow(client_config: dict[str, Any], source: DocumentSource
             timeout_message,
         )
     except OSError as exc:
-        allow_console = os.environ.get("GOOGLE_OAUTH_ALLOW_CONSOLE_FALLBACK", "true").lower() != "false"
+        allow_console = env_flag("GOOGLE_OAUTH_ALLOW_CONSOLE_FALLBACK", True)
         if not allow_console:
             raise
         print(f"Local server flow failed ({exc}). Falling back to console-based auth.")

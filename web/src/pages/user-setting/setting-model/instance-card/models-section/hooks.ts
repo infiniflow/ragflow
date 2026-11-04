@@ -28,6 +28,7 @@ import {
 import { IInstanceModel, IProviderInstance } from '@/interfaces/database/llm';
 import { IModelInfo, IProviderModelItem } from '@/interfaces/request/llm';
 import llmService from '@/services/llm-service';
+import { modelNameKey } from '@/utils/llm-util';
 import {
   Dispatch,
   SetStateAction,
@@ -78,12 +79,20 @@ export const normalizeModelTypes = (raw: unknown): string[] =>
  * provider model items. `features` is forwarded via `extra` so the backend
  * can persist per-model flags such as `is_tools`.
  */
-export const buildModelInfo = (items: IProviderModelItem[]): IModelInfo[] =>
+export const buildModelInfo = (
+  items: IProviderModelItem[],
+  // New (draft) instances default every model to tool-calling enabled;
+  // an explicit per-model `extra.is_tools` below still overrides it.
+  defaultToolsEnabled = false,
+): IModelInfo[] =>
   items.map((m) => ({
     model_name: m.name,
     model_type: m.model_types ?? [],
     max_tokens: m.max_tokens ?? 0,
-    extra: { is_tools: hasToolFeature(m.features), ...(m.extra ?? {}) },
+    extra: {
+      is_tools: defaultToolsEnabled || hasToolFeature(m.features),
+      ...(m.extra ?? {}),
+    },
   }));
 
 /** Resolved credentials for catalog / verify / batch calls.
@@ -134,6 +143,14 @@ interface UseModelsCatalogArgs {
   baseUrlValue: string | undefined;
 
   instanceDetailsLoaded?: boolean;
+
+  /**
+   * Invoked with the freshly fetched items after every successful catalog
+   * fetch (mount auto-fetch and manual "List models" clicks). Used by
+   * draft cards to auto-merge new models while skipping names the user
+   * has already removed.
+   */
+  onCatalogFetched?: (items: IProviderModelItem[]) => void;
 }
 
 export function useModelsCatalog({
@@ -145,6 +162,7 @@ export function useModelsCatalog({
   apiKeyValue,
   baseUrlValue,
   instanceDetailsLoaded,
+  onCatalogFetched,
 }: UseModelsCatalogArgs) {
   const { listProviderModels } = useListProviderModels();
   const [catalog, setCatalog] = useState<IProviderModelItem[]>([]);
@@ -154,17 +172,20 @@ export function useModelsCatalog({
   const catalogOverridesRef = useRef(catalogOverrides);
   const [manualListLoading, setManualListLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
+  const onCatalogFetchedRef = useRef(onCatalogFetched);
+  onCatalogFetchedRef.current = onCatalogFetched;
 
   const applyCatalogOverrides = useCallback((items: IProviderModelItem[]) => {
     const overrides = catalogOverridesRef.current;
-    const names = new Set<string>();
+    const keys = new Set<string>();
     const merged = items.map((item) => {
-      names.add(item.name);
-      const override = overrides[item.name];
+      const key = modelNameKey(item.name);
+      keys.add(key);
+      const override = overrides[key];
       return override ? { ...item, ...override, name: item.name } : item;
     });
-    Object.entries(overrides).forEach(([name, override]) => {
-      if (!names.has(name)) {
+    Object.entries(overrides).forEach(([key, override]) => {
+      if (!keys.has(key)) {
         merged.push(override);
       }
     });
@@ -173,29 +194,33 @@ export function useModelsCatalog({
 
   const updateCatalogModel = useCallback(
     (name: string, item: IProviderModelItem) => {
+      const key = modelNameKey(name);
       setCatalogOverrides((prev) => {
         const next = {
           ...prev,
-          [name]: { ...(prev[name] ?? {}), ...item, name },
+          [key]: { ...(prev[key] ?? {}), ...item, name },
         };
         catalogOverridesRef.current = next;
         return next;
       });
       setCatalog((prev) => {
-        if (!prev.some((m) => m.name === name)) {
+        if (!prev.some((m) => modelNameKey(m.name) === key)) {
           return [...prev, { ...item, name }];
         }
-        return prev.map((m) => (m.name === name ? { ...m, ...item, name } : m));
+        return prev.map((m) =>
+          modelNameKey(m.name) === key ? { ...m, ...item, name } : m,
+        );
       });
     },
     [],
   );
 
   const clearCatalogOverride = useCallback((name: string) => {
+    const key = modelNameKey(name);
     setCatalogOverrides((prev) => {
-      if (!prev[name]) return prev;
+      if (!prev[key]) return prev;
       const next = { ...prev };
-      delete next[name];
+      delete next[key];
       catalogOverridesRef.current = next;
       return next;
     });
@@ -218,9 +243,11 @@ export function useModelsCatalog({
         base_url: baseUrl,
       });
       if (ret?.code === 0) {
-        setCatalog(
-          applyCatalogOverrides((ret.data as IProviderModelItem[]) ?? []),
+        const merged = applyCatalogOverrides(
+          (ret.data as IProviderModelItem[]) ?? [],
         );
+        setCatalog(merged);
+        onCatalogFetchedRef.current?.(merged);
       }
       setHasFetched(true);
     } catch {
@@ -330,7 +357,7 @@ interface UseModelsDerivedArgs {
   /**
    * True when this card represents a draft instance (no backend id yet).
    * Picks between `instanceModels` (saved) and `draftModels` (draft) as
-   * the source for `instanceItems` / `addedSet`.
+   * the source for `instanceItems` / `isModelAdded`.
    */
   isDraftInstance: boolean;
   onInstanceModelsChange: ModelsSectionProps['onInstanceModelsChange'];
@@ -351,7 +378,7 @@ export function useModelsDerived({
     const map = new Map<string, string[]>();
     catalog.forEach((m) => {
       if (Array.isArray(m.features) && m.features.length > 0) {
-        map.set(m.name, m.features);
+        map.set(modelNameKey(m.name), m.features);
       }
     });
     return map;
@@ -374,7 +401,8 @@ export function useModelsDerived({
       const model_types = normalizeModelTypes(
         im.model_types ?? im.model_type ?? [],
       );
-      const catalogFeats = catalogFeatures.get(im.name) ?? im.features ?? null;
+      const catalogFeats =
+        catalogFeatures.get(modelNameKey(im.name)) ?? im.features ?? null;
       const features =
         im.is_tools && !hasToolFeature(catalogFeats)
           ? [...(catalogFeats ?? []), 'is_tools']
@@ -389,18 +417,21 @@ export function useModelsDerived({
     });
   }, [sourceItems, catalogFeatures]);
 
-  // Union of instance models + catalog, keyed by `name`. Instance entries
-  // win on conflict so that editing an already-added model loads the
+  // Union of instance models + catalog, keyed by the normalized name (see
+  // `modelNameKey`) — the catalog and an upstream listing can spell the same
+  // model with different case, and both must collapse into one row. Instance
+  // entries win on conflict so that editing an already-added model loads the
   // instance-specific values (e.g. a user-customised `max_tokens`) rather
   // than the upstream catalog defaults; catalog entries are only used to
   // fill in models that have not been added yet. Instance set is listed
   // first so already-added models stay at the top on the initial render.
   const models: IProviderModelItem[] = useMemo(() => {
     const byName = new Map<string, IProviderModelItem>();
-    instanceItems.forEach((m) => byName.set(m.name, m));
+    instanceItems.forEach((m) => byName.set(modelNameKey(m.name), m));
     catalog.forEach((m) => {
-      if (!byName.has(m.name)) {
-        byName.set(m.name, m);
+      const key = modelNameKey(m.name);
+      if (!byName.has(key)) {
+        byName.set(key, m);
       }
     });
     return Array.from(byName.values());
@@ -408,10 +439,17 @@ export function useModelsDerived({
 
   // Mirror of `instanceItems` names - drives the +/- toggle on each row
   // and the batch-toggle button. For drafts this is the local "added"
-  // set; for saved cards it tracks what the backend has persisted.
+  // set; for saved cards it tracks what the backend has persisted. Keyed
+  // by normalized name so a row the catalog spells differently from the
+  // saved model still reads as added.
   const addedSet = useMemo(
-    () => new Set(sourceItems.map((m: any) => m.name)),
+    () => new Set(sourceItems.map((m: any) => modelNameKey(m.name))),
     [sourceItems],
+  );
+
+  const isModelAdded = useCallback(
+    (name: string) => addedSet.has(modelNameKey(name)),
+    [addedSet],
   );
 
   // Keep the latest callbacks in refs so the effect below only fires
@@ -432,7 +470,7 @@ export function useModelsDerived({
   // Push the latest per-instance model list up to the host so its
   // save payload can include `model_info`.
   useEffect(() => {
-    onChangeRef.current?.(buildModelInfo(instanceItems));
+    onChangeRef.current?.(buildModelInfo(instanceItems, isDraftInstance));
   }, [instanceItems]);
 
   // Saved instance models come from the backend, both after the initial
@@ -452,7 +490,7 @@ export function useModelsDerived({
     isDraftInstance,
   ]);
 
-  return { instanceItems, models, addedSet };
+  return { instanceItems, models, isModelAdded };
 }
 
 // ---------------------------------------------------------------------------
@@ -675,7 +713,7 @@ interface UseModelMutationsArgs {
   instance: IProviderInstance | undefined;
   instanceItems: IProviderModelItem[];
   filteredModels: IProviderModelItem[];
-  addedSet: Set<string>;
+  isModelAdded: (name: string) => boolean;
   setCatalog: Dispatch<SetStateAction<IProviderModelItem[]>>;
   clearCatalogOverride: (name: string) => void;
   /**
@@ -698,7 +736,7 @@ export function useModelMutations({
   instance,
   instanceItems,
   filteredModels,
-  addedSet,
+  isModelAdded,
   setCatalog,
   clearCatalogOverride,
   addDraftModel,
@@ -715,8 +753,8 @@ export function useModelMutations({
   const allFilteredAdded = useMemo(
     () =>
       filteredModels.length > 0 &&
-      filteredModels.every((m) => addedSet.has(m.name)),
-    [filteredModels, addedSet],
+      filteredModels.every((m) => isModelAdded(m.name)),
+    [filteredModels, isModelAdded],
   );
 
   const handleAddModel = async (model: IProviderModelItem) => {
@@ -758,7 +796,9 @@ export function useModelMutations({
     // unioned `models` list immediately. Server-side persistence happens
     // via `addInstanceModel` below (when there is a real instance).
     setCatalog((prev) =>
-      prev.some((m) => m.name === item.name) ? prev : [...prev, item],
+      prev.some((m) => modelNameKey(m.name) === modelNameKey(item.name))
+        ? prev
+        : [...prev, item],
     );
     if (hideActions || isDraftInstance) {
       // For drafts the catalog entry alone is not enough — we also need
@@ -792,21 +832,23 @@ export function useModelMutations({
     if (filteredModels.length === 0) return;
 
     const byName = new Map<string, IProviderModelItem>();
-    instanceItems.forEach((m) => byName.set(m.name, m));
+    instanceItems.forEach((m) => byName.set(modelNameKey(m.name), m));
 
     let nextModels: IProviderModelItem[];
     if (allFilteredAdded) {
-      const drop = new Set(filteredModels.map((m) => m.name));
-      nextModels = Array.from(byName.values()).filter((m) => !drop.has(m.name));
+      const drop = new Set(filteredModels.map((m) => modelNameKey(m.name)));
+      nextModels = Array.from(byName.values()).filter(
+        (m) => !drop.has(modelNameKey(m.name)),
+      );
     } else {
-      filteredModels.forEach((m) => byName.set(m.name, m));
+      filteredModels.forEach((m) => byName.set(modelNameKey(m.name), m));
       nextModels = Array.from(byName.values());
     }
 
     if (isDraftInstance) {
       setDraftModelsList?.(nextModels);
       filteredModels.forEach((m) => {
-        if (!addedSet.has(m.name)) {
+        if (!isModelAdded(m.name)) {
           clearCatalogOverride(m.name);
         }
       });
@@ -821,10 +863,10 @@ export function useModelMutations({
       api_key: apiKey,
       base_url: baseUrl,
       region: instance?.region ?? 'default',
-      model_info: buildModelInfo(nextModels),
+      model_info: buildModelInfo(nextModels, isDraftInstance),
     });
     filteredModels.forEach((m) => {
-      if (!addedSet.has(m.name)) {
+      if (!isModelAdded(m.name)) {
         clearCatalogOverride(m.name);
       }
     });
@@ -847,7 +889,7 @@ export function useModelMutations({
 interface UseModelEditArgs {
   providerName: string;
   instanceName: string;
-  addedSet: Set<string>;
+  isModelAdded: (name: string) => boolean;
   isDraftInstance?: boolean;
   updateCatalogModel: (name: string, item: IProviderModelItem) => void;
   clearCatalogOverride: (name: string) => void;
@@ -857,7 +899,7 @@ interface UseModelEditArgs {
 export function useModelEdit({
   providerName,
   instanceName,
-  addedSet,
+  isModelAdded,
   isDraftInstance,
   updateCatalogModel,
   clearCatalogOverride,
@@ -942,13 +984,13 @@ export function useModelEdit({
     if (!editingModel) return;
     const targetName = editingModel.name;
 
-    if (isDraftInstance && updateDraftModel && addedSet.has(targetName)) {
+    if (isDraftInstance && updateDraftModel && isModelAdded(targetName)) {
       updateDraftModel(item);
       setEditingModel(null);
       return;
     }
 
-    if (!addedSet.has(targetName)) {
+    if (!isModelAdded(targetName)) {
       updateCatalogModel(targetName, item);
       setEditingModel(null);
       return;
@@ -967,7 +1009,9 @@ export function useModelEdit({
         LlmKeys.instanceModels(providerName, instanceName),
         (prev) => {
           if (!prev) return prev;
-          const idx = prev.findIndex((m) => m.name === targetName);
+          const idx = prev.findIndex(
+            (m) => modelNameKey(m.name) === modelNameKey(targetName),
+          );
           if (idx === -1) return prev;
           const next = [...prev];
           const existing = next[idx];

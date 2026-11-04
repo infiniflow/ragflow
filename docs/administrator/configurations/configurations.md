@@ -57,10 +57,6 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 
 - `KIBANA_PORT`
   The port used to expose the Kibana service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `6601`.
-- `KIBANA_USER`
-  The username for Kibana. Defaults to `rag_flow`.
-- `KIBANA_PASSWORD`
-  The password for Kibana. Defaults to `infini_rag_flow`.
 
 ### Resource Management
 
@@ -103,7 +99,7 @@ RAGFlow utilizes MinIO as its object storage solution, leveraging its scalabilit
 - `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW_IMAGE`
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.2` (the RAGFlow Docker image without embedding models).
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.3` (the RAGFlow Docker image without embedding models).
 
 :::tip NOTE
 If you cannot download the RAGFlow Docker image, try the following mirrors.
@@ -143,8 +139,8 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
   - `0`: Disable user registration.
 
 - `OAUTH_AUTO_REGISTER`
-  - `true`: (Default) Allow new users to be provisioned on OAuth/OIDC login.
-  - `false`: Require OAuth/OIDC users to already exist. This is independent of `REGISTER_ENABLED`.
+  - `true`: (Default) Allow new users to be provisioned on OAuth/OIDC login. Also accepts `1`, `yes`, `on`.
+  - Any other value, `false` included: require OAuth/OIDC users to already exist. This is independent of `REGISTER_ENABLED`.
 
 ## Service Configuration
 

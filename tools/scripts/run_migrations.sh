@@ -9,7 +9,8 @@
 #   PY=python3 tools/scripts/run_migrations.sh [--config CONFIG_PATH]
 #
 # Environment variables:
-#   PY  - Python interpreter path (default: python3)
+#   PY       - Python interpreter path (default: python3)
+#   DB_TYPE  - metadata database type (mysql, postgres, gaussdb, oceanbase)
 # -----------------------------------------------------------------------------
 
 set -e
@@ -40,10 +41,30 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-echo "Running model provider table migrations..."
+DB_TYPE_NORMALIZED="${DB_TYPE:-mysql}"
+DB_TYPE_NORMALIZED="${DB_TYPE_NORMALIZED,,}"
+
+if [[ "$DB_TYPE_NORMALIZED" == "gaussdb" || "$DB_TYPE_NORMALIZED" == "gauss" ]]; then
+    echo "Skipping model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+    echo "GaussDB is not supported by the postgres/mysql migration scripts yet; use a manual upgrade path."
+    exit 0
+fi
+
+if [[ "$DB_TYPE_NORMALIZED" == "postgres" || "$DB_TYPE_NORMALIZED" == "postgresql" ]]; then
+    MIGRATION_SCRIPT="tools/scripts/postgres_migration.py"
+    ENGINE_LABEL="PostgreSQL"
+elif [[ "$DB_TYPE_NORMALIZED" == "mysql" || "$DB_TYPE_NORMALIZED" == "oceanbase" ]]; then
+    MIGRATION_SCRIPT="tools/scripts/mysql_migration.py"
+    ENGINE_LABEL="MySQL"
+else
+    echo "Error: unsupported DB_TYPE=${DB_TYPE:-mysql}. Expected mysql, oceanbase, postgres, postgresql, gaussdb, or gauss." >&2
+    exit 1
+fi
+
+echo "Running model provider table migrations (${ENGINE_LABEL}, DB_TYPE=${DB_TYPE:-mysql})..."
 
 # Step 1: Create base model provider tables
-"$PY" tools/scripts/mysql_migration.py \
+"$PY" "$MIGRATION_SCRIPT" \
     --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config \
     --config "$CONFIG" \
     --execute \
@@ -51,7 +72,7 @@ echo "Running model provider table migrations..."
     --mark-database-version-on-success
 
 # Step 2: Seed, merge model types, and migrate model IDs
-"$PY" tools/scripts/mysql_migration.py \
+"$PY" "$MIGRATION_SCRIPT" \
     --stages tenant_model_seeding,model_type_merge,tenant_model_id_migration \
     --config "$CONFIG" \
     --execute \

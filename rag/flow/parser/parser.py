@@ -269,7 +269,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark", "mistral ocr"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "plain text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark", "mistral ocr"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -393,7 +393,7 @@ class Parser(ProcessBase):
                 bboxes = reorder_multi_column_bboxes(pdf_parser, bboxes)
 
         # Plain text only keeps extracted text lines.
-        elif parse_method.lower() == "plain_text":
+        elif parse_method.lower() in {"plain_text", "plain text"}:
             pdf_parser = PlainParser()
             lines, _ = pdf_parser(blob)
             bboxes = [{"text": t, "layout_type": "text"} for t, _ in lines]
@@ -1202,6 +1202,8 @@ class Parser(ProcessBase):
                 txt = cv_model.describe_with_prompt(img_binary.read(), system_prompt)
             else:
                 txt = cv_model.describe(img_binary.read())
+            if "**ERROR**" in txt:
+                raise RuntimeError(txt)
 
         json_result = [
             {
@@ -1250,6 +1252,8 @@ class Parser(ProcessBase):
         cv_mdl = LLMBundle(self._canvas.get_tenant_id(), cv_model_config)
         video_prompt = str(conf.get("prompt", "") or "")
         txt = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=blob, filename=name, video_prompt=video_prompt))
+        if "**ERROR**" in txt:
+            raise RuntimeError(txt)
 
         self.set_output("text", txt)
 
@@ -1277,7 +1281,7 @@ class Parser(ProcessBase):
             return payload.decode("utf-8", errors="ignore")
 
         _, ext = os.path.splitext(name)
-        if ext == ".eml":
+        if ext.lower() == ".eml":
             # handle eml file
             from email import policy
             from email.parser import BytesParser

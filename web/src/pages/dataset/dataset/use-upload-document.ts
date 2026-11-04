@@ -116,11 +116,10 @@ export const useHandleUploadDocument = () => {
               ? 'knowledgeDetails.uploadUnsupportedTypesTitle'
               : 'knowledgeDetails.uploadMissingModelsTitle',
           ),
-          content: buildParserGapModalContent(
-            t,
-            gaps,
-            'knowledgeDetails.reselectParserAfterUploadHint',
-          ),
+          content: buildParserGapModalContent(t, gaps, {
+            missingModel: 'knowledgeDetails.addModelAfterUploadHint',
+            unsupportedType: 'knowledgeDetails.reselectParserAfterUploadHint',
+          }),
           okText: t('knowledgeDetails.continueUpload'),
           cancelText: t('common.cancel'),
           closable: false,

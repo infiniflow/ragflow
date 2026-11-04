@@ -22,14 +22,13 @@ from functools import lru_cache
 
 from peewee import fn
 
-from api.db import VALID_PIPELINE_TASK_TYPES
 from api.db.db_models import DB, Document, PipelineOperationLog
 from api.db.services.canvas_service import UserCanvasService
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
-from common.constants import PipelineTaskType, TaskStatus
+from common.constants import PipelineTaskType, TaskStatus, VALID_PIPELINE_TASK_TYPES
 
 logger = logging.getLogger(__name__)
 

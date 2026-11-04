@@ -191,7 +191,7 @@ class RAGFlowS3:
                 response = e.response if isinstance(e.response, dict) else {}
                 error = response.get("Error", {})
                 code = error.get("Code") if isinstance(error, dict) else None
-                if code in ("404", "NoSuchKey", "NotFound"):
+                if code in ("404", "NoSuchKey", "NoSuchBucket", "NotFound"):
                     return None
                 logging.exception(f"fail get {bucket}/{fnm}, attempt {attempt + 1}/{MAX_ATTEMPTS}")
                 if attempt == MAX_ATTEMPTS - 1:

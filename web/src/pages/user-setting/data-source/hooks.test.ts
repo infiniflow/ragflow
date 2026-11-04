@@ -62,7 +62,7 @@ describe('useTestDataSource', () => {
     jest.clearAllMocks();
   });
 
-  it('does not run Test Connection when the required name field is empty', async () => {
+  it('does not run Test Connection when connector validation fails', async () => {
     const formRef = {
       current: {
         getFilteredValues: () => ({ id: '1', name: '', source: 'mysql' }),
@@ -77,8 +77,10 @@ describe('useTestDataSource', () => {
       await result.current.handleTest();
     });
 
+    // Test connection validates connector fields (source/config), not the
+    // display name — the name/id fields are intentionally excluded (#18495).
     expect(formRef.current.trigger).toHaveBeenCalledWith(
-      expect.arrayContaining(['name']),
+      expect.arrayContaining(['source']),
     );
     expect(mockTest).not.toHaveBeenCalled();
   });
@@ -100,12 +102,11 @@ describe('useTestDataSource', () => {
     });
 
     expect(formRef.current.trigger).toHaveBeenCalledWith(
-      expect.arrayContaining(['name']),
+      expect.arrayContaining(['source']),
     );
     expect(mockTest).toHaveBeenCalledWith('1', {
       source: 'mysql',
       config: {},
     });
   });
-
 });

@@ -21,6 +21,10 @@ import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
+import pytest
+
+import common.doc_store.doc_store_base as _real_doc_store_base
+
 
 def _load_module(monkeypatch):
     class OrderByExpr:
@@ -33,19 +37,15 @@ def _load_module(monkeypatch):
             self.topn = topn
             self.extra_options = extra_options or {}
 
-    class MatchDenseExpr:
-        def __init__(self, *_args, **kwargs):
-            self.topn = kwargs.get("topn")
-
     async def thread_pool_exec(func, *args, **kwargs):
         return func(*args, **kwargs)
 
     common = ModuleType("common")
     common.settings = SimpleNamespace()
     doc_store_base = ModuleType("common.doc_store.doc_store_base")
+    doc_store_base.__dict__.update({k: v for k, v in vars(_real_doc_store_base).items() if not k.startswith("__")})
     doc_store_base.OrderByExpr = OrderByExpr
     doc_store_base.MatchTextExpr = MatchTextExpr
-    doc_store_base.MatchDenseExpr = MatchDenseExpr
     misc_utils = ModuleType("common.misc_utils")
     misc_utils.thread_pool_exec = thread_pool_exec
     structure = ModuleType("rag.advanced_rag.knowlege_compile.structure")
@@ -125,7 +125,6 @@ def test_tree_keyword_subgraph_returns_only_match_and_ancestor_path(monkeypatch)
         module.keyword_subgraph(
             "index",
             "kb-1",
-            SimpleNamespace(),
             {"doc_id": ["doc-1"], "knowledge_graph_kwd": ["entity"]},
             "Leaf",
             scope_for_template,
@@ -157,7 +156,6 @@ def test_keyword_subgraph_tokenizes_query_before_bm25(monkeypatch):
         module.keyword_subgraph(
             "index",
             "kb-1",
-            SimpleNamespace(),
             {"doc_id": ["doc-1"], "knowledge_graph_kwd": ["entity"]},
             "桃园结义",
             lambda _row: ({"template_id": "tree-1", "kind": "tree"}, {"doc_id": ["doc-1"], "compilation_template_ids": ["tree-1"]}),
@@ -172,46 +170,77 @@ def test_keyword_subgraph_tokenizes_query_before_bm25(monkeypatch):
     assert text_expressions[0].extra_options["original_query"] == text_expressions[0].matching_text
 
 
-def test_keyword_subgraph_limits_knn_fallback_to_one_candidate(monkeypatch):
+@pytest.mark.parametrize(
+    ("base_entity_condition", "kind"),
+    [
+        ({"doc_id": ["doc-1"], "knowledge_graph_kwd": ["entity"]}, "tree"),
+        ({"compilation_template_ids": ["template-1"], "knowledge_graph_kwd": ["entity"], "scope_kwd": ["dataset", "doc"]}, "mind_map"),
+    ],
+)
+def test_keyword_subgraph_returns_empty_without_name_match(monkeypatch, base_entity_condition, kind):
     module = _load_module(monkeypatch)
-    matched = _entity("Semantic leaf")
-    root = _entity("Root", "title")
-    parent = _entity("Parent")
-    relation_rows = [_relation("Root", "Parent"), _relation("Parent", "Semantic leaf")]
-    dense_expressions = []
-    search_limits = []
+    unrelated = _entity("Unrelated leaf")
+    search_expressions = []
 
-    async def graph_search(_index, _kb_id, _fields, condition, _order, limit, match_expressions=None, offset=0):
-        if match_expressions and isinstance(match_expressions[0], sys.modules["common.doc_store.doc_store_base"].MatchDenseExpr):
-            dense_expressions.extend(match_expressions)
-            search_limits.append(limit)
-            return {"matched": matched}, 1
-        if condition["knowledge_graph_kwd"] == ["relation"]:
-            child = condition["to_entity_kwd"][0]
-            rows = [row for row in relation_rows if row["to_entity_kwd"] == child]
-            return {str(i): row for i, row in enumerate(rows)}, len(rows)
-        if condition["knowledge_graph_kwd"] == ["entity"] and "name_kwd" in condition:
-            name = condition["name_kwd"][0]
-            rows = [entity for entity in (root, parent) if entity["name_kwd"] == name]
-            return {str(i): row for i, row in enumerate(rows)}, len(rows)
+    async def graph_search(_index, _kb_id, _fields, condition, _order, _limit, match_expressions=None, offset=0):
+        if match_expressions:
+            search_expressions.extend(match_expressions)
+            return {"unrelated": unrelated}, 1
+        assert condition["knowledge_graph_kwd"] == ["entity"]
         return {}, 0
 
     module.graph_search = graph_search
-    embedding = SimpleNamespace(encode_queries=lambda _query: ([0.1, 0.2], 2))
 
     bucket, entities, relations = asyncio.run(
         module.keyword_subgraph(
             "index",
             "kb-1",
-            embedding,
-            {"doc_id": ["doc-1"], "knowledge_graph_kwd": ["entity"]},
+            base_entity_condition,
             "unmatched",
-            lambda _row: ({"template_id": "tree-1", "kind": "tree"}, {"doc_id": ["doc-1"], "compilation_template_ids": ["tree-1"]}),
+            lambda _row: ({"template_id": "template-1", "kind": kind}, {"doc_id": ["doc-1"], "compilation_template_ids": ["template-1"]}),
         )
     )
 
-    assert bucket["template_id"] == "tree-1"
-    assert {entity["name"] for entity in entities} == {"Root", "Parent", "Semantic leaf"}
-    assert {(relation["from"], relation["to"]) for relation in relations} == {("Root", "Parent"), ("Parent", "Semantic leaf")}
-    assert dense_expressions[0].topn == 1
-    assert search_limits == [1]
+    assert bucket is None
+    assert entities == []
+    assert relations == []
+    assert len(search_expressions) == 1
+    assert isinstance(search_expressions[0], sys.modules["common.doc_store.doc_store_base"].MatchTextExpr)
+
+
+def _as_infinity(row):
+    """Mirror ``InfinityConnection.get_fields``: ``*_kwd`` -> list, absent -> ``None``."""
+    converted = {}
+    for key, val in row.items():
+        if key.endswith("_kwd") and isinstance(val, str):
+            converted[key] = [part for part in val.split("###") if part]
+        else:
+            converted[key] = val
+    return converted
+
+
+def test_build_bucket_accepts_infinity_list_shaped_kwd_columns(monkeypatch):
+    module = _load_module(monkeypatch)
+    rows = [_as_infinity(_entity("Root", "title")), _as_infinity(_relation("root", "Leaf"))]
+
+    async def graph_search(_index, _kb_id, _fields, _condition, _order, limit, match_expressions=None, offset=0):
+        return {str(i): row for i, row in enumerate(rows[:limit])}, len(rows)
+
+    module.graph_search = graph_search
+
+    entities, relations = asyncio.run(module.build_bucket("index", "kb-1", {}))
+
+    assert [entity["name"] for entity in entities] == ["Root"]
+    # normalize_relation_endpoints() cases the endpoint to the entity name.
+    assert [(relation["from"], relation["to"]) for relation in relations] == [("Root", "Leaf")]
+
+
+def test_project_relation_reads_list_shaped_entity_columns(monkeypatch):
+    module = _load_module(monkeypatch)
+    row = {
+        "content_with_weight": json.dumps({"type": "parent_child"}),
+        "from_entity_kwd": ["root"],
+        "to_entity_kwd": ["leaf"],
+    }
+
+    assert module.project_relation(row) == {"from": "root", "to": "leaf", "type": "parent_child"}

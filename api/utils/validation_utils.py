@@ -30,7 +30,7 @@ from werkzeug.exceptions import BadRequest, UnsupportedMediaType
 
 from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT
 from api.db import FileType
-from api.utils.pagination_utils import REST_API_MAX_IDS, validate_rest_api_page_size
+from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import RetCode
 
 
@@ -990,7 +990,7 @@ class BaseListReq(BaseModel):
 class ListDatasetReq(BaseListReq):
     """Request model for listing datasets."""
 
-    ids: Annotated[list[str] | None, Field(default=None, max_length=REST_API_MAX_IDS)]
+    ids: Annotated[list[str] | None, Field(default=None)]
     include_parsing_status: Annotated[bool, Field(default=False)]
     keywords: Annotated[str, Field(default="")]
     owner_ids: Annotated[list[str], Field(default_factory=list)]
@@ -1006,11 +1006,8 @@ class ListDatasetReq(BaseListReq):
         for v in v_list:
             ids_list.append(validate_uuid1_hex(v))
 
-        duplicates = [item for item, count in Counter(ids_list).items() if count > 1]
-        if duplicates:
-            raise PydanticCustomError("duplicate_uuids", "Duplicate ids: '{duplicate_ids}'", {"duplicate_ids": ", ".join(duplicates)})
-
-        return ids_list
+        # A metadata lookup may include the same dataset from independent Retrieval blocks.
+        return list(dict.fromkeys(ids_list))
 
 
 # ---- File Management Request Models ----
@@ -1047,6 +1044,23 @@ class MoveFileReq(Base):
         return self
 
 
+FILE_ORDERABLE_COLUMNS = {
+    "id",
+    "parent_id",
+    "tenant_id",
+    "created_by",
+    "name",
+    "location",
+    "size",
+    "type",
+    "source_type",
+    "create_time",
+    "create_date",
+    "update_time",
+    "update_date",
+}
+
+
 class ListFileReq(BaseModel):
     """Request model for listing files."""
 
@@ -1058,6 +1072,13 @@ class ListFileReq(BaseModel):
     page_size: Annotated[int, Field(default=15, ge=1)]
     orderby: Annotated[str, Field(default="create_time")]
     desc: Annotated[bool, Field(default=True)]
+
+    @field_validator("orderby", mode="before")
+    @classmethod
+    def validate_orderby(cls, v: Any) -> Any:
+        if isinstance(v, str) and v not in FILE_ORDERABLE_COLUMNS:
+            return "create_time"
+        return v
 
     @field_validator("page_size")
     @classmethod

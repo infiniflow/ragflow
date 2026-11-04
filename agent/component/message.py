@@ -24,7 +24,6 @@ except Exception:
 import inspect
 import json
 import os
-import random
 import re
 import logging
 import tempfile
@@ -285,7 +284,7 @@ class Message(ComponentBase):
         if self.check_if_canceled("Message processing"):
             return
 
-        rand_cnt = random.choice(_valid_message_content(self._param.content))
+        rand_cnt = "\n".join(_valid_message_content(self._param.content))
         if self._param.stream and not self._is_jinjia2(rand_cnt):
             self.set_output("content", partial(self._stream, rand_cnt))
             return

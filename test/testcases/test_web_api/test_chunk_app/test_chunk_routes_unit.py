@@ -16,13 +16,15 @@
 
 import asyncio
 import contextlib
-import inspect
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+
+import common.doc_store.doc_store_base as _real_doc_store_base
 
 
 class _DummyManager:
@@ -246,6 +248,7 @@ def _load_chunk_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.metadata_utils", metadata_utils_mod)
 
     doc_store_base_mod = ModuleType("common.doc_store.doc_store_base")
+    doc_store_base_mod.__dict__.update({k: v for k, v in vars(_real_doc_store_base).items() if not k.startswith("__")})
     doc_store_base_mod.OrderByExpr = type("OrderByExpr", (), {})
     monkeypatch.setitem(sys.modules, "common.doc_store", ModuleType("common.doc_store"))
     monkeypatch.setitem(sys.modules, "common.doc_store.doc_store_base", doc_store_base_mod)

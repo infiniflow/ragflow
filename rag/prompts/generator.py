@@ -568,11 +568,32 @@ async def gen_meta_filter(chat_mdl, meta_data: dict, query: str, constraints: di
     return {"conditions": []}
 
 
-async def gen_json(system_prompt: str, user_prompt: str, chat_mdl, gen_conf={}, max_retry=2):
+class LLMProviderError(RuntimeError):
+    """The chat model reported a provider failure instead of an answer."""
+
+
+def _is_llm_error_answer(text) -> bool:
+    """Whether an LLM helper reported a failure in-band.
+
+    ``LLMBundle`` returns ``"**ERROR**: ..."`` instead of raising when a
+    provider call fails terminally, and that text can also reach the LLM cache.
+    """
+    return isinstance(text, str) and text.lstrip().lower().startswith("**error**")
+
+
+async def gen_json(system_prompt: str, user_prompt: str, chat_mdl, gen_conf={}, max_retry=2, raise_on_error: bool = False):
+    """Return the JSON answer parsed from the model's reply.
+
+    ``raise_on_error`` opts in to :class:`LLMProviderError` on a provider
+    failure. It is off by default because most callers treat a missing answer as
+    "no result", while callers that persist the result (wiki MAP) must not store
+    a failure as an empty answer — ``json_repair`` turns the error text into
+    ``''``, which is indistinguishable from a model that found nothing.
+    """
     from rag.graphrag.utils import get_llm_cache, set_llm_cache
 
     cached = get_llm_cache(chat_mdl.llm_name, system_prompt, user_prompt, gen_conf)
-    if cached:
+    if cached and not (raise_on_error and _is_llm_error_answer(cached)):
         return json_repair.loads(cached)
     _, msg = message_fit_in(form_message(system_prompt, user_prompt), chat_mdl.max_length)
     err = ""
@@ -581,6 +602,12 @@ async def gen_json(system_prompt: str, user_prompt: str, chat_mdl, gen_conf={}, 
         if ans and err:
             msg[-1]["content"] += f"\nGenerated JSON is as following:\n{ans}\nBut exception while loading:\n{err}\nPlease reconsider and correct it."
         ans = await chat_mdl.async_chat(msg[0]["content"], msg[1:], gen_conf=gen_conf)
+        if _is_llm_error_answer(ans):
+            if raise_on_error:
+                raise LLMProviderError(ans.strip().splitlines()[0][:500])
+            # Legacy behaviour for the other callers: report "no result", but
+            # never cache a provider failure as an answer.
+            return json_repair.loads(ans)
         ans = re.sub(r"(^.*</think>|```json\n|```\n*$)", "", ans, flags=re.DOTALL)
         try:
             res = json_repair.loads(ans)

@@ -173,7 +173,9 @@ class RAGFlowMinio:
             try:
                 r = self.conn.get_object(bucket, filename)
                 return r.read()
-            except Exception:
+            except Exception as e:
+                if isinstance(e, S3Error) and e.code in ("NoSuchKey", "NoSuchBucket", "ResourceNotFound"):
+                    return None
                 logging.exception(f"Fail to get {bucket}/{filename}")
                 if attempt == 2:
                     raise

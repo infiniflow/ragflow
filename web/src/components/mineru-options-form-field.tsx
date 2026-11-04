@@ -15,7 +15,7 @@
  */
 
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from './originui/select-with-search';
 import { Switch } from '@/components/ui/switch';
 import { LLMFactory } from '@/constants/llm';
 import { buildOptions } from '@/utils/form';
@@ -86,7 +86,7 @@ export function MinerUOptionsFormField({
         horizontal={true}
       >
         {(field) => (
-          <RAGFlowSelect
+          <SelectWithSearch
             value={field.value || 'auto'}
             onChange={field.onChange}
             options={parseMethodOptions}
@@ -105,7 +105,7 @@ export function MinerUOptionsFormField({
         horizontal={true}
       >
         {(field) => (
-          <RAGFlowSelect
+          <SelectWithSearch
             value={field.value || 'English'}
             onChange={field.onChange}
             options={languageOptions}

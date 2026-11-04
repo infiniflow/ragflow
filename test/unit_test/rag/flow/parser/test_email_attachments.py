@@ -89,6 +89,19 @@ def test_multipart_body_comes_from_the_part_not_the_whole_message(monkeypatch):
 
 
 @pytest.mark.p2
+@pytest.mark.parametrize("name", ["MESSAGE.EML", "Mail.Eml"])
+def test_eml_extension_matches_in_any_case(monkeypatch, name):
+    """Upload type detection lowercases the name, so an upper-case .EML reaches
+    `_email`. It must take the .eml branch, not hand RFC 5322 text to extract_msg."""
+    parser_module = _load_parser_module(monkeypatch)
+
+    content = _parse(parser_module, _eml(body="upper case body"), name=name)
+
+    assert content["subject"] == "quarterly report"
+    assert content["text"].strip() == "upper case body"
+
+
+@pytest.mark.p2
 def test_single_part_body_still_parses(monkeypatch):
     parser_module = _load_parser_module(monkeypatch)
 

@@ -76,8 +76,8 @@ export function VersionDialog({
             {t('flow.historyVersion')}
           </DialogTitle>
         </DialogHeader>
-        <section className="flex gap-8 relative">
-          <div className="w-72 max-h-[60vh] overflow-auto min-h-[40vh]">
+        <section className="flex gap-8 relative min-w-0">
+          <div className="w-72 shrink-0 max-h-[60vh] overflow-auto min-h-[40vh]">
             {loading ? (
               <Spin className="top-1/2"></Spin>
             ) : (
@@ -91,7 +91,7 @@ export function VersionDialog({
                     onClick={handleClick(x.id)}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="truncate">{x.title}</span>
+                      <span className="truncate min-w-0">{x.title}</span>
                       {x.release && <Dot></Dot>}
                     </div>
                   </li>
@@ -99,7 +99,7 @@ export function VersionDialog({
               </ul>
             )}
           </div>
-          <div className="relative flex-1 ">
+          <div className="relative flex-1 min-w-0">
             {versionLoading ? (
               <Spin className="top-1/2" />
             ) : versionLoadFailed ? (
@@ -109,9 +109,9 @@ export function VersionDialog({
             ) : (
               <Card className="h-full">
                 <CardContent className="h-full p-5 flex flex-col">
-                  <section className="flex justify-between pb-2">
-                    <div>
-                      <div className="flex">
+                  <section className="flex justify-between gap-2 pb-2">
+                    <div className="min-w-0">
+                      <div className="flex min-w-0">
                         <span className="pb-1 truncate">{agent?.title}</span>
                         {agent?.release && (
                           <RAGFlowTooltip tooltip={t('flow.productionTooltip')}>

@@ -19,6 +19,8 @@ export const DescriptionKeyMap: Record<string, string> = {
 };
 
 export const ImageMap = {
+  audio: getImageName('audio', 1),
+  email: getImageName('email', 1),
   book: getImageName('book', 4, { 1: 'jpg' }),
   laws: getImageName('law', 2),
   manual: getImageName('manual', 4),

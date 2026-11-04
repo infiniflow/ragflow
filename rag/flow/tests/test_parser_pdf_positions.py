@@ -11,7 +11,7 @@ both ``positions`` and ``position_tag``, exactly as
 deepdoc/parser/pdf_parser.py:1900-1902 emits) and asserts the coordinates
 survive into the internal ``_pdf_positions`` field without stripping the
 original ``positions`` field. It is the parser-layer counterpart of
-rag/flow/tests/test_title_chunker_position_int.py (which proves the
+test/unit_test/rag/flow/chunker/test_title_chunker_position_int.py (which proves the
 chunker layer keeps the coordinates). Together they pin down the full
 parser -> chunker -> position_int bridge for infiniflow/ragflow#18148.
 """

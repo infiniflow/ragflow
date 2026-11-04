@@ -518,6 +518,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         type: 'inputSelect',
         required: true,
         placeholder: 'paddleocrApiUrlPlaceholder',
+        autoComplete: 'new-password',
         validation: { message: 'paddleocrApiUrlMessage' },
       },
       {
@@ -526,6 +527,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         type: FormFieldType.Password,
         required: false,
         placeholder: 'paddleocrAccessTokenPlaceholder',
+        autoComplete: 'new-password',
         validation: { message: 'paddleocrAccessTokenMessage' },
       },
       {
@@ -605,6 +607,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         type: 'inputSelect',
         required: true,
         placeholder: 'paddleocrApiUrlPlaceholder',
+        autoComplete: 'new-password',
         validation: { message: 'paddleocrApiUrlMessage' },
       },
       {
@@ -613,6 +616,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         type: FormFieldType.Password,
         required: false,
         placeholder: 'paddleocrAccessTokenPlaceholder',
+        autoComplete: 'new-password',
         validation: { message: 'paddleocrAccessTokenMessage' },
       },
     ],
@@ -655,6 +659,14 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         required: true,
         placeholder: 'mineruApiserverPlaceholder',
         validation: { message: 'mineruApiserverMessage' },
+      },
+      {
+        name: 'mineru_api_token',
+        label: 'mineruApiToken',
+        type: FormFieldType.Password,
+        required: false,
+        placeholder: 'mineruApiTokenPlaceholder',
+        tooltip: 'mineruApiTokenTip',
       },
       {
         name: 'mineru_output_dir',
@@ -715,6 +727,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       const rawDelete = obj.mineru_delete_output;
       return {
         mineru_apiserver: obj.mineru_apiserver ?? '',
+        mineru_api_token: obj.mineru_api_token ?? '',
         mineru_output_dir: obj.mineru_output_dir ?? '',
         mineru_backend: obj.mineru_backend ?? 'pipeline',
         mineru_server_url: obj.mineru_server_url ?? '',

@@ -16,7 +16,8 @@
 
 import { memo } from 'react';
 
-import { Images } from '@/constants/common';
+import { AudioExtensions, Images } from '@/constants/common';
+import { AudioPreviewer } from './audio-preview';
 import CSVFileViewer from './csv-preview';
 import { DocPreviewer } from './doc-preview';
 import { EpubPreviewer } from './epub-preview';
@@ -86,6 +87,11 @@ const DocumentPreview = function ({
       ].indexOf(fileType) > -1 && (
         <section>
           <VideoPreviewer className={className} url={url} />
+        </section>
+      )}
+      {AudioExtensions.indexOf(fileType) > -1 && (
+        <section>
+          <AudioPreviewer className={className} url={url} />
         </section>
       )}
       {['ppt', 'pptx'].indexOf(fileType) > -1 && (

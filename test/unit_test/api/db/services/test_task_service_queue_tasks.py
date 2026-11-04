@@ -79,3 +79,74 @@ def test_queue_tasks_does_not_log_the_resume_collapse_for_naive(monkeypatch, cap
         _queue_tasks(monkeypatch, "naive", {"pages": [[1, 5], [10, 15]], "task_page_size": 12})
 
     assert "uses the resume parser" not in caplog.text
+
+
+def _reparse(monkeypatch, prev_tasks, chunks_in_store):
+    """Drive queue_tasks over a non-PDF document that already has task rows."""
+    inserted_tasks = []
+    queued_messages = []
+    doc_updates = {}
+    doc_store = SimpleNamespace(
+        search=lambda *_args, **_kwargs: chunks_in_store,
+        get_total=lambda hits: hits,
+        delete=lambda *_args: None,
+    )
+    monkeypatch.setattr(task_service.settings, "docStoreConn", doc_store)
+    monkeypatch.setattr(task_service.settings, "STORAGE_IMPL", SimpleNamespace(get=lambda *_args: b""))
+    monkeypatch.setattr(
+        task_service.DocumentService,
+        "get_chunking_config",
+        lambda *_args: {"id": "doc-id", "kb_id": "kb-id", "tenant_id": "tenant-id", "parser_id": "naive", "parser_config": {}},
+    )
+    monkeypatch.setattr(task_service.TaskService, "get_tasks", lambda *_args: prev_tasks)
+    monkeypatch.setattr(task_service.TaskService, "filter_delete", lambda *_args: None)
+    monkeypatch.setattr(task_service.DocumentService, "update_by_id", lambda _doc_id, fields: doc_updates.update(fields))
+    monkeypatch.setattr(task_service, "bulk_insert_into_db", lambda _model, tasks, _replace: inserted_tasks.extend(tasks))
+    monkeypatch.setattr(task_service.DocumentService, "begin2parse", lambda *_args: None)
+    monkeypatch.setattr(task_service, "seed_doc_chunking_counter", lambda *_args: True)
+    monkeypatch.setattr(task_service.REDIS_CONN, "queue_product", lambda *_args, **kwargs: queued_messages.append(kwargs["message"]) or True)
+
+    task_service.queue_tasks(
+        {
+            "id": "doc-id",
+            "name": "handbook.txt",
+            "type": FileType.DOC.value,
+            "parser_id": "naive",
+            "parser_config": {},
+        },
+        "bucket",
+        "handbook.txt",
+        0,
+    )
+    return inserted_tasks, queued_messages, doc_updates
+
+
+def _finished_task_owning(chunk_id, monkeypatch):
+    """A completed task row for this document, as the previous parse left it."""
+    first_parse, _, _ = _reparse(monkeypatch, prev_tasks=None, chunks_in_store=1)
+    row = dict(first_parse[0])
+    row["progress"] = 1.0
+    row["chunk_ids"] = chunk_id
+    return row
+
+
+@pytest.mark.p2
+def test_queue_tasks_reparses_when_the_doc_store_lost_the_chunks(monkeypatch):
+    prev_tasks = [_finished_task_owning("chunk-a", monkeypatch)]
+
+    inserted_tasks, queued_messages, doc_updates = _reparse(monkeypatch, prev_tasks, chunks_in_store=0)
+
+    assert doc_updates["chunk_num"] == 0
+    assert inserted_tasks[0].get("chunk_ids", "") == ""
+    assert len(queued_messages) == 1
+
+
+@pytest.mark.p2
+def test_queue_tasks_reuses_chunks_the_doc_store_still_has(monkeypatch):
+    prev_tasks = [_finished_task_owning("chunk-a", monkeypatch)]
+
+    inserted_tasks, queued_messages, doc_updates = _reparse(monkeypatch, prev_tasks, chunks_in_store=1)
+
+    assert doc_updates["chunk_num"] == 1
+    assert inserted_tasks[0]["chunk_ids"] == "chunk-a"
+    assert queued_messages == []

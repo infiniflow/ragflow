@@ -10,6 +10,7 @@ import {
   findFilesParserGaps,
   findParserGap,
   getDocumentRunningStatus,
+  getDocumentProgressMessage,
   getFileTypeByExtension,
   getSavedParserSetups,
   hasUnsupportedTypeGap,
@@ -35,6 +36,54 @@ describe('isDocumentStopping', () => {
       isDocumentStopping({ ingestion_status: IngestionTaskStatus.RUNNING }),
     ).toBe(false);
     expect(isDocumentStopping({ ingestion_status: undefined })).toBe(false);
+  });
+});
+
+describe('getDocumentProgressMessage', () => {
+  afterEach(() => {
+    mockIsGoBackend = false;
+  });
+
+  it('reads the latest real ingestion event on Go', () => {
+    mockIsGoBackend = true;
+
+    expect(
+      getDocumentProgressMessage({
+        progress_msg: 'stale legacy text',
+        latest_ingestion_event: {
+          id: 42,
+          ts: '2026-01-01T00:00:00Z',
+          event_type: 1,
+          component: '',
+          phase: 0,
+          message: 'Indexing 4/10',
+        },
+      }),
+    ).toBe('Indexing 4/10');
+  });
+
+  it('keeps the Python progress field unchanged', () => {
+    mockIsGoBackend = false;
+
+    expect(
+      getDocumentProgressMessage({
+        progress_msg: 'Parsing chunks',
+        latest_ingestion_event: {
+          id: 42,
+          ts: '2026-01-01T00:00:00Z',
+          event_type: 1,
+          component: '',
+          phase: 0,
+          message: 'Go-only event',
+        },
+      }),
+    ).toBe('Parsing chunks');
+  });
+
+  it('returns a placeholder when the selected source has no message', () => {
+    mockIsGoBackend = true;
+
+    expect(getDocumentProgressMessage({ progress_msg: '' })).toBe('-');
   });
 });
 

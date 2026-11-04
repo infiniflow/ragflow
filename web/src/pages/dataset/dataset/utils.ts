@@ -96,6 +96,15 @@ export const getDocumentRunningStatus = (
     python: document.run ?? RunningStatus.UNSTART,
   });
 
+/** Returns the backend-specific message shown for a document's current run. */
+export const getDocumentProgressMessage = (
+  document: Pick<IDocumentInfo, 'progress_msg' | 'latest_ingestion_event'>,
+) =>
+  pickByBackend({
+    go: document.latest_ingestion_event?.message,
+    python: document.progress_msg,
+  }) || '-';
+
 /**
  * Whether a cancel request is currently in flight for the document.
  * Only the Go backend reports STOPPING; Python always returns false.
@@ -185,6 +194,17 @@ export type FileParserGap = ParserGap & { name: string };
 
 export const hasUnsupportedTypeGap = (gaps: ParserGap[]) =>
   gaps.some((gap) => gap.reason === ParserGapReason.UnsupportedType);
+
+// Modal copy keyed by gap kind: missing models steer to adding the model,
+// unsupported types to reselecting the parse method.
+export function pickByGapKind<T>(
+  gaps: ParserGap[],
+  options: { missingModel: T; unsupportedType: T },
+): T {
+  return hasUnsupportedTypeGap(gaps)
+    ? options.unsupportedType
+    : options.missingModel;
+}
 
 type ParserSetup = Record<string, any> & { fileFormat?: string };
 

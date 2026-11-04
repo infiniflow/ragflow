@@ -39,6 +39,10 @@ const methods = {
     url: getMemoryList,
     method: 'get',
   },
+  getMemoryFilters: {
+    url: getMemoryList,
+    method: 'get',
+  },
   deleteMemory: { url: deleteMemory, method: 'delete' },
   getMemoryConfig: {
     url: getMemoryConfig,

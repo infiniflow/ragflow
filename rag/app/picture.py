@@ -69,11 +69,14 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             cv_mdl = LLMBundle(tenant_id, model_config=cv_model_config, lang=lang)
             video_prompt = str(parser_config.get("video_prompt", "") or "")
             ans = asyncio.run(cv_mdl.async_chat(system="", history=[], gen_conf={}, video_bytes=binary, filename=filename, video_prompt=video_prompt))
+            if "**ERROR**" in ans:
+                raise RuntimeError(ans)
             callback(0.8, "CV LLM respond: %s ..." % ans[:32])
             tokenize(doc, ans, eng, language=lang)
             return [doc]
         except Exception as e:
             callback(prog=-1, msg=str(e))
+            raise
     else:
         img = Image.open(io.BytesIO(binary)).convert("RGB")
         doc.update(
@@ -106,19 +109,15 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
                 img.save(img_binary, format="JPEG")
                 img_binary.seek(0)
                 ans = cv_mdl.describe(img_binary.read())
+            if "**ERROR**" in ans:
+                raise RuntimeError(ans)
             callback(0.8, "CV LLM respond: %s ..." % ans[:32])
             txt += "\n" + ans
             tokenize(doc, txt, eng, language=lang)
             return attach_media_context([doc], 0, image_ctx)
         except Exception as e:
-            if txt:
-                logging.warning(f"CV LLM unavailable, indexing OCR text instead: {e}")
-                callback(msg=f"[WARN] CV LLM unavailable ({e}), indexing OCR text only.")
-                tokenize(doc, txt, eng, language=lang)
-                return attach_media_context([doc], 0, image_ctx)
             callback(prog=-1, msg=str(e))
-
-    return []
+            raise
 
 
 def _try_paddleocr_image(filename, binary, tenant_id, parser_config, callback):

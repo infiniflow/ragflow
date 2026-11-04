@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/tooltip';
 import { GenerateStatus, GenerateType } from '@/constants/knowledge';
 import { ITraceInfo, useGenerateStatus } from '@/hooks/use-dataset-generate';
+import { useIsGoBackend } from '@/utils/backend-variant';
 
 import { UpdateRunProgress } from './update-run-progress';
 
@@ -40,14 +41,17 @@ export function CompilationUpdateButton({
   onClick,
 }: CompilationUpdateButtonProps) {
   const { t } = useTranslation();
+  const isGo = useIsGoBackend();
   const { status } = useGenerateStatus(traceData);
   const isRunning = status === GenerateStatus.Running;
-  const isGenerating = isRunning || status === GenerateStatus.Failed;
+  const isFailed = status === GenerateStatus.Failed;
+  const isGenerating = isRunning || isFailed;
 
-  // A failed trace persists (progress stays < 0) until the next run, so it
-  // must not keep the button visible on its own — only real changes or a
-  // live run should.
-  if (!hasChanges && !isRunning) {
+  // A failed trace persists (progress stays < 0) until the next run, so on
+  // Python it must not keep the button visible on its own — only real changes
+  // or a live run should. On Go a failed batch is surfaced until retry drains
+  // it, so failure keeps the button visible there.
+  if (!hasChanges && !isRunning && !(isGo && isFailed)) {
     return null;
   }
 

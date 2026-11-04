@@ -13,15 +13,80 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-"""Unit tests for ``record_doc_deletion`` in ``dataset_structure_merger.py``."""
+"""Unit tests for ``dataset_structure_merger.py`` (deletion markers + row field normalization)."""
 
+import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 pytestmark = pytest.mark.p2
 
-from rag.svr.task_executor_refactor.dataset_structure_merger import _UPGRADED_TABLES, record_doc_deletion
+from common.doc_store.doc_store_base import field_scalar
+from rag.svr.task_executor_refactor.dataset_structure_merger import (
+    _TIMESTAMP_UPGRADED_TABLES,
+    _UPGRADED_TABLES,
+    _is_relation_row,
+    _save_build_time,
+    record_doc_deletion,
+)
+
+
+async def _inline_exec(func, *args, **kwargs):
+    """Stand-in for ``thread_pool_exec``: run the callable inline."""
+    return func(*args, **kwargs)
+
+
+def _run(coro):
+    """Run ``coro`` on a loop owned by this test.
+
+    ``asyncio.run`` goes through the thread's event-loop policy, which tests
+    elsewhere in the suite leave pointing at a closed loop ("Event loop is
+    closed" on CI). A private loop keeps these cases independent of collection
+    order and of whatever the previous test left behind.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+class TestFieldScalar:
+    """``*_kwd`` columns are one-item lists on Infinity and scalars on ES."""
+
+    def test_unwraps_infinity_list(self):
+        assert field_scalar(["tree"]) == "tree"
+
+    def test_passes_through_es_scalar(self):
+        assert field_scalar("tree") == "tree"
+
+    def test_none_and_empty_are_empty(self):
+        assert field_scalar(None) == ""
+        assert field_scalar([]) == ""
+        assert field_scalar("  ") == ""
+
+    def test_default_applies_to_missing(self):
+        assert field_scalar(None, default="skill") == "skill"
+        assert field_scalar([], default="skill") == "skill"
+        assert field_scalar(["x"], default="skill") == "x"
+
+
+class TestIsRelationRow:
+    def test_entity_row_is_not_a_relation_even_when_infinity_fills_the_column(self):
+        # Infinity fills absent columns, so ``from_entity_kwd`` exists (as [])
+        # on an entity row; a ``key in row`` test would misclassify it.
+        entity_row = {"name_kwd": ["apple"], "from_entity_kwd": [], "to_entity_kwd": []}
+        assert not _is_relation_row(entity_row)
+
+    def test_relation_row_is_detected_from_knowledge_graph_kwd(self):
+        assert _is_relation_row({"knowledge_graph_kwd": ["relation"]})
+
+    def test_relation_row_is_detected_from_entity_columns(self):
+        assert _is_relation_row({"from_entity_kwd": ["apple"], "to_entity_kwd": ["iphone"]})
+
+    def test_relation_row_without_marker_is_not_a_relation(self):
+        assert not _is_relation_row({"name_kwd": ["apple"]})
 
 
 class TestRecordDocDeletion:
@@ -37,7 +102,11 @@ class TestRecordDocDeletion:
         mock_conn.index_exist.return_value = True
         mock_conn.ensure_columns = MagicMock()
 
-        with patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings, patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search:
+        with (
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.thread_pool_exec", _inline_exec),
+        ):
             mock_settings.docStoreConn = mock_conn
             mock_search.index_name.return_value = "ragflow_tenant_123"
 
@@ -66,7 +135,11 @@ class TestRecordDocDeletion:
         mock_conn.index_exist.return_value = True
         mock_conn.ensure_columns = MagicMock()
 
-        with patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings, patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search:
+        with (
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.thread_pool_exec", _inline_exec),
+        ):
             mock_settings.docStoreConn = mock_conn
             mock_search.index_name.return_value = "ragflow_tenant_123"
 
@@ -90,7 +163,11 @@ class TestRecordDocDeletion:
         # First insert fails, second succeeds
         mock_conn.insert.side_effect = [RuntimeError("insert failed"), None]
 
-        with patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings, patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search:
+        with (
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.thread_pool_exec", _inline_exec),
+        ):
             mock_settings.docStoreConn = mock_conn
             mock_search.index_name.return_value = "ragflow_tenant_123"
 
@@ -110,7 +187,11 @@ class TestRecordDocDeletion:
         mock_conn.index_exist.return_value = False
         mock_conn.ensure_columns = MagicMock()
 
-        with patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings, patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search:
+        with (
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.thread_pool_exec", _inline_exec),
+        ):
             mock_settings.docStoreConn = mock_conn
             mock_search.index_name.return_value = "ragflow_tenant_123"
 
@@ -123,10 +204,76 @@ class TestRecordDocDeletion:
         mock_conn = MagicMock(spec=["index_exist", "insert"])
         mock_conn.index_exist.return_value = True
 
-        with patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings, patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search:
+        with (
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.thread_pool_exec", _inline_exec),
+        ):
             mock_settings.docStoreConn = mock_conn
             mock_search.index_name.return_value = "ragflow_tenant_123"
 
             record_doc_deletion("tenant_123", "kb_456", "doc_789")
 
             mock_conn.insert.assert_called_once()
+
+
+class TestSaveBuildTime:
+    """A chunk table created before ``build_timestamp_flt`` existed rejects the
+    write, which silently turns every merge into a full rebuild."""
+
+    def setup_method(self):
+        _TIMESTAMP_UPGRADED_TABLES.clear()
+
+    def test_save_build_time_upgrades_column_before_write(self):
+        mock_conn = MagicMock()
+        mock_conn.get.return_value = None
+        with (
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.thread_pool_exec", _inline_exec),
+        ):
+            mock_settings.docStoreConn = mock_conn
+            mock_search.index_name.return_value = "ragflow_tenant_123"
+
+            _run(_save_build_time("tenant_123", "kb_456", "wiki_page", None, 123.5))
+
+        mock_conn.ensure_columns.assert_called_once_with(
+            "ragflow_tenant_123",
+            "kb_456",
+            {"build_timestamp_flt": {"type": "float", "default": 0.0}},
+        )
+        rows, index, kb = mock_conn.insert.call_args[0]
+        assert (index, kb) == ("ragflow_tenant_123", "kb_456")
+        assert rows[0]["build_timestamp_flt"] == 123.5
+
+    def test_save_build_time_upgrades_each_table_once(self):
+        mock_conn = MagicMock()
+        mock_conn.get.return_value = None
+        with (
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.thread_pool_exec", _inline_exec),
+        ):
+            mock_settings.docStoreConn = mock_conn
+            mock_search.index_name.return_value = "ragflow_tenant_123"
+
+            _run(_save_build_time("tenant_123", "kb_456", "wiki_page", None, 1.0))
+            _run(_save_build_time("tenant_123", "kb_456", "mind_map", None, 2.0))
+
+        assert mock_conn.ensure_columns.call_count == 1
+        assert mock_conn.insert.call_count == 2
+
+    def test_save_build_time_skips_upgrade_when_engine_lacks_helper(self):
+        mock_conn = MagicMock(spec=["get", "insert", "update"])
+        mock_conn.get.return_value = None
+        with (
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search,
+            patch("rag.svr.task_executor_refactor.dataset_structure_merger.thread_pool_exec", _inline_exec),
+        ):
+            mock_settings.docStoreConn = mock_conn
+            mock_search.index_name.return_value = "ragflow_tenant_123"
+
+            _run(_save_build_time("tenant_123", "kb_456", "wiki_page", None, 3.0))
+
+        mock_conn.insert.assert_called_once()

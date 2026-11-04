@@ -48,12 +48,15 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
         seq2txt_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.ASR)
         seq2txt_mdl = LLMBundle(tenant_id, seq2txt_model_config, lang=lang)
         ans = seq2txt_mdl.transcription(tmp_path)
+        if "**ERROR**" in ans:
+            raise RuntimeError(ans)
         callback(0.8, "Sequence2Txt LLM respond: %s ..." % ans[:32])
 
         tokenize(doc, ans, is_english, language=lang)
         return [doc]
     except Exception as e:
         callback(prog=-1, msg=str(e))
+        raise
     finally:
         if tmp_path and os.path.exists(tmp_path):
             try:
@@ -61,4 +64,3 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             except Exception as e:
                 logging.exception(f"Failed to remove temporary file: {tmp_path}, exception: {e}")
                 pass
-    return []

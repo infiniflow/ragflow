@@ -110,16 +110,18 @@ def force_every_section_above_budget(monkeypatch):
 
 
 def test_naive_merge_bare_char_a_splits_only_at_lowercase_a():
-    """Bare-char ``a`` must split only at lowercase ``a``, not at ``A``.
+    """Bare-char ``a`` must split only at lowercase ``a``, not at ``A``, and the
+    matched delimiter must be retained (lossless, #20276).
 
-    The delimiter produces two paragraphs ("B", "Ab") which the default
-    OVER_CAP merge pairs into one chunk (pairing may exceed cap). The
-    assertion therefore checks the *split point*: lowercase 'a' separates
-    "B" from "Ab" while the uppercase 'A' stays inline.
+    The delimiter produces two paragraphs ("Ba", "Ab") which the default
+    OVER_CAP merge pairs into one chunk. The lowercase 'a' is kept as the end
+    of the first paragraph; the uppercase 'A' stays inline.
     """
     chunks = naive_merge(["BaAb"], chunk_token_num=8, delimiter="a")
     joined = "".join(chunks)
-    assert joined == "\nB\nAb"
+    assert joined == "\nBaAb"
+    # The matched delimiter is retained.
+    assert "a" in joined
     # Case-insensitive matching would have split at 'A' too -> "Ba\\nb".
     assert "Ba\nb" not in joined
 
@@ -127,7 +129,10 @@ def test_naive_merge_bare_char_a_splits_only_at_lowercase_a():
 def test_naive_merge_bare_char_A_splits_only_at_uppercase_A():
     chunks = naive_merge(["BaAb"], chunk_token_num=8, delimiter="A")
     joined = "".join(chunks)
-    assert joined == "\nBa\nb"
+    # The matched uppercase 'A' is retained as the end of the first paragraph.
+    assert joined == "\nBaAb"
+    # 'A' is kept; a regression to case-insensitive matching would split at the
+    # lowercase 'a' too -> "B\\nAb".
     assert "B\nAb" not in joined
 
 

@@ -2,7 +2,8 @@
 
 This directory contains database-related utility scripts for RAGFlow.
 
-- **mysql_migration.py**: Data migration between tables with stage-based execution
+- **mysql_migration.py**: Data migration between tables with stage-based execution (MySQL / OceanBase)
+- **postgres_migration.py**: Same stages as mysql_migration.py for PostgreSQL (`DB_TYPE=postgres`)
 - **db_schema_sync.py**: Database schema synchronization using peewee-migrate
 
 ---
@@ -165,6 +166,31 @@ python mysql_migration.py --stages tenant_model_provider,tenant_model_instance,t
 python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --password mypassword --execute
 ```
 
+## postgres_migration.py
+
+PostgreSQL counterpart to `mysql_migration.py`. It runs the same stages
+(`tenant_model_provider` through `tenant_model_id_migration`) with Postgres SQL
+(`TO_TIMESTAMP`, `USING …::text`, `ON CONFLICT`). `run_migrations.sh` selects
+this script when `DB_TYPE` is `postgres` or `postgresql`.
+
+`DB_TYPE=gaussdb` does not run this script; GaussDB needs a dedicated migration
+path (distributed/ORA incompatibilities with postgres-shaped SQL).
+
+Pre-startup `run_migrations.sh` is the primary path for both `model_type`
+merge and `tenant_*_id` conversion/backfill. `migrate_db()` only reruns the
+same stages (and a skip-if-already-varchar `tenant_*_id` type fallback) if
+that script did not run.
+
+Do not convert `tenant_model.model_type` to integer in `migrate_db()` first:
+`tenant_model_seeding` and `model_type_merge` skip when the column is already
+INT, which would leave unmerged duplicate rows.
+
+```bash
+python postgres_migration.py --list-stages
+python postgres_migration.py --stages tenant_model_seeding,model_type_merge,tenant_model_id_migration \
+    --config /path/to/config.yaml --execute --database-version v0.27.0 --mark-database-version-on-success
+```
+
 ## Output Interpretation
 
 ### Stage Execution Log
@@ -275,8 +301,8 @@ python db_schema_sync.py [OPTIONS]
 ### Version Format
 
 Version must be in format `vxx.xx.xx` where `xx` are digits:
-- Valid: `v0.27.2`, `v1.0.0`, `v10.20.30`
-- Invalid: `0.27.2`, `v0.25`, `v0.27.2.1`
+- Valid: `v0.27.3`, `v1.0.0`, `v10.20.30`
+- Invalid: `0.27.2`, `v0.25`, `v0.27.3.1`
 
 ### Migration File Location
 
@@ -287,7 +313,7 @@ tools/migrate/{version_dir}/
 
 Where `{version_dir}` is the version with `.` replaced by `_`.
 
-Example: Version `v0.27.2` → Directory `tools/migrate/v0_27_2/`
+Example: Version `v0.27.3` → Directory `tools/migrate/v0_27_3/`
 
 ### Examples
 
@@ -295,32 +321,32 @@ Example: Version `v0.27.2` → Directory `tools/migrate/v0_27_2/`
 # List all migrations
 python db_schema_sync.py --list \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
-    --version v0.27.2
+    --version v0.27.3
 
 # Create a new auto-detected migration (new tables, new fields, type changes only)
 python db_schema_sync.py --create \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
-    --version v0.27.2
+    --version v0.27.3
 
 # Create a migration including dropped fields (destructive!)
 python db_schema_sync.py --create --drop \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
-    --version v0.27.2
+    --version v0.27.3
 
 # Create a named migration
 python db_schema_sync.py --create --name add_user_table \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
-    --version v0.27.2
+    --version v0.27.3
 
 # Run all pending migrations
 python db_schema_sync.py --migrate \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
-    --version v0.27.2
+    --version v0.27.3
 
 # Show schema differences (including removed fields)
 python db_schema_sync.py --diff \
     --host localhost --port 3306 --user root --password xxx --database rag_flow \
-    --version v0.27.2
+    --version v0.27.3
 ```
 
 ## How It Works

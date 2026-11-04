@@ -13,8 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import datetime
 import asyncio
+import datetime
 import heapq
 import json
 import logging
@@ -22,28 +22,47 @@ import os
 import re
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Tuple
 
 import xxhash
 
+from common.doc_store.doc_store_base import field_scalar
 from common.exceptions import TaskCanceledException
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
 from rag.prompts.generator import gen_json
+
 from ._common import (
     build_chunk_batches as _build_chunk_batches,
+)
+from ._common import (
     encode as _encode,
-    find_vec_field as _find_vec_field,
-    stable_row_id as _stable_row_id,
-    tokenize_for_search as _tokenize_for_search,
-    union_ordered as _union_ordered,
-    run_chunked_pipeline as _run_chunked_pipeline,
-    knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
+)
+from ._common import (
     env_float as _env_float,
+)
+from ._common import (
     env_int as _env_int,
 )
-
+from ._common import (
+    find_vec_field as _find_vec_field,
+)
+from ._common import (
+    knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
+)
+from ._common import (
+    run_chunked_pipeline as _run_chunked_pipeline,
+)
+from ._common import (
+    stable_row_id as _stable_row_id,
+)
+from ._common import (
+    tokenize_for_search as _tokenize_for_search,
+)
+from ._common import (
+    union_ordered as _union_ordered,
+)
 
 _STRUCT_TYPES = ("list", "set", "hypergraph")
 _STRUCT_TYPE_ALIASES = {
@@ -423,7 +442,7 @@ def _struct_get(cfg: dict, *keys, default=None):
         if k in cfg:
             return cfg[k]
         kl = k.lower()
-        for ck in cfg.keys():
+        for ck in cfg:
             if isinstance(ck, str) and ck.lower() == kl:
                 return cfg[ck]
     return default
@@ -455,7 +474,7 @@ def _struct_supported_type(parser_config: dict, autotype: str) -> bool:
     return normalized_kind == autotype
 
 
-def _struct_render_fields(fields: list, language: str) -> Tuple[str, str]:
+def _struct_render_fields(fields: list, language: str) -> tuple[str, str]:
     """Return (bulleted field descriptions, JSON skeleton for one item)."""
     lines = []
     skeleton_parts = []
@@ -486,7 +505,7 @@ def _struct_render_type_fields(
     *,
     kind: str,
     extra_fields: list | None = None,
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """Render the new compilation-template field shape.
 
     New templates define allowed item ``type`` values with descriptions/rules,
@@ -596,7 +615,7 @@ def _struct_type_counts(items: list[dict]) -> dict[str, str]:
     return {k: f"{v[0]}/{v[1]}" for k, v in sorted(out.items())}
 
 
-def _struct_hypergraph_prompts(parser_config: dict, language: str = "en", rechunk: bool = False) -> Tuple[str, str]:
+def _struct_hypergraph_prompts(parser_config: dict, language: str = "en", rechunk: bool = False) -> tuple[str, str]:
     autotype = _struct_infer_type(parser_config)
     guideline = _struct_get(parser_config, "guideline", default={}) or {}
     output = _struct_get(parser_config, "output", default={}) or {}
@@ -754,7 +773,7 @@ async def _struct_extract_hypergraph(
     chat_mdl,
     language: str,
     rechunk: bool = False,
-) -> Tuple[list[dict], list[dict], dict[str, str], list[dict]]:
+) -> tuple[list[dict], list[dict], dict[str, str], list[dict]]:
     node_prompt, edge_prompt_template = _struct_hypergraph_prompts(parser_config, language, rechunk=rechunk)
 
     user_prompt = (
@@ -1345,7 +1364,7 @@ def _struct_merge_graph_relations(relations: list[dict]) -> list[dict]:
     return [merged[key] for key in order]
 
 
-def _struct_relation_member_fields(parser_config: dict) -> Tuple:
+def _struct_relation_member_fields(parser_config: dict) -> tuple:
     """Return (source_field, target_field) for relation docs, or (None, None).
 
     Looks at ``identifiers.relation_members`` first (dict form for graph-style
@@ -2079,7 +2098,7 @@ def _struct_rebuild_doc_storage_doc(
         new_doc["id"] = base_doc["id"]
     # The spec forbids changing from_entity_kwd / to_entity_kwd on a merge.
     for kwd in ("from_entity_kwd", "to_entity_kwd"):
-        if kwd in base_doc and base_doc[kwd]:
+        if base_doc.get(kwd):
             new_doc[kwd] = base_doc[kwd]
     return new_doc
 
@@ -2890,8 +2909,8 @@ async def _struct_rebuild_graph_json(
     compilation_template_id: str | None = None,
 ) -> dict:
     from common import settings
-    from rag.nlp import search as _rag_search
     from common.doc_store.doc_store_base import OrderByExpr
+    from rag.nlp import search as _rag_search
 
     index = _rag_search.index_name(tenant_id)
     fields = ["content_with_weight", "knowledge_graph_kwd", "source_chunk_ids", "doc_id"]
@@ -2932,7 +2951,7 @@ async def _struct_rebuild_graph_json(
             continue
         source_doc_id = str(row.get("doc_id") or "").strip()
         payload = _struct_load_payload(row)
-        if row.get("knowledge_graph_kwd") == "relation":
+        if field_scalar(row.get("knowledge_graph_kwd")) == "relation":
             relation = _struct_graph_relation(payload)
             if relation:
                 if doc_id is None and source_doc_id:
@@ -3006,13 +3025,13 @@ async def cleanup_timeline_isolated_entities(
     rows = settings.docStoreConn.get_fields(res, fields) or {}
     connected_names: set[str] = set()
     for row in rows.values():
-        if row.get("knowledge_graph_kwd") != "relation":
+        if field_scalar(row.get("knowledge_graph_kwd")) != "relation":
             continue
         edge = _chain_extract_edge(row)
         if edge is not None:
             connected_names.update(name.casefold() for name in edge if name)
 
-    orphan_ids = [row_id for row_id, row in rows.items() if row.get("knowledge_graph_kwd") == "entity" and _struct_entity_name(row).casefold() not in connected_names]
+    orphan_ids = [row_id for row_id, row in rows.items() if field_scalar(row.get("knowledge_graph_kwd")) == "entity" and _struct_entity_name(row).casefold() not in connected_names]
     if orphan_ids:
         await thread_pool_exec(
             settings.docStoreConn.delete,
@@ -3321,7 +3340,10 @@ async def _struct_upsert_dataset_graph_json(
     """
     from common import settings
     from rag.nlp import search as _rag_search
-    from ._common import encode as _encode, tokenize_for_search as _tokenize_for_search, stable_row_id as _stable_row_id
+
+    from ._common import encode as _encode
+    from ._common import stable_row_id as _stable_row_id
+    from ._common import tokenize_for_search as _tokenize_for_search
 
     index = _rag_search.index_name(tenant_id)
     kb_id_str = str(kb_id)
@@ -3511,12 +3533,12 @@ commentary):
 
 def _chain_extract_edge(doc: dict) -> tuple[str, str] | None:
     """Return ``(from_slug, to_slug)`` for a relation doc, or None."""
-    if doc.get("knowledge_graph_kwd") != "relation":
+    if field_scalar(doc.get("knowledge_graph_kwd")) != "relation":
         return None
-    src = doc.get("from_entity_kwd")
-    tgt = doc.get("to_entity_kwd")
-    if isinstance(src, str) and isinstance(tgt, str) and src.strip() and tgt.strip():
-        return src.strip(), tgt.strip()
+    src = field_scalar(doc.get("from_entity_kwd"))
+    tgt = field_scalar(doc.get("to_entity_kwd"))
+    if src and tgt:
+        return src, tgt
     # Fallback: parse the payload — older relation docs may not have the
     # *_entity_kwd columns set if the upstream extractor was permissive.
     try:
@@ -3867,7 +3889,7 @@ async def merge_compiled_structures(
                 ),
                 timeout=chain_timeout_seconds,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logging.warning("chain validate: timed out after %ss; using local-deduped docs", chain_timeout_seconds)
         except Exception:
             logging.exception("chain validate: unexpected failure; using local-deduped docs")
@@ -3966,11 +3988,11 @@ async def merge_compiled_structures(
 
 
 __all__ = [
+    "MERGE_SCOPE_DATASET",
+    "MERGE_SCOPE_DOC",
+    "cleanup_timeline_isolated_entities",
     "compile_structure_from_text",
     "merge_compiled_structures",
-    "cleanup_timeline_isolated_entities",
-    "rebuild_structure_graph_json",
     "rebuild_dataset_structure_graph_json",
-    "MERGE_SCOPE_DOC",
-    "MERGE_SCOPE_DATASET",
+    "rebuild_structure_graph_json",
 ]

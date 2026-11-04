@@ -110,6 +110,25 @@ class ESConnection(ESConnectionBase):
     def _es_search_once(self, index_names: list[str], query: dict, track_total_hits: bool):
         return self.es.search(index=index_names, body=query, timeout="600s", track_total_hits=track_total_hits)
 
+    def _id_sort_field(self, index_names: list[str]) -> str | None:
+        # Indices created before ``id`` matched the keyword template map it as
+        # text with an ``id.keyword`` sub-field; sorting on the text field fails.
+        res = self.es.indices.get_field_mapping(fields="id", index=index_names, ignore_unavailable=True, allow_no_indices=True)
+        sort_fields = set()
+        for index_mapping in res.values():
+            id_mapping = index_mapping.get("mappings", {}).get("id", {}).get("mapping", {}).get("id")
+            if not id_mapping:
+                continue
+            if id_mapping.get("type") == "keyword":
+                sort_fields.add("id")
+            elif id_mapping.get("fields", {}).get("keyword", {}).get("type") == "keyword":
+                sort_fields.add("id.keyword")
+            else:
+                return None
+        if len(sort_fields) > 1:
+            return None
+        return sort_fields.pop() if sort_fields else "id"
+
     def _search_with_search_after(self, index_names: list[str], query: dict, offset: int, limit: int):
         q_base = copy.deepcopy(query)
         q_base.pop("from", None)
@@ -280,8 +299,8 @@ class ESConnection(ESConnectionBase):
         for field in highlight_fields:
             s = s.highlight(field, fragment_size=50, number_of_fragments=5)
 
+        orders = list()
         if order_by:
-            orders = list()
             for field, order in order_by.fields:
                 order = "asc" if order == 0 else "desc"
                 if field in ["page_num_int", "top_int"]:
@@ -289,7 +308,11 @@ class ESConnection(ESConnectionBase):
                 elif field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
                 elif field == "id":
-                    continue  # id as "text", not a "keyword", order by it will cause error
+                    field = self._id_sort_field(index_names)
+                    if field is None:
+                        self.logger.warning(f"ESConnection.search {index_names!s}: no sortable id field, dropping the id sort")
+                        continue
+                    order_info = {"order": order, "unmapped_type": "keyword"}
                 else:
                     order_info = {"order": order, "unmapped_type": "keyword"}
                 orders.append({field: order_info})
@@ -299,7 +322,7 @@ class ESConnection(ESConnectionBase):
                 s.aggs.bucket(f"aggs_{fld}", "terms", field=fld, size=1000000)
 
         has_dense = any(isinstance(m, MatchDenseExpr) for m in match_expressions)
-        has_explicit_sort = bool(order_by and order_by.fields)
+        has_explicit_sort = bool(orders)
         use_search_after = limit > 0 and (offset + limit > MAX_RESULT_WINDOW) and has_explicit_sort and not has_dense
 
         if limit > 0 and not use_search_after:

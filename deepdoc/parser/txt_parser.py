@@ -22,6 +22,7 @@ from rag.nlp import MergeStrategy, merge_paragraphs
 from rag.nlp.delim import (
     DEFAULT_DELIMITER,
     compile_delimiter_pattern,
+    has_wrapped_delimiter,
     normalize_text_newlines,
     parse_delimiter_field,
 )
@@ -45,6 +46,15 @@ class RAGFlowTxtParser:
             bool(dels),
         )
         secs = re.split(r"(%s)" % dels, txt) if dels else [txt]
+        if has_wrapped_delimiter(delimiter):
+            # Custom (backtick-wrapped) delimiter: hard split, one chunk per
+            # segment, no token-size merge. Mirrors naive_merge's has_custom
+            # branch: the delimiter itself is dropped. Without this, the
+            # delimiter is consumed here and the downstream naive_merge sees
+            # no boundary (e.g. txt with '`#`' never splits).
+            cks = [sec for sec in secs if sec and not (dels and re.fullmatch(dels, sec))]
+            logging.debug("parser_txt: %d sections -> %d chunks (custom delimiter, no merge)", len(secs), len(cks))
+            return [[c, ""] for c in cks]
         paragraphs = []
         for index, sec in enumerate(secs):
             if dels and re.match(f"^{dels}$", sec):

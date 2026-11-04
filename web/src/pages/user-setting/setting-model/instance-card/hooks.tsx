@@ -24,6 +24,7 @@ import {
 import { IProviderInstance } from '@/interfaces/database/llm';
 import { IModelInfo } from '@/interfaces/request/llm';
 import { RefObject, useCallback, useEffect, useMemo, useRef } from 'react';
+import { getProviderConfig } from '../provider-schema/field-config';
 import { useProviderFields } from '../provider-schema/hooks';
 import { SelectOption } from '../provider-schema/types';
 import {
@@ -96,7 +97,10 @@ export function unwrapApiKey(raw: unknown): {
 function pickDefaultUrl(
   options?: Array<{ value: string; regionKey?: string }>,
 ): string | undefined {
-  return options?.find((o) => o.regionKey === 'default')?.value;
+  // Guard against non-array data (e.g. a transient cache/HMR value).
+  return Array.isArray(options)
+    ? options.find((o) => o.regionKey === 'default')?.value
+    : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -108,6 +112,10 @@ function pickDefaultUrl(
  * `base_url` dropdown options for the current provider.
  * Used to pre-fill the URL field with the provider's default URL when
  * creating a new instance.
+ *
+ * Also exposes `url_hint`: a display-only example endpoint that becomes
+ * the endpoint input's placeholder. Providers that ship no default URL
+ * (most self-hosted ones) still get a useful hint.
  */
 export function useProviderBaseUrlOptions(providerName: string) {
   const { data: availableProviders } = useFetchAvailableProviders();
@@ -145,7 +153,9 @@ export function useProviderBaseUrlOptions(providerName: string) {
     return options.length > 0 ? options : undefined;
   }, [currentProvider]);
 
-  return { baseUrlOptions, availableProviders };
+  const urlHint = useMemo(() => currentProvider?.url_hint, [currentProvider]);
+
+  return { baseUrlOptions, availableProviders, urlHint };
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +179,7 @@ export function useProviderBaseUrlOptions(providerName: string) {
  *   registered in `API_KEY_NESTED_FIELDS`.
  */
 export function useProviderInitialValues(
+  providerName: string,
   instance: IProviderInstance,
   instanceDetails: IProviderInstance | undefined,
   isDraft: boolean,
@@ -181,7 +192,14 @@ export function useProviderInitialValues(
     if (isDraft) {
       const values: Record<string, any> = { instance_name: '' };
       if (defaultBaseUrl) {
-        values.base_url = defaultBaseUrl;
+        // Seed the URL field by the name the provider's form actually
+        // uses. Most providers call it `base_url`, but some (e.g.
+        // PaddleOCR) use a provider-specific field name.
+        const urlFieldName =
+          getProviderConfig(providerName).fields.find(
+            (f) => f.type === 'inputSelect',
+          )?.name ?? 'base_url';
+        values[urlFieldName] = defaultBaseUrl;
       }
       return values;
     }
@@ -227,7 +245,14 @@ export function useProviderInitialValues(
       }
     }
     return values;
-  }, [instance, instanceDetails, isDraft, baseUrlOptions, echoTransform]);
+  }, [
+    providerName,
+    instance,
+    instanceDetails,
+    isDraft,
+    baseUrlOptions,
+    echoTransform,
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -727,6 +752,7 @@ export function useFormFields(
   initialValues: Record<string, any>,
   baseUrlOptions: SelectOption[] | undefined,
   hideWhenInstanceExists: (values: any) => boolean,
+  urlHint?: string,
 ) {
   const { fields, defaultValues } = useProviderFields({
     llmFactory: providerName,
@@ -740,6 +766,7 @@ export function useFormFields(
     initialValues,
     baseUrlOptions,
     hideWhenInstanceExists,
+    urlHint,
   });
 
   const formFields = useMemo(

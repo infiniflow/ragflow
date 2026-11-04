@@ -5,9 +5,11 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Operator } from '@/constants/agent';
-import useGraphStore from '@/pages/agent/store';
-import { PropsWithChildren, useCallback, useMemo } from 'react';
+import { useIsGoBackend } from '@/utils/backend-variant';
+import { PropsWithChildren, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import useGraphStore from '../../../store';
+import { buildPipelineNextOperators } from '../../../utils/pipeline-connection';
 import { OperatorItemList } from './operator-item-list';
 
 function OperatorAccordionTrigger({ children }: PropsWithChildren) {
@@ -140,26 +142,6 @@ export function AccordionOperators({
   );
 }
 
-// Limit the number of operators of a certain type on the canvas to only one
-function useRestrictSingleOperatorOnCanvas() {
-  const { findNodeByName } = useGraphStore((state) => state);
-
-  const restrictSingleOperatorOnCanvas = useCallback(
-    (singleOperators: Operator[]) => {
-      const list: Operator[] = [];
-      singleOperators.forEach((operator) => {
-        if (!findNodeByName(operator)) {
-          list.push(operator);
-        }
-      });
-      return list;
-    },
-    [findNodeByName],
-  );
-
-  return restrictSingleOperatorOnCanvas;
-}
-
 export function PipelineAccordionOperators({
   isCustomDropdown = false,
   mousePosition,
@@ -169,36 +151,23 @@ export function PipelineAccordionOperators({
   mousePosition?: { x: number; y: number };
   nodeId?: string;
 }) {
-  const restrictSingleOperatorOnCanvas = useRestrictSingleOperatorOnCanvas();
-  const { getOperatorTypeFromId } = useGraphStore((state) => state);
+  const { findNodeByName, getOperatorTypeFromId } = useGraphStore(
+    (state) => state,
+  );
+  const isGoBackend = useIsGoBackend();
+  const sourceOperator = getOperatorTypeFromId(nodeId) as
+    | Operator
+    | undefined;
 
-  const operators = useMemo(() => {
-    const list = [
-      ...restrictSingleOperatorOnCanvas([Operator.Parser, Operator.Tokenizer]),
-    ];
-    list.push(Operator.Extractor);
-    if (getOperatorTypeFromId(nodeId) !== Operator.Compiler) {
-      list.push(Operator.Compiler);
-    }
-    return list;
-  }, [getOperatorTypeFromId, nodeId, restrictSingleOperatorOnCanvas]);
-
-  const chunkerOperators = useMemo(() => {
-    return [
-      ...restrictSingleOperatorOnCanvas([
-        Operator.TokenChunker,
-        Operator.TitleChunker,
-      ]),
-    ];
-  }, [restrictSingleOperatorOnCanvas]);
-
-  const showChunker = useMemo(() => {
-    return (
-      getOperatorTypeFromId(nodeId) !== Operator.Extractor &&
-      getOperatorTypeFromId(nodeId) !== Operator.Compiler &&
-      chunkerOperators.length > 0
-    );
-  }, [chunkerOperators.length, getOperatorTypeFromId, nodeId]);
+  const { operators, chunkerOperators, showChunker } = useMemo(
+    () =>
+      buildPipelineNextOperators(
+        sourceOperator,
+        isGoBackend,
+        (operator) => !!findNodeByName(operator),
+      ),
+    [findNodeByName, isGoBackend, sourceOperator],
+  );
 
   return (
     <>

@@ -16,6 +16,7 @@ export const ReparseDialog = memo(
     handleOperationIconClick,
     chunk_num,
     enable_metadata = false,
+    forceDelete = false,
     visible = true,
     hideModal,
   }: DialogProps & {
@@ -25,6 +26,9 @@ export const ReparseDialog = memo(
       apply_kb: boolean;
     }) => void;
     enable_metadata?: boolean;
+    // Go always drops existing chunks on re-ingest, so it only shows a plain
+    // confirmation with no checkboxes.
+    forceDelete?: boolean;
     visible: boolean;
     hideModal: () => void;
   }) => {
@@ -34,7 +38,7 @@ export const ReparseDialog = memo(
 
     useEffect(() => {
       setDefaultValues({
-        delete: chunk_num > 0,
+        delete: forceDelete || chunk_num > 0,
         apply_kb: false,
       });
       const deleteField = {
@@ -80,7 +84,11 @@ export const ReparseDialog = memo(
           </div>
         ),
       };
-      if (chunk_num > 0 && enable_metadata) {
+      // Go only needs a plain confirm: chunks are always dropped, so no
+      // checkboxes are rendered.
+      if (forceDelete) {
+        setFields([]);
+      } else if (chunk_num > 0 && enable_metadata) {
         setFields([deleteField, applyKBField]);
       } else if (chunk_num > 0 && !enable_metadata) {
         setFields([deleteField]);
@@ -89,7 +97,7 @@ export const ReparseDialog = memo(
       } else {
         setFields([]);
       }
-    }, [chunk_num, t, enable_metadata]);
+    }, [chunk_num, t, enable_metadata, forceDelete]);
 
     const formCallbackRef = useRef<DynamicFormRef>(null);
 
@@ -128,7 +136,11 @@ export const ReparseDialog = memo(
         open={visible}
         okButtonText={t('common.confirm')}
         content={{
-          title: t(`knowledgeDetails.parseFileTip`),
+          title: t(
+            forceDelete
+              ? `knowledgeDetails.clearChunksReparseTip`
+              : `knowledgeDetails.parseFileTip`,
+          ),
           node: (
             <div>
               <DynamicForm.Root

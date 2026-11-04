@@ -108,6 +108,7 @@ def test_gaussdb_migration_adds_compatible_fields_before_relaxing_columns(monkey
     monkeypatch.setattr(db_models, "migrate_add_unique_email", lambda _migrator: None)
     monkeypatch.setattr(db_models, "migrate_model_type_names", lambda: None)
     monkeypatch.setattr(db_models, "ensure_model_indexes", lambda _migrator: None)
+    monkeypatch.setattr(db_models, "migrate_document_meta_fields", lambda: None)
 
     db_models.migrate_db()
 
@@ -156,6 +157,7 @@ def test_gaussdb_unique_email_migration_checks_unique_email_index_not_fixed_name
 
 def test_gaussdb_deadlock_retry_recognizes_psycopg_sqlstates(monkeypatch):
     from peewee import OperationalError
+
     from api.db.services.common_service import _is_deadlock_error
 
     class PgError:

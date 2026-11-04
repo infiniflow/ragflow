@@ -3,7 +3,7 @@ import { IDocumentInfo } from '@/interfaces/database/document';
 import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
 import { RunningStatus, RunningStatusMap } from './constant';
-import { getDocumentRunningStatus } from './utils';
+import { getDocumentProgressMessage, getDocumentRunningStatus } from './utils';
 
 interface IProps {
   record: IDocumentInfo;
@@ -59,7 +59,7 @@ export const PopoverContent = ({ record }: IProps) => {
     {
       key: 'progress_msg',
       label: t('knowledgeDetails.progressMsg'),
-      children: replaceText((record.progress_msg || '').trim()),
+      children: replaceText(getDocumentProgressMessage(record).trim()),
     },
   ];
 

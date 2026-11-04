@@ -66,7 +66,7 @@ export const AddOrEditModal = memo(function AddOrEditModal(props: IProps) {
         <div className="flex justify-end gap-2 pb-5">
           <DynamicForm.CancelButton handleCancel={onClose} />
           <DynamicForm.SavingButton
-            submitLoading={false}
+            submitLoading={props.loading}
             submitFunc={(data) => {
               onSubmit?.(data);
             }}

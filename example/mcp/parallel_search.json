@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "parallel-search": {
+      "type": "streamable-http",
+      "url": "https://search.parallel.ai/mcp",
+      "headers": {
+        "User-Agent": "ragflow"
+      }
+    }
+  }
+}

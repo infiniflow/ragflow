@@ -466,3 +466,16 @@ def test_claude_with_unparsable_version_is_treated_as_recent():
     gen_conf = _litellm_policies("claude-latest", SupportedLiteLLMProvider.Anthropic, CLAUDE_GEN_CONF)
 
     assert "top_p" not in gen_conf
+
+
+@pytest.mark.parametrize("model_name", ["bedrock/converse/us.openai.gpt-6-sol", "bedrock/converse/global.openai.gpt-6-luna", "bedrock/converse/us.openai.gpt-6-astra", "bedrock/us.openai.gpt-5.6-sol"])
+def test_bedrock_openai_gpt_drops_sampling_params_and_stop(model_name):
+    gen_conf = _litellm_policies(model_name, SupportedLiteLLMProvider.Bedrock, {**CLAUDE_GEN_CONF, "stop": ["<|stop|>"], "max_completion_tokens": 64})
+
+    assert gen_conf == {"presence_penalty": 0.1, "frequency_penalty": 0.1, "max_completion_tokens": 64}
+
+
+def test_bedrock_gpt_oss_keeps_sampling_params_and_stop():
+    gen_conf = _litellm_policies("bedrock/openai.gpt-oss-120b-1:0", SupportedLiteLLMProvider.Bedrock, {**CLAUDE_GEN_CONF, "stop": ["<|stop|>"]})
+
+    assert gen_conf == {**CLAUDE_GEN_CONF, "stop": ["<|stop|>"]}

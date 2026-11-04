@@ -28,6 +28,12 @@ type BuildNavTreeDataOptions = {
   childrenMap: Record<string, DatasetNavNode[]>;
   childrenErrorParents?: Record<string, boolean>;
   structureMap: Record<string, IStructureGraphTemplate[]>;
+  /**
+   * Search mode: the items are a pruned forest — the matched document leaves
+   * plus the cluster path above each of them, every row carrying parent_kwd —
+   * so branches come from the payload instead of a lazy /children request.
+   */
+  searchMode?: boolean;
   getActions?: NavTreeActionsFactory;
   onNodeClick: (node: DatasetNavNode, parentName: string | null) => void;
   onNodeExpand: (node: DatasetNavNode) => void;
@@ -117,20 +123,153 @@ function buildStructureTreeData(
   });
 }
 
+// navNodeIdentity is the forest's node key. Identity, not display name: two
+// documents may share a name, and a cluster's display name is exactly the key
+// its children reference through parent_kwd.
+function navNodeIdentity(node: DatasetNavNode): string {
+  return node.type === 'doc' && node.doc_id
+    ? `doc:${node.doc_id}`
+    : `cluster:${node.name}`;
+}
+
+type NavSearchForest = {
+  roots: DatasetNavNode[];
+  children: Record<string, DatasetNavNode[]>;
+};
+
+// nestNavSearchHits groups a search response into the tree its rows describe: a
+// row whose parent edge points at another returned row becomes that row's child,
+// everything else is a root. The backend returns every hit together with the
+// cluster path above it, so this yields ONE tree per root cluster holding only
+// the matched branches — instead of one top-level tree per hit, where a matching
+// cluster's own matching subtrees showed up as trees beside it.
+export function nestNavSearchHits(
+  items: DatasetNavNode[] = [],
+): NavSearchForest {
+  const present = new Set(items.map(navNodeIdentity));
+  const children: Record<string, DatasetNavNode[]> = {};
+  const roots: DatasetNavNode[] = [];
+  items.forEach((node) => {
+    const parentKey = node.parent_kwd ? `cluster:${node.parent_kwd}` : '';
+    if (parentKey && present.has(parentKey)) {
+      const bucket = children[parentKey];
+      if (bucket) {
+        bucket.push(node);
+      } else {
+        children[parentKey] = [node];
+      }
+    } else {
+      roots.push(node);
+    }
+  });
+  return { roots, children };
+}
+
+// mountDocumentStructure attaches a document leaf's structure-graph children to
+// its tree item, or a loading placeholder while the graph is being fetched.
+//
+// The search path passes pendingPlaceholder false: its branches mount already
+// expanded (expandAll), so a pending row under every hit would sit there for
+// good — the mount-time expansion never fires onExpand, which is what triggers
+// the fetch.
+function mountDocumentStructure(
+  item: TreeDataItem,
+  node: DatasetNavNode,
+  id: string,
+  options: BuildNavTreeDataOptions,
+  { pendingPlaceholder = true } = {},
+): void {
+  const templates = options.structureMap[node.doc_id as string];
+  if (!templates) {
+    // Not fetched yet: the placeholder keeps the node rendered as an expandable
+    // branch until the request resolves.
+    item.hasChildren = true;
+    if (pendingPlaceholder) {
+      item.children = [
+        { id: `${id}/__loading__`, name: options.loadingPlaceholder },
+      ];
+    }
+    return;
+  }
+  const children = buildStructureTreeData(templates, id, (entity) =>
+    options.onEntityClick?.(
+      node,
+      getEntityDisplayName(entity),
+      getEntityDescription(entity),
+    ),
+  );
+  if (children.length) {
+    item.hasChildren = true;
+    item.children = children;
+  }
+  // No entity nodes: leave hasChildren unset so the node stays a leaf.
+}
+
+// buildNavSearchTreeData renders the pruned search forest. Branches come from
+// the response, so expanding one fetches nothing; a matched document leaf still
+// expands into its structure graph.
+function buildNavSearchTreeData(
+  nodes: DatasetNavNode[],
+  forest: NavSearchForest,
+  options: BuildNavTreeDataOptions,
+  parentName: string | null,
+  idPrefix: string,
+): TreeDataItem[] {
+  const { getActions, onNodeClick, onNodeExpand } = options;
+  return nodes.map((node) => {
+    const identity = navNodeIdentity(node);
+    const id = idPrefix ? `${idPrefix}/${identity}` : identity;
+    const item: TreeDataItem = {
+      id,
+      name: trim(node.name),
+      actions: getActions?.(node, parentName),
+      onClick: () => onNodeClick(node, parentName),
+    };
+
+    const branches = forest.children[identity];
+    if (branches?.length) {
+      item.hasChildren = true;
+      item.children = buildNavSearchTreeData(
+        branches,
+        forest,
+        options,
+        node.name,
+        id,
+      );
+    } else if (node.doc_id) {
+      item.onExpand = () => onNodeExpand(node);
+      mountDocumentStructure(item, node, id, options, {
+        pendingPlaceholder: false,
+      });
+    }
+
+    return item;
+  });
+}
+
 export function buildNavTreeData(
   items: DatasetNavNode[] = [],
   options: BuildNavTreeDataOptions,
   parentName: string | null = null,
   idPrefix = '',
 ): TreeDataItem[] {
+  if (options.searchMode) {
+    const forest = nestNavSearchHits(items);
+    return buildNavSearchTreeData(
+      forest.roots,
+      forest,
+      options,
+      parentName,
+      idPrefix,
+    );
+  }
+
   const {
     childrenMap,
     childrenErrorParents,
-    structureMap,
     getActions,
     onNodeClick,
     onNodeExpand,
-    onEntityClick,
     loadingPlaceholder,
     errorPlaceholder,
   } = options;
@@ -160,26 +299,7 @@ export function buildNavTreeData(
       // Fetched but empty: leave children unset so the branch opens to nothing.
     } else if (node.doc_id) {
       // Document leaf: expandable into its structure graph entities.
-      const templates = structureMap[node.doc_id];
-      if (!templates) {
-        // Not fetched yet: a placeholder keeps the node rendered as an
-        // expandable branch until the request resolves.
-        item.hasChildren = true;
-        item.children = [{ id: `${id}/__loading__`, name: loadingPlaceholder }];
-      } else {
-        const children = buildStructureTreeData(templates, id, (entity) =>
-          onEntityClick?.(
-            node,
-            getEntityDisplayName(entity),
-            getEntityDescription(entity),
-          ),
-        );
-        if (children.length) {
-          item.hasChildren = true;
-          item.children = children;
-        }
-        // No entity nodes: leave hasChildren unset so the node stays a leaf.
-      }
+      mountDocumentStructure(item, node, id, options);
     }
 
     return item;

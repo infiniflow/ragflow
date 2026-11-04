@@ -8,7 +8,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
@@ -70,7 +70,7 @@ export function YouComWidgets() {
               {t('youComFreshness')}
             </FormLabel>
             <FormControl>
-              <RAGFlowSelect {...field} options={freshnessOptions} />
+              <SelectWithSearch {...field} options={freshnessOptions} />
             </FormControl>
             <FormMessage />
           </FormItem>

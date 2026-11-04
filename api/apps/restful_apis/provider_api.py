@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import logging
+import re
 
 from quart import request
 
@@ -322,7 +323,8 @@ async def create_provider_instance(tenant_id: str = None, provider_id_or_name: s
           properties:
             instance_name:
               type: string
-              description: Instance name.
+              pattern: '^[0-9A-Za-z_-]+$'
+              description: Instance name containing only ASCII letters, digits, underscores, and hyphens.
             api_key:
               type: string
               description: API key.
@@ -345,6 +347,8 @@ async def create_provider_instance(tenant_id: str = None, provider_id_or_name: s
         return get_error_argument_result(message="instance_name is required")
 
     instance_name = data["instance_name"]
+    if not isinstance(instance_name, str) or not re.fullmatch(r"[0-9A-Za-z_-]+", instance_name):
+        return get_error_argument_result(message="instance name may only contain digits, underscores, hyphens, and letters")
     # data only contains instance_name — no other fields needed
     if set(data.keys()) == {"instance_name"}:
         try:

@@ -62,17 +62,6 @@ class CanvasCategory(StrEnum):
     DataFlow = "dataflow_canvas"
 
 
-VALID_PIPELINE_TASK_TYPES = {
-    PipelineTaskType.PARSE,
-    PipelineTaskType.DOWNLOAD,
-    PipelineTaskType.RAPTOR,
-    PipelineTaskType.GRAPH_RAG,
-    PipelineTaskType.MINDMAP,
-    PipelineTaskType.ARTIFACT,
-    PipelineTaskType.SKILL,
-}
-
-
 # KB-level fan-out task types: their Task row uses GRAPH_RAPTOR_FAKE_DOC_ID as a
 # sentinel doc_id, and ``task_executor.collect_task`` substitutes the first real
 # doc_id from ``msg["doc_ids"]`` before re-running ``TaskService.get_task`` so

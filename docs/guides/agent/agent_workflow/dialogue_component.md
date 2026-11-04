@@ -18,7 +18,7 @@ The message is used to output static or dynamic messages to users, and is usuall
 
 Write the output content in the message. Type `/` or click the variable button to insert component outputs.
 
-If multiple messages are added, the system randomly selects one of them to send. When the `Begin` component selects `Webhook` and the response method is `Final response`, the reply message component can set an HTTP status code in the range of 200 to 399.
+If multiple messages are added, the system sends all of them in order, separated by newlines. When the `Begin` component selects `Webhook` and the response method is `Final response`, the reply message component can set an HTTP status code in the range of 200 to 399.
 
 ![Reply Message Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/reply_message_component_1.jpg)
 

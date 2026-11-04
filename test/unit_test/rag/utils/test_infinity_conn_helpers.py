@@ -33,6 +33,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
+
 from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr
 
 pytestmark = pytest.mark.p2
@@ -328,6 +329,60 @@ class TestEnsureColumns:
             )
 
         release.assert_called_once_with(inf_conn)
+
+
+class TestInsertShardsOversizedBatches:
+    """``insert`` shards at Infinity's "Insert batch row limit shouldn't more
+    than 8192" (error 3032); the id delete stays a single statement. A
+    18704-row wiki graph bucket used to be rejected as one statement."""
+
+    def _new_conn(self):
+        inst = _Inf.__new__(_Inf)
+        inst.dbName = "default_db"
+        inst.logger = logging.getLogger("test.infinity_conn_insert_shards")
+        inst.connPool = MagicMock()
+        return inst
+
+    def _run_insert(self, row_count):
+        conn = self._new_conn()
+        inf_conn = MagicMock()
+        db = MagicMock()
+        table = MagicMock()
+        # No embedding columns: the rows under test carry only ``id``.
+        table.show_columns.return_value.rows.return_value = []
+        db.get_table.return_value = table
+        inf_conn.get_database.return_value = db
+
+        docs = [{"id": f"id-{i}"} for i in range(row_count)]
+        with patch.object(conn.connPool, "get_conn", return_value=inf_conn), patch.object(conn.connPool, "release_conn") as release:
+            conn.insert(docs, "ragflow_tenant-A", "kb-1")
+
+        release.assert_called_once_with(inf_conn)
+        return table
+
+    def test_under_the_limit_is_a_single_statement(self):
+        table = self._run_insert(rag_infinity_conn._INFINITY_MAX_INSERT_ROWS)
+        assert [len(call.args[0]) for call in table.insert.call_args_list] == [rag_infinity_conn._INFINITY_MAX_INSERT_ROWS]
+        assert table.delete.call_count == 1
+
+    def test_reported_18704_row_bucket_is_sharded(self):
+        table = self._run_insert(18704)
+
+        batch_sizes = [len(call.args[0]) for call in table.insert.call_args_list]
+        assert batch_sizes == [8192, 8192, 2320]
+        assert max(batch_sizes) <= rag_infinity_conn._INFINITY_MAX_INSERT_ROWS
+
+        # The delete covers every id and is not sharded.
+        assert table.delete.call_count == 1
+        delete_filter = table.delete.call_args.args[0]
+        assert delete_filter.startswith("id IN (")
+        assert delete_filter.count("'id-") == 18704
+
+    def test_every_row_is_written_once_in_order(self):
+        table = self._run_insert(18704)
+
+        written = [row["id"] for call in table.insert.call_args_list for row in call.args[0]]
+        assert written == [f"id-{i}" for i in range(18704)]
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ import csv
 from copy import deepcopy
 
 from deepdoc.parser.utils import get_text
-from rag.app.qa import Excel
+from rag.app.qa import Excel, csv_pair_delimiter
 from rag.nlp import rag_tokenizer
 from common import settings
 
@@ -92,7 +92,7 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
-        delimiter = "\t" if any("\t" in line for line in lines) else ","
+        delimiter = csv_pair_delimiter(lines)
 
         fails = []
         content = ""

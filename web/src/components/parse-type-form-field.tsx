@@ -30,9 +30,13 @@ import { useTranslation } from 'react-i18next';
 export function ParseTypeItem({
   line = 2,
   name = 'parseType',
+  builtInLabelKey = 'knowledgeConfiguration.builtIn',
+  pipelineLabelKey = 'knowledgeConfiguration.manualSetup',
 }: {
   line?: number;
   name?: string;
+  builtInLabelKey?: string;
+  pipelineLabelKey?: string;
 }) {
   const { t } = useTranslation();
   const form = useFormContext();
@@ -62,16 +66,17 @@ export function ParseTypeItem({
               <FormControl>
                 <Radio.Group {...field}>
                   <div
-                    className={cn(
-                      'flex gap-2 justify-between text-muted-foreground',
-                      line === 1 ? 'w-1/2' : 'w-3/4',
-                    )}
+                    className="flex w-full gap-8 text-muted-foreground"
                   >
                     <Radio value={ParseType.BuiltIn}>
-                      {t('knowledgeConfiguration.builtIn')}
+                      <span className="whitespace-nowrap">
+                        {t(builtInLabelKey)}
+                      </span>
                     </Radio>
                     <Radio value={ParseType.Pipeline}>
-                      {t('knowledgeConfiguration.manualSetup')}
+                      <span className="whitespace-nowrap">
+                        {t(pipelineLabelKey)}
+                      </span>
                     </Radio>
                   </div>
                 </Radio.Group>
