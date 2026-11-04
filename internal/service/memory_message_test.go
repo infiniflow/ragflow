@@ -121,7 +121,7 @@ func TestMemoryWithAccessReturnsCanceledContext(t *testing.T) {
 	cancel()
 
 	err := ctx.Err()
-	if _, gotErr := NewMemoryService(dao.DB, engine.Get()).memoryWithAccess(ctx, "user-1", "memory-1", permission.OperationRead); !errors.Is(gotErr, err) {
+	if _, gotErr := NewMemoryService(dao.DB, engine.Get()).memoryWithAccess(ctx, "memory-1", permission.OperationRead); !errors.Is(gotErr, err) {
 		t.Fatalf("memoryWithAccess error = %v, want %v", gotErr, err)
 	}
 }
