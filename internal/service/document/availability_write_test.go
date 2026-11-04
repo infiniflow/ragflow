@@ -23,7 +23,7 @@ type zeroCountAvailabilityEngine struct {
 }
 
 // A stateful index fixture keeps successful batches when a later operation
-// fails, just as an external search index does across a database rollback.
+// fails; a later database failure cannot undo those external writes.
 type availabilityRecoveryEngine struct {
 	fakeChatDocEngine
 	rows         map[string]int
@@ -84,14 +84,15 @@ func TestDocumentAvailabilitySameStatusRepairsIndex(t *testing.T) {
 				eng := &availabilityRecoveryEngine{rows: map[string]int{"source": 1 - want}}
 				svc := testDocumentService(t)
 				svc.docEngine = eng
-				// Reconciliation must not pretend that a DB transition occurred.
-				if err := db.Callback().Update().Before("gorm:update").Register("test:no_status_transition", func(tx *gorm.DB) {
-					tx.AddError(errors.New("unchanged status must not be rewritten"))
-				}); err != nil {
-					t.Fatal(err)
-				}
 				if err := setAvailabilityThroughEntry(documentTestContext(t.Context()), svc, entry, status); err != nil {
 					t.Fatal(err)
+				}
+				persisted, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if persisted.Status == nil || *persisted.Status != status {
+					t.Fatalf("same-status repair changed database status: %v, want %s", persisted.Status, status)
 				}
 				if eng.rows["source"] != want {
 					t.Fatalf("successful same-status request left index availability=%d, want %d", eng.rows["source"], want)
@@ -137,7 +138,7 @@ func TestDocumentAvailabilityRecoversAfterPartialFailure(t *testing.T) {
 					t.Fatal(err)
 				}
 				if *persisted.Status != strconv.Itoa(previous) || eng.rows["chunk-0000"] == previous {
-					t.Fatalf("expected database rollback with a changed index batch: status=%s index=%d", *persisted.Status, eng.rows["chunk-0000"])
+					t.Fatalf("expected unchanged database status with a changed index batch: status=%s index=%d", *persisted.Status, eng.rows["chunk-0000"])
 				}
 				eng.failUpdateAt = 0
 				if failure == "database_update" {

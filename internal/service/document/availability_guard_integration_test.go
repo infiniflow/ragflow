@@ -181,19 +181,25 @@ func TestDocumentPublicationRejectsActiveStatusChanges(t *testing.T) {
 					svc := testDocumentService(t)
 					svc.docEngine = es
 					actorCtx := documentTestActorContext(ctx, "user-1", tenantID)
-					if err := setAvailabilityThroughEntry(actorCtx, svc, entry, strconv.Itoa(desired)); err == nil {
-						t.Fatal("active document status change was acknowledged")
-					}
-					if err := apiDB.Where("id = ?", "doc-1").Take(&doc).Error; err != nil {
-						t.Fatal(err)
-					}
-					if *doc.Status != initial {
-						t.Fatalf("rejected request changed document status to %s", *doc.Status)
-					}
-					// The same batch still updates an unrelated, idle document.
-					result, _, err := svc.BatchUpdateDocumentStatus(actorCtx, "kb-1", strconv.Itoa(desired), []string{"doc-1", "doc-2"})
-					if err == nil || result["doc-2"].(map[string]string)["status"] != strconv.Itoa(desired) {
-						t.Fatalf("mixed batch did not preserve its successful item: result=%v err=%v", result, err)
+					t.Run("active_guard", func(t *testing.T) {
+						if err := setAvailabilityThroughEntry(actorCtx, svc, entry, strconv.Itoa(desired)); err == nil {
+							t.Fatal("active document status change was acknowledged")
+						}
+						if err := apiDB.Where("id = ?", "doc-1").Take(&doc).Error; err != nil {
+							t.Fatal(err)
+						}
+						if *doc.Status != initial {
+							t.Fatalf("rejected request changed document status to %s", *doc.Status)
+						}
+					})
+					if entry == "batch" {
+						t.Run("mixed_batch", func(t *testing.T) {
+							// The same batch still updates an unrelated, idle document.
+							result, _, err := svc.BatchUpdateDocumentStatus(actorCtx, "kb-1", strconv.Itoa(desired), []string{"doc-1", "doc-2"})
+							if err == nil || result["doc-2"].(map[string]string)["status"] != strconv.Itoa(desired) {
+								t.Fatalf("mixed batch did not preserve its successful item: result=%v err=%v", result, err)
+							}
+						})
 					}
 					releaseBulk()
 					select {
@@ -208,41 +214,47 @@ func TestDocumentPublicationRejectsActiveStatusChanges(t *testing.T) {
 					if err := apiDB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", common.COMPLETED).Error; err != nil {
 						t.Fatal(err)
 					}
-					// Counts are deliberately still zero. Both a transition and a
-					// same-status retry must reconcile the real index.
-					for attempt := range 2 {
-						if attempt == 1 {
-							// Seed a historical mismatch to exercise same-status repair.
-							if err := es.UpdateChunks(ctx, map[string]any{"doc_id": "doc-1"}, map[string]any{"available_int": 1 - desired}, indexName, "kb-1"); err != nil {
+					assertVisibility := func(t *testing.T) {
+						t.Helper()
+						if err := apiDB.Where("id = ?", "doc-1").Take(&doc).Error; err != nil {
+							t.Fatal(err)
+						}
+						if *doc.Status != strconv.Itoa(desired) || doc.ChunkNum != 0 {
+							t.Fatalf("status=%v count=%d; want current status without count bookkeeping", doc.Status, doc.ChunkNum)
+						}
+						for _, filter := range []map[string]any{
+							{"doc_id": "doc-1"},
+							{"doc_id": "doc-1", "available_int": 1},
+						} {
+							result, err := es.Search(ctx, &enginetypes.SearchRequest{IndexNames: []string{indexName}, KbIDs: []string{"kb-1"}, Limit: 10, Filter: filter})
+							if err != nil {
 								t.Fatal(err)
 							}
+							want := 3
+							if _, visibleOnly := filter["available_int"]; visibleOnly && desired == 0 {
+								want = 0
+							}
+							if len(result.Chunks) != want {
+								t.Fatalf("filter=%v indexed rows=%d, want %d", filter, len(result.Chunks), want)
+							}
+						}
+					}
+					t.Run("zero_count_transition", func(t *testing.T) {
+						if err := setAvailabilityThroughEntry(actorCtx, svc, entry, strconv.Itoa(desired)); err != nil {
+							t.Fatal(err)
+						}
+						assertVisibility(t)
+					})
+					t.Run("same_status_repair", func(t *testing.T) {
+						// Seed a historical mismatch after the status transition.
+						if err := es.UpdateChunks(ctx, map[string]any{"doc_id": "doc-1"}, map[string]any{"available_int": 1 - desired}, indexName, "kb-1"); err != nil {
+							t.Fatal(err)
 						}
 						if err := setAvailabilityThroughEntry(actorCtx, svc, entry, strconv.Itoa(desired)); err != nil {
 							t.Fatal(err)
 						}
-					}
-					if err := apiDB.Where("id = ?", "doc-1").Take(&doc).Error; err != nil {
-						t.Fatal(err)
-					}
-					if *doc.Status != strconv.Itoa(desired) || doc.ChunkNum != 0 {
-						t.Fatalf("status=%v count=%d; want current status without count bookkeeping", doc.Status, doc.ChunkNum)
-					}
-					for _, filter := range []map[string]any{
-						{"doc_id": "doc-1"},
-						{"doc_id": "doc-1", "available_int": 1},
-					} {
-						result, err := es.Search(ctx, &enginetypes.SearchRequest{IndexNames: []string{indexName}, KbIDs: []string{"kb-1"}, Limit: 10, Filter: filter})
-						if err != nil {
-							t.Fatal(err)
-						}
-						want := 3
-						if _, visibleOnly := filter["available_int"]; visibleOnly && desired == 0 {
-							want = 0
-						}
-						if len(result.Chunks) != want {
-							t.Fatalf("filter=%v indexed rows=%d, want %d", filter, len(result.Chunks), want)
-						}
-					}
+						assertVisibility(t)
+					})
 				})
 			}
 		}
