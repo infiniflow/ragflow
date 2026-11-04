@@ -40,41 +40,37 @@ func NewMemorySaverAdapter(svc *MemoryService) component.MemorySaver {
 	return &memorySaverAdapter{svc: svc}
 }
 
-// Save implements component.MemorySaver. It checks the runtime user against
-// each configured memory before queueing the message.
+// Save checks the authenticated caller's access to each configured memory
+// before queueing the message. Internal runs without a request identity use
+// the identity carried by the canvas runtime state.
 func (a *memorySaverAdapter) Save(ctx context.Context, req component.MemorySaveRequest) error {
 	if a == nil || a.svc == nil {
 		return fmt.Errorf("memory: saver adapter not initialised")
 	}
-	authorizationUserID := req.UserID
 	if len(req.MemoryIDs) > 0 {
 		state, stateErr := runtime.GetStateFromContext(ctx)
 		if stateErr != nil || state == nil {
 			return fmt.Errorf("%w: canvas runtime state is required to use memory from an agent", permission.ErrInvalidPermission)
 		}
 		canvasID, _ := state.GetSysString("canvas_id")
-		userID, _ := state.GetSysString("user_id")
-		tenantID, _ := state.GetSysString("tenant_id")
+		stateUserID, _ := state.GetSysString("user_id")
+		stateTenantID, _ := state.GetSysString("tenant_id")
 		canvasID = strings.TrimSpace(canvasID)
-		userID = strings.TrimSpace(userID)
-		tenantID = strings.TrimSpace(tenantID)
-		authorizationUserID = userID
+		stateUserID = strings.TrimSpace(stateUserID)
+		stateTenantID = strings.TrimSpace(stateTenantID)
 		if canvasID == "" {
 			return fmt.Errorf("%w: canvas id is required to use memory from an agent", permission.ErrInvalidPermission)
 		}
-		if userID == "" {
-			return permission.ErrUnauthenticated
-		}
 		contextUserID := permission.UserIDFromContext(ctx)
-		contextTenantID := permission.TenantIDFromContext(ctx)
-		if contextUserID != "" && contextUserID != userID {
-			return permission.ErrIdentityMismatch
-		}
-		if contextTenantID != "" && tenantID != "" && contextTenantID != tenantID {
-			return permission.ErrIdentityMismatch
-		}
-		if contextUserID == "" || contextTenantID == "" {
-			ctx = permission.WithIdentity(ctx, userID, tenantID)
+		if contextUserID == "" {
+			if stateUserID == "" {
+				return permission.ErrUnauthenticated
+			}
+			tenantID := permission.TenantIDFromContext(ctx)
+			if tenantID == "" {
+				tenantID = stateTenantID
+			}
+			ctx = permission.WithIdentity(ctx, stateUserID, tenantID)
 		}
 		checker := permission.NewDatabaseChecker(a.svc.db)
 		entry := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
@@ -97,7 +93,7 @@ func (a *memorySaverAdapter) Save(ctx context.Context, req component.MemorySaveR
 		UserInput:     req.UserInput,
 		AgentResponse: req.AgentResponse,
 	}
-	ok, detail, err := a.svc.saveAgentMessage(ctx, authorizationUserID, req.MemoryIDs, msg)
+	ok, detail, err := a.svc.saveAgentMessage(ctx, req.MemoryIDs, msg)
 	if err != nil {
 		return err
 	}

@@ -128,7 +128,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	terms := orderTermsFromQuery(c, orderBy, desc)
 
 	ctx := c.Request.Context()
-	result, err := h.fileService.ListFilesForTenant(ctx, userID, tenantID, parentID, page, pageSize, terms, keywords)
+	result, err := h.fileService.ListFilesForTenant(ctx, tenantID, parentID, page, pageSize, terms, keywords)
 	if err != nil {
 		respondFileServiceError(c, err)
 		return
@@ -145,13 +145,11 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/files/{id}/parent [get]
 func (h *FileHandler) GetParentFolder(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
-	userID := user.ID
-
 	fileID := c.Param("id")
 	if fileID == "" {
 		common.RespondError(c, common.CodeBadRequest, "file_id is required")
@@ -160,7 +158,7 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	// Get parent folder with permission check
-	parentFolder, err := h.fileService.GetParentFolder(ctx, userID, fileID)
+	parentFolder, err := h.fileService.GetParentFolder(ctx, fileID)
 	if err != nil {
 		respondFileServiceError(c, err)
 		return
@@ -178,13 +176,11 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/files/{id}/ancestors [get]
 func (h *FileHandler) GetFileAncestors(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
-	userID := user.ID
-
 	fileID := c.Param("id")
 	if fileID == "" {
 		common.RespondError(c, common.CodeBadRequest, "file id is required")
@@ -197,9 +193,9 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 	var parentFolders []map[string]interface{}
 	var err error
 	if tenantID == "" {
-		parentFolders, err = h.fileService.GetAllParentFolders(ctx, userID, fileID)
+		parentFolders, err = h.fileService.GetAllParentFolders(ctx, fileID)
 	} else {
-		parentFolders, err = h.fileService.GetAllParentFoldersForTenant(ctx, userID, tenantID, fileID)
+		parentFolders, err = h.fileService.GetAllParentFoldersForTenant(ctx, tenantID, fileID)
 	}
 	if err != nil {
 		respondFileServiceError(c, err)
@@ -289,11 +285,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		}
 		parentID := c.PostForm("parent_id")
 		if parentID == "" {
-			tenantID := strings.TrimSpace(c.GetString("tenant_id"))
-			if tenantID == "" {
-				tenantID = userID
-			}
-			rootFolder, err := h.fileService.GetRootFolder(ctx, tenantID)
+			rootFolder, err := h.fileService.GetRootFolder(ctx)
 			if err != nil {
 				respondFileServiceError(c, err)
 				operationLog.Code = int(common.CodeBadRequest)
@@ -346,11 +338,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 		parentID := req.ParentID
 		if parentID == "" {
-			tenantID := strings.TrimSpace(c.GetString("tenant_id"))
-			if tenantID == "" {
-				tenantID = userID
-			}
-			rootFolder, err := h.fileService.GetRootFolder(ctx, tenantID)
+			rootFolder, err := h.fileService.GetRootFolder(ctx)
 			if err != nil {
 				respondFileServiceError(c, err)
 				operationLog.Code = int(common.CodeBadRequest)
@@ -361,7 +349,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		}
 		operationLog.Resources["directory_name"] = req.Name
 
-		result, err := h.fileService.CreateFolder(ctx, userID, req.Name, parentID, req.Type)
+		result, err := h.fileService.CreateFolder(ctx, req.Name, parentID, req.Type)
 		if err != nil {
 			if respondPermissionErrorIf(c, err, true) {
 				return
@@ -502,7 +490,7 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := h.fileService.MoveFiles(ctx, user.ID, req.SrcFileIDs, req.DestFileID, req.NewName); err != nil {
+	if err := h.fileService.MoveFiles(ctx, req.SrcFileIDs, req.DestFileID, req.NewName); err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
@@ -688,7 +676,7 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if err := h.file2DocumentService.LinkToDatasets(ctx, user.ID, &req, mode); err != nil {
+	if err := h.file2DocumentService.LinkToDatasets(ctx, &req, mode); err != nil {
 		errorCode = linkToDatasetsErrorCode(err)
 		common.RespondError(c, errorCode, err.Error())
 		operationLog.Code = int(errorCode)

@@ -633,7 +633,8 @@ func (c *whatsappChannel) eventsURL() (string, error) {
 	case "https":
 		base.Scheme = "wss"
 	}
-	base.Path = strings.TrimRight(base.Path, "/") + "/whatsapp/" + url.PathEscape(c.sessionKey()) + "/events/ws"
+	base.Path = strings.TrimRight(base.Path, "/") + "/whatsapp/" + c.sessionKey() + "/events/ws"
+	base.RawPath = ""
 	q := base.Query()
 	c.mu.Lock()
 	q.Set("after", strconv.FormatInt(c.eventCursor, 10))

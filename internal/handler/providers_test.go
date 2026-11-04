@@ -244,7 +244,8 @@ func TestValidateInstanceName(t *testing.T) {
 		{name: "-my-instance-1", valid: true},
 		{name: "", valid: false},
 		{name: "my instance", valid: false},
-		{name: "实例", valid: false},
+		{name: "实例", valid: true},
+		{name: "实例_name123", valid: true},
 		{name: "instância", valid: false},
 		{name: "instance!", valid: false},
 	}

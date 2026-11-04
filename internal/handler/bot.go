@@ -39,15 +39,15 @@ type BotHandler struct {
 // botService is the subset of BotService used by these handlers. It
 // is interface-typed so the test suite can inject a stub.
 type botService interface {
-	ChatbotInfo(ctx context.Context, userID, dialogID string) (
+	ChatbotInfo(ctx context.Context, dialogID string) (
 		title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error)
-	AgentbotInputs(ctx context.Context, userID, agentID string) (
+	AgentbotInputs(ctx context.Context, agentID string) (
 		title, avatar, prologue, mode string, inputs map[string]any,
 		ec common.ErrorCode, err error)
-	AgentbotCompletion(ctx context.Context, userID, agentID string, req service.AgentbotCompletionRequest) (
+	AgentbotCompletion(ctx context.Context, agentID string, req service.AgentbotCompletionRequest) (
 		<-chan canvas.RunEvent, common.ErrorCode, error)
-	AgentbotLogs(ctx context.Context, userID, agentID, messageID string) (map[string]any, common.ErrorCode, error)
-	ChatbotCompletion(ctx context.Context, userID, dialogID string, req service.ChatbotCompletionRequest) (
+	AgentbotLogs(ctx context.Context, agentID, messageID string) (map[string]any, common.ErrorCode, error)
+	ChatbotCompletion(ctx context.Context, dialogID string, req service.ChatbotCompletionRequest) (
 		<-chan service.ChatbotSSEFrame, common.ErrorCode, error)
 }
 
@@ -61,18 +61,13 @@ func NewBotHandler(svc *service.BotService) *BotHandler {
 // Mirrors python bot_api.py:126-154. Returns the public metadata of
 // a chatbot dialog (title, avatar, prologue, web search flag, llm_id).
 func (h *BotHandler) ChatbotInfo(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	dialogID := c.Param("dialog_id")
 	if dialogID == "" {
 		common.RespondError(c, common.CodeArgumentError, "`dialog_id` is required.")
 		return
 	}
 	title, avatar, prologue, llmID, hasWebSearch, ec, err := h.botService.ChatbotInfo(
-		c.Request.Context(), user.ID, dialogID)
+		c.Request.Context(), dialogID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -95,18 +90,13 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 // Mirrors python bot_api.py:239-250. Returns the public metadata of
 // an agentbot canvas (title, avatar, inputs, prologue, mode).
 func (h *BotHandler) AgentbotInputs(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	agentID := c.Param("agent_id")
 	if agentID == "" {
 		common.RespondError(c, common.CodeArgumentError, "`agent_id` is required.")
 		return
 	}
 	title, avatar, prologue, mode, inputs, ec, err := h.botService.AgentbotInputs(
-		c.Request.Context(), user.ID, agentID)
+		c.Request.Context(), agentID)
 	if err != nil {
 		common.RespondError(c, ec, err.Error())
 		return
@@ -136,11 +126,6 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 // canvas event, including node_* telemetry used by the "Thinking"
 // log panel).
 func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	agentID := c.Param("agent_id")
 	if agentID == "" {
 		common.RespondError(c, common.CodeArgumentError, "`agent_id` is required.")
@@ -170,7 +155,7 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 	events, ec, err := h.botService.AgentbotCompletion(
-		ctx, user.ID, agentID, body)
+		ctx, agentID, body)
 	if err != nil {
 		common.RespondError(c, ec, err.Error())
 		return
@@ -198,11 +183,6 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 // SSE frames in the Python envelope shape. The streaming helper
 // lives in service/bot_completion.go.
 func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	dialogID := c.Param("dialog_id")
 	if dialogID == "" {
 		common.RespondError(c, common.CodeArgumentError, "`dialog_id` is required.")
@@ -222,7 +202,7 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 	frames, ec, err := h.botService.ChatbotCompletion(
-		ctx, user.ID, dialogID, body)
+		ctx, dialogID, body)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -252,11 +232,6 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 // "Thinking" button hits this endpoint because the share flow authenticates
 // with a beta APIToken (no session JWT). Mirrors python bot_api.py:agent_bot_logs.
 func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	agentIDStr := c.Param("agent_id")
 	if agentIDStr == "" {
 		common.RespondError(c, common.CodeArgumentError, "agent_id is required")
@@ -277,7 +252,7 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 			return
 		}
 	}
-	data, ec, err := h.botService.AgentbotLogs(c.Request.Context(), user.ID, agentIDStr, messageID)
+	data, ec, err := h.botService.AgentbotLogs(c.Request.Context(), agentIDStr, messageID)
 	if err != nil {
 		common.RespondError(c, ec, err.Error())
 		return

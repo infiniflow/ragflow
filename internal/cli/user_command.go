@@ -3034,14 +3034,16 @@ func (c *CLI) APIParseLocalFileCommand(commandCount int, cmd *Command) (Response
 	}
 
 	fileType := utility.GetFileType(filename)
-	fileParser, err := parser.GetTextOnlyParser(fileType)
-	if err != nil {
-		return nil, err
-	}
-
 	fileContent, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dsl file: %w", err)
+	}
+	fileParser, actual, err := parser.GetTextOnlyParser(fileType, fileContent)
+	if err != nil {
+		return nil, err
+	}
+	if actual != fileType {
+		fmt.Fprintf(os.Stderr, "WARNING: file %q: requested format %s; detected %s; continuing with the %s parser\n", filepath.Base(filename), fileType, actual, actual)
 	}
 
 	ctx := context.Background()

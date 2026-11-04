@@ -1315,11 +1315,22 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s: run %s belongs to document %s/dataset %s, expected %s/%s", ingestionTask.ID, run.ID, run.DocumentID, run.KbID, ingestionTask.DocumentID, ingestionTask.DatasetID))
 		return
 	}
+	// Keep the run's own binding: the document may have been re-bound since.
+	pipelineID := ""
+	if run.PipelineID != nil {
+		pipelineID = strings.TrimSpace(*run.PipelineID)
+	}
+	versionID := ""
+	if pipelineID != "" && run.PipelineVersionID != nil {
+		versionID = strings.TrimSpace(*run.PipelineVersionID)
+	}
 	input := taskpkg.PipelineLogInput{
-		KbID:          ingestionTask.DatasetID,
-		DocumentID:    ingestionTask.DocumentID,
-		Status:        status,
-		PipelineLogID: *ingestionTask.PipelineLogID,
+		KbID:              ingestionTask.DatasetID,
+		DocumentID:        ingestionTask.DocumentID,
+		PipelineID:        pipelineID,
+		PipelineVersionID: versionID,
+		Status:            status,
+		PipelineLogID:     *ingestionTask.PipelineLogID,
 	}
 	if err := taskpkg.RecordPipelineLog(ctx, e.deps.DB, input); err != nil {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))

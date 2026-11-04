@@ -13,18 +13,20 @@ jest.mock('@/hooks/use-pipeline-operator', () => ({
 // The hook now fetches the canvas version list itself and derives the latest
 // id reactively, so we mock the fetch and drive it via a mutable array.
 let mockVersions: Array<{ id: string; version?: number; name?: string }> = [];
-jest.mock('@/hooks/use-agent-request', () => ({
-  useFetchCanvasVersionList: () => ({
+jest.mock('@/hooks/use-pipeline-version-request', () => ({
+  useFetchPipelineVersionList: () => ({
     data: mockVersions,
     loading: false,
     isError: false,
   }),
-  // The three hooks below back useParserTreeData, which the form hook
-  // consults for the missing-option validation.
+  useFetchPipelineVersionCatalog: () => ({
+    data: [],
+    loading: false,
+    isError: false,
+  }),
+}));
+jest.mock('@/hooks/use-agent-request', () => ({
   useFetchBuiltinPipelines: () => ({ options: [], loading: false }),
-  useFetchAgentList: () => ({ data: { canvas: [], total: 0 }, loading: false }),
-  useFetchCanvasVersions: (canvasIds: string[]) =>
-    canvasIds.map(() => ({ isSuccess: true, data: mockVersions })),
 }));
 
 // Cut the chain parser-config-validation -> compilation-form -> locales/config
