@@ -390,9 +390,9 @@ type TableBuilder interface {
 	// FinalizeGrid turns the annotated structure grid plus the table's
 	// OCR/text boxes into the final grid. The DeepDoc builder already
 	// folds OCR text into the grid inline during processOneTable's box-RC
-	// grouping, so its implementation is the identity function; builders
-	// that defer OCR overlay to after structure grouping (e.g. an alternative V/H
-	// builder) perform the overlay here.
+	// grouping, so its implementation is the identity function; an EE V/H
+	// builder that defers OCR overlay to after structure grouping performs
+	// the overlay here.
 	FinalizeGrid(annotGrid [][]TSRCell, boxes []TextBox) [][]TSRCell
 	// AttachSpanInfo attaches any builder-specific span geometry onto the
 	// assembled table item. The DeepDoc builder's TableItem carries no

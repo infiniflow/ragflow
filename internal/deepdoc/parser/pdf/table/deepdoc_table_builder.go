@@ -180,8 +180,8 @@ func overlapsY(a, b pdf.TSRCell) bool {
 
 // FinalizeGrid returns annotGrid unchanged. The DeepDoc builder folds OCR
 // text into the grid inline during processOneTable's box-RC grouping, so
-// there is no deferred work to perform here. Builders that defer the OCR
-// overlay (e.g. an alternative V/H builder) override this with the real overlay.
+// there is no deferred work to perform here. An EE V/H builder that defers
+// the OCR overlay overrides this with the real overlay.
 func (b *DeepDocTableBuilder) FinalizeGrid(annotGrid [][]pdf.TSRCell, boxes []pdf.TextBox) [][]pdf.TSRCell {
 	return annotGrid
 }
