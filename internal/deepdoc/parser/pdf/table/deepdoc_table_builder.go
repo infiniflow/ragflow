@@ -177,3 +177,16 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 func overlapsY(a, b pdf.TSRCell) bool {
 	return a.Y0 < b.Y1 && a.Y1 > b.Y0
 }
+
+// FinalizeGrid returns annotGrid unchanged. The DeepDoc builder folds OCR
+// text into the grid inline during processOneTable's box-RC grouping, so
+// there is no deferred work to perform here. An EE V/H builder that defers
+// the OCR overlay overrides this with the real overlay.
+func (b *DeepDocTableBuilder) FinalizeGrid(annotGrid [][]pdf.TSRCell, boxes []pdf.TextBox) [][]pdf.TSRCell {
+	return annotGrid
+}
+
+// AttachSpanInfo is a no-op for the DeepDoc builder: its TableItem carries
+// no builder-specific span geometry. An EE V/H builder overrides this to
+// attach V/H span info.
+func (b *DeepDocTableBuilder) AttachSpanInfo(item *pdf.TableItem) {}

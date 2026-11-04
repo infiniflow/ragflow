@@ -200,6 +200,10 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 			}
 		}
 	}
+	// Let the active builder finalize the grid (e.g. fold in a deferred OCR
+	// overlay). The DeepDoc builder is the identity function, so OSS keeps its
+	// current behavior unchanged.
+	grid = tb.FinalizeGrid(grid, boxInCrop)
 	item := pdf.TableItem{
 		Cells: cells, Grid: grid, Positions: positions,
 		Scale: scale, CropOffX: cropOffX, CropOffY: cropOffY,
@@ -208,6 +212,10 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		Page: pageNum,
 	}
 	tbl.WriteTableAnnotations(boxes, tm.BoxIdx, cells, scale, cropOffX, cropOffY, tb)
+	// Let the active builder attach builder-specific span geometry onto the
+	// assembled item. The DeepDoc builder is a no-op, so OSS keeps its current
+	// behavior unchanged.
+	tb.AttachSpanInfo(&item)
 	return item
 }
 
