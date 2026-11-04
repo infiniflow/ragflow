@@ -390,7 +390,7 @@ func TestImageOCRDoesNotUseGlobalEndpoint(t *testing.T) {
 // OCR requests even when the model was explicitly selected.
 func TestImageOCRKeepsCloudSSRFGuard(t *testing.T) {
 	db, requests := imageOCRFixture(t, "PaddleOCR", false)
-	common.AllowAnyHostForTest = false
+	t.Setenv(common.EnvAllowAnyHost, "")
 	_, err := extractSelectedImageOCR(t.Context(), db, "tenant-1", "model-b", picturePNG(t))
 	if err == nil || !strings.Contains(err.Error(), "non-public address") || len(requests.list()) != 0 {
 		t.Fatalf("cloud transport policy changed: err=%v requests=%v", err, requests.list())

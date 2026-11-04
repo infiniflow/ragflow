@@ -143,9 +143,7 @@ func TestMigratedIngestionConfigReachesRuntime(t *testing.T) {
 // process-wide SSRF bypass, so this test and its subtests must not run in parallel.
 func TestMigratedMinerUControlsReachRequest(t *testing.T) {
 	t.Setenv(common.EnvMineruBackend, "pipeline")
-	previous := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = previous })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 
 	var response bytes.Buffer
 	archive := zip.NewWriter(&response)

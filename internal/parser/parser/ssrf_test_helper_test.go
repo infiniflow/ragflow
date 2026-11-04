@@ -12,7 +12,5 @@ import (
 // internal/utility/ssrf_test.go.
 func withSSRFBypass(t *testing.T) {
 	t.Helper()
-	prev := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 }
