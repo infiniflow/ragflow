@@ -54,7 +54,7 @@ func TestUpdateMemoryTeamMemberResolvesModelsAgainstOwnerTenant(t *testing.T) {
 	}
 
 	llmID := "gpt-4o@default@OpenAI"
-	if _, err := NewMemoryService(dao.DB, engine.Get()).UpdateMemory(ctx, "member-1", "mem-model", &UpdateMemoryRequest{LLMID: &llmID}); err != nil {
+	if _, err := NewMemoryService(dao.DB, engine.Get()).UpdateMemory(ctx, "mem-model", &UpdateMemoryRequest{LLMID: &llmID}); err != nil {
 		t.Fatalf("UpdateMemory model error = %v", err)
 	}
 	updated, err := dao.NewMemoryDAO().GetByID(t.Context(), dao.DB, "mem-model")
