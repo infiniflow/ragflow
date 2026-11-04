@@ -509,13 +509,13 @@ func TestRecordPipelineLog_TerminalWithoutDSLResolvesCanvasTitle(t *testing.T) {
 		t.Fatalf("seed document: %v", err)
 	}
 
-	// Mirrors Ingestor.recordTerminalPipelineLog: only the terminal status is
-	// known; pipeline_id and DSL are absent and must come from the document.
 	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
-		KbID:          "kb-1",
-		DocumentID:    "doc-1",
-		Status:        "3",
-		PipelineLogID: "run-1",
+		KbID:                    "kb-1",
+		DocumentID:              "doc-1",
+		PipelineID:              "canvas-1",
+		Status:                  "3",
+		PipelineLogID:           "run-1",
+		PipelineBindingResolved: true,
 	}); err != nil {
 		t.Fatalf("RecordPipelineLog: %v", err)
 	}
@@ -1561,6 +1561,7 @@ func TestExecutePersistsResolvedVersionBeforeRun(t *testing.T) {
 	}
 
 	taskCtx := makeTaskCtx()
+	taskCtx.PipelineID = "canvas-1"
 	taskCtx.IngestionTask.PipelineLogID = &logID
 	exec := mustNewPipelineExecutor(t, taskCtx, "canvas-1", 0)
 	exec.WithRunPipelineFunc(func(context.Context, string) (map[string]any, string, error) {
@@ -1584,3 +1585,106 @@ func TestExecutePersistsResolvedVersionBeforeRun(t *testing.T) {
 }
 
 func int64PtrForTest(v int64) *int64 { return &v }
+
+func TestExecuteClearsStaleBindingForBuiltinRun(t *testing.T) {
+	restore := setupPipelineExecutorTestDB(t)
+	defer restore()
+	db := dao.DB
+
+	oldPipelineID := "canvas-1"
+	oldVersionID := "ver-1"
+	logID := "run-1"
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:                logID,
+		DocumentID:        "doc-1",
+		TenantID:          "tenant-1",
+		KbID:              "kb-1",
+		ParserID:          "naive",
+		DocumentName:      "test-doc.pdf",
+		DocumentSuffix:    ".pdf",
+		DocumentType:      "pdf",
+		SourceFrom:        "local",
+		OperationStatus:   string(entity.TaskStatusRunning),
+		TaskType:          string(entity.PipelineTaskTypeParse),
+		PipelineID:        &oldPipelineID,
+		PipelineVersionID: &oldVersionID,
+	}).Error; err != nil {
+		t.Fatalf("seed pipeline log: %v", err)
+	}
+
+	taskCtx := makeTaskCtx()
+	taskCtx.IngestionTask.PipelineLogID = &logID
+	exec := mustNewPipelineExecutor(t, taskCtx, "naive", 0)
+	exec.WithLoadDSLFunc(func(_ context.Context, canvasID string) (string, string, error) {
+		return `{"nodes":[],"edges":[]}`, canvasID, nil
+	})
+	exec.WithRunPipelineFunc(func(context.Context, string) (map[string]any, string, error) {
+		return nil, "", errors.New("pipeline failed")
+	})
+
+	if _, err := exec.Execute(t.Context()); err == nil {
+		t.Fatal("expected the injected pipeline failure")
+	}
+
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", logID).Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.PipelineID != nil || run.PipelineVersionID != nil {
+		t.Fatalf("pipeline binding = (%v, %v), want both nil after a builtin run", run.PipelineID, run.PipelineVersionID)
+	}
+}
+
+func TestRecordPipelineLogClearsStaleBindingForResolvedVersionlessRun(t *testing.T) {
+	restore := setupPipelineExecutorTestDB(t)
+	defer restore()
+	db := dao.DB
+
+	oldPipelineID := "canvas-1"
+	oldVersionID := "ver-1"
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:                "run-1",
+		DocumentID:        "doc-1",
+		TenantID:          "tenant-1",
+		KbID:              "kb-1",
+		ParserID:          "naive",
+		DocumentName:      "test-doc.pdf",
+		DocumentSuffix:    ".pdf",
+		DocumentType:      "pdf",
+		SourceFrom:        "local",
+		OperationStatus:   string(entity.TaskStatusRunning),
+		TaskType:          string(entity.PipelineTaskTypeParse),
+		PipelineID:        &oldPipelineID,
+		PipelineVersionID: &oldVersionID,
+	}).Error; err != nil {
+		t.Fatalf("seed pipeline log: %v", err)
+	}
+	currentPipelineID := "canvas-2"
+	docName := "test-doc.pdf"
+	if err := db.Create(&entity.Document{
+		ID: "doc-1", KbID: "kb-1", ParserID: "naive", ParserConfig: entity.JSONMap{},
+		Name: &docName, Suffix: ".pdf", Type: "pdf", SourceType: "local", Status: strPtr("1"),
+		PipelineID: &currentPipelineID,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	if err := RecordPipelineLog(t.Context(), db, PipelineLogInput{
+		TenantID:                "tenant-1",
+		KbID:                    "kb-1",
+		DocumentID:              "doc-1",
+		Status:                  string(entity.TaskStatusDone),
+		PipelineLogID:           "run-1",
+		PipelineBindingResolved: true,
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "run-1").Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.PipelineID != nil || run.PipelineVersionID != nil {
+		t.Fatalf("pipeline binding = (%v, %v), want both nil for a versionless run", run.PipelineID, run.PipelineVersionID)
+	}
+}

@@ -118,6 +118,17 @@ func TestSetResolvedPipelineOnlyUpdatesOpenRuns(t *testing.T) {
 		t.Fatalf("open PipelineVersionID = %v, want ver-1", openReloaded.PipelineVersionID)
 	}
 
+	if err := dao.SetResolvedPipeline(ctx, db, "open-run", "", ""); err != nil {
+		t.Fatalf("clear resolved pipeline: %v", err)
+	}
+	var openCleared entity.PipelineOperationLog
+	if err := db.First(&openCleared, "id = ?", "open-run").Error; err != nil {
+		t.Fatalf("load cleared open run: %v", err)
+	}
+	if openCleared.PipelineID != nil || openCleared.PipelineVersionID != nil {
+		t.Fatalf("cleared pipeline identity = (%v, %v), want both nil", openCleared.PipelineID, openCleared.PipelineVersionID)
+	}
+
 	terminal := &entity.PipelineOperationLog{
 		ID:              "terminal-run",
 		DocumentID:      "doc-2",

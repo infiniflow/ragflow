@@ -295,14 +295,21 @@ func (dao *PipelineOperationLogDAO) AdvanceOpenLog(ctx context.Context, db *gorm
 
 // SetResolvedPipeline records the pipeline and version a run resolved.
 func (dao *PipelineOperationLogDAO) SetResolvedPipeline(ctx context.Context, db *gorm.DB, logID, pipelineID, versionID string) error {
-	if logID == "" || pipelineID == "" || versionID == "" {
+	if logID == "" {
 		return nil
+	}
+	var pipelineValue, versionValue interface{}
+	if pipelineID != "" {
+		pipelineValue = pipelineID
+	}
+	if versionID != "" {
+		versionValue = versionID
 	}
 	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
 		Where("id = ? AND operation_status IN ?", logID, OpenPipelineOperationStatuses()).
 		Updates(map[string]interface{}{
-			"pipeline_id":         pipelineID,
-			"pipeline_version_id": versionID,
+			"pipeline_id":         pipelineValue,
+			"pipeline_version_id": versionValue,
 		}).Error
 }
 
