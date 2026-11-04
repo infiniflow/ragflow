@@ -1,14 +1,14 @@
 ---
 sidebar_position: 8
-title: Connect the Pipeline to a Knowledge Base
-sidebar_label: Connect the Pipeline to a Knowledge Base
+title: Connect the Pipeline to a Dataset
+sidebar_label: Connect the Pipeline to a Dataset
 slug: /connect_the_pipeline_to_a_knowledge_base
 sidebar_custom_props: {
   categoryIcon: RagAiAgent
 }
 ---
 
-# Connect the Pipeline to a Knowledge Base
+# Connect the Pipeline to a Dataset {#connect-the-pipeline-to-a-knowledge-base}
 
 Publish a pipeline version before applying a custom pipeline to a Dataset. Saving a draft alone does not make it selectable for document processing.
 

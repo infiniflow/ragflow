@@ -64,7 +64,7 @@ Variable types:
 | Single-line text | Used to enter short text, such as names, keywords, and serial numbers.                                                                                                                                                                     |
 | Paragraph text   | Used to enter longer content, such as problem descriptions, requirement descriptions, and prompts.                                                                                                                                         |
 | Dropdown options | Provides predefined options for users to select. You can click **Add option** to add multiple options. This is suitable for fixed-value inputs such as language, department, and model type.                                               |
-| File upload      | Allows users to upload files as workflow input. This can be used for document analysis, image processing, and similar scenarios. Uploaded files are not automatically saved to knowledge bases, and are used only in the current workflow. |
+| File upload      | Allows users to upload files as workflow input. This can be used for document analysis, image processing, and similar scenarios. Uploaded files are not automatically saved to Datasets, and are used only in the current workflow. |
 | Number           | Used to enter numeric values, such as quantity, threshold, `Top K`, and maximum returned items.                                                                                                                                            |
 | Boolean          | Provides a switch (`True`/`False`) or yes/no option, used to control whether a feature is enabled or whether a branch is executed.                                                                                                         |
 | JSON object      | Used to enter structured JSON data, such as parameters, configurations, or other complex data containing multiple fields.                                                                                                                  |
@@ -73,7 +73,7 @@ Variable types:
 
 :::tip NOTE
 
-Files uploaded through **Begin** are available to the workflow without being added to a knowledge base.
+Files uploaded through **Begin** are available to the workflow without being added to a Dataset.
 
 - For documents, add a **File upload** input and select a parser. Reference the parsed content through `sys.files` in subsequent components.
 - For images, select a vision-capable model in the Agent component to analyze the uploaded image. Image uploads are not automatically converted to text.
@@ -145,7 +145,7 @@ Parameter description:
 | Parameter           | Description                                                                                                                                                                                                                    | Suggestion                                                                                                          |
 |---------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
 | Message window size | Sets the number of historical messages retained by the Agent during reasoning. A larger window provides more context, but increases token consumption.                                                                         | Keep the default value in general. Increase it for multi-turn conversations, and decrease it for single-turn tasks. |
-| Citation            | Specifies whether to return citation information in answers. When the Agent uses knowledge bases or retrieval results to generate answers, source citations can be enabled to make it easier to view the basis for the answer. | Recommended for knowledge base Q&A scenarios.                                                                       |
+| Citation            | Specifies whether to return citation information in answers. When the Agent uses Datasets or retrieval results to generate answers, source citations can be enabled to make it easier to view the basis for the answer. | Recommended for Dataset Q&A scenarios.                                                                       |
 
 If an Agent run fails, check the error details in the run results, correct the cause, and run again.
 
@@ -164,13 +164,13 @@ For structured output, after enabling **Structured output**, click **Configurati
 
 ## Retrieval Component
 
-The knowledge retrieval component is used to retrieve relevant content from specified knowledge bases or memories. It can be used as a regular workflow component, or as a tool for the Agent component.
+The knowledge retrieval component is used to retrieve relevant content from specified Datasets or memories. It can be used as a regular workflow component, or as a tool for the Agent component.
 
 Configuration steps:
 
 1. Click the knowledge retrieval component.
 2. In **Query variable**, select the query source. `sys.query` is commonly used.
-3. In **Retrieval source**, select one or more knowledge bases, or select **Memory**.
+3. In **Retrieval from**, select one or more Datasets, or select **Memory**.
 4. Expand **Advanced settings** and adjust **Similarity threshold**, **Keyword similarity weight**, **Rerank candidate count**, and **Top N** as needed. Select a **Rerank model** if required.
 5. For cross-language retrieval, select a **Cross-language search** language.
 6. Click **Run** to test the retrieval results.
@@ -183,7 +183,7 @@ Configuration steps:
 
 **Similarity threshold** is used to filter low-relevance chunks. The higher the threshold, the stricter the returned content, but useful information may be missed.
 
-**Keyword similarity weight** controls the full-text keyword weight in the combined retrieval score. Its default is `0.7`, with a corresponding vector weight of `1 - 0.7 = 0.3`. The panel shows both weights. Increasing the keyword weight favors keyword matching; decreasing it favors vector similarity. When retrieving from multiple knowledge bases together, make sure they use the same embedding model.
+**Keyword similarity weight** controls the full-text keyword weight in the combined retrieval score. Its default is `0.7`, with a corresponding vector weight of `1 - 0.7 = 0.3`. The panel shows both weights. Increasing the keyword weight favors keyword matching; decreasing it favors vector similarity. When retrieving from multiple Datasets together, make sure they use the same embedding model.
 
 **Rerank candidate count** controls the number of retrieval candidates available for reranking. The default shown in the panel is `64`. This is separate from **Top N**, which limits the results passed to downstream components.
 
