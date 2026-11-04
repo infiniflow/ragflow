@@ -295,17 +295,148 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if message.MsgType == "text" && message.FromUserName != "" {
-		channel.handleTextMessage(r.Context(), message.FromUserName, message.FromUserName, message.MsgID, message.Content, "p2p", map[string]any{
-			"to_user_name":   message.ToUserName,
-			"from_user_name": message.FromUserName,
-			"create_time":    message.CreateTime,
-			"msg_type":       message.MsgType,
-			"content":        message.Content,
-			"msg_id":         message.MsgID,
-			"xml":            string(plaintext),
-		})
+		if !tryAcquireWeComWork() {
+			// Acknowledging a message we cannot schedule would drop it: there
+			// is no retry once WeCom sees 200. Ask WeCom to deliver it again.
+			common.Warn("wecom: handler capacity exhausted; requesting retry", zap.String("account_id", accountID), zap.String("message_id", message.MsgID))
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		if weComMessageSeen(accountID, message.MsgID) {
+			releaseWeComWork()
+			common.Info("wecom: skipping duplicate callback", zap.String("account_id", accountID), zap.String("message_id", message.MsgID))
+		} else {
+			// WeCom retries callbacks that are not acknowledged within a few
+			// seconds, while answering runs an LLM completion that takes far
+			// longer. Acknowledge immediately and answer in the background; the
+			// message id guard above keeps a retry from answering twice.
+			chatID := message.FromUserName
+			senderID := message.FromUserName
+			messageID := message.MsgID
+			content := message.Content
+			raw := map[string]any{
+				"to_user_name":   message.ToUserName,
+				"from_user_name": message.FromUserName,
+				"create_time":    message.CreateTime,
+				"msg_type":       message.MsgType,
+				"content":        message.Content,
+				"msg_id":         message.MsgID,
+				"xml":            string(plaintext),
+			}
+			go func() {
+				defer releaseWeComWork()
+				defer func() {
+					if recovered := recover(); recovered != nil {
+						common.Error(
+							"wecom: panic while handling message",
+							fmt.Errorf("panic: %v", recovered),
+							zap.String("account_id", accountID),
+							zap.String("message_id", messageID),
+							zap.Stack("stack"),
+						)
+						// A panic is a retryable failure: let a later delivery
+						// run the message instead of suppressing it.
+						weComForgetMessage(accountID, messageID)
+					}
+				}()
+				// The request context is cancelled as soon as this handler
+				// returns, so the background reply must not inherit it.
+				runCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), weComHandlerTimeout)
+				defer cancel()
+				if err := channel.handleTextMessage(runCtx, chatID, senderID, messageID, content, "p2p", raw); err != nil {
+					// The bridge failed before producing a reply, so keep the
+					// message retryable instead of dropping a later delivery.
+					weComForgetMessage(accountID, messageID)
+				}
+			}()
+		}
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// WeCom retries unacknowledged callbacks, so recently handled message ids are
+// remembered and the retries dropped instead of answered twice.
+const (
+	weComDedupeWindow          = 30 * time.Second
+	weComDedupeMax             = 2000
+	weComHandlerTimeout        = 10 * time.Minute
+	weComMaxConcurrentHandlers = 16
+)
+
+var (
+	weComSeenMessagesMu sync.Mutex
+	weComSeenMessages   = map[string]time.Time{}
+	// weComWorkSlots bounds detached callback handlers so a burst cannot spawn
+	// unbounded concurrent completions in one process.
+	weComWorkSlots = make(chan struct{}, weComMaxConcurrentHandlers)
+)
+
+func tryAcquireWeComWork() bool {
+	return tryAcquireSlot(weComWorkSlots)
+}
+
+func tryAcquireSlot(slots chan struct{}) bool {
+	select {
+	case slots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func releaseWeComWork() {
+	releaseSlot(weComWorkSlots)
+}
+
+func releaseSlot(slots chan struct{}) {
+	<-slots
+}
+
+// weComMessageSeen records an inbound message id and reports whether it was
+// already handled inside the dedupe window.
+func weComMessageSeen(accountID, messageID string) bool {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return false
+	}
+	key := accountID + ":" + messageID
+	now := time.Now()
+
+	weComSeenMessagesMu.Lock()
+	defer weComSeenMessagesMu.Unlock()
+
+	if seenAt, ok := weComSeenMessages[key]; ok && now.Sub(seenAt) < weComDedupeWindow {
+		return true
+	}
+	for existing, seenAt := range weComSeenMessages {
+		if now.Sub(seenAt) >= weComDedupeWindow {
+			delete(weComSeenMessages, existing)
+		}
+	}
+	for len(weComSeenMessages) >= weComDedupeMax {
+		oldestKey := ""
+		oldestAt := now
+		for existing, seenAt := range weComSeenMessages {
+			if oldestKey == "" || seenAt.Before(oldestAt) {
+				oldestKey, oldestAt = existing, seenAt
+			}
+		}
+		delete(weComSeenMessages, oldestKey)
+	}
+	weComSeenMessages[key] = now
+	return false
+}
+
+// weComForgetMessage clears a dedupe entry after a retryable handler failure so
+// a later delivery can run instead of being skipped for the whole window.
+func weComForgetMessage(accountID, messageID string) {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return
+	}
+	weComSeenMessagesMu.Lock()
+	delete(weComSeenMessages, accountID+":"+messageID)
+	weComSeenMessagesMu.Unlock()
 }
 
 func weComAccountIDFromPath(path string) (string, bool) {

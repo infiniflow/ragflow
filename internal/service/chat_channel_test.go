@@ -9,6 +9,7 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -25,7 +26,7 @@ func setupChatChannelServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.User{}, &entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.User{}, &entity.UserTenant{}, &entity.UserCanvas{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -99,6 +100,7 @@ func TestChatChannelServiceCreateAndList(t *testing.T) {
 		"dingtalk",
 		entity.JSONMap{"token": "abc"},
 		&chatID,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("CreateChatChannel failed: %v", err)
@@ -481,4 +483,99 @@ func TestGetOrCreateForChannelFallbackNames(t *testing.T) {
 			t.Fatalf("unexpected session name: %v", session.Name)
 		}
 	})
+}
+func TestResolveChannelTargetRejectsChatAndAgentTogether(t *testing.T) {
+	chatID := "dialog-1"
+	agentID := "agent-1"
+
+	_, _, err := resolveChannelTarget(t.Context(), &chatID, &agentID)
+	if !errors.Is(err, ErrChatChannelTargetConflict) {
+		t.Fatalf("resolveChannelTarget() error = %v, want ErrChatChannelTargetConflict", err)
+	}
+}
+
+func TestStripReasoningContentKeepsOnlyTheAnswer(t *testing.T) {
+	if got := stripReasoningContent("<think>weighing options</think>final answer"); got != "final answer" {
+		t.Fatalf("stripReasoningContent() = %q, want %q", got, "final answer")
+	}
+	if got := stripReasoningContent("plain answer"); got != "plain answer" {
+		t.Fatalf("stripReasoningContent() = %q, want the input unchanged", got)
+	}
+	if got := stripReasoningContent("<think>unterminated reasoning"); got != "<think>unterminated reasoning" {
+		t.Fatalf("stripReasoningContent() = %q, want the input unchanged without a closing tag", got)
+	}
+}
+
+func TestChannelAgentSessionIDIsStablePerChat(t *testing.T) {
+	sessionID := channelAgentSessionID("agent-1", "channel-1", "chat-1")
+	if len(sessionID) != 32 {
+		t.Fatalf("session id length = %d, want 32", len(sessionID))
+	}
+	if sessionID != channelAgentSessionID("agent-1", "channel-1", "chat-1") {
+		t.Fatal("session id must be stable for the same agent, channel and chat")
+	}
+	if sessionID == channelAgentSessionID("agent-1", "channel-1", "chat-2") {
+		t.Fatal("each end-user chat must get its own agent session")
+	}
+	if sessionID == channelAgentSessionID("agent-2", "channel-1", "chat-1") {
+		t.Fatal("rebinding another agent must not reuse the previous session")
+	}
+}
+
+func TestCollectChannelAgentAnswerAccumulatesAndStripsReasoning(t *testing.T) {
+	events := make(chan canvas.RunEvent, 3)
+	events <- canvas.RunEvent{Type: "message", Data: `{"content":"weighing options","start_to_think":true}`}
+	events <- canvas.RunEvent{Type: "message", Data: `{"content":"done","end_to_think":true}`}
+	events <- canvas.RunEvent{Type: "message", Data: `{"content":"final answer"}`}
+	close(events)
+
+	if got := collectChannelAgentAnswer(events); got != "final answer" {
+		t.Fatalf("collectChannelAgentAnswer() = %q, want %q", got, "final answer")
+	}
+}
+
+func TestCollectChannelAgentAnswerReturnsFallbackOnTerminalEvents(t *testing.T) {
+	for _, eventType := range []string{"error", "cancelled"} {
+		t.Run(eventType, func(t *testing.T) {
+			events := make(chan canvas.RunEvent, 2)
+			events <- canvas.RunEvent{Type: "message", Data: `{"content":"partial answer"}`}
+			events <- canvas.RunEvent{Type: eventType, Data: `{"message":"boom"}`}
+			close(events)
+
+			if got := collectChannelAgentAnswer(events); got != agentChannelFailureReply {
+				t.Fatalf("collectChannelAgentAnswer() = %q, want the fallback reply", got)
+			}
+		})
+	}
+}
+
+func TestHandleIncomingMessageFailsWhenAgentRuntimeIsUnconfigured(t *testing.T) {
+	db := setupChatChannelServiceTestDB(t)
+	agentID := "agent-1"
+	createServiceTestChannel(t, db, &entity.ChatChannel{
+		ID:       "cc-agent",
+		TenantID: "tenant-1",
+		Name:     "bot-a",
+		Channel:  "wecom",
+		Config:   entity.JSONMap{"token": "abc"},
+		AgentID:  &agentID,
+		Status:   1,
+	})
+
+	SetChatChannelAgentService(nil)
+	t.Cleanup(func() { SetChatChannelAgentService(nil) })
+
+	answer, err := NewChatChannelService().HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{
+		Channel:   "wecom",
+		AccountID: "cc-agent",
+		ChatID:    "chat-1",
+		MessageID: "msg-1",
+		Text:      "hello",
+	})
+	if err == nil {
+		t.Fatal("expected an error when the agent runtime is not configured")
+	}
+	if answer != "" {
+		t.Fatalf("answer = %q, want empty", answer)
+	}
 }
