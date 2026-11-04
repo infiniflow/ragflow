@@ -26,7 +26,7 @@ The configuration page allows you to manage the core settings of a knowledge bas
 - **Description**: A description of the knowledge base, used to explain its data scope, business purpose, or maintenance information.
 - **Permissions**: Controls access to the knowledge base and the scope of allowed operations.
 - **Embedding model**: The model used to vectorize chunks. When chunks already exist, changing the model requires a compatibility check against existing vectors. Saving the change does not automatically re-embed existing chunks.
-- **PageRank**: Sets the PageRank score for the knowledge base. During retrieval, this score is added to the hybrid similarity score of matching chunks from the knowledge base, increasing their ranking weight. This is useful when searching across multiple knowledge bases and you want to prioritize content from a specific knowledge base.
+- **PageRank**: Sets the PageRank score for the knowledge base. During retrieval, this score is added to the hybrid similarity score of matching chunks from the knowledge base, increasing their ranking weight. This is useful when searching across multiple knowledge bases, and you want to prioritize content from a specific knowledge base.
 
 ## Dataset Page Overview
 

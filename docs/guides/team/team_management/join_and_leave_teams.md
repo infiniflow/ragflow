@@ -37,7 +37,7 @@ When someone invites you to their team, you can respond from your own account:
 
 After you accept, the invitation actions are replaced by a leave-team icon. Find resources shared with **Team** in the corresponding Dataset, Agent, or Memory list. See [Team usage guides](../resource_sharing/resource_sharing_and_permissions.md#find-the-sharing-setting). Private resources remain unavailable.
 
-If you decline, the invitation is removed from the active list and you do not join the team. The owner can invite you again later if needed.
+If you decline, the invitation is removed from the active list, and you do not join the team. The owner can invite you again later if needed.
 
 ## Leave a Team
 
