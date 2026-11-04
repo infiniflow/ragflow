@@ -139,7 +139,7 @@ func (s *DocumentService) ListDocuments(ctx context.Context, page, pageSize int)
 	return responses, total, nil
 }
 
-func (s *DocumentService) GetThumbnails(ctx context.Context, userID string, docIDs []string) (map[string]string, error) {
+func (s *DocumentService) GetThumbnails(ctx context.Context, docIDs []string) (map[string]string, error) {
 	if len(docIDs) == 0 {
 		return map[string]string{}, nil
 	}
