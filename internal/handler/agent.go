@@ -56,10 +56,10 @@ type agentFileService interface {
 	DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error)
 	// UploadInfos stores raw bytes in the per-user downloads bucket and
 	// returns lightweight descriptors.
-	UploadInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
+	UploadInfos(ctx context.Context, files []*multipart.FileHeader) ([]map[string]interface{}, error)
 	// UploadFromURL downloads a remote file (with SSRF protection) and
 	// stores it as an info blob.
-	UploadFromURL(ctx context.Context, tenantID, rawURL string) (map[string]interface{}, error)
+	UploadFromURL(ctx context.Context, rawURL string) (map[string]interface{}, error)
 }
 
 // chatAgentService is the subset of AgentService used by the chat-completion
