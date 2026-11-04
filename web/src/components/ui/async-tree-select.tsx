@@ -252,7 +252,7 @@ export function AsyncTreeSelect({
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
-        <div className="flex justify-between border px-2 py-1.5 rounded-md gap-2 items-center w-full">
+        <div className="flex justify-between border px-2 py-1.5 rounded-md gap-2 items-center w-full break-all">
           {selectedTitle || (
             <span className="text-slate-400">{t('common.pleaseSelect')}</span>
           )}
