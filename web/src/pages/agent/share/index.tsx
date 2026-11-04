@@ -1,9 +1,12 @@
 import { EmbedContainer } from '@/components/embed-container';
 import { FileUploadProps } from '@/components/file-upload';
+import { LoadingDots } from '@/components/loading-dots';
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import SvgIcon from '@/components/svg-icon';
 import { useSyncThemeFromParams } from '@/components/theme-provider';
 import { VirtualMessageList } from '@/components/virtual-message-list';
 import { MessageType } from '@/constants/chat';
@@ -69,6 +72,10 @@ const ChatContainer = () => {
     sendFormMessage,
   });
   const sendDisabled = useSendButtonDisabled(value);
+  // The assistant message is only created when the first SSE frame arrives,
+  // so fill the gap between sending and the first frame with a loading row.
+  const showSendLoading =
+    sendLoading && derivedMessages.at(-1)?.role !== MessageType.Assistant;
 
   const showBeginParameterDialog = useCallback(() => {
     if (inputsData && inputsData.inputs && !isEmpty(inputsData.inputs)) {
@@ -183,6 +190,28 @@ const ChatContainer = () => {
                 </MessageItem>
               )}
             />
+            {showSendLoading && (
+              <div className="flex w-full gap-5 py-6">
+                {visibleAvatar &&
+                  (inputsData.avatar || inputsData.title ? (
+                    <RAGFlowAvatar
+                      className="size-10"
+                      avatar={inputsData.avatar}
+                      name={inputsData.title}
+                      isPerson
+                    />
+                  ) : (
+                    <SvgIcon
+                      name={'assistant'}
+                      width={'100%'}
+                      className="size-10 fill-current"
+                    />
+                  ))}
+                <div className="px-2.5 py-1.5">
+                  <LoadingDots className="text-text-secondary" />
+                </div>
+              </div>
+            )}
           </div>
           {isTaskMode || (
             <div className="flex w-full justify-center md:mb-8">
