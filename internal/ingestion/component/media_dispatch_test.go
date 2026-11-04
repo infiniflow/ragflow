@@ -50,6 +50,14 @@ type pictureOCRAnalyzer struct {
 
 func (*pictureOCRAnalyzer) Health() bool { return true }
 
+func (*pictureOCRAnalyzer) DLA(context.Context, image.Image) ([]deepdoctype.DLARegion, error) {
+	return nil, nil
+}
+
+func (*pictureOCRAnalyzer) TSR(context.Context, image.Image) ([]deepdoctype.TSRCell, error) {
+	return nil, nil
+}
+
 func (a *pictureOCRAnalyzer) OCRDetect(ctx context.Context, img image.Image) ([]deepdoctype.OCRBox, error) {
 	if a.empty {
 		return nil, nil

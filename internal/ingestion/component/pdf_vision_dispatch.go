@@ -840,8 +840,12 @@ func dispatchMonkeyOCRPDF(
 		return parser.ParseResult{}, err
 	}
 
+	// The MonkeyOCR adapter fronts the same MinerU-compatible /file_parse API,
+	// so it shares the MinerU timeout resolution (default 30m) that
+	// mineruStreamParse was already written against.
+	timeout := mineruRequestTimeout(setup, apiConfig)
 	extraction := mineruExtractionOptions{formulaEnable: true, tableEnable: true}
-	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction)
+	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction, timeout)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR stream: %w", err)
 	}
