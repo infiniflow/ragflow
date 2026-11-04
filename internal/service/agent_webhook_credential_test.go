@@ -103,10 +103,13 @@ func TestAgentWebhookCredentialUsesBoundPrincipalAndCanBeRotated(t *testing.T) {
 	if _, err := svc.Resolve(ctx, canvas.ID, secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {
 		t.Fatalf("removed member token resolution error = %v, want invalid credential", err)
 	}
-	if err := svc.Revoke(ctx, canvas.ID, "caller-1"); err != nil {
+	if err := svc.Revoke(permission.WithIdentity(t.Context(), "", ""), canvas.ID); !errors.Is(err, permission.ErrUnauthenticated) {
+		t.Fatalf("revoke without authenticated user error = %v, want unauthenticated", err)
+	}
+	if err := svc.Revoke(ctx, canvas.ID); err != nil {
 		t.Fatalf("revoke credential: %v", err)
 	}
-	if err := svc.Revoke(ctx, canvas.ID, "caller-1"); err != nil {
+	if err := svc.Revoke(ctx, canvas.ID); err != nil {
 		t.Fatalf("repeat revoke: %v", err)
 	}
 	if _, err := svc.Resolve(ctx, canvas.ID, secondToken); !errors.Is(err, ErrInvalidAgentWebhookCredential) {

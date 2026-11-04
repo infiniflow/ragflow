@@ -24,14 +24,11 @@ import (
 )
 
 // docxExtract is a test seam for the native office_oxide extraction. It
-// defaults to the deepdoc/docx backend (which is the only place that depends
-// on office_oxide) and is overridden in tests to capture the effective
-// container format passed to the engine.
+// defaults to the deepdoc/office backend, which owns the native dependency.
 var docxExtract = deepdocoffice.OpenAndExtract
 
-// DOCXParser is the DOCX/DOC parser. It is a CGO-free facade: magic-byte
-// sniffing and post-processing live here, while the native extraction lives
-// in internal/deepdoc/parser/office. The IR data model and postprocessing live
+// DOCXParser parses DOCX documents. Native extraction lives in
+// internal/deepdoc/parser/office. The IR data model and postprocessing live
 // in cgo-free files (docx_ir.go, docx_postprocess.go, office_table_render.go)
 // so they compile and test without native libraries.
 type DOCXParser struct {
@@ -62,28 +59,8 @@ func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 // ParseWithResult produces structured JSON items from a docx document.
 // Embedded images are stored in the run media cache and emitted as media_ref;
 // text-only parsers skip them instead.
-//
-// File["format"] in the returned ParseResult reflects the effective
-// container format after magic-byte sniffing (e.g. "doc" for an OLE
-// payload uploaded as .docx), not merely the file extension. See
-// office_detect.go:officeContainer for the detection contract.
 func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	// office_oxide's OpenFromBytes takes the container format as given
-	// and does no magic-byte detection, so a legacy .doc uploaded with a
-	// .docx extension would be parsed as ZIP/OOXML and fail. Sniff the
-	// real container and pass the matching format so mislabeled files
-	// still parse (mirrors the magic-byte correction office_oxide::Open
-	// performs on file paths).
-	format := "docx"
-	if officeContainer(data) == "ole" {
-		format = "doc"
-	}
-	// Note: when format == "doc" (OLE fallback), header/footer and TOC
-	// post-processing below degrades gracefully: extractDOCXHeaderFooterTexts
-	// opens the payload as ZIP and fails closed, so RemoveHeaderFooter becomes
-	// a no-op for legacy OLE inputs. This is acceptable — legacy DOC has no
-	// OOXML header/footer parts to strip.
-	irJSON, _, _, _, err := docxExtract(data, format)
+	irJSON, _, _, _, err := docxExtract(data, "docx")
 	if err != nil {
 		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
 			return ParseResult{Err: fmt.Errorf("%w: %s", ErrOfficeCGORequired, filename)}
@@ -93,7 +70,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 
 	fileMeta := map[string]any{
 		"name":   filename,
-		"format": format,
+		"format": "docx",
 	}
 
 	var sink *officeMediaSink

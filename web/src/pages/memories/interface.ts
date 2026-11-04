@@ -11,7 +11,7 @@ export interface MemoryListParams {
   page_size?: number;
   orderby?: string;
   desc?: boolean;
-  owner_ids?: string;
+  tenant_id?: string;
 }
 export type MemoryType = 'raw' | 'semantic' | 'episodic' | 'procedural';
 export type StorageType = 'table' | 'graph';
@@ -26,8 +26,10 @@ export interface ICreateMemoryProps {
 export interface IMemory extends ICreateMemoryProps {
   id: string;
   avatar: string;
+  operator_permission?: number;
   tenant_id: string;
-  owner_name: string;
+  nickname?: string;
+  owner_name?: string;
   storage_type: StorageType;
   permissions: Permissions;
   description: string;

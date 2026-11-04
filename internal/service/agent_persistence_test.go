@@ -183,7 +183,7 @@ func TestPersistAgentRunSessionPreservesThinking(t *testing.T) {
 	results := make(chan error, 2)
 	for _, question := range []string{"concurrent question 1", "concurrent question 2"} {
 		go func(question string) {
-			events, err := svc.RunAgent(ctx, "user-1", "canvas-think", "session-think", "", question, nil)
+			events, err := svc.RunAgent(ctx, "canvas-think", "session-think", "", question, nil)
 			if err == nil {
 				for event := range events {
 					if event.Type == "error" {

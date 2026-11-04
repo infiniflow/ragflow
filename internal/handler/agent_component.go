@@ -61,7 +61,7 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 		return
 	}
 
-	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
+	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			common.RespondError(c, common.CodeOperatingError, canvasNoAccessMessage)
@@ -153,7 +153,7 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 		return
 	}
 
-	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
+	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			common.RespondError(c, common.CodeOperatingError, canvasNoAccessMessage)

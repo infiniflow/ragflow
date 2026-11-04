@@ -407,6 +407,20 @@ export const applyDatasetParserConfig = (datasetId: string) =>
     true,
   );
 
+const stopAllDocumentsProxy = registerNextServer({
+  stopAllDocuments: {
+    url: ({ datasetId }: { datasetId: string }) =>
+      api.stopAllDocuments(datasetId),
+    method: 'post',
+  },
+});
+
+export const stopAllDocuments = (datasetId: string, runStatuses: string[]) =>
+  stopAllDocumentsProxy.stopAllDocuments(
+    { datasetId, data: { cancel_all: true, run_statuses: runStatuses } },
+    true,
+  );
+
 // Using RESTful API: GET /api/v1/datasets/{dataset_id}/documents
 export const listDocument = (
   params?: IFetchKnowledgeListRequestParams,

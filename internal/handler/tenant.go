@@ -263,11 +263,6 @@ type CreateChunkTableRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/tenant/chunk-store [post]
 func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	var req CreateChunkTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -311,11 +306,6 @@ type DeleteChunkTableRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/tenant/chunk-store [delete]
 func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	ctx := c.Request.Context()
 	var req DeleteChunkTableRequest

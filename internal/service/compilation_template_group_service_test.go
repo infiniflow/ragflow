@@ -27,6 +27,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // setupCompilationGroupTestDB migrates the minimal schema for the group
@@ -59,7 +60,8 @@ func seedCompilationGroup(t *testing.T, svc *CompilationTemplateGroupService, te
 	for _, name := range templateNames {
 		templates = append(templates, &GroupTemplate{Name: name, Kind: "text", Config: entity.JSONMap{}})
 	}
-	group, err := svc.CreateGroup(t.Context(), tenantID, &GroupRequest{Name: groupName, Templates: templates})
+	ctx := permission.WithIdentity(t.Context(), tenantID, tenantID)
+	group, err := svc.CreateGroup(ctx, &GroupRequest{Name: groupName, Templates: templates})
 	if err != nil {
 		t.Fatalf("seed group %q: %v", groupName, err)
 	}
@@ -130,14 +132,14 @@ func templateByID(t *testing.T, group *GroupListItem, id string) *TemplateListIt
 func TestCreateGroupDoesNotMutateRequestName(t *testing.T) {
 	setupCompilationGroupTestDB(t)
 	svc := NewCompilationTemplateGroupService()
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "tenant-1", "tenant-1")
 
 	req := &GroupRequest{
 		Name:      "Group A",
 		Templates: []*GroupTemplate{{Name: "tpl", Kind: "text", Config: entity.JSONMap{}}},
 	}
 
-	first, err := svc.CreateGroup(ctx, "tenant-1", req)
+	first, err := svc.CreateGroup(ctx, req)
 	if err != nil {
 		t.Fatalf("first CreateGroup: %v", err)
 	}
@@ -148,7 +150,7 @@ func TestCreateGroupDoesNotMutateRequestName(t *testing.T) {
 		t.Fatalf("CreateGroup mutated req.Name to %q", req.Name)
 	}
 
-	second, err := svc.CreateGroup(ctx, "tenant-1", req)
+	second, err := svc.CreateGroup(ctx, req)
 	if err != nil {
 		t.Fatalf("second CreateGroup: %v", err)
 	}
@@ -165,12 +167,12 @@ func TestCreateGroupDoesNotMutateRequestName(t *testing.T) {
 func TestReconcileChildrenAllowsRenameOntoRemovedName(t *testing.T) {
 	setupCompilationGroupTestDB(t)
 	svc := NewCompilationTemplateGroupService()
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "tenant-1", "tenant-1")
 
 	group := seedCompilationGroup(t, svc, "tenant-1", "Group A", "A", "B")
 	b := templateByName(t, group, "B")
 
-	updated, err := svc.UpdateGroup(ctx, "tenant-1", group.ID, &GroupRequest{
+	updated, err := svc.UpdateGroup(ctx, group.ID, &GroupRequest{
 		Templates: []*GroupTemplate{{ID: b.ID, Name: "A", Kind: "text", Config: entity.JSONMap{}}},
 	})
 	if err != nil {
@@ -189,13 +191,13 @@ func TestReconcileChildrenAllowsRenameOntoRemovedName(t *testing.T) {
 func TestReconcileChildrenAllowsNameSwap(t *testing.T) {
 	setupCompilationGroupTestDB(t)
 	svc := NewCompilationTemplateGroupService()
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "tenant-1", "tenant-1")
 
 	group := seedCompilationGroup(t, svc, "tenant-1", "Group A", "A", "B")
 	a := templateByName(t, group, "A")
 	b := templateByName(t, group, "B")
 
-	updated, err := svc.UpdateGroup(ctx, "tenant-1", group.ID, &GroupRequest{
+	updated, err := svc.UpdateGroup(ctx, group.ID, &GroupRequest{
 		Templates: []*GroupTemplate{
 			{ID: a.ID, Name: "B", Kind: "text", Config: entity.JSONMap{}},
 			{ID: b.ID, Name: "A", Kind: "text", Config: entity.JSONMap{}},
@@ -216,13 +218,13 @@ func TestReconcileChildrenAllowsNameSwap(t *testing.T) {
 func TestReconcileChildrenRejectsDuplicateSurvivingName(t *testing.T) {
 	setupCompilationGroupTestDB(t)
 	svc := NewCompilationTemplateGroupService()
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "tenant-1", "tenant-1")
 
 	group := seedCompilationGroup(t, svc, "tenant-1", "Group A", "A", "B")
 	a := templateByName(t, group, "A")
 	b := templateByName(t, group, "B")
 
-	_, err := svc.UpdateGroup(ctx, "tenant-1", group.ID, &GroupRequest{
+	_, err := svc.UpdateGroup(ctx, group.ID, &GroupRequest{
 		Templates: []*GroupTemplate{
 			{ID: a.ID, Name: "b", Kind: "text", Config: entity.JSONMap{}},
 			{ID: b.ID, Name: "B", Kind: "text", Config: entity.JSONMap{}},
@@ -239,11 +241,11 @@ func TestReconcileChildrenRejectsDuplicateSurvivingName(t *testing.T) {
 func TestReconcileChildrenAllowsLegacyCaseVariantDuplicates(t *testing.T) {
 	setupCompilationGroupTestDB(t)
 	svc := NewCompilationTemplateGroupService()
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "tenant-1", "tenant-1")
 
 	ids := seedLegacyCompilationGroup(t, "tenant-1", "legacy-group", "A", "a")
 
-	updated, err := svc.UpdateGroup(ctx, "tenant-1", "legacy-group", &GroupRequest{
+	updated, err := svc.UpdateGroup(ctx, "legacy-group", &GroupRequest{
 		Templates: []*GroupTemplate{
 			{ID: ids["A"], Name: "A", Kind: "text", Config: entity.JSONMap{}},
 			{ID: ids["a"], Name: "a", Kind: "text", Config: entity.JSONMap{}},
@@ -262,11 +264,11 @@ func TestReconcileChildrenAllowsLegacyCaseVariantDuplicates(t *testing.T) {
 func TestReconcileChildrenRejectsRenameOntoUnchangedLegacyName(t *testing.T) {
 	setupCompilationGroupTestDB(t)
 	svc := NewCompilationTemplateGroupService()
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "tenant-1", "tenant-1")
 
 	ids := seedLegacyCompilationGroup(t, "tenant-1", "legacy-group-2", "A", "a", "B")
 
-	_, err := svc.UpdateGroup(ctx, "tenant-1", "legacy-group-2", &GroupRequest{
+	_, err := svc.UpdateGroup(ctx, "legacy-group-2", &GroupRequest{
 		Templates: []*GroupTemplate{
 			{ID: ids["A"], Name: "b", Kind: "text", Config: entity.JSONMap{}},
 			{ID: ids["a"], Name: "a", Kind: "text", Config: entity.JSONMap{}},
@@ -284,7 +286,7 @@ func TestReconcileChildrenRejectsRenameOntoUnchangedLegacyName(t *testing.T) {
 func TestCreateGroupSingleTemplateSharesFallbackName(t *testing.T) {
 	setupCompilationGroupTestDB(t)
 	svc := NewCompilationTemplateGroupService()
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "tenant-1", "tenant-1")
 
 	first := seedCompilationGroup(t, svc, "tenant-1", "Group A", "tpl")
 	if first.Templates[0].Name != "Group A" {
@@ -299,7 +301,7 @@ func TestCreateGroupSingleTemplateSharesFallbackName(t *testing.T) {
 		t.Fatalf("second template name = %q, want %q", second.Templates[0].Name, "Group A(1)")
 	}
 
-	updated, err := svc.UpdateGroup(ctx, "tenant-1", second.ID, &GroupRequest{
+	updated, err := svc.UpdateGroup(ctx, second.ID, &GroupRequest{
 		Name: "Group A(1)",
 		Templates: []*GroupTemplate{
 			{ID: second.Templates[0].ID, Name: "Group A(1)", Kind: "text", Config: entity.JSONMap{}},

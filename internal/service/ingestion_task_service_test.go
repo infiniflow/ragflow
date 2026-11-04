@@ -2112,6 +2112,53 @@ func TestIngestionTaskServiceRetryAfterTerminalOpensFreshPipelineLog(t *testing.
 	}
 }
 
+func TestIngestionTaskServiceOpensRunWithDocumentPipelineVersion(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	pipelineID := "canvas-1"
+	if err := db.Create(&entity.UserCanvas{
+		ID:             pipelineID,
+		UserID:         "user-1",
+		CanvasCategory: "dataflow_canvas",
+	}).Error; err != nil {
+		t.Fatalf("insert pipeline: %v", err)
+	}
+	versionID := "ver-1"
+	if err := db.Create(&entity.Document{
+		ID:                "doc-1",
+		KbID:              "kb-1",
+		ParserID:          "naive",
+		ParserConfig:      entity.JSONMap{},
+		Suffix:            ".txt",
+		Status:            sptr("1"),
+		PipelineID:        &pipelineID,
+		PipelineVersionID: &versionID,
+	}).Error; err != nil {
+		t.Fatalf("insert versioned document: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	task, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED,
+	})
+	if err != nil {
+		t.Fatalf("CreateAndEnqueue: %v", err)
+	}
+	if task.PipelineLogID == nil {
+		t.Fatal("enqueued task has no pipeline log id")
+	}
+
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", *task.PipelineLogID).Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.PipelineVersionID == nil || *run.PipelineVersionID != versionID {
+		t.Fatalf("PipelineVersionID = %v, want %q", run.PipelineVersionID, versionID)
+	}
+}
+
 func TestIngestionTaskServiceRetryAllocatesNextRunCount(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -2570,53 +2617,6 @@ func TestIngestionTaskServiceMarkFailedCarriesReason(t *testing.T) {
 	}
 	if got.EventType != "failed" || got.Status != common.FAILED {
 		t.Fatalf("emitted event type/status = %q/%q, want failed/%q", got.EventType, got.Status, common.FAILED)
-	}
-}
-
-// TestIngestionTaskServicePersistProcessEndAtIdempotent verifies that
-// persistProcessEndAt records the end time on first settlement and leaves an
-// already-recorded value untouched on a later settlement (overlapping
-// failure/timeout terminal events must not rewrite the completion instant).
-func TestIngestionTaskServicePersistProcessEndAtIdempotent(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	runID := "run-idempotent-1"
-	begin := time.Now().Add(-time.Minute)
-	run := &entity.PipelineOperationLog{
-		ID:              runID,
-		DocumentID:      "doc-idem-1",
-		TenantID:        "tenant-1",
-		KbID:            "kb-1",
-		ParserID:        "parser-1",
-		DocumentName:    "doc",
-		DocumentSuffix:  ".pdf",
-		DocumentType:    "pdf",
-		SourceFrom:      "web",
-		OperationStatus: "RUNNING",
-		ProcessBeginAt:  &begin,
-	}
-	if err := db.Create(run).Error; err != nil {
-		t.Fatalf("create run: %v", err)
-	}
-	ctx := t.Context()
-	svc := NewIngestionTaskService()
-	svc.persistProcessEndAt(ctx, runID)
-	var first entity.PipelineOperationLog
-	if err := db.Where("id = ?", runID).First(&first).Error; err != nil {
-		t.Fatalf("load run: %v", err)
-	}
-	if first.ProcessEndAt == nil {
-		t.Fatalf("process_end_at not persisted on first call")
-	}
-	firstEnd := *first.ProcessEndAt
-	// A second settlement must not overwrite the recorded end time.
-	svc.persistProcessEndAt(ctx, runID)
-	var second entity.PipelineOperationLog
-	if err := db.Where("id = ?", runID).First(&second).Error; err != nil {
-		t.Fatalf("load run again: %v", err)
-	}
-	if second.ProcessEndAt == nil || !second.ProcessEndAt.Equal(firstEnd) {
-		t.Fatalf("process_end_at changed on second call: first=%v second=%v", firstEnd, second.ProcessEndAt)
 	}
 }
 

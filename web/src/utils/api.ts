@@ -277,6 +277,8 @@ const apiEndpoints = {
   documentRename: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentIngest: `${restAPIv1}/documents/ingest`,
+  stopAllDocuments: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/stop`,
   documentCreate: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=empty`,
   documentChangeParser: (datasetId: string, documentId: string) =>
@@ -345,6 +347,7 @@ const apiEndpoints = {
   // flow
   listAgentTemplate: `${restAPIv1}/agents/templates`,
   listAgents: `${restAPIv1}/agents`,
+  listAgentVersions: `${restAPIv1}/agents/versions`,
   listAgentTags: `${restAPIv1}/agents/tags`,
   updateAgentTags: (agentId: string) => `${restAPIv1}/agents/${agentId}/tags`,
   createAgent: `${restAPIv1}/agents`,

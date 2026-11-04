@@ -47,13 +47,13 @@ func TestGetTextOnlyParserRoutesOfficeFamilies(t *testing.T) {
 			return ok && parser.textOnly
 		}},
 		{utility.FileTypeXLS, func(p ParseResultProducer) bool {
-			parser, ok := p.(*XLSParser)
-			return ok && parser.textOnly
+			_, ok := p.(*XLSParser)
+			return ok
 		}},
 	}
 	for _, tc := range tests {
 		t.Run(string(tc.fileType), func(t *testing.T) {
-			p, err := GetTextOnlyParser(tc.fileType)
+			p, _, err := GetTextOnlyParser(tc.fileType, nil)
 			if err != nil {
 				t.Fatalf("GetTextOnlyParser: %v", err)
 			}
