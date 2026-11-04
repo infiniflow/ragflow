@@ -170,10 +170,11 @@ Configuration steps:
 
 1. Click the knowledge retrieval component.
 2. In **Query variable**, select the query source. `sys.query` is commonly used.
-3. In **Retrieval from**, select one or more Datasets, or select **Memory**.
-4. Expand **Advanced settings** and adjust **Similarity threshold**, **Keyword similarity weight**, **Rerank candidate count**, and **Top N** as needed. Select a **Rerank model** if required.
-5. For cross-language retrieval, select a **Cross-language search** language.
-6. Click **Run** to test the retrieval results.
+3. In **Retrieval from**, select **Dataset** or **Memory**.
+4. In the corresponding source selection field below, select at least one Dataset or Memory.
+5. Expand **Advanced settings** and adjust **Similarity threshold**, **Keyword similarity weight**, **Rerank candidate count**, and **Top N** as needed. Select a **Rerank model** if required.
+6. For cross-language retrieval, select a **Cross-language search** language.
+7. Click **Run** to test the retrieval results.
 
 ![Knowledge Retrieval Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/knowledge_retrieval_component_1.jpg)
 

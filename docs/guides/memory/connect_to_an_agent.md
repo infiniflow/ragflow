@@ -26,9 +26,10 @@ A memory must be connected to an Agent before historical messages can be written
 
 1. Select or add the **Retrieval** component on the Agent canvas.
 2. In **Query variable**, select the query source. `sys.query` is commonly used.
-3. In **Retrieval from**, select **Memory**, and select one or more target memories.
-4. Set **User ID** to the same value or variable used when writing messages to that Memory. Adjust **Similarity threshold**, **Keyword similarity weight**, and **Top N** as needed.
-5. Connect the retrieval result to a subsequent large language model or answer component, so that the Agent can use the retrieved historical context.
-6. Save and run a test, and check whether the answer correctly references historical memories.
+3. In **Retrieval from**, select **Memory**.
+4. In the Memory selection field below, select at least one target Memory.
+5. Set **User ID** to the same value or variable used when writing messages to that Memory. Adjust **Similarity threshold**, **Keyword similarity weight**, and **Top N** as needed.
+6. Connect the retrieval result to a subsequent large language model or answer component, so that the Agent can use the retrieved historical context.
+7. Save and run a test, and check whether the answer correctly references historical memories.
 
 ![Let an agent retrieve from memory](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/workflow_retrieve_from_memory.jpg)
