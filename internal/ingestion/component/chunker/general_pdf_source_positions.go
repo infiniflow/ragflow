@@ -61,6 +61,9 @@ func splitPDFUnits(units []schema.ChunkDoc, sources [][]pdfSourceSpan, pattern *
 					cursor = end
 				}
 			}
+			if len(spans) > 0 {
+				piece.PDFPositions, piece.Positions = pdfSourcePositions(spans)
+			}
 			result = append(result, piece)
 			resultSources = append(resultSources, spans)
 		}
