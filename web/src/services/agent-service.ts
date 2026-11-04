@@ -87,6 +87,10 @@ const methods = {
     url: listAgents,
     method: 'get',
   },
+  listAgentVersions: {
+    url: api.listAgentVersions,
+    method: 'get',
+  },
   listAgentTags: {
     url: api.listAgentTags,
     method: 'get',
