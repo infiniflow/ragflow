@@ -10,7 +10,7 @@ import (
 
 // ApplyDatasetParserConfig handles POST /api/v1/datasets/:dataset_id/documents/apply-parser-config.
 func (h *DocumentHandler) ApplyDatasetParserConfig(c *gin.Context) {
-	user, code, message := GetUser(c)
+	_, code, message := GetUser(c)
 	if code != common.CodeSuccess {
 		common.RespondError(c, code, message)
 		return
@@ -20,7 +20,7 @@ func (h *DocumentHandler) ApplyDatasetParserConfig(c *gin.Context) {
 		common.RespondError(c, common.CodeArgumentError, "dataset_id is required")
 		return
 	}
-	result, code, err := h.documentService.ApplyDatasetParserConfig(c.Request.Context(), user.ID, datasetID)
+	result, code, err := h.documentService.ApplyDatasetParserConfig(c.Request.Context(), datasetID)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return

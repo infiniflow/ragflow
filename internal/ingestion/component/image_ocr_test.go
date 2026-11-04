@@ -174,7 +174,7 @@ func TestImageOCRSelectedTenantModel(t *testing.T) {
 			data := picturePNG(t)
 			setups := imageSwitchSetups(t, true)
 			setups["image"]["ocr_model_id"] = "model-b"
-			res, handled, err := maybeDispatchImage(t.Context(), db, utility.FileTypeVISUAL,
+			res, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), db, utility.FileTypeVISUAL,
 				"invoice.png", data, map[string]any{"tenant_id": "tenant-1"}, setups, false, visionSettings{})
 			if err != nil || !handled {
 				t.Fatalf("handled=%v error=%v", handled, err)
@@ -238,7 +238,7 @@ func TestImageOCRReleasesMediaAdmissionBeforeRequest(t *testing.T) {
 			}
 			setups := imageSwitchSetups(t, true)
 			setups["image"]["ocr_model_id"] = "model-b"
-			result, _, err := maybeDispatchImage(t.Context(), db, utility.FileTypeVISUAL,
+			result, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), db, utility.FileTypeVISUAL,
 				"invoice.png", picturePNG(t), map[string]any{"tenant_id": "tenant-1"}, setups, false, visionSettings{})
 			if err != nil || len(result.JSON) != 1 {
 				t.Fatalf("err=%v result=%+v", err, result)
@@ -275,7 +275,7 @@ func TestImageOCRFailureRetainsAttachment(t *testing.T) {
 			db, requests := imageOCRFixture(t, provider, true)
 			setups := imageSwitchSetups(t, true)
 			setups["image"]["ocr_model_id"] = "model-b"
-			res, _, err := maybeDispatchImage(t.Context(), db, utility.FileTypeVISUAL,
+			res, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), db, utility.FileTypeVISUAL,
 				"invoice.png", picturePNG(t), map[string]any{"tenant_id": "tenant-1"}, setups, false, visionSettings{})
 			if err != nil {
 				t.Fatal(err)
@@ -321,7 +321,7 @@ func TestImageOCRInvalidSelectionNeverFallsBack(t *testing.T) {
 			}
 			setups := imageSwitchSetups(t, true)
 			setups["image"]["ocr_model_id"] = tc.ref
-			res, _, err := maybeDispatchImage(t.Context(), db, utility.FileTypeVISUAL,
+			res, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), db, utility.FileTypeVISUAL,
 				"invoice.png", picturePNG(t), map[string]any{"tenant_id": tc.tenant}, setups, false, visionSettings{})
 			if err != nil {
 				t.Fatal(err)
@@ -351,7 +351,7 @@ func TestImageOCRSelectionRespectsSwitchAndSVG(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			setups := imageSwitchSetups(t, tc.ocr)
 			setups["image"]["ocr_model_id"] = "model-b"
-			res, _, err := maybeDispatchImage(t.Context(), db, utility.FileTypeVISUAL,
+			res, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), db, utility.FileTypeVISUAL,
 				tc.filename, tc.data, map[string]any{"tenant_id": "tenant-1"}, setups, false, visionSettings{})
 			if err != nil || len(res.JSON) != 1 {
 				t.Fatalf("err=%v result=%+v", err, res)

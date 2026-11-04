@@ -36,9 +36,9 @@ type CompilationStatus struct {
 }
 
 // GetDatasetCompilationStatus returns the scheduling-row lifecycle state for a
-// dataset after verifying the calling user owns it. When no row exists the
+// dataset after verifying the caller can read it. When no row exists the
 // dataset has never had any compile work, so the state is idle.
-func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, userID, datasetID, kind string) (CompilationStatus, common.ErrorCode, error) {
+func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, datasetID, kind string) (CompilationStatus, common.ErrorCode, error) {
 	if datasetID == "" {
 		return CompilationStatus{}, common.CodeDataError, errors.New("dataset_id is required")
 	}

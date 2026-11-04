@@ -81,6 +81,7 @@ func maybeDispatchVideo(
 // preserves the original image and optionally appends global vision enhancement.
 func maybeDispatchImage(
 	ctx context.Context,
+	p parser.ParseResultProducer,
 	db *gorm.DB,
 	fileType utility.FileType,
 	filename string,
@@ -140,7 +141,7 @@ func maybeDispatchImage(
 		}
 	}
 	release()
-	parsed := dispatchParse(ctx, fileType, filename, binary, setups, progress.Window{})
+	parsed := dispatchParse(ctx, p, fileType, filename, binary, setups, progress.Window{})
 	if parsed.Err != nil {
 		return parsed, true, parsed.Err
 	}

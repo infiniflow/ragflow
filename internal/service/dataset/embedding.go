@@ -37,7 +37,7 @@ type embeddingCheckSample struct {
 // CheckEmbedding verifies that a candidate embedding model is compatible with a
 // dataset's existing vectors (the standard "switch embedding model" validation).
 // It is independent of the retired RunIndex/graph_rag_queue scheduling path.
-func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID string, req *service.CheckEmbeddingRequest) (*service.EmbeddingCheckResponse, common.ErrorCode, error) {
+func (d *DatasetService) CheckEmbedding(ctx context.Context, datasetID string, req *service.CheckEmbeddingRequest) (*service.EmbeddingCheckResponse, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}

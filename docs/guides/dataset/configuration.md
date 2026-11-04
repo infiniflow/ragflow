@@ -360,3 +360,14 @@ The **Data source** area is used to associate the current dataset with data sour
 Click **Link data source** and select the data source to associate from existing data sources. After association, the current dataset can use the data provided by that data source. This area is only used to establish and manage the association between the dataset and data sources. It does not provide data source creation or connection configuration.
 
 > Tip: To add a new data source, or configure data source connection information, synchronization methods, and other settings, see [**Data source**](../../guides/data_source/overview_and_page_management.md). After adding the data source, return to the dataset configuration page to associate it.
+
+## Sharing Scope
+
+1. Open **Dataset** and select the Dataset.
+2. Open **Configuration > Basic** and find **Permissions**.
+3. Select **Only me** to keep it private, or **Team** to share it with your team.
+4. Click **Save**.
+
+![Open Source Edition Sharing Scope Configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/open_source_edition_sharing_scope_configuration.jpg)
+
+See [Team resource permissions](../team/resource_sharing/resource_sharing_and_permissions.md#member-permissions) for what members can do after sharing.

@@ -39,6 +39,9 @@ import (
 func TestAgentRoutesRegistered(t *testing.T) {
 	eng := gin.New()
 	g := eng.Group("/api/v1/agents")
+	g.Use(func(c *gin.Context) {
+		c.AbortWithStatus(http.StatusUnauthorized)
+	})
 	RegisterAgentRoutes(g, &handler.AgentHandler{})
 
 	cases := []struct {
@@ -67,10 +70,10 @@ func TestAgentRoutesRegistered(t *testing.T) {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(c.method, c.path, nil)
 		eng.ServeHTTP(w, req)
-		// The handler dereferences a nil AgentService so a non-404 here
-		// would panic; what we care about is "not NoRoute 404".
-		if w.Code == http.StatusNotFound {
-			t.Errorf("route %s %s returned 404 — RegisterAgentRoutes did not wire it", c.method, c.path)
+		// The auth middleware stops the request before handler dependencies
+		// are reached. Registered routes return 401; unmatched routes return 404.
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("route %s %s returned %d, want %d", c.method, c.path, w.Code, http.StatusUnauthorized)
 		}
 	}
 }

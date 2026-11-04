@@ -168,6 +168,7 @@ func (s *DocumentService) addFileFromKB(ctx context.Context, doc *entity.Documen
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   kbFolderID,
+		UserID:     tenantID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
 		Name:       name,
@@ -284,6 +285,7 @@ func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID,
 	doc := &entity.Document{
 		ID:                docID,
 		KbID:              kb.ID,
+		UserID:            tenantID,
 		ParserID:          parserID,
 		PipelineID:        pipelineID,
 		PipelineVersionID: kb.PipelineVersionID,

@@ -1298,7 +1298,7 @@ Ensure that you [upgrade **both** your code **and** Docker image to this release
 #### Added documents
 
 - [Configurations](https://ragflow.io/docs/dev/configurations)
-- [Manage team members](./guides/team/team_management/index.md)
+- [Manage team members](guides/team/team_management/manage_team_members.md)
 - Run health check on RAGFlow's dependencies
 
 ## v0.13.0
