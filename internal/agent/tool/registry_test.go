@@ -233,6 +233,20 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	}
 }
 
+func TestNodeOnlyToolParams(t *testing.T) {
+	t.Parallel()
+
+	// Canvas keeps the component casing, so the lookup normalizes it.
+	for _, name := range []string{"searxng", "SearXNG", " searxng "} {
+		if got := NodeOnlyToolParams(name); len(got) != 1 || got[0] != "searxng_url" {
+			t.Fatalf("NodeOnlyToolParams(%q) = %v, want [searxng_url]", name, got)
+		}
+	}
+	if got := NodeOnlyToolParams("tavily"); got != nil {
+		t.Fatalf("NodeOnlyToolParams(tavily) = %v, want nil", got)
+	}
+}
+
 // TestBuildTushareTool_NodeParams pins the node-level credential channel:
 // the token comes from tool_params, an empty set still builds (Invoke reports
 // the missing configuration), and a non-string token is rejected.

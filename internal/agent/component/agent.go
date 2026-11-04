@@ -1817,6 +1817,10 @@ func cloneMap(in map[string]any) map[string]any {
 	return out
 }
 
+// mergeToolParams layers runtime per-tool params over the persisted node
+// params. Node-only keys keep the persisted value: runtime inputs arrive from
+// component debug requests and agent-as-tool calls, so they must not rewrite
+// what the node configuration pinned.
 func mergeToolParams(base, overrides map[string]map[string]any) map[string]map[string]any {
 	if len(base) == 0 && len(overrides) == 0 {
 		return nil
@@ -1838,12 +1842,37 @@ func mergeToolParams(base, overrides map[string]map[string]any) map[string]map[s
 				delete(out, k)
 			}
 		}
-		out[name] = cloneMap(params)
+		merged := cloneMap(params)
+		persisted := persistedToolParams(base, name)
+		for _, key := range agenttool.NodeOnlyToolParams(name) {
+			if value, ok := persisted[key]; ok {
+				merged[key] = value
+				continue
+			}
+			delete(merged, key)
+		}
+		out[name] = merged
 		if lower != "" && lower != name {
-			out[lower] = cloneMap(params)
+			out[lower] = cloneMap(merged)
 		}
 	}
 	return out
+}
+
+// persistedToolParams returns the node-configured params for name. Canvas keeps
+// component casing while runtime inputs may lower-case or canonicalize the
+// tool name, so the lookup ignores case and surrounding whitespace.
+func persistedToolParams(base map[string]map[string]any, name string) map[string]any {
+	if params, ok := base[name]; ok {
+		return params
+	}
+	lower := strings.ToLower(strings.TrimSpace(name))
+	for key, params := range base {
+		if strings.ToLower(strings.TrimSpace(key)) == lower {
+			return params
+		}
+	}
+	return nil
 }
 
 // sliceFrom extracts []string from inputs[name].

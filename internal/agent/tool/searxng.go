@@ -19,6 +19,7 @@ package tool
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -31,6 +32,7 @@ import (
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 
+	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
 )
 
@@ -46,13 +48,12 @@ var searxngDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/png;b
 
 var searxngNewlinePattern = regexp.MustCompile(`\n+`)
 
-// searxngParams mirrors the SearXNG-specific Python parameters. Query and
-// searxng_url are model inputs; searxng_url may also be node configuration,
-// while top_n is Canvas-only configuration.
+var errSearXNGURLUnconfigured = errors.New("searxng: SearXNG URL is not configured")
+
+// searxngParams are the model-supplied call arguments. The SearXNG host is
+// node configuration and never comes from a model call.
 type searxngParams struct {
-	Query      string `json:"query"`
-	SearXNGURL string `json:"searxng_url"`
-	TopN       int    `json:"top_n"`
+	Query string `json:"query"`
 }
 
 type searxngEnvelope struct {
@@ -64,29 +65,26 @@ type searxngResolver func(string) (string, net.IP, error)
 
 // SearXNGTool queries a caller-configured SearXNG instance.
 type SearXNGTool struct {
-	helper   *HTTPHelper
-	defaults searxngParams
-	resolve  searxngResolver
+	helper  *HTTPHelper
+	url     string
+	topN    int
+	resolve searxngResolver
 }
 
 var _ ToolComponent = (*SearXNGTool)(nil)
 var _ ReferenceBuilder = (*SearXNGTool)(nil)
 
-func defaultSearXNGParams() searxngParams {
-	return searxngParams{TopN: defaultSearXNGTopN}
-}
-
-// NewSearXNGTool returns a SearXNG tool using Python's defaults.
+// NewSearXNGTool returns an unconfigured SearXNG tool.
 func NewSearXNGTool() *SearXNGTool {
-	return newSearXNGToolWithDefaults(nil, defaultSearXNGParams())
+	return newSearXNGTool(nil, "", defaultSearXNGTopN)
 }
 
-func newSearXNGToolWithDefaults(helper *HTTPHelper, defaults searxngParams) *SearXNGTool {
+func newSearXNGTool(helper *HTTPHelper, searxngURL string, topN int) *SearXNGTool {
 	if helper == nil {
 		helper = NewHTTPHelper()
 	}
-	if defaults.TopN == 0 {
-		defaults.TopN = defaultSearXNGTopN
+	if topN == 0 {
+		topN = defaultSearXNGTopN
 	}
 	// SearXNG performs one request. Keep the shared helper from adding its own
 	// retry loop so request count stays explicit and predictable.
@@ -95,13 +93,40 @@ func newSearXNGToolWithDefaults(helper *HTTPHelper, defaults searxngParams) *Sea
 		helper.client.Timeout = searxngRequestTimeout
 	}
 	return &SearXNGTool{
-		helper:   helper,
-		defaults: defaults,
-		resolve:  ResolveAndValidate,
+		helper:  helper,
+		url:     strings.TrimSpace(searxngURL),
+		topN:    topN,
+		resolve: resolveSearXNGURL,
 	}
 }
 
-// Info exposes the Python model-call schema, not Canvas-only configuration.
+// resolveSearXNGURL pins the node-configured SearXNG host before dialing. The
+// URL comes from a tenant-editable node config, so private addresses stay
+// blocked unless the operator sets ALLOW_ANY_HOST, the same opt-in that gates
+// every other configured host dial.
+func resolveSearXNGURL(rawURL string) (string, net.IP, error) {
+	u, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", nil, fmt.Errorf("ssrf: parse url: %w", err)
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", nil, fmt.Errorf("ssrf: unsupported scheme %q", u.Scheme)
+	}
+	pinned, enabled, err := common.PinConfiguredPrivateHost(u.Hostname())
+	if !enabled {
+		return ResolveAndValidate(rawURL)
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("ssrf: resolve %s: %w", u.Hostname(), err)
+	}
+	ip := net.ParseIP(pinned)
+	if ip == nil {
+		return "", nil, fmt.Errorf("ssrf: could not parse resolved address %q for %s", pinned, u.Hostname())
+	}
+	return u.Hostname(), ip, nil
+}
+
+// Info exposes only the model-call arguments.
 func (s *SearXNGTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
 		Name: searxngToolName,
@@ -111,11 +136,6 @@ func (s *SearXNGTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 				Type:     schema.String,
 				Desc:     "The search keywords to execute with SearXNG. The keywords should be the most important words/terms(includes synonyms) from the original request.",
 				Required: true,
-			},
-			"searxng_url": {
-				Type:     schema.String,
-				Desc:     "The base URL of your SearXNG instance (e.g., http://localhost:4000). This is required to connect to your SearXNG server.",
-				Required: false,
 			},
 		}),
 	}, nil
@@ -132,37 +152,27 @@ func buildSearXNGURL(baseURL, query string) string {
 	return baseURL + "/search?" + params.Encode()
 }
 
-func mergeSearXNGDefaults(defaults, params searxngParams) searxngParams {
-	if defaults.SearXNGURL != "" {
-		params.SearXNGURL = defaults.SearXNGURL
-	}
-	params.TopN = defaults.TopN
-	return params
-}
-
-// InvokableRun performs the same request and result slicing as Python
-// SearXNG._invoke. Empty try-run inputs return an empty result without I/O.
+// InvokableRun queries the configured SearXNG instance. Empty try-run inputs
+// return an empty result without I/O; an unconfigured URL is an error.
 func (s *SearXNGTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
 	var params searxngParams
 	if err := json.Unmarshal([]byte(argsJSON), &params); err != nil {
 		err = fmt.Errorf("searxng: parse arguments: %w", err)
 		return searxngErrJSON(err), err
 	}
-	params = mergeSearXNGDefaults(s.defaults, params)
 	if strings.TrimSpace(params.Query) == "" {
 		return searxngJSON(searxngEnvelope{Results: []any{}}), nil
 	}
-	params.SearXNGURL = strings.TrimSpace(params.SearXNGURL)
-	if params.SearXNGURL == "" {
-		return searxngJSON(searxngEnvelope{Results: []any{}}), nil
+	if s.url == "" {
+		return searxngErrJSON(errSearXNGURLUnconfigured), errSearXNGURLUnconfigured
 	}
 
-	host, pinnedIP, err := s.resolve(params.SearXNGURL)
+	host, pinnedIP, err := s.resolve(s.url)
 	if err != nil {
 		return searxngErrJSON(err), err
 	}
 
-	endpoint := buildSearXNGURL(params.SearXNGURL, params.Query)
+	endpoint := buildSearXNGURL(s.url, params.Query)
 	if ctx.Err() != nil {
 		return searxngJSON(searxngEnvelope{Results: []any{}}), nil
 	}
@@ -173,8 +183,8 @@ func (s *SearXNGTool) InvokableRun(ctx context.Context, argsJSON string, _ ...to
 		}
 		return searxngErrJSON(requestErr), requestErr
 	}
-	if len(results) > params.TopN {
-		results = results[:params.TopN]
+	if len(results) > s.topN {
+		results = results[:s.topN]
 	}
 	return searxngJSON(searxngEnvelope{Results: results}), nil
 }

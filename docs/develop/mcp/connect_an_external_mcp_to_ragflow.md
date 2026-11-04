@@ -80,7 +80,7 @@ RAGFlow validates the endpoint before connecting:
 - By default, every address returned by DNS must be publicly routable. Loopback, private, link-local, reserved, Docker-network, and other non-public addresses are rejected.
 - The Go MCP client connects to the validated address directly and does not use HTTP proxy environment variables.
 
-To connect to self-hosted MCP endpoints on private or Docker networks, set `ALLOW_ANY_HOST=true` in the RAGFlow backend environment and restart the backend. This shared setting also permits private database and connector hosts. Accepted true values are `1`, `true`, `yes`, and `on` (case-insensitive, with surrounding whitespace ignored). HTTP/HTTPS scheme validation, DNS resolution, and connection pinning remain enabled.
+To connect to self-hosted MCP endpoints on private or Docker networks, set `ALLOW_ANY_HOST=true` in the RAGFlow backend environment and restart the backend. This shared setting also permits private database and connector hosts, and private Agent tool endpoints such as the SearXNG URL stored in a node config. Accepted true values are `1`, `true`, `yes`, and `on` (case-insensitive, with surrounding whitespace ignored). HTTP/HTTPS scheme validation, DNS resolution, and connection pinning remain enabled.
 
 ## Troubleshoot a failed connection
 

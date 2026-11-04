@@ -217,7 +217,7 @@ SearXNG is a self-hostable privacy-oriented meta-search engine. This component c
 
 #### Output Result
 
-The output contains titles, links, summaries, and source information returned by SearXNG. Before use, configure a reachable SearXNG service address and pass the system security checks.
+The output contains titles, links, summaries, and source information returned by SearXNG. Before use, configure a reachable SearXNG service address and pass the system security checks: the URL is supplied by the node configuration, so loopback, private, link-local, and other non-public addresses are rejected by default. To call a SearXNG instance on a private address, the operator must set `ALLOW_ANY_HOST` in the backend environment and restart the backend.
 
 ### Keenable
 

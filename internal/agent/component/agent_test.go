@@ -1418,6 +1418,61 @@ func TestAgent_ReActExhaustsSteps(t *testing.T) {
 	}
 }
 
+// TestMergeToolParamsKeepsNodeOnlyParams pins the runtime merge boundary: a
+// debug request or agent-as-tool call may not replace a node-only tool param,
+// so the persisted SearXNG host survives a runtime override while ordinary
+// params still follow the runtime value.
+func TestMergeToolParamsKeepsNodeOnlyParams(t *testing.T) {
+	base := map[string]map[string]any{
+		"searxng": {"searxng_url": "https://searx.example.com", "top_n": 5},
+	}
+	merged := mergeToolParams(base, map[string]map[string]any{
+		"searxng": {"searxng_url": "http://169.254.169.254", "top_n": 3},
+	})
+	params := merged["searxng"]
+	if params["searxng_url"] != "https://searx.example.com" {
+		t.Fatalf("searxng_url = %v, want the persisted node value", params["searxng_url"])
+	}
+	if params["top_n"] != 3 {
+		t.Fatalf("top_n = %v, want the runtime value 3", params["top_n"])
+	}
+
+	// A runtime-only override cannot introduce the param when the node config
+	// never set it.
+	merged = mergeToolParams(nil, map[string]map[string]any{
+		"searxng": {"searxng_url": "http://10.0.0.1"},
+	})
+	if _, ok := merged["searxng"]["searxng_url"]; ok {
+		t.Fatalf("runtime override introduced searxng_url: %#v", merged["searxng"])
+	}
+
+	// Canvas casing differs from the runtime tool name; the persisted value is
+	// still found and pinned.
+	merged = mergeToolParams(
+		map[string]map[string]any{"SearXNG": {"searxng_url": "https://node.example.com"}},
+		map[string]map[string]any{"searxng": {"searxng_url": "http://127.0.0.1:4000"}},
+	)
+	if merged["searxng"]["searxng_url"] != "https://node.example.com" {
+		t.Fatalf("searxng_url = %v, want the persisted node value", merged["searxng"]["searxng_url"])
+	}
+}
+
+// TestAgentInputsCannotReplaceSearXNGURL drives the same rule through
+// mergeAgentParam, the entry every runtime input map passes through.
+func TestAgentInputsCannotReplaceSearXNGURL(t *testing.T) {
+	p := mergeAgentParam(
+		AgentParam{ToolParams: map[string]map[string]any{
+			"searxng": {"searxng_url": "https://searx.example.com"},
+		}},
+		map[string]any{"tool_params": map[string]any{
+			"searxng": map[string]any{"searxng_url": "http://169.254.169.254"},
+		}},
+	)
+	if got := p.ToolParams["searxng"]["searxng_url"]; got != "https://searx.example.com" {
+		t.Fatalf("searxng_url = %v, want the persisted node value", got)
+	}
+}
+
 func TestAgentDisabledMaxTokens(t *testing.T) {
 	p := mergeAgentParam(AgentParam{}, map[string]any{"max_tokens": 256, "maxTokensEnabled": false})
 	if p.MaxTokens != nil {
