@@ -1590,3 +1590,242 @@ func TestAgent_AnthropicReActToolCallLoop(t *testing.T) {
 		t.Fatalf("unexpected content: %s", msg.Content)
 	}
 }
+
+func TestAgent_MultipleRetrievalToolsUseFunctionName(t *testing.T) {
+	p := AgentParam{
+		Tools: []string{"search_archa_metodika", "search_archa_data"},
+		ToolParams: map[string]map[string]any{
+			"search_archa_metodika": {
+				"component_name": "Retrieval",
+				"function_name":  "search_archa_metodika",
+				"description":    "Vyhľadávanie v metodike.",
+				"kb_ids":         []any{"kb-metodika"},
+				"top_n":          float64(10),
+			},
+			"search_archa_data": {
+				"component_name": "Retrieval",
+				"function_name":  "search_archa_data",
+				"description":    "Vyhľadávanie v projektovej dokumentácii.",
+				"kb_ids":         []any{"kb-data"},
+				"top_n":          float64(25),
+			},
+		},
+		MaxRounds: 1,
+	}
+	tools, err := buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("len(tools) = %d, want 2", len(tools))
+	}
+	names := make(map[string]bool)
+	for _, tool := range tools {
+		info, err := tool.Info(t.Context())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		names[info.Name] = true
+	}
+	if !names["search_archa_metodika"] || !names["search_archa_data"] {
+		t.Fatalf("expected distinct retrieval tool names, got %v", names)
+	}
+}
+
+// TestAgent_DedupeToolDefinitions verifies that duplicate tool names are
+// dropped when identical and renamed when their configuration differs.
+func TestAgent_DedupeToolDefinitions(t *testing.T) {
+	// Two retrieval instances with the same advertised name and identical
+	// configuration should collapse to one tool.
+	p := AgentParam{
+		Tools: []string{"retrieval", "search_my_dateset"},
+		ToolParams: map[string]map[string]any{
+			"retrieval": {
+				"component_name": "Retrieval",
+				"function_name":  "search_archa_data",
+				"kb_ids":         []any{"kb-a"},
+			},
+			"search_my_dateset": {
+				"component_name": "Retrieval",
+				"function_name":  "search_archa_data",
+				"kb_ids":         []any{"kb-a"},
+			},
+		},
+		MaxRounds: 1,
+	}
+	tools, err := buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("identical duplicates: len(tools) = %d, want 1", len(tools))
+	}
+
+	// A differently configured retrieval instance should be kept under a
+	// unique name rather than being silently dropped.
+	p.ToolParams["search_my_dateset"]["kb_ids"] = []any{"kb-b"}
+	tools, err = buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("different defaults: len(tools) = %d, want 2", len(tools))
+	}
+	names := make(map[string]bool, len(tools))
+	for _, tool := range tools {
+		info, err := tool.Info(t.Context())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		names[info.Name] = true
+	}
+	if !names["search_archa_data"] || !names["search_archa_data_2"] {
+		t.Fatalf("expected base name and renamed duplicate, got %v", names)
+	}
+
+	// Two retrieval instances with the same dataset but different top_n are
+	// distinct configurations and must both be kept.
+	p.ToolParams["search_my_dateset"]["kb_ids"] = []any{"kb-a"}
+	p.ToolParams["search_my_dateset"]["top_n"] = float64(25)
+	tools, err = buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("different top_n: len(tools) = %d, want 2", len(tools))
+	}
+
+	// Renamed tools must remain usable by Eino's ToolsNode; wrapping them
+	// in a type that only implements BaseTool breaks invocation.
+	if _, err := compose.NewToolNode(t.Context(), &compose.ToolsNodeConfig{Tools: tools}); err != nil {
+		t.Fatalf("NewToolNode with renamed tools: %v", err)
+	}
+}
+
+// TestAgent_SubAgentNameCollisionRenamed verifies that two sub-agents whose
+// normalized names collide receive distinct tool names.
+func TestAgent_SubAgentNameCollisionRenamed(t *testing.T) {
+	p := AgentParam{
+		SubAgents: []SubAgentTool{
+			{Name: "Data Analyst"},
+			{Name: "data-analyst"},
+		},
+	}
+	tools, err := buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("len(tools) = %d, want 2", len(tools))
+	}
+	names := make(map[string]bool)
+	for _, tool := range tools {
+		info, err := tool.Info(t.Context())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		names[info.Name] = true
+	}
+	if len(names) != 2 {
+		t.Fatalf("expected 2 distinct names, got %v", names)
+	}
+}
+
+// TestAgent_DedupeComparesEffectiveConfig verifies that dedupe keys on the
+// constructor params, not the model-facing ToolInfo: two ExeSQL tools whose
+// advertised definition is identical but whose connection details differ are
+// distinct configurations and must both survive (renamed), and an A/B/B
+// sequence where the second B matches an already-renamed duplicate is
+// dropped instead of renamed again.
+func TestAgent_DedupeComparesEffectiveConfig(t *testing.T) {
+	conn := func(host string) map[string]any {
+		return map[string]any{
+			"db_type":  "mysql",
+			"host":     host,
+			"port":     float64(3306),
+			"database": "db",
+			"username": "u",
+			"password": "p",
+		}
+	}
+	p := AgentParam{
+		Tools: []string{"execute_sql", "execute_sql", "execute_sql"},
+		ToolSpecs: []AgentToolSpec{
+			{Name: "execute_sql", Params: conn("a.db")},
+			{Name: "execute_sql", Params: conn("b.db")},
+			{Name: "execute_sql", Params: conn("b.db")},
+		},
+		MaxRounds: 1,
+	}
+	tools, err := buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("distinct ExeSQL configs: len(tools) = %d, want 2", len(tools))
+	}
+	names := make(map[string]bool)
+	for _, tool := range tools {
+		info, err := tool.Info(t.Context())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		names[info.Name] = true
+	}
+	if !names["execute_sql"] || !names["execute_sql_2"] {
+		t.Fatalf("expected base name plus one rename, got %v", names)
+	}
+}
+
+// TestAgent_CanvasDuplicateComponentKeepsPerOccurrenceParams verifies that two
+// canvas DSL nodes sharing a component name keep their own params: the
+// name-keyed params map can only hold one configuration, so params must travel
+// per tool occurrence or only the last node's configuration would survive.
+func TestAgent_CanvasDuplicateComponentKeepsPerOccurrenceParams(t *testing.T) {
+	cmp, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "x",
+		"tools": []any{
+			map[string]any{
+				"component_name": "Retrieval",
+				"function_name":  "search_a",
+				"params":         map[string]any{"kb_ids": []any{"kb-a"}},
+			},
+			map[string]any{
+				"component_name": "Retrieval",
+				"function_name":  "search_b",
+				"params":         map[string]any{"kb_ids": []any{"kb-b"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	agent, ok := cmp.(*AgentComponent)
+	if !ok {
+		t.Fatalf("New(Agent) returned %T, want *AgentComponent", cmp)
+	}
+	tools, err := buildAgentTools(t.Context(), agent.param)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("len(tools) = %d, want 2", len(tools))
+	}
+	got := make(map[string]any)
+	for _, tool := range tools {
+		info, err := tool.Info(t.Context())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		got[info.Name] = info.Extra["dataset_ids"]
+	}
+	aIDs, _ := got["search_a"].([]string)
+	if len(aIDs) != 1 || aIDs[0] != "kb-a" {
+		t.Fatalf("search_a dataset_ids = %#v, want [kb-a]", got["search_a"])
+	}
+	bIDs, _ := got["search_b"].([]string)
+	if len(bIDs) != 1 || bIDs[0] != "kb-b" {
+		t.Fatalf("search_b dataset_ids = %#v, want [kb-b]", got["search_b"])
+	}
+}
