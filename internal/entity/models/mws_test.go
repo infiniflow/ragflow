@@ -114,12 +114,10 @@ func TestNormalizeMWSProjectURL(t *testing.T) {
 
 func TestMWSHTTPClientRejectsPrivateDNSResult(t *testing.T) {
 	previousLookup := common.LookupHost
-	previousAllowAny := common.AllowAnyHostForTest
 	common.LookupHost = func(string) ([]string, error) { return []string{"127.0.0.1"}, nil }
-	common.AllowAnyHostForTest = false
+	t.Setenv(common.EnvAllowAnyHost, "")
 	t.Cleanup(func() {
 		common.LookupHost = previousLookup
-		common.AllowAnyHostForTest = previousAllowAny
 	})
 
 	request, err := http.NewRequest(http.MethodGet, "https://gpt.mwsapis.ru/projects/demo/openai/v1/models", nil)

@@ -26,6 +26,7 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -35,14 +36,10 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
-// Reset the environment opt-in so tests select private-host access explicitly
-// through either ALLOW_ANY_HOST or the in-memory test hook.
+// Set the environment opt-in so tests select private-host access explicitly.
 func setupAllowAnyHost(t *testing.T, enabled bool) {
 	t.Helper()
-	t.Setenv(common.EnvAllowAnyHost, "")
-	prev := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = enabled
-	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
+	t.Setenv(common.EnvAllowAnyHost, strconv.FormatBool(enabled))
 }
 
 // TestInvoke_GET exercises the happy path: a GET request to a stub
@@ -327,7 +324,7 @@ func TestInvoke_AllowAnyHostRejectsInvalidURLs(t *testing.T) {
 }
 
 // TestInvoke_SSRFGuard_BlocksLoopback mirrors PR #15426: when
-// AllowAnyHostForTest is unset (production shape), the Invoke
+// ALLOW_ANY_HOST is unset, the Invoke
 // component must reject loopback / link-local / RFC1918 URLs
 // BEFORE any HTTP request is made. The test sets up an
 // httptest server on 127.0.0.1, points Invoke at it, and
