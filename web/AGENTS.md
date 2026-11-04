@@ -68,7 +68,7 @@ Any element rendering **user-generated or server-returned text** (names, titles,
 - `truncate` needs a width constraint to bite: add `min-w-0` on every flex ancestor between the text and the element that actually constrains the width (flex children default to `min-width: auto` and won't shrink below content size).
 - Keep truncated text revealable: prefer the shared `TruncatedText` component (`src/components/truncated-text.tsx`), which shows a tooltip only when truncation actually occurs.
 - Long i18n strings count as long text — a label that fits in Chinese may overflow in English.
-- Before finishing a display-component change, verify with extreme input (100+ characters, an unbroken no-space string, a CJK/Latin mix) using the `overflow-check` skill (`.claude/skills/overflow-check`), which scans the rendered page in a real browser. jsdom and lint cannot measure layout.
+- When overflow is suspected or the user asks, verify with extreme input (100+ characters, an unbroken no-space string, a CJK/Latin mix) using the `overflow-check` skill (`.claude/skills/overflow-check`), which scans the rendered page in a real browser. jsdom and lint cannot measure layout.
 
 ### Color Tokens
 
