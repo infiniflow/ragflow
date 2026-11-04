@@ -185,7 +185,7 @@ func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *ent
 	if logID != nil && *logID != "" && s.pipelineLogDAO != nil {
 		run, _ = s.pipelineLogDAO.GetByID(ctx, dao.DB, *logID)
 	}
-	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(task, doc, run, typ, status, errorInfo))
+	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(task, doc, run, typ, status, errorInfo), "", "")
 }
 
 func (s *IngestionTaskService) ListByUser(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
