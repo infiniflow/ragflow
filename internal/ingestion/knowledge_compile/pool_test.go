@@ -23,12 +23,19 @@ func TestKCCompileConcurrencyOverride(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			orig, had := os.LookupEnv(key)
 			if c.set == "" {
 				os.Unsetenv(key)
 			} else {
 				os.Setenv(key, c.set)
 			}
-			defer os.Unsetenv(key)
+			t.Cleanup(func() {
+				if had {
+					os.Setenv(key, orig)
+				} else {
+					os.Unsetenv(key)
+				}
+			})
 			if got := kcCompileConcurrencyOverride(); got != c.want {
 				t.Fatalf("kcCompileConcurrencyOverride() = %d, want %d (env=%q)", got, c.want, c.set)
 			}

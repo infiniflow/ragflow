@@ -915,10 +915,8 @@ func TestGroupedDeduperTracksNameAfterSemanticMerge(t *testing.T) {
 }
 
 // TestStructureBatchCap locks the STRUCT_MAX_CHUNKS_PER_BATCH env override:
-// unset / zero / negative / non-numeric all mean "no cap" (0), and a positive
-// value is returned as-is. The upstream strconv.Atoi(os.Getenv(...)) form
-// treated a non-numeric value as 0 already, but common.GetEnvInt makes the
-// fall-through explicit and avoids importing os/strconv at the call site.
+// invalid or non-positive values disable the cap (return 0), and a positive
+// value sets the cap.
 func TestStructureBatchCap(t *testing.T) {
 	const key = "STRUCT_MAX_CHUNKS_PER_BATCH"
 	cases := []struct {
@@ -934,12 +932,19 @@ func TestStructureBatchCap(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			orig, had := os.LookupEnv(key)
 			if c.set == "" {
 				os.Unsetenv(key)
 			} else {
 				os.Setenv(key, c.set)
 			}
-			defer os.Unsetenv(key)
+			t.Cleanup(func() {
+				if had {
+					os.Setenv(key, orig)
+				} else {
+					os.Unsetenv(key)
+				}
+			})
 			if got := structureBatchCap(); got != c.want {
 				t.Fatalf("structureBatchCap() = %d, want %d (env=%q)", got, c.want, c.set)
 			}
