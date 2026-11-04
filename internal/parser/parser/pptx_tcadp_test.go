@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 )
 
@@ -63,15 +64,21 @@ func TestPPTXParser_ParseWithResult_TCADPParserSpelling(t *testing.T) {
 	withSSRFBypass(t)
 	zipPayload := tcadpZipFixture(t)
 
+	var mu sync.Mutex
 	var lastReq map[string]any
 	var serverCalled bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/reconstruct_document":
-			serverCalled = true
-			if err := json.NewDecoder(r.Body).Decode(&lastReq); err != nil {
-				t.Fatalf("decode request: %v", err)
+			var req map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
 			}
+			mu.Lock()
+			serverCalled = true
+			lastReq = req
+			mu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"DocumentRecognizeResultUrl": "http://" + r.Host + "/result.zip",
@@ -120,8 +127,10 @@ func TestPPTXParser_ParseWithResult_TCADPParserSpelling(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			mu.Lock()
 			serverCalled = false
 			lastReq = nil
+			mu.Unlock()
 
 			tc.parser.ConfigureFromSetup(map[string]any{
 				"parse_method":    tc.parseMethod,
@@ -129,7 +138,13 @@ func TestPPTXParser_ParseWithResult_TCADPParserSpelling(t *testing.T) {
 			})
 
 			res := tc.parser.ParseWithResult(t.Context(), tc.filename, []byte("fake presentation data"))
-			if !serverCalled {
+
+			mu.Lock()
+			called := serverCalled
+			capturedReq := lastReq
+			mu.Unlock()
+
+			if !called {
 				t.Fatalf("TCADP API server was never called for parse_method %q; fell through to local extractor", tc.parseMethod)
 			}
 			if res.Err != nil {
@@ -138,10 +153,10 @@ func TestPPTXParser_ParseWithResult_TCADPParserSpelling(t *testing.T) {
 			if !res.Produced() {
 				t.Fatalf("ParseWithResult produced nothing")
 			}
-			if got := lastReq["file_type"]; got != tc.wantFileType {
+			if got := capturedReq["file_type"]; got != tc.wantFileType {
 				t.Errorf("file_type = %v, want %s", got, tc.wantFileType)
 			}
-			cfg, _ := lastReq["config"].(map[string]any)
+			cfg, _ := capturedReq["config"].(map[string]any)
 			if got, want := cfg["TableResultType"], "1"; got != want {
 				t.Errorf("config.TableResultType = %v, want default %q", got, want)
 			}

@@ -30,10 +30,11 @@ import (
 var pptxExtract = deepdocoffice.OpenAndExtract
 
 // PPTXParser parses both .pptx (OOXML) and .ppt (OLE binary)
-// files via the office_oxide backend. The format field controls
-// the container format passed to OpenFromBytes — "pptx" for
-// ZIP-based OOXML presentations and "ppt" for the legacy binary
-// OLE format.
+// presentations. ParseWithResult dispatches TCADP-configured
+// presentations to parseWithTCADP and uses the office_oxide backend
+// for local extraction. The format field controls the container
+// format passed to OpenFromBytes ("pptx" for ZIP-based OOXML and
+// "ppt" for legacy binary OLE).
 type PPTXParser struct {
 	format   string
 	textOnly bool
