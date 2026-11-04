@@ -91,6 +91,39 @@ func TestGeneralPDFCrossPageKanaJoinsWithoutSpace(t *testing.T) {
 	}
 }
 
+func TestGeneralPDFCrossPageMixedScriptKeepsSpace(t *testing.T) {
+	items := []map[string]any{
+		{"text": "The word is", "doc_type_kwd": "text", "positions": [][]float64{{1, 80, 520, 700, 715}}},
+		{"text": "ひらがな", "doc_type_kwd": "text", "positions": [][]float64{{2, 80, 200, 100, 115}}},
+	}
+	out := invokePDFContinuation(t, items, 1, []string{"\n"}, nil)
+	if got, want := outputTexts(t, out), []string{"The word is ひらがな"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("texts=%q, want %q", got, want)
+	}
+}
+
+func TestGeneralPDFCrossPageAbbreviationIsNotListMarker(t *testing.T) {
+	items := []map[string]any{
+		{"text": "references,", "doc_type_kwd": "text", "positions": [][]float64{{1, 80, 520, 700, 715}}},
+		{"text": "e.g. this article.", "doc_type_kwd": "text", "positions": [][]float64{{2, 80, 200, 100, 115}}},
+	}
+	out := invokePDFContinuation(t, items, 1, []string{"\n"}, nil)
+	if got, want := outputTexts(t, out), []string{"references, e.g. this article."}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("texts=%q, want %q", got, want)
+	}
+}
+
+func TestGeneralPDFCrossPageRejectsRegionBelowPreviousBottom(t *testing.T) {
+	items := []map[string]any{
+		{"text": "负责物资保障", "doc_type_kwd": "text", "positions": [][]float64{{3, 80, 520, 100, 115}}},
+		{"text": "下一段内容", "doc_type_kwd": "text", "positions": [][]float64{{4, 80, 520, 500, 515}}},
+	}
+	out := invokePDFContinuation(t, items, 512, []string{"\n"}, nil)
+	if got, want := outputTexts(t, out), []string{"负责物资保障\n下一段内容"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("texts=%q, want %q", got, want)
+	}
+}
+
 func TestGeneralPDFContinuationRebuildsMismatchedSources(t *testing.T) {
 	units := []schema.ChunkDoc{
 		{Text: "物资保障", DocType: "text", Positions: json.RawMessage(`[[3,80,520,700,715]]`)},

@@ -11,7 +11,7 @@ import (
 	"ragflow/internal/parser/parser"
 )
 
-var pdfListStart = regexp.MustCompile(`^(?:[（(]?[0-9一二三四五六七八九十百]+[）).．、]|[a-zA-Z][.)]|[-*•]\s)`)
+var pdfListStart = regexp.MustCompile(`^(?:[（(]?[0-9一二三四五六七八九十百]+[）).．、]|[a-zA-Z]\)|[a-zA-Z]\.(?:\s|$)|[-*•]\s)`)
 
 // joinPDFContinuations removes physical page breaks within continuing prose
 // before delimiter splitting turns source regions into independent merge units.
@@ -103,7 +103,9 @@ func canJoinPDFContinuation(previous, next schema.ChunkDoc) bool {
 		return false
 	}
 	a, b := before[len(before)-1], after[0]
-	if b[0] != a[0]+1 {
+	// A continuation starts higher on the next page than the previous page's
+	// last region ended; a region at or below that point is unrelated.
+	if b[0] != a[0]+1 || b[3] >= a[4] {
 		return false
 	}
 	height := math.Min(a[4]-a[3], b[4]-b[3])
@@ -121,15 +123,18 @@ func lastPDFRune(text string) rune {
 func pdfContinuationSeparator(left, right string) string {
 	a := lastPDFRune(left)
 	b, _ := utf8.DecodeRuneInString(right)
-	if pdfNoSpaceRune(a) || pdfNoSpaceRune(b) || strings.ContainsRune("-\u2010\u2011", a) || unicode.IsPunct(b) {
+	if unicode.Is(unicode.Han, a) || unicode.Is(unicode.Han, b) || strings.ContainsRune("-\u2010\u2011", a) || unicode.IsPunct(b) {
+		return ""
+	}
+	if pdfKanaRune(a) && pdfKanaRune(b) {
 		return ""
 	}
 	return " "
 }
 
-// pdfNoSpaceRune reports scripts that do not separate words with spaces, so a
-// joined line break must not synthesize one. Hangul is excluded because Korean
-// separates words with spaces.
-func pdfNoSpaceRune(r rune) bool {
-	return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana)
+// pdfKanaRune reports Hiragana and Katakana, which do not separate words with
+// spaces. A mixed kana/Latin boundary keeps the space because the Latin side is
+// space-delimited; Han boundaries stay space-free as before.
+func pdfKanaRune(r rune) bool {
+	return unicode.In(r, unicode.Hiragana, unicode.Katakana)
 }
