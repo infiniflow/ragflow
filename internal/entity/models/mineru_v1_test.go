@@ -160,12 +160,47 @@ func TestMinerUV1DownloadStripsAuthOnCrossOriginRedirect(t *testing.T) {
 	}))
 	defer api.Close()
 
-	body, err := minerUDownloadFile(context.Background(), minerUHTTPClient(), api.URL, "secret-token", api.URL+"/v1/files/out-1/content")
+	body, err := minerUDownloadFile(context.Background(), api.URL, "secret-token", api.URL+"/v1/files/out-1/content")
 	if err != nil {
 		t.Fatalf("minerUDownloadFile: %v", err)
 	}
 	if body == nil || string(body) != "artifact" {
 		t.Fatalf("body = %q", body)
+	}
+	if sawAuth.Load() {
+		t.Fatal("Authorization must not be forwarded to a cross-origin redirect target")
+	}
+}
+
+func TestMinerUV1UploadStripsAuthOnCrossOriginRedirect(t *testing.T) {
+	var sawAuth atomic.Bool
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			sawAuth.Store(true)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer redirect.Close()
+
+	var apiSawAuth atomic.Bool
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			apiSawAuth.Store(true)
+		}
+		if r.URL.Path == "/v1/upload-slot" {
+			http.Redirect(w, r, redirect.URL, http.StatusTemporaryRedirect)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer api.Close()
+
+	err := minerUPutUploadBytes(context.Background(), "secret-token", api.URL, http.MethodPut, api.URL+"/v1/upload-slot", nil, []byte("data"))
+	if err != nil {
+		t.Fatalf("minerUPutUploadBytes: %v", err)
+	}
+	if !apiSawAuth.Load() {
+		t.Fatal("same-origin upload must carry the bearer token initially")
 	}
 	if sawAuth.Load() {
 		t.Fatal("Authorization must not be forwarded to a cross-origin redirect target")

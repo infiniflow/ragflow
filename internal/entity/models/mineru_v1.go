@@ -351,7 +351,7 @@ func parseMinerUV1Legacy(ctx context.Context, client *http.Client, token, baseUR
 		if created.UploadURL == "" {
 			return nil, fmt.Errorf("MinerU V1 upload missing upload_url")
 		}
-		if err := minerUPutUploadBytes(ctx, client, token, baseURL, created.UploadMethod, created.UploadURL, created.UploadHeaders, content); err != nil {
+		if err := minerUPutUploadBytes(ctx, token, baseURL, created.UploadMethod, created.UploadURL, created.UploadHeaders, content); err != nil {
 			return nil, err
 		}
 		var completed minerUV1UploadResponse
@@ -415,7 +415,7 @@ func parseMinerUV1Legacy(ctx context.Context, client *http.Client, token, baseUR
 			continue
 		}
 		if ref, ok := file.OutputFiles["zip"]; ok && ref.artifactID() != "" && len(result.Zip) == 0 {
-			body, err := minerUDownloadFile(ctx, client, baseURL, token, baseURL+"/v1/files/"+ref.artifactID()+"/content")
+			body, err := minerUDownloadFile(ctx, baseURL, token, baseURL+"/v1/files/"+ref.artifactID()+"/content")
 			if err != nil {
 				if artifactErr == nil {
 					artifactErr = fmt.Errorf("download zip: %w", err)
@@ -425,7 +425,7 @@ func parseMinerUV1Legacy(ctx context.Context, client *http.Client, token, baseUR
 			}
 		}
 		if ref, ok := file.OutputFiles["markdown"]; ok && ref.artifactID() != "" && result.Markdown == "" {
-			body, err := minerUDownloadFile(ctx, client, baseURL, token, baseURL+"/v1/files/"+ref.artifactID()+"/content")
+			body, err := minerUDownloadFile(ctx, baseURL, token, baseURL+"/v1/files/"+ref.artifactID()+"/content")
 			if err != nil {
 				if artifactErr == nil {
 					artifactErr = fmt.Errorf("download markdown: %w", err)
@@ -485,8 +485,9 @@ func minerUV1DownloadHTTPClient(apiOrigin string) *http.Client {
 // minerUPutUploadBytes uploads the raw file bytes to an upload URL with the
 // given method (PUT unless the server said otherwise), applying the supplied
 // headers and attaching the bearer token only when the URL is same-origin
-// with the API base, so signed object-storage links never see the token.
-func minerUPutUploadBytes(ctx context.Context, client *http.Client, token, baseURL, method, rawURL string, headers map[string]string, content []byte) error {
+// with the API base, and stripping the token on any cross-origin redirect so
+// signed object-storage links never see the token.
+func minerUPutUploadBytes(ctx context.Context, token, baseURL, method, rawURL string, headers map[string]string, content []byte) error {
 	uploadURL, err := url.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("invalid upload_url: %w", err)
@@ -508,10 +509,11 @@ func minerUPutUploadBytes(ctx context.Context, client *http.Client, token, baseU
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	if minerUSameOrigin(baseURL, uploadURL.String()) {
+	apiOrigin := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	if minerUSameOrigin(apiOrigin, uploadURL.String()) {
 		applyMinerUAuth(req, token)
 	}
-	resp, err := client.Do(req)
+	resp, err := minerUV1DownloadHTTPClient(apiOrigin).Do(req)
 	if err != nil {
 		return fmt.Errorf("byte upload: %w", err)
 	}
@@ -528,7 +530,7 @@ func minerUPutUploadBytes(ctx context.Context, client *http.Client, token, baseU
 // (a Files URL on local services, a signed object-storage link on SaaS). The
 // bearer token is attached only to same-origin URLs and stripped again on
 // every cross-origin redirect.
-func minerUDownloadFile(ctx context.Context, client *http.Client, baseURL, token, rawURL string) ([]byte, error) {
+func minerUDownloadFile(ctx context.Context, baseURL, token, rawURL string) ([]byte, error) {
 	apiOrigin := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	dlClient := minerUV1DownloadHTTPClient(apiOrigin)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
@@ -623,7 +625,7 @@ func parseMinerUTasks(ctx context.Context, client *http.Client, token, baseURL, 
 	// on. A successful PUT is never repeated.
 	uploaded := false
 	if upload := created.Files[0].Upload; upload != nil {
-		if err := minerUPutUploadBytes(ctx, client, token, baseURL, http.MethodPut, upload.URL, upload.Headers, content); err != nil {
+		if err := minerUPutUploadBytes(ctx, token, baseURL, http.MethodPut, upload.URL, upload.Headers, content); err != nil {
 			return nil, err
 		}
 		uploaded = true
@@ -649,7 +651,7 @@ func parseMinerUTasks(ctx context.Context, client *http.Client, token, baseURL, 
 		}
 		task = &detail
 		if !uploaded && len(task.Files) > 0 && task.Files[0].Upload != nil {
-			if err := minerUPutUploadBytes(ctx, client, token, baseURL, http.MethodPut, task.Files[0].Upload.URL, task.Files[0].Upload.Headers, content); err != nil {
+			if err := minerUPutUploadBytes(ctx, token, baseURL, http.MethodPut, task.Files[0].Upload.URL, task.Files[0].Upload.Headers, content); err != nil {
 				return nil, err
 			}
 			uploaded = true
@@ -665,7 +667,7 @@ func parseMinerUTasks(ctx context.Context, client *http.Client, token, baseURL, 
 		if file.Status != "completed" || file.ResultURL == "" {
 			continue
 		}
-		body, err := minerUDownloadFile(ctx, client, baseURL, token, file.ResultURL)
+		body, err := minerUDownloadFile(ctx, baseURL, token, file.ResultURL)
 		if err != nil {
 			return nil, fmt.Errorf("download task result: %w", err)
 		}
