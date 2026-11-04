@@ -1773,7 +1773,7 @@ func TestStartParseDocuments_ApplyKBMergesDatasetParserConfig(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 
 	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
 	if err != nil {
@@ -1974,7 +1974,7 @@ func TestStartParseDocuments_ApplyKBUsesDatasetDefaults(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 
 	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
 	if err != nil {
@@ -2165,7 +2165,7 @@ func TestStartParseDocuments_ApplyKBPersistFailureNamesDocument(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 
 	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
 	if err != nil {
@@ -2261,7 +2261,7 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 
 	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
 	if err != nil {
@@ -2317,6 +2317,28 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	}
 }
 
+func TestIngestDocumentsRejectsMissingUserIdentity(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	svc := testDocumentService(t)
+	publisher := &recordingTaskPublisher{}
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	if _, err := svc.IngestDocuments(t.Context(), "kb-1", []string{"doc-1"}); !errors.Is(err, permission.ErrUnauthenticated) {
+		t.Fatalf("IngestDocuments error = %v, want unauthenticated", err)
+	}
+	if len(publisher.messages) != 0 {
+		t.Fatalf("parse publications = %d, want none", len(publisher.messages))
+	}
+	var taskCount int64
+	if err := db.Model(&entity.IngestionTask{}).Count(&taskCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if taskCount != 0 {
+		t.Fatalf("ingestion tasks = %d, want none", taskCount)
+	}
+}
+
 func TestStartParseDocumentsSerializesConcurrentReruns(t *testing.T) {
 	db := setupConcurrentServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -2347,7 +2369,7 @@ func TestStartParseDocumentsSerializesConcurrentReruns(t *testing.T) {
 	secondPublisher := &runningTaskPublisher{db: db, published: make(chan struct{})}
 	secondService := testDocumentService(t)
 	secondService.ingestionTaskSvc.SetTaskPublisher(secondPublisher)
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	kb, err := firstService.kbDAO.GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("load knowledgebase: %v", err)
@@ -2398,7 +2420,7 @@ func TestStartParseDocumentsSupersedesQueuedRun(t *testing.T) {
 
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(&recordingTaskPublisher{})
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("load knowledgebase: %v", err)
@@ -4763,12 +4785,13 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 	}
 
 	// Case 1: empty user -> not allowed.
-	if _, err := svc.GetDocumentArtifact(ctx, "result.png"); !errors.Is(err, ErrArtifactNotFound) {
+	if _, err := svc.GetDocumentArtifact(t.Context(), "result.png"); !errors.Is(err, ErrArtifactNotFound) {
 		t.Errorf("empty user: want ErrArtifactNotFound, got %v", err)
 	}
 
 	// Case 2: another user without any session reference -> not allowed.
-	if _, err := svc.GetDocumentArtifact(ctx, "result.png"); !errors.Is(err, ErrArtifactNotFound) {
+	otherUserCtx := documentTestActorContext(t.Context(), "user-2", "tenant-1")
+	if _, err := svc.GetDocumentArtifact(otherUserCtx, "result.png"); !errors.Is(err, ErrArtifactNotFound) {
 		t.Errorf("unrelated user: want ErrArtifactNotFound, got %v", err)
 	}
 
@@ -4791,7 +4814,7 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed conv 2: %v", err)
 	}
-	if _, err := svc.GetDocumentArtifact(ctx, "result.png"); !errors.Is(err, ErrArtifactNotFound) {
+	if _, err := svc.GetDocumentArtifact(otherUserCtx, "result.png"); !errors.Is(err, ErrArtifactNotFound) {
 		t.Errorf("user-2 with unrelated session: want ErrArtifactNotFound, got %v", err)
 	}
 }
@@ -4988,7 +5011,7 @@ func TestStartParseDocuments_FailsBeforeClearing(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("get doc: %v", err)

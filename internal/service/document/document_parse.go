@@ -17,6 +17,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestionpipeline "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
@@ -113,6 +114,9 @@ func (s *DocumentService) deletePreparedDocumentTask(ctx context.Context, docID 
 // Extracted from Ingest so other entry points (e.g. ChunkService.Parse)
 // can reuse the same start-parse flow.
 func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, opts StartParseOptions) error {
+	if permission.UserIDFromContext(ctx) == "" {
+		return permission.ErrUnauthenticated
+	}
 	// Validate storage first so we don't clear prior results and then fail
 	// because the document can't be read, leaving the document with neither
 	// old nor new parse results.
