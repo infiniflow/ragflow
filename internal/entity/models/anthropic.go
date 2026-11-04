@@ -123,7 +123,23 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 		return nil, fmt.Errorf("anthropic messages API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, parseAnthropicChatResponse)
+	parts, err := parseAnthropicChatResponse(body, chatModelConfig)
+	if parts.Usage != nil {
+		if err != nil && modelUsage != nil && modelUsage.ErrorMessage == "" {
+			modelUsage.ErrorMessage = err.Error()
+		}
+		recordResponseUsage(modelUsage, parts.RequestID, parts.Usage, "chat")
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &ChatResponse{
+		Answer:        parts.Content,
+		ReasonContent: parts.ReasonContent,
+		ToolCalls:     parts.ToolCalls,
+		Usage:         parts.Usage,
+	}, nil
 }
 
 func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *ChatConfig) error {
@@ -461,15 +477,31 @@ func parseAnthropicChatResponse(body []byte, _ *ChatConfig) (chatResponseParts, 
 			Input    map[string]any `json:"input"`
 		} `json:"content"`
 		Usage struct {
-			InputTokens  int `json:"input_tokens"`
-			OutputTokens int `json:"output_tokens"`
+			InputTokens              int `json:"input_tokens"`
+			OutputTokens             int `json:"output_tokens"`
+			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 		} `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
 		return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
 	}
+
+	totalPromptTokens := result.Usage.InputTokens +
+		result.Usage.CacheCreationInputTokens +
+		result.Usage.CacheReadInputTokens
+
+	var usage *TokenUsage
+	if totalPromptTokens > 0 || result.Usage.OutputTokens > 0 {
+		usage = &TokenUsage{
+			PromptTokens:     totalPromptTokens,
+			CompletionTokens: result.Usage.OutputTokens,
+			TotalTokens:      totalPromptTokens + result.Usage.OutputTokens,
+		}
+	}
+
 	if len(result.Content) == 0 {
-		return chatResponseParts{}, fmt.Errorf("no content in Anthropic response")
+		return chatResponseParts{RequestID: result.ID, Usage: usage}, fmt.Errorf("no content in Anthropic response")
 	}
 
 	var answer strings.Builder
@@ -483,26 +515,17 @@ func parseAnthropicChatResponse(body []byte, _ *ChatConfig) (chatResponseParts, 
 			reasoning.WriteString(block.Thinking)
 		case "tool_use":
 			if block.ID == "" || block.Name == "" || block.Input == nil {
-				return chatResponseParts{}, fmt.Errorf("invalid tool_use in Anthropic response")
+				return chatResponseParts{RequestID: result.ID, Usage: usage}, fmt.Errorf("invalid tool_use in Anthropic response")
 			}
 			arguments, err := json.Marshal(block.Input)
 			if err != nil {
-				return chatResponseParts{}, fmt.Errorf("anthropic: marshal tool input: %w", err)
+				return chatResponseParts{RequestID: result.ID, Usage: usage}, fmt.Errorf("anthropic: marshal tool input: %w", err)
 			}
 			toolCalls = append(toolCalls, map[string]any{"id": block.ID, "type": "function", "function": map[string]any{"name": block.Name, "arguments": string(arguments)}})
 		}
 	}
 	if answer.Len() == 0 && len(toolCalls) == 0 {
-		return chatResponseParts{}, fmt.Errorf("no text content in Anthropic response")
-	}
-
-	usage := &TokenUsage{
-		PromptTokens:     result.Usage.InputTokens,
-		CompletionTokens: result.Usage.OutputTokens,
-		TotalTokens:      result.Usage.InputTokens + result.Usage.OutputTokens,
-	}
-	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 {
-		usage = nil
+		return chatResponseParts{RequestID: result.ID, Usage: usage}, fmt.Errorf("no text content in Anthropic response")
 	}
 
 	ans := answer.String()
@@ -578,7 +601,7 @@ func (a *AnthropicModel) CheckConnection(ctx context.Context, apiConfig *APIConf
 	return err
 }
 
-func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) (streamErr error) {
 	if modelConfig != nil {
 		modelConfig.ToolCallsResult = nil
 	}
@@ -643,7 +666,69 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 
 	sawTerminal := false
 	var streamUsage TokenUsage
+	var streamRequestID string
 	sawUsage := false
+	var (
+		inputTokens      int
+		cacheCreation    int
+		cacheRead        int
+		hasInputTokens   bool
+		hasCacheCreation bool
+		hasCacheRead     bool
+	)
+
+	updateUsage := func(usageMap map[string]interface{}) {
+		if usageMap == nil {
+			return
+		}
+		if v, ok := usageMap["input_tokens"].(float64); ok {
+			inputTokens = int(v)
+			hasInputTokens = true
+			sawUsage = true
+		}
+		if v, ok := usageMap["cache_creation_input_tokens"].(float64); ok {
+			cacheCreation = int(v)
+			hasCacheCreation = true
+			sawUsage = true
+		}
+		if v, ok := usageMap["cache_read_input_tokens"].(float64); ok {
+			cacheRead = int(v)
+			hasCacheRead = true
+			sawUsage = true
+		}
+		if v, ok := usageMap["output_tokens"].(float64); ok {
+			streamUsage.CompletionTokens = int(v)
+			sawUsage = true
+		}
+
+		if hasInputTokens || hasCacheCreation || hasCacheRead {
+			streamUsage.PromptTokens = inputTokens + cacheCreation + cacheRead
+		}
+	}
+
+	var usageRecorded bool
+	recordKnownUsage := func() {
+		if usageRecorded || !sawUsage {
+			return
+		}
+		usageRecorded = true
+		streamUsage.TotalTokens = streamUsage.PromptTokens + streamUsage.CompletionTokens
+		if streamRequestID != "" && modelUsage != nil && modelUsage.RequestID == "" {
+			modelUsage.RequestID = streamRequestID
+		}
+		if streamErr != nil || !sawTerminal {
+			errMsg := "anthropic: stream ended before message_stop"
+			if streamErr != nil {
+				errMsg = streamErr.Error()
+			}
+			if modelUsage != nil && modelUsage.ErrorMessage == "" {
+				modelUsage.ErrorMessage = errMsg
+			}
+		}
+		applyStreamUsage(modelConfig, modelUsage, &streamUsage)
+	}
+	defer recordKnownUsage()
+
 	type toolBlock struct {
 		id, name string
 		input    map[string]any
@@ -721,21 +806,17 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 			if !ok {
 				return nil
 			}
+			if id, ok := message["id"].(string); ok && id != "" {
+				streamRequestID = id
+			}
 			if usage, ok := message["usage"].(map[string]interface{}); ok {
-				if inputTokens, ok := usage["input_tokens"].(float64); ok {
-					streamUsage.PromptTokens = int(inputTokens)
-					sawUsage = true
-				}
+				updateUsage(usage)
 			}
 		case "message_delta":
 			// message_delta carries the running total of output tokens
-			// generated so far; the last event before message_stop is
-			// authoritative.
+			// and may also carry updated input/cache tokens.
 			if usage, ok := event["usage"].(map[string]interface{}); ok {
-				if outputTokens, ok := usage["output_tokens"].(float64); ok {
-					streamUsage.CompletionTokens = int(outputTokens)
-					sawUsage = true
-				}
+				updateUsage(usage)
 			}
 		case "message_stop":
 			sawTerminal = true
@@ -743,6 +824,10 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 			errInfo, _ := event["error"].(map[string]interface{})
 			message, _ := errInfo["message"].(string)
 			return fmt.Errorf("anthropic stream error: %s", message)
+		default:
+			if usage, ok := event["usage"].(map[string]interface{}); ok {
+				updateUsage(usage)
+			}
 		}
 		return nil
 	})
@@ -757,13 +842,17 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	}
 	setSortedToolCallsResult(modelConfig, toolCalls)
 
-	if sawUsage {
-		streamUsage.TotalTokens = streamUsage.PromptTokens + streamUsage.CompletionTokens
-		applyStreamUsage(modelConfig, modelUsage, &streamUsage)
-	}
+	recordKnownUsage()
 
 	endOfStream := "[DONE]"
-	return sender(&endOfStream, nil)
+	if sendErr := sender(&endOfStream, nil); sendErr != nil {
+		streamErr = sendErr
+		if modelUsage != nil && modelUsage.ErrorMessage == "" {
+			modelUsage.ErrorMessage = sendErr.Error()
+		}
+		return sendErr
+	}
+	return nil
 }
 
 func (a *AnthropicModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {

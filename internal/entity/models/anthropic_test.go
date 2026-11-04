@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -151,6 +152,158 @@ func TestAnthropicChatHappyPath(t *testing.T) {
 	}
 	if resp.ReasonContent == nil || *resp.ReasonContent != "reasoning" {
 		t.Errorf("reason=%v, want reasoning", resp.ReasonContent)
+	}
+}
+
+func TestAnthropicChatPromptCacheUsage(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":   "msg_cache_test",
+			"type": "message",
+			"content": []map[string]interface{}{
+				{"type": "text", "text": "cached response"},
+			},
+			"usage": map[string]interface{}{
+				"input_tokens":                200,
+				"cache_creation_input_tokens": 50,
+				"cache_read_input_tokens":     4800,
+				"output_tokens":               150,
+			},
+		})
+	})
+	defer srv.Close()
+	ctx := t.Context()
+
+	apiKey := "test-key"
+	modelUsage := &common.ModelUsage{}
+	resp, err := newAnthropicForTest(srv.URL).ChatWithMessages(
+		ctx,
+		"claude-sonnet-4-5-20250929",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{},
+		modelUsage,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if resp.Usage == nil {
+		t.Fatal("expected non-nil resp.Usage")
+	}
+	// Anthropic prompt tokens must sum input_tokens, cache_creation_input_tokens, and cache_read_input_tokens.
+	// 200 + 50 + 4800 = 5050
+	if resp.Usage.PromptTokens != 5050 {
+		t.Errorf("resp.Usage.PromptTokens=%d, want 5050", resp.Usage.PromptTokens)
+	}
+	if resp.Usage.CompletionTokens != 150 {
+		t.Errorf("resp.Usage.CompletionTokens=%d, want 150", resp.Usage.CompletionTokens)
+	}
+	if resp.Usage.TotalTokens != 5200 {
+		t.Errorf("resp.Usage.TotalTokens=%d, want 5200", resp.Usage.TotalTokens)
+	}
+	if modelUsage.InputTokens != 5050 {
+		t.Errorf("modelUsage.InputTokens=%d, want 5050", modelUsage.InputTokens)
+	}
+	if modelUsage.OutputTokens != 150 {
+		t.Errorf("modelUsage.OutputTokens=%d, want 150", modelUsage.OutputTokens)
+	}
+	if modelUsage.TotalTokens != 5200 {
+		t.Errorf("modelUsage.TotalTokens=%d, want 5200", modelUsage.TotalTokens)
+	}
+}
+
+func TestAnthropicChatInvalidContentPreservesUsage(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":      "msg_invalid_content",
+			"type":    "message",
+			"content": []map[string]interface{}{},
+			"usage": map[string]interface{}{
+				"input_tokens":                120,
+				"cache_creation_input_tokens": 10,
+				"cache_read_input_tokens":     30,
+				"output_tokens":               40,
+			},
+		})
+	})
+	defer srv.Close()
+	ctx := t.Context()
+
+	apiKey := "test-key"
+	modelUsage := &common.ModelUsage{}
+	resp, err := newAnthropicForTest(srv.URL).ChatWithMessages(
+		ctx,
+		"claude-sonnet-4-5-20250929",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{},
+		modelUsage,
+	)
+	if err == nil {
+		t.Fatal("expected error due to empty content")
+	}
+	if resp != nil {
+		t.Fatalf("expected nil resp, got %+v", resp)
+	}
+	// Usage must still be recorded: 120 + 10 + 30 = 160
+	if modelUsage.InputTokens != 160 {
+		t.Errorf("modelUsage.InputTokens=%d, want 160", modelUsage.InputTokens)
+	}
+	if modelUsage.OutputTokens != 40 {
+		t.Errorf("modelUsage.OutputTokens=%d, want 40", modelUsage.OutputTokens)
+	}
+	if modelUsage.TotalTokens != 200 {
+		t.Errorf("modelUsage.TotalTokens=%d, want 200", modelUsage.TotalTokens)
+	}
+	if modelUsage.RequestID != "msg_invalid_content" {
+		t.Errorf("modelUsage.RequestID=%q, want msg_invalid_content", modelUsage.RequestID)
+	}
+	if modelUsage.ErrorMessage == "" {
+		t.Errorf("expected ErrorMessage to be populated for invalid content response")
+	}
+}
+
+func TestAnthropicChatInvalidToolUsePreservesUsage(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":   "msg_invalid_tool",
+			"type": "message",
+			"content": []map[string]interface{}{
+				{"type": "tool_use", "id": "t1"}, // missing name and input
+			},
+			"usage": map[string]interface{}{
+				"input_tokens":  80,
+				"output_tokens": 20,
+			},
+		})
+	})
+	defer srv.Close()
+	ctx := t.Context()
+
+	apiKey := "test-key"
+	modelUsage := &common.ModelUsage{}
+	resp, err := newAnthropicForTest(srv.URL).ChatWithMessages(
+		ctx,
+		"claude-sonnet-4-5-20250929",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{},
+		modelUsage,
+	)
+	if err == nil {
+		t.Fatal("expected error due to invalid tool use")
+	}
+	if resp != nil {
+		t.Fatalf("expected nil resp, got %+v", resp)
+	}
+	if modelUsage.InputTokens != 80 || modelUsage.OutputTokens != 20 || modelUsage.TotalTokens != 100 {
+		t.Errorf("modelUsage tokens mismatch: %+v", modelUsage)
+	}
+	if modelUsage.ErrorMessage == "" {
+		t.Errorf("expected ErrorMessage to be populated for invalid tool use response")
 	}
 }
 
@@ -412,6 +565,227 @@ func TestAnthropicChatStreamlyWithSenderHappyPath(t *testing.T) {
 	}
 	if modelUsage.TotalTokens != 7 {
 		t.Errorf("TotalTokens=%d, want 7", modelUsage.TotalTokens)
+	}
+}
+
+func TestAnthropicChatStreamlyWithSenderPromptCacheUsage(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["stream"] != true {
+			t.Errorf("stream=%v, want true", body["stream"])
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		events := []string{
+			`{"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":200,"cache_creation_input_tokens":50,"cache_read_input_tokens":4800,"output_tokens":0}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"cached stream pong"}}`,
+			`{"type":"content_block_stop","index":0}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":150}}`,
+			`{"type":"message_stop"}`,
+		}
+		for _, event := range events {
+			_, _ = w.Write([]byte("data: " + event + "\n\n"))
+		}
+	})
+	defer srv.Close()
+	ctx := t.Context()
+
+	apiKey := "test-key"
+	var answer strings.Builder
+	sawDone := false
+	modelUsage := &common.ModelUsage{}
+	chatConfig := &ChatConfig{}
+	err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"claude-sonnet-4-5-20250929",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		chatConfig,
+		modelUsage,
+		func(text, reason *string) error {
+			if text != nil {
+				if *text == "[DONE]" {
+					sawDone = true
+				} else {
+					answer.WriteString(*text)
+				}
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+	if answer.String() != "cached stream pong" {
+		t.Errorf("answer=%q, want 'cached stream pong'", answer.String())
+	}
+	if !sawDone {
+		t.Error("expected terminal [DONE] sender call")
+	}
+	// Anthropic prompt tokens must sum input_tokens, cache_creation_input_tokens, and cache_read_input_tokens.
+	// 200 + 50 + 4800 = 5050
+	if modelUsage.InputTokens != 5050 {
+		t.Errorf("InputTokens=%d, want 5050", modelUsage.InputTokens)
+	}
+	if modelUsage.OutputTokens != 150 {
+		t.Errorf("OutputTokens=%d, want 150", modelUsage.OutputTokens)
+	}
+	if modelUsage.TotalTokens != 5200 {
+		t.Errorf("TotalTokens=%d, want 5200", modelUsage.TotalTokens)
+	}
+	if chatConfig.UsageResult == nil {
+		t.Fatal("expected non-nil chatConfig.UsageResult")
+	}
+	if chatConfig.UsageResult.PromptTokens != 5050 {
+		t.Errorf("chatConfig.UsageResult.PromptTokens=%d, want 5050", chatConfig.UsageResult.PromptTokens)
+	}
+	if chatConfig.UsageResult.CompletionTokens != 150 {
+		t.Errorf("chatConfig.UsageResult.CompletionTokens=%d, want 150", chatConfig.UsageResult.CompletionTokens)
+	}
+	if chatConfig.UsageResult.TotalTokens != 5200 {
+		t.Errorf("chatConfig.UsageResult.TotalTokens=%d, want 5200", chatConfig.UsageResult.TotalTokens)
+	}
+}
+
+func TestAnthropicChatStreamlyWithSenderCumulativeUsageUpdate(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		events := []string{
+			`{"type":"message_start","message":{"id":"msg_stream_cumul","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":100,"cache_creation_input_tokens":10,"cache_read_input_tokens":20,"output_tokens":1}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello "}}`,
+			// message_delta updates output_tokens and updates input_tokens to 110 (latest cumulative, not additive)
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":45,"input_tokens":110}}`,
+			`{"type":"content_block_stop","index":0}`,
+			`{"type":"message_stop"}`,
+		}
+		for _, e := range events {
+			_, _ = io.WriteString(w, "data: "+e+"\n\n")
+		}
+	})
+	defer srv.Close()
+	ctx := t.Context()
+
+	apiKey := "test-key"
+	modelUsage := &common.ModelUsage{}
+	chatConfig := &ChatConfig{}
+	err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"claude-sonnet-4-5-20250929",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		chatConfig,
+		modelUsage,
+		func(text, reason *string) error {
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+	// Input should be latest cumulative: 110 + 10 + 20 = 140
+	if modelUsage.InputTokens != 140 {
+		t.Errorf("InputTokens=%d, want 140", modelUsage.InputTokens)
+	}
+	if modelUsage.OutputTokens != 45 {
+		t.Errorf("OutputTokens=%d, want 45", modelUsage.OutputTokens)
+	}
+	if modelUsage.TotalTokens != 185 {
+		t.Errorf("TotalTokens=%d, want 185", modelUsage.TotalTokens)
+	}
+	if modelUsage.RequestID != "msg_stream_cumul" {
+		t.Errorf("RequestID=%q, want msg_stream_cumul", modelUsage.RequestID)
+	}
+}
+
+func TestAnthropicChatStreamlyWithSenderPreservesUsageOnError(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		events := []string{
+			`{"type":"message_start","message":{"id":"msg_stream_err","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":250,"cache_creation_input_tokens":50,"cache_read_input_tokens":0,"output_tokens":1}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello chunk"}}`,
+		}
+		for _, e := range events {
+			_, _ = io.WriteString(w, "data: "+e+"\n\n")
+		}
+	})
+	defer srv.Close()
+	ctx := t.Context()
+
+	apiKey := "test-key"
+	modelUsage := &common.ModelUsage{}
+	chatConfig := &ChatConfig{}
+	senderErr := fmt.Errorf("client network disconnected")
+	err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"claude-sonnet-4-5-20250929",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		chatConfig,
+		modelUsage,
+		func(text, reason *string) error {
+			if text != nil && *text == "hello chunk" {
+				return senderErr
+			}
+			return nil
+		},
+	)
+	if err == nil {
+		t.Fatal("expected sender error to be returned")
+	}
+	// Known input usage (250 + 50 = 300) must still be preserved
+	if modelUsage.InputTokens != 300 {
+		t.Errorf("InputTokens=%d, want 300", modelUsage.InputTokens)
+	}
+	if modelUsage.TotalTokens < 300 {
+		t.Errorf("TotalTokens=%d, want >= 300", modelUsage.TotalTokens)
+	}
+	if chatConfig.UsageResult == nil || chatConfig.UsageResult.PromptTokens != 300 {
+		t.Errorf("chatConfig.UsageResult=%+v, want PromptTokens=300", chatConfig.UsageResult)
+	}
+	if modelUsage.ErrorMessage == "" {
+		t.Errorf("expected ErrorMessage to be populated for failed stream")
+	}
+}
+
+func TestAnthropicChatStreamlyWithSenderInterruptedStreamPreservesUsage(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		// Send message_start then immediately close stream without message_stop
+		_, _ = io.WriteString(w, "data: "+`{"type":"message_start","message":{"id":"msg_stream_interrupted","type":"message","role":"assistant","content":[],"model":"claude","usage":{"input_tokens":180,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}`+"\n\n")
+	})
+	defer srv.Close()
+	ctx := t.Context()
+
+	apiKey := "test-key"
+	modelUsage := &common.ModelUsage{}
+	chatConfig := &ChatConfig{}
+	err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"claude-sonnet-4-5-20250929",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		chatConfig,
+		modelUsage,
+		func(text, reason *string) error {
+			return nil
+		},
+	)
+	if err == nil {
+		t.Fatal("expected error due to incomplete stream")
+	}
+	if modelUsage.InputTokens != 180 {
+		t.Errorf("InputTokens=%d, want 180", modelUsage.InputTokens)
+	}
+	if modelUsage.TotalTokens != 180 {
+		t.Errorf("TotalTokens=%d, want 180", modelUsage.TotalTokens)
+	}
+	if modelUsage.ErrorMessage != "anthropic: stream ended before message_stop" {
+		t.Errorf("modelUsage.ErrorMessage=%q, want 'anthropic: stream ended before message_stop'", modelUsage.ErrorMessage)
 	}
 }
 
