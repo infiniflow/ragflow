@@ -107,7 +107,7 @@ func (s *ChatPipelineService) agenticRag(
 	go func() {
 		defer close(out)
 
-		runCtx, cancel := context.WithTimeout(ctx, agenticRunTimeout)
+		runCtx, cancel := context.WithTimeoutCause(ctx, agenticRunTimeout, fmt.Errorf("agentic run timed out after %s", agenticRunTimeout))
 		defer cancel()
 		// The run's evidence registry: every tool result stamps its passages with
 		// the [ID:n] handle the model cites, and buildAgenticReference resolves
@@ -319,7 +319,7 @@ func (s *ChatPipelineService) agenticRag(
 				zap.Any("tool_errors", toolErrors),
 				zap.String("error", runErr.Error()),
 			}, usageFields...)...)
-			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", runErr.Error()), Final: true})
+			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", runtime.MarkdownSafeErrorText(runErr)), Final: true})
 			return
 		}
 		common.InfoCtx(ctx, "agentic turn done", append([]zap.Field{
