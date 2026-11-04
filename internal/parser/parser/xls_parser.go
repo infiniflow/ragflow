@@ -83,12 +83,13 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 		)
-	case "", "excelize":
-		// Continue with the local Excelize parser.
+	case "", "excelize", "biff", "biff8":
+		// Continue with the local BIFF8 parser.
 	default:
-		return ParseResult{
-			Err: fmt.Errorf("unsupported XLS parse method: %q", p.ParseMethod),
-		}
+		// PDF-specific methods like "DeepDOC" / "PaddleOCR" / "MinerU"
+		// are meaningless for XLS; treat them as the default BIFF8 path,
+		// matching Python's behaviour where parse_method is irrelevant
+		// for spreadsheet processing.
 	}
 
 	items, sheetsCount, err := parseBIFF8Bytes(ctx, data)

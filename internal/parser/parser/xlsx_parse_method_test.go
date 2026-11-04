@@ -28,6 +28,9 @@ func TestNormalizeXLSXParseMethod(t *testing.T) {
 		{"DeepDOC Parser", ""},
 		{"tcadp parser", "tcadp"},
 		{"TCADP Parser", "tcadp"},
+		{"tcadp", "tcadp"},
+		{"TCADP", "tcadp"},
+		{"  tcadp  ", "tcadp"},
 		{"excelize", "excelize"},
 		{"csv", "csv"},
 		{"unknown", "unknown"}, // preserved so the switch rejects it
@@ -192,22 +195,25 @@ func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	}
 }
 
-// TestXLSParser_DeepDocParseMethod_NoUnsupportedError asserts the XLS
-// parser no longer rejects "deepdoc". A real .xls blob is hard to
-// synthesize in a unit test, so we only assert that the error is not the
-// "unsupported XLS parse method" rejection; an open/parse failure from
-// the fake blob is acceptable. The shared normalization is already
-// covered by TestNormalizeXLSXParseMethod.
-func TestXLSParser_DeepDocParseMethod_NoUnsupportedError(t *testing.T) {
-	p, err := NewXLSParser("")
-	if err != nil {
-		t.Fatalf("NewXLSParser: %v", err)
-	}
-	p.ConfigureFromSetup(map[string]any{"parse_method": "deepdoc"})
+// TestXLSParser_ParseMethod_NoUnsupportedError asserts the XLS
+// parser accepts all spreadsheet and dataset-level parse_methods (including
+// "deepdoc", "biff", "biff8", and non-spreadsheet methods like "PaddleOCR",
+// "MinerU", "General") by continuing with the local BIFF8 parser instead of
+// rejecting them as unsupported.
+func TestXLSParser_ParseMethod_NoUnsupportedError(t *testing.T) {
+	for _, method := range []string{"deepdoc", "DeepDOC", "excelize", "biff", "biff8", "PaddleOCR", "MinerU", "General"} {
+		t.Run(method, func(t *testing.T) {
+			p, err := NewXLSParser("")
+			if err != nil {
+				t.Fatalf("NewXLSParser: %v", err)
+			}
+			p.ConfigureFromSetup(map[string]any{"parse_method": method})
 
-	ctx := t.Context()
-	res := p.ParseWithResult(ctx, "test.xls", []byte("not a real xls"))
-	if res.Err != nil && strings.Contains(res.Err.Error(), "unsupported XLS parse method") {
-		t.Fatalf("deepdoc must not be rejected as unsupported: %v", res.Err)
+			ctx := t.Context()
+			res := p.ParseWithResult(ctx, "test.xls", []byte("not a real xls"))
+			if res.Err != nil && strings.Contains(res.Err.Error(), "unsupported XLS parse method") {
+				t.Fatalf("method %q must not be rejected as unsupported: %v", method, res.Err)
+			}
+		})
 	}
 }

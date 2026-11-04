@@ -70,7 +70,7 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 
 func normalizeXLSXParseMethod(raw string) string {
 	method := strings.ToLower(strings.TrimSpace(raw))
-	if method == "tcadp parser" {
+	if method == "tcadp parser" || method == "tcadp" {
 		return "tcadp"
 	}
 	// "deepdoc" / "deepdoc parser" is the default spreadsheet parse_method
