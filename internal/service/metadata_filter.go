@@ -615,11 +615,69 @@ func ApplyMetaDataFilter(
 	kbIDs []string,
 	manualValueResolver ...ManualValueResolver,
 ) []string {
-	if metaDataFilter == nil {
-		return baseDocIDs
+	return applyMetaDataFilter(ctx, metaDataFilter, metaData, question, chatModel, baseDocIDs, kbIDs, nil, manualValueResolver...)
+}
+
+// ApplyMetaDataFilterWithDiagnostics is the same as ApplyMetaDataFilter but
+// records the runtime outcome in diagnostics when diagnostics is non-nil.
+// The caller must not read diagnostics until the function returns.
+func ApplyMetaDataFilterWithDiagnostics(
+	ctx context.Context,
+	metaDataFilter map[string]interface{},
+	metaData common.MetaData,
+	question string,
+	chatModel *modelModule.ChatModel,
+	baseDocIDs []string,
+	kbIDs []string,
+	diagnostics *common.MetadataFilterDiagnostic,
+	manualValueResolver ...ManualValueResolver,
+) []string {
+	return applyMetaDataFilter(ctx, metaDataFilter, metaData, question, chatModel, baseDocIDs, kbIDs, diagnostics, manualValueResolver...)
+}
+
+func applyMetaDataFilter(
+	ctx context.Context,
+	metaDataFilter map[string]interface{},
+	metaData common.MetaData,
+	question string,
+	chatModel *modelModule.ChatModel,
+	baseDocIDs []string,
+	kbIDs []string,
+	diagnostics *common.MetadataFilterDiagnostic,
+	manualValueResolver ...ManualValueResolver,
+) []string {
+	setDiag := func(status string, conditions []MetaFilterCondition, logic string, matched int) {
+		if diagnostics == nil {
+			return
+		}
+		condMaps := make([]map[string]interface{}, 0, len(conditions))
+		for _, c := range conditions {
+			condMaps = append(condMaps, map[string]interface{}{
+				"key":   c.Key,
+				"op":    c.Op,
+				"value": c.Value,
+			})
+		}
+		diagnostics.Status = status
+		diagnostics.Conditions = condMaps
+		diagnostics.Logic = logic
+		diagnostics.MatchedDocumentCount = matched
 	}
 
 	method, _ := metaDataFilter["method"].(string)
+	if method == "" {
+		method = "disabled"
+	}
+	if diagnostics != nil {
+		diagnostics.Method = method
+		diagnostics.Conditions = []map[string]interface{}{}
+		diagnostics.Logic = "and"
+		diagnostics.MatchedDocumentCount = 0
+	}
+	if metaDataFilter == nil {
+		setDiag("disabled", nil, "and", 0)
+		return baseDocIDs
+	}
 
 	// Helper to run metadata filter with push-down fallback
 	// runMetadataFilter executes filter conditions via push-down (ES/Infinity)
@@ -661,15 +719,24 @@ func ApplyMetaDataFilter(
 		filters, err := GenMetaFilter(ctx, chatModel, metaData, question, nil)
 		if err != nil {
 			common.Warn("Failed to generate meta filter", zap.Error(err))
+			setDiag("not_generated", nil, "and", 0)
 			return baseDocIDs
 		}
-		filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
+		conditions := filters.Conditions
+		logic := filters.Logic
+		if len(conditions) == 0 {
+			setDiag("not_generated", conditions, logic, 0)
+			return nil
+		}
+		filteredIDs := runMetadataFilter(conditions, logic)
 		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(docIDs) == 0 {
 			// No conditions, or conditions that selected nothing: the model was
 			// not able to narrow the search, so it stays unnarrowed.
+			setDiag("no_matches", conditions, logic, 0)
 			return nil
 		}
+		setDiag("applied", conditions, logic, len(docIDs))
 		return docIDs
 
 	case "semi_auto":
@@ -705,16 +772,27 @@ func ApplyMetaDataFilter(
 				filters, err := GenMetaFilter(ctx, chatModel, filteredMeta, question, constraints)
 				if err != nil {
 					common.Warn("Failed to generate meta filter", zap.Error(err))
+					setDiag("not_generated", nil, "and", 0)
 					return baseDocIDs
 				}
-				filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
-				docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
-				if len(docIDs) == 0 {
+				conditions := filters.Conditions
+				logic := filters.Logic
+				if len(conditions) == 0 {
+					setDiag("not_generated", conditions, logic, 0)
 					return nil
 				}
+				filteredIDs := runMetadataFilter(conditions, logic)
+				docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
+				if len(docIDs) == 0 {
+					setDiag("no_matches", conditions, logic, 0)
+					return nil
+				}
+				setDiag("applied", conditions, logic, len(docIDs))
 				return docIDs
 			}
 		}
+		setDiag("not_generated", nil, "and", 0)
+		return baseDocIDs
 
 	case "manual":
 		manualFilters, _ := metaDataFilter["manual"].([]interface{})
@@ -723,6 +801,7 @@ func ApplyMetaDataFilter(
 			logic = logicVal
 		}
 		if len(manualFilters) == 0 {
+			setDiag("not_generated", nil, logic, 0)
 			return baseDocIDs
 		}
 
@@ -759,11 +838,14 @@ func ApplyMetaDataFilter(
 		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(manualFilters) > 0 && len(docIDs) == 0 {
 			// The user named these conditions, so no match is the answer.
+			setDiag("no_matches", conditions, logic, 0)
 			return []string{NoMatchDocIDSentinel}
 		}
+		setDiag("applied", conditions, logic, len(docIDs))
 		return docIDs
 	}
 
+	setDiag("unsupported", nil, "and", 0)
 	return baseDocIDs
 }
 
