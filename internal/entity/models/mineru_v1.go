@@ -23,6 +23,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -179,6 +180,17 @@ func applyMinerUAuth(req *http.Request, token string) {
 	}
 }
 
+// minerUHTTPStatusError carries the HTTP status of a non-2xx MinerU response
+// so callers can branch on it (the Tasks dispatch only falls back to the
+// legacy cycle on 404). Its text matches the previous plain fmt error.
+type minerUHTTPStatusError struct {
+	Status int
+	Err    error
+}
+
+func (e *minerUHTTPStatusError) Error() string { return e.Err.Error() }
+func (e *minerUHTTPStatusError) Unwrap() error { return e.Err }
+
 func minerUJSON(ctx context.Context, client *http.Client, method, rawURL, token string, body any, dest any) error {
 	var reader io.Reader
 	if body != nil {
@@ -206,7 +218,10 @@ func minerUJSON(ctx context.Context, client *http.Client, method, rawURL, token 
 		return fmt.Errorf("read %s %s: %w", method, rawURL, err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("MinerU V1 %s %s: HTTP %d: %s", method, rawURL, resp.StatusCode, string(payload))
+		return &minerUHTTPStatusError{
+			Status: resp.StatusCode,
+			Err:    fmt.Errorf("MinerU V1 %s %s: HTTP %d: %s", method, rawURL, resp.StatusCode, string(payload)),
+		}
 	}
 	if dest == nil {
 		return nil
@@ -274,8 +289,12 @@ func minerUV1Terminal(status string) bool {
 	}
 }
 
-// ParseMinerUV1 runs the MinerU 4 V1 cycle: create upload → PUT bytes →
-// complete → parse job → poll → download zip and/or markdown.
+// ParseMinerUV1 runs the MinerU 4 V1 parse cycle. MinerU 4.1 replaced the 4.0
+// upload/job routes with the asynchronous Tasks API and returns 404 with no
+// alias, so the protocol is chosen by POST /v1/tasks: a 404 creation means a
+// 4.0 server and the legacy upload → complete → parse job → poll cycle runs
+// instead. No support cache: one extra POST per parse is negligible next to
+// the parse itself, and a cache would go stale across a server upgrade.
 // ocrMode is the V1 ocr_mode (auto, txt, ocr); use MinerUV1OCRMode to normalize.
 func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, content []byte, backend, ocrMode string, timeout time.Duration) (*MinerUV1Result, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
@@ -296,6 +315,19 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 	name := minerUFilename(filename)
 	sum := sha256.Sum256(content)
 
+	result, err := parseMinerUTasks(ctx, client, token, baseURL, name, content, sum, backend, ocrMode)
+	if err == nil {
+		return result, nil
+	}
+	if !errors.Is(err, errMinerUTasksUnavailable) {
+		return nil, err
+	}
+	return parseMinerUV1Legacy(ctx, client, token, baseURL, name, content, sum, backend, ocrMode)
+}
+
+// parseMinerUV1Legacy runs the MinerU 4.0 cycle: create upload → PUT bytes →
+// complete → parse job → poll → download zip and/or markdown.
+func parseMinerUV1Legacy(ctx context.Context, client *http.Client, token, baseURL, name string, content []byte, sum [32]byte, backend, ocrMode string) (*MinerUV1Result, error) {
 	var created minerUV1UploadResponse
 	if err := minerUJSON(ctx, client, http.MethodPost, baseURL+"/v1/uploads", token, map[string]any{
 		"filename":  name,
@@ -319,39 +351,8 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 		if created.UploadURL == "" {
 			return nil, fmt.Errorf("MinerU V1 upload missing upload_url")
 		}
-		uploadURL, err := url.Parse(created.UploadURL)
-		if err != nil {
-			return nil, fmt.Errorf("invalid upload_url: %w", err)
-		}
-		if !uploadURL.IsAbs() {
-			base, err := url.Parse(baseURL + "/")
-			if err != nil {
-				return nil, fmt.Errorf("invalid MinerU base URL: %w", err)
-			}
-			uploadURL = base.ResolveReference(uploadURL)
-		}
-		method := strings.ToUpper(strings.TrimSpace(created.UploadMethod))
-		if method == "" {
-			method = http.MethodPut
-		}
-		req, err := http.NewRequestWithContext(ctx, method, uploadURL.String(), bytes.NewReader(content))
-		if err != nil {
-			return nil, fmt.Errorf("create byte upload: %w", err)
-		}
-		for k, v := range created.UploadHeaders {
-			req.Header.Set(k, v)
-		}
-		if minerUSameOrigin(baseURL, uploadURL.String()) {
-			applyMinerUAuth(req, token)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("byte upload: %w", err)
-		}
-		_, _ = io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return nil, fmt.Errorf("byte upload: HTTP %d", resp.StatusCode)
+		if err := minerUPutUploadBytes(ctx, client, token, baseURL, created.UploadMethod, created.UploadURL, created.UploadHeaders, content); err != nil {
+			return nil, err
 		}
 		var completed minerUV1UploadResponse
 		if err := minerUJSON(ctx, client, http.MethodPost, baseURL+"/v1/uploads/"+created.ID+"/complete", token, nil, &completed); err != nil {
@@ -414,7 +415,7 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 			continue
 		}
 		if ref, ok := file.OutputFiles["zip"]; ok && ref.artifactID() != "" && len(result.Zip) == 0 {
-			body, err := minerUV1DownloadFile(ctx, client, baseURL, token, ref.artifactID())
+			body, err := minerUDownloadFile(ctx, client, baseURL, token, baseURL+"/v1/files/"+ref.artifactID()+"/content")
 			if err != nil {
 				if artifactErr == nil {
 					artifactErr = fmt.Errorf("download zip: %w", err)
@@ -424,7 +425,7 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 			}
 		}
 		if ref, ok := file.OutputFiles["markdown"]; ok && ref.artifactID() != "" && result.Markdown == "" {
-			body, err := minerUV1DownloadFile(ctx, client, baseURL, token, ref.artifactID())
+			body, err := minerUDownloadFile(ctx, client, baseURL, token, baseURL+"/v1/files/"+ref.artifactID()+"/content")
 			if err != nil {
 				if artifactErr == nil {
 					artifactErr = fmt.Errorf("download markdown: %w", err)
@@ -481,14 +482,62 @@ func minerUV1DownloadHTTPClient(apiOrigin string) *http.Client {
 	}
 }
 
-func minerUV1DownloadFile(ctx context.Context, client *http.Client, baseURL, token, fileID string) ([]byte, error) {
+// minerUPutUploadBytes uploads the raw file bytes to an upload URL with the
+// given method (PUT unless the server said otherwise), applying the supplied
+// headers and attaching the bearer token only when the URL is same-origin
+// with the API base, so signed object-storage links never see the token.
+func minerUPutUploadBytes(ctx context.Context, client *http.Client, token, baseURL, method, rawURL string, headers map[string]string, content []byte) error {
+	uploadURL, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid upload_url: %w", err)
+	}
+	if !uploadURL.IsAbs() {
+		base, err := url.Parse(baseURL + "/")
+		if err != nil {
+			return fmt.Errorf("invalid MinerU base URL: %w", err)
+		}
+		uploadURL = base.ResolveReference(uploadURL)
+	}
+	if method = strings.ToUpper(strings.TrimSpace(method)); method == "" {
+		method = http.MethodPut
+	}
+	req, err := http.NewRequestWithContext(ctx, method, uploadURL.String(), bytes.NewReader(content))
+	if err != nil {
+		return fmt.Errorf("create byte upload: %w", err)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	if minerUSameOrigin(baseURL, uploadURL.String()) {
+		applyMinerUAuth(req, token)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("byte upload: %w", err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("byte upload: HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// minerUDownloadFile GETs a MinerU artifact URL. Legacy 4.0 output_files ids
+// resolve to /v1/files/{id}/content; 4.1 tasks return the result_url directly
+// (a Files URL on local services, a signed object-storage link on SaaS). The
+// bearer token is attached only to same-origin URLs and stripped again on
+// every cross-origin redirect.
+func minerUDownloadFile(ctx context.Context, client *http.Client, baseURL, token, rawURL string) ([]byte, error) {
 	apiOrigin := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	dlClient := minerUV1DownloadHTTPClient(apiOrigin)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiOrigin+"/v1/files/"+fileID+"/content", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	applyMinerUAuth(req, token)
+	if minerUSameOrigin(apiOrigin, rawURL) {
+		applyMinerUAuth(req, token)
+	}
 	resp, err := dlClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -502,6 +551,155 @@ func minerUV1DownloadFile(ctx context.Context, client *http.Client, baseURL, tok
 		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 	return body, nil
+}
+
+// errMinerUTasksUnavailable marks a MinerU server without the 4.1 Tasks API:
+// POST /v1/tasks returned 404, so the caller falls back to the 4.0 legacy
+// cycle instead of surfacing the routing error.
+var errMinerUTasksUnavailable = errors.New("MinerU V1 tasks API unavailable")
+
+// MinerU 4.1 Tasks API payload. Every response is a complete snapshot whose
+// absent fields carry no value: an upload slot only exists while the file is
+// actually waiting for bytes.
+type minerUTaskUpload struct {
+	URL       string            `json:"url"`
+	Headers   map[string]string `json:"headers"`
+	ExpiresAt int64             `json:"expires_at"`
+}
+
+type minerUTaskFile struct {
+	FileID    string            `json:"file_id"`
+	FileName  string            `json:"file_name"`
+	Status    string            `json:"status"`
+	Upload    *minerUTaskUpload `json:"upload"`
+	ResultURL string            `json:"result_url"`
+	Error     *minerUV1Error    `json:"error"`
+}
+
+// minerUTaskResponse decodes both the 202 creation receipt and the GET detail
+// snapshot.
+type minerUTaskResponse struct {
+	TaskID string           `json:"task_id"`
+	Status string           `json:"status"`
+	Error  *minerUV1Error   `json:"error"`
+	Files  []minerUTaskFile `json:"files"`
+}
+
+// parseMinerUTasks runs the MinerU 4.1 Tasks cycle: POST /v1/tasks with a
+// JSON manifest → PUT raw bytes to the returned upload URL (no completion
+// call) → poll GET /v1/tasks/{id} → download the file's result_url.
+// output_formats ["default"] yields one ZIP per input holding markdown.md
+// plus the other general results, which minerUMarkdownFromZip unpacks.
+// Creation returns errMinerUTasksUnavailable on 404 so ParseMinerUV1 can run
+// the legacy 4.0 cycle; every other creation failure is a real error (401/400/
+// 503 carry protocol meaning and must not be masked by a legacy retry).
+func parseMinerUTasks(ctx context.Context, client *http.Client, token, baseURL, name string, content []byte, sum [32]byte, backend, ocrMode string) (*MinerUV1Result, error) {
+	var created minerUTaskResponse
+	if err := minerUJSON(ctx, client, http.MethodPost, baseURL+"/v1/tasks", token, map[string]any{
+		"files": []map[string]any{{
+			"file_name": name,
+			"bytes":     len(content),
+			"sha256sum": hex.EncodeToString(sum[:]),
+		}},
+		"tier":           MinerUTierFromBackend(backend),
+		"ocr_mode":       MinerUV1OCRMode(ocrMode),
+		"output_formats": []string{"default"},
+	}, &created); err != nil {
+		var statusErr *minerUHTTPStatusError
+		if errors.As(err, &statusErr) && statusErr.Status == http.StatusNotFound {
+			return nil, fmt.Errorf("%w: %w", errMinerUTasksUnavailable, err)
+		}
+		return nil, fmt.Errorf("create task: %w", err)
+	}
+	if created.TaskID == "" {
+		return nil, fmt.Errorf("MinerU V1 tasks creation missing task_id")
+	}
+	if len(created.Files) == 0 {
+		return nil, fmt.Errorf("MinerU V1 tasks creation missing files")
+	}
+
+	// Upload only when a snapshot offers a slot: the receipt can arrive before
+	// the upload is prepared, and a waiting file without an upload means poll
+	// on. A successful PUT is never repeated.
+	uploaded := false
+	if upload := created.Files[0].Upload; upload != nil {
+		if err := minerUPutUploadBytes(ctx, client, token, baseURL, http.MethodPut, upload.URL, upload.Headers, content); err != nil {
+			return nil, err
+		}
+		uploaded = true
+	}
+
+	task := &created
+	pollWait := minerUV1PollInitial
+	for !minerUV1Terminal(task.Status) {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(pollWait):
+		}
+		if pollWait < minerUV1PollMax {
+			pollWait *= 2
+			if pollWait > minerUV1PollMax {
+				pollWait = minerUV1PollMax
+			}
+		}
+		var detail minerUTaskResponse
+		if err := minerUJSON(ctx, client, http.MethodGet, baseURL+"/v1/tasks/"+url.PathEscape(created.TaskID), token, nil, &detail); err != nil {
+			return nil, fmt.Errorf("poll task: %w", err)
+		}
+		task = &detail
+		if !uploaded && len(task.Files) > 0 && task.Files[0].Upload != nil {
+			if err := minerUPutUploadBytes(ctx, client, token, baseURL, http.MethodPut, task.Files[0].Upload.URL, task.Files[0].Upload.Headers, content); err != nil {
+				return nil, err
+			}
+			uploaded = true
+		}
+	}
+	switch task.Status {
+	case "failed", "canceled":
+		return nil, minerUTaskStatusError(task.Status, task.Error, task.Files)
+	}
+
+	result := &MinerUV1Result{}
+	for _, file := range task.Files {
+		if file.Status != "completed" || file.ResultURL == "" {
+			continue
+		}
+		body, err := minerUDownloadFile(ctx, client, baseURL, token, file.ResultURL)
+		if err != nil {
+			return nil, fmt.Errorf("download task result: %w", err)
+		}
+		if len(result.Zip) == 0 {
+			result.Zip = body
+		}
+		if result.Markdown == "" {
+			if md, err := minerUMarkdownFromZip(body); err == nil {
+				result.Markdown = md
+			}
+		}
+	}
+	if len(result.Zip) == 0 && strings.TrimSpace(result.Markdown) == "" {
+		return nil, minerUTaskStatusError(task.Status, task.Error, task.Files)
+	}
+	return result, nil
+}
+
+// minerUTaskStatusError names a terminal task status and its first error:
+// the snapshot-level error wins over per-file errors, matching how the
+// response nests them.
+func minerUTaskStatusError(status string, taskErr *minerUV1Error, files []minerUTaskFile) error {
+	msg := status
+	if taskErr != nil && strings.TrimSpace(taskErr.Message) != "" {
+		msg = taskErr.Message
+	} else {
+		for i := range files {
+			if files[i].Error != nil && strings.TrimSpace(files[i].Error.Message) != "" {
+				msg = files[i].Error.Message
+				break
+			}
+		}
+	}
+	return fmt.Errorf("MinerU V1 task %s: %s", status, msg)
 }
 
 // minerUMarkdownFromZip prefers a .md member, then content_list.json text,

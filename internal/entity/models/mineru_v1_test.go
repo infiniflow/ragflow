@@ -160,9 +160,9 @@ func TestMinerUV1DownloadStripsAuthOnCrossOriginRedirect(t *testing.T) {
 	}))
 	defer api.Close()
 
-	body, err := minerUV1DownloadFile(context.Background(), minerUHTTPClient(), api.URL, "secret-token", "out-1")
+	body, err := minerUDownloadFile(context.Background(), minerUHTTPClient(), api.URL, "secret-token", api.URL+"/v1/files/out-1/content")
 	if err != nil {
-		t.Fatalf("minerUV1DownloadFile: %v", err)
+		t.Fatalf("minerUDownloadFile: %v", err)
 	}
 	if body == nil || string(body) != "artifact" {
 		t.Fatalf("body = %q", body)
@@ -392,5 +392,220 @@ func TestMinerUProbeGETKeepsStatusWhenBodyReadFails(t *testing.T) {
 	client = &http.Client{Transport: minerUFailTransport{}}
 	if _, err = minerUProbeGET(context.Background(), client, "http://mineru.example/v1/health", ""); err == nil {
 		t.Fatal("probe error = nil, want the transport error when no status was received")
+	}
+}
+
+func TestParseMinerUV1TasksFlow(t *testing.T) {
+	orig := minerUV1PollInitial
+	minerUV1PollInitial = time.Millisecond
+	t.Cleanup(func() { minerUV1PollInitial = orig })
+
+	var (
+		mu         sync.Mutex
+		created    map[string]any
+		gotBytes   []byte
+		uploadHdr  string
+		uploadAuth bool
+		polls      int
+	)
+	zipBuf := minerUTestZip(t, "markdown.md", "# Tasks\n\nFrom 4.1.\n")
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/tasks":
+			var payload map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&payload)
+			mu.Lock()
+			created = payload
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"task_id":"task-1","status":"waiting-file","files":[{"file_id":"file-1","file_name":"sample.pdf","status":"waiting-file","upload":{"url":"/v1/tasks/task-1/uploads/file-1","headers":{"X-Up":"1"},"expires_at":1800003600}}]}`))
+		case r.Method == http.MethodPut && r.URL.Path == "/v1/tasks/task-1/uploads/file-1":
+			mu.Lock()
+			uploadHdr = r.Header.Get("X-Up")
+			uploadAuth = r.Header.Get("Authorization") != ""
+			gotBytes, _ = io.ReadAll(r.Body)
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/tasks/task-1":
+			mu.Lock()
+			polls++
+			n := polls
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			if n < 2 {
+				_, _ = w.Write([]byte(`{"task_id":"task-1","status":"pending","progress":{"completed":0,"failed":0,"total":1},"files":[{"file_id":"file-1","file_name":"sample.pdf","status":"pending"}]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"task_id":"task-1","status":"completed","progress":{"completed":1,"failed":0,"total":1},"files":[{"file_id":"file-1","file_name":"sample.pdf","status":"completed","parse":{"tier":"standard","duration_ms":8000},"result_url":"` + server.URL + `/v1/files/file-1/content"}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/file-1/content":
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(zipBuf)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	result, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", "ocr", 5*time.Second)
+	if err != nil {
+		t.Fatalf("ParseMinerUV1: %v", err)
+	}
+	if result.Markdown != "# Tasks\n\nFrom 4.1.\n" {
+		t.Fatalf("markdown = %q", result.Markdown)
+	}
+	if len(result.Zip) == 0 {
+		t.Fatal("expected zip artifact")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	files, _ := created["files"].([]any)
+	if len(files) != 1 {
+		t.Fatalf("creation files = %v", created["files"])
+	}
+	file, _ := files[0].(map[string]any)
+	if file["file_name"] != "sample.pdf" {
+		t.Fatalf("file_name = %v", file["file_name"])
+	}
+	if file["bytes"] != float64(8) {
+		t.Fatalf("bytes = %v, want 8", file["bytes"])
+	}
+	if sum, _ := file["sha256sum"].(string); len(sum) != 64 {
+		t.Fatalf("sha256sum = %v, want 64 hex chars", file["sha256sum"])
+	}
+	if file["file_id"] != nil || file["client_file_id"] != nil {
+		t.Fatalf("client must not send file_id/client_file_id: %v", file)
+	}
+	if created["tier"] != "basic" {
+		t.Fatalf("tier = %v, want basic (mapped from pipeline)", created["tier"])
+	}
+	if created["ocr_mode"] != "ocr" {
+		t.Fatalf("ocr_mode = %v, want ocr", created["ocr_mode"])
+	}
+	if formats, _ := created["output_formats"].([]any); len(formats) != 1 || formats[0] != "default" {
+		t.Fatalf("output_formats = %v, want [default]", created["output_formats"])
+	}
+	if !bytes.Equal(gotBytes, []byte("%PDF-1.4")) {
+		t.Fatalf("uploaded bytes = %q", gotBytes)
+	}
+	if uploadHdr != "1" {
+		t.Fatalf("upload headers not applied: X-Up = %q", uploadHdr)
+	}
+	if !uploadAuth {
+		t.Fatal("same-origin upload must carry the bearer token")
+	}
+}
+
+func TestParseMinerUV1TasksUploadSlotArrivesOnPoll(t *testing.T) {
+	orig := minerUV1PollInitial
+	minerUV1PollInitial = time.Millisecond
+	t.Cleanup(func() { minerUV1PollInitial = orig })
+
+	var (
+		mu       sync.Mutex
+		uploaded bool
+		polls    int
+	)
+	zipBuf := minerUTestZip(t, "markdown.md", "# Late slot\n")
+
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/tasks":
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"task_id":"task-2","status":"waiting-file","files":[{"file_id":"file-2","file_name":"sample.pdf","status":"waiting-file"}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/tasks/task-2":
+			mu.Lock()
+			polls++
+			n := polls
+			uploadedAlready := uploaded
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			switch {
+			case n == 1:
+				_, _ = w.Write([]byte(`{"task_id":"task-2","status":"waiting-file","files":[{"file_id":"file-2","status":"waiting-file","upload":{"url":"/v1/tasks/task-2/uploads/file-2","headers":{},"expires_at":1800003600}}]}`))
+			case n == 2 && !uploadedAlready:
+				t.Error("upload slot was offered but no PUT arrived before the next poll")
+				_, _ = w.Write([]byte(`{"task_id":"task-2","status":"waiting-file","files":[{"file_id":"file-2","status":"waiting-file"}]}`))
+			default:
+				_, _ = w.Write([]byte(`{"task_id":"task-2","status":"completed","files":[{"file_id":"file-2","status":"completed","result_url":"` + server.URL + `/v1/files/file-2/content"}]}`))
+			}
+		case r.Method == http.MethodPut && r.URL.Path == "/v1/tasks/task-2/uploads/file-2":
+			mu.Lock()
+			uploaded = true
+			mu.Unlock()
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/file-2/content":
+			_, _ = w.Write(zipBuf)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	result, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "standard", "auto", 5*time.Second)
+	if err != nil {
+		t.Fatalf("ParseMinerUV1: %v", err)
+	}
+	if result.Markdown != "# Late slot\n" {
+		t.Fatalf("markdown = %q", result.Markdown)
+	}
+}
+
+func TestParseMinerUV1TasksFailedFileSurfacesError(t *testing.T) {
+	orig := minerUV1PollInitial
+	minerUV1PollInitial = time.Millisecond
+	t.Cleanup(func() { minerUV1PollInitial = orig })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/tasks":
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{"task_id":"task-3","status":"waiting-file","files":[{"file_id":"file-3","status":"waiting-file","upload":{"url":"/v1/tasks/task-3/uploads/file-3","headers":{},"expires_at":1800003600}}]}`))
+		case r.Method == http.MethodPut && r.URL.Path == "/v1/tasks/task-3/uploads/file-3":
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/tasks/task-3":
+			_, _ = w.Write([]byte(`{"task_id":"task-3","status":"partial","files":[{"file_id":"file-3","status":"failed","error":{"code":"render_failed","message":"page render failed"}}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	_, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", "auto", 5*time.Second)
+	if err == nil {
+		t.Fatal("expected error for failed task file")
+	}
+	if !strings.Contains(err.Error(), "partial") || !strings.Contains(err.Error(), "page render failed") {
+		t.Fatalf("error = %q, want partial status and file error", err.Error())
+	}
+}
+
+func TestParseMinerUV1TasksCreationErrorIsNotMaskedByLegacy(t *testing.T) {
+	var legacyCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/tasks":
+			http.Error(w, `{"error":{"code":"invalid_api_key","message":"bad key"}}`, http.StatusUnauthorized)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+			legacyCalls.Add(1)
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	_, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", "auto", 5*time.Second)
+	if err == nil {
+		t.Fatal("expected the 401 creation error")
+	}
+	if !strings.Contains(err.Error(), "401") {
+		t.Fatalf("error = %q, want the 401 status", err.Error())
+	}
+	if legacyCalls.Load() != 0 {
+		t.Fatal("legacy cycle must not run for a non-404 creation failure")
 	}
 }
