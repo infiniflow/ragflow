@@ -3,8 +3,10 @@
 package pdfoxide
 
 import (
+	"context"
 	"image"
 	"math"
+	"sync"
 
 	"ragflow/internal/deepdoc/parser/pdf/pdfium"
 )
@@ -20,9 +22,21 @@ type Char struct {
 }
 
 // Engine wraps pdf_oxide to extract chars and render pages.
+//
+// rawData and doc belong to exactly one document (NewEngine opens one and
+// Close releases it), so the per-document lookups below are cached on the
+// engine: the byte-level /Rotate and /CropBox scan runs once, and pdfium's
+// page sizes are read in one pass instead of one full document reload per
+// page.
 type Engine struct {
 	doc     *Document
 	rawData []byte
+
+	mu         sync.Mutex
+	directives map[int]pageDirectives
+	// pageDims is nil until the document-wide size pass completes; a non-nil
+	// map therefore means "cached and complete".
+	pageDims map[int][2]float64
 }
 
 // NewEngine opens a PDF from bytes and returns an Engine.
@@ -35,6 +49,54 @@ func NewEngine(pdfBytes []byte) (*Engine, error) {
 }
 
 func (e *Engine) RawData() []byte { return e.rawData }
+
+// loadPageDims fills pageDims with every page's post-rotation size from a
+// single pdfium pass. Only a complete table is cached: a partial one would
+// pin the failure for the rest of the document, so an incomplete pass leaves
+// the cache empty and the next page retries — the same retry the previous
+// per-page lookup got.
+func (e *Engine) loadPageDims() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.pageDims != nil {
+		return
+	}
+	n, err := e.doc.PageCount()
+	if err != nil || n <= 0 {
+		return
+	}
+	idxs := make([]int, n)
+	for i := range idxs {
+		idxs[i] = i
+	}
+	sizes, _, _ := pdfium.PageSizes(context.Background(), e.rawData, idxs)
+	if len(sizes) == n {
+		e.pageDims = sizes
+	}
+}
+
+// pageSizeFromCache reports the post-rotation size of one page when the
+// document-wide pass has already recorded it.
+func (e *Engine) pageSizeFromCache(pageNum int) (float64, float64, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	d, ok := e.pageDims[pageNum]
+	if !ok {
+		return 0, 0, false
+	}
+	return d[0], d[1], true
+}
+
+// pageDirective returns the cached /Rotate and /CropBox of one page, scanning
+// the raw bytes on first use.
+func (e *Engine) pageDirective(pageNum int) pageDirectives {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.directives == nil {
+		e.directives = scanPageDirectives(e.rawData)
+	}
+	return e.directives[pageNum]
+}
 
 func (e *Engine) ExtractChars(pageNum int) ([]Char, error) {
 	chars, err := e.doc.GetDedupePageChars(pageNum, 0.5)
@@ -52,15 +114,17 @@ func (e *Engine) ExtractChars(pageNum int) ([]Char, error) {
 	//    If dimensions are swapped, the page has implicit rotation
 	//    (inherited /Rotate or ContentBox rotation).
 	rawW, rawH, _ := e.doc.PageSize(pageNum)
-	effW, effH, pdfErr := pdfium.PageSize(e.rawData, pageNum)
-	if pdfErr != nil {
+	e.loadPageDims()
+	effW, effH, cached := e.pageSizeFromCache(pageNum)
+	if !cached {
 		effW, effH = rawW, rawH
 	}
 
 	dimSwapped := rawW > 0 && rawH > 0 && effW > 0 && effH > 0 &&
 		math.Abs(rawW-effH) < 1 && math.Abs(rawH-effW) < 1
 
-	rawRot := parsePageRotationFromRaw(e.rawData, pageNum)
+	dir := e.pageDirective(pageNum)
+	rawRot := dir.rotate
 
 	needsRotate := false
 	rotation90 := false
@@ -86,7 +150,7 @@ func (e *Engine) ExtractChars(pageNum int) ([]Char, error) {
 
 	// CropBox correction — shift origin if CropBox differs from MediaBox.
 	var cropDX, cropDY float64
-	realCrop, hasCrop := parseCropBoxFromRaw(e.rawData, pageNum)
+	realCrop, hasCrop := dir.cropBox, dir.hasCrop
 	if hasCrop {
 		cropH := realCrop[3] - realCrop[1]
 		oxideCropH := rawH
@@ -173,51 +237,6 @@ func (e *Engine) ExtractChars(pageNum int) ([]Char, error) {
 	return result, nil
 }
 
-// parsePageRotationFromRaw scans raw PDF bytes for /Rotate entries.
-// Returns the rotation value for the given page index, or 0 if not found.
-// NOTE: This only finds /Rotate defined directly on page objects.
-// Inherited /Rotate (from parent Pages dict) is not detected here but
-// is caught by the dimension-comparison fallback in ExtractChars.
-func parsePageRotationFromRaw(data []byte, pageIdx int) int {
-	var rotations []int
-	rest := data
-	for {
-		idx := -1
-		for i := 0; i < len(rest)-7; i++ {
-			if rest[i] == '/' && rest[i+1] == 'R' && rest[i+2] == 'o' &&
-				rest[i+3] == 't' && rest[i+4] == 'a' && rest[i+5] == 't' &&
-				rest[i+6] == 'e' {
-				idx = i
-				break
-			}
-		}
-		if idx < 0 {
-			break
-		}
-		rest = rest[idx+7:]
-		for len(rest) > 0 && (rest[0] == ' ' || rest[0] == '\t' || rest[0] == '\n' || rest[0] == '\r') {
-			rest = rest[1:]
-		}
-		if len(rest) == 0 {
-			break
-		}
-		val := 0
-		i := 0
-		for i < len(rest) && rest[i] >= '0' && rest[i] <= '9' {
-			val = val*10 + int(rest[i]-'0')
-			i++
-		}
-		if i > 0 {
-			rotations = append(rotations, val)
-		}
-		rest = rest[i:]
-	}
-	if pageIdx < len(rotations) {
-		return rotations[pageIdx]
-	}
-	return 0
-}
-
 // RenderPageImage uses pdfium for page rendering — pdfium correctly
 // applies /Rotate so the output matches character coordinates and DLA.
 // There is no pdf_oxide fallback because pdf_oxide does not apply
@@ -236,8 +255,14 @@ func (e *Engine) RenderPage(pageNum int, dpi float64) ([]byte, error) {
 
 // PageSize returns the effective page dimensions via pdfium, which
 // correctly applies /Rotate.  pdf_oxide's own PageSize returns raw
-// (unrotated) dimensions.
+// (unrotated) dimensions. Sizes come from the document-wide pass once it has
+// run; before that (and for a page pdfium cannot size) it falls back to the
+// previous per-call path.
 func (e *Engine) PageSize(pageNum int) (float64, float64, error) {
+	e.loadPageDims()
+	if w, h, ok := e.pageSizeFromCache(pageNum); ok {
+		return w, h, nil
+	}
 	w, h, err := pdfium.PageSize(e.rawData, pageNum)
 	if err != nil {
 		return e.doc.PageSize(pageNum)
