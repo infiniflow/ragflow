@@ -548,3 +548,34 @@ func TestCollectChannelAgentAnswerReturnsFallbackOnTerminalEvents(t *testing.T) 
 		})
 	}
 }
+
+func TestHandleIncomingMessageFailsWhenAgentRuntimeIsUnconfigured(t *testing.T) {
+	db := setupChatChannelServiceTestDB(t)
+	agentID := "agent-1"
+	createServiceTestChannel(t, db, &entity.ChatChannel{
+		ID:       "cc-agent",
+		TenantID: "tenant-1",
+		Name:     "bot-a",
+		Channel:  "wecom",
+		Config:   entity.JSONMap{"token": "abc"},
+		AgentID:  &agentID,
+		Status:   1,
+	})
+
+	SetChatChannelAgentService(nil)
+	t.Cleanup(func() { SetChatChannelAgentService(nil) })
+
+	answer, err := NewChatChannelService().HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{
+		Channel:   "wecom",
+		AccountID: "cc-agent",
+		ChatID:    "chat-1",
+		MessageID: "msg-1",
+		Text:      "hello",
+	})
+	if err == nil {
+		t.Fatal("expected an error when the agent runtime is not configured")
+	}
+	if answer != "" {
+		t.Fatalf("answer = %q, want empty", answer)
+	}
+}

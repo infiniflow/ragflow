@@ -426,7 +426,7 @@ func (s *ChatChannelService) runChannelAgent(ctx context.Context, channel *entit
 	agentService := getChatChannelAgentService()
 	if agentService == nil {
 		common.Warn("chat channel agent runtime is not configured", zap.String("channel_id", channel.ID))
-		return "", nil
+		return "", errors.New("chat channel agent runtime is not configured")
 	}
 	agentCtx := permission.WithIdentity(ctx, channel.TenantID, channel.TenantID)
 	if err := validateChannelAgentTarget(agentCtx, agentID); err != nil {
