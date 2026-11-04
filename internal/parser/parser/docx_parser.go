@@ -34,6 +34,7 @@ var docxExtract = deepdocoffice.OpenAndExtract
 type DOCXParser struct {
 	libType            string
 	textOnly           bool
+	FlattenMediaToText bool
 	RemoveTOC          bool
 	RemoveHeaderFooter bool
 }
@@ -47,6 +48,9 @@ func NewDOCXParser() *DOCXParser {
 func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
+	}
+	if v, ok := setup["flatten_media_to_text"].(bool); ok {
+		p.FlattenMediaToText = v
 	}
 	if v, ok := setup["remove_toc"].(bool); ok {
 		p.RemoveTOC = v
@@ -113,6 +117,11 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if p.RemoveTOC {
 		outlines := extractDOCXOutlines(irJSON)
 		sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
+	}
+	// flatten_media_to_text: normalize table and image items to text
+	// (mirrors Python parser.py:922-938 flatten_media_to_text).
+	if p.FlattenMediaToText {
+		sections = flattenDOCXMediaToText(sections)
 	}
 	if len(sections) == 0 {
 		sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}

@@ -8,6 +8,9 @@ import (
 	"io"
 	"regexp"
 	"strings"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/parser/tableutil"
 )
 
 // docxOutline is a heading outline entry extracted from the
@@ -212,3 +215,28 @@ func removeDOCXHeaderFooterSections(items []map[string]any, hfTexts map[string]b
 	}
 	return filtered
 }
+
+// flattenDOCXMediaToText normalizes media items (tables and images) to plain
+// text items when flatten_media_to_text is enabled. Structured tables are
+// rendered into HTML strings (preserving cells and captions), and image and
+// table items have their doc_type_kwd rewritten to "text". Mirrors Python
+// parser.py:922-938.
+func flattenDOCXMediaToText(items []map[string]any) []map[string]any {
+	for _, item := range items {
+		if table, ok := item["table"].(*entity.TableData); ok && table != nil {
+			text, _ := item["text"].(string)
+			rendered := tableutil.RenderTableHTML(table)
+			if text != "" {
+				item["text"] = strings.TrimSpace(rendered + "\n" + text)
+			} else {
+				item["text"] = rendered
+			}
+			delete(item, "table")
+			item["doc_type_kwd"] = "text"
+		} else if item["doc_type_kwd"] == "image" || item["doc_type_kwd"] == "table" {
+			item["doc_type_kwd"] = "text"
+		}
+	}
+	return items
+}
+
