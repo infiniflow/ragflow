@@ -18,7 +18,7 @@ package dao
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"strings"
@@ -499,134 +499,52 @@ func (dao *FileDAO) GetDatasetIDByFileID(ctx context.Context, db *gorm.DB, fileI
 	return datasetIDs, nil
 }
 
-// reparentAndDeleteFolder safely removes a duplicate folder by first
-// reparenting any child records to the kept folder, then hard-deleting
-// the duplicate row. This prevents orphaned children when cleaning up
-// duplicates created by race conditions.
-func reparentAndDeleteFolder(ctx context.Context, db *gorm.DB, dupID, keepID string) error {
-	// Reparent any child files/folders from the duplicate to the kept folder
-	if err := db.WithContext(ctx).Model(&entity.File{}).
-		Where("parent_id = ?", dupID).
-		Update("parent_id", keepID).Error; err != nil {
-		return fmt.Errorf("failed to reparent children from %s to %s: %w", dupID, keepID, err)
-	}
-
-	// Hard-delete the duplicate folder row
-	if err := db.WithContext(ctx).Unscoped().Where("id = ?", dupID).Delete(&entity.File{}).Error; err != nil {
-		return fmt.Errorf("failed to delete duplicate folder %s: %w", dupID, err)
-	}
-
-	return nil
-}
-
 // DatasetFolderName is the folder name for dataset
 const DatasetFolderName = ".knowledgebase"
 
 // SkillsFolderName is the folder name for skills
 const SkillsFolderName = "skills"
 
-// InitDatasetDocs initializes dataset documents for tenant.
-// This matches Python's FileService.init_dataset_docs method.
-// Deduplicates duplicate entries that may have been created by
-// concurrent race conditions (TOCTOU).
+// InitDatasetDocs initializes dataset folders and document mappings.
 func (dao *FileDAO) InitDatasetDocs(ctx context.Context, db *gorm.DB, rootID, tenantID string, file2DocumentDAO *File2DocumentDAO) error {
-	var existing []*entity.File
-	err := db.WithContext(ctx).Where("name = ? AND parent_id = ? AND tenant_id = ?", DatasetFolderName, rootID, tenantID).
-		Order("create_time ASC").
-		Find(&existing).Error
-	if err != nil {
+	var existing []entity.File
+	if err := db.WithContext(ctx).Where("name = ? AND parent_id = ? AND tenant_id = ?", DatasetFolderName, rootID, tenantID).Limit(2).Find(&existing).Error; err != nil {
 		return err
 	}
-
-	if len(existing) > 0 {
-		if len(existing) > 1 {
-			common.Warn("Found duplicate folders under root, keeping only the first",
-				zap.Int("duplicates", len(existing)), zap.String("name", DatasetFolderName), zap.String("root_id", rootID))
-			keepID := existing[0].ID
-			for _, dup := range existing[1:] {
-				if err := reparentAndDeleteFolder(ctx, db, dup.ID, keepID); err != nil {
-					common.Error("Failed to deduplicate folder", err, zap.String("folder_id", dup.ID))
-				}
-			}
-		}
+	if len(existing) > 1 || (len(existing) == 1 && existing[0].Type != "folder") {
+		common.Warn("Retaining ambiguous dataset root", zap.String("tenant_id", tenantID))
 		return nil
 	}
-
-	datasetFolder, err := dao.newAFileFromDataset(ctx, db, tenantID, DatasetFolderName, rootID)
-	if err != nil {
+	if len(existing) == 1 {
+		return nil
+	}
+	if _, err := datasetRoot(ctx, db, tenantID, true); err != nil {
 		return err
 	}
-
 	var datasets []entity.Knowledgebase
-	err = db.WithContext(ctx).Select("id", "name").
-		Where("tenant_id = ?", tenantID).
-		Find(&datasets).Error
-	if err != nil {
+	if err := db.WithContext(ctx).Select("id", "name", "tenant_id").Where("tenant_id = ?", tenantID).Find(&datasets).Error; err != nil {
 		return err
 	}
-
-	for _, ds := range datasets {
-		var datasetFolderForDataset *entity.File
-		datasetFolderForDataset, err = dao.newAFileFromDataset(ctx, db, tenantID, ds.Name, datasetFolder.ID)
+	for _, kb := range datasets {
+		folder, err := dao.EnsureDatasetFolder(ctx, db, &kb)
 		if err != nil {
-			continue
+			if errors.Is(err, ErrDatasetFolderConflict) {
+				common.Warn("Skipping ambiguous dataset folder", zap.String("kb_id", kb.ID))
+				continue
+			}
+			return err
 		}
-
 		var documents []entity.Document
-		err = db.WithContext(ctx).Where("kb_id = ?", ds.ID).Find(&documents).Error
-		if err != nil {
-			continue
+		if err := db.WithContext(ctx).Where("kb_id = ?", kb.ID).Find(&documents).Error; err != nil {
+			return err
 		}
-
 		for _, doc := range documents {
-			if err = dao.addFileFromKB(ctx, db, &doc, datasetFolderForDataset.ID, tenantID, file2DocumentDAO); err != nil {
+			if err := dao.addFileFromKB(ctx, db, &doc, folder.ID, tenantID, file2DocumentDAO); err != nil {
 				return err
 			}
 		}
 	}
-
 	return nil
-}
-
-// newAFileFromDataset creates a new file from knowledgebase, or returns the existing one.
-// Deduplicates duplicate entries that may have been created by race conditions.
-func (dao *FileDAO) newAFileFromDataset(ctx context.Context, db *gorm.DB, tenantID, name, parentID string) (*entity.File, error) {
-	var existingFiles []*entity.File
-	err := db.WithContext(ctx).Where("tenant_id = ? AND parent_id = ? AND name = ?", tenantID, parentID, name).Order("create_time ASC").Find(&existingFiles).Error
-	if err != nil {
-		return nil, err
-	}
-
-	if len(existingFiles) > 0 {
-		if len(existingFiles) > 1 {
-			common.Warn("Found duplicate entries under parent, keeping only the first",
-				zap.Int("duplicates", len(existingFiles)), zap.String("name", name), zap.String("parent_id", parentID))
-			keepID := existingFiles[0].ID
-			for _, dup := range existingFiles[1:] {
-				if err = reparentAndDeleteFolder(ctx, db, dup.ID, keepID); err != nil {
-					common.Error("Failed to deduplicate file entry", err, zap.String("entry_id", dup.ID))
-				}
-			}
-		}
-		return existingFiles[0], nil
-	}
-
-	fileID := common.GenerateToken()
-	file := &entity.File{
-		ID:         fileID,
-		ParentID:   parentID,
-		TenantID:   tenantID,
-		CreatedBy:  tenantID,
-		Name:       name,
-		Type:       "folder",
-		Size:       0,
-		SourceType: "knowledgebase",
-	}
-
-	if err = db.WithContext(ctx).Create(file).Error; err != nil {
-		return nil, err
-	}
-	return file, nil
 }
 
 // addFileFromKB adds a file record from knowledgebase document

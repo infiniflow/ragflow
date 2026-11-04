@@ -18,6 +18,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -203,8 +204,46 @@ func loadUserDeletionData(ctx context.Context, userID string) (*userDeletionData
 	if err := fileQuery.Find(&data.files).Error; err != nil {
 		return nil, fmt.Errorf("load files: %w", err)
 	}
-	for _, file := range data.files {
-		data.fileIDs = append(data.fileIDs, file.ID)
+	if len(data.files) > 0 {
+		tenantIDs := make([]string, 0)
+		seenTenants := make(map[string]bool)
+		for _, file := range data.files {
+			if !seenTenants[file.TenantID] {
+				seenTenants[file.TenantID] = true
+				tenantIDs = append(tenantIDs, file.TenantID)
+			}
+		}
+		bindings := db.Model(&entity.Knowledgebase{}).Where("tenant_id IN ? AND folder_id IS NOT NULL AND folder_id <> ''", tenantIDs)
+		if len(data.datasetIDs) > 0 {
+			bindings = bindings.Where("id NOT IN ?", data.datasetIDs)
+		}
+		var folderIDs []string
+		if err := bindings.Pluck("folder_id", &folderIDs).Error; err != nil {
+			return nil, fmt.Errorf("load surviving dataset folders: %w", err)
+		}
+		retained := make(map[string]bool)
+		for _, folderID := range folderIDs {
+			for currentID := folderID; currentID != "" && !retained[currentID]; {
+				var folder entity.File
+				if err := db.Select("id", "parent_id").Where("id = ?", currentID).Take(&folder).Error; err != nil {
+					if errors.Is(err, gorm.ErrRecordNotFound) {
+						break
+					}
+					return nil, fmt.Errorf("load surviving dataset folder path: %w", err)
+				}
+				retained[currentID] = true
+				currentID = folder.ParentID
+			}
+		}
+		files := data.files[:0]
+		for _, file := range data.files {
+			if file.Type == "folder" && retained[file.ID] {
+				continue
+			}
+			files = append(files, file)
+			data.fileIDs = append(data.fileIDs, file.ID)
+		}
+		data.files = files
 	}
 	if data.ownedTenantID != "" {
 		if err := db.Select("id", "tenant_id").Where("tenant_id = ?", data.ownedTenantID).Find(&data.memories).Error; err != nil {

@@ -447,6 +447,17 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			updates["parser_config"] = effectiveParserConfig
 		}
 
+		if name, ok := updates["name"].(string); ok && name != lockedKB.Name {
+			if folderErr := dao.NewFileDAO().RenameDatasetFolder(ctx, tx, lockedKB, name); folderErr != nil {
+				if errors.Is(folderErr, dao.ErrDatasetFolderConflict) {
+					txCode = common.CodeDataError
+				} else {
+					txCode = common.CodeServerError
+				}
+				return folderErr
+			}
+		}
+
 		if len(updates) > 0 {
 			if err = tx.Model(&entity.Knowledgebase{}).Where("id = ?", lockedKB.ID).Updates(updates).Error; err != nil {
 				if dao.IsDuplicateKeyErr(err) {

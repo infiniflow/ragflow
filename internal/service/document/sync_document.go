@@ -128,7 +128,7 @@ func (s *DocumentService) Upsert(ctx context.Context, input service.DocumentUpse
 func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.DocumentUpsertInput, filename, location, filetype, contentHash, tenantID string) (service.DocumentUpsertResult, error) {
 	// base info
 	kb := &input.TaskContext.Knowledgebase
-	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
+	kbFolder, err := s.ensureKBFolder(ctx, kb)
 	if err != nil {
 		return service.DocumentUpsertResult{}, err
 	}
@@ -275,7 +275,7 @@ func (s *DocumentService) updateSyncDocumentFile(ctx context.Context, input serv
 
 	// no updates
 	if len(mappings) == 0 || mappings[0].FileID == nil {
-		kbFolder, folderErr := s.ensureKBFolder(ctx, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID)
+		kbFolder, folderErr := s.ensureKBFolder(ctx, &input.TaskContext.Knowledgebase)
 		if folderErr != nil {
 			return folderErr
 		}

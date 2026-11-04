@@ -36,7 +36,7 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 	// Resolve (and create if needed) the dataset's file-manager folder up front.
 	// Without the File / file2document linkage the document list (which inner-joins
 	// file2document + file) would never surface the uploaded files.
-	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
+	kbFolder, err := s.ensureKBFolder(ctx, kb)
 	if err != nil {
 		return nil, []string{err.Error()}
 	}
@@ -127,7 +127,7 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 		return nil, common.CodeServerError, err
 	}
 
-	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
+	kbFolder, err := s.ensureKBFolder(ctx, kb)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -144,49 +144,9 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 	return docToRawMap(doc), common.CodeSuccess, nil
 }
 
-// ensureKBFolder resolves (creating as needed) the per-dataset file-manager
-// folder: root -> .knowledgebase -> <dataset name>. Mirrors Python
-// get_root_folder + get_kb_folder + new_a_file_from_kb.
-func (s *DocumentService) ensureKBFolder(ctx context.Context, kb *entity.Knowledgebase, tenantID string) (*entity.File, error) {
-	root, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	kbRoot, err := s.newAFileFromKB(ctx, tenantID, knowledgebaseFolderName, root.ID)
-	if err != nil {
-		return nil, err
-	}
-	return s.newAFileFromKB(ctx, kb.TenantID, kb.Name, kbRoot.ID)
-}
-
-// newAFileFromKB returns the existing folder named name under parentID, or
-// creates it. Mirrors Python FileService.new_a_file_from_kb.
-func (s *DocumentService) newAFileFromKB(ctx context.Context, tenantID, name, parentID string) (*entity.File, error) {
-	existingFolders, err := s.fileDAO.Query(ctx, dao.DB, name, parentID, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	for _, f := range existingFolders {
-		if f.TenantID == tenantID {
-			return f, nil
-		}
-	}
-	loc := ""
-	folder := &entity.File{
-		ID:         common.GenerateToken(),
-		ParentID:   parentID,
-		TenantID:   tenantID,
-		CreatedBy:  tenantID,
-		Name:       name,
-		Type:       "folder",
-		Size:       0,
-		Location:   &loc,
-		SourceType: string(entity.FileSourceKnowledgebase),
-	}
-	if err := s.fileDAO.Create(ctx, dao.DB, folder); err != nil {
-		return nil, err
-	}
-	return folder, nil
+// ensureKBFolder returns the dataset folder, creating it when no association exists.
+func (s *DocumentService) ensureKBFolder(ctx context.Context, kb *entity.Knowledgebase) (*entity.File, error) {
+	return s.fileDAO.EnsureDatasetFolder(ctx, dao.DB, kb)
 }
 
 // addFileFromKB links a document into the file manager: a File row under the
@@ -237,7 +197,7 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 		return nil, common.CodeServerError, fmt.Errorf("storage not initialized")
 	}
 
-	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
+	kbFolder, err := s.ensureKBFolder(ctx, kb)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}

@@ -263,10 +263,6 @@ type valueInfo struct {
 	firstOrder int
 }
 
-// knowledgebaseFolderName is the file-manager folder under each tenant's root
-// that holds per-dataset subfolders, mirroring Python KNOWLEDGEBASE_FOLDER_NAME.
-const knowledgebaseFolderName = ".knowledgebase"
-
 // MetadataUpdate is one update item: set key to value.
 type MetadataUpdate struct {
 	Key       string      `json:"key"`

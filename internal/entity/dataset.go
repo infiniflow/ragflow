@@ -101,6 +101,7 @@ const (
 // Knowledgebase represents the knowledge base model
 type Knowledgebase struct {
 	ID                     string     `gorm:"column:id;primaryKey;size:32" json:"id"`
+	FolderID               *string    `gorm:"column:folder_id;size:32" json:"-"`
 	Avatar                 *string    `gorm:"column:avatar;type:longtext" json:"avatar,omitempty"`
 	TenantID               string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	Name                   string     `gorm:"column:name;size:128;not null;index" json:"name"`

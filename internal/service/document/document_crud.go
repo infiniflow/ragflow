@@ -269,6 +269,17 @@ func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, del
 	return deleted, nil
 }
 
+// prepareDatasetFolderForDocumentRemoval records directory identity when it can
+// be established. Ambiguous or missing directories do not prevent document cleanup.
+func (s *DocumentService) prepareDatasetFolderForDocumentRemoval(ctx context.Context, kb *entity.Knowledgebase) error {
+	err := s.fileDAO.BindExistingDatasetFolder(ctx, dao.DB, kb)
+	if errors.Is(err, dao.ErrDatasetFolderConflict) || dao.IsNotFoundErr(err) {
+		common.Warn(fmt.Sprintf("Preserving unresolved dataset folder during document removal for %s: %v", kb.ID, err))
+		return nil
+	}
+	return err
+}
+
 // deleteDocumentFull performs full document cleanup. Non-critical failures
 // are tolerated (logged and continue). Critical failures (e.g. document or
 // KB not found) return an error immediately.
@@ -279,6 +290,10 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 	}
 	unlock := lockDocumentParse(docID)
 	defer unlock()
+
+	if err := s.prepareDatasetFolderForDocumentRemoval(ctx, kb); err != nil {
+		return err
+	}
 
 	// Settle and delete the task before purging its cache state. A conditional
 	// delete failure leaves the document and the newly active run intact.
@@ -320,6 +335,10 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	}
 	unlock := lockDocumentParse(docID)
 	defer unlock()
+
+	if err := s.prepareDatasetFolderForDocumentRemoval(ctx, kb); err != nil {
+		return err
+	}
 
 	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
 	if typeErr != nil {

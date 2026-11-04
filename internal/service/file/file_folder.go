@@ -727,6 +727,19 @@ func (s *FileService) moveEntryRecursive(ctx context.Context, userID string, sou
 		if err != nil {
 			return fmt.Errorf("failed to query existing folders: %w", err)
 		}
+		var datasetIDs []string
+		if err := dao.DB.WithContext(ctx).Model(&entity.Knowledgebase{}).Where("folder_id = ?", sourceFile.ID).Limit(1).Pluck("id", &datasetIDs).Error; err != nil {
+			return err
+		}
+		if len(datasetIDs) != 0 {
+			if len(existingFolders) != 0 {
+				return errors.New("duplicated file name in the same folder")
+			}
+			return s.fileDAO.UpdateByID(ctx, dao.DB, sourceFile.ID, map[string]interface{}{
+				"parent_id": destFolder.ID,
+				"name":      effectiveName,
+			})
+		}
 		var newFolder *entity.File
 		if len(existingFolders) > 0 {
 			// Prevent moving a folder into itself (self-target merge)

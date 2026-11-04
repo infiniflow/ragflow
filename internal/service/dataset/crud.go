@@ -524,6 +524,14 @@ func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledge
 	}
 
 	if err := dao.DB.Transaction(func(tx *gorm.DB) error {
+		fileDAO := dao.NewFileDAO()
+		folder, folderErr := fileDAO.GetDatasetFolder(ctx, tx, kb)
+		if folderErr != nil {
+			if !errors.Is(folderErr, dao.ErrDatasetFolderConflict) && !dao.IsNotFoundErr(folderErr) {
+				return folderErr
+			}
+			common.Warn("Retaining dataset folder with ambiguous association", zap.String("kb_id", kb.ID))
+		}
 		// Delete index tasks referencing this KB.
 		if taskIDs := datasetIndexTaskIDs(kb); len(taskIDs) > 0 {
 			if err := tx.Where("id IN ?", taskIDs).Delete(&entity.Task{}).Error; err != nil {
@@ -545,7 +553,10 @@ func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledge
 				return fmt.Errorf("delete dataset error for %s", kb.ID)
 			}
 			if len(fileIDs) > 0 {
-				if err := tx.Unscoped().Where("id IN ? AND source_type = ?", fileIDs, string(entity.FileSourceKnowledgebase)).Delete(&entity.File{}).Error; err != nil {
+				if err := tx.Unscoped().Where("id IN ? AND source_type = ?", fileIDs, string(entity.FileSourceKnowledgebase)).
+					Where("type <> ?", "folder").
+					Where("id NOT IN (?)", tx.Model(&entity.File2Document{}).Select("file_id").Where("file_id IS NOT NULL")).
+					Delete(&entity.File{}).Error; err != nil {
 					return fmt.Errorf("delete dataset error for %s", kb.ID)
 				}
 			}
@@ -554,12 +565,10 @@ func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledge
 			}
 		}
 
-		// Delete the KB folder file record.
-		if err := tx.Unscoped().
-			Where("source_type = ? AND type = ? AND name = ? AND tenant_id = ?",
-				string(entity.FileSourceKnowledgebase), "folder", kb.Name, kb.TenantID).
-			Delete(&entity.File{}).Error; err != nil {
-			return fmt.Errorf("delete dataset error for %s", kb.ID)
+		if folder != nil {
+			if err := fileDAO.DeleteEmptyDatasetFolder(ctx, tx, folder.ID); err != nil {
+				return err
+			}
 		}
 
 		if err := tx.Where("id = ?", kb.ID).Delete(&entity.Knowledgebase{}).Error; err != nil {

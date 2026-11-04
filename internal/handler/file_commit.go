@@ -124,16 +124,15 @@ func (h *FileCommitHandler) resolveDatasetFolderID(ctx context.Context, datasetI
 	if err != nil {
 		return "", err
 	}
-	files, err := h.fileDAO.Query(ctx, dao.DB, kb.Name, "", kb.TenantID)
+	folder, err := h.fileDAO.GetDatasetFolder(ctx, dao.DB, kb)
 	if err != nil {
 		return "", err
 	}
-	for _, f := range files {
-		if f.SourceType == string(entity.FileSourceKnowledgebase) && f.Type == "folder" && f.TenantID == kb.TenantID {
-			return f.ID, nil
-		}
+	if folder == nil {
+		return "", common.ErrNotFound
 	}
-	return "", common.ErrNotFound
+	return folder.ID, nil
+
 }
 
 // folderAccessible reports whether userID may access the given workspace

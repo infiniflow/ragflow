@@ -48,6 +48,32 @@ func (s *FileService) DeleteFiles(ctx context.Context, fileIDs []string) error {
 			continue
 		}
 		if file.Type == FileTypeFolder {
+			descendants, queryErr := s.fileDAO.ListDescendants(ctx, dao.DB, file.ID)
+			if queryErr != nil {
+				return queryErr
+			}
+			folderIDs := []string{file.ID}
+			for _, descendant := range descendants {
+				if descendant.Type == FileTypeFolder {
+					folderIDs = append(folderIDs, descendant.ID)
+				}
+			}
+			bound := false
+			for start := 0; start < len(folderIDs); start += 500 {
+				end := min(start+500, len(folderIDs))
+				var datasetIDs []string
+				if queryErr = dao.DB.WithContext(ctx).Model(&entity.Knowledgebase{}).Where("folder_id IN ?", folderIDs[start:end]).Limit(1).Pluck("id", &datasetIDs).Error; queryErr != nil {
+					return queryErr
+				}
+				if len(datasetIDs) != 0 {
+					bound = true
+					break
+				}
+			}
+			if bound {
+				common.Warn("Retaining directory tree containing a bound dataset folder", zap.String("folder_id", file.ID))
+				continue
+			}
 			if err = s.deleteFolderRecursive(ctx, file); err != nil {
 				return fmt.Errorf("failed to delete folder: %w", err)
 			}
