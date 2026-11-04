@@ -50,6 +50,14 @@ type pictureOCRAnalyzer struct {
 
 func (*pictureOCRAnalyzer) Health() bool { return true }
 
+func (*pictureOCRAnalyzer) DLA(context.Context, image.Image) ([]deepdoctype.DLARegion, error) {
+	return nil, nil
+}
+
+func (*pictureOCRAnalyzer) TSR(context.Context, image.Image) ([]deepdoctype.TSRCell, error) {
+	return nil, nil
+}
+
 func (a *pictureOCRAnalyzer) OCRDetect(ctx context.Context, img image.Image) ([]deepdoctype.OCRBox, error) {
 	if a.empty {
 		return nil, nil
@@ -176,8 +184,7 @@ func TestMaybeDispatchImage_ParseMethodModelDoesNotOverrideGlobalEnhancement(t *
 	setups := defaultSetups()
 	setups["image"]["parse_method"] = "custom-vlm@provider"
 
-	res, dispatched, err := maybeDispatchImage(
-		t.Context(),
+	res, dispatched, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(),
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"photo.png",
@@ -235,7 +242,7 @@ func TestMaybeDispatchImage_OCRWithoutEnhancementSkipsVision(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["image"]["parse_method"] = "ocr"
-	res, _, err := maybeDispatchImage(t.Context(), dao.DB, utility.FileTypeVISUAL, "photo.png", picturePNG(t), map[string]any{"tenant_id": "t1"}, setups, false, visionSettings{})
+	res, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), dao.DB, utility.FileTypeVISUAL, "photo.png", picturePNG(t), map[string]any{"tenant_id": "t1"}, setups, false, visionSettings{})
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
 	}
@@ -325,8 +332,7 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	setups["image"]["system_prompt"] = "自定义视觉提示"
 
 	ctx := t.Context()
-	res, dispatched, err := maybeDispatchImage(
-		ctx,
+	res, dispatched, err := maybeDispatchImage(ctx, parser.NewPictureParser(),
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
@@ -377,8 +383,7 @@ func TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage(t *testing.T) {
 	setups["image"]["lang"] = "Chinese"
 	setups["image"]["system_prompt"] = ""
 
-	_, _, err := maybeDispatchImage(
-		t.Context(),
+	_, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(),
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
@@ -448,8 +453,7 @@ func TestMaybeDispatchImage_GlobalVisionPromptDrivesImage(t *testing.T) {
 			setups := defaultSetups()
 			setups["image"]["lang"] = tc.familyLang
 			setups["image"]["system_prompt"] = tc.familyPrompt
-			_, _, err := maybeDispatchImage(
-				t.Context(), dao.DB, utility.FileTypeVISUAL, "test.png", picturePNG(t),
+			_, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), dao.DB, utility.FileTypeVISUAL, "test.png", picturePNG(t),
 				tc.inputs, setups, true,
 				visionSettings{systemPrompt: tc.globalPrompt},
 			)
@@ -484,8 +488,7 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 
 	setups := defaultSetups()
 	ctx := t.Context()
-	res, dispatched, err := maybeDispatchImage(
-		ctx,
+	res, dispatched, err := maybeDispatchImage(ctx, parser.NewPictureParser(),
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
@@ -533,8 +536,7 @@ func TestMaybeDispatchImage_HardcodesJSONOutput(t *testing.T) {
 
 	setups := defaultSetups()
 	ctx := t.Context()
-	res, _, err := maybeDispatchImage(
-		ctx,
+	res, _, err := maybeDispatchImage(ctx, parser.NewPictureParser(),
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
@@ -670,8 +672,7 @@ func TestMaybeDispatchImage_UsesConfiguredVLMModel(t *testing.T) {
 	setups := defaultSetups()
 	setups["image"]["parse_method"] = "custom-vlm@provider"
 
-	_, dispatched, err := maybeDispatchImage(
-		t.Context(),
+	_, dispatched, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(),
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
@@ -805,7 +806,7 @@ func TestMaybeDispatchImageWithoutOCRTextKeepsImage(t *testing.T) {
 		for _, method := range []string{"ocr", ""} {
 			setups := defaultSetups()
 			setups["image"]["parse_method"] = method
-			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, setups, false, visionSettings{})
+			result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, setups, false, visionSettings{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -829,7 +830,7 @@ func TestMaybeDispatchImageUnhealthyOCRKeepsImage(t *testing.T) {
 	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
 		return &unhealthyPictureOCRAnalyzer{}, true
 	}
-	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, defaultSetups(), false, visionSettings{})
+	result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, defaultSetups(), false, visionSettings{})
 	if err != nil || result.Err != nil {
 		t.Fatalf("unhealthy OCR should degrade without an error: err = %v, result.Err = %v", err, result.Err)
 	}
@@ -845,7 +846,7 @@ func TestMaybeDispatchImageRejectsUndecodableBytes(t *testing.T) {
 	for _, method := range []string{"ocr", "custom-vlm"} {
 		setups := defaultSetups()
 		setups["image"]["parse_method"] = method
-		_, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", []byte("bad image"), nil, setups, false, visionSettings{})
+		_, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", []byte("bad image"), nil, setups, false, visionSettings{})
 		if err == nil || !strings.Contains(err.Error(), "decode") {
 			t.Fatalf("method %q: error = %v, want decode error", method, err)
 		}
@@ -865,7 +866,7 @@ func TestMaybeDispatchImageReleasesAdmissionAfterPanic(t *testing.T) {
 				t.Error("expected OCR analyzer panic")
 			}
 		}()
-		_, _, _ = maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", data, nil, defaultSetups(), false, visionSettings{})
+		_, _, _ = maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", data, nil, defaultSetups(), false, visionSettings{})
 	}()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
@@ -892,7 +893,7 @@ func TestMaybeDispatchImageDecodesRasterOnlyForOCR(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			setups := defaultSetups()
 			setups["image"]["parse_method"] = method
-			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
+			result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL,
 				"photo.png", []byte(magic), map[string]any{"tenant_id": "t1"}, setups, true, visionSettings{})
 			if method == "ocr" {
 				if err == nil || !strings.Contains(err.Error(), "raster decoding requested") {
@@ -935,7 +936,7 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 	}
 
 	t.Run("ocr-on", func(t *testing.T) {
-		res, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+		res, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
 			map[string]any{"tenant_id": "t1"}, ocrSetups(true), false, visionSettings{})
 		if err != nil || !handled {
 			t.Fatalf("err = %v, handled = %v", err, handled)
@@ -945,7 +946,7 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 		}
 	})
 	t.Run("ocr-off-no-enhancement-keeps-empty", func(t *testing.T) {
-		res, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+		res, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
 			map[string]any{"tenant_id": "t1"}, ocrSetups(false), false, visionSettings{})
 		if err != nil || !handled {
 			t.Fatalf("err = %v, handled = %v", err, handled)
@@ -961,7 +962,7 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 		}
 	})
 	t.Run("ocr-off-vision-only", func(t *testing.T) {
-		res, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+		res, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
 			map[string]any{"tenant_id": "t1"}, ocrSetups(false), true, visionSettings{})
 		if err != nil || !handled {
 			t.Fatalf("err = %v, handled = %v", err, handled)
@@ -973,7 +974,7 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 	t.Run("switch-beats-stale-parse-method", func(t *testing.T) {
 		setups := defaultSetups() // image still carries parse_method:"ocr"
 		setups["image"]["ocr_enabled"] = false
-		res, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+		res, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
 			map[string]any{"tenant_id": "t1"}, setups, false, visionSettings{})
 		if err != nil {
 			t.Fatal(err)
@@ -1003,7 +1004,7 @@ func TestMaybeDispatchImageBlankVisionDescriptionWarns(t *testing.T) {
 		return blankAnswerVisionDriver{}, "vision", &modelModule.APIConfig{}, 0, nil
 	}
 
-	res, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+	res, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
 		map[string]any{"tenant_id": "t1"}, imageSwitchSetups(t, false), true, visionSettings{})
 	if err != nil || !handled {
 		t.Fatalf("err = %v, handled = %v", err, handled)

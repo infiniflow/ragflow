@@ -84,7 +84,7 @@ func TestCreateDataset_BindsLatestPipelineVersion(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 
 	canvasID := "0123456789abcdef0123456789abcdef"
 	versionID := "version0000000000000000000000aa"
@@ -99,7 +99,7 @@ func TestCreateDataset_BindsLatestPipelineVersion(t *testing.T) {
 		PipelineID:        &canvasID,
 		PipelineVersionID: &versionID,
 		ParseType:         &parseType,
-	}, testDatasetSubject("tenant-1"))
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%d", err, code)
 	}
@@ -117,7 +117,7 @@ func TestCreateDataset_BuiltInHasNoPipelineVersion(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 
 	parseType := 1
 	parserID := "general"
@@ -125,7 +125,7 @@ func TestCreateDataset_BuiltInHasNoPipelineVersion(t *testing.T) {
 		Name:      "ds-builtin",
 		ParserID:  &parserID,
 		ParseType: &parseType,
-	}, testDatasetSubject("tenant-1"))
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%d", err, code)
 	}
@@ -156,7 +156,7 @@ func TestUpdateDataset_RewritesVersionOnPipelineChange(t *testing.T) {
 	// C5/G3: switching the bound pipeline now requires an explicit version (the
 	// empty version is no longer auto-backfilled to the new canvas latest). Supply
 	// canvas2's version to verify the rewrite still pins the chosen version.
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-change", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-change", service.UpdateDatasetRequest{
 		PipelineID:        &canvas2,
 		ParseType:         &parseType,
 		PipelineVersionID: &ver2,
@@ -185,7 +185,7 @@ func TestUpdateDataset_PreservesVersionWhenPipelineUnchanged(t *testing.T) {
 
 	parseType := 2
 	name := "kb-preserve-renamed"
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-preserve", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-preserve", service.UpdateDatasetRequest{
 		Name:       &name,
 		PipelineID: &canvas1,
 		ParseType:  &parseType,
@@ -276,7 +276,7 @@ func TestCreateDataset_BindsExplicitPipelineVersion(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 
 	canvasID := "0123456789abcdef0123456789abcdef"
 	verOld := "version0000000000000000000000aa"
@@ -291,7 +291,7 @@ func TestCreateDataset_BindsExplicitPipelineVersion(t *testing.T) {
 		PipelineID:        &canvasID,
 		PipelineVersionID: &verOld, // explicitly pin the older version
 		ParseType:         &parseType,
-	}, testDatasetSubject("tenant-1"))
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%d", err, code)
 	}
@@ -310,7 +310,7 @@ func TestCreateDataset_RejectsForeignPipelineVersion(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 
 	canvas1 := "0123456789abcdef0123456789abcdef"
 	canvas2 := "fedcba9876543210fedcba9876543210"
@@ -327,7 +327,7 @@ func TestCreateDataset_RejectsForeignPipelineVersion(t *testing.T) {
 		PipelineID:        &canvas1,
 		PipelineVersionID: &verForeign, // belongs to canvas2
 		ParseType:         &parseType,
-	}, testDatasetSubject("tenant-1"))
+	})
 	if err == nil && code == common.CodeSuccess {
 		t.Fatalf("expected rejection of foreign pipeline version, got success")
 	}
@@ -351,7 +351,7 @@ func TestUpdateDataset_RebindsExplicitVersion(t *testing.T) {
 	seedBoundKB(t, db, "kb-repin", canvas1, verOld)
 
 	parseType := 2
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-repin", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-repin", service.UpdateDatasetRequest{
 		PipelineID:        &canvas1,
 		PipelineVersionID: &verNew,
 		ParseType:         &parseType,
@@ -411,7 +411,7 @@ func TestUpdateDataset_EmptyVersionClearsPin(t *testing.T) {
 
 	parseType := 2
 	empty := ""
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-clear", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-clear", service.UpdateDatasetRequest{
 		PipelineID:        &canvas1,
 		ParseType:         &parseType,
 		PipelineVersionID: &empty,
@@ -456,7 +456,7 @@ func TestUpdateDataset_VersionChangeResetsParserConfigToNewVersionDefault(t *tes
 
 	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	parseType := 2
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-c3", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-c3", service.UpdateDatasetRequest{
 		PipelineID:        &canvas1,
 		PipelineVersionID: &verNew,
 		ParseType:         &parseType,
@@ -528,7 +528,7 @@ func TestUpdateDataset_VersionChangeKeepsSubmittedParserConfig(t *testing.T) {
 
 	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	parseType := 2
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-c3-echo", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-c3-echo", service.UpdateDatasetRequest{
 		PipelineID:        &canvas1,
 		PipelineVersionID: &verNew,
 		ParseType:         &parseType,
@@ -585,7 +585,7 @@ func TestUpdateDataset_SameVersionKeepsParserConfig(t *testing.T) {
 
 	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 	parseType := 2
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-c3-same", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-c3-same", service.UpdateDatasetRequest{
 		PipelineID:        &canvas1,
 		PipelineVersionID: &verOld, // same version, no change
 		ParseType:         &parseType,

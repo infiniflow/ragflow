@@ -152,7 +152,7 @@ func (s *ChatPipelineService) agenticRag(
 		// answer the run had just built and shipped an empty reply. Delivery is
 		// tried first and unconditionally, because out is buffered and the
 		// consumer always drains it.
-		emitResult := func(result AsyncChatResult) bool {
+		sendResult := func(result AsyncChatResult) bool {
 			select {
 			case out <- result:
 				return true
@@ -164,6 +164,32 @@ func (s *ChatPipelineService) agenticRag(
 			case <-ctx.Done():
 				return false
 			}
+		}
+		var answerFilter, reasoningFilter citationStreamFilter
+		emitResult := func(result AsyncChatResult) bool {
+			if !quote {
+				// Flush before a boundary so buffered text stays in its section.
+				if result.StartToThink || result.EndToThink || result.Final {
+					if text := reasoningFilter.flush(); text != "" {
+						if !sendResult(AsyncChatResult{Reasoning: text}) {
+							return false
+						}
+					}
+					if text := answerFilter.flush(); text != "" {
+						if !sendResult(AsyncChatResult{Answer: text}) {
+							return false
+						}
+					}
+				}
+				if !result.Final && (result.Answer != "" || result.Reasoning != "") {
+					result.Answer = answerFilter.write(result.Answer)
+					result.Reasoning = reasoningFilter.write(result.Reasoning)
+					if result.Answer == "" && result.Reasoning == "" {
+						return true
+					}
+				}
+			}
+			return sendResult(result)
 		}
 
 		chain, chainErr := s.agenticModelChain(runCtx, userID, chat)
@@ -307,7 +333,7 @@ func (s *ChatPipelineService) agenticRag(
 
 		// Citations off means neither the [ID:N] markers nor the reference
 		// payload, matching what the regular pipeline ships when quote is
-		// false. The answer text is still whatever the agent wrote.
+		// false.
 		answer := final
 		if reasoning.Len() > 0 {
 			answer = agentSessionMessageContent("\n\n"+final, reasoning.String())
@@ -315,8 +341,11 @@ func (s *ChatPipelineService) agenticRag(
 		reference := map[string]interface{}{}
 		if quote {
 			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), answer, registry)
-		} else if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
-			common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
+		} else {
+			if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
+				common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
+			}
+			answer = stripCitations(answer)
 		}
 		// What the turn cost, on the wire for the same reason the log line
 		// exists: nothing else tells the client. The chat page renders it under

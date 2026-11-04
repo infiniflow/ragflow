@@ -55,14 +55,14 @@ After knowledge artifacts are generated, check the generated results based on th
 
 For different knowledge artifact types, focus on the following checks:
 
-| Type | Check Focus |
-| --- | --- |
-| Graph | Whether entities are duplicated; whether relationship directions are correct; whether there are unsupported nodes or edges. |
-| Tree | Whether the hierarchy is clear; whether peer nodes are at similar abstraction levels; whether summaries are accurate. |
-| PageIndex | Whether chapter hierarchy is preserved; whether facts and conclusions come from the corresponding chapters. |
-| Mindmap | Whether the central topic is clear; whether branches are duplicated or crossed; whether node names are concise. |
-| Timeline | Whether time is accurate; whether event order is correct; whether relative time is misinterpreted. |
-| Wiki | Whether page topics are reasonable; whether links between pages are valid; whether facts are consistent with sources. |
+| Type      | Check Focus                                                                                                                 |
+|-----------|-----------------------------------------------------------------------------------------------------------------------------|
+| Graph     | Whether entities are duplicated; whether relationship directions are correct; whether there are unsupported nodes or edges. |
+| Tree      | Whether the hierarchy is clear; whether peer nodes are at similar abstraction levels; whether summaries are accurate.       |
+| PageIndex | Whether chapter hierarchy is preserved; whether facts and conclusions come from the corresponding chapters.                 |
+| Mindmap   | Whether the central topic is clear; whether branches are duplicated or crossed; whether node names are concise.             |
+| Timeline  | Whether time is accurate; whether event order is correct; whether relative time is misinterpreted.                          |
+| Wiki      | Whether page topics are reasonable; whether links between pages are valid; whether facts are consistent with sources.       |
 
 ## Update Knowledge Artifacts
 

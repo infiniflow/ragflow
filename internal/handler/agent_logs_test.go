@@ -124,7 +124,7 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
 		t.Fatalf("prepare agent log permission fixture: %v", err)
 	}
-	ctx = permission.WithSubject(ctx, permission.Subject{UserID: "u1", TenantID: "u1"})
+	ctx = permission.WithIdentity(ctx, "u1", "u1")
 
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
@@ -258,7 +258,7 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
 		t.Fatalf("prepare agent log permission fixture: %v", err)
 	}
-	ctx = permission.WithSubject(ctx, permission.Subject{UserID: "u1", TenantID: "u1"})
+	ctx = permission.WithIdentity(ctx, "u1", "u1")
 
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
@@ -493,12 +493,7 @@ func TestRespondWithDebugResult_Shape(t *testing.T) {
 	}
 }
 
-// TestRespondWithDebugResult_ErrorCarriesMessageID pins that a run failure
-// still surfaces the polling key: the response must keep a non-success code
-// (the existing contract forbids masking errors as success) BUT the error
-// envelope's data must carry message_id so the front-end can poll the failure
-// timeline that DebugLogSink.Flush already wrote to Redis.
-func TestRespondWithDebugResult_ErrorCarriesMessageID(t *testing.T) {
+func TestRespondWithDebugResult_ErrorOmitsData(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	w := httptest.NewRecorder()
@@ -508,15 +503,14 @@ func TestRespondWithDebugResult_ErrorCarriesMessageID(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v body=%s", err, w.Body.String())
 	}
-	if code, _ := resp["code"].(float64); int(code) == int(common.CodeSuccess) {
-		t.Fatalf("error case must not be success: %v", resp)
+	if code, _ := resp["code"].(float64); int(code) != int(common.CodeServerError) {
+		t.Fatalf("code=%v want %d", resp["code"], common.CodeServerError)
 	}
-	data, ok := resp["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("error envelope data must be an object carrying message_id: %v", resp)
+	if _, ok := resp["data"]; ok {
+		t.Fatalf("error envelope must omit data: %v", resp)
 	}
-	if data["message_id"] != "m-err" {
-		t.Fatalf("error envelope data.message_id=%v want m-err", data["message_id"])
+	if resp["message"] != "boom" {
+		t.Fatalf("message=%v want boom", resp["message"])
 	}
 }
 
@@ -663,7 +657,7 @@ func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
 		t.Fatalf("prepare agent log permission fixture: %v", err)
 	}
-	ctx = permission.WithSubject(ctx, permission.Subject{UserID: "u1", TenantID: "u1"})
+	ctx = permission.WithIdentity(ctx, "u1", "u1")
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
 	mr, err := miniredis.Run()

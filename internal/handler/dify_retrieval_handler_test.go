@@ -44,7 +44,7 @@ import (
 type mockKBService struct {
 	KBServiceIface
 	getKnowledgebaseByIDFn func(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
-	checkAccessFn          func(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error
+	checkAccessFn          func(ctx context.Context, datasetID string, operation permission.Operation) error
 }
 
 func (m *mockKBService) GetKnowledgebaseByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
@@ -56,9 +56,9 @@ func (m *mockKBService) GetKnowledgebaseByID(ctx context.Context, kbID string) (
 	}, nil
 }
 
-func (m *mockKBService) CheckResource(ctx context.Context, subject permission.Subject, resource permission.ResourceRef, operation permission.Operation) error {
+func (m *mockKBService) CheckResource(ctx context.Context, resource permission.ResourceRef, operation permission.Operation) error {
 	if m.checkAccessFn != nil {
-		return m.checkAccessFn(ctx, subject, resource.ID, operation)
+		return m.checkAccessFn(ctx, resource.ID, operation)
 	}
 	return nil
 }
@@ -207,8 +207,11 @@ func TestDifyRetrieval_HealthCheck(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["data"] != true {
-		t.Errorf("expected data=true, got %v", resp["data"])
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected success, got %v", resp)
+	}
+	if data, exists := resp["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 }
 
@@ -383,7 +386,7 @@ func TestDifyRetrieval_NoAuth(t *testing.T) {
 func TestDifyRetrieval_Unauthorized(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	kbSvc := &mockKBService{
-		checkAccessFn: func(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error {
+		checkAccessFn: func(ctx context.Context, datasetID string, operation permission.Operation) error {
 			if operation != permission.OperationUse {
 				t.Errorf("dataset operation = %q, want %q", operation, permission.OperationUse)
 			}

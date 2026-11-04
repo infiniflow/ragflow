@@ -37,59 +37,6 @@ type SearchResult struct {
 	Field       map[string]map[string]interface{} // id -> fields
 }
 
-// Rerank performs reranking based on whether a reranker model is provided
-// This implements the logic from rag/nlp/search.py L404-L429
-// Parameters:
-//   - rerankModel: the reranker model (can be nil)
-//   - sres: search results
-//   - query: the query string
-//   - tkWeight: weight for token similarity
-//   - vtWeight: weight for vector similarity
-//   - useInfinity: whether using Infinity engine
-//   - cfield: content field name (default: "content_ltks")
-//   - qb: QueryBuilder instance for token processing
-//
-// Returns:
-//   - sim: combined similarity scores
-//   - tsim: token similarity scores
-//   - vsim: vector similarity scores
-func Rerank(
-	ctx context.Context,
-	rerankModel *models.RerankModel,
-	chunks []map[string]interface{},
-	total int,
-	keywords []string,
-	questionVector []float64,
-	query string,
-	tkWeight, vtWeight float64,
-	useInfinity bool,
-	cfield string,
-	qb *QueryBuilder,
-	rankFeature map[string]float64,
-	language string,
-) (sim []float64, tsim []float64, vsim []float64, err error) {
-	// If reranker model is provided and there are results, use model reranking
-	if rerankModel != nil && total > 0 {
-		return RerankByModel(ctx, rerankModel, chunks, nil, nil, query, tkWeight, vtWeight, cfield, qb, rankFeature, language)
-	}
-
-	// Otherwise, use fallback logic based on engine type
-	if useInfinity {
-		// For Infinity: scores are already normalized before fusion
-		// Just extract the scores from results
-		if chunks == nil || total == 0 || len(chunks) == 0 {
-			return []float64{}, []float64{}, []float64{}, nil
-		}
-
-		sim, tsim, vsim = RerankInfinityFallback(chunks)
-		return sim, tsim, vsim, nil
-	}
-
-	// For Elasticsearch: need to perform reranking and apply rank features
-	sim, tsim, vsim = RerankStandard(chunks, keywords, questionVector, query, tkWeight, vtWeight, cfield, qb, rankFeature, language)
-	return sim, tsim, vsim, nil
-}
-
 // RerankByModel performs reranking using a reranker model
 func RerankByModel(
 	ctx context.Context,
@@ -318,32 +265,6 @@ func RerankStandard(
 
 	common.Info("RerankStandard completed", zap.Int("outputChunks", len(sim)))
 	return sim, tsim, vsim
-}
-
-// RerankInfinityFallback is used as a fallback when no reranker model is provided for Infinity engine.
-// Infinity can return scores in various field names (SCORE, score, SIMILARITY, etc.),
-// so we check multiple possible field names. If no score is found, we default to 1.0
-// to ensure the chunk passes through any similarity threshold filters.
-func RerankInfinityFallback(chunks []map[string]interface{}) (sim []float64, tsim []float64, vsim []float64) {
-	common.Info("RerankInfinityFallback started", zap.Int("chunkCount", len(chunks)))
-
-	sim = make([]float64, len(chunks))
-	for i, chunk := range chunks {
-		scoreFound := false
-		scoreFields := []string{"SCORE", "score", "SIMILARITY", "similarity", "_score", "score()", "similarity()"}
-		for _, field := range scoreFields {
-			if score, ok := chunk[field].(float64); ok {
-				sim[i] = score
-				scoreFound = true
-				break
-			}
-		}
-		if !scoreFound {
-			sim[i] = 1.0
-		}
-	}
-	common.Info("RerankInfinityFallback completed")
-	return sim, sim, sim
 }
 
 // HybridSimilarity calculates hybrid similarity between query and documents

@@ -108,7 +108,12 @@ type ListMCPServersResponse struct {
 const maxMCPFetchTimeoutSec = 60
 
 // CreateMCPServer creates an MCP server in the caller's owned tenant.
-func (s *MCPService) CreateMCPServer(ctx context.Context, userID string, req CreateMCPServerRequest) (*CreateMCPServerResponse, common.ErrorCode, error) {
+func (s *MCPService) CreateMCPServer(ctx context.Context, req CreateMCPServerRequest) (*CreateMCPServerResponse, common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		code, normalized := permissionresponse.Normalize(permission.ErrUnauthenticated)
+		return nil, code, normalized
+	}
 	if req.Timeout < 0 || req.Timeout > maxMCPFetchTimeoutSec {
 		return nil, common.CodeDataError, errors.New("invalid timeout")
 	}
@@ -128,7 +133,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, userID string, req Cre
 		code, normalized := permissionresponse.Normalize(err)
 		return nil, code, normalized
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, "mcp", permission.ActionWrite); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "mcp", permission.ActionWrite); err != nil {
 		code, normalized := permissionresponse.Normalize(err)
 		return nil, code, normalized
 	}
@@ -154,6 +159,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, userID string, req Cre
 	server := &entity.MCPServer{
 		ID:          common.GenerateUUID(),
 		Name:        req.Name,
+		UserID:      userID,
 		TenantID:    tenantID,
 		URL:         req.URL,
 		ServerType:  req.ServerType,
@@ -166,7 +172,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, userID string, req Cre
 		if err := s.mcpServerDAO.CreateMCPServer(ctx, tx, server); err != nil {
 			return err
 		}
-		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: server.ID})
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: server.ID})
 	}); err != nil {
 		return nil, common.CodeDataError, errors.New("failed to create MCP server")
 	}
@@ -368,8 +374,8 @@ func importedMCPHeaders(raw interface{}) (map[string]string, map[string]interfac
 	return headers, values, true
 }
 
-func (s *MCPService) GetMCPServer(ctx context.Context, userID, mcpID string) (*entity.MCPServer, common.ErrorCode, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: mcpID}, permission.OperationRead); err != nil {
+func (s *MCPService) GetMCPServer(ctx context.Context, mcpID string) (*entity.MCPServer, common.ErrorCode, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: mcpID}, permission.OperationRead); err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
@@ -384,8 +390,8 @@ func (s *MCPService) GetMCPServer(ctx context.Context, userID, mcpID string) (*e
 	return server, common.CodeSuccess, nil
 }
 
-func (s *MCPService) ExportMCPServer(ctx context.Context, userID, mcpID string) (*ExportMCPServerResponse, common.ErrorCode, error) {
-	server, code, err := s.GetMCPServer(ctx, userID, mcpID)
+func (s *MCPService) ExportMCPServer(ctx context.Context, mcpID string) (*ExportMCPServerResponse, common.ErrorCode, error) {
+	server, code, err := s.GetMCPServer(ctx, mcpID)
 	if err != nil {
 		return nil, code, err
 	}
@@ -393,8 +399,8 @@ func (s *MCPService) ExportMCPServer(ctx context.Context, userID, mcpID string) 
 }
 
 // UpdateMCPServer updates an MCP server the caller can manage.
-func (s *MCPService) UpdateMCPServer(ctx context.Context, userID, mcpID string, req UpdateMCPServerRequest) (*entity.MCPServer, common.ErrorCode, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: mcpID}, permission.OperationUpdate); err != nil {
+func (s *MCPService) UpdateMCPServer(ctx context.Context, mcpID string, req UpdateMCPServerRequest) (*entity.MCPServer, common.ErrorCode, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: mcpID}, permission.OperationUpdate); err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
@@ -541,7 +547,8 @@ func headerOrVariablesChanged(req UpdateMCPServerRequest) bool {
 }
 
 // ListMCPServers lists MCP servers belonging to a tenant the caller can use.
-func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
+func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
 	tenantID := strings.TrimSpace(requestedTenantID)
 	if tenantID == "" {
 		var err error
@@ -553,14 +560,14 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 			code, normalized := permissionresponse.NormalizeHidden(err)
 			return nil, code, normalized
 		}
-	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantMember); err != nil {
+	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 
 	checker := permission.NewDatabaseChecker(dao.DB)
-	subject := permission.Subject{UserID: userID, TenantID: tenantID}
-	queryScope, err := checker.QueryScope(ctx, subject, permission.ScopeQuery{
+	queryScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
+		TenantID:  tenantID,
 		Kind:      permission.ResourceKindMCPServer,
 		Operation: permission.OperationRead,
 	})
@@ -584,7 +591,7 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 		for _, server := range servers[offset:end] {
 			refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: server.ID})
 		}
-		accesses, err := checker.ResolveAccesses(ctx, subject, refs)
+		accesses, err := checker.ResolveAccesses(ctx, refs)
 		if err != nil {
 			code, normalized := permissionresponse.NormalizeHidden(err)
 			return nil, code, normalized
@@ -627,8 +634,8 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 }
 
 // DeleteMCPServer deletes an MCP server the caller can manage.
-func (s *MCPService) DeleteMCPServer(ctx context.Context, userID, mcpID string) (bool, common.ErrorCode, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: mcpID}, permission.OperationDelete); err != nil {
+func (s *MCPService) DeleteMCPServer(ctx context.Context, mcpID string) (bool, common.ErrorCode, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: mcpID}, permission.OperationDelete); err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return false, code, normalized
 	}
@@ -726,13 +733,17 @@ type ImportResult struct {
 }
 
 // ImportServers bulk-imports MCP servers from a {"mcpServers": {name: config}} map.
-func (s *MCPService) ImportServers(ctx context.Context, userID string, servers map[string]map[string]interface{}, timeoutSeconds float64) ([]ImportResult, error) {
+func (s *MCPService) ImportServers(ctx context.Context, servers map[string]map[string]interface{}, timeoutSeconds float64) ([]ImportResult, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
 	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		_, normalized := permissionresponse.Normalize(err)
 		return nil, normalized
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, "mcp", permission.ActionWrite); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "mcp", permission.ActionWrite); err != nil {
 		_, normalized := permissionresponse.Normalize(err)
 		return nil, normalized
 	}
@@ -826,6 +837,7 @@ func (s *MCPService) ImportServers(ctx context.Context, userID string, servers m
 
 		server := &entity.MCPServer{
 			ID:         common.GenerateUUID(),
+			UserID:     userID,
 			TenantID:   tenantID,
 			Name:       newName,
 			URL:        url,
@@ -837,7 +849,7 @@ func (s *MCPService) ImportServers(ctx context.Context, userID string, servers m
 			if err := s.mcpServerDAO.CreateMCPServer(ctx, tx, server); err != nil {
 				return err
 			}
-			return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: server.ID})
+			return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: server.ID})
 		}); err != nil {
 			results = append(results, ImportResult{Server: serverName, Success: false, Message: "Failed to create MCP server."})
 			continue
@@ -869,7 +881,7 @@ type TestServerRequest struct {
 }
 
 // TestServer opens a live MCP session and returns the tools the server advertises.
-func (s *MCPService) TestServer(ctx context.Context, userID, mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
+func (s *MCPService) TestServer(ctx context.Context, mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
 	if req == nil || req.URL == "" {
 		return nil, fmt.Errorf("%w: Invalid MCP url", ErrMCPInvalidURL)
 	}
@@ -877,7 +889,7 @@ func (s *MCPService) TestServer(ctx context.Context, userID, mcpID string, req *
 		return nil, ErrMCPInvalidType
 	}
 	if mcpID != mcpServerPreviewID {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: mcpID}, permission.OperationUpdate); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: mcpID}, permission.OperationUpdate); err != nil {
 			_, normalized := permissionresponse.NormalizeHidden(err)
 			return nil, normalized
 		}

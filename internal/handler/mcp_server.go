@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/mcp"
+	"ragflow/internal/permission"
 	"ragflow/internal/server/config"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
@@ -98,7 +99,7 @@ func (h *MCPServerHandler) NewStandalone(ctx context.Context, auth *AuthHandler,
 func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -117,9 +118,15 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 // mcpListDatasets wraps DatasetService.ListDatasets for the MCP tool handler,
 // filling in default values for parameters that the MCP tool does not expose.
 func mcpListDatasets(ctx context.Context, ds *dataset.DatasetService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+	contextUserID := permission.UserIDFromContext(ctx)
+	if contextUserID == "" {
+		ctx = permission.WithIdentity(ctx, userID, permission.TenantIDFromContext(ctx))
+	} else if contextUserID != userID {
+		return nil, 0, permission.ErrIdentityMismatch
+	}
 	data, total, _, err := ds.ListDatasets(ctx,
 		"", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}},
-		"", nil, "", userID, nil, "",
+		"", nil, "", nil, "",
 	)
 	return data, total, err
 }
@@ -127,7 +134,13 @@ func mcpListDatasets(ctx context.Context, ds *dataset.DatasetService, userID str
 // mcpListChats wraps ChatService.ListChats for the MCP tool handler,
 // converting the typed response into a generic []map[string]interface{}.
 func mcpListChats(ctx context.Context, chatService *service.ChatService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-	resp, err := chatService.ListChats(ctx, userID, "1", "", "", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}}, nil)
+	contextUserID := permission.UserIDFromContext(ctx)
+	if contextUserID == "" {
+		ctx = permission.WithIdentity(ctx, userID, permission.TenantIDFromContext(ctx))
+	} else if contextUserID != userID {
+		return nil, 0, permission.ErrIdentityMismatch
+	}
+	resp, err := chatService.ListChats(ctx, "1", "", "", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}}, nil)
 	if err != nil {
 		return nil, 0, err
 	}

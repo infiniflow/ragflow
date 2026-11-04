@@ -8,11 +8,13 @@ import {
 export function insertVariableTrigger(editor: LexicalEditor) {
   editor.update(
     () => {
+      const root = $getRoot();
+      const trigger = root.getTextContent() === '' ? '/' : ' /';
       const selection = $getSelection();
       if ($isRangeSelection(selection)) {
-        selection.insertText(' /');
+        selection.insertText(trigger);
       } else {
-        $getRoot().selectEnd().insertText(' /');
+        root.selectEnd().insertText(trigger);
       }
     },
     { discrete: true },

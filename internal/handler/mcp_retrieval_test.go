@@ -13,6 +13,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/ingestion/knowledge_compile"
 	"ragflow/internal/mcp"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 )
 
@@ -35,17 +36,17 @@ type recordingDatasetService struct {
 	searchErr error
 }
 
-func (f *recordingDatasetService) ListDatasets(_ context.Context, _, _ string, page, pageSize int, _ []dao.OrderTerm, _ string, _ []string, _, _ string, _ []string, _ string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
+func (f *recordingDatasetService) ListDatasets(_ context.Context, _, _ string, page, pageSize int, _ []dao.OrderTerm, _ string, _ []string, _ string, _ []string, _ string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	f.listCalls++
 	f.listPages = append(f.listPages, page)
 	f.listSizes = append(f.listSizes, pageSize)
 	return f.listRows, int64(len(f.listRows)), common.CodeSuccess, nil
 }
 
-func (f *recordingDatasetService) SearchDatasets(_ context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error) {
+func (f *recordingDatasetService) SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest) (*service.SearchDatasetsResponse, error) {
 	f.searchCalls++
 	f.request = req
-	f.searchUser = userID
+	f.searchUser = permission.UserIDFromContext(ctx)
 	if f.searchErr != nil {
 		return nil, f.searchErr
 	}
@@ -55,7 +56,7 @@ func (f *recordingDatasetService) SearchDatasets(_ context.Context, req *service
 	return f.response, nil
 }
 
-func (f *recordingDatasetService) GetDataset(_ context.Context, datasetID, _ string) (map[string]interface{}, common.ErrorCode, error) {
+func (f *recordingDatasetService) GetDataset(_ context.Context, datasetID string) (map[string]interface{}, common.ErrorCode, error) {
 	f.getCalls++
 	f.getIDs = append(f.getIDs, datasetID)
 	return map[string]interface{}{"name": "dataset-" + datasetID}, common.CodeSuccess, nil

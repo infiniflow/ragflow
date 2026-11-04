@@ -25,7 +25,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
 	statusInt, convErr := strconv.Atoi(status)
 	if convErr != nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("invalid status: %s", status)
@@ -53,7 +53,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 			hasError = true
 			continue
 		}
-		if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, datasetID, permission.OperationUpdate); err != nil {
+		if err := service.CheckDocumentAccess(ctx, doc.ID, datasetID, permission.OperationUpdate); err != nil {
 			result[docID] = map[string]string{"error": "Permission denied"}
 			if permissionresponse.IsPermissionError(err) {
 				permissionDenied = err
@@ -138,8 +138,8 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 	return result, common.CodeSuccess, nil
 }
 
-func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, documentID, datasetID, permission.OperationUpdate); err != nil {
+func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
+	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -159,7 +159,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 		return nil, common.CodeServerError, err
 	}
-	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, userID, doc, req, present); err != nil {
+	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, doc, req, present); err != nil {
 		return nil, code, err
 	}
 
@@ -246,7 +246,6 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	if (sel != nil || present["parser_config"]) && isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
 		accessErr := permission.NewDatabaseChecker(dao.DB).CheckDependency(
 			ctx,
-			permission.Subject{UserID: userID, TenantID: kb.TenantID},
 			permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: doc.ID},
 			permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effPipelineID)},
 			permission.OperationUpdate,
@@ -293,7 +292,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, parentChildOverrides)
 			llmID := ""
-			if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+			if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
 				llmID = service.ModelReference(modelInfo)
 			}
 			cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
@@ -324,7 +323,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 				zap.String("parserID", effParserID), zap.Error(cpErr))
 		} else {
 			llmID := ""
-			if modelInfo, llmErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); llmErr == nil {
+			if modelInfo, llmErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{TenantID: kb.TenantID}, entity.ModelTypeChat); llmErr == nil {
 				llmID = service.ModelReference(modelInfo)
 			} else if !errors.Is(llmErr, service.ErrNoDefaultModel) {
 				common.Warn("document pipeline/version switch: failed to resolve default chat model, falling back to no llm binding",
@@ -421,7 +420,7 @@ func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *e
 	}
 }
 
-func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, datasetID, documentID, userID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
+func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, datasetID, documentID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
 	if req == nil {
 		return common.CodeDataError, errors.New("invalid request payload")
 	}

@@ -152,7 +152,7 @@ func newIngestionMessagesHandlerRouter() *gin.Engine {
 	r := gin.New()
 	r.GET("/api/v1/datasets/:dataset_id/ingestions/:log_id/messages", func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "user-1"})
-		c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", "user-1"))
 		h.ListIngestionMessages(c)
 	})
 	return r
@@ -164,7 +164,7 @@ func newIngestionLogsHandlerRouter() *gin.Engine {
 	r := gin.New()
 	r.GET("/api/v1/datasets/:dataset_id/ingestions", func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "user-1"})
-		c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", "user-1"))
 		h.ListIngestionLogs(c)
 	})
 	return r
