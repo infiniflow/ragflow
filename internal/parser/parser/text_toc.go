@@ -26,6 +26,18 @@ func itemText(item map[string]any) string {
 	return ""
 }
 
+// cleanTOCItemText strips leading Markdown ATX heading markers (#), bullet markers
+// (*, -), and whitespace so TOC headings, list items, and body headings can match
+// on their core text. HTML and plain text items are unchanged.
+func cleanTOCItemText(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimLeft(s, "# \t")
+	if strings.HasPrefix(s, "* ") || strings.HasPrefix(s, "- ") {
+		s = strings.TrimSpace(s[2:])
+	}
+	return s
+}
+
 // removeContentsTable drops the table-of-contents entries from a list
 // of parser items. Mirrors Python rag/nlp/__init__.py:937-965
 // (remove_contents_table).
@@ -43,7 +55,8 @@ func removeContentsTable(items []map[string]any, eng bool) []map[string]any {
 	for i < len(items) {
 		text := itemText(items[i])
 		// Strip @@ suffix and whitespace before matching.
-		normalized := whitespacePattern.ReplaceAllString(strings.SplitN(text, "@@", 2)[0], "")
+		rawNoAt := strings.SplitN(text, "@@", 2)[0]
+		normalized := strings.TrimLeft(whitespacePattern.ReplaceAllString(rawNoAt, ""), "#")
 		if !tocHeadingPattern.MatchString(normalized) {
 			i++
 			continue
@@ -54,13 +67,15 @@ func removeContentsTable(items []map[string]any, eng bool) []map[string]any {
 			break
 		}
 		// Determine the prefix from the entry right after the heading.
-		prefix := tocPrefix(itemText(items[i]), eng)
+		cleanText := cleanTOCItemText(itemText(items[i]))
+		prefix := tocPrefix(cleanText, eng)
 		for prefix == "" {
 			items = append(items[:i], items[i+1:]...)
 			if i >= len(items) {
 				break
 			}
-			prefix = tocPrefix(itemText(items[i]), eng)
+			cleanText = cleanTOCItemText(itemText(items[i]))
+			prefix = tocPrefix(cleanText, eng)
 		}
 		if i >= len(items) || prefix == "" {
 			break
@@ -76,7 +91,8 @@ func removeContentsTable(items []map[string]any, eng bool) []map[string]any {
 			limit = len(items)
 		}
 		for j := i; j < limit; j++ {
-			if !strings.HasPrefix(itemText(items[j]), prefix) {
+			cleanTarget := cleanTOCItemText(itemText(items[j]))
+			if !strings.HasPrefix(cleanTarget, prefix) {
 				continue
 			}
 			// Drop entries [i, j).
@@ -126,7 +142,7 @@ func isEnglishTexts(texts []string) bool {
 	if len(sampled) == 0 {
 		return false
 	}
-	pat := regexp.MustCompile("^[" + "`" + "a-zA-Z0-9\\s.,':;/\"?<>!()-]+$")
+	pat := regexp.MustCompile("^[" + "`" + "a-zA-Z0-9\\s.,':;/\"?<>!()#*_-]+$")
 	eng := 0
 	for _, t := range sampled {
 		if pat.MatchString(t) {

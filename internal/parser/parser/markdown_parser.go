@@ -46,6 +46,7 @@ type MarkdownParser struct {
 	ParseMethod        string
 	VLM                map[string]any
 	FlattenMediaToText bool
+	RemoveTOC          bool
 	// FetchRemoteImages controls whether HTTP(S) Markdown images are
 	// downloaded. NewMarkdownParser enables it for direct Markdown parsing;
 	// callers normalizing untrusted backend responses may disable it.
@@ -83,6 +84,9 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["flatten_media_to_text"].(bool); ok {
 		p.FlattenMediaToText = v
+	}
+	if v, ok := setup["remove_toc"].(bool); ok {
+		p.RemoveTOC = v
 	}
 }
 
@@ -187,6 +191,12 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 		return ParseResult{Err: err}
 	}
 	if items == nil {
+		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
+	}
+	if p.RemoveTOC {
+		items = removeContentsTable(items, isEnglishItems(items))
+	}
+	if len(items) == 0 {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	var warnings []string
