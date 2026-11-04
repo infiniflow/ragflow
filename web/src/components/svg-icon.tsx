@@ -129,6 +129,7 @@ const svgIcons = [
   LLMFactory.Cheapaimodel,
   LLMFactory.Wally,
   LLMFactory.Synap,
+  LLMFactory.HopBase,
 ];
 
 export const LlmIcon = ({
