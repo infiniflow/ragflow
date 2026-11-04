@@ -37,6 +37,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/media"
@@ -368,7 +369,7 @@ func describeImage(
 	// (the key the Python parser's image branch used) stays readable for canvases
 	// saved before the move. Do NOT read setup["prompt"] here — that key is for
 	// the video family, not image.
-	if v := firstNonEmpty(vision.systemPrompt, getStringOr(setup, "system_prompt", "")); v != "" {
+	if v := kccommon.FirstNonEmpty(vision.systemPrompt, getStringOr(setup, "system_prompt", "")); v != "" {
 		prompt = v
 	}
 	messages := []modelModule.Message{{

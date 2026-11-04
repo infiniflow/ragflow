@@ -279,14 +279,61 @@ func VariantToTaskType(variant Variant) string {
 	}
 }
 
-// FirstNonEmpty returns the first string that is non-empty after trimming.
+// FirstNonEmpty returns the first string that is non-empty after trimming,
+// trimmed. Trimming the returned value preserves the historical contract of the
+// wiki pipeline's local helper (which trimmed and returned the trimmed value);
+// the consolidated callers rely on the trimmed result.
 func FirstNonEmpty(vals ...string) string {
 	for _, v := range vals {
 		if strings.TrimSpace(v) != "" {
-			return v
+			return strings.TrimSpace(v)
 		}
 	}
 	return ""
+}
+
+// MetaInt extracts an integer from a Product.Meta value that may be boxed as
+// int64, int, float64 (JSON number), or even a numeric string — the
+// engine/JSON round-trip does not guarantee a single numeric type. It returns
+// (0, false) when the key is absent or not a parseable number. The int64 form
+// is the canonical one so callers can store it directly without a narrowing
+// conversion.
+func MetaInt(meta map[string]any, key string) (int64, bool) {
+	switch v := meta[key].(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case string:
+		var n int64
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
+// MetaStringSlice reads a []string (or []any) Product.Meta key, keeping
+// non-empty strings and dropping empties. The []any branch filters empties; the
+// source data is produced empty-free by the dedup helpers, so this is
+// behavior-preserving with both legacy readers. Returns nil when no strings are
+// present.
+func MetaStringSlice(meta map[string]any, key string) []string {
+	switch v := meta[key].(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			if s, ok := e.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // VectorFromChunkMap extracts a pre-computed embedding from a chunk map. The
