@@ -27,6 +27,7 @@ type QueryVariableProps = {
   onChange?: (value: string) => void;
   pureQuery?: boolean;
   value?: string;
+  tooltip?: ReactNode;
 } & BuildQueryVariableOptions;
 
 // RAGFlowFormItem's FormControl (a Radix Slot) clones its child with a ref,
@@ -42,6 +43,7 @@ export const QueryVariable = forwardRef<HTMLButtonElement, QueryVariableProps>(
       onChange,
       pureQuery = false,
       value,
+      tooltip,
       nodeIds = [],
       variablesExceptOperatorOutputs,
     },
@@ -84,7 +86,9 @@ export const QueryVariable = forwardRef<HTMLButtonElement, QueryVariableProps>(
         render={({ field }) => (
           <FormItem className={className}>
             {hideLabel || (
-              <FormLabel tooltip={label ? undefined : t('flow.queryTip')}>
+              <FormLabel
+                tooltip={tooltip ?? (label ? undefined : t('flow.queryTip'))}
+              >
                 {label || t('flow.query')}
               </FormLabel>
             )}

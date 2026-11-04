@@ -49,6 +49,8 @@ type UserTenant struct {
 	TenantOCRID      *string `gorm:"column:tenant_ocr_id;size:32" json:"tenant_ocr_id,omitempty"`
 	DecisionID       *string `gorm:"column:decision_id;size:256" json:"decision_id,omitempty"`
 	TenantDecisionID *string `gorm:"column:tenant_decision_id;size:32" json:"tenant_decision_id,omitempty"`
+	ScoringID        *string `gorm:"column:scoring_id;size:256" json:"scoring_id,omitempty"`
+	TenantScoringID  *string `gorm:"column:tenant_scoring_id;size:32" json:"tenant_scoring_id,omitempty"`
 	BaseModel
 }
 

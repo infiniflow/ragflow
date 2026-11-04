@@ -37,6 +37,7 @@ var tenantDefaultModelColumns = []string{
 	"tts_id", "tenant_tts_id",
 	"ocr_id", "tenant_ocr_id",
 	"decision_id", "tenant_decision_id",
+	"scoring_id", "tenant_scoring_id",
 }
 
 type tenantDefaultModelsLegacySchema struct {
@@ -57,6 +58,8 @@ type tenantDefaultModelsLegacySchema struct {
 	TenantOCRID      *string `gorm:"column:tenant_ocr_id"`
 	DecisionID       *string `gorm:"column:decision_id"`
 	TenantDecisionID *string `gorm:"column:tenant_decision_id"`
+	ScoringID        *string `gorm:"column:scoring_id"`
+	TenantScoringID  *string `gorm:"column:tenant_scoring_id"`
 }
 
 func (tenantDefaultModelsLegacySchema) TableName() string {

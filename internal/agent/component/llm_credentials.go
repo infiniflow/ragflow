@@ -47,6 +47,10 @@ func resolveChatModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiK
 	return resolveModelRef(ctx, db, modelID, driver, apiKey, baseURL, entity.ModelTypeChat)
 }
 
+func resolveTypedModelRef(ctx context.Context, db *gorm.DB, modelType entity.ModelType, modelID, driver, apiKey, baseURL string) (string, string, string, string, error) {
+	return resolveModelRef(ctx, db, modelID, driver, apiKey, baseURL, modelType)
+}
+
 func resolveModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiKey, baseURL string, allowedTypes entity.ModelType) (string, string, string, string, error) {
 	originalModelID := modelID
 	if driver == "" && modelID != "" {
