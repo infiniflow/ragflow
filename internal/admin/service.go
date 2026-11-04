@@ -764,12 +764,7 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 	for _, serverStatus := range serverList {
 		now := time.Now()
 		serverItem := newServiceStatus(string(serverStatus.ServerType), serverStatus.ServerName, serverStatus.Host, serverStatus.Port, "", serverStatus.Timestamp, "")
-		// the difference between now and serverStatus.Timestamp is less than 5 seconds, then the server is alive
-		if now.Sub(serverStatus.Timestamp) < 5*globalConfig.GetHeartbeatInterval() {
-			serverItem.Status = "alive"
-		} else {
-			serverItem.Status = "timeout"
-		}
+		serverItem.Status = getHeartbeatStatus(serverStatus.Timestamp, now, globalConfig.GetHeartbeatInterval())
 		results = append(results, serverItem)
 	}
 
@@ -1318,12 +1313,8 @@ func (s *Service) TestSandboxConnection(ctx context.Context, providerType string
 	return result, nil
 }
 
-var heartBeatCount int64 = 0
-
 // HandleHeartbeat handle heartbeat
 func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode, map[string]interface{}, string) {
-	heartBeatCount++
-
 	status := &common.BaseMessage{
 		ServerName: message.ServerName,
 		ServerType: message.ServerType,
