@@ -66,9 +66,7 @@ export function DraftModeCard({
         resetOptions={{ keepDirtyValues: true }}
       />
 
-      {providerName === LLMFactory.AIMLAPI && (
-        <AimlapiGetKeyButton />
-      )}
+      {providerName === LLMFactory.AIMLAPI && <AimlapiGetKeyButton />}
 
       {/* {providerName !== LLMFactory.OpenAiAPICompatible && (
         <div className="pt-3">
