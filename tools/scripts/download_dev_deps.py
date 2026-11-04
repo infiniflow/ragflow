@@ -355,7 +355,7 @@ def _valid_download(filename):
     return True
 
 
-def _extract_native_archive(archive_path, target, required_files, version=None):
+def _extract_native_archive(archive_path, target, required_files, version=None, platform=None):
     """Extract ARCHIVE_PATH into TARGET, verifying REQUIRED_FILES (and, for .a
     files, an optional null-delimited VERSION stamp) before promoting the
     staged tree.
@@ -363,8 +363,19 @@ def _extract_native_archive(archive_path, target, required_files, version=None):
     Path-traversal / absolute / non-regular members are rejected before
     extraction, and an incomplete archive raises instead of replacing a
     previously good directory."""
+    platform_token = None
+    if platform is not None:
+        platform_token = f"{platform[0]}/{platform[1]}" if isinstance(platform, tuple) else str(platform)
 
-    def complete(directory):
+    def complete(directory, check_platform=False):
+        """Return True when directory holds all required_files, version stamps, and matching platform."""
+        if check_platform and platform_token is not None:
+            stamp_path = os.path.join(directory, ".ragflow_platform")
+            if not os.path.isfile(stamp_path):
+                return False
+            with open(stamp_path, encoding="utf-8") as stamp_file:
+                if stamp_file.read().strip() != platform_token:
+                    return False
         for name in required_files:
             path = os.path.join(directory, name)
             if not os.path.isfile(path) or os.path.getsize(path) == 0:
@@ -375,7 +386,7 @@ def _extract_native_archive(archive_path, target, required_files, version=None):
                         return False
         return True
 
-    if complete(target):
+    if complete(target, check_platform=True):
         print(f"  ✓ {os.path.basename(target)} already extracted to {target}")
         return
     os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -389,6 +400,9 @@ def _extract_native_archive(archive_path, target, required_files, version=None):
             archive.extractall(staging, members=members)
         if not complete(staging):
             raise RuntimeError(f"{archive_path} is missing required native files or version {version}")
+        if platform_token is not None:
+            with open(os.path.join(staging, ".ragflow_platform"), "w", encoding="utf-8") as stamp_file:
+                stamp_file.write(f"{platform_token}\n")
         if os.path.isdir(target):
             shutil.rmtree(target)
         os.replace(staging, target)
@@ -749,7 +763,7 @@ def main():
             continue
         target = os.path.join(NATIVE_LIBS_DIR, subdir)
         try:
-            _extract_native_archive(archive_path, target, required_files, version)
+            _extract_native_archive(archive_path, target, required_files, version, platform=(goos, goarch))
         except (tarfile.TarError, EOFError, RuntimeError):
             os.unlink(archive_path)
             raise
