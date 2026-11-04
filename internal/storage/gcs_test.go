@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -85,12 +86,18 @@ func fakeGCS(t *testing.T, listed []string) (*gcs.Client, *[]string) {
 			if prefix := req.URL.Query().Get("prefix"); prefix != "" {
 				line += " prefix=" + prefix
 			}
+			if req.URL.Query().Get("versions") == "true" {
+				line += " versions"
+			}
+			if generation := req.URL.Query().Get("generation"); generation != "" {
+				line += " generation=" + generation
+			}
 			seen = append(seen, line)
 			body := `{}`
 			if req.Method == http.MethodGet && strings.HasSuffix(req.URL.Path, "/o") {
 				items := make([]string, 0, len(listed))
-				for _, name := range listed {
-					items = append(items, `{"name":"`+name+`","bucket":"shared"}`)
+				for i, name := range listed {
+					items = append(items, fmt.Sprintf(`{"name":%q,"bucket":"shared","generation":"%d"}`, name, i+1))
 				}
 				body = `{"items":[` + strings.Join(items, ",") + `]}`
 			}
@@ -139,16 +146,18 @@ func TestGCSStorageSingleBucketPutWritesUnderDatasetPrefix(t *testing.T) {
 }
 
 func TestGCSStorageSingleBucketRemoveBucketDeletesOnlyThePrefix(t *testing.T) {
-	client, seen := fakeGCS(t, []string{"kb1/a.txt", "kb1/b.txt"})
+	// kb1/a.txt is listed twice: a live and a noncurrent generation.
+	client, seen := fakeGCS(t, []string{"kb1/a.txt", "kb1/a.txt", "kb1/b.txt"})
 	s := &GCSStorage{client: client}
 	s.config.Bucket = "shared"
 	if err := s.RemoveBucket(t.Context(), "kb1"); err != nil {
 		t.Fatalf("RemoveBucket: %v", err)
 	}
 	want := []string{
-		"GET /storage/v1/b/shared/o prefix=kb1/",
-		"DELETE /storage/v1/b/shared/o/kb1/a.txt",
-		"DELETE /storage/v1/b/shared/o/kb1/b.txt",
+		"GET /storage/v1/b/shared/o prefix=kb1/ versions",
+		"DELETE /storage/v1/b/shared/o/kb1/a.txt generation=1",
+		"DELETE /storage/v1/b/shared/o/kb1/a.txt generation=2",
+		"DELETE /storage/v1/b/shared/o/kb1/b.txt generation=3",
 	}
 	if strings.Join(*seen, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("requests:\n%s\nwant:\n%s", strings.Join(*seen, "\n"), strings.Join(want, "\n"))
@@ -168,10 +177,15 @@ func TestGCSStorageSingleBucketRemoveEmptyBucket(t *testing.T) {
 		}
 	}
 
-	client, _ = fakeGCS(t, []string{"folder1/x"})
+	// The listing is version-aware, so a prefix holding only noncurrent
+	// generations counts as non-empty.
+	client, seen = fakeGCS(t, []string{"folder1/x"})
 	s.client = client
 	if err := s.RemoveEmptyBucket(t.Context(), "folder1"); err == nil {
 		t.Fatal("RemoveEmptyBucket of a non-empty prefix succeeded")
+	}
+	if len(*seen) != 1 || (*seen)[0] != "GET /storage/v1/b/shared/o prefix=folder1/ versions" {
+		t.Fatalf("requests = %q, want one version-aware listing of prefix folder1/", *seen)
 	}
 }
 
@@ -188,5 +202,22 @@ func TestGCSStorageSingleBucketListObjectsIsRelative(t *testing.T) {
 	}
 	if strings.Join(got, ",") != "a.txt,sub/b.txt" {
 		t.Fatalf("ListObjects = %q", got)
+	}
+}
+
+func TestGCSStorageRemoveBucketDeletesEveryGeneration(t *testing.T) {
+	client, seen := fakeGCS(t, []string{"a.txt", "a.txt"})
+	s := &GCSStorage{client: client}
+	if err := s.RemoveBucket(t.Context(), "kb1"); err != nil {
+		t.Fatalf("RemoveBucket: %v", err)
+	}
+	want := []string{
+		"GET /storage/v1/b/kb1/o versions",
+		"DELETE /storage/v1/b/kb1/o/a.txt generation=1",
+		"DELETE /storage/v1/b/kb1/o/a.txt generation=2",
+		"DELETE /storage/v1/b/kb1",
+	}
+	if strings.Join(*seen, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("requests:\n%s\nwant:\n%s", strings.Join(*seen, "\n"), strings.Join(want, "\n"))
 	}
 }

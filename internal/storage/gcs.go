@@ -42,6 +42,7 @@ type GCSStorage struct {
 	config config.GCSConfig
 }
 
+// singleBucket reports whether every logical bucket lives in config.Bucket.
 func (m *GCSStorage) singleBucket() bool { return m.config.Bucket != "" }
 
 // resolve maps a logical bucket and object name to the GCS bucket and object.
@@ -238,17 +239,19 @@ func (m *GCSStorage) BucketExistsWithError(ctx context.Context, bucket string) (
 	return false, err
 }
 
-// RemoveBucket removes a logical bucket and all its objects. In single-bucket
-// mode it deletes the bucket's prefix and leaves the GCS bucket in place.
+// RemoveBucket removes a logical bucket and every generation of its objects,
+// so nothing stays behind as a noncurrent version when the bucket has object
+// versioning. In single-bucket mode it deletes the bucket's prefix and leaves
+// the GCS bucket in place.
 func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error {
 	if bucketName == "" {
 		return fmt.Errorf("attempt to delete bucket without name")
 	}
 
 	bucket := m.client.Bucket(m.gcsBucket(bucketName))
-	var query *storage.Query
+	query := &storage.Query{Versions: true}
 	if m.singleBucket() {
-		query = &storage.Query{Prefix: m.logicalPrefix(bucketName)}
+		query.Prefix = m.logicalPrefix(bucketName)
 	}
 
 	it := bucket.Objects(ctx, query)
@@ -261,7 +264,7 @@ func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error 
 			return err
 		}
 
-		if err = bucket.Object(attrs.Name).Delete(ctx); err != nil && !errors.Is(err, storage.ErrObjectNotExist) {
+		if err = bucket.Object(attrs.Name).Generation(attrs.Generation).Delete(ctx); err != nil && !errors.Is(err, storage.ErrObjectNotExist) {
 			return err
 		}
 	}
@@ -276,13 +279,15 @@ func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error 
 	return nil
 }
 
-// RemoveEmptyBucket removes a bucket only if GCS finds it empty.
+// RemoveEmptyBucket removes a bucket only if GCS finds it empty. In
+// single-bucket mode it removes nothing and fails while any generation of an
+// object, current or noncurrent, remains under the bucket's prefix.
 func (m *GCSStorage) RemoveEmptyBucket(ctx context.Context, bucketName string) error {
 	if bucketName == "" {
 		return fmt.Errorf("attempt to delete bucket without name")
 	}
 	if m.singleBucket() {
-		it := m.client.Bucket(m.config.Bucket).Objects(ctx, &storage.Query{Prefix: m.logicalPrefix(bucketName)})
+		it := m.client.Bucket(m.config.Bucket).Objects(ctx, &storage.Query{Prefix: m.logicalPrefix(bucketName), Versions: true})
 		_, err := it.Next()
 		if errors.Is(err, iterator.Done) {
 			return nil
