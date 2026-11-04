@@ -423,6 +423,7 @@ func fileIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *servic
 		"kb_id":                  log.KbID,
 		"pipeline_id":            stringPointerValue(log.PipelineID),
 		"pipeline_title":         stringPointerValue(log.PipelineTitle),
+		"pipeline_version_id":    stringPointerValue(log.PipelineVersionID),
 		"parser_id":              log.ParserID,
 		"document_name":          log.DocumentName,
 		"document_suffix":        log.DocumentSuffix,

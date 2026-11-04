@@ -6,7 +6,14 @@ import {
 import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
 import { ChevronDown, ChevronRight, Loader2, X } from 'lucide-react';
-import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from './button';
 import { SearchInput } from './input';
@@ -28,6 +35,7 @@ type AsyncTreeSelectProps = {
   onChange?(value: TreeId): void;
   loadData?(node: TreeNodeType): Promise<any>;
   canSelect?(node: TreeNodeType): boolean;
+  defaultExpandRoot?: boolean;
   // When false, hides the clear button and disables re-click deselection.
   allowClear?: boolean;
 };
@@ -45,6 +53,7 @@ export function AsyncTreeSelect({
   loadData,
   onChange,
   canSelect,
+  defaultExpandRoot = false,
   allowClear = true,
 }: AsyncTreeSelectProps) {
   const [open, setOpen] = useState(false);
@@ -52,6 +61,7 @@ export function AsyncTreeSelect({
   const { t } = useTranslation();
 
   const [expandedKeys, setExpandedKeys] = useState<TreeId[]>([]);
+  const rootExpansionInitialized = useRef(false);
   const [loadingId, setLoadingId] = useState<TreeId>('');
 
   const selectedTitle = useMemo(() => {
@@ -246,8 +256,17 @@ export function AsyncTreeSelect({
   useEffect(() => {
     if (isEmpty(treeData)) {
       loadData?.({ id: '', parentId: '', title: '' });
+    } else if (defaultExpandRoot && !rootExpansionInitialized.current) {
+      rootExpansionInitialized.current = true;
+      setExpandedKeys(
+        treeData
+          .filter((node) =>
+            treeData.every((parent) => node.parentId !== parent.id),
+          )
+          .map((node) => node.id),
+      );
     }
-  }, [treeData, loadData]);
+  }, [treeData, loadData, defaultExpandRoot]);
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
