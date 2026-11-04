@@ -329,3 +329,45 @@ func TestCSVParser_GBK(t *testing.T) {
 		t.Errorf("CSV File.encoding = %q, want gbk/gb2312/gb18030", enc)
 	}
 }
+
+func TestCSVParser_FlattenMediaToText(t *testing.T) {
+	data := []byte("Header1,Header2\nVal1,Val2\n")
+
+	// 1. Default: doc_type_kwd = "table"
+	pDefault := NewCSVParser()
+	resDefault := pDefault.ParseWithResult(context.Background(), "test.csv", data)
+	if resDefault.Err != nil {
+		t.Fatalf("ParseWithResult default: %v", resDefault.Err)
+	}
+	if len(resDefault.JSON) != 1 {
+		t.Fatalf("len(resDefault.JSON) = %d, want 1", len(resDefault.JSON))
+	}
+	if resDefault.JSON[0].ToMap()["doc_type_kwd"] != "table" {
+		t.Errorf("default doc_type_kwd = %v, want 'table'", resDefault.JSON[0].ToMap()["doc_type_kwd"])
+	}
+
+	// 2. FlattenMediaToText = true: doc_type_kwd = "text", rendered HTML table in text
+	pFlatten := NewCSVParser()
+	pFlatten.ConfigureFromSetup(map[string]any{"flatten_media_to_text": true})
+	if !pFlatten.FlattenMediaToText {
+		t.Fatal("FlattenMediaToText not configured")
+	}
+	resFlatten := pFlatten.ParseWithResult(context.Background(), "test.csv", data)
+	if resFlatten.Err != nil {
+		t.Fatalf("ParseWithResult flatten: %v", resFlatten.Err)
+	}
+	if len(resFlatten.JSON) != 1 {
+		t.Fatalf("len(resFlatten.JSON) = %d, want 1", len(resFlatten.JSON))
+	}
+	item := resFlatten.JSON[0].ToMap()
+	if item["doc_type_kwd"] != "text" {
+		t.Errorf("flattened doc_type_kwd = %v, want 'text'", item["doc_type_kwd"])
+	}
+	if _, ok := item["table"]; ok {
+		t.Error("flattened item should not have table field")
+	}
+	text, _ := item["text"].(string)
+	if !strings.Contains(text, "<table>") || !strings.Contains(text, "Val1") {
+		t.Errorf("flattened item text = %q, want rendered HTML table", text)
+	}
+}
