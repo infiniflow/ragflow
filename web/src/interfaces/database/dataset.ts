@@ -38,6 +38,11 @@ export interface IDataset {
   parser_id?: string;
   permission: string;
   pipeline_id: string;
+  // Pinned dataflow canvas version (design section 5/C2). Absent or empty
+  // means the dataset tracks the canvas latest version.
+  pipeline_version_id?: string;
+  // True when the pinned version is not the canvas latest (design D1/D2/D3).
+  pipeline_version_outdated?: boolean;
   raptor_task_finish_at: string;
   raptor_task_id: string;
   similarity_threshold: number;
@@ -45,6 +50,7 @@ export interface IDataset {
   tenant_avatar: string;
   tenant_embd_id: number;
   tenant_id: string;
+  operator_permission: number;
   token_num: number;
   update_date: string;
   update_time: number;

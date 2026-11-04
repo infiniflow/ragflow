@@ -58,9 +58,12 @@ func TestBuiltinTitleMediaContext(t *testing.T) {
 			tested = true
 			for _, pair := range [][2]int{{0, 0}, {1, 0}, {0, 1}, {1, 1}, {64, 32}} {
 				t.Run(fmt.Sprintf("%s/table=%d/image=%d", ref, pair[0], pair[1]), func(t *testing.T) {
-					config := BuildParserConfig(dsl, map[string]any{spec.CpnID: map[string]any{
+					config, err := BuildParserConfig(dsl, map[string]any{spec.CpnID: map[string]any{
 						"table_context_size": pair[0], "image_context_size": pair[1],
 					}})
+					if err != nil {
+						t.Fatal(err)
+					}
 					raw, err := json.Marshal(config)
 					if err != nil {
 						t.Fatal(err)

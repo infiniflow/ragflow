@@ -33,6 +33,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
 )
 
@@ -185,7 +186,7 @@ func TestTokenChunker_BacktickEndSplitsOnlyAtLowercase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	got := make([]string, 0, len(chunks))
 	for _, ck := range chunks {
 		text, _ := ck["text"].(string)
@@ -225,7 +226,7 @@ func TestTokenChunker_BacktickASplitsOnlyAtLowercase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	got := make([]string, 0, len(chunks))
 	for _, ck := range chunks {
 		text, _ := ck["text"].(string)

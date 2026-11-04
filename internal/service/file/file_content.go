@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
@@ -139,6 +140,13 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 		}
 
 		ft := utility.FilenameType(name)
+		if utility.IsVideoFilename(name) {
+			// Uploads accept video, but no parser implements video analysis.
+			// Report that instead of inlining the container as a bogus image
+			// data URI (the old visual classification) or dumping raw bytes.
+			texts = append(texts, fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n(video content is not supported)\n", name))
+			continue
+		}
 		if ft == utility.FileTypeVISUAL {
 			mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
 			if mediaType == "" {
@@ -183,6 +191,14 @@ func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, file
 			return nil, fmt.Errorf("file %q: upload is empty", name)
 		}
 
+		// Reject video filenames before the MIME-based image branch: a
+		// mislabeled video (e.g. clip.mp4 declaring image/png) would otherwise
+		// be inlined as a bogus image data URI without ever reaching the
+		// parser-level video check.
+		if utility.IsVideoFilename(name) {
+			return nil, fmt.Errorf("file %q: video content is not supported", name)
+		}
+
 		mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
 		if strings.HasPrefix(mediaType, "image/") {
 			contents = append(contents, "data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))
@@ -202,9 +218,12 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 	content := string(data)
 	fileType := utility.GetFileType(filename)
 	if fileType != utility.FileTypeOTHER {
-		fp, err := parser.GetParser(fileType)
+		fp, actual, err := parser.GetTextOnlyParser(fileType, data)
 		if err != nil {
 			return "", err
+		}
+		if actual != fileType {
+			common.Warn(fmt.Sprintf("file %q: requested format %s; detected %s; continuing with the %s parser", filename, fileType, actual, actual))
 		}
 		if configurable, ok := fp.(interface{ ConfigureFromSetup(map[string]any) }); ok {
 			configurable.ConfigureFromSetup(map[string]any{"layout_recognize": layoutRecognize})
@@ -223,47 +242,28 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 }
 
 // parseResultText converts a parser result into the readable text expected by
-// sys.files. JSON results are flattened in item order, preferring each item's
-// text field and serializing items without one as a final fallback.
+// sys.files. Every parser result is structured JSON, so the items are flattened
+// in order, preferring each item's text field and rendering tables; items
+// without either are serialized as a final fallback.
 func parseResultText(res parser.ParseResult) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(res.OutputFormat)) {
-	case "text":
-		return res.Text, nil
-	case "markdown":
-		return res.Markdown, nil
-	case "json":
-		if len(res.JSON) > 0 {
-			parts := make([]string, 0, len(res.JSON))
-			for _, item := range res.JSON {
-				m := item.ToMap()
-				if text, ok := m["text"].(string); ok {
-					parts = append(parts, text)
-					continue
-				}
-				if td, ok := m["table"].(*entity.TableData); ok && td != nil {
-					parts = append(parts, tableutil.RenderTableHTML(td))
-					continue
-				}
-				raw, err := json.Marshal(m)
-				if err != nil {
-					return "", err
-				}
-				parts = append(parts, string(raw))
-			}
-			return strings.Join(parts, "\n"), nil
+	parts := make([]string, 0, len(res.JSON))
+	for _, item := range res.JSON {
+		m := item.ToMap()
+		if text, ok := m["text"].(string); ok {
+			parts = append(parts, text)
+			continue
 		}
-		// Some legacy parsers mark the result as JSON while only populating a
-		// rendered companion field. Preserve that content instead of returning
-		// an empty sys.files value.
-		for _, fallback := range []string{res.Markdown, res.Text} {
-			if fallback != "" {
-				return fallback, nil
-			}
+		if td, ok := m["table"].(*entity.TableData); ok && td != nil {
+			parts = append(parts, tableutil.RenderTableHTML(td))
+			continue
 		}
-		return "", nil
-	default:
-		return "", fmt.Errorf("unsupported parser output format %q", res.OutputFormat)
+		raw, err := json.Marshal(m)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, string(raw))
 	}
+	return strings.Join(parts, "\n"), nil
 }
 
 // parseFileContent tries to parse a file's contents using the appropriate parser.
@@ -273,9 +273,12 @@ func parseFileContent(ctx context.Context, filename string, data []byte) string 
 	if fileType == utility.FileTypeOTHER {
 		return string(data)
 	}
-	fp, err := parser.GetParser(fileType)
+	fp, actual, err := parser.GetTextOnlyParser(fileType, data)
 	if err != nil {
 		return string(data)
+	}
+	if actual != fileType {
+		common.Warn(fmt.Sprintf("file %q: requested format %s; detected %s; continuing with the %s parser", filename, fileType, actual, actual))
 	}
 	res := fp.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {

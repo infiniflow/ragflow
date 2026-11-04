@@ -25,6 +25,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 )
 
@@ -96,8 +97,12 @@ func TestTitleMediaContext(t *testing.T) {
 						t.Errorf("chunk %d text=%q, want %q", index, got, want)
 					}
 					for _, key := range []string{"_pdf_positions", "img_id", "image"} {
-						if want, exists := fixture[index][key]; exists && !reflect.DeepEqual(chunks[index][key], want) {
-							t.Errorf("chunk %d lost %s: %v", index, key, chunks[index][key])
+						if want, exists := fixture[index][key]; exists {
+							gotJSON, _ := json.Marshal(chunks[index][key])
+							wantJSON, _ := json.Marshal(want)
+							if string(gotJSON) != string(wantJSON) {
+								t.Errorf("chunk %d lost %s: %v", index, key, chunks[index][key])
+							}
 						}
 					}
 					if _, ok := chunks[index]["context_above"]; ok {
@@ -230,6 +235,59 @@ func TestTitleMediaContextManualOrder(t *testing.T) {
 	}
 }
 
+// TestTitleMediaContextPreservesReadingOrder keeps PaddleOCR's source sequence
+// when its positions disagree with the physical sort used for other inputs.
+func TestTitleMediaContextPreservesReadingOrder(t *testing.T) {
+	for _, budget := range []int{0, 1} {
+		for _, tc := range mediaContextComponents(t, map[string]any{"image_context_size": budget}) {
+			t.Run(fmt.Sprintf("%s/budget=%d", tc.name, budget), func(t *testing.T) {
+				chunks := titleFamilyChunks(t, tc.comp, []map[string]any{
+					{"text": "Source before.", "doc_type_kwd": "text", "_preserve_order": true, "_pdf_positions": [][]float64{{1, 10, 100, 30, 40}}},
+					{"text": "", "doc_type_kwd": "image", "img_id": "figure", "_preserve_order": true, "_pdf_positions": [][]float64{{1, 10, 100, 20, 25}}},
+					{"text": "Source after.", "doc_type_kwd": "text", "_preserve_order": true, "_pdf_positions": [][]float64{{1, 10, 100, 10, 15}}},
+				})
+				want := ""
+				if budget > 0 {
+					want = "Source before.\n\nSource after."
+				}
+				if len(chunks) != 3 || chunks[1]["text"] != want || chunks[0]["text"] != "Source before.\n" || chunks[2]["text"] != "Source after.\n" {
+					t.Fatalf("source reading order or context lost: %#v", chunks)
+				}
+			})
+		}
+	}
+}
+
+// TestTitleMediaContextDeferredAndPositionOnlyIdentity preserves upstream media
+// identities when equal neighboring text gives captionless media equal bodies.
+func TestTitleMediaContextDeferredAndPositionOnlyIdentity(t *testing.T) {
+	for _, kind := range []string{"reference", "position"} {
+		t.Run(kind, func(t *testing.T) {
+			groups := make([][]lineRecord, 2)
+			for i := range groups {
+				rec := lineRecord{docType: "image", contextAbove: "Same context.\n"}
+				if kind == "reference" {
+					rec.mediaRef = &entity.MediaRef{Format: "html", Kind: entity.MediaKindKV, SHA256: strings.Repeat(fmt.Sprint(i+1), 64)}
+				} else {
+					rec.positions = json.RawMessage(fmt.Sprintf("[[1,10,100,%d,%d]]", i*30+10, i*30+20))
+				}
+				groups[i] = []lineRecord{rec}
+			}
+			p := defaultsTitle()
+			p.ImageContextSize = 1
+			chunks, _ := buildChunksFromRecordGroups(groups, nil, &p, false, "source")
+			if len(chunks) != 2 || chunks[0]["text"] != chunks[1]["text"] || chunks[0]["id"] == chunks[1]["id"] {
+				t.Fatalf("distinct %s media collided: %#v", kind, chunks)
+			}
+			groups[0][0].contextAbove = "Changed context.\n"
+			changed, _ := buildChunksFromRecordGroups(groups[:1], nil, &p, false, "source")
+			if changed[0]["id"] == chunks[0]["id"] {
+				t.Fatalf("%s media identity ignored changed context", kind)
+			}
+		})
+	}
+}
+
 // TestTitleMediaContextSentences uses whole adjacent sentences even over a one-token budget.
 func TestTitleMediaContextSentences(t *testing.T) {
 	for _, tc := range mediaContextComponents(t, map[string]any{"image_context_size": 1}) {
@@ -312,7 +370,7 @@ func TestTitleMediaContextCaptionlessIDs(t *testing.T) {
 			}
 			for i, payload := range []string{pngBase64, pngBase64Red} {
 				text := toString(chunks[i+1]["text"])
-				source := mediaChunkIdentity("data:image/png;base64,"+payload, "") + "\x00" + text
+				source := mediaChunkIdentity("data:image/png;base64,"+payload, "", nil) + "\x00" + text
 				if want := common.ChunkID("source-doc", source); chunks[i+1]["id"] != want || uploaded[want] != 1 {
 					t.Fatalf("context/media/document identity lost: %#v", chunks[i+1])
 				}
@@ -325,7 +383,7 @@ func TestTitleMediaContextCaptionlessIDs(t *testing.T) {
 // derived from a contextual captionless image, matching decorator behavior.
 func TestTitleMediaContextStampedCropID(t *testing.T) {
 	ck := schema.ChunkDoc{
-		ID: "source-scoped-media-id", Text: "Context-only body.", CKType: "image",
+		ID: "source-scoped-media-id", Text: "Context-only body.", DocType: "image",
 		Extra: map[string]json.RawMessage{titleMediaContextIDKey: json.RawMessage("true")},
 	}
 	if got := canonicalChunkID("doc", ck); got != ck.ID {
@@ -340,7 +398,7 @@ func TestTitleMediaContextCropIDRejectsUpstreamID(t *testing.T) {
 		for _, marker := range []string{"", "false", "null", "1", `"true"`} {
 			t.Run(kind+"/"+marker, func(t *testing.T) {
 				ck := schema.ChunkDoc{
-					ID: "stale-upstream-id", Text: "Caption.@@1\t2##", CKType: kind,
+					ID: "stale-upstream-id", Text: "Caption.@@1\t2##", DocType: kind,
 					ContextAbove: "Source explanation.\n",
 				}
 				if marker != "" {

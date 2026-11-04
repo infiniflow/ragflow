@@ -19,25 +19,21 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	deepdocoffice "ragflow/internal/deepdoc/parser/office"
 )
 
 // docxExtract is a test seam for the native office_oxide extraction. It
-// defaults to the deepdoc/docx backend (which is the only place that depends
-// on office_oxide) and is overridden in tests to capture the effective
-// container format passed to the engine.
+// defaults to the deepdoc/office backend, which owns the native dependency.
 var docxExtract = deepdocoffice.OpenAndExtract
 
-// DOCXParser is the DOCX/DOC parser. It is a CGO-free facade: magic-byte
-// sniffing and post-processing live here, while the native extraction lives
-// in internal/deepdoc/parser/office. The IR data model and postprocessing live
+// DOCXParser parses DOCX documents. Native extraction lives in
+// internal/deepdoc/parser/office. The IR data model and postprocessing live
 // in cgo-free files (docx_ir.go, docx_postprocess.go, office_table_render.go)
 // so they compile and test without native libraries.
 type DOCXParser struct {
 	libType            string
-	outputFormat       string // from DSL config; "json" or "markdown"
+	textOnly           bool
 	RemoveTOC          bool
 	RemoveHeaderFooter bool
 }
@@ -47,14 +43,10 @@ func NewDOCXParser() *DOCXParser {
 }
 
 // ConfigureFromSetup implements parserSetupConfigurer, receiving the
-// DSL "docx" family setup map. The output_format key drives whether
-// ParseWithResult produces JSON items (structured) or Markdown.
+// DSL "docx" family setup map.
 func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.outputFormat = v
 	}
 	if v, ok := setup["remove_toc"].(bool); ok {
 		p.RemoveTOC = v
@@ -64,35 +56,11 @@ func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 	}
 }
 
-// ParseWithResult produces structured JSON items (when
-// p.outputFormat == "json") or markdown (default) from a
-// docx document. The JSON path emits bounded image items; the
-// Markdown path attaches bounded figure metadata to the file result.
-//
-// JSON path mirrors python parser.py:_docx() output_format == "json".
-// Markdown path mirrors python naive.py: Docx() → naive_merge_docx().
-//
-// File["format"] in the returned ParseResult reflects the effective
-// container format after magic-byte sniffing (e.g. "doc" for an OLE
-// payload uploaded as .docx), not merely the file extension. See
-// office_detect.go:officeContainer for the detection contract.
+// ParseWithResult produces structured JSON items from a docx document.
+// Embedded images are stored in the run media cache and emitted as media_ref;
+// text-only parsers skip them instead.
 func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	// office_oxide's OpenFromBytes takes the container format as given
-	// and does no magic-byte detection, so a legacy .doc uploaded with a
-	// .docx extension would be parsed as ZIP/OOXML and fail. Sniff the
-	// real container and pass the matching format so mislabeled files
-	// still parse (mirrors the magic-byte correction office_oxide::Open
-	// performs on file paths).
-	format := "docx"
-	if officeContainer(data) == "ole" {
-		format = "doc"
-	}
-	// Note: when format == "doc" (OLE fallback), header/footer and TOC
-	// post-processing below degrades gracefully: extractDOCXHeaderFooterTexts
-	// opens the payload as ZIP and fails closed, so RemoveHeaderFooter becomes
-	// a no-op for legacy OLE inputs. This is acceptable — legacy DOC has no
-	// OOXML header/footer parts to strip.
-	irJSON, md, _, mdErr, err := docxExtract(data, format)
+	irJSON, _, _, _, err := docxExtract(data, "docx")
 	if err != nil {
 		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
 			return ParseResult{Err: fmt.Errorf("%w: %s", ErrOfficeCGORequired, filename)}
@@ -102,106 +70,57 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 
 	fileMeta := map[string]any{
 		"name":   filename,
-		"format": format,
+		"format": "docx",
 	}
 
-	// Extract IR JSON for section building (JSON path) and
-	// embedded-image extraction (both paths). The budget bounds image
-	// payloads so the downstream VLM enhancement stays within limits.
-	budget := newEmbeddedMediaBudget()
-	if irJSON != "" {
-		figures := extractDOCXFiguresFromIR(irJSON, budget)
-		if len(figures) > 0 {
-			fileMeta["figures"] = buildFiguresMap(figures)
-		}
+	var sink *officeMediaSink
+	if !p.textOnly {
+		sink = newOfficeMediaSink(ctx, officeMediaFormatDOCX)
 	}
 
-	if p.outputFormat == "json" {
-		// The JSON path is built entirely from the structured IR, so an
-		// empty IR is a fatal parse error for this output format — the
-		// Markdown path below still has the plain-text fallback. The
-		// OpenAndExtract contract swallows per-view errors, so we cannot
-		// distinguish "IR failed" from "IR legitimately empty"; either way
-		// the JSON path has nothing to build from, so we fail loud
-		// (Finding B) rather than emit empty/garbage JSON sections.
-		if irJSON == "" {
-			return ParseResult{Err: fmt.Errorf("docx extract: empty IR, cannot build JSON output")}
-		}
-		sections := buildDOCXJSONSections(irJSON, budget)
-		if err := ctx.Err(); err != nil {
-			return ParseResult{Err: err}
-		}
-		// remove_header_footer: drop sections whose normalized text
-		// matches a docx header/footer entry (mirrors Python
-		// parser.py:889-891 extract_docx_header_footer_texts +
-		// remove_header_footer_docx_sections).
-		if p.RemoveHeaderFooter {
-			hfTexts := extractDOCXHeaderFooterTexts(data)
-			sections = removeDOCXHeaderFooterSections(sections, hfTexts)
-		}
-		// remove_toc: filter TOC entries using heading outlines
-		// (mirrors Python parser.py:892-893 remove_toc_word).
-		if p.RemoveTOC {
-			outlines := extractDOCXOutlines(irJSON)
-			sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
-		}
-		if len(sections) == 0 {
-			sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
-		}
-		return ParseResult{
-			OutputFormat: "json",
-			File:         fileMeta,
-			JSON:         MapsToItems(sections),
-			Warnings:     budget.warnings(),
-		}
+	// The result is built entirely from the structured IR, so an empty IR
+	// is a fatal parse error. The OpenAndExtract contract swallows per-view
+	// errors, so we cannot distinguish "IR failed" from "IR legitimately
+	// empty"; either way there is nothing to build from, so fail loud
+	// rather than emit empty/garbage JSON sections.
+	if irJSON == "" {
+		return ParseResult{Err: fmt.Errorf("docx extract: empty IR, cannot build JSON output")}
 	}
-
-	// Default / Markdown path.
-	if mdErr != nil {
-		// The Markdown view failed but other views survived. Surface the
-		// Markdown render error rather than silently emitting empty markdown
-		// (PR review Finding 3). The JSON path above is unaffected because it
-		// is built from the IR view.
-		return ParseResult{Err: fmt.Errorf("docx extract: markdown render failed: %w", mdErr)}
+	// TEMPORARY Caption-styled-paragraph detection (office_oxide does
+	// not yet expose paragraph styles; yfedoseev/office_oxide#455).
+	// Remove once office_oxide is upgraded to emit them.
+	tableCaptions, capErr := extractDOCXTableCaptions(data)
+	if capErr != nil {
+		tableCaptions = nil
 	}
-	markdownPayload := md
-	// remove_header_footer on Markdown: filter lines by exact match
-	// (mirrors Python parser.py:923-926 split lines → filter → rejoin).
+	sections := buildDOCXJSONSectionsWithCaptions(irJSON, sink, tableCaptions)
+	if sink != nil && sink.err != nil {
+		return ParseResult{Err: sink.err}
+	}
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
+	}
+	// remove_header_footer: drop sections whose normalized text
+	// matches a docx header/footer entry (mirrors Python
+	// parser.py:889-891 extract_docx_header_footer_texts +
+	// remove_header_footer_docx_sections).
 	if p.RemoveHeaderFooter {
 		hfTexts := extractDOCXHeaderFooterTexts(data)
-		lines := strings.Split(markdownPayload, "\n")
-		lineItems := make([]map[string]any, 0, len(lines))
-		for _, ln := range lines {
-			lineItems = append(lineItems, map[string]any{"text": ln})
-		}
-		lineItems = removeDOCXHeaderFooterSections(lineItems, hfTexts)
-		rebuilt := make([]string, 0, len(lineItems))
-		for _, item := range lineItems {
-			rebuilt = append(rebuilt, itemText(item))
-		}
-		markdownPayload = strings.Join(rebuilt, "\n")
+		sections = removeDOCXHeaderFooterSections(sections, hfTexts)
 	}
-	// remove_toc on Markdown: split lines, filter, rejoin
-	// (mirrors Python parser.py:927-928 remove_toc_word on Markdown).
-	if p.RemoveTOC && irJSON != "" {
+	// remove_toc: filter TOC entries using heading outlines
+	// (mirrors Python parser.py:892-893 remove_toc_word).
+	if p.RemoveTOC {
 		outlines := extractDOCXOutlines(irJSON)
-		lines := strings.Split(markdownPayload, "\n")
-		lineItems := make([]map[string]any, 0, len(lines))
-		for _, ln := range lines {
-			lineItems = append(lineItems, map[string]any{"text": ln})
-		}
-		filtered := removeTOCWord(lineItems, outlines, isEnglishItems(lineItems))
-		rebuilt := make([]string, 0, len(filtered))
-		for _, item := range filtered {
-			rebuilt = append(rebuilt, itemText(item))
-		}
-		markdownPayload = strings.Join(rebuilt, "\n")
+		sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
+	}
+	if len(sections) == 0 {
+		sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	return ParseResult{
-		OutputFormat: "markdown",
-		File:         fileMeta,
-		Markdown:     markdownPayload,
-		Warnings:     budget.warnings(),
+		File:     fileMeta,
+		JSON:     MapsToItems(sections),
+		Warnings: sink.warnings(),
 	}
 }
 

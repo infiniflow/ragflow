@@ -28,6 +28,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"strings"
 	"testing"
 )
@@ -58,7 +59,7 @@ func driveChunker(t *testing.T, params map[string]any, input map[string]any) []m
 	if msg, _ := out["_ERROR"].(string); msg != "" {
 		t.Fatalf("TokenChunker returned _ERROR: %s", msg)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	return chunks
 }
 

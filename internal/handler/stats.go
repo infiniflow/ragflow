@@ -37,11 +37,11 @@ func NewStatsHandler(statsService *service.StatsService) *StatsHandler {
 	}
 }
 
-// GetStats returns API conversation statistics for the current user's tenant.
-func (h *StatsHandler) GetStats(c *gin.Context) {
+// GetChatStats returns API conversation statistics for the current user's tenant.
+func (h *StatsHandler) GetChatStats(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -60,15 +60,15 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// Get stats
-	stats, err := h.statsService.GetStats(ctx, user.ID, fromDate, toDate, source)
+	stats, err := h.statsService.GetChatStats(ctx, user.ID, fromDate, toDate, source)
 	if err != nil {
 		code := common.CodeExceptionError
 		if errors.Is(err, service.ErrTenantNotFound) {
 			code = common.CodeDataError
 		}
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, stats, "success")
+	common.RespondSuccess(c, stats, "success")
 }

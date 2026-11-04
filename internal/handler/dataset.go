@@ -19,6 +19,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/engine"
@@ -26,12 +27,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
+	"ragflow/internal/service/billing"
 	dataset "ragflow/internal/service/dataset"
 )
 
@@ -44,11 +48,11 @@ type DatasetsHandler struct {
 }
 
 type searchDatasetsService interface {
-	SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
+	SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest) (*service.SearchDatasetsResponse, error)
 }
 
 type searchDatasetService interface {
-	SearchDataset(ctx context.Context, datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error)
+	SearchDataset(ctx context.Context, datasetID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error)
 }
 
 // NewDatasetsHandler creates a new datasets' handler.
@@ -66,27 +70,27 @@ func NewDatasetsHandler(datasetsService *dataset.DatasetService, metadataService
 
 // ListDatasets handles GET /api/v1/datasets.
 func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	if c.Query("type") == "filter" {
 		ctx := c.Request.Context()
-		data, code, err := h.datasetsService.ListDatasetFilters(ctx, user.ID, c.Query("canvas_id"))
+		data, code, err := h.datasetsService.ListDatasetFilters(ctx, c.Query("canvas_id"))
 		if err != nil {
-			common.ErrorWithCode(c, code, err.Error())
+			common.RespondError(c, code, err.Error())
 			return
 		}
-		common.SuccessNoMessage(c, data)
+		common.RespondSuccess(c, data, "success")
 		return
 	}
 
 	// Mirror pydantic's extra="forbid" on ListDatasetReq.
 	for param := range c.Request.URL.Query() {
 		if !listDatasetsAllowedParams[param] {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Extra inputs are not permitted: %s", param))
+			common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("Extra inputs are not permitted: %s", param))
 			return
 		}
 	}
@@ -96,11 +100,11 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 	if pageStr := c.Query("page"); pageStr != "" {
 		p, err := strconv.Atoi(pageStr)
 		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be a valid integer, unable to parse string as an integer")
+			common.RespondError(c, common.CodeArgumentError, "Input should be a valid integer, unable to parse string as an integer")
 			return
 		}
 		if p < 1 {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be greater than or equal to 1")
+			common.RespondError(c, common.CodeArgumentError, "Input should be greater than or equal to 1")
 			return
 		}
 		page = p
@@ -110,11 +114,11 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
 		ps, err := strconv.Atoi(pageSizeStr)
 		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be a valid integer, unable to parse string as an integer")
+			common.RespondError(c, common.CodeArgumentError, "Input should be a valid integer, unable to parse string as an integer")
 			return
 		}
 		if ps < 1 {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be greater than or equal to 1")
+			common.RespondError(c, common.CodeArgumentError, "Input should be greater than or equal to 1")
 			return
 		}
 		pageSize = ps
@@ -127,7 +131,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 	if queryOrderby, exists := c.GetQuery("orderby"); exists {
 		if queryOrderby != "create_time" && queryOrderby != "update_time" {
 			if len(sortTerms) == 0 {
-				common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be 'create_time' or 'update_time'")
+				common.RespondError(c, common.CodeArgumentError, "Input should be 'create_time' or 'update_time'")
 				return
 			}
 		} else {
@@ -140,7 +144,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		parsed, ok := parsePythonBool(descStr)
 		if !ok {
 			if len(sortTerms) == 0 {
-				common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Input should be a valid boolean, unable to interpret input")
+				common.RespondError(c, common.CodeArgumentError, "Input should be a valid boolean, unable to interpret input")
 				return
 			}
 		} else {
@@ -163,7 +167,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 	// Mirror pydantic: a present-but-empty id fails UUID validation.
 	if rawID, exists := c.GetQuery("id"); exists {
 		if _, err := dataset.NormalizeDatasetID(strings.TrimSpace(rawID)); err != nil {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+			common.RespondError(c, common.CodeArgumentError, err.Error())
 			return
 		}
 	}
@@ -180,7 +184,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 				}
 				normalizedID, err := dataset.NormalizeDatasetID(strings.TrimSpace(value))
 				if err != nil {
-					common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+					common.RespondError(c, common.CodeArgumentError, err.Error())
 					return
 				}
 				seen[normalizedID]++
@@ -196,7 +200,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 			}
 		}
 		if len(duplicates) > 0 {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Duplicate ids: '%s'", strings.Join(duplicates, ", ")))
+			common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("duplicate ids: '%s'", strings.Join(duplicates, ", ")))
 			return
 		}
 	}
@@ -212,91 +216,146 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		keywords,
 		ownerIDs,
 		parserID,
-		user.ID,
 		ids,
 		c.Query("canvas_id"),
 	)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":           common.CodeSuccess,
 		"data":           data,
+		"message":        "success",
 		"total_datasets": total,
 	})
 }
 
 // CreateDataset handles POST /api/v1/datasets.
 func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "create_dataset",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
 
-	bodyBytes, raw, ok := parseJSONRequestObject(c)
-	if !ok {
+	bodyBytes, raw, err := parseJSONRequestObject(c)
+	if err != nil {
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = err
 		return
 	}
 	if _, exists := raw["ext"]; exists {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Extra inputs are not permitted: ext")
+		err = fmt.Errorf("extra inputs are not permitted: ext")
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = err
 		return
 	}
 	for field := range raw {
 		if !createDatasetAllowedFields[field] {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Extra inputs are not permitted: %s", field))
+			err = fmt.Errorf("extra inputs are not permitted: %s", field)
+			common.RespondError(c, common.CodeArgumentError, err.Error())
+			operationLog.Code = int(common.CodeArgumentError)
+			operationLog.Error = err
 			return
 		}
 	}
 
 	var req service.CreateDatasetRequest
-	if err := json.Unmarshal(bodyBytes, &req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+	if err = json.Unmarshal(bodyBytes, &req); err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = err
 		return
 	}
 	if req.ParserConfig == nil && req.PipelineID == nil {
 		req.ParserConfig = map[string]interface{}{}
 	}
-	// Mirror Python's pydantic required validation.
+
 	if req.Name == "" || (len(bodyBytes) > 0 && jsonNullValue(bodyBytes, "name")) {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Field validation for 'name' failed on the 'required' tag")
+		err = fmt.Errorf("field validation for 'name' failed on the 'required' tag")
+		common.RespondError(c, common.CodeDataError, err.Error())
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = err
 		return
 	}
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.CreateDataset(ctx, &req, permission.Subject{
-		UserID:   user.ID,
-		TenantID: user.ID,
-	})
+	tenantID := strings.TrimSpace(c.GetString("tenant_id"))
+	if tenantID == "" {
+		tenantID = user.ID
+	}
+
+	// Application quota: every new dataset counts as one app, matching
+	// Python's check_dynamic_resources(apps=1).
+	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+		if quotaErr := billingService.CheckResources(ctx, tenantID, billing.ResourceDelta{Apps: 1}); quotaErr != nil {
+			var insufficient *billing.InsufficientResourceError
+			if errors.As(quotaErr, &insufficient) {
+				common.RespondError(c, common.CodeBillingAppsInsufficient, quotaErr.Error(), common.ResponseOptions{Detail: gin.H{
+					"resource": "apps",
+					"current":  insufficient.Current,
+					"limit":    insufficient.Limit,
+				}})
+				operationLog.Code = int(common.CodeBillingAppsInsufficient)
+				operationLog.Error = insufficient
+				return
+			}
+			common.RespondError(c, common.CodeServerError, quotaErr.Error())
+			operationLog.Code = int(common.CodeServerError)
+			operationLog.Error = quotaErr
+			return
+		}
+	}
+
+	result, code, err := h.datasetsService.CreateDataset(ctx, &req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetDataset handles GET /api/v1/datasets/:dataset_id.
 func (h *DatasetsHandler) GetDataset(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	ctx := c.Request.Context()
 
 	datasetID := c.Param("dataset_id")
-	result, code, err := h.datasetsService.GetDataset(ctx, datasetID, user.ID)
+	result, code, err := h.datasetsService.GetDataset(ctx, datasetID)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.RespondSuccess(c, result, "success")
 }
 
 // UpdateDataset Update a dataset.
@@ -313,31 +372,31 @@ func parsePythonBool(s string) (bool, bool) {
 }
 
 // parseJSONRequestObject mirrors Python's validate_and_parse_json_request:
-// content-type check first, then JSON syntax, then object shape. On failure it
+// content-type check first, then JSON syntax, then object shape. On failure, it
 // writes the error response and returns ok=false.
-func parseJSONRequestObject(c *gin.Context) (body []byte, raw map[string]interface{}, ok bool) {
+func parseJSONRequestObject(c *gin.Context) ([]byte, map[string]interface{}, error) {
 	if c.ContentType() != "application/json" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Unsupported content type: Expected application/json, got %s", c.GetHeader("Content-Type")))
-		return nil, nil, false
+		common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("Unsupported content type: Expected application/json, got %s", c.GetHeader("Content-Type")))
+		return nil, nil, fmt.Errorf("unsupported content type: Expected application/json, got %s", c.GetHeader("Content-Type"))
 	}
 
 	body, err := c.GetRawData()
 	if err != nil || len(body) == 0 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
-		return nil, nil, false
+		common.RespondError(c, common.CodeArgumentError, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
+		return nil, nil, fmt.Errorf("malformed JSON syntax: Missing commas/brackets or invalid encoding")
 	}
 
 	var payload interface{}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
-		return nil, nil, false
+	if err = json.Unmarshal(body, &payload); err != nil {
+		common.RespondError(c, common.CodeArgumentError, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
+		return nil, nil, err
 	}
 	raw, isObject := payload.(map[string]interface{})
 	if !isObject {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Invalid request payload: expected object, got %s", pythonJSONTypeName(payload)))
-		return nil, nil, false
+		common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("Invalid request payload: expected object, got %s", pythonJSONTypeName(payload)))
+		return nil, nil, fmt.Errorf("invalid request payload: expected object, got %s", pythonJSONTypeName(payload))
 	}
-	return body, raw, true
+	return body, raw, nil
 }
 
 // jsonNullValue checks if a field is explicitly null in the JSON body.
@@ -385,70 +444,100 @@ var listDatasetsAllowedParams = map[string]bool{
 var createDatasetAllowedFields = map[string]bool{
 	"name": true, "embedding_model": true, "parser_config": true,
 	"language": true, "permission": true, "parser_id": true,
-	"pipeline_id": true, "parse_type": true,
+	"pipeline_id": true, "pipeline_version_id": true, "parse_type": true,
 }
 
 // updateDatasetAllowedFields mirrors the field set of Python's UpdateDatasetReq
 // (CreateDatasetReq fields + dataset_id/pagerank/language/connectors).
 var updateDatasetAllowedFields = map[string]bool{
 	"name": true, "avatar": true, "description": true, "embedding_model": true,
-	"permission": true, "parse_type": true, "pipeline_id": true, "chunk_method": true,
+	"permission": true, "parse_type": true, "pipeline_id": true, "pipeline_version_id": true, "chunk_method": true,
 	"parser_id": true, "parser_config": true, "auto_metadata_config": true,
 	"dataset_id": true, "pagerank": true, "language": true, "connectors": true,
 }
 
 func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "create_dataset",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "user id is required")
+		common.RespondError(c, common.CodeDataError, "user id is required")
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = errors.New("user id is required")
 		return
 	}
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "dataset id is required")
-		return
-	}
-	// Mirror the pydantic UUID validation of Python's UpdateDatasetReq.
-	if _, err := dataset.NormalizeDatasetID(datasetID); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeBadRequest, "dataset id is required")
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = errors.New("dataset id is required")
 		return
 	}
 
-	bodyBytes, _, ok := parseJSONRequestObject(c)
-	if !ok {
+	if _, err := dataset.NormalizeDatasetID(datasetID); err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = err
+		return
+	}
+
+	bodyBytes, _, err := parseJSONRequestObject(c)
+	if err != nil {
+		// parseJSONRequestObject already wrote the error response.
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = err
 		return
 	}
 
 	var req service.UpdateDatasetRequest
-	if err := json.Unmarshal(bodyBytes, &req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+	if err = json.Unmarshal(bodyBytes, &req); err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = err
 		return
 	}
 
 	// Detect an explicitly provided parser_config key (even {} or null) so it is not
 	// rejected as "no properties were modified", mirroring the Python contract.
 	var providedFields map[string]json.RawMessage
-	if err := json.Unmarshal(bodyBytes, &providedFields); err == nil {
+	if err = json.Unmarshal(bodyBytes, &providedFields); err == nil {
 		_, req.ParserConfigProvided = providedFields["parser_config"]
 		// Mirror pydantic's extra="forbid" on UpdateDatasetReq.
 		for field := range providedFields {
 			if !updateDatasetAllowedFields[field] {
-				common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Extra inputs are not permitted: %s", field))
+				common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("Extra inputs are not permitted: %s", field))
+				operationLog.Code = int(common.CodeArgumentError)
+				operationLog.Error = fmt.Errorf("extra inputs are not permitted: %s", field)
 				return
 			}
 		}
 		if parserConfig, ok := providedFields["parser_config"]; ok {
 			var config map[string]interface{}
 			if json.Unmarshal(parserConfig, &config) == nil {
-				if _, ok := config["ext"]; ok {
-					common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "parser_config.ext is not supported; send parser configuration fields directly")
+				if _, ok = config["ext"]; ok {
+					common.RespondError(c, common.CodeArgumentError, "parser_config.ext is not supported; send parser configuration fields directly")
+					operationLog.Code = int(common.CodeArgumentError)
+					operationLog.Error = errors.New("parser_config.ext is not supported; send parser configuration fields directly")
 					return
 				}
 			}
@@ -457,87 +546,91 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.UpdateDataset(ctx, datasetID, userID, req)
+	result, code, err := h.datasetsService.UpdateDataset(ctx, datasetID, req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, "dataset updated failed")
+		common.RespondError(c, code, "dataset updated failed")
+		operationLog.Code = int(code)
+		operationLog.Error = errors.New("dataset updated failed")
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.RespondSuccess(c, result, "success")
 }
 
 func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	ctx := c.Request.Context()
 
 	datasetID := c.Param("dataset_id")
-	result, code, err := h.datasetsService.GetMetadataConfig(ctx, datasetID, user.ID)
+	result, code, err := h.datasetsService.GetMetadataConfig(ctx, datasetID)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.RespondSuccess(c, result, "success")
 }
 
 func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	datasetID := c.Param("dataset_id")
 	var req service.MetadataConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.UpdateMetadataConfig(ctx, datasetID, user.ID, &req)
+	result, code, err := h.datasetsService.UpdateMetadataConfig(ctx, datasetID, &req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetIngestionSummary handles GET /api/v1/datasets/:dataset_id/ingestions/summary.
 func (h *DatasetsHandler) GetIngestionSummary(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	ctx := c.Request.Context()
 	datasetID := c.Param("dataset_id")
-	result, code, err := h.datasetsService.GetIngestionSummary(ctx, datasetID, user.ID)
+	result, code, err := h.datasetsService.GetIngestionSummary(ctx, datasetID)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // ListIngestionLogs handles GET /api/v1/datasets/:dataset_id/ingestions.
 // The log_type=datasource query returns logs for connectors linked to the dataset.
 func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -547,8 +640,7 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	if pageStr := c.Query("page"); pageStr != "" {
 		p, err := strconv.Atoi(pageStr)
 		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-				"page must be an integer")
+			common.RespondError(c, common.CodeArgumentError, "page must be an integer")
 			return
 		}
 		page = p
@@ -558,8 +650,7 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
 		ps, err := strconv.Atoi(pageSizeStr)
 		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-				"page_size must be an integer")
+			common.RespondError(c, common.CodeArgumentError, "page_size must be an integer")
 			return
 		}
 		pageSize = ps
@@ -567,12 +658,12 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if strings.EqualFold(strings.TrimSpace(c.Query("log_type")), "datasource") {
-		result, code, err := h.datasetsService.ListSyncLogs(ctx, datasetID, user.ID, page, pageSize)
+		result, code, err := h.datasetsService.ListSyncLogs(ctx, datasetID, page, pageSize)
 		if err != nil {
-			common.ErrorWithCode(c, code, err.Error())
+			common.RespondError(c, code, err.Error())
 			return
 		}
-		common.SuccessWithData(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 
@@ -589,20 +680,20 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	// equivalent; the frontend only sends it on the Go backend.
 	documentID := c.Query("document_id")
 
-	result, code, err := h.datasetsService.ListIngestionLogs(ctx, datasetID, user.ID, page, pageSize, terms, operationStatus, createDateFrom, createDateTo, logType, keywords, documentID)
+	result, code, err := h.datasetsService.ListIngestionLogs(ctx, datasetID, page, pageSize, terms, operationStatus, createDateFrom, createDateTo, logType, keywords, documentID)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetIngestionLog handles GET /api/v1/datasets/:dataset_id/ingestions/:log_id.
 func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -610,21 +701,21 @@ func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
 	logID := c.Param("log_id")
-	result, code, err := h.datasetsService.GetIngestionLog(ctx, datasetID, user.ID, logID)
+	result, code, err := h.datasetsService.GetIngestionLog(ctx, datasetID, logID)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // ListIngestionMessages handles GET
 // /api/v1/datasets/:dataset_id/ingestions/:log_id/messages.
 func (h *DatasetsHandler) ListIngestionMessages(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -632,7 +723,7 @@ func (h *DatasetsHandler) ListIngestionMessages(c *gin.Context) {
 	if rawLimit := c.Query("limit"); rawLimit != "" {
 		parsed, err := strconv.Atoi(rawLimit)
 		if err != nil || parsed <= 0 {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "limit must be a positive integer")
+			common.RespondError(c, common.CodeArgumentError, "limit must be a positive integer")
 			return
 		}
 		limit = parsed
@@ -647,13 +738,13 @@ func (h *DatasetsHandler) ListIngestionMessages(c *gin.Context) {
 	}
 
 	result, code, err := h.datasetsService.ListIngestionMessages(
-		c.Request.Context(), c.Param("dataset_id"), user.ID, c.Param("log_id"), limit, afterID, beforeID,
+		c.Request.Context(), c.Param("dataset_id"), c.Param("log_id"), limit, afterID, beforeID,
 	)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func ingestionEventCursor(c *gin.Context, name string) (*int, bool) {
@@ -663,7 +754,7 @@ func ingestionEventCursor(c *gin.Context, name string) (*int, bool) {
 	}
 	value, err := strconv.Atoi(raw)
 	if err != nil || value <= 0 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, name+" must be a positive integer")
+		common.RespondError(c, common.CodeArgumentError, name+" must be a positive integer")
 		return nil, false
 	}
 	return &value, true
@@ -671,21 +762,42 @@ func ingestionEventCursor(c *gin.Context, name string) (*int, bool) {
 
 // DeleteDatasets handles DELETE /api/v1/datasets.
 func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "delete_dataset",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
 
-	bodyBytes, rawPayload, ok := parseJSONRequestObject(c)
-	if !ok {
+	bodyBytes, rawPayload, err := parseJSONRequestObject(c)
+	if err != nil {
+		// parseJSONRequestObject already wrote the error response.
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = err
 		return
 	}
 
 	// Mirror pydantic's extra="forbid" on DeleteDatasetReq.
 	for field := range rawPayload {
 		if field != "ids" && field != "delete_all" {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Extra inputs are not permitted: %s", field))
+			err = fmt.Errorf("extra inputs are not permitted: %s", field)
+			common.RespondError(c, common.CodeArgumentError, err.Error())
+			operationLog.Code = int(common.CodeArgumentError)
+			operationLog.Error = err
 			return
 		}
 	}
@@ -694,8 +806,10 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 		IDs       *[]string `json:"ids"`
 		DeleteAll bool      `json:"delete_all,omitempty"`
 	}
-	if err := json.Unmarshal(bodyBytes, &req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+	if err = json.Unmarshal(bodyBytes, &req); err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		operationLog.Code = int(common.CodeDataError)
+		operationLog.Error = err
 		return
 	}
 
@@ -710,7 +824,10 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 			}
 		}
 		if len(duplicates) > 0 {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Duplicate ids: '%s'", strings.Join(duplicates, ", ")))
+			err = fmt.Errorf("duplicate ids: '%s'", strings.Join(duplicates, ", "))
+			common.RespondError(c, common.CodeArgumentError, err.Error())
+			operationLog.Code = int(common.CodeArgumentError)
+			operationLog.Error = err
 			return
 		}
 	}
@@ -721,49 +838,47 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-
-	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll, permission.Subject{
-		UserID:   user.ID,
-		TenantID: user.ID,
-	})
+	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 
-	common.SuccessNoMessage(c, result)
+	common.RespondSuccess(c, result, "success")
 }
 
 // GetKnowledgeGraph handles GET /api/v1/datasets/:dataset_id/graph.
 func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
+		common.RespondError(c, common.CodeDataError, "dataset_id is required")
 		return
 	}
 
 	ctx := c.Request.Context()
-	datasetInstance, code, err := h.datasetsService.GetDataset(ctx, datasetID, user.ID)
+	datasetInstance, code, err := h.datasetsService.GetDataset(ctx, datasetID)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
 	tenantID, _ := datasetInstance["tenant_id"].(string)
 	if tenantID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "tenant_id is required")
+		common.RespondError(c, common.CodeDataError, "tenant_id is required")
 		return
 	}
 
 	docEngine := engine.Get()
 	if docEngine == nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Document engine is not initialized")
+		common.RespondError(c, common.CodeServerError, "Document engine is not initialized")
 		return
 	}
 
@@ -779,7 +894,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		"mind_map": map[string]interface{}{},
 	}
 	if !exists {
-		common.SuccessWithData(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 
@@ -799,7 +914,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		return
 	}
 	if searchResult == nil || len(searchResult.Chunks) == 0 {
-		common.SuccessWithData(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 
@@ -810,17 +925,17 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	}
 	contentWithWeight, _ := chunk["content_with_weight"].(string)
 	if strings.TrimSpace(contentWithWeight) == "" {
-		common.SuccessWithData(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 
 	var graphData map[string]interface{}
 	if err = json.Unmarshal([]byte(contentWithWeight), &graphData); err != nil {
-		common.SuccessWithData(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 	if len(graphData) == 0 {
-		common.SuccessWithData(c, result, "success")
+		common.RespondSuccess(c, result, "success")
 		return
 	}
 
@@ -834,39 +949,39 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		result[graphType] = graphData
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // DeleteKnowledgeGraph handles DELETE /api/v1/datasets/:dataset_id/graph.
 func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
+		common.RespondError(c, common.CodeDataError, "dataset_id is required")
 		return
 	}
 
 	ctx := c.Request.Context()
-	datasetInstance, code, err := h.datasetsService.GetDataset(ctx, datasetID, user.ID)
+	datasetInstance, code, err := h.datasetsService.GetDataset(ctx, datasetID)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
 	tenantID, _ := datasetInstance["tenant_id"].(string)
 	if tenantID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "tenant_id is required")
+		common.RespondError(c, common.CodeDataError, "tenant_id is required")
 		return
 	}
 
 	docEngine := engine.Get()
 	if docEngine == nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Document engine is not initialized")
+		common.RespondError(c, common.CodeServerError, "Document engine is not initialized")
 		return
 	}
 
@@ -879,51 +994,41 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // CheckEmbedding Check embedding model compatibility by sampling random chunks,
 // re-embedding them with the new model, and computing cosine similarity.
 func (h *DatasetsHandler) CheckEmbedding(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "user_id is required")
+		common.RespondError(c, common.CodeDataError, "dataset_id is required")
 		return
 	}
 
 	var req service.CheckEmbeddingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	if strings.TrimSpace(req.EmbeddingID) == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "`embd_id` is required.")
+		common.RespondError(c, common.CodeDataError, "`embd_id` is required.")
 		return
 	}
 
 	ctx := c.Request.Context()
-	data, code, err := h.datasetsService.CheckEmbedding(ctx, userID, datasetID, &req)
+	data, code, err := h.datasetsService.CheckEmbedding(ctx, datasetID, &req)
 	if err != nil {
-		if code == common.CodeNotEffective {
-			common.ResponseWithCodeData(c, code, data, err.Error())
-			return
-		}
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.SuccessWithData(c, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 // AggregateTags handles GET /api/v1/datasets/tags/aggregation.
@@ -936,9 +1041,9 @@ func (h *DatasetsHandler) CheckEmbedding(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/tags/aggregation [get]
 func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
@@ -952,43 +1057,42 @@ func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
 		}
 	}
 	if len(datasetIDs) == 0 {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Lack of dataset_ids in query parameters")
+		common.RespondError(c, common.CodeDataError, "Lack of dataset_ids in query parameters")
 		return
 	}
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.AggregateTags(ctx, datasetIDs, user.ID)
+	result, code, err := h.datasetsService.AggregateTags(ctx, datasetIDs)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccessList(c, result, "success")
 }
 
 // GetCompilationStatus returns the dataset-level knowledge-compile lifecycle
 // state. The optional `kind` query parameter scopes the status to one compile
 // type.
 func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
+		common.RespondError(c, common.CodeDataError, "dataset_id is required")
 		return
 	}
-	userID := strings.TrimSpace(user.ID)
 	ctx := c.Request.Context()
 	kind := strings.TrimSpace(c.Query("kind"))
-	st, code, err := h.datasetsService.GetDatasetCompilationStatus(ctx, userID, datasetID, kind)
+	st, code, err := h.datasetsService.GetDatasetCompilationStatus(ctx, datasetID, kind)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.SuccessWithData(c, st, "success")
+	common.RespondSuccess(c, st, "success")
 }
 
 // ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.
@@ -1001,15 +1105,10 @@ func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/metadata/flattened [get]
 func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
 	datasetIDsStr := c.Query("dataset_ids")
 	if datasetIDsStr == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_ids is required")
+		common.RespondError(c, common.CodeDataError, "dataset_ids is required")
 		return
 	}
 
@@ -1022,14 +1121,14 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 		}
 	}
 	if len(datasetIDs) == 0 {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_ids is required")
+		common.RespondError(c, common.CodeDataError, "dataset_ids is required")
 		return
 	}
 
 	ctx := c.Request.Context()
 	// Check access for each dataset
 	for _, datasetID := range datasetIDs {
-		if err := h.datasetsService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 			respondPermissionError(c, err, false)
 			return
 		}
@@ -1037,50 +1136,44 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 
 	flattenedMeta, err := h.metadataService.GetFlattedMetaByKBs(ctx, datasetIDs)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to get metadata: "+err.Error())
+		common.RespondError(c, common.CodeServerError, "Failed to get metadata: "+err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, flattenedMeta, "success")
+	common.RespondSuccess(c, flattenedMeta, "success")
 }
 
 func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_id is required")
+		common.RespondError(c, common.CodeArgumentError, "dataset_id is required")
 		return
 	}
 	documentID := strings.TrimSpace(c.Param("document_id"))
 	if documentID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "document_id is required")
+		common.RespondError(c, common.CodeArgumentError, "document_id is required")
 		return
 	}
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "user_id is required")
-		return
-	}
-
 	var req map[string]interface{}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
 	ctx := c.Request.Context()
-	data, code, err := h.datasetsService.UpdateDocumentMetadataConfig(ctx, userID, datasetID, documentID, req)
+	data, code, err := h.datasetsService.UpdateDocumentMetadataConfig(ctx, datasetID, documentID, req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.ResponseWithCodeData(c, code, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 // SearchDatasets searches chunks across datasets based on a question
@@ -1091,15 +1184,15 @@ func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/search [post]
 func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	var req service.SearchDatasetsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
@@ -1126,20 +1219,20 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 
 	req.Question = strings.TrimSpace(req.Question)
 	if req.Question == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
+		common.RespondError(c, common.CodeArgumentError, "question is required")
 		return
 	}
 	if req.DatasetIDs == nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_ids is required")
+		common.RespondError(c, common.CodeArgumentError, "dataset_ids is required")
 		return
 	}
 
 	if len(req.DatasetIDs) == 0 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_ids array cannot be empty")
+		common.RespondError(c, common.CodeArgumentError, "dataset_ids array cannot be empty")
 		return
 	}
 	if err := validateSearchDatasetsRequest(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
@@ -1148,22 +1241,22 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		searchService = h.datasetsService
 	}
 	if searchService == nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset service is not initialized")
+		common.RespondError(c, common.CodeDataError, "dataset service is not initialized")
 		return
 	}
 
 	ctx := c.Request.Context()
 
-	resp, err := searchService.SearchDatasets(ctx, &req, user.ID)
+	resp, err := searchService.SearchDatasets(ctx, &req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	common.SuccessNoMessage(c, resp)
+	common.RespondSuccess(c, resp, "success")
 }
 
 // SearchDataset searches chunks within a single dataset based on a question.
@@ -1175,30 +1268,30 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/{dataset_id}/search [post]
 func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
+		common.RespondError(c, common.CodeDataError, "dataset_id is required")
 		return
 	}
 
 	var req service.SearchDatasetRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 	req.Question = strings.TrimSpace(req.Question)
 	if req.Question == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
+		common.RespondError(c, common.CodeArgumentError, "question is required")
 		return
 	}
 	if err := validateSearchDatasetRequest(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
@@ -1207,22 +1300,22 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		searchService = h.datasetsService
 	}
 	if searchService == nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset service is not initialized")
+		common.RespondError(c, common.CodeDataError, "dataset service is not initialized")
 		return
 	}
 
 	ctx := c.Request.Context()
 
-	resp, err := searchService.SearchDataset(ctx, datasetID, user.ID, &req)
+	resp, err := searchService.SearchDataset(ctx, datasetID, &req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	common.SuccessNoMessage(c, resp)
+	common.RespondSuccess(c, resp, "success")
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {

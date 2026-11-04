@@ -40,44 +40,44 @@ import (
 // BotHandler. Each test case sets only the methods it needs; unset
 // methods return safe defaults.
 type stubBotService struct {
-	chatbotInfoFn      func(ctx context.Context, tenantID, dialogID string) (string, string, string, string, bool, common.ErrorCode, error)
-	agentbotInputsFn   func(ctx context.Context, userID, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error)
-	agentbotCompleteFn func(ctx context.Context, userID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error)
-	agentbotLogsFn     func(ctx context.Context, userID, agentID, messageID string) (map[string]any, common.ErrorCode, error)
-	chatbotCompleteFn  func(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error)
+	chatbotInfoFn      func(ctx context.Context, dialogID string) (string, string, string, string, bool, common.ErrorCode, error)
+	agentbotInputsFn   func(ctx context.Context, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error)
+	agentbotCompleteFn func(ctx context.Context, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error)
+	agentbotLogsFn     func(ctx context.Context, agentID, messageID string) (map[string]any, common.ErrorCode, error)
+	chatbotCompleteFn  func(ctx context.Context, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error)
 }
 
-func (s *stubBotService) ChatbotInfo(ctx context.Context, tenantID, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
+func (s *stubBotService) ChatbotInfo(ctx context.Context, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
 	if s.chatbotInfoFn != nil {
-		return s.chatbotInfoFn(ctx, tenantID, dialogID)
+		return s.chatbotInfoFn(ctx, dialogID)
 	}
 	return "", "", "", "", false, common.CodeDataError, errors.New("not stubbed")
 }
 
-func (s *stubBotService) AgentbotInputs(ctx context.Context, userID, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error) {
+func (s *stubBotService) AgentbotInputs(ctx context.Context, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error) {
 	if s.agentbotInputsFn != nil {
-		return s.agentbotInputsFn(ctx, userID, agentID)
+		return s.agentbotInputsFn(ctx, agentID)
 	}
 	return "", "", "", "", nil, common.CodeDataError, errors.New("not stubbed")
 }
 
-func (s *stubBotService) AgentbotCompletion(ctx context.Context, userID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+func (s *stubBotService) AgentbotCompletion(ctx context.Context, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
 	if s.agentbotCompleteFn != nil {
-		return s.agentbotCompleteFn(ctx, userID, agentID, req)
+		return s.agentbotCompleteFn(ctx, agentID, req)
 	}
 	return nil, common.CodeDataError, errors.New("not stubbed")
 }
 
-func (s *stubBotService) AgentbotLogs(ctx context.Context, userID, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
+func (s *stubBotService) AgentbotLogs(ctx context.Context, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
 	if s.agentbotLogsFn != nil {
-		return s.agentbotLogsFn(ctx, userID, agentID, messageID)
+		return s.agentbotLogsFn(ctx, agentID, messageID)
 	}
 	return nil, common.CodeDataError, errors.New("not stubbed")
 }
 
-func (s *stubBotService) ChatbotCompletion(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
+func (s *stubBotService) ChatbotCompletion(ctx context.Context, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
 	if s.chatbotCompleteFn != nil {
-		return s.chatbotCompleteFn(ctx, tenantID, dialogID, req)
+		return s.chatbotCompleteFn(ctx, dialogID, req)
 	}
 	return nil, common.CodeDataError, errors.New("not stubbed")
 }
@@ -138,7 +138,7 @@ func doJSON(r *gin.Engine, method, path, body string) *httptest.ResponseRecorder
 // TestChatbotInfo_OK covers the happy path (criterion 13).
 func TestChatbotInfo_OK(t *testing.T) {
 	stub := &stubBotService{
-		chatbotInfoFn: func(ctx context.Context, tenantID, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
+		chatbotInfoFn: func(ctx context.Context, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
 			return "My Bot", "avatar.png", "Hello!", "gpt-4", false, common.CodeSuccess, nil
 		},
 	}
@@ -172,7 +172,7 @@ func TestChatbotInfo_OK(t *testing.T) {
 // TestChatbotInfo_HasTavilyKey covers criterion 14.
 func TestChatbotInfo_HasTavilyKey(t *testing.T) {
 	stub := &stubBotService{
-		chatbotInfoFn: func(ctx context.Context, tenantID, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
+		chatbotInfoFn: func(ctx context.Context, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
 			return "Bot", "", "", "gpt-4", true, common.CodeSuccess, nil
 		},
 	}
@@ -193,7 +193,7 @@ func TestChatbotInfo_HasTavilyKey(t *testing.T) {
 // TestChatbotInfo_ForeignTenant covers criterion 15.
 func TestChatbotInfo_ForeignTenant(t *testing.T) {
 	stub := &stubBotService{
-		chatbotInfoFn: func(ctx context.Context, tenantID, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
+		chatbotInfoFn: func(ctx context.Context, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
 			return "", "", "", "", false, common.CodeNotFound, permission.ErrPermissionDenied
 		},
 	}
@@ -220,7 +220,7 @@ func TestChatbotInfo_MissingPrologueField(t *testing.T) {
 	// Stub returns empty prologue (mimics the defensive stringFromMap
 	// fallback when the field is absent or non-string).
 	stub := &stubBotService{
-		chatbotInfoFn: func(ctx context.Context, tenantID, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
+		chatbotInfoFn: func(ctx context.Context, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
 			return "Bot", "", "", "gpt-4", false, common.CodeSuccess, nil
 		},
 	}
@@ -240,7 +240,7 @@ func TestChatbotInfo_MissingPrologueField(t *testing.T) {
 // TestChatbotCompletion_AuthoriseFail covers criterion 6.
 func TestChatbotCompletion_AuthoriseFail(t *testing.T) {
 	stub := &stubBotService{
-		chatbotCompleteFn: func(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
+		chatbotCompleteFn: func(ctx context.Context, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
 			return nil, common.CodeNotFound, permission.ErrPermissionDenied
 		},
 	}
@@ -265,7 +265,7 @@ func TestChatbotCompletion_AuthoriseFail(t *testing.T) {
 // TestChatbotCompletion_StreamsSSE covers criterion 11.
 func TestChatbotCompletion_StreamsSSE(t *testing.T) {
 	stub := &stubBotService{
-		chatbotCompleteFn: func(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
+		chatbotCompleteFn: func(ctx context.Context, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
 			ch := make(chan service.ChatbotSSEFrame, 4)
 			go func() {
 				defer close(ch)
@@ -308,7 +308,7 @@ func TestChatbotCompletion_StreamsSSE(t *testing.T) {
 // TestChatbotCompletion_LLMUnavailable covers criterion 12.
 func TestChatbotCompletion_LLMUnavailable(t *testing.T) {
 	stub := &stubBotService{
-		chatbotCompleteFn: func(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
+		chatbotCompleteFn: func(ctx context.Context, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
 			return nil, common.CodeDataError, errors.New("LLM not available: timeout")
 		},
 	}
@@ -330,7 +330,7 @@ func TestChatbotCompletion_LLMUnavailable(t *testing.T) {
 // TestChatbotCompletion_SessionNotFound covers criterion 10.
 func TestChatbotCompletion_SessionNotFound(t *testing.T) {
 	stub := &stubBotService{
-		chatbotCompleteFn: func(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
+		chatbotCompleteFn: func(ctx context.Context, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
 			return nil, common.CodeDataError, errors.New("session not found")
 		},
 	}
@@ -353,7 +353,7 @@ func TestChatbotCompletion_SessionNotFound(t *testing.T) {
 func TestChatbotCompletion_CreatesNewSession(t *testing.T) {
 	var capturedReq service.ChatbotCompletionRequest
 	stub := &stubBotService{
-		chatbotCompleteFn: func(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
+		chatbotCompleteFn: func(ctx context.Context, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
 			capturedReq = req
 			ch := make(chan service.ChatbotSSEFrame, 2)
 			close(ch)
@@ -377,7 +377,7 @@ func TestChatbotCompletion_CreatesNewSession(t *testing.T) {
 func TestChatbotCompletion_ReusesSession(t *testing.T) {
 	var capturedReq service.ChatbotCompletionRequest
 	stub := &stubBotService{
-		chatbotCompleteFn: func(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
+		chatbotCompleteFn: func(ctx context.Context, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
 			capturedReq = req
 			ch := make(chan service.ChatbotSSEFrame, 2)
 			close(ch)
@@ -394,7 +394,7 @@ func TestChatbotCompletion_ReusesSession(t *testing.T) {
 // TestChatbotCompletion_SessionTenantMismatch covers criterion 9.
 func TestChatbotCompletion_SessionTenantMismatch(t *testing.T) {
 	stub := &stubBotService{
-		chatbotCompleteFn: func(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
+		chatbotCompleteFn: func(ctx context.Context, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
 			return nil, common.CodeDataError, errors.New("session not found")
 		},
 	}
@@ -420,7 +420,7 @@ func TestChatbotCompletion_SessionTenantMismatch(t *testing.T) {
 // data:{answer}} envelope — terminated by [DONE].
 func TestAgentbotCompletion_StreamsSSE(t *testing.T) {
 	stub := &stubBotService{
-		agentbotCompleteFn: func(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+		agentbotCompleteFn: func(ctx context.Context, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
 			ch := make(chan canvas.RunEvent, 4)
 			go func() {
 				defer close(ch)
@@ -471,7 +471,7 @@ func TestAgentbotCompletion_StreamsSSE(t *testing.T) {
 func TestAgentbotCompletion_URLBoundAgentID(t *testing.T) {
 	var capturedAgentID string
 	stub := &stubBotService{
-		agentbotCompleteFn: func(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+		agentbotCompleteFn: func(ctx context.Context, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
 			capturedAgentID = agentID
 			ch := make(chan canvas.RunEvent, 2)
 			close(ch)
@@ -490,7 +490,7 @@ func TestAgentbotCompletion_URLBoundAgentID(t *testing.T) {
 // TestAgentbotCompletion_NoAccess covers criterion 19.
 func TestAgentbotCompletion_NoAccess(t *testing.T) {
 	stub := &stubBotService{
-		agentbotCompleteFn: func(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+		agentbotCompleteFn: func(ctx context.Context, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
 			return nil, common.CodeDataError, errors.New("can't find agent by ID: a1")
 		},
 	}
@@ -513,7 +513,7 @@ func TestAgentbotCompletion_NoAccess(t *testing.T) {
 func TestAgentbotCompletion_ResumesSession(t *testing.T) {
 	var capturedReq service.AgentbotCompletionRequest
 	stub := &stubBotService{
-		agentbotCompleteFn: func(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+		agentbotCompleteFn: func(ctx context.Context, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
 			capturedReq = req
 			ch := make(chan canvas.RunEvent, 2)
 			close(ch)
@@ -530,7 +530,7 @@ func TestAgentbotCompletion_ResumesSession(t *testing.T) {
 func TestAgentbotCompletion_BindsReleaseQuery(t *testing.T) {
 	var capturedReq service.AgentbotCompletionRequest
 	stub := &stubBotService{
-		agentbotCompleteFn: func(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+		agentbotCompleteFn: func(ctx context.Context, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
 			capturedReq = req
 			ch := make(chan canvas.RunEvent)
 			close(ch)
@@ -547,7 +547,7 @@ func TestAgentbotCompletion_BindsReleaseQuery(t *testing.T) {
 func TestAgentbotCompletion_BindsFileDescriptors(t *testing.T) {
 	var capturedReq service.AgentbotCompletionRequest
 	stub := &stubBotService{
-		agentbotCompleteFn: func(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+		agentbotCompleteFn: func(ctx context.Context, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
 			capturedReq = req
 			ch := make(chan canvas.RunEvent)
 			close(ch)
@@ -572,7 +572,7 @@ func TestAgentbotCompletion_BindsFileDescriptors(t *testing.T) {
 // TestAgentbotInputs_OK covers criterion 21.
 func TestAgentbotInputs_OK(t *testing.T) {
 	stub := &stubBotService{
-		agentbotInputsFn: func(ctx context.Context, tenantID, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error) {
+		agentbotInputsFn: func(ctx context.Context, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error) {
 			return "My Agent", "agent.png", "Welcome", "Agent", map[string]any{"query": map[string]any{"type": "string"}}, common.CodeSuccess, nil
 		},
 	}
@@ -609,7 +609,7 @@ func TestAgentbotInputs_MissingBeginComponent(t *testing.T) {
 	// service-layer fallback when FindBeginComponentID returns
 	// ErrComponentNotFound).
 	stub := &stubBotService{
-		agentbotInputsFn: func(ctx context.Context, tenantID, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error) {
+		agentbotInputsFn: func(ctx context.Context, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error) {
 			return "Agent", "", "", "", nil, common.CodeSuccess, nil
 		},
 	}
@@ -633,7 +633,7 @@ func TestAgentbotInputs_MissingBeginComponent(t *testing.T) {
 // TestAgentbotInputs_NotFound covers criterion 23.
 func TestAgentbotInputs_NotFound(t *testing.T) {
 	stub := &stubBotService{
-		agentbotInputsFn: func(ctx context.Context, tenantID, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error) {
+		agentbotInputsFn: func(ctx context.Context, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error) {
 			return "", "", "", "", nil, common.CodeDataError, errors.New("can't find agent by ID: a1")
 		},
 	}
@@ -783,29 +783,26 @@ func (f *fakeFileService) UploadFromURL(ctx context.Context, tenantID, rawURL st
 
 // ----- Cross-cutting tests (criteria 24, 25, 26) -----
 
-// TestBotRoutes_RequireAuth covers criterion 24. Without a user
-// context (no `user` set by middleware), the handler should return
-// an error. We construct an engine that runs the routes WITHOUT the
-// fake-user middleware to assert GetUser() short-circuits with 401.
+// TestBotRoutes_RequireAuth covers criterion 24. The BetaAuthMiddleware
+// rejects requests without credentials before dispatching to the handlers.
 func TestBotRoutes_RequireAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	h := NewBotHandler(nil)
 	h.botService = &stubBotService{
-		chatbotInfoFn: func(ctx context.Context, tenantID, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
+		chatbotInfoFn: func(ctx context.Context, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
 			t.Fatal("service should not be called when user is missing")
 			return "", "", "", "", false, common.CodeUnauthorized, nil
 		},
 	}
 	g := r.Group("/api/v1")
+	g.Use((&AuthHandler{}).BetaAuthMiddleware())
 	// Inline registration avoids the import cycle that
 	// RegisterChatbotRoutes would create (router -> handler).
 	chatbot := g.Group("/chatbots")
-	chatbot.Use(func(c *gin.Context) { c.Next() })
 	chatbot.POST("/:dialog_id/completions", h.ChatbotCompletion)
 	chatbot.GET("/:dialog_id/info", h.ChatbotInfo)
 	agentbot := g.Group("/agentbots")
-	agentbot.Use(func(c *gin.Context) { c.Next() })
 	agentbot.POST("/:agent_id/completions", h.AgentbotCompletion)
 	agentbot.GET("/:agent_id/inputs", h.AgentbotInputs)
 	cases := []struct {
@@ -823,10 +820,10 @@ func TestBotRoutes_RequireAuth(t *testing.T) {
 			Message string `json:"message"`
 		}
 		_ = json.Unmarshal(w.Body.Bytes(), &resp)
-		if resp.Code != 401 {
-			t.Errorf("%s %s: code = %d, want 401; body = %s", tc.method, tc.path, resp.Code, w.Body.String())
+		if resp.Code != int(common.CodeDataError) {
+			t.Errorf("%s %s: code = %d, want %d; body = %s", tc.method, tc.path, resp.Code, common.CodeDataError, w.Body.String())
 		}
-		if !strings.Contains(resp.Message, "User not found") && !strings.Contains(resp.Message, "Authorization") {
+		if resp.Message != "Authorization is not valid!" {
 			t.Errorf("%s %s: message = %q, want auth error", tc.method, tc.path, resp.Message)
 		}
 	}
@@ -836,17 +833,17 @@ func TestBotRoutes_RequireAuth(t *testing.T) {
 // middleware must accept a regular user token sent without the
 // "Bearer " prefix — same behaviour as AuthMiddleware(). We
 // inject a stub userTokenResolver that returns CodeSuccess on
-// GetUserByToken, then send a non-Bearer token and assert the
+// ResolveAccessToken, then send a non-Bearer token and assert the
 // middleware lets the request through (sets `user` on the
 // context, calls c.Next, no abort).
 func TestBotMiddleware_NonBearerRegularToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	stub := &stubUserTokenResolver{
-		getUserByTokenFn: func(ctx context.Context, auth string) (*entity.User, common.ErrorCode, error) {
+		resolveAccessTokenFn: func(ctx context.Context, auth string) (*service.AuthIdentity, common.ErrorCode, error) {
 			if auth != "raw-access-token-abc" {
-				t.Errorf("GetUserByToken called with %q, want raw-access-token-abc", auth)
+				t.Errorf("ResolveAccessToken called with %q, want raw-access-token-abc", auth)
 			}
-			return &entity.User{ID: "u-regular"}, common.CodeSuccess, nil
+			return &service.AuthIdentity{User: &entity.User{ID: "u-regular"}, TenantID: "tenant-1"}, common.CodeSuccess, nil
 		},
 	}
 	r := gin.New()
@@ -854,10 +851,13 @@ func TestBotMiddleware_NonBearerRegularToken(t *testing.T) {
 	g := r.Group("/api/v1")
 	g.Use(ah.BetaAuthMiddleware())
 	var seenUser *entity.User
+	var seenTenantID string
 	g.GET("/x", func(c *gin.Context) {
 		if u, ok := c.Get("user"); ok {
 			seenUser, _ = u.(*entity.User)
 		}
+		tenantValue, _ := c.Get("tenant_id")
+		seenTenantID, _ = tenantValue.(string)
 		c.String(http.StatusOK, "ok")
 	})
 	req, _ := http.NewRequest(http.MethodGet, "/api/v1/x", nil)
@@ -871,23 +871,20 @@ func TestBotMiddleware_NonBearerRegularToken(t *testing.T) {
 	if seenUser == nil || seenUser.ID != "u-regular" {
 		t.Fatalf("middleware did not set user from non-Bearer token; got %+v", seenUser)
 	}
+	if seenTenantID != "tenant-1" {
+		t.Fatalf("tenant_id = %q, want tenant-1", seenTenantID)
+	}
 }
 
 func TestBotMiddleware_BetaTokenBindsAgentID(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	agentID := "agent-bound"
 	stub := &stubUserTokenResolver{
-		getUserByBetaAPITokenFn: func(ctx context.Context, auth string) (*entity.User, common.ErrorCode, error) {
+		resolveBetaAPITokenFn: func(ctx context.Context, auth string) (*service.AuthIdentity, common.ErrorCode, error) {
 			if auth != "beta-token" {
-				t.Errorf("GetUserByBetaAPIToken called with %q, want beta-token", auth)
+				t.Errorf("ResolveBetaAPIToken called with %q, want beta-token", auth)
 			}
-			return &entity.User{ID: "u-beta"}, common.CodeSuccess, nil
-		},
-		getAPITokenByBetaFn: func(ctx context.Context, auth string) (*entity.APIToken, error) {
-			if auth != "beta-token" {
-				t.Errorf("GetAPITokenByBeta called with %q, want beta-token", auth)
-			}
-			return &entity.APIToken{DialogID: &agentID}, nil
+			return &service.AuthIdentity{User: &entity.User{ID: "u-beta"}, TenantID: "tenant-1", APIToken: &entity.APIToken{DialogID: &agentID}}, common.CodeSuccess, nil
 		},
 	}
 	r := gin.New()
@@ -895,9 +892,12 @@ func TestBotMiddleware_BetaTokenBindsAgentID(t *testing.T) {
 	g := r.Group("/api/v1")
 	g.Use(ah.BetaAuthMiddleware())
 	var seenAgentID string
+	var seenTenantID string
 	g.GET("/x", func(c *gin.Context) {
 		rawAgentID, _ := c.Get("agent_id")
 		seenAgentID, _ = rawAgentID.(string)
+		tenantValue, _ := c.Get("tenant_id")
+		seenTenantID, _ = tenantValue.(string)
 		c.String(http.StatusOK, "ok")
 	})
 	req, _ := http.NewRequest(http.MethodGet, "/api/v1/x", nil)
@@ -911,6 +911,9 @@ func TestBotMiddleware_BetaTokenBindsAgentID(t *testing.T) {
 	if seenAgentID != agentID {
 		t.Fatalf("agent_id = %q, want %q", seenAgentID, agentID)
 	}
+	if seenTenantID != "tenant-1" {
+		t.Fatalf("tenant_id = %q, want tenant-1", seenTenantID)
+	}
 }
 
 // stubUserTokenResolver implements userTokenResolver for tests.
@@ -918,38 +921,30 @@ func TestBotMiddleware_BetaTokenBindsAgentID(t *testing.T) {
 // return safe defaults (CodeUnauthorized so the middleware
 // short-circuits to 401).
 type stubUserTokenResolver struct {
-	getUserByTokenFn        func(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error)
-	getUserByAPITokenFn     func(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
-	getUserByBetaAPITokenFn func(ctx context.Context, token string) (*entity.User, common.ErrorCode, error)
-	getAPITokenByBetaFn     func(ctx context.Context, authorization string) (*entity.APIToken, error)
+	resolveAccessTokenFn  func(ctx context.Context, authorization string) (*service.AuthIdentity, common.ErrorCode, error)
+	resolveAPITokenFn     func(ctx context.Context, token string) (*service.AuthIdentity, common.ErrorCode, error)
+	resolveBetaAPITokenFn func(ctx context.Context, token string) (*service.AuthIdentity, common.ErrorCode, error)
 }
 
-func (s *stubUserTokenResolver) GetUserByToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error) {
-	if s.getUserByTokenFn != nil {
-		return s.getUserByTokenFn(ctx, authorization)
+func (s *stubUserTokenResolver) ResolveAccessToken(ctx context.Context, authorization string) (*service.AuthIdentity, common.ErrorCode, error) {
+	if s.resolveAccessTokenFn != nil {
+		return s.resolveAccessTokenFn(ctx, authorization)
 	}
 	return nil, common.CodeUnauthorized, errors.New("not stubbed")
 }
 
-func (s *stubUserTokenResolver) GetUserByAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error) {
-	if s.getUserByAPITokenFn != nil {
-		return s.getUserByAPITokenFn(ctx, token)
+func (s *stubUserTokenResolver) ResolveAPIToken(ctx context.Context, token string) (*service.AuthIdentity, common.ErrorCode, error) {
+	if s.resolveAPITokenFn != nil {
+		return s.resolveAPITokenFn(ctx, token)
 	}
 	return nil, common.CodeUnauthorized, errors.New("not stubbed")
 }
 
-func (s *stubUserTokenResolver) GetUserByBetaAPIToken(ctx context.Context, token string) (*entity.User, common.ErrorCode, error) {
-	if s.getUserByBetaAPITokenFn != nil {
-		return s.getUserByBetaAPITokenFn(ctx, token)
+func (s *stubUserTokenResolver) ResolveBetaAPIToken(ctx context.Context, token string) (*service.AuthIdentity, common.ErrorCode, error) {
+	if s.resolveBetaAPITokenFn != nil {
+		return s.resolveBetaAPITokenFn(ctx, token)
 	}
 	return nil, common.CodeUnauthorized, errors.New("not stubbed")
-}
-
-func (s *stubUserTokenResolver) GetAPITokenByBeta(ctx context.Context, authorization string) (*entity.APIToken, error) {
-	if s.getAPITokenByBetaFn != nil {
-		return s.getAPITokenByBetaFn(ctx, authorization)
-	}
-	return nil, errors.New("not stubbed")
 }
 
 // TestBotRoutes_NoRegularAuthRequired covers criterion 25. The
@@ -968,14 +963,14 @@ func (s *stubUserTokenResolver) GetAPITokenByBeta(ctx context.Context, authoriza
 func TestBotRoutes_NoRegularAuthRequired(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	stub := &stubUserTokenResolver{
-		getUserByTokenFn: func(ctx context.Context, auth string) (*entity.User, common.ErrorCode, error) {
-			return &entity.User{ID: "u-regular"}, common.CodeSuccess, nil
+		resolveAccessTokenFn: func(ctx context.Context, auth string) (*service.AuthIdentity, common.ErrorCode, error) {
+			return &service.AuthIdentity{User: &entity.User{ID: "u-regular"}, TenantID: "tenant-1"}, common.CodeSuccess, nil
 		},
 	}
 	ah := &AuthHandler{userService: stub}
 	h := NewBotHandler(nil)
 	h.botService = &stubBotService{
-		chatbotInfoFn: func(ctx context.Context, tenantID, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
+		chatbotInfoFn: func(ctx context.Context, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
 			return "Bot", "", "", "gpt-4", false, common.CodeSuccess, nil
 		},
 	}
@@ -999,7 +994,7 @@ func TestBotRoutes_NoRegularAuthRequired(t *testing.T) {
 		// production AuthMiddleware is exercised separately;
 		// here we just need to assert "the path resolves to
 		// something that is NOT a BotHandler".
-		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "no bot route on v1")
+		common.RespondError(c, common.CodeUnauthorized, "no bot route on v1")
 	})
 
 	// (1) regular JWT on apiNoAuth bot path -> 200.
@@ -1053,7 +1048,7 @@ func TestBotRoutes_NoRegularAuthRequired(t *testing.T) {
 func TestDownloadAttachment_Unauth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	stub := &stubUserTokenResolver{
-		getUserByTokenFn: func(ctx context.Context, auth string) (*entity.User, common.ErrorCode, error) {
+		resolveAccessTokenFn: func(ctx context.Context, auth string) (*service.AuthIdentity, common.ErrorCode, error) {
 			return nil, common.CodeUnauthorized, errors.New("invalid token")
 		},
 	}
@@ -1068,18 +1063,18 @@ func TestDownloadAttachment_Unauth(t *testing.T) {
 	g.Use(func(c *gin.Context) {
 		auth := c.GetHeader("Authorization")
 		if auth == "" {
-			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "Authorization required")
+			common.RespondError(c, common.CodeUnauthorized, "Authorization required")
 			c.Abort()
 			return
 		}
-		u, code, err := stub.GetUserByToken(c.Request.Context(), auth)
+		identity, code, err := stub.ResolveAccessToken(c.Request.Context(), auth)
 		if err != nil || code != common.CodeSuccess {
-			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "Invalid auth credentials")
+			common.RespondError(c, common.CodeUnauthorized, "Invalid auth credentials")
 			c.Abort()
 			return
 		}
 
-		c.Set("user", u)
+		c.Set("user", identity.User)
 		c.Next()
 	})
 	g.GET("/attachments/:attachment_id/download", h.DownloadAttachment)
@@ -1159,7 +1154,7 @@ func parseBotSSEFrames(t *testing.T, body []byte) []string {
 // TestChatbotInfo_DialogNotFound pins the DAO miss path.
 func TestChatbotInfo_DialogNotFound(t *testing.T) {
 	stub := &stubBotService{
-		chatbotInfoFn: func(ctx context.Context, tenantID, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
+		chatbotInfoFn: func(ctx context.Context, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
 			return "", "", "", "", false, common.CodeDataError, errors.New("dialog not found")
 		},
 	}
@@ -1247,6 +1242,7 @@ func TestGetAgentbotLogs_AllowsUnboundTokenForAccessibleAgent(t *testing.T) {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("GET",
 		"/api/v1/agentbots/agent-a/logs/msg-1", nil)
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "u1", ""))
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Params = gin.Params{
 		{Key: "agent_id", Value: "agent-a"},
@@ -1254,9 +1250,9 @@ func TestGetAgentbotLogs_AllowsUnboundTokenForAccessibleAgent(t *testing.T) {
 	}
 
 	h := NewBotHandler(nil)
-	h.botService = &stubBotService{agentbotLogsFn: func(_ context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
-		if tenantID != "u1" || agentID != "agent-a" || messageID != "msg-1" {
-			t.Fatalf("logs arguments = (%q, %q, %q)", tenantID, agentID, messageID)
+	h.botService = &stubBotService{agentbotLogsFn: func(ctx context.Context, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
+		if permission.UserIDFromContext(ctx) != "u1" || agentID != "agent-a" || messageID != "msg-1" {
+			t.Fatalf("logs identity/arguments = (%q, %q, %q)", permission.UserIDFromContext(ctx), agentID, messageID)
 		}
 		return map[string]any{"events": []any{}}, common.CodeSuccess, nil
 	}}
@@ -1285,7 +1281,7 @@ func TestGetAgentbotLogs_AllowsMatchingBoundAgent(t *testing.T) {
 	}
 
 	h := NewBotHandler(nil)
-	h.botService = &stubBotService{agentbotLogsFn: func(_ context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
+	h.botService = &stubBotService{agentbotLogsFn: func(_ context.Context, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
 		return map[string]any{"events": []any{}}, common.CodeSuccess, nil
 	}}
 	h.GetAgentbotLogs(c)
@@ -1312,7 +1308,7 @@ func TestGetAgentbotLogs_DeniesMismatchedBoundAgent(t *testing.T) {
 	}
 
 	h := NewBotHandler(nil)
-	h.botService = &stubBotService{agentbotLogsFn: func(context.Context, string, string, string) (map[string]any, common.ErrorCode, error) {
+	h.botService = &stubBotService{agentbotLogsFn: func(context.Context, string, string) (map[string]any, common.ErrorCode, error) {
 		t.Fatal("AgentbotLogs should not be called for a mismatched bound agent")
 		return nil, common.CodeServerError, errors.New("unexpected call")
 	}}
@@ -1344,7 +1340,7 @@ func TestGetAgentbotLogs_DeniesInaccessibleAgent(t *testing.T) {
 	}
 
 	h := NewBotHandler(nil)
-	h.botService = &stubBotService{agentbotLogsFn: func(context.Context, string, string, string) (map[string]any, common.ErrorCode, error) {
+	h.botService = &stubBotService{agentbotLogsFn: func(context.Context, string, string) (map[string]any, common.ErrorCode, error) {
 		return nil, common.CodeDataError, errors.New("can't find agent by ID: agent-b")
 	}}
 	h.GetAgentbotLogs(c)

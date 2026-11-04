@@ -24,11 +24,11 @@ func TestCompile_OverrideParams(t *testing.T) {
 					ComponentName: "Parser",
 					Params: map[string]any{
 						"pdf": map[string]any{
-							"output_format": "one",
-							"parse_method":  "naive",
+							"lang":         "one",
+							"parse_method": "naive",
 						},
 						"doc": map[string]any{
-							"output_format": "one",
+							"lang": "one",
 						},
 					},
 				},
@@ -50,10 +50,10 @@ func TestCompile_OverrideParams(t *testing.T) {
 	override := map[string]any{
 		"parser_0": map[string]any{
 			"pdf": map[string]any{
-				"output_format": "detailed",
+				"lang": "detailed",
 			},
 			"docx": map[string]any{
-				"output_format": "one",
+				"lang": "one",
 			},
 		},
 	}
@@ -68,11 +68,11 @@ func TestCompile_OverrideParams(t *testing.T) {
 		t.Fatalf("Parser factory not called")
 	}
 	// doc preserved from base.
-	if v, _ := got["doc"].(map[string]any); v == nil || v["output_format"] != "one" {
+	if v, _ := got["doc"].(map[string]any); v == nil || v["lang"] != "one" {
 		t.Errorf("doc should be preserved from base: %#v", got["doc"])
 	}
 	// docx injected by the override (was absent in base).
-	if v, _ := got["docx"].(map[string]any); v == nil || v["output_format"] != "one" {
+	if v, _ := got["docx"].(map[string]any); v == nil || v["lang"] != "one" {
 		t.Errorf("docx injection missing: %#v", got["docx"])
 	}
 	// pdf: override fully replaces the base entry (shallow merge).
@@ -80,8 +80,8 @@ func TestCompile_OverrideParams(t *testing.T) {
 	if pdf == nil {
 		t.Fatalf("pdf setup missing: %#v", got)
 	}
-	if pdf["output_format"] != "detailed" {
-		t.Errorf("pdf.output_format not overridden: %#v", pdf)
+	if pdf["lang"] != "detailed" {
+		t.Errorf("pdf.lang not overridden: %#v", pdf)
 	}
 	if _, ok := pdf["parse_method"]; ok {
 		t.Errorf("pdf.parse_method should be dropped by shallow merge: %#v", pdf)

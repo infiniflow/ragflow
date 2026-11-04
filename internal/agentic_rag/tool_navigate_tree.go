@@ -148,6 +148,13 @@ func (g *NavigateTreeTool) invokableRun(ctx context.Context, argumentsInJSON str
 		common.DebugCtx(ctx, "navigate_tree: marked unavailable; skipping backend (no compiled navigation tree)")
 		return navTreeEmpty(navTreeReasonNoStructure, "no compiled navigation tree"), nil
 	}
+	docScope, err := resolveDocumentScope(ctx, args.DocScope)
+	if err != nil {
+		return "", fmt.Errorf("navigate_tree: %w", err)
+	}
+	if docScope != nil && len(docScope) == 0 {
+		return navTreeEmpty(navTreeReasonNoDoc, ""), nil
+	}
 	if len(datasetIDs) == 0 {
 		// Bound scope is empty: report no structure rather than reading outside
 		// the conversation's allowed datasets.
@@ -167,7 +174,7 @@ func (g *NavigateTreeTool) invokableRun(ctx context.Context, argumentsInJSON str
 		anyError error
 	)
 	for _, kbID := range datasetIDs {
-		routed, rerr := router.Route(ctx, g.tenantID, kbID, full, args.DocScope, navSearchMaxDocs)
+		routed, rerr := router.Route(ctx, g.tenantID, kbID, full, docScope, navSearchMaxDocs)
 		if rerr != nil {
 			anyError = rerr
 			common.DebugCtx(ctx, "navigate_tree: nav-tree descent failed",
@@ -222,6 +229,7 @@ func (g *NavigateTreeTool) invokableRun(ctx context.Context, argumentsInJSON str
 	common.InfoCtx(ctx, "agentic_rag: navigate_tree",
 		zap.String("query", query),
 		zap.Int("datasets", len(datasetIDs)),
+		zap.Int("doc_scope", len(docScope)),
 		zap.Int("docs", len(ordered)),
 		zap.Strings("names", names))
 	parts := []string{fmt.Sprintf(`<tree_navigation count="%d" query="%s">`, len(ordered), xmlEscape(query))}

@@ -34,7 +34,6 @@ import { AgentCategory } from '@/constants/agent';
 import { Edge, Node } from '@xyflow/react';
 import { IReference, Message } from './chat';
 import { ICompilationTemplateGroup } from './compilation-template';
-import { IDataset } from './dataset';
 
 export type DSLComponents = Record<string, IOperator>;
 
@@ -83,10 +82,34 @@ export declare interface IFlow {
   release?: boolean;
   release_time?: number;
   last_publish_time?: number;
-  datasets?: Pick<IDataset, 'id' | 'name' | 'avatar'>[];
   tags?: string;
 }
 
+export interface ICanvasPresenceUser {
+  user_id: string;
+  display_name: string;
+  active_tab_count: number;
+  last_seen_at: number;
+  permission: number;
+}
+
+export interface ICanvasPresenceResponse {
+  canvas_id: string;
+  online_user_count: number;
+  operator_permission?: number;
+  users: ICanvasPresenceUser[];
+}
+
+export interface ICanvasPresenceHeartbeatData {
+  ok: boolean;
+  code?: string;
+}
+
+export interface IPresencePayload {
+  canvas_id: string;
+  tab_id: string;
+  presence_session_id: string;
+}
 // GET /agents merges compilation template groups into the agent list when no
 // canvas_category is requested; every item carries this discriminator.
 export enum AgentListItemType {
@@ -242,7 +265,6 @@ export type IRelevantNode = BaseNode;
 export type ILogicNode = BaseNode;
 export type INoteNode = BaseNode;
 export type IMessageNode = BaseNode;
-export type IRewriteNode = BaseNode;
 export type IInvokeNode = BaseNode;
 export type ITemplateNode = BaseNode;
 export type IEmailNode = BaseNode;
@@ -264,7 +286,6 @@ export type RAGFlowNodeType =
   | ILogicNode
   | INoteNode
   | IMessageNode
-  | IRewriteNode
   | IInvokeNode
   | ITemplateNode
   | IEmailNode
@@ -282,6 +303,22 @@ export interface ITraceData {
   trace: Array<Record<string, any>>;
 }
 
+export interface IModelInputSnapshot {
+  calls: Array<{
+    sequence: number;
+    model: string;
+    status: 'captured' | 'omitted';
+    messages?: Record<string, unknown>[];
+    reason?: 'unsupported_content' | 'size_limit' | 'serialization_error';
+  }>;
+  omitted_count: number;
+}
+
+export interface ISingleDebugCaptureData {
+  outputs: Record<string, unknown> | null;
+  model_inputs: IModelInputSnapshot;
+}
+
 export interface IAgentLogResponse {
   id: string;
   message: IAgentLogMessage[];
@@ -295,15 +332,18 @@ export interface IAgentLogResponse {
   source: string;
   user_id: string;
   dsl: string;
-  reference: IReference[];
   name: string;
   version_title: string;
+  is_new?: boolean;
 }
 export interface IAgentLogsResponse {
   total: number;
   sessions: IAgentLogResponse[];
 }
 export interface IAgentLogsRequest {
+  include_history?: boolean;
+  include_reference?: boolean;
+  include_prompt?: boolean;
   keywords?: string;
   to_date?: string | Date;
   from_date?: string | Date;
@@ -317,6 +357,7 @@ export interface IAgentLogsRequest {
 export interface IAgentLogMessage {
   content: string;
   role: 'user' | 'assistant';
+  reference?: IReference;
   id: string;
 }
 
@@ -354,4 +395,9 @@ export interface IWebhookTrace {
   events: any[];
   next_since_ts: number;
   finished: boolean;
+}
+
+export interface IAgentWebhookCredential {
+  credential: string;
+  webhook_url: string;
 }

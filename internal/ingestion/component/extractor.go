@@ -39,6 +39,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"sort"
@@ -54,32 +55,31 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/modelcontext"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 )
 
-const componentNameExtractor = "Extractor"
+// componentNameExtractor is the canonical Extractor component name; the value
+// lives in the schema package so the pipeline layer can reference the same
+// identity.
+const componentNameExtractor = schema.ComponentNameExtractor
 
-// defaultExtractorChatTimeout bounds one LLM chat call. It is a hung-call
-// ceiling, not a pacing target: a fast model answers in seconds and never
-// approaches it, so per-model speed variance needs no tuning — only a hung
-// provider burns the full budget. Larger than the tag path's 60s because a
-// thinking model legitimately needs longer on open-ended prompts, and the
-// driver-level 20m stays as the absolute backstop.
+// defaultExtractorChatTimeout bounds one Extractor LLM call, including
+// retries and backoff. Tag extraction has its own timeout.
 const defaultExtractorChatTimeout = 180 * time.Second
 
 // extractorChatTimeout resolves the per-call LLM budget from
 // EXTRACTOR_CHAT_TIMEOUT (seconds), falling back to
 // defaultExtractorChatTimeout on unset/invalid values.
 func extractorChatTimeout() time.Duration {
-	if v := os.Getenv("EXTRACTOR_CHAT_TIMEOUT"); v != "" {
-		if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil && n > 0 {
+	if v := os.Getenv(common.EnvExtractorChatTimeout); v != "" {
+		if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n > 0 && n <= math.MaxInt64/int64(time.Second) {
 			return time.Duration(n) * time.Second
 		}
 	}
@@ -99,49 +99,31 @@ var (
 // and question extraction calls (generator.py:230,245).
 const extractorTemperature = 0.2
 
-// defaultExtractorConcurrency bounds concurrent LLM extraction calls
-// process-wide. It mirrors Python's chat_limiter bound
-// (agent/component/base.py:353 asyncio.Semaphore(MAX_CONCURRENT_CHATS,
-// default 10)) so the Go port rate-limits auto-keywords / auto-questions /
-// auto-metadata extraction the same way Python does.
+// defaultExtractorConcurrency bounds concurrent chunk extraction jobs
+// process-wide to reduce provider rate-limit pressure.
 const defaultExtractorConcurrency = 10
 
 // extractorJob is one chunk's auto-extraction unit of work.
 type extractorJob func() error
 
-// extractorPool is the process-wide bounded worker pool that drives
-// cross-chunk concurrency for auto-keywords / auto-questions /
-// auto-metadata extraction. It mirrors the parser/structure/mindmap
-// WorkerPool usage, but is held globally so every Extractor
-// invocation shares one rate limiter instead of spinning up one pool
-// per batch. The pool only bounds concurrency (it is never StopWait'd),
-// so per-invocation completion is tracked by runAutoExtractions with its
-// own sync.WaitGroup + first-error collection — concurrent Invoke calls
-// therefore do not disturb each other.
+// extractorPool bounds chunk extraction concurrency across all Extractor
+// invocations in this process: keywords, LLM tags, questions, summary, and
+// metadata share the same workers. Each invocation waits for its own futures.
 var extractorPool = utility.NewWorkerPool[extractorJob, struct{}](
 	extractorConcurrency(),
 	extractorConcurrency()*4,
 	func(_ context.Context, j extractorJob) (struct{}, error) { return struct{}{}, j() },
 )
 
-// extractorConcurrency resolves the pool size from MAX_CONCURRENT_CHATS
-// (Python parity) with a safe default of defaultExtractorConcurrency.
+// extractorConcurrency resolves the pool size from EXTRACTOR_CONCURRENCY
+// with a safe default of defaultExtractorConcurrency.
 func extractorConcurrency() int {
-	if v := os.Getenv("MAX_CONCURRENT_CHATS"); v != "" {
+	if v := os.Getenv(common.EnvExtractorConcurrency); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
 		}
 	}
 	return defaultExtractorConcurrency
-}
-
-// SetExtractorConcurrency overrides the global extractor pool size at
-// runtime (e.g. from service init or tests). Mirrors tuning Python's
-// chat_limiter bound.
-func SetExtractorConcurrency(n int) {
-	if n > 0 {
-		extractorPool.Resize(n)
-	}
 }
 
 // extractorTopNPattern matches the {{ topn }} placeholder accepted in
@@ -644,6 +626,8 @@ func extractorChunkList(v any) ([]map[string]any, bool) {
 	switch list := v.(type) {
 	case []map[string]any:
 		return list, true
+	case []schema.ChunkDoc:
+		return schema.ChunkDocsToMaps(list), true
 	case []any:
 		out := make([]map[string]any, 0, len(list))
 		for _, item := range list {
@@ -1538,14 +1522,12 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 	var modelName string
 	var apiConfig *models.APIConfig
 	if isBareTenantModelID(compositeLLMID) {
-		// UUID path: resolveModelConfigByID does a single GetByID and
-		// returns a clear error if the record doesn't exist.  No need
-		// for a separate pre-check — resolveModelConfig's redundant
-		// GetByID dispatch check is also bypassed.
-		driver, modelName, apiConfig, _, err = resolveModelConfigByID(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
+		// Resolve the exact tenant model without a separate existence check.
+		resolved, err := resolveModelConfigByID(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
 		if err != nil {
 			return extractorChatConfig{}, fmt.Errorf("extractor: tenant model %q not found or not usable: %w", compositeLLMID, err)
 		}
+		driver, modelName, apiConfig = resolved.driver, resolved.model.ModelName, resolved.apiConfig
 	} else {
 		// Composite "model@provider" path: delegate to the shared dispatcher.
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
@@ -1554,6 +1536,14 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 		}
 	}
 
+	return newExtractorChatConfig(driver, modelName, apiConfig), nil
+}
+
+// newExtractorChatConfig builds the chat config from a resolved driver and its
+// API settings: the driver name lowercased as the llm_factory, with the
+// credentials dereferenced defensively (a nil apiConfig or nil fields mean
+// "not configured", not a panic).
+func newExtractorChatConfig(driver models.ModelDriver, modelName string, apiConfig *models.APIConfig) extractorChatConfig {
 	apiKey := ""
 	baseURL := ""
 	if apiConfig != nil {
@@ -1569,7 +1559,7 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 		modelName: modelName,
 		apiKey:    apiKey,
 		baseURL:   baseURL,
-	}, nil
+	}
 }
 
 // resolveExtractorChatDefaultConfig resolves the tenant's default chat
@@ -1591,22 +1581,7 @@ func resolveExtractorChatDefaultConfig(ctx context.Context, db *gorm.DB) extract
 		return extractorChatConfig{}
 	}
 
-	apiKey := ""
-	baseURL := ""
-	if apiConfig != nil {
-		if apiConfig.ApiKey != nil {
-			apiKey = *apiConfig.ApiKey
-		}
-		if apiConfig.BaseURL != nil {
-			baseURL = *apiConfig.BaseURL
-		}
-	}
-	return extractorChatConfig{
-		driver:    strings.ToLower(driver.Name()),
-		modelName: modelName,
-		apiKey:    apiKey,
-		baseURL:   baseURL,
-	}
+	return newExtractorChatConfig(driver, modelName, apiConfig)
 }
 
 // isBareTenantModelID reports whether s is a 32-character hex string
@@ -1661,9 +1636,6 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 	if fn := getExtractorContextLengthOverride(); fn != nil {
 		return fn(ctx, llmID)
 	}
-	if db == nil {
-		db = dao.DB
-	}
 	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return 0
@@ -1679,7 +1651,7 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 	if llmID == "" {
 		return 0
 	}
-	return dao.ResolveModelContentLength(ctx, db, tid, llmID, "", "")
+	return modelcontext.ResolveModelContentLength(ctx, db, tid, llmID, "", "")
 }
 
 // defaultChatModelRef returns the tenant's default chat model reference —
@@ -1690,14 +1662,14 @@ func defaultChatModelRef(ctx context.Context, db *gorm.DB, tenantID string) stri
 		// No database to read the tenant's default chat model from.
 		return ""
 	}
-	tenant, err := dao.NewTenantDAO().GetByID(ctx, db, tenantID)
-	if err != nil || tenant == nil {
+	membership, err := resolveDefaultModelMembership(ctx, db, tenantID)
+	if err != nil || membership == nil {
 		return ""
 	}
-	if tenant.TenantLLMID != nil && *tenant.TenantLLMID != "" {
-		return *tenant.TenantLLMID
+	if membership.TenantLLMID != nil && *membership.TenantLLMID != "" {
+		return *membership.TenantLLMID
 	}
-	return tenant.LLMID
+	return membership.LLMID
 }
 
 // extractorContextFitBudget returns 97% of the model's context window as the

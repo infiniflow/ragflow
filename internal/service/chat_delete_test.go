@@ -62,8 +62,8 @@ func TestChatServiceDeleteChatRejectsNonOwner(t *testing.T) {
 	createChatDeleteServiceTestChat(t, db, "chat-1", "tenant-1")
 
 	svc := NewChatService()
-	ctx := t.Context()
-	err := svc.DeleteChat(ctx, "user-1", "chat-1")
+	ctx := serviceTestContext(t, "user-1", "tenant-1")
+	err := svc.DeleteChat(ctx, "chat-1")
 	if !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("expected permission denied, got %v", err)
 	}
@@ -84,8 +84,8 @@ func TestChatServiceBulkDeleteChatsDeleteAllOnlyDeletesOwnedChats(t *testing.T) 
 	createChatDeleteServiceTestChat(t, db, "chat-3", "tenant-2")
 
 	svc := NewChatService()
-	ctx := t.Context()
-	result, err := svc.BulkDeleteChats(ctx, "user-1", &BulkDeleteChatsRequest{DeleteAll: true})
+	ctx := serviceTestContext(t, "user-1", "user-1")
+	result, err := svc.BulkDeleteChats(ctx, &BulkDeleteChatsRequest{DeleteAll: true})
 	if err != nil {
 		t.Fatalf("BulkDeleteChats failed: %v", err)
 	}
@@ -125,8 +125,8 @@ func TestChatServiceBulkDeleteChatsReturnsPartialSuccessErrors(t *testing.T) {
 	createChatDeleteServiceTestChat(t, db, "chat-2", "tenant-2")
 
 	svc := NewChatService()
-	ctx := t.Context()
-	result, err := svc.BulkDeleteChats(ctx, "user-1", &BulkDeleteChatsRequest{
+	ctx := serviceTestContext(t, "user-1", "user-1")
+	result, err := svc.BulkDeleteChats(ctx, &BulkDeleteChatsRequest{
 		IDs: []string{"chat-1", "chat-2", "chat-1"},
 	})
 	if err != nil {

@@ -32,6 +32,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
@@ -115,7 +116,6 @@ func emitOne(text, docType string) map[string]any {
 		// scope here.
 		Text:    removeTag(text),
 		DocType: docType,
-		CKType:  docType,
 	}})
 }
 
@@ -138,15 +138,16 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		it := src[0]
 		docType := itemDocType(it)
 		text := itemTextOrFallback(it)
-		if strings.TrimSpace(text) == "" && it.Image == "" {
+		if strings.TrimSpace(text) == "" && !hasMediaPayload(it) {
 			return emptyOutputs()
 		}
 		out := schema.ChunkDoc{
 			// Strip parser coordinate tags (see emitOne).
 			Text:         removeTag(text),
 			DocType:      docType,
-			CKType:       docType,
 			Image:        it.Image,
+			ImgID:        it.ImgID,
+			MediaRef:     it.MediaRef,
 			Positions:    it.Positions,
 			PDFPositions: it.PDFPositions,
 			Sheet:        it.Sheet,
@@ -157,6 +158,7 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 
 	var parts []string
 	var img string
+	var mediaRef *entity.MediaRef
 	for _, it := range src {
 		if t := itemTextOrFallback(it); t != "" {
 			// Strip parser coordinate tags before joining (see emitOne).
@@ -165,12 +167,15 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		if img == "" && it.Image != "" {
 			img = it.Image
 		}
+		if mediaRef == nil && it.MediaRef != nil {
+			mediaRef = it.MediaRef
+		}
 	}
 	merged := strings.Join(parts, "\n")
-	if strings.TrimSpace(merged) == "" && img == "" {
+	if strings.TrimSpace(merged) == "" && img == "" && mediaRef == nil {
 		return emptyOutputs()
 	}
-	out := schema.ChunkDoc{Text: merged, DocType: "text", CKType: "text"}
+	out := schema.ChunkDoc{Text: merged, DocType: "text"}
 	// Multi-item merge produces a single text-only chunk mirroring Python
 	// one.py:166-168. Per-item Positions/PDFPositions are intentionally
 	// not carried — merging coordinates from different source items would
@@ -179,6 +184,7 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 	if img != "" {
 		out.Image = img
 	}
+	out.MediaRef = mediaRef
 	return chunkOutputs([]schema.ChunkDoc{out})
 }
 

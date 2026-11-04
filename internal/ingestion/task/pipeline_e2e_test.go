@@ -209,7 +209,7 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetByID failed: %v", err)
 			}
-			taskCtx, err := LoadFromIngestionTask(ctx, ingestionTask)
+			taskCtx, err := LoadFromIngestionTask(ctx, dao.DB, ingestionTask)
 			if err != nil {
 				t.Fatalf("LoadFromIngestionTask failed: %v", err)
 			}

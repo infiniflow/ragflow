@@ -8,6 +8,7 @@ function refineRangeConsistency(
   max: number | undefined,
   isMaxExclusive: boolean,
 ): boolean {
+  if (min === undefined || max === undefined) return true;
   if (min !== undefined && max !== undefined && min > max) {
     return false;
   }
@@ -187,7 +188,7 @@ const getJsonObjectType = (t: Translation) =>
       },
     );
 
-export function getTypeValidation(type: string, t: Translation) {
+export function getTypeValidation(type: string | undefined, t: Translation) {
   const jsonTypesValidation: Record<string, z.ZodTypeAny> = {
     string: getJsonStringType(t),
     number: getJsonNumberType(t),
@@ -195,17 +196,17 @@ export function getTypeValidation(type: string, t: Translation) {
     object: getJsonObjectType(t),
   };
 
-  return jsonTypesValidation[type] || z.any();
+  return (type && jsonTypesValidation[type]) || z.any();
 }
 
 export interface TypeValidationResult {
   success: boolean;
-  errors?: z.core.$ZodIssue[];
+  errors?: z.ZodIssue[];
 }
 
 export function validateSchemaByType(
   schema: unknown,
-  type: string,
+  type: string | undefined,
   t: Translation,
 ): TypeValidationResult {
   const zodSchema = getTypeValidation(type, t);
@@ -218,7 +219,7 @@ export function validateSchemaByType(
 }
 
 export interface ValidationTreeNode {
-  name: string;
+  name: string | undefined;
   validation: TypeValidationResult;
   children: Record<string, ValidationTreeNode>;
   cumulativeChildrenErrors: number; // Total errors in this node and all its descendants
@@ -255,7 +256,7 @@ export function buildValidationTree(
                 code: 'custom',
                 message: t.validatorErrorSchemaValidation,
                 path: [],
-              } as unknown as z.core.$ZodIssue,
+              } as unknown as z.ZodIssue,
             ],
           };
 

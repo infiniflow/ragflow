@@ -39,15 +39,15 @@ type BotHandler struct {
 // botService is the subset of BotService used by these handlers. It
 // is interface-typed so the test suite can inject a stub.
 type botService interface {
-	ChatbotInfo(ctx context.Context, userID, dialogID string) (
+	ChatbotInfo(ctx context.Context, dialogID string) (
 		title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error)
-	AgentbotInputs(ctx context.Context, userID, agentID string) (
+	AgentbotInputs(ctx context.Context, agentID string) (
 		title, avatar, prologue, mode string, inputs map[string]any,
 		ec common.ErrorCode, err error)
-	AgentbotCompletion(ctx context.Context, userID, agentID string, req service.AgentbotCompletionRequest) (
+	AgentbotCompletion(ctx context.Context, agentID string, req service.AgentbotCompletionRequest) (
 		<-chan canvas.RunEvent, common.ErrorCode, error)
-	AgentbotLogs(ctx context.Context, userID, agentID, messageID string) (map[string]any, common.ErrorCode, error)
-	ChatbotCompletion(ctx context.Context, userID, dialogID string, req service.ChatbotCompletionRequest) (
+	AgentbotLogs(ctx context.Context, agentID, messageID string) (map[string]any, common.ErrorCode, error)
+	ChatbotCompletion(ctx context.Context, dialogID string, req service.ChatbotCompletionRequest) (
 		<-chan service.ChatbotSSEFrame, common.ErrorCode, error)
 }
 
@@ -61,26 +61,21 @@ func NewBotHandler(svc *service.BotService) *BotHandler {
 // Mirrors python bot_api.py:126-154. Returns the public metadata of
 // a chatbot dialog (title, avatar, prologue, web search flag, llm_id).
 func (h *BotHandler) ChatbotInfo(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
-		return
-	}
 	dialogID := c.Param("dialog_id")
 	if dialogID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`dialog_id` is required.")
+		common.RespondError(c, common.CodeArgumentError, "`dialog_id` is required.")
 		return
 	}
 	title, avatar, prologue, llmID, hasWebSearch, ec, err := h.botService.ChatbotInfo(
-		c.Request.Context(), user.ID, dialogID)
+		c.Request.Context(), dialogID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.ResponseWithCodeData(c, ec, nil, err.Error())
+		common.RespondError(c, ec, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{
+	common.RespondSuccess(c, gin.H{
 		"title":                   title,
 		"avatar":                  avatar,
 		"prologue":                prologue,
@@ -95,23 +90,18 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 // Mirrors python bot_api.py:239-250. Returns the public metadata of
 // an agentbot canvas (title, avatar, inputs, prologue, mode).
 func (h *BotHandler) AgentbotInputs(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
-		return
-	}
 	agentID := c.Param("agent_id")
 	if agentID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`agent_id` is required.")
+		common.RespondError(c, common.CodeArgumentError, "`agent_id` is required.")
 		return
 	}
 	title, avatar, prologue, mode, inputs, ec, err := h.botService.AgentbotInputs(
-		c.Request.Context(), user.ID, agentID)
+		c.Request.Context(), agentID)
 	if err != nil {
-		common.ResponseWithCodeData(c, ec, nil, err.Error())
+		common.RespondError(c, ec, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{
+	common.RespondSuccess(c, gin.H{
 		"title":    title,
 		"avatar":   avatar,
 		"inputs":   inputs,
@@ -136,14 +126,9 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 // canvas event, including node_* telemetry used by the "Thinking"
 // log panel).
 func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
-		return
-	}
 	agentID := c.Param("agent_id")
 	if agentID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`agent_id` is required.")
+		common.RespondError(c, common.CodeArgumentError, "`agent_id` is required.")
 		return
 	}
 	var body service.AgentbotCompletionRequest
@@ -153,8 +138,7 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 	// then ran with empty inputs.
 	if c.Request.ContentLength != 0 {
 		if err := c.ShouldBindJSON(&body); err != nil {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-				"Invalid request: "+err.Error())
+			common.RespondError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
 			return
 		}
 	}
@@ -162,17 +146,18 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 		if rawRelease, ok := c.GetQuery("release"); ok {
 			release, err := strconv.ParseBool(rawRelease)
 			if err != nil {
-				common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-					"Invalid release value: "+err.Error())
+				common.RespondError(c, common.CodeArgumentError, "Invalid release value: "+err.Error())
 				return
 			}
 			body.Release = &release
 		}
 	}
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
 	events, ec, err := h.botService.AgentbotCompletion(
-		c.Request.Context(), user.ID, agentID, body)
+		ctx, agentID, body)
 	if err != nil {
-		common.ResponseWithCodeData(c, ec, nil, err.Error())
+		common.RespondError(c, ec, err.Error())
 		return
 	}
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -198,14 +183,9 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 // SSE frames in the Python envelope shape. The streaming helper
 // lives in service/bot_completion.go.
 func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
-		return
-	}
 	dialogID := c.Param("dialog_id")
 	if dialogID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`dialog_id` is required.")
+		common.RespondError(c, common.CodeArgumentError, "`dialog_id` is required.")
 		return
 	}
 	var body service.ChatbotCompletionRequest
@@ -215,18 +195,19 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 	// then ran with empty session_id/question.
 	if c.Request.ContentLength != 0 {
 		if err := c.ShouldBindJSON(&body); err != nil {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-				"Invalid request: "+err.Error())
+			common.RespondError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
 			return
 		}
 	}
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
 	frames, ec, err := h.botService.ChatbotCompletion(
-		c.Request.Context(), user.ID, dialogID, body)
+		ctx, dialogID, body)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.ResponseWithCodeData(c, ec, nil, err.Error())
+		common.RespondError(c, ec, err.Error())
 		return
 	}
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -251,19 +232,14 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 // "Thinking" button hits this endpoint because the share flow authenticates
 // with a beta APIToken (no session JWT). Mirrors python bot_api.py:agent_bot_logs.
 func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
-		return
-	}
 	agentIDStr := c.Param("agent_id")
 	if agentIDStr == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "agent_id is required")
+		common.RespondError(c, common.CodeArgumentError, "agent_id is required")
 		return
 	}
 	messageID := c.Param("message_id")
 	if messageID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "message_id is required")
+		common.RespondError(c, common.CodeArgumentError, "message_id is required")
 		return
 	}
 	// A beta token with DialogID is restricted to that agent. Tokens without
@@ -272,14 +248,14 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 	if boundAgentID, ok := c.Get("agent_id"); ok {
 		boundAgentIDStr, ok := boundAgentID.(string)
 		if ok && boundAgentIDStr != "" && boundAgentIDStr != agentIDStr {
-			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "API token is not authorized for this agent.")
+			common.RespondError(c, common.CodeUnauthorized, "API token is not authorized for this agent.")
 			return
 		}
 	}
-	data, ec, err := h.botService.AgentbotLogs(c.Request.Context(), user.ID, agentIDStr, messageID)
+	data, ec, err := h.botService.AgentbotLogs(c.Request.Context(), agentIDStr, messageID)
 	if err != nil {
-		common.ResponseWithCodeData(c, ec, nil, err.Error())
+		common.RespondError(c, ec, err.Error())
 		return
 	}
-	common.SuccessWithData(c, data, "success")
+	common.RespondSuccess(c, data, "success")
 }

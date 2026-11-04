@@ -241,7 +241,6 @@ func TestChunkDocSpreadsheetFieldsRoundTrip(t *testing.T) {
 	original := ChunkDoc{
 		Text:       "<table><tr><th>ID</th></tr></table>",
 		DocType:    "table",
-		CKType:     "table",
 		Sheet:      "Orders",
 		SheetIndex: &sheetIndex,
 	}
@@ -268,7 +267,7 @@ func TestChunkDocSpreadsheetFieldsRoundTrip(t *testing.T) {
 // round trip through Extra; the index boundary strips them from the store.
 func TestChunkDocLegacyRowIRKeysPassThrough(t *testing.T) {
 	var decoded ChunkDoc
-	raw := `{"text":"row","doc_type_kwd":"text","ck_type":"table_row","table_id":"sheet-2","headers":["ID","Status"],"cells":["A-100","paid"],"row_start":42,"row_end":42,"col_start":1,"col_end":3}`
+	raw := `{"text":"row","doc_type_kwd":"text","table_id":"sheet-2","headers":["ID","Status"],"cells":["A-100","paid"],"row_start":42,"row_end":42,"col_start":1,"col_end":3}`
 	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}

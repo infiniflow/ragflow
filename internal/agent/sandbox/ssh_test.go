@@ -22,6 +22,8 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 	"fmt"
+	"io"
+	"os/exec"
 	"path/filepath"
 
 	"golang.org/x/crypto/ssh"
@@ -316,6 +318,138 @@ func TestShq_Extra(t *testing.T) {
 			t.Errorf("shq(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
+}
+
+func TestShqDoesNotInterpretSingleQuote(t *testing.T) {
+	shell, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("POSIX shell is not available")
+	}
+	marker := filepath.Join(t.TempDir(), "injected")
+	argument := "safe'; touch " + marker + "; #"
+	command := "printf %s " + shq(argument)
+	output, err := exec.Command(shell, "-c", command).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run quoted shell argument: %v; output: %s", err, output)
+	}
+	if string(output) != argument {
+		t.Fatalf("shell output = %q, want %q", output, argument)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("quoted argument executed injected command; marker stat error = %v", err)
+	}
+}
+
+func TestSSHRemoteWriteFileStreamsContentAsStdin(t *testing.T) {
+	commands := make(chan string, 1)
+	contents := make(chan string, 1)
+	client := newSSHExecTestClient(t, func(command string, stdin io.Reader) error {
+		commands <- command
+		content, err := io.ReadAll(stdin)
+		if err != nil {
+			return err
+		}
+		contents <- string(content)
+		return nil
+	})
+	provider := &SSHProvider{timeout: 5}
+	remotePath := filepath.Join(t.TempDir(), "uploaded.py")
+	content := "print('safe')\n__RAGFLOW_SSH_EOF__\nprintf injected\n"
+	if err := provider.remoteWriteFile(t.Context(), client, remotePath, content); err != nil {
+		t.Fatalf("remoteWriteFile: %v", err)
+	}
+	if got, want := <-commands, "cat > "+shq(remotePath); got != want {
+		t.Fatalf("remote command = %q, want %q", got, want)
+	}
+	if got := <-contents; got != content {
+		t.Fatalf("stdin content = %q, want %q", got, content)
+	}
+}
+
+func newSSHExecTestClient(t *testing.T, execute func(string, io.Reader) error) *ssh.Client {
+	t.Helper()
+	_, hostKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate SSH host key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(hostKey)
+	if err != nil {
+		t.Fatalf("create SSH host signer: %v", err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for SSH test server: %v", err)
+	}
+	serverConfig := &ssh.ServerConfig{PasswordCallback: func(ssh.ConnMetadata, []byte) (*ssh.Permissions, error) {
+		return nil, nil
+	}}
+	serverConfig.AddHostKey(signer)
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		server, channels, requests, err := ssh.NewServerConn(conn, serverConfig)
+		if err != nil {
+			return
+		}
+		defer server.Close()
+		go ssh.DiscardRequests(requests)
+		for newChannel := range channels {
+			if newChannel.ChannelType() != "session" {
+				_ = newChannel.Reject(ssh.UnknownChannelType, "unsupported channel")
+				continue
+			}
+			channel, channelRequests, err := newChannel.Accept()
+			if err != nil {
+				continue
+			}
+			go func() {
+				defer channel.Close()
+				for request := range channelRequests {
+					if request.Type != "exec" {
+						_ = request.Reply(false, nil)
+						continue
+					}
+					var payload struct{ Command string }
+					if err := ssh.Unmarshal(request.Payload, &payload); err != nil {
+						_ = request.Reply(false, nil)
+						return
+					}
+					_ = request.Reply(true, nil)
+					status := uint32(0)
+					if err := execute(payload.Command, channel); err != nil {
+						status = 1
+					}
+					_, _ = channel.SendRequest("exit-status", false, ssh.Marshal(struct{ ExitStatus uint32 }{status}))
+					return
+				}
+			}()
+		}
+	}()
+
+	conn, err := net.Dial("tcp", listener.Addr().String())
+	if err != nil {
+		listener.Close()
+		t.Fatalf("connect to SSH test server: %v", err)
+	}
+	clientConn, channels, requests, err := ssh.NewClientConn(conn, listener.Addr().String(), &ssh.ClientConfig{
+		User:            "test",
+		Auth:            []ssh.AuthMethod{ssh.Password("test")},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	})
+	if err != nil {
+		conn.Close()
+		listener.Close()
+		t.Fatalf("SSH client handshake: %v", err)
+	}
+	client := ssh.NewClient(clientConn, channels, requests)
+	t.Cleanup(func() {
+		_ = client.Close()
+		_ = listener.Close()
+	})
+	return client
 }
 
 func TestMinTimeout(t *testing.T) {

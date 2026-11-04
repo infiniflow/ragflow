@@ -27,7 +27,7 @@ import (
 type webhookWorkflowLoader struct{ *fakeCanvasLoader }
 
 // RunAgentWithWebhook forwards the cleaned HTTP payload into a compiled Begin-to-Message workflow.
-func (f *webhookWorkflowLoader) RunAgentWithWebhook(ctx context.Context, _, _ string, payload map[string]any) (<-chan canvas.RunEvent, error) {
+func (f *webhookWorkflowLoader) RunAgentWithWebhook(ctx context.Context, _ string, payload map[string]any) (<-chan canvas.RunEvent, error) {
 	raw, err := json.Marshal(f.canvas.DSL)
 	if err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func TestWebhookHeaderReachesDownstreamMessage(t *testing.T) {
 				"obj":      map[string]any{"component_name": "Message", "params": map[string]any{"content": "{{begin@headers." + field + "}}"}},
 				"upstream": []string{"begin"},
 			}
-			h := &AgentHandler{loader: &webhookWorkflowLoader{&fakeCanvasLoader{canvas: cv}}}
+			h := newWebhookTestAgentHandler(&webhookWorkflowLoader{&fakeCanvasLoader{canvas: cv}})
 			h.webhookTraceAppender = func(context.Context, string, time.Time, canvas.RunEvent) {}
 			c, w := webhookCtx("POST", "/api/v1/agents/c1/webhook/test", `{}`, "application/json")
 			c.Request.Header.Set(field, "request-123")

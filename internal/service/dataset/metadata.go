@@ -15,10 +15,10 @@ import (
 )
 
 // UpdateDocumentMetadataConfig updates the metadata config for a document in a dataset.
-func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userID, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
-	userID = strings.TrimSpace(userID)
+func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	datasetID = strings.TrimSpace(datasetID)
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -48,13 +48,12 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userI
 	if kb == nil {
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
-	tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID)
-	if tenantErr != nil {
+	if _, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID); tenantErr != nil {
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 	llmID := ""
-	if tenant != nil {
-		llmID = tenant.LLMID
+	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+		llmID = service.ModelReference(modelInfo)
 	}
 	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 
@@ -70,10 +69,9 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userI
 }
 
 // GetMetadataConfig gets the auto-metadata configuration for a dataset.
-func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
-	userID = strings.TrimSpace(userID)
-	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -101,11 +99,11 @@ func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID, userI
 }
 
 // UpdateMetadataConfig updates the auto-metadata configuration for a dataset.
-func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, userID string, req *service.MetadataConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID string, req *service.MetadataConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
-	userID = strings.TrimSpace(userID)
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -121,6 +119,9 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, us
 	if kb == nil {
 		code, permissionErr := permissionresponse.Normalize(permission.ErrResourceNotFound)
 		return nil, code, permissionErr
+	}
+	if _, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID); tenantErr != nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 
 	if req == nil {
@@ -160,13 +161,9 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, us
 	}
 	delete(parserConfig, "enable_metadata")
 	delete(parserConfig, "built_in_metadata")
-	tenant, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID)
-	if tenantErr != nil {
-		return nil, common.CodeServerError, errors.New("database operation failed")
-	}
 	llmID := ""
-	if tenant != nil {
-		llmID = tenant.LLMID
+	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+		llmID = service.ModelReference(modelInfo)
 	}
 	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 

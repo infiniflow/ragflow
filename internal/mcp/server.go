@@ -29,7 +29,6 @@ type RetrievalRequest struct {
 	TopK                   int      `json:"top_k"`
 	RerankID               string   `json:"rerank_id,omitempty"`
 	Keyword                bool     `json:"keyword"`
-	ForceRefresh           bool     `json:"force_refresh"`
 }
 
 // toolsJSON contains the schemas and base descriptions from mcp/server/server.py.

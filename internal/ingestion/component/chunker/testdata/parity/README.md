@@ -98,7 +98,7 @@ Field comparison is deliberately asymmetric:
   field is justified rather than assumed harmless.
 
 The allowed set is derived per case rather than hardcoded, because it is not
-constant across components: `TokenChunker` emits `ck_type`/`tk_nums`/`id` while
+constant across components: `TokenChunker` emits `tk_nums`/`id` while
 `TitleChunker` emits only `id`.
 
 ## No CGO required

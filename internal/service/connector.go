@@ -278,6 +278,13 @@ func (s *ConnectorService) cancelConnectorTasks(ctx context.Context, connectorID
 
 // CreateConnector creates a connector owned by the current user.
 func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, req *CreateConnectorRequest) (*entity.Connector, error) {
+	tenantID, err := requireCurrentTenantID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
+		return nil, err
+	}
 	if req.RefreshFreq != nil && *req.RefreshFreq <= 0 {
 		return nil, fmt.Errorf("%w: refresh_freq got %d", ErrConnectorInvalidFreq, *req.RefreshFreq)
 	}
@@ -301,7 +308,8 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 
 	connector := &entity.Connector{
 		ID:          common.GenerateUUID(),
-		TenantID:    userID,
+		UserID:      userID,
+		TenantID:    tenantID,
 		Name:        req.Name,
 		Source:      req.Source,
 		InputType:   connectorInputTypePoll,
@@ -312,7 +320,12 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 		Status:      connectorStatusUnstarted,
 	}
 
-	if err := s.connectorDAO.Create(ctx, dao.DB, connector); err != nil {
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.connectorDAO.Create(ctx, tx, connector); err != nil {
+			return err
+		}
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connector.ID})
+	}); err != nil {
 		return nil, err
 	}
 
@@ -324,7 +337,7 @@ func (s *ConnectorService) GetConnector(ctx context.Context, connectorID, userID
 	if strings.TrimSpace(connectorID) == "" {
 		return nil, ErrConnectorIDRequired
 	}
-	if err := checkConnectorPermission(ctx, userID, connectorID, permission.OperationRead); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationRead); err != nil {
 		return nil, err
 	}
 
@@ -350,14 +363,14 @@ func (s *ConnectorService) ListConnectors(ctx context.Context, userID, requested
 	tenantID := strings.TrimSpace(requestedTenantID)
 	if tenantID == "" {
 		var err error
-		tenantID, err = requireOwnedTenantID(ctx, userID)
+		tenantID, err = requireCurrentTenantID(ctx, userID)
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return &ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
 		}
 		if err != nil {
 			return nil, err
 		}
-	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantMember); err != nil {
+	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
 		return nil, err
 	}
 	connectors, err := s.connectorDAO.ListByTenantID(ctx, dao.DB, tenantID)
@@ -374,13 +387,21 @@ func (s *ConnectorService) ListConnectors(ctx context.Context, userID, requested
 func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userID string, config entity.JSONMap) error {
 	var storedConnector *entity.Connector
 	if connectorID != "" {
-		permissionErr := checkConnectorPermission(ctx, userID, connectorID, permission.OperationUse)
+		permissionErr := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationUse)
 		if permissionErr != nil && !errors.Is(permissionErr, permission.ErrResourceNotFound) {
 			return permissionErr
 		}
 		if errors.Is(permissionErr, permission.ErrResourceNotFound) {
 			if config == nil {
 				return ErrConnectorNotFound
+			}
+			// A caller may test settings for an unsaved connector by supplying a
+			// request config, but must not use that path to test an existing
+			// connector they cannot access.
+			if _, lookupErr := s.connectorDAO.GetByID(ctx, dao.DB, connectorID); lookupErr == nil {
+				return ErrConnectorNotFound
+			} else if !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+				return lookupErr
 			}
 		} else {
 			loadedConnector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
@@ -925,8 +946,8 @@ func (s *ConnectorService) DeleteConnector(ctx context.Context, connectorID, use
 	if connectorID == "" {
 		return false, common.CodeDataError, fmt.Errorf("connector_id is required")
 	}
-	if err := checkConnectorPermission(ctx, userID, connectorID, permission.OperationDelete); err != nil {
-		code, permissionErr := normalizeConnectorPermissionError(err)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationDelete); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return false, code, permissionErr
 	}
 
@@ -961,13 +982,13 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 	if connectorID == "" {
 		return nil, common.CodeDataError, fmt.Errorf("connector_id is required")
 	}
-	if err := checkConnectorPermission(ctx, userID, connectorID, permission.OperationUpdate); err != nil {
-		code, permissionErr := normalizeConnectorPermissionError(err)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, permissionErr
 	}
 	if req != nil && (req.Reschedule || isConnectorCancelStatus(req.Status) || isConnectorScheduleStatus(req.Status)) {
-		if err := checkConnectorPermission(ctx, userID, connectorID, permission.OperationRun); err != nil {
-			code, permissionErr := normalizeConnectorPermissionError(err)
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationRun); err != nil {
+			code, permissionErr := permissionresponse.NormalizeHidden(err)
 			return nil, code, permissionErr
 		}
 	}
@@ -1060,8 +1081,8 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 	if kbID == "" {
 		return false, common.CodeArgumentError, fmt.Errorf("required argument is missing: kb_id")
 	}
-	if err := checkConnectorPermission(ctx, userID, connectorID, permission.OperationRun); err != nil {
-		code, permissionErr := normalizeConnectorPermissionError(err)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationRun); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return false, code, permissionErr
 	}
 
@@ -1075,7 +1096,7 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 
 	// The caller-supplied kb is targeted by delete + re-sync below, so it must
 	// be accessible to the caller and the connector must be bound to it.
-	if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, kbID, permission.OperationRun); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kbID}, permission.OperationRun); err != nil {
 		common.Warn("rebuild denied: kb not accessible",
 			zap.String("connector_id", connectorID), zap.String("kb_id", kbID), zap.String("user_id", userID))
 		code, permissionErr := permissionresponse.Normalize(err)
@@ -1130,15 +1151,34 @@ func (s *ConnectorService) ResumeFailedSync(ctx context.Context, connectorID, us
 	if req.TaskID == "" {
 		return false, common.CodeArgumentError, fmt.Errorf("required argument is missing: task_id")
 	}
-	if err := checkConnectorPermission(ctx, userID, connectorID, permission.OperationRun); err != nil {
-		code, permissionErr := normalizeConnectorPermissionError(err)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationRun); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return false, code, permissionErr
 	}
-	if err := checkSyncTaskPermission(ctx, userID, connectorID, req.TaskID, permission.OperationRun); err != nil {
-		code, permissionErr := normalizeConnectorPermissionError(err)
+	connectorRef := permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}
+	taskScope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindSyncTask,
+		Parent:    connectorRef,
+		Operation: permission.OperationRun,
+		Entry:     &connectorRef,
+		EntryOp:   permission.OperationRun,
+	})
+	if err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return false, code, permissionErr
 	}
-	if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, req.KbID, permission.OperationRun); err != nil {
+	taskAccessible := false
+	for _, taskID := range taskScope.ResourceIDs {
+		if taskID == req.TaskID {
+			taskAccessible = true
+			break
+		}
+	}
+	if !taskAccessible {
+		code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+		return false, code, permissionErr
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: req.KbID}, permission.OperationRun); err != nil {
 		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return false, code, permissionErr
 	}
@@ -1238,10 +1278,26 @@ func (s *ConnectorService) ListLog(ctx context.Context, connectorID, userID stri
 		return nil, 0, common.CodeDataError, fmt.Errorf("connector_id is required")
 	}
 
-	taskIDs, err := accessibleSyncTaskIDs(ctx, userID, connectorID, permission.OperationRead)
-	if err != nil {
-		code, permissionErr := normalizeConnectorPermissionError(err)
+	checker := permission.NewDatabaseChecker(dao.DB)
+	connectorRef := permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}
+	if err := checker.CheckResource(ctx, connectorRef, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return nil, 0, code, permissionErr
+	}
+	taskScope, err := checker.Scope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindSyncTask,
+		Parent:    connectorRef,
+		Operation: permission.OperationRead,
+		Entry:     &connectorRef,
+		EntryOp:   permission.OperationRead,
+	})
+	if err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return nil, 0, code, permissionErr
+	}
+	taskIDs := taskScope.ResourceIDs
+	if taskScope.Mode != permission.ScopeIDs {
+		taskIDs = []string{}
 	}
 
 	if page < 1 {
@@ -1271,19 +1327,40 @@ func (s *ConnectorService) ListLogs(ctx context.Context, userID, datasetID strin
 	}
 
 	if datasetID != "" {
-		if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 			code, permissionErr := permissionresponse.NormalizeHidden(err)
 			return nil, 0, code, permissionErr
 		}
 	}
-	connectorIDs, err := accessibleConnectorIDs(ctx, userID, permission.OperationRead)
+	checker := permission.NewDatabaseChecker(dao.DB)
+	connectorScope, err := checker.Scope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindConnector,
+		Operation: permission.OperationRead,
+	})
 	if err != nil {
 		return nil, 0, common.CodeServerError, err
 	}
-	taskIDs, err := accessibleSyncTaskIDsForConnectors(ctx, userID, connectorIDs, permission.OperationRead)
-	if err != nil {
-		code, permissionErr := normalizeConnectorPermissionError(err)
-		return nil, 0, code, permissionErr
+	connectorIDs := connectorScope.ResourceIDs
+	if connectorScope.Mode != permission.ScopeIDs {
+		connectorIDs = []string{}
+	}
+	var taskIDs []string
+	for _, connectorID := range connectorIDs {
+		connectorRef := permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}
+		taskScope, err := checker.Scope(ctx, permission.ScopeQuery{
+			Kind:      permission.ResourceKindSyncTask,
+			Parent:    connectorRef,
+			Operation: permission.OperationRead,
+			Entry:     &connectorRef,
+			EntryOp:   permission.OperationRead,
+		})
+		if err != nil {
+			code, permissionErr := permissionresponse.NormalizeHidden(err)
+			return nil, 0, code, permissionErr
+		}
+		if taskScope.Mode == permission.ScopeIDs {
+			taskIDs = append(taskIDs, taskScope.ResourceIDs...)
+		}
 	}
 
 	offset, limit := 0, pageSize

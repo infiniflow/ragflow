@@ -176,8 +176,7 @@ func TestMaybeDispatchImage_ParseMethodModelDoesNotOverrideGlobalEnhancement(t *
 	setups := defaultSetups()
 	setups["image"]["parse_method"] = "custom-vlm@provider"
 
-	res, dispatched, err := maybeDispatchImage(
-		t.Context(),
+	res, dispatched, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(),
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"photo.png",
@@ -235,7 +234,7 @@ func TestMaybeDispatchImage_OCRWithoutEnhancementSkipsVision(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["image"]["parse_method"] = "ocr"
-	res, _, err := maybeDispatchImage(t.Context(), dao.DB, utility.FileTypeVISUAL, "photo.png", picturePNG(t), map[string]any{"tenant_id": "t1"}, setups, false, visionSettings{})
+	res, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), dao.DB, utility.FileTypeVISUAL, "photo.png", picturePNG(t), map[string]any{"tenant_id": "t1"}, setups, false, visionSettings{})
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
 	}
@@ -325,8 +324,7 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	setups["image"]["system_prompt"] = "自定义视觉提示"
 
 	ctx := t.Context()
-	res, dispatched, err := maybeDispatchImage(
-		ctx,
+	res, dispatched, err := maybeDispatchImage(ctx, parser.NewPictureParser(),
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
@@ -345,8 +343,8 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	// (OutputFormat=="json"), not a bare Text field. The combined text
 	// now lives in JSON[0]["text"]; the legacy res.Text is no longer
 	// populated for the image family.
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json (image family is always structured)", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want json (image family is always structured)", res.Produced())
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1 (image result must be a single JSON item)", len(res.JSON))
@@ -377,8 +375,7 @@ func TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage(t *testing.T) {
 	setups["image"]["lang"] = "Chinese"
 	setups["image"]["system_prompt"] = ""
 
-	_, _, err := maybeDispatchImage(
-		t.Context(),
+	_, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(),
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
@@ -448,8 +445,7 @@ func TestMaybeDispatchImage_GlobalVisionPromptDrivesImage(t *testing.T) {
 			setups := defaultSetups()
 			setups["image"]["lang"] = tc.familyLang
 			setups["image"]["system_prompt"] = tc.familyPrompt
-			_, _, err := maybeDispatchImage(
-				t.Context(), dao.DB, utility.FileTypeVISUAL, "test.png", picturePNG(t),
+			_, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), dao.DB, utility.FileTypeVISUAL, "test.png", picturePNG(t),
 				tc.inputs, setups, true,
 				visionSettings{systemPrompt: tc.globalPrompt},
 			)
@@ -484,8 +480,7 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 
 	setups := defaultSetups()
 	ctx := t.Context()
-	res, dispatched, err := maybeDispatchImage(
-		ctx,
+	res, dispatched, err := maybeDispatchImage(ctx, parser.NewPictureParser(),
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
@@ -500,8 +495,8 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 	if !dispatched {
 		t.Fatalf("expected dispatched=true")
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want json", res.Produced())
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
@@ -520,10 +515,8 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 }
 
 // TestMaybeDispatchImage_HardcodesJSONOutput verifies the image family
-// always emits json regardless of setup["output_format"]. Python
-// rag/app/picture.py:chunk() has no output_format concept — it always
-// returns a structured doc. Honoring a "text" override produced a bare
-// Text payload that lost the image attachment and set doc_type to "text".
+// always emits structured JSON items. Python rag/app/picture.py:chunk()
+// has no output format concept — it always returns a structured doc.
 func TestMaybeDispatchImage_HardcodesJSONOutput(t *testing.T) {
 	origResolver := resolveTenantModelByType
 	defer func() { resolveTenantModelByType = origResolver }()
@@ -534,10 +527,8 @@ func TestMaybeDispatchImage_HardcodesJSONOutput(t *testing.T) {
 	}
 
 	setups := defaultSetups()
-	setups["image"]["output_format"] = "text" // legacy/override; must be ignored
 	ctx := t.Context()
-	res, _, err := maybeDispatchImage(
-		ctx,
+	res, _, err := maybeDispatchImage(ctx, parser.NewPictureParser(),
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
@@ -549,11 +540,11 @@ func TestMaybeDispatchImage_HardcodesJSONOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json (image family must ignore output_format override)", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want json", res.Produced())
 	}
 	if len(res.JSON) != 1 {
-		t.Fatalf("JSON len = %d, want 1 even when setup says text", len(res.JSON))
+		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
 	}
 }
 
@@ -569,11 +560,11 @@ func (d *audioTranscribeDriver) TranscribeAudio(ctx context.Context, _ *string, 
 	return &modelModule.ASRResponse{Text: d.transcription}, nil
 }
 
-// TestMaybeDispatchAudio_JSONCarriesTranscription pins diff 2.11: when the
-// audio family's output_format is "json", the ASR transcription must be
-// carried in the JSON items (not only in the Text field). Before the fix the
-// branch returned Text only with an empty JSON slice, and the Invoke switch
-// silently dropped the transcription because it has no "json" branch.
+// TestMaybeDispatchAudio_JSONCarriesTranscription pins that the ASR
+// transcription is carried in the JSON items (not only in the Text field).
+// Before the fix the branch returned Text only with an empty JSON slice, and
+// the Invoke switch silently dropped the transcription because it has no
+// "json" branch.
 func TestMaybeDispatchAudio_JSONCarriesTranscription(t *testing.T) {
 	origResolver := resolveTenantModelByType
 	defer func() { resolveTenantModelByType = origResolver }()
@@ -585,7 +576,6 @@ func TestMaybeDispatchAudio_JSONCarriesTranscription(t *testing.T) {
 	}
 
 	setups := defaultSetups()
-	setups["audio"]["output_format"] = "json"
 
 	ctx := t.Context()
 	res, dispatched, err := maybeDispatchAudio(
@@ -603,8 +593,8 @@ func TestMaybeDispatchAudio_JSONCarriesTranscription(t *testing.T) {
 	if !dispatched {
 		t.Fatalf("expected dispatched=true for AURAL file")
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want json", res.Produced())
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1 (transcription must be carried as a JSON item)", len(res.JSON))
@@ -617,49 +607,8 @@ func TestMaybeDispatchAudio_JSONCarriesTranscription(t *testing.T) {
 	}
 }
 
-func TestMaybeDispatchAudio_IgnoresLegacyOutputFormat(t *testing.T) {
-	origResolver := resolveTenantModelByType
-	defer func() { resolveTenantModelByType = origResolver }()
-
-	const want = "hello world"
-	drv := &audioTranscribeDriver{transcription: want}
-	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-		return drv, "asr-model", &modelModule.APIConfig{}, 0, nil
-	}
-
-	setups := defaultSetups()
-	setups["audio"]["output_format"] = "text"
-
-	ctx := t.Context()
-	res, dispatched, err := maybeDispatchAudio(
-		ctx,
-		dao.DB,
-		utility.FileTypeAURAL,
-		"test.mp3",
-		[]byte("fake-audio"),
-		map[string]any{"tenant_id": "t1"},
-		setups,
-	)
-	if err != nil {
-		t.Fatalf("maybeDispatchAudio: %v", err)
-	}
-	if !dispatched {
-		t.Fatalf("expected dispatched=true for AURAL file")
-	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
-	}
-	if len(res.JSON) != 1 {
-		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
-	}
-	if got, _ := res.JSON[0].ToMap()["text"].(string); got != want {
-		t.Fatalf("JSON[0].text = %q, want %q", got, want)
-	}
-}
-
-// TestMaybeDispatchAudio_DefaultOutputFormatJson covers the
-// maybeDispatchAudio always returns a JSON transcription item, including when
-// the setup has no output_format key.
+// TestMaybeDispatchAudio_DefaultOutputFormatJson covers that
+// maybeDispatchAudio always returns a JSON transcription item.
 func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	const want = "hello world"
 	drv := &audioTranscribeDriver{transcription: want}
@@ -668,8 +617,6 @@ func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return drv, "asr-model", &modelModule.APIConfig{}, 0, nil
 	}
-	// No output_format key — exercise the default path inside
-	// maybeDispatchAudio.
 	setups := map[string]schema.ParserSetup{"audio": {}}
 	res, dispatched, err := maybeDispatchAudio(
 		context.Background(),
@@ -686,19 +633,8 @@ func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	if !dispatched {
 		t.Fatal("expected dispatched=true for AURAL file")
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("default OutputFormat = %q, want json", res.OutputFormat)
-	}
-}
-
-// TestDefaultEmailOutputFormatIsJSON pins diff 2.2: the email family default
-// output_format must be "json" (matching Python parser.py:212), not "text".
-// With "text" the structured email fields (from/to/subject/attachments/...) are
-// flattened into a blob and lost downstream.
-func TestDefaultEmailOutputFormatIsJSON(t *testing.T) {
-	got, _ := defaultSetups()["email"]["output_format"].(string)
-	if got != "json" {
-		t.Fatalf("email default output_format = %q, want json", got)
+	if !res.Produced() {
+		t.Fatalf("default produced = %t, want true", res.Produced())
 	}
 }
 
@@ -728,8 +664,7 @@ func TestMaybeDispatchImage_UsesConfiguredVLMModel(t *testing.T) {
 	setups := defaultSetups()
 	setups["image"]["parse_method"] = "custom-vlm@provider"
 
-	_, dispatched, err := maybeDispatchImage(
-		t.Context(),
+	_, dispatched, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(),
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
@@ -863,7 +798,7 @@ func TestMaybeDispatchImageWithoutOCRTextKeepsImage(t *testing.T) {
 		for _, method := range []string{"ocr", ""} {
 			setups := defaultSetups()
 			setups["image"]["parse_method"] = method
-			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, setups, false, visionSettings{})
+			result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, setups, false, visionSettings{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -887,7 +822,7 @@ func TestMaybeDispatchImageUnhealthyOCRKeepsImage(t *testing.T) {
 	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
 		return &unhealthyPictureOCRAnalyzer{}, true
 	}
-	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, defaultSetups(), false, visionSettings{})
+	result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, defaultSetups(), false, visionSettings{})
 	if err != nil || result.Err != nil {
 		t.Fatalf("unhealthy OCR should degrade without an error: err = %v, result.Err = %v", err, result.Err)
 	}
@@ -903,7 +838,7 @@ func TestMaybeDispatchImageRejectsUndecodableBytes(t *testing.T) {
 	for _, method := range []string{"ocr", "custom-vlm"} {
 		setups := defaultSetups()
 		setups["image"]["parse_method"] = method
-		_, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", []byte("bad image"), nil, setups, false, visionSettings{})
+		_, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", []byte("bad image"), nil, setups, false, visionSettings{})
 		if err == nil || !strings.Contains(err.Error(), "decode") {
 			t.Fatalf("method %q: error = %v, want decode error", method, err)
 		}
@@ -923,7 +858,7 @@ func TestMaybeDispatchImageReleasesAdmissionAfterPanic(t *testing.T) {
 				t.Error("expected OCR analyzer panic")
 			}
 		}()
-		_, _, _ = maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", data, nil, defaultSetups(), false, visionSettings{})
+		_, _, _ = maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", data, nil, defaultSetups(), false, visionSettings{})
 	}()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
@@ -950,7 +885,7 @@ func TestMaybeDispatchImageDecodesRasterOnlyForOCR(t *testing.T) {
 		t.Run(method, func(t *testing.T) {
 			setups := defaultSetups()
 			setups["image"]["parse_method"] = method
-			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
+			result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL,
 				"photo.png", []byte(magic), map[string]any{"tenant_id": "t1"}, setups, true, visionSettings{})
 			if method == "ocr" {
 				if err == nil || !strings.Contains(err.Error(), "raster decoding requested") {
@@ -993,7 +928,7 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 	}
 
 	t.Run("ocr-on", func(t *testing.T) {
-		res, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+		res, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
 			map[string]any{"tenant_id": "t1"}, ocrSetups(true), false, visionSettings{})
 		if err != nil || !handled {
 			t.Fatalf("err = %v, handled = %v", err, handled)
@@ -1003,7 +938,7 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 		}
 	})
 	t.Run("ocr-off-no-enhancement-keeps-empty", func(t *testing.T) {
-		res, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+		res, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
 			map[string]any{"tenant_id": "t1"}, ocrSetups(false), false, visionSettings{})
 		if err != nil || !handled {
 			t.Fatalf("err = %v, handled = %v", err, handled)
@@ -1019,7 +954,7 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 		}
 	})
 	t.Run("ocr-off-vision-only", func(t *testing.T) {
-		res, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+		res, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
 			map[string]any{"tenant_id": "t1"}, ocrSetups(false), true, visionSettings{})
 		if err != nil || !handled {
 			t.Fatalf("err = %v, handled = %v", err, handled)
@@ -1031,7 +966,7 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 	t.Run("switch-beats-stale-parse-method", func(t *testing.T) {
 		setups := defaultSetups() // image still carries parse_method:"ocr"
 		setups["image"]["ocr_enabled"] = false
-		res, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+		res, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
 			map[string]any{"tenant_id": "t1"}, setups, false, visionSettings{})
 		if err != nil {
 			t.Fatal(err)
@@ -1061,7 +996,7 @@ func TestMaybeDispatchImageBlankVisionDescriptionWarns(t *testing.T) {
 		return blankAnswerVisionDriver{}, "vision", &modelModule.APIConfig{}, 0, nil
 	}
 
-	res, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+	res, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
 		map[string]any{"tenant_id": "t1"}, imageSwitchSetups(t, false), true, visionSettings{})
 	if err != nil || !handled {
 		t.Fatalf("err = %v, handled = %v", err, handled)
@@ -1090,4 +1025,36 @@ func picturePNG(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return data.Bytes()
+}
+
+// TestMaybeDispatchVideoRejectsExplicitly pins the runtime backstop behind the
+// frontend parse block: a video file whose setups declare the video family
+// gets an explicit "not yet supported" error (not a silent fallback), while
+// configs without a video family fall through to the generic dispatch path.
+func TestMaybeDispatchVideoRejectsExplicitly(t *testing.T) {
+	ctx := t.Context()
+	inputs := map[string]any{"tenant_id": "t1"}
+
+	// Main path: standard component defaults declare the video family, so the
+	// branch handles the file and fails loudly.
+	_, handled, err := maybeDispatchVideo(ctx, nil, utility.FileTypeVIDEO, "clip.mov", []byte("mov-bytes"), inputs, defaultSetups())
+	if !handled {
+		t.Fatal("maybeDispatchVideo did not handle a video file with a video setup")
+	}
+	if err == nil || !strings.Contains(err.Error(), "not yet supported") {
+		t.Fatalf("video error = %v, want explicit not-yet-supported", err)
+	}
+
+	// Without a video family the branch stays out of the way; the generic
+	// dispatch path (GetParser "unsupported file type") answers instead.
+	_, handled, err = maybeDispatchVideo(ctx, nil, utility.FileTypeVIDEO, "clip.mov", []byte("mov-bytes"), inputs, map[string]schema.ParserSetup{})
+	if handled || err != nil {
+		t.Fatalf("handled = %v, err = %v, want pass-through without a video setup", handled, err)
+	}
+
+	// Non-video files never enter the video branch.
+	_, handled, err = maybeDispatchVideo(ctx, nil, utility.FileTypeVISUAL, "photo.jpg", []byte("jpeg-bytes"), inputs, defaultSetups())
+	if handled || err != nil {
+		t.Fatalf("handled = %v, err = %v, want pass-through for images", handled, err)
+	}
 }

@@ -183,7 +183,8 @@ func isDataSourceBox(text string) bool {
 // handles test TableItems or bare engines without DLA.
 func tableRegionBox(tbl *pdf.TableItem, ref *pdf.TextBox, html string) pdf.TextBox {
 	pg := 0
-	if len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0 {
+	hasPageNumber := len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0
+	if hasPageNumber {
 		pg = tbl.Positions[0].PageNumbers[0]
 	}
 	// A table merged across consecutive pages (MergeTablesAcrossPages appends
@@ -197,27 +198,29 @@ func tableRegionBox(tbl *pdf.TableItem, ref *pdf.TextBox, html string) pdf.TextB
 	// Use DLA region boundaries when set.
 	if tbl.RegionLeft != 0 || tbl.RegionRight != 0 || tbl.RegionTop != 0 || tbl.RegionBottom != 0 {
 		return pdf.TextBox{
-			X0:         tbl.RegionLeft,
-			X1:         tbl.RegionRight,
-			Top:        tbl.RegionTop,
-			Bottom:     tbl.RegionBottom,
-			Text:       html,
-			PageNumber: pg,
-			Pages:      pages,
-			LayoutType: pdf.LayoutTypeTable,
+			X0:            tbl.RegionLeft,
+			X1:            tbl.RegionRight,
+			Top:           tbl.RegionTop,
+			Bottom:        tbl.RegionBottom,
+			Text:          html,
+			PageNumber:    pg,
+			HasPageNumber: hasPageNumber,
+			Pages:         pages,
+			LayoutType:    pdf.LayoutTypeTable,
 		}
 	}
 	// Fallback: use anchor box coordinates.
 	x0, x1, top, bot := ref.X0, ref.X1, ref.Top, ref.Bottom
 	return pdf.TextBox{
-		X0:         x0,
-		X1:         x1,
-		Top:        top,
-		Bottom:     bot,
-		Text:       html,
-		PageNumber: pg,
-		Pages:      pages,
-		LayoutType: pdf.LayoutTypeTable,
+		X0:            x0,
+		X1:            x1,
+		Top:           top,
+		Bottom:        bot,
+		Text:          html,
+		PageNumber:    pg,
+		HasPageNumber: hasPageNumber,
+		Pages:         pages,
+		LayoutType:    pdf.LayoutTypeTable,
 	}
 }
 

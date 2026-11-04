@@ -28,19 +28,19 @@ import (
 )
 
 // compiledKnowledgeToolNames are the tools that only make sense on a corpus that
-// has produced knowledge-compilation products (a navigation tree, a compiled
-// structure, a knowledge graph, a per-document panorama). They are INJECTED,
-// never declared in a template's tool list: Run adds them only when the bound
-// datasets actually hold compiled products, so an uncompiled corpus never
-// offers - or pays for - them.
+// has produced knowledge-compilation products (a knowledge graph, a per-document
+// panorama). They are INJECTED, never declared in a template's tool list: Run
+// adds them only when the bound datasets actually hold compiled products, so an
+// uncompiled corpus never offers - or pays for - them.
 //
-// The injected set is the whole compiled-knowledge surface on purpose: a tool
-// that is registered but neither declared by a template nor injected here is
-// unreachable at runtime, which is indistinguishable from "the model chose not
-// to use it" unless someone reads the tool list.
+// The navigation tools (navigate_tree / navigate_structure) are deliberately NOT
+// in this set any more. Their claim leg was the only way compiled evidence
+// reached the model, and it required the model to choose them - which the FRAMES
+// runs measured at zero calls per turn. Compiled evidence now travels with the
+// ordinary search results (see compiled_evidence.go), so the navigation route is
+// a second, costlier path to the same facts: it stays registered for templates
+// that declare it explicitly, but it is never injected.
 var compiledKnowledgeToolNames = []string{
-	navigateTreeToolName,
-	navigateStructureToolName,
 	graphExploreToolName,
 	graphDocOutlineToolName,
 }
@@ -63,11 +63,10 @@ func compiledKnowledgeTools(tenantID string, datasetIDs []string) []tool.BaseToo
 // carry compile_kwd; ordinary chunks do not (that is what the default retriever
 // excludes with must_not/exists compile_kwd), so a single existence read answers
 // it. A missing engine or an empty scope is false, leaving the tools undeclared.
-func datasetsHaveCompiledKnowledge(ctx context.Context, tenantID string, datasetIDs []string) bool {
+func datasetsHaveCompiledKnowledge(ctx context.Context, de engine.DocEngine, tenantID string, datasetIDs []string) bool {
 	if len(datasetIDs) == 0 {
 		return false
 	}
-	de := engine.Get()
 	if de == nil {
 		return false
 	}
@@ -91,3 +90,62 @@ func datasetsHaveCompiledKnowledge(ctx context.Context, tenantID string, dataset
 	}
 	return len(res.Chunks) > 0
 }
+
+func toolsForRun(ctx context.Context, tmpl Template, in Input, de engine.DocEngine) []tool.BaseTool {
+	tools := toolsFor(ctx, tmpl, in.TenantID, in.DatasetIDs, in.Tools)
+	if len(in.Tools) != 0 || tmpl.strictTools {
+		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools skipped",
+			zap.Strings("datasets", in.DatasetIDs),
+			zap.String("reason", "explicit tool selection"))
+	} else if datasetsHaveCompiledKnowledge(ctx, de, in.TenantID, in.DatasetIDs) {
+		compiled := compiledKnowledgeTools(in.TenantID, in.DatasetIDs)
+		tools = append(tools, compiled...)
+		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools injected",
+			zap.Strings("datasets", in.DatasetIDs),
+			zap.String("reason", "compile_kwd rows present in the bound datasets"),
+			zap.Int("tools", len(compiled)))
+	} else {
+		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools skipped",
+			zap.Strings("datasets", in.DatasetIDs),
+			zap.String("reason", "no compile_kwd row in the bound datasets"))
+	}
+	return tools
+}
+
+// datasetsHaveClaims reports whether any bound dataset carries knowledge-compiled
+// CLAIM rows (entity_type_kwd="claim").
+//
+// It is the gate for the claim prefetch and is deliberately STRICTER than
+// datasetsHaveCompiledKnowledge: a dataset compiled into a navigation tree or a
+// timeline has compile_kwd rows but no evidence rows, so the looser probe would
+// let the pipeline spend a routing call plus two retrieval legs per document to
+// learn that there is nothing to prefetch. claimRowsPresent wraps it so tests can
+// drive the gate without an engine.
+func datasetsHaveClaims(ctx context.Context, tenantID string, datasetIDs []string) bool {
+	if len(datasetIDs) == 0 {
+		return false
+	}
+	de := engine.Get()
+	if de == nil {
+		return false
+	}
+	res, err := de.Search(ctx, &enginetypes.SearchRequest{
+		IndexNames:         []string{indexNameFor(tenantID, "")},
+		KbIDs:              datasetIDs,
+		SelectFields:       []string{"id"},
+		Filter:             map[string]interface{}{"entity_type_kwd": []string{navClaimRowType}},
+		Limit:              1,
+		IncludeUnavailable: true,
+	})
+	if err != nil || res == nil {
+		common.DebugCtx(ctx, "agentic_rag: claim probe failed",
+			zap.String("tenant_id", tenantID),
+			zap.Strings("datasets", datasetIDs),
+			zap.Error(err))
+		return false
+	}
+	return len(res.Chunks) > 0
+}
+
+// claimRowsPresent is the claim-prefetch gate; tests replace it.
+var claimRowsPresent = datasetsHaveClaims

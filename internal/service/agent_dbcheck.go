@@ -24,14 +24,17 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 )
 
 // TestDBConnectionRequest is the request body for AgentService.TestDBConnection.
@@ -224,7 +227,8 @@ func dbConnectionPort(port interface{}) string {
 // short timeout to keep the API responsive when targets are unreachable.
 // The "required argument are missing" message has a trailing semicolon
 // and space to stay byte-identical with the Python implementation.
-func (s *AgentService) TestDBConnection(ctx context.Context, userID string, req *TestDBConnectionRequest) (common.ErrorCode, error) {
+func (s *AgentService) TestDBConnection(ctx context.Context, req *TestDBConnectionRequest) (common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
 	if missing := missingDBConnectionFields(req); len(missing) > 0 {
 		return common.CodeArgumentError, fmt.Errorf("required argument are missing: %s; ", strings.Join(missing, ","))
 	}
@@ -241,10 +245,11 @@ func (s *AgentService) TestDBConnection(ctx context.Context, userID string, req 
 		return common.CodeDataError, err
 	}
 
+	var db *sql.DB
+	dbProbeTimeout := 5 * time.Second
 	switch req.DBType {
 	case "mysql", "mariadb", "oceanbase":
 		port := dbConnectionPort(req.Port)
-		dbProbeTimeout := 5 * time.Second
 		config := mysql.Config{
 			User:                 req.Username,
 			Passwd:               req.Password,
@@ -254,24 +259,35 @@ func (s *AgentService) TestDBConnection(ctx context.Context, userID string, req 
 			Timeout:              dbProbeTimeout,
 			AllowNativePasswords: true,
 		}
-		var db *sql.DB
 		db, err = sql.Open("mysql", config.FormatDSN())
-		if err != nil {
-			return common.CodeExceptionError, err
+	case "postgres", "postgresql":
+		dsn := url.URL{
+			Scheme: "postgres",
+			User:   url.UserPassword(req.Username, req.Password),
+			Host:   net.JoinHostPort(safeHost, dbConnectionPort(req.Port)),
+			Path:   "/" + req.Database,
+			RawQuery: url.Values{
+				"sslmode":         {"disable"},
+				"connect_timeout": {"5"},
+			}.Encode(),
 		}
-		defer db.Close()
-
-		newCtx, cancel := context.WithTimeout(ctx, dbProbeTimeout)
-		defer cancel()
-
-		if err = db.PingContext(newCtx); err != nil {
-			return common.CodeExceptionError, err
-		}
-		if _, err = db.ExecContext(newCtx, "SELECT 1"); err != nil {
-			return common.CodeExceptionError, err
-		}
+		db, err = sql.Open("postgres", dsn.String())
 	default:
 		return common.CodeExceptionError, errors.New("unsupported database type")
+	}
+	if err != nil {
+		return common.CodeExceptionError, err
+	}
+	defer db.Close()
+
+	newCtx, cancel := context.WithTimeout(ctx, dbProbeTimeout)
+	defer cancel()
+
+	if err = db.PingContext(newCtx); err != nil {
+		return common.CodeExceptionError, err
+	}
+	if _, err = db.ExecContext(newCtx, "SELECT 1"); err != nil {
+		return common.CodeExceptionError, err
 	}
 
 	return common.CodeSuccess, nil
