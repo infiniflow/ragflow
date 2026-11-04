@@ -91,16 +91,13 @@ func TestPageSizeBatchPartialFailure(t *testing.T) {
 	}
 	defer eng.Close()
 
-	origBatch, origSingle := pageSizesBatch, pageSizeSingle
-	t.Cleanup(func() { pageSizesBatch, pageSizeSingle = origBatch, origSingle })
-
 	var batchCalls, singleCalls int
-	pageSizesBatch = func(context.Context, []byte, []int) (map[int][2]float64, int, error) {
+	eng.pageSizesBatch = func(context.Context, []byte, []int) (map[int][2]float64, int, error) {
 		batchCalls++
 		// Page 1 is unreadable in this pass; page 0 succeeded.
 		return map[int][2]float64{0: {200, 100}}, 2, errors.New("page 1 unreadable")
 	}
-	pageSizeSingle = func([]byte, int) (float64, float64, error) {
+	eng.pageSizeSingle = func([]byte, int) (float64, float64, error) {
 		singleCalls++
 		return 200, 100, nil
 	}
@@ -138,13 +135,10 @@ func TestPageSizeFallbackWhenBothLookupsFail(t *testing.T) {
 	}
 	defer eng.Close()
 
-	origBatch, origSingle := pageSizesBatch, pageSizeSingle
-	t.Cleanup(func() { pageSizesBatch, pageSizeSingle = origBatch, origSingle })
-
-	pageSizesBatch = func(context.Context, []byte, []int) (map[int][2]float64, int, error) {
+	eng.pageSizesBatch = func(context.Context, []byte, []int) (map[int][2]float64, int, error) {
 		return nil, 1, errors.New("batch failed")
 	}
-	pageSizeSingle = func([]byte, int) (float64, float64, error) {
+	eng.pageSizeSingle = func([]byte, int) (float64, float64, error) {
 		return 0, 0, errors.New("single page failed")
 	}
 
@@ -179,13 +173,10 @@ func TestExtractCharsUsesSinglePageRetry(t *testing.T) {
 	}
 	defer eng.Close()
 
-	origBatch, origSingle := pageSizesBatch, pageSizeSingle
-	t.Cleanup(func() { pageSizesBatch, pageSizeSingle = origBatch, origSingle })
-
-	pageSizesBatch = func(context.Context, []byte, []int) (map[int][2]float64, int, error) {
+	eng.pageSizesBatch = func(context.Context, []byte, []int) (map[int][2]float64, int, error) {
 		return map[int][2]float64{0: {200, 100}}, 2, errors.New("page 1 unreadable")
 	}
-	pageSizeSingle = func([]byte, int) (float64, float64, error) {
+	eng.pageSizeSingle = func([]byte, int) (float64, float64, error) {
 		return wantW, wantH, nil
 	}
 

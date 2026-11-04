@@ -39,15 +39,13 @@ type Engine struct {
 	// the map is retried on its own rather than by re-reading every page.
 	pageDims      map[int][2]float64
 	dimsAttempted bool
-}
 
-// pageSizesBatch and pageSizeSingle are the pdfium lookups the engine uses.
-// They are package variables so tests can simulate a partial batch without a
-// malformed PDF.
-var (
-	pageSizesBatch = pdfium.PageSizes
-	pageSizeSingle = pdfium.PageSize
-)
+	// pageSizesBatch and pageSizeSingle are the pdfium lookups this engine
+	// uses. They are fields rather than package variables so a test can
+	// simulate a partial batch on one engine without touching global state.
+	pageSizesBatch func(ctx context.Context, pdf []byte, pages []int) (map[int][2]float64, int, error)
+	pageSizeSingle func(pdf []byte, page int) (float64, float64, error)
+}
 
 // NewEngine opens a PDF from bytes and returns an Engine.
 func NewEngine(pdfBytes []byte) (*Engine, error) {
@@ -55,7 +53,12 @@ func NewEngine(pdfBytes []byte) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Engine{doc: doc, rawData: pdfBytes}, nil
+	return &Engine{
+		doc:            doc,
+		rawData:        pdfBytes,
+		pageSizesBatch: pdfium.PageSizes,
+		pageSizeSingle: pdfium.PageSize,
+	}, nil
 }
 
 func (e *Engine) RawData() []byte { return e.rawData }
@@ -83,7 +86,7 @@ func (e *Engine) loadPageDims() {
 	for i := range idxs {
 		idxs[i] = i
 	}
-	sizes, _, _ := pageSizesBatch(context.Background(), e.rawData, idxs)
+	sizes, _, _ := e.pageSizesBatch(context.Background(), e.rawData, idxs)
 	if len(sizes) == 0 {
 		return
 	}
@@ -110,7 +113,7 @@ func (e *Engine) pageSize(pageNum int) ([2]float64, bool) {
 		return d, true
 	}
 
-	w, h, err := pageSizeSingle(e.rawData, pageNum)
+	w, h, err := e.pageSizeSingle(e.rawData, pageNum)
 	if err != nil {
 		return [2]float64{}, false
 	}
