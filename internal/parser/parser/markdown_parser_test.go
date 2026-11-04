@@ -1037,3 +1037,174 @@ func tableRowsContain(td *entity.TableData, want string) bool {
 	}
 	return false
 }
+
+// TestMarkdownParser_RemoveTOC_Chinese verifies that Markdown TOC sections are filtered
+// when remove_toc is enabled, mirroring HTML and DOCX behavior.
+func TestMarkdownParser_RemoveTOC_Chinese(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+
+	md := `# 前言
+
+前言内容。
+
+# 目录
+
+* 第一章 概述
+* 第二章 架构
+
+# 第一章 概述
+
+第一章正文内容。
+
+# 第二章 架构
+
+第二章正文内容。
+`
+
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if strings.Contains(text, "目录") {
+			t.Errorf("TOC heading %q was not removed", text)
+		}
+		if text == "* 第一章 概述" || text == "* 第二章 架构" {
+			t.Errorf("TOC entry %q was not removed", text)
+		}
+	}
+
+	wantTexts := map[string]bool{
+		"# 前言":     false,
+		"前言内容。":     false,
+		"# 第一章 概述": false,
+		"第一章正文内容。": false,
+		"# 第二章 架构": false,
+		"第二章正文内容。": false,
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if _, ok := wantTexts[text]; ok {
+			wantTexts[text] = true
+		}
+	}
+	for text, found := range wantTexts {
+		if !found {
+			t.Errorf("expected text %q was unexpectedly removed", text)
+		}
+	}
+}
+
+// TestMarkdownParser_RemoveTOC_English verifies that English Markdown TOC sections
+// are filtered when remove_toc is enabled.
+func TestMarkdownParser_RemoveTOC_English(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+
+	md := `# Overview
+
+Project overview.
+
+# Table of Contents
+
+* Chapter 1 Getting Started
+* Chapter 2 Deep Dive
+
+# Chapter 1 Getting Started
+
+First chapter content.
+
+# Chapter 2 Deep Dive
+
+Second chapter content.
+`
+
+	res := p.ParseWithResult(ctx, "test_en.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if strings.Contains(strings.ToLower(text), "table of contents") {
+			t.Errorf("TOC heading %q was not removed", text)
+		}
+		if text == "* Chapter 1 Getting Started" || text == "* Chapter 2 Deep Dive" {
+			t.Errorf("TOC entry %q was not removed", text)
+		}
+	}
+
+	wantTexts := map[string]bool{
+		"# Overview":                 false,
+		"Project overview.":          false,
+		"# Chapter 1 Getting Started": false,
+		"First chapter content.":     false,
+		"# Chapter 2 Deep Dive":      false,
+		"Second chapter content.":    false,
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if _, ok := wantTexts[text]; ok {
+			wantTexts[text] = true
+		}
+	}
+	for text, found := range wantTexts {
+		if !found {
+			t.Errorf("expected text %q was unexpectedly removed", text)
+		}
+	}
+}
+
+// TestMarkdownParser_RemoveTOC_DisabledByDefault verifies that TOC content is preserved
+// when remove_toc is disabled or omitted.
+func TestMarkdownParser_RemoveTOC_DisabledByDefault(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+
+	md := `# 目录
+
+* 第一章 概述
+* 第二章 架构
+
+# 第一章 概述
+
+第一章正文内容。
+`
+
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	foundHeading := false
+	foundEntry := false
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if strings.Contains(text, "目录") {
+			foundHeading = true
+		}
+		if text == "* 第一章 概述" {
+			foundEntry = true
+		}
+	}
+	if !foundHeading {
+		t.Errorf("expected TOC heading to be preserved by default")
+	}
+	if !foundEntry {
+		t.Errorf("expected TOC entry to be preserved by default")
+	}
+}
