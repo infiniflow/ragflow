@@ -230,6 +230,18 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 					}
 				}
 			}
+			if variable["type"] == "object" {
+				if text, ok := value.(string); ok {
+					var object map[string]any
+					if err := json.Unmarshal([]byte(text), &object); err != nil || object == nil {
+						return nil, fmt.Errorf("Invoke: parameter %q must be a valid JSON object", key)
+					}
+					value = object
+				}
+				if object, ok := value.(map[string]any); !ok || object == nil {
+					return nil, fmt.Errorf("Invoke: parameter %q must be a valid JSON object", key)
+				}
+			}
 			fields[key] = value
 		}
 		if len(fields) > 0 {
