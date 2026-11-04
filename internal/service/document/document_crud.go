@@ -216,7 +216,7 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 //
 //	ids: specific document IDs; deleteAll: delete all docs in the dataset.
 //	Returns the number of successfully deleted documents.
-func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
+func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID string) (int, error) {
 	// Deleting the entire dataset requires dataset-level access; deleting
 	// explicit documents also accepts direct document grants.
 	if deleteAll {
