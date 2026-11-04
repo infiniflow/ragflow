@@ -57,7 +57,7 @@ func TestInsertMetadataReturnsErrorOnBulkItemError(t *testing.T) {
 	if err == nil {
 		t.Fatal("InsertMetadata returned nil for a bulk response with a failed item")
 	}
-	for _, want := range []string{"ragflow_doc_meta_t1", "1 item errors", "failed to parse field"} {
+	for _, want := range []string{"ragflow_doc_meta_t1", "1 item errors", "doc-1: failed to parse field"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q does not mention %q", err.Error(), want)
 		}
@@ -82,6 +82,23 @@ func TestInsertMetadataReportsFailedItemCountBeforeTruncatingReasons(t *testing.
 	}
 	if strings.Contains(err.Error(), "reason-5") || strings.Contains(err.Error(), "reason-6") {
 		t.Fatalf("error %q should only show the first 5 reasons", err.Error())
+	}
+}
+
+func TestInsertMetadataIdentifiesEachFailedDocument(t *testing.T) {
+	engine := newBulkReplyEngine(t, `{}`,
+		`{"errors":true,"items":[`+
+			`{"index":{"_id":"doc-a","status":400,"error":{"reason":"failed to parse field [meta_fields.author]"}}},`+
+			`{"index":{"_id":"doc-b","status":400,"error":{"reason":"failed to parse field [meta_fields.author]"}}}]}`)
+
+	_, err := engine.InsertMetadata(t.Context(), oneMetadata(), "t1")
+	if err == nil {
+		t.Fatal("InsertMetadata returned nil for failed bulk items")
+	}
+	for _, want := range []string{"doc-a:", "doc-b:", "2 item errors"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q does not mention %q", err.Error(), want)
+		}
 	}
 }
 

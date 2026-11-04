@@ -164,7 +164,7 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 	// the reasons instead of returning success while metadata was silently
 	// dropped.
 	if hasErrs, ok := bulkResponse["errors"].(bool); ok && hasErrs {
-		var reasons []string
+		var failures []string
 		failed := 0
 		if items, ok := bulkResponse["items"].([]interface{}); ok {
 			for _, it := range items {
@@ -177,22 +177,31 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 					if !ok {
 						continue
 					}
-					if errObj, ok := om["error"].(map[string]interface{}); ok {
-						failed++
-						if reason, ok := errObj["reason"].(string); ok && reason != "" {
-							reasons = append(reasons, reason)
-						}
+					errObj, ok := om["error"].(map[string]interface{})
+					if !ok {
+						continue
+					}
+					failed++
+					reason, _ := errObj["reason"].(string)
+					docID, _ := om["_id"].(string)
+					switch {
+					case docID != "" && reason != "":
+						failures = append(failures, docID+": "+reason)
+					case docID != "":
+						failures = append(failures, docID)
+					case reason != "":
+						failures = append(failures, reason)
 					}
 				}
 			}
 		}
-		shown := reasons
+		shown := failures
 		if len(shown) > 5 {
 			shown = shown[:5]
 		}
 		common.Error("Elasticsearch bulk request had item errors",
-			fmt.Errorf("index %s: %d failed items; first reasons: %v", indexName, failed, shown))
-		return nil, fmt.Errorf("elasticsearch bulk request had %d item errors (index %s); first reasons: %v",
+			fmt.Errorf("index %s: %d failed items; first failures: %v", indexName, failed, shown))
+		return nil, fmt.Errorf("elasticsearch bulk request had %d item errors (index %s); first failures: %v",
 			failed, indexName, shown)
 	}
 
