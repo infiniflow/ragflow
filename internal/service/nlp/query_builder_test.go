@@ -320,7 +320,7 @@ func TestQueryBuilderQuestionUnsegmentedChinese(t *testing.T) {
 
 	for _, question := range []string{"甲烷报警阈值是多少", "青柚七号充一次电能跑多久？", "故障码E-17怎么处理", "红外热像仪", "LEL"} {
 		t.Run(question, func(t *testing.T) {
-			expr, keywords := qb.Question(question, "", 0.3)
+			expr, keywords := qb.Question(question, "", 0.3, "")
 			if expr == nil || len(keywords) == 0 {
 				t.Fatalf("missing query or keywords for %q", question)
 			}

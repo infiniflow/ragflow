@@ -89,7 +89,7 @@ func TestQueryBuilderInfinityChineseFullText(t *testing.T) {
 	qb := NewQueryBuilder()
 	for _, question := range []string{"甲烷报警阈值是多少", "红外热像仪", "LEL"} {
 		t.Run(question, func(t *testing.T) {
-			expr, _ := qb.Question(question, "", 0.3)
+			expr, _ := qb.Question(question, "", 0.3, "")
 			if expr == nil {
 				t.Fatal("missing full-text expression")
 			}
