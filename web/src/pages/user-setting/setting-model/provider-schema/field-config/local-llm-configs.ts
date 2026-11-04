@@ -181,7 +181,7 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
     'GPUStack',
     false,
     undefined,
-    'https://docs.gpustack.ai/latest/quickstart',
+    'https://docs.gpustack.ai/latest/integrations/integrate-with-ragflow/',
   ),
   [LLMFactory.VLLM]: buildLocalConfig(
     LLMFactory.VLLM,
