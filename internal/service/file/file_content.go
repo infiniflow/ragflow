@@ -23,7 +23,7 @@ func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*
 	if err != nil || file == nil {
 		return nil, fmt.Errorf("document not found")
 	}
-	if err := checkFileAccess(ctx, uid, file, permission.OperationRead); err != nil {
+	if err := checkFileAccess(ctx, file, permission.OperationRead); err != nil {
 		return nil, err
 	}
 	return file, nil

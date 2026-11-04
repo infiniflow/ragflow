@@ -41,12 +41,12 @@ done
 
 The `docker` project commonly uses these volumes:
 
-| Data | Typical volume |
-|------|----------------|
-| Metadata database | `docker_mysql_data` |
+| Data                              | Typical volume      |
+|-----------------------------------|---------------------|
+| Metadata database                 | `docker_mysql_data` |
 | Uploaded objects in bundled MinIO | `docker_minio_data` |
-| Redis data | `docker_redis_data` |
-| Elasticsearch index | `docker_esdata01` |
+| Redis data                        | `docker_redis_data` |
+| Elasticsearch index               | `docker_esdata01`   |
 
 Use these four default volumes as the starting point. If the deployment uses Infinity instead of Elasticsearch, include its persistent data. Add every named volume and persistent host directory shown by the mount check.
 
@@ -83,10 +83,10 @@ The `date` command adds the current time to the directory name so that files fro
 
 Choose one backup method:
 
-| Deployment | Backup method |
-|------------|---------------|
-| `v0.20.1` or later with the four default MySQL, MinIO, Redis, and Elasticsearch volumes | Use the bundled script. |
-| `v0.20.0`, Infinity, or any non-default volume set | Use the manual procedure for every recorded volume. |
+| Deployment                                                                              | Backup method                                       |
+|-----------------------------------------------------------------------------------------|-----------------------------------------------------|
+| `v0.20.1` or later with the four default MySQL, MinIO, Redis, and Elasticsearch volumes | Use the bundled script.                             |
+| `v0.20.0`, Infinity, or any non-default volume set                                      | Use the manual procedure for every recorded volume. |
 
 For a deployment with the four default volumes, create the archives with:
 

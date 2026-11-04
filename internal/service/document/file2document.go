@@ -79,7 +79,7 @@ type LinkToDatasetsRequest struct {
 //
 // On validation failure it returns a sentinel error (see ErrLink* above) so the
 // handler can map it to a Python-compatible response without leaking internals.
-func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string, req *LinkToDatasetsRequest, mode string) error {
+func (s *File2DocumentService) LinkToDatasets(ctx context.Context, req *LinkToDatasetsRequest, mode string) error {
 	// ── 1. Validate files exist ───────────────────────────────────────────────
 	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, req.FileIDs)
 	if err != nil {
@@ -164,8 +164,8 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	// ── 6. Run conversion in background (fire-and-forget) ────────────────────
 	kbIDs := req.KbIDs
 	go func() {
-		newCtx := context.Background()
-		if err = s.convertFiles(newCtx, allFileIDs, kbIDs, userID, mode); err != nil {
+		newCtx := context.WithoutCancel(ctx)
+		if err := s.convertFiles(newCtx, allFileIDs, kbIDs, mode); err != nil {
 			common.Warn("file2document.convertFiles failed",
 				zap.Strings("file_ids", allFileIDs),
 				zap.Strings("kb_ids", kbIDs),
@@ -178,7 +178,8 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 
 // convertFiles mirrors Python _convert_files: keep existing links, remove links
 // outside the requested KBs in replace mode, then add any missing links.
-func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs []string, userID, mode string) error {
+func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs []string, mode string) error {
+	userID := permission.UserIDFromContext(ctx)
 	replaceExisting := mode != "add"
 	kbIDs = dedupeStrings(kbIDs)
 	requestedKBIDs := make(map[string]struct{}, len(kbIDs))

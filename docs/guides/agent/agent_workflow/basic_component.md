@@ -59,15 +59,15 @@ Common fields are as follows:
 
 Variable types:
 
-| Type | Description |
-| --- | --- |
-| Single-line text | Used to enter short text, such as names, keywords, and serial numbers. |
-| Paragraph text | Used to enter longer content, such as problem descriptions, requirement descriptions, and prompts. |
-| Dropdown options | Provides predefined options for users to select. You can click **Add option** to add multiple options. This is suitable for fixed-value inputs such as language, department, and model type. |
-| File upload | Allows users to upload files as workflow input. This can be used for document analysis, image processing, and similar scenarios. Uploaded files are not automatically saved to knowledge bases, and are used only in the current workflow. |
-| Number | Used to enter numeric values, such as quantity, threshold, `Top K`, and maximum returned items. |
-| Boolean | Provides a switch (`True`/`False`) or yes/no option, used to control whether a feature is enabled or whether a branch is executed. |
-| JSON object | Used to enter structured JSON data, such as parameters, configurations, or other complex data containing multiple fields. |
+| Type             | Description                                                                                                                                                                                                                                |
+|------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Single-line text | Used to enter short text, such as names, keywords, and serial numbers.                                                                                                                                                                     |
+| Paragraph text   | Used to enter longer content, such as problem descriptions, requirement descriptions, and prompts.                                                                                                                                         |
+| Dropdown options | Provides predefined options for users to select. You can click **Add option** to add multiple options. This is suitable for fixed-value inputs such as language, department, and model type.                                               |
+| File upload      | Allows users to upload files as workflow input. This can be used for document analysis, image processing, and similar scenarios. Uploaded files are not automatically saved to knowledge bases, and are used only in the current workflow. |
+| Number           | Used to enter numeric values, such as quantity, threshold, `Top K`, and maximum returned items.                                                                                                                                            |
+| Boolean          | Provides a switch (`True`/`False`) or yes/no option, used to control whether a feature is enabled or whether a branch is executed.                                                                                                         |
+| JSON object      | Used to enter structured JSON data, such as parameters, configurations, or other complex data containing multiple fields.                                                                                                                  |
 
 ![Begin Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/begin_component_2.jpg)
 
@@ -85,7 +85,7 @@ Keep uploaded content within the selected model's context limit.
 
 ## Agent Component
 
-The Agent component is used to call large language models for reasoning, content generation, task planning, and tool calling. It can process user questions independently, or work with components such as knowledge retrieval, HTTP requests, code, databases, and sub-agents to complete multi-step tasks.
+The Agent component is used to call large language models for reasoning, content generation, task planning, and tool calling. It can process user questions independently, or work with components such as knowledge retrieval, HTTP requests, code, databases, and sub-agents to complete multistep tasks.
 
 The Agent component can work independently and has the following capabilities:
 
@@ -142,10 +142,10 @@ Use **Advanced settings** to adjust conversation history and citations.
 
 Parameter description:
 
-| Parameter | Description | Suggestion |
-| --- | --- | --- |
-| Message window size | Sets the number of historical messages retained by the Agent during reasoning. A larger window provides more context, but increases token consumption. | Keep the default value in general. Increase it for multi-turn conversations, and decrease it for single-turn tasks. |
-| Citation | Specifies whether to return citation information in answers. When the Agent uses knowledge bases or retrieval results to generate answers, source citations can be enabled to make it easier to view the basis for the answer. | Recommended for knowledge base Q&A scenarios. |
+| Parameter           | Description                                                                                                                                                                                                                    | Suggestion                                                                                                          |
+|---------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
+| Message window size | Sets the number of historical messages retained by the Agent during reasoning. A larger window provides more context, but increases token consumption.                                                                         | Keep the default value in general. Increase it for multi-turn conversations, and decrease it for single-turn tasks. |
+| Citation            | Specifies whether to return citation information in answers. When the Agent uses knowledge bases or retrieval results to generate answers, source citations can be enabled to make it easier to view the basis for the answer. | Recommended for knowledge base Q&A scenarios.                                                                       |
 
 If an Agent run fails, check the error details in the run results, correct the cause, and run again.
 
@@ -153,10 +153,10 @@ If an Agent run fails, check the error details in the run results, correct the c
 
 `Output` is used to configure the output content of the Agent node.
 
-| Configuration item | Description |
-| --- | --- |
-| `content` | The natural language text returned by the Agent. This is the default output. |
-| `structured` | Structured data returned by the Agent. After structured output is enabled, results can be output according to a predefined JSON Schema, making it easier for subsequent nodes to read and process. |
+| Configuration item | Description                                                                                                                                                                                        |
+|--------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `content`          | The natural language text returned by the Agent. This is the default output.                                                                                                                       |
+| `structured`       | Structured data returned by the Agent. After structured output is enabled, results can be output according to a predefined JSON Schema, making it easier for subsequent nodes to read and process. |
 
 For structured output, after enabling **Structured output**, click **Configuration** to configure the output structure. Users can define the returned data format according to JSON Schema, such as specifying field names, data types, and required fields. The Agent tries to return results according to the configured structure, making it easier to pass data to nodes such as Code, HTTP Request, Execute SQL, and Switch for automated processing.
 
@@ -200,11 +200,11 @@ Similarity threshold values below use the UI percentage scale: enter `20`, `50`,
 
 Retrieval parameters directly affect answer coverage, accuracy, and response time. You can start with the settings in the following table, and then optimize them based on real questions.
 
-| Parameter | Suggested Value | Scenario | Description |
-| --- | --- | --- | --- |
-| Top N | 3-5 | FAQ and short knowledge entries | Faster responses for clear answers. |
-| Top N | 5-10 | Product documentation and help centers | A suggested range to test with representative questions. |
-| Top N | 10-20 | Legal contracts and long document analysis | More context with higher token consumption. |
-| Similarity threshold | 20 | Loose recall | Questions with diverse expressions. |
-| Similarity threshold | 50 | General Q&A | A stricter tuning example; the initial UI value is 20 (20%). |
-| Similarity threshold | 80 | Strict precise matching | Scenarios that require exact terminology matching. |
+| Parameter            | Suggested Value | Scenario                                   | Description                                                  |
+|----------------------|-----------------|--------------------------------------------|--------------------------------------------------------------|
+| Top N                | 3-5             | FAQ and short knowledge entries            | Faster responses for clear answers.                          |
+| Top N                | 5-10            | Product documentation and help centers     | A suggested range to test with representative questions.     |
+| Top N                | 10-20           | Legal contracts and long document analysis | More context with higher token consumption.                  |
+| Similarity threshold | 20              | Loose recall                               | Questions with diverse expressions.                          |
+| Similarity threshold | 50              | General Q&A                                | A stricter tuning example; the initial UI value is 20 (20%). |
+| Similarity threshold | 80              | Strict precise matching                    | Scenarios that require exact terminology matching.           |

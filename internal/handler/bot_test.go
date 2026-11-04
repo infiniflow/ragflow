@@ -773,11 +773,11 @@ func (f *fakeFileService) DownloadAgentFile(ctx context.Context, tenantID, locat
 	return f.blob, f.err
 }
 
-func (f *fakeFileService) UploadInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
+func (f *fakeFileService) UploadInfos(ctx context.Context, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 
-func (f *fakeFileService) UploadFromURL(ctx context.Context, tenantID, rawURL string) (map[string]interface{}, error) {
+func (f *fakeFileService) UploadFromURL(ctx context.Context, rawURL string) (map[string]interface{}, error) {
 	return nil, nil
 }
 
