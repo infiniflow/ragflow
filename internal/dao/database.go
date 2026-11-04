@@ -460,8 +460,8 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
 	}
-	if err = initializeSystemSettingsEE(ctx, DB); err != nil {
-		return fmt.Errorf("failed to initialize enterprise system settings: %w", err)
+	if err = SeedSystemSettings(ctx, DB); err != nil {
+		return fmt.Errorf("failed to seed system settings: %w", err)
 	}
 	// Conversation lists filter by dialog and usually order by update time.
 	for _, table := range []string{"conversation", "api_4_conversation"} {
