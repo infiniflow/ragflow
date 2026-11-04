@@ -34,10 +34,20 @@ type Engine struct {
 
 	mu         sync.Mutex
 	directives map[int]pageDirectives
-	// pageDims is nil until the document-wide size pass completes; a non-nil
-	// map therefore means "cached and complete".
-	pageDims map[int][2]float64
+	// pageDims caches the page sizes pdfium has reported so far; dimsAttempted
+	// records that the document-wide pass already ran, so a page missing from
+	// the map is retried on its own rather than by re-reading every page.
+	pageDims      map[int][2]float64
+	dimsAttempted bool
 }
+
+// pageSizesBatch and pageSizeSingle are the pdfium lookups the engine uses.
+// They are package variables so tests can simulate a partial batch without a
+// malformed PDF.
+var (
+	pageSizesBatch = pdfium.PageSizes
+	pageSizeSingle = pdfium.PageSize
+)
 
 // NewEngine opens a PDF from bytes and returns an Engine.
 func NewEngine(pdfBytes []byte) (*Engine, error) {
@@ -50,17 +60,21 @@ func NewEngine(pdfBytes []byte) (*Engine, error) {
 
 func (e *Engine) RawData() []byte { return e.rawData }
 
-// loadPageDims fills pageDims with every page's post-rotation size from a
-// single pdfium pass. Only a complete table is cached: a partial one would
-// pin the failure for the rest of the document, so an incomplete pass leaves
-// the cache empty and the next page retries — the same retry the previous
-// per-page lookup got.
+// loadPageDims fills pageDims with every page size pdfium can report from one
+// batch pass. The pass runs once: successful pages are cached even when other
+// pages fail, so a missing page is retried individually by pageSize instead of
+// re-reading the whole document on every call. A failed pass is not retried in
+// bulk; only the pages that missed out are looked up again.
+//
+// The pass has no caller context to honour: ExtractChars carries none, and
+// threading one through the PDFEngine interface is a separate change.
 func (e *Engine) loadPageDims() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.pageDims != nil {
+	if e.dimsAttempted {
 		return
 	}
+	e.dimsAttempted = true
 	n, err := e.doc.PageCount()
 	if err != nil || n <= 0 {
 		return
@@ -69,22 +83,45 @@ func (e *Engine) loadPageDims() {
 	for i := range idxs {
 		idxs[i] = i
 	}
-	sizes, _, _ := pdfium.PageSizes(context.Background(), e.rawData, idxs)
-	if len(sizes) == n {
-		e.pageDims = sizes
+	sizes, _, _ := pageSizesBatch(context.Background(), e.rawData, idxs)
+	if len(sizes) == 0 {
+		return
+	}
+	if e.pageDims == nil {
+		e.pageDims = make(map[int][2]float64, len(sizes))
+	}
+	for page, size := range sizes {
+		e.pageDims[page] = size
 	}
 }
 
-// pageSizeFromCache reports the post-rotation size of one page when the
-// document-wide pass has already recorded it.
-func (e *Engine) pageSizeFromCache(pageNum int) (float64, float64, bool) {
+// pageSize returns a page's post-rotation size. It prefers the document-wide
+// batch, then retries that one page directly, and reports false only when both
+// fail. The retry result is cached so a page pdfium cannot size costs at most
+// one extra lookup per document. Both ExtractChars and PageSize use this helper
+// so the fallback rule cannot diverge between them.
+func (e *Engine) pageSize(pageNum int) ([2]float64, bool) {
+	e.loadPageDims()
+
 	e.mu.Lock()
-	defer e.mu.Unlock()
 	d, ok := e.pageDims[pageNum]
-	if !ok {
-		return 0, 0, false
+	e.mu.Unlock()
+	if ok {
+		return d, true
 	}
-	return d[0], d[1], true
+
+	w, h, err := pageSizeSingle(e.rawData, pageNum)
+	if err != nil {
+		return [2]float64{}, false
+	}
+	d = [2]float64{w, h}
+	e.mu.Lock()
+	if e.pageDims == nil {
+		e.pageDims = make(map[int][2]float64, 1)
+	}
+	e.pageDims[pageNum] = d
+	e.mu.Unlock()
+	return d, true
 }
 
 // pageDirective returns the cached /Rotate and /CropBox of one page, scanning
@@ -114,10 +151,9 @@ func (e *Engine) ExtractChars(pageNum int) ([]Char, error) {
 	//    If dimensions are swapped, the page has implicit rotation
 	//    (inherited /Rotate or ContentBox rotation).
 	rawW, rawH, _ := e.doc.PageSize(pageNum)
-	e.loadPageDims()
-	effW, effH, cached := e.pageSizeFromCache(pageNum)
-	if !cached {
-		effW, effH = rawW, rawH
+	effW, effH := rawW, rawH
+	if d, ok := e.pageSize(pageNum); ok {
+		effW, effH = d[0], d[1]
 	}
 
 	dimSwapped := rawW > 0 && rawH > 0 && effW > 0 && effH > 0 &&
@@ -255,19 +291,14 @@ func (e *Engine) RenderPage(pageNum int, dpi float64) ([]byte, error) {
 
 // PageSize returns the effective page dimensions via pdfium, which
 // correctly applies /Rotate.  pdf_oxide's own PageSize returns raw
-// (unrotated) dimensions. Sizes come from the document-wide pass once it has
-// run; before that (and for a page pdfium cannot size) it falls back to the
-// previous per-call path.
+// (unrotated) dimensions. Sizes come from the document-wide cache, with a
+// single-page pdfium retry for a page the batch could not size; only when
+// both fail does it fall back to pdf_oxide, exactly as before.
 func (e *Engine) PageSize(pageNum int) (float64, float64, error) {
-	e.loadPageDims()
-	if w, h, ok := e.pageSizeFromCache(pageNum); ok {
-		return w, h, nil
+	if d, ok := e.pageSize(pageNum); ok {
+		return d[0], d[1], nil
 	}
-	w, h, err := pdfium.PageSize(e.rawData, pageNum)
-	if err != nil {
-		return e.doc.PageSize(pageNum)
-	}
-	return w, h, nil
+	return e.doc.PageSize(pageNum)
 }
 func (e *Engine) PageCount() (int, error) { return e.doc.PageCount() }
 func (e *Engine) Close() error            { e.doc.Close(); return nil }
