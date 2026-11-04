@@ -1,8 +1,11 @@
 package chunker
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
+
+	"ragflow/internal/ingestion/component/schema"
 )
 
 func TestGeneralPDFJoinsCrossPageSentenceBeforeTokenMerge(t *testing.T) {
@@ -74,6 +77,31 @@ func TestGeneralPDFCrossPageEnglishKeepsWordSpace(t *testing.T) {
 	out := invokePDFContinuation(t, items, 1, []string{"\n"}, nil)
 	if got, want := outputTexts(t, out), []string{"work with the team to finish."}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("texts=%q, want %q", got, want)
+	}
+}
+
+func TestGeneralPDFCrossPageKanaJoinsWithoutSpace(t *testing.T) {
+	items := []map[string]any{
+		{"text": "これは", "doc_type_kwd": "text", "positions": [][]float64{{1, 80, 520, 700, 715}}},
+		{"text": "テストです。", "doc_type_kwd": "text", "positions": [][]float64{{2, 80, 200, 100, 115}}},
+	}
+	out := invokePDFContinuation(t, items, 1, []string{"\n"}, nil)
+	if got, want := outputTexts(t, out), []string{"これはテストです。"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("texts=%q, want %q", got, want)
+	}
+}
+
+func TestGeneralPDFContinuationRebuildsMismatchedSources(t *testing.T) {
+	units := []schema.ChunkDoc{
+		{Text: "物资保障", DocType: "text", Positions: json.RawMessage(`[[3,80,520,700,715]]`)},
+		{Text: "组、宣传工作组。", DocType: "text", Positions: json.RawMessage(`[[4,80,200,100,115]]`)},
+	}
+	joined, sources := joinPDFContinuations(units, [][]pdfSourceSpan{})
+	if len(joined) != 1 {
+		t.Fatalf("joined units = %d, want 1", len(joined))
+	}
+	if len(sources) != 1 || len(sources[0]) == 0 {
+		t.Fatalf("sources = %#v, want one populated source list", sources)
 	}
 }
 
@@ -158,6 +186,7 @@ func TestGeneralPDFCrossPageContinuationKeepsParagraphBoundaries(t *testing.T) {
 		{"blank line", "负责物资保障\n\n", "下一段内容", "", 4, 80},
 		{"spaced blank line", "负责物资保障\n \t\n", "下一段内容", "", 4, 80},
 		{"lettered item", "负责物资保障", "b) 宣传工作组", "", 4, 80},
+		{"lettered item no space", "负责物资保障", "b)宣传工作组", "", 4, 80},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			top := 100.0
