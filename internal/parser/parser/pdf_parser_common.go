@@ -61,11 +61,15 @@ func parseMinerUTimeoutSetupValue(raw any) (time.Duration, bool) {
 	if raw == nil {
 		return 0, false
 	}
+	minSec := MinMinerURequestTimeout.Seconds()
 	maxSec := MaxMinerURequestTimeout.Seconds()
 	switch v := raw.(type) {
 	case int:
 		if v <= 0 {
 			return 0, false
+		}
+		if float64(v) < minSec {
+			return MinMinerURequestTimeout, true
 		}
 		if float64(v) > maxSec {
 			return MaxMinerURequestTimeout, true
@@ -75,6 +79,9 @@ func parseMinerUTimeoutSetupValue(raw any) (time.Duration, bool) {
 		if v <= 0 {
 			return 0, false
 		}
+		if float64(v) < minSec {
+			return MinMinerURequestTimeout, true
+		}
 		if float64(v) > maxSec {
 			return MaxMinerURequestTimeout, true
 		}
@@ -82,6 +89,9 @@ func parseMinerUTimeoutSetupValue(raw any) (time.Duration, bool) {
 	case float64:
 		if v <= 0 {
 			return 0, false
+		}
+		if v < minSec {
+			return MinMinerURequestTimeout, true
 		}
 		if v > maxSec {
 			return MaxMinerURequestTimeout, true
@@ -93,12 +103,18 @@ func parseMinerUTimeoutSetupValue(raw any) (time.Duration, bool) {
 			return 0, false
 		}
 		if sec, err := strconv.Atoi(s); err == nil && sec > 0 {
+			if float64(sec) < minSec {
+				return MinMinerURequestTimeout, true
+			}
 			if float64(sec) > maxSec {
 				return MaxMinerURequestTimeout, true
 			}
 			return ClampMinerUTimeout(time.Duration(sec) * time.Second), true
 		}
 		if secF, err := strconv.ParseFloat(s, 64); err == nil && secF > 0 {
+			if secF < minSec {
+				return MinMinerURequestTimeout, true
+			}
 			if secF > maxSec {
 				return MaxMinerURequestTimeout, true
 			}

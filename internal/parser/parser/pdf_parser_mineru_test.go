@@ -434,6 +434,25 @@ func TestPDFParser_ConfigureFromSetup_MinerUTimeout(t *testing.T) {
 	if pdfHugeStr.MinerUPollTimeout != MaxMinerURequestTimeout || !pdfHugeStr.MinerUTimeoutConfigured {
 		t.Fatalf("huge str timeout = %v, want %v", pdfHugeStr.MinerUPollTimeout, MaxMinerURequestTimeout)
 	}
+
+	// Tiny sub-second float values should clamp to MinMinerURequestTimeout without truncating to 0
+	pdfTinyFloat := NewPDFParser()
+	pdfTinyFloat.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": 1e-10,
+	})
+	if pdfTinyFloat.MinerUPollTimeout != MinMinerURequestTimeout || !pdfTinyFloat.MinerUTimeoutConfigured {
+		t.Fatalf("tiny float timeout = %v, want %v", pdfTinyFloat.MinerUPollTimeout, MinMinerURequestTimeout)
+	}
+
+	pdfTinyStr := NewPDFParser()
+	pdfTinyStr.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": "1e-10",
+	})
+	if pdfTinyStr.MinerUPollTimeout != MinMinerURequestTimeout || !pdfTinyStr.MinerUTimeoutConfigured {
+		t.Fatalf("tiny str timeout = %v, want %v", pdfTinyStr.MinerUPollTimeout, MinMinerURequestTimeout)
+	}
 }
 
 func TestClampMinerUTimeout(t *testing.T) {

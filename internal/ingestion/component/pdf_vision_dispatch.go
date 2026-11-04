@@ -1047,14 +1047,21 @@ func mineruRequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APICo
 	if value == "" {
 		return mineruDefaultTimeout
 	}
+	minSec := parser.MinMinerURequestTimeout.Seconds()
 	maxSec := parser.MaxMinerURequestTimeout.Seconds()
 	if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
+		if float64(seconds) < minSec {
+			return parser.MinMinerURequestTimeout
+		}
 		if float64(seconds) > maxSec {
 			return parser.MaxMinerURequestTimeout
 		}
 		return clampMinerUTimeout(time.Duration(seconds) * time.Second)
 	}
 	if seconds, err := strconv.ParseFloat(value, 64); err == nil && seconds > 0 {
+		if seconds < minSec {
+			return parser.MinMinerURequestTimeout
+		}
 		if seconds > maxSec {
 			return parser.MaxMinerURequestTimeout
 		}
