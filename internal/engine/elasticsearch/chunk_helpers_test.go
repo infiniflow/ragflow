@@ -1158,3 +1158,46 @@ func TestDeleteChunksRejectsEmptyDatasetID(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteChunksRejectsEmptyIDs(t *testing.T) {
+	cases := []struct {
+		name string
+		id   interface{}
+	}{
+		{name: "nil", id: nil},
+		{name: "empty string slice", id: []string{}},
+		{name: "nil string slice", id: []string(nil)},
+		{name: "empty interface slice", id: []interface{}{}},
+		{name: "nil interface slice", id: []interface{}(nil)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var deletes atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("X-Elastic-Product", "Elasticsearch")
+				w.Header().Set("Content-Type", "application/json")
+				if r.Method == http.MethodPost {
+					deletes.Add(1)
+					_, _ = w.Write([]byte(`{"deleted":1}`))
+				}
+			}))
+			defer server.Close()
+			client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			engine := &Engine{client: client}
+			condition := map[string]interface{}{"id": tc.id}
+			deleted, err := engine.DeleteChunks(t.Context(), condition, "ragflow_tenant", "kb-1")
+			if err == nil {
+				t.Error("expected an error for empty IDs")
+			}
+			if deleted != 0 {
+				t.Errorf("deleted=%d, want 0", deleted)
+			}
+			if deletes.Load() != 0 {
+				t.Errorf("sent %d delete requests, want 0", deletes.Load())
+			}
+		})
+	}
+}

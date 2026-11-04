@@ -1023,6 +1023,12 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	// shared by every dataset, so without this a condition that omits kb_id
 	// deletes matching chunks in other datasets too.
 	condition = copyFields(condition)
+	if idVal, ok := condition["id"]; ok {
+		items, isList := conditionTermsList(idVal)
+		if idVal == nil || (isList && len(items) == 0) {
+			return 0, fmt.Errorf("ES delete aborted: empty id list on index %s", fullIndexName)
+		}
+	}
 	condition["kb_id"] = datasetID
 	condition = types.CompilationFilter(condition)
 	// Build bool query from condition
