@@ -161,6 +161,9 @@ const componentNameRetrieval = "Retrieval"
 
 var legacyRetrievalQueryPattern = regexp.MustCompile(`(?s)^\s*UserFillUp:\s*(.*?)\s+Input\s+(.*?)\s*$`)
 
+// newRetrievalComponent builds the tool with user_id taken from the node
+// configuration alone: applyDefaults drops any upstream value, so the memory
+// user filter cannot be chosen by a value flowing through the canvas.
 func newRetrievalComponent(params map[string]any) (Component, error) {
 	return &retrievalComponent{
 		inner:  agenttool.NewRetrievalTool(),
@@ -236,9 +239,7 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	common.Debug("agent retrieval component: output",
 		zap.String("tool_output", out),
 	)
-
 	return normalizeRetrievalOutputs(parseToolEnvelope(out)), nil
-
 }
 
 func checkCanvasRetrievalDependencies(ctx context.Context, db *gorm.DB, inputs map[string]any) error {
@@ -356,8 +357,13 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 	if _, ok := out["memory_ids"]; !ok && len(c.params.MemoryIDs) > 0 {
 		out["memory_ids"] = append([]string(nil), c.params.MemoryIDs...)
 	}
-	if _, ok := out["user_id"]; !ok && c.params.UserID != "" {
+	// user_id decides whose memory messages are read, so it is the one argument
+	// the node configuration owns outright: an upstream value is dropped, not
+	// used as an override, because an upstream output can carry a model choice.
+	if c.params.UserID != "" {
 		out["user_id"] = c.params.UserID
+	} else {
+		delete(out, "user_id")
 	}
 	if _, ok := out["cross_languages"]; !ok && len(c.params.CrossLanguages) > 0 {
 		out["cross_languages"] = append([]string(nil), c.params.CrossLanguages...)

@@ -502,7 +502,11 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		}
 		defaults.RetrievalFrom = retrievalFrom
 	}
-	return NewRetrievalToolWithDefaults(defaults), nil
+	// This path is the Agent tool list: the arguments come straight from the
+	// model, so user_id must be resolved from the node config alone.
+	tool := NewRetrievalToolWithDefaults(defaults)
+	tool.argsUserIDUntrusted = true
+	return tool, nil
 }
 
 func buildSearXNGTool(params map[string]any) (einotool.BaseTool, error) {
