@@ -303,6 +303,32 @@ func TestFileCommit_CreateCommit_DeleteLiveFileIsBadRequest(t *testing.T) {
 	}
 }
 
+func TestFileCommit_CreateCommit_RejectsFileOutsideFolder(t *testing.T) {
+	r, mock := setupFileCommitTest("user-1")
+	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+		return nil, fmt.Errorf("%w: file f2 is outside folder %s", permission.ErrPermissionDenied, folderID)
+	}
+
+	body := `{"message": "attempt", "files": [{"file_id": "f2", "file_name": "other.txt", "operation": "modify", "content": "x"}]}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/folders/folder-1/commits", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	// Hidden resource: a file the caller cannot commit is reported exactly like
+	// one that does not exist, not as a server error.
+	if code, _ := resp["code"].(float64); code != float64(common.CodeNotFound) {
+		t.Errorf("expected not found, got code %v", code)
+	}
+}
+
 func TestFileCommit_CreateCommit_NoAuth(t *testing.T) {
 	r := setupFileCommitTestNoAuth()
 	body := `{"message": "test", "files": [{"file_id": "f1", "file_name": "t.txt", "operation": "add"}]}`

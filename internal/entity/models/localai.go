@@ -371,7 +371,7 @@ func (l *LocalAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 }
 
 func (l *LocalAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", l.Name())
 }
 
 func (l *LocalAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -383,39 +383,39 @@ func (l *LocalAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig
 }
 
 func (l *LocalAIModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", l.Name())
 }
 
 func (l *LocalAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", l.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", l.Name())
 }
 
 // AudioSpeech convert text to audio
 func (l *LocalAIModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", l.Name())
 }
 
 func (l *LocalAIModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", l.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", l.Name())
 }
 
 func (l *LocalAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", l.Name())
 }
 
 // ParseFile parse file
 func (l *LocalAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", l.Name())
 }
 
 func (l *LocalAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", l.Name())
 }
 
 func (l *LocalAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", l.Name())
 }
 
 func (l *LocalAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", l.Name())
 }

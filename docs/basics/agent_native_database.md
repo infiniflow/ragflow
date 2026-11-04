@@ -75,7 +75,7 @@ Two rules keep the layer trustworthy:
 ## How it differs from RAG and vector databases
 
 |                  | RAG engine      | Vector database    | Agent native database              |
-| ---------------- | --------------- | ------------------ | ---------------------------------- |
+|------------------|-----------------|--------------------|------------------------------------|
 | Primary consumer | Human user      | Retrieval pipeline | Agent harness                      |
 | Delivers         | Ranked passages | Similarity hits    | Smallest sufficient context        |
 | Unit of value    | Recall@k        | Embedding quality  | Token cost, provenance, governance |

@@ -75,6 +75,7 @@ type IngestionLog struct {
 	DocID          string         `json:"doc_id"`
 	UserID         string         `json:"user_id"`
 	UserName       string         `json:"user_name,omitempty"`
+	TenantName     string         `json:"tenant_name,omitempty"`
 	Worker         string         `json:"worker"`
 	TaskID         string         `json:"task_id"`
 	EventType      string         `json:"event_type"`

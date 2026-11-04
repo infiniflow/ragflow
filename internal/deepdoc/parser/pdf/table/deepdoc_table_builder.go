@@ -3,7 +3,6 @@ package table
 import (
 	"context"
 	"image"
-	"sort"
 	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -115,16 +114,42 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	}
 
 	// 5. Span injection.
+	//
+	// For each TSR "table spanning cell", locate the top-left grid cell of
+	// the covered rectangle (the lexicographically smallest (row, col) whose
+	// centre lies inside the span bbox) and extend its bbox to the span's
+	// bbox, tagging it with the span label. A cell centre ∈ span bbox iff
+	// its column centre ∈ [sp.X0,sp.X1] AND its row centre ∈ [sp.Y0,sp.Y1],
+	// because every cell in a row shares the row boundary and every cell in
+	// a column shares the column boundary. We track the minimum (r, c)
+	// directly instead of allocating a covered slice and sorting it — the
+	// covered set is recomputed later by CalSpans from this extended bbox,
+	// so that slice was dead work. The origin must stay the covered
+	// rectangle's top-left: CalSpans derives colspan/rowspan and the
+	// `covered` (hidden) map from it, so a non-top-left origin would make
+	// the rendered cell span a different rectangle than the one hidden.
+	//
+	// The remaining covered cells KEEP their row×column bbox. Python's
+	// construct_table assigns every box to a cell by its TSR row/column
+	// label (R/C) regardless of spanning cells, then __cal_spans folds the
+	// covered cells' text into the span origin cell at render time. If Go
+	// zeroed these bboxes here, FillCellTextFromBoxesWithRows would skip
+	// them, their text would never reach the span cell, and orphan-row/
+	// column cleanup would drop the covered rows/columns — the
+	// dell/prodeploy/screenshot real-PDF parity gap (11→6 rows).
 	for _, sp := range spans {
-		type cellIdx struct{ r, c int }
-		var covered []cellIdx
+		firstR, firstC := -1, -1
 		for ri := range grid {
+			cy := (grid[ri][0].Y0 + grid[ri][0].Y1) / 2
+			if cy < sp.Y0 || cy > sp.Y1 {
+				continue
+			}
 			for cj := range grid[ri] {
-				cell := grid[ri][cj]
-				cx := (cell.X0 + cell.X1) / 2
-				cy := (cell.Y0 + cell.Y1) / 2
-				if cx >= sp.X0 && cx <= sp.X1 && cy >= sp.Y0 && cy <= sp.Y1 {
-					covered = append(covered, cellIdx{ri, cj})
+				cx := (grid[ri][cj].X0 + grid[ri][cj].X1) / 2
+				if cx >= sp.X0 && cx <= sp.X1 {
+					if firstR == -1 || ri < firstR || (ri == firstR && cj < firstC) {
+						firstR, firstC = ri, cj
+					}
 				}
 			}
 		}
@@ -133,31 +158,16 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 		// model's box edge missed the neighbour row) is still a real TSR
 		// span and must be labelled, not silently dropped. A 1-cell span
 		// renders as rowspan=1/colspan=1 (harmless) but keeps the TSR
-		// recognition visible downstream. Only skip when the box overlaps
-		// no grid cell at all (genuine coordinate mismatch).
-		if len(covered) == 0 {
+		// recognition visible downstream. Only skip when no grid cell centre
+		// falls inside the box at all (genuine coordinate mismatch).
+		if firstR == -1 {
 			continue
 		}
-		sort.Slice(covered, func(a, b int) bool {
-			if covered[a].r != covered[b].r {
-				return covered[a].r < covered[b].r
-			}
-			return covered[a].c < covered[b].c
-		})
-		first := covered[0]
-		grid[first.r][first.c].X0 = sp.X0
-		grid[first.r][first.c].Y0 = sp.Y0
-		grid[first.r][first.c].X1 = sp.X1
-		grid[first.r][first.c].Y1 = sp.Y1
-		grid[first.r][first.c].Label = sp.Label
-		// The remaining covered cells KEEP their row×column bbox. Python's
-		// construct_table assigns every box to a cell by its TSR row/column
-		// label (R/C) regardless of spanning cells, then __cal_spans folds the
-		// covered cells' text into the span origin cell at render time. If Go
-		// zeroed these bboxes here, FillCellTextFromBoxesWithRows would skip
-		// them, their text would never reach the span cell, and orphan-row/
-		// column cleanup would drop the covered rows/columns — the
-		// dell/prodeploy/screenshot real-PDF parity gap (11→6 rows).
+		grid[firstR][firstC].X0 = sp.X0
+		grid[firstR][firstC].Y0 = sp.Y0
+		grid[firstR][firstC].X1 = sp.X1
+		grid[firstR][firstC].Y1 = sp.Y1
+		grid[firstR][firstC].Label = sp.Label
 	}
 
 	return grid
@@ -167,3 +177,16 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 func overlapsY(a, b pdf.TSRCell) bool {
 	return a.Y0 < b.Y1 && a.Y1 > b.Y0
 }
+
+// FinalizeGrid returns annotGrid unchanged. The DeepDoc builder folds OCR
+// text into the grid inline during processOneTable's box-RC grouping, so
+// there is no deferred work to perform here. An EE V/H builder that defers
+// the OCR overlay overrides this with the real overlay.
+func (b *DeepDocTableBuilder) FinalizeGrid(annotGrid [][]pdf.TSRCell, boxes []pdf.TextBox) [][]pdf.TSRCell {
+	return annotGrid
+}
+
+// AttachSpanInfo is a no-op for the DeepDoc builder: its TableItem carries
+// no builder-specific span geometry. An EE V/H builder overrides this to
+// attach V/H span info.
+func (b *DeepDocTableBuilder) AttachSpanInfo(item *pdf.TableItem) {}

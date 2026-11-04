@@ -585,6 +585,15 @@ func (m *MockTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	return nil
 }
 
+// FinalizeGrid returns annotGrid unchanged (identity). The fake carries no
+// deferred OCR-overlay behavior, matching the production DeepDoc builder.
+func (m *MockTableBuilder) FinalizeGrid(annotGrid [][]pdf.TSRCell, boxes []pdf.TextBox) [][]pdf.TSRCell {
+	return annotGrid
+}
+
+// AttachSpanInfo is a no-op for the fake builder.
+func (m *MockTableBuilder) AttachSpanInfo(item *pdf.TableItem) {}
+
 // ── writeTableAnnotations unit tests ──────────────────────────────────
 
 func TestWriteTableAnnotations_WriteBack(t *testing.T) {

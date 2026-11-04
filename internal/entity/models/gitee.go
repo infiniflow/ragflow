@@ -347,20 +347,20 @@ func (g *GiteeModel) Rerank(ctx context.Context, modelName *string, request Rera
 
 // TranscribeAudio transcribe audio
 func (g *GiteeModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", g.Name())
 }
 
 func (g *GiteeModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", g.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", g.Name())
 }
 
 // AudioSpeech convert text to audio
 func (g *GiteeModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", g.Name())
 }
 
 func (g *GiteeModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", g.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", g.Name())
 }
 
 type giteeOCRResponse struct {
@@ -923,5 +923,5 @@ func (g *GiteeModel) ShowTask(ctx context.Context, taskID string, apiConfig *API
 }
 
 func (g *GiteeModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", g.Name())
 }

@@ -56,11 +56,6 @@ const canvasNoAccessMessage = "Make sure you have permission to access the agent
 
 // UploadAgentFile POST /api/v1/agents/:canvas_id/upload
 func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	canvasID := c.Param("canvas_id")
 	if canvasID == "" {
 		common.RespondError(c, common.CodeArgumentError, "`canvas_id` is required.")
@@ -73,7 +68,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	// IDOR mitigation; the user-visible envelope uses OPERATING_ERROR
 	// (103) with the python permission message so existing clients can
 	// still pattern-match the text.
-	if _, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID); err != nil {
+	if _, err := h.loader.LoadCanvasByID(c.Request.Context(), canvasID); err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			common.RespondError(c, common.CodeOperatingError, canvasNoAccessMessage)
 			return
@@ -115,7 +110,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 	// conditions are met.
 	ctx := c.Request.Context()
 	if url := c.Query("url"); url != "" && len(files) == 1 {
-		uploaded, err := h.fileService.UploadFromURL(ctx, user.ID, url)
+		uploaded, err := h.fileService.UploadFromURL(ctx, url)
 		if err != nil {
 			common.RespondError(c, common.CodeServerError, err.Error())
 			return
@@ -129,7 +124,7 @@ func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
 		return
 	}
 
-	results, err := h.fileService.UploadInfos(ctx, user.ID, files)
+	results, err := h.fileService.UploadInfos(ctx, files)
 	if err != nil {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return

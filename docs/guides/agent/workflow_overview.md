@@ -22,7 +22,7 @@ Agents are commonly used in the following scenarios:
 
 ## Relationship Between Agent and Knowledge Base Q&A
 - **Chat**: Suitable for applications mainly based on knowledge base Q&A and multi-turn dialogue.
-- **Agent**: Suitable for business workflows requiring conditional branching, tool calling, data processing or multi-step orchestration.
+- **Agent**: Suitable for business workflows requiring conditional branching, tool calling, data processing or multistep orchestration.
 
 The `Retrieval` component can be used inside an Agent to query knowledge bases. Retrieval can also be used as a tool under the Agent component, allowing the LLM to autonomously decide when to perform retrieval.
 

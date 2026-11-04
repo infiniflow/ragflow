@@ -62,6 +62,7 @@ export interface IProviderInstance {
   status: string;
   /** Whether the current user owns this model instance. */
   is_owner?: boolean;
+  operator_permission?: number;
   /** Whether the server has a credential configured for this instance. */
   api_key_configured?: boolean;
   /** Safe provider configuration values; secret values are never returned. */

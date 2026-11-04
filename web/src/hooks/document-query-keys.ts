@@ -26,6 +26,7 @@ export const enum DocumentApiAction {
   CreateDocument = 'createDocument',
   FetchDocumentThumbnails = 'fetchDocumentThumbnails',
   ParseDocument = 'parseDocument',
+  StopAllDocuments = 'stopAllDocuments',
 }
 
 export const DocumentKeys = {

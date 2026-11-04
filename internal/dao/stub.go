@@ -39,9 +39,6 @@ func billingDataModelsEE() []interface{} { return nil }
 // migrateBillingSchemaEE is a no-op in the community edition.
 func migrateBillingSchemaEE(ctx context.Context, db *gorm.DB) error { return nil }
 
-// initializeSystemSettingsEE is a no-op in the community edition.
-func initializeSystemSettingsEE(ctx context.Context, db *gorm.DB) error { return nil }
-
 // migratePermissionDataEE is a no-op in the community edition.
 func migratePermissionDataEE(ctx context.Context, db *gorm.DB) error { return nil }
 

@@ -140,9 +140,9 @@ func TestExchangeBoxAuthorizationCodeRequestBody(t *testing.T) {
 
 func TestStartBoxWebOAuthRequiresClientCredentials(t *testing.T) {
 	svc := NewConnectorService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 
-	_, code, err := svc.StartBoxWebOAuth(ctx, "user-1", &StartBoxWebOAuthRequest{ClientID: "client-1"})
+	_, code, err := svc.StartBoxWebOAuth(ctx, &StartBoxWebOAuthRequest{ClientID: "client-1"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -158,9 +158,9 @@ func TestPollBoxWebOAuthResultPendingWithoutRedis(t *testing.T) {
 	forceNilConnectorRedis(t)
 
 	svc := NewConnectorService()
-	ctx := t.Context()
+	ctx := serviceTestContext(t, "user-1", "user-1")
 
-	_, code, err := svc.PollBoxWebOAuthResult(ctx, "user-1", &PollBoxWebOAuthResultRequest{FlowID: "flow-1"})
+	_, code, err := svc.PollBoxWebOAuthResult(ctx, &PollBoxWebOAuthResultRequest{FlowID: "flow-1"})
 	if err == nil {
 		t.Fatal("expected pending error")
 	}

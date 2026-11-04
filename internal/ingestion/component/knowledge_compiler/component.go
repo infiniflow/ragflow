@@ -269,10 +269,14 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	)
 	result := mergeChunks(inputs, compiled)
 	if len(out.AffectedPageSlugs) > 0 {
-		result["wiki_affected_slugs"] = uniqueSorted(out.AffectedPageSlugs)
+		affected := clog.DeduplicateTrimmed(out.AffectedPageSlugs)
+		sort.Strings(affected)
+		result["wiki_affected_slugs"] = affected
 	}
 	if len(out.RemovedPageSlugs) > 0 {
-		result["wiki_removed_slugs"] = uniqueSorted(out.RemovedPageSlugs)
+		removed := clog.DeduplicateTrimmed(out.RemovedPageSlugs)
+		sort.Strings(removed)
+		result["wiki_removed_slugs"] = removed
 	}
 	if len(out.WikiActiveStates) > 0 {
 		result["wiki_active_map_states"] = wikiActiveStateValues(out.WikiActiveStates)
@@ -299,24 +303,6 @@ func wikiActiveStateValues(states []common.WikiMapActiveState) []map[string]any 
 		})
 	}
 	return values
-}
-
-func uniqueSorted(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	sort.Strings(result)
-	return result
 }
 
 // resolveTemplateSpecs resolves the configured compilation template spec(s) to

@@ -20,6 +20,7 @@ package entity
 // Note: Python defines custom create_time/update_time (not null) instead of using BaseModel's
 type EvaluationDataset struct {
 	ID          string  `gorm:"column:id;primaryKey;size:32" json:"id"`
+	UserID      string  `gorm:"column:user_id;size:32;not null;default:'';index" json:"user_id"`
 	TenantID    string  `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	Name        string  `gorm:"column:name;size:255;not null;index" json:"name"`
 	Description *string `gorm:"column:description;type:longtext" json:"description,omitempty"`

@@ -283,6 +283,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		ID:                kbID,
 		PipelineVersionID: pipelineVersionID,
 		Name:              name,
+		UserID:            userID,
 		TenantID:          tenantID,
 		CreatedBy:         userID,
 		ParserID:          parserID,
@@ -327,7 +328,7 @@ func (d *DatasetService) dedupeDatasetName(ctx context.Context, name, tenantID s
 	})
 }
 
-func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetDataset(ctx context.Context, datasetID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New("lack of \"Dataset ID\"")
@@ -587,7 +588,7 @@ func datasetNameAndID(kb *entity.Knowledgebase) string {
 	return fmt.Sprintf("%s (%s)", kb.Name, kb.ID)
 }
 
-func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID, userID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
+func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	id = strings.TrimSpace(id)
 	canvasID = strings.TrimSpace(canvasID)
 	if id != "" && len(ids) > 0 {
@@ -721,7 +722,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	}
 	if len(deniedIDs) > 0 {
 		common.Warn("User lacks permission for datasets",
-			zap.String("user_id", userID),
+			zap.String("user_id", permission.UserIDFromContext(ctx)),
 			zap.Strings("dataset_ids", common.Deduplicate(deniedIDs)),
 		)
 	}
@@ -750,7 +751,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	return data, total, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) ListDatasetFilters(ctx context.Context, userID, canvasID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) ListDatasetFilters(ctx context.Context, canvasID string) (map[string]interface{}, common.ErrorCode, error) {
 	owners := make([]*entity.DatasetOwnerFilter, 0)
 	err := dao.DB.Transaction(func(tx *gorm.DB) error {
 		query := permission.ScopeQuery{Kind: permission.ResourceKindDataset, Operation: permission.OperationRead}

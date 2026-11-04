@@ -387,6 +387,18 @@ type TableBuilder interface {
 	Name() string
 	DetectCells(ctx context.Context, cropped image.Image) ([]TSRCell, error)
 	GroupCells(cells []TSRCell) [][]TSRCell
+	// FinalizeGrid turns the annotated structure grid plus the table's
+	// OCR/text boxes into the final grid. The DeepDoc builder already
+	// folds OCR text into the grid inline during processOneTable's box-RC
+	// grouping, so its implementation is the identity function; an EE V/H
+	// builder that defers OCR overlay to after structure grouping performs
+	// the overlay here.
+	FinalizeGrid(annotGrid [][]TSRCell, boxes []TextBox) [][]TSRCell
+	// AttachSpanInfo attaches any builder-specific span geometry onto the
+	// assembled table item. The DeepDoc builder's TableItem carries no
+	// such geometry, so its implementation is a no-op; an EE V/H builder
+	// uses this step to attach V/H span info.
+	AttachSpanInfo(item *TableItem)
 }
 
 // Rectangular is any 2D axis-aligned rectangle that can report its bounds.

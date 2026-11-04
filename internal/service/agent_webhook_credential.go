@@ -149,12 +149,16 @@ func (s *AgentWebhookCredentialService) Resolve(ctx context.Context, canvasID, t
 
 // Revoke removes the authenticated user's ability to trigger this canvas with
 // their webhook credential. The operation is idempotent.
-func (s *AgentWebhookCredentialService) Revoke(ctx context.Context, canvasID, userID string) error {
+func (s *AgentWebhookCredentialService) Revoke(ctx context.Context, canvasID string) error {
 	if s == nil || s.db == nil {
 		return gorm.ErrInvalidDB
 	}
-	if strings.TrimSpace(canvasID) == "" || strings.TrimSpace(userID) == "" {
+	if strings.TrimSpace(canvasID) == "" {
 		return permission.ErrInvalidPermission
+	}
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
+		return permission.ErrUnauthenticated
 	}
 	return dao.RevokeAgentWebhookCredential(ctx, s.db, canvasID, userID)
 }

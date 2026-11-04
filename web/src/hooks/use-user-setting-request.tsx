@@ -15,6 +15,7 @@
  */
 
 import message from '@/components/ui/message';
+import { TenantRole } from '@/ee/constants/team';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
 import { ITenantInfo } from '@/interfaces/database/dataset';
@@ -83,18 +84,27 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
   return { data, loading };
 };
 
-export const useFetchTenantData = (): ResponseGetType<ITenantInfo> => {
+/**
+ * @param enabled Set to `false` where the tenant endpoint is not part of the
+ *   page's contract (e.g. the admin gateway, which serves every tenant and
+ *   has no `/users/me/models`). Defaults to `true`, so existing callers are
+ *   unchanged.
+ */
+export const useFetchTenantData = (
+  enabled: boolean = true,
+): ResponseGetType<ITenantInfo> => {
   const { data, isFetching: loading } = useQuery({
     queryKey: [UserSettingApiAction.TenantInfo],
     initialData: {},
     gcTime: 0,
+    enabled,
     queryFn: async () => {
       const { data: res } = await userService.getTenantInfo();
       if (res.code === 0) {
         return res.data ?? {};
       }
 
-      return res;
+      return res ?? {};
     },
   });
   return { data, loading };
@@ -311,9 +321,10 @@ export const useCreateSystemToken = () => {
   return { data, loading, createToken: mutateAsync };
 };
 
-export const useListTenantUser = () => {
-  const { data: tenantInfo } = useFetchTenantInfo();
-  const tenantId = tenantInfo.tenant_id;
+export const useListTenantUser = (
+  tenantId: string,
+  excludePendingInvitations = false,
+) => {
   const {
     data,
     isFetching: loading,
@@ -323,6 +334,10 @@ export const useListTenantUser = () => {
     initialData: [],
     gcTime: 0,
     enabled: !!tenantId,
+    select: (data) =>
+      excludePendingInvitations
+        ? data.filter((x) => x.role !== TenantRole.Invite)
+        : data,
     queryFn: async () => {
       const { data } = await listTenantUser(tenantId);
 
@@ -381,9 +396,6 @@ export const useDeleteTenantUser = () => {
       if (data.code === 0) {
         message.success(t('message.deleted'));
         queryClient.invalidateQueries({
-          queryKey: [UserSettingApiAction.ListTenantUser],
-        });
-        queryClient.invalidateQueries({
           queryKey: [UserSettingApiAction.ListTenant],
         });
       }
@@ -409,7 +421,7 @@ export const useListTenant = () => {
     queryFn: async () => {
       const { data } = await listTenant();
 
-      return data?.data ?? [];
+      return Array.isArray(data?.data) ? data.data : [];
     },
   });
 
