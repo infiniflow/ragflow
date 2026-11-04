@@ -38,9 +38,9 @@ type AgentVersionCatalogItem struct {
 	Versions []AgentVersionMetadata `json:"versions"`
 }
 
-// ListVersionCatalog returns accessible dataflow canvases and all their saved
-// versions, newest first. Empty canvases remain present with an empty list.
-func (s *AgentService) ListVersionCatalog(ctx context.Context) ([]AgentVersionCatalogItem, error) {
+// ListVersionCatalog returns accessible canvases in the selected category and
+// their saved versions, newest first. Empty canvases keep an empty version list.
+func (s *AgentService) ListVersionCatalog(ctx context.Context, canvasCategory string) ([]AgentVersionCatalogItem, error) {
 	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.ScopeQuery{
 		Kind: permission.ResourceKindCanvas, Operation: permission.OperationRead,
 	})
@@ -51,7 +51,7 @@ func (s *AgentService) ListVersionCatalog(ctx context.Context) ([]AgentVersionCa
 	if scope.Mode == permission.ScopeNone {
 		return items, nil
 	}
-	canvases, err := s.canvasDAO.ListMetadataByIDs(ctx, dao.DB, scope.ResourceIDs, "dataflow_canvas")
+	canvases, err := s.canvasDAO.ListMetadataByIDs(ctx, dao.DB, scope.ResourceIDs, canvasCategory)
 	if err != nil {
 		return nil, fmt.Errorf("list version catalog canvases: %w", err)
 	}

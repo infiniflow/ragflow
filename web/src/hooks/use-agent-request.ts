@@ -144,6 +144,8 @@ export const AgentKeys = {
     [AgentApiAction.FetchInputForm, agentId, componentId] as const,
   versionList: (agentId?: string) =>
     [AgentApiAction.FetchVersionList, agentId] as const,
+  canvasVersionList: (canvasId?: string) =>
+    ['canvasVersionList', canvasId] as const,
   version: (agentId?: string, versionId?: string) =>
     [AgentApiAction.FetchVersion, agentId, versionId] as const,
 };
@@ -805,7 +807,7 @@ export const useFetchCanvasVersionList = (canvasId?: string) => {
     isFetching: loading,
     isError,
   } = useQuery({
-    queryKey: ['canvasVersionList', canvasId],
+    queryKey: AgentKeys.canvasVersionList(canvasId),
     gcTime: 0,
     enabled: !!canvasId,
     queryFn: async (): Promise<ICanvasVersionRow[]> => {
@@ -848,7 +850,7 @@ export const useDeleteVersion = () => {
         queryKey: AgentKeys.versionList(variables.canvasId),
       });
       queryClient.invalidateQueries({
-        queryKey: ['canvasVersionList', variables.canvasId],
+        queryKey: AgentKeys.canvasVersionList(variables.canvasId),
       });
       queryClient.invalidateQueries({
         queryKey: PipelineVersionKeys.catalog(),
@@ -918,7 +920,7 @@ export const useUpdateVersion = () => {
         queryKey: AgentKeys.versionList(variables.canvasId),
       });
       queryClient.invalidateQueries({
-        queryKey: ['canvasVersionList', variables.canvasId],
+        queryKey: AgentKeys.canvasVersionList(variables.canvasId),
       });
       queryClient.invalidateQueries({
         queryKey: PipelineVersionKeys.catalog(),

@@ -22,11 +22,11 @@ import (
 	"ragflow/internal/common"
 )
 
-// ListVersionCatalog returns lightweight version metadata grouped by pipeline.
-// @Summary List pipeline versions
+// ListVersionCatalog returns lightweight version metadata grouped by canvas.
+// @Summary List agent or pipeline versions
 // @Tags agents
 // @Produce json
-// @Param category query string true "Canvas category" Enums(dataflow)
+// @Param category query string true "Canvas category" Enums(dataflow,agent)
 // @Success 200 {array} service.AgentVersionCatalogItem
 // @Router /api/v1/agents/versions [get]
 func (h *AgentHandler) ListVersionCatalog(c *gin.Context) {
@@ -34,11 +34,17 @@ func (h *AgentHandler) ListVersionCatalog(c *gin.Context) {
 		common.RespondError(c, code, msg)
 		return
 	}
-	if c.Query("category") != "dataflow" {
-		common.RespondError(c, common.CodeBadRequest, "category must be dataflow")
+	var canvasCategory string
+	switch c.Query("category") {
+	case "dataflow":
+		canvasCategory = "dataflow_canvas"
+	case "agent":
+		canvasCategory = "agent_canvas"
+	default:
+		common.RespondError(c, common.CodeBadRequest, "category must be dataflow or agent")
 		return
 	}
-	items, err := h.agentService.ListVersionCatalog(c.Request.Context())
+	items, err := h.agentService.ListVersionCatalog(c.Request.Context(), canvasCategory)
 	if err != nil {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return

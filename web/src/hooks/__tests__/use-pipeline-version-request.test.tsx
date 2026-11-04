@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import agentService, { updateVersion } from '@/services/agent-service';
 import {
+  AgentKeys,
   useDeleteAgent,
   useDeleteVersion,
   useSaveAgent,
@@ -131,6 +132,9 @@ it.each(['alias', 'deleteVersion', 'deletePipeline', 'save', 'rename'])(
   async (action) => {
     const { client, wrapper } = setup();
     client.setQueryData(PipelineVersionKeys.catalog(), Catalog);
+    client.setQueryData(AgentKeys.canvasVersionList('pipe-1'), [
+      { id: 'v2', title: 'Version two', alias: 'production' },
+    ]);
     jest.mocked(updateVersion).mockResolvedValue({ data: { code: 0 } } as any);
     jest.mocked(updateAgent).mockResolvedValue({ data: { code: 0 } } as any);
     jest
@@ -174,5 +178,15 @@ it.each(['alias', 'deleteVersion', 'deletePipeline', 'save', 'rename'])(
     expect(
       client.getQueryState(PipelineVersionKeys.catalog())?.isInvalidated,
     ).toBe(true);
+    if (action === 'alias' || action === 'deleteVersion') {
+      expect(AgentKeys.canvasVersionList('pipe-1')).toEqual([
+        'canvasVersionList',
+        'pipe-1',
+      ]);
+      expect(
+        client.getQueryState(AgentKeys.canvasVersionList('pipe-1'))
+          ?.isInvalidated,
+      ).toBe(true);
+    }
   },
 );
