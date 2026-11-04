@@ -5,17 +5,21 @@ import (
 	"strings"
 )
 
-// tocHeadingPattern matches TOC heading text. Mirrors Python
-// rag/nlp/__init__.py:945 — case-insensitive match against
-// contents/目录/目次/table of contents/致谢/acknowledge after
-// stripping all spaces (ASCII + fullwidth).
+// tocHeadingPattern matches TOC heading text — case-insensitive match against
+// contents/目录/目次/table of contents after stripping all spaces (ASCII + fullwidth).
+// Standalone front/back-matter headings such as 致谢/acknowledgements are excluded
+// so their content is not mistakenly dropped as a TOC.
 // The heading is matched after whitespacePattern has removed its spaces, so a
 // multi-word heading is listed without them: "Table of Contents" reads "tableofcontents".
-var tocHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|tableofcontents|致谢|acknowledge)$`)
+var tocHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|tableofcontents)$`)
 
 // whitespacePattern matches ASCII spaces and fullwidth space (U+3000)
 // for normalization before heading match.
 var whitespacePattern = regexp.MustCompile("[ \t\u3000]+")
+
+// listMarkerPattern matches unordered list markers (*, -, +) or ordered list
+// markers (e.g. 1., 2), as emitted by markdownListMarker) at the start of a string.
+var listMarkerPattern = regexp.MustCompile(`^(?:[\*\-\+]|\d+[\.\)])\s+`)
 
 // itemText extracts the text field from a parser item map. Falls
 // back to empty string when the field is missing or not a string.
@@ -27,13 +31,18 @@ func itemText(item map[string]any) string {
 }
 
 // cleanTOCItemText strips leading Markdown ATX heading markers (#), bullet markers
-// (*, -), and whitespace so TOC headings, list items, and body headings can match
-// on their core text. HTML and plain text items are unchanged.
+// (*, -, +), ordered list markers (e.g. 1., 1)), and whitespace so TOC headings,
+// list items, and body headings can match on their core text. HTML and plain text
+// items without list markers are unchanged.
 func cleanTOCItemText(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.TrimLeft(s, "# \t")
-	if strings.HasPrefix(s, "* ") || strings.HasPrefix(s, "- ") {
-		s = strings.TrimSpace(s[2:])
+	for {
+		if loc := listMarkerPattern.FindStringIndex(s); loc != nil {
+			s = strings.TrimSpace(s[loc[1]:])
+		} else {
+			break
+		}
 	}
 	return s
 }
@@ -142,7 +151,7 @@ func isEnglishTexts(texts []string) bool {
 	if len(sampled) == 0 {
 		return false
 	}
-	pat := regexp.MustCompile("^[" + "`" + "a-zA-Z0-9\\s.,':;/\"?<>!()#*_-]+$")
+	pat := regexp.MustCompile("^[" + "`" + "a-zA-Z0-9\\s.,':;/\"?<>!()#*+_-]+$")
 	eng := 0
 	for _, t := range sampled {
 		if pat.MatchString(t) {

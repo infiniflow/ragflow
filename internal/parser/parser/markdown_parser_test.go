@@ -1230,3 +1230,104 @@ func TestMarkdownParser_RemoveTOC_DisabledByDefault(t *testing.T) {
 		t.Errorf("expected TOC entry to be preserved by default")
 	}
 }
+
+// TestMarkdownParser_RemoveTOC_OrderedList verifies that TOC entries formatted as
+// ordered lists (1. ..., 2. ...) are stripped when remove_toc is enabled.
+func TestMarkdownParser_RemoveTOC_OrderedList(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+
+	md := `# Contents
+
+1. Introduction
+2. Installation
+
+# Introduction
+
+Welcome to the project.
+
+# Installation
+
+Run npm install.
+`
+
+	res := p.ParseWithResult(ctx, "test_ordered.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if strings.EqualFold(text, "# Contents") || strings.EqualFold(text, "Contents") {
+			t.Errorf("TOC heading %q was not removed", text)
+		}
+		if strings.HasPrefix(text, "1. Introduction") || strings.HasPrefix(text, "2. Installation") {
+			t.Errorf("TOC entry %q was not removed", text)
+		}
+	}
+
+	wantTexts := map[string]bool{
+		"# Introduction":           false,
+		"Welcome to the project.": false,
+		"# Installation":           false,
+		"Run npm install.":        false,
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if _, ok := wantTexts[text]; ok {
+			wantTexts[text] = true
+		}
+	}
+	for text, found := range wantTexts {
+		if !found {
+			t.Errorf("expected body text %q was unexpectedly removed", text)
+		}
+	}
+}
+
+// TestMarkdownParser_RemoveTOC_PreservesAcknowledgments verifies that standalone
+// 致谢 / Acknowledgments headings and their content are NOT treated as TOCs.
+func TestMarkdownParser_RemoveTOC_PreservesAcknowledgments(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+
+	md := `# 致谢
+
+感谢所有开源贡献者的付出。
+
+# Acknowledgments
+
+We thank all contributors for their support.
+`
+
+	res := p.ParseWithResult(ctx, "test_ack.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	wantTexts := map[string]bool{
+		"# 致谢":                                false,
+		"感谢所有开源贡献者的付出。":                          false,
+		"# Acknowledgments":                    false,
+		"We thank all contributors for their support.": false,
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if _, ok := wantTexts[text]; ok {
+			wantTexts[text] = true
+		}
+	}
+	for text, found := range wantTexts {
+		if !found {
+			t.Errorf("expected acknowledgment text %q was unexpectedly removed", text)
+		}
+	}
+}

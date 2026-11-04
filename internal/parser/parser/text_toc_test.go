@@ -106,6 +106,30 @@ func TestRemoveContentsTable(t *testing.T) {
 			},
 		},
 		{
+			name: "致谢 heading is not treated as TOC → unchanged",
+			items: []map[string]any{
+				{"text": "致谢"},
+				{"text": "感谢各位的支持与帮助。"},
+			},
+			eng: false,
+			want: []map[string]any{
+				{"text": "致谢"},
+				{"text": "感谢各位的支持与帮助。"},
+			},
+		},
+		{
+			name: "acknowledgments heading is not treated as TOC → unchanged",
+			items: []map[string]any{
+				{"text": "Acknowledgments"},
+				{"text": "We thank all contributors."},
+			},
+			eng: true,
+			want: []map[string]any{
+				{"text": "Acknowledgments"},
+				{"text": "We thank all contributors."},
+			},
+		},
+		{
 			name:  "empty input → unchanged",
 			items: nil,
 			eng:   false,
@@ -120,6 +144,30 @@ func TestRemoveContentsTable(t *testing.T) {
 				t.Errorf("got %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestCleanTOCItemText(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"1. Introduction", "Introduction"},
+		{"2) Setup", "Setup"},
+		{"10. Deep Dive", "Deep Dive"},
+		{"* Chapter One", "Chapter One"},
+		{"- Chapter Two", "Chapter Two"},
+		{"+ Chapter Three", "Chapter Three"},
+		{"# Introduction", "Introduction"},
+		{"### 1. Introduction", "Introduction"},
+		{"* 1. Nested", "Nested"},
+		{"Plain text", "Plain text"},
+		{"  #  *  Spaced  ", "Spaced"},
+	}
+	for _, tc := range cases {
+		if got := cleanTOCItemText(tc.in); got != tc.want {
+			t.Errorf("cleanTOCItemText(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
 
