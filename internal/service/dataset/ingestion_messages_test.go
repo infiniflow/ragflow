@@ -490,7 +490,7 @@ func TestListIngestionLogsExposesPipelineVersionID(t *testing.T) {
 		t.Fatalf("insert versioned run: %v", err)
 	}
 
-	result, code, err := NewDatasetService().ListIngestionLogs(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", "user-1", 1, 30, nil, nil, "", "", "file", "", "")
+	result, code, err := NewDatasetService().ListIngestionLogs(withDatasetTestContext(t.Context(), "user-1", "user-1"), "kb-1", 1, 30, nil, nil, "", "", "file", "", "")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListIngestionLogs = (%+v, %v, %v), want success", result, code, err)
 	}
