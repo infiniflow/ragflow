@@ -914,10 +914,7 @@ func (s *ChatPipelineService) AsyncChat(
 		//      otherwise see an empty reply.
 		if emptyResponseApplies(len(knowledges), attachments, hasImageAttachments) {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
-				finalReference := kbinfos
-				if !quote {
-					finalReference = map[string]interface{}{}
-				}
+				finalReference := emptyResponseReference(kbinfos, knowledges, quote)
 				if !sendResult(AsyncChatResult{
 					Answer:    emptyResp,
 					Reference: map[string]interface{}{},
@@ -2264,6 +2261,18 @@ func gateImageAttachments(llmID, modelType string, images []string) (kept []stri
 // the model could still answer from.
 func emptyResponseApplies(knowledgeCount int, attachments string, imageAttachments bool) bool {
 	return knowledgeCount == 0 && attachments == "" && !imageAttachments
+}
+
+// emptyResponseReference is the reference the empty-response fallback closes
+// the stream with. With citations off it is empty. With citations on it is the
+// retrieval result, unless retrieval returned chunks but none of them entered
+// the prompt (no room in the knowledge budget): then it is empty too, so the
+// client never gets sources for passages the answer could not have used.
+func emptyResponseReference(kbinfos map[string]interface{}, knowledges []string, quote bool) map[string]interface{} {
+	if !quote || (len(knowledges) == 0 && len(chunksFromKBInfos(kbinfos)) > 0) {
+		return map[string]interface{}{}
+	}
+	return kbinfos
 }
 
 // splitFileAttachments mirrors Python's `split_file_attachments` at

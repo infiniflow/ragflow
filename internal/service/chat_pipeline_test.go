@@ -1771,6 +1771,36 @@ func TestKBPromptKeepsNoPassageWithoutBudget(t *testing.T) {
 	}
 }
 
+// A zero knowledge budget keeps every retrieved chunk out of the prompt, so the
+// empty-response fallback must not send them as references; an empty retrieval
+// keeps closing with the retrieval result.
+func TestEmptyResponseReferenceOmitsChunksOutsideThePrompt(t *testing.T) {
+	s := NewChatPipelineService()
+	retrieved := map[string]interface{}{
+		"total": 1,
+		"chunks": []map[string]interface{}{
+			{"content_with_weight": "The regional council approved the budget amendment.", "doc_id": "d1", "docnm_kwd": "a.pdf"},
+		},
+		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "a.pdf", "count": 1}},
+	}
+	budget := s.knowledgeTokenBudget(100, strings.Repeat("word ", 200), nil, true, 25)
+	knowledges := s.kbPrompt(retrieved, budget)
+	if !emptyResponseApplies(len(knowledges), "", false) {
+		t.Fatalf("budget %d kept %d passages, want the fallback to apply", budget, len(knowledges))
+	}
+	if ref := emptyResponseReference(retrieved, knowledges, true); len(ref) != 0 {
+		t.Errorf("zero budget, quote on: reference = %#v, want empty", ref)
+	}
+
+	empty := map[string]interface{}{"total": 0, "chunks": []map[string]interface{}{}, "doc_aggs": []interface{}{}}
+	if ref := emptyResponseReference(empty, nil, true); !reflect.DeepEqual(ref, empty) {
+		t.Errorf("empty retrieval, quote on: reference = %#v, want the retrieval result", ref)
+	}
+	if ref := emptyResponseReference(empty, nil, false); ref == nil || len(ref) != 0 {
+		t.Errorf("quote off: reference = %#v, want an explicit empty object", ref)
+	}
+}
+
 const fullWindowTemplate = "You are a helpful assistant. Answer from the knowledge base.\n{knowledge}"
 
 // fillWindowAndClamp runs the request-building steps of AsyncChat's phase 10 on a
