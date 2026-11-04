@@ -27,7 +27,6 @@ import (
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
 )
@@ -104,7 +103,7 @@ type openAICompatCompletion struct {
 // chat-completion wire format. It deliberately does not use the normal
 // RAGFlow response helpers because those add the {code,data,message} REST
 // envelope and are not accepted by OpenAI-compatible clients.
-func (h *AgentHandler) handleOpenAICompat(c *gin.Context, user *entity.User, req *agentChatCompletionsRequest) {
+func (h *AgentHandler) handleOpenAICompat(c *gin.Context, req *agentChatCompletionsRequest) {
 	question := extractLastUserContent(req.Messages)
 	if req.SessionID == "" {
 		req.SessionID = common.GenerateToken()
@@ -114,7 +113,7 @@ func (h *AgentHandler) handleOpenAICompat(c *gin.Context, user *entity.User, req
 	runContext, cancel := context.WithCancel(service.WithOpenAICompatMessages(c.Request.Context(), req.Messages))
 	defer cancel()
 	events, err := h.chatRunner.RunAgent(
-		runContext, user.ID, req.AgentID, req.SessionID, "", question, req.Files,
+		runContext, req.AgentID, req.SessionID, "", question, req.Files,
 	)
 	if err != nil {
 		writeOpenAICompatError(c, err)

@@ -63,13 +63,13 @@ func TestApplyVersionDraftSave(t *testing.T) {
 				wantErr = context.Canceled
 			}
 			svc := NewAgentService()
-			err := svc.ApplyVersion(ctx, "user-1", current.ID, version.ID)
+			err := svc.ApplyVersion(ctx, current.ID, version.ID)
 			if !errors.Is(err, wantErr) {
 				t.Fatalf("ApplyVersion error = %v, want %v", err, wantErr)
 			}
 			wantDSL, wantRelease := current.DSL, true
 			if wantErr == nil {
-				if err := svc.ApplyVersion(ctx, "user-1", current.ID, version.ID); err != nil {
+				if err := svc.ApplyVersion(ctx, current.ID, version.ID); err != nil {
 					t.Fatalf("repeated ApplyVersion failed: %v", err)
 				}
 				wantDSL, wantRelease = version.DSL, false

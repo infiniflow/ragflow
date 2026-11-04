@@ -235,6 +235,7 @@ func (s *FileService) initSkillsFolder(ctx context.Context, rootID, tenantID str
 	folder := &entity.File{
 		ID:         common.GenerateToken(),
 		ParentID:   rootID,
+		UserID:     tenantID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
 		Name:       SkillsFolderName,

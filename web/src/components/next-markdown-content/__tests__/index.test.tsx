@@ -88,6 +88,13 @@ jest.mock('@/components/ui/hover-card', () => ({
   },
 }));
 
+// The citation popover is portaled to escape clipping containers. The real
+// Radix Portal requires the HoverCard Root context, which the mock above
+// removes; pass children through instead.
+jest.mock('@radix-ui/react-hover-card', () => ({
+  Portal: ({ children }: any) => children,
+}));
+
 jest.mock('@/components/svg-icon', () => ({
   __esModule: true,
   default: () => {

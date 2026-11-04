@@ -876,6 +876,7 @@ func dispatchMinerUPDF(
 	mineruLang := mineruLangCode(lang)
 	backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "mineru_backend", ""), apiKeyRaw)
 	serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "mineru_server_url", ""), apiKeyRaw)
+	timeout := mineruRequestTimeout(setup, apiConfig)
 
 	if modelModule.IsMinerUCloudBase(baseURL) {
 		if !extraction.formulaEnable || !extraction.tableEnable {
@@ -884,7 +885,9 @@ func dispatchMinerUPDF(
 		if err := modelModule.ValidateMinerUConfigForAPI(backend, serverURL, true); err != nil {
 			return parser.ParseResult{}, err
 		}
-		result, err := modelModule.ParseMinerUCloud(ctx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, mineruLang)
+		cloudCtx, cloudCancel := context.WithTimeout(ctx, timeout)
+		defer cloudCancel()
+		result, err := modelModule.ParseMinerUCloud(cloudCtx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, mineruLang)
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU cloud: %w", err)
 		}
@@ -905,7 +908,7 @@ func dispatchMinerUPDF(
 		if !extraction.formulaEnable || !extraction.tableEnable {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1 does not support disabling formula or table extraction; use a /file_parse server to configure these switches")
 		}
-		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, 0)
+		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, timeout)
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
 		}
@@ -913,7 +916,7 @@ func dispatchMinerUPDF(
 	}
 
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
-	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction)
+	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction, timeout)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
 	}
@@ -1085,8 +1088,12 @@ func dispatchMonkeyOCRPDF(
 		return parser.ParseResult{}, err
 	}
 
+	// The MonkeyOCR adapter fronts the same MinerU-compatible /file_parse API,
+	// so it shares the MinerU timeout resolution (default 30m) that
+	// mineruStreamParse was already written against.
+	timeout := mineruRequestTimeout(setup, apiConfig)
 	extraction := mineruExtractionOptions{formulaEnable: true, tableEnable: true}
-	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction)
+	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction, timeout)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR stream: %w", err)
 	}
@@ -1238,14 +1245,61 @@ func mineruAPIParseMethod(raw string) string {
 	return "auto"
 }
 
-// mineruStreamTimeout bounds a single /file_parse upload. It matches the
-// MinerU 4 V1 parse budget so both API generations give up at the same point.
-const mineruStreamTimeout = 30 * time.Minute
+// mineruDefaultTimeout bounds a single /file_parse upload or V1 parse cycle. It matches the
+// MinerU 4 V1 parse budget so both API generations give up at the same point when unset.
+const mineruDefaultTimeout = 30 * time.Minute
+
+// mineruRequestTimeout resolves the MinerU parse timeout with precedence:
+//  1. setup["mineru_timeout"] / setup["mineru_timeout_seconds"] (authoritative; non-empty invalid values
+//     do not fall through to env or API config and fall back to mineruDefaultTimeout)
+//  2. apiConfig provider JSON (mineru_timeout, mineru_timeout_seconds, MINERU_TIMEOUT, MINERU_TIMEOUT_SECONDS)
+//  3. Environment variables (MINERU_TIMEOUT, MINERU_TIMEOUT_SECONDS)
+//  4. mineruDefaultTimeout (30m)
+func mineruRequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) time.Duration {
+	value := ""
+	if raw, ok := setup["mineru_timeout"]; ok && raw != nil {
+		value = strings.TrimSpace(fmt.Sprint(raw))
+	}
+	if value == "" {
+		if raw, ok := setup["mineru_timeout_seconds"]; ok && raw != nil {
+			value = strings.TrimSpace(fmt.Sprint(raw))
+		}
+	}
+	if value == "" {
+		value = modelModule.ProviderJSONConfigValueFromAPIConfig(
+			apiConfig,
+			"mineru_timeout",
+			"mineru_timeout_seconds",
+			common.EnvMineruTimeout,
+			"MINERU_TIMEOUT_SECONDS",
+		)
+	}
+	if value == "" {
+		value = os.Getenv(common.EnvMineruTimeout)
+	}
+	if value == "" {
+		value = os.Getenv("MINERU_TIMEOUT_SECONDS")
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return mineruDefaultTimeout
+	}
+	if seconds, err := strconv.Atoi(value); err == nil && seconds > 0 {
+		return time.Duration(seconds) * time.Second
+	}
+	if seconds, err := strconv.ParseFloat(value, 64); err == nil && seconds > 0 {
+		return time.Duration(seconds * float64(time.Second))
+	}
+	if d, err := time.ParseDuration(value); err == nil && d > 0 {
+		return d
+	}
+	return mineruDefaultTimeout
+}
 
 // mineruStreamParse POSTs the PDF binary to the MinerU /file_parse
 // endpoint with streaming and returns the zip response body.
 // Mirrors Python's mineru_parser.py._run_mineru_api with stream=True.
-func mineruStreamParse(ctx context.Context, apiURL string, apiKey string, binary []byte, parseMethod, lang, backend, serverURL string, extraction mineruExtractionOptions) ([]byte, error) {
+func mineruStreamParse(ctx context.Context, apiURL string, apiKey string, binary []byte, parseMethod, lang, backend, serverURL string, extraction mineruExtractionOptions, timeout time.Duration) ([]byte, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
@@ -1278,7 +1332,10 @@ func mineruStreamParse(ctx context.Context, apiURL string, apiKey string, binary
 		return nil, fmt.Errorf("finalize form: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, mineruStreamTimeout)
+	if timeout <= 0 {
+		timeout = mineruDefaultTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, &body)

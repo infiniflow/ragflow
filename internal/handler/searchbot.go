@@ -131,11 +131,6 @@ func (h *SearchBotHandler) SetAskService(svc *service.AskService) { h.askSvc = s
 // @Router /api/v1/searchbots/related-questions [post]
 func (h *SearchBotHandler) Handle(c *gin.Context) {
 	ctx := c.Request.Context()
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	var req SearchBotRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -169,11 +164,6 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/retrieval [post]
 func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.Respond(c, http.StatusUnauthorized, errorCode, nil, errorMessage)
-		return
-	}
 
 	var req SearchBotRetrievalTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -234,11 +224,6 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/ask [post]
 func (h *SearchBotHandler) Ask(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	var req SearchBotAskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -360,11 +345,6 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/mindmap [post]
 func (h *SearchBotHandler) MindMap(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	var req SearchBotMindMapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

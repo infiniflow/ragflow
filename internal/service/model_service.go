@@ -1500,6 +1500,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 			zap.L().Warn("failed to list remote models from provider",
 				zap.Error(listErr),
 			)
+			return modelVerifyResult, fmt.Errorf("failed to list models from provider: %w", listErr)
 		}
 
 		if len(modelsToVerify) == 0 {

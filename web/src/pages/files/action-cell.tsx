@@ -5,6 +5,7 @@ import {
 import { FileIcon } from '@/components/icon-font';
 import NewDocumentLink from '@/components/new-document-link';
 import { Button } from '@/components/ui/button';
+import { FilePrivilegeButton } from '@/ee/pages/files/file-privilege-button';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useDownloadFile } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
@@ -36,7 +37,9 @@ type IProps = Pick<CellContext<IFile, unknown>, 'row'> &
   Pick<UseHandleConnectToKnowledgeReturnType, 'showConnectToKnowledgeModal'> &
   Pick<UseRenameCurrentFileReturnType, 'showFileRenameModal'> &
   Pick<UseRowSelectionType, 'setRowSelection'> &
-  UseMoveDocumentShowType;
+  UseMoveDocumentShowType & {
+    showPrivilegeModal?(record: IFile): void;
+  };
 
 export function ActionCell({
   row,
@@ -44,6 +47,7 @@ export function ActionCell({
   showFileRenameModal,
   showMoveFileModal,
   setRowSelection,
+  showPrivilegeModal,
 }: IProps) {
   const record = row.original;
   const documentId = record.id;
@@ -106,6 +110,10 @@ export function ActionCell({
           <Link2 />
         </Button>
       )}
+      <FilePrivilegeButton
+        record={record}
+        showPrivilegeModal={showPrivilegeModal}
+      />
       {isKnowledgeBase || (
         <Button
           variant="transparent"

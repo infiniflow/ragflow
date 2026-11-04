@@ -237,7 +237,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
-	dialogResp, err := s.chatSvc.GetChat(ctx, userID, chatID)
+	dialogResp, err := s.chatSvc.GetChat(ctx, chatID)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
 			code, permissionErr := permissionresponse.NormalizeHidden(err)

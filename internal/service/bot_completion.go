@@ -289,7 +289,7 @@ func writeSSEJSON(w http.ResponseWriter, payload map[string]any) error {
 // Authorization is checked against the Chat resource before the
 // completion pipeline or session state is touched.
 func (s *BotService) ChatbotCompletion(
-	ctx context.Context, userID, dialogID string, req ChatbotCompletionRequest,
+	ctx context.Context, dialogID string, req ChatbotCompletionRequest,
 ) (<-chan ChatbotSSEFrame, common.ErrorCode, error) {
 	receivedAt := float64(time.Now().UnixNano()) / 1e9
 	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
@@ -302,6 +302,7 @@ func (s *BotService) ChatbotCompletion(
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalizedErr
 	}
+	userID := permission.UserIDFromContext(ctx)
 	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {

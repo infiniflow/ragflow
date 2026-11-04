@@ -86,13 +86,13 @@ type ChunkService struct {
 	ingestionTaskDAO *dao.IngestionTaskDAO
 	searchService    *service.SearchService
 
-	checkDatasetAccessFunc   func(string, string) error
+	checkDatasetAccessFunc   func(string) error
 	getKnowledgebaseByIDFunc func(string) (*entity.Knowledgebase, error)
 	getDocumentsByIDsFunc    func([]string) ([]*entity.Document, error)
 	// startParseDocumentsFunc overrides the DSL start-parse flow. Production
 	// uses service.DocumentService.StartParseDocuments; tests inject a fake
 	// to avoid the MQ publisher.
-	startParseDocumentsFunc func(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts document.StartParseOptions) error
+	startParseDocumentsFunc func(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, opts document.StartParseOptions) error
 	// cancelIngestionTaskFunc overrides the document-parsing cancellation.
 	// Production uses service.DocumentService.CancelDocParse; tests inject
 	// a fake to avoid the MQ publisher.
@@ -557,7 +557,7 @@ func hydrateChunkVectors(ctx context.Context, engine engine.DocEngine, chunks []
 }
 
 // Get retrieves a chunk by ID
-func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, userID string) (*service.GetChunkResponse, error) {
+func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest) (*service.GetChunkResponse, error) {
 	if s.docEngine == nil {
 		return nil, fmt.Errorf("doc engine not initialized")
 	}
@@ -566,7 +566,7 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 		return nil, fmt.Errorf("chunk_id is required")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, userID, permission.OperationRead)
+	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, permission.OperationRead)
 	if err != nil {
 		return nil, err
 	}
@@ -634,7 +634,7 @@ func (s *ChunkService) cancelAllTasksOfDoc(ctx context.Context, doc *entity.Docu
 	return cancel(ctx, doc)
 }
 
-func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+func (s *ChunkService) StopParsing(ctx context.Context, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
@@ -706,9 +706,9 @@ func checkDuplicateIDs(documentIDs []string, idTypes string) ([]string, []string
 	return uniqueDocIDs, duplicateMessages
 }
 
-func (s *ChunkService) checkDatasetAccess(ctx context.Context, datasetID, userID string, operation permission.Operation) error {
+func (s *ChunkService) checkDatasetAccess(ctx context.Context, datasetID string, operation permission.Operation) error {
 	if s.checkDatasetAccessFunc != nil {
-		return s.checkDatasetAccessFunc(datasetID, userID)
+		return s.checkDatasetAccessFunc(datasetID)
 	}
 	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, operation)
 }
@@ -720,8 +720,8 @@ func (s *ChunkService) getKnowledgebaseByID(ctx context.Context, datasetID strin
 	return s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 }
 
-func (s *ChunkService) getAccessibleKnowledgebase(ctx context.Context, datasetID, userID string, operation permission.Operation) (*entity.Knowledgebase, error) {
-	if err := s.checkDatasetAccess(ctx, datasetID, userID, operation); err != nil {
+func (s *ChunkService) getAccessibleKnowledgebase(ctx context.Context, datasetID string, operation permission.Operation) (*entity.Knowledgebase, error) {
+	if err := s.checkDatasetAccess(ctx, datasetID, operation); err != nil {
 		return nil, err
 	}
 	kb, err := s.getKnowledgebaseByID(ctx, datasetID)
@@ -738,8 +738,8 @@ func (s *ChunkService) getDocumentsByIDs(ctx context.Context, docIDs []string) (
 	return s.documentDAO.GetByIDs(ctx, dao.DB, docIDs)
 }
 
-func (s *ChunkService) Parse(ctx context.Context, userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
-	if err := s.checkDatasetAccess(ctx, datasetID, userID, permission.OperationRun); err != nil {
+func (s *ChunkService) Parse(ctx context.Context, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
+	if err := s.checkDatasetAccess(ctx, datasetID, permission.OperationRun); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -789,7 +789,7 @@ func (s *ChunkService) Parse(ctx context.Context, userID, datasetID string, req 
 
 	for _, docID := range docIDs {
 		doc := docByID[docID]
-		if err = startParse(ctx, doc, kb, userID, document.StartParseOptions{RerunWithDelete: true}); err != nil {
+		if err = startParse(ctx, doc, kb, document.StartParseOptions{RerunWithDelete: true}); err != nil {
 			return nil, common.CodeServerError, err
 		}
 		successCount++
@@ -808,7 +808,7 @@ func (s *ChunkService) Parse(ctx context.Context, userID, datasetID string, req 
 }
 
 // List retrieves chunks for a document
-func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
+func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest) (*service.ListChunksResponse, error) {
 	if s.docEngine == nil {
 		return nil, fmt.Errorf("doc engine not initialized")
 	}
@@ -827,7 +827,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		return nil, fmt.Errorf("document not found")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID, permission.OperationRead)
+	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, permission.OperationRead)
 	if err != nil {
 		return nil, err
 	}
@@ -1049,7 +1049,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	}, nil
 }
 
-func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, documentID string, availableInt int, chunkIDs []string) error {
+func (s *ChunkService) SwitchChunks(ctx context.Context, datasetID, documentID string, availableInt int, chunkIDs []string) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("doc engine not initialized")
 	}
@@ -1062,7 +1062,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 		return fmt.Errorf("req is null")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, datasetID, userID, permission.OperationUpdate)
+	kb, err := s.getAccessibleKnowledgebase(ctx, datasetID, permission.OperationUpdate)
 	if err != nil {
 		return err
 	}
@@ -1095,7 +1095,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 	return nil
 }
 
-func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
+func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("doc engine not initialized")
 	}
@@ -1104,7 +1104,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		return fmt.Errorf("chunk_id is required")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, userID, permission.OperationUpdate)
+	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, permission.OperationUpdate)
 	if err != nil {
 		return err
 	}
@@ -1271,7 +1271,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 
 	return nil
 }
-func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChunksRequest, userID string) (int64, error) {
+func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChunksRequest) (int64, error) {
 	if s.docEngine == nil {
 		return 0, fmt.Errorf("doc engine not initialized")
 	}
@@ -1290,7 +1290,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		return 0, permission.ErrResourceNotFound
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID, permission.OperationUpdate)
+	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, permission.OperationUpdate)
 	if err != nil {
 		return 0, err
 	}
@@ -1381,14 +1381,14 @@ func (s *ChunkService) nextSourceChunkOrder(ctx context.Context, indexName, data
 	return 0
 }
 
-func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkRequest) (*service.AddChunkResponse, error) {
 	if s.docEngine == nil {
 		return nil, addChunkError{code: common.CodeServerError, message: "doc engine not initialized"}
 	}
 	if req == nil {
 		return nil, addChunkError{code: common.CodeDataError, message: "invalid request payload"}
 	}
-	if err := s.checkDatasetAccess(ctx, req.DatasetID, userID, permission.OperationUpdate); err != nil {
+	if err := s.checkDatasetAccess(ctx, req.DatasetID, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, addChunkError{code: code, message: permissionErr.Error(), cause: permissionErr}
 	}
