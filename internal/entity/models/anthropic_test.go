@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -645,6 +646,29 @@ func TestAnthropicListModelsFollowsPagination(t *testing.T) {
 	}
 	if strings.Join(afterIDs, "|") != "|claude-b" {
 		t.Errorf("after_id sequence=%v", afterIDs)
+	}
+}
+
+func TestAnthropicListModelsStopsOnEndlessCursors(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data":     []map[string]interface{}{{"id": fmt.Sprintf("claude-%d", requests)}},
+			"has_more": true,
+			"last_id":  fmt.Sprintf("claude-%d", requests),
+		})
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	if _, err := newAnthropicForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey}); err == nil {
+		t.Fatal("expected an error when pagination never ends")
+	}
+	if requests != anthropicModelsMaxPages {
+		t.Errorf("requests=%d, want %d", requests, anthropicModelsMaxPages)
 	}
 }
 

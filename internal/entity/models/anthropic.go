@@ -522,6 +522,10 @@ func parseAnthropicChatResponse(body []byte, _ *ChatConfig) (chatResponseParts, 
 // default is 20, which silently truncated the list for accounts with more.
 const anthropicModelsPageSize = 1000
 
+// anthropicModelsMaxPages bounds the pagination loop so a server that keeps
+// returning a fresh cursor cannot make ListModels (and CheckConnection) run forever.
+const anthropicModelsMaxPages = 100
+
 func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -539,7 +543,7 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 
 	models := make([]ListModelResponse, 0)
 	afterID := ""
-	for {
+	for pageNum := 0; pageNum < anthropicModelsMaxPages; pageNum++ {
 		page, err := a.listModelsPage(ctx, endpoint, apiKey, afterID)
 		if err != nil {
 			return nil, err
@@ -556,6 +560,7 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 		}
 		afterID = page.LastID
 	}
+	return nil, fmt.Errorf("models list exceeded %d pages", anthropicModelsMaxPages)
 }
 
 type anthropicModelsPage struct {
