@@ -17,14 +17,14 @@ import (
 	"ragflow/internal/service/nlp"
 )
 
-func (d *DatasetService) SearchDataset(ctx context.Context, datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
+func (d *DatasetService) SearchDataset(ctx context.Context, datasetID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
 	if datasetID == "" {
 		return nil, fmt.Errorf("dataset_id is required")
 	}
-	return d.SearchDatasets(ctx, req.ToSearchDatasetsRequest(datasetID), userID)
+	return d.SearchDatasets(ctx, req.ToSearchDatasetsRequest(datasetID))
 }
 
-func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error) {
+func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest) (*service.SearchDatasetsResponse, error) {
 	if req.Question == "" {
 		return nil, fmt.Errorf("question is required")
 	}
@@ -34,6 +34,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if err := service.ValidateKnowledgeCompilationScope(req.KnowledgeCompilationScope); err != nil {
 		return nil, err
 	}
+	userID := permission.UserIDFromContext(ctx)
 	common.Info("SearchDatasets started", zap.String("userID", userID), zap.Any("datasets", req.DatasetIDs), zap.String("question", req.Question))
 
 	page := 1

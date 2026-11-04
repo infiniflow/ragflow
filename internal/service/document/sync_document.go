@@ -27,6 +27,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -35,6 +36,18 @@ import (
 )
 
 var syncFilenameUnsafeRE = regexp.MustCompile(`[\\/:*?"<>|]+`)
+
+func syncDocumentParseContext(ctx context.Context, taskContext service.SyncTaskContext) (context.Context, error) {
+	userID := strings.TrimSpace(taskContext.Connector.UserID)
+	if userID == "" {
+		return nil, fmt.Errorf("connector %s has no owner user_id", taskContext.Connector.ID)
+	}
+	tenantID := strings.TrimSpace(taskContext.Connector.TenantID)
+	if tenantID == "" {
+		return nil, fmt.Errorf("connector %s has no tenant_id", taskContext.Connector.ID)
+	}
+	return permission.WithIdentity(ctx, userID, tenantID), nil
+}
 
 // Upsert stores one normalized source document.
 func (s *DocumentService) Upsert(ctx context.Context, input service.DocumentUpsertInput) (service.DocumentUpsertResult, error) {
@@ -223,7 +236,11 @@ func (s *DocumentService) afterSyncDocumentUpsert(ctx context.Context, input ser
 	}
 	// do auto_parse if enabled
 	if input.AutoParse {
-		if err := s.StartParseDocuments(ctx, doc, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID, StartParseOptions{RerunWithDelete: rerun}); err != nil {
+		parseCtx, err := syncDocumentParseContext(ctx, input.TaskContext)
+		if err != nil {
+			return err
+		}
+		if err := s.StartParseDocuments(parseCtx, doc, &input.TaskContext.Knowledgebase, StartParseOptions{RerunWithDelete: rerun}); err != nil {
 			return err
 		}
 	}
@@ -264,7 +281,11 @@ func (s *DocumentService) ensureSyncDocumentPostWrite(ctx context.Context, input
 	if task != nil {
 		return nil
 	}
-	return s.StartParseDocuments(ctx, doc, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID, StartParseOptions{})
+	parseCtx, err := syncDocumentParseContext(ctx, input.TaskContext)
+	if err != nil {
+		return err
+	}
+	return s.StartParseDocuments(parseCtx, doc, &input.TaskContext.Knowledgebase, StartParseOptions{})
 }
 
 // updateSyncDocumentFile updates the file-manager row linked to a synced document.

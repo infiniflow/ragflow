@@ -14,7 +14,7 @@ import (
 	permissionresponse "ragflow/internal/permission/response"
 )
 
-func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string) ([]map[string]interface{}, common.ErrorCode, error) {
 	if len(datasetIDs) == 0 {
 		return nil, common.CodeDataError, errors.New("Lack of dataset_ids in query parameters")
 	}
