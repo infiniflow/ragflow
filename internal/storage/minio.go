@@ -112,19 +112,25 @@ func (m *MinioStorage) resolveBucketAndPath(bucket, fnm string) (string, string)
 
 func (m *MinioStorage) Type() string { return "minio" }
 
-// Health checks MinIO service availability
+// Health checks endpoint liveness with a read-only probe, not bucket permissions.
 func (m *MinioStorage) Health(ctx context.Context) bool {
-	cancelFunction, err := m.client.HealthCheck(time.Second * 5)
-	if cancelFunction != nil {
-		defer cancelFunction()
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if probeCtx.Err() != nil {
+		return false
 	}
 
-	if err != nil {
+	// A missing or inaccessible probe bucket still proves the endpoint responds.
+	_, err := m.client.BucketExists(probeCtx, "ragflow-health-check")
+	if probeCtx.Err() != nil {
+		return false
+	}
+	if err != nil && minio.ToErrorResponse(err).Code != minio.AccessDenied {
 		common.Warn("Failed to check MinIO health", zap.Error(err))
 		return false
 	}
 
-	return m.client.IsOnline()
+	return true
 }
 
 // Put uploads an object to MinIO
