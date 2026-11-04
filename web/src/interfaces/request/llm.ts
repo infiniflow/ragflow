@@ -156,4 +156,9 @@ export interface IListProviderModelsRequestBody {
    * server applies the current form's non-secret configuration and endpoint.
    */
   instance_name?: string;
+  /**
+   * Returns failures to the caller instead of raising the global notification,
+   * so they can be explained next to the form.
+   */
+  skipGlobalErrorNotification?: boolean;
 }
