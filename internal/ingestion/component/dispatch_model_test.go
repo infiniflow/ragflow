@@ -111,6 +111,94 @@ func TestResolveModelConfigForStoredMistralOCRProvider(t *testing.T) {
 	}
 }
 
+// Models stored under "Unlimited-OCR-2" provider name resolve to the
+// UnlimitedOCR driver and catalog entry, by tenant model id and by composite
+// reference. This asserts that a tenant row with provider_name = "Unlimited-OCR-2"
+// resolves through CatalogProviderName -> FindProvider -> NewInstance and returns
+// driver.Name() == "unlimited_ocr".
+func TestResolveModelConfigForStoredUnlimitedOCRProvider(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	const storedKey = `{"unlimited_ocr_api_key": "sk-unlimited"}`
+	for _, row := range []interface{}{
+		&entity.TenantModelProvider{ID: "provider-unlimited-ocr", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "Unlimited-OCR-2"},
+		&entity.TenantModelInstance{ID: "instance-unlimited-ocr", ProviderID: "provider-unlimited-ocr", InstanceName: "default", APIKey: storedKey, Status: "active", Extra: `{"base_url":"http://127.0.0.1:18000"}`},
+		&entity.TenantModel{ID: "model-unlimited-ocr", ProviderID: "provider-unlimited-ocr", InstanceID: "instance-unlimited-ocr", ModelName: "Unlimited-OCR-2", ModelType: int(entity.ModelTypeOCR), Status: "active"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	for _, tc := range []struct {
+		name      string
+		modelRef  string
+		wantModel string
+	}{
+		{name: "tenant model id", modelRef: "model-unlimited-ocr", wantModel: "Unlimited-OCR-2"},
+		{name: "enrolled composite", modelRef: "Unlimited-OCR-2@default@Unlimited-OCR-2", wantModel: "Unlimited-OCR-2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			driver, modelName, apiConfig, _, err := defaultResolveModelConfig(t.Context(), db, "tenant-1", entity.ModelTypeOCR, tc.modelRef)
+			if err != nil {
+				t.Fatalf("resolve %q: %v", tc.modelRef, err)
+			}
+			if driver == nil || driver.Name() != "unlimited_ocr" {
+				t.Fatalf("driver = %v, want the unlimited_ocr driver", driver)
+			}
+			if modelName != tc.wantModel {
+				t.Fatalf("model name = %q, want %q", modelName, tc.wantModel)
+			}
+			if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey != storedKey {
+				t.Fatalf("api config = %+v, want the stored key", apiConfig)
+			}
+		})
+	}
+
+	t.Run("resolveModelConfigByID directly", func(t *testing.T) {
+		resolved, err := resolveModelConfigByID(t.Context(), db, "tenant-1", entity.ModelTypeOCR, "model-unlimited-ocr")
+		if err != nil {
+			t.Fatalf("resolveModelConfigByID: %v", err)
+		}
+		if resolved.driver == nil || resolved.driver.Name() != "unlimited_ocr" {
+			t.Fatalf("resolved.driver = %v, want unlimited_ocr", resolved.driver)
+		}
+		if resolved.model.ModelName != "Unlimited-OCR-2" {
+			t.Fatalf("resolved.model = %q, want Unlimited-OCR-2", resolved.model.ModelName)
+		}
+	})
+
+	t.Run("resolveTenantOCRModelByProvider directly", func(t *testing.T) {
+		driver, modelName, _, _, err := defaultResolveTenantOCRModelByProvider(t.Context(), db, "tenant-1", "Unlimited-OCR-2")
+		if err != nil {
+			t.Fatalf("defaultResolveTenantOCRModelByProvider: %v", err)
+		}
+		if driver == nil || driver.Name() != "unlimited_ocr" {
+			t.Fatalf("driver = %v, want unlimited_ocr", driver)
+		}
+		if modelName != "Unlimited-OCR-2" {
+			t.Fatalf("modelName = %q, want Unlimited-OCR-2", modelName)
+		}
+	})
+
+	t.Run("disabled model returns error", func(t *testing.T) {
+		if err := db.Model(&entity.TenantModel{}).Where("id = ?", "model-unlimited-ocr").Update("status", "disabled").Error; err != nil {
+			t.Fatalf("update: %v", err)
+		}
+		defer db.Model(&entity.TenantModel{}).Where("id = ?", "model-unlimited-ocr").Update("status", "active")
+
+		_, _, _, _, err := defaultResolveTenantOCRModelByProvider(t.Context(), db, "tenant-1", "Unlimited-OCR-2")
+		if err == nil {
+			t.Fatal("expected error for disabled model, got nil")
+		}
+	})
+}
+
 // TestResolveModelConfigInaccessibleIDs checks that missing and foreign model
 // IDs have the same public error and trigger no instance reads before access
 // is established, regardless of the foreign model's state.

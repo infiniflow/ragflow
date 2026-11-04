@@ -483,3 +483,64 @@ func TestUnlimitedOCR2RequestTimeout(t *testing.T) {
 		t.Fatalf("expected 2m from setup, got %v", got)
 	}
 }
+
+type mockNonUnlimitedDriver struct {
+	modelModule.ModelDriver
+}
+
+func (m *mockNonUnlimitedDriver) Name() string {
+	return "openai"
+}
+
+func TestDispatchUnlimitedOCR2PDF_MismatchedDriverFails(t *testing.T) {
+	origResolver := resolveTenantOCRModelByProvider
+	t.Cleanup(func() { resolveTenantOCRModelByProvider = origResolver })
+
+	resolveTenantOCRModelByProvider = func(ctx context.Context, db *gorm.DB, tenantID, providerName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return &mockNonUnlimitedDriver{}, "gpt-4o", &modelModule.APIConfig{}, 0, nil
+	}
+
+	_, err := dispatchUnlimitedOCR2PDF(
+		context.Background(),
+		nil,
+		"test.pdf",
+		[]byte("%PDF-1.4 test"),
+		"tenant-1",
+		schema.ParserSetup{},
+		"",
+	)
+	if err == nil {
+		t.Fatal("expected error for mismatched driver, got nil")
+	}
+	if !strings.Contains(err.Error(), "requires an Unlimited-OCR-2 OCR model; found \"openai\"") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}
+
+func TestDispatchUnlimitedOCR2PDF_ResolutionErrorSurfacedWithoutFallbackURL(t *testing.T) {
+	t.Setenv(common.EnvUnlimitedOCRServerURL, "")
+	t.Setenv(common.EnvUnlimitedOCRAPIServer, "")
+
+	origResolver := resolveTenantOCRModelByProvider
+	t.Cleanup(func() { resolveTenantOCRModelByProvider = origResolver })
+
+	resolveTenantOCRModelByProvider = func(ctx context.Context, db *gorm.DB, tenantID, providerName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return nil, "", nil, 0, fmt.Errorf("tenant %s has no active %s OCR model", tenantID, providerName)
+	}
+
+	_, err := dispatchUnlimitedOCR2PDF(
+		context.Background(),
+		nil,
+		"test.pdf",
+		[]byte("%PDF-1.4 test"),
+		"tenant-1",
+		schema.ParserSetup{},
+		"",
+	)
+	if err == nil {
+		t.Fatal("expected error when model resolution fails and no fallback URL, got nil")
+	}
+	if !strings.Contains(err.Error(), "has no active Unlimited-OCR-2 OCR model") {
+		t.Fatalf("unexpected error message: %v", err)
+	}
+}

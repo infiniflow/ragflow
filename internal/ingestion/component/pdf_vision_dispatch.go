@@ -402,6 +402,15 @@ func defaultIsMonkeyOCRv2LayoutModelID(ctx context.Context, db *gorm.DB, tenantI
 	return err == nil && strings.EqualFold(resolved.driver.Name(), "monkeyocrv2")
 }
 
+// isUnlimitedOCRDriver reports whether driver is an Unlimited-OCR-2 variant.
+func isUnlimitedOCRDriver(driver modelModule.ModelDriver) bool {
+	if driver == nil {
+		return false
+	}
+	name := strings.ToLower(driver.Name())
+	return name == "unlimited_ocr" || strings.Contains(name, "unlimited")
+}
+
 // isUnlimitedOCRLayoutModelID tests whether a model ID resolves to an Unlimited-OCR provider.
 var isUnlimitedOCRLayoutModelID = defaultIsUnlimitedOCRLayoutModelID
 
@@ -411,7 +420,7 @@ func defaultIsUnlimitedOCRLayoutModelID(ctx context.Context, db *gorm.DB, tenant
 		return false
 	}
 	resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-	return err == nil && (strings.EqualFold(resolved.driver.Name(), "unlimited_ocr") || strings.Contains(strings.ToLower(resolved.driver.Name()), "unlimited"))
+	return err == nil && isUnlimitedOCRDriver(resolved.driver)
 }
 
 // dispatchUnlimitedOCR2PDF routes PDF parsing to the Unlimited-OCR-2 inference engine.
@@ -430,29 +439,46 @@ func dispatchUnlimitedOCR2PDF(
 	}
 	baseURL := strings.TrimRight(getStringOr(setup, "unlimited_ocr_server_url", environmentURL), "/")
 
+	var resolvedDriver *modelModule.UnlimitedOCRModel
 	var resolvedAPIConfig *modelModule.APIConfig
 	if tenantID != "" {
+		var driver modelModule.ModelDriver
 		var apiConfig *modelModule.APIConfig
 		var err error
 		if modelRef != "" {
-			_, _, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
+			driver, _, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
 		} else {
-			_, _, apiConfig, _, err = resolveTenantOCRModelByProvider(ctx, db, tenantID, "Unlimited-OCR-2")
+			driver, _, apiConfig, _, err = resolveTenantOCRModelByProvider(ctx, db, tenantID, "Unlimited-OCR-2")
 		}
-		if err != nil && modelRef != "" {
-			return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 model: %w", err)
-		}
-		if err == nil && apiConfig != nil {
-			resolvedAPIConfig = apiConfig
-			if apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
-				baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
-			} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "unlimited_ocr_server_url"); configuredURL != "" {
-				baseURL = strings.TrimRight(configuredURL, "/")
-			} else if modelModule.ResolveUnlimitedOCRBearerToken(apiConfig) != "" {
-				if environmentURL == "" {
-					return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 tenant credential requires a server URL on the model or %s", common.EnvUnlimitedOCRServerURL)
+		if err != nil {
+			if modelRef != "" || (environmentURL == "" && getStringOr(setup, "unlimited_ocr_server_url", "") == "") {
+				return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 model: %w", err)
+			}
+			common.Warn("pdf vision dispatch: Unlimited-OCR-2 model resolution failed, falling back to environment/setup URL",
+				zap.String("tenant_id", tenantID),
+				zap.Error(err),
+				zap.String("fallback_url", baseURL),
+			)
+		} else {
+			if !isUnlimitedOCRDriver(driver) {
+				return parser.ParseResult{}, fmt.Errorf(
+					"parser: Unlimited-OCR-2 requires an Unlimited-OCR-2 OCR model; found %q", driver.Name())
+			}
+			if uDriver, ok := driver.(*modelModule.UnlimitedOCRModel); ok {
+				resolvedDriver = uDriver
+			}
+			if apiConfig != nil {
+				resolvedAPIConfig = apiConfig
+				if apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
+					baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
+				} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "unlimited_ocr_server_url"); configuredURL != "" {
+					baseURL = strings.TrimRight(configuredURL, "/")
+				} else if modelModule.ResolveUnlimitedOCRBearerToken(apiConfig) != "" {
+					if environmentURL == "" {
+						return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 tenant credential requires a server URL on the model or %s", common.EnvUnlimitedOCRServerURL)
+					}
+					baseURL = environmentURL
 				}
-				baseURL = environmentURL
 			}
 		}
 	}
@@ -461,10 +487,15 @@ func dispatchUnlimitedOCR2PDF(
 	}
 	timeout := unlimitedOCR2RequestTimeout(setup, resolvedAPIConfig)
 
-	driver := modelModule.NewUnlimitedOCRModel(
-		map[string]string{"default": baseURL},
-		modelModule.URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
-	)
+	var driver *modelModule.UnlimitedOCRModel
+	if resolvedDriver != nil {
+		driver = resolvedDriver.NewInstance(map[string]string{"default": baseURL}).(*modelModule.UnlimitedOCRModel)
+	} else {
+		driver = modelModule.NewUnlimitedOCRModel(
+			map[string]string{"default": baseURL},
+			modelModule.URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
+		)
+	}
 	effectiveAPIConfig := &modelModule.APIConfig{
 		BaseURL: &baseURL,
 	}
