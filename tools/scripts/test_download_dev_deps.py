@@ -282,6 +282,43 @@ def test_incomplete_native_archive_preserves_existing_directory(tmp_path):
     assert (target / "existing").read_bytes() == b"keep"
 
 
+def test_pdfium_required_files_by_platform():
+    # Linux pdfium-static archives bundle libc++.a + libc++abi.a (linked by
+    # build.sh with -fuse-ld=lld on Linux), whereas macOS archives ship only
+    # lib/libpdfium.a and include/fpdfview.h and rely on the macOS SDK libc++.
+    assert native.pdfium_required_files("linux") == [
+        "lib/libpdfium.a",
+        "lib/libc++.a",
+        "lib/libc++abi.a",
+        "include/fpdfview.h",
+    ]
+    assert native.pdfium_required_files("darwin") == [
+        "lib/libpdfium.a",
+        "include/fpdfview.h",
+    ]
+
+
+def test_extracts_darwin_pdfium_archive_without_bundled_libcxx(tmp_path):
+    archive = tmp_path / "pdfium-mac-arm64-static.tgz"
+    with tarfile.open(archive, "w:gz") as tf:
+        for rel, payload in [
+            ("lib/libpdfium.a", b"!<arch>\npdfium"),
+            ("include/fpdfview.h", b"// header"),
+        ]:
+            info = tarfile.TarInfo(rel)
+            info.size = len(payload)
+            tf.addfile(info, io.BytesIO(payload))
+
+    darwin_target = tmp_path / "pdfium-darwin"
+    native._extract_native_archive(str(archive), str(darwin_target), native.pdfium_required_files("darwin"))
+    assert (darwin_target / "lib" / "libpdfium.a").is_file()
+    assert (darwin_target / "include" / "fpdfview.h").is_file()
+
+    linux_target = tmp_path / "pdfium-linux"
+    with pytest.raises(RuntimeError, match="missing required native file"):
+        native._extract_native_archive(str(archive), str(linux_target), native.pdfium_required_files("linux"))
+
+
 @pytest.mark.parametrize("kind", ["traversal", "absolute", "symlink", "hardlink", "fifo", "device"])
 def test_native_archive_rejects_unsafe_members(tmp_path, kind):
     target = tmp_path / "native"

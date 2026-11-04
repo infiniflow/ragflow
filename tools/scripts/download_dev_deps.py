@@ -202,6 +202,19 @@ def pdfium_url(goos: str, goarch: str) -> str:
     return f"{gh_proxy()}https://github.com/kognitos/pdfium-static/releases/download/chromium%2F{PDFIUM_VERSION}/{PDFIUM_STATIC_ASSETS[(goos, goarch)]}"
 
 
+def pdfium_required_files(goos: str) -> list[str]:
+    """Required files inside the pdfium-static archive for `goos`.
+
+    kognitos/pdfium-static bundles lib/libc++.a and lib/libc++abi.a only in the
+    Linux tarballs (which build.sh links with -fuse-ld=lld on Linux); the macOS
+    tarballs ship lib/libpdfium.a and include/fpdfview.h and rely on the system
+    libc++ from the macOS SDK.
+    """
+    if goos == "linux":
+        return ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"]
+    return ["lib/libpdfium.a", "include/fpdfview.h"]
+
+
 def office_oxide_url(repo_root: str, goos: str, goarch: str) -> str:
     """office_oxide native tarball for the target platform. The version is
     derived from go.mod so it always matches what the Go build actually links
@@ -724,7 +737,7 @@ def main():
     # Ensures build.sh can find them without network access.
     office_version = go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
     extractions = [
-        (PDFIUM_STATIC_ASSETS[(goos, goarch)], "pdfium-static", ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None),
+        (PDFIUM_STATIC_ASSETS[(goos, goarch)], "pdfium-static", pdfium_required_files(goos), None),
         (PDF_OXIDE_ASSETS[(goos, goarch)], "pdf_oxide", [f"lib/{goos}_{goarch}/libpdf_oxide.a", "include/pdf_oxide.h"], None),
         (OFFICE_OXIDE_ASSETS[(goos, goarch)], "office_oxide", ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version),
     ]
