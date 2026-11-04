@@ -58,7 +58,6 @@ func TestModelFactoryResolvesStoredMistralOCRProvider(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
 
-	access := Identity{TenantID: "user-1", UserID: "user-1"}
 	for _, tc := range []struct {
 		name      string
 		modelRef  string
@@ -69,7 +68,7 @@ func TestModelFactoryResolvesStoredMistralOCRProvider(t *testing.T) {
 		{name: "catalog composite", modelRef: "mistral-ocr-2512@default@Mistral OCR", wantModel: "mistral-ocr-2512"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			target, err := NewModelFactory().resolveConfig(serviceTestContext(t, "user-1", "user-1"), access, entity.ModelTypeOCR, tc.modelRef)
+			target, err := NewModelFactory().resolveConfig(serviceTestContext(t, "user-1", "user-1"), entity.ModelTypeOCR, tc.modelRef)
 			if err != nil {
 				t.Fatalf("resolveConfig(%q): %v", tc.modelRef, err)
 			}
@@ -96,7 +95,7 @@ func TestModelFactoryResolveModelTypeForStoredMistralOCRProvider(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
 
-	types, err := NewModelFactory().ResolveModelType(serviceTestContext(t, "user-1", "user-1"), Identity{TenantID: "user-1", UserID: "user-1"}, "mistral-ocr-2512@default@Mistral OCR")
+	types, err := NewModelFactory().ResolveModelType(permission.WithTenantID(serviceTestContext(t, "user-1", "user-1"), "user-1"), "mistral-ocr-2512@default@Mistral OCR")
 	if err != nil {
 		t.Fatalf("ResolveModelType: %v", err)
 	}
@@ -124,7 +123,7 @@ func TestModelFactoryResolvesStoredMistralOCRCapability(t *testing.T) {
 	factory := NewModelFactory()
 	for _, modelRef := range []string{"model-mistral-ocr", "mistral-ocr-latest@default@Mistral OCR"} {
 		t.Run(modelRef, func(t *testing.T) {
-			target, err := factory.resolveConfig(serviceTestContext(t, "user-1", "user-1"), Identity{TenantID: "user-1", UserID: "user-1"}, 0, modelRef)
+			target, err := factory.resolveConfig(permission.WithTenantID(serviceTestContext(t, "user-1", "user-1"), "user-1"), 0, modelRef)
 			if err != nil {
 				t.Fatalf("resolve model %q: %v", modelRef, err)
 			}
@@ -151,7 +150,7 @@ func TestListProvidersOfTenantSkipsStoredMistralOCRProvider(t *testing.T) {
 		t.Fatalf("create provider: %v", err)
 	}
 
-	providers, code, err := NewModelProviderService().ListProvidersOfTenant(serviceTestContext(t, "user-1", "user-1"), "user-1")
+	providers, code, err := NewModelProviderService().ListProvidersOfTenant(serviceTestContext(t, "user-1", "user-1"))
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListProvidersOfTenant = (%v, %v)", code, err)
 	}

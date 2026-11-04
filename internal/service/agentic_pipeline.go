@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/tokenizer"
 )
 
@@ -192,7 +193,7 @@ func (s *ChatPipelineService) agenticRag(
 			return sendResult(result)
 		}
 
-		chain, chainErr := s.agenticModelChain(runCtx, userID, chat)
+		chain, chainErr := s.agenticModelChain(runCtx, chat)
 		if chainErr != nil {
 			common.ErrorCtx(runCtx, "agentic_rag: resolve chat model", chainErr)
 			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", chainErr.Error()), Final: true})
@@ -443,9 +444,9 @@ func agenticUsageFields(ctx context.Context, usage *tokenizer.RunUsage) []zap.Fi
 // the dialog configures. Agentic RAG must not silently broaden the dialog's
 // model choice to every chat model owned by the tenant: a failover chain is
 // exactly the list the dialog's author chose, and nothing else.
-func (s *ChatPipelineService) agenticModelChain(ctx context.Context, userID string, chat *entity.Chat) ([]*modelModule.ChatModel, error) {
-	access := Identity{UserID: userID, TenantID: chat.TenantID}
-	primary, err := s.agenticPrimaryModel(ctx, access, chat)
+func (s *ChatPipelineService) agenticModelChain(ctx context.Context, chat *entity.Chat) ([]*modelModule.ChatModel, error) {
+	ctx = permission.WithTenantID(ctx, chat.TenantID)
+	primary, err := s.agenticPrimaryModel(ctx, chat)
 	if err != nil {
 		return nil, err
 	}
@@ -459,7 +460,7 @@ func (s *ChatPipelineService) agenticModelChain(ctx context.Context, userID stri
 		if llmID == "" || llmID == chat.LLMID {
 			continue
 		}
-		model, resolveErr := s.ModelFactory.NewChatModel(ctx, access, llmID)
+		model, resolveErr := s.ModelFactory.NewChatModel(ctx, llmID)
 		if resolveErr != nil || model == nil {
 			common.WarnCtx(ctx, "agentic_rag: skipping unresolvable failover model",
 				zap.String("llm_id", llmID), zap.Error(resolveErr))
@@ -474,15 +475,15 @@ func (s *ChatPipelineService) agenticModelChain(ctx context.Context, userID stri
 
 // agenticPrimaryModel resolves the dialog's own model, or the tenant default
 // when it selected none.
-func (s *ChatPipelineService) agenticPrimaryModel(ctx context.Context, access Identity, chat *entity.Chat) (*modelModule.ChatModel, error) {
+func (s *ChatPipelineService) agenticPrimaryModel(ctx context.Context, chat *entity.Chat) (*modelModule.ChatModel, error) {
 	var (
 		model *modelModule.ChatModel
 		err   error
 	)
 	if chat.LLMID == "" {
-		model, err = s.ModelFactory.NewDefaultChatModel(ctx, access)
+		model, err = s.ModelFactory.NewDefaultChatModel(ctx)
 	} else {
-		model, err = s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
+		model, err = s.ModelFactory.NewChatModel(ctx, chat.LLMID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("resolve chat model: %w", err)

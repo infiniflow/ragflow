@@ -23,8 +23,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
+
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"regexp"
 	"strconv"
@@ -37,7 +39,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/utility"
 )
@@ -64,9 +65,9 @@ type chatPipelineRunner interface {
 }
 
 type chatModelInfoResolver interface {
-	ResolveInfo(ctx context.Context, access Identity, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error)
-	ResolveDefaultInfo(ctx context.Context, access Identity, modelType entity.ModelType) (*modelModule.ModelInfo, error)
-	ResolveModelType(ctx context.Context, access Identity, modelRef string) ([]entity.ModelType, error)
+	ResolveInfo(ctx context.Context, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error)
+	ResolveDefaultInfo(ctx context.Context, modelType entity.ModelType) (*modelModule.ModelInfo, error)
+	ResolveModelType(ctx context.Context, modelRef string) ([]entity.ModelType, error)
 }
 
 // chunkFeedbackApplier is the dispatch seam for chunk-level feedback
@@ -1244,7 +1245,7 @@ func (s *ChatSessionService) ChatCompletions(
 		dialog.LLMID = llmID
 		dialog.LLMSetting = genConfig
 	} else if dialog.LLMID == "" {
-		modelInfo, err := NewModelFactory().ResolveDefaultInfo(ctx, Identity{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat)
+		modelInfo, err := NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, dialog.TenantID), entity.ModelTypeChat)
 		if err != nil {
 			return fail(errors.New("no default chat model for tenant"))
 		}
@@ -1846,13 +1847,13 @@ func (s *ChatSessionService) checkTenantLLMAPIKey(ctx context.Context, tenantID,
 	if modelFactory == nil {
 		modelFactory = NewModelFactory()
 	}
+	ctx = permission.WithTenantID(ctx, tenantID)
 	var err error
-	access := Identity{TenantID: tenantID}
 	if modelName == "" {
-		_, err = modelFactory.ResolveDefaultInfo(ctx, access, entity.ModelTypeChat)
+		_, err = modelFactory.ResolveDefaultInfo(ctx, entity.ModelTypeChat)
 	} else {
 		modelType := entity.ModelTypeChat
-		if modelTypes, typeErr := modelFactory.ResolveModelType(ctx, access, modelName); typeErr == nil {
+		if modelTypes, typeErr := modelFactory.ResolveModelType(ctx, modelName); typeErr == nil {
 			for _, resolvedType := range modelTypes {
 				if resolvedType.Has(entity.ModelTypeImage2Text) {
 					modelType = entity.ModelTypeImage2Text
@@ -1860,7 +1861,7 @@ func (s *ChatSessionService) checkTenantLLMAPIKey(ctx context.Context, tenantID,
 				}
 			}
 		}
-		_, err = modelFactory.ResolveInfo(ctx, access, modelType, modelName)
+		_, err = modelFactory.ResolveInfo(ctx, modelType, modelName)
 	}
 	if err != nil {
 		return false, err

@@ -22,11 +22,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	ragprompts "ragflow/internal/rag/prompts"
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/graph"
@@ -1572,12 +1574,12 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 4. Construct the selected chat model through the factory.
-		access := Identity{UserID: userID, TenantID: chat.TenantID}
+		modelCtx := permission.WithTenantID(ctx, chat.TenantID)
 		var chatModel *modelModule.ChatModel
 		if strings.TrimSpace(chat.LLMID) == "" {
-			chatModel, err = s.ModelFactory.NewDefaultChatModel(ctx, access)
+			chatModel, err = s.ModelFactory.NewDefaultChatModel(modelCtx)
 		} else {
-			chatModel, err = s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
+			chatModel, err = s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
 		}
 		if err != nil {
 			sendResult(AsyncChatResult{
@@ -1591,7 +1593,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		var ttsModel *modelModule.TTSModel
 		if promptConfig != nil {
 			if useTTS, _ := promptConfig["tts"].(bool); useTTS {
-				ttsModel, err = s.ModelFactory.NewDefaultTTSModel(ctx, access)
+				ttsModel, err = s.ModelFactory.NewDefaultTTSModel(modelCtx)
 				if err != nil || ttsModel == nil {
 					common.Warn("AsyncChatSolo: TTS lookup failed; proceeding without TTS",
 						zap.String("tenant_id", chat.TenantID),
@@ -2071,13 +2073,13 @@ func tokenizeText(text string) string {
 // models reject them at the provider (e.g. Zhipu GLM error 1210:
 // messages.content.type only allows 'text').
 func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
-	access := Identity{TenantID: chat.TenantID}
+	ctx = permission.WithTenantID(ctx, chat.TenantID)
 	var info *modelModule.ModelInfo
 	var err error
 	if strings.TrimSpace(chat.LLMID) == "" {
-		info, err = s.ModelFactory.ResolveDefaultInfo(ctx, access, entity.ModelTypeChat)
+		info, err = s.ModelFactory.ResolveDefaultInfo(ctx, entity.ModelTypeChat)
 	} else {
-		info, err = s.ModelFactory.ResolveInfo(ctx, access, entity.ModelTypeChat, chat.LLMID)
+		info, err = s.ModelFactory.ResolveInfo(ctx, entity.ModelTypeChat, chat.LLMID)
 	}
 	if err != nil {
 		return nil, "", "", "", err
@@ -2153,7 +2155,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		}
 		if kbs[0].EmbdID != "" {
 			embdTenantID := kbs[0].TenantID
-			model, err := s.ModelFactory.NewEmbeddingModel(ctx, Identity{TenantID: embdTenantID}, kbs[0].EmbdID)
+			model, err := s.ModelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, embdTenantID), kbs[0].EmbdID)
 			if err != nil {
 				common.Warn("Failed to get embedding model for chat retrieval",
 					zap.String("embdID", kbs[0].EmbdID),
@@ -2166,25 +2168,25 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	}
 
 	// Chat model.
-	access := Identity{TenantID: chat.TenantID}
+	modelCtx := permission.WithTenantID(ctx, chat.TenantID)
 	var chatModel *modelModule.ChatModel
 	if strings.TrimSpace(chat.LLMID) == "" {
-		chatModel, _ = s.ModelFactory.NewDefaultChatModel(ctx, access)
+		chatModel, _ = s.ModelFactory.NewDefaultChatModel(modelCtx)
 	} else {
-		chatModel, _ = s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
+		chatModel, _ = s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
 	}
 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		rerankModel, _ = s.ModelFactory.NewRerankModel(ctx, access, chat.RerankID)
+		rerankModel, _ = s.ModelFactory.NewRerankModel(modelCtx, chat.RerankID)
 	}
 
 	// TTS model.
 	var ttsModel *modelModule.TTSModel
 	if chat.PromptConfig != nil {
 		if useTTS, _ := chat.PromptConfig["tts"].(bool); useTTS {
-			ttsModel, _ = s.ModelFactory.NewDefaultTTSModel(ctx, access)
+			ttsModel, _ = s.ModelFactory.NewDefaultTTSModel(modelCtx)
 		}
 	}
 
@@ -2790,15 +2792,15 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 	if chatModel != nil {
 		return chatModel
 	}
-	access := Identity{TenantID: chat.TenantID}
+	modelCtx := permission.WithTenantID(ctx, chat.TenantID)
 	if strings.TrimSpace(chat.LLMID) == "" {
-		model, err := s.ModelFactory.NewDefaultChatModel(ctx, access)
+		model, err := s.ModelFactory.NewDefaultChatModel(modelCtx)
 		if err != nil {
 			return nil
 		}
 		return model
 	}
-	model, err := s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
+	model, err := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
 	if err != nil {
 		return nil
 	}

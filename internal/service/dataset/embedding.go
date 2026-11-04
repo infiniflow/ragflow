@@ -62,7 +62,7 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, datasetID string, r
 		return nil, common.CodeServerError, errors.New("doc engine not initialized")
 	}
 
-	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(ctx, service.Identity{TenantID: kb.TenantID}, embeddingID)
+	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, kb.TenantID), embeddingID)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -281,8 +281,8 @@ func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 	return samples, nil
 }
 
-func (d *DatasetService) verifyEmbeddingAvailability(ctx context.Context, embdID string, access service.Identity) (bool, string) {
-	_, err := service.NewModelFactory().ResolveInfo(ctx, access, entity.ModelTypeEmbedding, embdID)
+func (d *DatasetService) verifyEmbeddingAvailability(ctx context.Context, embdID, tenantID string) (bool, string) {
+	_, err := service.NewModelFactory().ResolveInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return false, err.Error()
 	}

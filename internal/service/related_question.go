@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/rag/prompts"
 )
 
@@ -34,14 +35,18 @@ func GenerateRelatedQuestions(ctx context.Context, question, searchID string, se
 	if modelFactory == nil {
 		return nil, fmt.Errorf("model factory not configured")
 	}
-	searchConfig, err := relatedQuestionsSearchConfig(ctx, searchID, searchSvc)
+	searchConfig, tenantID, err := relatedQuestionsSearchConfig(ctx, searchID, searchSvc)
 	if err != nil {
 		return nil, err
 	}
-	access, err := ResolveIdentity(ctx)
-	if err != nil {
-		return nil, err
+	if tenantID == "" {
+		userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+		tenantID, err = requireCurrentTenantID(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
 	}
+	modelCtx := permission.WithTenantID(ctx, tenantID)
 	modelID, _ := searchConfig["chat_id"].(string)
 	prompt, err := (prompts.EmbeddedPromptLoader{}).Load("related_question")
 	if err != nil {
@@ -53,12 +58,12 @@ func GenerateRelatedQuestions(ctx context.Context, question, searchID string, se
 	}
 	var chatModel *modelModule.ChatModel
 	if modelID == "" {
-		chatModel, err = modelFactory.NewDefaultChatModel(ctx, access)
+		chatModel, err = modelFactory.NewDefaultChatModel(modelCtx)
 		if errors.Is(err, ErrNoDefaultModel) {
 			return nil, fmt.Errorf("no chat model configured")
 		}
 	} else {
-		chatModel, err = modelFactory.NewChatModel(ctx, access, modelID)
+		chatModel, err = modelFactory.NewChatModel(modelCtx, modelID)
 	}
 	if err != nil {
 		return nil, err
@@ -73,18 +78,19 @@ func GenerateRelatedQuestions(ctx context.Context, question, searchID string, se
 	return []string{}, nil
 }
 
-func relatedQuestionsSearchConfig(ctx context.Context, searchID string, searchSvc *SearchService) (map[string]interface{}, error) {
+func relatedQuestionsSearchConfig(ctx context.Context, searchID string, searchSvc *SearchService) (map[string]interface{}, string, error) {
 	if searchID == "" {
-		return map[string]interface{}{}, nil
+		return map[string]interface{}{}, "", nil
 	}
 	if searchSvc == nil {
-		return nil, fmt.Errorf("search service not configured")
+		return nil, "", fmt.Errorf("search service not configured")
 	}
 	detail, err := searchSvc.GetDetail(ctx, searchID)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return relatedQuestionsSearchConfigFromDetail(detail), nil
+	tenantID, _ := detail["tenant_id"].(string)
+	return relatedQuestionsSearchConfigFromDetail(detail), strings.TrimSpace(tenantID), nil
 }
 
 func relatedQuestionsSearchConfigFromDetail(detail map[string]interface{}) map[string]interface{} {

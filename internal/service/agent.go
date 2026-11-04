@@ -23,6 +23,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+
+	"ragflow/internal/permission"
 	"ragflow/internal/service/file"
 	"reflect"
 	"slices"
@@ -44,7 +46,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
 
@@ -2062,7 +2063,7 @@ func validateAgentChatModelReferences(ctx context.Context, userID, tenantID stri
 		if !ok {
 			modelRef, _ = node.Obj.Params["llm_id"].(string)
 		}
-		if _, err := modelFactory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, entity.ModelTypeChat, modelRef); err != nil {
+		if _, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeChat, modelRef); err != nil {
 			if draft && (errors.Is(err, errModelConfigUnavailable) || errors.Is(err, gorm.ErrRecordNotFound)) && !errors.Is(err, permission.ErrPermissionDenied) && !errors.Is(err, permission.ErrResourceNotFound) {
 				continue
 			}

@@ -1941,7 +1941,7 @@ func TestResolveModelConfigRejectsImage2TextOnlyModel(t *testing.T) {
 	svc := NewChatPipelineService()
 
 	_, err := svc.ModelFactory.resolveConfig(
-		t.Context(), Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-image2text-tools",
+		permission.WithTenantID(t.Context(), "tenant-1"), entity.ModelTypeChat, "model-image2text-tools",
 	)
 	if err == nil {
 		t.Fatal("ResolveModelConfig accepted an image2text-only model as chat")

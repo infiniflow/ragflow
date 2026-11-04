@@ -32,6 +32,7 @@ import (
 	knowledgecompiler "ragflow/internal/ingestion/component/knowledge_compiler"
 	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	appcommon "ragflow/internal/common"
@@ -582,7 +583,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			// actually run instead of failing / falling back to a no-op. Use the
 			// tenant model ID so later model resolution can use the same persisted
 			// tenant model directly.
-			defaultInfo, derr := modelFactory.ResolveDefaultInfo(modelCtx, service.Identity{TenantID: tenantID}, entity.ModelTypeChat)
+			defaultInfo, derr := modelFactory.ResolveDefaultInfo(permission.WithTenantID(modelCtx, tenantID), entity.ModelTypeChat)
 			if derr != nil || defaultInfo == nil || strings.TrimSpace(defaultInfo.ID) == "" {
 				return kc.Deps{}, fmt.Errorf("knowledge_compiler: llm_id is empty and no tenant default chat model available: %w", derr)
 			}
@@ -596,7 +597,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		// generation cap and must not be used as the input budget.
 		llmMax := kc.DefaultLLMContextLength
 		// Bound the model-config lookup and inherit cancellation from the task.
-		modelInfo, contextLengthErr := modelFactory.ResolveInfo(modelCtx, service.Identity{TenantID: tenantID}, entity.ModelTypeChat, llmID)
+		modelInfo, contextLengthErr := modelFactory.ResolveInfo(permission.WithTenantID(modelCtx, tenantID), entity.ModelTypeChat, llmID)
 		if contextLengthErr == nil && modelInfo != nil && modelInfo.ContextLength > 0 {
 			llmMax = modelInfo.ContextLength
 		}
@@ -642,7 +643,7 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	if req.LLMID != "" {
 		llmID = req.LLMID
 	}
-	chatModel, err := c.factory.NewChatModel(ctx, service.Identity{TenantID: c.tenantID}, llmID)
+	chatModel, err := c.factory.NewChatModel(permission.WithTenantID(ctx, c.tenantID), llmID)
 	if err != nil {
 		return nil, err
 	}
@@ -822,7 +823,7 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 // loudly instead of silently producing empty vectors.
 func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, error) {
 	if embdID := strings.TrimSpace(e.embdID); embdID != "" {
-		embeddingModel, err := e.factory.NewEmbeddingModel(ctx, service.Identity{TenantID: e.tenantID}, embdID)
+		embeddingModel, err := e.factory.NewEmbeddingModel(permission.WithTenantID(ctx, e.tenantID), embdID)
 		if err != nil {
 			return nil, fmt.Errorf("knowledge_compiler: resolve embedding model: %w", err)
 		}
@@ -831,7 +832,7 @@ func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, 
 		}
 		return embeddingModel, nil
 	}
-	embeddingModel, err := e.factory.NewDefaultEmbeddingModel(ctx, service.Identity{TenantID: e.tenantID})
+	embeddingModel, err := e.factory.NewDefaultEmbeddingModel(permission.WithTenantID(ctx, e.tenantID))
 	if err != nil {
 		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required and no tenant default embedding model is set: %w", err)
 	}

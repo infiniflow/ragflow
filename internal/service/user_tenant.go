@@ -78,7 +78,8 @@ type TenantInfoResponse struct {
 }
 
 // GetCurrentTenantInfo returns the active tenant with the user's membership settings.
-func (s *UserTenantService) GetCurrentTenantInfo(ctx context.Context, userID string) (*TenantInfoResponse, error) {
+func (s *UserTenantService) GetCurrentTenantInfo(ctx context.Context) (*TenantInfoResponse, error) {
+	userID := permission.UserIDFromContext(ctx)
 	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -135,7 +136,7 @@ func (s *UserTenantService) GetUserTenantRelationByUserIDWithContext(ctx context
 var defaultModelTypeNames = [...]string{"chat", "embedding", "rerank", "asr", "vision", "tts", "ocr", "decision"}
 
 // SetModelSettings validates and updates default models on the user's active tenant membership.
-func (s *UserTenantService) SetModelSettings(ctx context.Context, userID string, req *SetModelSettingsRequest) (common.ErrorCode, error) {
+func (s *UserTenantService) SetModelSettings(ctx context.Context, req *SetModelSettingsRequest) (common.ErrorCode, error) {
 	if req == nil || (req.Raw != nil && req.DefaultModel != nil) {
 		return common.CodeArgumentError, fmt.Errorf("provide either model settings or one default model selection")
 	}
@@ -167,6 +168,7 @@ func (s *UserTenantService) SetModelSettings(ctx context.Context, userID string,
 	if err != nil {
 		return common.CodeArgumentError, err
 	}
+	userID := permission.UserIDFromContext(ctx)
 	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		return common.CodeForbidden, err
@@ -211,7 +213,7 @@ func (s *UserTenantService) SetModelSettings(ctx context.Context, userID string,
 			continue
 		}
 
-		info, err := factory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, modelType, modelRef)
+		info, err := factory.ResolveInfo(permission.WithTenantID(ctx, tenantID), modelType, modelRef)
 		if err != nil {
 			switch {
 			case errors.Is(err, permission.ErrPermissionDenied), errors.Is(err, permission.ErrResourceNotFound), errors.Is(err, permission.ErrMembershipNotFound):
@@ -330,7 +332,8 @@ func ptrStringValue(value *string) string {
 }
 
 // ListDefaultModels returns the models configured on the user's current tenant membership.
-func (s *UserTenantService) ListDefaultModels(ctx context.Context, userID string) ([]ModelItem, error) {
+func (s *UserTenantService) ListDefaultModels(ctx context.Context) ([]ModelItem, error) {
+	userID := permission.UserIDFromContext(ctx)
 	tenantID, err := requireCurrentTenantID(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -368,7 +371,7 @@ func (s *UserTenantService) ListDefaultModels(ctx context.Context, userID string
 		if err != nil {
 			continue
 		}
-		info, err := factory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, modelType, modelRef)
+		info, err := factory.ResolveInfo(permission.WithTenantID(ctx, tenantID), modelType, modelRef)
 		if err != nil || info == nil {
 			continue
 		}

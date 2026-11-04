@@ -25,9 +25,9 @@ import (
 	"strings"
 	"time"
 
-	"ragflow/internal/entity"
-
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
 
@@ -139,7 +139,8 @@ type OpenAIChatRequest struct {
 	MaxTokens        *int     `json:"max_tokens,omitempty"`
 }
 
-func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID string, bodyBytes []byte) {
+func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string, bodyBytes []byte) {
+	userID := permission.UserIDFromContext(c.Request.Context())
 	var req OpenAIChatRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		s.writeArgError(c, err.Error())
@@ -261,7 +262,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 	if req.Model != "model" {
-		if _, mErr := s.pipeline.ModelFactory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat, resolvedModel); mErr != nil {
+		if _, mErr := s.pipeline.ModelFactory.ResolveInfo(permission.WithTenantID(ctx, dialog.TenantID), entity.ModelTypeChat, resolvedModel); mErr != nil {
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
 			return
 		}

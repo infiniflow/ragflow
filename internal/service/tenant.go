@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -49,7 +50,8 @@ type tenantInviteRole struct {
 
 // tenantMemberPermission keeps community membership policy in shared code and
 // lets Enterprise apply its Tenant permission grants through the EE hook.
-func tenantMemberPermission(ctx context.Context, db *gorm.DB, userID, tenantID string, required int32) (*entity.UserTenant, int32, error) {
+func tenantMemberPermission(ctx context.Context, db *gorm.DB, tenantID string, required int32) (*entity.UserTenant, int32, error) {
+	userID := permission.UserIDFromContext(ctx)
 	membership, mask, handled, err := tenantMemberPermissionEE(ctx, db, userID, tenantID, required)
 	if err != nil || handled {
 		return membership, mask, err
@@ -124,7 +126,8 @@ type TenantListItem struct {
 }
 
 // GetTenantList get tenant list for a user
-func (s *TenantService) GetTenantList(ctx context.Context, userID string) ([]*TenantListItem, error) {
+func (s *TenantService) GetTenantList(ctx context.Context) ([]*TenantListItem, error) {
+	userID := permission.UserIDFromContext(ctx)
 	tenants, err := s.userTenantDAO.GetTenantsByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, err
@@ -282,8 +285,8 @@ type TenantMemberResponse struct {
 }
 
 // ListMembers returns all non-owner members of tenantID.
-func (s *TenantService) ListMembers(ctx context.Context, userID, tenantID string) ([]*TenantMemberResponse, common.ErrorCode, error) {
-	if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), userID, tenantID, entity.TenantPermissionManageMembers); err != nil {
+func (s *TenantService) ListMembers(ctx context.Context, tenantID string) ([]*TenantMemberResponse, common.ErrorCode, error) {
+	if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), tenantID, entity.TenantPermissionManageMembers); err != nil {
 		return nil, tenantRoleErrorCode(err), err
 	}
 	rows, err := s.userTenantDAO.GetMembersByTenantID(ctx, dao.DB, tenantID)
@@ -326,8 +329,9 @@ type AddMemberResponse struct {
 }
 
 // AddMember invites a user (by email) to the tenant.
-func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, req *AddMemberRequest) (*AddMemberResponse, common.ErrorCode, error) {
-	if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), userID, tenantID, entity.TenantPermissionManageMembers); err != nil {
+func (s *TenantService) AddMember(ctx context.Context, tenantID string, req *AddMemberRequest) (*AddMemberResponse, common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), tenantID, entity.TenantPermissionManageMembers); err != nil {
 		return nil, tenantRoleErrorCode(err), err
 	}
 	if req == nil {
@@ -407,12 +411,13 @@ func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, 
 // RemoveMember removes a user from the tenant. The owner may remove members,
 // and a member may remove themselves. An invitee may decline their own pending
 // invitation. The tenant owner cannot be removed.
-func (s *TenantService) RemoveMember(ctx context.Context, userID, tenantID, targetUserID string) (common.ErrorCode, error) {
+func (s *TenantService) RemoveMember(ctx context.Context, tenantID, targetUserID string) (common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
 	if s.userTenantDAO == nil {
 		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
 	}
 	if userID != targetUserID {
-		if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), userID, tenantID, entity.TenantPermissionManageMembers); err != nil {
+		if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), tenantID, entity.TenantPermissionManageMembers); err != nil {
 			return tenantRoleErrorCode(err), err
 		}
 	}
@@ -471,7 +476,8 @@ func (s *TenantService) RemoveMember(ctx context.Context, userID, tenantID, targ
 }
 
 // AcceptInvite assigns the Tenant default role when a pending invitation is accepted.
-func (s *TenantService) AcceptInvite(ctx context.Context, userID, tenantID string) (common.ErrorCode, error) {
+func (s *TenantService) AcceptInvite(ctx context.Context, tenantID string) (common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
 	// Seat quota is enforced again at acceptance time: several pending
 	// invitations can each fit the remaining seat but not all of them.
 	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {

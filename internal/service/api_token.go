@@ -18,10 +18,11 @@ package service
 
 import (
 	"context"
-	"fmt"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/billing"
 	"time"
 )
@@ -41,7 +42,11 @@ type APIKeyResponse struct {
 }
 
 // ListAPIKeys list all API keys for a tenant
-func (s *SystemService) ListAPIKeys(ctx context.Context, tenantID string) ([]*APIKeyResponse, error) {
+func (s *SystemService) ListAPIKeys(ctx context.Context) ([]*APIKeyResponse, error) {
+	tenantID, err := requireCurrentTenantID(ctx, permission.UserIDFromContext(ctx))
+	if err != nil {
+		return nil, err
+	}
 	APITokenDAO := dao.NewAPITokenDAO()
 	keys, err := APITokenDAO.GetByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
@@ -87,9 +92,11 @@ type CreateAPIKeyRequest struct {
 }
 
 // CreateAPIKey creates a new API key for a tenant
-func (s *SystemService) CreateAPIKey(ctx context.Context, userID, tenantID string, req *CreateAPIKeyRequest) (*APIKeyResponse, error) {
-	if userID == "" || tenantID == "" {
-		return nil, fmt.Errorf("user and tenant context are required")
+func (s *SystemService) CreateAPIKey(ctx context.Context, req *CreateAPIKeyRequest) (*APIKeyResponse, error) {
+	userID := permission.UserIDFromContext(ctx)
+	tenantID, err := requireCurrentTenantID(ctx, userID)
+	if err != nil {
+		return nil, err
 	}
 	APITokenDAO := dao.NewAPITokenDAO()
 
@@ -134,9 +141,13 @@ func apiTokenUserID(value *string) string {
 	return *value
 }
 
-func (s *SystemService) DeleteAPIKey(ctx context.Context, tenantID, key string) error {
+func (s *SystemService) DeleteAPIKey(ctx context.Context, key string) error {
+	tenantID, err := requireCurrentTenantID(ctx, permission.UserIDFromContext(ctx))
+	if err != nil {
+		return err
+	}
 	APITokenDAO := dao.NewAPITokenDAO()
-	_, err := APITokenDAO.DeleteByTenantIDAndToken(ctx, dao.DB, tenantID, key)
+	_, err = APITokenDAO.DeleteByTenantIDAndToken(ctx, dao.DB, tenantID, key)
 	if err == nil {
 		if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
 			billingService.DeleteRateLimitKeys(ctx, key)
