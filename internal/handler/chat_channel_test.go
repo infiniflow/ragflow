@@ -13,57 +13,62 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 type fakeChatChannelService struct {
-	createFn  func(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error)
-	listFn    func(tenantID string) ([]*entity.ChatChannelListResponse, error)
-	getFn     func(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error)
-	updateFn  func(userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
-	runtimeFn func(userID, channelID string) (map[string]any, common.ErrorCode, error)
-	deleteFn  func(userID, channelID string) (bool, common.ErrorCode, error)
+	createFn  func(context.Context, string, string, entity.JSONMap, *string) (*entity.ChatChannel, error)
+	listFn    func(context.Context) ([]*entity.ChatChannelListResponse, error)
+	getFn     func(context.Context, string) (*entity.ChatChannel, common.ErrorCode, error)
+	updateFn  func(context.Context, string, map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
+	runtimeFn func(context.Context, string) (map[string]any, common.ErrorCode, error)
+	deleteFn  func(context.Context, string) (bool, common.ErrorCode, error)
 }
 
-func (f fakeChatChannelService) CreateChatChannel(ctx context.Context, tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+func (f fakeChatChannelService) CreateChatChannel(ctx context.Context, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
 	if f.createFn == nil {
 		return nil, errors.New("unexpected CreateChatChannel call")
 	}
-	return f.createFn(tenantID, name, channelType, config, chatID)
+	return f.createFn(ctx, name, channelType, config, chatID)
 }
 
-func (f fakeChatChannelService) List(ctx context.Context, tenantID string) ([]*entity.ChatChannelListResponse, error) {
+func (f fakeChatChannelService) List(ctx context.Context) ([]*entity.ChatChannelListResponse, error) {
 	if f.listFn == nil {
 		return nil, errors.New("unexpected List call")
 	}
-	return f.listFn(tenantID)
+	return f.listFn(ctx)
 }
 
-func (f fakeChatChannelService) GetChatChannel(ctx context.Context, userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
+func (f fakeChatChannelService) GetChatChannel(ctx context.Context, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
 	if f.getFn == nil {
 		return nil, common.CodeServerError, errors.New("unexpected GetChatChannel call")
 	}
-	return f.getFn(userID, channelID)
+	return f.getFn(ctx, channelID)
 }
 
-func (f fakeChatChannelService) UpdateChatChannel(ctx context.Context, userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
+func (f fakeChatChannelService) UpdateChatChannel(ctx context.Context, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
 	if f.updateFn == nil {
 		return nil, common.CodeServerError, errors.New("unexpected UpdateChatChannel call")
 	}
-	return f.updateFn(userID, channelID, req)
+	return f.updateFn(ctx, channelID, req)
 }
 
-func (f fakeChatChannelService) GetChatChannelRuntime(ctx context.Context, userID, channelID string) (map[string]any, common.ErrorCode, error) {
+func (f fakeChatChannelService) GetChatChannelRuntime(ctx context.Context, channelID string) (map[string]any, common.ErrorCode, error) {
 	if f.runtimeFn == nil {
 		return nil, common.CodeServerError, errors.New("unexpected GetChatChannelRuntime call")
 	}
-	return f.runtimeFn(userID, channelID)
+	return f.runtimeFn(ctx, channelID)
 }
 
-func (f fakeChatChannelService) DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error) {
+func (f fakeChatChannelService) DeleteChatChannel(ctx context.Context, channelID string) (bool, common.ErrorCode, error) {
 	if f.deleteFn == nil {
 		return false, common.CodeServerError, errors.New("unexpected DeleteChatChannel call")
 	}
-	return f.deleteFn(userID, channelID)
+	return f.deleteFn(ctx, channelID)
+}
+
+func setChatChannelHandlerIdentity(c *gin.Context) {
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "tenant-1", "tenant-1"))
 }
 
 func TestChatChannelHandlerCreateSuccess(t *testing.T) {
@@ -75,15 +80,15 @@ func TestChatChannelHandlerCreateSuccess(t *testing.T) {
 
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
-			createFn: func(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
-				gotTenantID = tenantID
+			createFn: func(ctx context.Context, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+				gotTenantID = permission.TenantIDFromContext(ctx)
 				gotName = name
 				gotChannel = channelType
 				gotConfig = config
 				gotChatID = chatID
 				return &entity.ChatChannel{
 					ID:       "cc-1",
-					TenantID: tenantID,
+					TenantID: permission.TenantIDFromContext(ctx),
 					Name:     name,
 					Channel:  channelType,
 					Config:   config,
@@ -96,7 +101,7 @@ func TestChatChannelHandlerCreateSuccess(t *testing.T) {
 
 	router := gin.New()
 	router.POST("/api/v1/chat-channels", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant-1"})
+		setChatChannelHandlerIdentity(c)
 		h.CreateChatChannel(c)
 	})
 
@@ -135,7 +140,7 @@ func TestChatChannelHandlerCreateInvalidRequestStopsEarly(t *testing.T) {
 	called := false
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
-			createFn: func(tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
+			createFn: func(ctx context.Context, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
 				called = true
 				return nil, nil
 			},
@@ -144,7 +149,7 @@ func TestChatChannelHandlerCreateInvalidRequestStopsEarly(t *testing.T) {
 
 	router := gin.New()
 	router.POST("/api/v1/chat-channels", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant-1"})
+		setChatChannelHandlerIdentity(c)
 		h.CreateChatChannel(c)
 	})
 
@@ -172,8 +177,8 @@ func TestChatChannelHandlerListSuccess(t *testing.T) {
 	gotTenantID := ""
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
-			listFn: func(tenantID string) ([]*entity.ChatChannelListResponse, error) {
-				gotTenantID = tenantID
+			listFn: func(ctx context.Context) ([]*entity.ChatChannelListResponse, error) {
+				gotTenantID = permission.TenantIDFromContext(ctx)
 				return []*entity.ChatChannelListResponse{
 					{ID: "cc-1", Name: "bot-a", Channel: "dingtalk", Status: 1},
 				}, nil
@@ -183,7 +188,7 @@ func TestChatChannelHandlerListSuccess(t *testing.T) {
 
 	router := gin.New()
 	router.GET("/api/v1/chat-channels", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant-1"})
+		setChatChannelHandlerIdentity(c)
 		h.ListChatChannel(c)
 	})
 
@@ -209,7 +214,7 @@ func TestChatChannelHandlerListServiceError(t *testing.T) {
 
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
-			listFn: func(tenantID string) ([]*entity.ChatChannelListResponse, error) {
+			listFn: func(ctx context.Context) ([]*entity.ChatChannelListResponse, error) {
 				return nil, errors.New("db failed")
 			},
 		},
@@ -217,7 +222,7 @@ func TestChatChannelHandlerListServiceError(t *testing.T) {
 
 	router := gin.New()
 	router.GET("/api/v1/chat-channels", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant-1"})
+		setChatChannelHandlerIdentity(c)
 		h.ListChatChannel(c)
 	})
 
@@ -239,7 +244,7 @@ func TestChatChannelHandlerGetChatChannelHidesPermissionDenial(t *testing.T) {
 
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
-			getFn: func(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
+			getFn: func(ctx context.Context, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
 				return nil, common.CodeNotFound, errors.New("Resource not found")
 			},
 		},
@@ -247,7 +252,7 @@ func TestChatChannelHandlerGetChatChannelHidesPermissionDenial(t *testing.T) {
 
 	router := gin.New()
 	router.GET("/api/v1/chat-channels/:channel_id", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant-1"})
+		setChatChannelHandlerIdentity(c)
 		h.GetChatChannel(c)
 	})
 
@@ -273,16 +278,16 @@ func TestChatChannelHandlerUpdateChatChannelUnwrapsData(t *testing.T) {
 	var gotReq map[string]interface{}
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
-			updateFn: func(userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
+			updateFn: func(ctx context.Context, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
 				gotReq = req
-				return &entity.ChatChannel{ID: channelID, TenantID: userID, Name: "new-name"}, common.CodeSuccess, nil
+				return &entity.ChatChannel{ID: channelID, TenantID: permission.TenantIDFromContext(ctx), Name: "new-name"}, common.CodeSuccess, nil
 			},
 		},
 	}
 
 	router := gin.New()
 	router.PATCH("/api/v1/chat-channels/:channel_id", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant-1"})
+		setChatChannelHandlerIdentity(c)
 		h.UpdateChatChannel(c)
 	})
 
@@ -302,8 +307,8 @@ func TestChatChannelHandlerDeleteChatChannelSuccess(t *testing.T) {
 	var gotUserID, gotChannelID string
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
-			deleteFn: func(userID, channelID string) (bool, common.ErrorCode, error) {
-				gotUserID = userID
+			deleteFn: func(ctx context.Context, channelID string) (bool, common.ErrorCode, error) {
+				gotUserID = permission.UserIDFromContext(ctx)
 				gotChannelID = channelID
 				return true, common.CodeSuccess, nil
 			},
@@ -312,7 +317,7 @@ func TestChatChannelHandlerDeleteChatChannelSuccess(t *testing.T) {
 
 	router := gin.New()
 	router.DELETE("/api/v1/chat-channels/:channel_id", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant-1"})
+		setChatChannelHandlerIdentity(c)
 		h.DeleteChatChannel(c)
 	})
 
@@ -342,8 +347,8 @@ func TestChatChannelHandlerGetRuntimeSuccess(t *testing.T) {
 	var gotUserID, gotChannelID string
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
-			runtimeFn: func(userID, channelID string) (map[string]any, common.ErrorCode, error) {
-				gotUserID = userID
+			runtimeFn: func(ctx context.Context, channelID string) (map[string]any, common.ErrorCode, error) {
+				gotUserID = permission.UserIDFromContext(ctx)
 				gotChannelID = channelID
 				return map[string]any{"status": "waiting"}, common.CodeSuccess, nil
 			},
@@ -352,7 +357,7 @@ func TestChatChannelHandlerGetRuntimeSuccess(t *testing.T) {
 
 	router := gin.New()
 	router.GET("/api/v1/chat-channels/:channel_id/runtime", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant-1"})
+		setChatChannelHandlerIdentity(c)
 		h.GetChatChannelRuntime(c)
 	})
 

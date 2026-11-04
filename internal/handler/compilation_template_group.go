@@ -55,11 +55,6 @@ func NewCompilationTemplateGroupHandler(svc *service.CompilationTemplateGroupSer
 //	@Success 200 {object} map[string]interface{}
 //	@Router /v1/compilation-template-groups [get]
 func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "30"))
 	if page < 1 {
@@ -71,10 +66,14 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 	keywords := c.Query("keywords")
 	scope := c.Query("scope")
 	tenantID := c.Query("tenant_id")
+	ctx := c.Request.Context()
 	if tenantID == "" {
-		tenantID = user.ID
+		tenantID = permission.TenantIDFromContext(ctx)
+		if tenantID == "" {
+			tenantID = permission.UserIDFromContext(ctx)
+		}
 	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(
-		c.Request.Context(), tenantID, permission.TenantMember,
+		ctx, tenantID, permission.TenantMember,
 	); err != nil {
 		respondPermissionError(c, err, false)
 		return
@@ -83,7 +82,7 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 	desc := c.DefaultQuery("desc", "true") != "false"
 	terms := orderTermsFromQuery(c, orderby, desc)
 
-	groups, err := h.compilationTemplateGroupService.ListSaved(c.Request.Context(), tenantID, keywords, scope, terms)
+	groups, err := h.compilationTemplateGroupService.ListSaved(ctx, tenantID, keywords, scope, terms)
 	if err != nil {
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
@@ -113,13 +112,8 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 //	@Success 200 {object} map[string]interface{}
 //	@Router /v1/compilation-template-groups/{group_id} [get]
 func (h *CompilationTemplateGroupHandler) Get(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	id := c.Param("group_id")
-	group, err := h.compilationTemplateGroupService.GetSaved(c.Request.Context(), user.ID, id)
+	group, err := h.compilationTemplateGroupService.GetSaved(c.Request.Context(), id)
 	if err != nil {
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
@@ -140,11 +134,6 @@ func (h *CompilationTemplateGroupHandler) Get(c *gin.Context) {
 //	@Success 200 {object} map[string]interface{}
 //	@Router /v1/compilation-template-groups [post]
 func (h *CompilationTemplateGroupHandler) Save(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	var req service.GroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
@@ -154,7 +143,7 @@ func (h *CompilationTemplateGroupHandler) Save(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	group, err := h.compilationTemplateGroupService.CreateGroup(c.Request.Context(), user.ID, &req)
+	group, err := h.compilationTemplateGroupService.CreateGroup(c.Request.Context(), &req)
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
@@ -172,11 +161,6 @@ func (h *CompilationTemplateGroupHandler) Save(c *gin.Context) {
 //	@Success 200 {object} map[string]interface{}
 //	@Router /v1/compilation-template-groups/{group_id} [put]
 func (h *CompilationTemplateGroupHandler) Update(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	id := c.Param("group_id")
 	var req service.GroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -188,7 +172,7 @@ func (h *CompilationTemplateGroupHandler) Update(c *gin.Context) {
 		return
 	}
 	if req.Name != "" {
-		nameExists, nerr := h.compilationTemplateGroupService.NameExists(c.Request.Context(), user.ID, req.Name, id)
+		nameExists, nerr := h.compilationTemplateGroupService.NameExists(c.Request.Context(), req.Name, id)
 		if nerr != nil {
 			common.RespondError(c, common.CodeExceptionError, nerr.Error())
 			return
@@ -198,7 +182,7 @@ func (h *CompilationTemplateGroupHandler) Update(c *gin.Context) {
 			return
 		}
 	}
-	group, err := h.compilationTemplateGroupService.UpdateGroup(c.Request.Context(), user.ID, id, &req)
+	group, err := h.compilationTemplateGroupService.UpdateGroup(c.Request.Context(), id, &req)
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
@@ -219,13 +203,8 @@ func (h *CompilationTemplateGroupHandler) Update(c *gin.Context) {
 //	@Success 200 {object} map[string]interface{}
 //	@Router /v1/compilation-template-groups/{group_id} [delete]
 func (h *CompilationTemplateGroupHandler) Delete(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	id := c.Param("group_id")
-	ok, err := h.compilationTemplateGroupService.DeleteGroup(c.Request.Context(), user.ID, id)
+	ok, err := h.compilationTemplateGroupService.DeleteGroup(c.Request.Context(), id)
 	if err != nil {
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return

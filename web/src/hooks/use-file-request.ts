@@ -92,6 +92,11 @@ export const useUploadFile = () => {
         formData.append('path', pathList[index]);
       });
       try {
+        // Return the full response (code + message + detail) so the caller
+        // can dispatch the upgrade modal for billing codes 2000-2007. The
+        // global request interceptor already shows the modal for 2000-2005,
+        // but returning the full payload keeps the page-level handler
+        // consistent with the dataset upload flow.
         const ret = await fileManagerService.uploadFile(formData);
         if (ret?.data.code === 0) {
           message.success(t('message.uploaded'));
@@ -100,9 +105,9 @@ export const useUploadFile = () => {
             queryKey: [FileApiAction.FetchFileList],
           });
         }
-        return ret?.data?.code;
+        return ret?.data;
       } catch {
-        return;
+        return undefined;
       }
     },
   });

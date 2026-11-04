@@ -40,7 +40,7 @@ func TestUpdateDatasetDocumentParentChildPatchUsesRequestedFields(t *testing.T) 
 			}).Error; err != nil {
 				t.Fatal(err)
 			}
-			resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+			resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 				ParserConfig: map[string]any{"GeneralChunker:SixApplesFall": tc.patch},
 			}, map[string]bool{"parser_config": true})
 			if code != common.CodeSuccess || err != nil {
@@ -94,7 +94,7 @@ func TestUpdateDatasetDocumentConfigPatchPreservesOmittedSettings(t *testing.T) 
 			if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(updates).Error; err != nil {
 				t.Fatal(err)
 			}
-			resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+			resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", req, present)
 			if err != nil || code != common.CodeSuccess {
 				t.Fatalf("update: code=%d err=%v", code, err)
 			}
@@ -155,7 +155,7 @@ func TestUpdateDatasetDocumentRejectsUnsupportedFileFamilyBeforeWrites(t *testin
 					svc := testDocumentService(t)
 					svc.docEngine = engine
 					svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-					_, code, err := svc.UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+					_, code, err := svc.UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", req, present)
 					if code != common.CodeDataError || err == nil || !strings.Contains(err.Error(), "does not support") {
 						t.Fatalf("expected unsupported file rejection: code=%d err=%v", code, err)
 					}
@@ -207,7 +207,7 @@ func TestUpdateDatasetDocumentParserAliasPreservesConfig(t *testing.T) {
 						req.ParserConfig = map[string]any{"Parser:HipSignsRhyme": map[string]any{"enable_vision_enhancement": true}}
 						present["parser_config"] = true
 					}
-					resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+					resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", req, present)
 					if err != nil || code != common.CodeSuccess {
 						t.Fatalf("update: code=%d err=%v", code, err)
 					}
@@ -259,7 +259,7 @@ func TestUpdateDatasetDocumentSelectionWithoutConfig(t *testing.T) {
 				} else {
 					req.ChunkMethod = new("manual")
 				}
-				_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+				_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", req, present)
 				if err != nil || code != common.CodeSuccess {
 					t.Fatalf("update: code=%d err=%v", code, err)
 				}
@@ -298,7 +298,7 @@ func TestUpdateDatasetDocumentChunkMethodAcceptsCurrentTemplates(t *testing.T) {
 			pushServiceDB(t, db)
 			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
 			insertNamedTestDoc(t, "doc-1", "kb-1", file.name, 0, 0)
-			resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+			resp, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 				ChunkMethod: &file.method,
 			}, map[string]bool{"chunk_method": true})
 			if err != nil || code != common.CodeSuccess {
@@ -339,7 +339,7 @@ func TestUpdateDatasetDocumentUsesEffectiveParserForConfig(t *testing.T) {
 			} else if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("parser_id", "manual").Error; err != nil {
 				t.Fatal(err)
 			}
-			_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+			_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", req, present)
 			if err != nil || code != common.CodeSuccess {
 				t.Fatalf("update: code=%d err=%v", code, err)
 			}
@@ -379,7 +379,7 @@ func TestUpdateDatasetDocumentKeepsDocumentCanvasForConfigPatch(t *testing.T) {
 	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("pipeline_id", pipelineID).Error; err != nil {
 		t.Fatal(err)
 	}
-	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParserConfig: map[string]any{"Parser:custom": map[string]any{"vlm": map[string]any{"llm_id": "vision-model"}}},
 	}, map[string]bool{"parser_config": true})
 	if err != nil || code != common.CodeSuccess {
@@ -455,7 +455,7 @@ func TestUpdateDatasetDocumentRejectsParserErrorsBeforeWrites(t *testing.T) {
 			svc := testDocumentService(t)
 			svc.docEngine = engine
 			svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
-			_, code, err := svc.UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", req, present)
+			_, code, err := svc.UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", req, present)
 			if code != common.CodeDataError || err == nil || !strings.Contains(err.Error(), wantError) {
 				t.Fatalf("expected %q, got code=%d err=%v", wantError, code, err)
 			}
@@ -497,7 +497,7 @@ func TestBatchUpdateDocumentStatusReturnsPermissionErrorWhenAllDenied(t *testing
 
 	svc := testDocumentService(t)
 	ctx := documentTestActorContext(t.Context(), "member", "tenant-1")
-	_, code, err := svc.BatchUpdateDocumentStatus(ctx, "member", "kb-1", "0", []string{"doc-1"})
+	_, code, err := svc.BatchUpdateDocumentStatus(ctx, "kb-1", "0", []string{"doc-1"})
 	if err == nil {
 		t.Fatal("expected permission error for an inaccessible document")
 	}
@@ -530,7 +530,7 @@ func TestBatchUpdateDocumentStatusRetainsPartialFailure(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := documentTestActorContext(t.Context(), "member", "tenant-1")
-	_, code, err := svc.BatchUpdateDocumentStatus(ctx, "member", "kb-1", "1", []string{"member-doc", "owner-doc"})
+	_, code, err := svc.BatchUpdateDocumentStatus(ctx, "kb-1", "1", []string{"member-doc", "owner-doc"})
 	if err == nil {
 		t.Fatal("expected a partial failure")
 	}

@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ChatEvaluationButton } from '@/ee/pages/next-chats/chat/evaluation-button';
 import {
   useFetchSessionList,
   useFetchSessionManually,
@@ -119,15 +120,17 @@ export default function Chat() {
                 >
                   <CardTitle className="flex justify-between items-center text-base gap-2">
                     <div className="truncate">{currentConversationName}</div>
-
-                    <Button
-                      variant="ghost"
-                      onClick={switchDebugMode}
-                      data-testid="chat-detail-multimodel-toggle"
-                    >
-                      <LucideArrowUpRight />
-                      {t('chat.multipleModels')}
-                    </Button>
+                    <div className="flex gap-4 items-center">
+                      <ChatEvaluationButton />
+                      <Button
+                        variant="ghost"
+                        onClick={switchDebugMode}
+                        data-testid="chat-detail-multimodel-toggle"
+                      >
+                        <LucideArrowUpRight />
+                        {t('chat.multipleModels')}
+                      </Button>
+                    </div>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="flex-1 p-0 min-h-0">
