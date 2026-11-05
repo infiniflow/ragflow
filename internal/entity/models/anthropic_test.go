@@ -738,3 +738,106 @@ func TestAnthropicUnsupportedMethods(t *testing.T) {
 		t.Errorf("ShowTask: got %v", err)
 	}
 }
+
+// Large integers (>2^53) sent by the model in tool input must survive the
+// decode → re-marshal round trips in both directions; a plain json.Unmarshal
+// widens every number to float64 and silently corrupts the value.
+const largeIntegerLiteral = "1234567890123456789"
+
+func TestAnthropicChatToolInputPreservesLargeIntegers(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		// The response body carries the literal; the handler's own map decode
+		// must not influence the assertion, which reads only the marshaled
+		// arguments string produced by the adapter.
+		_, _ = w.Write([]byte(`{"content":[{"type":"tool_use","id":"call_1","name":"lookup","input":{"record_id":` + largeIntegerLiteral + `}}],"usage":{"input_tokens":1,"output_tokens":1}}`))
+	})
+	defer srv.Close()
+	apiKey := "test-key"
+	resp, err := newAnthropicForTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"claude-sonnet-4-5-20250929",
+		[]Message{{Role: "user", Content: "lookup the record"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{},
+		&common.ModelUsage{},
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if len(resp.ToolCalls) != 1 {
+		t.Fatalf("tool calls=%v, want one", resp.ToolCalls)
+	}
+	fn, _ := resp.ToolCalls[0]["function"].(map[string]interface{})
+	args, _ := fn["arguments"].(string)
+	if !strings.Contains(args, largeIntegerLiteral) {
+		t.Errorf("arguments=%s, want literal %s preserved", args, largeIntegerLiteral)
+	}
+}
+
+func TestAnthropicStreamToolInputPreservesLargeIntegers(t *testing.T) {
+	withSSRFBypass(t)
+	secondPartial := `{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"` + largeIntegerLiteral + `}"}}`
+	events := []string{
+		`{"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"call_1","name":"lookup","input":{}}}`,
+		`{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"record_id\":"}}`,
+		secondPartial,
+		`{"type":"content_block_stop","index":1}`,
+		`{"type":"message_delta","delta":{"stop_reason":"tool_use"}}`,
+		`{"type":"message_stop"}`,
+	}
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, event := range events {
+			_, _ = io.WriteString(w, "data: "+event+"\n\n")
+		}
+	})
+	defer srv.Close()
+	apiKey := "test-key"
+	config := &ChatConfig{}
+	err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(t.Context(), "claude", []Message{{Role: "user", Content: "lookup"}}, &APIConfig{ApiKey: &apiKey}, config, nil, func(text, _ *string) error {
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+	if config.ToolCallsResult == nil || len(*config.ToolCallsResult) != 1 {
+		t.Fatalf("tool calls=%v, want one", config.ToolCallsResult)
+	}
+	fn, _ := (*config.ToolCallsResult)[0]["function"].(map[string]interface{})
+	args, _ := fn["arguments"].(string)
+	if !strings.Contains(args, largeIntegerLiteral) {
+		t.Errorf("arguments=%s, want literal %s preserved", args, largeIntegerLiteral)
+	}
+}
+
+func TestAnthropicRequestPreservesLargeIntegerToolArgs(t *testing.T) {
+	withSSRFBypass(t)
+	var rawBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+		}
+		rawBody = raw
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}}`))
+	}))
+	defer srv.Close()
+	apiKey := "test-key"
+	_, err := newAnthropicForTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"claude-sonnet-4-5-20250929",
+		[]Message{{Role: "assistant", ToolCalls: []map[string]interface{}{
+			{"id": "call_1", "type": "function", "function": map[string]interface{}{"name": "lookup", "arguments": `{"record_id":` + largeIntegerLiteral + `}`}},
+		}}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{},
+		&common.ModelUsage{},
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if !strings.Contains(string(rawBody), largeIntegerLiteral) {
+		t.Errorf("request body=%s, want literal %s preserved", rawBody, largeIntegerLiteral)
+	}
+}

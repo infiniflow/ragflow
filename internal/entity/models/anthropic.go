@@ -32,6 +32,23 @@ import (
 
 const anthropicVersion = "2023-06-01"
 
+// decodeToolInput unmarshals tool-call arguments with UseNumber so integer
+// literals survive the string → object → request-body round trip; plain
+// Unmarshal widens numbers to float64 and corrupts values beyond 2^53.
+func decodeToolInput(arguments string, input *map[string]any) error {
+	dec := json.NewDecoder(strings.NewReader(arguments))
+	dec.UseNumber()
+	if err := dec.Decode(input); err != nil {
+		return err
+	}
+	// Reject trailing data the way json.Unmarshal would.
+	if dec.More() {
+		_, err := dec.Token()
+		return err
+	}
+	return nil
+}
+
 // AnthropicModel implements ModelDriver for Claude models through the
 // Anthropic Messages API.
 type AnthropicModel struct {
@@ -271,7 +288,7 @@ func anthropicMessages(messages []Message) ([]map[string]interface{}, string, er
 				id, _ := call["id"].(string)
 				arguments, _ := function["arguments"].(string)
 				var input map[string]any
-				if id == "" || name == "" || json.Unmarshal([]byte(arguments), &input) != nil || input == nil {
+				if id == "" || name == "" || decodeToolInput(arguments, &input) != nil || input == nil {
 					return nil, "", fmt.Errorf("anthropic: invalid assistant tool call")
 				}
 				blocks = append(blocks, map[string]any{"type": "tool_use", "id": id, "name": name, "input": input})
@@ -467,7 +484,12 @@ func parseAnthropicChatResponse(body []byte, _ *ChatConfig) (chatResponseParts, 
 			OutputTokens int `json:"output_tokens"`
 		} `json:"usage"`
 	}
-	if err := json.Unmarshal(body, &result); err != nil {
+	// UseNumber keeps tool input integers intact across the
+	// decode → re-marshal round trip below; a plain Unmarshal widens every
+	// number to float64 and silently corrupts values beyond 2^53.
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if err := dec.Decode(&result); err != nil {
 		return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
 	}
 	if len(result.Content) == 0 {
@@ -740,7 +762,7 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 			index, ok := event["index"].(float64)
 			if tool := pendingTools[index]; ok && tool != nil {
 				if tool.partial.Len() > 0 {
-					if err := json.Unmarshal([]byte(tool.partial.String()), &tool.input); err != nil {
+					if err := decodeToolInput(tool.partial.String(), &tool.input); err != nil {
 						return fmt.Errorf("anthropic: invalid streamed tool input: %w", err)
 					}
 				}
