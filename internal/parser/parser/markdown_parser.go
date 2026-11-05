@@ -132,6 +132,7 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 		for index, child := range node.GetChildren() {
 			if paragraph, ok := child.(*ast.Paragraph); ok && bytes.Contains(paragraph.Content, []byte("|")) {
 				_, inList := node.(*ast.ListItem)
+				_, topLevel := node.(*ast.Document)
 				afterList := false
 				if index > 0 {
 					_, afterList = node.GetChildren()[index-1].(*ast.List)
@@ -139,6 +140,8 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 				content := paragraph.Content
 				if afterList {
 					content = dedentMarkdownTable(content)
+				} else if topLevel {
+					content = dedentTopLevelTable(content)
 				}
 				if !inList && bytes.Equal(content, paragraph.Content) {
 					children = append(children, child)
@@ -328,6 +331,25 @@ func dedentMarkdownTable(data []byte) []byte {
 	}
 	for i := 1; i < len(lines); i++ {
 		lines[i] = strings.TrimPrefix(lines[i], prefix)
+	}
+	return mdparser.NormalizeNewlines([]byte(strings.Join(lines, "\n")))
+}
+
+// GFM allows up to three spaces of indentation before each line of a table. At the top level
+// gomarkdown reads such a table as a paragraph that keeps the indentation of its continuation
+// lines. Normalize a table paragraph whose lines are all indented by at most three spaces; a
+// tab or four spaces leave the lines to the parser's own rules.
+func dedentTopLevelTable(data []byte) []byte {
+	lines := strings.Split(string(data), "\n")
+	if len(lines) < 2 || !isMarkdownTableRow(lines[0]) || !isMarkdownTableSeparator(lines[1]) {
+		return data
+	}
+	for i, line := range lines {
+		trimmed := strings.TrimLeft(line, " ")
+		if strings.HasPrefix(trimmed, "\t") || len(line)-len(trimmed) > 3 {
+			return data
+		}
+		lines[i] = trimmed
 	}
 	return mdparser.NormalizeNewlines([]byte(strings.Join(lines, "\n")))
 }
