@@ -25,6 +25,7 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
 import { supportsSourceLocate } from '@/utils/source-locate';
 import { getDirAttribute } from '@/utils/text-direction';
+import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 import DOMPurify from 'dompurify';
 import { memo, useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
@@ -167,6 +168,8 @@ const MarkdownContent = ({
         (value: string) => replaceThinkToSection(value, thinkSummary),
         replaceRetrievingToSection,
         preprocessLaTeX,
+        // Entity decoding can expose a line-leading > after the first escape.
+        escapeUnmatchedAngleBrackets,
       )(nextText),
     );
   }, [content, loading, t]);
@@ -336,9 +339,11 @@ const MarkdownContent = ({
                 </bdi>
               </HoverCardTrigger>
               {hasReference && (
-                <HoverCardContent className="max-w-3xl">
-                  {getPopoverContent(chunkIndex)}
-                </HoverCardContent>
+                <HoverCardPrimitive.Portal>
+                  <HoverCardContent className="max-w-3xl">
+                    {getPopoverContent(chunkIndex)}
+                  </HoverCardContent>
+                </HoverCardPrimitive.Portal>
               )}
             </HoverCard>
           );

@@ -13,23 +13,19 @@ Search Settings allow you to configure the knowledge sources, retrieval strategy
 
 ## Datasets
 
-Select the knowledge bases that Search will use. When a user submits a query, the system retrieves relevant content from the selected knowledge bases.
+Select the Datasets that Search will use. When a user submits a query, the system retrieves relevant content from the selected Datasets.
 
-You can select one or more knowledge bases. When multiple knowledge bases are selected, Search retrieves relevant content from all of them simultaneously.
+You can select one or more Datasets. When multiple Datasets are selected, Search retrieves relevant content from all of them simultaneously.
 
-Select knowledge bases based on the intended use case of the Search. Avoid adding large numbers of knowledge bases that are unrelated to the search topic, as this may increase the number of irrelevant results.
+Select Datasets based on the intended use case of the Search. Avoid adding large numbers of Datasets that are unrelated to the search topic, as this may increase the number of irrelevant results.
 
-## Show chunk metadata
+## Metadata
 
-Controls whether chunk metadata is displayed in search results.
-
-When enabled, search results can display metadata associated with each chunk in addition to its text. This helps users identify the source of the content and further filter or evaluate the results.
-
-If you are mainly interested in the content itself, you can leave this option disabled. Enable it if you need to inspect or verify the sources of the results.
+Use **Metadata** to restrict retrieval by document metadata. Available fields depend on the selected Datasets. This setting filters content; it is not a switch for displaying metadata in results.
 
 ## Similarity threshold
 
-Sets the minimum similarity threshold for search results. It is used to filter out chunks that have low relevance to the query.
+Sets the minimum similarity threshold for search results. The UI displays this on a percentage scale: `20` means 20%. It is used to filter out chunks that have low relevance to the query.
 
 Only content with a similarity score that meets or exceeds the threshold is included in the search results.
 
@@ -38,36 +34,27 @@ Only content with a similarity score that meets or exceeds the threshold is incl
 
 If there are too many results and their relevance is low, try increasing this value. If Search frequently fails to return the expected content, try decreasing it.
 
-## Vector similarity weight
+## Keyword similarity weight
 
-Sets the relative weights of vector similarity and full-text search in hybrid retrieval.
+Sets the full-text weight in hybrid retrieval. For example, `0.7` means full-text weight `0.7` and vector weight `0.3`.
 
-For example, a value of `0.3` means:
+- Increase it to favor keywords, product names, identifiers, and exact terms.
+- Decrease it to favor semantic matches when the query differs from the source wording.
 
-- Vector = `0.3`
-- Full-text = `0.7`
-
-Vector search focuses more on semantic similarity between the query and the document, while full-text search focuses more on matching keywords, terms, and other textual elements.
-
-Therefore:
-
-- Increase the vector weight: Gives greater priority to semantic matching. This is suitable when a user's wording differs from that of the source text.
-- Decrease the vector weight: Gives greater priority to full-text matching. This is suitable for exact matches involving proper nouns, product models, identifiers, fixed terminology, and similar content.
-
-You can generally start with the default value and adjust it based on actual search performance.
+Start with the default value and adjust it based on search results.
 
 ## Rerank candidates
 
 Sets the number of candidate chunks that enter the reranking stage.
 
-The system first retrieves candidate content from the knowledge bases and then determines which results to display from among those candidates. This parameter controls the candidate pool available for subsequent ranking or reranking.
+The system first retrieves candidate content from the Datasets and then determines which results to display from among those candidates. This parameter controls the candidate pool available for subsequent ranking or reranking.
 
 For example, a value of `100` means that up to 100 candidate chunks are selected for subsequent processing.
 
 - Increase the value: Expands the candidate pool and reduces the likelihood that highly relevant content will be missed during initial retrieval, but increases processing overhead.
 - Decrease the value: Generally improves search speed, but the smaller candidate pool may omit some relevant content.
 
-For large knowledge bases or use cases that require broader retrieval coverage, you can increase this value as appropriate.
+For large Datasets or use cases that require broader retrieval coverage, you can increase this value as appropriate.
 
 ## Rerank model
 
@@ -78,6 +65,28 @@ When enabled, you must select an available rerank model. The system uses the mod
 Reranking can generally improve the quality of the final result ordering, but it introduces additional model calls and increases search latency.
 
 Enable it if search accuracy is the priority. Leave it disabled if response speed is more important or no rerank model has been configured.
+
+## Model
+
+Use **Model** below **Rerank model** to select the LLM used by Search's generated content, such as **AI summary**, **Enable related search**, and **Show query mindmap**. This is separate from the embedding model used to retrieve content and the rerank model used to order results.
+
+1. Add and verify an available LLM in **User settings > Model providers**.
+2. Open the Search's **Search settings** panel and select that model under **Model**.
+3. Enable the generation features you need and click **Save**.
+4. Submit a representative query and review the generated content along with its source results.
+
+## Model Settings
+
+Expand **Model settings** below **Model** to adjust the generation parameters supported by the selected model.
+
+| Setting | Purpose |
+| --- | --- |
+| Temperature | Adjust the variation in generated text. Start with a lower value when consistent summaries are important. |
+| Top P | Limit token sampling to a probability mass. Keep the default unless the generated content requires adjustment. |
+| Presence penalty | Adjust the tendency to introduce topics not yet mentioned in the generated text. |
+| Frequency penalty | Adjust the tendency to repeat words or phrases. |
+
+Change one parameter at a time, click **Save**, and compare the results using the same query. These settings control generated text; use the retrieval parameters above to change which source chunks are retrieved.
 
 ## AI summary
 

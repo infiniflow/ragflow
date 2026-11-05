@@ -433,6 +433,7 @@ func mustOpenTaskTestDB(t *testing.T) *gorm.DB {
 	}
 	if err = db.AutoMigrate(
 		&entity.Tenant{},
+		&entity.UserTenant{},
 		&entity.Knowledgebase{},
 		&entity.Document{},
 		&entity.File{},
@@ -611,15 +612,16 @@ func mustSeedTaskRealPipelineDocumentBytes(
 	ocrID := "ocr-default"
 	if err := db.Create(&entity.Tenant{
 		ID:        tenantID,
-		LLMID:     "gpt-4",
-		ASRID:     "asr-default",
-		Img2TxtID: "img2txt-default",
-		RerankID:  "rerank-default",
 		ParserIDs: "parser-default",
-		OCRID:     &ocrID,
 		Status:    taskStrPtr("1"),
 	}).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "owner-" + tenantID, UserID: tenantID, TenantID: tenantID, Role: "owner", Status: taskStrPtr("1"),
+		LLMID: "gpt-4", ASRID: "asr-default", Img2TxtID: "img2txt-default", RerankID: "rerank-default", OCRID: &ocrID,
+	}).Error; err != nil {
+		t.Fatalf("create tenant owner membership: %v", err)
 	}
 	if err := db.Create(&entity.Knowledgebase{
 		ID:           kbID,

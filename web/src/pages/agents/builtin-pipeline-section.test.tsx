@@ -55,9 +55,12 @@ beforeEach(() => {
 });
 
 describe('BuiltinPipelineSection', () => {
-  it('renders the section with cards in the "All" view', () => {
+  it('renders the section with cards in the Pipeline tab', () => {
     const { container } = render(
-      <BuiltinPipelineSection rawCategory={undefined} searchString="" />,
+      <BuiltinPipelineSection
+        canvasCategory={AgentCategory.DataflowCanvas}
+        searchString=""
+      />,
       { wrapper },
     );
     expect(screen.getByTestId('builtin-pipeline-section')).toBeInTheDocument();
@@ -77,9 +80,12 @@ describe('BuiltinPipelineSection', () => {
 
   it('still renders when the user list is empty (built-ins are not gated on user items)', () => {
     // This is the empty-user-list visibility scenario: the section must appear
-    // in the All view even though there are zero user-owned canvases.
+    // in the Pipeline tab even though there are zero user-owned canvases.
     const { container } = render(
-      <BuiltinPipelineSection rawCategory={undefined} searchString="general" />,
+      <BuiltinPipelineSection
+        canvasCategory={AgentCategory.DataflowCanvas}
+        searchString="general"
+      />,
       { wrapper },
     );
     expect(screen.getByTestId('builtin-pipeline-section')).toBeInTheDocument();
@@ -89,23 +95,10 @@ describe('BuiltinPipelineSection', () => {
     ).toBeTruthy();
   });
 
-  it('hides the section in the pure Agent view', () => {
+  it('hides the section in the Workflow tab', () => {
     render(
       <BuiltinPipelineSection
-        rawCategory={AgentCategory.AgentCanvas}
-        searchString=""
-      />,
-      { wrapper },
-    );
-    expect(
-      screen.queryByTestId('builtin-pipeline-section'),
-    ).not.toBeInTheDocument();
-  });
-
-  it('hides the section for a structured (non-string) category filter', () => {
-    render(
-      <BuiltinPipelineSection
-        rawCategory={{ operator: 'or', values: [AgentCategory.DataflowCanvas] }}
+        canvasCategory={AgentCategory.AgentCanvas}
         searchString=""
       />,
       { wrapper },
@@ -120,9 +113,13 @@ describe('BuiltinPipelineSection', () => {
       data: { canvas: [], total: 0 },
       loading: false,
     });
-    render(<BuiltinPipelineSection rawCategory={undefined} searchString="" />, {
-      wrapper,
-    });
+    render(
+      <BuiltinPipelineSection
+        canvasCategory={AgentCategory.DataflowCanvas}
+        searchString=""
+      />,
+      { wrapper },
+    );
     expect(
       screen.queryByTestId('builtin-pipeline-section'),
     ).not.toBeInTheDocument();
@@ -131,7 +128,7 @@ describe('BuiltinPipelineSection', () => {
   it('renders a divider before the section only when showDivider is set', () => {
     const { rerender } = render(
       <BuiltinPipelineSection
-        rawCategory={undefined}
+        canvasCategory={AgentCategory.DataflowCanvas}
         searchString=""
         showDivider={false}
       />,
@@ -141,19 +138,22 @@ describe('BuiltinPipelineSection', () => {
 
     rerender(
       <BuiltinPipelineSection
-        rawCategory={undefined}
+        canvasCategory={AgentCategory.DataflowCanvas}
         searchString=""
         showDivider
       />,
-      { wrapper },
     );
     expect(document.querySelector('.border-t')).not.toBeNull();
   });
 
   it('triggers the copy mutation when a card copy button is clicked', () => {
-    render(<BuiltinPipelineSection rawCategory={undefined} searchString="" />, {
-      wrapper,
-    });
+    render(
+      <BuiltinPipelineSection
+        canvasCategory={AgentCategory.DataflowCanvas}
+        searchString=""
+      />,
+      { wrapper },
+    );
     fireEvent.click(screen.getAllByTestId('copy-builtin-pipeline')[0]);
     expect(mockCopy).toHaveBeenCalledTimes(1);
     expect(mockCopy.mock.calls[0][0]).toEqual({

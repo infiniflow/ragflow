@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 func TestCSVParser_EmitsSpreadsheetRows(t *testing.T) {
@@ -18,8 +20,8 @@ func TestCSVParser_EmitsSpreadsheetRows(t *testing.T) {
 	}
 
 	// Default output format is "json"
-	if res.OutputFormat != "json" {
-		t.Fatalf("res.OutputFormat = %q, want %q", res.OutputFormat, "json")
+	if !res.Produced() {
+		t.Fatalf("res.produced = %t, want true", res.Produced())
 	}
 
 	// One wire shape: the whole sheet is one segmented HTML table item.
@@ -99,7 +101,7 @@ func TestCSVParserHTML4ExcelIsIgnored(t *testing.T) {
 	}
 }
 
-func TestCSVParser_ConfigureOutputFormatJSON(t *testing.T) {
+func TestCSVParser_ConfigureproducedJSON(t *testing.T) {
 	csvData := []byte("col1,col2\nval1,val2\n")
 	p := NewCSVParser()
 
@@ -108,8 +110,8 @@ func TestCSVParser_ConfigureOutputFormatJSON(t *testing.T) {
 		t.Fatalf("ParseWithResult failed: %v", res.Err)
 	}
 
-	if res.OutputFormat != "json" {
-		t.Fatalf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("res.produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) != 1 {
 		t.Fatalf("len(res.JSON) = %d, want one HTML table item", len(res.JSON))
@@ -130,8 +132,8 @@ func TestCSVParser_EmptyContent(t *testing.T) {
 		t.Fatalf("ParseWithResult failed: %v", res.Err)
 	}
 
-	if res.OutputFormat != "json" {
-		t.Fatalf("res.OutputFormat = %q, want 'json'", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("res.produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) != 0 {
 		t.Fatalf("len(res.JSON) = %d, want 0", len(res.JSON))
@@ -292,5 +294,38 @@ func TestCSVParser_PreservesInternalJoiners(t *testing.T) {
 	}
 	if !strings.Contains(text, "<td>"+persian+"</td>") {
 		t.Errorf("Persian half-space lost: %q", text)
+	}
+}
+
+func TestCSVParser_GBK(t *testing.T) {
+	csvText := "产品,分类,价格,备注\n笔记本电脑,电子,6999.00,\"特价销售，送鼠标\"\n无线耳机,配件,399.00,\"热销\"\n"
+	gbkBytes, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte(csvText))
+	if err != nil {
+		t.Fatalf("GBK encode: %v", err)
+	}
+
+	p := NewCSVParser()
+	res := p.ParseWithResult(context.Background(), "products.csv", gbkBytes)
+	if res.Err != nil {
+		t.Fatalf("CSVParser.ParseWithResult failed: %v", res.Err)
+	}
+	if len(res.JSON) == 0 {
+		t.Fatalf("CSVParser returned no JSON items")
+	}
+	var rowText strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		text := tableItemHTML(t, item)
+		rowText.WriteString(text)
+	}
+	if strings.ContainsRune(rowText.String(), '\ufffd') {
+		t.Errorf("CSV output contains replacement runes: %s", rowText.String())
+	}
+	for _, want := range []string{"笔记本电脑", "电子", "特价销售，送鼠标", "无线耳机"} {
+		if !strings.Contains(rowText.String(), want) {
+			t.Errorf("CSV output missing expected substring %q; got: %s", want, rowText.String())
+		}
+	}
+	if enc, _ := res.File["encoding"].(string); enc != "gb18030" && enc != "gbk" && enc != "gb2312" {
+		t.Errorf("CSV File.encoding = %q, want gbk/gb2312/gb18030", enc)
 	}
 }

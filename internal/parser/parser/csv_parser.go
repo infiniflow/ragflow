@@ -29,6 +29,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"ragflow/internal/parser/charset"
 )
 
 const csvSheetName = "Data"
@@ -111,11 +113,10 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		// for CSV processing.
 	}
 
-	decoded, encName := DecodeToUTF8(data, "text/csv")
+	decoded, encName := charset.DecodeToUTF8(data, "text/csv")
 	text := string(decoded)
 	if strings.TrimSpace(text) == "" {
 		return ParseResult{
-			OutputFormat: spreadsheetOutputFormat,
 			File: map[string]any{
 				"name":     filename,
 				"size":     len(data),
@@ -140,9 +141,8 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	// One wire shape for csv as for xlsx: a single segmented HTML table with
 	// row-aligned positions (csv has no in-cell image anchors).
-	items := buildSheetItems(records, csvSheetName, 1, 1, dataRows, nil)
+	items := buildSheetItems(records, csvSheetName, 1, 1, dataRows, nil, nil)
 	return ParseResult{
-		OutputFormat: spreadsheetOutputFormat,
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),

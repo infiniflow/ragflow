@@ -41,8 +41,8 @@ func TestPDFParser_ParseWithResult_CGOFixture(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON is empty; want at least 1 parsed item")
@@ -70,8 +70,8 @@ func TestPDFParser_ParseWithResult_CGOFixturePlainText(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON is empty; want page text items")

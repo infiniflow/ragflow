@@ -23,7 +23,7 @@ func TestCSVQAFirstRowIsData(t *testing.T) {
 	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"name":          "qa.csv",
 		"file_type":     "csv",
-		"output_format": res.OutputFormat,
+		"output_format": "json",
 		"json":          res.JSON,
 	})
 	if err != nil {

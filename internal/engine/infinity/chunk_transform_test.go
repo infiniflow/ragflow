@@ -300,6 +300,22 @@ func TestFieldJSONMatchesJSONMappingColumns(t *testing.T) {
 	}
 }
 
+// TestFieldVarcharJSONMatchesVarcharColumns keeps fieldVarcharJSON aligned with
+// the schema: a column it decodes must exist as a varchar column, and it must
+// not claim a json-typed column fieldJSON already owns.
+func TestFieldVarcharJSONMatchesVarcharColumns(t *testing.T) {
+	for _, column := range []string{"tag_feas"} {
+		if !fieldVarcharJSON(column) {
+			t.Errorf("fieldVarcharJSON(%q) = false, want true", column)
+		}
+	}
+	for column, columnType := range mappingColumnTypes(t) {
+		if fieldVarcharJSON(column) && columnType != "varchar" {
+			t.Errorf("fieldVarcharJSON(%q) = true, but the mapping declares type %q", column, columnType)
+		}
+	}
+}
+
 // chunkMappingColumns reads the column set the chunk table is created from.
 func chunkMappingColumns(t *testing.T) map[string]bool {
 	columns := mappingColumnTypes(t)
@@ -502,6 +518,60 @@ func TestJSONColumnsMatchCaseInsensitively(t *testing.T) {
 	decodeJSONFields(row)
 	if want := []interface{}{}; !reflect.DeepEqual(row["Source_Doc_IDs"], want) {
 		t.Errorf("nil Source_Doc_IDs = %#v, want %#v", row["Source_Doc_IDs"], want)
+	}
+}
+
+// TestDecodeVarcharJSONFieldsRoundTripsTagFeatures pins that the read-side
+// decode of tag_feas yields the map the write path marshaled.
+func TestDecodeVarcharJSONFieldsRoundTripsTagFeatures(t *testing.T) {
+	tags := map[string]int{"物流查询": 7, "售后服务": 8}
+	row := transformChunkFields(map[string]interface{}{"tag_feas": tags}, nil)
+	if _, ok := row["tag_feas"].(string); !ok {
+		t.Fatalf("write path should store tag_feas as JSON text, got %#v", row["tag_feas"])
+	}
+
+	decodeVarcharJSONFields(row)
+	got, ok := row["tag_feas"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("decodeVarcharJSONFields left tag_feas as %T, want map", row["tag_feas"])
+	}
+	if want := float64(7); got["物流查询"] != want {
+		t.Errorf("tag_feas[物流查询] = %#v, want %#v", got["物流查询"], want)
+	}
+	if want := float64(8); got["售后服务"] != want {
+		t.Errorf("tag_feas[售后服务] = %#v, want %#v", got["售后服务"], want)
+	}
+}
+
+// TestDecodeVarcharJSONFieldsEmptyAndPreDecoded covers empty/nil text (→ {}),
+// an already decoded value, and that pagerank_fea is left untouched.
+func TestDecodeVarcharJSONFieldsEmptyAndPreDecoded(t *testing.T) {
+	row := map[string]interface{}{"tag_feas": ""}
+	decodeVarcharJSONFields(row)
+	if want := map[string]interface{}{}; !reflect.DeepEqual(row["tag_feas"], want) {
+		t.Errorf("empty tag_feas = %#v, want %#v", row["tag_feas"], want)
+	}
+	row = map[string]interface{}{"tag_feas": nil}
+	decodeVarcharJSONFields(row)
+	if want := map[string]interface{}{}; !reflect.DeepEqual(row["tag_feas"], want) {
+		t.Errorf("nil tag_feas = %#v, want %#v", row["tag_feas"], want)
+	}
+
+	decoded := map[string]interface{}{"tag": float64(9)}
+	row = map[string]interface{}{"tag_feas": decoded}
+	decodeVarcharJSONFields(row)
+	if !reflect.DeepEqual(row["tag_feas"], decoded) {
+		t.Errorf("pre-decoded tag_feas = %#v, want %#v", row["tag_feas"], decoded)
+	}
+
+	// pagerank_fea ends in "_fea", not "_feas": it must stay untouched.
+	ranked := map[string]interface{}{"pagerank_fea": int64(7), "tag_feas": `{"t":1}`}
+	decodeVarcharJSONFields(ranked)
+	if want := int64(7); ranked["pagerank_fea"] != want {
+		t.Errorf("pagerank_fea = %#v, want %#v", ranked["pagerank_fea"], want)
+	}
+	if _, ok := ranked["tag_feas"].(map[string]interface{}); !ok {
+		t.Errorf("tag_feas = %#v, want a decoded map", ranked["tag_feas"])
 	}
 }
 

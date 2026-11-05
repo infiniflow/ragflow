@@ -10,17 +10,20 @@ interface ParserFormFields {
   parse_type?: ParseType;
   parser_id?: string;
   pipeline_id?: string;
+  pipeline_version_id?: string;
 }
 
-// useParserSelectHandler returns a stable onChange handler for ParserSelect that
-// maps the resolved (kind, rawId) pair onto the form's parser fields. Extracting
-// it keeps the duplicated logic in one place and avoids a fresh closure on every
-// render, which would otherwise defeat SelectWithSearch's memoization.
+// useParserSelectHandler returns a stable onChange handler for
+// ParserTreeSelect that maps the resolved (kind, rawId, versionId) triple onto
+// the form's parser fields. A version leaf selection writes pipeline_id and
+// pipeline_version_id atomically, so a stale version from a previously
+// selected pipeline can never survive a switch. Extracting the handler keeps
+// the logic in one place and avoids a fresh closure on every render.
 export function useParserSelectHandler<T extends ParserFormFields>(
   form: UseFormReturn<T>,
 ) {
   return useCallback(
-    (kind: ParserOptionKind | null, rawId: string) => {
+    (kind: ParserOptionKind | null, rawId: string, versionId?: string) => {
       // UseFormReturn is invariant in its values type, so the full form cannot
       // be narrowed to ParserFormFields directly. The constraint above
       // guarantees these fields exist; narrowing setValue once keeps the field
@@ -31,13 +34,16 @@ export function useParserSelectHandler<T extends ParserFormFields>(
         setValue('parse_type', ParseType.BuiltIn);
         setValue('parser_id', rawId);
         setValue('pipeline_id', '');
+        setValue('pipeline_version_id', '');
       } else if (kind === ParserOptionKind.Pipeline) {
         setValue('parse_type', ParseType.Pipeline);
         setValue('pipeline_id', rawId);
+        setValue('pipeline_version_id', versionId ?? '');
         setValue('parser_id', '');
       } else {
         setValue('parser_id', '');
         setValue('pipeline_id', '');
+        setValue('pipeline_version_id', '');
       }
     },
     [form],

@@ -52,8 +52,8 @@ func TestTextParser_ParseWithResult_PreservesOneTextUnit(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want true", res.Produced())
 	}
 	if got, want := res.File["name"], "doc.txt"; got != want {
 		t.Fatalf("File.name = %v, want %v", got, want)
@@ -148,8 +148,8 @@ func TestHTMLParser_ParseWithResult_BlockSplit(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) != 3 {
 		t.Fatalf("JSON len = %d, want 3 (h1, p, ul)", len(res.JSON))
@@ -246,7 +246,7 @@ func TestWalkHTMLBlocksWithState_SkipsHeadLooseText(t *testing.T) {
 	head.AppendChild(&html.Node{Type: html.TextNode, Data: "Head metadata"})
 
 	var items []map[string]any
-	state := &htmlWalkState{}
+	state := &htmlWalkState{budget: newMediaBudgetForTest()}
 	walkHTMLBlocksWithState(head, &items, state)
 	if len(items) != 0 {
 		t.Fatalf("JSON len = %d, want 0: %#v", len(items), items)
@@ -289,7 +289,7 @@ func TestHTMLParser_ParseWithResult_SkipsScriptAndStyle(t *testing.T) {
 // `utility.FileTypeTXT` resolves to a TextParser that satisfies
 // ParseResultProducer.
 func TestGetParser_RoutesTextAndCode(t *testing.T) {
-	p, err := GetParser(utility.FileTypeTXT)
+	p, _, err := GetParser(utility.FileTypeTXT, nil)
 	if err != nil {
 		t.Fatalf("GetParser(FileTypeTXT): %v", err)
 	}

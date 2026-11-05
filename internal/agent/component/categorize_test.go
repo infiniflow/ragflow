@@ -379,6 +379,7 @@ func TestCategorize_ResolvesTenantModelInstanceCredentials(t *testing.T) {
 	pushComponentDB(t, db)
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-1",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "SILICONFLOW",
 	}).Error; err != nil {
@@ -428,6 +429,7 @@ func TestCategorize_ResolvesInstanceCredentialsModelNameWithAt(t *testing.T) {
 	pushComponentDB(t, db)
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-1",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "LM-Studio",
 	}).Error; err != nil {
@@ -478,6 +480,7 @@ func TestCategorize_ResolvesTenantModelID(t *testing.T) {
 	pushComponentDB(t, db)
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-1",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "SILICONFLOW",
 	}).Error; err != nil {
@@ -538,6 +541,7 @@ func TestCategorize_ResolvesSoleActiveInstanceWhenDefaultMissing(t *testing.T) {
 	pushComponentDB(t, db)
 	if err := db.Create(&entity.TenantModelProvider{
 		ID:           "provider-1",
+		UserID:       "tenant-1",
 		TenantID:     "tenant-1",
 		ProviderName: "SILICONFLOW",
 	}).Error; err != nil {

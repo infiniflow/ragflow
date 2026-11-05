@@ -93,14 +93,6 @@
 
 Другие обновления см. в [полных примечаниях к выпускам](https://ragflow.io/docs/dev/release_notes).
 
-## 🎉 Следите за обновлениями
-
-⭐️ Поставьте звезду репозиторию, чтобы не пропускать новые возможности и улучшения. Получайте уведомления о релизах!
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
 ## 🌟 Ключевые возможности
 
 ### 🍭 **«Качество на входе — качество на выходе»**
@@ -184,7 +176,7 @@ Docker подходит для быстрой оценки, интеграцио
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc2
+   git checkout v1.0.0-rc3
    docker compose -f docker-compose.yml up -d
    ```
 

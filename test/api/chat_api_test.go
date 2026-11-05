@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func createRESTChat(t *testing.T, extra apiObject) apiObject {
@@ -130,19 +131,18 @@ func TestRESTChatNameValidation(t *testing.T) {
 		value any
 	}{
 		{"missing", nil}, {"empty", ""}, {"whitespace", " \t\n"}, {"number", 1},
-		{"ascii_overflow", strings.Repeat("a", 256)}, {"utf8_overflow", strings.Repeat("界", 86)},
+		{"ascii_overflow", strings.Repeat("a", 256)}, {"utf8_overflow", strings.Repeat("界", 256)},
 	} {
 		t.Run("create/"+tc.name, func(t *testing.T) {
 			restCode(t, restCall(t, TestConfig, http.MethodPost, "/chats", apiObject{"name": tc.value, "dataset_ids": []string{}}, nil), 200, 102)
 		})
 	}
 	asciiPrefix := uniqueName("boundary_ascii")
-	boundaryNames := []string{asciiPrefix + strings.Repeat("a", 255-len(asciiPrefix))}
+	boundaryNames := []string{asciiPrefix + strings.Repeat("a", 255-utf8.RuneCountInString(asciiPrefix))}
 	utf8Prefix := uniqueName("boundary_utf8")
-	utf8Padding := 255 - len(utf8Prefix)
-	boundaryNames = append(boundaryNames, utf8Prefix+strings.Repeat("界", utf8Padding/len("界"))+strings.Repeat("a", utf8Padding%len("界")))
+	boundaryNames = append(boundaryNames, utf8Prefix+strings.Repeat("界", 255-utf8.RuneCountInString(utf8Prefix)))
 	for _, name := range boundaryNames {
-		t.Run(fmt.Sprintf("boundary/%d_bytes", len(name)), func(t *testing.T) {
+		t.Run(fmt.Sprintf("boundary/%d_chars", utf8.RuneCountInString(name)), func(t *testing.T) {
 			chat := createRESTChat(t, apiObject{"name": name})
 			assertChatValue(t, chat["name"], name)
 			assertChatValue(t, getRESTChat(t, chatID(t, chat))["name"], name)
@@ -349,13 +349,14 @@ func TestRESTChatConfigurationMatrices(t *testing.T) {
 		reject      bool
 	}
 	var scenarios []scenario
-	for _, field := range []string{"temperature", "top_p", "presence_penalty", "frequency_penalty", "max_token"} {
-		values := []any{0, 1, -1, 10, "a"}
-		if field == "max_token" {
+	for _, field := range []string{"temperature", "top_p", "presence_penalty", "frequency_penalty", "max_tokens"} {
+		values := []any{0, 1, -1, 10, "a", "0.5", nil, true, []any{}, apiObject{}}
+		if field == "max_tokens" {
 			values[1] = 1024
 		}
 		for _, value := range values {
-			scenarios = append(scenarios, scenario{"llm/" + field + "/" + fmt.Sprint(value), "llm_setting", apiObject{field: value}, apiObject{field: normalizeChatNumber(value)}, false})
+			_, numeric := value.(int)
+			scenarios = append(scenarios, scenario{"llm/" + field + "/" + fmt.Sprint(value), "llm_setting", apiObject{field: value}, apiObject{field: normalizeChatNumber(value)}, !numeric})
 		}
 	}
 	scenarios = append(scenarios, scenario{"llm/unknown_key", "llm_setting", apiObject{"unknown": "unknown"}, apiObject{"unknown": "unknown"}, false})
@@ -378,7 +379,8 @@ func TestRESTChatConfigurationMatrices(t *testing.T) {
 			values = []any{"Hello World {knowledge}", "{knowledge}", "!@#$%^&*() {knowledge}", "中文测试 {knowledge}", "Hello World", 123, true}
 		}
 		for _, value := range values {
-			scenarios = append(scenarios, scenario{"prompt/" + field + "/" + fmt.Sprint(value), "prompt_config", apiObject{field: value}, apiObject{field: normalizeChatNumber(value)}, false})
+			_, text := value.(string)
+			scenarios = append(scenarios, scenario{"prompt/" + field + "/" + fmt.Sprint(value), "prompt_config", apiObject{field: value}, apiObject{field: normalizeChatNumber(value)}, !text})
 		}
 	}
 	for _, value := range []bool{true, false} {
@@ -402,6 +404,8 @@ func TestRESTChatConfigurationMatrices(t *testing.T) {
 						body["dataset_ids"] = []any{}
 						if tc.reject {
 							restCode(t, restCall(t, TestConfig, http.MethodPost, "/chats", body, nil), 200, 102)
+							data := object(t, restOK(t, restCall(t, TestConfig, http.MethodGet, "/chats", nil, apiObject{"name": body["name"]}))["data"])
+							assertChatValue(t, data["chats"], []any{})
 							return
 						}
 						persisted = createRESTChat(t, body)

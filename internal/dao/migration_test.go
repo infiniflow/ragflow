@@ -18,11 +18,16 @@ package dao
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/glebarez/sqlite"
+	"github.com/lib/pq"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 	"ragflow/internal/entity"
@@ -30,19 +35,24 @@ import (
 
 const tenantModelIDWidth = 32
 
-func TestKnowledgeCompileBacklogColumnsUseLongText(t *testing.T) {
-	parsed, err := schema.Parse(&entity.KnowledgeCompileDataset{}, &sync.Map{}, schema.NamingStrategy{})
-	if err != nil {
-		t.Fatalf("parse KnowledgeCompileDataset schema: %v", err)
-	}
-
-	for _, name := range []string{"BacklogDocIDs", "InflightDocIDs"} {
-		field := parsed.FieldsByName[name]
-		if field == nil {
-			t.Fatalf("missing field %s", name)
+func TestKnowledgeCompileQueuesHaveNoPrimaryKey(t *testing.T) {
+	for _, model := range []interface{}{&entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}} {
+		parsed, err := schema.Parse(model, &sync.Map{}, schema.NamingStrategy{})
+		if err != nil {
+			t.Fatalf("parse %T schema: %v", model, err)
 		}
-		if field.DataType != "longtext" {
-			t.Errorf("%s database type = %q, want longtext", name, field.DataType)
+		if len(parsed.PrimaryFields) != 0 || parsed.FieldsByName["ID"] != nil {
+			t.Fatalf("%s must have no primary key or ID", parsed.Table)
+		}
+		indexes := parsed.ParseIndexes()
+		if len(indexes) != 1 {
+			t.Fatalf("%s indexes = %v, want one queue index", parsed.Table, indexes)
+		}
+		for _, index := range indexes {
+			if index.Class == "UNIQUE" || len(index.Fields) != 2 ||
+				index.Fields[0].DBName != "dataset_id" || index.Fields[1].DBName != "queue_position" {
+				t.Fatalf("unexpected queue index: %+v", index)
+			}
 		}
 	}
 }
@@ -108,6 +118,59 @@ func TestTenantModelIDColumnSpecsMirrorsBackfillFields(t *testing.T) {
 		if specs[i] != again[i] {
 			t.Fatalf("spec order is not deterministic at index %d: %v then %v", i, specs[i], again[i])
 		}
+	}
+}
+
+// TestIsDuplicateColumnErrorClassification pins the convergence criteria for
+// "the column is already there": MySQL's Error 1060 pairing on the MySQL wire
+// and the typed duplicate-object SQLSTATEs on the Vastbase connection. A bare
+// "already exists" text match is intentionally out — unrelated failures
+// phrase themselves that way.
+func TestIsDuplicateColumnErrorClassification(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"mysql duplicate column", errors.New("Error 1060: Duplicate column name 'pipeline_log_id'"), true},
+		{"mysql other error", errors.New("Error 1054: Unknown column 'x' in 'where clause'"), false},
+		{"pq duplicate column", &pq.Error{Code: "42701", Message: `column "x" of relation "t" already exists`}, true},
+		{"pq duplicate relation", &pq.Error{Code: "42P07", Message: `relation "uk_tenant_llm" already exists`}, true},
+		{"pq other sqlstate", &pq.Error{Code: "42602", Message: "invalid name syntax"}, false},
+		{"wrapped pq duplicate", fmt.Errorf("alter table: %w", &pq.Error{Code: "42701", Message: `column "x" already exists`}), true},
+		{"plain already-exists text is not convergence", errors.New("the snapshot already exists"), false},
+	}
+	for _, tc := range cases {
+		if got := isDuplicateColumnError(tc.err); got != tc.want {
+			t.Errorf("%s: isDuplicateColumnError = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestModifyColumnTypesSkipsVastbase pins the vastbase bail-out. The specs
+// carry MySQL type names that the B-mode catalog never reports back after a
+// MODIFY (int comes back as integer), so on the Vastbase connection the step
+// would re-issue the ALTER on every startup while AutoMigrate flips the
+// column back — the loop measured on a live instance. The step must return
+// without touching the database at all. The dialector is the vastbase
+// wrapper: the guard targets that type, so a plain postgres dialector stays
+// on the aligning path.
+func TestModifyColumnTypesSkipsVastbase(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock: %v", err)
+	}
+	defer mockDB.Close()
+	db, err := gorm.Open(vastbaseDialector{Dialector: &postgres.Dialector{Config: &postgres.Config{Conn: mockDB}}}, &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	if err := modifyColumnTypes(context.Background(), db); err != nil {
+		t.Fatalf("modifyColumnTypes on vastbase: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("modifyColumnTypes must not query the vastbase catalog: %v", err)
 	}
 }
 

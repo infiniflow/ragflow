@@ -71,14 +71,9 @@ Enabling the listener with its default `self-host` mode requires `mcp.host_api_k
 
 For the Go deployment, use `docker/docker-compose.yml` with `docker/.env`. Uncomment the `mcp` example in `docker/service_conf.yaml.template` or set the equivalent `RAGFLOW_MCP_*` values in `docker/.env`. The Go entrypoint generates the runtime configuration from that template.
 
-To connect to the optional listener from outside the container, set its host to `0.0.0.0` and add this mapping under the `ragflow-cpu` service's `ports` in `docker/docker-compose.yml`:
+Set `RAGFLOW_MCP_HOST=0.0.0.0` and connect to `http://<docker-host-ip>:${SVR_MCP_PORT}/mcp`. Compose publishes `SVR_MCP_PORT` (default `9382`) on all host IPv4 interfaces to the configured `RAGFLOW_MCP_PORT` (default `9382`) inside the container. Recreate the container after changing these settings.
 
-```yaml
-ports:
-  - ${SVR_MCP_PORT}:9382
-```
-
-The checked-in Go Compose file does not publish port `9382` by default. `SVR_MCP_PORT` is defined in `docker/.env`. Adjust the container-side port if you change `mcp.port`. Use `host` mode when external clients must authenticate individually.
+This exposes the listener to any network that can reach the host port. In `self-host` mode, every client reaching it shares the configured user's identity. Restrict access with a firewall and use `host` mode when clients should authenticate with their own RAGFlow credentials.
 
 ## Verify the endpoint
 

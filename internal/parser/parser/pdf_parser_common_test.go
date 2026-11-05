@@ -53,8 +53,8 @@ func TestPDFParseResultToJSON_NormalizesCoreFields(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("pdfParseResultToJSON: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want true", res.Produced())
 	}
 	if got, want := res.File["name"], "sample.pdf"; got != want {
 		t.Fatalf("File.name = %v, want %v", got, want)
@@ -362,7 +362,7 @@ func TestNormalizePDFParseMethod_PlainTextSpellings(t *testing.T) {
 func TestIsPDFParseMethod(t *testing.T) {
 	named := []string{
 		"deepdoc", "plain_text", "plaintext", "plain text", "mineru",
-		"monkeyocrv2", "docling", "opendataloader", "tcadp parser",
+		"monkeyocr", "monkeyocrv2", "docling", "opendataloader", "tcadp parser",
 		"paddleocr", "somark",
 		"DeepDoc", "PLAIN_TEXT", "MinerU", "DocLing",
 		"OpenDataLoader", "TCADP Parser", "PaddleOCR", "SoMark",
@@ -411,7 +411,7 @@ func TestIsPDFParseMethodLayoutSuffixes(t *testing.T) {
 // dispatcher-handled OCR methods remain recognized by the selector vocabulary.
 func TestPDFParseMethodTablesAgree(t *testing.T) {
 	const unsetSentinel = ""
-	dispatcherHandled := map[string]bool{"monkeyocrv2": true, "paddleocr": true}
+	dispatcherHandled := map[string]bool{"monkeyocr": true, "monkeyocrv2": true, "paddleocr": true}
 	reachable := make(map[string]bool, len(pdfParseMethodSpellings))
 	for spelling, canonical := range pdfParseMethodSpellings {
 		if canonical == unsetSentinel {
@@ -475,7 +475,7 @@ func TestPDFParseResultToJSON_NoInlineRetainsPositions(t *testing.T) {
 		PageHeight: map[int]float64{0: 100},
 		Sections: []deepdoctype.Section{
 			{
-				Text:        "Figure caption",
+				Text:        "",
 				LayoutType:  deepdoctype.LayoutTypeFigure,
 				PositionTag: "@@0\t10\t50\t10\t50##",
 				Positions: []deepdoctype.Position{
@@ -512,12 +512,19 @@ func TestPDFParseResultToJSON_NoInlineRetainsPositions(t *testing.T) {
 		t.Fatalf("JSON len = %d, want 3", len(res.JSON))
 	}
 
-	// Figure must retain positions but NOT inline an image.
-	figPos, ok := res.JSON[0].ToMap()["_pdf_positions"].([][]any)
-	if !ok || len(figPos) == 0 {
-		t.Fatalf("Figure should retain _pdf_positions, got %v", res.JSON[0].ToMap()["_pdf_positions"])
+	// A textless figure must remain an image crop item without inlining an image.
+	figure := res.JSON[0].ToMap()
+	if got, want := figure["doc_type_kwd"], "image"; got != want {
+		t.Fatalf("textless figure doc_type_kwd = %v, want %v", got, want)
 	}
-	if img, _ := res.JSON[0].ToMap()["image"].(string); img != "" {
+	figPos, ok := figure["_pdf_positions"].([][]any)
+	if !ok || len(figPos) == 0 {
+		t.Fatalf("textless figure should retain _pdf_positions, got %v", figure["_pdf_positions"])
+	}
+	if !HasPDFCropRegion(figure) {
+		t.Fatal("textless figure should carry a crop region for VLM and chunker")
+	}
+	if img, _ := figure["image"].(string); img != "" {
 		t.Fatalf("Figure should not inline image under cgo, got %q", img)
 	}
 

@@ -28,13 +28,10 @@ import (
 	"fmt"
 	"strings"
 
-	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
-
-	"go.uber.org/zap"
 )
 
 type parserSetupConfigurer interface {
@@ -61,12 +58,12 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 	cfg.ConfigureFromSetup(map[string]any(setup))
 }
 
-// dispatchParse resolves the parser for the given fileType and invokes
-// its structured ParseWithResult contract.
+// dispatchParse configures the selected parser and invokes its structured
+// ParseWithResult contract using the effective file type.
 //
 // The function NEVER returns a partial result. On error the result
-// is the zero value (OutputFormat == "" + Err != nil). Callers can
-// detect the success/failure boundary on the OutputFormat alone.
+// is the zero value (Err != nil, no JSON and no File). Callers detect the
+// success/failure boundary with ParseResult.Produced().
 //
 // fileType may be utility.FileTypeOTHER when the upstream did not
 // supply a filename; the dispatch then takes text-page mode
@@ -77,7 +74,7 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 // re-reading setups. lib_type is no longer threaded through: the
 // Python dispatcher picks a single backend per family and the Go
 // constructors mirror that.
-func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup, window progress.Window) parser.ParseResult {
+func dispatchParse(ctx context.Context, p parser.ParseResultProducer, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup, window progress.Window) parser.ParseResult {
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
 		// as text pages; splitIntoPages handles it. We return no
@@ -92,10 +89,6 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 		}
 	}
 
-	p, err := parser.GetParser(fileType)
-	if err != nil {
-		return parser.ParseResult{Err: fmt.Errorf("parser: resolve %q: %w", fileType, err)}
-	}
 	configureParserFromSetups(p, fileType, setups)
 	attachPDFPageProgress(ctx, p, window)
 
@@ -261,7 +254,7 @@ func pythonFamilyName(raw string) string {
 		return "doc"
 	case "docx":
 		return "docx"
-	case "ppt", "pptx", "slides":
+	case "ppt", "pptx", "pages", "dps", "dpt", "slides":
 		return "slides"
 	case "xls", "xlsx", "spreadsheet":
 		return "spreadsheet"
@@ -318,7 +311,7 @@ func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name
 	if lang != "" {
 		out["lang"] = lang
 	}
-	if dispatched.Err == nil && dispatched.OutputFormat != "" {
+	if dispatched.Produced() {
 		out["output_format"] = "json"
 		// Emit the parser's typed []DocItem directly. The chunker consumes
 		// it via schema.ChunkDocsFromDocItem (no ToMap round-trip); other
@@ -354,18 +347,7 @@ func normalizeParserJSON(ctx context.Context, filename string, dispatched parser
 	if len(dispatched.JSON) > 0 {
 		return dispatched.JSON
 	}
-	if dispatched.Markdown != "" {
-		return parseMarkdownToJSONItems(ctx, filename, dispatched.Markdown)
-	}
 	return []parser.DocItem{}
-}
-
-func warnParserNormalizationFallback(filename, source string, err error) {
-	common.Warn("parser normalization fell back to text",
-		zap.String("filename", filename),
-		zap.String("normalized_from", source),
-		zap.Error(err),
-	)
 }
 
 func parserInputName(inputs map[string]any, docID string) string {

@@ -36,21 +36,19 @@ func jsonInternalError(c *gin.Context, err error) {
 		zap.String("method", c.Request.Method),
 		zap.String("path", c.Request.URL.Path),
 	)
-	common.ResponseWithCodeData(c, common.CodeServerError, nil, common.CodeServerError.Message())
+	common.RespondError(c, common.CodeServerError, common.CodeServerError.Message())
 }
 
 // HandleNoRoute handles requests to undefined routes
 func HandleNoRoute(c *gin.Context) {
-	// Python parity: GET /api/v1/auth/login/ (an empty OAuth channel) resolves
-	// to a Werkzeug MethodNotAllowed in the Python API, which
-	// server_error_response renders as HTTP 200 / code 100 with the
-	// exception's repr() as the message. gin instead falls through to
-	// NoRoute, so emit the same body here to keep the auth error paths
-	// byte-for-byte aligned.
-	if (c.Request.Method == http.MethodGet && c.Request.URL.Path == "/api/v1/auth/login/") ||
+	// Python parity: requests that resolve to a Werkzeug MethodNotAllowed in
+	// the Python API render as HTTP 200 / code 100 with the exception's repr()
+	// as the message. gin instead falls through to NoRoute, so emit the same
+	// body here to keep the error paths byte-for-byte aligned.
+	if isOAuthLoginNoRoute(c) ||
 		(c.Request.Method == http.MethodPost && c.Request.URL.Path == "/api/v1/chats//sessions") ||
 		(c.Request.Method == http.MethodPatch && strings.HasSuffix(c.Request.URL.Path, "/sessions/")) {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, false, "<MethodNotAllowed '405: Method Not Allowed'>")
+		common.RespondError(c, common.CodeExceptionError, "<MethodNotAllowed '405: Method Not Allowed'>")
 		return
 	}
 
@@ -67,7 +65,6 @@ func HandleNoRoute(c *gin.Context) {
 	c.JSON(http.StatusNotFound, gin.H{
 		"code":    404,
 		"message": "Not Found: " + c.Request.URL.Path,
-		"data":    nil,
 		"error":   "Not Found",
 	})
 }

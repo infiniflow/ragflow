@@ -18,13 +18,10 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	neturl "net/url"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -361,10 +358,9 @@ func buildKeenableReferences(envelope map[string]any) ([]map[string]any, []map[s
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(keenableHashInt(content, 100000000), 10)
 		title := keenableValueString(result["title"])
 		resultURL := keenableValueString(result["url"])
-		displayID := strconv.FormatInt(keenableHashInt(documentID, 500), 10)
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -417,12 +413,6 @@ func keenableValueString(value any) string {
 		return "None"
 	}
 	return strings.TrimSpace(fmt.Sprint(value))
-}
-
-func keenableHashInt(value string, modulus int64) int64 {
-	sum := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(sum[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateKeenableRunes(value string, limit int) string {

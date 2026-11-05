@@ -21,10 +21,8 @@ import { ITurnUsage } from '@/interfaces/database/chat';
  * The one-line cost footer under an answer: tokens spent and how long the turn
  * took.
  *
- * It renders only when the turn actually reported a cost. The final SSE chunk
- * carries it, an answer restored from history does not — there is nowhere in the
- * message row to keep it — so showing a placeholder for those would advertise a
- * measurement that was never taken.
+ * It renders only when the turn reported a cost, either in the final SSE chunk
+ * or in a message restored from history.
  */
 export function TurnUsage({
   usage,

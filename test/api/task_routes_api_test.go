@@ -21,12 +21,12 @@ func TestRESTTaskCancellationRequiresAuthentication(t *testing.T) {
 func TestRESTTaskCancellationMissingAndRepeatedAreIdempotent(t *testing.T) {
 	taskID := uniqueName("missing_task")
 	first := restOK(t, restCall(t, TestConfig, http.MethodPost, "/tasks/"+taskID+"/cancel", nil, nil))
-	if first["data"] != true {
-		t.Fatalf("missing-task cancellation should acknowledge the request: %v", first)
+	if data, exists := first["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 	second := restOK(t, restCall(t, TestConfig, http.MethodPost, "/tasks/"+taskID+"/cancel", nil, nil))
-	if second["data"] != true {
-		t.Fatalf("repeated cancellation changed acknowledgement: %v", second)
+	if data, exists := second["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 }
 

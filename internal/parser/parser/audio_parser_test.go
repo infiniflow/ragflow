@@ -29,8 +29,8 @@ func TestAudioParser_ValidExtension(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Errorf("output_format = %q, want json", result.OutputFormat)
+	if !result.Produced() {
+		t.Errorf("produced = %t, want true", result.Produced())
 	}
 	if name, ok := result.File["name"].(string); !ok || name != "test.mp3" {
 		t.Errorf("name = %q, want test.mp3", name)
@@ -60,14 +60,14 @@ func TestAudioParser_InvalidExtension(t *testing.T) {
 	}
 }
 
-func TestAudioParser_DefaultOutputFormat(t *testing.T) {
+func TestAudioParser_Defaultproduced(t *testing.T) {
 	ctx := t.Context()
 	p := NewAudioParser()
 	result := p.ParseWithResult(ctx, "test.flac", []byte{})
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	if result.OutputFormat != "json" {
-		t.Errorf("output_format = %q, want json", result.OutputFormat)
+	if !result.Produced() {
+		t.Errorf("produced = %t, want true", result.Produced())
 	}
 }

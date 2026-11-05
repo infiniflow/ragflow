@@ -52,6 +52,7 @@ func TestPipelineRun_TemplateGeneral_RealMySQLMinIO_OutputShape(t *testing.T) {
 	realDB := mustOpenRealMySQL(t, cfg)
 	if err := realDB.AutoMigrate(
 		&entity.Tenant{},
+		&entity.UserTenant{},
 		&entity.Knowledgebase{},
 		&entity.Document{},
 		&entity.File{},
@@ -396,10 +397,19 @@ func mustSeedRealPipelineDocument(
 	t.Helper()
 	if err := db.Create(&entity.Tenant{
 		ID:     tenantID,
-		LLMID:  "gpt-4",
 		Status: strPtr("1"),
 	}).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID:       tenantID,
+		UserID:   tenantID,
+		TenantID: tenantID,
+		Role:     "owner",
+		Status:   strPtr(entity.TenantMembershipStatusJoined),
+		LLMID:    "gpt-4",
+	}).Error; err != nil {
+		t.Fatalf("create tenant owner membership: %v", err)
 	}
 	if err := db.Create(&entity.Knowledgebase{
 		ID:           kbID,
@@ -450,6 +460,7 @@ func mustSeedRealPipelineDocument(
 }
 
 func cleanupRealPipelineDocument(db *gorm.DB, stg storage.Storage, tenantID, kbID, docID, fileID, bucket, objectPath string) {
+	_ = db.Where("tenant_id = ?", tenantID).Delete(&entity.UserTenant{}).Error
 	_ = db.Where("document_id = ?", docID).Delete(&entity.File2Document{}).Error
 	_ = db.Where("id = ?", docID).Delete(&entity.Document{}).Error
 	_ = db.Where("id = ?", fileID).Delete(&entity.File{}).Error

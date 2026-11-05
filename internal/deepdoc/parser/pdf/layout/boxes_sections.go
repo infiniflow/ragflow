@@ -55,7 +55,7 @@ func BoxesToSections(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.Sec
 	sections := make([]pdf.Section, 0, len(boxes))
 	for _, b := range boxes {
 		t := strings.TrimSpace(b.Text)
-		if t == "" {
+		if t == "" && b.LayoutType != pdf.LayoutTypeFigure {
 			continue
 		}
 

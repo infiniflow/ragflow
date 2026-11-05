@@ -104,38 +104,6 @@ func (e *Enhancer) LabelQuestion(
 	return e.metadataSvc.LabelQuestion(ctx, question, kbs)
 }
 
-// EnhanceTOC adds or boosts chunks selected through the document table of
-// contents. The service enhancer mutates the supplied kbinfos map.
-func (e *Enhancer) EnhanceTOC(
-	ctx context.Context,
-	chatModel *modelModule.ChatModel,
-	tenantIDs, kbIDs []string,
-	question string,
-	topN int,
-	chunks []map[string]any,
-) ([]map[string]any, error) {
-	if e == nil {
-		return nil, fmt.Errorf("retrieval enhancer is not configured")
-	}
-	kbinfos := map[string]any{"chunks": chunks}
-	enhancer := service.NewTOCEnhancer(
-		e.docEngine,
-		chatModel,
-		tenantIDs,
-		kbIDs,
-		question,
-		topN,
-	)
-	if _, err := enhancer.Enhance(ctx, kbinfos); err != nil {
-		return nil, err
-	}
-	enhanced, ok := kbinfos["chunks"].([]map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("TOC enhancer returned invalid chunks type %T", kbinfos["chunks"])
-	}
-	return enhanced, nil
-}
-
 // RetrieveByChildren aggregates child chunks under their parent chunks.
 func (e *Enhancer) RetrieveByChildren(
 	ctx context.Context,
