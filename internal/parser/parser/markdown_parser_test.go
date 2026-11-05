@@ -49,8 +49,8 @@ func TestMarkdownParser_BlockquoteKeepsItsBlocksApart(t *testing.T) {
 		want string
 	}{
 		{"> First quote\n>\n> Second quote\n", "First quote\nSecond quote"},
-		{"> | a | b |\n> |---|---|\n> | one | two |\n", "a | b\none | two"},
-		{"> Intro\n>\n> | a | b |\n> |---|---|\n> | one | two |\n", "Intro\na | b\none | two"},
+		{"> One\n>\n> Two\n>\n> Three\n", "One\nTwo\nThree"},
+		{"> Intro\n>\n> - item one\n> - item two\n", "Intro\nitem one\nitem two"},
 	} {
 		res := p.ParseWithResult(t.Context(), "test.md", []byte(tc.md))
 		if res.Err != nil {

@@ -901,22 +901,13 @@ func walkLeaf(n ast.Node, buf *bytes.Buffer) {
 			}
 			walkLeaf(c, buf)
 		}
-	case *ast.BlockQuote, *ast.Table, *ast.TableHeader, *ast.TableBody, *ast.TableFooter:
-		// The blocks of a blockquote and the rows of a table carry no separator of
-		// their own, so their texts ran together: "First quoteSecond quote" for two
-		// quoted paragraphs, "abonetwo" for a table inside a blockquote (a table there
-		// is not inlined as HTML). Put each block and each row on its own line.
+	case *ast.BlockQuote:
+		// The blocks of a blockquote carry no separator of their own, so two quoted
+		// paragraphs ran together as "First quoteSecond quote". Put each block on its
+		// own line, as for the blocks of a list item.
 		for i, c := range n.GetChildren() {
 			if i > 0 {
 				buf.WriteByte('\n')
-			}
-			walkLeaf(c, buf)
-		}
-	case *ast.TableRow:
-		// Join the cells of a row as the source writes them.
-		for i, c := range n.GetChildren() {
-			if i > 0 {
-				buf.WriteString(" | ")
 			}
 			walkLeaf(c, buf)
 		}
