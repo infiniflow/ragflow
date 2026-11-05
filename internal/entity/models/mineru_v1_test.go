@@ -651,7 +651,7 @@ func TestParseMinerUV1TasksCreationErrorIsNotMaskedByLegacy(t *testing.T) {
 	}
 }
 
-func TestParseMinerUV1LegacySelectedWhenTasksReturns400(t *testing.T) {
+func TestParseMinerUV1LegacySelectedForVersion40(t *testing.T) {
 	orig := minerUV1PollInitial
 	minerUV1PollInitial = time.Millisecond
 	t.Cleanup(func() { minerUV1PollInitial = orig })
@@ -676,8 +676,6 @@ func TestParseMinerUV1LegacySelectedWhenTasksReturns400(t *testing.T) {
 			mu.Lock()
 			tasksCalls++
 			mu.Unlock()
-			// A real MinerU 4.0.12 server responds with HTTP 400 validation error
-			// when given the 4.1 manifest (missing files[0].source, forbidden output_formats).
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(`{"detail":[{"loc":["body","files",0,"source"],"msg":"field required","type":"value_error.missing"}]}`))
@@ -753,6 +751,175 @@ func TestParseMinerUV1LegacySelectedWhenTasksReturns400(t *testing.T) {
 	}
 	if gotOCR != "ocr" {
 		t.Fatalf("ocr_mode = %q, want ocr", gotOCR)
+	}
+}
+
+func TestParseMinerUV1LegacySelectedWhenTasksReturns400(t *testing.T) {
+	orig := minerUV1PollInitial
+	minerUV1PollInitial = time.Millisecond
+	t.Cleanup(func() { minerUV1PollInitial = orig })
+
+	var (
+		mu         sync.Mutex
+		tasksCalls int
+		polls      int
+	)
+	zipBuf := minerUTestZip(t, "doc.md", "# From 4.0 Legacy Via 400 Fallback\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+			// Health endpoint is present but omits version (decided=false).
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/tasks":
+			mu.Lock()
+			tasksCalls++
+			mu.Unlock()
+			// A 4.0 server returns HTTP 400 validation error on the 4.1 manifest.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"detail":[{"loc":["body","files",0,"source"],"msg":"field required","type":"value_error.missing"}]}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"up-40","status":"pending","upload_url":"/v1/uploads/up-40/content","upload_method":"PUT"}`))
+		case r.Method == http.MethodPut && r.URL.Path == "/v1/uploads/up-40/content":
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads/up-40/complete":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"up-40","status":"completed","file":{"id":"file-40"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"job_id":"job-40","status":"queued"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/parse/jobs/job-40":
+			mu.Lock()
+			polls++
+			n := polls
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			if n < 2 {
+				_, _ = w.Write([]byte(`{"job_id":"job-40","status":"running"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"job_id":"job-40","status":"completed","files":[{"name":"doc.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"},"markdown":{"file_id":"out-md"}}}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(zipBuf)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
+			_, _ = w.Write([]byte("# From 4.0 Legacy Via 400 Fallback\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	result, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", "ocr", 5*time.Second)
+	if err != nil {
+		t.Fatalf("ParseMinerUV1: %v", err)
+	}
+	if result.Markdown != "# From 4.0 Legacy Via 400 Fallback\n" {
+		t.Fatalf("markdown = %q", result.Markdown)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if tasksCalls != 1 {
+		t.Fatalf("expected /v1/tasks to be called once and return 400, got %d calls", tasksCalls)
+	}
+}
+
+func TestParseMinerUV1HealthCachedBetweenSupportAndParse(t *testing.T) {
+	var healthCalls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+			healthCalls++
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok","version":"4.0.12"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"status":"completed","output_files":{"markdown":{"file_id":"md-1"}}}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/md-1/content":
+			_, _ = w.Write([]byte("# Cached\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	apiKey := "test-cache-key"
+	supported, err := MinerUSupportsV1(ctx, server.URL, apiKey)
+	if err != nil || !supported {
+		t.Fatalf("MinerUSupportsV1: supported=%v, err=%v", supported, err)
+	}
+	if healthCalls != 1 {
+		t.Fatalf("healthCalls after MinerUSupportsV1 = %d, want 1", healthCalls)
+	}
+
+	res, err := ParseMinerUV1(ctx, server.URL, apiKey, "test.pdf", []byte("%PDF-1.4"), "pipeline", "auto", 5*time.Second)
+	if err != nil {
+		t.Fatalf("ParseMinerUV1: %v", err)
+	}
+	if res.Markdown != "# Cached\n" {
+		t.Fatalf("res.Markdown = %q", res.Markdown)
+	}
+	if healthCalls != 1 {
+		t.Fatalf("healthCalls after ParseMinerUV1 = %d, want 1 (should be cached)", healthCalls)
+	}
+}
+
+func TestParseMinerUTasksMultiFileMarkdownJoined(t *testing.T) {
+	orig := minerUV1PollInitial
+	minerUV1PollInitial = time.Millisecond
+	t.Cleanup(func() { minerUV1PollInitial = orig })
+
+	zip1 := minerUTestZip(t, "part1.md", "# Part 1\n")
+	zip2 := minerUTestZip(t, "part2.md", "# Part 2\n")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok","version":"4.1.0"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/tasks":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(`{
+				"task_id":"task-multi",
+				"status":"completed",
+				"files":[
+					{"file_id":"f1","file_name":"part1.pdf","status":"completed","result_url":"/v1/download/f1.zip"},
+					{"file_id":"f2","file_name":"part2.pdf","status":"completed","result_url":"/v1/download/f2.zip"}
+				]
+			}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/download/f1.zip":
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(zip1)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/download/f2.zip":
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(zip2)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	res, err := ParseMinerUV1(context.Background(), server.URL, "secret", "multi.pdf", []byte("%PDF-1.4"), "pipeline", "auto", 5*time.Second)
+	if err != nil {
+		t.Fatalf("ParseMinerUV1: %v", err)
+	}
+	expected := "# Part 1\n\n# Part 2\n"
+	if res.Markdown != expected {
+		t.Fatalf("res.Markdown = %q, want %q", res.Markdown, expected)
+	}
+	if len(res.Zip) == 0 {
+		t.Fatal("expected non-empty zip")
 	}
 }
 

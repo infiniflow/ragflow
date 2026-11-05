@@ -48,8 +48,10 @@ var (
 const DefaultMinerUV1ParseTimeout = 30 * time.Minute
 
 type minerUV1SupportCacheEntry struct {
-	supported bool
-	expires   time.Time
+	supported     bool
+	supportsTasks bool
+	decided       bool
+	expires       time.Time
 }
 
 var minerUV1SupportCache sync.Map
@@ -125,8 +127,7 @@ func MinerUV1OCRMode(raw string) string {
 	}
 }
 
-func minerUV1SupportCacheKey(baseURL, apiKey string) string {
-	token := minerUBearerFromAPIKey(apiKey)
+func minerUV1SupportCacheKey(baseURL, token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return baseURL + "\x00" + hex.EncodeToString(sum[:])
 }
@@ -141,6 +142,20 @@ func minerUProbeGET(ctx context.Context, client *http.Client, rawURL, token stri
 	return 0, err
 }
 
+func minerUParseHealthVersion(body []byte) (supportsTasks bool, decided bool) {
+	var payload struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil || strings.TrimSpace(payload.Version) == "" {
+		return false, false
+	}
+	major, minor, _, ok := minerUParseSemver(payload.Version)
+	if !ok {
+		return false, false
+	}
+	return minerUV1VersionSupportsTasks(major, minor), true
+}
+
 // MinerUSupportsV1 reports whether baseURL speaks MinerU 4's /v1 HTTP API.
 // 404/405 mean a 3.x /file_parse service. 401/403 still count as V1 (the
 // route exists; credentials may be wrong).
@@ -149,16 +164,16 @@ func MinerUSupportsV1(ctx context.Context, baseURL, apiKey string) (bool, error)
 	if baseURL == "" {
 		return false, fmt.Errorf("MinerU base URL is empty")
 	}
-	cacheKey := minerUV1SupportCacheKey(baseURL, apiKey)
+	token := minerUBearerFromAPIKey(apiKey)
+	cacheKey := minerUV1SupportCacheKey(baseURL, token)
 	if cached, ok := minerUV1SupportCache.Load(cacheKey); ok {
 		entry := cached.(minerUV1SupportCacheEntry)
 		if time.Now().Before(entry.expires) {
 			return entry.supported, nil
 		}
 	}
-	token := minerUBearerFromAPIKey(apiKey)
-	code, err := minerUProbeGET(ctx, minerUHTTPClient(), baseURL+"/v1/health", token)
-	if err != nil {
+	code, body, err := minerUGET(ctx, minerUHTTPClient(), baseURL+"/v1/health", token)
+	if err != nil && code == 0 {
 		return false, err
 	}
 	var supported bool
@@ -168,9 +183,15 @@ func MinerUSupportsV1(ctx context.Context, baseURL, apiKey string) (bool, error)
 	default:
 		supported = true
 	}
+	var supportsTasks, decided bool
+	if supported && code >= 200 && code < 300 {
+		supportsTasks, decided = minerUParseHealthVersion(body)
+	}
 	minerUV1SupportCache.Store(cacheKey, minerUV1SupportCacheEntry{
-		supported: supported,
-		expires:   time.Now().Add(minerUV1SupportCacheTTL),
+		supported:     supported,
+		supportsTasks: supportsTasks,
+		decided:       decided,
+		expires:       time.Now().Add(minerUV1SupportCacheTTL),
 	})
 	return supported, nil
 }
@@ -337,31 +358,39 @@ func minerUV1VersionSupportsTasks(major, minor int) bool {
 // speaks the 4.0 legacy upload/job protocol or the 4.1+ Tasks API.
 // A recognized version < 4.1 selects the 4.0 cycle; version >= 4.1 selects Tasks.
 // If /v1/health is unavailable or omits version, decided is false and the caller
-// probes /v1/tasks directly, falling back on 404.
+// probes /v1/tasks directly, falling back on 404/400.
+// Results are cached in minerUV1SupportCache so repeated calls and callers that
+// precede ParseMinerUV1 with MinerUSupportsV1 do not probe /v1/health twice.
 func minerUV1ServerSupportsTasks(ctx context.Context, client *http.Client, baseURL, token string) (supportsTasks bool, decided bool) {
+	cacheKey := minerUV1SupportCacheKey(baseURL, token)
+	if cached, ok := minerUV1SupportCache.Load(cacheKey); ok {
+		entry := cached.(minerUV1SupportCacheEntry)
+		if time.Now().Before(entry.expires) {
+			return entry.supportsTasks, entry.decided
+		}
+	}
 	code, body, err := minerUGET(ctx, client, baseURL+"/v1/health", token)
 	if err != nil || code < 200 || code >= 300 {
 		return false, false
 	}
-	var payload struct {
-		Version string `json:"version"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil || strings.TrimSpace(payload.Version) == "" {
-		return false, false
-	}
-	major, minor, _, ok := minerUParseSemver(payload.Version)
-	if !ok {
-		return false, false
-	}
-	return minerUV1VersionSupportsTasks(major, minor), true
+	supportsTasks, decided = minerUParseHealthVersion(body)
+	minerUV1SupportCache.Store(cacheKey, minerUV1SupportCacheEntry{
+		supported:     true,
+		supportsTasks: supportsTasks,
+		decided:       decided,
+		expires:       time.Now().Add(minerUV1SupportCacheTTL),
+	})
+	return supportsTasks, decided
 }
 
 // ParseMinerUV1 runs the MinerU 4 V1 parse cycle. When GET /v1/health advertises
 // a known server version, versions < 4.1 (such as 4.0.x) run the 4.0 upload →
 // complete → parse job → poll cycle directly, avoiding the 4.1 Tasks API where
 // 4.0 servers return HTTP 400 (validation error on the 4.1 manifest).
-// When /v1/health is absent or reports >= 4.1, the 4.1 Tasks API runs first,
-// falling back to the 4.0 cycle only when POST /v1/tasks returns 404 (unavailable).
+// When /v1/health is absent or omits version, the 4.1 Tasks API runs first,
+// falling back to the 4.0 cycle when POST /v1/tasks returns 404 (unavailable)
+// or 400 (schema validation error on 4.0 servers). When the version is known
+// to be >= 4.1, errors from the Tasks API are returned directly.
 // ocrMode is the V1 ocr_mode (auto, txt, ocr); use MinerUV1OCRMode to normalize.
 func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, content []byte, backend, ocrMode string, timeout time.Duration) (*MinerUV1Result, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
@@ -606,13 +635,24 @@ func minerUPutUploadBytes(ctx context.Context, token, baseURL, method, rawURL st
 // bearer token is attached only to same-origin URLs and stripped again on
 // every cross-origin redirect.
 func minerUDownloadFile(ctx context.Context, baseURL, token, rawURL string) ([]byte, error) {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid download url: %w", err)
+	}
+	if !parsedURL.IsAbs() {
+		base, err := url.Parse(strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/")
+		if err != nil {
+			return nil, fmt.Errorf("invalid MinerU base URL: %w", err)
+		}
+		parsedURL = base.ResolveReference(parsedURL)
+	}
 	apiOrigin := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	dlClient := minerUV1DownloadHTTPClient(apiOrigin)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
-	if minerUSameOrigin(apiOrigin, rawURL) {
+	if minerUSameOrigin(apiOrigin, parsedURL.String()) {
 		applyMinerUAuth(req, token)
 	}
 	resp, err := dlClient.Do(req)
@@ -667,9 +707,11 @@ type minerUTaskResponse struct {
 // call) → poll GET /v1/tasks/{id} → download the file's result_url.
 // output_formats ["default"] yields one ZIP per input holding markdown.md
 // plus the other general results, which minerUMarkdownFromZip unpacks.
-// Creation returns errMinerUTasksUnavailable on 404 so ParseMinerUV1 can run
-// the legacy 4.0 cycle; every other creation failure is a real error (401/400/
-// 503 carry protocol meaning and must not be masked by a legacy retry).
+// Creation returns errMinerUTasksUnavailable on 404 (absent) or 400 (4.0 servers
+// validating against legacy schema) so ParseMinerUV1 can run the legacy 4.0
+// cycle when version was not decided by health; every other creation failure
+// is a real error (401/503 carry protocol meaning and must not be masked by a
+// legacy retry).
 func parseMinerUTasks(ctx context.Context, client *http.Client, token, baseURL, name string, content []byte, sum [32]byte, backend, ocrMode string) (*MinerUV1Result, error) {
 	var created minerUTaskResponse
 	if err := minerUJSON(ctx, client, http.MethodPost, baseURL+"/v1/tasks", token, map[string]any{
@@ -683,7 +725,7 @@ func parseMinerUTasks(ctx context.Context, client *http.Client, token, baseURL, 
 		"output_formats": []string{"default"},
 	}, &created); err != nil {
 		var statusErr *minerUHTTPStatusError
-		if errors.As(err, &statusErr) && statusErr.Status == http.StatusNotFound {
+		if errors.As(err, &statusErr) && (statusErr.Status == http.StatusNotFound || statusErr.Status == http.StatusBadRequest) {
 			return nil, fmt.Errorf("%w: %w", errMinerUTasksUnavailable, err)
 		}
 		return nil, fmt.Errorf("create task: %w", err)
@@ -738,6 +780,7 @@ func parseMinerUTasks(ctx context.Context, client *http.Client, token, baseURL, 
 	}
 
 	result := &MinerUV1Result{}
+	var markdownParts []string
 	for _, file := range task.Files {
 		if file.Status != "completed" || file.ResultURL == "" {
 			continue
@@ -749,11 +792,17 @@ func parseMinerUTasks(ctx context.Context, client *http.Client, token, baseURL, 
 		if len(result.Zip) == 0 {
 			result.Zip = body
 		}
-		if result.Markdown == "" {
-			if md, err := minerUMarkdownFromZip(body); err == nil {
-				result.Markdown = md
-			}
+		if md, err := minerUMarkdownFromZip(body); err == nil && strings.TrimSpace(md) != "" {
+			markdownParts = append(markdownParts, md)
 		}
+	}
+	if len(markdownParts) == 1 {
+		result.Markdown = markdownParts[0]
+	} else if len(markdownParts) > 1 {
+		for i := range markdownParts {
+			markdownParts[i] = strings.TrimRight(markdownParts[i], "\r\n")
+		}
+		result.Markdown = strings.Join(markdownParts, "\n\n") + "\n"
 	}
 	if len(result.Zip) == 0 && strings.TrimSpace(result.Markdown) == "" {
 		return nil, minerUTaskStatusError(task.Status, task.Error, task.Files)
