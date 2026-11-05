@@ -151,7 +151,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 // @Router /api/v1/searches [post]
 
 type CreateSearchRequest struct {
-	Name        string  `json:"name"`                  // required, validated via common.ValidateName (max 255 bytes)
+	Name        string  `json:"name"`                  // required, max 128 characters
 	Description *string `json:"description,omitempty"` // optional description
 }
 
@@ -172,7 +172,7 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 		return
 	}
 
-	if err = common.ValidateName(req.Name); err != nil {
+	if err = common.ValidateNameRunes(req.Name, common.NameLimit128); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
@@ -296,7 +296,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	}
 
 	// Validate name (same as Python validation)
-	if err := common.ValidateName(req.Name); err != nil {
+	if err := common.ValidateNameRunes(req.Name, common.NameLimit128); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}

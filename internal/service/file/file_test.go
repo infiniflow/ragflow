@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -615,6 +616,48 @@ func TestReadUploadInfoData_RejectsOversizedInput(t *testing.T) {
 	if !strings.Contains(err.Error(), "file size exceeds") {
 		t.Fatalf("err = %v, want size limit message", err)
 	}
+}
+
+func TestUploadInfosRejectsNameOverLimitAfterNormalization(t *testing.T) {
+	t.Setenv(common.EnvMaxFileNumPerUser, "")
+	store := &fakeStorage{}
+	factory := storage.GetStorageFactory()
+	original := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(original) })
+
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
+	filename := strings.Repeat("a", common.NameLimit255)
+	fh := makeUploadInfoHeader(t, filename, []byte("%PDF-1.7"))
+	if _, err := testFileService().UploadInfos(ctx, []*multipart.FileHeader{fh}); err == nil || !strings.Contains(err.Error(), "maximum length") {
+		t.Fatalf("UploadInfos err = %v, want maximum length error", err)
+	}
+}
+
+func makeUploadInfoHeader(t *testing.T, filename string, content []byte) *multipart.FileHeader {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		t.Fatalf("create form file: %v", err)
+	}
+	if _, err := part.Write(content); err != nil {
+		t.Fatalf("write form file: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	if err := req.ParseMultipartForm(int64(len(content) + 1024)); err != nil {
+		t.Fatalf("parse multipart form: %v", err)
+	}
+	headers := req.MultipartForm.File["file"]
+	if len(headers) != 1 {
+		t.Fatalf("multipart file headers = %d, want 1", len(headers))
+	}
+	return headers[0]
 }
 
 // zeroReader is an io.Reader that returns an infinite stream of zero bytes.
