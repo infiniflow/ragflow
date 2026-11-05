@@ -18,8 +18,11 @@ package models
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
 )
 
@@ -280,5 +283,205 @@ func TestChatWithToolsCountsTerminalRoundUsageOnce(t *testing.T) {
 	}
 	if _, _, runTotal, calls := tokenizer.GetRunUsage(ctx).Snapshot(); runTotal != total || calls != 1 {
 		t.Errorf("run usage total=%d calls=%d, want total=%d calls=1", runTotal, calls, total)
+	}
+}
+
+// errorSession always fails with a message that should not reach the model.
+type errorSession struct{ msg string }
+
+func (s *errorSession) ToolCall(string, map[string]interface{}) (string, error) {
+	return "", fmt.Errorf("internal traceback: %s", s.msg)
+}
+
+// TestAppendToolResultsRedactsErrorDetails verifies that tool failures surface
+// only the exception type, not the full internal error text.
+func TestAppendToolResultsRedactsErrorDetails(t *testing.T) {
+	history := []Message{{Role: "user", Content: "q"}}
+	hist, _, _ := appendToolResults(history, []map[string]interface{}{
+		toolCallMsg("call-1", "rag", `{}`),
+	}, &errorSession{msg: "do not leak"}, nil, false)
+
+	if len(hist) != 3 {
+		t.Fatalf("history length = %d, want 3", len(hist))
+	}
+	content, _ := hist[2].Content.(string)
+	if !strings.HasPrefix(content, "Error: tool call failed:") {
+		t.Errorf("content = %q, want redacted error prefix", content)
+	}
+	if strings.Contains(content, "do not leak") || strings.Contains(content, "traceback") {
+		t.Errorf("content leaks internal details: %q", content)
+	}
+}
+
+// roundTripDriver returns tool calls for the first maxToolRounds calls and a
+// plain answer afterwards, letting us exercise the "exceed max rounds" path.
+type roundTripDriver struct {
+	*captureToolDriver
+	calls         int
+	maxToolRounds int
+	lastMessages  []Message
+	lastCfg       *ChatConfig
+}
+
+func (d *roundTripDriver) ChatWithMessages(_ context.Context, _ string, messages []Message, _ *APIConfig, cfg *ChatConfig, _ *common.ModelUsage) (*ChatResponse, error) {
+	d.calls++
+	d.lastMessages = append([]Message(nil), messages...)
+	d.lastCfg = cfg
+	if d.calls <= d.maxToolRounds {
+		return &ChatResponse{
+			ToolCalls: []map[string]interface{}{toolCallMsg(fmt.Sprintf("call-%d", d.calls), "rag", `{"question":"q"}`)},
+			Usage:     &TokenUsage{TotalTokens: 1},
+		}, nil
+	}
+	answer := "final answer"
+	return &ChatResponse{Answer: &answer, Usage: &TokenUsage{TotalTokens: 1}}, nil
+}
+
+// TestChatWithToolsFinalAnswerForcesNoToolsAndLimitPrompt checks that, after
+// the loop exhausts max_rounds, the final model call carries the forced-final
+// prompt and no tool configuration.
+func TestChatWithToolsFinalAnswerForcesNoToolsAndLimitPrompt(t *testing.T) {
+	modelName, apiKey := "m", "k"
+	driver := &roundTripDriver{captureToolDriver: &captureToolDriver{}, maxToolRounds: 2}
+	cm := NewChatModel(driver, &modelName, &APIConfig{ApiKey: &apiKey})
+	cm.ToolConfig = &ToolConfig{
+		Tools:           `[{"type":"function","function":{"name":"rag"}}]`,
+		ToolCallSession: &stubSession{results: map[string]string{"rag": "ok"}},
+		MaxRounds:       1,
+	}
+
+	got, _, err := cm.ChatWithTools(t.Context(), "", []Message{{Role: "user", Content: "q"}}, &ChatConfig{})
+	if err != nil {
+		t.Fatalf("ChatWithTools: %v", err)
+	}
+	if got != "final answer" {
+		t.Fatalf("answer = %q, want final answer", got)
+	}
+	if driver.lastCfg != nil {
+		if driver.lastCfg.Tools != nil {
+			t.Errorf("final call still carries tools: %#v", driver.lastCfg.Tools)
+		}
+		if driver.lastCfg.ToolChoice != nil {
+			t.Errorf("final call still carries tool_choice: %q", *driver.lastCfg.ToolChoice)
+		}
+	}
+	if len(driver.lastMessages) == 0 {
+		t.Fatal("no messages captured for final call")
+	}
+	last := driver.lastMessages[len(driver.lastMessages)-1]
+	if last.Role != "user" || last.Content != toolRoundLimitPrompt {
+		t.Errorf("final message = {role=%q content=%q}, want limit prompt", last.Role, last.Content)
+	}
+}
+
+// roundTripStreamDriver is the streaming counterpart of roundTripDriver.
+type roundTripStreamDriver struct {
+	*captureToolDriver
+	calls         int
+	maxToolRounds int
+	lastMessages  []Message
+	lastCfg       *ChatConfig
+}
+
+func (d *roundTripStreamDriver) ChatStreamlyWithSender(_ context.Context, _ string, messages []Message, _ *APIConfig, cfg *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
+	d.calls++
+	d.lastMessages = append([]Message(nil), messages...)
+	d.lastCfg = cfg
+	if d.calls <= d.maxToolRounds {
+		tcs := []map[string]interface{}{toolCallMsg(fmt.Sprintf("call-%d", d.calls), "rag", `{"question":"q"}`)}
+		cfg.ToolCallsResult = &tcs
+		return nil
+	}
+	answer := "final answer"
+	return sender(&answer, nil)
+}
+
+// TestChatStreamlyWithToolsFinalAnswerForcesNoToolsAndLimitPrompt checks the
+// streaming path behaves the same as the non-streaming one at the round limit.
+func TestChatStreamlyWithToolsFinalAnswerForcesNoToolsAndLimitPrompt(t *testing.T) {
+	modelName, apiKey := "m", "k"
+	driver := &roundTripStreamDriver{captureToolDriver: &captureToolDriver{}, maxToolRounds: 2}
+	cm := NewChatModel(driver, &modelName, &APIConfig{ApiKey: &apiKey})
+	cm.ToolConfig = &ToolConfig{
+		Tools:           `[{"type":"function","function":{"name":"rag"}}]`,
+		ToolCallSession: &stubSession{results: map[string]string{"rag": "ok"}},
+		MaxRounds:       1,
+	}
+
+	var streamed []string
+	_, err := cm.ChatStreamlyWithTools(t.Context(), "", []Message{{Role: "user", Content: "q"}}, &ChatConfig{}, func(delta *string, _ *string) error {
+		if delta != nil && *delta != "" && *delta != "[DONE]" {
+			streamed = append(streamed, *delta)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithTools: %v", err)
+	}
+	if len(streamed) != 1 || streamed[0] != "final answer" {
+		t.Fatalf("streamed answer = %v, want [final answer]", streamed)
+	}
+	if driver.lastCfg != nil {
+		if driver.lastCfg.Tools != nil {
+			t.Errorf("final stream call still carries tools: %#v", driver.lastCfg.Tools)
+		}
+		if driver.lastCfg.ToolChoice != nil {
+			t.Errorf("final stream call still carries tool_choice: %q", *driver.lastCfg.ToolChoice)
+		}
+	}
+	if len(driver.lastMessages) == 0 {
+		t.Fatal("no messages captured for final stream call")
+	}
+	last := driver.lastMessages[len(driver.lastMessages)-1]
+	if last.Role != "user" || last.Content != toolRoundLimitPrompt {
+		t.Errorf("final stream message = {role=%q content=%q}, want limit prompt", last.Role, last.Content)
+	}
+}
+
+// namelessThenAnswerDriver simulates a provider that first emits a tool-call
+// delta that never receives a function name, then answers on the next round.
+type namelessThenAnswerDriver struct {
+	*captureToolDriver
+	calls int
+}
+
+func (d *namelessThenAnswerDriver) ChatStreamlyWithSender(_ context.Context, _ string, _ []Message, _ *APIConfig, cfg *ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
+	d.calls++
+	if d.calls == 1 {
+		tcs := []map[string]interface{}{
+			{"id": "call-1", "type": "function", "function": map[string]interface{}{"name": "", "arguments": ""}},
+		}
+		cfg.ToolCallsResult = &tcs
+		return nil
+	}
+	answer := "final answer"
+	return sender(&answer, nil)
+}
+
+// TestChatStreamlyWithToolsSkipsNamelessToolCallsAndContinues verifies that a
+// streamed tool-call delta without a name is dropped and the loop continues
+// to the next model round instead of erroring out.
+func TestChatStreamlyWithToolsSkipsNamelessToolCallsAndContinues(t *testing.T) {
+	modelName, apiKey := "m", "k"
+	driver := &namelessThenAnswerDriver{captureToolDriver: &captureToolDriver{}}
+	cm := NewChatModel(driver, &modelName, &APIConfig{ApiKey: &apiKey})
+	cm.ToolConfig = &ToolConfig{
+		Tools:     `[{"type":"function","function":{"name":"rag"}}]`,
+		MaxRounds: 2,
+	}
+
+	var got []string
+	sender := func(delta *string, _ *string) error {
+		if delta != nil && *delta != "" && *delta != "[DONE]" {
+			got = append(got, *delta)
+		}
+		return nil
+	}
+	_, err := cm.ChatStreamlyWithTools(t.Context(), "", []Message{{Role: "user", Content: "q"}}, &ChatConfig{}, sender)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithTools: %v", err)
+	}
+	if len(got) != 1 || got[0] != "final answer" {
+		t.Fatalf("streamed answer = %v, want [final answer]", got)
 	}
 }
