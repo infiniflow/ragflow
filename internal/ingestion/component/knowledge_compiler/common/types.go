@@ -11,6 +11,7 @@ package common
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -56,6 +57,7 @@ type Param struct {
 
 	LLMID          string
 	EmbeddingModel string
+	ChatSettings   ChatSettings
 	Language       string
 	// SimilarityThreshold defaults to 0.99 when not provided (see Defaults).
 	SimilarityThreshold   float64
@@ -173,6 +175,42 @@ func ParseParam(m map[string]any) (Param, error) {
 	if v, ok := m["llm_id"].(string); ok {
 		p.LLMID = v
 	}
+	var err error
+	if p.ChatSettings.Temperature, err = optionalFloatSetting(m, "temperature", "temperatureEnabled"); err != nil {
+		return p, err
+	}
+	if p.ChatSettings.TopP, err = optionalFloatSetting(m, "top_p", "topPEnabled"); err != nil {
+		return p, err
+	}
+	if p.ChatSettings.PresencePenalty, err = optionalFloatSetting(m, "presence_penalty", "presencePenaltyEnabled"); err != nil {
+		return p, err
+	}
+	if p.ChatSettings.FrequencyPenalty, err = optionalFloatSetting(m, "frequency_penalty", "frequencyPenaltyEnabled"); err != nil {
+		return p, err
+	}
+	if p.ChatSettings.MaxTokens, err = optionalIntSetting(m, "max_tokens", "maxTokensEnabled"); err != nil {
+		return p, err
+	}
+	if raw, ok := m["thinking"]; ok && raw != nil {
+		thinking, valid := raw.(string)
+		if !valid {
+			return p, fmt.Errorf("knowledge_compiler: thinking must be a string")
+		}
+		switch strings.TrimSpace(thinking) {
+		case "", "default":
+			p.ChatSettings.ThinkingSet = true
+		case "enabled":
+			enabled := true
+			p.ChatSettings.Thinking = &enabled
+			p.ChatSettings.ThinkingSet = true
+		case "disabled":
+			disabled := false
+			p.ChatSettings.Thinking = &disabled
+			p.ChatSettings.ThinkingSet = true
+		default:
+			return p, fmt.Errorf("knowledge_compiler: unsupported thinking setting %q", thinking)
+		}
+	}
 	if v, ok := m["embedding_model"].(string); ok {
 		p.EmbeddingModel = v
 	}
@@ -194,6 +232,64 @@ func ParseParam(m map[string]any) (Param, error) {
 		p.Extra = raw
 	}
 	return p, nil
+}
+
+func optionalFloatSetting(params map[string]any, key, enabledKey string) (*float64, error) {
+	if !settingEnabled(params, enabledKey) {
+		return nil, nil
+	}
+	raw, ok := params[key]
+	if !ok {
+		return nil, nil
+	}
+	value, ok := numericValue(raw)
+	if !ok {
+		return nil, fmt.Errorf("knowledge_compiler: %s must be numeric", key)
+	}
+	return &value, nil
+}
+
+func optionalIntSetting(params map[string]any, key, enabledKey string) (*int, error) {
+	if !settingEnabled(params, enabledKey) {
+		return nil, nil
+	}
+	raw, ok := params[key]
+	if !ok {
+		return nil, nil
+	}
+	value, ok := numericValue(raw)
+	maxInt := int(^uint(0) >> 1)
+	if !ok || math.Trunc(value) != value || value <= 0 || value >= float64(maxInt) {
+		return nil, fmt.Errorf("knowledge_compiler: %s must be a positive integer", key)
+	}
+	intValue := int(value)
+	return &intValue, nil
+}
+
+func settingEnabled(params map[string]any, enabledKey string) bool {
+	raw, exists := params[enabledKey]
+	if !exists {
+		return true
+	}
+	enabled, ok := raw.(bool)
+	return ok && enabled
+}
+
+func numericValue(value any) (float64, bool) {
+	switch value := value.(type) {
+	case float64:
+		return value, true
+	case float32:
+		return float64(value), true
+	case int:
+		return float64(value), true
+	case int64:
+		return float64(value), true
+	case int32:
+		return float64(value), true
+	default:
+		return 0, false
+	}
 }
 
 // PlanEnabled reports whether wiki topic mode is selected. An unset value

@@ -162,6 +162,10 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		if err != nil {
 			return nil, err
 		}
+		deps.Chat = common.WithChatSettings(deps.Chat, specParam.ChatSettings)
+		if maxTokens := specParam.ChatSettings.MaxTokens; maxTokens != nil && (deps.ModelMaxOutput <= 0 || *maxTokens < deps.ModelMaxOutput) {
+			deps.ModelMaxOutput = *maxTokens
+		}
 		deps.TenantID = tenantID
 		deps.DatasetID = datasetID
 		// Reserve 1% for converting and merging all products.
