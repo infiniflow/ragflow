@@ -42,11 +42,12 @@ import (
 const (
 	defaultFeishuDomain   = "feishu"
 	defaultFeishuTimeout  = 30 * time.Second
+	feishuTurnBudget      = 60 * time.Second
 	feishuMessageTTL      = time.Hour
 	feishuQueueSize       = 64
 	feishuWorkerIdle      = 5 * time.Minute
 	feishuStreamTick      = 100 * time.Millisecond
-	feishuStreamStep      = 1
+	feishuStreamStep      = 10
 	feishuStreamAttempts  = 3
 	feishuStreamBackoff   = 300 * time.Millisecond
 	feishuStreamCallLimit = 10 * time.Second
@@ -554,7 +555,7 @@ func (c *feishuChannel) runWorker(ctx context.Context, chatID string, worker *fe
 			if ctx.Err() != nil {
 				return
 			}
-			handlerCtx, cancel := context.WithTimeout(ctx, c.account.Timeout)
+			handlerCtx, cancel := context.WithTimeout(ctx, feishuTurnBudget)
 			c.handleIncoming(handlerCtx, msg)
 			cancel()
 			resetTimer(idle, feishuWorkerIdle)

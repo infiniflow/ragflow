@@ -35,9 +35,10 @@ import (
 )
 
 const (
-	reconcileInterval      = 10 * time.Second
-	initialStartRetryDelay = 10 * time.Second
-	maxStartRetryDelay     = 5 * time.Minute
+	reconcileInterval       = 10 * time.Second
+	initialStartRetryDelay  = 10 * time.Second
+	maxStartRetryDelay      = 5 * time.Minute
+	channelFinalSendTimeout = 30 * time.Second
 )
 
 type runningChannel struct {
@@ -321,8 +322,12 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 		if err != nil || answer == "" {
 			return err
 		}
+		// The turn's context may already be past its deadline, so the fallback send gets a
+		// context that cannot be cancelled by it.
+		sendCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), channelFinalSendTimeout)
+		defer cancel()
 		outgoing.Text = answer
-		return ch.Send(ctx, outgoing)
+		return ch.Send(sendCtx, outgoing)
 	})
 	if err = ch.Start(ctx); err != nil {
 		return err
