@@ -534,6 +534,11 @@ check_onnxruntime_deps() {
 check_office_oxide_deps() {
     print_section "Checking office_oxide native library"
     _seed_from_system "office_oxide" || true
+    # Recover from a stale user cache left by an older CI image on a self-hosted
+    # runner where $HOME persists across jobs: copy the version pinned in /opt
+    # over the cache before validating. No-op when /opt has no copy, so a correct
+    # manual download is never clobbered. Mirrors the onnxruntime/pdfium recovery.
+    reseed_dep_from_system "office_oxide" "$OFFICE_OXIDE_VERSION" "$SYSTEM_DEPS" "$OFFICE_OXIDE_PREFIX" || true
 
     local lib_file="liboffice_oxide.a"
     local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
@@ -631,6 +636,10 @@ pdf_oxide_validate_version() {
 
 check_pdf_oxide_deps() {
     _seed_from_system "pdf_oxide" || true
+    # Recover from a stale user cache on a self-hosted runner (see office_oxide
+    # above). No-op when /opt has no copy, so a correct manual download is never
+    # clobbered.
+    reseed_dep_from_system "pdf_oxide" "$PDF_OXIDE_VERSION" "$SYSTEM_DEPS" "$PDF_OXIDE_PREFIX" || true
     # Map platform to tarball-internal subdirectory (lib/<os>_<arch>/). Reuses
     # TARGET_OS/TARGET_ARCH set by detect_target_platform instead of re-deriving
     # from uname, so it stays consistent with the other check_*_deps helpers.

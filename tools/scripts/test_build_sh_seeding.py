@@ -96,3 +96,103 @@ def test_pdfium_reseed_from_opt_on_missing(tmp_path):
     proc = _run(script)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert (user / "lib" / "libpdfium.a").exists()
+
+
+# ── office_oxide: stale user cache + correct /opt => recover via reseed ────────
+# Mirrors the onnxruntime recovery path. On a self-hosted runner where $HOME
+# persists across jobs, an older CI image may have left a wrong-version
+# office_oxide under ~/ragflow-native-libs/office_oxide; build.sh must overwrite
+# it from the /opt pre-bake instead of failing loud on the stale version.
+def _make_opt_office_oxide(opt_root, version="0.1.16"):
+    lib = opt_root / "office_oxide" / "lib"
+    inc = opt_root / "office_oxide" / "include" / "office_oxide_c"
+    lib.mkdir(parents=True)
+    inc.mkdir(parents=True)
+    (lib / "liboffice_oxide.a").write_text(f"{version}\n")
+    (inc / "office_oxide.h").write_text("")
+    return opt_root
+
+
+def test_office_oxide_reseed_from_opt_on_stale_cache(tmp_path):
+    # Version must match go.mod's office_oxide pin (single source of truth).
+    opt = _make_opt_office_oxide(tmp_path / "opt" / "ragflow-native-libs")
+
+    user = tmp_path / "user" / "ragflow-native-libs" / "office_oxide"
+    (user / "lib").mkdir(parents=True)
+    (user / "include" / "office_oxide_c").mkdir(parents=True)
+    (user / "lib" / "liboffice_oxide.a").write_text("9.9.9\n")  # stale
+    (user / "include" / "office_oxide_c" / "office_oxide.h").write_text("")
+
+    script = f'HOME="{tmp_path / "home"}"\nSYSTEM_DEPS="{opt}"\nOFFICE_OXIDE_PREFIX="{user}"\ncheck_office_oxide_deps\n'
+    proc = _run(script)
+    # Recovers from /opt: stale gone, correct version present, build proceeds.
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert (user / "lib" / "liboffice_oxide.a").read_text().strip() == "0.1.16"
+    # Stale content must not linger (no silent wrong-version link).
+    assert "9.9.9" not in (user / "lib" / "liboffice_oxide.a").read_text()
+
+
+def test_office_oxide_no_opt_still_fails_loud(tmp_path):
+    opt = tmp_path / "opt" / "ragflow-native-libs"  # empty: no office_oxide baked
+    user = tmp_path / "user" / "ragflow-native-libs" / "office_oxide"
+    (user / "lib").mkdir(parents=True)
+    (user / "include" / "office_oxide_c").mkdir(parents=True)
+    (user / "lib" / "liboffice_oxide.a").write_text("9.9.9\n")  # stale, no /opt to recover from
+    (user / "include" / "office_oxide_c" / "office_oxide.h").write_text("")
+
+    script = f'HOME="{tmp_path / "home"}"\nSYSTEM_DEPS="{opt}"\nOFFICE_OXIDE_PREFIX="{user}"\ncheck_office_oxide_deps\n'
+    proc = _run(script)
+    # Hard fail when /opt has no copy — never silently link the stale 9.9.9.
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    assert "9.9.9" in (user / "lib" / "liboffice_oxide.a").read_text()  # untouched
+
+
+# ── pdf_oxide: stale user cache + correct /opt => recover via reseed ───────────
+def _make_opt_pdf_oxide(opt_root, os_="linux", arch="amd64"):
+    lib = opt_root / "pdf_oxide" / "lib" / f"{os_}_{arch}"
+    lib.mkdir(parents=True)
+    (lib / "libpdf_oxide.a").write_text("pdf_oxide 0.3.73\n")
+    return opt_root
+
+
+def test_pdf_oxide_reseed_from_opt_on_stale_cache(tmp_path):
+    opt = _make_opt_pdf_oxide(tmp_path / "opt" / "ragflow-native-libs")
+
+    user = tmp_path / "user" / "ragflow-native-libs" / "pdf_oxide"
+    (user / "lib" / "linux_amd64").mkdir(parents=True)
+    (user / "lib" / "linux_amd64" / "libpdf_oxide.a").write_text("pdf_oxide 9.9.9\n")  # stale
+
+    script = f'HOME="{tmp_path / "home"}"\nTARGET_OS=linux\nTARGET_ARCH=amd64\nSYSTEM_DEPS="{opt}"\nPDF_OXIDE_PREFIX="{user}"\ncheck_pdf_oxide_deps\n'
+    proc = _run(script)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert (user / "lib" / "linux_amd64" / "libpdf_oxide.a").read_text().strip() == "pdf_oxide 0.3.73"
+    assert "9.9.9" not in (user / "lib" / "linux_amd64" / "libpdf_oxide.a").read_text()
+
+
+def test_pdf_oxide_no_opt_still_fails_loud(tmp_path):
+    opt = tmp_path / "opt" / "ragflow-native-libs"  # empty: no pdf_oxide baked
+    user = tmp_path / "user" / "ragflow-native-libs" / "pdf_oxide"
+    (user / "lib" / "linux_amd64").mkdir(parents=True)
+    (user / "lib" / "linux_amd64" / "libpdf_oxide.a").write_text("pdf_oxide 9.9.9\n")  # stale
+
+    script = f'HOME="{tmp_path / "home"}"\nTARGET_OS=linux\nTARGET_ARCH=amd64\nSYSTEM_DEPS="{opt}"\nPDF_OXIDE_PREFIX="{user}"\ncheck_pdf_oxide_deps\n'
+    proc = _run(script)
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    assert "9.9.9" in (user / "lib" / "linux_amd64" / "libpdf_oxide.a").read_text()  # untouched
+
+
+# ── CI wiring: the new native-lib tests must actually run in CI ───────────────
+# Regression guard for review finding #1: sep-tests.yml only ran
+# test_download_dev_deps.py, so test_native_lib_version.py and
+# test_build_sh_seeding.py were never executed in CI. This pins the "Run deps
+# regression guards" step's pytest command to include both new files.
+def test_ci_runs_new_native_lib_tests():
+    wf = os.path.join(REPO, ".github", "workflows", "sep-tests.yml")
+    with open(wf) as fh:
+        text = fh.read()
+    idx = text.index("Run deps regression guards")
+    end = text.find("\n      - name:", idx)
+    block = text[idx:end] if end != -1 else text[idx:]
+    pytest_line = next((ln for ln in block.splitlines() if "pytest" in ln and "tools/scripts" in ln), "")
+    assert "tools/scripts/test_native_lib_version.py" in pytest_line, "CI must run the new native_lib_version tests:\n" + block
+    assert "tools/scripts/test_build_sh_seeding.py" in pytest_line, "CI must run the new build_sh seeding tests:\n" + block
