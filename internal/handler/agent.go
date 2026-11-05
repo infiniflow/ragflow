@@ -978,13 +978,18 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
+	includeDSL, err := strconv.ParseBool(c.DefaultQuery("include_dsl", "false"))
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, "include_dsl must be a boolean")
+		return
+	}
 	ctx := c.Request.Context()
 	options, err := sessionHistoryQuery(c)
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
-	row, code, err := h.agentService.GetAgentSession(ctx, canvasID, sessionID, options)
+	row, code, err := h.agentService.GetAgentSession(ctx, canvasID, sessionID, includeDSL, options)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return

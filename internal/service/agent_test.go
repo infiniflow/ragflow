@@ -1097,7 +1097,7 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	session, code, err := NewAgentService().GetAgentSession(ctx, "canvas-1", "session-1", dao.ConversationHistoryOptions{IncludeReference: true})
+	session, code, err := NewAgentService().GetAgentSession(ctx, "canvas-1", "session-1", false, dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil {
 		t.Fatalf("GetAgentSession failed: %v", err)
 	}
@@ -1324,7 +1324,7 @@ func TestGetAgentSessionServiceNotFoundWhenSessionBelongsToAnotherAgent(t *testi
 	createAgentSessionTestConversation(t, "session-other", "canvas-other", "user-1", 1000)
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	session, code, err := NewAgentService().GetAgentSession(ctx, "canvas-1", "session-other")
+	session, code, err := NewAgentService().GetAgentSession(ctx, "canvas-1", "session-other", false)
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -2815,7 +2815,7 @@ func TestGetAgentSession_RejectsIDOR(t *testing.T) {
 	createAgentSessionTestConversation(t, "session-1", "agent-1", "user-1", 1000)
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	data, code, err := NewAgentService().GetAgentSession(ctx, "agent-2", "session-1")
+	data, code, err := NewAgentService().GetAgentSession(ctx, "agent-2", "session-1", false)
 	if err == nil {
 		t.Fatal("expected non-nil error for cross-agent session access")
 	}
@@ -2838,7 +2838,7 @@ func TestGetAgentSession_SuccessWhenAgentMatches(t *testing.T) {
 	createAgentSessionTestConversation(t, "session-1", "agent-1", "user-1", 1000)
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	data, code, err := NewAgentService().GetAgentSession(ctx, "agent-1", "session-1")
+	data, code, err := NewAgentService().GetAgentSession(ctx, "agent-1", "session-1", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2880,7 +2880,7 @@ func TestDeleteAgentSessionItem_RejectsIDOR(t *testing.T) {
 	}
 
 	// The session must still exist — the cross-agent delete was a no-op.
-	verify, _, err := NewAgentService().GetAgentSession(ctx, "agent-1", "session-1")
+	verify, _, err := NewAgentService().GetAgentSession(ctx, "agent-1", "session-1", false)
 	if err != nil {
 		t.Fatalf("session should still exist for the legitimate owner: %v", err)
 	}
