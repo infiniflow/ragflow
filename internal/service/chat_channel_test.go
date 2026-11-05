@@ -25,7 +25,7 @@ func setupChatChannelServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.User{}, &entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserCanvas{}, &entity.User{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -98,7 +98,7 @@ func TestChatChannelServiceCreateAndList(t *testing.T) {
 		"bot-a",
 		"dingtalk",
 		entity.JSONMap{"token": "abc"},
-		&chatID,
+		&chatID, nil,
 	)
 	if err != nil {
 		t.Fatalf("CreateChatChannel failed: %v", err)
@@ -214,6 +214,7 @@ func TestChatChannelServiceCreateRejectsOverlongName(t *testing.T) {
 		strings.Repeat("a", common.NameLimit128+1),
 		"dingtalk",
 		entity.JSONMap{},
+		nil,
 		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "larger than") {
