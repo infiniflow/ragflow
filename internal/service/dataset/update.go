@@ -31,9 +31,9 @@ type datasetPagerankUpdate struct {
 	datasetID string
 }
 
-func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
-	userID = strings.TrimSpace(userID)
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	if _, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
 		if dao.IsNotFoundErr(err) {
 			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
@@ -184,7 +184,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
-		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID, userID)
+		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID)
 		if authErr != nil {
 			txCode = code
 			return authErr
@@ -200,7 +200,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			if isPipeline && effectivePipelineID != nil && strings.TrimSpace(*effectivePipelineID) != "" {
 				accessErr := permission.NewLockingDatabaseChecker(tx).CheckDependency(
 					ctx,
-					permission.Subject{UserID: userID, TenantID: lockedKB.TenantID},
 					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: lockedKB.ID},
 					permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effectivePipelineID)},
 					permission.OperationUpdate,
@@ -221,7 +220,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			if permissionValue != lockedKB.Permission {
 				accessErr := permission.NewLockingDatabaseChecker(tx).CheckResource(
 					ctx,
-					permission.Subject{UserID: userID},
 					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
 					permission.OperationShare,
 				)
@@ -271,14 +269,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			} else {
 				tenantEmbdID = ""
 			}
-			identity := service.Identity{UserID: userID, TenantID: lockedKB.TenantID}
-			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, identity)
+			modelCtx := permission.WithTenantID(ctx, lockedKB.TenantID)
+			ok, message := d.verifyEmbeddingAvailability(modelCtx, effectiveEmbdID, lockedKB.TenantID)
 			if !ok {
 				txCode = common.CodeDataError
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				target, err := service.NewModelFactory().ResolveInfo(ctx, identity, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelFactory().ResolveInfo(modelCtx, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
 					tenantEmbdID = target.ID
 				}
@@ -549,7 +547,7 @@ func publishDatasetSyncerTasks(taskIDs []string) {
 	}
 }
 
-func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {
+func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID string) (*entity.Knowledgebase, common.ErrorCode, error) {
 	var kb entity.Knowledgebase
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND status = ?", datasetID, string(entity.StatusValid)).
@@ -564,7 +562,6 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 
 	err = permission.NewLockingDatabaseChecker(tx).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
 		permission.OperationUpdate,
 	)

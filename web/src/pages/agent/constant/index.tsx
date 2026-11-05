@@ -515,6 +515,11 @@ export const initialCrawlerValues = {
   query: '',
 };
 
+export const InvokeParameterTypeOptions = [
+  { label: 'String', value: 'string' },
+  { label: 'Object', value: 'object' },
+];
+
 export const initialInvokeValues = {
   url: '',
   method: 'GET',

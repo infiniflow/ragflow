@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -74,7 +75,7 @@ type SearchShareDetail struct {
 
 // ListSearches list search apps with advanced filtering (equivalent to list_search_app)
 func (s *SearchService) ListSearches(ctx context.Context, keywords string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string) (*ListSearchAppsResponse, error) {
-	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{}, permission.ScopeQuery{
+	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.ScopeQuery{
 		Kind:      permission.ResourceKindSearchApp,
 		Operation: permission.OperationRead,
 	})
@@ -94,7 +95,7 @@ func (s *SearchService) ListSearches(ctx context.Context, keywords string, page,
 	searchApps := make([]map[string]interface{}, len(searches))
 	checker := permission.NewDatabaseChecker(dao.DB)
 	for i, search := range searches {
-		access, err := checker.ResolveAccess(ctx, permission.Subject{}, permission.ResourceRef{
+		access, err := checker.ResolveAccess(ctx, permission.ResourceRef{
 			Kind: permission.ResourceKindSearchApp,
 			ID:   search.ID,
 		})
@@ -153,11 +154,12 @@ type CreateSearchResponse struct {
 // 6. Save to database within DB.atomic() transaction
 // 7. Return {search_id: id} on success
 func (s *SearchService) CreateSearch(ctx context.Context, name string, description *string) (*CreateSearchResponse, error) {
-	identity, err := ResolveIdentity(ctx)
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: identity.UserID}, "search", permission.ActionWrite); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "search", permission.ActionWrite); err != nil {
 		return nil, err
 	}
 	if err := common.ValidateName(name); err != nil {
@@ -170,7 +172,7 @@ func (s *SearchService) CreateSearch(ctx context.Context, name string, descripti
 	// Generate unique name (same as Python duplicate_name)
 	// search.name is a 128-byte column; keep generated names within it.
 	uniqueName, err := common.UniqueName(name, 128, func(candidate string) (bool, error) {
-		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, identity.TenantID)
+		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, tenantID)
 		if err != nil {
 			return false, err
 		}
@@ -184,9 +186,10 @@ func (s *SearchService) CreateSearch(ctx context.Context, name string, descripti
 	// Create search entity
 	search := &entity.Search{
 		ID:           searchID,
-		TenantID:     identity.TenantID,
+		UserID:       userID,
+		TenantID:     tenantID,
 		Name:         uniqueName,
-		CreatedBy:    identity.UserID,
+		CreatedBy:    userID,
 		SearchConfig: make(entity.JSONMap),
 	}
 
@@ -203,7 +206,7 @@ func (s *SearchService) CreateSearch(ctx context.Context, name string, descripti
 		if err := s.searchDAO.Create(ctx, tx, search); err != nil {
 			return err
 		}
-		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.Subject{UserID: identity.UserID, TenantID: identity.TenantID}, permission.ResourceRef{Kind: permission.ResourceKindSearchApp, ID: search.ID})
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindSearchApp, ID: search.ID})
 	}); err != nil {
 		return nil, fmt.Errorf("failed to create search: %w", err)
 	}
@@ -214,7 +217,7 @@ func (s *SearchService) CreateSearch(ctx context.Context, name string, descripti
 }
 
 func (s *SearchService) GetSearchDetail(ctx context.Context, searchID string) (*entity.Search, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{}, permission.ResourceRef{
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindSearchApp,
 		ID:   searchID,
 	}, permission.OperationRead); err != nil {
@@ -257,7 +260,7 @@ func (s *SearchService) GetSearchShareDetail(ctx context.Context, searchID strin
 
 // DeleteSearch deletes a search app by ID
 func (s *SearchService) DeleteSearch(ctx context.Context, searchID string) error {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{}, permission.ResourceRef{
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindSearchApp,
 		ID:   searchID,
 	}, permission.OperationDelete); err != nil {
@@ -271,7 +274,7 @@ func (s *SearchService) DeleteSearch(ctx context.Context, searchID string) error
 }
 
 type SearchCompletionPlan struct {
-	Identity   Identity
+	TenantID   string
 	SearchID   string
 	Question   string
 	DatasetIDs []string
@@ -315,7 +318,7 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, searchID string, 
 	}
 
 	for _, datasetID := range datasetIDs {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{}, permission.ResourceRef{
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 			Kind: permission.ResourceKindDataset,
 			ID:   datasetID,
 		}, permission.OperationUse); err != nil {
@@ -323,21 +326,21 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, searchID string, 
 			return nil, code, permissionErr
 		}
 	}
-	identity, err := ResolveIdentity(ctx)
-	if err != nil {
-		code, normalizedErr := permissionresponse.Normalize(err)
-		return nil, code, normalizedErr
+	tenantID, _ := searchDetail["tenant_id"].(string)
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, common.CodeDataError, fmt.Errorf("search %s has no tenant", searchID)
 	}
 
 	modelID, _ := stringFromSearchConfig(searchConfig["chat_id"])
 	if modelID == "" {
-		if info, infoErr := NewModelFactory().ResolveDefaultInfo(ctx, identity, entity.ModelTypeChat); infoErr == nil {
+		if info, infoErr := NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeChat); infoErr == nil {
 			modelID = ModelReference(info)
 		}
 	}
 
 	return &SearchCompletionPlan{
-		Identity:   identity,
+		TenantID:   tenantID,
 		SearchID:   searchID,
 		Question:   question,
 		DatasetIDs: datasetIDs,
@@ -522,7 +525,7 @@ type UpdateSearchRequest struct {
 }
 
 func (s *SearchService) UpdateSearch(ctx context.Context, searchID string, req *UpdateSearchRequest) (*entity.Search, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{}, permission.ResourceRef{
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindSearchApp,
 		ID:   searchID,
 	}, permission.OperationUpdate); err != nil {
@@ -596,7 +599,7 @@ func (s *SearchService) UpdateSearch(ctx context.Context, searchID string, req *
 
 // GetDetail returns Search App configuration to a caller that is executing it.
 func (s *SearchService) GetDetail(ctx context.Context, searchID string) (map[string]interface{}, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{}, permission.ResourceRef{
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindSearchApp,
 		ID:   searchID,
 	}, permission.OperationRun); err != nil {
@@ -618,7 +621,7 @@ func (s *SearchService) GetDetail(ctx context.Context, searchID string) (map[str
 		"update_time":   search.UpdateTime,
 		"search_config": map[string]interface{}(search.SearchConfig),
 	}
-	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.Subject{}, permission.ResourceRef{
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindSearchApp,
 		ID:   search.ID,
 	})

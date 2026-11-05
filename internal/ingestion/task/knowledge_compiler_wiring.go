@@ -32,6 +32,7 @@ import (
 	knowledgecompiler "ragflow/internal/ingestion/component/knowledge_compiler"
 	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	appcommon "ragflow/internal/common"
@@ -146,7 +147,7 @@ func compileDirtyWikiDocument(ctx context.Context, request knowledge_compile.Wik
 	if len(affectedSlugs) == 0 && len(removedSlugs) == 0 {
 		return persistDirtyWikiActiveStates(ctx, request, activeStates)
 	}
-	return replaceDirtyWikiProducts(ctx, request, compiled, uniqueStrings(affectedSlugs), uniqueStrings(removedSlugs), activeStates, false)
+	return replaceDirtyWikiProducts(ctx, request, compiled, appcommon.DeduplicateTrimmed(affectedSlugs), appcommon.DeduplicateTrimmed(removedSlugs), activeStates, false)
 }
 
 func loadWikiCompilerParams(ctx context.Context, doc *entity.Document) (map[string]any, error) {
@@ -206,13 +207,13 @@ func resolveWikiTemplateIDs(ctx context.Context, tenantID string, params map[str
 	groupIDs := stringValues(params["compilation_template_group_id"])
 	groupIDs = append(groupIDs, stringValues(params["compilation_template_group_ids"])...)
 	if len(groupIDs) > 0 {
-		resolved, err := dao.NewCompilationTemplateDAO().ResolveGroupTemplateIDs(ctx, kcWiringDeps.DB, tenantID, uniqueStrings(groupIDs))
+		resolved, err := dao.NewCompilationTemplateDAO().ResolveGroupTemplateIDs(ctx, kcWiringDeps.DB, tenantID, appcommon.DeduplicateTrimmed(groupIDs))
 		if err != nil {
 			return nil, err
 		}
 		ids = append(ids, resolved...)
 	}
-	ids = uniqueStrings(ids)
+	ids = appcommon.DeduplicateTrimmed(ids)
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -231,7 +232,7 @@ func resolveWikiTemplateIDs(ctx context.Context, tenantID string, params map[str
 			wikiIDs = append(wikiIDs, template.ID)
 		}
 	}
-	return uniqueStrings(wikiIDs), nil
+	return appcommon.DeduplicateTrimmed(wikiIDs), nil
 }
 
 func loadActiveSourceChunks(ctx context.Context, request knowledge_compile.WikiDirtyRequest) ([]map[string]any, error) {
@@ -353,7 +354,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 				removedSlugs = append(removedSlugs, anyString(row["slug_kwd"]))
 			}
 		}
-		removedSlugs = uniqueStrings(removedSlugs)
+		removedSlugs = appcommon.DeduplicateTrimmed(removedSlugs)
 	}
 	staleIDs := make([]string, 0)
 	if existing != nil {
@@ -516,23 +517,6 @@ func stringValues(value any) []string {
 	return nil
 }
 
-func uniqueStrings(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	return result
-}
-
 // newKnowledgeCompilerGroupResolver builds the production GroupResolver backed by
 // the compilation_template DAO. Without it, any config carrying
 // compilation_template_group_id would fail loud at runtime (the component
@@ -582,7 +566,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			// actually run instead of failing / falling back to a no-op. Use the
 			// tenant model ID so later model resolution can use the same persisted
 			// tenant model directly.
-			defaultInfo, derr := modelFactory.ResolveDefaultInfo(modelCtx, service.Identity{TenantID: tenantID}, entity.ModelTypeChat)
+			defaultInfo, derr := modelFactory.ResolveDefaultInfo(permission.WithTenantID(modelCtx, tenantID), entity.ModelTypeChat)
 			if derr != nil || defaultInfo == nil || strings.TrimSpace(defaultInfo.ID) == "" {
 				return kc.Deps{}, fmt.Errorf("knowledge_compiler: llm_id is empty and no tenant default chat model available: %w", derr)
 			}
@@ -596,7 +580,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		// generation cap and must not be used as the input budget.
 		llmMax := kc.DefaultLLMContextLength
 		// Bound the model-config lookup and inherit cancellation from the task.
-		modelInfo, contextLengthErr := modelFactory.ResolveInfo(modelCtx, service.Identity{TenantID: tenantID}, entity.ModelTypeChat, llmID)
+		modelInfo, contextLengthErr := modelFactory.ResolveInfo(permission.WithTenantID(modelCtx, tenantID), entity.ModelTypeChat, llmID)
 		if contextLengthErr == nil && modelInfo != nil && modelInfo.ContextLength > 0 {
 			llmMax = modelInfo.ContextLength
 		}
@@ -642,7 +626,7 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	if req.LLMID != "" {
 		llmID = req.LLMID
 	}
-	chatModel, err := c.factory.NewChatModel(ctx, service.Identity{TenantID: c.tenantID}, llmID)
+	chatModel, err := c.factory.NewChatModel(permission.WithTenantID(ctx, c.tenantID), llmID)
 	if err != nil {
 		return nil, err
 	}
@@ -822,7 +806,7 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 // loudly instead of silently producing empty vectors.
 func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, error) {
 	if embdID := strings.TrimSpace(e.embdID); embdID != "" {
-		embeddingModel, err := e.factory.NewEmbeddingModel(ctx, service.Identity{TenantID: e.tenantID}, embdID)
+		embeddingModel, err := e.factory.NewEmbeddingModel(permission.WithTenantID(ctx, e.tenantID), embdID)
 		if err != nil {
 			return nil, fmt.Errorf("knowledge_compiler: resolve embedding model: %w", err)
 		}
@@ -831,7 +815,7 @@ func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, 
 		}
 		return embeddingModel, nil
 	}
-	embeddingModel, err := e.factory.NewDefaultEmbeddingModel(ctx, service.Identity{TenantID: e.tenantID})
+	embeddingModel, err := e.factory.NewDefaultEmbeddingModel(permission.WithTenantID(ctx, e.tenantID))
 	if err != nil {
 		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required and no tenant default embedding model is set: %w", err)
 	}

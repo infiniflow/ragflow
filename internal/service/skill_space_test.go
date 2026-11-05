@@ -330,7 +330,8 @@ func TestDeleteSpaceRestartsCleanupLeftInTheDeletingState(t *testing.T) {
 		t.Fatalf("create space: %v", err)
 	}
 
-	code, err := NewSkillSpaceService(nil).DeleteSpace(context.Background(), "owner-1", space.ID, nil)
+	ctx := permission.WithIdentity(context.Background(), "owner-1", "tenant-1")
+	code, err := NewSkillSpaceService(nil).DeleteSpace(ctx, space.ID, nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("DeleteSpace = (%v, %v), want success", code, err)
 	}

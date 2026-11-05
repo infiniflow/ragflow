@@ -62,35 +62,35 @@ func (m *MinerULocalModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 }
 
 func (m *MinerULocalModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: ChatWithMessages", m.Name())
 }
 
 func (m *MinerULocalModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", m.Name())
+	return fmt.Errorf("%s: no such method: ChatStreamlyWithSender", m.Name())
 }
 
 func (m *MinerULocalModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", m.Name())
 }
 
 func (m *MinerULocalModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", m.Name())
 }
 
 func (m *MinerULocalModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", m.Name())
 }
 
 func (m *MinerULocalModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", m.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", m.Name())
 }
 
 func (m *MinerULocalModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", m.Name())
 }
 
 func (m *MinerULocalModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", m.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", m.Name())
 }
 
 // OCRFile is exercised during model verification (verifyOCRModel). Local MinerU
@@ -114,7 +114,7 @@ func (m *MinerULocalModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 }
 
 func (m *MinerULocalModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", m.Name())
 }
 
 func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -338,7 +338,7 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 }
 
 func (m *MinerULocalModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", m.Name())
 }
 
 func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
@@ -429,5 +429,5 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 }
 
 func (m *MinerULocalModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", m.Name())
 }

@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/retrievalbridge"
@@ -32,6 +33,7 @@ import (
 	"ragflow/internal/channels"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/handler"
+	"ragflow/internal/permission"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
@@ -154,21 +156,19 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 		documentDAO,
 		agenttool.RetrievalModelConstructors{
 			Embedding: func(ctx context.Context, tenantID, modelRef string) (*modelModule.EmbeddingModel, error) {
-				access := service.Identity{TenantID: tenantID}
 				if strings.TrimSpace(modelRef) == "" {
-					return modelFactory.NewDefaultEmbeddingModel(ctx, access)
+					return modelFactory.NewDefaultEmbeddingModel(permission.WithTenantID(ctx, tenantID))
 				}
-				return modelFactory.NewEmbeddingModel(ctx, access, modelRef)
+				return modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), modelRef)
 			},
 			Chat: func(ctx context.Context, tenantID, modelRef string) (*modelModule.ChatModel, error) {
-				access := service.Identity{TenantID: tenantID}
 				if strings.TrimSpace(modelRef) == "" {
-					return modelFactory.NewDefaultChatModel(ctx, access)
+					return modelFactory.NewDefaultChatModel(permission.WithTenantID(ctx, tenantID))
 				}
-				return modelFactory.NewChatModel(ctx, access, modelRef)
+				return modelFactory.NewChatModel(permission.WithTenantID(ctx, tenantID), modelRef)
 			},
 			Rerank: func(ctx context.Context, tenantID, modelRef string) (*modelModule.RerankModel, error) {
-				return modelFactory.NewRerankModel(ctx, service.Identity{TenantID: tenantID}, modelRef)
+				return modelFactory.NewRerankModel(permission.WithTenantID(ctx, tenantID), modelRef)
 			},
 		},
 		retrievalEnhancer,
@@ -461,7 +461,6 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// Initialize the ingestion lifecycle event sink (best-effort; stdout is
 	// always on, ingestor.log.path adds an optional rotated file). Flush it on shutdown.
 	bootstrap.SetIngestLog(serverName)
-	defer common.SyncIngestLog()
 
 	// Start server in a goroutine
 	go func() {

@@ -18,6 +18,7 @@ import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import ThemeSwitch from '@/components/theme-switch';
 import { Button } from '@/components/ui/button';
 import { Domain } from '@/constants/common';
+import { useSettingMenuItems } from '@/ee/pages/user-setting/sidebar/use-setting-menu';
 import { useLogout } from '@/hooks/use-login-request';
 import {
   useFetchSystemVersion,
@@ -55,6 +56,7 @@ export function SideBar() {
     }
   }, [fetchSystemVersion]);
   const { logout } = useLogout();
+  const items = useSettingMenuItems(menuItems(t));
 
   return (
     <aside className="shrink-0 w-16 md:w-[303px] bg-bg-base flex flex-col overflow-hidden">
@@ -74,7 +76,7 @@ export function SideBar() {
 
       <nav className="flex-1 overflow-auto mt-4 py-1">
         <ul className="px-2 md:px-6 flex flex-col gap-2 md:gap-5 items-center md:items-stretch">
-          {menuItems(t).map((item) => {
+          {items.map((item) => {
             const { key, icon, label, ...rest } = item;
 
             return (

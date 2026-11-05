@@ -29,7 +29,7 @@ func TestSDKDatasetUnicodeCharacterLimit(t *testing.T) {
 			pushServiceDB(t, db)
 			insertCreateDatasetTenant(t, "tenant-1")
 			name := strings.Repeat("数", n)
-			_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{Name: name, ParseType: new(1), ParserID: new("general")}, testDatasetSubject("tenant-1"))
+			_, code, err := testDatasetCreateService(t).CreateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), &service.CreateDatasetRequest{Name: name, ParseType: new(1), ParserID: new("general")})
 			if (err == nil) != (n == 128) {
 				t.Fatalf("create characters=%d code=%d err=%v", n, code, err)
 			}
@@ -39,7 +39,7 @@ func TestSDKDatasetUnicodeCharacterLimit(t *testing.T) {
 			pushServiceDB(t, db)
 			insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 			ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
-			_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{Name: new(strings.Repeat("资", n))})
+			_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{Name: new(strings.Repeat("资", n))})
 			if (err == nil) != (n == 128) {
 				t.Fatalf("update characters=%d code=%d err=%v", n, code, err)
 			}
@@ -50,7 +50,7 @@ func TestSDKDatasetNegativePagerankDiagnostic(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", "tenant-1", service.UpdateDatasetRequest{Pagerank: new(int64(-1))})
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", service.UpdateDatasetRequest{Pagerank: new(int64(-1))})
 	if code != common.CodeDataError || err == nil || !strings.Contains(err.Error(), "greater than or equal to 0") {
 		t.Fatalf("code=%d err=%v", code, err)
 	}

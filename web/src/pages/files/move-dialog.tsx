@@ -24,15 +24,19 @@ export function MoveDialog({ hideModal, onOk, loading }: IModalProps<any>) {
 
   const [treeValue, setTreeValue] = useState<number | string>();
 
-  const [treeData, setTreeData] = useState([]);
+  const [treeData, setTreeData] = useState<TreeNodeType[]>([]);
 
   const onLoadData = useCallback(
     async ({ id }: TreeNodeType) => {
       const ret = await fetchList({ parentId: id as string });
       if (ret.code === 0) {
         setTreeData((tree) => {
+          const rootNodes: TreeNodeType[] = id
+            ? []
+            : [{ id: ret.data.parent_folder.id, parentId: '', title: '/' }];
           return uniqBy(
             tree.concat(
+              rootNodes,
               ret.data.files
                 .filter((x: IFile) => x.type === 'folder')
                 .map((x: IFile) => ({
@@ -65,6 +69,7 @@ export function MoveDialog({ hideModal, onOk, loading }: IModalProps<any>) {
         </DialogHeader>
         <div>
           <AsyncTreeSelect
+            defaultExpandRoot
             treeData={treeData}
             value={treeValue}
             onChange={setTreeValue}

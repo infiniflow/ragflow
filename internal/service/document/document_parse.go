@@ -17,6 +17,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestionpipeline "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
@@ -112,7 +113,10 @@ func (s *DocumentService) deletePreparedDocumentTask(ctx context.Context, docID 
 // KB config (ApplyKB), validates storage, and enqueues an ingestion task.
 // Extracted from Ingest so other entry points (e.g. ChunkService.Parse)
 // can reuse the same start-parse flow.
-func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts StartParseOptions) error {
+func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, opts StartParseOptions) error {
+	if permission.UserIDFromContext(ctx) == "" {
+		return permission.ErrUnauthenticated
+	}
 	// Validate storage first so we don't clear prior results and then fail
 	// because the document can't be read, leaving the document with neither
 	// old nor new parse results.
@@ -134,7 +138,7 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 		}
 	}
 
-	responses, err := s.IngestDocuments(ctx, doc.KbID, userID, []string{doc.ID})
+	responses, err := s.IngestDocuments(ctx, doc.KbID, []string{doc.ID})
 	if err != nil {
 		return err
 	}
@@ -431,7 +435,7 @@ func (s *DocumentService) clearKBChunkNumWhenRerun(doc *entity.Document) error {
 	}).Error
 }
 
-func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
 	// deduplicate the document id
 	uniqueDocIDs := common.Deduplicate(docIDs)
 	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {
@@ -508,6 +512,140 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 			} else {
 				errs = append(errs, cancelErr.Error())
 			}
+			continue
+		}
+		successCount++
+	}
+
+	result := map[string]interface{}{"success_count": successCount}
+	if len(errs) > 0 {
+		result["errors"] = errs
+	}
+	return result, nil
+}
+
+// cancelAllTaskBatchSize bounds the IN-clause size when loading the latest
+// ingestion tasks for a dataset-wide cancel, keeping the query within the
+// database driver's prepared-statement parameter limit even for very large
+// queues.
+var cancelAllTaskBatchSize = 1000
+
+// chunkDocumentIDs splits ids into batches of at most size. A non-positive size
+// is treated as 1. Order and membership are preserved across the batches.
+func chunkDocumentIDs(ids []string, size int) [][]string {
+	if size <= 0 {
+		size = 1
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	var batches [][]string
+	for i := 0; i < len(ids); i += size {
+		end := i + size
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batches = append(batches, ids[i:end])
+	}
+	return batches
+}
+
+// cancellableStatuses returns the subset of runStatuses that RequestStopScoped can
+// actually transition (CREATED/SCHEDULED/RUNNING). It scopes the per-task stop so
+// a request naming a terminal or derived status (COMPLETED, UNSTART) selects
+// documents via the list query but is never reported as cancelled. If none of the
+// requested statuses are stoppable the result is empty, which RequestStopScoped
+// treats as "cancel nothing".
+func cancellableStatuses(runStatuses []string) []string {
+	out := make([]string, 0, len(runStatuses))
+	for _, st := range runStatuses {
+		switch st {
+		case common.CREATED, common.SCHEDULED, common.RUNNING:
+			out = append(out, st)
+		}
+	}
+	return out
+}
+
+// StopParseDocumentsAll stops parsing for every document in a dataset whose
+// latest ingestion task matches one of the supplied run statuses. An empty
+// runStatuses defaults to DefaultCancelRunStatuses. The matching document IDs are
+// resolved server-side with a single unpaginated list query (no client-side
+// pagination), then cancelled in bulk: one batch task lookup followed by a
+// RequestStop per active task. This keeps the work O(1) with respect to the
+// number of documents, avoiding the previous filter-and-paginate cancel loop.
+func (s *DocumentService) StopParseDocumentsAll(ctx context.Context, datasetID string, runStatuses []string) (map[string]interface{}, error) {
+	if len(runStatuses) == 0 {
+		runStatuses = common.DefaultCancelRunStatuses
+	}
+
+	ids, err := s.ListDocumentIDsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{
+		KbID:        datasetID,
+		RunStatuses: runStatuses,
+	})
+	if err != nil {
+		return nil, err
+	}
+	// A document may map to multiple files (file2document), which would produce
+	// duplicate document IDs in the list; collapse them so each document is
+	// cancelled and counted at most once.
+	ids = common.Deduplicate(ids)
+	if len(ids) == 0 {
+		return map[string]interface{}{"success_count": 0}, nil
+	}
+
+	// Load the latest task per document in bounded batches so the IN-clause never
+	// exceeds the driver's prepared-statement parameter limit, even for very
+	// large queues.
+	tasksByDoc := make(map[string]*entity.IngestionTask, len(ids))
+	for _, batch := range chunkDocumentIDs(ids, cancelAllTaskBatchSize) {
+		batchTasks, err := s.ingestionTaskDAO.GetLatestByDocumentIDs(ctx, dao.DB, batch)
+		if err != nil {
+			return nil, err
+		}
+		for docID, task := range batchTasks {
+			tasksByDoc[docID] = task
+		}
+	}
+
+	// The statuses RequestStopScoped is permitted to transition. Only queued or
+	// running states are actually stoppable; STOPPED/STOPPING are counted as
+	// idempotent successes when encountered out of scope, and terminal states
+	// (COMPLETED/FAILED) or any status that drifted out of the requested scope
+	// after the list query are left untouched. Restricting the scope to this set
+	// also neutralizes a request that names a non-cancellable status (e.g.
+	// COMPLETED), which the list query would otherwise select but which must
+	// never be reported as cancelled.
+	allowed := cancellableStatuses(runStatuses)
+
+	var errs []string
+	successCount := 0
+	for _, id := range ids {
+		task := tasksByDoc[id]
+		if task == nil {
+			// Selected by the status filter but has no ingestion task to stop:
+			// report as a failure rather than a misleading success (the sibling
+			// StopParseDocuments endpoint returns ErrParseNotRunning for the same
+			// situation).
+			errs = append(errs, fmt.Sprintf("document %s: can't stop parsing that has not started or already completed", id))
+			continue
+		}
+		// Hand the task to RequestStopScoped, which re-reads the current status
+		// and decides atomically with the transition. This closes the TOCTOU
+		// window between the list/lookup read above and the stop: a status that
+		// drifted out of the requested scope returns ErrTaskNotInScope and is not
+		// reported as cancelled.
+		got, err := s.ingestionTaskSvc.RequestStopScoped(ctx, task.ID, allowed)
+		if err != nil {
+			if errors.Is(err, service.ErrTaskNotInScope) {
+				// Already stopped/stopping (idempotent) or drifted out of scope:
+				// count an already-cancelled task as success, otherwise skip.
+				if got != nil && (got.Status == common.STOPPED || got.Status == common.STOPPING) {
+					successCount++
+				}
+				continue
+			}
+			errs = append(errs, err.Error())
 			continue
 		}
 		successCount++

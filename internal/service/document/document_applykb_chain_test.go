@@ -23,7 +23,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	datasetsvc "ragflow/internal/service/dataset"
 )
@@ -133,7 +132,7 @@ func TestIngest_ApplyKB_RealDatasetAPIChain(t *testing.T) {
 
 	ctx := documentTestContext(t.Context())
 	enabled := true
-	if _, code, err := newDatasetService().UpdateMetadataConfig(ctx, "kb-1", "user-1", &service.MetadataConfigRequest{
+	if _, code, err := newDatasetService().UpdateMetadataConfig(ctx, "kb-1", &service.MetadataConfigRequest{
 		Enabled:         &enabled,
 		Metadata:        []service.MetadataConfigField{{Key: "author", Type: "string"}},
 		BuiltInMetadata: []service.MetadataConfigField{{Key: "document_name", Type: "string"}},
@@ -164,7 +163,7 @@ func TestIngest_ApplyKB_RealDatasetAPIChain(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs:  []string{"doc-1"},
 		Run:     string(entity.TaskStatusRunning),
 		Delete:  true,
@@ -248,7 +247,7 @@ func TestIngest_ApplyKB_DisabledDatasetAPIChain(t *testing.T) {
 
 	ctx := documentTestContext(t.Context())
 	disabled := false
-	if _, code, err := newDatasetService().UpdateMetadataConfig(ctx, "kb-1", "user-1", &service.MetadataConfigRequest{
+	if _, code, err := newDatasetService().UpdateMetadataConfig(ctx, "kb-1", &service.MetadataConfigRequest{
 		Enabled: &disabled,
 	}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("UpdateMetadataConfig err=%v code=%v", err, code)
@@ -258,7 +257,7 @@ func TestIngest_ApplyKB_DisabledDatasetAPIChain(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs:  []string{"doc-1"},
 		Run:     string(entity.TaskStatusRunning),
 		Delete:  true,
@@ -336,7 +335,7 @@ func TestIngest_ApplyKB_RealCreatedDatasetChain(t *testing.T) {
 				},
 			},
 		},
-	}, permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%v", err, code)
 	}
@@ -387,7 +386,7 @@ func TestIngest_ApplyKB_RealCreatedDatasetChain(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 
-	code, err = svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err = svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs:  []string{"doc-1"},
 		Run:     string(entity.TaskStatusRunning),
 		Delete:  true,

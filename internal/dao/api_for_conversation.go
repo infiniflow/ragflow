@@ -115,12 +115,16 @@ func (dao *API4ConversationDAO) Stats(ctx context.Context, db *gorm.DB, tenantID
 	return rows, err
 }
 
-func (dao *API4ConversationDAO) GetBySessionID(ctx context.Context, db *gorm.DB, sessionID, agentID string, options ...ConversationHistoryOptions) (*entity.API4Conversation, error) {
+func (dao *API4ConversationDAO) GetBySessionID(ctx context.Context, db *gorm.DB, sessionID, agentID string, includeDSL bool, options ...ConversationHistoryOptions) (*entity.API4Conversation, error) {
 	historyOptions := ConversationHistoryOptions{}
 	if len(options) > 0 {
 		historyOptions = options[0]
 	}
-	result, err := dao.GetMetadataBySessionID(ctx, db, sessionID, agentID)
+	query := db
+	if !includeDSL {
+		query = query.Omit("dsl")
+	}
+	result, err := dao.GetMetadataBySessionID(ctx, query, sessionID, agentID)
 	if err != nil || result == nil {
 		return result, err
 	}
