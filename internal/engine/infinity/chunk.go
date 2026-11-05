@@ -172,6 +172,35 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 				return err
 			}
 		}
+
+		// Reconcile the parser media ordinal columns on the existing-table
+		// path, matching what newly created tables get from
+		// conf/infinity_mapping.json: a table created before the declaration
+		// would otherwise reject every transformed PPTX row (#20500).
+		// The skill mapping declares neither column, so a skill table gets
+		// no reconcile — its schema does not want them.
+		if schemaDeclaresMediaOrdinals(&schema) {
+			slideNumberExists, slideCheckErr := e.columnExists(table, "slide_number")
+			if slideCheckErr != nil {
+				if isConnectionLevelError(slideCheckErr) {
+					e.client.dropConnectionFor(db, "CreateChunkStore")
+				}
+				return fmt.Errorf("failed to check slide_number column: %w", slideCheckErr)
+			}
+			mediaOrderExists, mediaCheckErr := e.columnExists(table, "media_order")
+			if mediaCheckErr != nil {
+				if isConnectionLevelError(mediaCheckErr) {
+					e.client.dropConnectionFor(db, "CreateChunkStore")
+				}
+				return fmt.Errorf("failed to check media_order column: %w", mediaCheckErr)
+			}
+			if err := e.ensureMediaOrdinalColumns(table, slideNumberExists, mediaOrderExists); err != nil {
+				if isConnectionLevelError(err) {
+					e.client.dropConnectionFor(db, "CreateChunkStore")
+				}
+				return err
+			}
+		}
 	} else {
 		// Table doesn't exist, create it with vector column in the initial schema
 		common.Info(fmt.Sprintf("Creating table with vector column: %s with dimension %d", vectorColName, vecSize))
@@ -315,6 +344,22 @@ func parserIDFromChunks(chunks []map[string]interface{}) string {
 	return ""
 }
 
+// batchNeedsMediaOrdinalColumns reports whether any row carries the parser
+// media ordinal columns (slide_number from the PPTX parser, media_order from
+// the docx/html/pptx image paths), so the insert can reconcile them onto a
+// legacy table before writing.
+func batchNeedsMediaOrdinalColumns(chunks []map[string]interface{}) bool {
+	for _, chunk := range chunks {
+		if _, ok := chunk["slide_number"]; ok {
+			return true
+		}
+		if _, ok := chunk["media_order"]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // ensureChunkDataColumn adds the column the table parser writes when a table
 // created ahead of its first table-parser document lacks it. exists is the
 // caller's already-known column existence.
@@ -327,6 +372,78 @@ func (e *Engine) ensureChunkDataColumn(table *infinity.Table, exists bool) error
 	}); err != nil {
 		return fmt.Errorf("failed to add chunk_data column: %w", err)
 	}
+	return nil
+}
+
+// mediaOrdinalColumns are the parser media ordinal columns the PPTX path
+// writes: slide_number on every slide item, media_order on every image item.
+// conf/infinity_mapping.json declares both for newly created tables; the
+// reconcile below adds them to tables created before that declaration
+// (#20500). Keep the definitions identical to the mapping entries — a unit
+// test pins them to conf/infinity_mapping.json.
+var mediaOrdinalColumns = []infinity.ColumnDefinition{
+	{Name: "slide_number", DataType: "integer", Default: 0},
+	{Name: "media_order", DataType: "integer", Default: 0},
+}
+
+// columnAdder is the slice of the Infinity table API the column reconciles
+// use. Taking it as an interface keeps the AddColumns failure path unit
+// testable without a live Infinity instance.
+type columnAdder interface {
+	AddColumns(columnDefs infinity.TableSchema) (interface{}, error)
+}
+
+// schemaDeclaresMediaOrdinals reports whether the selected mapping declares
+// the parser media ordinal columns. conf/infinity_mapping.json declares both;
+// conf/skill_infinity_mapping.json declares neither, so a skill table must not
+// get them reconciled onto — its schema does not want them, and a failed
+// reconcile would fail the whole create for a column it never needed.
+func schemaDeclaresMediaOrdinals(schema *orderedFields) bool {
+	for i := range mediaOrdinalColumns {
+		if _, ok := schema.Fields[mediaOrdinalColumns[i].Name]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// reconcileMediaOrdinalColumns reconciles the parser media ordinal columns the
+// batch carries onto a table that predates their mapping declaration.
+//
+// The error is returned, not logged: Infinity rejects an insert that names an
+// undeclared column, so continuing would drop the matching rows on the delete
+// and only then fail the insert (#20500).
+func (e *Engine) reconcileMediaOrdinalColumns(table columnAdder, chunks []map[string]interface{}, slideNumberExists, mediaOrderExists bool) error {
+	if !batchNeedsMediaOrdinalColumns(chunks) {
+		return nil
+	}
+	return e.ensureMediaOrdinalColumns(table, slideNumberExists, mediaOrderExists)
+}
+
+// ensureMediaOrdinalColumns adds the parser media ordinal columns when a table
+// predates their conf/infinity_mapping.json declaration. The PPTX parser emits
+// slide_number on every slide item and media_order on every image item, so a
+// legacy table without the columns rejects the whole transformed batch with
+// "Column slide_number not found" (#20500). The exists flags come from a
+// ShowColumns pass the callers already run.
+func (e *Engine) ensureMediaOrdinalColumns(table columnAdder, slideNumberExists, mediaOrderExists bool) error {
+	if slideNumberExists && mediaOrderExists {
+		return nil
+	}
+	exists := map[string]bool{"slide_number": slideNumberExists, "media_order": mediaOrderExists}
+	var schema infinity.TableSchema
+	for i := range mediaOrdinalColumns {
+		if exists[mediaOrdinalColumns[i].Name] {
+			continue
+		}
+		schema = append(schema, &mediaOrdinalColumns[i])
+	}
+	if _, err := table.AddColumns(schema); err != nil {
+		return fmt.Errorf("failed to add media ordinal columns: %w", err)
+	}
+	common.Info("Added parser media ordinal columns to an existing table",
+		zap.Bool("slide_number", !slideNumberExists),
+		zap.Bool("media_order", !mediaOrderExists))
 	return nil
 }
 
@@ -423,6 +540,21 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		if err := e.ensureChunkDataColumn(table, hasChunkData); err != nil {
 			common.Warn("Failed to add chunk_data column", zap.Error(err))
 		}
+	}
+
+	// Reconcile the parser media ordinal columns here too, when the batch
+	// carries them: a table created before conf/infinity_mapping.json declared
+	// slide_number/media_order is opened through GetTable on this path and
+	// would reject the transformed PPTX rows below (#20500).
+	//
+	// A failed reconcile aborts the insert instead of continuing: the batch
+	// still names an undeclared ordinal column, so the insert below would
+	// fail anyway — after the delete has already dropped the matching rows.
+	if err := e.reconcileMediaOrdinalColumns(table, chunks, columns["slide_number"], columns["media_order"]); err != nil {
+		if isConnectionLevelError(err) {
+			e.client.dropConnectionFor(db, "InsertChunks")
+		}
+		return nil, err
 	}
 
 	// Transform chunks using helper function
