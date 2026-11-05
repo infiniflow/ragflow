@@ -319,6 +319,15 @@ func (e *Engine) DeleteMetadata(ctx context.Context, condition map[string]interf
 		deleted = int64(d)
 	}
 
+	// delete_by_query can answer 200 while only part of the work was done.
+	// Surface that so callers do not treat leftover metadata as deleted.
+	if timedOut, _ := result["timed_out"].(bool); timedOut {
+		return deleted, fmt.Errorf("elasticsearch delete metadata by query timed out after deleting %d metadata documents from %s", deleted, indexName)
+	}
+	if failures, ok := result["failures"].([]interface{}); ok && len(failures) > 0 {
+		return deleted, fmt.Errorf("elasticsearch delete metadata by query reported %d failures after deleting %d metadata documents from %s", len(failures), deleted, indexName)
+	}
+
 	common.Info("ElasticsearchConnection.DeleteMetadata completes", zap.String("index_name", indexName), zap.Int64("deleted_count", deleted))
 	return deleted, nil
 }

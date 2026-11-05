@@ -29,9 +29,7 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	prevAllow := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = prevAllow })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
 	if err != nil {
@@ -109,7 +107,7 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	h.SetMindMapDependencies(nil, nil, service.NewModelFactory(), nil)
 
 	c, w := setupGinContextWithUser(http.MethodPost, "/api/v1/chat/audio/speech", `{"text":"hello"}`)
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", "user-1"))
 	h.ChatAudioSpeech(c)
 
 	body := w.Body.String()

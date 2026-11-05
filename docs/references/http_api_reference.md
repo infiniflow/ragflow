@@ -11,6 +11,9 @@ A complete reference for RAGFlow's RESTful API, including migration notes for RA
 
 In the standard response envelope, `message` is always a non-empty string. Successful responses default to `"success"`; error responses contain a description of the error.
 
+`data` is optional. Operation acknowledgments omit it; check `code` for success
+and `message` for the result description. Result payloads use objects or arrays.
+
 ---
 
 ## ERROR CODES
@@ -1687,7 +1690,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -2076,9 +2079,13 @@ Success:
 
 ```json
 {
-    "code": 0
+    "code": 0,
+    "message": "success",
+    "data": {"deleted_count": 1}
 }
 ```
+
+`data.deleted_count` is the number of chunks deleted. It is `0` when no chunks matched the request.
 
 Failure:
 
@@ -2236,7 +2243,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -3073,7 +3080,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -5195,7 +5202,6 @@ Failure:
 ```json
 {
     "code": 401,
-    "data": null,
     "message": "<Unauthorized '401: Unauthorized'>"
 }
 ```
@@ -5353,7 +5359,10 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
+    "data": {
+        "id": "58af890a2a8911f0a71a11b922ed82d6",
+        "title": "Test Agent"
+    },
     "message": "success"
 }
 ```
@@ -5423,7 +5432,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
+    "data": {"update_time": 1720000000000},
     "message": "success"
 }
 ```
@@ -5484,7 +5493,6 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
     "message": "success"
 }
 ```
@@ -5538,7 +5546,6 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
     "message": "success"
 }
 ```
@@ -5591,7 +5598,6 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
     "message": "success"
 }
 ```
@@ -5990,7 +5996,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6032,7 +6037,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "success"
 }
 ```
@@ -6042,7 +6046,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Resource not found"
 }
 ```
@@ -6171,7 +6174,6 @@ Failure
 ```
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6232,7 +6234,7 @@ curl --location 'http://{address}/api/v1/messages' \
 
 - `user_id`: `string`, *Optional*
 
-  The user participating in the conversation with the agent. Honoured only when the request is authenticated with an API key. For API key authentication, this field must be a non-empty string; surrounding whitespace is stripped, and a missing, blank, or non-string value causes the request to fail. Any other authentication, whether a JWT bearer token or a browser session, ignores this field and attributes the message to the authenticated user.
+  The user participating in the conversation with the agent. Honored only when the request is authenticated with an API key. For API key authentication, this field must be a non-empty string; surrounding whitespace is stripped, and a missing, blank, or non-string value causes the request to fail. Any other authentication, whether a JWT bearer token or a browser session, ignores this field and attributes the message to the authenticated user.
 
 - `user_input`: `string`, *Required*
 
@@ -6249,7 +6251,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "All add to task."
 }
 ```
@@ -6259,7 +6260,6 @@ Failure
 ```json
 {
     "code": 500,
-    "data": null,
     "message": "Some messages failed to add. Detail: {fail information}"
 }
 ```
@@ -6304,7 +6304,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "success"
 }
 ```
@@ -6314,7 +6313,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6369,7 +6367,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "success"
 }
 ```
@@ -6379,7 +6376,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6627,7 +6623,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -7394,7 +7389,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -7604,7 +7599,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits`
 
-Lists all commits for the specified folder with pagination. Also available at:
+Lists all commits for the specified folder with pagination. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits`
 
 #### Request
@@ -7670,7 +7665,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}`
 
-Retrieves the details of a specific commit, including its file changes. Also available at:
+Retrieves the details of a specific commit, including its file changes. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}`
 
 #### Request
@@ -7739,7 +7734,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files`
 
-Lists the file changes associated with a specific commit. Also available at:
+Lists the file changes associated with a specific commit. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files`
 
 #### Request
@@ -7786,7 +7781,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/diff?from={commit_id}&to={commit_id}`
 
-Compares two commits and returns the differences. Also available at:
+Compares two commits and returns the differences. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/diff?from=...&to=...`
 
 #### Request
@@ -7852,7 +7847,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/changes`
 
-Returns the uncommitted changes for the specified folder (similar to `git status`). Also available at:
+Returns the uncommitted changes for the specified folder (similar to `git status`). Also, available at:
 - `/api/v1/datasets/{dataset_id}/changes`
 
 #### Request
@@ -7903,7 +7898,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/tree`
 
-Retrieves the full folder tree snapshot as it existed at a specific commit. Also available at:
+Retrieves the full folder tree snapshot as it existed at a specific commit. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/tree`
 
 #### Request
@@ -7969,7 +7964,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
 
-Retrieves the file content as it existed at a specific commit. Also available at:
+Retrieves the file content as it existed at a specific commit. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files/{file_id}/content`
 
 #### Request
@@ -8349,7 +8344,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 

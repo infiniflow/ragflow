@@ -71,7 +71,9 @@ func NewManualChunker(params map[string]any) (runtime.Component, error) {
 			zap.Strings("dropped", dropped))
 	}
 	p := defaultsTitle()
-	p.Update(conf)
+	if err := p.Update(conf); err != nil {
+		return nil, fmt.Errorf("ManualChunker: %w", err)
+	}
 	if err := p.TitleChunkerParam.Validate(); err != nil {
 		return nil, fmt.Errorf("ManualChunker: %w", err)
 	}

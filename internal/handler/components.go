@@ -68,17 +68,17 @@ func (h *ComponentsHandler) Get(c *gin.Context) {
 	raw := c.Query("category")
 	cats, err := parseCategories(raw)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, 400, nil, err.Error())
 		return
 	}
 
 	out, err := h.svc.List(cats...)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
+		common.Respond(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, out, "success")
+	common.RespondSuccessList(c, out, "success")
 }
 
 // parseCategories splits a comma-separated category query string into

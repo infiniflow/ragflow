@@ -18,7 +18,7 @@ func TestCreateDataset_EmptyVersionRejected(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 
 	canvasID := "0123456789abcdef0123456789abcdef"
 	seedDataflowCanvas(t, db, canvasID)
@@ -30,7 +30,7 @@ func TestCreateDataset_EmptyVersionRejected(t *testing.T) {
 		PipelineID: &canvasID,
 		ParseType:  &parseType,
 		// PipelineVersionID omitted on purpose (empty version)
-	}, testDatasetSubject("tenant-1"))
+	})
 	if err == nil {
 		t.Fatalf("expected rejection of empty pipeline version, got result=%v code=%d", result, code)
 	}
@@ -55,7 +55,7 @@ func TestCreateDataset_ExplicitEmptyVersionStringRejected(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 
 	canvasID := "0123456789abcdef0123456789abcdef"
 	seedDataflowCanvas(t, db, canvasID)
@@ -68,7 +68,7 @@ func TestCreateDataset_ExplicitEmptyVersionStringRejected(t *testing.T) {
 		PipelineID:        &canvasID,
 		PipelineVersionID: &empty,
 		ParseType:         &parseType,
-	}, testDatasetSubject("tenant-1"))
+	})
 	if err == nil || code == common.CodeSuccess {
 		t.Fatalf("expected rejection of explicit empty version, got code=%d err=%v", code, err)
 	}
@@ -83,7 +83,7 @@ func TestCreateDataset_BuiltinEmptyVersionAllowed(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := t.Context()
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
 
 	parseType := 1
 	general := "general"
@@ -91,7 +91,7 @@ func TestCreateDataset_BuiltinEmptyVersionAllowed(t *testing.T) {
 		Name:      "ds-builtin-no-version",
 		ParserID:  &general,
 		ParseType: &parseType,
-	}, testDatasetSubject("tenant-1"))
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("expected BuiltIn create without version to succeed, got code=%d err=%v", code, err)
 	}
@@ -114,7 +114,7 @@ func TestUpdateDataset_ExplicitEmptyVersionRejected(t *testing.T) {
 
 	parseType := 2
 	empty := ""
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-empty-upd", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-empty-upd", service.UpdateDatasetRequest{
 		PipelineID:        &canvas1,
 		ParseType:         &parseType,
 		PipelineVersionID: &empty,
@@ -145,7 +145,7 @@ func TestUpdateDataset_PipelineChangeWithoutVersionRejected(t *testing.T) {
 	insertDatasetUpdateKB(t, "kb-switch", "tenant-1", "Original") // builtin, no pipeline bound
 
 	parseType := 2
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-switch", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-switch", service.UpdateDatasetRequest{
 		PipelineID: &canvas1,
 		ParseType:  &parseType,
 	})
@@ -170,7 +170,7 @@ func TestUpdateDataset_PreservePinnedVersionOnPartialUpdate(t *testing.T) {
 	seedBoundKB(t, db, "kb-preserve", canvas1, ver1)
 
 	name := "renamed-partial"
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-preserve", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-preserve", service.UpdateDatasetRequest{
 		Name: &name,
 	})
 	if err != nil || code != common.CodeSuccess {

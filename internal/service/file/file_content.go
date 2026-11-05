@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
@@ -22,7 +23,7 @@ func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*
 	if err != nil || file == nil {
 		return nil, fmt.Errorf("document not found")
 	}
-	if err := checkFileAccess(ctx, uid, file, permission.OperationRead); err != nil {
+	if err := checkFileAccess(ctx, file, permission.OperationRead); err != nil {
 		return nil, err
 	}
 	return file, nil
@@ -217,9 +218,12 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 	content := string(data)
 	fileType := utility.GetFileType(filename)
 	if fileType != utility.FileTypeOTHER {
-		fp, err := parser.GetTextOnlyParser(fileType)
+		fp, actual, err := parser.GetTextOnlyParser(fileType, data)
 		if err != nil {
 			return "", err
+		}
+		if actual != fileType {
+			common.Warn(fmt.Sprintf("file %q: requested format %s; detected %s; continuing with the %s parser", filename, fileType, actual, actual))
 		}
 		if configurable, ok := fp.(interface{ ConfigureFromSetup(map[string]any) }); ok {
 			configurable.ConfigureFromSetup(map[string]any{"layout_recognize": layoutRecognize})
@@ -269,9 +273,12 @@ func parseFileContent(ctx context.Context, filename string, data []byte) string 
 	if fileType == utility.FileTypeOTHER {
 		return string(data)
 	}
-	fp, err := parser.GetTextOnlyParser(fileType)
+	fp, actual, err := parser.GetTextOnlyParser(fileType, data)
 	if err != nil {
 		return string(data)
+	}
+	if actual != fileType {
+		common.Warn(fmt.Sprintf("file %q: requested format %s; detected %s; continuing with the %s parser", filename, fileType, actual, actual))
 	}
 	res := fp.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {

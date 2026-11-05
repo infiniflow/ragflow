@@ -6,6 +6,7 @@ package models
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -151,5 +152,24 @@ func TestMinerUCloudReachable(t *testing.T) {
 	}
 	if err := minerUCloudReachable(context.Background(), server.Client(), u); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestParseMinerUCloudRespectsContextDeadline(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		http.Error(w, "too late", http.StatusOK)
+	}))
+	defer server.Close()
+
+	_, err := ParseMinerUCloud(ctx, server.URL, "secret", "doc.pdf", []byte("%PDF"), "vlm-http-client", "ocr", "ch")
+	if err == nil {
+		t.Fatal("expected deadline exceeded error, got nil")
+	}
+	if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "context deadline exceeded") {
+		t.Fatalf("expected context deadline exceeded, got: %v", err)
 	}
 }

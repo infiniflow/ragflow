@@ -77,9 +77,9 @@ func setupGinContextWithUserAndDB(t *testing.T, method, path string) (*gin.Conte
 	c.Request = httptest.NewRequest(method, path, nil)
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
-		UserID: "user-1", TenantID: "user-1",
-	}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(),
+		"user-1", "user-1",
+	))
 
 	db := setupHandlerAgentsTestDB(t)
 	orig := dao.DB
@@ -170,7 +170,7 @@ func TestListAgentVersionsHandler_NoPermission(t *testing.T) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "user-a", "user-a"); err != nil {
 		t.Fatalf("prepare agent permission fixture: %v", err)
 	}
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-a", TenantID: "user-a"}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-a", "user-a"))
 	c.Set("user", &entity.User{ID: "user-a"})
 	c.Set("user_id", "user-a")
 	c.Params = gin.Params{{Key: "canvas_id", Value: "canvas-b"}}
@@ -209,7 +209,7 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "user-1", "user-1"); err != nil {
 		t.Fatalf("prepare agent permission fixture: %v", err)
 	}
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", "user-1"))
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
 	c.Params = gin.Params{{Key: "canvas_id", Value: "non-existent"}}
@@ -457,9 +457,9 @@ func seedAgentCreationContext(t *testing.T, c *gin.Context, db *gorm.DB) {
 			t.Fatalf("create Agent permission test table: %v", err)
 		}
 	}
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
-		UserID: "user-1", TenantID: "tenant-1",
-	}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(),
+		"user-1", "tenant-1",
+	))
 }
 
 // sptr returns a pointer to the given string.
@@ -490,31 +490,31 @@ type agentHandlerTestable struct {
 func (h *agentHandlerTestable) listAgents(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	result, code, err := h.svc.ListAgents(user.ID, "", 0, 0, "create_time", true, nil, "", nil)
 	if err != nil {
-		common.ResponseWithCodeData(c, code, false, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 func (h *agentHandlerTestable) listTemplates(c *gin.Context) {
 	if _, errorCode, errorMessage := GetUser(c); errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	templates, err := h.svc.ListTemplates()
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 	if templates == nil {
 		templates = []*entity.CanvasTemplate{}
 	}
-	common.SuccessWithData(c, templates, "success")
+	common.RespondSuccessList(c, templates, "success")
 }
 
 func (f *fakeAgentService) ListAgents(userID, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string, canvasCategory string, tags []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
@@ -608,7 +608,7 @@ func (f *fullFakeAgentService) UpdateAgent(context.Context, string, string, map[
 func (f *fullFakeAgentService) DeleteAgent(context.Context, string, string) error {
 	return nil
 }
-func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string, string, any) (<-chan canvas.RunEvent, error) {
+func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string, any, []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	ch := make(chan canvas.RunEvent)
 	close(ch)
 	return ch, nil
@@ -616,16 +616,16 @@ func (f *fullFakeAgentService) RunAgent(context.Context, string, string, string,
 func (f *fullFakeAgentService) PublishAgent(context.Context, string, string, *service.PublishAgentRequest) (*entity.UserCanvasVersion, error) {
 	return f.version, nil
 }
-func (f *fullFakeAgentService) ListVersions(context.Context, string, string) ([]*entity.UserCanvasVersion, error) {
+func (f *fullFakeAgentService) ListVersions(context.Context, string) ([]*entity.UserCanvasVersion, error) {
 	return f.versions, nil
 }
-func (f *fullFakeAgentService) GetVersion(context.Context, string, string, string) (*entity.UserCanvasVersion, error) {
+func (f *fullFakeAgentService) GetVersion(context.Context, string, string) (*entity.UserCanvasVersion, error) {
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
 	return f.version, nil
 }
-func (f *fullFakeAgentService) DeleteVersion(context.Context, string, string, string) error {
+func (f *fullFakeAgentService) DeleteVersion(context.Context, string, string) error {
 	return f.getErr
 }
 
@@ -711,7 +711,7 @@ func TestAgentHandler_NotFoundOnUnknownCanvas(t *testing.T) {
 	r2.Use(setUser())
 	g2 := r2.Group("/api/v1/agents")
 	g2.GET("/:canvas_id", func(c *gin.Context) {
-		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "agent unknown: not found")
+		common.RespondError(c, common.CodeNotFound, "agent unknown: not found")
 	})
 
 	w := httptest.NewRecorder()
@@ -876,7 +876,7 @@ type stubChatRunner struct {
 	userInput        any
 }
 
-func (s *stubChatRunner) RunAgent(ctx context.Context, _, _, sessionID, _ string, userInput any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (s *stubChatRunner) RunAgent(ctx context.Context, _, sessionID, _ string, userInput any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	s.sessionID = sessionID
 	s.trustedSessionID = service.AgentSessionIDFromContext(ctx)
 	s.userInput = userInput
@@ -1133,7 +1133,7 @@ type emptySessionCaptureRunner struct {
 	trustedSessionID string
 }
 
-func (r *emptySessionCaptureRunner) RunAgent(ctx context.Context, _, _, sessionID, _ string, _ any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (r *emptySessionCaptureRunner) RunAgent(ctx context.Context, _, sessionID, _ string, _ any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	r.sessionID = sessionID
 	r.trustedSessionID = service.AgentSessionIDFromContext(ctx)
 	ch := make(chan canvas.RunEvent)
@@ -1296,7 +1296,7 @@ type captureChatRunner struct {
 	capturedFiles *[]map[string]interface{}
 }
 
-func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _ string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _ string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	*c.captured = userInput
 	if c.capturedFiles != nil {
 		*c.capturedFiles = files

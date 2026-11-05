@@ -20,7 +20,7 @@ import {
   usePipelineOperatorNodes,
   useResetParserConfigOnPipelineChange,
 } from '@/hooks/use-pipeline-operator';
-import { useFetchCanvasVersionList } from '@/hooks/use-agent-request';
+import { useFetchPipelineVersionList } from '@/hooks/use-pipeline-version-request';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import {
   getOperatorType,
@@ -148,7 +148,7 @@ export function useDocumentPipelineForm({
   // *reactive* value: it resolves after mount and the adoption effect below
   // re-fires when it does. (Reading it from a static prop captured before the
   // fetch would freeze it at undefined.) versions is newest-first.
-  const { data: versions = [] } = useFetchCanvasVersionList(
+  const { data: versions = [] } = useFetchPipelineVersionList(
     isPipelineMode ? selectedDataFlowId : undefined,
   );
   const latestVersionId = versions[0]?.id;
