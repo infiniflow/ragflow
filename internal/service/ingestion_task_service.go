@@ -185,7 +185,7 @@ func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *ent
 	if logID != nil && *logID != "" && s.pipelineLogDAO != nil {
 		run, _ = s.pipelineLogDAO.GetByID(ctx, dao.DB, *logID)
 	}
-	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(task, doc, run, typ, status, errorInfo))
+	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(task, doc, run, typ, status, errorInfo, "", ""))
 }
 
 func (s *IngestionTaskService) ListByUser(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
@@ -1144,6 +1144,9 @@ func (s *IngestionTaskService) buildOpenLogInput(ctx context.Context, task *enti
 	if doc.PipelineID != nil {
 		if pipelineID := strings.TrimSpace(*doc.PipelineID); pipelineID != "" {
 			input.PipelineID = pipelineID
+			if doc.PipelineVersionID != nil {
+				input.PipelineVersionID = strings.TrimSpace(*doc.PipelineVersionID)
+			}
 			if canvas, err := s.userCanvasDAO.GetByID(ctx, dao.DB, pipelineID); err == nil && canvas != nil {
 				if canvas.Title != nil && *canvas.Title != "" {
 					input.PipelineTitle = *canvas.Title

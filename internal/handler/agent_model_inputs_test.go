@@ -37,9 +37,7 @@ func setupModelInputDebug(t *testing.T, endpoint string) (*AgentHandler, *entity
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u-1", "u-1"); err != nil {
 		t.Fatalf("prepare agent model input permission fixture: %v", err)
 	}
-	previousHostSetting := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = previousHostSetting })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 	if err := models.InitProviderManager("../../conf/models"); err != nil {
 		t.Fatalf("InitProviderManager: %v", err)
 	}

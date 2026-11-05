@@ -56,10 +56,10 @@ type agentFileService interface {
 	DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error)
 	// UploadInfos stores raw bytes in the per-user downloads bucket and
 	// returns lightweight descriptors.
-	UploadInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
+	UploadInfos(ctx context.Context, files []*multipart.FileHeader) ([]map[string]interface{}, error)
 	// UploadFromURL downloads a remote file (with SSRF protection) and
 	// stores it as an info blob.
-	UploadFromURL(ctx context.Context, tenantID, rawURL string) (map[string]interface{}, error)
+	UploadFromURL(ctx context.Context, rawURL string) (map[string]interface{}, error)
 }
 
 // chatAgentService is the subset of AgentService used by the chat-completion
@@ -978,13 +978,18 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
+	includeDSL, err := strconv.ParseBool(c.DefaultQuery("include_dsl", "false"))
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, "include_dsl must be a boolean")
+		return
+	}
 	ctx := c.Request.Context()
 	options, err := sessionHistoryQuery(c)
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
-	row, code, err := h.agentService.GetAgentSession(ctx, canvasID, sessionID, options)
+	row, code, err := h.agentService.GetAgentSession(ctx, canvasID, sessionID, includeDSL, options)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return

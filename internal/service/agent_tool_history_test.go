@@ -59,9 +59,7 @@ func TestRunAgent_ToolHistoryPersists(t *testing.T) {
 			previousInvoker := component.GetDefaultChatInvokerForTest()
 			component.SetDefaultChatInvoker(nil)
 			t.Cleanup(func() { component.SetDefaultChatInvoker(previousInvoker) })
-			previousAllow := common.AllowAnyHostForTest
-			common.AllowAnyHostForTest = true
-			t.Cleanup(func() { common.AllowAnyHostForTest = previousAllow })
+			t.Setenv(common.EnvAllowAnyHost, "true")
 			if err := models.InitProviderManager("../../conf/models"); err != nil {
 				t.Fatal(err)
 			}

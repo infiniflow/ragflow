@@ -317,7 +317,7 @@ func (s *AgentService) ListAgentSessions(ctx context.Context, agentID string, re
 }
 
 // GetAgentSession fetches a single conversation belonging to agentID.
-func (s *AgentService) GetAgentSession(ctx context.Context, agentID, sessionID string, options ...dao.ConversationHistoryOptions) (*entity.API4Conversation, common.ErrorCode, error) {
+func (s *AgentService) GetAgentSession(ctx context.Context, agentID, sessionID string, includeDSL bool, options ...dao.ConversationHistoryOptions) (*entity.API4Conversation, common.ErrorCode, error) {
 	if sessionID == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("session_id is required")
 	}
@@ -332,7 +332,7 @@ func (s *AgentService) GetAgentSession(ctx context.Context, agentID, sessionID s
 		return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
 	}
 
-	data, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID, sessionHistoryOptions(options...))
+	data, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID, includeDSL, sessionHistoryOptions(options...))
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to fetch session: %w", err)
 	}

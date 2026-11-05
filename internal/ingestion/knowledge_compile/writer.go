@@ -652,7 +652,7 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 	compileKinds := make([]string, 0, len(buckets))
 	for i := range buckets {
 		byIdentity[structureBucketIdentity(buckets[i])] = i
-		compileKinds = appendUnique(compileKinds, []string{structureCompileKind(buckets[i].CompileKwd)})
+		compileKinds = common.AppendUnique(compileKinds, []string{structureCompileKind(buckets[i].CompileKwd)})
 	}
 	if len(byIdentity) == 0 {
 		return nil, nil
@@ -691,8 +691,8 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 			if !structureBucketWritable(*bucket) {
 				continue
 			}
-			bucket.SourceDocIDs = appendUnique(bucket.SourceDocIDs, firstStringSlice(row["source_doc_ids"]))
-			bucket.SourceChunkIDs = appendUnique(bucket.SourceChunkIDs, firstStringSlice(row["source_chunk_ids"]))
+			bucket.SourceDocIDs = common.AppendUnique(bucket.SourceDocIDs, firstStringSlice(row["source_doc_ids"]))
+			bucket.SourceChunkIDs = common.AppendUnique(bucket.SourceChunkIDs, firstStringSlice(row["source_chunk_ids"]))
 			payload := structureRowPayload(row)
 			if bucket.FromEntity == "" && bucket.ToEntity == "" {
 				existingType := structureString(row["entity_type_kwd"])

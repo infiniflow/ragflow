@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -272,27 +273,14 @@ func wikiContributionSignature(product kccommon.Product) string {
 		Title:          strings.TrimSpace(metaString(product.Meta, "title")),
 		Topic:          kccommon.NormalizeWikiTopicPath(metaString(product.Meta, "topic")),
 		Summary:        strings.TrimSpace(metaString(product.Meta, "summary")),
-		EntityNames:    sortedUniqueCopy(metaStringSlice(product.Meta, "entity_names")),
-		RelatedKBPages: sortedUniqueCopy(metaStringSlice(product.Meta, "related_kb_pages")),
-		Outlinks:       sortedUniqueCopy(metaStringSlice(product.Meta, "outlinks")),
-		SourceChunkIDs: sortedUniqueCopy(metaStringSlice(product.Meta, "source_chunk_ids")),
+		EntityNames:    common.DeduplicateSorted(metaStringSlice(product.Meta, "entity_names")),
+		RelatedKBPages: common.DeduplicateSorted(metaStringSlice(product.Meta, "related_kb_pages")),
+		Outlinks:       common.DeduplicateSorted(metaStringSlice(product.Meta, "outlinks")),
+		SourceChunkIDs: common.DeduplicateSorted(metaStringSlice(product.Meta, "source_chunk_ids")),
 	}
 	payload, _ := json.Marshal(normalized)
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])
-}
-
-func sortedUniqueCopy(values []string) []string {
-	copyValues := append([]string(nil), values...)
-	sort.Strings(copyValues)
-	out := copyValues[:0]
-	for _, value := range copyValues {
-		if value == "" || len(out) > 0 && out[len(out)-1] == value {
-			continue
-		}
-		out = append(out, value)
-	}
-	return out
 }
 
 type wikiContributionDiffResult struct {

@@ -432,7 +432,7 @@ The Azure DevOps data source is used to synchronize Azure Repos source files and
 - **Repositories**: Comma separated repositories, used when indexing by repository. Use `project/repo` to disambiguate repositories that share a name across projects.
 - **Content types**: Choose whether to index source files, pull requests, or both.
 
-Pull request descriptions are re-fetched individually when they reach the 400 character limit imposed by the list endpoint, so long descriptions are indexed in full. Completed and abandoned pull requests are filtered by their close date; active ones are always re-indexed because Azure DevOps exposes no dependable "last updated" timestamp for them.
+Pull request descriptions are re-fetched individually when they reach the 400-character limit imposed by the list endpoint, so long descriptions are indexed in full. Completed and abandoned pull requests are filtered by their close date; active ones are always re-indexed because Azure DevOps exposes no dependable "last updated" timestamp for them.
 - **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index.
 
 Build output and vendored directories such as `node_modules`, `bin`, `obj`, `dist`, and `vendor` are skipped, along with binary files and files larger than 1 MB.

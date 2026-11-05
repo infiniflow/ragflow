@@ -68,17 +68,17 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 					}}
 					_, err := s.Get(ctx, &service.GetChunkRequest{
 						DatasetID: "kb-1", DocumentID: "doc-1", ChunkID: "chunk-1",
-					}, tt.userID)
+					})
 					return err
 				}},
 				{"list", func(s *ChunkService) error {
 					s.docEngine = &listChunksSearchEngine{}
-					_, err := s.List(ctx, &service.ListChunksRequest{DatasetID: "kb-1", DocID: "doc-1"}, tt.userID)
+					_, err := s.List(ctx, &service.ListChunksRequest{DatasetID: "kb-1", DocID: "doc-1"})
 					return err
 				}},
 				{"switch", func(s *ChunkService) error {
 					s.docEngine = &updateChunkTestEngine{}
-					return s.SwitchChunks(ctx, tt.userID, "kb-1", "doc-1", 0, []string{"chunk-1"})
+					return s.SwitchChunks(ctx, "kb-1", "doc-1", 0, []string{"chunk-1"})
 				}},
 				{"update", func(s *ChunkService) error {
 					s.docEngine = &updateChunkTestEngine{existingChunk: map[string]interface{}{
@@ -86,11 +86,11 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 					}}
 					return s.UpdateChunk(ctx, &service.UpdateChunkRequest{
 						DatasetID: "kb-1", DocumentID: "doc-1", ChunkID: "chunk-1",
-					}, tt.userID)
+					})
 				}},
 				{"remove", func(s *ChunkService) error {
 					s.docEngine = &parseTestDocEngine{}
-					_, err := s.RemoveChunks(ctx, &service.RemoveChunksRequest{DatasetID: "kb-1", DocID: "doc-1", DeleteAll: true}, tt.userID)
+					_, err := s.RemoveChunks(ctx, &service.RemoveChunksRequest{DatasetID: "kb-1", DocID: "doc-1", DeleteAll: true})
 					return err
 				}},
 			} {

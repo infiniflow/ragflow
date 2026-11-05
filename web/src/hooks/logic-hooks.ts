@@ -22,12 +22,7 @@ import { MessageType } from '@/constants/chat';
 import { FormInstance } from '@/interfaces/antd-compat';
 import { Pagination } from '@/interfaces/common';
 import { ResponseType } from '@/interfaces/database/base';
-import {
-  IAnswer,
-  IClientConversation,
-  IMessage,
-  Message,
-} from '@/interfaces/database/chat';
+import { IAnswer, IMessage, Message } from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/dataset';
 import { changeLanguageAsync } from '@/locales/config';
 import api from '@/utils/api';
@@ -519,13 +514,19 @@ export const useSelectDerivedMessages = (resetKey?: string) => {
           role: MessageType.Assistant,
           content: answer.answer,
           reference: answer.reference,
-          id: buildMessageUuid({
-            id: answer.id,
-            role: MessageType.Assistant,
-          }),
           prompt: answer.prompt,
           audio_binary: answer.audio_binary,
           ...omit(answer, 'reference'),
+          // Chatbot/embed SSE frames carry `id: null`; assigned after the
+          // spread so the null cannot clobber a real id. Reusing the
+          // placeholder message's id keeps the virtualizer item key stable
+          // across stream chunks — otherwise every assistant message shares
+          // the `assistant_null` key and the virtualizer's per-key size
+          // cache inflates the other assistant rows with this row's height.
+          id: buildMessageUuid({
+            id: answer.id || pre?.at(-1)?.id,
+            role: MessageType.Assistant,
+          }),
         },
       ];
     });
@@ -671,43 +672,6 @@ export const useSelectDerivedMessages = (resetKey?: string) => {
 export interface IRemoveMessageById {
   removeMessageById(messageId: string): void;
 }
-
-export const useRemoveMessagesAfterCurrentMessage = (
-  setCurrentConversation: (
-    callback: (state: IClientConversation) => IClientConversation,
-  ) => void,
-) => {
-  const removeMessagesAfterCurrentMessage = useCallback(
-    (messageId: string) => {
-      setCurrentConversation((pre) => {
-        const index = pre.message?.findIndex((x) => x.id === messageId);
-        if (index !== -1) {
-          let nextMessages = pre.message?.slice(0, index + 2) ?? [];
-          const latestMessage = nextMessages.at(-1);
-          nextMessages = latestMessage
-            ? [
-                ...nextMessages.slice(0, -1),
-                {
-                  ...latestMessage,
-                  content: '',
-                  reference: undefined,
-                  prompt: undefined,
-                },
-              ]
-            : nextMessages;
-          return {
-            ...pre,
-            message: nextMessages,
-          };
-        }
-        return pre;
-      });
-    },
-    [setCurrentConversation],
-  );
-
-  return { removeMessagesAfterCurrentMessage };
-};
 
 export interface IRegenerateMessage {
   regenerateMessage?: (message: Message) => void;
