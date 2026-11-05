@@ -24,6 +24,8 @@ import (
 	"testing"
 
 	"ragflow/internal/agentic_rag"
+	"ragflow/internal/common"
+	modelModule "ragflow/internal/entity/models"
 )
 
 func TestBuildAgenticReferenceRetainsWebChunkCitations(t *testing.T) {
@@ -389,5 +391,121 @@ func TestCitationStreamFilter(t *testing.T) {
 	got += filter.flush()
 	if got != want {
 		t.Fatalf("filtered answer=%q, want %q", got, want)
+	}
+}
+
+// TestStripCitations pins that the answer path removes every citation shape it
+// accepts, the bare "ref12" shape included.
+func TestStripCitations(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"Answer ref12 here [ID:2].", "Answer  here ."},
+		{"a (ID: 1) b 【ID: 2】 c (**ID:3**) d [ID:Slot 0] e ##4$$", "a  b  c  d  e "},
+		{"[2024][guide](https://example.com)", "[2024][guide](https://example.com)"},
+	}
+	for _, c := range cases {
+		if got := stripCitations(c.in); got != c.want {
+			t.Errorf("stripCitations(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestHistoryMessageContent pins what a history message keeps on its way back
+// to the model: a previous answer loses its [ID:n] markers in every delimited
+// spelling, so the model cannot reuse that turn's numbering in a new answer,
+// but keeps a bare "ref123", which may be ordinary text, while user
+// messages keep their text and only lose the ##n$$ markers.
+func TestHistoryMessageContent(t *testing.T) {
+	cases := []struct {
+		name, role, in, want string
+	}{
+		{"answer markers", "assistant", "Delibera n. 815 sugli elicotteri [ID:20] e [ID: 21].", "Delibera n. 815 sugli elicotteri  e ."},
+		{"answer legacy markers", "assistant", "testo ##3$$ fine", "testo  fine"},
+		{"answer without markers", "assistant", "nessuna citazione", "nessuna citazione"},
+		{"answer keeps ref text", "assistant", "The filing is ref123 [ID:2].", "The filing is ref123 ."},
+		{"answer delimited bad markers", "assistant", "a (ID: 1) b 【ID: 2】 c (**ID:3**) d [ID:4-5]", "a  b  c  d "},
+		{"user keeps brackets", "user", "cosa dice [ID:3]?", "cosa dice [ID:3]?"},
+		{"user legacy markers", "user", "testo ##3$$ fine", "testo  fine"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := historyMessageContent(c.role, c.in); got != c.want {
+				t.Fatalf("historyMessageContent(%q, %q) = %q, want %q", c.role, c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// promptRecordingDriver records the system prompt FullQuestion sends.
+type promptRecordingDriver struct {
+	*modelModule.DummyModel
+	system string
+}
+
+func (d *promptRecordingDriver) ChatWithMessages(
+	ctx context.Context,
+	modelName string,
+	messages []modelModule.Message,
+	apiConfig *modelModule.APIConfig,
+	chatModelConfig *modelModule.ChatConfig,
+	modelUsage *common.ModelUsage,
+) (*modelModule.ChatResponse, error) {
+	if len(messages) > 0 {
+		d.system, _ = messages[0].Content.(string)
+	}
+	answer := "refined question"
+	return &modelModule.ChatResponse{Answer: &answer}, nil
+}
+
+// TestFullQuestionStripsCitationMarkersFromHistory pins that the multi-turn
+// refinement prompt carries prior answers without their [ID:n] or ##n$$
+// citation markers, which would otherwise leak into the rewritten question.
+func TestFullQuestionStripsCitationMarkersFromHistory(t *testing.T) {
+	driver := &promptRecordingDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	modelName := "dummy"
+	chatModel := &modelModule.ChatModel{ModelDriver: driver, ModelName: &modelName, APIConfig: &modelModule.APIConfig{}}
+	messages := []map[string]interface{}{
+		{"role": "user", "content": "Which acts were approved?"},
+		{"role": "assistant", "content": "Act 12 [ID:0] and act 14 [ID:3] ##1$$ were approved."},
+		{"role": "user", "content": "And who signed them?"},
+	}
+	if _, err := FullQuestion(t.Context(), chatModel, messages, ""); err != nil {
+		t.Fatalf("FullQuestion: %v", err)
+	}
+	for _, marker := range []string{"[ID:0]", "[ID:3]", "##1$$"} {
+		if strings.Contains(driver.system, marker) {
+			t.Errorf("refinement prompt still contains %q:\n%s", marker, driver.system)
+		}
+	}
+	if !strings.Contains(driver.system, "Act 12") || !strings.Contains(driver.system, "act 14") {
+		t.Errorf("refinement prompt lost the answer text:\n%s", driver.system)
+	}
+}
+
+// TestConvertMessagesToEinoStripsCitationMarkers pins that the agentic path
+// receives prior answers without their [ID:n] markers, which would otherwise
+// resolve against the new run's evidence numbering, and user turns without
+// ##n$$ markers.
+func TestConvertMessagesToEinoStripsCitationMarkers(t *testing.T) {
+	s := &ChatPipelineService{}
+	out := s.convertMessagesToEino(t.Context(), "user-1", "chat", []map[string]interface{}{
+		{"role": "user", "content": "Which acts were approved? ##2$$"},
+		{"role": "assistant", "content": "Act 12 [ID:0] and act 14 [ID:3] were approved."},
+		{"role": "user", "content": "And who signed them?"},
+	})
+	if len(out) != 3 {
+		t.Fatalf("converted %d messages, want 3", len(out))
+	}
+	for i, msg := range out {
+		for _, marker := range []string{"[ID:0]", "[ID:3]", "##2$$"} {
+			if strings.Contains(msg.Content, marker) {
+				t.Errorf("message %d (%s) still contains %q: %q", i, msg.Role, marker, msg.Content)
+			}
+		}
+	}
+	if !strings.Contains(out[1].Content, "Act 12") || !strings.Contains(out[1].Content, "act 14") {
+		t.Errorf("assistant message lost its text: %q", out[1].Content)
+	}
+	if !strings.Contains(out[0].Content, "Which acts were approved?") {
+		t.Errorf("user message lost its text: %q", out[0].Content)
 	}
 }
