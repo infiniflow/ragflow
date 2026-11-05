@@ -99,11 +99,14 @@ type docxIRRun struct {
 }
 
 type docxIRRow struct {
-	Cells []docxIRCell `json:"cells"`
+	IsHeader bool         `json:"is_header"` // repeated table header row
+	Cells    []docxIRCell `json:"cells"`
 }
 
 type docxIRCell struct {
 	Content []docxIRElement `json:"content"` // block-level content (typically paragraphs; may also hold list/table)
+	ColSpan int             `json:"col_span"`
+	RowSpan int             `json:"row_span"`
 }
 
 // joinDOCXIRRuns concatenates inline runs into plain text. Hard line
@@ -180,16 +183,26 @@ func joinCellText(cell docxIRCell) string {
 }
 
 // officeIRTableData projects native Office rows directly onto the table contract.
+// The row/column spans office_oxide recovers for merged cells are preserved so
+// BuildTableData can rebuild the same grid; header flags mark repeated header
+// rows, falling back to BuildTableData's default when the format does not carry
+// them.
 func officeIRTableData(el docxIRElement, caption string) *entity.TableData {
 	rows := make([][]tableutil.CellInput, 0, len(el.Rows))
+	headerFlags := make([]bool, 0, len(el.Rows))
 	for _, row := range el.Rows {
 		cells := make([]tableutil.CellInput, 0, len(row.Cells))
 		for _, cell := range row.Cells {
-			cells = append(cells, tableutil.CellInput{Text: joinCellText(cell)})
+			cells = append(cells, tableutil.CellInput{
+				Text:    joinCellText(cell),
+				ColSpan: cell.ColSpan,
+				RowSpan: cell.RowSpan,
+			})
 		}
 		rows = append(rows, cells)
+		headerFlags = append(headerFlags, row.IsHeader)
 	}
-	return tableutil.BuildTableData(rows, nil, strings.TrimSpace(caption))
+	return tableutil.BuildTableData(rows, headerFlags, strings.TrimSpace(caption))
 }
 
 type docxTableImage struct {
@@ -300,16 +313,6 @@ func docxElementText(el docxIRElement, cellSep string) string {
 	default:
 		return ""
 	}
-}
-
-// docxIRTableCols returns the number of cells in a table's first row, used
-// to decide whether two adjacent table elements are fragments of one logical
-// table. It returns 0 for an empty table.
-func docxIRTableCols(el docxIRElement) int {
-	if len(el.Rows) == 0 {
-		return 0
-	}
-	return len(el.Rows[0].Cells)
 }
 
 // docxHeading is one entry of the heading outline stack.
