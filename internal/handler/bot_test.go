@@ -769,7 +769,7 @@ type fakeFileService struct {
 	err  error
 }
 
-func (f *fakeFileService) DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error) {
+func (f *fakeFileService) DownloadAgentFile(ctx context.Context, location string) ([]byte, error) {
 	return f.blob, f.err
 }
 

@@ -25,12 +25,15 @@ func DeploymentUploadMaxBytes() int64 {
 }
 
 // UploadFile uploads files to a folder
-func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string, files []*multipart.FileHeader, maxBytes int64) ([]map[string]interface{}, error) {
-	userID, currentTenantID, err := fileRequestIdentity(ctx, tenantID)
-	if err != nil {
-		return nil, err
+func (s *FileService) UploadFile(ctx context.Context, parentID string, files []*multipart.FileHeader, maxBytes int64) ([]map[string]interface{}, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
 	}
-	tenantID = currentTenantID
+	tenantID := permission.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = userID
+	}
 	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
 		return nil, err
 	}

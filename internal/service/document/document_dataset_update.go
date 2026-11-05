@@ -7,6 +7,8 @@ import (
 	"maps"
 	"math"
 	"path/filepath"
+
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"strconv"
 	"strings"
@@ -17,7 +19,6 @@ import (
 	"ragflow/internal/entity"
 	componentpkg "ragflow/internal/ingestion/component"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
-	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -292,7 +293,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 			}
 			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, parentChildOverrides)
 			llmID := ""
-			if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+			if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); modelErr == nil {
 				llmID = service.ModelReference(modelInfo)
 			}
 			cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
@@ -323,7 +324,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 				zap.String("parserID", effParserID), zap.Error(cpErr))
 		} else {
 			llmID := ""
-			if modelInfo, llmErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{TenantID: kb.TenantID}, entity.ModelTypeChat); llmErr == nil {
+			if modelInfo, llmErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); llmErr == nil {
 				llmID = service.ModelReference(modelInfo)
 			} else if !errors.Is(llmErr, service.ErrNoDefaultModel) {
 				common.Warn("document pipeline/version switch: failed to resolve default chat model, falling back to no llm binding",

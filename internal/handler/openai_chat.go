@@ -50,12 +50,6 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 		return
 	}
 
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
-
 	bodyBytes, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
@@ -133,5 +127,5 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 	// Long agentic runs stream for minutes or compute before their single
 	// write; clear http.Server.WriteTimeout so neither is cut off mid-response.
 	clearResponseWriteDeadline(c)
-	h.svc.OpenAIChatCompletions(c, user.ID, chatID, bodyBytes)
+	h.svc.OpenAIChatCompletions(c, chatID, bodyBytes)
 }

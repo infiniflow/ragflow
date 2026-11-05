@@ -29,6 +29,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/utility"
 
 	"gopkg.in/yaml.v3"
@@ -38,14 +39,14 @@ import (
 // fill_config_default_llm: when the config has no explicit llm_id it lazily
 // fills the current member's default chat model id (read-side only; the DB row is left
 // untouched).
-func fillConfigDefaultLLM(ctx context.Context, config entity.JSONMap, access Identity) entity.JSONMap {
-	if len(config) == 0 || access.TenantID == "" {
+func fillConfigDefaultLLM(ctx context.Context, config entity.JSONMap, tenantID string) entity.JSONMap {
+	if len(config) == 0 || tenantID == "" {
 		return config
 	}
 	if _, ok := config["llm_id"]; ok {
 		return config
 	}
-	info, err := NewModelFactory().ResolveDefaultInfo(ctx, access, entity.ModelTypeChat)
+	info, err := NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeChat)
 	if err != nil {
 		return config
 	}
@@ -119,7 +120,7 @@ func NewCompilationTemplateService() *CompilationTemplateService {
 // ListBuiltins returns the read-only template palette loaded from the YAML
 // definitions. Built-in templates are never persisted in the database.
 func (s *CompilationTemplateService) ListBuiltins(ctx context.Context) ([]*BuiltinTemplate, error) {
-	access, err := ResolveIdentity(ctx)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +129,7 @@ func (s *CompilationTemplateService) ListBuiltins(ctx context.Context) ([]*Built
 		return nil, err
 	}
 	for _, template := range templates {
-		template.Config = fillConfigDefaultLLM(ctx, template.Config, access)
+		template.Config = fillConfigDefaultLLM(ctx, template.Config, tenantID)
 	}
 	return s.sortBuiltins(templates), nil
 }
