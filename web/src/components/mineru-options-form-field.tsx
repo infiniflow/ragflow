@@ -88,13 +88,14 @@ export function MinerUOptionsFormField({ namePrefix }: { namePrefix: string }) {
         label={t('knowledgeConfiguration.mineruLanguage', 'Language')}
         tooltip={t(
           'knowledgeConfiguration.mineruLanguageTip',
-          'Preferred OCR language for MinerU.',
+          'OCR language for MinerU. Leave empty to use the PDF language. A saved English value is sent as English.',
         )}
         horizontal={true}
       >
         {(field) => (
           <SelectWithSearch
-            value={field.value || 'English'}
+            allowClear
+            value={field.value || ''}
             onChange={field.onChange}
             options={LanguageOptions}
             placeholder={t('common.selectPlaceholder', 'Select value')}

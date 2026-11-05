@@ -73,7 +73,7 @@ func TestMinerUImageItemKeptWhenZipMemberExists(t *testing.T) {
 		"type": "image", "img_path": "images/a.png",
 		"page_idx": 0, "bbox": []any{1.0, 2.0, 3.0, 4.0},
 	}
-	got := mineruContentItemToJSONBudget(item, images, map[int][2]float64{0: {612, 792}}, media.NewBudget())
+	got := mineruContentItemToJSONBudget(item, images, map[int][2]float64{0: {612, 792}}, media.NewBudget(), true)
 	if got == nil {
 		t.Fatal("image item with a zip member must be kept without inlining")
 	}
@@ -87,13 +87,13 @@ func TestMinerUImageItemKeptWhenZipMemberExists(t *testing.T) {
 		t.Fatalf("positions must be kept: %#v", got)
 	}
 	missing := map[string]any{"type": "image", "img_path": "images/none.png"}
-	if mineruContentItemToJSONBudget(missing, images, nil, nil) != nil {
+	if mineruContentItemToJSONBudget(missing, images, nil, nil, true) != nil {
 		t.Fatal("image with no text and no zip member must still be dropped")
 	}
 	bboxOnly := map[string]any{
 		"type": "image", "page_idx": 0, "bbox": []any{1.0, 2.0, 3.0, 4.0},
 	}
-	gotBBox := mineruContentItemToJSONBudget(bboxOnly, nil, map[int][2]float64{0: {612, 792}}, nil)
+	gotBBox := mineruContentItemToJSONBudget(bboxOnly, nil, map[int][2]float64{0: {612, 792}}, nil, true)
 	if gotBBox == nil {
 		t.Fatal("captionless figure with a crop box must be kept for PDF cropping")
 	}
@@ -101,7 +101,7 @@ func TestMinerUImageItemKeptWhenZipMemberExists(t *testing.T) {
 		t.Fatalf("positions must be kept: %#v", gotBBox)
 	}
 	zipOnly := map[string]any{"type": "image", "img_path": "images/a.png"}
-	if mineruContentItemToJSONBudget(zipOnly, images, nil, nil) != nil {
+	if mineruContentItemToJSONBudget(zipOnly, images, nil, nil, true) != nil {
 		t.Fatal("zip-only figure without a crop region must be dropped")
 	}
 }
@@ -113,7 +113,7 @@ func TestMinerUStructuredFigureKeptWithoutCaptionOrZip(t *testing.T) {
 		"type": "image", "image_data_uri": dataURI,
 		"page_idx": 0, "bbox": []any{1.0, 2.0, 3.0, 4.0},
 	}
-	got := mineruContentItemToJSONBudget(item, nil, map[int][2]float64{0: {612, 792}}, media.NewBudget())
+	got := mineruContentItemToJSONBudget(item, nil, map[int][2]float64{0: {612, 792}}, media.NewBudget(), true)
 	if got == nil {
 		t.Fatal("structured figure with positions must be kept without caption or zip member")
 	}
@@ -157,7 +157,7 @@ func TestMinerUStructuredDataURINotCopiedAndWarnsOnBudget(t *testing.T) {
 		"image_caption": []any{"cap"},
 		"page_idx":      0, "bbox": []any{1.0, 2.0, 3.0, 4.0},
 	}
-	got := mineruContentItemToJSONBudget(item, nil, map[int][2]float64{0: {612, 792}}, budget)
+	got := mineruContentItemToJSONBudget(item, nil, map[int][2]float64{0: {612, 792}}, budget, true)
 	if got == nil {
 		t.Fatal("expected image item")
 	}
@@ -198,7 +198,7 @@ func TestMinerUExtractJSONItemsWarnsOnZipOnlyFigure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, warnings, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {612, 792}})
+	items, warnings, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {612, 792}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +254,7 @@ func TestMinerUExtractJSONItemsManyImagesStaySmall(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, warnings, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {612, 792}})
+	items, warnings, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {612, 792}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
