@@ -1321,10 +1321,10 @@ func (s *ConnectorService) ListLog(ctx context.Context, connectorID string, page
 	}
 
 	if page < 1 {
-		page = 1
+		page = common.DefaultPage
 	}
-	if pageSize <= 0 || pageSize > 100 {
-		pageSize = 15
+	if pageSize <= 0 || pageSize > common.MaxPageSize {
+		pageSize = common.DefaultPageSize
 	}
 	offset := (page - 1) * pageSize
 
@@ -1388,10 +1388,10 @@ func (s *ConnectorService) ListLogs(ctx context.Context, datasetID string, page,
 		limit = 0
 	} else {
 		if page < 1 {
-			page = 1
+			page = common.DefaultPage
 		}
-		if pageSize > 100 {
-			limit = 15
+		if pageSize > common.MaxPageSize {
+			limit = common.DefaultPageSize
 		}
 		offset = (page - 1) * limit
 	}

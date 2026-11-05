@@ -205,7 +205,6 @@ func TestRESTDocumentListingFiltersPaginationAndReads(t *testing.T) {
 		{"unstarted", apiObject{"run": "UNSTART"}, ids, 3},
 		{"future_creation", apiObject{"create_time_from": "9999999999000"}, nil, 3},
 		{"past_creation", apiObject{"create_time_to": "1"}, nil, 3},
-		{"invalid_page_defaults", apiObject{"page": "invalid", "page_size": -1}, ids, 3},
 		{"unknown_query_ignored", apiObject{"unexpected": "ignored"}, ids, 3},
 	}
 	for _, tc := range cases {
@@ -238,6 +237,7 @@ func TestRESTDocumentListingFiltersPaginationAndReads(t *testing.T) {
 		query apiObject
 		code  int
 	}{
+		{apiObject{"page": "invalid", "page_size": -1}, 101},
 		{apiObject{"orderby": "name; DROP TABLE document"}, 101},
 		{apiObject{"metadata_condition": "{bad"}, 102},
 		{apiObject{"metadata_condition": "[]"}, 102},
