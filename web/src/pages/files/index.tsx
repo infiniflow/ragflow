@@ -11,16 +11,18 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ListDeletionKey } from '@/constants/list-deletion';
 import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
+import { useClearSelectionOnFolderChange } from '@/hooks/logic-hooks/use-clear-selection-on-folder-change';
 import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import { useRowSelection } from '@/hooks/logic-hooks/use-row-selection';
 import { useFetchFileList } from '@/hooks/use-file-request';
 import { LucidePlus } from 'lucide-react';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CreateFolderDialog } from './create-folder-dialog';
 import { FileBreadcrumb } from './file-breadcrumb';
 import { FilesTable } from './files-table';
 import {
+  useGetFolderId,
   useHandleConnectToKnowledge,
   UseHandleConnectToKnowledgeReturnType,
 } from './hooks';
@@ -83,24 +85,38 @@ export default function Files() {
     selectedCount,
   } = useRowSelection();
 
-  useClearSelectionOnPageChange(pagination, clearRowSelection);
-
-  useGoToPreviousPageOnEmpty(files?.length, loading, {
-    deletionKey: ListDeletionKey.FileList,
-    searchString,
-    setSearchString,
-  });
+  const folderId = useGetFolderId();
 
   const {
     showMoveFileModal,
     moveFileVisible,
     onMoveFileOk,
     hideMoveFileModal,
+    dismissMoveFile,
     moveFileLoading,
   } = useHandleMoveFile({ clearRowSelection });
 
   const connectKnowledgeModal: UseHandleConnectToKnowledgeReturnType =
     useHandleConnectToKnowledge();
+
+  const clearSelectionOnFolderChange = useCallback(() => {
+    clearRowSelection();
+    dismissMoveFile();
+    connectKnowledgeModal.dismissConnectToKnowledge();
+  }, [
+    clearRowSelection,
+    dismissMoveFile,
+    connectKnowledgeModal.dismissConnectToKnowledge,
+  ]);
+
+  useClearSelectionOnPageChange(pagination, clearRowSelection);
+  useClearSelectionOnFolderChange(folderId, clearSelectionOnFolderChange);
+
+  useGoToPreviousPageOnEmpty(files?.length, loading, {
+    deletionKey: ListDeletionKey.FileList,
+    searchString,
+    setSearchString,
+  });
 
   const { list } = useBulkOperateFile({
     files,
