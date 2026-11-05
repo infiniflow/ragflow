@@ -530,8 +530,8 @@ func renameDatasetFolder(ctx context.Context, tx *gorm.DB, kb *entity.Knowledgeb
 
 	var kbRoot entity.File
 	err = tx.WithContext(ctx).
-		Where("tenant_id = ? AND parent_id = ? AND name = ? AND type = ? AND source_type = ?",
-			kb.TenantID, root.ID, dao.DatasetFolderName, "folder", string(entity.FileSourceKnowledgebase)).
+		Where("tenant_id = ? AND parent_id = ? AND name = ?",
+			kb.TenantID, root.ID, dao.DatasetFolderName).
 		Take(&kbRoot).Error
 	if dao.IsNotFoundErr(err) {
 		return common.CodeSuccess, nil
@@ -539,22 +539,27 @@ func renameDatasetFolder(ctx context.Context, tx *gorm.DB, kb *entity.Knowledgeb
 	if err != nil {
 		return common.CodeServerError, err
 	}
+	if kbRoot.Type != "folder" {
+		return common.CodeDataError, errors.New("Knowledgebase root is not a folder")
+	}
 
-	folders := func() *gorm.DB {
+	entries := func() *gorm.DB {
 		return tx.WithContext(ctx).Model(&entity.File{}).
-			Where("tenant_id = ? AND parent_id = ? AND type = ?", kb.TenantID, kbRoot.ID, "folder")
+			Where("tenant_id = ? AND parent_id = ?", kb.TenantID, kbRoot.ID)
 	}
 	var original entity.File
-	err = folders().Where("name = ? AND source_type = ?", kb.Name, string(entity.FileSourceKnowledgebase)).
+	// Uploads reuse entries by tenant, parent and name, regardless of source.
+	err = entries().Where("name = ?", kb.Name).
 		Take(&original).Error
 	if err != nil && !dao.IsNotFoundErr(err) {
 		return common.CodeServerError, err
 	}
+	if original.ID != "" && original.Type != "folder" {
+		return common.CodeDataError, errors.New("Dataset path is not a folder")
+	}
 
 	var count int64
-	err = tx.WithContext(ctx).Model(&entity.File{}).
-		Where("tenant_id = ? AND parent_id = ? AND LOWER(name) = LOWER(?) AND id <> ?",
-			kb.TenantID, kbRoot.ID, newName, original.ID).
+	err = entries().Where("LOWER(name) = LOWER(?) AND id <> ?", newName, original.ID).
 		Count(&count).Error
 	if err != nil {
 		return common.CodeServerError, err
@@ -565,7 +570,7 @@ func renameDatasetFolder(ctx context.Context, tx *gorm.DB, kb *entity.Knowledgeb
 	if original.ID == "" {
 		return common.CodeSuccess, nil
 	}
-	if err = folders().Where("id = ?", original.ID).Update("name", newName).Error; err != nil {
+	if err = entries().Where("id = ? AND type = ?", original.ID, "folder").Update("name", newName).Error; err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil

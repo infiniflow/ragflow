@@ -27,15 +27,17 @@ func insertRenameTestFolder(t *testing.T, id, parentID, tenantID, name, source s
 
 func TestDatasetRenameFolder(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		root        bool
-		kbRoot      bool
-		original    bool
-		target      bool
-		targetScope string
-		targetType  string
-		newName     string
-		wantCode    common.ErrorCode
+		name         string
+		root         bool
+		kbRoot       bool
+		original     bool
+		target       bool
+		targetScope  string
+		targetType   string
+		originalType string
+		kbRootType   string
+		newName      string
+		wantCode     common.ErrorCode
 	}{
 		{name: "rename existing folder", root: true, kbRoot: true, original: true, newName: "Renamed"},
 		{name: "case only rename", root: true, kbRoot: true, original: true, newName: "ORIGINAL"},
@@ -48,6 +50,8 @@ func TestDatasetRenameFolder(t *testing.T) {
 		{name: "no original folder", root: true, kbRoot: true, newName: "Renamed"},
 		{name: "no knowledgebase root", root: true, newName: "Renamed"},
 		{name: "no root", newName: "Renamed"},
+		{name: "original name is a virtual file", root: true, kbRoot: true, original: true, originalType: "virtual", newName: "Renamed", wantCode: common.CodeDataError},
+		{name: "knowledgebase root is a virtual file", root: true, kbRoot: true, kbRootType: "virtual", newName: "Renamed", wantCode: common.CodeDataError},
 		{name: "same name in another tenant", root: true, kbRoot: true, original: true, target: true, targetScope: "tenant", newName: "Renamed"},
 		{name: "same name under another parent", root: true, kbRoot: true, original: true, target: true, targetScope: "parent", newName: "Renamed"},
 	} {
@@ -65,6 +69,13 @@ func TestDatasetRenameFolder(t *testing.T) {
 				insertRenameTestFolder(t, "original", "kb-root", "tenant-1", "Original", "knowledgebase")
 				// Matching names outside the owned folder must remain untouched.
 				insertRenameTestFolder(t, "unrelated-original", "root", "tenant-1", "Original", "knowledgebase")
+			}
+			for id, fileType := range map[string]string{"original": tc.originalType, "kb-root": tc.kbRootType} {
+				if fileType != "" {
+					if err := db.Model(&entity.File{}).Where("id = ?", id).Update("type", fileType).Error; err != nil {
+						t.Fatal(err)
+					}
+				}
 			}
 			if tc.target {
 				parentID, tenantID := "kb-root", "tenant-1"
@@ -149,108 +160,154 @@ func TestDatasetRenameFolderRollsBack(t *testing.T) {
 }
 
 func TestDatasetRenameFolderSurvivesDeletingReusedName(t *testing.T) {
-	db := setupDatasetUpdateTestDB(t)
-	pushServiceDB(t, db)
-	insertCreateDatasetTenant(t, "tenant-1")
-	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
-	factory := storage.GetStorageFactory()
-	previous := factory.GetStorage()
-	store := storage.NewMemoryStorage()
-	factory.SetStorage(store)
-	t.Cleanup(func() { factory.SetStorage(previous) })
-	datasets := testDatasetCreateService(t)
-	documents := document.NewDocumentService()
-	create := func(name string) *entity.Knowledgebase {
-		t.Helper()
-		result, code, err := datasets.CreateDataset(ctx, &service.CreateDatasetRequest{Name: name, ParserID: sptr("general"), ParseType: iptr(1)})
-		if err != nil || code != common.CodeSuccess {
-			t.Fatalf("create %s: code=%v err=%v", name, code, err)
-		}
-		kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, result["id"].(string))
-		if err != nil {
-			t.Fatal(err)
-		}
-		return kb
-	}
-	upload := func(kb *entity.Knowledgebase, name string) (string, entity.File) {
-		t.Helper()
-		var body bytes.Buffer
-		writer := multipart.NewWriter(&body)
-		part, err := writer.CreateFormFile("file", name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err = part.Write([]byte("content for " + name)); err != nil {
-			t.Fatal(err)
-		}
-		if err = writer.Close(); err != nil {
-			t.Fatal(err)
-		}
-		req := httptest.NewRequest("POST", "/", &body)
-		req.Header.Set("Content-Type", writer.FormDataContentType())
-		if err = req.ParseMultipartForm(1 << 20); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = req.MultipartForm.RemoveAll() })
-		results, errs := documents.UploadLocalDocuments(ctx, kb, req.MultipartForm.File["file"], "", nil)
-		if len(errs) != 0 || len(results) != 1 {
-			t.Fatalf("upload %s: results=%v errors=%v", name, results, errs)
-		}
-		id := results[0]["id"].(string)
-		var file entity.File
-		if err = db.Table("file").Select("file.*").Joins("JOIN file2document ON file2document.file_id = file.id").Where("file2document.document_id = ?", id).Take(&file).Error; err != nil {
-			t.Fatal(err)
-		}
-		return id, file
-	}
-	a := create("Original")
-	oldDoc, oldFile := upload(a, "a-old.txt")
-	name := "Renamed"
-	if _, code, err := datasets.UpdateDataset(ctx, a.ID, service.UpdateDatasetRequest{Name: &name}); err != nil || code != common.CodeSuccess {
-		t.Fatalf("rename: code=%v err=%v", code, err)
-	}
-	var err error
-	a, err = dao.NewKnowledgebaseDAO().GetByID(ctx, db, a.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	newDoc, newFile := upload(a, "a-new.txt")
-	if newFile.ParentID != oldFile.ParentID {
-		t.Fatalf("A upload changed folders after rename: old=%s new=%s", oldFile.ParentID, newFile.ParentID)
-	}
-	b := create("Original")
-	bDoc, bFile := upload(b, "b.txt")
-	if bFile.ParentID == oldFile.ParentID {
-		t.Fatal("B reused A's folder")
-	}
-	if _, code, err := datasets.DeleteDatasets(ctx, []string{b.ID}, false); err != nil || code != common.CodeSuccess {
-		t.Fatalf("delete B: code=%v err=%v", code, err)
-	}
-	var folder entity.File
-	if err := db.Where("id = ?", oldFile.ParentID).Take(&folder).Error; err != nil || folder.Name != "Renamed" {
-		t.Fatalf("A folder missing or incorrectly named: %+v err=%v", folder, err)
-	}
-	for _, check := range []struct {
-		model interface{}
-		id    string
-		want  int64
+	for _, tc := range []struct {
+		name          string
+		manualRoot    bool
+		manualDataset bool
 	}{
-		{&entity.Knowledgebase{}, a.ID, 1}, {&entity.Document{}, oldDoc, 1}, {&entity.Document{}, newDoc, 1},
-		{&entity.File{}, oldFile.ID, 1}, {&entity.File{}, newFile.ID, 1},
-		{&entity.Knowledgebase{}, b.ID, 0}, {&entity.Document{}, bDoc, 0}, {&entity.File{}, bFile.ID, 0}, {&entity.File{}, bFile.ParentID, 0},
+		{name: "managed folders"},
+		{name: "user created dataset folder", manualDataset: true},
+		{name: "user created knowledgebase root", manualRoot: true},
+		{name: "both user created", manualRoot: true, manualDataset: true},
 	} {
-		var count int64
-		if err := db.Model(check.model).Where("id = ?", check.id).Count(&count).Error; err != nil || count != check.want {
-			t.Fatalf("%T id=%s: count=%d want=%d err=%v", check.model, check.id, count, check.want, err)
-		}
-	}
-	for _, name := range []string{"a-old.txt", "a-new.txt"} {
-		blob, err := store.Get(ctx, a.ID, name)
-		if err != nil || string(blob) != "content for "+name {
-			t.Fatalf("A content changed: name=%s blob=%q err=%v", name, blob, err)
-		}
-	}
-	if store.BucketExists(ctx, b.ID) {
-		t.Fatal("B storage bucket survived deletion")
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupDatasetUpdateTestDB(t)
+			pushServiceDB(t, db)
+			insertCreateDatasetTenant(t, "tenant-1")
+			ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+			factory := storage.GetStorageFactory()
+			previous := factory.GetStorage()
+			store := storage.NewMemoryStorage()
+			factory.SetStorage(store)
+			t.Cleanup(func() { factory.SetStorage(previous) })
+			datasets := testDatasetCreateService(t)
+			documents := document.NewDocumentService()
+			var manualFolderID, kbRootID string
+			if tc.manualRoot || tc.manualDataset {
+				root, err := dao.NewFileDAO().GetRootFolder(ctx, db, "tenant-1")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tc.manualRoot {
+					created, err := filesvc.NewFileService(nil).CreateFolder(ctx, ".knowledgebase", root.ID, "folder")
+					if err != nil {
+						t.Fatal(err)
+					}
+					kbRootID = created["id"].(string)
+				} else {
+					kbRootID = "kb-root"
+					insertRenameTestFolder(t, kbRootID, root.ID, "tenant-1", ".knowledgebase", "knowledgebase")
+				}
+				if tc.manualDataset {
+					created, err := filesvc.NewFileService(nil).CreateFolder(ctx, "Original", kbRootID, "folder")
+					if err != nil {
+						t.Fatal(err)
+					}
+					manualFolderID = created["id"].(string)
+				}
+			}
+			create := func(name string) *entity.Knowledgebase {
+				t.Helper()
+				result, code, err := datasets.CreateDataset(ctx, &service.CreateDatasetRequest{Name: name, ParserID: sptr("general"), ParseType: iptr(1)})
+				if err != nil || code != common.CodeSuccess {
+					t.Fatalf("create %s: code=%v err=%v", name, code, err)
+				}
+				kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, result["id"].(string))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return kb
+			}
+			upload := func(kb *entity.Knowledgebase, name string) (string, entity.File) {
+				t.Helper()
+				var body bytes.Buffer
+				writer := multipart.NewWriter(&body)
+				part, err := writer.CreateFormFile("file", name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = part.Write([]byte("content for " + name)); err != nil {
+					t.Fatal(err)
+				}
+				if err = writer.Close(); err != nil {
+					t.Fatal(err)
+				}
+				req := httptest.NewRequest("POST", "/", &body)
+				req.Header.Set("Content-Type", writer.FormDataContentType())
+				if err = req.ParseMultipartForm(1 << 20); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = req.MultipartForm.RemoveAll() })
+				results, errs := documents.UploadLocalDocuments(ctx, kb, req.MultipartForm.File["file"], "", nil)
+				if len(errs) != 0 || len(results) != 1 {
+					t.Fatalf("upload %s: results=%v errors=%v", name, results, errs)
+				}
+				id := results[0]["id"].(string)
+				var file entity.File
+				if err = db.Table("file").Select("file.*").Joins("JOIN file2document ON file2document.file_id = file.id").Where("file2document.document_id = ?", id).Take(&file).Error; err != nil {
+					t.Fatal(err)
+				}
+				return id, file
+			}
+			a := create("Original")
+			oldDoc, oldFile := upload(a, "a-old.txt")
+			if tc.manualDataset && oldFile.ParentID != manualFolderID {
+				t.Fatal("upload did not reuse user-created dataset folder")
+			}
+			name := "Renamed"
+			if _, code, err := datasets.UpdateDataset(ctx, a.ID, service.UpdateDatasetRequest{Name: &name}); err != nil || code != common.CodeSuccess {
+				t.Fatalf("rename: code=%v err=%v", code, err)
+			}
+			var err error
+			a, err = dao.NewKnowledgebaseDAO().GetByID(ctx, db, a.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			newDoc, newFile := upload(a, "a-new.txt")
+			if newFile.ParentID != oldFile.ParentID {
+				t.Fatalf("A upload changed folders after rename: old=%s new=%s", oldFile.ParentID, newFile.ParentID)
+			}
+			b := create("Original")
+			bDoc, bFile := upload(b, "b.txt")
+			if bFile.ParentID == oldFile.ParentID {
+				t.Fatal("B reused A's folder")
+			}
+			if _, code, err := datasets.DeleteDatasets(ctx, []string{b.ID}, false); err != nil || code != common.CodeSuccess {
+				t.Fatalf("delete B: code=%v err=%v", code, err)
+			}
+			var folder entity.File
+			if err := db.Where("id = ?", oldFile.ParentID).Take(&folder).Error; err != nil || folder.Name != "Renamed" {
+				t.Fatalf("A folder missing or incorrectly named: %+v err=%v", folder, err)
+			}
+			if tc.manualDataset && folder.SourceType != "" {
+				t.Fatalf("rename changed folder source: %q", folder.SourceType)
+			}
+			if kbRootID != "" && folder.ParentID != kbRootID {
+				t.Fatal("upload did not reuse the expected knowledgebase root")
+			}
+			for _, check := range []struct {
+				model interface{}
+				id    string
+				want  int64
+			}{
+				{&entity.Knowledgebase{}, a.ID, 1}, {&entity.Document{}, oldDoc, 1}, {&entity.Document{}, newDoc, 1},
+				{&entity.File{}, oldFile.ID, 1}, {&entity.File{}, newFile.ID, 1},
+				{&entity.Knowledgebase{}, b.ID, 0}, {&entity.Document{}, bDoc, 0}, {&entity.File{}, bFile.ID, 0}, {&entity.File{}, bFile.ParentID, 0},
+			} {
+				var count int64
+				if err := db.Model(check.model).Where("id = ?", check.id).Count(&count).Error; err != nil || count != check.want {
+					t.Fatalf("%T id=%s: count=%d want=%d err=%v", check.model, check.id, count, check.want, err)
+				}
+			}
+			for _, name := range []string{"a-old.txt", "a-new.txt"} {
+				blob, err := store.Get(ctx, a.ID, name)
+				if err != nil || string(blob) != "content for "+name {
+					t.Fatalf("A content changed: name=%s blob=%q err=%v", name, blob, err)
+				}
+			}
+			if store.BucketExists(ctx, b.ID) {
+				t.Fatal("B storage bucket survived deletion")
+			}
+		})
 	}
 }
