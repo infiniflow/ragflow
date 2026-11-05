@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"testing"
 
@@ -910,5 +911,43 @@ func TestGroupedDeduperTracksNameAfterSemanticMerge(t *testing.T) {
 	}
 	if ids := common.MetaStringSlice(got[0].Meta, "source_chunk_ids"); len(ids) != 3 {
 		t.Fatalf("semantic and exact-name merges lost provenance: %v", ids)
+	}
+}
+
+// TestStructureBatchCap locks the STRUCT_MAX_CHUNKS_PER_BATCH env override:
+// invalid or non-positive values disable the cap (return 0), and a positive
+// value sets the cap.
+func TestStructureBatchCap(t *testing.T) {
+	const key = "STRUCT_MAX_CHUNKS_PER_BATCH"
+	cases := []struct {
+		name string
+		set  string // "" means unset
+		want int
+	}{
+		{"unset", "", 0},
+		{"zero", "0", 0},
+		{"negative", "-3", 0},
+		{"non-numeric", "abc", 0},
+		{"positive", "5", 5},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			orig, had := os.LookupEnv(key)
+			if c.set == "" {
+				os.Unsetenv(key)
+			} else {
+				os.Setenv(key, c.set)
+			}
+			t.Cleanup(func() {
+				if had {
+					os.Setenv(key, orig)
+				} else {
+					os.Unsetenv(key)
+				}
+			})
+			if got := structureBatchCap(); got != c.want {
+				t.Fatalf("structureBatchCap() = %d, want %d (env=%q)", got, c.want, c.set)
+			}
+		})
 	}
 }

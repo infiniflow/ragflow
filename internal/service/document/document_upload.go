@@ -10,6 +10,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -27,7 +28,11 @@ import (
 //
 // Gaps vs Python (documented, not yet ported): thumbnail generation and
 // read_potential_broken_pdf repair.
-func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
+func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, []string{permission.ErrUnauthenticated.Error()}
+	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, []string{"storage not initialized"}
@@ -36,7 +41,7 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 	// Resolve (and create if needed) the dataset's file-manager folder up front.
 	// Without the File / file2document linkage the document list (which inner-joins
 	// file2document + file) would never surface the uploaded files.
-	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
+	kbFolder, err := s.ensureKBFolder(ctx, kb, userID)
 	if err != nil {
 		return nil, []string{err.Error()}
 	}
@@ -90,7 +95,7 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 		}
 
 		selection, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, merged)
-		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), selection, parserConfig, "local", int64(len(blob)), blob)
+		doc := s.newDatasetDocument(kb, userID, filename, location, string(filetype), selection, parserConfig, "local", int64(len(blob)), blob)
 		if err = s.InsertDocument(ctx, doc); err != nil {
 			// Roll back the orphaned blob so a failed insert doesn't leak storage.
 			rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
@@ -118,7 +123,11 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 }
 
 // UploadEmptyDocument inserts a zero-byte "virtual" document into the dataset.
-func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, name string) (map[string]interface{}, common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, common.CodeUnauthorized, permission.ErrUnauthenticated
+	}
 	// Fall back to a numbered name when the requested one is already taken.
 	name, err := common.UniqueFileName(name, 255, func(candidate string) (bool, error) {
 		return s.documentDAO.NameExistsInKB(ctx, dao.DB, kb.ID, candidate)
@@ -127,14 +136,14 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 		return nil, common.CodeServerError, err
 	}
 
-	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
+	kbFolder, err := s.ensureKBFolder(ctx, kb, userID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
 
 	// Virtual documents have no file type to route on, so they keep the
 	// dataset parser (mirrors Python's _upload_empty_document).
-	doc := s.newDatasetDocument(kb, tenantID, name, "", "virtual", service.CurrentSelection(kb.ParserID, kb.PipelineID), kb.ParserConfig, "local", 0, nil)
+	doc := s.newDatasetDocument(kb, userID, name, "", "virtual", service.CurrentSelection(kb.ParserID, kb.PipelineID), kb.ParserConfig, "local", 0, nil)
 	if err = s.InsertDocument(ctx, doc); err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -233,13 +242,17 @@ func (s *DocumentService) addFileFromKB(ctx context.Context, doc *entity.Documen
 	return nil
 }
 
-func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, name, url string) (map[string]interface{}, common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, common.CodeUnauthorized, permission.ErrUnauthenticated
+	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, common.CodeServerError, fmt.Errorf("storage not initialized")
 	}
 
-	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
+	kbFolder, err := s.ensureKBFolder(ctx, kb, userID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -275,7 +288,7 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 	}
 
 	selection, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, kb.ParserConfig)
-	doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), selection, parserConfig, "web", int64(len(blob)), blob)
+	doc := s.newDatasetDocument(kb, userID, filename, location, string(filetype), selection, parserConfig, "web", int64(len(blob)), blob)
 	if err = s.InsertDocument(ctx, doc); err != nil {
 		rmErr := removeObjectBestEffort(ctx, storageImpl, kb.ID, location)
 		if rmErr != nil {

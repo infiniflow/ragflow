@@ -44,19 +44,19 @@ RAGFlow stores the credentials _per tenant_. You can configure them either via t
 4. Click **Save**.
 
 
-Once saved, the Go chat pipeline uses these credentials for chat requests that use a knowledge base or web search.
+Once saved, the Go chat pipeline uses these credentials for chat requests that use a Dataset or web search.
 
 ---
 
 ## 3. Run a Pipeline and Watch the Traces
 
-1. Send a message through a Chat configured with a knowledge base or web search.
+1. Send a message through a Chat configured with a Dataset or web search.
 2. Open your Langfuse project ▸ **Traces**.
 3. Find the trace named `openai_chat` for the request.
 
 The trace contains:
 
-- One `openai_chat` trace containing the tenant ID as `userId`, the chat ID as `sessionId`, and metadata indicating whether streaming was enabled and how many knowledge bases were configured.
+- One `openai_chat` trace containing the tenant ID as `userId`, the chat ID as `sessionId`, and metadata indicating whether streaming was enabled and how many Datasets were configured.
 - One `chat` generation observation containing the model name and the prompt, citation prompt, and model message list as input.
 - A completion update for that generation containing the recorded output summary and prompt, completion, and total token counts.
 

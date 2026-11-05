@@ -799,6 +799,18 @@ export interface ICanvasVersionRow {
   alias?: string;
 }
 
+// Query options shared by useFetchCanvasVersionList and imperative callers
+// (queryClient.fetchQuery), so both hit the same cache entry.
+export const canvasVersionListQuery = (canvasId?: string) =>
+  ({
+    queryKey: AgentKeys.canvasVersionList(canvasId),
+    queryFn: async (): Promise<ICanvasVersionRow[]> => {
+      if (!canvasId) return [];
+      const { data } = await agentService.fetchVersionList(canvasId);
+      return data?.data ?? [];
+    },
+  }) as const;
+
 // Lists versions for document status displays. Parser selection uses the
 // lightweight catalog instead. No initialData so pending and empty differ.
 export const useFetchCanvasVersionList = (canvasId?: string) => {
@@ -807,14 +819,9 @@ export const useFetchCanvasVersionList = (canvasId?: string) => {
     isFetching: loading,
     isError,
   } = useQuery({
-    queryKey: AgentKeys.canvasVersionList(canvasId),
+    ...canvasVersionListQuery(canvasId),
     gcTime: 0,
     enabled: !!canvasId,
-    queryFn: async (): Promise<ICanvasVersionRow[]> => {
-      if (!canvasId) return [];
-      const { data } = await agentService.fetchVersionList(canvasId);
-      return data?.data ?? [];
-    },
   });
 
   return { data, loading, isError };

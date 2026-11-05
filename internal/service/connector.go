@@ -282,7 +282,7 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, req *CreateConne
 	if userID == "" {
 		return nil, permission.ErrUnauthenticated
 	}
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +367,7 @@ func (s *ConnectorService) ListConnectors(ctx context.Context, requestedTenantID
 	tenantID := strings.TrimSpace(requestedTenantID)
 	if tenantID == "" {
 		var err error
-		tenantID, err = requireCurrentTenantID(ctx, userID)
+		tenantID, err = requireCurrentTenantID(ctx)
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return &ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
 		}

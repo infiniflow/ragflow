@@ -311,7 +311,7 @@ func (s *CompilationTemplateGroupService) buildGroupItem(ctx context.Context, te
 			Name:        c.Name,
 			Description: derefString(c.Description),
 			Kind:        c.Kind,
-			Config:      fillConfigDefaultLLM(ctx, c.Config, identityForTemplateTenant(ctx, tenantID)),
+			Config:      fillConfigDefaultLLM(ctx, c.Config, tenantID),
 			CreateTime:  timeStr(c.CreateTime),
 			UpdateTime:  timeStr(c.UpdateTime),
 		})
@@ -434,14 +434,18 @@ func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db
 			}
 		}
 		desc := child.Description
-		config := fillConfigDefaultLLM(ctx, child.Config, identityForTemplateTenant(ctx, tenantID))
+		config := fillConfigDefaultLLM(ctx, child.Config, tenantID)
 		if config == nil {
 			config = entity.JSONMap{}
 		}
 		valid := string(entity.StatusValid)
+		userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+		if userID == "" {
+			userID = tenantID
+		}
 		tmpl := &entity.CompilationTemplate{
 			ID:       common.GenerateUUID(),
-			UserID:   identityForTemplateTenant(ctx, tenantID).UserID,
+			UserID:   userID,
 			TenantID: &tenantID,
 			GroupID:  &groupID,
 			Name:     name,
@@ -539,7 +543,7 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 
 	// Pass 3: apply updates and inserts.
 	for _, item := range resolved {
-		config := fillConfigDefaultLLM(ctx, item.child.Config, identityForTemplateTenant(ctx, tenantID))
+		config := fillConfigDefaultLLM(ctx, item.child.Config, tenantID)
 		if config == nil {
 			config = entity.JSONMap{}
 		}
@@ -564,9 +568,13 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 		}
 		newID := common.GenerateUUID()
 		valid := string(entity.StatusValid)
+		userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+		if userID == "" {
+			userID = tenantID
+		}
 		tmpl := &entity.CompilationTemplate{
 			ID:       newID,
-			UserID:   identityForTemplateTenant(ctx, tenantID).UserID,
+			UserID:   userID,
 			TenantID: &tenantID,
 			GroupID:  &groupID,
 			Name:     newName,
@@ -591,14 +599,6 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 		oldNames[c.ID] = c.Name
 	}
 	return s.assertUniqueChildNames(ctx, db, groupID, oldNames)
-}
-
-func identityForTemplateTenant(ctx context.Context, tenantID string) Identity {
-	access := Identity{UserID: tenantID, TenantID: tenantID}
-	if userID := strings.TrimSpace(permission.UserIDFromContext(ctx)); userID != "" {
-		access.UserID = userID
-	}
-	return access
 }
 
 // assertUniqueChildNames rejects a group whose valid children collide on a

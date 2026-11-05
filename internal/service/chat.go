@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -198,7 +199,7 @@ type CreateChatRequest struct {
 
 func (s *ChatService) Create(ctx context.Context, req map[string]interface{}) (map[string]interface{}, common.ErrorCode, error) {
 	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalized := permissionresponse.Normalize(err)
 		return nil, code, normalized
@@ -436,7 +437,7 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 	return normalizedIDs, nil
 }
 
-func validateChatDatasetAccess(ctx context.Context, userID string, kbIDs entity.JSONSlice) error {
+func validateChatDatasetAccess(ctx context.Context, kbIDs entity.JSONSlice) error {
 	for _, rawID := range kbIDs {
 		datasetID, ok := rawID.(string)
 		if !ok || strings.TrimSpace(datasetID) == "" {
@@ -476,7 +477,7 @@ func resolveCreateLLMID(ctx context.Context, llmID, tenantID string, llmSetting 
 		}
 	}
 	modelFactory := NewModelFactory()
-	target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: tenantID}, modelType, llmID)
+	target, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), modelType, llmID)
 	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
@@ -492,7 +493,7 @@ func resolveCreateRerankID(ctx context.Context, rerankID, tenantID string) (stri
 		return "", nil
 	}
 	modelFactory := NewModelFactory()
-	target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: tenantID}, entity.ModelTypeRerank, rerankID)
+	target, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeRerank, rerankID)
 	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
@@ -955,7 +956,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, chatID string, req map
 			req["tenant_decision_id"] = nil
 		} else {
 			modelFactory := NewModelFactory()
-			target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: modelTenantID}, entity.ModelTypeDecision, decisionID)
+			target, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, modelTenantID), entity.ModelTypeDecision, decisionID)
 			if err != nil {
 				return nil, fmt.Errorf("`decision_id` %s doesn't exist", decisionID)
 			}
@@ -1209,7 +1210,7 @@ func (s *ChatService) resolveRESTLLMID(ctx context.Context, llmID, tenantID stri
 		}
 	}
 	modelFactory := NewModelFactory()
-	target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: tenantID}, modelType, llmID)
+	target, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), modelType, llmID)
 	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
@@ -1225,7 +1226,7 @@ func (s *ChatService) resolveRESTRerankID(ctx context.Context, rerankID, tenantI
 		return "", nil
 	}
 	modelFactory := NewModelFactory()
-	target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: tenantID}, entity.ModelTypeRerank, rerankID)
+	target, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeRerank, rerankID)
 	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}

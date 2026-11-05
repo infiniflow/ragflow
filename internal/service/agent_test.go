@@ -958,7 +958,7 @@ func TestMergedAgentsRespectRequestedTimestamp(t *testing.T) {
 		{"default", nil, "new"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resp, code, err := NewAgentService().mergeAgentsAndGroups(t.Context(), "user-1", items, "", tc.terms, 1, 1)
+			resp, code, err := NewAgentService().mergeAgentsAndGroups(permission.WithIdentity(t.Context(), "user-1", ""), items, "", tc.terms, 1, 1)
 			if err != nil || code != common.CodeSuccess || resp.Total != 2 || len(resp.Canvas) != 1 {
 				t.Fatalf("merge: response=%+v code=%v err=%v", resp, code, err)
 			}
@@ -1097,7 +1097,7 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	session, code, err := NewAgentService().GetAgentSession(ctx, "canvas-1", "session-1", dao.ConversationHistoryOptions{IncludeReference: true})
+	session, code, err := NewAgentService().GetAgentSession(ctx, "canvas-1", "session-1", false, dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil {
 		t.Fatalf("GetAgentSession failed: %v", err)
 	}
@@ -1173,7 +1173,6 @@ func TestCreateAgentSessionLeavesVersionTitleNilWithVersions(t *testing.T) {
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	svc := NewAgentService()
 	session, code, err := svc.CreateAgentSession(ctx, &CreateAgentSessionRequest{
-		UserID:  "user-1",
 		AgentID: "canvas-1",
 		Name:    "hello",
 	})
@@ -1221,7 +1220,6 @@ func TestCreateAgentSessionNoVersionLeavesTitleNil(t *testing.T) {
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	session, code, err := NewAgentService().CreateAgentSession(ctx, &CreateAgentSessionRequest{
-		UserID:  "user-1",
 		AgentID: "canvas-1",
 	})
 	if err != nil {
@@ -1309,7 +1307,7 @@ func TestAgentModelValidationUsesCanvasTenant(t *testing.T) {
 
 	ctx := permission.WithIdentity(t.Context(), tenantOwnerID, tenantID)
 	svc := NewAgentService()
-	if _, code, err := svc.CreateAgentSession(ctx, &CreateAgentSessionRequest{UserID: tenantOwnerID, AgentID: canvasRow.ID}); err != nil || code != common.CodeSuccess {
+	if _, code, err := svc.CreateAgentSession(ctx, &CreateAgentSessionRequest{AgentID: canvasRow.ID}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateAgentSession with tenant model = (%d, %v), want success", code, err)
 	}
 	if err := svc.UpdateAgent(ctx, canvasRow.ID, map[string]any{"dsl": dsl}); err != nil {
@@ -1324,7 +1322,7 @@ func TestGetAgentSessionServiceNotFoundWhenSessionBelongsToAnotherAgent(t *testi
 	createAgentSessionTestConversation(t, "session-other", "canvas-other", "user-1", 1000)
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	session, code, err := NewAgentService().GetAgentSession(ctx, "canvas-1", "session-other")
+	session, code, err := NewAgentService().GetAgentSession(ctx, "canvas-1", "session-other", false)
 	if err == nil {
 		t.Fatal("expected not found error")
 	}
@@ -2815,7 +2813,7 @@ func TestGetAgentSession_RejectsIDOR(t *testing.T) {
 	createAgentSessionTestConversation(t, "session-1", "agent-1", "user-1", 1000)
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	data, code, err := NewAgentService().GetAgentSession(ctx, "agent-2", "session-1")
+	data, code, err := NewAgentService().GetAgentSession(ctx, "agent-2", "session-1", false)
 	if err == nil {
 		t.Fatal("expected non-nil error for cross-agent session access")
 	}
@@ -2838,7 +2836,7 @@ func TestGetAgentSession_SuccessWhenAgentMatches(t *testing.T) {
 	createAgentSessionTestConversation(t, "session-1", "agent-1", "user-1", 1000)
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	data, code, err := NewAgentService().GetAgentSession(ctx, "agent-1", "session-1")
+	data, code, err := NewAgentService().GetAgentSession(ctx, "agent-1", "session-1", false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2880,7 +2878,7 @@ func TestDeleteAgentSessionItem_RejectsIDOR(t *testing.T) {
 	}
 
 	// The session must still exist — the cross-agent delete was a no-op.
-	verify, _, err := NewAgentService().GetAgentSession(ctx, "agent-1", "session-1")
+	verify, _, err := NewAgentService().GetAgentSession(ctx, "agent-1", "session-1", false)
 	if err != nil {
 		t.Fatalf("session should still exist for the legitimate owner: %v", err)
 	}

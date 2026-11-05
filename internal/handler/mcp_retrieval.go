@@ -48,12 +48,9 @@ type mcpDatasetService interface {
 // mcpRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
-func mcpRetrieval(ctx context.Context, ds mcpDatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
-	contextUserID := permission.UserIDFromContext(ctx)
-	if contextUserID == "" {
-		ctx = permission.WithIdentity(ctx, userID, permission.TenantIDFromContext(ctx))
-	} else if contextUserID != userID {
-		return "", permission.ErrIdentityMismatch
+func mcpRetrieval(ctx context.Context, ds mcpDatasetService, req mcp.RetrievalRequest) (string, error) {
+	if permission.UserIDFromContext(ctx) == "" {
+		return "", permission.ErrUnauthenticated
 	}
 
 	if err := validateRetrievalWindow(req.Page, req.PageSize); err != nil {

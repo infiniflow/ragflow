@@ -317,7 +317,7 @@ func (s *AgentService) ListAgentSessions(ctx context.Context, agentID string, re
 }
 
 // GetAgentSession fetches a single conversation belonging to agentID.
-func (s *AgentService) GetAgentSession(ctx context.Context, agentID, sessionID string, options ...dao.ConversationHistoryOptions) (*entity.API4Conversation, common.ErrorCode, error) {
+func (s *AgentService) GetAgentSession(ctx context.Context, agentID, sessionID string, includeDSL bool, options ...dao.ConversationHistoryOptions) (*entity.API4Conversation, common.ErrorCode, error) {
 	if sessionID == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("session_id is required")
 	}
@@ -332,7 +332,7 @@ func (s *AgentService) GetAgentSession(ctx context.Context, agentID, sessionID s
 		return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
 	}
 
-	data, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID, sessionHistoryOptions(options...))
+	data, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID, includeDSL, sessionHistoryOptions(options...))
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to fetch session: %w", err)
 	}
@@ -583,7 +583,6 @@ func (s *AgentService) UpdateAgentTags(ctx context.Context, canvasID string, tag
 // CreateAgentSessionRequest is the wire shape for POST
 // /api/v1/agents/:agent_id/sessions.
 type CreateAgentSessionRequest struct {
-	UserID   string
 	AgentID  string
 	Name     string
 	Source   string
@@ -620,8 +619,9 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 	if req.AgentID == "" {
 		return nil, common.CodeArgumentError, errors.New("create agent session: agent_id is required")
 	}
-	if req.UserID == "" {
-		return nil, common.CodeArgumentError, errors.New("create agent session: user_id is required")
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, common.CodeUnauthorized, permission.ErrUnauthenticated
 	}
 
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: req.AgentID}, permission.OperationRun); err != nil {
@@ -649,7 +649,7 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 	if len(dsl) == 0 {
 		dsl = canvas.DSL
 	}
-	if err := validateAgentChatModels(ctx, req.UserID, canvas.EffectiveTenantID(), dsl); err != nil {
+	if err := validateAgentChatModels(ctx, canvas.EffectiveTenantID(), dsl); err != nil {
 		if errors.Is(err, ErrAgentStorageError) {
 			return nil, common.CodeServerError, errors.New("Internal storage error while accessing the agent.")
 		}
@@ -681,8 +681,8 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		ID:        id,
 		Name:      namePtr,
 		DialogID:  req.AgentID,
-		UserID:    req.UserID,
-		ExpUserID: &req.UserID,
+		UserID:    userID,
+		ExpUserID: &userID,
 		Message:   messages,
 		Source:    sourcePtr,
 		DSL:       dsl,
