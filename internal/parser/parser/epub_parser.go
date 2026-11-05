@@ -115,12 +115,9 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("epub: opf: %w", err)}
 	}
 
-	items, detectedEnc, warnings, err := extractEPUBTextItems(ctx, reader, opf, p.textOnly)
+	items, detectedEnc, warnings, err := extractEPUBTextItems(ctx, reader, opf, p.textOnly, p.RemoveTOC)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("epub: %w", err)}
-	}
-	if p.RemoveTOC {
-		items = removeContentsTable(items, isEnglishItems(items))
 	}
 	if p.FlattenMediaToText {
 		items = flattenEPUBMediaToText(items)
@@ -305,8 +302,8 @@ func normalizeEPUBSelfClosing(source string) string {
 // skipped and no other item could be read, it returns an error instead of an
 // empty result. An item that holds no text (an image-only chapter) still counts
 // as read, and an empty item counts as neither.
-func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, textOnly bool) ([]map[string]any, string, []string, error) {
-	var items []map[string]any
+func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, textOnly bool, removeTOC bool) ([]map[string]any, string, []string, error) {
+	var leaves []map[string]any
 	var failures []string
 	read := 0
 	state := &htmlWalkState{
@@ -331,7 +328,7 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 		}
 	}
 	detectedEncoding := "utf-8"
-	for _, href := range opf.SpineHrefs {
+	for chIdx, href := range opf.SpineHrefs {
 		if state.err != nil {
 			break
 		}
@@ -359,7 +356,11 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 		}
 		// Image sources are relative to the chapter, not to the OPF.
 		state.resolveMedia = epubMediaResolver(entries, state, chapterEntry, opf.Images)
-		items = appendEPUBChapter(items, doc, state)
+		chLeaves := extractEPUBChapterLeaves(doc, state)
+		for _, leaf := range chLeaves {
+			leaf["__epub_chapter"] = chIdx
+			leaves = append(leaves, leaf)
+		}
 	}
 	if state.err != nil {
 		return nil, detectedEncoding, state.warnings(), state.err
@@ -367,6 +368,10 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 	if len(failures) > 0 && read == 0 {
 		return nil, detectedEncoding, state.warnings(), fmt.Errorf("no readable content: %d of %d content items could not be read (%s)", len(failures), len(opf.SpineHrefs), failures[0])
 	}
+	if removeTOC {
+		leaves = removeContentsTable(leaves, isEnglishItems(leaves))
+	}
+	items := collapseEPUBLeaves(leaves)
 	return items, detectedEncoding, state.warnings(), nil
 }
 
@@ -449,32 +454,69 @@ func (s *htmlWalkState) loadEPUBMedia(name, mime string, entry *zip.File) (*enti
 	return ref, ref != nil
 }
 
-// appendEPUBChapter keeps continuous chapter prose together, splitting only
-// at tables and images. The shared leaf walker preserves their source order.
-func appendEPUBChapter(items []map[string]any, doc *html.Node, state *htmlWalkState) []map[string]any {
+// extractEPUBChapterLeaves walks a chapter document and collects discrete leaf items
+// (headings, paragraphs, tables, images) preserving source order.
+func extractEPUBChapterLeaves(doc *html.Node, state *htmlWalkState) []map[string]any {
 	var chapter []map[string]any
-	for root := doc.FirstChild; root != nil; root = root.NextSibling {
-		if root.Type != html.ElementNode {
-			continue
+	var collectLeaves func(n *html.Node)
+	collectLeaves = func(n *html.Node) {
+		if n == nil {
+			return
 		}
-		for part := root.FirstChild; part != nil; part = part.NextSibling {
-			htmlLeafTextWithState(part, &chapter, "text", true, state)
+		if n.Type == html.DocumentNode {
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				collectLeaves(c)
+			}
+			return
 		}
+		if n.Type == html.ElementNode && (n.Data == "html" || n.Data == "body") {
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				collectLeaves(c)
+			}
+			return
+		}
+		htmlLeafTextWithState(n, &chapter, "text", false, state)
 	}
-	start := len(items)
+	collectLeaves(doc)
+
+	var leaves []map[string]any
 	for _, item := range chapter {
 		if item["doc_type_kwd"] != "text" {
-			items = append(items, item)
+			leaves = append(leaves, item)
 			continue
 		}
 		text := strings.Join(strings.FieldsFunc(stringValue(item["text"]), isCollapsibleWS), " ")
 		if text == "" {
 			continue
 		}
-		if len(items) > start && items[len(items)-1]["doc_type_kwd"] == "text" {
+		item["text"] = text
+		leaves = append(leaves, item)
+	}
+	return leaves
+}
+
+// collapseEPUBLeaves collapses continuous prose within the same chapter into
+// single text items, splitting at tables and images and at chapter boundaries.
+func collapseEPUBLeaves(leaves []map[string]any) []map[string]any {
+	var items []map[string]any
+	var lastChapter any = nil
+	for _, item := range leaves {
+		ch := item["__epub_chapter"]
+		delete(item, "__epub_chapter")
+		if item["doc_type_kwd"] != "text" {
+			items = append(items, item)
+			lastChapter = nil
+			continue
+		}
+		text, _ := item["text"].(string)
+		if text == "" {
+			continue
+		}
+		if len(items) > 0 && lastChapter == ch && items[len(items)-1]["doc_type_kwd"] == "text" {
 			items[len(items)-1]["text"] = stringValue(items[len(items)-1]["text"]) + " " + text
 		} else {
 			items = append(items, map[string]any{"text": text, "doc_type_kwd": "text"})
+			lastChapter = ch
 		}
 	}
 	return items

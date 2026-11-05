@@ -1179,24 +1179,20 @@ func TestEPUBParser_RemoveTOC(t *testing.T) {
 	if resTOC.Err != nil {
 		t.Fatalf("ParseWithResult with remove_toc: %v", resTOC.Err)
 	}
+	var resTexts []string
 	for _, it := range ItemsToMaps(resTOC.JSON) {
 		text, _ := it["text"].(string)
-		if text == "目录" {
+		if strings.Contains(text, "目录") {
 			t.Errorf("TOC heading %q was not removed", text)
 		}
-		if strings.HasPrefix(text, "第一章") {
+		if strings.Contains(text, "第一章 概述") {
 			t.Errorf("TOC entry %q was not removed", text)
 		}
+		resTexts = append(resTexts, text)
 	}
 	// "前言" and "正文开始" should survive.
-	survived := false
-	for _, it := range ItemsToMaps(resTOC.JSON) {
-		text, _ := it["text"].(string)
-		if strings.Contains(text, "正文开始") {
-			survived = true
-		}
-	}
-	if !survived {
-		t.Error("body content was unexpectedly removed")
+	full := strings.Join(resTexts, " ")
+	if !strings.Contains(full, "前言") || !strings.Contains(full, "正文开始") {
+		t.Errorf("expected body content to survive, got %q", full)
 	}
 }
