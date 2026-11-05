@@ -11,14 +11,14 @@ export function RootLayoutContainer({ children }: React.PropsWithChildren) {
 
   return (
     <div
-      className="size-full min-w-0 grid grid-cols-[auto_minmax(0,1fr)] grid-rows-1"
+      className="size-full min-w-0 grid grid-cols-[auto_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]"
       ref={containerRef}
     >
-      <AppSidebar />
-
-      <div>
+      <div className="col-span-full">
         <RootLayoutBanner />
       </div>
+
+      <AppSidebar />
 
       <main className="size-full min-w-0 min-h-0 overflow-hidden">
         {children}
