@@ -104,7 +104,7 @@ class Session(Base):
             raise Exception(f"Unknown session type: {self.__session_type}")
 
         if stream:
-            for line in res.iter_lines(decode_unicode=True):
+            for line in res.iter_lines(decode_unicode=True, delimiter="\n"):
                 if not line:
                     continue  # Skip empty lines
                 line = line.strip()
