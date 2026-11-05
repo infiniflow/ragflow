@@ -57,17 +57,11 @@ func NewSkillSearchHandler(docEngine engine.DocEngine, spaceRemover file.DocRemo
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skills/config [get]
 func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	embdID := c.Query("embd_id")
 	spaceID := c.Query("space_id")
 
 	ctx := c.Request.Context()
-	result, code, err := h.searchService.GetConfig(ctx, user.ID, spaceID, embdID)
+	result, code, err := h.searchService.GetConfig(ctx, spaceID, embdID)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -85,12 +79,6 @@ func (h *SkillSearchHandler) GetConfig(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skills/config [post]
 func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	var req service.UpdateConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
@@ -98,7 +86,7 @@ func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.searchService.UpdateConfig(ctx, user.ID, &req)
+	result, code, err := h.searchService.UpdateConfig(ctx, &req)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -116,19 +104,13 @@ func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skills/search [post]
 func (h *SkillSearchHandler) Search(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	var req service.SearchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	result, code, err := h.searchService.Search(c.Request.Context(), user.ID, &req, h.docEngine)
+	result, code, err := h.searchService.Search(c.Request.Context(), &req, h.docEngine)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -153,12 +135,6 @@ type IndexSkillsRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skills/index [post]
 func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	var req IndexSkillsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
@@ -169,7 +145,7 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 	embdID := req.EmbdID
 	if embdID == "" {
 		ctx := c.Request.Context()
-		config, code, err := h.searchService.GetConfig(ctx, user.ID, req.SpaceID, "")
+		config, code, err := h.searchService.GetConfig(ctx, req.SpaceID, "")
 		if err != nil {
 			common.RespondError(c, code, "failed to get skill search config: "+err.Error())
 			return
@@ -184,13 +160,12 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 
 	// Ensure index exists before indexing (for both ES and Infinity)
 	common.Info("Ensuring skill index exists before indexing",
-		zap.String("tenantID", user.ID),
 		zap.String("spaceID", req.SpaceID),
 		zap.String("engineType", h.docEngine.GetType()),
 		zap.Int("skillCount", len(req.Skills)))
 
 	if h.docEngine.GetType() == "elasticsearch" {
-		if err := h.indexerService.EnsureIndex(c.Request.Context(), user.ID, req.SpaceID, h.docEngine, embdID); err != nil {
+		if err := h.indexerService.EnsureIndex(c.Request.Context(), req.SpaceID, h.docEngine, embdID); err != nil {
 			if respondPermissionErrorIf(c, err, true) {
 				return
 			}
@@ -199,17 +174,16 @@ func (h *SkillSearchHandler) IndexSkills(c *gin.Context) {
 		}
 	}
 
-	if err := h.indexerService.BatchIndexSkills(c.Request.Context(), user.ID, req.SpaceID, req.Skills, h.docEngine, embdID); err != nil {
+	if err := h.indexerService.BatchIndexSkills(c.Request.Context(), req.SpaceID, req.Skills, h.docEngine, embdID); err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.Error(fmt.Sprintf("Failed to batch index skills: tenantID=%s, spaceID=%s, error=%v", user.ID, req.SpaceID, err), err)
+		common.Error(fmt.Sprintf("Failed to batch index skills: spaceID=%s, error=%v", req.SpaceID, err), err)
 		common.RespondError(c, common.CodeOperatingError, err.Error())
 		return
 	}
 
 	common.Info("Successfully indexed skills",
-		zap.String("tenantID", user.ID),
 		zap.String("spaceID", req.SpaceID),
 		zap.Int("indexedCount", len(req.Skills)))
 
@@ -233,12 +207,6 @@ type ReindexRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skills/reindex [post]
 func (h *SkillSearchHandler) Reindex(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	var req ReindexRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
@@ -249,7 +217,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 	embdID := req.EmbdID
 	if embdID == "" {
 		ctx := c.Request.Context()
-		config, code, err := h.searchService.GetConfig(ctx, user.ID, req.SpaceID, "")
+		config, code, err := h.searchService.GetConfig(ctx, req.SpaceID, "")
 		if err != nil {
 			common.RespondError(c, code, "failed to get skill search config: "+err.Error())
 			return
@@ -262,7 +230,7 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 		embdID = val
 	}
 
-	result, err := h.indexerService.ReindexAll(c.Request.Context(), user.ID, req.SpaceID, h.docEngine, embdID)
+	result, err := h.indexerService.ReindexAll(c.Request.Context(), req.SpaceID, h.docEngine, embdID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -286,12 +254,6 @@ func (h *SkillSearchHandler) Reindex(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skills/index [delete]
 func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	skillID := c.Query("skill_id")
 	spaceID := c.Query("space_id")
 	if skillID == "" {
@@ -299,7 +261,7 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 		return
 	}
 
-	err := h.indexerService.DeleteSkillIndex(c.Request.Context(), user.ID, spaceID, skillID, h.docEngine)
+	err := h.indexerService.DeleteSkillIndex(c.Request.Context(), spaceID, skillID, h.docEngine)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -323,12 +285,6 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skill/search/init [post]
 func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	embdID := c.Query("embd_id")
 	spaceID := c.Query("space_id")
 	if embdID == "" {
@@ -336,7 +292,7 @@ func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
 		return
 	}
 
-	if err := h.indexerService.InitializeIndex(c.Request.Context(), user.ID, spaceID, h.docEngine, embdID); err != nil {
+	if err := h.indexerService.InitializeIndex(c.Request.Context(), spaceID, h.docEngine, embdID); err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
@@ -357,14 +313,8 @@ func (h *SkillSearchHandler) InitializeIndex(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/skills/spaces [get]
 func (h *SkillSearchHandler) ListSpaces(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	ctx := c.Request.Context()
-	result, code, err := h.spaceService.ListSpaces(ctx, user.ID)
+	result, code, err := h.spaceService.ListSpaces(ctx)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -392,12 +342,6 @@ type CreateSpaceRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/skills/spaces [post]
 func (h *SkillSearchHandler) CreateSpace(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	var req CreateSpaceRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
@@ -405,7 +349,7 @@ func (h *SkillSearchHandler) CreateSpace(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.spaceService.CreateSpace(ctx, user.ID, &service.CreateSpaceRequest{
+	result, code, err := h.spaceService.CreateSpace(ctx, &service.CreateSpaceRequest{
 		Name:        req.Name,
 		Description: req.Description,
 		EmbdID:      req.EmbdID,
@@ -428,12 +372,6 @@ func (h *SkillSearchHandler) CreateSpace(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/skills/spaces/{space_id} [get]
 func (h *SkillSearchHandler) GetSpace(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	spaceID := c.Param("space_id")
 	if spaceID == "" {
 		common.RespondError(c, common.CodeDataError, "space_id is required")
@@ -441,7 +379,7 @@ func (h *SkillSearchHandler) GetSpace(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.spaceService.GetSpace(ctx, user.ID, spaceID)
+	result, code, err := h.spaceService.GetSpace(ctx, spaceID)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -452,11 +390,11 @@ func (h *SkillSearchHandler) GetSpace(c *gin.Context) {
 
 // UpdateSpaceRequest represents the request to update a skill space
 type UpdateSpaceRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	EmbdID      string `json:"embd_id"`
-	RerankID    string `json:"rerank_id"`
-	TopK        int    `json:"top_k"`
+	Name        *string `json:"name"`
+	Description string  `json:"description"`
+	EmbdID      string  `json:"embd_id"`
+	RerankID    string  `json:"rerank_id"`
+	TopK        int     `json:"top_k"`
 }
 
 // UpdateSpace handles the update skill space request
@@ -471,12 +409,6 @@ type UpdateSpaceRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/skills/spaces/{space_id} [put]
 func (h *SkillSearchHandler) UpdateSpace(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	spaceID := c.Param("space_id")
 	if spaceID == "" {
 		common.RespondError(c, common.CodeDataError, "space_id is required")
@@ -490,7 +422,7 @@ func (h *SkillSearchHandler) UpdateSpace(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.spaceService.UpdateSpace(ctx, user.ID, spaceID, &service.UpdateSpaceRequest{
+	result, code, err := h.spaceService.UpdateSpace(ctx, spaceID, &service.UpdateSpaceRequest{
 		Name:        req.Name,
 		Description: req.Description,
 		EmbdID:      req.EmbdID,
@@ -516,19 +448,13 @@ func (h *SkillSearchHandler) UpdateSpace(c *gin.Context) {
 // @Success 202 {object} map[string]interface{}
 // @Router /api/v1/skills/spaces/{space_id} [delete]
 func (h *SkillSearchHandler) DeleteSpace(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	spaceID := c.Param("space_id")
 	if spaceID == "" {
 		common.RespondError(c, common.CodeDataError, "space_id is required")
 		return
 	}
 
-	code, err := h.spaceService.DeleteSpace(c.Request.Context(), user.ID, spaceID, h.docEngine)
+	code, err := h.spaceService.DeleteSpace(c.Request.Context(), spaceID, h.docEngine)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -553,12 +479,6 @@ func (h *SkillSearchHandler) DeleteSpace(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/skills/space/by-folder [get]
 func (h *SkillSearchHandler) GetSpaceByFolder(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	folderID := c.Query("folder_id")
 	if folderID == "" {
 		common.RespondError(c, common.CodeDataError, "folder_id is required")
@@ -566,7 +486,7 @@ func (h *SkillSearchHandler) GetSpaceByFolder(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.spaceService.GetSpaceByFolderID(ctx, user.ID, folderID)
+	result, code, err := h.spaceService.GetSpaceByFolderID(ctx, folderID)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return

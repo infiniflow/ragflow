@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 func TestAgentRunSessionUpdateFailurePreventsSuccessEvents(t *testing.T) {
@@ -70,7 +71,8 @@ func TestAgentRunSessionUpdateFailurePreventsSuccessEvents(t *testing.T) {
 		"path": []any{"begin_0", "message_0"},
 	}
 	events := make(chan canvas.RunEvent, 32)
-	_, err := NewAgentService().buildRunFunc("canvas-update-failure", nil, dsl)(context.Background(), map[string]any{
+	ctx := permission.WithIdentity(context.Background(), "user-1", "")
+	_, err := NewAgentService().buildRunFunc("canvas-update-failure", nil, dsl)(ctx, map[string]any{
 		"__events__":     events,
 		"__message_id__": "message-1",
 		"__session_id__": "session-update-failure",
@@ -136,10 +138,11 @@ func TestPersistAgentRunSessionPreservesThinking(t *testing.T) {
 	}
 
 	svc := NewAgentService()
-	if err := svc.persistAgentRunQuestion(t.Context(), "canvas-think", "user-1", "session-think", "msg-think-1", "question", 1); err != nil {
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
+	if err := svc.persistAgentRunQuestion(ctx, "canvas-think", "session-think", "msg-think-1", "question", 1); err != nil {
 		t.Fatalf("persist question: %v", err)
 	}
-	if err := svc.persistAgentRunSession(context.Background(), "canvas-think", "user-1", "session-think", "msg-think-1", "question", "final answer", "reasoning trace", map[string]interface{}{}, nil, nil, true); err != nil {
+	if err := svc.persistAgentRunSession(permission.WithIdentity(context.Background(), "user-1", ""), "canvas-think", "session-think", "msg-think-1", "question", "final answer", "reasoning trace", map[string]interface{}{}, nil, nil, true); err != nil {
 		t.Fatalf("persist: %v", err)
 	}
 

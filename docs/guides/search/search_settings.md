@@ -13,15 +13,15 @@ Search Settings allow you to configure the knowledge sources, retrieval strategy
 
 ## Datasets
 
-Select the knowledge bases that Search will use. When a user submits a query, the system retrieves relevant content from the selected knowledge bases.
+Select the Datasets that Search will use. When a user submits a query, the system retrieves relevant content from the selected Datasets.
 
-You can select one or more knowledge bases. When multiple knowledge bases are selected, Search retrieves relevant content from all of them simultaneously.
+You can select one or more Datasets. When multiple Datasets are selected, Search retrieves relevant content from all of them simultaneously.
 
-Select knowledge bases based on the intended use case of the Search. Avoid adding large numbers of knowledge bases that are unrelated to the search topic, as this may increase the number of irrelevant results.
+Select Datasets based on the intended use case of the Search. Avoid adding large numbers of Datasets that are unrelated to the search topic, as this may increase the number of irrelevant results.
 
 ## Metadata
 
-Use **Metadata** to restrict retrieval by document metadata. Available fields depend on the selected knowledge bases. This setting filters content; it is not a switch for displaying metadata in results.
+Use **Metadata** to restrict retrieval by document metadata. Available fields depend on the selected Datasets. This setting filters content; it is not a switch for displaying metadata in results.
 
 ## Similarity threshold
 
@@ -47,14 +47,14 @@ Start with the default value and adjust it based on search results.
 
 Sets the number of candidate chunks that enter the reranking stage.
 
-The system first retrieves candidate content from the knowledge bases and then determines which results to display from among those candidates. This parameter controls the candidate pool available for subsequent ranking or reranking.
+The system first retrieves candidate content from the Datasets and then determines which results to display from among those candidates. This parameter controls the candidate pool available for subsequent ranking or reranking.
 
 For example, a value of `100` means that up to 100 candidate chunks are selected for subsequent processing.
 
 - Increase the value: Expands the candidate pool and reduces the likelihood that highly relevant content will be missed during initial retrieval, but increases processing overhead.
 - Decrease the value: Generally improves search speed, but the smaller candidate pool may omit some relevant content.
 
-For large knowledge bases or use cases that require broader retrieval coverage, you can increase this value as appropriate.
+For large Datasets or use cases that require broader retrieval coverage, you can increase this value as appropriate.
 
 ## Rerank model
 

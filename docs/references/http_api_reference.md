@@ -1228,7 +1228,7 @@ curl --request PATCH \
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
 - `"enabled"`: (*Body parameter*), `integer`
-  Whether the document should be **available** in the knowledge base.
+  Whether the document should be **available** in the Dataset.
   - `1` → （available）
   - `0` → （unavailable）
 
@@ -5075,7 +5075,7 @@ Failure:
 
 **POST** `/api/v1/chat/mindmap`
 
-Generates a mind map from a question and a set of knowledge base IDs.
+Generates a mind map from a question and a set of Dataset IDs.
 
 #### Request
 
@@ -5086,7 +5086,7 @@ Generates a mind map from a question and a set of knowledge base IDs.
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
 - Body:
   - `"question"`: `string` *(Required)* The central question or topic.
-  - `"kb_ids"`: `list[string]` *(Required)* Knowledge base IDs to search.
+  - `"kb_ids"`: `list[string]` *(Required)* Dataset IDs to search.
   - `"search_id"`: `string` *(Optional)* ID of a saved search configuration to merge additional `kb_ids` and settings.
 
 ##### Request example
@@ -8095,7 +8095,7 @@ curl --request POST \
 ##### Body parameters
 
 - `"name"`: `string`, *Required*
-  The name of the search app. Must be unique and no longer than 255 characters.
+  The name of the search app. Must be unique and no longer than 128 characters.
 - `"description"`: `string`
   A brief description of the search app.
 

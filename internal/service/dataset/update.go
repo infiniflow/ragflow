@@ -69,8 +69,8 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		if name == "" {
 			return nil, common.CodeDataError, errors.New("String should have at least 1 character")
 		}
-		if utf8.RuneCountInString(name) > 128 {
-			return nil, common.CodeDataError, errors.New("String should have at most 128 characters")
+		if utf8.RuneCountInString(name) > entity.DatasetNameLimit {
+			return nil, common.CodeDataError, fmt.Errorf("String should have at most %d characters", entity.DatasetNameLimit)
 		}
 		simpleUpdates["name"] = name
 	}
@@ -269,14 +269,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			} else {
 				tenantEmbdID = ""
 			}
-			identity := service.Identity{UserID: userID, TenantID: lockedKB.TenantID}
-			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, identity)
+			modelCtx := permission.WithTenantID(ctx, lockedKB.TenantID)
+			ok, message := d.verifyEmbeddingAvailability(modelCtx, effectiveEmbdID, lockedKB.TenantID)
 			if !ok {
 				txCode = common.CodeDataError
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				target, err := service.NewModelFactory().ResolveInfo(ctx, identity, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelFactory().ResolveInfo(modelCtx, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
 					tenantEmbdID = target.ID
 				}

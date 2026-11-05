@@ -151,8 +151,8 @@ func TestRESTDocumentUploadValidation(t *testing.T) {
 	}{
 		{"missing_file", nil, 101, "No file part!"},
 		{"empty_filename", []documentUpload{{Name: "", Content: []byte("x")}}, 101, "No file part!"},
-		{"overlong_filename", []documentUpload{{Name: strings.Repeat("a", 252) + ".txt"}}, 101, "255 bytes"},
-		{"multibyte_overlong_filename", []documentUpload{{Name: strings.Repeat("界", 84) + ".txt"}}, 101, "255 bytes"},
+		{"overlong_filename", []documentUpload{{Name: strings.Repeat("a", 252) + ".txt"}}, 101, "255 characters"},
+		{"multibyte_overlong_filename", []documentUpload{{Name: strings.Repeat("界", 252) + ".txt"}}, 101, "255 characters"},
 		{"unsupported_format", []documentUpload{{Name: "executable.exe", Content: []byte("not executable")}}, 500, "not been supported"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
