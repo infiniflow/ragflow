@@ -373,7 +373,7 @@ func (s *BotService) ChatbotCompletion(
 		}
 	}
 
-	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, req.SessionID, dialogID)
+	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, req.SessionID, dialogID, true)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
