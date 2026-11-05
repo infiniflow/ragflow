@@ -29,6 +29,7 @@ import (
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -289,12 +290,78 @@ func minerUV1Terminal(status string) bool {
 	}
 }
 
-// ParseMinerUV1 runs the MinerU 4 V1 parse cycle. MinerU 4.1 replaced the 4.0
-// upload/job routes with the asynchronous Tasks API and returns 404 with no
-// alias, so the protocol is chosen by POST /v1/tasks: a 404 creation means a
-// 4.0 server and the legacy upload → complete → parse job → poll cycle runs
-// instead. No support cache: one extra POST per parse is negligible next to
-// the parse itself, and a cache would go stale across a server upgrade.
+// minerUParseSemver parses strings like "4.0.12", "v4.1.0", "4.0", "4.1.0-alpha".
+// Prerelease tags and build metadata are stripped. Returns ok=false on unparseable inputs.
+func minerUParseSemver(v string) (major, minor, patch int, ok bool) {
+	v = strings.TrimSpace(v)
+	v = strings.TrimPrefix(v, "v")
+	v = strings.TrimPrefix(v, "V")
+	if v == "" {
+		return 0, 0, 0, false
+	}
+	if idx := strings.IndexAny(v, "-+"); idx >= 0 {
+		v = v[:idx]
+	}
+	parts := strings.Split(v, ".")
+	if len(parts) == 0 {
+		return 0, 0, 0, false
+	}
+	var err error
+	major, err = strconv.Atoi(parts[0])
+	if err != nil {
+		return 0, 0, 0, false
+	}
+	if len(parts) > 1 {
+		minor, err = strconv.Atoi(parts[1])
+		if err != nil {
+			return 0, 0, 0, false
+		}
+	}
+	if len(parts) > 2 {
+		patch, _ = strconv.Atoi(parts[2])
+	}
+	return major, minor, patch, true
+}
+
+func minerUV1VersionSupportsTasks(major, minor int) bool {
+	if major > 4 {
+		return true
+	}
+	if major == 4 {
+		return minor >= 1
+	}
+	return false
+}
+
+// minerUV1ServerSupportsTasks probes GET /v1/health to determine whether the server
+// speaks the 4.0 legacy upload/job protocol or the 4.1+ Tasks API.
+// A recognized version < 4.1 selects the 4.0 cycle; version >= 4.1 selects Tasks.
+// If /v1/health is unavailable or omits version, decided is false and the caller
+// probes /v1/tasks directly, falling back on 404.
+func minerUV1ServerSupportsTasks(ctx context.Context, client *http.Client, baseURL, token string) (supportsTasks bool, decided bool) {
+	code, body, err := minerUGET(ctx, client, baseURL+"/v1/health", token)
+	if err != nil || code < 200 || code >= 300 {
+		return false, false
+	}
+	var payload struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil || strings.TrimSpace(payload.Version) == "" {
+		return false, false
+	}
+	major, minor, _, ok := minerUParseSemver(payload.Version)
+	if !ok {
+		return false, false
+	}
+	return minerUV1VersionSupportsTasks(major, minor), true
+}
+
+// ParseMinerUV1 runs the MinerU 4 V1 parse cycle. When GET /v1/health advertises
+// a known server version, versions < 4.1 (such as 4.0.x) run the 4.0 upload →
+// complete → parse job → poll cycle directly, avoiding the 4.1 Tasks API where
+// 4.0 servers return HTTP 400 (validation error on the 4.1 manifest).
+// When /v1/health is absent or reports >= 4.1, the 4.1 Tasks API runs first,
+// falling back to the 4.0 cycle only when POST /v1/tasks returns 404 (unavailable).
 // ocrMode is the V1 ocr_mode (auto, txt, ocr); use MinerUV1OCRMode to normalize.
 func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, content []byte, backend, ocrMode string, timeout time.Duration) (*MinerUV1Result, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
@@ -315,9 +382,17 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 	name := minerUFilename(filename)
 	sum := sha256.Sum256(content)
 
+	supportsTasks, decided := minerUV1ServerSupportsTasks(ctx, client, baseURL, token)
+	if decided && !supportsTasks {
+		return parseMinerUV1Legacy(ctx, client, token, baseURL, name, content, sum, backend, ocrMode)
+	}
+
 	result, err := parseMinerUTasks(ctx, client, token, baseURL, name, content, sum, backend, ocrMode)
 	if err == nil {
 		return result, nil
+	}
+	if decided && supportsTasks {
+		return nil, err
 	}
 	if !errors.Is(err, errMinerUTasksUnavailable) {
 		return nil, err
