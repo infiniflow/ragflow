@@ -2174,8 +2174,5 @@ func TestConfigureParserFromSetups_EPUB(t *testing.T) {
 		if v, ok := got.setup["flatten_media_to_text"].(bool); !ok || v != want["flatten_media_to_text"] {
 			t.Errorf("FileTypeEPUB flatten_media_to_text = %v, want %v", v, want["flatten_media_to_text"])
 		}
-		if v, ok := got.setup["remove_toc"].(bool); !ok || v != want["remove_toc"] {
-			t.Errorf("FileTypeEPUB remove_toc = %v, want %v", v, want["remove_toc"])
-		}
 	})
 }

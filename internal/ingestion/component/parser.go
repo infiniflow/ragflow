@@ -374,7 +374,6 @@ func defaultSetups() map[string]schema.ParserSetup {
 		},
 		"epub": {
 			"flatten_media_to_text": false,
-			"remove_toc":            false,
 			"suffix":                []string{"epub"},
 		},
 		"json": {
