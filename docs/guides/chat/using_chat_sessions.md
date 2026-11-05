@@ -11,7 +11,7 @@ sidebar_custom_props:
 
 After entering a Chat, users can ask questions in different conversations. The conversation list appears on the left, the current conversation appears in the center, and the message input box appears at the bottom.
 
-A Chat can contain multiple conversations. Each conversation maintains its own context, while all conversations share the knowledge bases, model, system prompt, and retrieval parameters configured for the Chat.
+A Chat can contain multiple conversations. Each conversation maintains its own context, while all conversations share the Datasets, model, system prompt, and retrieval parameters configured for the Chat.
 
 ## Create and Manage conversations
 
@@ -33,7 +33,7 @@ Enter a question in the message box and press **Enter**, or click **Send**. Pres
 
 While an answer is being generated, click **Stop** to interrupt it. Before sending a question, select a Thinking mode, enable web search when available, or add attachments.
 
-Chat generates an answer using the current conversation history together with the Chat's configured knowledge bases, model, and system prompt.
+Chat generates an answer using the current conversation history together with the Chat's configured Datasets, model, and system prompt.
 
 ## Choose a Thinking Mode
 
@@ -55,7 +55,7 @@ Text files can be parsed into text for the model to reference. Processing images
 
 ![Upload files in a conversation](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_files_chat.jpg)
 
-Files uploaded in a conversation provide supplemental context only and are not automatically added to a knowledge base. To make a file permanently available for knowledge base retrieval, add it to a knowledge base and complete parsing.
+Files uploaded in a conversation provide supplemental context only and are not automatically added to a Dataset. To make a file permanently available for Dataset retrieval, add it to a Dataset and complete parsing.
 
 The supported number, size, and types of files depend on the deployment and answer configuration. Follow the instructions displayed in the interface.
 

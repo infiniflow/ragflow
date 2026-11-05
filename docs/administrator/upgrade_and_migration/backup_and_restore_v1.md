@@ -144,4 +144,4 @@ docker compose -p docker -f docker/docker-compose.yml ps --all
 docker compose -p docker -f docker/docker-compose.yml logs --tail=200 ragflow-cpu
 ```
 
-Finally, sign in and confirm that existing knowledge bases and files are present, files can be opened, and retrieval returns content from previously parsed documents. After these checks pass, the backup and restore are complete.
+Finally, sign in and confirm that existing Datasets and files are present, files can be opened, and retrieval returns content from previously parsed documents. After these checks pass, the backup and restore are complete.
