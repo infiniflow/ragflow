@@ -7,7 +7,10 @@ import { ListDeletionKey } from '@/constants/list-deletion';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
-import memoryService, { updateMemoryById } from '@/services/memory-service';
+import memoryService, {
+  getMemoryDetailById,
+  updateMemoryById,
+} from '@/services/memory-service';
 import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
@@ -179,24 +182,18 @@ export const useFetchMemoryDetail = (tenantId?: string) => {
   const [memoryParams] = useSearchParams();
   const shared_id = memoryParams.get('shared_id');
   const memoryId = id || shared_id;
-  let param: { id: string | null; tenant_id?: string } = {
-    id: memoryId,
-  };
-  if (shared_id) {
-    param = {
-      id: memoryId,
-      tenant_id: tenantId,
-    };
-  }
-  const fetchMemoryDetailFunc = shared_id
-    ? memoryService.getMemoryDetailShare
-    : memoryService.getMemoryDetail;
 
   const { data, isLoading, isError } = useQuery<MemoryDetailResponse, Error>({
     queryKey: ['memoryDetail', memoryId],
-    enabled: !shared_id || !!tenantId,
+    enabled: !!memoryId && (!shared_id || !!tenantId),
     queryFn: async () => {
-      const { data: response } = await fetchMemoryDetailFunc(param);
+      if (!memoryId) {
+        throw new Error('Memory id is required');
+      }
+      const { data: response } = await getMemoryDetailById(
+        memoryId,
+        shared_id ? { tenant_id: tenantId } : {},
+      );
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to fetch memory detail');
       }
@@ -266,7 +263,7 @@ export const useUpdateMemory = () => {
 
       return response.data;
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       message.success(t('message.updated'));
       queryClient.invalidateQueries({
         queryKey: ['memoryDetail', variables.id],
