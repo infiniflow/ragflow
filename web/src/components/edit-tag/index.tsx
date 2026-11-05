@@ -60,10 +60,15 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
 
     const handleInputConfirm = () => {
       if (inputValue && value) {
+        const seenTags = new Set(value);
         const newTags = inputValue
           .split(';')
           .map((tag) => tag.trim())
-          .filter((tag) => tag && !value.includes(tag));
+          .filter((tag) => {
+            if (!tag || seenTags.has(tag)) return false;
+            seenTags.add(tag);
+            return true;
+          });
         onChange?.([...value, ...newTags]);
       }
       setInputVisible(false);

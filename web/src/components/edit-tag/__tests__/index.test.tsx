@@ -8,6 +8,7 @@ jest.mock('react-router', () => ({
 }));
 
 import EditTag from '..';
+import { TooltipProvider } from '../../ui/tooltip';
 
 describe('EditTag Enter handling', () => {
   const setup = () => {
@@ -40,5 +41,28 @@ describe('EditTag Enter handling', () => {
     fireEvent.keyDown(input, { key: 'Enter' });
 
     expect(onChange).toHaveBeenCalledWith(['foo']);
+  });
+});
+
+describe('EditTag batch normalization', () => {
+  it('adds each new trimmed tag once while preserving input order', () => {
+    const onChange = jest.fn();
+    render(
+      <TooltipProvider>
+        <EditTag
+          value={['existing']}
+          onChange={onChange}
+          addButtonTestId="add-tag"
+          inputTestId="tag-input"
+        />
+      </TooltipProvider>,
+    );
+    fireEvent.click(screen.getByTestId('add-tag'));
+    const input = screen.getByTestId('tag-input');
+    fireEvent.change(input, {
+      target: { value: ' alpha ; existing ; alpha ; beta ; beta ;; ' },
+    });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onChange).toHaveBeenCalledWith(['existing', 'alpha', 'beta']);
   });
 });
