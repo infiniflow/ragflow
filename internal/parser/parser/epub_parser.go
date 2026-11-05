@@ -577,7 +577,9 @@ func readEPUBContentFile(r *zip.Reader, opfDir, href string) ([]byte, string, er
 // flattenEPUBMediaToText normalizes media items (tables and images) to plain
 // text items when flatten_media_to_text is enabled. Structured tables are
 // rendered into HTML strings (preserving cells and captions), and image and
-// table items have their doc_type_kwd rewritten to "text".
+// table items have their doc_type_kwd rewritten to "text". Table/image structural
+// linkage fields (source_table_id, parent_table_id, row_index, column_index)
+// are cleared since downstream consumers treat the flattened items as plain prose.
 func flattenEPUBMediaToText(items []map[string]any) []map[string]any {
 	for _, item := range items {
 		if table, ok := item["table"].(*entity.TableData); ok && table != nil {
@@ -589,9 +591,13 @@ func flattenEPUBMediaToText(items []map[string]any) []map[string]any {
 				item["text"] = rendered
 			}
 			delete(item, "table")
+			delete(item, "source_table_id")
 			item["doc_type_kwd"] = "text"
 		} else if item["doc_type_kwd"] == "image" || item["doc_type_kwd"] == "table" {
 			item["doc_type_kwd"] = "text"
+			delete(item, "parent_table_id")
+			delete(item, "row_index")
+			delete(item, "column_index")
 		}
 	}
 	return items

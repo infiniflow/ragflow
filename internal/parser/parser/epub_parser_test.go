@@ -1094,7 +1094,7 @@ func TestEPUBParser_FlattenMediaToText(t *testing.T) {
 	ctx, _ := recordingMediaContext()
 	data := buildTestEPUBWithImages(t, []epubTestChapter{{
 		name:    "ch1.xhtml",
-		content: epubTestHTML(`<h1>Chapter 1</h1><table><tr><td>Product</td><td>Price</td></tr><tr><td>Book</td><td>$10</td></tr></table><p>Next</p><img src="Images/pic.png" alt="sample">`),
+		content: epubTestHTML(`<h1>Chapter 1</h1><table><tr><td>Product</td><td><img src="Images/pic.png" alt="sample"></td></tr><tr><td>Book</td><td>$10</td></tr></table><p>Next</p>`),
 	}}, []epubTestImage{{name: "Images/pic.png", content: "sample-img"}})
 
 	// 1. Without FlattenMediaToText
@@ -1112,9 +1112,15 @@ func TestEPUBParser_FlattenMediaToText(t *testing.T) {
 			if it["table"] == nil {
 				t.Fatalf("table item missing table entity: %#v", it)
 			}
+			if it["source_table_id"] == nil {
+				t.Errorf("default table item should carry source_table_id: %#v", it)
+			}
 		}
 		if it["doc_type_kwd"] == DocTypeImage {
 			hasImage = true
+			if it["parent_table_id"] == nil {
+				t.Errorf("default cell image should carry parent_table_id: %#v", it)
+			}
 		}
 	}
 	if !hasTable || !hasImage {
@@ -1137,6 +1143,15 @@ func TestEPUBParser_FlattenMediaToText(t *testing.T) {
 		if it["table"] != nil {
 			t.Errorf("table entity should be deleted when flattened: %#v", it)
 		}
+		if it["source_table_id"] != nil {
+			t.Errorf("source_table_id should be cleared when flattened: %#v", it)
+		}
+		if it["parent_table_id"] != nil {
+			t.Errorf("parent_table_id should be cleared when flattened: %#v", it)
+		}
+		if it["row_index"] != nil || it["column_index"] != nil {
+			t.Errorf("row_index/column_index should be cleared when flattened: %#v", it)
+		}
 		if text, _ := it["text"].(string); strings.Contains(text, "<table>") && strings.Contains(text, "Product") {
 			tableRendered = true
 		}
@@ -1153,7 +1168,8 @@ func TestEPUBParser_RemoveTOC(t *testing.T) {
 <h1>目录</h1>
 <p>第一章 概述</p>
 <p>第二章 方法</p>
-<p>正文开始</p>`),
+<h1>第一章 概述</h1>
+<p>正文第一章开始讨论...</p>`),
 	}}, nil)
 
 	// 1. Without RemoveTOC
@@ -1172,7 +1188,7 @@ func TestEPUBParser_RemoveTOC(t *testing.T) {
 		t.Fatal("expected TOC to be present when RemoveTOC is false")
 	}
 
-	// 2. With RemoveTOC = true
+	// 2. With RemoveTOC = true (realistic layout: TOC entries precede matching body heading)
 	pTOC := NewEPUBParser()
 	pTOC.ConfigureFromSetup(map[string]any{"remove_toc": true})
 	resTOC := pTOC.ParseWithResult(context.Background(), "book.epub", data)
@@ -1185,14 +1201,14 @@ func TestEPUBParser_RemoveTOC(t *testing.T) {
 		if strings.Contains(text, "目录") {
 			t.Errorf("TOC heading %q was not removed", text)
 		}
-		if strings.Contains(text, "第一章 概述") {
-			t.Errorf("TOC entry %q was not removed", text)
+		if strings.Contains(text, "第二章 方法") {
+			t.Errorf("second TOC entry %q was not removed", text)
 		}
 		resTexts = append(resTexts, text)
 	}
-	// "前言" and "正文开始" should survive.
+	// "前言", body heading "第一章 概述", and body "正文第一章开始讨论..." should survive.
 	full := strings.Join(resTexts, " ")
-	if !strings.Contains(full, "前言") || !strings.Contains(full, "正文开始") {
+	if !strings.Contains(full, "前言") || !strings.Contains(full, "第一章 概述") || !strings.Contains(full, "正文第一章开始讨论") {
 		t.Errorf("expected body content to survive, got %q", full)
 	}
 
@@ -1229,5 +1245,66 @@ func TestEPUBParser_RemoveTOC(t *testing.T) {
 	fullNested := strings.Join(nestedTexts, " ")
 	if !strings.Contains(fullNested, "前言") || !strings.Contains(fullNested, "Chapter 1: Intro") || !strings.Contains(fullNested, "Chapter body text") {
 		t.Errorf("expected body chapters and foreword to survive, got %q", fullNested)
+	}
+}
+
+func TestEPUBParser_DefaultPathEquivalence(t *testing.T) {
+	ctx, _ := recordingMediaContext()
+	data := buildTestEPUBWithImages(t, []epubTestChapter{
+		{
+			name: "ch1.xhtml",
+			content: epubTestHTML(`<h1>Chapter 1</h1>
+<p>Paragraph one.</p>
+<p>Paragraph two.</p>
+<table><tr><td>Header</td></tr><tr><td>Data</td></tr></table>
+<p>Paragraph three.</p>
+<img src="Images/img1.png" alt="photo">
+<p>Paragraph four.</p>`),
+		},
+		{
+			name: "ch2.xhtml",
+			content: epubTestHTML(`<h2>Chapter 2</h2>
+<p>Paragraph five across chapter boundary.</p>`),
+		},
+	}, []epubTestImage{
+		{name: "Images/img1.png", content: "img-bytes"},
+	})
+
+	p := NewEPUBParser()
+	// Default configuration: RemoveTOC = false, FlattenMediaToText = false
+	res := p.ParseWithResult(ctx, "book.epub", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult default: %v", res.Err)
+	}
+	items := ItemsToMaps(res.JSON)
+
+	// Expected items:
+	// 1. Text: "Chapter 1 Paragraph one. Paragraph two."
+	// 2. Table: doc_type_kwd == "table", table != nil
+	// 3. Text: "Paragraph three."
+	// 4. Image: doc_type_kwd == "image", image != nil
+	// 5. Text: "Paragraph four."
+	// 6. Text: "Chapter 2 Paragraph five across chapter boundary." (distinct from ch1)
+	if len(items) != 6 {
+		t.Fatalf("expected 6 collapsed items in default path, got %d: %#v", len(items), items)
+	}
+
+	if items[0]["doc_type_kwd"] != DocTypeText || !strings.Contains(stringValue(items[0]["text"]), "Paragraph one. Paragraph two.") {
+		t.Errorf("item 0 prose not collapsed: %#v", items[0])
+	}
+	if items[1]["doc_type_kwd"] != DocTypeTable || items[1]["table"] == nil {
+		t.Errorf("item 1 table entity not preserved: %#v", items[1])
+	}
+	if items[2]["doc_type_kwd"] != DocTypeText || !strings.Contains(stringValue(items[2]["text"]), "Paragraph three.") {
+		t.Errorf("item 2 prose mismatch: %#v", items[2])
+	}
+	if items[3]["doc_type_kwd"] != DocTypeImage || items[3]["media_ref"] == nil {
+		t.Errorf("item 3 image not preserved: %#v", items[3])
+	}
+	if items[4]["doc_type_kwd"] != DocTypeText || !strings.Contains(stringValue(items[4]["text"]), "Paragraph four.") {
+		t.Errorf("item 4 prose mismatch: %#v", items[4])
+	}
+	if items[5]["doc_type_kwd"] != DocTypeText || !strings.Contains(stringValue(items[5]["text"]), "Chapter 2 Paragraph five") {
+		t.Errorf("item 5 chapter 2 boundary collapsed across chapters: %#v", items[5])
 	}
 }
