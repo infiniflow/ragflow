@@ -679,3 +679,100 @@ func TestDeclaredMetadataFieldsEmptyWhenNothingDeclared(t *testing.T) {
 		}
 	}
 }
+
+// --- LegacyFlatMetadataConfig (#20142) ---
+
+// TestLegacyFlatMetadataConfigSynthesizesModularShape pins the runtime
+// bridge that lets pre-#18511 datasets keep their built_in_metadata
+// visible on every read instead of silently returning empty. The legacy
+// shape stores enable_metadata / metadata / built_in_metadata at the
+// top level of parser_config; the bridge synthesizes a metaObj with the
+// same shape that the modular parser_config.metadata uses so callers
+// don't have to special-case the legacy layout.
+func TestLegacyFlatMetadataConfigSynthesizesModularShape(t *testing.T) {
+	pc := map[string]any{
+		"enable_metadata": true,
+		"metadata": []any{
+			map[string]any{"key": "author", "type": "string", "description": "who wrote it"},
+		},
+		"built_in_metadata": []any{
+			map[string]any{"key": "doc_type", "type": "string"},
+			map[string]any{"key": "file_name", "type": "string"},
+		},
+	}
+	metaObj, ok := LegacyFlatMetadataConfig(pc)
+	if !ok {
+		t.Fatalf("LegacyFlatMetadataConfig returned ok=false, want true for legacy flat shape")
+	}
+	if got := ParserConfigBool(metaObj["enabled"]); !got {
+		t.Errorf("metaObj[\"enabled\"] = %v, want true", metaObj["enabled"])
+	}
+	gotMeta := MetadataRawFieldList(metaObj["metadata"])
+	gotBuiltIn := MetadataRawFieldList(metaObj["built_in_metadata"])
+	if len(gotMeta) != 1 || gotMeta[0].(map[string]any)["key"] != "author" {
+		t.Errorf("metaObj[\"metadata\"] = %#v, want [{author}]", gotMeta)
+	}
+	if len(gotBuiltIn) != 2 {
+		t.Errorf("metaObj[\"built_in_metadata\"] = %#v, want 2 entries", gotBuiltIn)
+	}
+}
+
+// TestLegacyFlatMetadataConfigDeferredWhenModularPresent pins the
+// invariant that the bridge is only a fallback: a parser_config that
+// already carries the new parser_config.metadata is preferred and the
+// legacy flat fields are ignored (treated as stale leftovers from a
+// partial migration).
+func TestLegacyFlatMetadataConfigDeferredWhenModularPresent(t *testing.T) {
+	pc := map[string]any{
+		"metadata": map[string]any{
+			"enabled": true,
+			"metadata": []any{
+				map[string]any{"key": "new_key", "type": "string"},
+			},
+		},
+		// Stale leftovers — must not appear in the synthesized metaObj.
+		"built_in_metadata": []any{
+			map[string]any{"key": "stale_key", "type": "string"},
+		},
+	}
+	if _, ok := LegacyFlatMetadataConfig(pc); ok {
+		t.Fatal("LegacyFlatMetadataConfig returned ok=true with the modular shape present; expected fallback to defer")
+	}
+}
+
+// TestLegacyFlatMetadataConfigNilAndEmpty pins the safe no-op cases:
+// nil / empty / fully unkeyed parser_config does not synthesize.
+func TestLegacyFlatMetadataConfigNilAndEmpty(t *testing.T) {
+	for name, pc := range map[string]map[string]any{
+		"nil":   nil,
+		"empty": {},
+	} {
+		if _, ok := LegacyFlatMetadataConfig(pc); ok {
+			t.Errorf("%s: LegacyFlatMetadataConfig returned ok=true, want false", name)
+		}
+	}
+}
+
+// TestDeclaredMetadataFieldsFallsBackToLegacyFlat pins the read-side
+// recovery for pre-#18511 datasets (#20142): when parser_config carries
+// only the top-level enable_metadata / metadata / built_in_metadata (and
+// no parser_config.metadata / Extractor-node metadata), the bridge
+// synthesizes a modular-shaped metaObj so the declarative field list is
+// non-empty.
+func TestDeclaredMetadataFieldsFallsBackToLegacyFlat(t *testing.T) {
+	pc := map[string]any{
+		"enable_metadata": true,
+		"built_in_metadata": []any{
+			map[string]any{"key": "file_name", "type": "string"},
+			map[string]any{"key": "doc_type", "type": "string"},
+		},
+	}
+	got := DeclaredMetadataFieldsFromParserConfig(pc)
+	want := []MetadataFieldDef{
+		{Key: "file_name", Type: "string"},
+		{Key: "doc_type", Type: "string"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("fields = %#v, want %#v", got, want)
+	}
+}
