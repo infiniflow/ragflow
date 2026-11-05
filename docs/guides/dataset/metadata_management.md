@@ -19,13 +19,30 @@ Metadata may come from system built-in fields, automatic generation during parsi
 
 In document management or document details, you can view and maintain metadata related to documents. Metadata is displayed in list form, including **Field**, **Type**, **Values**, and related operations.
 
+![Open document metadata](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/delete_chunk.jpg)
+
+![View metadata fields, types, and values](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_and_manage_metadata.jpg)
+
 ## Add Metadata
 
 You can add metadata manually for documents. When adding metadata, you need to specify the field name, data type, and value. To improve subsequent filtering and retrieval, keep field names, data types, and value formats consistent.
 
+![Add a metadata field](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_metadata.jpg)
+
 ## Automatically Generate Metadata
 
-After **Auto Metadata** is enabled in dataset configuration, the system can automatically generate metadata during document parsing according to the configured generation rules. Automatically generated metadata usually comes from document content, source information, or built-in parsing information.
+For a built-in parsing mode, configure automatic metadata through **Dataset > Configuration > Extractor > Metadata**.
+
+1. Open the target Dataset and select **Configuration**.
+2. Open the **Extractor** tab and expand **Metadata**.
+3. Turn on the switch beside **Metadata**. Expanding the section alone does not enable generation.
+4. Click **Settings** to open **Metadata generation settings**.
+5. In **Generation**, click **Add** to define fields and their descriptions, types, and allowed values. In **Built-in**, enable predefined fields such as `update_time` and `file_name` as needed.
+6. Click **Save** in the dialog, then **Save** on the Dataset configuration page.
+
+For metadata generated from document content, check that the Extractor's **Model** is available. See [Dataset configuration](./configuration.md) for the detailed settings.
+
+If the Dataset uses a custom ingestion pipeline, configure metadata in that pipeline's [Transformer](../agent/ingestion_pipeline/configure_transformer_component.md), publish the updated version, then open **Dataset > Configuration > Parsing mode**, expand the pipeline, select the updated published version, and click **Save** to apply it.
 
 Changes to auto metadata configuration only affect newly parsed documents. If you need to apply new metadata rules to existing documents, parse the relevant documents again.
 

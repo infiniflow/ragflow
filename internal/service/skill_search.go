@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -32,6 +33,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 // SkillSearchService handles business logic for skill search operations
@@ -55,11 +57,11 @@ type GetConfigRequest struct {
 }
 
 // GetConfig retrieves the search configuration for a tenant
-func (s *SkillSearchService) GetConfig(ctx context.Context, userID, spaceID, embdID string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSearchService) GetConfig(ctx context.Context, spaceID, embdID string) (map[string]interface{}, common.ErrorCode, error) {
 	spaceID = normalizeSpaceID(spaceID)
-	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationRead)
+	tenantID, err := resolveSkillSpaceTenantID(ctx, spaceID, permission.OperationRead)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 	var config *entity.SkillSearchConfig
@@ -88,9 +90,9 @@ func (s *SkillSearchService) GetConfig(ctx context.Context, userID, spaceID, emb
 	} else {
 		config, err = s.configDAO.GetByTenantAndEmbdID(ctx, dao.DB, tenantID, spaceID, embdID)
 		if err != nil {
-			tenantID, err = resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
+			tenantID, err = resolveSkillSpaceTenantID(ctx, spaceID, permission.OperationUpdate)
 			if err != nil {
-				code, normalized := normalizeSkillSpacePermissionError(err)
+				code, normalized := permissionresponse.NormalizeHidden(err)
 				return nil, code, normalized
 			}
 			// Config not found, create default one
@@ -117,11 +119,11 @@ type UpdateConfigRequest struct {
 }
 
 // UpdateConfig updates the search configuration for a tenant
-func (s *SkillSearchService) UpdateConfig(ctx context.Context, userID string, req *UpdateConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSearchService) UpdateConfig(ctx context.Context, req *UpdateConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
 	req.SpaceID = normalizeSpaceID(req.SpaceID)
-	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, req.SpaceID, permission.OperationUpdate)
+	tenantID, err := resolveSkillSpaceTenantID(ctx, req.SpaceID, permission.OperationUpdate)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 	req.TenantID = tenantID
@@ -222,19 +224,19 @@ type SearchResponse struct {
 }
 
 // Search performs skill search with the configured strategy
-func (s *SkillSearchService) Search(ctx context.Context, userID string, req *SearchRequest, docEngine engine.DocEngine) (*SearchResponse, common.ErrorCode, error) {
+func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, docEngine engine.DocEngine) (*SearchResponse, common.ErrorCode, error) {
 	req.SpaceID = normalizeSpaceID(req.SpaceID)
-	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, req.SpaceID, permission.OperationUse)
+	tenantID, err := resolveSkillSpaceTenantID(ctx, req.SpaceID, permission.OperationUse)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 	req.TenantID = tenantID
 	if req.Page <= 0 {
-		req.Page = 1
+		req.Page = common.DefaultPage
 	}
 	if req.PageSize <= 0 {
-		req.PageSize = 10
+		req.PageSize = common.DefaultPageSize
 	}
 
 	// Check if index exists before searching
@@ -660,7 +662,7 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(ctx, ModelAccess{TenantID: tenantID}, embdID)
+	embeddingModel, err := s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}

@@ -218,6 +218,12 @@ def test_url_builders_honor_gh_proxy(monkeypatch):
     assert native.pdf_oxide_url("linux", "arm64").startswith("https://gh-proxy.com/https://github.com/")
 
 
+def test_dev_downloader_rejects_untrusted_gh_proxy(monkeypatch):
+    monkeypatch.setenv("GH_PROXY", "https://attacker.invalid/")
+    with pytest.raises(RuntimeError, match="GH_PROXY"):
+        native.gh_proxy()
+
+
 @pytest.fixture
 def download_server():
     class Handler(BaseHTTPRequestHandler):
@@ -482,6 +488,24 @@ def test_image_script_does_not_handle_native_archives():
     assert not hasattr(img, "extract_onnxruntime")
     assert not hasattr(img, "_extract_native_archive")
     assert "onnxruntime" not in (img.__doc__ or "").lower()
+
+
+def _image_deps_module():
+    deps_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "deps", "download_deps.py")
+    spec = importlib.util.spec_from_file_location("download_deps_image_security", deps_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_image_proxy_is_restricted_to_the_configured_mirror(monkeypatch):
+    image_deps = _image_deps_module()
+    monkeypatch.setenv("GH_PROXY", "https://attacker.invalid/")
+    with pytest.raises(RuntimeError, match="GH_PROXY"):
+        image_deps.gh_proxy()
+
+    monkeypatch.setenv("GH_PROXY", "https://gh-proxy.com/")
+    assert image_deps.gh_proxy() == "https://gh-proxy.com/"
 
 
 # ── Documentation contract: ARM64 build-host minimums ─────────────────────

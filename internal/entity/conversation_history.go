@@ -20,15 +20,19 @@ import "encoding/json"
 
 // ConversationMessageFields contains searchable fields and variable message metadata.
 type ConversationMessageFields struct {
-	MessageID   *string  `gorm:"column:message_id;size:255;index:,composite:message_lookup,priority:2" json:"id,omitempty"`
-	Role        *string  `gorm:"column:role;size:32;index:,composite:message_lookup,priority:3" json:"role,omitempty"`
-	Content     *string  `gorm:"column:content;type:longtext" json:"content,omitempty"`
-	ContentType string   `gorm:"column:content_type;size:8" json:"-"`
-	Status      *string  `gorm:"column:status;size:32" json:"status,omitempty"`
-	ThumbUp     *bool    `gorm:"column:thumb_up" json:"thumbup,omitempty"`
-	Feedback    *string  `gorm:"column:feedback;type:longtext" json:"feedback,omitempty"`
-	CreatedAt   *float64 `gorm:"column:created_at" json:"created_at,omitempty"`
-	Metadata    string   `gorm:"column:metadata;type:longtext" json:"-"`
+	MessageID   *string         `gorm:"column:message_id;size:255;index:,composite:message_lookup,priority:2" json:"id,omitempty"`
+	Role        *string         `gorm:"column:role;size:32;index:,composite:message_lookup,priority:3" json:"role,omitempty"`
+	Content     *string         `gorm:"column:content;type:longtext" json:"content,omitempty"`
+	ContentType string          `gorm:"column:content_type;size:8" json:"-"`
+	Status      *string         `gorm:"column:status;size:32" json:"status,omitempty"`
+	ThumbUp     *bool           `gorm:"column:thumb_up" json:"thumbup,omitempty"`
+	Feedback    *string         `gorm:"column:feedback;type:longtext" json:"feedback,omitempty"`
+	CreatedAt   *float64        `gorm:"column:created_at" json:"created_at,omitempty"`
+	Prompt      *string         `gorm:"column:prompt;type:longtext" json:"prompt,omitempty"`
+	Usage       JSONMap         `gorm:"column:usage;type:longtext" json:"usage,omitempty"`
+	ElapsedMs   *float64        `gorm:"column:elapsed_ms" json:"elapsed_ms,omitempty"`
+	Reference   json.RawMessage `gorm:"column:reference;type:longtext;serializer:json" json:"reference,omitempty"`
+	Metadata    string          `gorm:"column:metadata;type:longtext" json:"-"`
 }
 
 // ConversationMessage stores one ordered message for a conversation.

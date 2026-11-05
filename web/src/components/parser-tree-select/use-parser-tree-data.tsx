@@ -1,19 +1,13 @@
-import { AgentCategory } from '@/constants/agent';
-import {
-  ICanvasVersionRow,
-  useFetchAgentList,
-  useFetchBuiltinPipelines,
-  useFetchCanvasVersions,
-} from '@/hooks/use-agent-request';
+import { useFetchBuiltinPipelines } from '@/hooks/use-agent-request';
+import { useFetchPipelineVersionCatalog } from '@/hooks/use-pipeline-version-request';
 import {
   buildParserOptionValue,
   parseParserOptionValue,
   ParserOptionKind,
 } from '@/hooks/use-parser-options';
-import { AgentListItemType } from '@/interfaces/database/agent';
-import { Loader2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { PipelineVersionLabel } from '../pipeline-version-label';
 import {
   filterTreeNodes,
   TreeSelectNode,
@@ -26,18 +20,13 @@ import {
 const buildPipelineNodeId = (pipelineId: string) =>
   buildParserOptionValue(ParserOptionKind.Pipeline, pipelineId);
 
-// useParserTreeData assembles the merged parser tree: dataflow pipelines as
-// branches with their published versions as leaves, builtin parsers as
-// root-level leaves. Versions are fetched lazily — for the currently selected
-// pipeline (needed for the closed-select display) and for every branch the
-// user has expanded.
+// Combines the cached pipeline/version catalog with builtin parser leaves.
 export function useParserTreeData({ value }: { value?: string }) {
   const { t } = useTranslation();
   const { options: builtinOptions, loading: builtinLoading } =
     useFetchBuiltinPipelines();
-  const { data: pipelineData, loading: pipelineLoading } = useFetchAgentList({
-    canvas_category: AgentCategory.DataflowCanvas,
-  });
+  const { data: pipelines = [], loading: pipelineLoading } =
+    useFetchPipelineVersionCatalog();
 
   const selectedPipelineId = useMemo(() => {
     const parsed = parseParserOptionValue(value);
@@ -46,8 +35,7 @@ export function useParserTreeData({ value }: { value?: string }) {
       : undefined;
   }, [value]);
 
-  // Expansion is controlled here (not inside TreeSelect) so that expansion
-  // drives the lazy version fetch below.
+  // Expansion is local; all version metadata is already in the catalog.
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   // Render-phase adjustment (React's endorsed "adjust state when a prop
@@ -69,103 +57,63 @@ export function useParserTreeData({ value }: { value?: string }) {
     }
   }
 
-  // Versions load for the selected pipeline plus every expanded branch. The
-  // set is derived, so collapsing a branch drops its observer and a re-expand
-  // refetches (gcTime: 0) — always-fresh data over a cached shortcut.
-  const versionCanvasIds = useMemo(() => {
-    const ids = new Set<string>();
-    if (selectedPipelineId) ids.add(selectedPipelineId);
-    expandedIds.forEach((nodeId) => {
-      const parsed = parseParserOptionValue(nodeId);
-      if (parsed?.kind === ParserOptionKind.Pipeline) ids.add(parsed.rawId);
-    });
-    // Sorted so the useQueries array stays stable across expansion changes.
-    return [...ids].sort();
-  }, [selectedPipelineId, expandedIds]);
-  const versionResults = useFetchCanvasVersions(versionCanvasIds);
-
-  const { versionsByCanvas, loadingCanvasIds } = useMemo(() => {
-    const versionsByCanvas = new Map<string, ICanvasVersionRow[]>();
-    const loadingCanvasIds = new Set<string>();
-    versionCanvasIds.forEach((canvasId, index) => {
-      const query = versionResults[index];
-      if (query?.isSuccess) {
-        versionsByCanvas.set(canvasId, query.data ?? []);
-      } else {
-        loadingCanvasIds.add(canvasId);
-      }
-    });
-    return { versionsByCanvas, loadingCanvasIds };
-  }, [versionResults, versionCanvasIds]);
-
   // Trim: some locales still define the marker with surrounding whitespace
   // from when it was appended to the label text.
   const builtInTag = t('knowledgeConfiguration.builtInSuffix').trim();
 
   const treeData = useMemo<TreeSelectNode[]>(() => {
-    const pipelines = (pipelineData?.canvas ?? [])
-      .filter(
-        (item) => item.type !== AgentListItemType.CompilationTemplateGroup,
-      )
-      .map((item): TreeSelectNode => {
-        const nodeId = buildPipelineNodeId(item.id);
-        const versions = versionsByCanvas.get(item.id);
-        let children: TreeSelectNode[];
-        if (!versions) {
-          children = [
-            {
-              id: `${nodeId}:loading`,
-              title: '',
-              disabled: true,
-              label: (
-                <Loader2 className="size-3.5 animate-spin text-text-disabled" />
-              ),
-            },
-          ];
-        } else if (versions.length === 0) {
-          // A pipeline draft without published versions stays visible but
-          // offers nothing to select. The disabled placeholder row also keeps
-          // the branch non-empty, so TreeSelect never treats the draft itself
-          // as a selectable leaf.
-          children = [
-            {
-              id: `${nodeId}:empty`,
-              title: '',
-              disabled: true,
-              label: (
-                <span className="text-text-disabled">
-                  {t('flow.version.noPublished')}
-                </span>
-              ),
-            },
-          ];
-        } else {
-          children = versions.map((version): TreeSelectNode => ({
-            id: buildParserOptionValue(
-              ParserOptionKind.Pipeline,
-              item.id,
-              version.id,
-            ),
-            // The alias joins the plain-text title so TreeSelect search
-            // matches it; `label` renders it as secondary text instead.
-            title: version.alias
-              ? `${version.title} ${version.alias}`
-              : version.title,
-            searchKeywords: version.alias ? [version.alias] : undefined,
+    const pipelineNodes = pipelines.map((item): TreeSelectNode => {
+      const nodeId = buildPipelineNodeId(item.id);
+      const versions = item.versions;
+      let children: TreeSelectNode[];
+      if (versions.length === 0) {
+        // A pipeline draft without saved versions stays visible but
+        // offers nothing to select. The disabled placeholder row also keeps
+        // the branch non-empty, so TreeSelect never treats the draft itself
+        // as a selectable leaf.
+        children = [
+          {
+            id: `${nodeId}:empty`,
+            title: '',
+            disabled: true,
             label: (
-              <span className="flex items-center gap-1.5 min-w-0">
-                <span className="truncate">{version.title}</span>
-                {version.alias && (
-                  <span className="text-text-secondary truncate flex-shrink-0">
-                    {version.alias}
-                  </span>
-                )}
+              <span className="text-text-disabled">
+                {t('flow.version.noPublished')}
               </span>
             ),
-          }));
-        }
-        return { id: nodeId, title: item.title, children };
-      });
+          },
+        ];
+      } else {
+        children = versions.map((version): TreeSelectNode => ({
+          id: buildParserOptionValue(
+            ParserOptionKind.Pipeline,
+            item.id,
+            version.id,
+          ),
+          // The alias joins the plain-text title so TreeSelect search
+          // matches it; `label` renders it as secondary text instead.
+          title: version.alias
+            ? `${version.name} ${version.alias}`
+            : version.name,
+          searchKeywords: version.alias ? [version.alias] : undefined,
+          // The trigger display needs the alias and the unpolluted title
+          // (title above has the alias joined in for search). The dropdown
+          // row caps the alias at a fixed width — the popover is w-auto, so
+          // an uncapped alias would blow it wide instead of truncating.
+          data: version.alias
+            ? { title: version.name, alias: version.alias }
+            : undefined,
+          label: (
+            <PipelineVersionLabel
+              title={version.name}
+              alias={version.alias}
+              aliasClassName="max-w-60"
+            />
+          ),
+        }));
+      }
+      return { id: nodeId, title: item.name, children };
+    });
 
     const builtins = builtinOptions.map((option): TreeSelectNode => ({
       id: buildParserOptionValue(ParserOptionKind.BuiltIn, option.value),
@@ -183,8 +131,8 @@ export function useParserTreeData({ value }: { value?: string }) {
 
     // Pipeline branches first, builtin leaves below — the same ordering the
     // flat parser select used.
-    return [...pipelines, ...builtins];
-  }, [pipelineData, builtinOptions, versionsByCanvas, t, builtInTag]);
+    return [...pipelineNodes, ...builtins];
+  }, [pipelines, builtinOptions, t, builtInTag]);
 
   // TreeSelect's built-in search auto-expansion only runs for uncontrolled
   // expansion; with expansion owned here, matching branches are expanded from
@@ -203,10 +151,7 @@ export function useParserTreeData({ value }: { value?: string }) {
   // An unmatched value is "missing" only once everything that could contain
   // it has loaded; while the selected pipeline's versions are still arriving
   // the select must not flash the missing display.
-  const loading =
-    builtinLoading ||
-    pipelineLoading ||
-    (!!selectedPipelineId && loadingCanvasIds.has(selectedPipelineId));
+  const loading = builtinLoading || pipelineLoading;
 
   const selectedLeafExists = useMemo(() => {
     if (!value) return false;
@@ -218,19 +163,11 @@ export function useParserTreeData({ value }: { value?: string }) {
     return find(treeData);
   }, [treeData, value]);
 
-  // Node-id keyed (not canvas-id keyed) so TreeSelect can spin the chevron of
-  // a branch whose versions are being fetched.
-  const loadingIds = useMemo(
-    () => new Set([...loadingCanvasIds].map(buildPipelineNodeId)),
-    [loadingCanvasIds],
-  );
-
   return {
     treeData,
     expandedIds,
     onExpandedChange: setExpandedIds,
     onSearchChange: handleSearchChange,
-    loadingIds,
     loading,
     selectedLeafExists,
   };

@@ -146,6 +146,10 @@ func (g *GraphDocOutlineTool) invokableRun(ctx context.Context, argumentsInJSON 
 	if err != nil {
 		return "", fmt.Errorf("graph_doc_outline: %w", err)
 	}
+	docScope, err := resolveDocumentScope(ctx, docIDs)
+	if err != nil {
+		return "", fmt.Errorf("graph_doc_outline: %w", err)
+	}
 	if len(datasetIDs) == 0 {
 		// Bound scope is empty: short-circuit before touching the backend so the
 		// tool never reads outside the conversation's allowed datasets.
@@ -156,7 +160,10 @@ func (g *GraphDocOutlineTool) invokableRun(ctx context.Context, argumentsInJSON 
 	// it. Locating here costs one BM25 pass and saves the model a whole search
 	// call plus a second outline call carrying the doc_ids that search returned.
 	if len(docIDs) == 0 {
-		docIDs = locateDocIDsForOutline(ctx, g.tenantID, datasetIDs, query)
+		if docScope != nil && len(docScope) == 0 {
+			return renderKgDocOutlineLocateMiss(ctx, query), nil
+		}
+		docIDs = locateDocIDsForOutline(ctx, g.tenantID, datasetIDs, docScope, query)
 		if len(docIDs) == 0 {
 			return renderKgDocOutlineLocateMiss(ctx, query), nil
 		}
@@ -242,10 +249,11 @@ func renderKgDocOutline(ctx context.Context, docIDs []string, result KgExploreRe
 // the model reach the compiled graph before it holds any doc_id. The pass is
 // lexical on purpose - that keeps the entry working on a corpus whose
 // embedding backend is unavailable.
-func locateDocIDsForOutline(ctx context.Context, tenantID string, datasetIDs []string, query string) []string {
+func locateDocIDsForOutline(ctx context.Context, tenantID string, datasetIDs, docScope []string, query string) []string {
 	chunks, err := runtime.GetBm25Service().SearchBm25(ctx, runtime.Bm25Request{
 		Queries:    []string{query},
 		DatasetIDs: datasetIDs,
+		DocScope:   docScope,
 		TopN:       graphDocOutlineLocateTopN,
 		TenantID:   tenantID,
 	})

@@ -59,21 +59,21 @@ Common fields are as follows:
 
 Variable types:
 
-| Type | Description |
-| --- | --- |
-| Single-line text | Used to enter short text, such as names, keywords, and serial numbers. |
-| Paragraph text | Used to enter longer content, such as problem descriptions, requirement descriptions, and prompts. |
-| Dropdown options | Provides predefined options for users to select. You can click **Add option** to add multiple options. This is suitable for fixed-value inputs such as language, department, and model type. |
-| File upload | Allows users to upload files as workflow input. This can be used for document analysis, image processing, and similar scenarios. Uploaded files are not automatically saved to knowledge bases, and are used only in the current workflow. |
-| Number | Used to enter numeric values, such as quantity, threshold, `Top K`, and maximum returned items. |
-| Boolean | Provides a switch (`True`/`False`) or yes/no option, used to control whether a feature is enabled or whether a branch is executed. |
-| JSON object | Used to enter structured JSON data, such as parameters, configurations, or other complex data containing multiple fields. |
+| Type             | Description                                                                                                                                                                                                                                |
+|------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Single-line text | Used to enter short text, such as names, keywords, and serial numbers.                                                                                                                                                                     |
+| Paragraph text   | Used to enter longer content, such as problem descriptions, requirement descriptions, and prompts.                                                                                                                                         |
+| Dropdown options | Provides predefined options for users to select. You can click **Add option** to add multiple options. This is suitable for fixed-value inputs such as language, department, and model type.                                               |
+| File upload      | Allows users to upload files as workflow input. This can be used for document analysis, image processing, and similar scenarios. Uploaded files are not automatically saved to Datasets, and are used only in the current workflow. |
+| Number           | Used to enter numeric values, such as quantity, threshold, `Top K`, and maximum returned items.                                                                                                                                            |
+| Boolean          | Provides a switch (`True`/`False`) or yes/no option, used to control whether a feature is enabled or whether a branch is executed.                                                                                                         |
+| JSON object      | Used to enter structured JSON data, such as parameters, configurations, or other complex data containing multiple fields.                                                                                                                  |
 
 ![Begin Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/begin_component_2.jpg)
 
 :::tip NOTE
 
-Files uploaded through **Begin** are available to the workflow without being added to a knowledge base.
+Files uploaded through **Begin** are available to the workflow without being added to a Dataset.
 
 - For documents, add a **File upload** input and select a parser. Reference the parsed content through `sys.files` in subsequent components.
 - For images, select a vision-capable model in the Agent component to analyze the uploaded image. Image uploads are not automatically converted to text.
@@ -85,7 +85,7 @@ Keep uploaded content within the selected model's context limit.
 
 ## Agent Component
 
-The Agent component is used to call large language models for reasoning, content generation, task planning, and tool calling. It can process user questions independently, or work with components such as knowledge retrieval, HTTP requests, code, databases, and sub-agents to complete multi-step tasks.
+The Agent component is used to call large language models for reasoning, content generation, task planning, and tool calling. It can process user questions independently, or work with components such as knowledge retrieval, HTTP requests, code, databases, and sub-agents to complete multistep tasks.
 
 The Agent component can work independently and has the following capabilities:
 
@@ -106,7 +106,7 @@ Configuration steps:
 5. Write the task in **User prompt**, and insert variables by typing `/`.
 6. Add Retrieval, Execute SQL, or other tools offered by **Tools**, select MCP tools, or add sub-agents under **Agent**. For a fixed HTTP call, connect a separate **HTTP Request** workflow node.
 7. Review the `content` output, or enable structured output and configure its schema when needed.
-8. Click **Save**, then **Run** to check the result.
+8. Click **Save draft**, then **Run** to check the result.
 
 ![Agent Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_component_1.jpg)
 
@@ -142,10 +142,10 @@ Use **Advanced settings** to adjust conversation history and citations.
 
 Parameter description:
 
-| Parameter | Description | Suggestion |
-| --- | --- | --- |
-| Message window size | Sets the number of historical messages retained by the Agent during reasoning. A larger window provides more context, but increases token consumption. | Keep the default value in general. Increase it for multi-turn conversations, and decrease it for single-turn tasks. |
-| Citation | Specifies whether to return citation information in answers. When the Agent uses knowledge bases or retrieval results to generate answers, source citations can be enabled to make it easier to view the basis for the answer. | Recommended for knowledge base Q&A scenarios. |
+| Parameter           | Description                                                                                                                                                                                                                    | Suggestion                                                                                                          |
+|---------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------|
+| Message window size | Sets the number of historical messages retained by the Agent during reasoning. A larger window provides more context, but increases token consumption.                                                                         | Keep the default value in general. Increase it for multi-turn conversations, and decrease it for single-turn tasks. |
+| Citation            | Specifies whether to return citation information in answers. When the Agent uses Datasets or retrieval results to generate answers, source citations can be enabled to make it easier to view the basis for the answer. | Recommended for Dataset Q&A scenarios.                                                                       |
 
 If an Agent run fails, check the error details in the run results, correct the cause, and run again.
 
@@ -153,10 +153,10 @@ If an Agent run fails, check the error details in the run results, correct the c
 
 `Output` is used to configure the output content of the Agent node.
 
-| Configuration item | Description |
-| --- | --- |
-| `content` | The natural language text returned by the Agent. This is the default output. |
-| `structured` | Structured data returned by the Agent. After structured output is enabled, results can be output according to a predefined JSON Schema, making it easier for subsequent nodes to read and process. |
+| Configuration item | Description                                                                                                                                                                                        |
+|--------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `content`          | The natural language text returned by the Agent. This is the default output.                                                                                                                       |
+| `structured`       | Structured data returned by the Agent. After structured output is enabled, results can be output according to a predefined JSON Schema, making it easier for subsequent nodes to read and process. |
 
 For structured output, after enabling **Structured output**, click **Configuration** to configure the output structure. Users can define the returned data format according to JSON Schema, such as specifying field names, data types, and required fields. The Agent tries to return results according to the configured structure, making it easier to pass data to nodes such as Code, HTTP Request, Execute SQL, and Switch for automated processing.
 
@@ -164,16 +164,17 @@ For structured output, after enabling **Structured output**, click **Configurati
 
 ## Retrieval Component
 
-The knowledge retrieval component is used to retrieve relevant content from specified knowledge bases or memories. It can be used as a regular workflow component, or as a tool for the Agent component.
+The knowledge retrieval component is used to retrieve relevant content from specified Datasets or memories. It can be used as a regular workflow component, or as a tool for the Agent component.
 
 Configuration steps:
 
 1. Click the knowledge retrieval component.
 2. In **Query variable**, select the query source. `sys.query` is commonly used.
-3. In **Retrieval source**, select one or more knowledge bases, or select **Memory**.
-4. Expand **Advanced settings** and adjust **Similarity threshold**, **Keyword similarity weight**, **Rerank candidate count**, and **Top N** as needed. Select a **Rerank model** if required.
-5. For cross-language retrieval, select a **Cross-language search** language.
-6. Click **Run** to test the retrieval results.
+3. In **Retrieval from**, select **Dataset** or **Memory**.
+4. In the corresponding source selection field below, select at least one Dataset or Memory.
+5. Expand **Advanced settings** and adjust **Similarity threshold**, **Keyword similarity weight**, **Rerank candidate count**, and **Top N** as needed. Select a **Rerank model** if required.
+6. For cross-language retrieval, select a **Cross-language search** language.
+7. Click **Run** to test the retrieval results.
 
 ![Knowledge Retrieval Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/knowledge_retrieval_component_1.jpg)
 
@@ -183,11 +184,11 @@ Configuration steps:
 
 **Similarity threshold** is used to filter low-relevance chunks. The higher the threshold, the stricter the returned content, but useful information may be missed.
 
-**Keyword similarity weight** controls the full-text keyword weight in the combined retrieval score. Its default is `0.7`, with a corresponding vector weight of `1 - 0.7 = 0.3`. The panel shows both weights. Increasing the keyword weight favors keyword matching; decreasing it favors vector similarity. When retrieving from multiple knowledge bases together, make sure they use the same embedding model.
+**Keyword similarity weight** controls the full-text keyword weight in the combined retrieval score. Its default is `0.7`, with a corresponding vector weight of `1 - 0.7 = 0.3`. The panel shows both weights. Increasing the keyword weight favors keyword matching; decreasing it favors vector similarity. When retrieving from multiple Datasets together, make sure they use the same embedding model.
 
 **Rerank candidate count** controls the number of retrieval candidates available for reranking. The default shown in the panel is `64`. This is separate from **Top N**, which limits the results passed to downstream components.
 
-The initial **Similarity threshold** is `0.2` (displayed as `20` in the percentage-based control), and the initial **Top N** is `8`. The recommendations below are tuning suggestions rather than defaults. **Meta data** filters can also constrain retrieval; check the selected datasets and filter conditions when relevant content is missing.
+The initial **Similarity threshold** displayed in the UI is `20`, meaning 20%, and the initial **Top N** is `8`. The recommendations below are tuning suggestions rather than defaults. **Meta data** filters can also constrain retrieval; check the selected datasets and filter conditions when relevant content is missing.
 
 **Top N** specifies the number of chunks sent to subsequent components. Too few chunks may result in insufficient information, while too many chunks may increase response time and context pressure.
 
@@ -196,15 +197,15 @@ Enabling a **Rerank model** usually improves the sorting of knowledge retrieval 
 
 ### Configuration Suggestions
 
-The following values are only initial configuration references. Actual results are affected by the embedding model, document quality, chunking method, and business questions. Adjust them based on knowledge retrieval test results.
+Similarity threshold values below use the UI percentage scale: enter `20`, `50`, or `80` for 20%, 50%, or 80%. The following values are only initial configuration references. Actual results are affected by the embedding model, document quality, chunking method, and business questions. Adjust them based on knowledge retrieval test results.
 
 Retrieval parameters directly affect answer coverage, accuracy, and response time. You can start with the settings in the following table, and then optimize them based on real questions.
 
-| Parameter | Suggested Value | Scenario | Description |
-| --- | --- | --- | --- |
-| Top N | 3-5 | FAQ and short knowledge entries | Faster responses for clear answers. |
-| Top N | 5-10 | Product documentation and help centers | A suggested range to test with representative questions. |
-| Top N | 10-20 | Legal contracts and long document analysis | More context with higher token consumption. |
-| Similarity threshold | 0.2 | Loose recall | Questions with diverse expressions. |
-| Similarity threshold | 0.5 | General Q&A | A stricter tuning example; the initial value is 0.2. |
-| Similarity threshold | 0.8 | Strict precise matching | Scenarios that require exact terminology matching. |
+| Parameter            | Suggested Value | Scenario                                   | Description                                                  |
+|----------------------|-----------------|--------------------------------------------|--------------------------------------------------------------|
+| Top N                | 3-5             | FAQ and short knowledge entries            | Faster responses for clear answers.                          |
+| Top N                | 5-10            | Product documentation and help centers     | A suggested range to test with representative questions.     |
+| Top N                | 10-20           | Legal contracts and long document analysis | More context with higher token consumption.                  |
+| Similarity threshold | 20              | Loose recall                               | Questions with diverse expressions.                          |
+| Similarity threshold | 50              | General Q&A                                | A stricter tuning example; the initial UI value is 20 (20%). |
+| Similarity threshold | 80              | Strict precise matching                    | Scenarios that require exact terminology matching.           |

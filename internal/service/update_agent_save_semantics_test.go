@@ -61,7 +61,7 @@ func TestUpdateAgent_AutosaveUpdatesDraftOnly(t *testing.T) {
 	svc := NewAgentService()
 	ctx := serviceTestContext(t, userID, userID)
 
-	if err := svc.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": sampleDSL()}); err != nil {
+	if err := svc.UpdateAgent(ctx, canvasID, map[string]interface{}{"dsl": sampleDSL()}); err != nil {
 		t.Fatalf("manual save: %v", err)
 	}
 	before, err := dao.NewUserCanvasVersionDAO().ListByCanvasID(ctx, dao.DB, canvasID)
@@ -74,7 +74,7 @@ func TestUpdateAgent_AutosaveUpdatesDraftOnly(t *testing.T) {
 
 	autoDSL := sampleDSL()
 	autoDSL["autosave_marker"] = "yes"
-	if err := svc.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": autoDSL, "autosave": true}); err != nil {
+	if err := svc.UpdateAgent(ctx, canvasID, map[string]interface{}{"dsl": autoDSL, "autosave": true}); err != nil {
 		t.Fatalf("autosave: %v", err)
 	}
 	after, err := dao.NewUserCanvasVersionDAO().ListByCanvasID(ctx, dao.DB, canvasID)
@@ -104,10 +104,10 @@ func TestUpdateAgent_ManualSaveInsertsNewVersion(t *testing.T) {
 	svc := NewAgentService()
 	ctx := serviceTestContext(t, userID, userID)
 
-	if err := svc.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": sampleDSL()}); err != nil {
+	if err := svc.UpdateAgent(ctx, canvasID, map[string]interface{}{"dsl": sampleDSL()}); err != nil {
 		t.Fatalf("first save: %v", err)
 	}
-	if err := svc.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": sampleDSL()}); err != nil {
+	if err := svc.UpdateAgent(ctx, canvasID, map[string]interface{}{"dsl": sampleDSL()}); err != nil {
 		t.Fatalf("second save: %v", err)
 	}
 	versions, err := dao.NewUserCanvasVersionDAO().ListByCanvasID(ctx, dao.DB, canvasID)
@@ -131,7 +131,7 @@ func TestUpdateAgent_ManualSaveCarriesAlias(t *testing.T) {
 	ctx := serviceTestContext(t, userID, userID)
 
 	alias := "carried-alias"
-	if err := svc.UpdateAgent(ctx, userID, canvasID, map[string]interface{}{"dsl": sampleDSL(), "alias": alias}); err != nil {
+	if err := svc.UpdateAgent(ctx, canvasID, map[string]interface{}{"dsl": sampleDSL(), "alias": alias}); err != nil {
 		t.Fatalf("save with alias: %v", err)
 	}
 	latest, err := dao.NewUserCanvasVersionDAO().GetLatest(ctx, dao.DB, canvasID)

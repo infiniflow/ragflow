@@ -1,9 +1,12 @@
 package connector
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -330,5 +333,64 @@ func TestGmailTimeRangeQuery(t *testing.T) {
 	end := time.Unix(200, 0).UTC()
 	if got := gmailTimeRangeQuery(&start, end); got != "after:101 before:200" {
 		t.Fatalf("query = %q", got)
+	}
+}
+
+// Exercise the HTTP path: the regular fixtures bypass loadThread and therefore
+// cannot catch fields projections that remove body data before decoding.
+func TestGmailSyncRequestsCompleteMimePayload(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		t.Run(fmt.Sprintf("nested=%t", nested), func(t *testing.T) {
+			c, err := NewGmailConnector(map[string]any{"batch_size": 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.listUsers = func(context.Context) ([]string, error) { return []string{"reader@example.com"}, nil }
+			c.httpClientForUser = func(context.Context, string) (*http.Client, error) {
+				return &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+					var result any
+					if strings.HasSuffix(req.URL.Path, "/threads") {
+						result = map[string]any{"threads": []map[string]string{{"id": "thread-1"}}}
+					} else {
+						payload := map[string]any{"mimeType": "text/plain", "headers": []map[string]string{{"name": "Subject", "value": "Body projection regression"}}, "body": map[string]string{"data": base64.RawURLEncoding.EncodeToString([]byte("invoice amount 125"))}}
+						if nested {
+							payload = map[string]any{"mimeType": "multipart/mixed", "headers": payload["headers"], "parts": []any{map[string]any{"mimeType": "multipart/alternative", "parts": []any{payload}}}}
+						}
+						fields := req.URL.Query().Get("fields")
+						// Model Google's documented partial-response behavior for
+						// the old narrow projection versus a complete payload.
+						switch fields {
+						case "id,messages(id,labelIds,payload(headers,parts(body(data),mimeType)))":
+							delete(payload, "body")
+							delete(payload, "mimeType")
+							if nested {
+								payload["parts"] = []any{map[string]string{"mimeType": "multipart/alternative"}}
+							}
+						case "", "id,messages(id,labelIds,payload)":
+						default:
+							t.Fatalf("fixture does not model fields %q", fields)
+						}
+						result = map[string]any{"id": "thread-1", "messages": []any{map[string]any{"id": "message-1", "payload": payload}}}
+					}
+					data, err := json.Marshal(result)
+					if err != nil {
+						return nil, err
+					}
+					return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(bytes.NewReader(data))}, nil
+				})}, nil
+			}
+			session, err := c.OpenSync(t.Context(), SyncRequest{FromBeginning: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer session.Close()
+			batch, err := session.NextBatch(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(batch.Documents) != 1 || !strings.Contains(string(batch.Documents[0].Blob), "invoice amount 125") {
+				t.Fatalf("mail body missing from synced document: %+v", batch.Documents)
+			}
+		})
 	}
 }

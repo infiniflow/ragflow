@@ -14,9 +14,7 @@ import (
 // its own dedicated coverage in internal/utility/ssrf_test.go.
 func withSSRFBypass(t *testing.T) {
 	t.Helper()
-	prev := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 }
 
 func requireNoSuchMethod(t *testing.T, name string, err error) {

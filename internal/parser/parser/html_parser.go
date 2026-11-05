@@ -21,6 +21,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
 
@@ -29,6 +30,10 @@ import (
 	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/tableutil"
 )
+
+// htmlImageProcessingBudget bounds the total time one HTML document may spend
+// downloading remote images. It is a variable so tests can shorten it.
+var htmlImageProcessingBudget = 60 * time.Second
 
 type HTMLParser struct {
 	RemoveHeaderFooter bool
@@ -88,12 +93,23 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 	var items []map[string]any
 	state := &htmlWalkState{
-		refOnly:    true,
-		ctx:        ctx,
-		mediaCache: media.CacheFromContext(ctx),
+		refOnly:           true,
+		fetchRemoteImages: true,
+		ctx:               ctx,
+		mediaCache:        media.CacheFromContext(ctx),
+		budget:            media.NewBudget(),
 	}
 	if p.textOnly {
-		state.resolveImage = func(string) (string, bool) { return "", false }
+		// Text-only callers have no run media cache and must not reach the
+		// network: every image source is dropped before resolution.
+		state.skipImages = true
+	} else {
+		// Remote downloads are bounded per document. The fetch deadline lives
+		// in its own context because state.ctx also scopes the media cache:
+		// expiring it would fail every later image write in the document.
+		fetchCtx, cancel := context.WithTimeout(ctx, htmlImageProcessingBudget)
+		defer cancel()
+		state.fetchCtx = fetchCtx
 	}
 	walkHTMLBlocksWithState(doc, &items, state)
 	if state.err != nil {
@@ -110,13 +126,18 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
+	warnings := state.warnings()
+	if state.fetchCtx != nil && state.budget.Count() > 0 &&
+		state.fetchCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
+		warnings = append(warnings, "HTML image processing reached the document time budget")
+	}
 	return ParseResult{
 		File: map[string]any{
 			"name":     filename,
 			"encoding": encName,
 		},
 		JSON:     MapsToItems(items),
-		Warnings: state.warnings(),
+		Warnings: warnings,
 	}
 }
 
@@ -130,69 +151,187 @@ type htmlWalkState struct {
 	tableSequence       int
 	mediaOrder          int
 	skippedInlineImages int
-	mediaBudget         *embeddedMediaBudget
+	skippedRemoteImages int
+	unresolvedImages    int
+	budget              *media.Budget
+	mediaSink           *media.Sink
 	// refOnly defers image bytes to content-addressed references instead of
-	// carrying the normalized data URI on the item. HTML sets it; formats
-	// that still inline image bytes leave it false.
-	refOnly      bool
-	ctx          context.Context
-	mediaCache   media.Cache
+	// carrying the normalized data URI on the item. HTML, EPUB and Markdown
+	// ingestion set it; formats that still inline image bytes leave it false.
+	refOnly bool
+	// fetchRemoteImages downloads HTTP(S) image sources into the run media
+	// cache while refOnly is set. The HTML parser enables it; text-only
+	// parsing sets skipImages instead so it never reaches the network.
+	fetchRemoteImages bool
+	ctx               context.Context
+	// fetchCtx bounds remote image downloads for one document. A nil value
+	// falls back to ctx.
+	fetchCtx   context.Context
+	mediaCache media.Cache
+	// mediaFormat names the parser family recorded on cache writes. An empty
+	// value means the HTML parser.
+	mediaFormat string
+	// skipImages drops every image source before resolution. Text-only
+	// callers use it when no run media cache is available.
+	skipImages   bool
+	resolveMedia func(string) (*entity.MediaRef, bool)
 	resolveImage func(string) (string, bool)
 	err          error
 }
 
 func (s *htmlWalkState) warnings() []string {
-	warnings := s.mediaBudget.warnings()
+	var warnings []string
+	if s.mediaSink != nil {
+		warnings = append(warnings, s.mediaSink.Warnings()...)
+	} else {
+		warnings = append(warnings, s.budget.Warnings()...)
+	}
 	if s.skippedInlineImages > 0 {
 		warnings = append(warnings, fmt.Sprintf("document parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages))
 	}
+	if s.skippedRemoteImages > 0 {
+		warnings = append(warnings, fmt.Sprintf("document parser skipped %d remote image(s) that could not be downloaded", s.skippedRemoteImages))
+	}
+	if s.unresolvedImages > 0 {
+		warnings = append(warnings, fmt.Sprintf("document parser skipped %d unresolved image reference(s)", s.unresolvedImages))
+	}
 	return warnings
+}
+
+// cacheFormat reports the parser family recorded on media-cache writes.
+func (s *htmlWalkState) cacheFormat() string {
+	if s.mediaFormat != "" {
+		return s.mediaFormat
+	}
+	return "html"
 }
 
 func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool) {
 	if s.err != nil {
 		return "", nil, false
 	}
+	if s.skipImages {
+		return "", nil, false
+	}
+	if s.resolveMedia != nil {
+		if ref, ok := s.resolveMedia(src); ok {
+			return "", ref, true
+		}
+		if s.err != nil {
+			// The resolver already recorded a fatal cache failure; running the
+			// refOnly data-URI fallback would write the same source again.
+			return "", nil, false
+		}
+	}
 	if s.resolveImage != nil {
 		normalized, ok := s.resolveImage(src)
 		return normalized, nil, ok
 	}
-	if !media.IsHTMLDataImageSource(src) {
+	if !media.IsDataImageSource(src) {
+		if s.refOnly && s.fetchRemoteImages && isRemoteImageSource(src) {
+			if ref, ok := s.resolveRemoteMedia(s.remoteFetchContext(), src); ok {
+				return "", ref, true
+			}
+		}
 		return "", nil, false
 	}
 	if s.refOnly {
-		if media.HTMLImageExceedsLimit(src) {
-			return "", nil, false
+		ref, invalid := s.storeDataURIMedia("data:"+src, src)
+		if invalid {
+			s.skippedInlineImages++
 		}
-		mime, data, ok := media.DecodeHTMLImageSource(src)
-		if !ok {
-			return "", nil, false
-		}
-		if s.mediaCache == nil {
-			s.err = fmt.Errorf("html media cache is not configured")
-			return "", nil, false
-		}
-		ref, err := s.mediaCache.Put(s.ctx, "html", mime, data)
-		if err != nil {
-			s.err = fmt.Errorf("html media cache write: %w", err)
-			return "", nil, false
-		}
-		return "", &ref, true
+		return "", ref, ref != nil
 	}
-	if s.mediaBudget == nil {
-		s.mediaBudget = newEmbeddedMediaBudget()
-	}
-	if !s.mediaBudget.reserveItem() {
+	reservation, admission := s.budget.ReserveOccurrence(media.UnknownSize)
+	if admission != media.Admitted {
 		return "", nil, false
 	}
-	normalized, size, _, ok := media.NormalizeHTMLImageSource(src)
+	normalized, size, _, ok := media.NormalizeDataImageSource(src)
 	if !ok {
+		s.skippedInlineImages++
 		return "", nil, false
 	}
-	if !s.mediaBudget.includeReservedSize(int(size)) {
+	if !reservation.Commit(media.Size(size)) {
 		return "", nil, false
 	}
 	return normalized, nil, true
+}
+
+// storeDataURIMedia writes one data-URI image source to the run media cache.
+// A repeated source reuses the first outcome without touching the budget or
+// the cache again. It reports an invalid or oversized payload so each parser
+// can count its own warning.
+func (s *htmlWalkState) storeDataURIMedia(key, src string) (*entity.MediaRef, bool) {
+	sink := s.mediaOutput()
+	if ref, seen := sink.Lookup(key); seen {
+		return ref, false
+	}
+	size, ok := media.DataImageDecodedSize(src)
+	if !ok {
+		sink.Skip(key)
+		return nil, true
+	}
+	invalid := false
+	ref, err := sink.Resolve(key, media.Size(size), func() (string, []byte, bool) {
+		mime, data, ok := media.DecodeDataImageSource(src)
+		invalid = !ok
+		return mime, data, ok
+	})
+	if err != nil {
+		s.err = err
+	}
+	return ref, invalid
+}
+
+// resolveRemoteMedia downloads one HTTP(S) image into the run media cache.
+// fetchCtx bounds new downloads; cached sources remain reusable after its
+// deadline. A failed download is counted once for the
+// parser warning. A cache or task-context failure is returned to the caller
+// through the walk state.
+func (s *htmlWalkState) resolveRemoteMedia(fetchCtx context.Context, src string) (*entity.MediaRef, bool) {
+	src = strings.TrimSpace(src)
+	if err := s.ctx.Err(); err != nil {
+		s.err = err
+		return nil, false
+	}
+	if ref, seen := s.mediaOutput().Lookup(src); seen {
+		return ref, ref != nil
+	}
+	if fetchCtx.Err() != nil {
+		return nil, false
+	}
+	ref, err := s.mediaOutput().Resolve(src, media.UnknownSize, func() (string, []byte, bool) {
+		data, err := fetchImage(fetchCtx, src)
+		if err != nil {
+			if fetchCtx.Err() == nil {
+				s.skippedRemoteImages++
+			}
+			return "", nil, false
+		}
+		return remoteImageMIME(data), data, true
+	})
+	if err != nil {
+		s.err = err
+	}
+	return ref, ref != nil
+}
+
+// remoteFetchContext is the context that bounds remote downloads: the
+// document fetch budget when one is installed, otherwise the walk context.
+func (s *htmlWalkState) remoteFetchContext() context.Context {
+	if s.fetchCtx != nil {
+		return s.fetchCtx
+	}
+	return s.ctx
+}
+
+// mediaOutput shares source admission and writes across data URIs, remote
+// downloads and EPUB entries.
+func (s *htmlWalkState) mediaOutput() *media.Sink {
+	if s.mediaSink == nil {
+		s.mediaSink = media.NewSink(media.WithCache(s.ctx, s.mediaCache), s.cacheFormat(), s.budget)
+	}
+	return s.mediaSink
 }
 
 // walkHTMLBlocksWithState emits normalized text and image items in document
@@ -456,10 +595,8 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 			src := htmlAttribute(n, "src")
 			normalized, ref, ok := state.imageSource(src)
 			if !ok {
-				if state.resolveImage != nil {
+				if state.resolveImage != nil || state.resolveMedia != nil || state.skipImages {
 					w.writeText(htmlAttribute(n, "alt"))
-				} else if media.IsHTMLDataImageSource(src) {
-					state.skippedInlineImages++
 				}
 				return
 			}
@@ -523,8 +660,7 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	if state.err != nil {
 		return
 	}
-	images, skippedInlineImages := htmlTableImages(n, state)
-	state.skippedInlineImages += skippedInlineImages
+	images := htmlTableImages(n, state)
 	markup := renderTableHTML(n)
 	if strings.TrimSpace(markup) == "" {
 		return
@@ -552,9 +688,8 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	}
 }
 
-func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, int) {
+func htmlTableImages(table *html.Node, state *htmlWalkState) []htmlTableImage {
 	var images []htmlTableImage
-	skippedInlineImages := 0
 	rowCount := 0
 	columnCounts := make(map[int]int)
 	var walk func(node *html.Node, row, column int)
@@ -578,11 +713,16 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, 
 					if state.err != nil {
 						return
 					}
-					if state.resolveImage != nil {
+					if state.resolveImage != nil || state.resolveMedia != nil || state.skipImages {
+						// ParseTableHTML's cellText ignores <img>, so replace
+						// an unresolved table image with its Markdown reference.
 						alt := htmlAttribute(node, "alt")
-						node.Type, node.Data, node.Attr = html.TextNode, alt, nil
-					} else if media.IsHTMLDataImageSource(src) {
-						skippedInlineImages++
+						replacement := alt
+						if shouldPreserveImageReference(src) {
+							replacement = "![" + alt + "](" + src + ")"
+						}
+						node.Type, node.Data, node.Attr = html.TextNode, replacement, nil
+					} else if media.IsDataImageSource(src) {
 						removeHTMLImageSource(node)
 					}
 				} else {
@@ -608,7 +748,7 @@ func htmlTableImages(table *html.Node, state *htmlWalkState) ([]htmlTableImage, 
 		}
 	}
 	walk(table, 0, 0)
-	return images, skippedInlineImages
+	return images
 }
 
 func removeHTMLImageSource(n *html.Node) {

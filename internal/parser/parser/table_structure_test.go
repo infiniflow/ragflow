@@ -96,11 +96,11 @@ func TestMarkdownTableImageTimeoutDoesNotConsumeBudget(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	doc := markdownNew().Parse([]byte("| A | B |\n|---|---|\n| Logo | ![logo](http://127.0.0.1/logo.png) |\n"))
-	budget := newEmbeddedMediaBudget()
+	budget := newMediaBudgetForTest()
 	var items []map[string]any
-	unresolved := walkMarkdownBlocksWithImages(ctx, doc, &items, false, true, &htmlWalkState{mediaBudget: budget})
-	if budget.items != 0 || unresolved != 0 {
-		t.Fatalf("timed out image consumed budget: attempts=%d unresolved=%d", budget.items, unresolved)
+	unresolved := walkMarkdownBlocksWithImages(ctx, doc, &items, false, true, &htmlWalkState{budget: budget})
+	if budget.Count() != 0 || unresolved != 0 {
+		t.Fatalf("timed out image consumed budget: attempts=%d unresolved=%d", budget.Count(), unresolved)
 	}
 }
 
@@ -110,9 +110,7 @@ func TestMarkdownParserPreservesImageBesideInlineTable(t *testing.T) {
 		_, _ = w.Write([]byte("hello"))
 	}))
 	defer server.Close()
-	old := ssrfAllowLoopback
-	ssrfAllowLoopback = true
-	defer func() { ssrfAllowLoopback = old }()
+	allowLoopbackImages(t)
 	p, _ := NewMarkdownParser(GoMarkdown)
 	res := p.ParseWithResult(t.Context(), "table.md", []byte("![logo]("+server.URL+"/logo.png) <table><tr><td>Owner</td><td>RET</td></tr></table>"))
 	if res.Err != nil {
@@ -172,7 +170,7 @@ func TestPDFMarkdownPreservesEmptyHeaderTable(t *testing.T) {
 func TestSoMarkPreservesMarkdownTableAndNotes(t *testing.T) {
 	items, pages, _ := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{map[string]any{"blocks": []any{
 		map[string]any{"type": "table", "content": "Before.\n\n| | |\n|---|---|\n| Owner | RET |\n\nAfter."},
-	}}}}}}, false)
+	}}}}}}, false, nil)
 	if pages != 1 || len(items) != 3 {
 		t.Fatalf("pages=%d items=%#v", pages, items)
 	}
@@ -189,7 +187,7 @@ func TestSoMarkPreservesPageOnSplitTableItems(t *testing.T) {
 	items, _, _ := soMarkItems(t.Context(), map[string]any{"outputs": map[string]any{"json": map[string]any{"pages": []any{
 		map[string]any{"blocks": []any{}},
 		map[string]any{"blocks": []any{map[string]any{"type": "table", "content": "Before.\n\n| A | B |\n|---|---|\n| Owner | RET |\n\nAfter."}}},
-	}}}}, false)
+	}}}}, false, nil)
 	if len(items) != 3 {
 		t.Fatalf("items=%#v", items)
 	}
@@ -254,8 +252,20 @@ func TestPPTXTableOnlySlideIsNotEmpty(t *testing.T) {
 	}
 }
 
-func TestOfficeTableRetainsDefaultHeaderCount(t *testing.T) {
+func TestOfficeTableUsesRepeatedHeaderFlags(t *testing.T) {
 	ir := `{"sections":[{"elements":[{"type":"table","rows":[{"is_header":true,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H1"}]}]}]},{"is_header":true,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H2"}]}]}]}]}]}]}`
+	items := buildDOCXJSONSections(ir, nil)
+	if len(items) != 1 {
+		t.Fatalf("items=%#v", items)
+	}
+	td := items[0]["table"].(*entity.TableData)
+	if td.HeaderRows != 2 || len(td.Grid) != 2 {
+		t.Fatalf("table=%+v, want two rows and two repeated header rows", td)
+	}
+}
+
+func TestOfficeTableDefaultsToOneHeaderWithoutFlags(t *testing.T) {
+	ir := `{"sections":[{"elements":[{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H1"}]}]}]},{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H2"}]}]}]}]}]}]}`
 	items := buildDOCXJSONSections(ir, nil)
 	if len(items) != 1 {
 		t.Fatalf("items=%#v", items)
@@ -268,7 +278,7 @@ func TestOfficeTableRetainsDefaultHeaderCount(t *testing.T) {
 
 func TestOfficeTablePreservesLiteralCellText(t *testing.T) {
 	el := docxIRElement{Type: "table", Rows: []docxIRRow{{Cells: []docxIRCell{{Content: []docxIRElement{{Type: "paragraph", Content: json.RawMessage(`[{"type":"text","text":" <b>A & B</b>\nsecond line "}]`)}}}}}}}
-	items := appendOfficeTableSections(nil, el, " A & <B> ", "table-1", newEmbeddedMediaBudget())
+	items := appendOfficeTableSections(nil, el, " A & <B> ", "table-1", nil)
 	if len(items) != 1 {
 		t.Fatalf("items=%#v", items)
 	}

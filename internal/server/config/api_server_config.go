@@ -30,7 +30,8 @@ const (
 )
 
 type AuthenticationConfig struct {
-	EnableRegister bool `mapstructure:"enable_register"`
+	DisablePasswordLogin bool `mapstructure:"disable_password_login"`
+	EnableRegister       bool `mapstructure:"enable_register"`
 }
 
 type APIServerConfig struct {
@@ -93,6 +94,7 @@ func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
 
 func (c *Config) parseAuthenticationConfig(v *viper.Viper) {
 	apiServerConfig := &c.apiServer
+	apiServerConfig.Authentication.DisablePasswordLogin = false
 	apiServerConfig.Authentication.EnableRegister = true
 
 	if !v.IsSet("authentication") {
@@ -103,9 +105,20 @@ func (c *Config) parseAuthenticationConfig(v *viper.Viper) {
 		return
 	}
 
+	if sub.IsSet("disable_password_login") {
+		apiServerConfig.Authentication.DisablePasswordLogin = sub.GetBool("disable_password_login")
+	}
+
 	if sub.IsSet("enable_register") {
 		apiServerConfig.Authentication.EnableRegister = sub.GetBool("enable_register")
 	}
+}
+
+func (c *Config) DisablePasswordLogin() bool {
+	if c.environments.DisablePasswordLogin != nil {
+		return *c.environments.DisablePasswordLogin
+	}
+	return c.apiServer.Authentication.DisablePasswordLogin
 }
 
 func (c *Config) EnableRegister() bool {

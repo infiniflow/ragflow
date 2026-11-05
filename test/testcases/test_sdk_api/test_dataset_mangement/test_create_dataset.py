@@ -39,7 +39,6 @@ def test_name(dataset_factory, client, name):
     assert persisted[0].name == name
 
 
-@pytest.mark.skip(reason="internal/service/dataset/crud.go CreateDataset uses len(name) bytes despite the documented 128-character limit")
 def test_name_unicode_limit(dataset_factory):
     name = "数" * 128
     assert dataset_factory(name=name).name == name
@@ -194,12 +193,13 @@ def test_builtin_parser_default(dataset_factory):
     assert dataset.pipeline_id is None
 
 
-@pytest.mark.skip(reason="sdk/python/ragflow_sdk/ragflow.py create_dataset cannot send pipeline_version_id required by internal/service/dataset/crud.go CreateDataset (empty_version_test.go)")
 def test_pipeline_parser(dataset_factory, client, integration_settings):
     pipeline_id = integration_settings.get("pipeline_id")
     if not pipeline_id:
         pytest.fail("RAGFLOW_SDK_PIPELINE_ID must identify an accessible versioned ingestion pipeline")
-    dataset = dataset_factory(parse_type=2, pipeline_id=pipeline_id)
+    version_id = integration_settings.get("pipeline_version_id")
+    assert version_id, "RAGFLOW_SDK_PIPELINE_VERSION_ID must pin an accessible ingestion pipeline version"
+    dataset = dataset_factory(parse_type=2, pipeline_id=pipeline_id, pipeline_version_id=version_id)
     assert dataset.pipeline_id == pipeline_id
     assert dataset.parse_type == 2
     persisted = client.list_datasets(id=dataset.id)[0]

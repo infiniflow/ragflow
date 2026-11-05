@@ -129,7 +129,7 @@ func serviceTestContext(t *testing.T, userID, tenantID string, additionalMemberI
 			}
 		}
 	}
-	return permission.WithSubject(t.Context(), permission.Subject{UserID: userID, TenantID: tenantID})
+	return permission.WithIdentity(t.Context(), userID, tenantID)
 }
 
 func getAPIConversationForTest(t *testing.T, db *gorm.DB, id string) *entity.API4Conversation {

@@ -109,6 +109,27 @@ func TestBuildAll_CanvasComponentNameUsesCanonicalParams(t *testing.T) {
 	}
 }
 
+// TestBuildByName_FunctionNameCollisionPrefersComponentName asserts that a
+// Retrieval node whose DSL function_name happens to match a registered tool
+// (e.g., "wikipedia") still builds the retrieval tool, not the registered one.
+// The retrieval tool advertises the DSL function_name as its agent-visible name.
+func TestBuildByName_FunctionNameCollisionPrefersComponentName(t *testing.T) {
+	built, err := BuildByName("wikipedia", map[string]any{
+		"component_name": "Retrieval",
+		"function_name":  "wikipedia",
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	info, err := built.Info(t.Context())
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if info.Name != "wikipedia" {
+		t.Errorf("tool name = %q, want retrieval advertised as the DSL function_name (collision must not build Wikipedia)", info.Name)
+	}
+}
+
 func TestBuildByName_QueritAliases(t *testing.T) {
 	for _, name := range []string{"querit", "querit_search", "queritsearch", "QueritSearch"} {
 		built, err := BuildByName(name, map[string]any{
@@ -230,6 +251,35 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 	}
 	if len(tools) != len(names) {
 		t.Fatalf("len(tools) = %d, want %d", len(tools), len(names))
+	}
+}
+
+// TestBuildTushareTool_NodeParams pins the node-level credential channel:
+// the token comes from tool_params, an empty set still builds (Invoke reports
+// the missing configuration), and a non-string token is rejected.
+func TestBuildTushareTool_NodeParams(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("tushare", map[string]any{"token": "T-node"})
+	if err != nil {
+		t.Fatalf("BuildByName(tushare) with token: %v", err)
+	}
+	tool, ok := built.(*TushareTool)
+	if !ok {
+		t.Fatalf("tool type = %T, want *TushareTool", built)
+	}
+	if tool.defaults.Token != "T-node" {
+		t.Fatalf("defaults.Token = %q, want T-node", tool.defaults.Token)
+	}
+
+	if _, err = BuildByName("tushare", map[string]any{}); err != nil {
+		t.Fatalf("BuildByName(tushare) without params: %v", err)
+	}
+
+	if _, err = BuildByName("tushare", map[string]any{"token": 1}); err == nil {
+		t.Fatal("expected a type error for a non-string token")
+	} else if !strings.Contains(err.Error(), "string node-level param token") {
+		t.Fatalf("err = %q, want the node-level token type error", err.Error())
 	}
 }
 

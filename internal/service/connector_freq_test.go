@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -41,11 +42,25 @@ func TestCreateConnectorRejectsNonPositiveFreq(t *testing.T) {
 		"prune zero":       {Name: "c", Source: "rss", Config: entity.JSONMap{}, PruneFreq: int64Ptr(0)},
 		"prune negative":   {Name: "c", Source: "rss", Config: entity.JSONMap{}, PruneFreq: int64Ptr(-1)},
 	} {
-		if _, err := svc.CreateConnector(serviceTestContext(t, "user-1", "user-1"), "user-1", req); err == nil {
+		if _, err := svc.CreateConnector(serviceTestContext(t, "user-1", "user-1"), req); err == nil {
 			t.Fatalf("%s: CreateConnector succeeded, want frequency error", name)
 		} else if !errors.Is(err, ErrConnectorInvalidFreq) {
 			t.Fatalf("%s: error = %v, want ErrConnectorInvalidFreq", name, err)
 		}
+	}
+}
+
+func TestCreateConnectorRejectsOverlongName(t *testing.T) {
+	setupFreqValidationConnector(t)
+	svc := NewConnectorService()
+
+	_, err := svc.CreateConnector(serviceTestContext(t, "user-1", "user-1"), &CreateConnectorRequest{
+		Name:   strings.Repeat("a", common.NameLimit128+1),
+		Source: "rss",
+		Config: entity.JSONMap{},
+	})
+	if err == nil || !errors.Is(err, ErrConnectorInvalidName) {
+		t.Fatalf("CreateConnector overlong name error = %v, want ErrConnectorInvalidName", err)
 	}
 }
 
@@ -59,7 +74,7 @@ func TestUpdateConnectorRejectsNonPositiveFreq(t *testing.T) {
 		"prune zero":       {PruneFreq: int64Ptr(0)},
 		"prune negative":   {PruneFreq: int64Ptr(-1)},
 	} {
-		_, code, err := svc.UpdateConnector(serviceTestContext(t, "user-1", "user-1"), "conn-freq", "user-1", req)
+		_, code, err := svc.UpdateConnector(serviceTestContext(t, "user-1", "user-1"), "conn-freq", req)
 		if err == nil {
 			t.Fatalf("%s: UpdateConnector succeeded, want frequency error", name)
 		}

@@ -11,6 +11,14 @@ A complete reference for RAGFlow's RESTful API, including migration notes for RA
 
 In the standard response envelope, `message` is always a non-empty string. Successful responses default to `"success"`; error responses contain a description of the error.
 
+`data` is optional. Operation acknowledgments omit it; check `code` for success
+and `message` for the result description. Result payloads use objects or arrays.
+
+Paginated endpoints require a positive integer `page` (default `1`) and a
+`page_size` between `1` and `100`, inclusive. Requests over the limit are rejected with
+an error envelope; values are never silently clamped. Zero and negative sizes
+cannot disable pagination. All paginated endpoints default to `30` items per page.
+
 ---
 
 ## ERROR CODES
@@ -1225,7 +1233,7 @@ curl --request PATCH \
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
 - `"enabled"`: (*Body parameter*), `integer`
-  Whether the document should be **available** in the knowledge base.
+  Whether the document should be **available** in the Dataset.
   - `1` → （available）
   - `0` → （unavailable）
 
@@ -1687,7 +1695,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -2076,9 +2084,13 @@ Success:
 
 ```json
 {
-    "code": 0
+    "code": 0,
+    "message": "success",
+    "data": {"deleted_count": 1}
 }
 ```
+
+`data.deleted_count` is the number of chunks deleted. It is `0` when no chunks matched the request.
 
 Failure:
 
@@ -2236,7 +2248,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -2682,7 +2694,8 @@ curl --request POST \
   - `"refine_multiturn"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
-  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"anysearch"`, `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"searchapi"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
+  - `"anysearch_api_key"`: `string` The optional [AnySearch](https://anysearch.com/console/api-keys) API key. Set `web_search_provider` to `"anysearch"` when using this field. Omit it or leave it blank for anonymous search; service limits apply.
   - `"tavily_api_key"`: `string`
   - `"brave_api_key"`: `string` The Brave Search API key. Set `web_search_provider` to `"brave"` when using this field.
   - `"exa_api_key"`: `string` The Exa API key. Set `web_search_provider` to `"exa"` when using this field.
@@ -3072,7 +3085,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -3202,6 +3215,11 @@ curl --request GET \
   The name of the chat assistant to retrieve with exact match.
 
 When `id` or `name` is provided, exact filtering takes precedence over `keywords`.
+
+- `include_reference`: (*Query parameter*) `boolean`, defaults to `false`.
+  Include reference objects in answer messages when history is included.
+- `include_prompt`: (*Query parameter*) `boolean`, defaults to `false`.
+  Include recorded prompt strings in answer messages when history is included.
 
 #### Response
 
@@ -3454,7 +3472,7 @@ curl --request GET \
 - `page`: (*Query parameter*), `integer`
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
 - `page_size`: (*Query parameter*), `integer`
-  The number of sessions on each page. Defaults to `30`. If set to `0`, an empty list is returned.
+  The number of sessions on each page. Defaults to `30`. Must be between `1` and `100`.
 - `orderby`: (*Query parameter*), `string`
   The field by which sessions should be sorted. Available options:
   - `create_time` (default)
@@ -3490,7 +3508,6 @@ Success:
                 }
             ],
             "name": "new session",
-            "reference": [],
             "update_date": "Fri, 11 Oct 2024 08:46:43 GMT",
             "update_time": 1728636403974,
             "user_id": ""
@@ -3516,6 +3533,27 @@ Failure:
 
 Gets a specific session of a specified chat assistant, including its messages, references, and avatar.
 
+Completed assistant entries in `messages` include recorded `usage` (an object
+with `prompt_tokens`, `completion_tokens`, and `total_tokens`) and `elapsed_ms`
+(a number in milliseconds). Large answer fields are opt-in:
+
+- `include_reference`: boolean, defaults to `false`. Set to `true` to return a
+  `reference` object containing `chunks` and `doc_aggs` inside each answer.
+- `include_prompt`: boolean, defaults to `false`. Set to `true` to return the
+  recorded prompt string inside each answer.
+
+These query parameters apply only to chat and agent session list and detail
+endpoints. Fields omitted by these flags are excluded from SQL as well as the
+response. Invalid boolean values return an argument error on these read endpoints.
+Create, update, message deletion, and feedback endpoints ignore these query
+parameters and omit `reference` and `prompt` from their responses.
+There is no session-level reference array.
+
+The UI requests references for citations and source previews, and prompts for
+answer details. Older messages omit unavailable usage, timing, or prompt fields.
+Generation history SQL omits `reference`, `prompt`, `usage`, and `elapsed_ms`, and
+these fields are excluded from LLM input. Agentic answers have no recorded prompt.
+
 #### Request
 
 - Method: GET
@@ -3527,7 +3565,7 @@ Gets a specific session of a specified chat assistant, including its messages, r
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/chats/{chat_id}/sessions/{session_id} \
+     --url 'http://{address}/api/v1/chats/{chat_id}/sessions/{session_id}?include_reference=true&include_prompt=true' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -3554,9 +3592,19 @@ Success:
             {
                 "content": "Hi! I am your assistant, can I help you?",
                 "role": "assistant"
+            },
+            {
+                "id": "turn-1",
+                "role": "user",
+                "content": "What does the document say?"
+            },
+            {
+                "id": "turn-1",
+                "role": "assistant",
+                "content": "Here is the answer.",
+                "reference": {"chunks": [], "doc_aggs": []}
             }
-        ],
-        "reference": []
+        ]
     }
 }
 ```
@@ -3612,8 +3660,7 @@ Success: returns the updated session object.
     "data": {
         "chat_id": "2ca4b22e878011ef88fe0242ac120005",
         "id": "4606b4ec87ad11efbc4f0242ac120006",
-        "messages": [],
-        "reference": []
+        "messages": []
     }
 }
 ```
@@ -5033,7 +5080,7 @@ Failure:
 
 **POST** `/api/v1/chat/mindmap`
 
-Generates a mind map from a question and a set of knowledge base IDs.
+Generates a mind map from a question and a set of Dataset IDs.
 
 #### Request
 
@@ -5044,7 +5091,7 @@ Generates a mind map from a question and a set of knowledge base IDs.
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
 - Body:
   - `"question"`: `string` *(Required)* The central question or topic.
-  - `"kb_ids"`: `list[string]` *(Required)* Knowledge base IDs to search.
+  - `"kb_ids"`: `list[string]` *(Required)* Dataset IDs to search.
   - `"search_id"`: `string` *(Optional)* ID of a saved search configuration to merge additional `kb_ids` and settings.
 
 ##### Request example
@@ -5160,7 +5207,6 @@ Failure:
 ```json
 {
     "code": 401,
-    "data": null,
     "message": "<Unauthorized '401: Unauthorized'>"
 }
 ```
@@ -5318,7 +5364,10 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
+    "data": {
+        "id": "58af890a2a8911f0a71a11b922ed82d6",
+        "title": "Test Agent"
+    },
     "message": "success"
 }
 ```
@@ -5388,7 +5437,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
+    "data": {"update_time": 1720000000000},
     "message": "success"
 }
 ```
@@ -5449,7 +5498,6 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
     "message": "success"
 }
 ```
@@ -5503,7 +5551,6 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
     "message": "success"
 }
 ```
@@ -5556,7 +5603,6 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true,
     "message": "success"
 }
 ```
@@ -5839,7 +5885,7 @@ curl --location 'http://{address}/api/v1/memories?keywords=&page_size=50&page=1&
 
 - `page_size`: `int`, *Optional*
 
-  The number of memories on each page. Defaults to `50`.
+  The number of memories on each page. Defaults to `30`.
 
 #### Response
 
@@ -5955,7 +6001,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -5997,7 +6042,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "success"
 }
 ```
@@ -6007,7 +6051,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Resource not found"
 }
 ```
@@ -6055,7 +6098,7 @@ curl --location 'http://{address}/api/v1/memories/6c8983badede11f083f184ba59bc53
 
 - `page_size`: (*Query parameter*), `int`, *Optional*
 
-  The number of messages on each page. Defaults to `50`.
+  The number of messages on each page. Defaults to `30`.
 
 #### Response
 
@@ -6136,7 +6179,6 @@ Failure
 ```
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6197,7 +6239,7 @@ curl --location 'http://{address}/api/v1/messages' \
 
 - `user_id`: `string`, *Optional*
 
-  The user participating in the conversation with the agent. Honoured only when the request is authenticated with an API key. For API key authentication, this field must be a non-empty string; surrounding whitespace is stripped, and a missing, blank, or non-string value causes the request to fail. Any other authentication, whether a JWT bearer token or a browser session, ignores this field and attributes the message to the authenticated user.
+  The user participating in the conversation with the agent. Honored only when the request is authenticated with an API key. For API key authentication, this field must be a non-empty string; surrounding whitespace is stripped, and a missing, blank, or non-string value causes the request to fail. Any other authentication, whether a JWT bearer token or a browser session, ignores this field and attributes the message to the authenticated user.
 
 - `user_input`: `string`, *Required*
 
@@ -6214,7 +6256,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "All add to task."
 }
 ```
@@ -6224,7 +6265,6 @@ Failure
 ```json
 {
     "code": 500,
-    "data": null,
     "message": "Some messages failed to add. Detail: {fail information}"
 }
 ```
@@ -6269,7 +6309,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "success"
 }
 ```
@@ -6279,7 +6318,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6334,7 +6372,6 @@ Success
 ```json
 {
     "code": 0,
-    "data": null,
     "message": "success"
 }
 ```
@@ -6344,7 +6381,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -6592,7 +6628,6 @@ Failure
 ```json
 {
     "code": 404,
-    "data": null,
     "message": "Memory '{memory_id}' not found."
 }
 ```
@@ -7007,7 +7042,7 @@ curl --request GET \
 - `page`: `integer`
   Specifies the page on which the files will be displayed. Defaults to `1`.
 - `page_size`: `integer`
-  The number of files on each page. Defaults to `15`.
+  The number of files on each page. Defaults to `30`.
 - `orderby`: `string`
   The field by which files should be sorted. Available options:
   - `create_time` (default)
@@ -7359,7 +7394,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 
@@ -7569,7 +7604,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits`
 
-Lists all commits for the specified folder with pagination. Also available at:
+Lists all commits for the specified folder with pagination. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits`
 
 #### Request
@@ -7580,7 +7615,7 @@ Lists all commits for the specified folder with pagination. Also available at:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query:
   - `'page'`: `int` (optional, default: 1)
-  - `'page_size'`: `int` (optional, default: 15)
+  - `'page_size'`: `int` (optional, default: 30)
   - `'order_by'`: `string` (optional, default: `"create_time"`)
   - `'desc'`: `bool` (optional, default: `true`)
 
@@ -7635,7 +7670,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}`
 
-Retrieves the details of a specific commit, including its file changes. Also available at:
+Retrieves the details of a specific commit, including its file changes. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}`
 
 #### Request
@@ -7704,7 +7739,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files`
 
-Lists the file changes associated with a specific commit. Also available at:
+Lists the file changes associated with a specific commit. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files`
 
 #### Request
@@ -7751,7 +7786,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/diff?from={commit_id}&to={commit_id}`
 
-Compares two commits and returns the differences. Also available at:
+Compares two commits and returns the differences. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/diff?from=...&to=...`
 
 #### Request
@@ -7817,7 +7852,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/changes`
 
-Returns the uncommitted changes for the specified folder (similar to `git status`). Also available at:
+Returns the uncommitted changes for the specified folder (similar to `git status`). Also, available at:
 - `/api/v1/datasets/{dataset_id}/changes`
 
 #### Request
@@ -7868,7 +7903,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/tree`
 
-Retrieves the full folder tree snapshot as it existed at a specific commit. Also available at:
+Retrieves the full folder tree snapshot as it existed at a specific commit. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/tree`
 
 #### Request
@@ -7934,7 +7969,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
 
-Retrieves the file content as it existed at a specific commit. Also available at:
+Retrieves the file content as it existed at a specific commit. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files/{file_id}/content`
 
 #### Request
@@ -8065,7 +8100,7 @@ curl --request POST \
 ##### Body parameters
 
 - `"name"`: `string`, *Required*
-  The name of the search app. Must be unique and no longer than 255 characters.
+  The name of the search app. Must be unique and no longer than 128 characters.
 - `"description"`: `string`
   A brief description of the search app.
 
@@ -8121,7 +8156,7 @@ curl --request GET \
 - `page`: `integer`
   Specifies the page number. Defaults to `1`. Values less than `1` fall back to `1`.
 - `page_size`: `integer`
-  The number of items per page. Defaults to `30`. Values less than `1` fall back to `30`. The maximum value is `100`.
+  The number of items per page. Defaults to `30`. Must be between `1` and `100`.
 - `orderby`: `string`
   The field to sort by. Defaults to `create_time`.
 - `desc`: `boolean`
@@ -8314,7 +8349,7 @@ Success:
 ```json
 {
     "code": 0,
-    "data": true
+    "message": "success"
 }
 ```
 

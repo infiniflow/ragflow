@@ -91,19 +91,7 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	var (
-		items       []map[string]any
-		warnings    []string
-		sheetsCount int
-		err         error
-	)
-	if bytes.HasPrefix(data, CompoundDocumentSignature) {
-		items, sheetsCount, err = parseBIFF8Bytes(ctx, data)
-	} else {
-		mediaBudget := newEmbeddedMediaBudget()
-		items, warnings, sheetsCount, err = parseXLSXBytes(data, mediaBudget)
-		warnings = append(warnings, mediaBudget.warnings()...)
-	}
+	items, sheetsCount, err := parseBIFF8Bytes(ctx, data)
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
@@ -112,9 +100,8 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 
 	return ParseResult{
-		File:     map[string]any{"name": filename, "format": "xls", "sheets": sheetsCount},
-		JSON:     MapsToItems(items),
-		Warnings: warnings,
+		File: map[string]any{"name": filename, "format": "xls", "sheets": sheetsCount},
+		JSON: MapsToItems(items),
 	}
 }
 

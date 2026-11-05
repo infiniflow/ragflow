@@ -7,16 +7,18 @@ import (
 	"maps"
 	"math"
 	"path/filepath"
+
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"strconv"
 	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	componentpkg "ragflow/internal/ingestion/component"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
-	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -24,7 +26,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
 	statusInt, convErr := strconv.Atoi(status)
 	if convErr != nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("invalid status: %s", status)
@@ -52,7 +54,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 			hasError = true
 			continue
 		}
-		if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, datasetID, permission.OperationUpdate); err != nil {
+		if err := service.CheckDocumentAccess(ctx, doc.ID, datasetID, permission.OperationUpdate); err != nil {
 			result[docID] = map[string]string{"error": "Permission denied"}
 			if permissionresponse.IsPermissionError(err) {
 				permissionDenied = err
@@ -137,8 +139,8 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 	return result, common.CodeSuccess, nil
 }
 
-func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, documentID, datasetID, permission.OperationUpdate); err != nil {
+func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
+	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -158,7 +160,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 		return nil, common.CodeServerError, err
 	}
-	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, userID, doc, req, present); err != nil {
+	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, doc, req, present); err != nil {
 		return nil, code, err
 	}
 
@@ -245,7 +247,6 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	if (sel != nil || present["parser_config"]) && isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
 		accessErr := permission.NewDatabaseChecker(dao.DB).CheckDependency(
 			ctx,
-			permission.Subject{UserID: userID, TenantID: kb.TenantID},
 			permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: doc.ID},
 			permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effPipelineID)},
 			permission.OperationUpdate,
@@ -291,20 +292,24 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 				}
 			}
 			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, parentChildOverrides)
-			llmID, _, _ := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
+			llmID := ""
+			if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); modelErr == nil {
+				llmID = service.ModelReference(modelInfo)
+			}
 			cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
 			parserUpdates["parser_config"] = cleaned
 		}
 	}
 
-	// C3 / A3 整体重置: a pipeline (canvas) switch OR a version switch forces a
-	// full parser_config reset to the new DSL defaults, discarding any
-	// echoed/submitted parser_config. This mirrors the dataset-layer behavior so
-	// the two layers stay consistent (design A3 整体重置): a change to
-	// pipelineID or versionID must reset parser config to the DSL defaults. The
-	// reset overrides the first block's merge, so a stale form value (e.g. a
-	// manually edited chunk size) or a config submitted alongside the switch is
-	// dropped, exactly as the reset-on-switch contract requires.
+	// C3 / A3: a pipeline (canvas) switch OR a version switch resets
+	// parser_config to the new DSL defaults — but only when the request carried
+	// no parser_config of its own. A submitted config has already been
+	// reconciled against the new version's DSL by BuildParserConfig above
+	// (unknown operators dropped, missing params defaulted), and the settings
+	// form resets itself to the new defaults on a switch before the user
+	// edits — so a submitted config is authoritative and must not be
+	// discarded. This mirrors the dataset-layer behavior so the two layers
+	// stay consistent.
 	//
 	// pipelineChanged tracks a genuine canvas change (incl. builtin→canvas);
 	// versionChanged tracks a pinned-version change. Builtin→builtin switches are
@@ -312,17 +317,18 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	// first block as a normal selection rebuild).
 	pipelineChanged := isPipeline && req.PipelineID != nil &&
 		(doc.PipelineID == nil || strings.TrimSpace(*req.PipelineID) != strings.TrimSpace(*doc.PipelineID))
-	if pipelineChanged || versionChanged {
+	if (pipelineChanged || versionChanged) && !hasConfig {
 		cpDefaults, cpErr := service.ResolveComponentParamsDefaults(ctx, effParserID, effPipelineID, effectiveVersionID)
 		if cpErr != nil {
 			common.Warn("document pipeline/version switch: failed to resolve component params defaults, keeping prior parser_config",
 				zap.String("parserID", effParserID), zap.Error(cpErr))
 		} else {
-			llmID, _, llmErr := service.NewTenantService().GetDefaultModelRefsForUser(ctx, userID, kb.TenantID, entity.ModelTypeChat)
-			if llmErr != nil {
+			llmID := ""
+			if modelInfo, llmErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); llmErr == nil {
+				llmID = service.ModelReference(modelInfo)
+			} else if !errors.Is(llmErr, service.ErrNoDefaultModel) {
 				common.Warn("document pipeline/version switch: failed to resolve default chat model, falling back to no llm binding",
 					zap.String("tenant_id", kb.TenantID), zap.Error(llmErr))
-				llmID = ""
 			}
 			cleaned := service.ApplyComponentScopedParserConfig(cpDefaults, llmID)
 			parserUpdates["parser_config"] = cleaned
@@ -415,7 +421,7 @@ func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *e
 	}
 }
 
-func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, datasetID, documentID, userID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
+func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, datasetID, documentID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
 	if req == nil {
 		return common.CodeDataError, errors.New("invalid request payload")
 	}
@@ -496,8 +502,8 @@ func requestField[T any](value *T, present bool) *T {
 // validateDocumentName mirrors Python's validate_document_name: length check
 // (101), then extension check (101), then duplicate check (102).
 func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.Document, newName string) (common.ErrorCode, error) {
-	if len([]byte(newName)) > 255 {
-		return common.CodeArgumentError, errors.New("File name must be 255 bytes or less.")
+	if err := common.ValidateNameRunes(newName, common.NameLimit255); err != nil {
+		return common.CodeArgumentError, err
 	}
 
 	oldName := ""
@@ -583,6 +589,15 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 	titleTks, _ := tok.Tokenize(newName)
 	titleSmTks, _ := tok.FineGrainedTokenize(titleTks)
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
+	if doc.ChunkNum == 0 && engine.Type(s.docEngine) == engine.EngineElasticsearch {
+		exists, err := s.docEngine.ChunkStoreExists(ctx, indexName, doc.KbID)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return nil
+		}
+	}
 	return s.docEngine.UpdateChunks(
 		ctx,
 		map[string]interface{}{"doc_id": doc.ID},

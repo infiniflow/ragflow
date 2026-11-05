@@ -324,9 +324,21 @@ func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		normalizeTitleChunkMaps(chunks)
 		return chunks
 	}
+	for i := range docs {
+		// Only this bridge receives IDs finalized by the title-family
+		// builder. Mark them for the shared crop helper without extending
+		// ID trust to General/Token chunks decoded from upstream input.
+		if docs[i].ID != "" {
+			if docs[i].Extra == nil {
+				docs[i].Extra = make(map[string]json.RawMessage)
+			}
+			docs[i].Extra[titleMediaContextIDKey] = json.RawMessage("true")
+		}
+	}
 	cropped := cropImageChunks(ctx, engine, docs)
 	for i := range cropped {
 		clearStructuralLayout(&cropped[i])
+		delete(cropped[i].Extra, titleMediaContextIDKey)
 	}
 	return schema.ChunkDocsToMaps(cropped)
 }
@@ -686,6 +698,8 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// without duplicating the fold. Inline bytes, an uploaded ID or a
 		// deferred reference also make the chunk retrievable; dropping it here
 		// would lose the image before the materializer can resolve or reject it.
+		// Position-only media without a crop result is dropped here; crop above
+		// already attempted the on-demand PDF handoff.
 		if strings.TrimSpace(removeTag(schema.ContextualText(m))) == "" && !hasMediaPayload(m) {
 			continue
 		}

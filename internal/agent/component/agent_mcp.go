@@ -52,10 +52,21 @@ func buildAgentMCPTools(ctx context.Context, db *gorm.DB, raw any, timeout time.
 			return nil, fmt.Errorf("MCP server %q: missing runtime user or canvas", selection.ID)
 		}
 		tenantID, _ := state.GetSysString("tenant_id")
+		tenantID = strings.TrimSpace(tenantID)
+		contextUserID := permission.UserIDFromContext(ctx)
+		contextTenantID := permission.TenantIDFromContext(ctx)
+		if contextUserID != "" && contextUserID != userID {
+			return nil, permission.ErrIdentityMismatch
+		}
+		if contextTenantID != "" && tenantID != "" && contextTenantID != tenantID {
+			return nil, permission.ErrIdentityMismatch
+		}
+		if contextUserID == "" || contextTenantID == "" {
+			ctx = permission.WithIdentity(ctx, userID, tenantID)
+		}
 		checker := permission.NewDatabaseChecker(db)
 		err = checker.CheckDependency(
 			ctx,
-			permission.Subject{UserID: userID, TenantID: tenantID},
 			permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID},
 			permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: selection.ID},
 			permission.OperationRun,
