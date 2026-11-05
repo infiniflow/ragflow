@@ -148,11 +148,17 @@ class Invoke(ComponentBase, ABC):
             return self._resolve_variable_value(ref, kwargs)
 
         canvas_value = None
+        # A canvas reference can resolve successfully to None (a null component
+        # output, or an absent nested path), so reference existence is tracked
+        # separately from the resolved value. Only a genuinely missing
+        # reference may fall back to the parameter value.
+        canvas_ref_exists = False
         if ref:
             try:
                 canvas_value = self._canvas.get_variable_value(ref)
+                canvas_ref_exists = True
             except KeyError:
-                canvas_value = None
+                canvas_ref_exists = False
             except Exception as exc:
                 # The canvas raises a bare Exception("Can't find variable: ...")
                 # for missing references; any other error is a real bug and
@@ -164,9 +170,9 @@ class Invoke(ComponentBase, ABC):
                     ref,
                     exc_info=True,
                 )
-                canvas_value = None
+                canvas_ref_exists = False
 
-        if canvas_value is not None:
+        if canvas_ref_exists:
             if isinstance(canvas_value, partial):
                 canvas_value = "".join(canvas_value())
                 self.set_input_value(ref, canvas_value)
