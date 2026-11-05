@@ -315,6 +315,118 @@ def test_native_archive_rejects_unsafe_members(tmp_path, kind):
     assert sorted(path.name for path in tmp_path.iterdir()) == ["native", "outside", "unsafe.tar.gz"]
 
 
+# ── Version-stamped extraction (Slice 2): native .a must land under a
+# version-keyed subdir (v<version>/) of the user cache, never a flat layout, so a
+# single mounted cache can hold several versions at once (different PRs pinned to
+# different go.mod versions all build offline). extract_native_lib() is the
+# single extraction seam main() calls; it is idempotent (skips when the version
+# dir already holds the required files). ─────────────────────────────────────
+
+
+def _make_pdfium_archive(path, names):
+    with tarfile.open(path, "w:gz") as tf:
+        for name in names:
+            data = b"pdfium-payload-1234"  # non-empty so complete() accepts it
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            tf.addfile(info, io.BytesIO(data))
+
+
+def test_extracts_pdfium_into_versioned_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(native, "NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    archive = tmp_path / "pdfium-linux-x64-static.tgz"
+    _make_pdfium_archive(archive, ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"])
+    native.extract_native_lib(
+        str(archive),
+        "pdfium-static",
+        "v7809",
+        ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"],
+        None,
+    )
+    target = tmp_path / "native-libs" / "pdfium-static" / "v7809"
+    assert (target / "lib" / "libpdfium.a").is_file()
+    assert (target / "include" / "fpdfview.h").is_file()
+
+
+def test_extract_native_lib_idempotent_on_rerun(tmp_path, monkeypatch):
+    monkeypatch.setattr(native, "NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    archive = tmp_path / "pdfium-linux-x64-static.tgz"
+    _make_pdfium_archive(archive, ["lib/libpdfium.a"])
+    native.extract_native_lib(str(archive), "pdfium-static", "v7809", ["lib/libpdfium.a"], None)
+    before = sorted(os.listdir(tmp_path / "native-libs" / "pdfium-static" / "v7809" / "lib"))
+    native.extract_native_lib(str(archive), "pdfium-static", "v7809", ["lib/libpdfium.a"], None)
+    after = sorted(os.listdir(tmp_path / "native-libs" / "pdfium-static" / "v7809" / "lib"))
+    assert before == after
+
+
+def _make_stamped_archive(path, lib_name, stamp, header_name):
+    """Build a tar.gz with the .a (carrying STAMP, a version-bearing byte
+    string) plus an include header, so complete()'s file-list AND stamp checks
+    can both be exercised per library format."""
+    with tarfile.open(path, "w:gz") as tf:
+        info = tarfile.TarInfo(lib_name)
+        payload = b"!<arch>\n" + stamp
+        info.size = len(payload)
+        tf.addfile(info, io.BytesIO(payload))
+        header = tarfile.TarInfo(header_name)
+        header.size = len(b"// header")
+        tf.addfile(header, io.BytesIO(b"// header"))
+
+
+def test_pdf_oxide_stamp_text_accepts_matching_version(tmp_path, monkeypatch):
+    # pdf_oxide embeds a plain-text `pdf_oxide <version>` token (not the
+    # null-delimited token office_oxide uses). complete() must accept it when
+    # stamp_format="text", or auto-download would reject a good archive and
+    # build.sh's controlled download path would fail closed.
+    monkeypatch.setattr(native, "NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    archive = tmp_path / "pdf_oxide-go-ffi-linux-amd64.tar.gz"
+    _make_stamped_archive(archive, "lib/linux_amd64/libpdf_oxide.a", b"pdf_oxide 0.3.73", "include/pdf_oxide.h")
+    native.extract_native_lib(
+        str(archive),
+        "pdf_oxide",
+        "v0.3.73",
+        ["lib/linux_amd64/libpdf_oxide.a", "include/pdf_oxide.h"],
+        "0.3.73",
+        "text",
+    )
+    assert (tmp_path / "native-libs" / "pdf_oxide" / "v0.3.73" / "lib" / "linux_amd64" / "libpdf_oxide.a").is_file()
+
+
+def test_pdf_oxide_stamp_text_rejects_wrong_version(tmp_path, monkeypatch):
+    # A pdf_oxide .a stamped with a different version must be rejected, not
+    # silently accepted (the whole point of the stamp check is to catch a
+    # mismatched/wrong native build).
+    monkeypatch.setattr(native, "NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    archive = tmp_path / "pdf_oxide-go-ffi-linux-amd64.tar.gz"
+    _make_stamped_archive(archive, "lib/linux_amd64/libpdf_oxide.a", b"pdf_oxide 0.9.9", "include/pdf_oxide.h")
+    with pytest.raises(RuntimeError, match="missing required native files or version 0.3.73"):
+        native.extract_native_lib(
+            str(archive),
+            "pdf_oxide",
+            "v0.3.73",
+            ["lib/linux_amd64/libpdf_oxide.a", "include/pdf_oxide.h"],
+            "0.3.73",
+            "text",
+        )
+
+
+def test_office_oxide_stamp_null_accepts_matching_version(tmp_path, monkeypatch):
+    # Regression guard: office_oxide keeps its null-delimited stamp token; the
+    # "text" vs "null" split must not break it.
+    monkeypatch.setattr(native, "NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    archive = tmp_path / "native-linux-x86_64.tar.gz"
+    _make_stamped_archive(archive, "lib/liboffice_oxide.a", b"\x000.1.16\x00", "include/office_oxide_c/office_oxide.h")
+    native.extract_native_lib(
+        str(archive),
+        "office_oxide",
+        "v0.1.16",
+        ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"],
+        "0.1.16",
+        "null",
+    )
+    assert (tmp_path / "native-libs" / "office_oxide" / "v0.1.16" / "lib" / "liboffice_oxide.a").is_file()
+
+
 # ── Local-dev one-stop: the dev downloader must also fetch the runtime
 # resources (cl100k / DeepDoc .ort / tokenizer assets) so a developer runs THIS
 # script ONCE and the Go server is ready to build, run, parse and count. ─────
@@ -560,3 +672,36 @@ def test_arm64_docs_section_warns_that_lld18_links_but_hangs():
     section = _arm64_docs_section()
     assert "lld-18" in section, "lld-18 is no longer called out as insufficient"
     assert "hang" in section.lower() or "spin" in section.lower(), "lld-18 startup-hang failure mode missing"
+
+
+# ── Single source of truth for native versions (Slice 1) ───────────────────────
+# build.sh and download_dev_deps.py must agree on every native version. The
+# authoritative values live in tools/scripts/native_lib_version.sh (office_oxide
+# / pdf_oxide from go.mod, ORT from environments.go, pdfium as one shared const).
+# These tests pin that contract: no second hardcoded copy may drift.
+
+
+def test_deepdoc_ort_version_reads_environments_go(tmp_path):
+    # Fixture environments.go with a deliberately non-default version.
+    common = tmp_path / "internal" / "common"
+    common.mkdir(parents=True)
+    (common / "environments.go").write_text('package common\n\n// DeepDocORTVersion is ...\nconst DeepDocORTVersion = "9.9.9"\n')
+    assert native.deepdoc_ort_version(str(tmp_path)) == "9.9.9"
+
+
+def test_deepdoc_ort_version_against_real_repo():
+    # Sanity: parses the checked-out repo's actual pin.
+    assert native.deepdoc_ort_version(native.REPO_ROOT) == "1.29.0"
+
+
+def test_pdfium_static_version_reads_single_source(tmp_path):
+    # Fixture native_lib_version.sh exporting a sentinel (NOT the real 7809).
+    scripts = tmp_path / "tools" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "native_lib_version.sh").write_text("pdfium_static_version() { echo 1234; }\n")
+    assert native.pdfium_static_version(str(tmp_path)) == "1234"
+
+
+def test_pdfium_static_version_against_real_repo():
+    # Sanity: the shared const on the checked-out repo.
+    assert native.pdfium_static_version(native.REPO_ROOT) == "7809"

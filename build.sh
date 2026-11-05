@@ -15,8 +15,11 @@ PROJECT_ROOT="$SCRIPT_DIR"
 # untouched and merge conflicts against the EE branch are limited to this
 # single line plus the guarded hook call inside run_native_integration_tests.
 [[ -f "${SCRIPT_DIR}/build_ee.sh" ]] && source "${SCRIPT_DIR}/build_ee.sh"
-# Version-keyed native-lib resolution (select_native_lib_version): lets a single
-# CI runner image carry several versions of office_oxide / pdf_oxide at once.
+# Version-keyed native-lib resolution: each native lib sits under a
+# v<version>/ subdir of the user cache (~/ragflow-native-libs/<lib>/v<version>/),
+# so a single mounted cache holds several versions at once. The version numbers
+# come from go.mod (office_oxide / pdf_oxide), environments.go (ORT) and
+# native_lib_version.sh (pdfium) — see that file for the single source of truth.
 source "${SCRIPT_DIR}/tools/scripts/native_lib_version.sh"
 
 # Build directories
@@ -46,37 +49,42 @@ if [ -n "$EXTRA_GO_TAGS" ]; then
 fi
 
 # Native static library settings. These are the user-cache paths (~/ragflow-native-libs/).
-# If /opt/ragflow-native-libs/ exists (pre-seeded in CI runner image), it takes priority
-# and skips the network (download_dev_deps.py) fallback.
-SYSTEM_DEPS="/opt/ragflow-native-libs"
+# Each lib lives under a version-keyed subdir (v<version>/) placed there by
+# tools/scripts/download_dev_deps.py (idempotent, version-pinned) — run once by a
+# developer, or mounted in from the build host on CI. There is NO /opt pre-bake and
+# NO flat (version-less) fallback: a missing version dir means the cache is
+# incomplete and build.sh triggers the downloader itself (see setup_cgo_env).
 
-# office_oxide native library settings — static linking
-OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
-# Derived from go.mod (single source of truth: the Go module version), exactly as
-# tools/scripts/download_dev_deps.py derives it. Keeps build.sh and the dev
-# downloader in lockstep on the version. An empty value (module absent from
-# go.mod) would slip past the stale-lib comparison below and produce a broken
-# .../lib/v link path, so it is fatal.
+# office_oxide native library settings — static linking. Version is derived from
+# go.mod (single source of truth, exactly as tools/scripts/download_dev_deps.py
+# derives it). An empty value (module absent from go.mod) would produce a broken
+# .../lib/v link path, so it is fatal. The prefix is set after the version, since
+# it embeds the version.
 OFFICE_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/office_oxide/go" "$PROJECT_ROOT")"
 if [ -z "$OFFICE_OXIDE_VERSION" ]; then
     echo -e "${RED}Error: could not read office_oxide version from go.mod${NC}" >&2; exit 1
 fi
+OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide/v${OFFICE_OXIDE_VERSION}"
 
-# pdfium native library settings — static linking (kognitos/pdfium-static)
-# Pinned here (not grepped from the dev downloader) so build.sh stays tied to the
-# checked-out source tree and the Docker build needs no extra COPY of the script.
-PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"
-PDFIUM_STATIC_VERSION="7809"
+# pdfium native library settings — static linking (kognitos/pdfium-static).
+# Version is read from the single source of truth tools/scripts/native_lib_version.sh
+# (pdfium_static_version), exactly as download_dev_deps.py does, so the bare build
+# number lives in exactly one place. An empty value is fatal.
+PDFIUM_STATIC_VERSION="$(pdfium_static_version "$PROJECT_ROOT")"
+if [ -z "$PDFIUM_STATIC_VERSION" ]; then
+    echo -e "${RED}Error: could not read pdfium version from native_lib_version.sh${NC}" >&2; exit 1
+fi
+PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static/v${PDFIUM_STATIC_VERSION}"
 
-# pdf_oxide native library settings — static linking (go-ffi tarball)
-PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide"
-# Unified with office_oxide: read the pinned version from go.mod (single source of
-# truth) instead of a hardcoded constant, so bumping the dependency needs no
-# build.sh edit. The empty case is fatal for the same reason as office_oxide.
+# pdf_oxide native library settings — static linking (go-ffi tarball). Version
+# is read from go.mod (single source of truth) instead of a hardcoded constant,
+# so bumping the dependency needs no build.sh edit. The empty case is fatal for
+# the same reason as office_oxide. The prefix is set after the version.
 PDF_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/pdf_oxide/go" "$PROJECT_ROOT")"
 if [ -z "$PDF_OXIDE_VERSION" ]; then
     echo -e "${RED}Error: could not read pdf_oxide version from go.mod${NC}" >&2; exit 1
 fi
+PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide/v${PDF_OXIDE_VERSION}"
 
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
@@ -164,49 +172,53 @@ ort_static_lib_prefix() {
     esac
 }
 
-# Copy a dependency from the system pre-seed directory to the user cache.
-# Returns 0 if the dep was copied or already exists in cache, 1 otherwise.
-_seed_from_system() {
-    local dep_name="$1"  # e.g. "pdfium-static", "pdf_oxide", "office_oxide"
-    local dep_dir="${HOME}/ragflow-native-libs/${dep_name}"
-    local sys_dir="${SYSTEM_DEPS}/${dep_name}"
+# ── native static library provisioning ──────────────────────────────────
+# The native .a files live in the version-keyed user cache
+# (~/ragflow-native-libs/<lib>/v<version>/), placed there by
+# tools/scripts/download_dev_deps.py — idempotently and version-pinned — which a
+# developer runs once, and which CI mounts in from the build host. There is NO
+# /opt pre-bake and NO flat (version-less) fallback any more: a missing version
+# dir means the cache is incomplete, so build.sh triggers the downloader itself
+# (controlled auto-download) rather than silently linking a stale or wrong lib.
 
-    echo "check if dep ${dep_name} exists in ${dep_dir} or ${sys_dir}"
+# True when every native lib the Go build links is already in the versioned user
+# cache for the target platform. Used to skip the network entirely on an
+# already-provisioned host.
+_native_libs_present() {
+    [ -f "${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a" ] || return 1
+    [ -f "${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h" ] || return 1
+    [ -f "${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a" ] || return 1
+    [ -f "${PDF_OXIDE_PREFIX}/lib/${TARGET_OS}_${TARGET_ARCH}/libpdf_oxide.a" ] || return 1
+    # ORT is version+platform keyed under static_lib; any real .a there is
+    # authoritative (the version-stamped symlink dir created later holds only
+    # symlinks, so -type f skips them and matches the real archives).
+    [ -n "$(find "$ONNXRUNTIME_STATIC_PREFIX" -type f -name '*.a' 2>/dev/null | head -1)" ] || return 1
+    return 0
+}
 
-    if [ -d "$dep_dir" ]; then
-        echo "  ${dep_name} → ${dep_dir} (user cache)"
-        return 0  # already cached
-    fi
-
-    # Per-dep version used to look up a version-keyed copy pre-seeded into the
-    # CI runner image. Empty for deps still baked flat (pdfium-static,
-    # onnxruntime). A multi-version image carries v<version>/ subdirs so PRs
-    # pinned to different go.mod versions all build offline.
-    local dep_version=""
-    case "$dep_name" in
-        office_oxide) dep_version="${OFFICE_OXIDE_VERSION}" ;;
-        pdf_oxide)    dep_version="${PDF_OXIDE_VERSION}" ;;
-    esac
-    local seed_src=""
-    if [ -n "$dep_version" ] \
-       && seed_src="$(select_native_lib_version "$dep_name" "$dep_version" "$SYSTEM_DEPS")" \
-       && [ -n "$seed_src" ]; then
-        echo "  ${dep_name} → ${seed_src} (system, version-keyed v${dep_version})"
-        mkdir -p "$(dirname "$dep_dir")"
-        # Copy the version dir's contents flat so downstream build.sh (which
-        # expects lib/... and include/... at the cache root) is unchanged.
-        cp -r "$seed_src/." "$dep_dir/"
+# Controlled auto-download: if the versioned native libs are not yet in the user
+# cache, run the one-stop downloader ONCE. It is idempotent and version-pinned,
+# so it can only land the exact pinned .a — never a wrong version. Fail loud only
+# when the cache is still incomplete afterwards (a locked-down host with no
+# network and no pre-placed libs).
+_ensure_native_libs_installed() {
+    _native_libs_present && return 0
+    echo "One or more native static libraries are missing from the user cache;"
+    echo "  running downloader: uv run tools/scripts/download_dev_deps.py"
+    ( cd "$PROJECT_ROOT" && uv run tools/scripts/download_dev_deps.py ) || {
+        echo -e "${RED}Error: native library downloader failed.${NC}" >&2
+        exit 1
+    }
+    if _native_libs_present; then
         return 0
     fi
-
-    if [ -d "$sys_dir" ]; then
-        echo "  ${dep_name} → ${sys_dir} (system)"
-        mkdir -p "$(dirname "$dep_dir")"
-        cp -r "$sys_dir" "$dep_dir"
-        return 0
-    fi
-    echo "  ${dep_name} not found in system or user cache"
-    return 1
+    echo -e "${RED}Error: native static libraries still missing after download.${NC}" >&2
+    echo "  Pre-place the version-keyed dirs manually on a locked-down host:" >&2
+    echo "    ${OFFICE_OXIDE_PREFIX}" >&2
+    echo "    ${PDFIUM_STATIC_PREFIX}" >&2
+    echo "    ${PDF_OXIDE_PREFIX}" >&2
+    echo "    ${ONNXRUNTIME_STATIC_PREFIX}" >&2
+    exit 1
 }
 
 # ── cl100k_base BPE table ─────────────────────────────────────────────
@@ -431,12 +443,10 @@ check_onnxruntime_deps() {
     # another OS/arch, and the Python side legitimately keeps another ORT
     # version in the same prefix. Matching both is why coexisting version
     # dirs need no separate fail-fast guard here.
-    # Recover from a stale user cache left by an older CI image: if the runner
-    # image pre-baked the pinned version under /opt, copy it over the user cache
-    # before validating. reseed_dep_from_system is a no-op when /opt has no copy
-    # of this version (e.g. local dev without the pre-bake), so a correct manual
-    # download is never clobbered.
-    reseed_dep_from_system "onnxruntime" "$ort_version" "$SYSTEM_DEPS" "$(dirname "$ONNXRUNTIME_STATIC_PREFIX")" || true
+    # The ORT static archives are resolved from the version-keyed user cache
+    # (~/ragflow-native-libs/onnxruntime/static_lib, which the downloader
+    # populates and CI mounts in). There is no /opt pre-bake to reseed from; an
+    # incomplete cache is filled by the controlled auto-download in setup_cgo_env.
 
     local ort_dir_prefix
     ort_dir_prefix="$(ort_static_lib_prefix)"
@@ -533,12 +543,9 @@ check_onnxruntime_deps() {
 # Check office_oxide native library
 check_office_oxide_deps() {
     print_section "Checking office_oxide native library"
-    _seed_from_system "office_oxide" || true
-    # Recover from a stale user cache left by an older CI image on a self-hosted
-    # runner where $HOME persists across jobs: copy the version pinned in /opt
-    # over the cache before validating. No-op when /opt has no copy, so a correct
-    # manual download is never clobbered. Mirrors the onnxruntime/pdfium recovery.
-    reseed_dep_from_system "office_oxide" "$OFFICE_OXIDE_VERSION" "$SYSTEM_DEPS" "$OFFICE_OXIDE_PREFIX" || true
+    # office_oxide is resolved from the version-keyed user cache
+    # (${OFFICE_OXIDE_PREFIX}). An incomplete cache is filled by the controlled
+    # auto-download in setup_cgo_env; there is no /opt pre-bake to recover from.
 
     local lib_file="liboffice_oxide.a"
     local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
@@ -573,11 +580,9 @@ check_office_oxide_deps() {
 
 # Check pdfium static library.
 check_pdfium_deps() {
-    _seed_from_system "pdfium-static" || true
-    # Recover from a stale/missing user cache: copy the image-pre-baked pdfium
-    # from /opt over the cache before checking. No-op when /opt has no copy, so a
-    # local manual download is never clobbered.
-    reseed_dep_from_system "pdfium-static" "$PDFIUM_STATIC_VERSION" "$SYSTEM_DEPS" "$PDFIUM_STATIC_PREFIX" || true
+    # pdfium is resolved from the version-keyed user cache
+    # (${PDFIUM_STATIC_PREFIX}). An incomplete cache is filled by the controlled
+    # auto-download in setup_cgo_env; there is no /opt pre-bake to recover from.
     local lib_path="${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
 
     if [ -f "$lib_path" ]; then
@@ -635,11 +640,9 @@ pdf_oxide_validate_version() {
 }
 
 check_pdf_oxide_deps() {
-    _seed_from_system "pdf_oxide" || true
-    # Recover from a stale user cache on a self-hosted runner (see office_oxide
-    # above). No-op when /opt has no copy, so a correct manual download is never
-    # clobbered.
-    reseed_dep_from_system "pdf_oxide" "$PDF_OXIDE_VERSION" "$SYSTEM_DEPS" "$PDF_OXIDE_PREFIX" || true
+    # pdf_oxide is resolved from the version-keyed user cache
+    # (${PDF_OXIDE_PREFIX}). An incomplete cache is filled by the controlled
+    # auto-download in setup_cgo_env; there is no /opt pre-bake to recover from.
     # Map platform to tarball-internal subdirectory (lib/<os>_<arch>/). Reuses
     # TARGET_OS/TARGET_ARCH set by detect_target_platform instead of re-deriving
     # from uname, so it stays consistent with the other check_*_deps helpers.
@@ -652,10 +655,10 @@ check_pdf_oxide_deps() {
     local lib_path="${PDF_OXIDE_PREFIX}/lib/${platform_subdir}/libpdf_oxide.a"
 
     if [ -f "$lib_path" ]; then
-        # Verify the on-disk lib matches the pinned version. _seed_from_system
-        # accepts an existing user-cache directory without inspecting it, so a
-        # lib left over from an earlier pin is reused silently and the upgrade
-        # becomes a no-op.
+        # Verify the on-disk lib matches the pinned version. The cache is
+        # version-keyed (${PDF_OXIDE_PREFIX}), so an earlier pin lives under a
+        # different v<version>/ dir and is never silently reused; this check is a
+        # defense-in-depth against a stale .a that somehow landed in this dir.
         #
         # The version marker "pdf_oxide <version>" is merged into Rust's string
         # constant pool (unlike office_oxide's standalone "0.1.9" line), so we
@@ -872,25 +875,22 @@ build_go() {
 setup_cgo_env() {
     detect_target_platform
 
+    # Controlled auto-download: fill any missing version-keyed native lib from
+    # the user cache before resolving individual libs. On an already-provisioned
+    # host (the common CI case, where the cache is mounted in) this is a no-op;
+    # on a fresh host it runs the one-stop downloader once. There is no /opt
+    # pre-bake and no flat fallback to recover from.
+    _ensure_native_libs_installed
+
     # ── office_oxide ──────────────────────────────────────────────────
     check_office_oxide_deps
 
-    # Go's build cache keys CGO_LDFLAGS as a string — it does NOT hash the
-    # file content of referenced .a archives. So swapping the .a in-place
-    # (same path) does NOT invalidate the cache, and `go build` silently
-    # reuses a stale binary linked against the old .a.
-    #
-    # Create a version-stamped symlink directory so the flag string
-    # includes the actual linked version. When the .a is upgraded, the
-    # path changes → Go cache key changes → automatic relink.
-    local office_oxide_lib_dir="${OFFICE_OXIDE_PREFIX}/lib"
-    local versioned_lib_dir="${office_oxide_lib_dir}/v${OFFICE_OXIDE_VERSION}"
-    mkdir -p "$versioned_lib_dir"
-    ln -sf "${office_oxide_lib_dir}/liboffice_oxide.a" \
-        "${versioned_lib_dir}/liboffice_oxide.a"
-
+    # The office_oxide prefix is already version-keyed
+    # (${OFFICE_OXIDE_PREFIX} = .../office_oxide/v<version>), so the linked path
+    # carries the version and Go's build cache (which keys CGO_LDFLAGS as a
+    # string, not the .a contents) automatically relinks when the version bumps.
     export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
-    export CGO_LDFLAGS="${versioned_lib_dir}/liboffice_oxide.a"
+    export CGO_LDFLAGS="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
 
     # ── pdfium ────────────────────────────────────────────────────────
     check_pdfium_deps || return 1
@@ -929,16 +929,11 @@ setup_cgo_env() {
         linux_amd64|linux_arm64|darwin_amd64|darwin_arm64) ;;
         *) echo "pdf_oxide: unsupported platform: $pdf_oxide_subdir"; return 1 ;;
     esac
-    # Version-stamp the archive path so an in-place .a upgrade invalidates
-    # Go's build cache. See the office_oxide block above for why the raw path
-    # is not enough: the cache key hashes CGO_LDFLAGS as a string, not the
-    # contents of the archives it names.
+    # The pdf_oxide prefix is already version-keyed
+    # (${PDF_OXIDE_PREFIX} = .../pdf_oxide/v<version>), so the linked path
+    # carries the version and Go's build cache relinks on a version bump.
     local pdf_oxide_lib_dir="${PDF_OXIDE_PREFIX}/lib/${pdf_oxide_subdir}"
-    local pdf_oxide_versioned_dir="${pdf_oxide_lib_dir}/v${PDF_OXIDE_VERSION}"
-    mkdir -p "$pdf_oxide_versioned_dir"
-    ln -sf "${pdf_oxide_lib_dir}/libpdf_oxide.a" \
-        "${pdf_oxide_versioned_dir}/libpdf_oxide.a"
-    export CGO_LDFLAGS="$CGO_LDFLAGS ${pdf_oxide_versioned_dir}/libpdf_oxide.a"
+    export CGO_LDFLAGS="$CGO_LDFLAGS ${pdf_oxide_lib_dir}/libpdf_oxide.a"
 
     # ── onnxruntime (static, resolved via dlopen(NULL)) ────────────────
     # Statically link libonnxruntime*.a into the binary. The org Go binding
@@ -965,11 +960,10 @@ setup_cgo_env() {
     #     all unused objects and missing transitive dependencies), and exports
     #     it via -export_dynamic so runtime dlopen(NULL) resolves it.
     #
-    # Seed the static ORT archives from the system pre-bake (/opt, laid down
-    # by the CI runner image) into the user cache before the link check
-    # below. Mirrors the existing _seed_from_system calls for the other
-    # native libs so CI never downloads ORT at build/test time.
-    _seed_from_system "onnxruntime" || true
+    # The static ORT archives come from the version-keyed user cache (populated
+    # by download_dev_deps.py and mounted in on CI) — there is no /opt pre-bake.
+    # An incomplete cache is filled by the controlled auto-download at the top
+    # of setup_cgo_env.
     check_onnxruntime_deps || return 1
 
     # Version-stamp the archive paths so an in-place .a upgrade invalidates
