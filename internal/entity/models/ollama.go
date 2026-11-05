@@ -74,7 +74,55 @@ func buildOllamaMessages(messages []Message) []map[string]any {
 			apiMessages[i]["images"] = images
 		}
 	}
+	// Ollama's /api/chat expects tool_calls[].function.arguments as a JSON
+	// object (https://github.com/ollama/ollama/blob/main/docs/api.md), but the
+	// shared buildChatMessages path preserves the OpenAI string form used for
+	// dispatch (appendToolResults reads arguments as a string). Convert the
+	// assistant tool calls back to objects on the Ollama request path so a
+	// multi-turn tool-calling payload is not rejected. Counterpart to the
+	// response-direction fix in #22053.
+	ollamaObjectArguments(apiMessages)
 	return apiMessages
+}
+
+// ollamaObjectArguments replaces tool_calls on each assistant message with a
+// copy whose function.arguments has been converted from the internal
+// JSON-string form to a JSON object, matching the Ollama chat API. The
+// original messages are not mutated: a history that later fails over to an
+// OpenAI-compatible provider must still carry arguments as a string. A
+// non-string value (a provider that already ships an object) or an unparseable
+// string is left untouched so the request still carries the tool call for
+// Ollama to surface.
+func ollamaObjectArguments(apiMessages []map[string]any) {
+	for _, msg := range apiMessages {
+		calls, ok := msg["tool_calls"].([]map[string]any)
+		if !ok {
+			continue
+		}
+		msg["tool_calls"] = ollamaToolCallsWithObjectArguments(calls)
+	}
+}
+
+// ollamaToolCallsWithObjectArguments returns a shallow copy of calls in which
+// each call's function map (also copied) has its arguments converted from a
+// JSON string to a JSON object when possible.
+func ollamaToolCallsWithObjectArguments(calls []map[string]any) []map[string]any {
+	converted := make([]map[string]any, len(calls))
+	for i, call := range calls {
+		cp := cloneMap(call)
+		if fn, ok := cp["function"].(map[string]any); ok {
+			fn = cloneMap(fn)
+			if argsStr, ok := fn["arguments"].(string); ok && strings.TrimSpace(argsStr) != "" {
+				var argsObj map[string]any
+				if err := json.Unmarshal([]byte(argsStr), &argsObj); err == nil {
+					fn["arguments"] = argsObj
+				}
+			}
+			cp["function"] = fn
+		}
+		converted[i] = cp
+	}
+	return converted
 }
 
 func ollamaMultimodalContent(content interface{}) (string, []string, bool) {

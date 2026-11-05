@@ -136,6 +136,132 @@ func TestOllamaStreamingChatMapsMultimodalImages(t *testing.T) {
 	}
 }
 
+func TestOllamaChatSendsToolCallArgumentsAsObject(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		assertOllamaToolCallArgumentsAreObjects(t, body)
+		_, _ = io.WriteString(w, `{"message":{"content":"ok","thinking":""}}`)
+	}))
+	defer srv.Close()
+
+	response, err := newOllamaForChatTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"llama3",
+		ollamaToolCallTestMessages(),
+		&APIConfig{},
+		&ChatConfig{},
+		&common.ModelUsage{},
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if response.Answer == nil || *response.Answer != "ok" {
+		t.Fatalf("answer=%v, want ok", response.Answer)
+	}
+}
+
+func TestOllamaStreamingChatSendsToolCallArgumentsAsObject(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		assertOllamaToolCallArgumentsAreObjects(t, body)
+		_, _ = io.WriteString(w, "{\"message\":{\"content\":\"ok\"},\"done\":false}\n{\"done\":true}\n")
+	}))
+	defer srv.Close()
+
+	err := newOllamaForChatTest(srv.URL).ChatStreamlyWithSender(
+		t.Context(),
+		"llama3",
+		ollamaToolCallTestMessages(),
+		&APIConfig{},
+		&ChatConfig{},
+		&common.ModelUsage{},
+		func(*string, *string) error { return nil },
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+}
+
+// ollamaToolCallTestMessages builds a multi-turn history whose assistant
+// message carries tool_calls with OpenAI-style string arguments, the shape
+// appendToolResults leaves in history for the next request.
+func ollamaToolCallTestMessages() []Message {
+	return []Message{
+		{Role: "user", Content: "What is the weather in Paris?"},
+		{
+			Role:    "assistant",
+			Content: nil,
+			ToolCalls: []map[string]any{
+				{
+					"id":   "call_123",
+					"type": "function",
+					"function": map[string]any{
+						"name":      "get_weather",
+						"arguments": `{"location":"Paris"}`,
+					},
+				},
+			},
+		},
+		{Role: "tool", Content: "Sunny, 18C", ToolCallID: "call_123"},
+		{Role: "user", Content: "Thanks"},
+	}
+}
+
+// assertOllamaToolCallArgumentsAreObjects verifies that every assistant
+// tool_call in the request payload carries function.arguments as a JSON
+// object (Ollama format), not a JSON string (OpenAI format).
+func assertOllamaToolCallArgumentsAreObjects(t *testing.T, body map[string]interface{}) {
+	t.Helper()
+	messages, ok := body["messages"].([]interface{})
+	if !ok {
+		t.Fatalf("messages=%v, want array", body["messages"])
+	}
+	var found bool
+	for _, m := range messages {
+		msg, ok := m.(map[string]interface{})
+		if !ok || msg["role"] != "assistant" {
+			continue
+		}
+		calls, ok := msg["tool_calls"].([]interface{})
+		if !ok || len(calls) == 0 {
+			continue
+		}
+		found = true
+		for _, c := range calls {
+			call, ok := c.(map[string]interface{})
+			if !ok {
+				t.Fatalf("tool_call=%v, want object", c)
+			}
+			fn, ok := call["function"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("function=%v, want object", call["function"])
+			}
+			args, ok := fn["arguments"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("arguments=%v (%T), want JSON object", fn["arguments"], fn["arguments"])
+			}
+			if args["location"] != "Paris" {
+				t.Errorf("arguments[location]=%v, want Paris", args["location"])
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no assistant message with tool_calls in request payload")
+	}
+}
+
 func TestOllamaThinkingPayloadTriState(t *testing.T) {
 	withSSRFBypass(t)
 	for _, tc := range []struct {
