@@ -357,41 +357,32 @@ func docxHeadingLocationCaption(headings []docxHeading) string {
 // heading styles into element type "heading" plus a level, so the outline
 // is tracked from those elements alone.
 //
-// This is the caption-only (heading hierarchy) entry point. Use
-// buildDOCXJSONSectionsWithCaptions to also attach Caption-styled paragraph
-// text (a temporary stopgap; see docx_caption_scan.go).
+// buildDOCXJSONSections builds sections from an office_oxide IR. The heading
+// hierarchy supplies each table's caption; a "Caption"-styled paragraph that
+// immediately precedes a table overrides that with its own text. (Paragraph-
+// style recovery used to be a temporary stopgap that re-parsed
+// word/document.xml; office_oxide now emits the style directly — see
+// yfedoseev/office_oxide#455.)
 //
 // A nil sink means a text-only parse: embedded images are skipped and no
 // media cache is required. Normal DOCX/DOC parsing always passes a sink.
 func buildDOCXJSONSections(irJSON string, sink *officeMediaSink) []map[string]any {
-	return buildDOCXJSONSectionsCore(irJSON, sink, nil)
+	return buildDOCXJSONSectionsCore(irJSON, sink)
 }
 
-// buildDOCXJSONSectionsWithCaptions is buildDOCXJSONSections plus the
-// TEMPORARY Caption-styled-paragraph detection. tableCaptions must be aligned
-// by position with the tables in the IR (see docx_caption_scan.go).
-//
-// TEMPORARY: remove once office_oxide emits paragraph styles
-// (yfedoseev/office_oxide#455).
-func buildDOCXJSONSectionsWithCaptions(irJSON string, sink *officeMediaSink, tableCaptions []string) []map[string]any {
-	return buildDOCXJSONSectionsCore(irJSON, sink, tableCaptions)
-}
-
-// buildDOCXJSONSectionsCore is the shared implementation of the two entry
-// points above. tableCaptions, when non-nil, supplies a descriptive caption
-// for each table indexed by reading order; an explicit caption is preferred
-// over the synthesized heading-location caption. The position alignment
-// between tableCaptions and the IR tables is approximate (document-body order
-// vs office_oxide IR order) and is a known limitation of the temporary
-// Caption-style stopgap in docx_caption_scan.go.
-func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink, tableCaptions []string) []map[string]any {
+// buildDOCXJSONSectionsCore builds sections from an office_oxide IR. The
+// heading hierarchy supplies each table's caption; a "Caption"-styled
+// paragraph that immediately precedes a table overrides that with its own
+// text. (Paragraph-style recovery used to be a temporary stopgap that
+// re-parsed word/document.xml; office_oxide now emits the style directly.)
+func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink) []map[string]any {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil
 	}
 	var sections []map[string]any
 	tableSequence := 0
-	captionSequence := 0
+	var pendingCaption string
 	var headings []docxHeading
 	var emitElements func([]docxIRElement, bool)
 	emitElements = func(elements []docxIRElement, topLevel bool) {
@@ -405,57 +396,6 @@ func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink, tableCaptio
 				return
 			}
 			el := elements[ei]
-			// TEMPORARY: this merge is a stopgap. Revisit it once docxIRRow
-			// carries a three-state header field and office_oxide populates
-			// `TableRow.is_header` for .doc tables (upstream issue
-			// yfedoseev/office_oxide#456) — at that point prefer rejoining via
-			// the real header flag and drop the structural proxy below.
-			//
-			// office_oxide splits a .doc table whose first row is a styled
-			// header/title row into a 1-row "header" table immediately
-			// followed by the body table (the legacy binary .doc format
-			// stores such a table as two separate Table objects with a blank
-			// paragraph between them; walk_paragraphs flushes a new Element::Table
-			// at every non-fInTable paragraph, and emit_prose drops the blank
-			// one, so the two tables end up adjacent in the IR). Rejoin a
-			// 1-row table fragment with the adjacent following table when their
-			// first rows carry the same column count, so one logical table is
-			// emitted as a single item instead of a header chunk + body chunk
-			// (each would otherwise carry the same caption).
-			//
-			// Why a structural proxy instead of the row's `is_header` flag:
-			// office_oxide's IR DOES carry `TableRow.is_header`, but the .doc
-			// converter (convert_doc.rs) never populates it — every .doc row
-			// arrives with is_header=false, verified on the real document that
-			// triggered this bug. Only the .docx converter sets it, and .docx
-			// never splits. So `is_header` is a dead signal for .doc and cannot
-			// be used to confirm the leading fragment is a header or that the
-			// following table lacks one. The 1-row gate is the strongest
-			// available proxy: a 1-row table adjacent to a same-width table is
-			// overwhelmingly a header fragment, because a genuinely standalone
-			// 1-row table immediately followed by another table (with only a
-			// blank paragraph between) is rare.
-			//
-			// Regression guards baked into the merge condition:
-			//   - leading fragment is exactly 1 row: two genuinely separate
-			//     MULTI-row tables (same width, blank paragraph between) are
-			//     never merged.
-			//   - same first-row column count: differently-shaped tables stay
-			//     separate.
-			//   - adjacency (no element between): any heading/paragraph/image
-			//     in between keeps the two tables distinct.
-			if topLevel && el.Type == "table" && len(el.Rows) == 1 && ei+1 < len(elements) {
-				if nxt := elements[ei+1]; nxt.Type == "table" &&
-					docxIRTableCols(el) > 0 && docxIRTableCols(el) == docxIRTableCols(nxt) {
-					merged := nxt
-					rows := make([]docxIRRow, 0, len(nxt.Rows)+len(el.Rows))
-					rows = append(rows, el.Rows...)
-					rows = append(rows, nxt.Rows...)
-					merged.Rows = rows
-					el = merged
-					ei++ // fold the following table into this one; skip it
-				}
-			}
 			switch el.Type {
 			case "paragraph", "heading":
 				if el.Type == "heading" {
@@ -465,17 +405,13 @@ func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink, tableCaptio
 					}
 					headings = pushDOCXHeading(headings, level, docxElementText(el, "\n"))
 				}
-				// TEMPORARY (docx_caption_scan.go): when a paragraph's text
-				// exactly matches the Caption recovered for the next table,
-				// suppress it as a standalone text section — it is attached
-				// to that table as the caption instead. The text match keeps
-				// this safe if the document scan and the IR element order
-				// ever desync: a non-matching paragraph is never dropped.
-				if topLevel && captionSequence < len(tableCaptions) {
-					if explicit := strings.TrimSpace(tableCaptions[captionSequence]); explicit != "" &&
-						strings.TrimSpace(docxElementText(el, " ")) == explicit {
-						continue
-					}
+				// A "Caption"-styled paragraph (office_oxide 0.1.16 exposes the
+				// Word style name via the IR "style" field, yfedoseev/office_oxide#455)
+				// is attached to the next table as its caption and is not emitted as a
+				// standalone text section. It is consumed by the next top-level table.
+				if topLevel && strings.EqualFold(strings.TrimSpace(el.Style), "Caption") {
+					pendingCaption = strings.TrimSpace(docxElementText(el, " "))
+					continue
 				}
 				sections = appendDOCXParagraphSections(sections, el, el.Type == "heading", sink)
 
@@ -484,20 +420,15 @@ func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink, tableCaptio
 
 			case "table":
 				tableSequence++
-				if topLevel {
-					captionSequence++
-				}
 				if len(el.Rows) == 0 {
 					continue
 				}
-				// Prefer an explicit Caption-styled paragraph (temporary
-				// stopgap, see docx_caption_scan.go) over the synthesized
-				// heading-location caption.
+				// A "Caption"-styled paragraph that preceded this table (office_oxide#455)
+				// overrides the synthesized heading-location caption.
 				caption := docxHeadingLocationCaption(headings)
-				if idx := captionSequence - 1; topLevel && idx >= 0 && idx < len(tableCaptions) {
-					if explicit := strings.TrimSpace(tableCaptions[idx]); explicit != "" {
-						caption = explicit
-					}
+				if topLevel && pendingCaption != "" {
+					caption = pendingCaption
+					pendingCaption = ""
 				}
 				sections = appendOfficeTableSections(sections, el, caption, fmt.Sprintf("docx-table-%d", tableSequence), sink)
 
@@ -516,6 +447,17 @@ func buildDOCXJSONSectionsCore(irJSON string, sink *officeMediaSink, tableCaptio
 	for _, sec := range ir.Sections {
 		emitElements(sec.Elements, true)
 	}
+
+	// An orphan Caption-styled paragraph (no following table) is emitted as a
+	// normal text section so it is never silently dropped.
+	if pendingCaption != "" {
+		sections = append(sections, map[string]any{
+			"text":         pendingCaption,
+			"image":        nil,
+			"doc_type_kwd": "text",
+		})
+	}
+
 	return sections
 }
 

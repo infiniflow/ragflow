@@ -12,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	appcommon "ragflow/internal/common"
 )
 
 // Variant identifies which knowledge-compile strategy to run.
@@ -279,14 +281,64 @@ func VariantToTaskType(variant Variant) string {
 	}
 }
 
-// FirstNonEmpty returns the first string that is non-empty after trimming.
+// FirstNonEmpty returns the first string that is non-empty after trimming,
+// trimmed. It delegates to the generic helper in internal/common so the
+// knowledge_compiler package shares one implementation with the rest of the
+// codebase (the generic component layer no longer needs to reach into this
+// package for a meta-agnostic string helper). The trimmed return value preserves
+// the historical contract of the wiki pipeline's local helper.
 func FirstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if strings.TrimSpace(v) != "" {
-			return v
+	return appcommon.FirstNonEmpty(vals...)
+}
+
+// MetaInt extracts an integer from a Product.Meta value that may be boxed as
+// int64, int, float64 (JSON number), or even a numeric string — the
+// engine/JSON round-trip does not guarantee a single numeric type. It returns
+// (0, false) when the key is absent or not a parseable number. The int64 form
+// is the canonical one so callers can store it directly without a narrowing
+// conversion.
+func MetaInt(meta map[string]any, key string) (int64, bool) {
+	switch v := meta[key].(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case string:
+		var n int64
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
+			return n, true
 		}
 	}
-	return ""
+	return 0, false
+}
+
+// MetaStringSlice reads a []string (or []any) Product.Meta key, keeping
+// non-empty strings and dropping empties. Both the []string and []any branches
+// filter empties so the result is independent of how the value was boxed (the
+// engine/JSON round-trip does not guarantee a single type). Returns nil when no
+// strings are present; a present but empty key yields a non-nil empty slice.
+func MetaStringSlice(meta map[string]any, key string) []string {
+	switch v := meta[key].(type) {
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			if e != "" {
+				out = append(out, e)
+			}
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			if s, ok := e.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // VectorFromChunkMap extracts a pre-computed embedding from a chunk map. The

@@ -152,6 +152,16 @@ export function useDocumentPipelineForm({
     isPipelineMode ? selectedDataFlowId : undefined,
   );
   const latestVersionId = versions[0]?.id;
+  // Outdated = pinned to a non-latest version, shown as a hint bang on the
+  // parser select. Gated on Pipeline mode: a BuiltIn selection carries no
+  // live version binding, yet a stale pin can sit in the form (the backend
+  // clears pipeline_id but keeps pipeline_version_id after a pipeline→builtin
+  // switch) while the version list is not even fetched, so an ungated check
+  // would flag every builtin parser holding a stale pin.
+  const versionOutdated =
+    isPipelineMode &&
+    !!selectedVersionId &&
+    selectedVersionId !== latestVersionId;
   // The saved parser_config only belongs to the pipeline (and parse type) it
   // was saved with — expose its id only while that exact pipeline is selected,
   // so that after switching, defaults come purely from the new pipeline's DSL.
@@ -263,7 +273,7 @@ export function useDocumentPipelineForm({
     operatorValues,
     showOperatorTabs,
     buildSubmitData,
-    latestVersionId,
+    versionOutdated,
     parserOptionMissing,
   };
 }
