@@ -34,6 +34,7 @@ import (
 	"github.com/AkmalOt/gomsg"
 	"go.uber.org/zap"
 	htmlcharset "golang.org/x/net/html/charset"
+	"golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/transform"
 
 	"ragflow/internal/common"
@@ -176,14 +177,28 @@ func targetFieldsSet(fields []string) map[string]bool {
 // header values. utf-8 is handled natively by mime; the CharsetReader covers
 // the non-UTF-8 charsets via charsetEncoding, and every other WHATWG label
 // (windows-1250 to windows-1258, iso-8859-2 to iso-8859-16, koi8-r, ...) via
-// htmlcharset.Lookup, as decodeWithCharset does for mail bodies.
+// htmlcharset.Lookup, as decodeWithCharset does for mail bodies. Three labels
+// need more than that:
+//   - every ISO-8859-1 alias (iso_8859-1, iso8859-1, l1, ...) is read as
+//     windows-1252, like the label mime decodes itself (see latin1EncodedWordRe);
+//   - a bare utf-16 starts with a byte order mark and is big-endian without one
+//     (RFC 2781), where WHATWG reads it as little-endian and skips the mark;
+//   - WHATWG maps iso-2022-kr, iso-2022-cn and the like to its replacement
+//     decoder, which turns the whole word into U+FFFD, so those stay undecoded.
 var rfc2047Decoder = &mime.WordDecoder{
 	CharsetReader: func(charset string, input io.Reader) (io.Reader, error) {
+		htmlEnc, htmlName := htmlcharset.Lookup(charset)
+		if htmlName == "windows-1252" {
+			return transform.NewReader(input, htmlEnc.NewDecoder()), nil
+		}
+		if strings.EqualFold(strings.TrimSpace(charset), "utf-16") {
+			return transform.NewReader(input, unicode.UTF16(unicode.BigEndian, unicode.UseBOM).NewDecoder()), nil
+		}
 		if enc, ok := charsetlib.CharsetEncoding(charset); ok {
 			return transform.NewReader(input, enc.NewDecoder()), nil
 		}
-		if enc, _ := htmlcharset.Lookup(charset); enc != nil {
-			return transform.NewReader(input, enc.NewDecoder()), nil
+		if htmlEnc != nil && htmlName != "replacement" {
+			return transform.NewReader(input, htmlEnc.NewDecoder()), nil
 		}
 		return nil, fmt.Errorf("email: unsupported header charset %q", charset)
 	},

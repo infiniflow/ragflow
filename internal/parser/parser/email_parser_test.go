@@ -205,6 +205,26 @@ func TestEmailParser_EmlParsesAttachmentsWithEncodedNames(t *testing.T) {
 	}
 }
 
+// Three header charset labels the WHATWG lookup alone gets wrong: an ISO-8859-1
+// alias reads as windows-1252 like the label itself, a bare UTF-16 word honours
+// its byte order mark, and a charset WHATWG only knows as its replacement
+// decoder stays undecoded instead of turning into U+FFFD.
+func TestDecodeHeaderWord_CharsetLabelsBeyondTheWHATWGLookup(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"=?iso_8859-1?Q?=93Hi=94?=", "\u201cHi\u201d"},
+		{"=?iso8859-1?Q?=93Hi=94?=", "\u201cHi\u201d"},
+		{"=?l1?Q?=80?=", "\u20ac"},
+		{"=?UTF-16?B?/v8ASABp?=", "Hi"},
+		{"=?UTF-16?B?//5IAGkA?=", "Hi"},
+		{"=?UTF-16?B?AEgAaQ==?=", "Hi"},
+		{"=?iso-2022-kr?B?GyQpQw4hIQ8=?=", "=?iso-2022-kr?B?GyQpQw4hIQ8=?="},
+	} {
+		if got := decodeHeaderWord(tc.in); got != tc.want {
+			t.Errorf("decodeHeaderWord(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestEmailParser_InvalidEMLReturnsError(t *testing.T) {
 	p := NewEmailParser()
 	result := p.ParseWithResult(t.Context(), "broken.eml", []byte("not a valid RFC 5322 header"))
