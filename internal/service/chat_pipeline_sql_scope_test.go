@@ -17,8 +17,12 @@
 package service
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
 
 	"ragflow/internal/entity"
 )
@@ -436,12 +440,127 @@ func TestBuildChunkFetchSQLInheritsScope(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected the input to be scoped")
 	}
-	got, found := buildChunkFetchSQL(scoped, "ragflow_tenant_a", "docnm_kwd", false)
+	got, found := buildChunkFetchSQL(scoped, "ragflow_tenant_a", "docnm_kwd", false, "elasticsearch")
 	if !found {
 		t.Fatalf("expected a secondary fetch SQL")
 	}
 	mustContainScope(t, got, "kb_id = '"+scopeAllowedKB+"'")
 	if !strings.Contains(got, "AND (kb_id = '"+scopeAllowedKB+"')") {
 		t.Fatalf("secondary fetch lost the authorized filter:\n%s", got)
+	}
+}
+
+func TestBuildChunkFetchSQLTopLevelPredicate(t *testing.T) {
+	for _, tc := range []struct {
+		name, sql, want string
+	}{
+		{"quoted alias", `SELECT COUNT(*) AS "where 1=1 --", COUNT(*) AS n FROM t WHERE kb_id = 'allowed'`, "select doc_id, docnm_kwd from t where kb_id = 'allowed' limit 20"},
+		{"alias without predicate", `SELECT COUNT(*) AS "where 1=1 --", COUNT(*) AS n FROM t`, ""},
+		{"nested predicate only", "SELECT COUNT(*) FROM (SELECT * FROM t WHERE x = 1) s", ""},
+		{"nested and outer predicates", "SELECT COUNT(*) FROM (SELECT * FROM t WHERE x = 1) s WHERE x = 2", "select doc_id, docnm_kwd from t where x = 2 limit 20"},
+		{"keywords in literal", "SELECT COUNT(*) FROM t WHERE title = 'group by order by limit' ORDER BY n", "select doc_id, docnm_kwd from t where title = 'group by order by limit' limit 20"},
+		{"multiline predicate", "SELECT COUNT(*) FROM t WHERE x = 1 -- note\n OR x = 2 GROUP BY x HAVING COUNT(*) > 1", "select doc_id, docnm_kwd from t where x = 1 -- note\n OR x = 2 limit 20"},
+		{"trailing comment", "SELECT COUNT(*) FROM t WHERE x = 1 -- note", "select doc_id, docnm_kwd from t where x = 1 -- note\nlimit 20"},
+		{"having and offset", "SELECT COUNT(*) FROM t WHERE x = 1 GROUP BY x HAVING COUNT(*) > 1 OFFSET 5", "select doc_id, docnm_kwd from t where x = 1 limit 20"},
+		{"unterminated literal", "SELECT COUNT(*) FROM t WHERE title = 'open", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := buildChunkFetchSQL(tc.sql, "t", "docnm_kwd", false, "elasticsearch")
+			if got != tc.want || ok != (tc.want != "") {
+				t.Fatalf("buildChunkFetchSQL() = %q, %v; want %q, %v", got, ok, tc.want, tc.want != "")
+			}
+		})
+	}
+}
+
+func TestAggregateReferencesStayInAuthorizedKB(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.Exec("CREATE TABLE t (doc_id TEXT, docnm_kwd TEXT, kb_id TEXT)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO t VALUES (?, ?, ?), (?, ?, ?)",
+		"allowed-doc", "Allowed", scopeAllowedKB, "victim-doc", "Victim", scopeVictimKB).Error; err != nil {
+		t.Fatal(err)
+	}
+	docEngine := &sqlFakeEngine{
+		engineType: "elasticsearch",
+		runSQL: func(ctx context.Context, sqlText string) ([]map[string]interface{}, error) {
+			var rows []map[string]interface{}
+			err := db.WithContext(ctx).Raw(sqlText).Scan(&rows).Error
+			return rows, err
+		},
+	}
+	s := &ChatPipelineService{}
+	kbs := []*entity.Knowledgebase{{ID: scopeAllowedKB}}
+	t.Run("quoted alias in aggregate answer", func(t *testing.T) {
+		scoped, ok := addKBFilter(`SELECT COUNT(*) AS "where 1=1 --", COUNT(*) AS n FROM t`, "elasticsearch", kbs)
+		if !ok {
+			t.Fatal("aggregate query could not be scoped")
+		}
+		rows, err := docEngine.RunSQL(t.Context(), scoped, "json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, ref := s.buildSQLReference(t.Context(), docEngine, "t", scoped, rows, "", "elasticsearch", kbs, nil, true)
+		chunks, _ := ref["chunks"].([]map[string]interface{})
+		if len(chunks) != 1 || chunks[0]["document_id"] != "allowed-doc" {
+			t.Fatalf("references = %#v, want only allowed-doc", ref)
+		}
+	})
+	t.Run("secondary query reapplies scope", func(t *testing.T) {
+		chunks, _ := s.fetchAggregateChunks(t.Context(), docEngine, "t", "SELECT COUNT(*) FROM t WHERE 1=1", "docnm_kwd", []string{scopeAllowedKB})
+		if len(chunks) != 1 || chunks[0]["doc_id"] != "allowed-doc" {
+			t.Fatalf("chunks = %#v, want only allowed-doc", chunks)
+		}
+	})
+	t.Run("multi KB secondary query", func(t *testing.T) {
+		chunks, _ := s.fetchAggregateChunks(t.Context(), docEngine, "t", "SELECT COUNT(*) FROM t WHERE doc_id = 'allowed-doc'", "docnm_kwd", []string{scopeAllowedKB, scopeVictimKB})
+		if len(chunks) != 1 || chunks[0]["doc_id"] != "allowed-doc" || chunks[0]["kb_id"] != scopeAllowedKB {
+			t.Fatalf("chunks = %#v, want allowed-doc with its KB", chunks)
+		}
+	})
+	for _, kbIDs := range [][]string{nil, {"invalid"}} {
+		t.Run("unscopable query skips execution", func(t *testing.T) {
+			var calls []string
+			docEngine := &sqlFakeEngine{engineType: "elasticsearch", sqlCalls: &calls}
+			kbs := make([]*entity.Knowledgebase, len(kbIDs))
+			for i, id := range kbIDs {
+				kbs[i] = &entity.Knowledgebase{ID: id}
+			}
+			answer, ref := s.buildSQLReference(t.Context(), docEngine, "t", "SELECT COUNT(*) AS n, 'total' AS label FROM t WHERE 1=1",
+				[]map[string]interface{}{{"n": 42, "label": "total"}}, "", "elasticsearch", kbs, nil, true)
+			chunks, _ := ref["chunks"].([]map[string]interface{})
+			if len(calls) != 0 || len(chunks) != 0 || !strings.Contains(answer, "42") {
+				t.Fatalf("calls = %v, answer = %q, references = %#v; want aggregate answer without secondary execution", calls, answer, ref)
+			}
+		})
+	}
+}
+
+func TestBuildChunkFetchSQLDialect(t *testing.T) {
+	for _, tc := range []struct {
+		engineName, sql, want string
+	}{
+		{"vastbase", "SELECT COUNT(*) FROM t WHERE title = $tag$where limit$tag$ ORDER BY n", "select doc_id, docnm_kwd from t where title = $tag$where limit$tag$ limit 20"},
+		{"serenedb", `SELECT COUNT(*) FROM t WHERE title = E'it\'s where limit' ORDER BY n`, `select doc_id, docnm_kwd from t where title = E'it\'s where limit' limit 20`},
+		{"oceanbase", "SELECT COUNT(*) FROM t WHERE x = 1 # comment", ""},
+		{"infinity", "SELECT COUNT(*) FROM t WHERE x = 1", "select doc_id, docnm from t where x = 1 limit 20"},
+	} {
+		t.Run(tc.engineName, func(t *testing.T) {
+			expectedCol := expectedDocNameColumn(tc.engineName)
+			got, ok := buildChunkFetchSQL(tc.sql, "t", expectedCol, false, tc.engineName)
+			if got != tc.want || ok != (tc.want != "") {
+				t.Fatalf("buildChunkFetchSQL() = %q, %v; want %q, %v", got, ok, tc.want, tc.want != "")
+			}
+		})
 	}
 }

@@ -4334,35 +4334,57 @@ func extractSourceColumnIndexes(rows []map[string]interface{}) (docIDIdx, docNam
 	return
 }
 
-// WHERE-clause extraction for the aggregate secondary fetch.
-// Mirrors dialog_service.py:1321.
-var whereClauseRe = regexp.MustCompile(`(?i)\bwhere\b(.+?)(?:\bgroup by\b|\border by\b|\blimit\b|$)`)
-
-// limitClauseRe detects whether a SQL already has a LIMIT clause.
-var limitClauseRe = regexp.MustCompile(`(?i)\blimit\b`)
-
-// buildChunkFetchSQL extracts the WHERE clause from the original SQL
-// and constructs a secondary SQL to fetch source chunks. Mirrors
-// dialog_service.py:1327-1331. Returns ("", false) when no WHERE is
-// present. The `multiKB` flag controls whether `kb_id` is included
+// buildChunkFetchSQL extracts the top-level WHERE predicate from the original
+// SQL and constructs a secondary query to fetch source chunks. Returns
+// ("", false) when scanning fails or no predicate is present.
+// The `multiKB` flag controls whether `kb_id` is included
 // in the SELECT list (single-kb queries don't need it because the
 // caller already knows the kb_id).
-func buildChunkFetchSQL(originalSQL, tableName, expectedCol string, multiKB bool) (string, bool) {
-	m := whereClauseRe.FindStringSubmatch(originalSQL)
-	if len(m) < 2 {
+func buildChunkFetchSQL(originalSQL, tableName, expectedCol string, multiKB bool, engineName string) (string, bool) {
+	words, lineComments, ok := scanScalarWords(originalSQL, sqlScanDialectFor(engineName))
+	if !ok {
 		return "", false
 	}
-	where := strings.TrimSpace(m[1])
+	start, end := -1, len(originalSQL)
+predicate:
+	for _, word := range words {
+		if word.depth != 0 {
+			continue
+		}
+		if start < 0 {
+			if word.word == "WHERE" {
+				start = word.end
+			}
+			continue
+		}
+		switch word.word {
+		case "GROUP", "HAVING", "ORDER", "LIMIT", "OFFSET":
+			end = word.start
+			break predicate
+		}
+	}
+	if start < 0 {
+		return "", false
+	}
+	where := strings.TrimSpace(originalSQL[start:end])
+	if where == "" {
+		return "", false
+	}
 	kbCol := ""
 	if multiKB {
 		kbCol = ", kb_id"
 	}
 	sql := fmt.Sprintf("select doc_id, %s%s from %s where %s",
 		expectedCol, kbCol, tableName, where)
-	if !limitClauseRe.MatchString(sql) {
-		sql += " limit 20"
+	limitSeparator := " "
+	predicateEnd := len(strings.TrimRight(originalSQL[:end], " \t\r\n"))
+	for _, comment := range lineComments {
+		if predicateEnd > comment[0] && predicateEnd <= comment[1] {
+			limitSeparator = "\n"
+			break
+		}
 	}
-	return sql, true
+	return sql + limitSeparator + "limit 20", true
 }
 
 // toIfaceSlice converts a []map[string]interface{} to []interface{} for
@@ -4407,10 +4429,24 @@ func (s *ChatPipelineService) fetchAggregateChunks(
 		return nil, nil
 	}
 
-	chunksSQL, ok := buildChunkFetchSQL(originalSQL, tableName, expectedCol, multiKB)
+	engineName := docEngine.GetType()
+	chunksSQL, ok := buildChunkFetchSQL(originalSQL, tableName, expectedCol, multiKB, engineName)
 	if !ok {
 		common.Debug("SQL retrieval: aggregate secondary fetch skipped (no WHERE clause)",
 			zap.String("sql", originalSQL))
+		return nil, nil
+	}
+
+	if len(kbIDs) == 0 {
+		return nil, nil
+	}
+	kbs := make([]*entity.Knowledgebase, len(kbIDs))
+	for i, kbID := range kbIDs {
+		kbs[i] = &entity.Knowledgebase{ID: kbID}
+	}
+	chunksSQL, ok = addKBFilter(chunksSQL, engineName, kbs)
+	if !ok {
+		common.Warn("SQL retrieval: aggregate secondary fetch cannot be scoped to the authorized datasets; skipping")
 		return nil, nil
 	}
 
