@@ -423,7 +423,7 @@ def get_parser_config(chunk_method, parser_config):
         merged_config["children_delimiter"] = pc.get("children_delimiter", "\n")
         if explicit_parent_child:
             merged_config["enable_children"] = True
-    elif pc:
+    else:
         merged_config["children_delimiter"] = ""
         if explicit_parent_child:
             merged_config["enable_children"] = False
