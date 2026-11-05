@@ -1195,4 +1195,33 @@ func TestEPUBParser_RemoveTOC(t *testing.T) {
 	if !strings.Contains(full, "前言") || !strings.Contains(full, "正文开始") {
 		t.Errorf("expected body content to survive, got %q", full)
 	}
+
+	// 3. Nested container blocks (nav / section / div)
+	nestedData := buildTestEPUBWithImages(t, []epubTestChapter{{
+		name: "ch2.xhtml",
+		content: epubTestHTML(`<h1>前言</h1>
+<nav epub:type="toc">
+  <h2>Table of Contents</h2>
+  <ul>
+    <li><a href="#ch1">Chapter 1: Intro</a></li>
+    <li><a href="#ch2">Chapter 2: Methods</a></li>
+  </ul>
+</nav>
+<div class="content"><p>Chapter body text</p></div>`),
+	}}, nil)
+	pNested := NewEPUBParser()
+	pNested.ConfigureFromSetup(map[string]any{"remove_toc": true})
+	resNested := pNested.ParseWithResult(context.Background(), "nested.epub", nestedData)
+	if resNested.Err != nil {
+		t.Fatalf("ParseWithResult nested: %v", resNested.Err)
+	}
+	for _, it := range ItemsToMaps(resNested.JSON) {
+		text, _ := it["text"].(string)
+		if strings.Contains(text, "Table of Contents") {
+			t.Errorf("nested TOC heading %q was not removed", text)
+		}
+		if strings.Contains(text, "Chapter 1: Intro") {
+			t.Errorf("nested TOC entry %q was not removed", text)
+		}
+	}
 }

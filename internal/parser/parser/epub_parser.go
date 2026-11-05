@@ -458,6 +458,16 @@ func (s *htmlWalkState) loadEPUBMedia(name, mime string, entry *zip.File) (*enti
 // (headings, paragraphs, tables, images) preserving source order.
 func extractEPUBChapterLeaves(doc *html.Node, state *htmlWalkState) []map[string]any {
 	var chapter []map[string]any
+	var hasChildBlock func(n *html.Node) bool
+	hasChildBlock = func(n *html.Node) bool {
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if c.Type == html.ElementNode && (isBlockTag(c.Data) || c.Data == "table") {
+				return true
+			}
+		}
+		return false
+	}
+
 	var collectLeaves func(n *html.Node)
 	collectLeaves = func(n *html.Node) {
 		if n == nil {
@@ -469,11 +479,13 @@ func extractEPUBChapterLeaves(doc *html.Node, state *htmlWalkState) []map[string
 			}
 			return
 		}
-		if n.Type == html.ElementNode && (n.Data == "html" || n.Data == "body") {
-			for c := n.FirstChild; c != nil; c = c.NextSibling {
-				collectLeaves(c)
+		if n.Type == html.ElementNode {
+			if n.Data == "html" || n.Data == "body" || hasChildBlock(n) {
+				for c := n.FirstChild; c != nil; c = c.NextSibling {
+					collectLeaves(c)
+				}
+				return
 			}
-			return
 		}
 		htmlLeafTextWithState(n, &chapter, "text", false, state)
 	}
