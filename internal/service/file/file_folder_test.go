@@ -333,7 +333,7 @@ func TestFileService_GetFileContentRejectsInaccessibleFile(t *testing.T) {
 	setupFolderTestDB(t)
 	insertFolderTestFile(t, "file-1", "folder-1", "private.pdf")
 
-	_, err := testFileService().GetFileContent(fileTestContext(t, "user-2", "tenant-1", "tenant-1"), "user-2", "file-1")
+	_, err := testFileService().GetFileContent(fileTestContext(t, "user-2", "tenant-1", "tenant-1"), "file-1")
 	if !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("GetFileContent error = %v, want permission denied", err)
 	}
@@ -420,7 +420,7 @@ func TestFileService_UploadRejectsInaccessibleParent(t *testing.T) {
 		t.Fatalf("seed foreign folder: %v", err)
 	}
 
-	_, err := testFileService().UploadFile(fileTestContext(t, "user-1", "user-1"), "user-1", foreignFolder.ID, nil, 1024)
+	_, err := testFileService().UploadFile(fileTestContext(t, "user-1", "user-1"), foreignFolder.ID, nil, 1024)
 	if !errors.Is(err, permission.ErrResourceNotFound) {
 		t.Fatalf("UploadFile error = %v, want resource not found", err)
 	}

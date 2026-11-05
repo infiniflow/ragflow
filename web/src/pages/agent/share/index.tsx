@@ -138,7 +138,7 @@ const ChatContainer = () => {
             ref={messageContainerRef}
           >
             <VirtualMessageList
-              className="w-full"
+              className="w-full pr-6"
               items={derivedMessages}
               virtualizer={virtualizer}
               renderItem={(message, i) => (
