@@ -487,7 +487,7 @@ func generalTextInput(text string) map[string]any {
 
 func outputChunks(t *testing.T, out map[string]any) []map[string]any {
 	t.Helper()
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", out["chunks"])
 	}

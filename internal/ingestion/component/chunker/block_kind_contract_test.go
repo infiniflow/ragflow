@@ -20,10 +20,9 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 )
 
-// TestChunkerOutputDropsRetiredCKType pins the output contract: ck_type is a
-// retired parser key and no chunker may emit it, even when the input payload
-// still carries a legacy ck_type.
-func TestChunkerOutputDropsRetiredCKType(t *testing.T) {
+// TestChunkerOutputHasNoBlockKindMetadata pins the output contract: chunker
+// output carries no block-kind metadata, structural or otherwise.
+func TestChunkerOutputHasNoBlockKindMetadata(t *testing.T) {
 	cases := []struct {
 		name string
 		run  func(t *testing.T) []map[string]any
@@ -38,8 +37,8 @@ func TestChunkerOutputDropsRetiredCKType(t *testing.T) {
 				out, err := c.Invoke(t.Context(), nil, map[string]any{
 					"name": "t.md", "file_type": "md", "output_format": "json",
 					"json": []map[string]any{
-						{"text": "# Heading", "doc_type_kwd": "text", "layout": "heading", "ck_type": "heading"},
-						{"text": "body", "doc_type_kwd": "text", "ck_type": "text"},
+						{"text": "# Heading", "doc_type_kwd": "text", "layout": "heading"},
+						{"text": "body", "doc_type_kwd": "text"},
 					},
 				})
 				if err != nil {
@@ -58,8 +57,8 @@ func TestChunkerOutputDropsRetiredCKType(t *testing.T) {
 				out, err := c.Invoke(t.Context(), nil, map[string]any{
 					"name": "t.md", "output_format": "json",
 					"json": []map[string]any{
-						{"text": "# Heading", "doc_type_kwd": "text", "layout": "heading", "ck_type": "heading"},
-						{"text": "body", "doc_type_kwd": "text", "ck_type": "text"},
+						{"text": "# Heading", "doc_type_kwd": "text", "layout": "heading"},
+						{"text": "body", "doc_type_kwd": "text"},
 					},
 				})
 				if err != nil {
@@ -94,8 +93,8 @@ func TestChunkerOutputDropsRetiredCKType(t *testing.T) {
 				out, err := c.Invoke(t.Context(), nil, map[string]any{
 					"name": "t.md",
 					"chunks": []map[string]any{
-						{"text": "# Heading", "doc_type_kwd": "text", "layout": "heading", "ck_type": "heading"},
-						{"text": "body", "doc_type_kwd": "text", "ck_type": "text"},
+						{"text": "# Heading", "doc_type_kwd": "text", "layout": "heading"},
+						{"text": "body", "doc_type_kwd": "text"},
 					},
 				})
 				if err != nil {
@@ -113,9 +112,6 @@ func TestChunkerOutputDropsRetiredCKType(t *testing.T) {
 				t.Fatal("no chunks emitted")
 			}
 			for i, ck := range chunks {
-				if kind, ok := ck["ck_type"]; ok {
-					t.Errorf("chunk[%d] emits retired ck_type %v: %#v", i, kind, ck)
-				}
 				if layout, ok := ck["layout"].(string); ok && isStructuralLayout(layout) {
 					t.Errorf("chunk[%d] leaks structural layout %q: %#v", i, layout, ck)
 				}
@@ -149,9 +145,9 @@ func TestChunkOutputBoundaryClearsStructuralLayout(t *testing.T) {
 	}
 }
 
-// TestTitleReadsLayoutNotRetiredCKType pins that a legacy ck_type alone no
-// longer promotes a line to a heading; only layout does.
-func TestTitleReadsLayoutNotRetiredCKType(t *testing.T) {
+// TestTitleDoesNotPromotePlainTextToHeading pins that heading detection
+// requires parser layout metadata.
+func TestTitleDoesNotPromotePlainTextToHeading(t *testing.T) {
 	c, err := NewGroupTitleChunker(map[string]any{"levels": [][]string{{`^# `}}})
 	if err != nil {
 		t.Fatalf("NewGroupTitleChunker: %v", err)
@@ -159,9 +155,9 @@ func TestTitleReadsLayoutNotRetiredCKType(t *testing.T) {
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name": "t.docx",
 		"chunks": []map[string]any{
-			{"text": "Introduction", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "Introduction", "doc_type_kwd": "text"},
 			{"text": "Body.", "doc_type_kwd": "text"},
-			{"text": "Conclusion", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "Conclusion", "doc_type_kwd": "text"},
 			{"text": "Final.", "doc_type_kwd": "text"},
 		},
 	})
@@ -169,7 +165,7 @@ func TestTitleReadsLayoutNotRetiredCKType(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if chunks := outputChunks(t, out); len(chunks) != 1 {
-		t.Fatalf("legacy ck_type must not create headings: got %d chunks, want 1", len(chunks))
+		t.Fatalf("plain text created headings: got %d chunks, want 1", len(chunks))
 	}
 }
 

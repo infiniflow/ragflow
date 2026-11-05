@@ -21,6 +21,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 func TestHierarchyTitleChunker_Registered(t *testing.T) {
@@ -87,7 +88,7 @@ func TestHierarchyTitleChunker_InvokeEmptyInput(t *testing.T) {
 	if got, want := out["output_format"], "chunks"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 0 {
 		t.Errorf("chunks = %d, want 0", len(chunks))
 	}
@@ -110,7 +111,7 @@ func TestHierarchyTitleChunker_NestedHeadings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -165,7 +166,7 @@ func TestHierarchyChunker_StructuredMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	found := false
 	for _, ck := range chunks {
 		if dt, _ := ck["doc_type_kwd"].(string); dt == "image" {
@@ -199,7 +200,7 @@ func TestHierarchyTitleChunker_InvokeDeterministic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Invoke run %d: %v", run, err)
 		}
-		chunks, _ := out["chunks"].([]map[string]any)
+		chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 		texts := make([]string, len(chunks))
 		for i, ck := range chunks {
 			texts[i], _ = ck["text"].(string)
@@ -252,7 +253,7 @@ func TestHierarchyTitleChunker_ColonTitlePromotion(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -284,7 +285,7 @@ func TestHierarchyTitleChunker_ColonTitleShortLine_Negative(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -319,7 +320,7 @@ func TestHierarchyTitleChunker_ShortNumericLineFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -395,7 +396,7 @@ func TestHierarchyTitleChunker_ColonTitlePromotion_CJK_EdgeCase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -433,7 +434,7 @@ func TestHierarchyTitleChunker_ShortSingleCJKLineFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -472,7 +473,7 @@ func TestHierarchyTitleChunker_LayoutHeadingFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -513,7 +514,7 @@ func TestHierarchyTitleChunker_ConsecutiveNonTextOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	idx := func(sub string) int {
 		for i, ck := range chunks {
 			if text, _ := ck["text"].(string); strings.Contains(text, sub) {

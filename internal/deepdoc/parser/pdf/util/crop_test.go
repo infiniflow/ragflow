@@ -126,6 +126,61 @@ func TestCropSectionImage_NegativeCoordNotDropped(t *testing.T) {
 	}
 }
 
+func TestCropMediaSectionPositionsHasNoContextBands(t *testing.T) {
+	// Media previews must be clean position-only crops (Python cropout):
+	// no 120pt context bands, no putalpha(128) edge dimming. A solid-red
+	// page stays solid red top to bottom.
+	pageImages := map[int]image.Image{
+		0: makeTestPageImage(200, 800, color.RGBA{255, 0, 0, 255}),
+	}
+	positions := []pdf.Position{{PageNumbers: []int{0}, Left: 20, Right: 120, Top: 300, Bottom: 400}}
+	b64 := CropMediaSectionPositions(positions, pageImages, 1)
+	if b64 == "" {
+		t.Fatal("expected non-empty result")
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(b64)
+	img := decodePNG(t, decoded)
+	bounds := img.Bounds()
+	// Body is 100px tall; measureSectionRasterPlan adds one 6px stitch gap.
+	if bounds.Dx() != 100 || bounds.Dy() != 106 {
+		t.Fatalf("media crop bounds = %v, want 100x106 (body only, no context)", bounds)
+	}
+	for _, y := range []int{0, bounds.Dy() - 7} {
+		r, g, b, _ := img.At(0, y).RGBA()
+		if uint8(r>>8) < 200 || uint8(g>>8) != 0 || uint8(b>>8) != 0 {
+			t.Errorf("row %d = (%d,%d,%d), want undimmed red; edge overlay leaked into media crop", y, uint8(r>>8), uint8(g>>8), uint8(b>>8))
+		}
+	}
+}
+
+func TestCropMediaSectionPositionsSpansPages(t *testing.T) {
+	// A figure spanning two pages stitches body-only segments in page
+	// order: no context bands, no dimming, first page on top.
+	pageImages := map[int]image.Image{
+		0: makeTestPageImage(200, 400, color.RGBA{255, 0, 0, 255}),
+		1: makeTestPageImage(200, 400, color.RGBA{0, 0, 255, 255}),
+	}
+	positions := []pdf.Position{{PageNumbers: []int{0, 1}, Left: 20, Right: 120, Top: 300, Bottom: 100}}
+	b64 := CropMediaSectionPositions(positions, pageImages, 1)
+	if b64 == "" {
+		t.Fatal("expected non-empty result")
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(b64)
+	img := decodePNG(t, decoded)
+	// Spanning convention: Top is local to the first page, Bottom local
+	// to the last. Page 0 contributes rows [300,400], page 1 rows [0,100],
+	// plus two 6px stitch gaps: 100 + 100 + 12.
+	if bounds := img.Bounds(); bounds.Dx() != 100 || bounds.Dy() != 212 {
+		t.Fatalf("spanning media crop bounds = %v, want 100x212", bounds)
+	}
+	if r, _, _, _ := img.At(0, 0).RGBA(); uint8(r>>8) < 200 {
+		t.Error("top rows should be page-0 red, got dimmed or wrong content")
+	}
+	if _, _, b, _ := img.At(0, 150).RGBA(); uint8(b>>8) < 200 {
+		t.Error("bottom rows should be page-1 blue, got dimmed or wrong content")
+	}
+}
+
 func TestCropSectionImage_ContextPadding(t *testing.T) {
 	pageImages := map[int]image.Image{
 		0: makeTestPageImage(200, 800, color.RGBA{255, 0, 0, 255}),
@@ -664,5 +719,66 @@ func TestTSRRegionMarginPx(t *testing.T) {
 	const want = 10.0 * pdf.DlaScale // 10 points * ZM(3) = 30px
 	if TSRRegionMarginPx != want {
 		t.Errorf("TSRRegionMarginPx = %v, want %v (10pt * ZM)", TSRRegionMarginPx, want)
+	}
+}
+
+func TestCropMediaSectionPositionsSpansPagesOfMixedHeight(t *testing.T) {
+	// Bottom is local to the last page, so the span adds the height of the
+	// first page, not the last. Each case keeps 100 rows of each page.
+	red, blue := color.RGBA{255, 0, 0, 255}, color.RGBA{0, 0, 255, 255}
+	cases := []struct {
+		name        string
+		first, last int
+		top, bottom float64
+	}{
+		{"tall first page", 800, 600, 700, 100},
+		{"short first page", 600, 800, 500, 100},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pageImages := map[int]image.Image{
+				0: makeTestPageImage(200, tc.first, red),
+				1: makeTestPageImage(200, tc.last, blue),
+			}
+			positions := []pdf.Position{{PageNumbers: []int{0, 1}, Left: 20, Right: 120, Top: tc.top, Bottom: tc.bottom}}
+			b64 := CropMediaSectionPositions(positions, pageImages, 1)
+			if b64 == "" {
+				t.Fatal("expected non-empty result")
+			}
+			decoded, _ := base64.StdEncoding.DecodeString(b64)
+			img := decodePNG(t, decoded)
+			if bounds := img.Bounds(); bounds.Dx() != 100 || bounds.Dy() != 212 {
+				t.Fatalf("spanning media crop bounds = %v, want 100x212", bounds)
+			}
+			if r, _, _, _ := img.At(0, 50).RGBA(); uint8(r>>8) < 200 {
+				t.Error("top rows should be page-0 red")
+			}
+			if _, _, b, _ := img.At(0, 150).RGBA(); uint8(b>>8) < 200 {
+				t.Error("bottom rows should be page-1 blue")
+			}
+		})
+	}
+}
+
+func TestCropSectionByDLA_MultiPageMixedHeight(t *testing.T) {
+	// No DLA regions, so each page falls back to the section bbox. At
+	// scale 3, Top 100 is row 300 of the 450px page 0 and Bottom 50 is
+	// row 150 of the 300px page 1: 150 + 6 + 150 rows.
+	pageImages := map[int]image.Image{
+		0: makeTestPageImage(300, 450, color.RGBA{255, 0, 0, 255}),
+		1: makeTestPageImage(300, 300, color.RGBA{0, 0, 255, 255}),
+	}
+	sec := pdf.Section{
+		Positions:  []pdf.Position{{PageNumbers: []int{0, 1}, Left: 20, Right: 50, Top: 100, Bottom: 50}},
+		LayoutType: "figure",
+	}
+	result := CropSectionByDLA(sec, nil, pageImages)
+	if result == "" {
+		t.Fatal("expected non-empty multi-page crop")
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(result)
+	img := decodePNG(t, decoded)
+	if bounds := img.Bounds(); bounds.Dx() != 90 || bounds.Dy() != 306 {
+		t.Fatalf("DLA multi-page crop bounds = %v, want 90x306", bounds)
 	}
 }

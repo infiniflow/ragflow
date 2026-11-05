@@ -20,9 +20,7 @@ import (
 )
 
 func TestPaddleOCRHighlightsThroughPipeline(t *testing.T) {
-	previous := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = previous })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 	tokenizer.SetEngineType("infinity")
 	t.Cleanup(func() { tokenizer.SetEngineType("") })
 	body, err := os.ReadFile("../../../entity/models/testdata/paddleocr_layout.json")
@@ -71,7 +69,7 @@ func TestPaddleOCRHighlightsThroughPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks := output["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(output["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("no chunks")
 	}

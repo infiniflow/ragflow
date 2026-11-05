@@ -3,6 +3,10 @@
 import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { MetadataFilter } from '@/components/metadata-filter';
+import {
+  ModelTreeSelectFormField,
+  ModelTypeMap,
+} from '@/components/model-tree-select';
 import { RerankCandidatesCountFormField } from '@/components/rerank-candidates-count-item';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
@@ -160,10 +164,19 @@ export function ChatPromptEngine({
           open={agenticSettingOpen}
           onOpenChange={onAgenticSettingOpenChange}
         >
-          <AgenticTemplateFormField
-            name={prefixName(prefix, 'prompt_config.agentic_rag.content')}
-            config={agenticConfig}
-          />
+          <div className="space-y-8">
+            <ModelTreeSelectFormField
+              name={prefixName(prefix, 'decision_id')}
+              label={t('chat.decisionModel')}
+              tooltip={t('chat.decisionModelTip')}
+              modelTypes={ModelTypeMap.decision_id}
+              allowClear
+            />
+            <AgenticTemplateFormField
+              name={prefixName(prefix, 'prompt_config.agentic_rag.content')}
+              config={agenticConfig}
+            />
+          </div>
         </Collapse>
       </div>
     </Collapse>

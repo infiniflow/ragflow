@@ -181,11 +181,9 @@ func TestParserComponentInvoke_LanguageFromGlobals(t *testing.T) {
 	}
 }
 
-func TestNewParserComponentNormalizesOutputFormatToJSON(t *testing.T) {
+func TestNewParserComponentSkipsNonFamilyParams(t *testing.T) {
 	component, err := NewParserComponent(map[string]any{
-		"pdf":         map[string]any{"output_format": "markdown"},
-		"spreadsheet": map[string]any{"output_format": "html"},
-		"email":       map[string]any{"output_format": "text"},
+		"pdf": map[string]any{"parse_method": "deepdoc"},
 		"allowed_output_format": map[string]any{
 			"pdf": []any{"json", "markdown"},
 		},
@@ -195,11 +193,6 @@ func TestNewParserComponentNormalizesOutputFormatToJSON(t *testing.T) {
 	}
 
 	parserComponent := component.(*ParserComponent)
-	for _, family := range []string{"pdf", "spreadsheet", "email"} {
-		if got := parserComponent.setups[family]["output_format"]; got != "json" {
-			t.Errorf("%s output_format = %v, want json", family, got)
-		}
-	}
 	if _, ok := parserComponent.setups["allowed_output_format"]; ok {
 		t.Error("allowed_output_format must not be treated as a parser setup")
 	}
@@ -377,24 +370,6 @@ func TestParserComponent_Invoke_DeterministicMerge(t *testing.T) {
 		if string(encoded) != string(canonical) {
 			t.Errorf("run %d output differs from canonical:\n got=%s\nwant=%s",
 				i, encoded, canonical)
-		}
-	}
-}
-
-// TestParserComponent_New_Defaults constructs a Parser from a nil param map
-// and verifies every parser family uses the canonical JSON output format.
-func TestParserComponent_New_Defaults(t *testing.T) {
-	c, err := NewParserComponent(nil)
-	if err != nil {
-		t.Fatalf("NewParserComponent(nil): %v", err)
-	}
-	pc, ok := c.(*ParserComponent)
-	if !ok {
-		t.Fatalf("NewParserComponent returned %T, want *ParserComponent", c)
-	}
-	for family, setup := range pc.setups {
-		if got := setup["output_format"]; got != "json" {
-			t.Errorf("%s output_format = %v, want json", family, got)
 		}
 	}
 }

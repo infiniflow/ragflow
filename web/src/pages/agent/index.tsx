@@ -21,10 +21,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import message from '@/components/ui/message';
+import { AgentCategory } from '@/constants/agent';
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useSetAgent } from '@/hooks/use-agent-request';
+import { useSaveAgent } from '@/hooks/use-agent-request';
+import { useFetchCanvasPresence } from '@/ee/hooks/use-agent-presence';
+import { AgentEditGuard } from '@/ee/pages/agent/agent-edit-guard';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -32,7 +35,6 @@ import {
   Compass,
   History,
   LaptopMinimalCheck,
-  Logs,
   MessageSquareCode,
   ScreenShare,
   Settings,
@@ -65,6 +67,7 @@ import {
   useSaveGraphBeforeOpeningDebugDrawer,
   useWatchAgentChange,
 } from './hooks/use-save-graph';
+import { OnlineUsers } from '@/ee/pages/agent/online-users';
 import { PipelineLogSheet } from './pipeline-log-sheet';
 import PipelineRunSheet from './pipeline-run-sheet';
 import { SettingDialog } from './setting-dialog';
@@ -115,18 +118,32 @@ export default function Agent() {
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
+  // Manual Save is a draft save, same as auto-save: it refreshes the live
+  // canvas without minting a user_canvas_version row. Publishing does that.
   const handleSave = useCallback(() => {
-    saveGraph();
+    saveGraph(undefined, undefined, undefined, true);
   }, [saveGraph]);
+  const handlePublish = useCallback(
+    (alias?: string) => {
+      saveGraph(undefined, undefined, true, undefined, alias);
+    },
+    [saveGraph],
+  );
+  // Back-link lands on the agents list tab matching this canvas: ingestion
+  // pipeline canvases return to the pipeline tab, agent canvases to workflow.
+  const handleBackToAgents = useCallback(() => {
+    navigateToAgents(
+      isPipeline ? AgentCategory.DataflowCanvas : AgentCategory.AgentCanvas,
+    );
+  }, [isPipeline, navigateToAgents]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
-  // The canvas checklist only surfaces issues to the user; it never gates
-  // the save/run/explore/publish/embed entry points.
+  // The checklist displays all issues; Run separately checks blocking rules.
   const { issues } = useCanvasChecklist({
     ownerTenantId: agentDetail?.tenant_id,
     canvasID: id,
   });
   const { buildDslData } = useBuildDslData();
-  const { setAgent, loading: savingWidgetSettings } = useSetAgent(false);
+  const { saveAgent, loading: savingWidgetSettings } = useSaveAgent(false);
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
   const {
     visible: versionDialogVisible,
@@ -258,6 +275,8 @@ export default function Agent() {
     uploadedFileData,
   } = useRunDataflow({ showLogSheet: showPipelineLogSheet, setMessageId });
 
+  const { data: presence } = useFetchCanvasPresence();
+  const operatorPermission = presence.operator_permission ?? 0;
   const initialWidgetSettings = useMemo<WidgetSettings>(() => {
     const widgetSettings =
       agentDetail?.dsl?.globals?.[AgentWidgetSettingsGlobalKey];
@@ -274,7 +293,7 @@ export default function Agent() {
     async (widgetSettings: WidgetSettings) => {
       const dsl = buildDslData();
 
-      return setAgent({
+      return saveAgent({
         id: id!,
         title: agentDetail.title,
         dsl: {
@@ -286,7 +305,7 @@ export default function Agent() {
         },
       });
     },
-    [agentDetail.title, buildDslData, id, setAgent],
+    [agentDetail.title, buildDslData, id, saveAgent],
   );
 
   return (
@@ -296,7 +315,7 @@ export default function Agent() {
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink onClick={navigateToAgents}>
+                <BreadcrumbLink onClick={handleBackToAgents}>
                   {t('header.flow')}
                 </BreadcrumbLink>
               </BreadcrumbItem>
@@ -311,30 +330,40 @@ export default function Agent() {
           </div>
         </section>
         <div className="flex items-center gap-5">
-          <ButtonLoading
-            variant={'secondary'}
-            onClick={handleSave}
-            loading={loading}
-          >
-            <LaptopMinimalCheck /> {t('flow.save')}
-          </ButtonLoading>
-          {showRunButton &&
-            (runTooltipKey ? (
-              <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
-            ) : (
-              runButton
-            ))}
-          {isConversationMode && (
-            <Button variant={'secondary'} onClick={handleExploreClick}>
-              <Compass />
-              {t('explore.title')}
-            </Button>
-          )}
-          <PublishConfirmDialog
-            agentDetail={agentDetail}
-            loading={loading}
-            onPublish={() => saveGraph(undefined, undefined, true)}
-          />
+          <OnlineUsers></OnlineUsers>
+          <AgentEditGuard operatorPermission={operatorPermission}>
+            <ButtonLoading
+              variant={'secondary'}
+              onClick={handleSave}
+              loading={loading}
+            >
+              <LaptopMinimalCheck /> {t('flow.saveDraft')}
+            </ButtonLoading>
+
+            {showRunButton &&
+              (runTooltipKey ? (
+                <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
+              ) : (
+                runButton
+              ))}
+            {isConversationMode && (
+              <Button variant={'secondary'} onClick={handleExploreClick}>
+                <Compass />
+                {t('explore.title')}
+              </Button>
+            )}
+            {/* <PublishConfirmDialog
+              agentDetail={agentDetail}
+              loading={loading}
+              onPublish={() => saveGraph(undefined, undefined, true)}
+              onBeforeOpen={hasBlockingIssues}
+            /> */}
+            <PublishConfirmDialog
+              agentDetail={agentDetail}
+              loading={loading}
+              onPublish={handlePublish}
+            />
+          </AgentEditGuard>
           <CanvasChecklist issues={issues} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -343,34 +372,30 @@ export default function Agent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <AgentDropdownMenuItem onClick={() => showGlobalParamSheet()}>
-                <MessageSquareCode />
-                {t('flow.conversationVariable')}
-              </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
+              <AgentEditGuard operatorPermission={operatorPermission}>
+                <AgentDropdownMenuItem onClick={() => showGlobalParamSheet()}>
+                  <MessageSquareCode />
+                  {t('flow.conversationVariable')}
+                </AgentDropdownMenuItem>
+                <DropdownMenuSeparator />
+              </AgentEditGuard>
               <AgentDropdownMenuItem onClick={showVersionDialog}>
                 <History />
                 {t('flow.historyVersion')}
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
-              {isPipeline || (
-                <AgentDropdownMenuItem
-                  onClick={() => navigateToAgentLogs(id as string)()}
-                >
-                  <Logs />
-                  {t('flow.log')}
-                </AgentDropdownMenuItem>
-              )}
               <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />
                 {t('flow.export')}
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
-              <AgentDropdownMenuItem onClick={showSettingDialog}>
-                <Settings />
-                {t('flow.setting')}
-              </AgentDropdownMenuItem>
+              <AgentEditGuard operatorPermission={operatorPermission}>
+                <AgentDropdownMenuItem onClick={showSettingDialog}>
+                  <Settings />
+                  {t('flow.setting')}
+                </AgentDropdownMenuItem>
+              </AgentEditGuard>
               {isPipeline ||
                 (location.hostname !== 'cloud.ragflow.io' && (
                   <>

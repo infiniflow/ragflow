@@ -59,7 +59,8 @@ func TestRealProducerConsumer(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	db.Create(&entity.Tenant{ID: "t1", LLMID: "gpt-4", Status: testutil.StrPtr("1")})
+	db.Create(&entity.Tenant{ID: "t1", Status: testutil.StrPtr("1")})
+	db.Create(&entity.UserTenant{ID: "owner-t1", UserID: "t1", TenantID: "t1", Role: "owner", Status: testutil.StrPtr("1"), LLMID: "gpt-4"})
 	db.Create(&entity.Knowledgebase{ID: "kb1", TenantID: "t1", EmbdID: "e1", Status: testutil.StrPtr("1"), ParserConfig: entity.JSONMap{}})
 	docName := "doc-real.pdf"
 	db.Create(&entity.Document{ID: "doc-real", KbID: "kb1", ParserID: "naive", ParserConfig: entity.JSONMap{}, Name: &docName})

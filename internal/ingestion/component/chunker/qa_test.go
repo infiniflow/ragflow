@@ -66,7 +66,7 @@ func TestQAChunker_DelimiterTab(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -91,7 +91,7 @@ func TestQAChunker_DelimiterComma(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -116,7 +116,7 @@ func TestQAChunker_Markdown(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 2 {
 		t.Fatalf("expected 2 chunks, got %d", len(chunks))
 	}
@@ -136,7 +136,7 @@ func TestQAChunker_HTMLTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 2 {
 		t.Fatalf("expected 2 chunks, got %d", len(chunks))
 	}
@@ -156,7 +156,7 @@ func TestQAChunker_CSVStrictPairRejectsThreeCells(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 0 {
 		t.Fatalf("expected 0 chunks, got %d", len(chunks))
 	}
@@ -176,7 +176,7 @@ func TestQAChunker_CSVStrictPairAcceptsTwoCells(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -203,7 +203,7 @@ func TestQAChunker_JSONCSVNameUsesStrictRowShapeWithoutFileType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 0 {
 		t.Fatalf("chunks = %#v, want malformed CSV row rejected", chunks)
 	}
@@ -226,7 +226,7 @@ func TestQAChunker_NonCSVHTMLThreeCellsKeepsFirstTwo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -250,7 +250,7 @@ func TestQAChunker_RmQAPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	cww, _ := chunks[0]["text"].(string)
 	if cww != "Question: What is Go?\tAnswer: Go is a language." {
 		t.Fatalf("prefix not stripped: %q", cww)
@@ -271,7 +271,7 @@ func TestQAChunker_Empty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 0 {
 		t.Fatalf("expected 0 chunks, got %d", len(chunks))
 	}
@@ -291,7 +291,7 @@ func TestQAChunker_CaseInsensitivePrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -315,7 +315,7 @@ func TestQAChunker_PrefixSpaceSeparatorStrips(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -341,7 +341,7 @@ func TestQAChunker_HeadingNoTrailingSpace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -361,7 +361,7 @@ func TestQAChunker_ChineseLang(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -385,7 +385,7 @@ func TestQAChunker_MarkdownRendersHTML(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -415,7 +415,7 @@ func TestQAChunker_XLSXJSONRegression(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke failed: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 3 {
 		t.Fatalf("expected 3 chunks, got %d", len(chunks))
 	}
@@ -449,7 +449,7 @@ func TestQAChunkerSpreadsheetWireTreatsFirstRowAsQAData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 2 {
 		t.Fatalf("chunks = %#v, want both QA rows", out["chunks"])
 	}

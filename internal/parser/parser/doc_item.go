@@ -77,11 +77,13 @@ func (t TableItem) ToMap() map[string]any {
 }
 
 // ImageItem is an embedded image. Text is the alt text, Image the data
-// URL/base64 payload (possibly empty when omitted). Parsers emit standard
-// base64 with padding and no CR/LF in the payload.
+// URL/base64 payload (possibly empty when the parser emitted only a
+// MediaRef). Parsers emit standard base64 with padding and no CR/LF in the
+// payload.
 type ImageItem struct {
 	Text      string
 	Image     string
+	Media     *entity.MediaRef
 	Sheet     string
 	Positions Positions
 	Extra     map[string]any
@@ -90,8 +92,17 @@ type ImageItem struct {
 func (i ImageItem) ToMap() map[string]any {
 	m := map[string]any{
 		"text":     i.Text,
-		"image":    i.Image,
 		DocTypeKey: DocTypeImage,
+	}
+	// A ref-only image must not resurrect an empty "image" key: consumers use
+	// the key's absence to tell deferred bytes from an inline payload. Any
+	// present reference is emitted even when malformed, so the materializer
+	// can reject it instead of the conversion dropping it.
+	if i.Image != "" || i.Media == nil {
+		m["image"] = i.Image
+	}
+	if i.Media != nil {
+		m["media_ref"] = i.Media
 	}
 	if i.Sheet != "" {
 		m["sheet"] = i.Sheet
@@ -161,6 +172,9 @@ func DocItemFromMap(m map[string]any) DocItem {
 		if _, ok := m["image"]; ok {
 			return imageItemFromMap(m)
 		}
+		if entity.MediaRefFromAny(m["media_ref"]) != nil {
+			return imageItemFromMap(m)
+		}
 		return RawItem{M: m}
 	case DocTypeTable:
 		if _, ok := m["table"]; ok {
@@ -175,13 +189,17 @@ func DocItemFromMap(m map[string]any) DocItem {
 func textItemFromMap(m map[string]any) DocItem {
 	return TextItem{
 		Text:  stringField(m, "text"),
-		Extra: extraFromMap(m, "text", DocTypeKey, "ck_type"),
+		Extra: extraFromMap(m, "text", DocTypeKey),
 	}
 }
 
 func imageItemFromMap(m map[string]any) DocItem {
 	pos := wireToPositions(m["positions"], hasSheetIndex(m))
-	skip := []string{"text", "image", DocTypeKey, "ck_type", "sheet"}
+	media := entity.MediaRefFromAny(m["media_ref"])
+	skip := []string{"text", "image", DocTypeKey, "sheet"}
+	if media != nil {
+		skip = append(skip, "media_ref")
+	}
 	if pos != nil {
 		// Parsed into the typed field: it owns "positions", so strip it from
 		// Extra. Both [][]float64 (office/xlsx) and [][]any (PDF crop regions
@@ -192,6 +210,7 @@ func imageItemFromMap(m map[string]any) DocItem {
 	return ImageItem{
 		Text:      stringField(m, "text"),
 		Image:     stringField(m, "image"),
+		Media:     media,
 		Sheet:     stringField(m, "sheet"),
 		Positions: pos,
 		Extra:     extraFromMap(m, skip...),
@@ -209,7 +228,7 @@ func tableItemFromMap(m map[string]any) DocItem {
 		return RawItem{M: m}
 	}
 	pos := wireToPositions(m["positions"], hasSheetIndex(m))
-	skip := []string{"table", DocTypeKey, "ck_type", "sheet"}
+	skip := []string{"table", DocTypeKey, "sheet"}
 	if pos != nil {
 		skip = append(skip, "positions")
 	}
@@ -270,10 +289,6 @@ func ItemsToMaps(items []DocItem) []map[string]any {
 // present, so a stray Extra key can never shadow text/table/image/doc_type_kwd.
 func mergeExtra(m, extra map[string]any) map[string]any {
 	for k, v := range extra {
-		// ck_type is retired; a stray Extra key must not resurrect it.
-		if k == "ck_type" {
-			continue
-		}
 		if _, ok := m[k]; !ok {
 			m[k] = v
 		}

@@ -9,7 +9,21 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v1.0.0-rc3
+
+Released on Oct 30, 2026.
+
+1.0.0-rc3 is the third and final release candidate before the official v1.0.0 release. It fixes several issues found in rc2 and introduces new features and enhancements.
+
+Key updates:
+1. Introduced the decision model for evidence sufficiency judgment within the agentic tool loop, and the Categorize component for agents.
+2. Added support for multiple versions of ingestion pipeline DSL.
+3. Chat history now stores and displays prompts, token usage, and execution time.
+4. Compatible with existing v1.0.0-rc2 schema, allowing a direct upgrade.
+
 ## v1.0.0-rc2
+
+Released on Oct 16, 2026.
 
 1.0.0-rc2 is the second release candidate for v1.0.0. This release fixes several issues in rc1 and introduces new features and expanded support.
 
@@ -23,6 +37,8 @@ Key features, improvements and bug fixes in the latest releases.
 7. Added Docker images for the arm64 architecture.
 
 ## v1.0.0-rc1
+
+Released on Sep 29, 2026.
 
 RAGFlow v1.0.0-rc1 is a preview release of v1.0.0. This release marks a comprehensive rewrite of RAGFlow in Go, delivering a substantial reduction in system resource consumption and replacing the previous heavyweight deployment model with a lightweight architecture.
 
@@ -101,7 +117,7 @@ Released on Aug 28, 2026.
 - Retrieval API exposes rerank_candidates_count, knn top_k, and num_candidates ([#18768](https://github.com/infiniflow/ragflow/pull/18768), [#18737](https://github.com/infiniflow/ragflow/pull/18737))
 - Metadata filters pushed down to the metadata index for faster retrieval ([#18219](https://github.com/infiniflow/ragflow/pull/18219))
 - Chat settings form auto-scrolls to the error location on save ([#18811](https://github.com/infiniflow/ragflow/pull/18811))
-- Search page validates deleted knowledge bases ([#18522](https://github.com/infiniflow/ragflow/pull/18522))
+- Search page validates deleted Datasets ([#18522](https://github.com/infiniflow/ragflow/pull/18522))
 
 ### Bug fixes
 - Fixed PDF parsing failure in chat ([#18860](https://github.com/infiniflow/ragflow/pull/18860))
@@ -130,7 +146,7 @@ Released on Aug 28, 2026.
 Released on Aug 19, 2026.
 
 ### New features
-- Brand new document level and dataset level knowledge compilation, supporting Wiki, Graph, Tree, Page Index, Mind Map, Timeline, and To Skills ([#16777](https://github.com/infiniflow/ragflow/pull/16777), [#17546](https://github.com/infiniflow/ragflow/pull/17546), [#16797](https://github.com/infiniflow/ragflow/pull/16797), [#16749](https://github.com/infiniflow/ragflow/pull/16749), [#16899](https://github.com/infiniflow/ragflow/pull/16899), [#17996](https://github.com/infiniflow/ragflow/pull/17996))
+- Brand new document level and dataset level knowledge compilation, supporting Wiki, Graph, Tree, Page Index, Mindmap, Timeline, and To Skills ([#16777](https://github.com/infiniflow/ragflow/pull/16777), [#17546](https://github.com/infiniflow/ragflow/pull/17546), [#16797](https://github.com/infiniflow/ragflow/pull/16797), [#16749](https://github.com/infiniflow/ragflow/pull/16749), [#16899](https://github.com/infiniflow/ragflow/pull/16899), [#17996](https://github.com/infiniflow/ragflow/pull/17996))
    - The previous GraphRAG and RAPTOR features have been deprecated and are no longer available in the UI. Their replacements, Graph and Tree, are now integrated into Knowledge Compilation. Previously generated GraphRAG and RAPTOR content remains searchable.
 - Brand new Agentic RAG with four thinking modes when answering - Low, Medium, High, and Ultra ([#18303](https://github.com/infiniflow/ragflow/pull/18303), [#18138](https://github.com/infiniflow/ragflow/pull/18138), [#17342](https://github.com/infiniflow/ragflow/pull/17342), [#17444](https://github.com/infiniflow/ragflow/pull/17444))
 
@@ -342,7 +358,6 @@ Released on May 26, 2026.
 
 ### New features
 
-- Agent: Adds a **Browser** component that enables AI to autonomously navigate and interact with web pages. [#14888](https://github.com/infiniflow/ragflow/pull/14888)
 
 ### Improvements
 
@@ -894,8 +909,8 @@ Released on August 8, 2025.
 ### New agent templates (both workflow and agentic)
 
 - Text-to-SQL data expert Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
-- Choose Your Knowledge Base Workflow: Lets users select a dataset to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
-- Choose Your Knowledge Base Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
+- Choose Your Dataset Workflow: Lets users select a dataset to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
+- Choose Your Dataset Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
 
 ### Fixed Issues
 
@@ -1283,7 +1298,7 @@ Ensure that you [upgrade **both** your code **and** Docker image to this release
 #### Added documents
 
 - [Configurations](https://ragflow.io/docs/dev/configurations)
-- [Manage team members](./guides/team/team_management/index.md)
+- [Manage team members](guides/team/team_management/manage_team_members.md)
 - Run health check on RAGFlow's dependencies
 
 ## v0.13.0

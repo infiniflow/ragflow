@@ -93,7 +93,7 @@ func (c *CLI) LoginUserInteractive(email, password string) error {
 		return err
 	}
 
-	fmt.Printf("Login successfully\n")
+	fmt.Fprintln(os.Stderr, "Login successfully")
 
 	switch c.Config.CLIMode {
 	case AdminMode:

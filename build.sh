@@ -11,6 +11,11 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 
+# EE (enterprise) build extensions - sourced so the OSS body below stays
+# untouched and merge conflicts against the EE branch are limited to this
+# single line plus the guarded hook call inside run_native_integration_tests.
+[[ -f "${SCRIPT_DIR}/build_ee.sh" ]] && source "${SCRIPT_DIR}/build_ee.sh"
+
 # Build directories
 CPP_DIR="$PROJECT_ROOT/internal/binding/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
@@ -19,6 +24,23 @@ RAGFLOW_CLI_BINARY="$PROJECT_ROOT/bin/ragflow-cli"
 
 # Strip symbols from Go binaries (set via --strip / -s)
 STRIP_SYMBOLS=""
+
+# Extra Go build tags appended to every build (comma separated). This tree
+# carries the enterprise sources, so RAGFLOW_GO_TAGS=ee selects them through the
+# //go:build ee constraints; without it the same command lines build the
+# community edition.
+EXTRA_GO_TAGS="${RAGFLOW_GO_TAGS:-}"
+GO_BUILD_TAGS="cgo,static,sonic"
+[ -n "$EXTRA_GO_TAGS" ] && GO_BUILD_TAGS="$GO_BUILD_TAGS,$EXTRA_GO_TAGS"
+# The go test calls below predate `go build`, so they spell tags both
+# comma-separated ("cgo,static") and space-separated ("cgo static
+# integration"). Both forms accept the extra tags, so keep one variant each.
+EXTRA_TAGS_COMMA=""
+EXTRA_TAGS_SPACE=""
+if [ -n "$EXTRA_GO_TAGS" ]; then
+    EXTRA_TAGS_COMMA=",$EXTRA_GO_TAGS"
+    EXTRA_TAGS_SPACE=" $EXTRA_GO_TAGS"
+fi
 
 # Native static library settings. These are the user-cache paths (~/ragflow-native-libs/).
 # If /opt/ragflow-native-libs/ exists (pre-seeded in CI runner image), it takes priority
@@ -166,10 +188,10 @@ _seed_from_system() {
 # pre-seed first, then the network. A failure here is deliberately NOT fatal —
 # the loader stays the final gate, and its panic message names the file.
 CL100K_TABLE_URL="https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
-CL100K_TABLE_RELPATH="ragflow_deps/cl100k_base.tiktoken"
+CL100K_TABLE_RELPATH="deps/cl100k_base.tiktoken"
 SYSTEM_DEPS_TOKENIZER="/opt/ragflow_deps"
 
-# Provision the cl100k_base BPE table into ragflow_deps/ (no-op if present).
+# Provision the cl100k_base BPE table into deps/ (no-op if present).
 # Returns 0 when the table is in place, 1 when it could not be provisioned.
 _ensure_cl100k_table() {
     local dest="${PROJECT_ROOT}/${CL100K_TABLE_RELPATH}"
@@ -344,7 +366,7 @@ check_ort_version_consistency() {
 # that lacks those custom slots links successfully and only fails at runtime.
 # The check below catches that by comparing the local release ZIP against the
 # published {asset}.sha256 sidecar (same source of truth the download scripts
-# use). Devs who ran a download script have the zip under ragflow_deps/; CI
+# use). Devs who ran a download script have the zip under deps/; CI
 # seeds from /opt and has no zip, where the bake is authoritative.
 check_onnxruntime_deps() {
     # Ensure TARGET_OS/TARGET_ARCH are resolved. ort_static_lib_prefix below
@@ -434,7 +456,7 @@ check_onnxruntime_deps() {
     # macOS zip against the Linux digest would warn on every build, so an
     # unknown target verifies nothing instead.
     local asset="onnxruntime-v${ort_version}-$(ort_release_target).zip"
-    local zip_path="${PROJECT_ROOT}/ragflow_deps/${asset}"
+    local zip_path="${PROJECT_ROOT}/deps/${asset}"
     local expected=""
     case "$asset" in
         onnxruntime-v*-linux-x86_64.zip)
@@ -495,12 +517,12 @@ check_office_oxide_deps() {
         local found_version
         found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
         echo -e "${YELLOW}office_oxide native lib version mismatch (required v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}); refreshing from download${NC}"
-        rm -rf "${OFFICE_OXIDE_PREFIX}" "${PROJECT_ROOT}/ragflow_deps/$(office_oxide_asset)"
+        rm -rf "${OFFICE_OXIDE_PREFIX}" "${PROJECT_ROOT}/deps/$(office_oxide_asset)"
         if ! (cd "${PROJECT_ROOT}" && uv run tools/scripts/download_dev_deps.py); then
             echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
             echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
             echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
-            echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/$(office_oxide_asset)"
+            echo "    rm -rf ~/ragflow-native-libs/office_oxide deps/$(office_oxide_asset)"
             echo "    uv run tools/scripts/download_dev_deps.py"
             exit 1
         fi
@@ -628,7 +650,7 @@ check_pdf_oxide_deps() {
                 echo -e "${RED}Error: pdf_oxide native lib version mismatch${NC}"
                 echo "  Required: v${PDF_OXIDE_VERSION}; found: ${found_version:-unknown}"
                 echo "  A stale lib silently reverts PDF parsing fixes. Refresh:"
-                echo "    rm -rf ${PDF_OXIDE_PREFIX} ragflow_deps/$(pdf_oxide_asset)"
+                echo "    rm -rf ${PDF_OXIDE_PREFIX} deps/$(pdf_oxide_asset)"
                 echo "    uv run tools/scripts/download_dev_deps.py"
                 return 1
                 ;;
@@ -792,12 +814,12 @@ build_go() {
     echo "Building RAGFlow binary: $RAGFLOW_CLI_BINARY, $RAGFLOW_SERVER_BINARY"
     set -x
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
-        go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
+        go build -tags "$GO_BUILD_TAGS" "${strip_flags[@]}" -o "$RAGFLOW_CLI_BINARY" cmd/ragflow-cli.go
 
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go build -tags cgo,static,sonic "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
-        cmd/ragflow_server.go cmd/deepdoc_server_ee.go
+        go build -tags "$GO_BUILD_TAGS" "${strip_flags[@]}" -o "$RAGFLOW_SERVER_BINARY" \
+        ./cmd
     set +x
 
 
@@ -903,11 +925,10 @@ setup_cgo_env() {
     #     closure is small. --dynamic-list exports just OrtGetApiBase (the only
     #     symbol dlopen needs) and leaves Go's runtime symbols untouched, unlike
     #     a "local: *" version script which breaks PIE absolute relocations.
-    #   macOS (ld64): no GNU ld flags exist, so pull the archives in with
-    #     -force_load and export them with -export_dynamic. This path is written
-    #     but NOT yet verified on real Apple-Silicon hardware — the dlopen(NULL)
-    #     resolution of OrtGetApiBase under -export_dynamic must be confirmed
-    #     there. (待 Mac 验证)
+    #   macOS (ld64): ld64 uses -u _OrtGetApiBase to pull the OrtGetApiBase
+    #     symbol from the static archive without -force_load (which would pull
+    #     all unused objects and missing transitive dependencies), and exports
+    #     it via -export_dynamic so runtime dlopen(NULL) resolves it.
     #
     # Seed the static ORT archives from the system pre-bake (/opt, laid down
     # by the CI runner image) into the user cache before the link check
@@ -936,20 +957,11 @@ setup_cgo_env() {
     done
 
     if [ "$TARGET_OS" = "darwin" ]; then
-        # ld64 has no --undefined / --dynamic-list spelled the GNU way.
-        # Force-load each archive so ORT's lazily-registered execution
-        # providers are pulled in, and export the symbols so the runtime
-        # dlopen(NULL) can resolve OrtGetApiBase.
-        #
-        # NOTE: the macOS link path is NOT yet verified on a real Apple
-        # Silicon machine — the dlopen(NULL) symbol resolution of
-        # OrtGetApiBase under -export_dynamic must be confirmed there.
-        # (待 Mac 验证)
-        local ort_force=""
-        for f in $ort_a_versioned; do
-            ort_force="$ort_force -Wl,-force_load,$f"
-        done
-        export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,-export_dynamic${ort_force} -lc++"
+        # ld64 uses -u _OrtGetApiBase (with leading underscore) to force-pull
+        # OrtGetApiBase without -force_load, avoiding dragging in unneeded
+        # objects from libonnxruntime.a. Export dynamic symbols so the runtime
+        # dlopen(NULL) resolves OrtGetApiBase.
+        export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,-export_dynamic -Wl,-u,_OrtGetApiBase $ort_a_versioned -lc++"
     else
         # Export exactly one symbol (OrtGetApiBase) for the binding's
         # dlopen(NULL)+dlsym lookup via --dynamic-list (NOT --version-script
@@ -993,6 +1005,7 @@ setup_cgo_env() {
             export CGO_LDFLAGS="$CGO_LDFLAGS \
                 -framework CoreGraphics -framework CoreFoundation \
                 -framework Security -framework SystemConfiguration \
+                -framework Foundation \
                 -liconv -lresolv -lc++"
             ;;
     esac
@@ -1019,7 +1032,7 @@ run_go_tests() {
     fi
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go test -tags cgo,static -count=1 "$@"
+        go test -tags "cgo,static${EXTRA_TAGS_COMMA}" -count=1 "$@"
 
     run_native_tests
 }
@@ -1037,7 +1050,7 @@ run_native_tests() {
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags cgo,static -count=1 ./internal/deepdoc/native/... )
+      go test -tags "cgo,static${EXTRA_TAGS_COMMA}" -count=1 ./internal/deepdoc/native/... )
 }
 
 # Run the model-backed integration tests of the native package and the
@@ -1076,21 +1089,29 @@ run_native_integration_tests() {
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo static integration fetch_testdata" -count=1 "${native_run_filter[@]}" ./internal/deepdoc/native/... )
+      go test -tags "cgo static integration fetch_testdata${EXTRA_TAGS_SPACE}" -count=1 "${native_run_filter[@]}" ./internal/deepdoc/native/... )
 
     print_section "Running native integration concurrency tests (race detector on)"
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo static integration fetch_testdata" -race -count=1 \
+      go test -tags "cgo static integration fetch_testdata${EXTRA_TAGS_SPACE}" -race -count=1 \
       -run 'TestInferenceConcurrency' ./internal/deepdoc/native/... )
 
     print_section "Running native_analyzer race tests (race detector on)"
     ( cd "$PROJECT_ROOT" && \
       GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
       CGO_ENABLED=1 \
-      go test -tags "cgo static integration fetch_testdata" -race -count=1 \
+      go test -tags "cgo static integration fetch_testdata${EXTRA_TAGS_SPACE}" -race -count=1 \
       ./internal/deepdoc/parser/pdf/inference/native_analyzer/... )
+
+    # EE build extensions hook (build_ee.sh, sourced near the top of this
+    # script). Guarded so an empty/absent build_ee.sh is a safe no-op on the
+    # OSS path; the EE build defines run_ee_native_integration_tests to run its
+    # own native integration/parity tests at this point.
+    if declare -F run_ee_native_integration_tests >/dev/null 2>&1; then
+        run_ee_native_integration_tests
+    fi
 }
 
 # Run Go tests gated behind a build tag (or space-separated tag list), e.g.
@@ -1112,7 +1133,7 @@ run_go_tests_tagged() {
     fi
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
         CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
-        go test -tags "${tags} static" -count=1 "$@"
+        go test -tags "${tags} static${EXTRA_TAGS_SPACE}" -count=1 "$@"
 }
 
 # Clean build artifacts

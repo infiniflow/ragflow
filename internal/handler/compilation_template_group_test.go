@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 )
 
@@ -63,11 +64,11 @@ func newCompilationTemplateGroupHandlerRouter() *gin.Engine {
 	h := NewCompilationTemplateGroupHandler(service.NewCompilationTemplateGroupService())
 	r := gin.New()
 	r.POST("/api/v1/compilation-template-groups", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "user-1"})
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", "user-1"))
 		h.Save(c)
 	})
 	r.PUT("/api/v1/compilation-template-groups/:group_id", func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "user-1"})
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", "user-1"))
 		h.Update(c)
 	})
 	return r

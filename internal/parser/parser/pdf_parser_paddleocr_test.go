@@ -34,7 +34,7 @@ func TestPaddleOCRBlockPosition(t *testing.T) {
 	}
 }
 
-func TestPaddleOCRPDFResultKeepsUnlocatedText(t *testing.T) {
+func TestPaddleOCRPDFResultDropsUnlocatedMedia(t *testing.T) {
 	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
 	if err != nil {
 		t.Fatal(err)
@@ -48,6 +48,8 @@ func TestPaddleOCRPDFResultKeepsUnlocatedText(t *testing.T) {
 	if item["text"] != "keep me" || item["positions"] != nil {
 		t.Fatalf("item=%v", item)
 	}
+	// The image-only block has neither body text nor a crop region: a
+	// placeholder would index as body text (#21218), so it is dropped.
 }
 
 func TestPaddleOCRPDFResultKeepsUnstructuredTableText(t *testing.T) {
@@ -116,10 +118,6 @@ func TestPaddleOCRTitleLabels(t *testing.T) {
 			item := result.JSON[0].ToMap()
 			if item["layout"] != tc.layout || item["text"] != tc.want {
 				t.Fatalf("title semantics: %v", item)
-			}
-			formatted := pdfItemsToResult("title.pdf", ItemsToMaps(result.JSON), "markdown", 1)
-			if formatted.Markdown != tc.want {
-				t.Fatalf("markdown=%q; want %q", formatted.Markdown, tc.want)
 			}
 		})
 	}

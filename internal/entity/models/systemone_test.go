@@ -3,9 +3,11 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func newSystemOneForTest(baseURL string) *SystemOneModel {
@@ -92,6 +94,55 @@ func TestSystemOneListModelsProbesBaseURL(t *testing.T) {
 	}
 }
 
+// A decision model that cannot answer must not be addable: verification is the
+// last check before the model is saved, and it is the only one that speaks the
+// decision endpoint.
+//
+// The request is a well-formed one on purpose. A malformed request is rejected
+// before the transport call, so a test that sent one would pass here without the
+// server ever being asked — and would stay green if verification's status
+// handling broke. The "asked" counter below makes that impossible.
+func TestSystemOneDecideFailsWhenEndpointRejects(t *testing.T) {
+	withSSRFBypass(t)
+
+	for _, tc := range []struct {
+		name   string
+		status int
+	}{
+		{"rejected credential", http.StatusUnauthorized},
+		{"no decision endpoint", http.StatusNotFound},
+		{"server error", http.StatusInternalServerError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asked := false
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				asked = true
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(`{"error":"no"}`))
+			}))
+			defer srv.Close()
+
+			apiKey := "sk-test"
+			modelName := "decision-model-preview"
+			resp, err := newSystemOneForTest(srv.URL+"/v1").Decide(
+				context.Background(), &modelName, &DecideRequest{
+					State:     map[string]string{"passage": ""},
+					Questions: map[string]Question{"probe": Noul{Instructions: "Is this relevant?"}},
+				}, &APIConfig{ApiKey: &apiKey}, nil,
+			)
+			if err == nil {
+				t.Fatalf("Decide accepted status %d", tc.status)
+			}
+			if resp != nil {
+				t.Errorf("Decide returned a response alongside the error")
+			}
+			if !asked {
+				t.Fatal("the endpoint was never asked, so this proves nothing about its answer")
+			}
+		})
+	}
+}
+
 // An unreachable base URL must fail the listing rather than fall back to the
 // static catalog, or the model would appear even though it cannot be called.
 func TestSystemOneListModelsFailsWhenProbeFails(t *testing.T) {
@@ -112,5 +163,66 @@ func TestSystemOneListModelsFailsWhenProbeFails(t *testing.T) {
 	}
 	if models != nil {
 		t.Errorf("models=%v, want nil on failure", models)
+	}
+}
+
+func TestSystemOneDecide(t *testing.T) {
+	for _, path := range []string{"/v1", "/v1/systemone/"} {
+		t.Run(path, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/v1/systemone" || r.Header.Get("Authorization") != "Bearer test-key" {
+					t.Errorf("unexpected decision endpoint or credentials")
+				}
+				var request struct {
+					Model     string                                         `json:"model"`
+					State     map[string]string                              `json:"state"`
+					Questions map[string]struct{ Type, Instructions string } `json:"questions"`
+				}
+				if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+					t.Error(err)
+				}
+				if request.Model != "decision-model-preview" || request.State["query"] != "hello" || request.Questions["greeting"].Type != "noul" || request.Questions["greeting"].Instructions != "Is this a greeting?" {
+					t.Errorf("incorrect decision payload: %+v", request)
+				}
+				_, _ = w.Write([]byte(`{"answers":{"greeting":{"type":"noul","noul":0}},"usage":{"input_tokens":12}}`))
+			}))
+			defer srv.Close()
+			key, name := "test-key", "decision-model-preview"
+			result, err := newSystemOneForTest(srv.URL+path).Decide(t.Context(), &name, &DecideRequest{
+				State: map[string]string{"query": "hello"}, Questions: map[string]Question{"greeting": Noul{Instructions: "Is this a greeting?"}},
+			}, &APIConfig{ApiKey: &key}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Answers["greeting"].Noul == nil || *result.Answers["greeting"].Noul != 0 || result.Usage.InputTokens != 12 {
+				t.Fatalf("unexpected response: %+v", result)
+			}
+		})
+	}
+}
+
+func TestSystemOneDecideValidation(t *testing.T) {
+	model := newSystemOneForTest("http://unused")
+	key, name := "test-key", "decision-model-preview"
+	for _, count := range []int{0, MaxDecisionQuestions + 1} {
+		questions := make(map[string]Question, count)
+		for i := 0; i < count; i++ {
+			questions[string(rune('a'+i))] = Noul{Instructions: "Question"}
+		}
+		if _, err := model.Decide(t.Context(), &name, &DecideRequest{Questions: questions}, &APIConfig{ApiKey: &key}, nil); err == nil {
+			t.Fatalf("accepted %d questions", count)
+		}
+	}
+}
+
+func TestSystemOneDecideDeadline(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	defer srv.Close()
+	key, name := "test-key", "decision-model-preview"
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+	defer cancel()
+	_, err := newSystemOneForTest(srv.URL).Decide(ctx, &name, &DecideRequest{Questions: map[string]Question{"a": Noul{Instructions: "Question"}}}, &APIConfig{ApiKey: &key}, nil)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Decide = %v; want deadline exceeded", err)
 	}
 }

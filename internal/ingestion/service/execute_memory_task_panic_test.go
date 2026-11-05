@@ -17,7 +17,7 @@ import (
 // the memory-extraction path (HandleSaveToMemoryTask) is recovered by
 // executeMemoryTask. Before the fix, executeMemoryTask had no recover guard
 // (unlike the ingestion path's settleMessage), so a panic crashed the worker
-// goroutine. With max_concurrent_workers defaults that can be as low as 1, a
+// goroutine. With concurrent_workers defaults that can be as low as 1, a
 // single panicking memory task permanently removed the only worker, after which
 // every normal document parse (PDF etc.) stalled in the queue — exactly the
 // "parsing works at first, then breaks after some memory tasks" symptom.

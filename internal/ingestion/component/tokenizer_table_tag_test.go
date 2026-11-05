@@ -20,6 +20,7 @@ package component
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"testing"
 )
 
@@ -50,7 +51,7 @@ func TestTokenizerComponent_Embedding_SkipsOnlyEmptyTableChunk(t *testing.T) {
 	if len(stub.callInputs) != 2 || len(stub.callInputs[1]) != 1 || stub.callInputs[1][0] != "real text" {
 		t.Fatalf("content call inputs = %v, want [real text]", stub.callInputs)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 2 {
 		t.Fatalf("output chunks = %d, want 2 (a skipped chunk stays in the payload)", len(chunks))
 	}

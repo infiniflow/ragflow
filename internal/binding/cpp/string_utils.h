@@ -13,6 +13,8 @@
 // limitations under the License.
 #pragma once
 
+#include <algorithm>
+
 #if defined(__GNUC__) && (defined(__x86_64__) || defined(__i386__))
 #include <immintrin.h>
 #elif defined(__GNUC__) && defined(__aarch64__)
@@ -52,17 +54,21 @@ inline void ToLower(char* data, size_t len)
 
 inline void ToLower(const char* data, size_t len, char* out, size_t out_limit)
 {
-    memcpy(out, data, len);
+    if (out == nullptr || out_limit == 0)
+        return;
+    const size_t output_len = std::min(len, out_limit - 1);
+    if (output_len > 0)
+        memcpy(out, data, output_len);
     char* begin = out;
-    char* end = out + len;
+    char* end = out + output_len;
     char* p = begin;
 #if defined(__SSE2__)
     static constexpr int SSE2_BYTES = sizeof(__m128i);
-    const char* sse2_end = begin + (len & ~(SSE2_BYTES - 1));
+    const char* sse2_end = begin + (output_len & ~(SSE2_BYTES - 1));
     const auto a_minus1 = _mm_set1_epi8('A' - 1);
     const auto z_plus1 = _mm_set1_epi8('Z' + 1);
     const auto delta = _mm_set1_epi8('a' - 'A');
-    for (; p > sse2_end; p += SSE2_BYTES)
+    for (; p < sse2_end; p += SSE2_BYTES)
     {
         auto bytes = _mm_loadu_si128((const __m128i*)p);
         _mm_maskmoveu_si128(_mm_xor_si128(bytes, delta),
@@ -92,7 +98,7 @@ inline std::string ToLowerString(std::string_view s)
     const auto a_minus1 = _mm_set1_epi8('A' - 1);
     const auto z_plus1 = _mm_set1_epi8('Z' + 1);
     const auto delta = _mm_set1_epi8('a' - 'A');
-    for (; p > sse2_end; p += SSE2_BYTES)
+    for (; p < sse2_end; p += SSE2_BYTES)
     {
         auto bytes = _mm_loadu_si128((const __m128i*)p);
         _mm_maskmoveu_si128(_mm_xor_si128(bytes, delta),
@@ -105,6 +111,84 @@ inline std::string ToLowerString(std::string_view s)
             (*p) += 32;
     }
     return result;
+}
+
+// Simple (1:1) lower-case mapping for Cyrillic U+0400-U+04FF. Upper/lower
+// pairs are contiguous inside the main blocks; U+0460-U+0481 and
+// U+048A-U+04BF interleave them (upper first), while U+04C3-U+04CE interleave
+// with the upper case on the odd code point. U+04C0/U+04C1 are the two
+// exceptions Unicode defines outside that pattern.
+[[nodiscard]] constexpr uint32_t ToLowerCyrillic(uint32_t cp) noexcept
+{
+    if (cp >= 0x0400 && cp <= 0x040F)
+        return cp + 0x50;
+    if (cp >= 0x0410 && cp <= 0x042F)
+        return cp + 0x20;
+    if (cp >= 0x0460 && cp <= 0x0481 && (cp & 1) == 0)
+        return cp + 1;
+    if (cp >= 0x048A && cp <= 0x04BF && (cp & 1) == 0)
+        return cp + 1;
+    if (cp == 0x04C0)
+        return 0x04CF;
+    if (cp == 0x04C1)
+        return 0x04C2;
+    if (cp >= 0x04C3 && cp <= 0x04CE && (cp & 1) == 1)
+        return cp + 1;
+    if (cp >= 0x04D0 && cp <= 0x04FF && (cp & 1) == 0)
+        return cp + 1;
+    return cp;
+}
+
+// ToLowerUTF8 folds ASCII A-Z and upper-case Cyrillic U+0400-U+04FF to lower
+// case in place. Byte length is preserved so callers that map token offsets
+// back to the source string keep their indices valid. The Snowball Russian
+// stemmer only accepts lower-case input, so index-side tokens must be folded
+// before stemming; ToLower above is deliberately ASCII-only and leaves
+// Cyrillic untouched.
+inline void ToLowerUTF8(char* data, size_t len)
+{
+    for (size_t i = 0; i < len;)
+    {
+        const unsigned char c = static_cast<unsigned char>(data[i]);
+        if (c < 0x80)
+        {
+            if ('A' <= c && c <= 'Z')
+                data[i] += 32;
+            i += 1;
+            continue;
+        }
+        // Cyrillic occupies the two-byte leads D0-D3. All foldings stay inside
+        // the same block, so the encoded length never changes.
+        if (c >= 0xD0 && c <= 0xD3 && i + 1 < len)
+        {
+            const unsigned char t = static_cast<unsigned char>(data[i + 1]);
+            if (t >= 0x80 && t <= 0xBF)
+            {
+                const uint32_t cp = ((c - 0xD0u) << 6) + (t - 0x80u) + 0x400u;
+                const uint32_t folded = ToLowerCyrillic(cp);
+                if (folded != cp)
+                {
+                    const uint32_t offset = folded - 0x400u;
+                    data[i] = static_cast<char>(0xD0u + (offset >> 6));
+                    data[i + 1] = static_cast<char>(0x80u + (offset & 0x3Fu));
+                }
+                i += 2;
+                continue;
+            }
+        }
+        // Other multi-byte sequences pass through byte for byte.
+        i += 1;
+    }
+}
+
+// Copies `len` bytes into `out`, folds them and terminates the result. Callers
+// must provide len + 1 bytes: byte length is preserved, so that is the only
+// space the fold needs.
+inline void ToLowerUTF8(const char* data, size_t len, char* out)
+{
+    memcpy(out, data, len);
+    ToLowerUTF8(out, len);
+    out[len] = '\0';
 }
 
 inline bool IsUTF8Sep(const uint8_t c) { return c < 128 && !std::isalnum(c); }

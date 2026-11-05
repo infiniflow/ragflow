@@ -91,14 +91,6 @@ Experimente o nosso serviço na nuvem em [https://cloud.ragflow.io](https://clou
 
 Consulte as [notas de versão completas](https://ragflow.io/docs/dev/release_notes) para ver outras atualizações.
 
-## 🎉 Fique Ligado
-
-⭐️ Dê uma estrela no nosso repositório para se manter atualizado com novas funcionalidades e melhorias empolgantes! Receba notificações instantâneas sobre novos lançamentos! 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
 ## 🌟 Principais Funcionalidades
 
 ### 🍭 **"Qualidade entra, qualidade sai"**
@@ -178,7 +170,7 @@ O Docker é indicado para avaliação rápida, testes de integração e produç�
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc2
+   git checkout v1.0.0-rc3
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -214,10 +206,10 @@ Use `docker/.env` e `docker/docker-compose.yml`. Consulte a [configuração do D
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run ragflow_deps/download_deps.py
+   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py` baixa e descompacta pdfium, pdf_oxide, office_oxide e onnxruntime em `~/ragflow-native-libs`; `download_deps.py` baixa o vocabulário cl100k, os modelos DeepDoc e os recursos de tokenizadores de embedding em `ragflow_deps/`. Ambos são scripts Python; o `uv run` instala automaticamente as dependências declaradas (`requests`, além de `huggingface-hub` para os downloads de modelos e tokenizadores). Pule esta etapa se você já preparou os mesmos recursos por outros meios. Quando iniciado a partir da raiz do repositório, os serviços Go encontram `internal/rag/res/deepdoc` automaticamente; para iniciar de outro diretório, defina `DEEPDOC_MODEL_DIR` com seu caminho absoluto.
+   `download_dev_deps.py` baixa e descompacta pdfium, pdf_oxide, office_oxide e onnxruntime em `~/ragflow-native-libs`; `download_deps.py` baixa o vocabulário cl100k, os modelos DeepDoc e os recursos de tokenizadores de embedding em `deps/`. Ambos são scripts Python; o `uv run` instala automaticamente as dependências declaradas (`requests`, além de `huggingface-hub` para os downloads de modelos e tokenizadores). Pule esta etapa se você já preparou os mesmos recursos por outros meios. Quando iniciado a partir da raiz do repositório, os serviços Go encontram `internal/rag/res/deepdoc` automaticamente; para iniciar de outro diretório, defina `DEEPDOC_MODEL_DIR` com seu caminho absoluto.
 
 3. Compile os serviços:
 

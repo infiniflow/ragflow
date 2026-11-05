@@ -16,6 +16,7 @@ import {
 import { IAgenticRagSettings } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
 import {
+  deriveModelPreset,
   removeUselessFieldsFromValues,
   setLLMSettingEnabledValues,
 } from '@/utils/form';
@@ -73,7 +74,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(formSchema),
     // shouldUnregister: false keeps every field mounted in the form state, which
-    // includes all nine per-provider *_api_key fields. Switching provider therefore
+    // includes all per-provider *_api_key fields. Switching provider therefore
     // KEEPS the keys already typed for the others and saves them with the dialog —
     // deliberate (a user may switch back), but it is why the payload can carry more
     // than one provider key.
@@ -132,6 +133,14 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       agentic_rag: agenticRag,
     };
 
+    // The decision TreeSelect clears to '', but the backend reads only a
+    // missing key / null as "inherit the tenant default" and would treat ''
+    // as a literal empty model id. Normalise at the point where form values
+    // become the wire payload, so clearing the override really persists.
+    if (nextValues.decision_id === '') {
+      nextValues.decision_id = null;
+    }
+
     updateChat({
       chatId: id!,
       params: {
@@ -166,6 +175,12 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         ...data.prompt_config,
         // reset() skips undefined values, so fall back to '' to clear the field
         web_search_provider: getWebSearchProvider(data.prompt_config) ?? '',
+      },
+      llm_setting: {
+        ...data.llm_setting,
+        // The preset name is never persisted (removeUselessFieldsFromValues
+        // strips it on save); derive it from the stored sampling values.
+        parameter: deriveModelPreset(data.llm_setting),
       },
       ...llmSettingEnabledValues,
       keywords_similarity_weight: keywordsSimilarityWeight,

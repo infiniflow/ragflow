@@ -117,8 +117,10 @@ type TextBox struct {
 	Pages      []int
 	LayoutType string
 	LayoutNo   string
-	ColID      int
-	R          int
+	// FigureBounds retains DLA geometry in PDF points until figure consolidation.
+	FigureBounds *Position
+	ColID        int
+	R            int
 	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /
 	// ocrMergeChars), as opposed to one built from embedded PDF chars
 	// (CharsToBoxes). It scopes OCR-only post-processing (see layout.Dedup*)
@@ -193,6 +195,12 @@ type TableItem struct {
 	// by the pipeline and used by parity/replay harnesses to map replay
 	// intermediates (which are keyed by page) back onto the correct table.
 	Page int
+	// RenderVH marks tables assembled by an EE V/H (vertical/horizontal span)
+	// assembler. It is false for every OSS-built table; the EE tree's
+	// AttachSpanInfo sets it and the EE tree's ConstructTableVH renders those
+	// tables. It is a plain (non-build-tagged) field so the shared
+	// ConstructTable can dispatch without branching on the edition.
+	RenderVH bool
 }
 
 // TSRCell represents one table cell from TSR.
@@ -205,6 +213,11 @@ type TSRCell struct {
 	// so the production table assembly needs it to de-duplicate rows/columns
 	// the same way Python does.
 	Score float64
+	// ColSpan / RowSpan record grid span from the v/h edge-clustering
+	// assembler (deepdoc/vision/tsr.py port). 0 means no span. They are set
+	// only by the EE V/H builder; the OSS pipeline leaves them at zero.
+	ColSpan int
+	RowSpan int
 }
 
 func (c TSRCell) Bounds() (float64, float64, float64, float64) {
@@ -385,6 +398,18 @@ type TableBuilder interface {
 	Name() string
 	DetectCells(ctx context.Context, cropped image.Image) ([]TSRCell, error)
 	GroupCells(cells []TSRCell) [][]TSRCell
+	// FinalizeGrid turns the annotated structure grid plus the table's
+	// OCR/text boxes into the final grid. The DeepDoc builder already
+	// folds OCR text into the grid inline during processOneTable's box-RC
+	// grouping, so its implementation is the identity function; an EE V/H
+	// builder that defers OCR overlay to after structure grouping performs
+	// the overlay here.
+	FinalizeGrid(annotGrid [][]TSRCell, boxes []TextBox) [][]TSRCell
+	// AttachSpanInfo attaches any builder-specific span geometry onto the
+	// assembled table item. The DeepDoc builder's TableItem carries no
+	// such geometry, so its implementation is a no-op; an EE V/H builder
+	// uses this step to attach V/H span info.
+	AttachSpanInfo(item *TableItem)
 }
 
 // Rectangular is any 2D axis-aligned rectangle that can report its bounds.

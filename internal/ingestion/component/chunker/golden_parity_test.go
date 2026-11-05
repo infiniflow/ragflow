@@ -46,6 +46,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -230,7 +231,7 @@ func invokeChunker(t *testing.T, tc parityCase) []map[string]any {
 	if msg, ok := out["_ERROR"].(string); ok && msg != "" {
 		t.Fatalf("Go returned _ERROR while Python succeeded: %s", msg)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	return chunks
 }
 

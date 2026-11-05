@@ -74,10 +74,7 @@ describe('parser FormSchema', () => {
 
   it('accepts video and audio setups without a model', () => {
     const result = FormSchema.safeParse({
-      setups: [
-        { fileFormat: FileType.Video, output_format: 'text' },
-        { fileFormat: FileType.Audio, output_format: 'text' },
-      ],
+      setups: [{ fileFormat: FileType.Video }, { fileFormat: FileType.Audio }],
     });
     expect(result.success).toBe(true);
   });
@@ -89,7 +86,7 @@ describe('parser FormSchema', () => {
 
   it('still requires fields for email', () => {
     const result = FormSchema.safeParse({
-      setups: [{ fileFormat: FileType.Email, output_format: 'text' }],
+      setups: [{ fileFormat: FileType.Email }],
     });
     expect(result.success).toBe(false);
 
@@ -97,7 +94,6 @@ describe('parser FormSchema', () => {
       setups: [
         {
           fileFormat: FileType.Email,
-          output_format: 'text',
           fields: Object.values(ParserFields),
         },
       ],

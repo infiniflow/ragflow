@@ -38,6 +38,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 	componentpkg "ragflow/internal/ingestion/component"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
 
@@ -98,7 +99,7 @@ func (e *embedder) limiter() tokenizer.Limiter {
 		}
 		if id != "" && !tokenizer.CounterExact(id) {
 			e.limiterErr = fmt.Errorf(
-				"embedding tokenizer %q is declared for %s but its asset is unavailable (check that ragflow_deps/huggingface.co is present; run `uv run ragflow_deps/download_deps.py`): refusing to count with the calibrated estimate",
+				"embedding tokenizer %q is declared for %s but its asset is unavailable (check that deps/huggingface.co is present; run `uv run deps/download_deps.py`): refusing to count with the calibrated estimate",
 				id, e.quotaKey())
 		}
 		e.limiterVal = tokenizer.LimiterFor(id, string(e.quotaKey()), tokenizer.DefaultCalibration())
@@ -707,7 +708,7 @@ func init() {
 			return kb.EmbdID, nil
 		},
 		func(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error) {
-			embeddingModel, err := modelFactory.NewEmbeddingModel(ctx, service.ModelAccess{TenantID: tenantID}, embdID)
+			embeddingModel, err := modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
 			if err != nil {
 				return nil, err
 			}

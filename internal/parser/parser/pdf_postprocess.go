@@ -14,7 +14,6 @@ import (
 // per-box geometry signals those detectors rely on are still intact; they are
 // intentionally not repeated here.
 type pdfPostProcessOptions struct {
-	outputFormat       string
 	pageWidth          float64
 	zoom               float64
 	enableMultiColumn  bool

@@ -3,6 +3,7 @@ package indexdoc
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,27 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 )
+
+// TestStampDatasetPagerank pins the index-time stamp: a configured dataset
+// pagerank lands on every chunk the run indexes, and zero leaves chunks
+// untouched (Python only stamps a truthy pagerank).
+func TestStampDatasetPagerank(t *testing.T) {
+	chunks := []map[string]any{{"id": "a"}, {"id": "b"}}
+
+	StampDatasetPagerank(chunks, 0)
+	for _, chunk := range chunks {
+		if _, ok := chunk[common.PAGERANK_FLD]; ok {
+			t.Fatalf("zero pagerank stamped a field: %#v", chunk)
+		}
+	}
+
+	StampDatasetPagerank(chunks, 7)
+	for _, chunk := range chunks {
+		if got := chunk[common.PAGERANK_FLD]; got != int64(7) {
+			t.Fatalf("pagerank_fea = %#v, want 7", got)
+		}
+	}
+}
 
 func TestProcessChunksForPipeline_PreservesTypedMetadata(t *testing.T) {
 	want := map[string]any{
@@ -668,15 +690,30 @@ func TestCleanupConsumedChunkFields_ImportantKwdDropsEmptyParts(t *testing.T) {
 
 // TestProcessChunksForPipeline_StripsPipelineOnlyFields pins the index boundary
 // against the parser/chunker bookkeeping keys: none of them is a chunk-store
-// column, and a strict engine rejects the whole insert over one of them
-// ("Column ck_type not found in table", InfinityException 3013). ES only
-// swallowed them because its mapping is dynamic.
+// column, and a strict engine rejects the whole insert over one of them (e.g.
+// Infinity would reject an unknown column). ES only swallowed them because its
+// mapping is dynamic.
+//
+// The media_ref case is realistic rather than a bare map: the upload pass
+// replaces the parser reference with the persisted img_id, and a chunk that
+// still carries both must reach the index with the image key intact and no
+// trace of the run-scoped cache reference (scope or digest).
 func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
+	mediaRef := entity.MediaRef{
+		Format: "html",
+		Kind:   entity.MediaKindKV,
+		Scope:  "it-mediacache-index-boundary",
+		SHA256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+		MIME:   "image/png",
+		Size:   4,
+	}
 	ck := map[string]any{
 		"text": "hello",
 		// Every bookkeeping key the chunkers/parsers can leave on a chunk.
-		"ck_type": "text", "tk_nums": 3, "layout": "text", "layout_type": "text",
+		"tk_nums": 3, "layout": "text", "layout_type": "text",
 		"layoutno": "0", "image": "data:image/png;base64,AAAA",
+		"media_ref":     mediaRef,
+		"img_id":        "kb-1-chunk-1",
 		"context_above": "above", "context_below": "below", "page_number": 2,
 		"table_id": "t1", "sheet": "s1", "sheet_index": 0,
 		"headers": []string{"h"}, "cells": []string{"c"},
@@ -697,6 +734,18 @@ func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
 	}
 	if ck["doc_id"] != "doc-1" {
 		t.Errorf("doc_id = %v, want doc-1 (the strip must not touch persist fields)", ck["doc_id"])
+	}
+	if ck["img_id"] != "kb-1-chunk-1" {
+		t.Errorf("img_id = %v, want kb-1-chunk-1 (the persisted image key must survive the strip)", ck["img_id"])
+	}
+	encoded, err := json.Marshal(ck)
+	if err != nil {
+		t.Fatalf("marshal processed chunk: %v", err)
+	}
+	for _, leaked := range []string{mediaRef.Scope, mediaRef.SHA256} {
+		if strings.Contains(string(encoded), leaked) {
+			t.Errorf("processed chunk leaks media cache bookkeeping %q: %s", leaked, encoded)
+		}
 	}
 }
 

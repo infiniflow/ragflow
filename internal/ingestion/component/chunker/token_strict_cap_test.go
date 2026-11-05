@@ -114,7 +114,7 @@ func TestMergeByTokenSize_TextPathStrictCap(t *testing.T) {
 	}
 	tc := comp.(*TokenChunkerComponent)
 	out := tc.mergeByTokenSize(b.String(), nil, nil)
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) < 2 {
 		t.Fatalf("want multiple chunks, got %d", len(chunks))
 	}
@@ -139,7 +139,7 @@ func TestMergeByTokenSize_OversizedBoundarylessRunSplit(t *testing.T) {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
 	out := comp.(*TokenChunkerComponent).mergeByTokenSize(long, nil, nil)
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) < 2 {
 		t.Fatalf("oversized run must be split, got %d chunk(s)", len(chunks))
 	}
@@ -176,7 +176,7 @@ func TestInvokeTextPayload_HardCapEndToEnd(t *testing.T) {
 	if errMsg, _ := out["_ERROR"].(string); errMsg != "" {
 		t.Fatalf("Invoke error payload: %s", errMsg)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatalf("expected chunks, got %#v", out)
 	}
@@ -216,7 +216,7 @@ func TestInvokeJSONPayload_HardCapEndToEnd(t *testing.T) {
 	if errMsg, _ := out["_ERROR"].(string); errMsg != "" {
 		t.Fatalf("Invoke error payload: %s", errMsg)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) < 2 {
 		t.Fatalf("want multiple chunks, got %d", len(chunks))
 	}

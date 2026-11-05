@@ -76,7 +76,6 @@ type RetrievalRequest struct {
 	AllowDenseFallback       *bool
 	RerankID                 string
 	CrossLanguages           []string
-	TOCEnhance               bool
 	MetaDataFilter           map[string]any
 	RetrievalFrom            string
 	// DocScope restricts retrieval to a set of document ids (the doc_id list

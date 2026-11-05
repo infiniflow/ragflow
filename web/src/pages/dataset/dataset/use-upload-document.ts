@@ -1,19 +1,21 @@
 import { UploadFormSchemaType } from '@/components/file-upload-dialog';
 import { Modal } from '@/components/ui/modal/modal';
 import { useSetModalState } from '@/hooks/common-hooks';
+import { canvasVersionListQuery } from '@/hooks/use-agent-request';
 import {
   useRunDocument,
   useUploadDocument,
 } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { getUnSupportedFilesCount } from '@/utils/document-util';
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { buildUploadGapModalContent } from './parser-gap-content';
 import { useParserGapValidation } from './use-parser-gap-validation';
 import { hasUnsupportedTypeGap } from './utils';
 
-export const useHandleUploadDocument = () => {
+export const useHandleUploadDocument = (pipelineId?: string) => {
   const { t } = useTranslation();
   const {
     visible: documentUploadVisible,
@@ -23,6 +25,25 @@ export const useHandleUploadDocument = () => {
   const { uploadDocument, loading } = useUploadDocument();
   const { runDocumentByIds } = useRunDocument();
   const { findParseGaps, findDocumentParseGaps } = useParserGapValidation();
+  const queryClient = useQueryClient();
+
+  // The dataset's version list only feeds the parse-on-creation warning, so
+  // fetch it at submit time instead of on page entry — a dataset whose bound
+  // pipeline was deleted should not raise the request (and the global error
+  // notification) every time the file list opens. A fetch failure or an empty
+  // list means the pipeline can no longer parse.
+  const checkPipelineMissing = useCallback(async (): Promise<boolean> => {
+    if (!pipelineId) return false;
+    try {
+      const versions = await queryClient.fetchQuery({
+        ...canvasVersionListQuery(pipelineId),
+        staleTime: 60_000,
+      });
+      return versions.length === 0;
+    } catch {
+      return true;
+    }
+  }, [pipelineId, queryClient]);
 
   const proceedUpload = useCallback(
     async ({
@@ -62,7 +83,7 @@ export const useHandleUploadDocument = () => {
       if (
         (isSuccess || isPartialSuccess) &&
         parseOnCreation &&
-        ret.data?.length > 0
+        (ret.data?.length ?? 0) > 0
       ) {
         const runnableDocuments = (ret.data as IDocumentInfo[]).filter(
           (doc) => findDocumentParseGaps([doc]).length === 0,
@@ -97,14 +118,9 @@ export const useHandleUploadDocument = () => {
     ],
   );
 
-  const onDocumentUploadOk = useCallback(
+  const validateGapsAndUpload = useCallback(
     async (values: UploadFormSchemaType) => {
-      const { fileList } = values;
-      if (fileList.length === 0) {
-        return;
-      }
-
-      const names = fileList.map((file) =>
+      const names = values.fileList.map((file) =>
         file instanceof File ? file.name : file.file.name,
       );
       const gaps = findParseGaps(names);
@@ -134,6 +150,35 @@ export const useHandleUploadDocument = () => {
       return proceedUpload(values);
     },
     [findParseGaps, proceedUpload, t],
+  );
+
+  const onDocumentUploadOk = useCallback(
+    async (values: UploadFormSchemaType) => {
+      if (values.fileList.length === 0) {
+        return;
+      }
+
+      // The configured pipeline can no longer parse, so parse-on-creation
+      // would silently do nothing. Confirm first; on "Continue upload" the
+      // parsing is dropped. The gap check still runs because the backend
+      // reseeds parser configs at upload regardless.
+      if (values.parseOnCreation && (await checkPipelineMissing())) {
+        Modal.warning({
+          title: t('knowledgeDetails.uploadPipelineDeletedTitle'),
+          content: t('knowledgeDetails.uploadPipelineDeletedContent'),
+          okText: t('knowledgeDetails.continueUpload'),
+          cancelText: t('common.cancel'),
+          closable: false,
+          onOk: () => {
+            validateGapsAndUpload({ ...values, parseOnCreation: false });
+          },
+        });
+        return;
+      }
+
+      return validateGapsAndUpload(values);
+    },
+    [checkPipelineMissing, validateGapsAndUpload, t],
   );
 
   return {

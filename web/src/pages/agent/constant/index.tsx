@@ -515,6 +515,11 @@ export const initialCrawlerValues = {
   query: '',
 };
 
+export const InvokeParameterTypeOptions = [
+  { label: 'String', value: 'string' },
+  { label: 'Object', value: 'object' },
+];
+
 export const initialInvokeValues = {
   url: '',
   method: 'GET',
@@ -892,7 +897,6 @@ export const RestrictedUpstreamMap = {
   [Operator.LoopStart]: [Operator.Begin],
   [Operator.ExitLoop]: [Operator.Begin],
   [Operator.DocGenerator]: [Operator.Begin],
-  [Operator.Browser]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -954,7 +958,6 @@ export const NodeMap = {
   [Operator.ExitLoop]: 'exitLoopNode',
   [Operator.ExcelProcessor]: 'ragNode',
   [Operator.DocGenerator]: 'ragNode',
-  [Operator.Browser]: 'ragNode',
 };
 
 export enum BeginQueryType {
@@ -1192,21 +1195,6 @@ export const initialDocGeneratorValues = {
     mime_type: { type: 'string' },
     size: { type: 'number' },
     download: { type: 'string' },
-  },
-};
-
-export const initialBrowserValues = {
-  ...initialLlmBaseValues,
-  prompts: `{${AgentGlobals.SysQuery}}`,
-  max_steps: 30,
-  headless: true,
-  enable_default_extensions: false,
-  chromium_sandbox: false,
-  persist_session: true,
-  upload_sources: '',
-  outputs: {
-    content: { type: 'string', value: '' },
-    downloaded_files: { type: 'Array<Object>', value: [] },
   },
 };
 

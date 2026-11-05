@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 )
 
@@ -108,7 +109,7 @@ func TestTextParserGeneralChunkerParity(t *testing.T) {
 			if msg, ok := out["_ERROR"].(string); ok && msg != "" {
 				t.Fatalf("GeneralChunker returned _ERROR: %s", msg)
 			}
-			got, ok := out["chunks"].([]map[string]any)
+			got, ok := schema.ChunkCarrierToMaps(out["chunks"])
 			if !ok {
 				t.Fatalf("GeneralChunker chunks has type %T", out["chunks"])
 			}

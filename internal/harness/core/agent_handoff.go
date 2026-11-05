@@ -155,11 +155,10 @@ func runFlowAgentWithIsolatedSession(ctx context.Context, fa *flowAgent, input *
 
 	isolatedSession := &runSession{
 		Values:   make(map[string]any),
-		valuesMx: &sync.Mutex{},
+		valuesMx: &sync.RWMutex{},
 	}
 	if parentSession != nil {
-		isolatedSession.Values = parentSession.Values
-		isolatedSession.valuesMx = parentSession.valuesMx
+		isolatedSession.shareValuesFrom(parentSession)
 	}
 
 	rootInput := input
@@ -200,11 +199,10 @@ func resumeFlowAgentWithIsolatedSession(ctx context.Context, fa *flowAgent, info
 
 	isolatedSession := &runSession{
 		Values:   make(map[string]any),
-		valuesMx: &sync.Mutex{},
+		valuesMx: &sync.RWMutex{},
 	}
 	if parentSession != nil {
-		isolatedSession.Values = parentSession.Values
-		isolatedSession.valuesMx = parentSession.valuesMx
+		isolatedSession.shareValuesFrom(parentSession)
 	}
 	// Restore events from deterministic transfer state
 	for _, ev := range state.EventList {

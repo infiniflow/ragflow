@@ -61,9 +61,6 @@ func TestHTMLParser_TableProducesStructuredItems(t *testing.T) {
 	if tableCount != 1 {
 		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
 	}
-	if _, ok := res.JSON[tableIdx].ToMap()["ck_type"]; ok {
-		t.Errorf("retired ck_type present on structured table item: %#v", res.JSON[tableIdx].ToMap())
-	}
 	if !strings.Contains(tableText, "<table") ||
 		!strings.Contains(tableText, "Name") ||
 		!strings.Contains(tableText, "Alice") {
@@ -143,9 +140,6 @@ func TestHTMLParser_NestedTableProducesStructuredItems(t *testing.T) {
 	}
 	if tableCount != 1 {
 		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
-	}
-	if _, ok := res.JSON[tableIdx].ToMap()["ck_type"]; ok {
-		t.Errorf("retired ck_type present on structured nested table item: %#v", res.JSON[tableIdx].ToMap())
 	}
 	if !strings.Contains(tableText, "<table") ||
 		!strings.Contains(tableText, "Name") ||

@@ -7,8 +7,12 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
+
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
 )
@@ -134,7 +138,7 @@ func TestModifyColumnTypesHealsLegacyTenantModelIDColumns_Integration(t *testing
 	}
 }
 
-func TestModifyColumnTypesWidensKnowledgeCompileBacklogs_Integration(t *testing.T) {
+func TestMigrateKnowledgeCompileQueues_Integration(t *testing.T) {
 	dsn := os.Getenv("RAGFLOW_TEST_MYSQL_DSN")
 	if dsn == "" {
 		t.Skip("RAGFLOW_TEST_MYSQL_DSN unset: this test needs a throwaway MySQL database")
@@ -155,22 +159,29 @@ func TestModifyColumnTypesWidensKnowledgeCompileBacklogs_Integration(t *testing.
 	})
 	ctx := context.Background()
 	assertModifyColumnTypesTablesAbsent(t, db.WithContext(ctx), "knowledge_compile_docs")
+	for _, model := range []interface{}{&entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}} {
+		if db.Migrator().HasTable(model) {
+			t.Fatalf("%T already exists; this test requires an empty database", model)
+		}
+	}
 	if err = db.WithContext(ctx).Exec(`CREATE TABLE knowledge_compile_docs (
 		dataset_id varchar(64) NOT NULL PRIMARY KEY,
-		backlog_doc_ids text NOT NULL,
-		inflight_doc_ids text NOT NULL
+		backlog_doc_ids longtext NOT NULL,
+		inflight_doc_ids longtext NOT NULL
 	)`).Error; err != nil {
 		t.Fatalf("failed to create legacy knowledge_compile_docs: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := db.WithContext(context.Background()).Exec("DROP TABLE IF EXISTS knowledge_compile_docs").Error; err != nil {
-			t.Errorf("failed to drop knowledge_compile_docs test table: %v", err)
+		for _, table := range []string{"knowledge_compile_docs", "knowledge_compile_docs_backlog", "knowledge_compile_docs_inflight", "system_settings"} {
+			if err := db.WithContext(context.Background()).Migrator().DropTable(table); err != nil {
+				t.Errorf("failed to drop %s test table: %v", table, err)
+			}
 		}
 	})
 
-	legacyBacklog := knowledgeCompileBacklogFixture(480)
-	if len(legacyBacklog) >= 65535 {
-		t.Fatalf("legacy fixture is %d bytes, want less than TEXT's 65,535-byte limit", len(legacyBacklog))
+	legacyBacklog := knowledgeCompileBacklogFixture(600)
+	if len(legacyBacklog) <= 65535 {
+		t.Fatalf("fixture is %d bytes, want more than TEXT's 65,535-byte limit", len(legacyBacklog))
 	}
 	if err = db.WithContext(ctx).Exec(
 		"INSERT INTO knowledge_compile_docs (dataset_id, backlog_doc_ids, inflight_doc_ids) VALUES (?, ?, '[]')",
@@ -178,46 +189,295 @@ func TestModifyColumnTypesWidensKnowledgeCompileBacklogs_Integration(t *testing.
 	).Error; err != nil {
 		t.Fatalf("failed to seed legacy backlog: %v", err)
 	}
-	if err = modifyColumnTypes(ctx, db); err != nil {
-		t.Fatalf("modifyColumnTypes failed: %v", err)
+	if err := db.AutoMigrate(&entity.KnowledgeCompileBacklog{}, &entity.KnowledgeCompileInflight{}, &entity.SystemSettings{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := setDatabaseMigrationVersion(ctx, db, tenantDefaultModelsTargetVersion); err != nil {
+		t.Fatal(err)
+	}
+	if err = migrateKnowledgeCompileQueues(ctx, db); err != nil {
+		t.Fatalf("migrateKnowledgeCompileQueues failed: %v", err)
+	}
+	if version, err := GetDatabaseMigrationVersion(ctx, db); err != nil || version != knowledgeCompileQueueTargetVersion {
+		t.Fatalf("migration version=%q want=%q err=%v", version, knowledgeCompileQueueTargetVersion, err)
 	}
 
 	for _, column := range []string{"backlog_doc_ids", "inflight_doc_ids"} {
-		columnType, nullable, ok, err := columnDefinition(ctx, db, "knowledge_compile_docs", column)
-		if err != nil {
-			t.Fatalf("failed to read %s definition: %v", column, err)
-		}
-		if !ok || columnType != "longtext" || nullable {
-			t.Errorf("%s definition = %q nullable=%v exists=%v, want longtext NOT NULL", column, columnType, nullable, ok)
+		if db.Migrator().HasColumn(&entity.KnowledgeCompileDataset{}, column) {
+			t.Errorf("source column %s still exists", column)
 		}
 	}
+	var entries []entity.KnowledgeCompileEntry
+	if err := db.Table((entity.KnowledgeCompileBacklog{}).TableName()).Order("queue_position").Find(&entries).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 600 {
+		t.Fatalf("migrated %d events, want 600", len(entries))
+	}
+	for i, entry := range entries {
+		if entry.DocID != fmt.Sprintf("%032d", i) || entry.QueuePosition != int64(i+1) || entry.EventType != "doc_completed" || len(entry.TaskTypes) != 1 || entry.TaskTypes[0] != "Graph" {
+			t.Fatalf("unexpected event %d: %+v", i, entry)
+		}
+	}
+	for _, table := range []string{"knowledge_compile_docs_backlog", "knowledge_compile_docs_inflight"} {
+		var count int64
+		if err := db.Raw("SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND non_unique = 0", table).Scan(&count).Error; err != nil || count != 0 {
+			t.Fatalf("%s must have no primary key or unique indexes: count=%d err=%v", table, count, err)
+		}
+	}
+}
 
-	var preserved string
-	if err = db.WithContext(ctx).Raw(
-		"SELECT backlog_doc_ids FROM knowledge_compile_docs WHERE dataset_id = ?", "kb1",
-	).Scan(&preserved).Error; err != nil {
-		t.Fatalf("failed to read migrated backlog: %v", err)
-	}
-	if preserved != legacyBacklog {
-		t.Fatal("migration changed the existing backlog")
+func openIngestionTaskMigrationDB(t *testing.T) (*gorm.DB, context.Context) {
+	t.Helper()
+
+	dsn := os.Getenv("RAGFLOW_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("RAGFLOW_TEST_MYSQL_DSN unset: this test needs a throwaway MySQL database")
 	}
 
-	oversizedBacklog := knowledgeCompileBacklogFixture(600)
-	if len(oversizedBacklog) <= 65535 {
-		t.Fatalf("oversized fixture is %d bytes, want more than TEXT's 65,535-byte limit", len(oversizedBacklog))
+	db, err := gorm.Open(newMigrationAwareDialector(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
 	}
-	if err = db.WithContext(ctx).Exec(
-		"UPDATE knowledge_compile_docs SET backlog_doc_ids = ? WHERE dataset_id = ?",
-		oversizedBacklog, "kb1",
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get database connection pool: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("failed to close database connection pool: %v", err)
+		}
+	})
+	return db, context.Background()
+}
+
+func createDuplicateIngestionTaskSchema(t *testing.T, db *gorm.DB, ctx context.Context, withPipelineLog bool) {
+	t.Helper()
+
+	tables := []string{"ingestion_task"}
+	if withPipelineLog {
+		tables = append(tables, "pipeline_operation_log")
+	}
+	for _, table := range tables {
+		if db.Migrator().HasTable(table) {
+			t.Fatalf("%s already exists; this test requires an empty database", table)
+		}
+	}
+	t.Cleanup(func() {
+		for _, table := range tables {
+			if err := db.WithContext(context.Background()).Migrator().DropTable(table); err != nil {
+				t.Errorf("failed to drop %s test table: %v", table, err)
+			}
+		}
+	})
+	if err := db.WithContext(ctx).Exec(`CREATE TABLE ingestion_task (
+		id varchar(32) NOT NULL PRIMARY KEY,
+		document_id varchar(32) NOT NULL,
+		status varchar(32) NOT NULL,
+		create_time bigint NULL,
+		pipeline_log_id varchar(32) NULL
+	)`).Error; err != nil {
+		t.Fatalf("create ingestion_task: %v", err)
+	}
+	if err := db.WithContext(ctx).Exec(
+		"CREATE INDEX idx_ingestion_task_document_id ON ingestion_task(document_id)",
 	).Error; err != nil {
-		t.Fatalf("failed to store backlog larger than MySQL TEXT: %v", err)
+		t.Fatalf("create legacy document index: %v", err)
 	}
-	if err = db.WithContext(ctx).Raw(
-		"SELECT backlog_doc_ids FROM knowledge_compile_docs WHERE dataset_id = ?", "kb1",
-	).Scan(&preserved).Error; err != nil {
-		t.Fatalf("failed to read oversized backlog: %v", err)
+	if !withPipelineLog {
+		return
 	}
-	if preserved != oversizedBacklog {
-		t.Fatal("oversized backlog was truncated")
+	if err := db.WithContext(ctx).Exec(`CREATE TABLE pipeline_operation_log (
+		id varchar(32) NOT NULL PRIMARY KEY,
+		document_id varchar(32) NOT NULL,
+		operation_status varchar(32) NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create pipeline_operation_log: %v", err)
 	}
+}
+
+func TestMigrateIngestionTaskDocumentIDUnique_Integration(t *testing.T) {
+	db, ctx := openIngestionTaskMigrationDB(t)
+
+	t.Run("repairs terminal duplicates", func(t *testing.T) {
+		createDuplicateIngestionTaskSchema(t, db, ctx, true)
+		if err := db.WithContext(ctx).Exec(
+			"INSERT INTO pipeline_operation_log (id, document_id, operation_status) VALUES (?, ?, ?)",
+			"run-done", "doc-duplicate", string(entity.TaskStatusDone),
+		).Error; err != nil {
+			t.Fatalf("seed completed pipeline log: %v", err)
+		}
+		if err := db.WithContext(ctx).Exec(`INSERT INTO ingestion_task
+			(id, document_id, status, create_time, pipeline_log_id)
+			VALUES
+			('task-old', 'doc-duplicate', 'COMPLETED', 100, 'run-done'),
+			('task-new', 'doc-duplicate', 'FAILED', 200, NULL)`).Error; err != nil {
+			t.Fatalf("seed duplicate ingestion tasks: %v", err)
+		}
+
+		if err := migrateIngestionTaskDocumentIDUnique(ctx, db); err != nil {
+			t.Fatalf("migrateIngestionTaskDocumentIDUnique: %v", err)
+		}
+		var ids []string
+		if err := db.WithContext(ctx).Table("ingestion_task").Pluck("id", &ids).Error; err != nil {
+			t.Fatalf("list remaining ingestion tasks: %v", err)
+		}
+		if !reflect.DeepEqual(ids, []string{"task-new"}) {
+			t.Fatalf("remaining task ids = %v, want [task-new]", ids)
+		}
+		hasUnique, err := hasUniqueIndex(ctx, db, "ingestion_task", []string{"document_id"})
+		if err != nil {
+			t.Fatalf("check unique document index: %v", err)
+		}
+		if !hasUnique {
+			t.Fatal("ingestion_task.document_id is not unique after migration")
+		}
+		if err := migrateIngestionTaskDocumentIDUnique(ctx, db); err != nil {
+			t.Fatalf("second migrateIngestionTaskDocumentIDUnique: %v", err)
+		}
+	})
+
+	t.Run("rejects active duplicate", func(t *testing.T) {
+		createDuplicateIngestionTaskSchema(t, db, ctx, false)
+		if err := db.WithContext(ctx).Exec(`INSERT INTO ingestion_task
+			(id, document_id, status, create_time, pipeline_log_id)
+			VALUES
+			('task-active', 'doc-duplicate', 'RUNNING', 100, NULL),
+			('task-new', 'doc-duplicate', 'COMPLETED', 200, NULL)`).Error; err != nil {
+			t.Fatalf("seed duplicate ingestion tasks: %v", err)
+		}
+
+		err := migrateIngestionTaskDocumentIDUnique(ctx, db)
+		for _, want := range []string{"doc-duplicate", "task-active", common.RUNNING} {
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("migration error = %v, want it to contain %q", err, want)
+			}
+		}
+		var count int64
+		if err := db.WithContext(ctx).Table("ingestion_task").Count(&count).Error; err != nil {
+			t.Fatalf("count ingestion tasks: %v", err)
+		}
+		if count != 2 {
+			t.Fatalf("ingestion task count = %d, want 2 after failed migration", count)
+		}
+		hasUnique, err := hasUniqueIndex(ctx, db, "ingestion_task", []string{"document_id"})
+		if err != nil {
+			t.Fatalf("check unique document index: %v", err)
+		}
+		if hasUnique {
+			t.Fatal("ingestion_task.document_id unexpectedly became unique")
+		}
+	})
+}
+
+// TestMigrateNameColumnWidths_Integration verifies that the legacy 32-character
+// pipeline_title and 100-character tenant.name columns are widened in place and
+// keep their existing values. It needs a throwaway database because it creates
+// and drops the real table names.
+func TestMigrateNameColumnWidths_Integration(t *testing.T) {
+	dsn := os.Getenv("RAGFLOW_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("RAGFLOW_TEST_MYSQL_DSN unset: this test needs a throwaway MySQL database")
+	}
+
+	db, err := gorm.Open(newMigrationAwareDialector(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get database connection pool: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("failed to close database connection pool: %v", err)
+		}
+	})
+
+	if db.Migrator().HasTable("pipeline_operation_log") || db.Migrator().HasTable("tenant") {
+		t.Skip("test database already contains pipeline_operation_log or tenant; use a throwaway database")
+	}
+	t.Cleanup(func() {
+		db.Exec("DROP TABLE IF EXISTS pipeline_operation_log")
+		db.Exec("DROP TABLE IF EXISTS tenant")
+	})
+
+	ctx := context.Background()
+	if err := db.Exec(`CREATE TABLE pipeline_operation_log (
+		id varchar(32) PRIMARY KEY,
+		pipeline_title varchar(32) NULL,
+		KEY idx_pipeline_operation_log_pipeline_title (pipeline_title)
+	)`).Error; err != nil {
+		t.Fatalf("create pipeline_operation_log: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE tenant (
+		id varchar(32) PRIMARY KEY,
+		name varchar(100) NULL
+	)`).Error; err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	legacyTitle := strings.Repeat("a", 32)
+	legacyTenant := strings.Repeat("b", 100)
+	if err := db.Exec(`INSERT INTO pipeline_operation_log (id, pipeline_title) VALUES (?, ?)`, "log-1", legacyTitle).Error; err != nil {
+		t.Fatalf("seed pipeline_operation_log: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO tenant (id, name) VALUES (?, ?)`, "tenant-1", legacyTenant).Error; err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+
+	if err := migrateNameColumnWidths(ctx, db); err != nil {
+		t.Fatalf("migrateNameColumnWidths failed: %v", err)
+	}
+
+	if got := columnLength(t, db, &entity.PipelineOperationLog{}, "pipeline_title"); got != common.PipelineTitleLimit {
+		t.Fatalf("pipeline_title width = %d, want %d", got, common.PipelineTitleLimit)
+	}
+	if !db.Migrator().HasIndex(&entity.PipelineOperationLog{}, "idx_pipeline_operation_log_pipeline_title") {
+		t.Fatal("pipeline_title index was dropped by the width migration")
+	}
+	if got := columnLength(t, db, &entity.Tenant{}, "name"); got != common.TenantNameLimit {
+		t.Fatalf("tenant.name width = %d, want %d", got, common.TenantNameLimit)
+	}
+
+	var title string
+	if err := db.Raw(`SELECT pipeline_title FROM pipeline_operation_log WHERE id = ?`, "log-1").Scan(&title).Error; err != nil {
+		t.Fatalf("read pipeline_title: %v", err)
+	}
+	if title != legacyTitle {
+		t.Fatalf("pipeline_title = %q, want %q", title, legacyTitle)
+	}
+	var tenantName string
+	if err := db.Raw(`SELECT name FROM tenant WHERE id = ?`, "tenant-1").Scan(&tenantName).Error; err != nil {
+		t.Fatalf("read tenant.name: %v", err)
+	}
+	if tenantName != legacyTenant {
+		t.Fatalf("tenant.name = %q, want %q", tenantName, legacyTenant)
+	}
+
+	// The widened columns must accept values that previously failed with 1406.
+	longTitle := strings.Repeat("c", common.PipelineTitleLimit)
+	if err := db.Exec(`UPDATE pipeline_operation_log SET pipeline_title = ? WHERE id = ?`, longTitle, "log-1").Error; err != nil {
+		t.Fatalf("store widened pipeline_title: %v", err)
+	}
+}
+
+func columnLength(t *testing.T, db *gorm.DB, model any, column string) int64 {
+	t.Helper()
+	types, err := db.Migrator().ColumnTypes(model)
+	if err != nil {
+		t.Fatalf("read column types: %v", err)
+	}
+	for _, ct := range types {
+		if ct.Name() != column {
+			continue
+		}
+		length, ok := ct.Length()
+		if !ok {
+			t.Fatalf("column %s does not report a length", column)
+		}
+		return length
+	}
+	t.Fatalf("column %s not found", column)
+	return 0
 }

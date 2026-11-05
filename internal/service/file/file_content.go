@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
@@ -17,12 +18,12 @@ import (
 
 // GetFileContent gets file metadata and checks permission for download
 // Matches Python's file_api_service.get_file_content function
-func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*entity.File, error) {
+func (s *FileService) GetFileContent(ctx context.Context, fileID string) (*entity.File, error) {
 	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil || file == nil {
 		return nil, fmt.Errorf("document not found")
 	}
-	if err := checkFileAccess(ctx, uid, file, permission.OperationRead); err != nil {
+	if err := checkFileAccess(ctx, file, permission.OperationRead); err != nil {
 		return nil, err
 	}
 	return file, nil
@@ -79,13 +80,17 @@ func (s *FileService) GetStorageAddress(ctx context.Context, fileID string) (*St
 }
 
 // DownloadAgentFile downloads an agent-generated file directly from MinIO without querying the database.
-func (s *FileService) DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error) {
+func (s *FileService) DownloadAgentFile(ctx context.Context, location string) ([]byte, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	bucketName := fmt.Sprintf("%s-downloads", tenantID)
+	bucketName := fmt.Sprintf("%s-downloads", userID)
 
 	blob, err := storageImpl.Get(ctx, bucketName, location)
 	if err != nil {
@@ -111,7 +116,11 @@ func (s *FileService) DownloadAgentFile(ctx context.Context, tenantID, location 
 // Blobs are stored directly in "{created_by}-downloads/{id}" in object
 // storage WITHOUT a corresponding File entity row in the database.
 // Mirrors Python's FileService.get_files → get_blob(user_id, file_id).
-func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts []map[string]interface{}) (texts []string, images []string, err error) {
+func (s *FileService) GetFileContents(ctx context.Context, fileDicts []map[string]interface{}) (texts []string, images []string, err error) {
+	uid := permission.UserIDFromContext(ctx)
+	if uid == "" {
+		return nil, nil, permission.ErrUnauthenticated
+	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, nil, fmt.Errorf("storage not initialized")
@@ -163,7 +172,11 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 
 // ParseAgentUploads resolves descriptors returned by upload_info from the
 // caller's downloads bucket and converts them to sys.files values.
-func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
+func (s *FileService) ParseAgentUploads(ctx context.Context, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
@@ -217,9 +230,12 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 	content := string(data)
 	fileType := utility.GetFileType(filename)
 	if fileType != utility.FileTypeOTHER {
-		fp, err := parser.GetParser(fileType)
+		fp, actual, err := parser.GetTextOnlyParser(fileType, data)
 		if err != nil {
 			return "", err
+		}
+		if actual != fileType {
+			common.Warn(fmt.Sprintf("file %q: requested format %s; detected %s; continuing with the %s parser", filename, fileType, actual, actual))
 		}
 		if configurable, ok := fp.(interface{ ConfigureFromSetup(map[string]any) }); ok {
 			configurable.ConfigureFromSetup(map[string]any{"layout_recognize": layoutRecognize})
@@ -238,47 +254,28 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 }
 
 // parseResultText converts a parser result into the readable text expected by
-// sys.files. JSON results are flattened in item order, preferring each item's
-// text field and serializing items without one as a final fallback.
+// sys.files. Every parser result is structured JSON, so the items are flattened
+// in order, preferring each item's text field and rendering tables; items
+// without either are serialized as a final fallback.
 func parseResultText(res parser.ParseResult) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(res.OutputFormat)) {
-	case "text":
-		return res.Text, nil
-	case "markdown":
-		return res.Markdown, nil
-	case "json":
-		if len(res.JSON) > 0 {
-			parts := make([]string, 0, len(res.JSON))
-			for _, item := range res.JSON {
-				m := item.ToMap()
-				if text, ok := m["text"].(string); ok {
-					parts = append(parts, text)
-					continue
-				}
-				if td, ok := m["table"].(*entity.TableData); ok && td != nil {
-					parts = append(parts, tableutil.RenderTableHTML(td))
-					continue
-				}
-				raw, err := json.Marshal(m)
-				if err != nil {
-					return "", err
-				}
-				parts = append(parts, string(raw))
-			}
-			return strings.Join(parts, "\n"), nil
+	parts := make([]string, 0, len(res.JSON))
+	for _, item := range res.JSON {
+		m := item.ToMap()
+		if text, ok := m["text"].(string); ok {
+			parts = append(parts, text)
+			continue
 		}
-		// Some legacy parsers mark the result as JSON while only populating a
-		// rendered companion field. Preserve that content instead of returning
-		// an empty sys.files value.
-		for _, fallback := range []string{res.Markdown, res.Text} {
-			if fallback != "" {
-				return fallback, nil
-			}
+		if td, ok := m["table"].(*entity.TableData); ok && td != nil {
+			parts = append(parts, tableutil.RenderTableHTML(td))
+			continue
 		}
-		return "", nil
-	default:
-		return "", fmt.Errorf("unsupported parser output format %q", res.OutputFormat)
+		raw, err := json.Marshal(m)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, string(raw))
 	}
+	return strings.Join(parts, "\n"), nil
 }
 
 // parseFileContent tries to parse a file's contents using the appropriate parser.
@@ -288,9 +285,12 @@ func parseFileContent(ctx context.Context, filename string, data []byte) string 
 	if fileType == utility.FileTypeOTHER {
 		return string(data)
 	}
-	fp, err := parser.GetParser(fileType)
+	fp, actual, err := parser.GetTextOnlyParser(fileType, data)
 	if err != nil {
 		return string(data)
+	}
+	if actual != fileType {
+		common.Warn(fmt.Sprintf("file %q: requested format %s; detected %s; continuing with the %s parser", filename, fileType, actual, actual))
 	}
 	res := fp.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
