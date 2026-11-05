@@ -22,9 +22,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"ragflow/internal/cli/utils"
 	"ragflow/internal/common"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1507,80 +1509,80 @@ func (c *CLI) getDatasetIDByName(datasetName string) (string, error) {
 }
 
 func (c *CLI) getAgentIDByName(agentName string) (string, error) {
-	response, err := c.APIListAgentsCommand(1, nil)
-	if err != nil {
-		return "", err
-	}
-	commonResponse, ok := response.(*CommonResponse)
-	if !ok {
-		return "", fmt.Errorf("invalid response")
-	}
-	for _, agent := range commonResponse.Data {
-		if agent["name"] == agentName {
-			return agent["id"].(string), nil
-		}
-	}
-	return "", fmt.Errorf("agent %s not found", agentName)
+	return c.getResourceIDByName("agent", agentName, "canvas")
 }
 
 func (c *CLI) getSearchIDByName(searchName string) (string, error) {
-	response, err := c.APIListSearchesCommand(1, nil)
-	if err != nil {
-		return "", err
-	}
-	searchesResponse, ok := response.(*ListSearchesResponse)
-	if !ok {
-		return "", fmt.Errorf("invalid response")
-	}
-	searches := searchesResponse.Data["search_apps"].([]interface{})
-	for _, search := range searches {
-		searchMap := search.(map[string]interface{})
-		if searchMap["name"] == searchName {
-			return searchMap["id"].(string), nil
-		}
-	}
-	return "", fmt.Errorf("search %s not found", searchName)
+	return c.getResourceIDByName("search", searchName, "search_apps")
 }
 
 func (c *CLI) getChatIDByName(chatName string) (string, error) {
-	response, err := c.APIListChatsCommand(1, nil)
-	if err != nil {
-		return "", err
-	}
-	commonResponse, ok := response.(*CommonResponse)
-	if !ok {
-		return "", fmt.Errorf("invalid response")
-	}
-	for _, chat := range commonResponse.Data {
-		if chat["name"] == chatName {
-			return chat["id"].(string), nil
-		}
-	}
-	return "", fmt.Errorf("chat %s not found", chatName)
+	return c.getResourceIDByName("chat", chatName, "chats")
 }
 
 func (c *CLI) getMemoryIDByName(memoryName string) (string, error) {
-	response, err := c.APIListMemoriesCommand(1, nil)
+	return c.getResourceIDByName("memory", memoryName, "memory_list")
+}
+
+func (c *CLI) getResourceIDByName(resource, name, listKey string) (string, error) {
+	httpClient, err := c.apiModeClient()
 	if err != nil {
 		return "", err
 	}
-	listMemoriesResponse, ok := response.(*ListMemoriesResponse)
-	if !ok {
-		return "", fmt.Errorf("invalid response")
+	path, nameKey, totalKey := "/"+resource+"s", "name", "total"
+	if resource == "memory" {
+		path, totalKey = "/memories", "total_count"
+	} else if resource == "search" {
+		path = "/searches"
 	}
-	memories, ok := listMemoriesResponse.Data["memory_list"].([]interface{})
-	if !ok {
-		return "", fmt.Errorf("invalid memory_list in response")
+	if resource == "agent" {
+		nameKey = "title"
 	}
-	for _, memory := range memories {
-		var memoryMap map[string]interface{}
-		memoryMap, ok = memory.(map[string]interface{})
-		if !ok {
-			continue
+	query := url.Values{"page_size": {strconv.Itoa(common.MaxPageSize)}}
+	var remaining int64
+	for page := common.DefaultPage; ; page++ {
+		query.Set("page", strconv.Itoa(page))
+		resp, err := httpClient.Request(1, http.MethodGet, path+"?"+query.Encode(), httpClient.AuthKind(), nil, nil)
+		if err != nil {
+			return "", err
 		}
-		if memoryMap["name"] == memoryName {
-			return memoryMap["id"].(string), nil
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("failed to list %s: HTTP %d", path[1:], resp.StatusCode)
+		}
+		var result struct {
+			Code    int                        `json:"code"`
+			Message string                     `json:"message"`
+			Data    map[string]json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(resp.Body, &result); err != nil {
+			return "", fmt.Errorf("invalid response: %w", err)
+		}
+		if result.Code != 0 {
+			return "", fmt.Errorf("%s", result.Message)
+		}
+		if page == common.DefaultPage {
+			if err := json.Unmarshal(result.Data[totalKey], &remaining); err != nil || remaining < 0 {
+				return "", fmt.Errorf("invalid %s in response", totalKey)
+			}
+		}
+		var items []map[string]interface{}
+		if err := json.Unmarshal(result.Data[listKey], &items); err != nil {
+			return "", fmt.Errorf("invalid %s in response: %w", listKey, err)
+		}
+		for _, item := range items {
+			if item[nameKey] != name || (resource == "agent" && item["type"] == "compilation_template_group") {
+				continue
+			}
+			id, ok := item["id"].(string)
+			if !ok || id == "" {
+				return "", fmt.Errorf("invalid %s ID in response", resource)
+			}
+			return id, nil
+		}
+		remaining -= int64(len(items))
+		if remaining <= 0 || len(items) < common.MaxPageSize {
+			break
 		}
 	}
-	return "", fmt.Errorf("memory %s not found", memoryName)
+	return "", fmt.Errorf("%s %s not found", resource, name)
 }
