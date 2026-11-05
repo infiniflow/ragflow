@@ -31,6 +31,7 @@ import {
 import { useFetchInstanceNameSet, useHideWhenInstanceExists } from '../hooks';
 import { getProviderConfig } from '../provider-schema/field-config';
 import { BedrockInstanceCard } from './bedrock-instance-card';
+import { GPUStackInstanceCard } from './gpustack-instance-card';
 import { DraftModeCard } from './components/draft-mode-card';
 import { InstanceNameSection } from './components/instance-name-section';
 import { SavedModeCard } from './components/saved-mode-card';
@@ -326,6 +327,9 @@ export const ProviderInstanceCard = forwardRef<
   // hook-call order (Rules of Hooks).
   if (props.providerName === 'Bedrock') {
     return <BedrockInstanceCard {...props} ref={ref} />;
+  }
+  if (props.providerName === 'GPUStack') {
+    return <GPUStackInstanceCard {...props} ref={ref} />;
   }
   return <GenericProviderInstanceCard {...props} ref={ref} />;
 });

@@ -324,15 +324,9 @@ func (c *wecomChannel) Stop(ctx context.Context) error {
 // Send sends an application message or a WebSocket bot message.
 func (c *wecomChannel) Send(ctx context.Context, msg core.OutgoingMessage) error {
 	if c.account.ConnectionType == "websocket" {
-		if err := c.sendWebSocketMessage(msg); err != nil {
-			common.Error("wecom: websocket send failed", err, zap.String("account_id", c.account.AccountID))
-		}
-		return nil
+		return c.sendWebSocketMessage(msg)
 	}
-	if err := c.sendApplicationMessage(ctx, msg); err != nil {
-		common.Error("wecom: application send failed", redactURLError(err), zap.String("account_id", c.account.AccountID))
-	}
-	return nil
+	return redactURLError(c.sendApplicationMessage(ctx, msg))
 }
 
 func (c *wecomChannel) runWebSocket(ctx context.Context) {
@@ -754,7 +748,7 @@ func redactURLError(err error) error {
 		return urlErr
 	}
 	parsed.RawQuery = ""
-	return &url.Error{Op: urlErr.Op, URL: parsed.String(), Err: urlErr.Err}
+	return &url.Error{Op: urlErr.Op, URL: parsed.String(), Err: redactURLError(urlErr.Err)}
 }
 
 func (c *wecomChannel) handleTextMessage(ctx context.Context, chatID, senderID, messageID, text, chatType string, raw map[string]any) {

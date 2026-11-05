@@ -480,7 +480,7 @@ func TestWeComWebSocketMessagePreservesWhitespaceAndFallsBackToSender(t *testing
 	}
 }
 
-func TestWeComSendIgnoresTransportErrors(t *testing.T) {
+func TestWeComSendReturnsTransportErrors(t *testing.T) {
 	channel, err := newWeComChannel(wecomAccount{
 		AccountID:      "account-1",
 		ConnectionType: "websocket",
@@ -490,8 +490,31 @@ func TestWeComSendIgnoresTransportErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWeComChannel() error = %v", err)
 	}
-	if err := channel.Send(context.Background(), core.OutgoingMessage{ChatID: "chat-1", Text: "answer"}); err != nil {
-		t.Fatalf("Send() error = %v, want nil", err)
+	if err := channel.Send(t.Context(), core.OutgoingMessage{ChatID: "chat-1", Text: "answer"}); err == nil {
+		t.Fatal("Send() succeeded without a websocket connection")
+	}
+}
+
+func TestWeComSendRedactsApplicationTransportError(t *testing.T) {
+	aesKey, _ := testWeComAESKey()
+	channel, err := newWeComChannel(wecomAccount{
+		AccountID: "account-1", CorpID: "corp", AgentID: 1, Secret: "secret",
+		Token: "token", AESKey: aesKey,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel.accessToken = "sensitive-access-token"
+	channel.tokenExpiry = time.Now().Add(time.Hour)
+	channel.client = &http.Client{Transport: telegramRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, &url.Error{Op: "Post", URL: req.URL.String(), Err: net.ErrClosed}
+	})}
+	err = channel.Send(t.Context(), core.OutgoingMessage{ChatID: "user-1", Text: "answer"})
+	if err == nil {
+		t.Fatal("Send() succeeded after a transport failure")
+	}
+	if strings.Contains(err.Error(), channel.accessToken) {
+		t.Fatalf("Send() exposed access token: %v", err)
 	}
 }
 

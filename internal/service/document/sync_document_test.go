@@ -11,6 +11,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	syncerconnector "ragflow/internal/syncer/connector"
@@ -47,7 +48,7 @@ func setupSyncDocumentTest(t *testing.T, existing bool) (*DocumentService, *gorm
 	t.Cleanup(func() { factory.SetStorage(original) })
 	svc := testDocumentService(t)
 	input := service.DocumentUpsertInput{
-		TaskContext: service.SyncTaskContext{Knowledgebase: *kb, Connector: entity.Connector{TenantID: "tenant-1"}},
+		TaskContext: service.SyncTaskContext{Knowledgebase: *kb, Connector: entity.Connector{UserID: "user-1", TenantID: "tenant-1"}},
 		SourceType:  "github_connector-1",
 		DocumentID:  "doc-sync",
 		SourceDocument: syncerconnector.SourceDocument{
@@ -395,8 +396,78 @@ func TestSyncDocumentAcknowledgesParseEnqueueAfterCancellation(t *testing.T) {
 	if len(publisher.messages) != 1 {
 		t.Fatalf("parse publications = %d, want 1", len(publisher.messages))
 	}
+	task, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, publisher.messages[0].TaskID)
+	if err != nil {
+		t.Fatalf("load enqueued ingestion task: %v", err)
+	}
+	if task.UserID != input.TaskContext.Connector.UserID {
+		t.Fatalf("ingestion task user id = %q, want connector owner %q", task.UserID, input.TaskContext.Connector.UserID)
+	}
 	result, err = svc.Upsert(t.Context(), input)
 	if err != nil || result.Action != service.DocumentActionSkipped || len(publisher.messages) != 1 {
 		t.Fatalf("completed revision retried enqueue: result = %+v err = %v publications = %d", result, err, len(publisher.messages))
+	}
+}
+
+func TestSyncDocumentAutoParseRejectsMissingConnectorOwner(t *testing.T) {
+	svc, db, _, input := setupSyncDocumentTest(t, false)
+	input.AutoParse = true
+	input.TaskContext.Connector.UserID = ""
+	publisher := &recordingTaskPublisher{}
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+
+	if _, err := svc.Upsert(t.Context(), input); err == nil || !strings.Contains(err.Error(), "no owner user_id") {
+		t.Fatalf("Upsert error = %v, want missing connector owner", err)
+	}
+	if len(publisher.messages) != 0 {
+		t.Fatalf("parse publications = %d, want none", len(publisher.messages))
+	}
+	var taskCount int64
+	if err := db.Model(&entity.IngestionTask{}).Where("document_id = ?", input.DocumentID).Count(&taskCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if taskCount != 0 {
+		t.Fatalf("ingestion tasks = %d, want none", taskCount)
+	}
+}
+
+func TestSyncDocumentReenqueuesParseWithConnectorOwner(t *testing.T) {
+	svc, db, _, input := setupSyncDocumentTest(t, true)
+	publisher := &recordingTaskPublisher{}
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+
+	if _, err := svc.Upsert(t.Context(), input); err != nil {
+		t.Fatalf("sync document before parse retry: %v", err)
+	}
+	input.AutoParse = true
+	result, err := svc.Upsert(t.Context(), input)
+	if err != nil || result.Action != service.DocumentActionSkipped {
+		t.Fatalf("parse retry = %+v, err = %v", result, err)
+	}
+	if len(publisher.messages) != 1 {
+		t.Fatalf("parse publications = %d, want 1", len(publisher.messages))
+	}
+	task, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, publisher.messages[0].TaskID)
+	if err != nil {
+		t.Fatalf("load enqueued ingestion task: %v", err)
+	}
+	if task.UserID != input.TaskContext.Connector.UserID {
+		t.Fatalf("ingestion task user id = %q, want connector owner %q", task.UserID, input.TaskContext.Connector.UserID)
+	}
+}
+
+func TestSyncDocumentParseContextUsesConnectorIdentity(t *testing.T) {
+	ctx := permission.WithIdentity(t.Context(), "request-user", "request-tenant")
+	parseCtx, err := syncDocumentParseContext(ctx, service.SyncTaskContext{
+		Connector: entity.Connector{ID: "connector-1", UserID: "connector-owner", TenantID: "connector-tenant"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := permission.UserIDFromContext(parseCtx); got != "connector-owner" {
+		t.Fatalf("parse context user id = %q, want connector-owner", got)
+	}
+	if got := permission.TenantIDFromContext(parseCtx); got != "connector-tenant" {
+		t.Fatalf("parse context tenant id = %q, want connector-tenant", got)
 	}
 }
