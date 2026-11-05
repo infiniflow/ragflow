@@ -140,7 +140,8 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 				content := paragraph.Content
 				if afterList {
 					content = dedentMarkdownTable(content)
-				} else if topLevel {
+				}
+				if topLevel && bytes.Equal(content, paragraph.Content) {
 					content = dedentTopLevelTable(content)
 				}
 				if !inList && bytes.Equal(content, paragraph.Content) {
@@ -337,21 +338,31 @@ func dedentMarkdownTable(data []byte) []byte {
 
 // GFM allows up to three spaces of indentation before each line of a table. At the top level
 // gomarkdown reads such a table as a paragraph that keeps the indentation of its continuation
-// lines. Normalize a table paragraph whose lines are all indented by at most three spaces; a
-// tab or four spaces leave the lines to the parser's own rules.
+// lines, also when a line of text comes first. Normalize the lines from the first header and
+// delimiter row on, when each of them is indented by at most three spaces; a tab or four spaces
+// leave the paragraph to the parser's own rules, and the text before the table stays as it is.
 func dedentTopLevelTable(data []byte) []byte {
 	lines := strings.Split(string(data), "\n")
-	if len(lines) < 2 || !isMarkdownTableRow(lines[0]) || !isMarkdownTableSeparator(lines[1]) {
+	start := -1
+	for i := 0; i+1 < len(lines); i++ {
+		if isMarkdownTableRow(lines[i]) && isMarkdownTableSeparator(lines[i+1]) {
+			start = i
+			break
+		}
+	}
+	if start == -1 {
 		return data
 	}
-	for i, line := range lines {
-		trimmed := strings.TrimLeft(line, " ")
-		if strings.HasPrefix(trimmed, "\t") || len(line)-len(trimmed) > 3 {
+	for i := start; i < len(lines); i++ {
+		trimmed := strings.TrimLeft(lines[i], " ")
+		if strings.HasPrefix(trimmed, "\t") || len(lines[i])-len(trimmed) > 3 {
 			return data
 		}
 		lines[i] = trimmed
 	}
-	return mdparser.NormalizeNewlines([]byte(strings.Join(lines, "\n")))
+	// Paragraph content has no final newline, and the block parser reads a delimiter row only
+	// when one ends it, as in a file.
+	return append(mdparser.NormalizeNewlines([]byte(strings.Join(lines, "\n"))), '\n')
 }
 
 // balanceTableColumns pads the header row and its separator up to the widest row's cell

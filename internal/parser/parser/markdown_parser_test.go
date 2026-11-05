@@ -899,6 +899,8 @@ func TestMarkdownParser_IndentedTables(t *testing.T) {
 		"  | a | b |\n  |---|---|\n  | one | two |\n",
 		"   | a | b |\n   |---|---|\n   | one | two |\n",
 		" | a | b |\n   |---|---|\n  | one | two |\n",
+		"- item\n\n | a | b |\n   |---|---|\n  | one | two |\n",
+		"Intro\n | a | b |\n |---|---|\n | one | two |\n",
 		"- item\n\n  | a | b |\n  |---|---|\n  | one | two |\n",
 		"- item\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
 		"- item\n\n\t| a | b |\n\t|---|---|\n\t| one | two |\n",
@@ -926,6 +928,16 @@ func TestMarkdownParser_IndentedTables(t *testing.T) {
 		if tables != 1 {
 			t.Fatalf("ParseWithResult(%q): table items = %d, want 1", md, tables)
 		}
+	}
+
+	// The text before a table in the same paragraph stays, and a table may have no body rows.
+	res := p.ParseWithResult(ctx, "test.md", []byte("Intro\n | a | b |\n |---|---|\n | one | two |\n"))
+	if items := ItemsToMaps(res.JSON); len(items) != 2 || items[0]["text"] != "Intro" {
+		t.Fatalf("intro before an indented table: %#v", items)
+	}
+	res = p.ParseWithResult(ctx, "test.md", []byte(" | a | b |\n |---|---\n"))
+	if items := ItemsToMaps(res.JSON); len(items) != 1 || items[0]["doc_type_kwd"] != "table" {
+		t.Fatalf("indented header-only table: %#v", items)
 	}
 
 	for _, md := range []string{
