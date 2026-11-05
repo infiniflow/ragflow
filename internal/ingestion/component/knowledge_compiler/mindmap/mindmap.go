@@ -55,11 +55,11 @@ func runBatches(ctx context.Context, jobs []func() error) error {
 
 // Run executes the mindmap variant.
 func Run(ctx context.Context, deps common.Deps, param common.Param, inputs common.Inputs) (common.Outputs, error) {
-	docID := firstNonEmpty(inputs.DocID, deps.DatasetID)
+	docID := common.FirstNonEmpty(inputs.DocID, deps.DatasetID)
 	if docID == "" {
 		docID = "unknown"
 	}
-	llmID := firstNonEmpty(param.LLMID, inputs.LLMID)
+	llmID := common.FirstNonEmpty(param.LLMID, inputs.LLMID)
 	tenantID := deps.TenantID
 
 	if deps.Chat == nil {
@@ -268,7 +268,7 @@ func mindmapSourceChunkIDs(chunks []common.Chunk) []string {
 	seen := make(map[string]struct{}, len(chunks))
 	ids := make([]string, 0, len(chunks))
 	for i, chunk := range chunks {
-		if strings.TrimSpace(firstNonEmpty(chunk.Text, chunk.Content)) == "" {
+		if strings.TrimSpace(common.FirstNonEmpty(chunk.Text, chunk.Content)) == "" {
 			continue
 		}
 		id := strings.TrimSpace(chunk.ID)
@@ -425,20 +425,11 @@ func payloadJSON(payload map[string]any) string {
 func chunkTexts(chunks []common.Chunk) []string {
 	var out []string
 	for _, c := range chunks {
-		t := firstNonEmpty(c.Text, c.Content)
+		t := common.FirstNonEmpty(c.Text, c.Content)
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
 		out = append(out, t)
 	}
 	return out
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
