@@ -246,6 +246,28 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         type: FormFieldType.Password,
         required: true,
       },
+      {
+        label: 'Streaming',
+        name: 'config.credential.stream',
+        type: FormFieldType.Switch,
+        required: false,
+        defaultValue: false,
+      },
+      {
+        label: 'AI Card Template ID',
+        name: 'config.credential.card_template_id',
+        type: FormFieldType.Text,
+        required: false,
+        shouldRender: (values: any) => values?.config?.credential?.stream === true,
+      },
+      {
+        label: 'Stream Content Key',
+        name: 'config.credential.stream_content_key',
+        type: FormFieldType.Text,
+        required: false,
+        defaultValue: 'content',
+        shouldRender: (values: any) => values?.config?.credential?.stream === true,
+      },
     ],
     [ChatChannelKey.FEISHU]: [
       {
@@ -782,6 +804,10 @@ ChatChannelFormDefaultValues[
   ChatChannelKey.WECOM
 ].config.credential.connection_type = 'webhook';
 ChatChannelFormDefaultValues[ChatChannelKey.WECOM].config.credential.stream = false;
+ChatChannelFormDefaultValues[ChatChannelKey.DINGTALK].config.credential.stream = false;
+ChatChannelFormDefaultValues[
+  ChatChannelKey.DINGTALK
+].config.credential.stream_content_key = 'content';
 ChatChannelFormDefaultValues[ChatChannelKey.FEISHU].config.credential.domain =
   'feishu';
 ChatChannelFormDefaultValues[
