@@ -30,6 +30,11 @@ from common.ssrf_guard import assert_url_is_safe, pin_dns
 from deepdoc.parser import HtmlParser
 
 
+# Sentinel telling apart "the reference does not exist" from "the reference
+# exists and its value is None".
+_MISSING_REF = object()
+
+
 class InvokeParam(ComponentParamBase):
     """
     Define the Invoke component parameters.
@@ -144,17 +149,43 @@ class Invoke(ComponentBase, ABC):
 
     def _resolve_arg_value(self, para: dict, kwargs: dict) -> object:
         ref = (para.get("ref") or "").strip()
-        if ref and (ref in kwargs or self._canvas.get_variable_value(ref) is not None):
+        if ref and ref in kwargs:
             return self._resolve_variable_value(ref, kwargs)
+
+        # The reference existence is tracked separately from its value: a canvas
+        # reference can resolve successfully to None (e.g. an output stored as
+        # None or a nested value that is None), and that None must be
+        # preserved instead of being mistaken for a missing reference.
+        canvas_value = _MISSING_REF
+        if ref:
+            try:
+                canvas_value = self._canvas.get_variable_value(ref)
+            except KeyError:
+                canvas_value = _MISSING_REF
+            except Exception as exc:
+                # The canvas raises a bare Exception("Can't find variable: ...")
+                # for missing references; any other error is a real bug and
+                # must propagate instead of being treated as a fallback.
+                if "Can't find variable" not in str(exc):
+                    raise
+                logging.warning(
+                    "Invoke could not resolve canvas variable %s; falling back to the parameter value",
+                    ref,
+                    exc_info=True,
+                )
+                canvas_value = _MISSING_REF
+
+        if canvas_value is not _MISSING_REF:
+            if isinstance(canvas_value, partial):
+                canvas_value = "".join(canvas_value())
+                self.set_input_value(ref, canvas_value)
+            return canvas_value
 
         if para.get("value") is not None:
             value = para["value"]
             if isinstance(value, str):
                 return self._resolve_template_text(value, kwargs)
             return value
-
-        if ref:
-            return self._resolve_variable_value(ref, kwargs)
 
         return ""
 
