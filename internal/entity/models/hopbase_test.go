@@ -151,3 +151,50 @@ func TestHopBaseListModelsAndCheckConnection(t *testing.T) {
 		t.Fatalf("CheckConnection: %v", err)
 	}
 }
+
+// TestHopBaseListModelsKeepsCatalogTypes tests that listed models in the
+// HopBase catalog keep its types, so vision models are not reported as
+// chat-only, while unknown models keep name-inferred types.
+func TestHopBaseListModelsKeepsCatalogTypes(t *testing.T) {
+	withSSRFBypass(t)
+	saved := GetProviderManager()
+	defer setProviderManager(saved)
+	dir, restore := setupProviderTestDir(t, "hopbase.json")
+	defer restore()
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{"id": "deepseek-v4.1-flash"},
+				{"id": "qwen3.8-max"},
+				{"id": "glm-5.3-flash"},
+				{"id": "kimi-k3"},
+				{"id": "text-embedding-3-small"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	list, err := newHopBaseForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &testAPIKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	got := map[string][]string{}
+	for _, m := range list {
+		got[m.Name] = m.ModelTypes
+	}
+	for _, name := range []string{"deepseek-v4.1-flash", "qwen3.8-max", "glm-5.3-flash"} {
+		if !containsModelType(got[name], "vision") || !containsModelType(got[name], "chat") {
+			t.Errorf("%s types=%v, want chat and vision", name, got[name])
+		}
+	}
+	if !containsModelType(got["kimi-k3"], "chat") || containsModelType(got["kimi-k3"], "vision") {
+		t.Errorf("kimi-k3 types=%v, want chat only", got["kimi-k3"])
+	}
+	if !containsModelType(got["text-embedding-3-small"], "embedding") {
+		t.Errorf("text-embedding-3-small types=%v, want name-inferred embedding", got["text-embedding-3-small"])
+	}
+}

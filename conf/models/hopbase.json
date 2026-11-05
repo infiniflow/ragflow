@@ -40,7 +40,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "kimi-k3",
