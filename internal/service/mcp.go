@@ -128,7 +128,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, req CreateMCPServerReq
 		return nil, common.CodeDataError, errors.New("invalid url")
 	}
 
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalized := permissionresponse.Normalize(err)
 		return nil, code, normalized
@@ -548,11 +548,10 @@ func headerOrVariablesChanged(req UpdateMCPServerRequest) bool {
 
 // ListMCPServers lists MCP servers belonging to a tenant the caller can use.
 func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
-	userID := permission.UserIDFromContext(ctx)
 	tenantID := strings.TrimSpace(requestedTenantID)
 	if tenantID == "" {
 		var err error
-		tenantID, err = requireCurrentTenantID(ctx, userID)
+		tenantID, err = requireCurrentTenantID(ctx)
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return &ListMCPServersResponse{MCPServers: []*MCPServerListItem{}}, common.CodeSuccess, nil
 		}
@@ -738,7 +737,7 @@ func (s *MCPService) ImportServers(ctx context.Context, servers map[string]map[s
 	if userID == "" {
 		return nil, permission.ErrUnauthenticated
 	}
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		_, normalized := permissionresponse.Normalize(err)
 		return nil, normalized

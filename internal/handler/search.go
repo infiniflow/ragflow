@@ -19,7 +19,9 @@ package handler
 import (
 	"context"
 	"net/http"
+
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"strconv"
 	"strings"
 
@@ -395,10 +397,10 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		return
 	}
 
-	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, Identity: plan.Identity, ModelID: plan.ModelID}
-
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
+	ctx = permission.WithTenantID(ctx, plan.TenantID)
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, ModelID: plan.ModelID}
 	c.Request = c.Request.WithContext(ctx)
 
 	hadError := false

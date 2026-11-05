@@ -94,7 +94,7 @@ func (s *ChatChannelService) List(ctx context.Context) ([]*entity.ChatChannelLis
 
 func (s *ChatChannelService) CreateChatChannel(ctx context.Context, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
 	userID := permission.UserIDFromContext(ctx)
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}

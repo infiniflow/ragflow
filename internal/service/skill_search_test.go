@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // ---------------------------------------------------------------------------
@@ -89,6 +90,11 @@ func setupSkillSearchTenant(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("create membership: %v", err)
 	}
+}
+
+func skillSearchTestContext(t *testing.T) context.Context {
+	t.Helper()
+	return permission.WithIdentity(t.Context(), "owner", "")
 }
 
 // saveSkillSearchConfig inserts an active config row for owner/default.
@@ -264,7 +270,7 @@ func TestSearchReturnsEmptyWhenIndexMissing(t *testing.T) {
 	service := NewSkillSearchService()
 	eng := &skillSearchEngine{indexExists: false}
 
-	resp, code, err := service.Search(t.Context(), "owner", &SearchRequest{Query: "anything"}, eng)
+	resp, code, err := service.Search(skillSearchTestContext(t), &SearchRequest{Query: "anything"}, eng)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("Search: code=%d err=%v", code, err)
 	}
@@ -288,7 +294,7 @@ func TestSearchKeywordWhenNoEmbeddingConfigured(t *testing.T) {
 		searchResults: []map[string]interface{}{esStyleChunk("kw-skill", 1.0)},
 	}
 
-	resp, code, err := service.Search(t.Context(), "owner", &SearchRequest{Query: "find"}, eng)
+	resp, code, err := service.Search(skillSearchTestContext(t), &SearchRequest{Query: "find"}, eng)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("Search: code=%d err=%v", code, err)
 	}
@@ -330,7 +336,7 @@ func TestSearchKeywordOnZeroVectorWeight(t *testing.T) {
 		searchResults: []map[string]interface{}{esStyleChunk("zero-weight", 0.5)},
 	}
 
-	resp, code, err := service.Search(t.Context(), "owner", &SearchRequest{Query: "find"}, eng)
+	resp, code, err := service.Search(skillSearchTestContext(t), &SearchRequest{Query: "find"}, eng)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("Search: code=%d err=%v", code, err)
 	}
@@ -360,7 +366,7 @@ func TestSearchEmptyQueryListsAllWithoutThreshold(t *testing.T) {
 		},
 	}
 
-	resp, code, err := service.Search(t.Context(), "owner", &SearchRequest{Query: ""}, eng)
+	resp, code, err := service.Search(skillSearchTestContext(t), &SearchRequest{Query: ""}, eng)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("Search: code=%d err=%v", code, err)
 	}
@@ -398,7 +404,7 @@ func TestSearchHybridFallsBackToKeywordWhenEmbeddingUnavailable(t *testing.T) {
 		searchResults: []map[string]interface{}{esStyleChunk("fallback-skill", 0.7)},
 	}
 
-	resp, code, err := service.Search(t.Context(), "owner", &SearchRequest{Query: "find", SortBy: "name", SortOrder: "asc"}, eng)
+	resp, code, err := service.Search(skillSearchTestContext(t), &SearchRequest{Query: "find", SortBy: "name", SortOrder: "asc"}, eng)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("Search: code=%d err=%v", code, err)
 	}
@@ -437,7 +443,7 @@ func TestSearchHybridFallsBackToKeywordOnEngineError(t *testing.T) {
 
 	// Embedding resolution fails first (no model rows); Search then retries
 	// with keyword search, whose engine error must surface to the caller.
-	_, _, err := service.Search(t.Context(), "owner", &SearchRequest{Query: "find"}, eng)
+	_, _, err := service.Search(skillSearchTestContext(t), &SearchRequest{Query: "find"}, eng)
 	if err == nil || !strings.Contains(err.Error(), "engine down") {
 		t.Fatalf("err = %v, want engine error propagated from keyword fallback", err)
 	}
@@ -459,7 +465,7 @@ func TestSearchVectorFallsBackToKeywordWhenEmbeddingUnavailable(t *testing.T) {
 		searchResults: []map[string]interface{}{esStyleChunk("vector-fallback", 0.55)},
 	}
 
-	resp, code, err := service.Search(t.Context(), "owner", &SearchRequest{Query: "find"}, eng)
+	resp, code, err := service.Search(skillSearchTestContext(t), &SearchRequest{Query: "find"}, eng)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("Search: code=%d err=%v", code, err)
 	}
@@ -478,7 +484,7 @@ func TestSearchPropagatesKeywordSearchError(t *testing.T) {
 	service := NewSkillSearchService()
 	eng := &skillSearchEngine{indexExists: true, searchErr: errors.New("boom")}
 
-	resp, code, err := service.Search(t.Context(), "owner", &SearchRequest{Query: "find"}, eng)
+	resp, code, err := service.Search(skillSearchTestContext(t), &SearchRequest{Query: "find"}, eng)
 	if err == nil || code == common.CodeSuccess {
 		t.Fatalf("code=%d err=%v, want error propagated from keyword search", code, err)
 	}
@@ -498,7 +504,7 @@ func TestSearchPaginationWindow(t *testing.T) {
 	}
 	eng := &skillSearchEngine{indexExists: true, searchResults: results}
 
-	resp, code, err := service.Search(t.Context(), "owner", &SearchRequest{Query: "", Page: 2, PageSize: 10}, eng)
+	resp, code, err := service.Search(skillSearchTestContext(t), &SearchRequest{Query: "", Page: 2, PageSize: 10}, eng)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("Search: code=%d err=%v", code, err)
 	}
@@ -515,7 +521,7 @@ func TestSearchPaginationWindow(t *testing.T) {
 	}
 
 	// Page beyond the result set must return an empty slice, not panic.
-	resp, _, err = service.Search(t.Context(), "owner", &SearchRequest{Query: "", Page: 9, PageSize: 10}, eng)
+	resp, _, err = service.Search(skillSearchTestContext(t), &SearchRequest{Query: "", Page: 9, PageSize: 10}, eng)
 	if err != nil {
 		t.Fatalf("out-of-range page: %v", err)
 	}
@@ -535,7 +541,7 @@ func TestSearchDefaultsPageAndPageSize(t *testing.T) {
 	}
 
 	// Page/page_size default to 1/10 when non-positive.
-	resp, code, err := service.Search(t.Context(), "owner", &SearchRequest{Query: "", Page: -1, PageSize: -1}, eng)
+	resp, code, err := service.Search(skillSearchTestContext(t), &SearchRequest{Query: "", Page: -1, PageSize: -1}, eng)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("Search: code=%d err=%v", code, err)
 	}
@@ -575,7 +581,7 @@ func TestUpdateConfigRejectsInvalidParameters(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := base()
 			tc.mut(req)
-			resp, code, err := service.UpdateConfig(t.Context(), "owner", req)
+			resp, code, err := service.UpdateConfig(skillSearchTestContext(t), req)
 			if err == nil || code != common.CodeDataError {
 				t.Fatalf("code=%d err=%v, want CodeDataError", code, err)
 			}
@@ -592,7 +598,7 @@ func TestUpdateConfigCreatesThenUpdatesSingleActiveConfig(t *testing.T) {
 	setupSkillSearchTenant(t)
 	service := NewSkillSearchService()
 
-	created, code, err := service.UpdateConfig(t.Context(), "owner", &UpdateConfigRequest{
+	created, code, err := service.UpdateConfig(skillSearchTestContext(t), &UpdateConfigRequest{
 		SpaceID: "default", EmbdID: "embd-1",
 		VectorSimilarityWeight: 0.5, SimilarityThreshold: 0.2, TopK: 10,
 		FieldConfig: entity.DefaultFieldConfig(),
@@ -604,7 +610,7 @@ func TestUpdateConfigCreatesThenUpdatesSingleActiveConfig(t *testing.T) {
 		t.Fatalf("embd_id = %v, want embd-1", created["embd_id"])
 	}
 
-	updated, code, err := service.UpdateConfig(t.Context(), "owner", &UpdateConfigRequest{
+	updated, code, err := service.UpdateConfig(skillSearchTestContext(t), &UpdateConfigRequest{
 		SpaceID: "default", EmbdID: "embd-2",
 		VectorSimilarityWeight: 0.7, SimilarityThreshold: 0.3, TopK: 20,
 		FieldConfig: entity.DefaultFieldConfig(),
@@ -633,7 +639,7 @@ func TestGetConfigReturnsDefaultsWhenNoConfigExists(t *testing.T) {
 	setupSkillSearchTenant(t)
 	service := NewSkillSearchService()
 
-	config, code, err := service.GetConfig(t.Context(), "owner", "default", "")
+	config, code, err := service.GetConfig(skillSearchTestContext(t), "default", "")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("GetConfig: code=%d err=%v", code, err)
 	}
@@ -654,7 +660,7 @@ func TestGetConfigWithEmbdIDCreatesMissingConfig(t *testing.T) {
 	setupSkillSearchTenant(t)
 	service := NewSkillSearchService()
 
-	config, code, err := service.GetConfig(t.Context(), "owner", "default", "embd-1")
+	config, code, err := service.GetConfig(skillSearchTestContext(t), "default", "embd-1")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("GetConfig: code=%d err=%v", code, err)
 	}

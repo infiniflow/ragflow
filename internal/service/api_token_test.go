@@ -21,17 +21,22 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 func TestCreateAPIKeyStoresUserAndTenantContext(t *testing.T) {
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "tenant-1")
 	db := setupServiceTestDB(t)
-	if err := db.AutoMigrate(&entity.APIToken{}); err != nil {
-		t.Fatalf("failed to migrate api_token: %v", err)
+	if err := db.AutoMigrate(&entity.APIToken{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("failed to migrate api_token and user_tenant: %v", err)
+	}
+	status := entity.TenantMembershipStatusJoined
+	if err := db.Create(&entity.UserTenant{ID: "membership-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", Status: &status}).Error; err != nil {
+		t.Fatalf("failed to create Tenant membership: %v", err)
 	}
 	pushServiceDB(t, db)
 
-	key, err := (&SystemService{}).CreateAPIKey(ctx, "user-1", "tenant-1", &CreateAPIKeyRequest{})
+	key, err := (&SystemService{}).CreateAPIKey(ctx, &CreateAPIKeyRequest{})
 	if err != nil {
 		t.Fatalf("CreateAPIKey() error = %v", err)
 	}
