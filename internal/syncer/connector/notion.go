@@ -225,7 +225,8 @@ func (c *NotionConnector) readPage(ctx context.Context, page notionPage, request
 		UpdatedAt:          updatedAt,
 		SizeBytes:          int64(len(blob)),
 		Metadata:           map[string]any{"url": page.URL},
-		Fingerprint:        stableFingerprint(map[string]any{"id": page.ID, "last_edited_time": page.LastEditedTime}),
+		// last_edited_time has minute precision, so the title and text tell apart edits made in the same minute.
+		Fingerprint: stableFingerprint(map[string]any{"id": page.ID, "last_edited_time": page.LastEditedTime, "title": title, "content": text}),
 	}}
 	documents = append(documents, attachments...)
 	return documents, children, nil
@@ -872,7 +873,7 @@ func notionSearchResultsOlderThanWindowStart(pages []notionPage, request SyncReq
 	}
 	for _, page := range pages {
 		updatedAt := parseNotionTime(page.LastEditedTime)
-		if updatedAt.IsZero() || !beforeOrAtWindowStart(updatedAt, request.WindowStart) {
+		if updatedAt.IsZero() || !beforeNotionWindowStart(updatedAt, request.WindowStart) {
 			return false
 		}
 	}
@@ -894,7 +895,15 @@ func includeNotionUpdatedAt(updatedAt time.Time, request SyncRequest) bool {
 	if updatedAt.IsZero() {
 		return true
 	}
-	return !beforeOrAtWindowStart(updatedAt, request.WindowStart) && !afterWindowEnd(updatedAt, request.WindowEnd)
+	return !beforeNotionWindowStart(updatedAt, request.WindowStart) && !afterWindowEnd(updatedAt, request.WindowEnd)
+}
+
+// beforeNotionWindowStart reports whether a Notion timestamp is outside the
+// lower bound. Notion rounds last_edited_time down to the minute, so a page
+// edited after WindowStart within that same minute reports an earlier time;
+// the bound is floored to the minute to keep it.
+func beforeNotionWindowStart(updatedAt time.Time, windowStart *time.Time) bool {
+	return windowStart != nil && updatedAt.Before(windowStart.Truncate(time.Minute))
 }
 
 func parseNotionTime(value string) time.Time {
