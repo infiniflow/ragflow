@@ -13,7 +13,7 @@ import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import {
@@ -43,11 +43,31 @@ const FormSchema = z.object({
   extras_meta: z.boolean(),
 });
 
+const normalizeCrawlTimeout = (value: unknown) => {
+  const numberValue =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : Number.NaN;
+
+  return Number.isInteger(numberValue) && numberValue >= 1 && numberValue <= 60
+    ? numberValue
+    : initialQueritContentsValues.crawl_timeout;
+};
+
 function QueritContentsForm({ node }: INextOperatorForm) {
   const { t } = useTranslate('flow');
   const values = useFormValues(initialQueritContentsValues, node);
+  const defaultValues = useMemo(
+    () => ({
+      ...values,
+      crawl_timeout: normalizeCrawlTimeout(values.crawl_timeout),
+    }),
+    [values],
+  );
   const form = useForm<z.infer<typeof FormSchema>>({
-    defaultValues: values,
+    defaultValues,
     resolver: zodResolver(FormSchema),
     mode: 'onChange',
   });
@@ -103,7 +123,18 @@ function QueritContentsForm({ node }: INextOperatorForm) {
                   {t('queritContentsTimeout')}
                 </FormLabel>
                 <FormControl>
-                  <Input type="number" min={1} max={60} step={1} {...field} />
+                  <Input
+                    type="number"
+                    min={1}
+                    max={60}
+                    step={1}
+                    {...field}
+                    onChange={(event) => {
+                      if (event.target.value !== '') {
+                        field.onChange(event);
+                      }
+                    }}
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>
