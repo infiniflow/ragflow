@@ -68,7 +68,7 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 			continue
 		}
 
-		filename, err := common.UniqueFileName(fh.Filename, 255, func(candidate string) (bool, error) {
+		filename, err := common.UniqueFileName(fh.Filename, common.NameLimit255, func(candidate string) (bool, error) {
 			return s.documentDAO.NameExistsInKB(ctx, dao.DB, kb.ID, candidate)
 		})
 		if err != nil {
@@ -82,12 +82,12 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 			continue
 		}
 
-		location := filename
-		if safeParent != "" {
-			location = safeParent + "/" + filename
-		}
-		for storageImpl.ObjExist(ctx, kb.ID, location) {
-			location += "_"
+		var location string
+		for attempt := 0; ; attempt++ {
+			location = storageObjectPath(safeParent, filename, attempt)
+			if !storageImpl.ObjExist(ctx, kb.ID, location) {
+				break
+			}
 		}
 		if err = storageImpl.Put(ctx, kb.ID, location, blob); err != nil {
 			errMsgs = append(errMsgs, fh.Filename+": "+err.Error())
@@ -122,6 +122,17 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 	return results, errMsgs
 }
 
+// storageObjectPath builds the persisted object key for an upload. Display
+// names are limited by Unicode code points, while filesystem-backed storage
+// limits each path segment by bytes.
+func storageObjectPath(parent, filename string, attempt int) string {
+	key := utility.StorageObjectName(filename, attempt, utility.StorageKeyMaxBytes)
+	if parent == "" {
+		return key
+	}
+	return parent + "/" + key
+}
+
 // UploadEmptyDocument inserts a zero-byte "virtual" document into the dataset.
 func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, name string) (map[string]interface{}, common.ErrorCode, error) {
 	userID := permission.UserIDFromContext(ctx)
@@ -129,7 +140,7 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 		return nil, common.CodeUnauthorized, permission.ErrUnauthenticated
 	}
 	// Fall back to a numbered name when the requested one is already taken.
-	name, err := common.UniqueFileName(name, 255, func(candidate string) (bool, error) {
+	name, err := common.UniqueFileName(name, common.NameLimit255, func(candidate string) (bool, error) {
 		return s.documentDAO.NameExistsInKB(ctx, dao.DB, kb.ID, candidate)
 	})
 	if err != nil {
@@ -265,9 +276,12 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 	if headers != nil {
 		contentType = headers.Get("Content-Type")
 	}
-	filename := normalizeWebDocumentName(name, contentType, blob)
+	filename, ok := normalizeWebDocumentName(name, contentType, blob)
+	if !ok {
+		return nil, common.CodeArgumentError, fmt.Errorf("file name cannot be empty")
+	}
 	filename, _, blob = utility.NormalizeUploadInfoContent(filename, contentType, blob)
-	filename, err = common.UniqueFileName(filename, 255, func(candidate string) (bool, error) {
+	filename, err = common.UniqueFileName(filename, common.NameLimit255, func(candidate string) (bool, error) {
 		return s.documentDAO.NameExistsInKB(ctx, dao.DB, kb.ID, candidate)
 	})
 	if err != nil {
@@ -279,9 +293,12 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 		return nil, common.CodeDataError, fmt.Errorf("this type of file has not been supported yet")
 	}
 
-	location := filename
-	for storageImpl.ObjExist(ctx, kb.ID, location) {
-		location += "_"
+	location := ""
+	for attempt := 0; ; attempt++ {
+		location = storageObjectPath("", filename, attempt)
+		if !storageImpl.ObjExist(ctx, kb.ID, location) {
+			break
+		}
 	}
 	if err = storageImpl.Put(ctx, kb.ID, location, blob); err != nil {
 		return nil, common.CodeServerError, err
@@ -307,19 +324,22 @@ func (s *DocumentService) UploadWebDocument(ctx context.Context, kb *entity.Know
 	return docToRawMap(doc), common.CodeSuccess, nil
 }
 
-func normalizeWebDocumentName(name, contentType string, blob []byte) string {
+func normalizeWebDocumentName(name, contentType string, blob []byte) (string, bool) {
 	filename := utility.SanitizeFilename(name)
+	if filename == "" {
+		return "", false
+	}
 	if filepath.Ext(filename) != "" {
-		return filename
+		return filename, true
 	}
 	lowerCT := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
 	switch {
 	case lowerCT == "application/pdf" || http.DetectContentType(blob) == "application/pdf" || utility.BytesLooksLikePDF(blob):
-		return filename + ".pdf"
+		return filename + ".pdf", true
 	case lowerCT == "text/html" || lowerCT == "application/xhtml+xml" || utility.LooksLikeHTML(blob):
-		return filename + ".html"
+		return filename + ".html", true
 	default:
-		return filename
+		return filename, true
 	}
 }
 

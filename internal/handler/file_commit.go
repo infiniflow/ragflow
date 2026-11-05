@@ -156,7 +156,7 @@ func commitFolderID(c *gin.Context) string {
 
 // CreateCommitRequest represents the request body for creating a commit
 type CreateCommitRequest struct {
-	Message string              `json:"message" binding:"required"`
+	Message string              `json:"message" binding:"required,max=512"`
 	Files   []entity.FileChange `json:"files" binding:"required"`
 }
 
@@ -195,9 +195,10 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 	ctx := c.Request.Context()
 	commit, err := h.commitService.CreateCommit(ctx, folderID, user.ID, req.Message, req.Files)
 	if err != nil {
-		// A delete change for a file that is still in the folder is caller
-		// input, not a server fault.
-		if errors.Is(err, file.ErrDeleteLiveFile) {
+		// A delete change for a file that is still in the folder, or a rename
+		// with an empty or overlong target, is caller input, not a server
+		// fault.
+		if errors.Is(err, file.ErrDeleteLiveFile) || errors.Is(err, file.ErrInvalidRenameTarget) {
 			common.RespondError(c, common.CodeBadRequest, err.Error())
 			return
 		}

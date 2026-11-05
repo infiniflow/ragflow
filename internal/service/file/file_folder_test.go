@@ -3,6 +3,7 @@ package file
 import (
 	"context"
 	"errors"
+	"mime/multipart"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/permission/testsupport"
+	"ragflow/internal/storage"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -426,6 +428,30 @@ func TestFileService_UploadRejectsInaccessibleParent(t *testing.T) {
 	}
 }
 
+func TestFileService_UploadRejectsOverlongNameBeforePut(t *testing.T) {
+	db := setupFolderTestDB(t)
+	parent := &entity.File{ID: "folder-1", ParentID: "root-1", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "root", Type: FileTypeFolder}
+	if err := db.Create(parent).Error; err != nil {
+		t.Fatalf("seed parent folder: %v", err)
+	}
+
+	store := &fakeStorage{}
+	factory := storage.GetStorageFactory()
+	original := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(original) })
+
+	filename := strings.Repeat("a", 256) + ".txt"
+	fh := makeUploadInfoHeader(t, filename, []byte("x"))
+	_, err := testFileService().UploadFile(fileTestContext(t, "tenant-1", "tenant-1"), parent.ID, []*multipart.FileHeader{fh}, 1024)
+	if err == nil || !strings.Contains(err.Error(), "name length") {
+		t.Fatalf("UploadFile err = %v, want name length error", err)
+	}
+	if store.lastFnm != "" {
+		t.Fatalf("object %q was written before the name was validated", store.lastFnm)
+	}
+}
+
 func insertFolderTestDocument(t *testing.T, id, kbID, name string) {
 	t.Helper()
 	doc := &entity.Document{
@@ -489,6 +515,40 @@ func TestMoveFilesRenameUpdatesAllLinkedDocuments(t *testing.T) {
 		if doc.Name == nil || *doc.Name != "new.pdf" {
 			t.Fatalf("%s name = %v, want %q", docID, doc.Name, "new.pdf")
 		}
+	}
+}
+
+func TestMoveFilesRejectsBlankRenameTarget(t *testing.T) {
+	setupFolderTestDB(t)
+	folder := &entity.File{
+		ID:       "folder-1",
+		ParentID: "folder-1",
+		TenantID: "tenant-1",
+		Name:     "root",
+		Type:     FileTypeFolder,
+	}
+	if err := dao.DB.Create(folder).Error; err != nil {
+		t.Fatalf("seed folder: %v", err)
+	}
+	insertFolderTestFile(t, "file-1", "folder-1", "old.pdf")
+
+	svc := testFileService()
+	ctx := fileTestContext(t, "tenant-1", "tenant-1")
+	err := svc.MoveFiles(ctx, []string{"file-1"}, "folder-1", "   ")
+	if err == nil || !strings.Contains(err.Error(), "must not be blank") {
+		t.Fatalf("MoveFiles blank rename error = %v, want blank-name error", err)
+	}
+}
+
+func TestMoveFilesRenameRejectsOverlongName(t *testing.T) {
+	setupFolderTestDB(t)
+	insertFolderTestFile(t, "file-1", "folder-1", "old.pdf")
+
+	svc := testFileService()
+	ctx := fileTestContext(t, "tenant-1", "tenant-1")
+	err := svc.MoveFiles(ctx, []string{"file-1"}, "", strings.Repeat("a", common.NameLimit255+1)+".pdf")
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("MoveFiles overlong name error = %v, want length error", err)
 	}
 }
 

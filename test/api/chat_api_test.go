@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func createRESTChat(t *testing.T, extra apiObject) apiObject {
@@ -130,19 +131,18 @@ func TestRESTChatNameValidation(t *testing.T) {
 		value any
 	}{
 		{"missing", nil}, {"empty", ""}, {"whitespace", " \t\n"}, {"number", 1},
-		{"ascii_overflow", strings.Repeat("a", 256)}, {"utf8_overflow", strings.Repeat("界", 86)},
+		{"ascii_overflow", strings.Repeat("a", 256)}, {"utf8_overflow", strings.Repeat("界", 256)},
 	} {
 		t.Run("create/"+tc.name, func(t *testing.T) {
 			restCode(t, restCall(t, TestConfig, http.MethodPost, "/chats", apiObject{"name": tc.value, "dataset_ids": []string{}}, nil), 200, 102)
 		})
 	}
 	asciiPrefix := uniqueName("boundary_ascii")
-	boundaryNames := []string{asciiPrefix + strings.Repeat("a", 255-len(asciiPrefix))}
+	boundaryNames := []string{asciiPrefix + strings.Repeat("a", 255-utf8.RuneCountInString(asciiPrefix))}
 	utf8Prefix := uniqueName("boundary_utf8")
-	utf8Padding := 255 - len(utf8Prefix)
-	boundaryNames = append(boundaryNames, utf8Prefix+strings.Repeat("界", utf8Padding/len("界"))+strings.Repeat("a", utf8Padding%len("界")))
+	boundaryNames = append(boundaryNames, utf8Prefix+strings.Repeat("界", 255-utf8.RuneCountInString(utf8Prefix)))
 	for _, name := range boundaryNames {
-		t.Run(fmt.Sprintf("boundary/%d_bytes", len(name)), func(t *testing.T) {
+		t.Run(fmt.Sprintf("boundary/%d_chars", utf8.RuneCountInString(name)), func(t *testing.T) {
 			chat := createRESTChat(t, apiObject{"name": name})
 			assertChatValue(t, chat["name"], name)
 			assertChatValue(t, getRESTChat(t, chatID(t, chat))["name"], name)

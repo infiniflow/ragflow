@@ -21,7 +21,7 @@ import pytest
 from PIL import Image
 
 pytestmark = pytest.mark.integration
-CHAT_NAME_MAX_BYTES = 255
+CHAT_NAME_MAX_CHARS = 255
 
 
 @pytest.mark.p3
@@ -42,8 +42,8 @@ def test_name(client, chat_factory, name_case, expected_message):
     original_name = chat.name
     name = {
         "unique": f"renamed-{uuid4().hex}",
-        "max_length": "a" * CHAT_NAME_MAX_BYTES,
-        "too_long": "a" * (CHAT_NAME_MAX_BYTES + 1),
+        "max_length": "a" * CHAT_NAME_MAX_CHARS,
+        "too_long": "a" * (CHAT_NAME_MAX_CHARS + 1),
         "non_string": 1,
         "empty": "",
     }.get(name_case)

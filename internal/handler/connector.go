@@ -306,7 +306,7 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 
 	connector, err := h.connectorService.CreateConnector(ctx, &req)
 	if err != nil {
-		if errors.Is(err, service.ErrConnectorInvalidFreq) {
+		if errors.Is(err, service.ErrConnectorInvalidFreq) || errors.Is(err, service.ErrConnectorInvalidName) {
 			common.RespondError(c, common.CodeDataError, err.Error())
 			return
 		}
