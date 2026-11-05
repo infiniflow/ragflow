@@ -78,11 +78,14 @@ type discordGuild struct {
 
 // discordChannel is a channel or thread object from the REST API.
 type discordChannel struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Type     int    `json:"type"`
-	GuildID  string `json:"guild_id"`
-	ParentID string `json:"parent_id"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Type           int    `json:"type"`
+	GuildID        string `json:"guild_id"`
+	ParentID       string `json:"parent_id"`
+	ThreadMetadata struct {
+		ArchiveTimestamp string `json:"archive_timestamp"`
+	} `json:"thread_metadata"`
 }
 
 // discordThreadsResponse is the archived-threads paginated payload.
@@ -473,6 +476,8 @@ func (c *DiscordConnector) listActiveThreads(ctx context.Context, guildID string
 }
 
 // listArchivedThreads paginates archived public or private threads of a channel.
+// Discord returns them newest archive first and pages them by archive time:
+// `before` takes the ISO8601 archive_timestamp of the last thread, not its ID.
 func (c *DiscordConnector) listArchivedThreads(ctx context.Context, channelID, kind string) ([]discordChannel, int, error) {
 	var out []discordChannel
 	before := ""
@@ -493,7 +498,11 @@ func (c *DiscordConnector) listArchivedThreads(ctx context.Context, channelID, k
 		if !resp.HasMore {
 			break
 		}
-		before = resp.Threads[len(resp.Threads)-1].ID
+		next := resp.Threads[len(resp.Threads)-1].ThreadMetadata.ArchiveTimestamp
+		if next == "" || next == before {
+			return nil, 0, fmt.Errorf("discord %s archived threads pagination did not advance for channel %s", kind, channelID)
+		}
+		before = next
 	}
 	return out, http.StatusOK, nil
 }
