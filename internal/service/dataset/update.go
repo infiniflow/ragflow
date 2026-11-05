@@ -253,6 +253,13 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 				txCode = common.CodeDataError
 				return fmt.Errorf("Dataset name '%s' already exists", nameValue)
 			}
+			if nameValue != lockedKB.Name {
+				code, renameErr := renameDatasetFolder(ctx, tx, lockedKB, nameValue)
+				if renameErr != nil {
+					txCode = code
+					return renameErr
+				}
+			}
 		}
 
 		if pipelineID != nil {
@@ -505,6 +512,60 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 	data := datasetToMap(ctx, updatedKB)
 	data["connectors"] = datasetConnectorsOrEmpty(linkedConnectors)
 	return data, common.CodeSuccess, nil
+}
+
+// renameDatasetFolder updates an existing dataset folder in the caller's
+// transaction. Datasets without a folder do not create one during a rename.
+func renameDatasetFolder(ctx context.Context, tx *gorm.DB, kb *entity.Knowledgebase, newName string) (common.ErrorCode, error) {
+	var root entity.File
+	err := tx.WithContext(ctx).
+		Where("tenant_id = ? AND parent_id = id AND type = ?", kb.TenantID, "folder").
+		Take(&root).Error
+	if dao.IsNotFoundErr(err) {
+		return common.CodeSuccess, nil
+	}
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	var kbRoot entity.File
+	err = tx.WithContext(ctx).
+		Where("tenant_id = ? AND parent_id = ? AND name = ? AND type = ? AND source_type = ?",
+			kb.TenantID, root.ID, dao.DatasetFolderName, "folder", string(entity.FileSourceKnowledgebase)).
+		Take(&kbRoot).Error
+	if dao.IsNotFoundErr(err) {
+		return common.CodeSuccess, nil
+	}
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	folders := func() *gorm.DB {
+		return tx.WithContext(ctx).Model(&entity.File{}).
+			Where("tenant_id = ? AND parent_id = ? AND type = ?", kb.TenantID, kbRoot.ID, "folder")
+	}
+	var original entity.File
+	err = folders().Where("name = ? AND source_type = ?", kb.Name, string(entity.FileSourceKnowledgebase)).
+		Take(&original).Error
+	if err != nil && !dao.IsNotFoundErr(err) {
+		return common.CodeServerError, err
+	}
+
+	var count int64
+	err = folders().Where("LOWER(name) = LOWER(?) AND id <> ?", newName, original.ID).Count(&count).Error
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	if count > 0 {
+		return common.CodeDataError, fmt.Errorf("Dataset folder name '%s' already exists", newName)
+	}
+	if original.ID == "" {
+		return common.CodeSuccess, nil
+	}
+	if err = folders().Where("id = ?", original.ID).Update("name", newName).Error; err != nil {
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 func (d *DatasetService) updateDatasetPagerankChunks(ctx context.Context, update datasetPagerankUpdate) error {
