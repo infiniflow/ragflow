@@ -92,15 +92,22 @@ func TestMetaInt(t *testing.T) {
 // helpers so this is behavior-preserving with both legacy readers).
 func TestMetaStringSlice(t *testing.T) {
 	m := map[string]any{
-		"strs":    []string{"a", "", "b"},
-		"anys":    []any{"a", "", 5, "b"},
-		"anyson":  []any{1, 2},
-		"missing": "not-a-slice",
+		"strs":      []string{"a", "", "b"},
+		"strsEmpty": []string{"", "", ""},
+		"anys":      []any{"a", "", 5, "b"},
+		"anyson":    []any{1, 2},
+		"missing":   "not-a-slice",
 	}
-	// []string pass-through: preserves content (empties in a typed []string are
-	// rare and only occur when produced by code other than the dedup helpers).
-	if got := MetaStringSlice(m, "strs"); !reflect.DeepEqual(got, []string{"a", "", "b"}) {
-		t.Fatalf("MetaStringSlice(strs) = %v, want [a, , b]", got)
+	// Both boxings must drop empties: a unified []string/[]any reader must not let
+	// the source type change the result. The []string branch previously kept
+	// empties (inconsistent with []any) — this guards the fix.
+	if got := MetaStringSlice(m, "strs"); !reflect.DeepEqual(got, []string{"a", "b"}) {
+		t.Fatalf("MetaStringSlice(strs) = %v, want [a b]", got)
+	}
+	// A []string that is all-empty yields an empty (non-nil) slice, mirroring the
+	// []any branch — never nil for a present typed []string key.
+	if got := MetaStringSlice(m, "strsEmpty"); len(got) != 0 {
+		t.Fatalf("MetaStringSlice(strsEmpty) = %v, want empty slice", got)
 	}
 	// []any: drops non-strings and empties.
 	if got := MetaStringSlice(m, "anys"); !reflect.DeepEqual(got, []string{"a", "b"}) {

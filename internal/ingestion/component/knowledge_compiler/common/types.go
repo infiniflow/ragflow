@@ -12,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	appcommon "ragflow/internal/common"
 )
 
 // Variant identifies which knowledge-compile strategy to run.
@@ -280,16 +282,13 @@ func VariantToTaskType(variant Variant) string {
 }
 
 // FirstNonEmpty returns the first string that is non-empty after trimming,
-// trimmed. Trimming the returned value preserves the historical contract of the
-// wiki pipeline's local helper (which trimmed and returned the trimmed value);
-// the consolidated callers rely on the trimmed result.
+// trimmed. It delegates to the generic helper in internal/common so the
+// knowledge_compiler package shares one implementation with the rest of the
+// codebase (the generic component layer no longer needs to reach into this
+// package for a meta-agnostic string helper). The trimmed return value preserves
+// the historical contract of the wiki pipeline's local helper.
 func FirstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
+	return appcommon.FirstNonEmpty(vals...)
 }
 
 // MetaInt extracts an integer from a Product.Meta value that may be boxed as
@@ -316,14 +315,20 @@ func MetaInt(meta map[string]any, key string) (int64, bool) {
 }
 
 // MetaStringSlice reads a []string (or []any) Product.Meta key, keeping
-// non-empty strings and dropping empties. The []any branch filters empties; the
-// source data is produced empty-free by the dedup helpers, so this is
-// behavior-preserving with both legacy readers. Returns nil when no strings are
-// present.
+// non-empty strings and dropping empties. Both the []string and []any branches
+// filter empties so the result is independent of how the value was boxed (the
+// engine/JSON round-trip does not guarantee a single type). Returns nil when no
+// strings are present; a present but empty key yields a non-nil empty slice.
 func MetaStringSlice(meta map[string]any, key string) []string {
 	switch v := meta[key].(type) {
 	case []string:
-		return v
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			if e != "" {
+				out = append(out, e)
+			}
+		}
+		return out
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, e := range v {
