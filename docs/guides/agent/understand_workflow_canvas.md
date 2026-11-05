@@ -43,7 +43,7 @@ Operation Steps:
 6. After selection, the variable will be automatically inserted into the input box.
 7. Save component configuration and run the Agent to verify data transmission.
 
-![Use variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/use_variables.jpg)
+![Use variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/workflow_variable_picker.jpg)
 ## Canvas Toolbar
 
 The buttons in the upper-right corner let you save, test, publish, and manage the workflow.
@@ -83,3 +83,13 @@ Connections define component execution order. Sequential components run along a 
 Click any canvas component to open the right-side configuration panel, which displays fields, input variables, output variables and execution settings. Recommended workflow: confirm which variable the component reads → configure processing logic → verify downstream nodes reference correct outputs.
 
 For slow workflows, see [Improve Agent Response Time](./best_practices/accelerate_agent_question_answering.md).
+
+## Sharing Scope
+
+1. Open the workflow under **Agent > Workflow**.
+2. Click **Management > Settings** in the upper-right corner.
+3. In the **Edit** dialog, find **Permissions**.
+4. Select **me** to keep it private, or **Team** to share it with your team.
+5. Click **Save**.
+
+See [Team resource permissions](../team/resource_sharing/resource_sharing_and_permissions.md#member-permissions) for what members can do after sharing.

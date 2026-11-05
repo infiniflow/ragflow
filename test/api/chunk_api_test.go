@@ -541,20 +541,20 @@ func TestChunkLifecycle(t *testing.T) {
 	deleted := callChunkAPI(t, TestConfig, http.MethodDelete, path,
 		map[string]interface{}{"chunk_ids": []string{ids[0], ids[1], ids[0]}}, nil, http.StatusOK)
 	requireChunkCode(t, deleted, 0)
-	if deleted["data"] != float64(2) {
+	if chunkData(t, deleted)["deleted_count"] != float64(2) {
 		t.Fatalf("deleted count = %v, want 2 unique chunks", deleted["data"])
 	}
 	assertChunkIDs(t, listChunkIDs(t, path, nil, 1), ids[2:])
 	deleted = callChunkAPI(t, TestConfig, http.MethodDelete, path,
 		map[string]interface{}{"chunk_ids": ids[:2]}, nil, http.StatusOK)
 	requireChunkCode(t, deleted, 0)
-	if deleted["data"] != float64(0) {
+	if chunkData(t, deleted)["deleted_count"] != float64(0) {
 		t.Fatalf("repeated deletion count = %v, want 0", deleted["data"])
 	}
 	deleted = callChunkAPI(t, TestConfig, http.MethodDelete, path,
 		map[string]interface{}{"delete_all": true}, nil, http.StatusOK)
 	requireChunkCode(t, deleted, 0)
-	if deleted["data"] != float64(1) {
+	if chunkData(t, deleted)["deleted_count"] != float64(1) {
 		t.Fatalf("delete_all count = %v, want 1", deleted["data"])
 	}
 	assertChunkIDs(t, listChunkIDs(t, path, nil, 0), nil)
@@ -654,7 +654,7 @@ func TestChunkReadUpdateAndDeleteStayWithinDocument(t *testing.T) {
 	deleted := callChunkAPI(t, TestConfig, http.MethodDelete, otherPath,
 		map[string]interface{}{"chunk_ids": []string{id}}, nil, http.StatusOK)
 	requireChunkCode(t, deleted, 0)
-	if deleted["data"] != float64(0) {
+	if chunkData(t, deleted)["deleted_count"] != float64(0) {
 		t.Fatalf("deleted another document's chunk: %v", deleted)
 	}
 	get := callChunkAPI(t, TestConfig, http.MethodGet, path+"/"+id, nil, nil, http.StatusOK)

@@ -433,10 +433,9 @@ func migrateIngestionTaskPipelineLogID(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-// migrateIngestionLogRunIdentity adds the columns and indexes that make each
-// ingestion event belong to one immutable pipeline-operation-log run. It is
-// deliberately explicit: the runtime startup path auto-migrates ingestion
-// tables and cannot be trusted to converge an existing schema safely.
+// migrateIngestionLogRunIdentity adds the run identity and pipeline version
+// columns. It is explicit because runtime AutoMigrate cannot be trusted to
+// converge an existing schema safely.
 func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 	migrator := db.WithContext(ctx).Migrator()
 	if migrator.HasTable(&entity.PipelineOperationLog{}) {
@@ -447,18 +446,15 @@ func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 				return fmt.Errorf("add pipeline_operation_log.run_count: %w", err)
 			}
 		}
-		if !migrator.HasColumn(&entity.PipelineOperationLog{}, "process_end_at") {
-			if err := db.WithContext(ctx).Exec(
-				"ALTER TABLE pipeline_operation_log ADD COLUMN process_end_at datetime NULL",
-			).Error; err != nil && !isDuplicateColumnError(err) {
-				return fmt.Errorf("add pipeline_operation_log.process_end_at: %w", err)
-			}
-		}
-		if err := createIngestionLogIndexIfMissing(migrator, &entity.PipelineOperationLog{}, "idx_pipeline_operation_log_process_end_at", "add pipeline_operation_log.process_end_at index"); err != nil {
-			return err
-		}
 		if err := createIngestionLogIndexIfMissing(migrator, &entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run", "add pipeline_operation_log document/run index"); err != nil {
 			return err
+		}
+		if !migrator.HasColumn(&entity.PipelineOperationLog{}, "pipeline_version_id") {
+			if err := db.WithContext(ctx).Exec(
+				"ALTER TABLE pipeline_operation_log ADD COLUMN pipeline_version_id varchar(32) NULL",
+			).Error; err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("add pipeline_operation_log.pipeline_version_id: %w", err)
+			}
 		}
 	}
 

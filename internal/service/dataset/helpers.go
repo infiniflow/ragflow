@@ -300,8 +300,8 @@ func pythonStringListRepr(items []string) string {
 	return "[" + strings.Join(quoted, ", ") + "]"
 }
 
-func canvasAccessibleForUser(ctx context.Context, subject permission.Subject, canvasID string) (bool, error) {
-	err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, subject, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationUse)
+func canvasAccessibleForUser(ctx context.Context, canvasID string) (bool, error) {
+	err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationUse)
 	if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 		return false, nil
 	}

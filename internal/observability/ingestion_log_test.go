@@ -49,6 +49,24 @@ func TestComputeDurationsClampsEndBeforeBegin(t *testing.T) {
 	}
 }
 
+// TestComputeDurationsZeroBeginYieldsZeroParse guards against a real failure
+// mode: when the worker-claim time is unknown (e.g. the document lookup failed
+// and claimTime returned nil), BeginTime is the zero time while EndTime was
+// still derived from ProcessBeginAt + ProcessDuration. Without a begin.IsZero()
+// guard, parse would be end - year-0001 ≈ 9.2e9 seconds. A missing begin means
+// no parse window, so parse (and wait) must clamp to 0.
+func TestComputeDurationsZeroBeginYieldsZeroParse(t *testing.T) {
+	enqueue := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := enqueue.Add(10 * time.Minute)
+	wait, parse := ComputeDurations(enqueue, time.Time{}, end)
+	if wait != 0 {
+		t.Errorf("wait_duration_s = %v, want 0 for zero begin", wait)
+	}
+	if parse != 0 {
+		t.Errorf("parse_duration_s = %v, want 0 for zero begin (must not report a huge duration)", parse)
+	}
+}
+
 func ptrStr(s string) *string        { return &s }
 func ptrTime(t time.Time) *time.Time { return &t }
 func ptrInt(i int) *int              { return &i }
@@ -71,13 +89,14 @@ func TestBuildIngestLogHappy(t *testing.T) {
 		ProcessBeginAt: ptrTime(now.Add(2 * time.Minute)),
 	}
 	run := &entity.PipelineOperationLog{
-		RunCount:     ptrInt(1),
-		TenantID:     "tenant-1",
-		Progress:     1,
-		CreateDate:   ptrTime(now),
-		ProcessEndAt: ptrTime(now.Add(12 * time.Minute)),
+		RunCount:        ptrInt(1),
+		TenantID:        "tenant-1",
+		Progress:        1,
+		CreateDate:      ptrTime(now),
+		ProcessBeginAt:  ptrTime(now.Add(2 * time.Minute)),
+		ProcessDuration: 600,
 	}
-	log := BuildIngestLog(task, doc, run, "completed", "COMPLETED", "")
+	log := BuildIngestLog(task, doc, run, "completed", "COMPLETED", "", "", "")
 
 	if log.TaskID != "task-1" {
 		t.Errorf("TaskID = %q, want task-1", log.TaskID)
@@ -132,7 +151,7 @@ func TestBuildIngestLogCreatedSkipsClaimTime(t *testing.T) {
 		ProcessBeginAt: ptrTime(now.Add(2 * time.Minute)),
 	}
 	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(now)}
-	log := BuildIngestLog(task, doc, run, "created", "CREATED", "")
+	log := BuildIngestLog(task, doc, run, "created", "CREATED", "", "", "")
 	if !log.BeginTime.IsZero() {
 		t.Errorf("created event BeginTime = %v, want zero", log.BeginTime)
 	}
@@ -143,7 +162,7 @@ func TestBuildIngestLogFailedCarriesErrorInfo(t *testing.T) {
 	task := &entity.IngestionTask{ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1", UserID: "user-1"}
 	doc := &entity.Document{Name: ptrStr("docname"), Suffix: ".pdf", Type: "pdf", Size: 10, ParserID: "pdf"}
 	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(now)}
-	log := BuildIngestLog(task, doc, run, "failed", "FAILED", "boom")
+	log := BuildIngestLog(task, doc, run, "failed", "FAILED", "boom", "", "")
 	if log.ErrorInfo != "boom" {
 		t.Errorf("ErrorInfo = %q, want boom", log.ErrorInfo)
 	}

@@ -128,6 +128,9 @@ func (dao *KnowledgebaseDAO) EmbeddingBaseName(ctx context.Context, db *gorm.DB,
 
 // Create creates a new knowledge base record
 func (dao *KnowledgebaseDAO) Create(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) error {
+	if kb.UserID == "" {
+		kb.UserID = kb.CreatedBy
+	}
 	return db.WithContext(ctx).Create(kb).Error
 }
 

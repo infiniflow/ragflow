@@ -286,6 +286,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	file := &entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
+		UserID:    userID,
 		TenantID:  userID,
 		CreatedBy: userID,
 		Name:      "/",

@@ -39,16 +39,16 @@ Write down every RAGFlow volume name and every persistent host directory shown i
 
 Use the following table to check the list you recorded. Include each service enabled in your deployment, together with any additional or externally managed storage used in your environment.
 
-| Service or data | Persistent location |
-|-----------------|---------------------|
-| Metadata database in bundled MySQL | `docker_mysql_data` |
-| Uploaded objects in bundled MinIO | `docker_minio_data` |
-| Elasticsearch index | `docker_esdata01` |
-| Infinity index | `docker_infinity_data` |
-| Kvrocks cache and checkpoint data | `docker_kvrocks_data` |
-| NATS JetStream data | `docker_nats_data` |
-| Kibana data, when Kibana is enabled | `docker_kibana_data` |
-| RAGFlow logs | `docker/ragflow-logs` bind mount |
+| Service or data                     | Persistent location              |
+|-------------------------------------|----------------------------------|
+| Metadata database in bundled MySQL  | `docker_mysql_data`              |
+| Uploaded objects in bundled MinIO   | `docker_minio_data`              |
+| Elasticsearch index                 | `docker_esdata01`                |
+| Infinity index                      | `docker_infinity_data`           |
+| Kvrocks cache and checkpoint data   | `docker_kvrocks_data`            |
+| NATS JetStream data                 | `docker_nats_data`               |
+| Kibana data, when Kibana is enabled | `docker_kibana_data`             |
+| RAGFlow logs                        | `docker/ragflow-logs` bind mount |
 
 This table is a checklist. Always use the mounts reported by `docker inspect` as the final backup scope.
 
@@ -144,4 +144,4 @@ docker compose -p docker -f docker/docker-compose.yml ps --all
 docker compose -p docker -f docker/docker-compose.yml logs --tail=200 ragflow-cpu
 ```
 
-Finally, sign in and confirm that existing knowledge bases and files are present, files can be opened, and retrieval returns content from previously parsed documents. After these checks pass, the backup and restore are complete.
+Finally, sign in and confirm that existing Datasets and files are present, files can be opened, and retrieval returns content from previously parsed documents. After these checks pass, the backup and restore are complete.

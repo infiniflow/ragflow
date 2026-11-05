@@ -146,7 +146,7 @@ func compileDirtyWikiDocument(ctx context.Context, request knowledge_compile.Wik
 	if len(affectedSlugs) == 0 && len(removedSlugs) == 0 {
 		return persistDirtyWikiActiveStates(ctx, request, activeStates)
 	}
-	return replaceDirtyWikiProducts(ctx, request, compiled, uniqueStrings(affectedSlugs), uniqueStrings(removedSlugs), activeStates, false)
+	return replaceDirtyWikiProducts(ctx, request, compiled, appcommon.DeduplicateTrimmed(affectedSlugs), appcommon.DeduplicateTrimmed(removedSlugs), activeStates, false)
 }
 
 func loadWikiCompilerParams(ctx context.Context, doc *entity.Document) (map[string]any, error) {
@@ -206,13 +206,13 @@ func resolveWikiTemplateIDs(ctx context.Context, tenantID string, params map[str
 	groupIDs := stringValues(params["compilation_template_group_id"])
 	groupIDs = append(groupIDs, stringValues(params["compilation_template_group_ids"])...)
 	if len(groupIDs) > 0 {
-		resolved, err := dao.NewCompilationTemplateDAO().ResolveGroupTemplateIDs(ctx, kcWiringDeps.DB, tenantID, uniqueStrings(groupIDs))
+		resolved, err := dao.NewCompilationTemplateDAO().ResolveGroupTemplateIDs(ctx, kcWiringDeps.DB, tenantID, appcommon.DeduplicateTrimmed(groupIDs))
 		if err != nil {
 			return nil, err
 		}
 		ids = append(ids, resolved...)
 	}
-	ids = uniqueStrings(ids)
+	ids = appcommon.DeduplicateTrimmed(ids)
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -231,7 +231,7 @@ func resolveWikiTemplateIDs(ctx context.Context, tenantID string, params map[str
 			wikiIDs = append(wikiIDs, template.ID)
 		}
 	}
-	return uniqueStrings(wikiIDs), nil
+	return appcommon.DeduplicateTrimmed(wikiIDs), nil
 }
 
 func loadActiveSourceChunks(ctx context.Context, request knowledge_compile.WikiDirtyRequest) ([]map[string]any, error) {
@@ -353,7 +353,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 				removedSlugs = append(removedSlugs, anyString(row["slug_kwd"]))
 			}
 		}
-		removedSlugs = uniqueStrings(removedSlugs)
+		removedSlugs = appcommon.DeduplicateTrimmed(removedSlugs)
 	}
 	staleIDs := make([]string, 0)
 	if existing != nil {
@@ -514,23 +514,6 @@ func stringValues(value any) []string {
 		return result
 	}
 	return nil
-}
-
-func uniqueStrings(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	return result
 }
 
 // newKnowledgeCompilerGroupResolver builds the production GroupResolver backed by

@@ -33,12 +33,16 @@ func newPluginRouter(authenticate bool) (*gin.Engine, *PluginHandler) {
 	gin.SetMode(gin.TestMode)
 	h := NewPluginHandler(service.NewPluginService())
 	r := gin.New()
-	r.GET("/api/v1/plugin/tools", func(c *gin.Context) {
-		if authenticate {
+	api := r.Group("/api/v1")
+	if authenticate {
+		api.Use(func(c *gin.Context) {
 			c.Set("user", &entity.User{ID: "tenant-1"})
-		}
-		h.ListLLMTools(c)
-	})
+			c.Next()
+		})
+	} else {
+		api.Use((&AuthHandler{}).AuthMiddleware())
+	}
+	api.GET("/plugin/tools", h.ListLLMTools)
 	return r, h
 }
 

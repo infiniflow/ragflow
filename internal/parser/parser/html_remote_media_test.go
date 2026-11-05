@@ -299,7 +299,7 @@ func TestHTMLTextParserSkipsRemoteImages(t *testing.T) {
 	var hits atomic.Int32
 	server := imageTestServer(t, "remote-bytes", &hits)
 
-	p, err := GetTextOnlyParser(utility.FileTypeHTML)
+	p, _, err := GetTextOnlyParser(utility.FileTypeHTML, nil)
 	if err != nil {
 		t.Fatalf("GetTextOnlyParser: %v", err)
 	}

@@ -104,9 +104,9 @@ func requestWebhookTrace(t *testing.T, h *AgentHandler, canvasID, userID string,
 	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, "u1", userID, "u1"); err != nil {
 		t.Fatalf("prepare webhook trace caller permission: %v", err)
 	}
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
-		UserID: userID, TenantID: "u1",
-	}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(),
+		userID, "u1",
+	))
 	c.Set("user", &entity.User{ID: userID})
 	c.Set("user_id", userID)
 	c.Params = gin.Params{{Key: "canvas_id", Value: canvasID}}

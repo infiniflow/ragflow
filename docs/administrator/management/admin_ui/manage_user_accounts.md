@@ -99,7 +99,7 @@ Before deleting a user, set their account status to **Inactive**. If their user 
 
 **Caution:** The currently logged-in administrator cannot delete their own account through list **Actions**.
 
-Deleting a user is a high-risk operation. Before doing it, confirm whether the user's related data, knowledge bases, Agents, files, API keys, and business responsibilities have been handed over. If you only need to temporarily prevent login, change the account status to `Inactive` first.
+Deleting a user is a high-risk operation. Before doing it, confirm whether the user's related data, Datasets, Agents, files, API keys, and business responsibilities have been handed over. If you only need to temporarily prevent login, change the account status to `Inactive` first.
 
 ## View User Details and Resource Impact
 

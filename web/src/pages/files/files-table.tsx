@@ -61,6 +61,7 @@ type FilesTableProps = Pick<
   Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> &
   UseMoveDocumentShowType & {
     connectKnowledgeModal: UseHandleConnectToKnowledgeReturnType;
+    showPrivilegeModal?(record: IFile): void;
   };
 
 export function FilesTable({
@@ -73,6 +74,7 @@ export function FilesTable({
   setRowSelection,
   showMoveFileModal,
   connectKnowledgeModal,
+  showPrivilegeModal,
 }: FilesTableProps) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
@@ -273,6 +275,7 @@ export function FilesTable({
             showFileRenameModal={showFileRenameModal}
             showMoveFileModal={showMoveFileModal}
             setRowSelection={setRowSelection}
+            showPrivilegeModal={showPrivilegeModal}
           />
         );
       },

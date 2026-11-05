@@ -40,15 +40,15 @@ func resolveSkillSpaceTenantID(ctx context.Context, userID, spaceID string, oper
 		return requireCurrentTenantID(ctx, userID)
 	}
 
-	checker := permission.NewDatabaseChecker(dao.DB)
-	subject := permission.Subject{UserID: userID}
-	ref := permission.ResourceRef{Kind: permission.ResourceKindSkillSpace, ID: spaceID}
-	if err := checker.CheckResource(ctx, subject, ref, operation); err != nil {
-		return "", err
-	}
-	access, err := checker.ResolveAccess(ctx, subject, ref)
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindSkillSpace,
+		ID:   spaceID,
+	})
 	if err != nil {
 		return "", err
+	}
+	if !access.Allows(operation) {
+		return "", permission.ErrPermissionDenied
 	}
 	return access.TenantID, nil
 }
@@ -148,6 +148,7 @@ func (s *SkillSpaceService) getSkillsFolderID(ctx context.Context, tenantID stri
 	folder := &entity.File{
 		ID:         folderID,
 		ParentID:   rootFolder.ID,
+		UserID:     tenantID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
 		Name:       "skills",
@@ -179,7 +180,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, permission.Subject{UserID: userID}, "file", permission.ActionWrite); err != nil {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
@@ -266,6 +267,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 	folder := &entity.File{
 		ID:         folderID,
 		ParentID:   skillsFolderID,
+		UserID:     userID,
 		TenantID:   tenantID,
 		CreatedBy:  userID,
 		Name:       spaceName,
@@ -277,6 +279,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 	// Create the space
 	space := &entity.SkillSpace{
 		ID:          spaceID,
+		UserID:      userID,
 		TenantID:    tenantID,
 		Name:        spaceName,
 		FolderID:    folderID,
@@ -295,10 +298,10 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 			return fmt.Errorf("failed to create space: %w", err)
 		}
 		checker := permission.NewDatabaseChecker(tx)
-		if err := checker.GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: folderID}); err != nil {
+		if err := checker.GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: folderID}); err != nil {
 			return err
 		}
-		return checker.GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: permission.ResourceKindSkillSpace, ID: spaceID})
+		return checker.GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindSkillSpace, ID: spaceID})
 	}); err != nil {
 		common.Error("Failed to create skill space", err)
 		return nil, common.CodeOperatingError, err
@@ -325,7 +328,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 
 // ListSpaces lists skill spaces the caller can read.
 func (s *SkillSpaceService) ListSpaces(ctx context.Context, userID string) (map[string]interface{}, common.ErrorCode, error) {
-	spaceScope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
+	spaceScope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.ScopeQuery{
 		Kind:      permission.ResourceKindSkillSpace,
 		Operation: permission.OperationRead,
 	})
@@ -554,12 +557,13 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 	default:
 		ctxFS, cancelFS := context.WithTimeout(ctx, 60*time.Second)
 		defer cancelFS()
-		err := s.fileService.DeleteFiles(ctxFS, actingUserID, []string{folderID})
+		ctxFS = permission.WithIdentity(ctxFS, actingUserID, tenantID)
+		err := s.fileService.DeleteFiles(ctxFS, []string{folderID})
 		if err != nil {
 			common.Error(fmt.Sprintf("Failed to delete space folder via Go FileService during async delete, spaceID=%s, error=%v", spaceID, err), nil)
 			// Retry once with a delay (same ctxFS, still valid)
 			time.Sleep(5 * time.Second)
-			if retryErr := s.fileService.DeleteFiles(ctxFS, actingUserID, []string{folderID}); retryErr != nil {
+			if retryErr := s.fileService.DeleteFiles(ctxFS, []string{folderID}); retryErr != nil {
 				common.Error(fmt.Sprintf("Retry failed to delete space folder, marking space as deleted anyway, spaceID=%s, error=%v", spaceID, retryErr), nil)
 				// Mark as deleted even if folder deletion fails - orphaned folders can be cleaned up later
 			} else {

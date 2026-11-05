@@ -237,11 +237,11 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
-	dialogResp, err := s.chatSvc.GetChat(ctx, userID, chatID)
+	dialogResp, err := s.chatSvc.GetChat(ctx, chatID)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
 			code, permissionErr := permissionresponse.NormalizeHidden(err)
-			common.ResponseWithCodeData(c, code, nil, permissionErr.Error())
+			common.RespondError(c, code, permissionErr.Error())
 			return
 		}
 		s.writeDataError(c, err.Error())
@@ -250,7 +250,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	dialog := dialogResp.Chat
 	if err := validateChatDatasetAccess(ctx, userID, dialog.KBIDs); err != nil {
 		code, permissionErr := permissionresponse.NormalizeHidden(err)
-		common.ResponseWithCodeData(c, code, nil, permissionErr.Error())
+		common.RespondError(c, code, permissionErr.Error())
 		return
 	}
 	resolvedModel := req.Model
@@ -920,12 +920,12 @@ func streamChatCompletionSSE(
 
 // writeArgError writes a 101 JSON error envelope (malformed request).
 func (s *OpenAIChatService) writeArgError(c *gin.Context, msg string) {
-	common.ResponseWithCodeData(c, common.CodeArgumentError, nil, msg)
+	common.RespondError(c, common.CodeArgumentError, msg)
 }
 
 // writeDataError writes a 102 JSON error envelope (service failure).
 func (s *OpenAIChatService) writeDataError(c *gin.Context, msg string) {
-	common.ResponseWithCodeData(c, common.CodeDataError, nil, msg)
+	common.RespondError(c, common.CodeDataError, msg)
 }
 
 func getCreatedOrDefault(created *int64) int64 {
