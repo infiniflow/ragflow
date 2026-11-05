@@ -8095,7 +8095,7 @@ curl --request POST \
 ##### Body parameters
 
 - `"name"`: `string`, *Required*
-  The name of the search app. Must be unique and no longer than 255 characters.
+  The name of the search app. Must be unique and no longer than 128 characters.
 - `"description"`: `string`
   A brief description of the search app.
 

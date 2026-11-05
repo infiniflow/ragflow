@@ -48,6 +48,7 @@ import (
 	"ragflow/internal/entity"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -1010,6 +1011,9 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		return nil, common.CodeArgumentError, errors.New("no title in request")
 	}
 	title := strings.TrimSpace(*req.Title)
+	if err := common.ValidateNameRunes(title, common.NameLimit255); err != nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)
+	}
 	req.Title = &title
 
 	if req.Permission == "" {
@@ -1019,7 +1023,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		req.CanvasCategory = "agent_canvas"
 	}
 
-	uniqueTitle, err := common.UniqueName(title, 255, func(candidate string) (bool, error) {
+	uniqueTitle, err := common.UniqueName(title, common.NameLimit255, func(candidate string) (bool, error) {
 		return s.canvasDAO.TitleExists(ctx, dao.DB, userID, req.CanvasCategory, candidate, "")
 	})
 	if err != nil {
@@ -1199,9 +1203,15 @@ func (s *AgentService) UpdateAgent(ctx context.Context, canvasID string, patch m
 	for _, key := range []string{"title", "avatar", "description", "permission", "canvas_type", "canvas_category"} {
 		if value, ok := patch[key]; ok && value != nil {
 			if key == "title" {
-				if title, ok := value.(string); ok {
-					value = strings.TrimSpace(title)
+				title, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("update agent %s: title must be a string", canvasID)
 				}
+				title = strings.TrimSpace(title)
+				if err := common.ValidateNameRunes(title, common.NameLimit255); err != nil {
+					return fmt.Errorf("update agent %s: %w", canvasID, err)
+				}
+				value = title
 			}
 			if key == "permission" {
 				if permissionValue, ok := value.(string); ok {
@@ -1250,8 +1260,16 @@ func (s *AgentService) UpdateAgent(ctx context.Context, canvasID string, patch m
 	// Optional alias carried on a manual Save (design §4.4 carry-on path).
 	var aliasPtr *string
 	if value, ok := patch["alias"]; ok && value != nil {
-		if s, ok := value.(string); ok && strings.TrimSpace(s) != "" {
-			aliasPtr = &s
+		alias, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("update agent %s: alias must be a string", canvasID)
+		}
+		alias = strings.TrimSpace(alias)
+		if err := common.ValidateAliasRunes(alias, common.NameLimit255); err != nil {
+			return fmt.Errorf("update agent %s: %w", canvasID, err)
+		}
+		if alias != "" {
+			aliasPtr = &alias
 		}
 	}
 	// ApplyVersion restore path: restoring a version refreshes only the live
@@ -1436,13 +1454,25 @@ func (s *AgentService) PublishAgent(ctx context.Context, canvasID string, req *P
 		}
 		if req.Title != nil {
 			trimmed := strings.TrimSpace(*req.Title)
+			if err := common.ValidateNameRunes(trimmed, common.NameLimit255); err != nil {
+				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
+			}
 			title = &trimmed
 		}
 		if req.Description != nil {
 			description = req.Description
 		}
 		if req.Alias != nil {
-			alias = req.Alias
+			aliasValue := strings.TrimSpace(*req.Alias)
+			if err := common.ValidateAliasRunes(aliasValue, common.NameLimit255); err != nil {
+				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
+			}
+			alias = &aliasValue
+		}
+	}
+	if title != nil {
+		if err := common.ValidateNameRunes(*title, common.NameLimit255); err != nil {
+			return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
 		}
 	}
 
@@ -1502,7 +1532,10 @@ func buildVersionTitle(agentTitle string, ts time.Time) string {
 	if title == "" {
 		title = "agent"
 	}
-	return fmt.Sprintf("%s_%s", title, ts.Format("2006-01-02 15:04:05"))
+	// user_canvas_version.title is VARCHAR(255); reserve room for the timestamp
+	// suffix so a maximum-length canvas title cannot overflow the version row.
+	title = utility.TruncateRunes(title, common.VersionBaseTitleLimit)
+	return fmt.Sprintf("%s_%s", title, ts.Format(common.VersionTitleTimeLayout))
 }
 
 // ListVersions returns every version for a canvas the user can see,
@@ -1594,6 +1627,20 @@ func (s *AgentService) UpdateVersion(ctx context.Context, canvasID, versionID st
 	}
 	if row.UserCanvasID != canvasID {
 		return dao.ErrUserCanvasVersionNotFound
+	}
+	if patch.Alias != nil {
+		alias := strings.TrimSpace(*patch.Alias)
+		if err := common.ValidateAliasRunes(alias, common.NameLimit255); err != nil {
+			return err
+		}
+		patch.Alias = &alias
+	}
+	if patch.Title != nil {
+		title := strings.TrimSpace(*patch.Title)
+		if err := common.ValidateNameRunes(title, common.NameLimit255); err != nil {
+			return err
+		}
+		patch.Title = &title
 	}
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
 		return s.versionDAO.UpdateTx(ctx, tx, versionID, patch)

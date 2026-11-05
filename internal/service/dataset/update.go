@@ -69,8 +69,8 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		if name == "" {
 			return nil, common.CodeDataError, errors.New("String should have at least 1 character")
 		}
-		if utf8.RuneCountInString(name) > 128 {
-			return nil, common.CodeDataError, errors.New("String should have at most 128 characters")
+		if utf8.RuneCountInString(name) > entity.DatasetNameLimit {
+			return nil, common.CodeDataError, fmt.Errorf("String should have at most %d characters", entity.DatasetNameLimit)
 		}
 		simpleUpdates["name"] = name
 	}

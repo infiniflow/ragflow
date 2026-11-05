@@ -106,6 +106,10 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, name, channe
 			return nil, err
 		}
 	}
+	name = strings.TrimSpace(name)
+	if err := common.ValidateNameRunes(name, common.NameLimit128); err != nil {
+		return nil, err
+	}
 	row := &entity.ChatChannel{
 		ID:       common.GenerateUUID(),
 		UserID:   userID,
@@ -170,6 +174,10 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, channelID st
 		name, ok := value.(string)
 		if !ok {
 			return nil, common.CodeDataError, errors.New("name must be string")
+		}
+		name = strings.TrimSpace(name)
+		if err := common.ValidateNameRunes(name, common.NameLimit128); err != nil {
+			return nil, common.CodeDataError, err
 		}
 		updates["name"] = name
 	}

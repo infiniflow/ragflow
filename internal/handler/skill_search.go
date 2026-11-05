@@ -390,11 +390,11 @@ func (h *SkillSearchHandler) GetSpace(c *gin.Context) {
 
 // UpdateSpaceRequest represents the request to update a skill space
 type UpdateSpaceRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	EmbdID      string `json:"embd_id"`
-	RerankID    string `json:"rerank_id"`
-	TopK        int    `json:"top_k"`
+	Name        *string `json:"name"`
+	Description string  `json:"description"`
+	EmbdID      string  `json:"embd_id"`
+	RerankID    string  `json:"rerank_id"`
+	TopK        int     `json:"top_k"`
 }
 
 // UpdateSpace handles the update skill space request
