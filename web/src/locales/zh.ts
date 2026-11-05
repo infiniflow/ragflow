@@ -2450,11 +2450,15 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
       imageOcr: 'OCR',
       imageOcrTip:
-        '使用本地 OCR 或所选 PaddleOCR 模型提取图片文字。视觉增强独立于该开关，为图片补充描述。',
-      imageOcrModel: 'OCR 模型',
-      imageOcrLocal: 'DeepDoc',
-      imageOcrModelTip:
-        '选择 DeepDoc 使用本地 OCR，或选择已添加的 PaddleOCR 或 PaddleOCR.local 模型。关闭 OCR 会保留选择但不执行 OCR；SVG 直接读取文字。',
+        '提取图片中的文字。DeepDoc 将图片视作单页文档解析，包含版面分析与表格结构；外部 OCR 模型仅返回文字。视觉增强独立于该开关，会为图片补充描述。',
+      imageOcrParsingMethod: '解析方式',
+      imageOcrParsingMethodTip:
+        'DeepDoc 在本地运行，执行 OCR、版面分析与表格结构识别；外部 OCR 模型使用已添加的 PaddleOCR 模型，仅返回文字。关闭 OCR 会保留选择但不执行 OCR；SVG 直接读取文字。',
+      imageOcrDeepDoc: 'DeepDoc',
+      imageOcrDeepDocDescription: 'OCR + 版面分析 + 表格结构',
+      imageOcrExternal: '外部 OCR 模型',
+      imageOcrExternalDescription: '仅提取文字，无表格结构',
+      imageOcrModelPlaceholder: '选择 OCR 模型',
       imageOcrModelsError:
         'OCR 模型加载失败，已保留当前选择。请稍后重试，或选择 DeepDoc 使用本地 OCR。',
       imageOcrNoModels:
