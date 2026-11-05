@@ -28,6 +28,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"go.uber.org/zap"
@@ -254,12 +255,12 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	// Resolve chat model ID.
 	modelID := ""
 	options := service.AskStreamOptions{}
-	askAccess, accessErr := service.ResolveIdentity(c.Request.Context())
-	if accessErr != nil {
-		if respondPermissionErrorIf(c, accessErr, true) {
-			return
-		}
-		jsonInternalError(c, accessErr)
+	modelTenantID := strings.TrimSpace(permission.TenantIDFromContext(c.Request.Context()))
+	if modelTenantID == "" {
+		modelTenantID = permission.UserIDFromContext(c.Request.Context())
+	}
+	if modelTenantID == "" {
+		jsonInternalError(c, permission.ErrUnauthenticated)
 		return
 	}
 	if req.SearchID != "" {
@@ -277,6 +278,9 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 			return
 		}
 		searchConfig := searchConfigFromDetail(detail)
+		if tenantID, ok := detail["tenant_id"].(string); ok && strings.TrimSpace(tenantID) != "" {
+			modelTenantID = strings.TrimSpace(tenantID)
+		}
 		options = service.BuildAskStreamOptions(req.SearchID, searchConfig)
 		if chatID, ok := searchConfig["chat_id"].(string); ok && chatID != "" {
 			modelID = chatID
@@ -284,7 +288,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	}
 	if modelID == "" && h.modelFactory != nil {
 		ctx := c.Request.Context()
-		if info, infoErr := h.modelFactory.ResolveDefaultInfo(ctx, askAccess, entity.ModelTypeChat); infoErr == nil {
+		if info, infoErr := h.modelFactory.ResolveDefaultInfo(permission.WithTenantID(ctx, modelTenantID), entity.ModelTypeChat); infoErr == nil {
 			modelID = service.ModelReference(info)
 		}
 	}
@@ -308,9 +312,10 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	}
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
+	ctx = permission.WithTenantID(ctx, modelTenantID)
 	c.Request = c.Request.WithContext(ctx)
 	hadError := false
-	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, Identity: askAccess, ModelID: modelID}
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, ModelID: modelID}
 	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, req.Question, filtered, options) {
 		var ok bool
 		switch delta.Kind {
@@ -372,6 +377,10 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 	}
 
 	searchConfig := map[string]interface{}{}
+	modelTenantID := strings.TrimSpace(permission.TenantIDFromContext(c.Request.Context()))
+	if modelTenantID == "" {
+		modelTenantID = permission.UserIDFromContext(c.Request.Context())
+	}
 	if req.SearchID != "" {
 		if h.searchSvc == nil {
 			jsonInternalError(c, fmt.Errorf("search service not configured"))
@@ -387,17 +396,21 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 			return
 		}
 		searchConfig = searchConfigFromDetail(detail)
+		if tenantID, ok := detail["tenant_id"].(string); ok && strings.TrimSpace(tenantID) != "" {
+			modelTenantID = strings.TrimSpace(tenantID)
+		}
 	}
 
 	ctx := c.Request.Context()
 	mindMap, err := runMindMap(ctx, mindMapRunConfig{
-		Question:     req.Question,
-		KbIDs:        filtered,
-		SearchID:     req.SearchID,
-		SearchConfig: searchConfig,
-		ChunkSvc:     h.chunkSvc,
-		LLM:          h.modelFactory,
-		TenantSvc:    h.tenantSvc,
+		Question:      req.Question,
+		KbIDs:         filtered,
+		SearchID:      req.SearchID,
+		SearchConfig:  searchConfig,
+		ModelTenantID: modelTenantID,
+		ChunkSvc:      h.chunkSvc,
+		LLM:           h.modelFactory,
+		TenantSvc:     h.tenantSvc,
 	})
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {

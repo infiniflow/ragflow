@@ -64,6 +64,11 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 	if req.Config == nil {
 		req.Config = entity.JSONMap{}
 	}
+	req.Name = strings.TrimSpace(req.Name)
+	if err := common.ValidateNameRunes(req.Name, common.NameLimit128); err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		return
+	}
 
 	ctx := c.Request.Context()
 

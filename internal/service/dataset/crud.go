@@ -68,7 +68,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		return nil, common.CodeDataError, errors.New("dataset name can't be empty")
 	}
 	if utf8.RuneCountInString(name) > entity.DatasetNameLimit {
-		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", utf8.RuneCountInString(name), entity.DatasetNameLimit)
+		return nil, common.CodeDataError, fmt.Errorf("dataset name length is %d which is larger than %d", utf8.RuneCountInString(name), entity.DatasetNameLimit)
 	}
 
 	tenant, err := d.tenantDAO.GetByID(ctx, dao.DB, tenantID)
@@ -233,10 +233,10 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	var parserConfigMap map[string]interface{} = parserConfig
 
 	modelFactory := service.NewModelFactory()
-	identity := service.Identity{UserID: userID, TenantID: tenantID}
+	modelCtx := permission.WithTenantID(ctx, tenantID)
 	embdID, tenantEmbdID := "", ""
 	if embeddingModel == "" {
-		embeddingInfo, embeddingErr := modelFactory.ResolveDefaultInfo(ctx, identity, entity.ModelTypeEmbedding)
+		embeddingInfo, embeddingErr := modelFactory.ResolveDefaultInfo(modelCtx, entity.ModelTypeEmbedding)
 		if embeddingErr == nil {
 			embdID = service.ModelReference(embeddingInfo)
 			tenantEmbdID = embeddingInfo.ID
@@ -245,7 +245,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 	if embeddingModel != "" {
-		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, identity)
+		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, tenantID)
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
@@ -253,7 +253,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		tenantEmbdID = ""
 	}
 	if embdID != "" && tenantEmbdID == "" {
-		target, err := modelFactory.ResolveInfo(ctx, identity, entity.ModelTypeEmbedding, embdID)
+		target, err := modelFactory.ResolveInfo(modelCtx, entity.ModelTypeEmbedding, embdID)
 		if err == nil {
 			tenantEmbdID = target.ID
 		} else {
@@ -271,7 +271,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	name = dedupedName
 
 	llmID := ""
-	chatInfo, chatErr := modelFactory.ResolveDefaultInfo(ctx, identity, entity.ModelTypeChat)
+	chatInfo, chatErr := modelFactory.ResolveDefaultInfo(modelCtx, entity.ModelTypeChat)
 	if chatErr == nil {
 		llmID = service.ModelReference(chatInfo)
 	} else if !errors.Is(chatErr, service.ErrNoDefaultModel) {
@@ -323,7 +323,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 // dedupeDatasetName returns a non-colliding dataset name within the tenant,
 // appending (1), (2), ... when the requested name is already taken.
 func (d *DatasetService) dedupeDatasetName(ctx context.Context, name, tenantID string) (string, error) {
-	return common.UniqueNameCharacters(name, entity.DatasetNameLimit, func(candidate string) (bool, error) {
+	return common.UniqueName(name, entity.DatasetNameLimit, func(candidate string) (bool, error) {
 		return d.kbDAO.NameExists(ctx, dao.DB, tenantID, candidate)
 	})
 }

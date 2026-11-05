@@ -26,6 +26,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
@@ -958,7 +959,7 @@ func TestMergedAgentsRespectRequestedTimestamp(t *testing.T) {
 		{"default", nil, "new"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resp, code, err := NewAgentService().mergeAgentsAndGroups(t.Context(), "user-1", items, "", tc.terms, 1, 1)
+			resp, code, err := NewAgentService().mergeAgentsAndGroups(permission.WithIdentity(t.Context(), "user-1", ""), items, "", tc.terms, 1, 1)
 			if err != nil || code != common.CodeSuccess || resp.Total != 2 || len(resp.Canvas) != 1 {
 				t.Fatalf("merge: response=%+v code=%v err=%v", resp, code, err)
 			}
@@ -1173,7 +1174,6 @@ func TestCreateAgentSessionLeavesVersionTitleNilWithVersions(t *testing.T) {
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	svc := NewAgentService()
 	session, code, err := svc.CreateAgentSession(ctx, &CreateAgentSessionRequest{
-		UserID:  "user-1",
 		AgentID: "canvas-1",
 		Name:    "hello",
 	})
@@ -1221,7 +1221,6 @@ func TestCreateAgentSessionNoVersionLeavesTitleNil(t *testing.T) {
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	session, code, err := NewAgentService().CreateAgentSession(ctx, &CreateAgentSessionRequest{
-		UserID:  "user-1",
 		AgentID: "canvas-1",
 	})
 	if err != nil {
@@ -1309,7 +1308,7 @@ func TestAgentModelValidationUsesCanvasTenant(t *testing.T) {
 
 	ctx := permission.WithIdentity(t.Context(), tenantOwnerID, tenantID)
 	svc := NewAgentService()
-	if _, code, err := svc.CreateAgentSession(ctx, &CreateAgentSessionRequest{UserID: tenantOwnerID, AgentID: canvasRow.ID}); err != nil || code != common.CodeSuccess {
+	if _, code, err := svc.CreateAgentSession(ctx, &CreateAgentSessionRequest{AgentID: canvasRow.ID}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateAgentSession with tenant model = (%d, %v), want success", code, err)
 	}
 	if err := svc.UpdateAgent(ctx, canvasRow.ID, map[string]any{"dsl": dsl}); err != nil {
@@ -2142,6 +2141,71 @@ func seedAgentServiceCreateContext(t *testing.T) context.Context {
 		}
 	}
 	return permission.WithIdentity(t.Context(), "user-1", "tenant-agent")
+}
+
+func TestCreateAgentRejectsOverlongTitle(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	ctx := seedAgentServiceCreateContext(t)
+
+	title := strings.Repeat("a", common.NameLimit255+1)
+	row, code, err := NewAgentService().CreateAgent(ctx, &CreateAgentRequest{
+		Title: &title,
+		DSL:   entity.JSONMap{},
+	})
+	if row != nil || code != common.CodeArgumentError || err == nil {
+		t.Fatalf("CreateAgent overlong title = (%+v, %d, %v), want argument error", row, code, err)
+	}
+}
+
+func TestUpdateAgentRejectsOverlongTitle(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	ctx := serviceTestContext(t, "user-1", "user-1")
+
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
+		ID:             "canvas-overlong-title",
+		UserID:         "user-1",
+		Title:          sptr("Short Title"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed agent: %v", err)
+	}
+
+	err := NewAgentService().UpdateAgent(ctx, "canvas-overlong-title", map[string]interface{}{
+		"title": strings.Repeat("a", common.NameLimit255+1),
+	})
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("UpdateAgent overlong title error = %v, want length error", err)
+	}
+}
+
+func TestUpdateAgentRejectsOverlongAlias(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	ctx := serviceTestContext(t, "user-1", "user-1")
+
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserCanvas{
+		ID:             "canvas-overlong-alias",
+		UserID:         "user-1",
+		Title:          sptr("Short Title"),
+		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("failed to seed agent: %v", err)
+	}
+
+	err := NewAgentService().UpdateAgent(ctx, "canvas-overlong-alias", map[string]interface{}{
+		"alias": strings.Repeat("a", common.NameLimit255+1),
+	})
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("UpdateAgent overlong alias error = %v, want length error", err)
+	}
+}
+
+func TestBuildVersionTitleRespectsColumnWidth(t *testing.T) {
+	got := buildVersionTitle(strings.Repeat("a", common.NameLimit255), time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
+	if length := utf8.RuneCountInString(got); length > common.VersionTitleLimit {
+		t.Fatalf("buildVersionTitle length = %d, want <= %d", length, common.VersionTitleLimit)
+	}
 }
 
 func TestCreateAgentRequiresAuthenticatedUserID(t *testing.T) {

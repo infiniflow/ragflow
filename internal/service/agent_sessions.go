@@ -583,7 +583,6 @@ func (s *AgentService) UpdateAgentTags(ctx context.Context, canvasID string, tag
 // CreateAgentSessionRequest is the wire shape for POST
 // /api/v1/agents/:agent_id/sessions.
 type CreateAgentSessionRequest struct {
-	UserID   string
 	AgentID  string
 	Name     string
 	Source   string
@@ -620,8 +619,9 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 	if req.AgentID == "" {
 		return nil, common.CodeArgumentError, errors.New("create agent session: agent_id is required")
 	}
-	if req.UserID == "" {
-		return nil, common.CodeArgumentError, errors.New("create agent session: user_id is required")
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, common.CodeUnauthorized, permission.ErrUnauthenticated
 	}
 
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: req.AgentID}, permission.OperationRun); err != nil {
@@ -649,7 +649,7 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 	if len(dsl) == 0 {
 		dsl = canvas.DSL
 	}
-	if err := validateAgentChatModels(ctx, req.UserID, canvas.EffectiveTenantID(), dsl); err != nil {
+	if err := validateAgentChatModels(ctx, canvas.EffectiveTenantID(), dsl); err != nil {
 		if errors.Is(err, ErrAgentStorageError) {
 			return nil, common.CodeServerError, errors.New("Internal storage error while accessing the agent.")
 		}
@@ -666,6 +666,9 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 	if name == "" {
 		name = "session"
 	}
+	if err := common.ValidateNameRunes(name, common.NameLimit255); err != nil {
+		return nil, common.CodeDataError, err
+	}
 	var namePtr = &name
 	var sourcePtr *string
 	if req.Source != "" {
@@ -681,8 +684,8 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		ID:        id,
 		Name:      namePtr,
 		DialogID:  req.AgentID,
-		UserID:    req.UserID,
-		ExpUserID: &req.UserID,
+		UserID:    userID,
+		ExpUserID: &userID,
 		Message:   messages,
 		Source:    sourcePtr,
 		DSL:       dsl,

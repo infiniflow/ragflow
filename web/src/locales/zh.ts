@@ -1734,10 +1734,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       deleteChannelModalContent:
         '确定要删除此聊天渠道机器人吗？此操作无法撤销。',
       connectDialog: '关联助手或智能体',
-      connectDialogTitle: '将 {{name}} 关联到助手或智能体',
-      selectDialog: '选择助手或智能体',
+      connectDialogTitle: '将 {{name}} 关联到助手',
+      selectDialog: '选择助手',
       connectDialogTip:
-        '该渠道收到的消息将由关联的助手或智能体回复。清空选择即可解除关联。',
+        '该渠道收到的消息将由关联的助手回复。清空选择即可解除关联。',
       notConnected: '未关联助手或智能体',
       chatChannelAssistant: '聊天助手',
       chatChannelAgent: '智能体',

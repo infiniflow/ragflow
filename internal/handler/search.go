@@ -19,7 +19,9 @@ package handler
 import (
 	"context"
 	"net/http"
+
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"strconv"
 	"strings"
 
@@ -149,7 +151,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 // @Router /api/v1/searches [post]
 
 type CreateSearchRequest struct {
-	Name        string  `json:"name"`                  // required, validated via common.ValidateName (max 255 bytes)
+	Name        string  `json:"name"`                  // required, max 128 characters
 	Description *string `json:"description,omitempty"` // optional description
 }
 
@@ -170,7 +172,7 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 		return
 	}
 
-	if err = common.ValidateName(req.Name); err != nil {
+	if err = common.ValidateNameRunes(req.Name, common.NameLimit128); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
@@ -294,7 +296,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	}
 
 	// Validate name (same as Python validation)
-	if err := common.ValidateName(req.Name); err != nil {
+	if err := common.ValidateNameRunes(req.Name, common.NameLimit128); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
@@ -395,10 +397,10 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		return
 	}
 
-	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, Identity: plan.Identity, ModelID: plan.ModelID}
-
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
+	ctx = permission.WithTenantID(ctx, plan.TenantID)
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, ModelID: plan.ModelID}
 	c.Request = c.Request.WithContext(ctx)
 
 	hadError := false
