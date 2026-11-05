@@ -8,8 +8,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/mcp"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
-	dataset "ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 )
 
@@ -36,10 +36,26 @@ func validateRetrievalWindow(page, pageSize int) error {
 	return nil
 }
 
+// mcpDatasetService is the dataset surface mcpRetrieval depends on. It exists so
+// the MCP retrieval entry point can be tested against a recording fake without
+// standing up the full DatasetService.
+type mcpDatasetService interface {
+	ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error)
+	SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest) (*service.SearchDatasetsResponse, error)
+	GetDataset(ctx context.Context, datasetID string) (map[string]interface{}, common.ErrorCode, error)
+}
+
 // mcpRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
-func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+func mcpRetrieval(ctx context.Context, ds mcpDatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+	contextUserID := permission.UserIDFromContext(ctx)
+	if contextUserID == "" {
+		ctx = permission.WithIdentity(ctx, userID, permission.TenantIDFromContext(ctx))
+	} else if contextUserID != userID {
+		return "", permission.ErrIdentityMismatch
+	}
+
 	if err := validateRetrievalWindow(req.Page, req.PageSize); err != nil {
 		return "", err
 	}
@@ -51,7 +67,7 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 		ids, err := fetchAllDatasetIDs(func(page, pageSize int) ([]map[string]interface{}, int64, error) {
 			data, total, _, err := ds.ListDatasets(ctx,
 				"", "", page, pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}},
-				"", nil, "", userID, nil, "",
+				"", nil, "", nil, "",
 			)
 			return data, total, err
 		}, maxPageSize)
@@ -103,7 +119,7 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 		searchReq.Keyword = &v
 	}
 
-	resp, err := ds.SearchDatasets(ctx, searchReq, userID)
+	resp, err := ds.SearchDatasets(ctx, searchReq)
 	if err != nil {
 		return "", err
 	}
@@ -113,7 +129,7 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 	datasetNames := make(map[string]string)
 	documentMetadata := make(map[string]map[string]any)
 	for _, id := range datasetIDs {
-		info, code, err := ds.GetDataset(ctx, id, userID)
+		info, code, err := ds.GetDataset(ctx, id)
 		if err != nil || code != common.CodeSuccess {
 			continue
 		}

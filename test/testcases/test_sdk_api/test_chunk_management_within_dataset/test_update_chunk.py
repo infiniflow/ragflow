@@ -44,8 +44,8 @@ class TestUpdatedChunk:
     @pytest.mark.parametrize(
         "content",
         [
-            pytest.param(None, marks=pytest.mark.skip(reason="Go UpdateChunk silently ignores non-string content")),
-            pytest.param(1, marks=pytest.mark.skip(reason="Go UpdateChunk silently ignores non-string content")),
+            pytest.param(None),
+            pytest.param(1),
         ],
     )
     def test_content_invalid(self, add_chunks, content):
@@ -69,8 +69,8 @@ class TestUpdatedChunk:
     @pytest.mark.parametrize(
         "field",
         [
-            pytest.param("important_keywords", marks=pytest.mark.skip(reason="Go UpdateChunk ignores invalid keyword types or replaces non-string elements with empty strings")),
-            pytest.param("questions", marks=pytest.mark.skip(reason="Go UpdateChunk ignores invalid question types or replaces non-string elements with empty strings")),
+            pytest.param("important_keywords"),
+            pytest.param("questions"),
             "tag_kwd",
         ],
     )
@@ -91,7 +91,6 @@ class TestUpdatedChunk:
         chunks[0].update({"available": available})
         assert_updated(document, chunks[0], "available", available)
 
-    @pytest.mark.skip(reason="Go UpdateChunk only reads bool availability and silently ignores other types")
     @pytest.mark.parametrize("available", ["True", "False", 1, 0])
     def test_available_invalid(self, add_chunks, available):
         _, _, chunks = add_chunks

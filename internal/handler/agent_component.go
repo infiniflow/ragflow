@@ -45,30 +45,29 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/permission"
-	"ragflow/internal/service"
 )
 
 // GetComponentInputForm GET /api/v1/agents/:canvas_id/components/:component_id/input-form
 func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
+		common.RespondError(c, code, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	componentID := c.Param("component_id")
 	if canvasID == "" || componentID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`canvas_id` and `component_id` are required.")
+		common.RespondError(c, common.CodeArgumentError, "`canvas_id` and `component_id` are required.")
 		return
 	}
 
-	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
+	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
-			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
+			common.RespondError(c, common.CodeOperatingError, canvasNoAccessMessage)
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -77,7 +76,7 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 		mapDSLError(c, componentID, err)
 		return
 	}
-	common.SuccessWithData(c, form, "success")
+	common.RespondSuccess(c, form, "success")
 }
 
 // componentInputForm returns the input-form schema for a single component.
@@ -122,13 +121,13 @@ func (h *AgentHandler) componentInputForm(ctx context.Context, dslMap map[string
 func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
+		common.RespondError(c, code, msg)
 		return
 	}
 	canvasID := c.Param("canvas_id")
 	componentID := c.Param("component_id")
 	if canvasID == "" || componentID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`canvas_id` and `component_id` are required.")
+		common.RespondError(c, common.CodeArgumentError, "`canvas_id` and `component_id` are required.")
 		return
 	}
 
@@ -137,11 +136,11 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 		IncludeModelInputs json.RawMessage           `json:"include_model_inputs"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
+		common.RespondError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
 		return
 	}
 	if body.Params == nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`params` is required.")
+		common.RespondError(c, common.CodeArgumentError, "`params` is required.")
 		return
 	}
 	includeModelInputs := false
@@ -150,17 +149,17 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	case "true":
 		includeModelInputs = true
 	default:
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "`include_model_inputs` must be a boolean.")
+		common.RespondError(c, common.CodeArgumentError, "`include_model_inputs` must be a boolean.")
 		return
 	}
 
-	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
+	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
-			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
+			common.RespondError(c, common.CodeOperatingError, canvasNoAccessMessage)
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -183,14 +182,12 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	inputs := make(map[string]any, len(body.Params))
 	for k, v := range body.Params {
 		if v == nil {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-				"`params."+k+".value` is required.")
+			common.RespondError(c, common.CodeArgumentError, "`params."+k+".value` is required.")
 			return
 		}
 		value, ok := v["value"]
 		if !ok {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-				"`params."+k+".value` is required.")
+			common.RespondError(c, common.CodeArgumentError, "`params."+k+".value` is required.")
 			return
 		}
 		inputs[k] = value
@@ -198,24 +195,24 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 
 	factory := runtime.DefaultFactory()
 	if factory == nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, "component factory not initialised")
+		common.RespondError(c, common.CodeServerError, "component factory not initialised")
 		return
 	}
 	comp, err := factory(name, dslParams)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "component factory: "+err.Error())
+		common.RespondError(c, common.CodeDataError, "component factory: "+err.Error())
 		return
 	}
 	if includeModelInputs {
 		if _, ok := comp.(*component.AgentComponent); !ok {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Model inputs are available only for Agent components.")
+			common.RespondError(c, common.CodeArgumentError, "Model inputs are available only for Agent components.")
 			return
 		}
-		if err := service.CheckCanvasPermission(c.Request.Context(), permission.Subject{UserID: user.ID}, canvasID, permission.OperationUpdate); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(c.Request.Context(), permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationUpdate); err != nil {
 			if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
-				common.ResponseWithCodeData(c, common.CodeOperatingError, nil, canvasNoAccessMessage)
+				common.RespondError(c, common.CodeOperatingError, canvasNoAccessMessage)
 			} else {
-				common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+				common.RespondError(c, common.CodeServerError, err.Error())
 			}
 			return
 		}
@@ -270,6 +267,10 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	outputs, err := runtime.TrackElapsed(name, func() (map[string]any, error) {
 		return comp.Invoke(invokeCtx, dao.DB, inputs)
 	})
+	if err != nil {
+		common.RespondError(c, common.CodeServerError, "invoke: "+err.Error())
+		return
+	}
 	var data any = outputs
 	if capture != nil {
 		data = struct {
@@ -277,15 +278,7 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 			ModelInputs models.ModelInputs `json:"model_inputs"`
 		}{Outputs: outputs, ModelInputs: capture.Finalize()}
 	}
-	if err != nil {
-		if capture == nil {
-			data = nil
-		}
-		common.ResponseWithCodeData(c, common.CodeServerError, data, "invoke: "+err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 // mapDSLError translates a dsl extractor error into a 102 envelope.
@@ -296,12 +289,12 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 func mapDSLError(c *gin.Context, componentID string, err error) {
 	switch {
 	case errors.Is(err, dsl.ErrComponentNotFound):
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "component not found: "+componentID)
+		common.RespondError(c, common.CodeDataError, "component not found: "+componentID)
 	case errors.Is(err, dsl.ErrMissingInputForm):
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "component has no params.inputs: "+componentID)
+		common.RespondError(c, common.CodeDataError, "component has no params.inputs: "+componentID)
 	case errors.Is(err, dsl.ErrMalformedDSL):
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "malformed dsl: "+err.Error())
+		common.RespondError(c, common.CodeDataError, "malformed dsl: "+err.Error())
 	default:
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, "internal: "+err.Error())
+		common.RespondError(c, common.CodeServerError, "internal: "+err.Error())
 	}
 }

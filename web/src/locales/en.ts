@@ -9,7 +9,8 @@ export default {
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete it ?',
       deleteThem: 'Are you sure to delete them ?',
-      removeModalTitle: 'Are you sure to remove it ?',
+      removeIt: 'Are you sure to remove it ?',
+      removeThem: 'Are you sure to remove them ?',
       ok: 'Ok',
       cancel: 'Cancel',
       yes: 'Yes',
@@ -401,6 +402,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       continueUpload: 'Continue upload',
+      uploadPipelineDeletedTitle: 'Parsing pipeline unavailable',
+      uploadPipelineDeletedContent:
+        'The pipeline configured for this dataset has been deleted or has no published version, so uploaded files cannot be parsed automatically. Reconfigure a pipeline in the dataset settings, or upload now and configure parsing for each file individually.',
       reselectParser: 'Reselect parse method',
       goAddModel: 'Go add model',
       uploadMissingModelsTitle: 'Some files lack a required model',
@@ -602,6 +606,15 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       runningStatus3: 'Success',
       runningStatus4: 'Fail',
       runningStatusQueued: 'Queued',
+      cancelParsingTasks: 'Cancel parsing tasks',
+      filesParsing: '{{count}} files parsing',
+      filesPending: '{{count}} files pending',
+      cancelParsingConfirmTitle: 'Cancel parsing',
+      cancelParsingConfirm:
+        'Cancel parsing for the {{count}} files that are currently parsing?',
+      cancelPendingConfirm:
+        'Remove the {{count}} pending files from the parsing queue?',
+      cancelTasksSuccess: 'Canceled {{count}} parsing tasks',
       pageRanges: 'Page ranges',
       pageRangesTip:
         'Range of pages to be parsed; pages outside this range will not be processed.',
@@ -1153,7 +1166,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       operation: 'Operation',
       model: 'Model',
       modelTip: 'Large language chat model',
-      tokensSpent: '{{total}} tokens ({{prompt}} in + {{completion}} out)',
+      tokensSpent: '{{total}} tokens ({{prompt}} input, {{completion}} output)',
       turnElapsed: '{{seconds}}s',
       decisionModel: 'Decision model',
       decisionModelTip:
@@ -1288,9 +1301,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       webSearchApiKeyRequired:
         'An API key is required for the selected provider — without one no Internet search happens and the switch never appears.',
       // The key field's label. {{provider}} is the provider's BRAND name, which is
-      // deliberately not translated, so this single template covers all nine.
+      // deliberately not translated, so this single template covers all providers.
       webSearchApiKeyLabel: '{{provider}} API Key',
       // One Tip/Message pair per provider, alphabetical by provider id.
+      anysearchApiKeyTip:
+        'Optional. AnySearch works without a key; add a key to use your account quota. Service limits apply.',
+      anysearchApiKeyMessage: 'Optional - leave blank for anonymous search',
       braveApiKeyTip:
         'When Brave Search is selected, its web results supplement dataset retrieval. Every Brave endpoint requires a key.',
       braveApiKeyMessage: 'Please enter your Brave Search API Key',
@@ -1349,6 +1365,55 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
     },
     setting: {
+      gpustack: {
+        serverUrl: 'GPUStack server URL',
+        serverUrlTip: 'Must be reachable from the RAGFlow container.',
+        loopbackWarning:
+          'localhost points to the RAGFlow container itself. Use the IP address or host.docker.internal instead.',
+        apiKey: 'API key',
+        apiKeyTip: 'Create one in GPUStack under Access Control > API Keys.',
+        apiKeyKeep: 'Leave blank to keep the saved key',
+        connect: 'Connect',
+        connecting: 'Connecting...',
+        connected: 'Connected. {{count}} running models found.',
+        connectedShort: '{{count}} running',
+        errorAuth:
+          'GPUStack rejected this API key. Check it under Access Control > API Keys.',
+        errorUnreachable:
+          'Cannot reach this server from RAGFlow. Check the URL and that the port is open to the RAGFlow container.',
+        errorOther: 'Could not list models: {{message}}',
+        emptyTitle: 'No running models found',
+        emptyBody:
+          'GPUStack only exposes models that are running and have a route. Deploy a model with "Enable model route" turned on, then refresh.',
+        emptyLink: 'Read the integration guide',
+        addModels: 'Add {{count}} models',
+        addSelected: 'Add {{count}} selected',
+        adding: 'Adding...',
+        refresh: 'Refresh',
+        editInstance: 'Edit instance',
+        saveInstance: 'Save instance',
+        cancel: 'Cancel',
+        availableTitle: 'Available in GPUStack',
+        addedTitle: 'Added models',
+        modelsLoadFailed:
+          "Could not load this instance's models. Reload the page and try again.",
+        notRunning: 'Not running',
+        notRunningTip:
+          'GPUStack is not serving this model right now, so calls to it will fail.',
+        tokens: '{{count}} tokens',
+        changeType: 'Model type for {{name}}',
+        select: 'Select {{name}}',
+        remove: 'Remove {{name}}',
+        noAdded: 'No models added yet.',
+        kind_chat: 'Chat',
+        kind_vision: 'Chat + Vision',
+        kind_embedding: 'Embedding',
+        kind_rerank: 'Rerank',
+        kind_asr: 'Speech to text',
+        kind_tts: 'Text to speech',
+        typeHint:
+          'Types come from GPUStack. GPUStack cannot tell whether a model accepts images, so choose Chat + Vision for those.',
+      },
       Verify: 'Verify',
       keyValid: 'Your API Key is valid.',
       keyInvalid: 'Your API Key is invalid.',
@@ -2217,7 +2282,7 @@ Example: Virtual Hosted Style`,
         'The model that judges whether a retrieved passage is worth showing the LLM. Leave unset to keep the retrieved text unfiltered.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check the Model providers page to see if your model provider supports this model.',
+        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check the Model providers page to see if your model provider supports this model.',
       img2txtModel: 'VLM',
       img2txtModelTip:
         'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.',

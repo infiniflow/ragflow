@@ -4,9 +4,10 @@ import {
   ParserOptionKind,
 } from '@/hooks/use-parser-options';
 import { cn } from '@/lib/utils';
-import { AlertCircle, TriangleAlert } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ParserUnavailableLabel } from '../parser-unavailable-label';
 import { PipelineVersionLabel } from '../pipeline-version-label';
 import { TreeSelect, TreeSelectNode } from '../tree-select';
 import { useParserTreeData } from './use-parser-tree-data';
@@ -37,7 +38,7 @@ export interface ParserTreeSelectProps {
 }
 
 // ParserTreeSelect is the single dropdown that merges builtin parsers and
-// dataflow pipelines with their published versions: builtin parsers are
+// dataflow pipelines with their saved versions: builtin parsers are
 // selectable root-level leaves, pipelines are non-selectable branches (the
 // draft) whose version leaves are the only pipeline-side choices. It is a
 // controlled component: the parent owns the form fields and translates the
@@ -57,7 +58,6 @@ export function ParserTreeSelect({
     expandedIds,
     onExpandedChange,
     onSearchChange,
-    loadingIds,
     loading,
     selectedLeafExists,
   } = useParserTreeData({ value });
@@ -102,19 +102,7 @@ export function ParserTreeSelect({
   // (e.g. a deleted pipeline or pruned version) and options have finished
   // loading, render a localized "unavailable" label instead of the raw
   // internal value.
-  const renderMissingParser = useCallback(
-    () => (
-      <span className="flex items-center gap-1.5">
-        <TriangleAlert className="size-4 flex-shrink-0" />
-        <span className="truncate">
-          {t('knowledgeConfiguration.parserOptionUnavailable', {
-            defaultValue: 'unavailable',
-          })}
-        </span>
-      </span>
-    ),
-    [t],
-  );
+  const renderMissingParser = useCallback(() => <ParserUnavailableLabel />, []);
 
   // The outdated icon is a pure hint. The Radix tooltip trigger renders a
   // raw <button> with no `type`, which inside the surrounding forms (dataset
@@ -122,8 +110,8 @@ export function ParserTreeSelect({
   // the icon would submit the form, and stopPropagation alone cannot cancel
   // that native default action. type="button" removes it, while the click
   // handlers still swallow the event before it bubbles to the TreeSelect
-  // trigger, so the click neither toggles the dropdown nor triggers the lazy
-  // version fetches that follow. It is hidden while the value is already
+  // trigger, so the click neither toggles the dropdown nor changes branch
+  // expansion. It is hidden while the value is already
   // reported as missing — a deleted pin is the stronger signal.
   const stopHintClick = useCallback((e: React.SyntheticEvent) => {
     e.stopPropagation();
@@ -155,7 +143,6 @@ export function ParserTreeSelect({
       expandedIds={expandedIds}
       onExpandedChange={onExpandedChange}
       onSearchChange={onSearchChange}
-      loadingIds={loadingIds}
       loading={loading}
       renderSelected={renderSelected}
       renderMissingValue={renderMissingParser}

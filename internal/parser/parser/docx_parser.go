@@ -24,18 +24,16 @@ import (
 )
 
 // docxExtract is a test seam for the native office_oxide extraction. It
-// defaults to the deepdoc/docx backend (which is the only place that depends
-// on office_oxide) and is overridden in tests to capture the effective
-// container format passed to the engine.
+// defaults to the deepdoc/office backend, which owns the native dependency.
 var docxExtract = deepdocoffice.OpenAndExtract
 
-// DOCXParser is the DOCX/DOC parser. It is a CGO-free facade: magic-byte
-// sniffing and post-processing live here, while the native extraction lives
-// in internal/deepdoc/parser/office. The IR data model and postprocessing live
+// DOCXParser parses DOCX documents. Native extraction lives in
+// internal/deepdoc/parser/office. The IR data model and postprocessing live
 // in cgo-free files (docx_ir.go, docx_postprocess.go, office_table_render.go)
 // so they compile and test without native libraries.
 type DOCXParser struct {
 	libType            string
+	textOnly           bool
 	RemoveTOC          bool
 	RemoveHeaderFooter bool
 }
@@ -59,30 +57,10 @@ func (p *DOCXParser) ConfigureFromSetup(setup map[string]any) {
 }
 
 // ParseWithResult produces structured JSON items from a docx document.
-// It emits bounded image items and attaches figure metadata to the file
-// result.
-//
-// File["format"] in the returned ParseResult reflects the effective
-// container format after magic-byte sniffing (e.g. "doc" for an OLE
-// payload uploaded as .docx), not merely the file extension. See
-// office_detect.go:officeContainer for the detection contract.
+// Embedded images are stored in the run media cache and emitted as media_ref;
+// text-only parsers skip them instead.
 func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	// office_oxide's OpenFromBytes takes the container format as given
-	// and does no magic-byte detection, so a legacy .doc uploaded with a
-	// .docx extension would be parsed as ZIP/OOXML and fail. Sniff the
-	// real container and pass the matching format so mislabeled files
-	// still parse (mirrors the magic-byte correction office_oxide::Open
-	// performs on file paths).
-	format := "docx"
-	if officeContainer(data) == "ole" {
-		format = "doc"
-	}
-	// Note: when format == "doc" (OLE fallback), header/footer and TOC
-	// post-processing below degrades gracefully: extractDOCXHeaderFooterTexts
-	// opens the payload as ZIP and fails closed, so RemoveHeaderFooter becomes
-	// a no-op for legacy OLE inputs. This is acceptable — legacy DOC has no
-	// OOXML header/footer parts to strip.
-	irJSON, _, _, _, err := docxExtract(data, format)
+	irJSON, _, _, _, err := docxExtract(data, "docx")
 	if err != nil {
 		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
 			return ParseResult{Err: fmt.Errorf("%w: %s", ErrOfficeCGORequired, filename)}
@@ -92,18 +70,12 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 
 	fileMeta := map[string]any{
 		"name":   filename,
-		"format": format,
+		"format": "docx",
 	}
 
-	// Extract IR JSON for section building and embedded-image extraction.
-	// The budget bounds image payloads so the downstream VLM enhancement
-	// stays within limits.
-	budget := newEmbeddedMediaBudget()
-	if irJSON != "" {
-		figures := extractDOCXFiguresFromIR(irJSON, budget)
-		if len(figures) > 0 {
-			fileMeta["figures"] = buildFiguresMap(figures)
-		}
+	var sink *officeMediaSink
+	if !p.textOnly {
+		sink = newOfficeMediaSink(ctx, officeMediaFormatDOCX)
 	}
 
 	// The result is built entirely from the structured IR, so an empty IR
@@ -121,7 +93,10 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if capErr != nil {
 		tableCaptions = nil
 	}
-	sections := buildDOCXJSONSectionsWithCaptions(irJSON, budget, tableCaptions)
+	sections := buildDOCXJSONSectionsWithCaptions(irJSON, sink, tableCaptions)
+	if sink != nil && sink.err != nil {
+		return ParseResult{Err: sink.err}
+	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
@@ -145,7 +120,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	return ParseResult{
 		File:     fileMeta,
 		JSON:     MapsToItems(sections),
-		Warnings: budget.warnings(),
+		Warnings: sink.warnings(),
 	}
 }
 

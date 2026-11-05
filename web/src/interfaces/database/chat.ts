@@ -45,6 +45,7 @@ export interface PromptConfig {
   reasoning?: boolean;
   cross_languages?: Array<string>;
   agentic_rag?: AgenticRagOverride | null;
+  anysearch_api_key?: string;
   brave_api_key?: string;
   exa_api_key?: string;
   firecrawl_api_key?: string;
@@ -107,13 +108,16 @@ export interface IDialog {
   similarity_threshold: number;
   top_k: number;
   top_n: number;
+  meta_data_filter?: MetaDataFilter;
+  operator_permission: number;
+  nickname: string;
+  prefetch_size: number;
   rerank_candidates_count: number;
   rerank_id?: string;
   tenant_rerank_id?: string;
-  meta_data_filter: MetaDataFilter;
 }
 
-interface MetaDataFilter {
+export interface MetaDataFilter {
   manual: Manual[];
   method: string;
 }
@@ -157,11 +161,17 @@ export interface Message {
 export interface IReferenceChunk {
   citation_id?: string;
   id: string;
+  chunk_id?: string;
   content: null;
+  content_with_weight?: string;
   document_id: string;
+  doc_id?: string;
   document_name: string;
+  docnm_kwd?: string;
   dataset_id: string;
+  kb_id?: string;
   image_id: string;
+  img_id?: string;
   similarity: number;
   vector_similarity: number;
   term_similarity: number;

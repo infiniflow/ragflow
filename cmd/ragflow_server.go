@@ -460,6 +460,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	auditConfig := globalConfig.GetAuditConfig()
+	err = common.InitAudit(auditConfig.Type, auditConfig.GetFileOutput(), serverName)
+	if err != nil {
+		common.Error("Failed to initialize audit logger", err)
+		os.Exit(1)
+	}
+	defer func() {
+		common.SyncAudit()
+	}()
+
 	// set server name and log file path
 	server.SetServerName(serverName)
 
@@ -468,12 +478,14 @@ func main() {
 		err = deepdocpkg.RegisterNativeDeepDoc(arguments)
 		if err != nil {
 			common.Error("Failed to register in-process DeepDoc backend", err)
+			common.SyncAudit()
 			os.Exit(1)
 		}
 	case common.ServerTypeDeepDocCPU, common.ServerTypeDeepDocGPU, common.ServerTypeDeepDocAscend:
 		err = runDeepDoc(ctx, serverName, arguments)
 		if err != nil {
 			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
+			common.SyncAudit()
 			os.Exit(1)
 		}
 
@@ -557,6 +569,7 @@ func main() {
 	err = server.StartServer(ctx, cancel, serverName, serverType)
 	if err != nil {
 		common.Error("Failed to start EE server", err)
+		common.SyncAudit()
 		os.Exit(1)
 	}
 	defer server.ShutdownServer(ctx)
@@ -570,28 +583,33 @@ func main() {
 		err = apipkg.Run(ctx, serverName, arguments)
 		if err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
+			common.SyncAudit()
 			os.Exit(1)
 		}
 	case common.ServerTypeAdmin:
 		err = admin.Run(ctx, serverName, arguments)
 		if err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
+			common.SyncAudit()
 			os.Exit(1)
 		}
 	case common.ServerTypeIngestion:
 		err = ingestorpkg.Run(ctx, cancel, serverName, arguments)
 		if err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
+			common.SyncAudit()
 			os.Exit(1)
 		}
 	case common.ServerTypeFileSyncer:
 		err = syncerpkg.Run(ctx, cancel, serverName, arguments)
 		if err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
+			common.SyncAudit()
 			os.Exit(1)
 		}
 	default:
 		fmt.Printf("Invalid server mode: %v\n", serverType)
+		common.SyncAudit()
 		os.Exit(1)
 	}
 }

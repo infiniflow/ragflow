@@ -12,7 +12,7 @@ sidebar_custom_props: {
 ## Code Component
 The Code component executes Python or JavaScript code for complex data processing, format conversion, calculation, file generation and custom logic.
 
-Prerequisite: An administrator must configure a provider in **Admin > Sandbox Settings**. See [Code Execution Sandbox](../../../administrator/sandbox/overview.md). For a private deployment, follow [Quickstart with Self-Managed](../../../administrator/sandbox/quickstart_with_self_managed.md).
+Prerequisite: An administrator must configure a provider in **Admin > Sandbox**. See [Code Execution Sandbox](../../../administrator/sandbox/overview.md). For a private deployment, follow [Quickstart with Self-Managed](../../../administrator/sandbox/quickstart_with_self_managed.md).
 
 Configuration:
 1. **Input**: Define parameters passed into code; variables can be directly referenced inside scripts.
@@ -83,7 +83,7 @@ Configuration Steps:
 2. Select target data variables in Query variables.
 3. Click `+` to add multiple input variables. Query variables are mandatory.
 4. Select an operation under **Operations** and fill in the fields below.
-5. Click **Save**, then **Run** to check the result.
+5. Click **Save draft**, then **Run** to check the result.
 
 ![Data Operation Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/data_operation_component.jpg)
 

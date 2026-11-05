@@ -495,7 +495,13 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	//     "docx", ...). Used by parser.GetParser, whose switch
 	//     arms are keyed off the utility constants.
 	//
-	fileTypeExt := fileTypeFromInputs(inputs)
+	requestedType := fileTypeFromInputs(inputs)
+	fileParser, fileTypeExt, selectionErr := parser.GetParser(requestedType, binary)
+	if selectionErr == nil && fileTypeExt != requestedType {
+		warning := fmt.Sprintf("file %q: requested format %s does not match detected format %s; continuing with the %s parser", filename, requestedType, fileTypeExt, fileTypeExt)
+		common.Warn(warning)
+		reportParserWarnings(ctx, []string{warning})
+	}
 	parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
 	enhanceOn := c.enableVisionEnhancement
 	split := progress.NewSplit(parsePagesOn, enhanceOn)
@@ -519,7 +525,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	var handledImage bool
 	if !handledVision && !handledMedia {
 		// Image dispatch: OCR with independently controlled VLM enhancement.
-		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups, c.enableVisionEnhancement, c.vision)
+		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, fileParser, db, fileTypeExt, filename, binary, inputs, setups, c.enableVisionEnhancement, c.vision)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -534,7 +540,10 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		}
 	}
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
-		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups, pageWin)
+		if selectionErr != nil && fileTypeExt != utility.FileTypeOTHER {
+			return nil, fmt.Errorf("parser: resolve %q: %w", fileTypeExt, selectionErr)
+		}
+		dispatched = dispatchParse(ctx, fileParser, fileTypeExt, filename, binary, setups, pageWin)
 		if dispatched.Err == nil && ctx.Err() == nil {
 			pageWin.Report(ctx, 1.0)
 		}

@@ -95,7 +95,7 @@ export const useFetchMemoryList = () => {
   };
 
   if (Array.isArray(owner) && owner.length > 0) {
-    requestParams.owner_ids = owner.join(',');
+    requestParams.tenant_id = owner.join(',');
   }
   const { data, isLoading, isError, refetch } = useQuery<
     MemoryListResponse,

@@ -54,11 +54,11 @@ func TestSearchDatasetsSearchIDOverridesIntegration(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			searches := service.NewSearchService()
-			created, err := searches.CreateSearch(f.ctx, f.owner, "retrieval_"+tt.name, nil)
+			created, err := searches.CreateSearch(f.ctx, "retrieval_"+tt.name, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = searches.UpdateSearch(f.ctx, f.owner, created.SearchID, &service.UpdateSearchRequest{
+			_, err = searches.UpdateSearch(f.ctx, created.SearchID, &service.UpdateSearchRequest{
 				Name: "retrieval_" + tt.name,
 				SearchConfig: map[string]interface{}{
 					"keywords_similarity_weight": 1 - tt.weight,
@@ -119,7 +119,7 @@ func TestSearchDatasetsEmbeddingConsistencyIntegration(t *testing.T) {
 		}
 		req := f.request(0.7, 0)
 		req.DatasetIDs = []string{"kb-a", "kb-b"}
-		result, err := f.service.SearchDatasets(f.ctx, req, f.owner)
+		result, err := f.service.SearchDatasets(f.ctx, req)
 		if err == nil || !strings.Contains(err.Error(), "datasets use different embedding models") || result != nil {
 			t.Fatalf("different base models must be rejected before retrieval: result=%+v err=%v", result, err)
 		}
@@ -201,7 +201,7 @@ func newSearchIntegrationFixture(t *testing.T) *searchIntegrationFixture {
 		}
 		grantDatasetTestResource(t, owner, "kb", kb, owner, "owner")
 	}
-	model, err := service.NewModelFactory().NewEmbeddingModel(ctx, service.ModelAccess{TenantID: owner}, info.ModelID+"@Builtin")
+	model, err := service.NewModelFactory().NewEmbeddingModel(ctx, service.Identity{TenantID: owner}, info.ModelID+"@Builtin")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func (f *searchIntegrationFixture) request(weight, threshold float64) *service.S
 
 func (f *searchIntegrationFixture) search(t *testing.T, req *service.SearchDatasetsRequest) *service.SearchDatasetsResponse {
 	t.Helper()
-	result, err := f.service.SearchDatasets(f.ctx, req, f.owner)
+	result, err := f.service.SearchDatasets(f.ctx, req)
 	if err != nil {
 		t.Fatalf("SearchDatasets: %v", err)
 	}

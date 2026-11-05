@@ -81,9 +81,6 @@ func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID
 	if err != nil {
 		return nil, err
 	}
-	if len(data) == 0 {
-		return nil, fmt.Errorf("this document is empty")
-	}
 
 	fileName := ""
 	if doc.Name != nil {
@@ -219,11 +216,11 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 //
 //	ids: specific document IDs; deleteAll: delete all docs in the dataset.
 //	Returns the number of successfully deleted documents.
-func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
+func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID string) (int, error) {
 	// Deleting the entire dataset requires dataset-level access; deleting
 	// explicit documents also accepts direct document grants.
 	if deleteAll {
-		if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDeleteContent); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationDeleteContent); err != nil {
 			_, permissionErr := permissionresponse.Normalize(err)
 			return 0, permissionErr
 		}
@@ -236,7 +233,7 @@ func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, del
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDeleteContent); err != nil &&
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationDeleteContent); err != nil &&
 		!errors.Is(err, permission.ErrPermissionDenied) && !errors.Is(err, permission.ErrMembershipNotFound) {
 		_, permissionErr := permissionresponse.Normalize(err)
 		return 0, permissionErr
@@ -252,7 +249,7 @@ func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, del
 			return 0, err
 		}
 		for _, doc := range documents {
-			if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, datasetID, permission.OperationDeleteContent); err != nil {
+			if err := service.CheckDocumentAccess(ctx, doc.ID, datasetID, permission.OperationDeleteContent); err != nil {
 				_, permissionErr := permissionresponse.Normalize(err)
 				return 0, permissionErr
 			}
@@ -280,6 +277,14 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 	if err != nil {
 		return err
 	}
+	unlock := lockDocumentParse(docID)
+	defer unlock()
+
+	// Settle and delete the task before purging its cache state. A conditional
+	// delete failure leaves the document and the newly active run intact.
+	if err := s.cleanupDocumentTask(ctx, docID, taskTerminalMessageDocumentDeleted); err != nil {
+		return err
+	}
 
 	// Release an uncommitted parse hold before the document disappears.
 	if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
@@ -288,22 +293,11 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 		}
 	}
 
-	// Delete tasks from DB
-	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
-	if err != nil {
-		common.Error(fmt.Sprintf("failed to get ingestion task by doc:%s", doc.ID), err)
-		return err
+	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
+	if typeErr != nil {
+		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
 	}
-	if ingestionTask != nil {
-		if err := s.purgeTaskStateForCleanup(ctx, ingestionTask.ID); err != nil {
-			return err
-		}
-		if _, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, &ingestionTask.UserID); err != nil {
-			return err
-		}
-	}
-
-	if err := s.deleteDocEngineData(ctx, docID, kb.TenantID, doc.KbID); err != nil {
+	if err := s.deleteDocEngineData(ctx, docID, kb.TenantID, doc.KbID, variants, taskTypes); err != nil {
 		return err
 	}
 	if err = s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
@@ -323,26 +317,27 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 // deleting the underlying file record, its storage blob, or its file2document
 // mappings. Mirrors Python DocumentService.remove_document — the caller is
 // responsible for cleaning up the file2document mappings separately.
+//
+// Chunk + metadata cleanup is delegated to deleteDocEngineData so the keep-
+// file path matches deleteDocumentFull. The doc_deleted event is published
+// from inside deleteDocEngineData; no separate PublishDeleted is needed here.
 func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID string) error {
 	doc, kb, err := s.resolveDocAndKB(ctx, docID)
 	if err != nil {
 		return err
 	}
+	unlock := lockDocumentParse(docID)
+	defer unlock()
+
 	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
 	if typeErr != nil {
 		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
 	}
-	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
-	if err != nil {
-		return fmt.Errorf("failed to get ingestion task for %s: %w", docID, err)
-	}
-	if ingestionTask != nil {
-		if err := s.purgeTaskStateForCleanup(ctx, ingestionTask.ID); err != nil {
-			return err
-		}
-		if _, err := s.ingestionTaskSvc.Remove(ctx, ingestionTask.ID, nil); err != nil {
-			return fmt.Errorf("remove ingestion task for document %s: %w", docID, err)
-		}
+
+	// Settle and delete the task before purging its cache state. Active workers
+	// must be stopped before this path can run.
+	if err := s.cleanupDocumentTask(ctx, docID, taskTerminalMessageDocumentRemoved); err != nil {
+		return err
 	}
 	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
 		if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
@@ -350,19 +345,11 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		}
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
 	}
-	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
+	if err := s.deleteDocEngineData(ctx, docID, kb.TenantID, doc.KbID, variants, taskTypes); err != nil {
 		return err
 	}
-	if len(variants) == 0 {
-		return nil
-	}
-	// File replacement/deletion uses this path instead of deleteDocumentFull.
-	// Publish the same deletion event so the dataset-level consumer removes the
-	// deleted document's contribution in both paths.
-	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
-	defer cancel()
-	if err := knowledge_compile.PublishDeleted(pubCtx, kb.TenantID, kb.ID, docID, variants, taskTypes); err != nil {
-		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: publish doc_deleted for %s failed: %v", docID, err))
+	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
+		return err
 	}
 	return nil
 }
@@ -372,6 +359,9 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 // updates dataset/document counters on insert. The document's ID and timestamps
 // are populated by the caller / model hooks before insertion.
 func (s *DocumentService) InsertDocument(ctx context.Context, doc *entity.Document) error {
+	if doc.UserID == "" {
+		doc.UserID = doc.CreatedBy
+	}
 	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(doc).Error; err != nil {
 			return fmt.Errorf("failed to create document: %w", err)
@@ -422,18 +412,22 @@ func (s *DocumentService) resolveDocAndKB(ctx context.Context, docID string) (*e
 }
 
 // deleteDocEngineData removes chunks and metadata from the document engine.
-// No-op when the engine is nil.
-func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenantID, kbID string) error {
+// No-op when the engine is nil. Callers pass the resolved compile variants and
+// task types so the file-delete hot path does not search for them twice.
+func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenantID, kbID string, variants, taskTypes []string) error {
 	if s.docEngine == nil {
 		return nil
 	}
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, tenantID, kbID, docID)
-	if typeErr != nil {
-		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
-	}
 	deleteCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
 	_, delErr := s.docEngine.DeleteChunks(deleteCtx, map[string]interface{}{"doc_id": docID}, indexName, kbID)
+	if delErr != nil && deleteCtx.Err() == nil {
+		// Retry once under a fresh deadline: reusing deleteCtx would start the
+		// second attempt with whatever time the first attempt left over.
+		retryCtx, retryCancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+		_, delErr = s.docEngine.DeleteChunks(retryCtx, map[string]interface{}{"doc_id": docID}, indexName, kbID)
+		retryCancel()
+	}
 	cancel()
 	if delErr != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
@@ -441,7 +435,9 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	}
 	if len(variants) == 0 {
 		if s.metadataSvc != nil {
-			_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
+			if err := s.DeleteDocumentAllMetadata(ctx, docID); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -458,7 +454,9 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 		common.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	if s.metadataSvc != nil {
-		_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
+		if err := s.DeleteDocumentAllMetadata(ctx, docID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

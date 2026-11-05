@@ -34,13 +34,16 @@ import (
 	"unicode/utf8"
 
 	htmlcharset "golang.org/x/net/html/charset"
-
-	"ragflow/internal/parser/media"
 )
 
 // maxSVGDepth bounds element nesting: the XML decoder keeps one stack entry
 // per open element, so depth is the allocation an SVG payload could inflate.
 const maxSVGDepth = 1024
+
+// maxSVGEntityExpansionBytes bounds the total expanded size of DOCTYPE
+// entities. It is a fixed parser-safety bound, not the configurable image
+// limit.
+const maxSVGEntityExpansionBytes = 32 << 20
 
 // maxSVGEntities bounds the entity declarations read from a DOCTYPE.
 const maxSVGEntities = 64
@@ -117,7 +120,7 @@ func extractSVGText(ctx context.Context, data []byte) (string, error) {
 				value := string(match[2]) + string(match[3])
 				references := bytes.Count(data, []byte("&"+string(match[1])+";"))
 				expansion += int64(references) * int64(len(value))
-				if expansion > media.MaxImagePayloadBytes {
+				if expansion > maxSVGEntityExpansionBytes {
 					return "", errors.New("parser: decode SVG: entity expansion exceeds size limits")
 				}
 				entities[string(match[1])] = value

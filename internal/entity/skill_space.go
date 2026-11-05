@@ -28,6 +28,7 @@ const (
 // SkillSpace represents a skills space (library) that contains skills
 type SkillSpace struct {
 	ID          string `gorm:"column:id;primaryKey;size:32" json:"id"`
+	UserID      string `gorm:"column:user_id;size:32;not null;default:'';index" json:"user_id"`
 	TenantID    string `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	Name        string `gorm:"column:name;size:128;not null" json:"name"`
 	FolderID    string `gorm:"column:folder_id;size:32;not null" json:"folder_id"`

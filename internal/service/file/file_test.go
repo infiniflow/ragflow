@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 )
@@ -432,16 +433,16 @@ func TestFileService_UploadFromURL_PDFAddsExtensionAndStoresToDownloads(t *testi
 	}))
 	defer server.Close()
 
-	origAssert := common.AssertURLSafe
+	origAssert := common.AssertURLSafeWithContext
 	origPinned := utility.PinnedHTTPClient
-	common.AssertURLSafe = func(rawURL string) (string, string, error) {
+	common.AssertURLSafeWithContext = func(_ context.Context, rawURL string) (string, string, error) {
 		return "127.0.0.1", "127.0.0.1", nil
 	}
 	utility.PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 		return server.Client()
 	}
 	t.Cleanup(func() {
-		common.AssertURLSafe = origAssert
+		common.AssertURLSafeWithContext = origAssert
 		utility.PinnedHTTPClient = origPinned
 	})
 
@@ -451,14 +452,14 @@ func TestFileService_UploadFromURL_PDFAddsExtensionAndStoresToDownloads(t *testi
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user123", "")
 	svc := testFileService()
-	resp, err := svc.UploadFromURL(ctx, "tenant123", server.URL+"/report")
+	resp, err := svc.UploadFromURL(ctx, server.URL+"/report")
 	if err != nil {
 		t.Fatalf("UploadFromURL failed: %v", err)
 	}
 
-	if mockStorage.lastBucket != "tenant123-downloads" {
+	if mockStorage.lastBucket != "user123-downloads" {
 		t.Fatalf("bucket = %q", mockStorage.lastBucket)
 	}
 	if resp["name"] != "report.pdf" {
@@ -479,16 +480,16 @@ func TestFileService_UploadFromURL_HTMLNormalizesReadableContent(t *testing.T) {
 	}))
 	defer server.Close()
 
-	origAssert := common.AssertURLSafe
+	origAssert := common.AssertURLSafeWithContext
 	origPinned := utility.PinnedHTTPClient
-	common.AssertURLSafe = func(rawURL string) (string, string, error) {
+	common.AssertURLSafeWithContext = func(_ context.Context, rawURL string) (string, string, error) {
 		return "127.0.0.1", "127.0.0.1", nil
 	}
 	utility.PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 		return server.Client()
 	}
 	t.Cleanup(func() {
-		common.AssertURLSafe = origAssert
+		common.AssertURLSafeWithContext = origAssert
 		utility.PinnedHTTPClient = origPinned
 	})
 
@@ -498,9 +499,9 @@ func TestFileService_UploadFromURL_HTMLNormalizesReadableContent(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user123", "")
 	svc := testFileService()
-	resp, err := svc.UploadFromURL(ctx, "tenant123", server.URL+"/page")
+	resp, err := svc.UploadFromURL(ctx, server.URL+"/page")
 	if err != nil {
 		t.Fatalf("UploadFromURL failed: %v", err)
 	}
@@ -553,16 +554,16 @@ func TestFileService_UploadFromURL_ShortensLongNamesWithinTheLimit(t *testing.T)
 			}))
 			defer server.Close()
 
-			origAssert := common.AssertURLSafe
+			origAssert := common.AssertURLSafeWithContext
 			origPinned := utility.PinnedHTTPClient
-			common.AssertURLSafe = func(rawURL string) (string, string, error) {
+			common.AssertURLSafeWithContext = func(_ context.Context, rawURL string) (string, string, error) {
 				return "127.0.0.1", "127.0.0.1", nil
 			}
 			utility.PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 				return server.Client()
 			}
 			t.Cleanup(func() {
-				common.AssertURLSafe = origAssert
+				common.AssertURLSafeWithContext = origAssert
 				utility.PinnedHTTPClient = origPinned
 			})
 
@@ -571,7 +572,8 @@ func TestFileService_UploadFromURL_ShortensLongNamesWithinTheLimit(t *testing.T)
 			factory.SetStorage(&fakeStorage{})
 			t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-			resp, err := testFileService().UploadFromURL(t.Context(), "tenant123", server.URL+"/"+url.PathEscape(c.path))
+			ctx := permission.WithIdentity(t.Context(), "user123", "")
+			resp, err := testFileService().UploadFromURL(ctx, server.URL+"/"+url.PathEscape(c.path))
 			if err != nil {
 				t.Fatalf("UploadFromURL failed: %v", err)
 			}

@@ -171,7 +171,21 @@ func splitLineByXGap(chars []pdf.TextChar, threshold float64) [][]pdf.TextChar {
 
 // ---- internal helpers ----
 
-// GroupCharsToLines groups characters into horizontal lines based on vertical overlap.
+// GroupCharsToLines groups characters into horizontal lines based on vertical
+// overlap, and returns each line in reading order. The input slice is sorted in
+// place.
+//
+// The vertical key (Top, or Bottom when sortByTop is false) only decides which
+// line a character joins; it must not decide the character order inside a line.
+// Superscripts and subscripts share their line's vertical band but sit above or
+// below the baseline, so keeping the vertical-first order moves them to the front
+// (or the back) of the assembled text — `图 3. I²C 时序图` came out as
+// `2图 3. IC 时序图` — and leaves splitLineByXGap and LineToTextBox, which both
+// measure the gap between consecutive characters, with non-monotonic X positions
+// and therefore negative gaps. Each line is re-sorted by X0 once grouping is done;
+// the sort is stable, so characters sharing an X0 keep the order the vertical pass
+// left them in (their own relative X is undefined, so the pass decides). X0 is
+// assumed finite: a NaN X0 defeats the gap measurement whichever key orders it.
 func GroupCharsToLines(chars []pdf.TextChar, sortByTop bool) [][]pdf.TextChar {
 	if len(chars) == 0 {
 		return nil
@@ -215,6 +229,9 @@ func GroupCharsToLines(chars []pdf.TextChar, sortByTop bool) [][]pdf.TextChar {
 	if len(currentLine) > 0 {
 		lines = append(lines, currentLine)
 	}
+	for _, line := range lines {
+		sort.SliceStable(line, func(i, j int) bool { return line[i].X0 < line[j].X0 })
+	}
 	return lines
 }
 
@@ -227,8 +244,7 @@ func verticalOverlap(a, b pdf.TextChar) bool {
 	return math.Abs(a.Top-b.Top) < mh*0.5
 }
 
-// lineToTextBox converts a line of characters to a single pdf.TextBox.
-
+// LineToTextBox converts a line of characters to a single pdf.TextBox.
 func LineToTextBox(chars []pdf.TextChar) pdf.TextBox {
 	if len(chars) == 0 {
 		return pdf.TextBox{}

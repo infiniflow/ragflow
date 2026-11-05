@@ -36,7 +36,7 @@ export function useSendSingleMessage({
   const { send, answer, done } = useSendMessageWithSse();
 
   const {
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     setDerivedMessages,
     derivedMessages,
@@ -151,7 +151,7 @@ export function useSendSingleMessage({
   );
 
   return {
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     setDerivedMessages,
     derivedMessages,

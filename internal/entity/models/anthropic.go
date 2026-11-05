@@ -24,7 +24,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
+	"strconv"
 	"strings"
 )
 
@@ -161,9 +163,25 @@ func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *C
 		}
 		inputSchema := map[string]any{"type": "object", "properties": map[string]any{}}
 		if parameters, present := function["parameters"]; present {
-			inputSchema, ok = parameters.(map[string]any)
-			if !ok || inputSchema == nil {
+			if parameters == nil {
 				return fmt.Errorf("anthropic: tool %q parameters must be an object", name)
+			}
+			switch p := parameters.(type) {
+			case map[string]any:
+				if p == nil {
+					return fmt.Errorf("anthropic: tool %q parameters must be an object", name)
+				}
+				inputSchema = p
+			default:
+				data, err := json.Marshal(p)
+				if err != nil {
+					return fmt.Errorf("anthropic: tool %q parameters cannot be marshaled: %w", name, err)
+				}
+				var m map[string]any
+				if err := json.Unmarshal(data, &m); err != nil || m == nil {
+					return fmt.Errorf("anthropic: tool %q parameters must be an object", name)
+				}
+				inputSchema = m
 			}
 		}
 		nativeTool := map[string]any{"name": name, "input_schema": inputSchema}
@@ -500,6 +518,14 @@ func parseAnthropicChatResponse(body []byte, _ *ChatConfig) (chatResponseParts, 
 	}, nil
 }
 
+// anthropicModelsPageSize is the largest page the models endpoint allows; the
+// default is 20, which silently truncated the list for accounts with more.
+const anthropicModelsPageSize = 1000
+
+// anthropicModelsMaxPages bounds the pagination loop so a server that keeps
+// returning a fresh cursor cannot make ListModels (and CheckConnection) run forever.
+const anthropicModelsMaxPages = 100
+
 func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -510,15 +536,58 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
 	baseURLConfig.BaseURL = apiConfig.BaseURL
 
-	url, err := a.baseModel.EndpointURL(baseURLConfig, a.baseModel.URLSuffix.Models)
+	endpoint, err := a.baseModel.EndpointURL(baseURLConfig, a.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
+	}
+
+	models := make([]ListModelResponse, 0)
+	afterID := ""
+	for pageNum := 0; pageNum < anthropicModelsMaxPages; pageNum++ {
+		page, err := a.listModelsPage(ctx, endpoint, apiKey, afterID)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range page.Data {
+			if item.ID != "" {
+				models = append(models, ListModelResponse{
+					Name: item.ID,
+				})
+			}
+		}
+		if !page.HasMore || page.LastID == "" || page.LastID == afterID {
+			return models, nil
+		}
+		afterID = page.LastID
+	}
+	return nil, fmt.Errorf("models list exceeded %d pages", anthropicModelsMaxPages)
+}
+
+type anthropicModelsPage struct {
+	Data []struct {
+		ID string `json:"id"`
+	} `json:"data"`
+	HasMore bool   `json:"has_more"`
+	LastID  string `json:"last_id"`
+}
+
+func (a *AnthropicModel) listModelsPage(ctx context.Context, endpoint, apiKey, afterID string) (*anthropicModelsPage, error) {
+	query := url.Values{}
+	query.Set("limit", strconv.Itoa(anthropicModelsPageSize))
+	if afterID != "" {
+		query.Set("after_id", afterID)
+	}
+	pageURL := endpoint
+	if strings.Contains(pageURL, "?") {
+		pageURL += "&" + query.Encode()
+	} else {
+		pageURL += "?" + query.Encode()
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -538,23 +607,11 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 		return nil, fmt.Errorf("anthropic models API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var result struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
+	var result anthropicModelsPage
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-	models := make([]ListModelResponse, 0, len(result.Data))
-	for _, item := range result.Data {
-		if item.ID != "" {
-			models = append(models, ListModelResponse{
-				Name: item.ID,
-			})
-		}
-	}
-	return models, nil
+	return &result, nil
 }
 
 func (a *AnthropicModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -751,49 +808,49 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 }
 
 func (a *AnthropicModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", a.Name())
 }
 
 func (a *AnthropicModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", a.Name())
 }
 
 func (a *AnthropicModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", a.Name())
 }
 
 func (a *AnthropicModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", a.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", a.Name())
 }
 
 func (a *AnthropicModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, asrConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", a.Name())
 }
 
 func (a *AnthropicModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", a.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", a.Name())
 }
 
 func (a *AnthropicModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", a.Name())
 }
 
 func (a *AnthropicModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", a.Name())
 }
 
 func (a *AnthropicModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", a.Name())
 }
 
 func (a *AnthropicModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", a.Name())
 }
 
 func (a *AnthropicModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", a.Name())
 }
 
 func (a *AnthropicModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", a.Name())
 }

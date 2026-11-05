@@ -154,7 +154,7 @@ func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 }
 
 // ListByResourceIDs lists sessions for a chat, optionally restricted to sessionIDs.
-func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, terms []OrderTerm, page, pageSize int, options ...ConversationHistoryOptions) ([]*entity.ChatSession, int64, error) {
+func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name, sessionUserID string, terms []OrderTerm, page, pageSize int, options ...ConversationHistoryOptions) ([]*entity.ChatSession, int64, error) {
 	if sessionIDs != nil && len(sessionIDs) == 0 {
 		return []*entity.ChatSession{}, 0, nil
 	}
@@ -168,6 +168,9 @@ func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, c
 	}
 	if name != "" {
 		query = query.Where("name = ?", name)
+	}
+	if sessionUserID != "" {
+		query = query.Where("user_id = ?", sessionUserID)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
@@ -298,8 +301,7 @@ func (dao *ChatSessionDAO) ListAgentSessions(ctx context.Context, db *gorm.DB, p
 	if params.Keywords != "" {
 		keywords := strings.ToLower(params.Keywords)
 		keywordPattern := "%" + keywords + "%"
-		messageMatch := "EXISTS (SELECT 1 FROM " + apiConversationMessageTable + " AS cm WHERE cm.conversation_id = api_4_conversation.id AND LOWER(cm.content) LIKE ?)"
-		query = query.Where("(LOWER(id) LIKE ? OR LOWER(name) LIKE ? OR "+messageMatch+")", keywordPattern, keywordPattern, keywordPattern)
+		query = query.Where("(LOWER(id) LIKE ? OR LOWER(name) LIKE ?)", keywordPattern, keywordPattern)
 	}
 
 	dateColumn := "create_date"

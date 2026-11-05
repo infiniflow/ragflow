@@ -192,6 +192,8 @@ const (
 	EnvAllowAnyHost                      = "ALLOW_ANY_HOST"
 	EnvTavilyAPIKey                      = "TAVILY_API_KEY"
 	EnvQueritAPIKey                      = "QUERIT_API_KEY"
+	EnvDeepLAPIKey                       = "DEEPL_API_KEY"
+	EnvQWeatherAPIKey                    = "QWEATHER_API_KEY"
 	EnvHome                              = "HOME"
 	EnvUserProfile                       = "USERPROFILE"
 	EnvHTTPProxy                         = "http_proxy"
@@ -227,6 +229,7 @@ const (
 	EnvMineruAPIKey                      = "MINERU_API_KEY"
 	EnvMineruBackend                     = "MINERU_BACKEND"
 	EnvMineruServerURL                   = "MINERU_SERVER_URL"
+	EnvMineruTimeout                     = "MINERU_TIMEOUT"
 	EnvMonkeyOCRv2ServerURL              = "MONKEYOCRV2_SERVER_URL"
 	EnvMonkeyOCRv2Timeout                = "MONKEYOCRV2_TIMEOUT"
 	EnvMonkeyOCRAPIServer                = "MONKEYOCR_APISERVER"
@@ -286,6 +289,10 @@ const (
 	EnvGoogleDriveWebOAuthRedirectURI    = "GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI"
 	EnvSpacyModelDir                     = "SPACY_MODEL_DIR"
 
+	// EnvExtractorConcurrency bounds concurrent chunk extraction jobs across
+	// all Extractor invocations in one process.
+	EnvExtractorConcurrency = "EXTRACTOR_CONCURRENCY"
+
 	// EnvExtractorChatTimeout sets the Extractor LLM call timeout in seconds,
 	// including retries and backoff. It does not apply to tag extraction.
 	EnvExtractorChatTimeout = "EXTRACTOR_CHAT_TIMEOUT"
@@ -321,6 +328,13 @@ const (
 	// ingestor.inference_cpu_cores config key and is itself overridden by the
 	// --deepdoc-inference-cpu-cores CLI flag.
 	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
+
+	// Media extraction limits. The parser media budget and the run media cache
+	// read these per call: the per-image payload limit, the number of distinct
+	// images one run may cache, and the total decoded bytes one run may cache.
+	EnvMediaImageMaxBytes   = "RAGFLOW_MEDIA_IMAGE_MAX_BYTES"
+	EnvMediaMaxImagesPerRun = "RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN"
+	EnvMediaMaxBytesPerRun  = "RAGFLOW_MEDIA_MAX_BYTES_PER_RUN"
 
 	// Typed-decision model. Unset RAGFLOW_DECISION_DIR leaves the feature off:
 	// every caller degrades to unfiltered behaviour, so a deployment without the

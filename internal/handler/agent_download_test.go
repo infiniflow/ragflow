@@ -44,13 +44,13 @@ type fakeAgentFileService struct {
 	urlUploadErr error
 }
 
-func (f *fakeAgentFileService) UploadInfos(ctx context.Context, _ string, _ []*multipart.FileHeader) ([]map[string]interface{}, error) {
+func (f *fakeAgentFileService) UploadInfos(ctx context.Context, _ []*multipart.FileHeader) ([]map[string]interface{}, error) {
 	if f.uploadErr != nil {
 		return nil, f.uploadErr
 	}
 	return f.uploadList, nil
 }
-func (f *fakeAgentFileService) UploadFromURL(ctx context.Context, _ string, _ string) (map[string]interface{}, error) {
+func (f *fakeAgentFileService) UploadFromURL(ctx context.Context, _ string) (map[string]interface{}, error) {
 	if f.urlUploadErr != nil {
 		return nil, f.urlUploadErr
 	}

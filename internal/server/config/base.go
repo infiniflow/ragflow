@@ -44,4 +44,5 @@ type Config struct {
 	defaultModels DefaultModelsConfig
 	billing       BillingConfig
 	oAuth         OAuthConfig
+	audit         AuditConfig
 }

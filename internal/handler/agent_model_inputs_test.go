@@ -17,6 +17,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/permission/testsupport"
 )
 
 type modelInputDebugEnvelope struct {
@@ -33,9 +34,10 @@ func setupModelInputDebug(t *testing.T, endpoint string) (*AgentHandler, *entity
 	previous := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = previous })
-	previousHostSetting := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = previousHostSetting })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u-1", "u-1"); err != nil {
+		t.Fatalf("prepare agent model input permission fixture: %v", err)
+	}
+	t.Setenv(common.EnvAllowAnyHost, "true")
 	if err := models.InitProviderManager("../../conf/models"); err != nil {
 		t.Fatalf("InitProviderManager: %v", err)
 	}
@@ -133,8 +135,8 @@ func TestDebugAgentModelInputsMatchProviderMessages(t *testing.T) {
 	}
 }
 
-// TestDebugAgentModelInputsDefaultAndErrorContracts checks unchanged default
-// outputs and error codes, with opt-in diagnostics retained on provider failure.
+// TestDebugAgentModelInputsDefaultAndErrorContracts checks default outputs and
+// that provider failures omit data with or without opt-in diagnostics.
 func TestDebugAgentModelInputsDefaultAndErrorContracts(t *testing.T) {
 	var fail atomic.Bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -161,18 +163,8 @@ func TestDebugAgentModelInputsDefaultAndErrorContracts(t *testing.T) {
 	fail.Store(true)
 	without := runModelInputDebug(t, handler, "false")
 	with := runModelInputDebug(t, handler, "true")
-	if without.Code == 0 || without.Code != with.Code || without.Message != with.Message || string(without.Data) != "null" {
+	if without.Code == 0 || without.Code != with.Code || without.Message != with.Message || without.Data != nil || with.Data != nil {
 		t.Fatalf("error contract changed: without=%+v with=%+v", without, with)
-	}
-	var data struct {
-		Outputs     map[string]any     `json:"outputs"`
-		ModelInputs models.ModelInputs `json:"model_inputs"`
-	}
-	if err := json.Unmarshal(with.Data, &data); err != nil {
-		t.Fatal(err)
-	}
-	if data.Outputs != nil || len(data.ModelInputs.Calls) != 1 || data.ModelInputs.Calls[0].Status != "captured" {
-		t.Fatalf("failed provider input was lost: %s", with.Data)
 	}
 }
 
@@ -187,7 +179,7 @@ func TestDebugAgentModelInputsRejectsInvalidFlagAndUnauthorizedExecution(t *test
 	defer server.Close()
 	handler, _ := setupModelInputDebug(t, server.URL)
 	for _, flag := range []string{`null`, `"true"`, `1`, `{}`, `[]`} {
-		if response := runModelInputDebug(t, handler, flag); response.Code != int(common.CodeArgumentError) || string(response.Data) != "null" {
+		if response := runModelInputDebug(t, handler, flag); response.Code != int(common.CodeArgumentError) || response.Data != nil {
 			t.Fatalf("flag %s accepted: %+v", flag, response)
 		}
 	}
@@ -197,7 +189,7 @@ func TestDebugAgentModelInputsRejectsInvalidFlagAndUnauthorizedExecution(t *test
 		t.Fatal(err)
 	}
 	response := runModelInputDebug(t, handler, "true")
-	if response.Code != int(common.CodeOperatingError) || response.Message != canvasNoAccessMessage || string(response.Data) != "null" {
+	if response.Code != int(common.CodeOperatingError) || response.Message != canvasNoAccessMessage || response.Data != nil {
 		t.Fatalf("unauthorized result: %+v", response)
 	}
 	if calls.Load() != 0 {
@@ -216,7 +208,7 @@ func TestDebugModelInputsRejectsNonAgent(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if response.Code != int(common.CodeArgumentError) || string(response.Data) != "null" {
+	if response.Code != int(common.CodeArgumentError) || response.Data != nil {
 		t.Fatalf("non-Agent capture accepted: %+v", response)
 	}
 }

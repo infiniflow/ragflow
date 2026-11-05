@@ -322,16 +322,19 @@ func (c *whatsappChannel) runEvents(ctx context.Context) error {
 	}
 	defer conn.Close()
 
+	pingDone := make(chan struct{})
+	defer close(pingDone)
 	go func() {
-		<-ctx.Done()
-		_ = conn.Close()
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-pingDone:
+		}
 	}()
 	_ = conn.SetReadDeadline(time.Now().Add(wsReadTimeout))
 	conn.SetPongHandler(func(string) error {
 		return conn.SetReadDeadline(time.Now().Add(wsReadTimeout))
 	})
-	pingDone := make(chan struct{})
-	defer close(pingDone)
 	go func() {
 		ticker := time.NewTicker(wsPingInterval)
 		defer ticker.Stop()
@@ -630,7 +633,8 @@ func (c *whatsappChannel) eventsURL() (string, error) {
 	case "https":
 		base.Scheme = "wss"
 	}
-	base.Path = strings.TrimRight(base.Path, "/") + "/whatsapp/" + url.PathEscape(c.sessionKey()) + "/events/ws"
+	base.Path = strings.TrimRight(base.Path, "/") + "/whatsapp/" + c.sessionKey() + "/events/ws"
+	base.RawPath = ""
 	q := base.Query()
 	c.mu.Lock()
 	q.Set("after", strconv.FormatInt(c.eventCursor, 10))
