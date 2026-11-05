@@ -281,3 +281,64 @@ func TestOllamaListModelsRequiresBaseURL(t *testing.T) {
 		t.Fatal("ListModels: expected error for missing base URL, got nil")
 	}
 }
+
+func TestOllamaChatPreservesToolCalls(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"model":"qwen3.5:9b","message":{"content":"","thinking":"reasoning","tool_calls":[{"function":{"name":"query_summary","arguments":{"monthFrom":"1","monthTo":"10"}}}]},"done":true}`)
+	}))
+	defer srv.Close()
+
+	response, err := newOllamaForChatTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"qwen3.5:9b",
+		[]Message{{Role: "user", Content: "test"}},
+		&APIConfig{},
+		&ChatConfig{},
+		&common.ModelUsage{},
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if len(response.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls)=%d, want 1", len(response.ToolCalls))
+	}
+	fn, ok := response.ToolCalls[0]["function"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("function=%v, want map", response.ToolCalls[0]["function"])
+	}
+	if fn["name"] != "query_summary" {
+		t.Errorf("name=%v, want query_summary", fn["name"])
+	}
+	args, _ := fn["arguments"].(string)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(args), &parsed); err != nil {
+		t.Fatalf("arguments=%q is not valid JSON: %v", args, err)
+	}
+	if parsed["monthFrom"] != "1" || parsed["monthTo"] != "10" {
+		t.Errorf("arguments=%v, want {monthFrom:1, monthTo:10}", parsed)
+	}
+}
+
+func TestOllamaChatToolCallsWithoutContentOrThinking(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"model":"qwen3.5:9b","message":{"content":"","thinking":"","tool_calls":[{"function":{"name":"query_summary","arguments":{"monthFrom":"1","monthTo":"10"}}}]},"done":true}`)
+	}))
+	defer srv.Close()
+
+	response, err := newOllamaForChatTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"qwen3.5:9b",
+		[]Message{{Role: "user", Content: "test"}},
+		&APIConfig{},
+		&ChatConfig{},
+		&common.ModelUsage{},
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: expected success with tool_calls only, got: %v", err)
+	}
+	if len(response.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls)=%d, want 1", len(response.ToolCalls))
+	}
+}

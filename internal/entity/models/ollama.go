@@ -212,8 +212,9 @@ func (o *OllamaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 }
 
 type ollamaChatMessage struct {
-	Content  string `json:"content"`
-	Thinking string `json:"thinking"`
+	Content   string           `json:"content"`
+	Thinking  string           `json:"thinking"`
+	ToolCalls []map[string]any `json:"tool_calls"`
 }
 
 type ollamaChatResponse struct {
@@ -243,12 +244,32 @@ func handleOllamaNonStreamingResponse(body []byte, modelUsage *common.ModelUsage
 			chatConfig.UsageResult = usage
 		}
 	}
-	if content == "" && reasonContent == "" {
+	toolCalls := make([]map[string]any, 0, len(result.Message.ToolCalls))
+	for _, tc := range result.Message.ToolCalls {
+		fn, ok := tc["function"].(map[string]any)
+		if !ok {
+			continue
+		}
+		name, _ := fn["name"].(string)
+		argsBytes, err := json.Marshal(fn["arguments"])
+		if err != nil {
+			return nil, fmt.Errorf("ollama: marshal tool arguments: %w", err)
+		}
+		toolCalls = append(toolCalls, map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":      name,
+				"arguments": string(argsBytes),
+			},
+		})
+	}
+	if content == "" && reasonContent == "" && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("no message in response")
 	}
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 		Usage:         usage,
 	}, nil
 }
