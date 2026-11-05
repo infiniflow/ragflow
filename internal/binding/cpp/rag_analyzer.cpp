@@ -864,11 +864,11 @@ std::string RAGAnalyzer::StrQ2B(const std::string &input) {
         if (c < 0x80) {
             codepoint = c;
             i += 1;
-        } else if ((c & 0xE0) == 0xC0) {
+        } else if ((c & 0xE0) == 0xC0 && i + 1 < input.size()) {
             codepoint = (c & 0x1F) << 6;
             codepoint |= (input[i + 1] & 0x3F);
             i += 2;
-        } else if ((c & 0xF0) == 0xE0) {
+        } else if ((c & 0xF0) == 0xE0 && i + 2 < input.size()) {
             codepoint = (c & 0x0F) << 12;
             codepoint |= (input[i + 1] & 0x3F) << 6;
             codepoint |= (input[i + 2] & 0x3F);
