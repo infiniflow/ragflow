@@ -123,18 +123,17 @@ func lastPDFRune(text string) rune {
 func pdfContinuationSeparator(left, right string) string {
 	a := lastPDFRune(left)
 	b, _ := utf8.DecodeRuneInString(right)
-	if unicode.Is(unicode.Han, a) || unicode.Is(unicode.Han, b) || strings.ContainsRune("-\u2010\u2011", a) || unicode.IsPunct(b) {
-		return ""
-	}
-	if pdfKanaRune(a) && pdfKanaRune(b) {
+	if pdfNoSpaceRune(a) && pdfNoSpaceRune(b) || strings.ContainsRune("-\u2010\u2011", a) || unicode.IsPunct(b) {
 		return ""
 	}
 	return " "
 }
 
-// pdfKanaRune reports Hiragana and Katakana, which do not separate words with
-// spaces. A mixed kana/Latin boundary keeps the space because the Latin side is
-// space-delimited; Han boundaries stay space-free as before.
-func pdfKanaRune(r rune) bool {
-	return unicode.In(r, unicode.Hiragana, unicode.Katakana)
+// pdfNoSpaceRune reports scripts that write words without separating spaces.
+// A boundary keeps the space when only one side is in this set because the
+// other side is space-delimited. The prolonged sound mark is Common script, so
+// it is listed explicitly; Hangul is excluded because Korean separates words
+// with spaces.
+func pdfNoSpaceRune(r rune) bool {
+	return r == '\u30fc' || unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana)
 }

@@ -102,6 +102,39 @@ func TestGeneralPDFCrossPageMixedScriptKeepsSpace(t *testing.T) {
 	}
 }
 
+func TestGeneralPDFCrossPageHanLatinKeepsSpace(t *testing.T) {
+	items := []map[string]any{
+		{"text": "使用", "doc_type_kwd": "text", "positions": [][]float64{{1, 80, 520, 700, 715}}},
+		{"text": "python 进行开发。", "doc_type_kwd": "text", "positions": [][]float64{{2, 80, 200, 100, 115}}},
+	}
+	out := invokePDFContinuation(t, items, 1, []string{"\n"}, nil)
+	if got, want := outputTexts(t, out), []string{"使用 python 进行开发。"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("texts=%q, want %q", got, want)
+	}
+}
+
+func TestGeneralPDFCrossPageHanKanaJoinsWithoutSpace(t *testing.T) {
+	items := []map[string]any{
+		{"text": "日本語", "doc_type_kwd": "text", "positions": [][]float64{{1, 80, 520, 700, 715}}},
+		{"text": "の文章。", "doc_type_kwd": "text", "positions": [][]float64{{2, 80, 200, 100, 115}}},
+	}
+	out := invokePDFContinuation(t, items, 1, []string{"\n"}, nil)
+	if got, want := outputTexts(t, out), []string{"日本語の文章。"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("texts=%q, want %q", got, want)
+	}
+}
+
+func TestGeneralPDFCrossPageProlongedSoundMarkJoinsWithoutSpace(t *testing.T) {
+	items := []map[string]any{
+		{"text": "コンピュー", "doc_type_kwd": "text", "positions": [][]float64{{1, 80, 520, 700, 715}}},
+		{"text": "ター。", "doc_type_kwd": "text", "positions": [][]float64{{2, 80, 200, 100, 115}}},
+	}
+	out := invokePDFContinuation(t, items, 1, []string{"\n"}, nil)
+	if got, want := outputTexts(t, out), []string{"コンピューター。"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("texts=%q, want %q", got, want)
+	}
+}
+
 func TestGeneralPDFCrossPageAbbreviationIsNotListMarker(t *testing.T) {
 	items := []map[string]any{
 		{"text": "references,", "doc_type_kwd": "text", "positions": [][]float64{{1, 80, 520, 700, 715}}},
