@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
@@ -44,16 +45,14 @@ func (e *Engine) dropTable(ctx context.Context, tableName string) error {
 	}
 	defer release()
 
-	// Check if table exists
-	exists, err := e.tableExistsWithDB(db, tableName)
-	if err != nil {
-		return fmt.Errorf("failed to check table existence: %w", err)
-	}
-	if !exists {
-		return fmt.Errorf("table '%s' does not exist", tableName)
-	}
-
 	_, err = db.DropTable(tableName, infinity.ConflictTypeError)
+	var infinityErr *infinity.InfinityException
+	if errors.As(err, &infinityErr) && infinity.ErrorCode(infinityErr.ErrorCode) == infinity.ErrorCodeTableNotExist {
+		// Tolerate a missing table, as Elasticsearch's dropIndex does: tables
+		// are created on first write, so callers dropping by dataset or
+		// tenant routinely name one that was never created.
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("failed to drop table: %w", err)
 	}
@@ -224,6 +223,18 @@ func fieldJSONList(fieldName string) bool {
 		"doc_ids_kwd", "entity_names_kwd", "entity_names", "outlinks_kwd",
 		"related_kb_pages_kwd", "claims", "page_ids",
 		"rechunked_from_chunk_ids", "aliases":
+		return true
+	default:
+		return false
+	}
+}
+
+// fieldVarcharJSON reports varchar columns that hold JSON text: the write path
+// json-encodes their values and readers must parse them back. They are not
+// json-typed columns, so fieldJSON does not cover them.
+func fieldVarcharJSON(fieldName string) bool {
+	switch strings.ToLower(fieldName) {
+	case "tag_feas":
 		return true
 	default:
 		return false

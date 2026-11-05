@@ -141,6 +141,7 @@ func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, 
 // p.ChunkTokenCap. The cap is applied right after build_chunks and BEFORE the
 // on-demand crop, mirroring Python's invoke() order (build -> cap -> set_chunks).
 func chunkFromRecords(parentCtx context.Context, db *gorm.DB, upstream schema.ChunkerFromUpstream, p *titleChunkerParam, records []lineRecord, tokenCap int) (map[string]any, error) {
+	attachTitleMediaContext(records, p.TableContextSize, p.ImageContextSize)
 	ctx := newLevelContext(records, outlineFromUpstream(upstream), p)
 	levels := ctx.Levels()
 	// Count heading level distribution for debugging.
@@ -177,7 +178,8 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, upstream schema.Ch
 		zap.String("variant", "group"),
 		zap.Int("groups", len(groups)),
 	)
-	chunks, _ := buildChunksFromRecordGroups(groups, nil, p, isPlainTextFormat(upstream))
+	docID := globals.GlobalOrInput(parentCtx, nil, "doc_id", upstream.DocID)
+	chunks, _ := buildChunksFromRecordGroups(groups, nil, p, isPlainTextFormat(upstream), docID)
 	// Enforce the title-family token ceiling (chunk_token_cap) right after
 	// build_chunks and BEFORE the on-demand crop, mirroring Python's
 	// invoke() order (build -> cap -> set_chunks). ManualChunker passes
@@ -304,8 +306,13 @@ func isPlainTextFormat(upstream schema.ChunkerFromUpstream) bool {
 // stay aligned with the returned chunks after empty groups are dropped and
 // root_chunk_as_heading is applied, so the token-cap pass can re-prepend a
 // chunk's chain to every piece it splits off.
-func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *titleChunkerParam, plain bool) ([]map[string]any, []string) {
+// docID scopes contextual captionless media identities to their source document.
+func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *titleChunkerParam, plain bool, docID string) ([]map[string]any, []string) {
 	chunks := make([]map[string]any, 0, len(groups))
+	var mediaIdentities []string
+	if p.TableContextSize > 0 || p.ImageContextSize > 0 {
+		mediaIdentities = make([]string, 0, len(groups))
+	}
 	var outPrefixes []string
 	if prefixes != nil {
 		outPrefixes = make([]string, 0, len(groups))
@@ -325,6 +332,21 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 			chunkText = removeTag(g[0].text)
 		}
 		chunk := map[string]any{"text": chunkText}
+		mediaIdentity := ""
+		if !g[0].isText() && (g[0].contextAbove != "" || g[0].contextBelow != "") {
+			media := materializeMediaContext(schema.ChunkDoc{
+				Text: chunkText, ContextAbove: g[0].contextAbove, ContextBelow: g[0].contextBelow,
+			})
+			chunk["text"] = media.Text
+			chunk["tk_nums"] = intValue(media.TKNums)
+			if chunkText == "" {
+				imgID := ""
+				if g[0].imgID != nil {
+					imgID = *g[0].imgID
+				}
+				mediaIdentity = mediaTextIdentity(mediaChunkIdentity(g[0].image, imgID, g[0].mediaRef), true, mergePositionMatrix(g[0].pdfPositions, g[0].positions))
+			}
+		}
 		if g[0].preserveOrder {
 			chunk["_preserve_order"] = true
 		}
@@ -338,6 +360,9 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 			}
 			if first.image != "" {
 				chunk["image"] = first.image
+			}
+			if first.mediaRef != nil {
+				chunk["media_ref"] = first.mediaRef
 			}
 			if first.sheet != "" {
 				chunk["sheet"] = first.sheet
@@ -367,7 +392,21 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 		if m := mergePositionMatrix(posSrc...); m != nil {
 			chunk["positions"] = m
 		}
+		first := g[0]
+		if !plain && (first.docType == "image" || first.docType == "table") &&
+			chunkText == "" && first.image == "" && first.imgID == nil {
+			if positions := mergePositionMatrix(first.pdfPositions, first.positions); positions != nil {
+				// Seed position-only media identity with coordinates so figures
+				// sharing a root heading stay distinct. The heading text is folded
+				// in below before cropping. These decoded JSON rows always marshal.
+				identity, _ := json.Marshal(positions)
+				chunk["id"] = common.ChunkID(docID, mediaChunkIDPrefix+first.docType+":"+string(identity))
+			}
+		}
 		chunks = append(chunks, chunk)
+		if mediaIdentities != nil {
+			mediaIdentities = append(mediaIdentities, mediaIdentity)
+		}
 		if prefixes != nil {
 			outPrefixes = append(outPrefixes, prefixes[i])
 		}
@@ -376,13 +415,31 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *ti
 		rootText := toString(chunks[0]["text"])
 		for i := 1; i < len(chunks); i++ {
 			chunks[i]["text"] = rootText + "\n" + toString(chunks[i]["text"])
+			if _, contextual := chunks[i]["tk_nums"]; contextual {
+				chunks[i]["tk_nums"] = tokenizeStr(toString(chunks[i]["text"]))
+			}
+			if id := toString(chunks[i]["id"]); id != "" {
+				// Extractor caches key on id, so it must also identify the final text.
+				chunks[i]["id"] = common.ChunkID(docID, mediaChunkIDPrefix+id+":"+toString(chunks[i]["text"]))
+			}
 			if prefixes != nil {
 				outPrefixes[i] = rootText + "\n" + outPrefixes[i]
 			}
 		}
 		chunks = chunks[1:]
+		if mediaIdentities != nil {
+			mediaIdentities = mediaIdentities[1:]
+		}
 		if prefixes != nil {
 			outPrefixes = outPrefixes[1:]
+		}
+	}
+	for i, identity := range mediaIdentities {
+		if identity != "" {
+			// Context can give two distinct captionless images identical
+			// bodies. Keep their payload identity as well as the final body
+			// in the key, before either crop or decorator upload can run.
+			chunks[i]["id"] = common.ChunkID(docID, identity+"\x00"+toString(chunks[i]["text"]))
 		}
 	}
 	return chunks, outPrefixes
@@ -420,22 +477,29 @@ func pdfPosRowLess(a, b []float64) bool {
 // [page,left,right,top,bottom]; duplicates (by the first five columns)
 // are dropped and rows are sorted by (page, top, left). Returns nil when
 // no source carries any usable coordinates.
-func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
-	var out [][]float64
+//
+// The page cell may be a scalar (deepdoc's normalized form) or a list (the
+// raw layout.SectionsToJSON form, also seen in external/historical payloads);
+// both are preserved verbatim so the downstream PositionsFromMatrix can decode
+// either. A source may also be a single flat 5-tuple rather than a list of
+// rows (TCADP and some external producers emit that shape).
+//
+// Rows stay []any because a page cell may itself be a list; the generic shape
+// is what ChunkDoc.ToMap emits for such a matrix, so one representation flows
+// through the chunker and the index boundary.
+func mergePositionMatrix(sources ...json.RawMessage) [][]any {
+	var out [][]any
 	seen := make(map[string]bool)
 	for _, src := range sources {
-		if len(src) == 0 {
+		rows, ok := decodePositionRows(src)
+		if !ok {
 			continue
 		}
-		var mat [][]float64
-		if err := json.Unmarshal(src, &mat); err != nil {
-			continue
-		}
-		for _, row := range mat {
+		for _, row := range rows {
 			if len(row) < 5 {
 				continue
 			}
-			key := fmt.Sprintf("%v|%v|%v|%v|%v", row[0], row[1], row[2], row[3], row[4])
+			key := fmt.Sprint(row[:5])
 			if seen[key] {
 				continue
 			}
@@ -446,10 +510,99 @@ func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
 	if len(out) == 0 {
 		return nil
 	}
-	sort.Slice(out, func(i, j int) bool {
-		return pdfPosRowLess(out[i], out[j])
+	sort.SliceStable(out, func(i, j int) bool {
+		return positionRowLess(out[i], out[j])
 	})
 	return out
+}
+
+// decodePositionRows accepts the nested matrix form, a single flat 5-tuple,
+// and a flat sequence of multiple 5-tuples (TCADP/external producers emit a
+// flat array). JSON-decoded numbers are float64, and a page cell may itself
+// be a list, so the rows stay []any rather than being coerced to [][]float64.
+//
+// A flat sequence whose length is a multiple of five is grouped by five so
+// every tuple survives; a flat length that is not a multiple of five has
+// ambiguous tuple boundaries and is preserved verbatim as one row so the
+// first tuple still reaches cropping (sorting abstains via firstPositionRow).
+func decodePositionRows(src json.RawMessage) ([][]any, bool) {
+	if len(src) == 0 {
+		return nil, false
+	}
+	var rows [][]any
+	if err := json.Unmarshal(src, &rows); err == nil {
+		return rows, true
+	}
+	var flat []any
+	if err := json.Unmarshal(src, &flat); err != nil || len(flat) < 5 {
+		return nil, false
+	}
+	if len(flat)%5 != 0 {
+		return [][]any{flat}, true
+	}
+	grouped := make([][]any, 0, len(flat)/5)
+	for i := 0; i < len(flat); i += 5 {
+		grouped = append(grouped, flat[i:i+5])
+	}
+	return grouped, true
+}
+
+// positionRowLess orders rows by (first page, top, left), matching
+// pdfPosRowLess for scalar page numbers while tolerating a list page cell.
+func positionRowLess(a, b []any) bool {
+	ap, bp := positionRowPage(a), positionRowPage(b)
+	if ap != bp {
+		return ap < bp
+	}
+	at, bt := positionRowFloat(a, 3), positionRowFloat(b, 3)
+	if at != bt {
+		return at < bt
+	}
+	return positionRowFloat(a, 1) < positionRowFloat(b, 1)
+}
+
+// positionRowPage decodes the page cell for ordering only; the original cell
+// is kept in the emitted row. A list page uses its first entry.
+func positionRowPage(row []any) float64 {
+	if len(row) == 0 {
+		return 0
+	}
+	switch v := row[0].(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	case []any:
+		if len(v) == 0 {
+			return 0
+		}
+		return positionRowPage([]any{v[0]})
+	default:
+		return 0
+	}
+}
+
+func positionRowFloat(row []any, index int) float64 {
+	if index >= len(row) {
+		return 0
+	}
+	value, _ := positionRowNumber(row[index])
+	return value
+}
+
+// positionRowNumber decodes one numeric matrix element. JSON-decoded numbers
+// are float64; Go-constructed callers may use int/int64.
+func positionRowNumber(raw any) (float64, bool) {
+	switch v := raw.(type) {
+	case float64:
+		return v, true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	default:
+		return 0, false
+	}
 }
 
 // extractLineRecords converts the decoded upstream payload into records in the
@@ -503,17 +656,20 @@ func lineRecordsFromPayload(payload *string) []lineRecord {
 
 // recordsFromStructured converts parser-shaped items into records: text items
 // keep their text, and media items — tables whose TableData has already been
-// rendered to HTML by materializeTableText, images carrying an image payload
-// or reference — pass through as single records. Only an item with none of
-// text, image and img_id is dropped.
+// rendered to HTML by materializeTableText, images carrying an image payload,
+// reference or positions for on-demand cropping — pass through as single
+// records. Only an item with no text, image, img_id or retained position rows
+// is dropped.
 func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 	out := make([]lineRecord, 0, len(items))
 	for _, it := range items {
 		text := itemTextOrFallback(it)
 		// A structured table arrives with Text already rendered from TableData
 		// (materializeTableText); an image item legitimately carries no text —
-		// its payload is the image field. Only a truly empty item is skipped.
-		if text == "" && it.Image == "" && it.ImgID == "" {
+		// its payload may be positions for on-demand cropping rather than inline
+		// image bytes. Only a truly empty item is skipped.
+		if text == "" && !hasMediaPayload(it) &&
+			mergePositionMatrix(it.PDFPositions, it.Positions) == nil {
 			continue
 		}
 		dt := it.DocType
@@ -547,8 +703,8 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 				docType:       dt,
 				imgID:         imgID,
 				image:         image,
+				mediaRef:      it.MediaRef,
 				layout:        it.Layout,
-				ckType:        it.CKType,
 				pdfPositions:  it.PDFPositions,
 				positions:     it.Positions,
 				preserveOrder: it.PreserveOrder,
@@ -562,7 +718,7 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 		// so heading regexes can see headings after the first line. Structured
 		// media/table items and positioned text remain atomic, and the image
 		// payload stays out of per-line records so a blob is never duplicated.
-		plainText := itemDocType(it) == "text" && (it.CKType == "" || it.CKType == "text")
+		plainText := itemDocType(it) == "text" && !isStructuralLayout(it.Layout)
 		unpositioned := len(it.PDFPositions) == 0 && len(it.Positions) == 0
 		if plainText && unpositioned && strings.Contains(text, "\n") {
 			for _, line := range strings.Split(normalizeGeneralNewlines(text), "\n") {
@@ -604,7 +760,9 @@ func NewGroupTitleChunker(params map[string]any) (runtime.Component, error) {
 		conf[k] = v
 	}
 	p := defaultsTitle()
-	p.Update(conf)
+	if err := p.Update(conf); err != nil {
+		return nil, fmt.Errorf("GroupTitleChunker: %w", err)
+	}
 	if err := p.TitleChunkerParam.Validate(); err != nil {
 		return nil, fmt.Errorf("GroupTitleChunker: %w", err)
 	}

@@ -28,11 +28,28 @@ describe('insertVariableTrigger', () => {
     rootElement.remove();
   });
 
-  it('inserts the variable menu trigger when the editor has never been focused', () => {
+  it('inserts the variable menu trigger without leading whitespace when the editor has never been focused', () => {
     insertVariableTrigger(editor);
 
     editor.getEditorState().read(() => {
-      expect($getRoot().getTextContent()).toBe(' /');
+      expect($getRoot().getTextContent()).toBe('/');
+    });
+  });
+
+  it('inserts the variable menu trigger without leading whitespace at an existing caret in an empty editor', () => {
+    editor.update(
+      () => {
+        const paragraph = $createParagraphNode();
+        $getRoot().append(paragraph);
+        paragraph.selectStart();
+      },
+      { discrete: true },
+    );
+
+    insertVariableTrigger(editor);
+
+    editor.getEditorState().read(() => {
+      expect($getRoot().getTextContent()).toBe('/');
     });
   });
 

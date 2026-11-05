@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -120,6 +120,9 @@ class Session(Base):
                 except json.JSONDecodeError:
                     continue  # Skip lines that are not valid JSON
 
+                if json_data.get("code", 0) != 0:
+                    raise Exception(json_data.get("message", "Unknown API error"))
+
                 event = json_data.get("event", None)
                 if event:
                     if self.__session_type == "agent" and event not in {"message", "message_end"}:
@@ -144,19 +147,25 @@ class Session(Base):
                 json_data = res.json()
             except ValueError:
                 raise Exception(f"Invalid response {res}")
+            if json_data.get("code", 0) != 0:
+                raise Exception(json_data.get("message", "Unknown API error"))
             yield self._structure_answer(json_data["data"])
 
     def _structure_answer(self, json_data):
+        """Construct a Message object from streaming or non-streaming response payloads."""
         answer = ""
         event = None
         message_id = None
         if self.__session_type == "agent":
             event = json_data.get("event")
             message_id = json_data.get("message_id")
-            json_data = json_data["data"]
+            if isinstance(json_data.get("data"), dict):
+                json_data = json_data["data"]
             answer = json_data.get("content", "")
+            if not message_id:
+                message_id = json_data.get("id") or json_data.get("message_id")
         elif self.__session_type == "chat":
-            answer = json_data["answer"]
+            answer = json_data.get("answer", "")
             message_id = json_data.get("id")
         reference = json_data.get("reference", {})
         temp_dict = {"id": message_id, "content": answer, "role": "assistant"}

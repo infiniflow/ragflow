@@ -29,19 +29,15 @@ var ErrTenantNotFound = errors.New("Tenant not found!")
 // StatPoint matches the frontend [date, value] tuple shape.
 type StatPoint [2]interface{}
 
-type StatsService struct {
-	userTenantDAO *dao.UserTenantDAO
-}
+type StatsService struct{}
 
-// NewStatsService create stats service
+// NewStatsService creates a stats service.
 func NewStatsService() *StatsService {
-	return &StatsService{
-		userTenantDAO: dao.NewUserTenantDAO(),
-	}
+	return &StatsService{}
 }
 
-// StatsResponse matches Python GET /api/v1/system/stats response data.
-type StatsResponse struct {
+// ChatStatsResponse matches Python GET /api/v1/system/stats response data.
+type ChatStatsResponse struct {
 	PV      []StatPoint `json:"pv"`
 	UV      []StatPoint `json:"uv"`
 	Speed   []StatPoint `json:"speed"`
@@ -50,19 +46,19 @@ type StatsResponse struct {
 	ThumbUp []StatPoint `json:"thumb_up"`
 }
 
-// GetStats returns daily API conversation statistics for the first tenant of a user.
-func (s *StatsService) GetStats(ctx context.Context, userID, fromDate, toDate string, source *string) (*StatsResponse, error) {
-	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
-	if err != nil || len(tenants) == 0 {
+// GetChatStats returns daily API conversation statistics for the current tenant.
+func (s *StatsService) GetChatStats(ctx context.Context, fromDate, toDate string, source *string) (*ChatStatsResponse, error) {
+	tenantID, err := requireCurrentTenantID(ctx)
+	if err != nil {
 		return nil, ErrTenantNotFound
 	}
 
-	rows, err := dao.NewAPI4ConversationDAO().Stats(ctx, dao.DB, tenants[0].TenantID, fromDate, toDate, source)
+	rows, err := dao.NewAPI4ConversationDAO().Stats(ctx, dao.DB, tenantID, fromDate, toDate, source)
 	if err != nil {
 		return nil, err
 	}
 
-	response := &StatsResponse{
+	response := &ChatStatsResponse{
 		PV:      make([]StatPoint, 0, len(rows)),
 		UV:      make([]StatPoint, 0, len(rows)),
 		Speed:   make([]StatPoint, 0, len(rows)),

@@ -23,6 +23,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { ModelTypeProviderMap } from '@/constants/llm';
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { IAddedModel } from '@/interfaces/database/llm';
 import { buildModelValue, getRealModelName } from '@/utils/llm-util';
@@ -34,12 +35,26 @@ import { TreeSelect, TreeSelectNode } from './tree-select';
 /** Maps form field names to their supported model types */
 export const ModelTypeMap: Record<string, string[]> = {
   llm_id: ['chat', 'vision'],
+  decision_id: ['decision'],
   embd_id: ['embedding'],
   img2txt_id: ['vision'],
   asr_id: ['asr'],
   rerank_id: ['rerank'],
   tts_id: ['tts'],
 };
+
+/** The type/provider predicate shared by buildModelTree and useModelTree. */
+function filterAddedModels(
+  allModels: IAddedModel[],
+  modelTypes: string[],
+  providers?: string[],
+): IAddedModel[] {
+  return allModels.filter(
+    (m) =>
+      m.model_type?.some((t) => modelTypes.includes(t)) &&
+      (!providers?.length || providers.includes(m.provider_name)),
+  );
+}
 
 export function buildModelTree(
   allModels: IAddedModel[],
@@ -48,10 +63,9 @@ export function buildModelTree(
     node: TreeSelectNode,
     model: IAddedModel,
   ) => React.ReactNode,
+  providers?: string[],
 ): TreeSelectNode[] {
-  const filtered = allModels.filter((m) =>
-    m.model_type?.some((t) => modelTypes.includes(t)),
-  );
+  const filtered = filterAddedModels(allModels, modelTypes, providers);
 
   const seenLeafIds = new Set<string>();
   const providerMap = new Map<string, Map<string, IAddedModel[]>>();
@@ -118,8 +132,63 @@ export function buildModelTree(
   }));
 }
 
+export interface UseModelTreeOptions {
+  modelTypes?: string[];
+  /**
+   * Effective provider restriction. The ModelTypeProviderMap fallback stays
+   * with ModelTreeSelect, so callers that pass nothing get every provider.
+   */
+  providers?: string[];
+  renderLeafLabel?: (
+    node: TreeSelectNode,
+    model: IAddedModel,
+  ) => React.ReactNode;
+  ownerTenantId?: string;
+}
+
+/**
+ * Fetch + filter + tree assembly shared by ModelTreeSelect and the pickers
+ * that need the query result itself: layout_recognize derives the selected
+ * provider from allAddedModels, and the image OCR radio drives its state
+ * machine from the flat list and the request state. Array options must be
+ * stable references (module constants) — the memoized tree keys on their
+ * identity, and a fresh array per render would reset TreeSelect expansion on
+ * every parent render.
+ */
+export function useModelTree({
+  modelTypes = ModelTypeMap.llm_id,
+  providers,
+  renderLeafLabel,
+  ownerTenantId,
+}: UseModelTreeOptions = {}) {
+  const {
+    data: allAddedModels,
+    isFetched,
+    isError,
+  } = useFetchAllAddedModels(undefined, ownerTenantId);
+
+  const models = useMemo(
+    () => filterAddedModels(allAddedModels, modelTypes, providers),
+    [allAddedModels, modelTypes, providers],
+  );
+
+  const treeData = useMemo(
+    () =>
+      buildModelTree(allAddedModels, modelTypes, renderLeafLabel, providers),
+    [allAddedModels, modelTypes, renderLeafLabel, providers],
+  );
+
+  return { treeData, models, allAddedModels, isFetched, isError };
+}
+
 export interface ModelTreeSelectProps {
   modelTypes?: string[];
+  /**
+   * Restricts the tree to these providers. Defaults to whatever
+   * ModelTypeProviderMap declares for the selected types, so a caller that
+   * picks modelTypes automatically inherits the provider restriction.
+   */
+  providers?: string[];
   value?: string;
   onChange?: (value: string) => void;
   disabled?: boolean;
@@ -138,6 +207,7 @@ export const ModelTreeSelect = forwardRef<
 >(function ModelTreeSelect(
   {
     modelTypes = ModelTypeMap.llm_id,
+    providers,
     value,
     onChange,
     disabled,
@@ -151,16 +221,27 @@ export const ModelTreeSelect = forwardRef<
   },
   ref,
 ) {
+  // An explicit prop wins; otherwise inherit the restriction declared for the
+  // type, so the default-model page and the chat settings agree without each
+  // call site having to remember.
+  const allowedProviders = useMemo(() => {
+    if (providers) return providers;
+    for (const type of modelTypes) {
+      const declared = ModelTypeProviderMap[type];
+      if (declared) return declared;
+    }
+    return undefined;
+  }, [providers, modelTypes]);
+
   const {
-    data: allAddedModels,
+    treeData,
     isFetched: modelsFetched,
     isError: modelsError,
-  } = useFetchAllAddedModels(undefined, ownerTenantId);
-
-  const treeData = useMemo(
-    () => buildModelTree(allAddedModels, modelTypes),
-    [allAddedModels, modelTypes],
-  );
+  } = useModelTree({
+    modelTypes,
+    providers: allowedProviders,
+    ownerTenantId,
+  });
 
   // Backward compatibility: map legacy concatenated ids
   // ("modelName@instanceName@providerName") to new model_id-based ids so

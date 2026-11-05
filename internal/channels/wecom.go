@@ -126,7 +126,7 @@ func newWeComChannel(account wecomAccount) (*wecomChannel, error) {
 
 	channel := &wecomChannel{
 		account: account,
-		client:  &http.Client{Timeout: weComHTTPTimeout},
+		client:  newSafeChannelHTTPClient(weComHTTPTimeout, channelURLPolicy{exactHosts: []string{"qyapi.weixin.qq.com"}}),
 	}
 	if account.ConnectionType == "webhook" {
 		crypto, err := newWeComCrypto(account.Token, account.AESKey, account.CorpID)
@@ -317,15 +317,9 @@ func (c *wecomChannel) Stop(ctx context.Context) error {
 // Send sends an application message or a WebSocket bot message.
 func (c *wecomChannel) Send(ctx context.Context, msg core.OutgoingMessage) error {
 	if c.account.ConnectionType == "websocket" {
-		if err := c.sendWebSocketMessage(msg); err != nil {
-			common.Error("wecom: websocket send failed", err, zap.String("account_id", c.account.AccountID))
-		}
-		return nil
+		return c.sendWebSocketMessage(msg)
 	}
-	if err := c.sendApplicationMessage(ctx, msg); err != nil {
-		common.Error("wecom: application send failed", redactURLError(err), zap.String("account_id", c.account.AccountID))
-	}
-	return nil
+	return redactURLError(c.sendApplicationMessage(ctx, msg))
 }
 
 func (c *wecomChannel) runWebSocket(ctx context.Context) {
@@ -348,9 +342,9 @@ func (c *wecomChannel) runWebSocket(ctx context.Context) {
 }
 
 func (c *wecomChannel) runWebSocketOnce(ctx context.Context) error {
-	dialer := *websocket.DefaultDialer
-	dialer.HandshakeTimeout = weComWSHandshakeTimeout
-	conn, _, err := dialer.DialContext(ctx, c.account.WSURL, nil)
+	conn, _, err := dialSafeChannelWebSocket(ctx, c.account.WSURL, nil, weComWSHandshakeTimeout, channelURLPolicy{
+		exactHosts: []string{"openws.work.weixin.qq.com"},
+	})
 	if err != nil {
 		return err
 	}
@@ -659,7 +653,7 @@ func redactURLError(err error) error {
 		return urlErr
 	}
 	parsed.RawQuery = ""
-	return &url.Error{Op: urlErr.Op, URL: parsed.String(), Err: urlErr.Err}
+	return &url.Error{Op: urlErr.Op, URL: parsed.String(), Err: redactURLError(urlErr.Err)}
 }
 
 func (c *wecomChannel) handleTextMessage(ctx context.Context, chatID, senderID, messageID, text, chatType string, raw map[string]any) {

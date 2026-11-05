@@ -28,19 +28,19 @@ import (
 )
 
 // compiledKnowledgeToolNames are the tools that only make sense on a corpus that
-// has produced knowledge-compilation products (a navigation tree, a compiled
-// structure, a knowledge graph, a per-document panorama). They are INJECTED,
-// never declared in a template's tool list: Run adds them only when the bound
-// datasets actually hold compiled products, so an uncompiled corpus never
-// offers - or pays for - them.
+// has produced knowledge-compilation products (a knowledge graph, a per-document
+// panorama). They are INJECTED, never declared in a template's tool list: Run
+// adds them only when the bound datasets actually hold compiled products, so an
+// uncompiled corpus never offers - or pays for - them.
 //
-// The injected set is the whole compiled-knowledge surface on purpose: a tool
-// that is registered but neither declared by a template nor injected here is
-// unreachable at runtime, which is indistinguishable from "the model chose not
-// to use it" unless someone reads the tool list.
+// The navigation tools (navigate_tree / navigate_structure) are deliberately NOT
+// in this set any more. Their claim leg was the only way compiled evidence
+// reached the model, and it required the model to choose them - which the FRAMES
+// runs measured at zero calls per turn. Compiled evidence now travels with the
+// ordinary search results (see compiled_evidence.go), so the navigation route is
+// a second, costlier path to the same facts: it stays registered for templates
+// that declare it explicitly, but it is never injected.
 var compiledKnowledgeToolNames = []string{
-	navigateTreeToolName,
-	navigateStructureToolName,
 	graphExploreToolName,
 	graphDocOutlineToolName,
 }

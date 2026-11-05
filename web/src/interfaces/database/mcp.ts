@@ -5,9 +5,12 @@ export interface IMcpServer {
   id: string;
   name: string;
   server_type: string;
+  tenant_id: string;
   update_date: string;
   url: string;
   variables: Record<string, any> & { tools?: IMCPToolObject };
+  operator_permission: number;
+  nickname?: string;
 }
 
 export type IMCPToolObject = Record<string, Omit<IMCPTool, 'name'>>;

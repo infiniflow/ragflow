@@ -26,12 +26,10 @@ import { InstanceNameSection } from './instance-name-section';
 /**
  * The draft (unsaved) variant of the provider instance card.
  *
- * Renders the instance name input section at the top (without a Save
- * button - the parent drives save through the imperative ref API),
- * followed by the form fields, verify button, and per-instance models
- * section. All fields are editable from the start; there is no
- * fieldset lock - the user can fill in everything and submit via the
- * top-of-page Save button.
+ * Renders the instance name input section at the top (paired with the
+ * delete and Save buttons for this draft), followed by the form fields,
+ * verify button, and per-instance models section. All fields are
+ * editable from the start; there is no fieldset lock.
  */
 export function DraftModeCard({
   formFields,
@@ -39,6 +37,8 @@ export function DraftModeCard({
   formRef,
   handleVerify,
   handleDelete,
+  handleSave,
+  saving,
   handleInstanceModelsEdited,
   providerName,
   instanceName,
@@ -64,6 +64,8 @@ export function DraftModeCard({
         draftName={draftName}
         setDraftName={setDraftName}
         handleDelete={handleDelete}
+        handleSave={handleSave}
+        saving={saving}
       />
 
       <DynamicForm.Root

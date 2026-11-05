@@ -101,7 +101,7 @@ type Ingestor struct {
 	// Option E) owned by this ingestor. It is driven by kcConcurrency owned
 	// worker goroutines, each running the Consumer's Run loop (poll MySQL
 	// scheduling rows + NATS notify → claim closed batch → merge → ack). The
-	// MySQL knowledge_compile_docs table — not the broker — is the scheduling
+	// MySQL knowledge_compile_docs and its queue tables are the scheduling
 	// system of record and the source of same-KB serialization, so different
 	// datasets compile in parallel while the same dataset is serialized by its
 	// claim row. The workers are started/joined within the ingestor (via
@@ -359,7 +359,7 @@ func (e *Ingestor) consumeLoop() {
 				zap.Duration("handoff_duration", handoffDuration),
 			)
 		case <-e.dispatchCtx.Done():
-			if err := handle.Nack(); err != nil {
+			if err = handle.Nack(); err != nil {
 				common.Error("nack task after shutdown interrupted handoff", err)
 			}
 			return
@@ -413,7 +413,7 @@ func (e *Ingestor) SetKnowledgeCompileConcurrency(n int32) {
 }
 
 // startDatasetKnowledgeCompile provisions the dataset-level compile scheduling
-// store (MySQL knowledge_compile_docs + NATS notify subject), builds the
+// store (MySQL scheduling tables + NATS notify subject), builds the
 // Consumer, and starts the owned compile-worker pool. The consumer is driven by
 // the ingestor's own goroutine set — kcConcurrency compileLoop workers, each
 // running the Consumer's Run loop (see §11.7 of knowledge_compile_design.md) —
@@ -547,7 +547,7 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 			var identityErr *servicepkg.InvalidRunIdentityError
 			if errors.As(validateErr, &identityErr) {
 				common.Error(fmt.Sprintf("task %s has permanent run identity error: %s", task.ID, identityErr.Reason), validateErr)
-				if e.markFailed(e.ctx, task.ID) {
+				if e.markFailed(e.ctx, task.ID, fmt.Sprintf("Task rejected: invalid run identity (%s).", identityErr.Reason)) {
 					e.recordTerminalPipelineLog(e.ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task rejected: invalid run identity (%s).", identityErr.Reason))
 					e.ackHandle(hb, handle, taskMessage.TaskID)
 				} else {
@@ -820,10 +820,10 @@ func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 // The caller's context is detached before touching the DB (see markStopped):
 // failure paths usually carry an already-cancelled context, and losing the
 // FAILED write would turn a settled task into a redelivery loop.
-func (e *Ingestor) markFailed(ctx context.Context, taskID string) bool {
+func (e *Ingestor) markFailed(ctx context.Context, taskID, reason string) bool {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if uErr := e.ingestionTaskSvc.MarkFailed(ctx, taskID); uErr != nil {
+	if uErr := e.ingestionTaskSvc.MarkFailed(ctx, taskID, reason); uErr != nil {
 		common.Error(fmt.Sprintf("Failed to set task %s to FAILED", taskID), uErr)
 		return false
 	}
@@ -882,14 +882,14 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		if errors.Is(err, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
 			e.markTerminalProgress(task)
-			ok := e.markFailed(ctx, task.ID)
+			ok := e.markFailed(ctx, task.ID, "Task timed out.")
 			if ok {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), "Task timed out.")
 			}
 			return ok
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
-		ok := e.markFailed(ctx, task.ID)
+		ok := e.markFailed(ctx, task.ID, fmt.Sprintf("Task failed: %v", err))
 		if ok {
 			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task failed: %v", err))
 		}
@@ -1019,7 +1019,7 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 					}
 				}()
 				common.Error(fmt.Sprintf("task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
-				e.markFailed(ctx, taskID)
+				e.markFailed(ctx, taskID, fmt.Sprintf("Task panicked: %v", r))
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task panicked: %v", r))
 			}()
 			terminal = false
@@ -1315,11 +1315,22 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s: run %s belongs to document %s/dataset %s, expected %s/%s", ingestionTask.ID, run.ID, run.DocumentID, run.KbID, ingestionTask.DocumentID, ingestionTask.DatasetID))
 		return
 	}
+	// Keep the run's own binding: the document may have been re-bound since.
+	pipelineID := ""
+	if run.PipelineID != nil {
+		pipelineID = strings.TrimSpace(*run.PipelineID)
+	}
+	versionID := ""
+	if pipelineID != "" && run.PipelineVersionID != nil {
+		versionID = strings.TrimSpace(*run.PipelineVersionID)
+	}
 	input := taskpkg.PipelineLogInput{
-		KbID:          ingestionTask.DatasetID,
-		DocumentID:    ingestionTask.DocumentID,
-		Status:        status,
-		PipelineLogID: *ingestionTask.PipelineLogID,
+		KbID:              ingestionTask.DatasetID,
+		DocumentID:        ingestionTask.DocumentID,
+		PipelineID:        pipelineID,
+		PipelineVersionID: versionID,
+		Status:            status,
+		PipelineLogID:     *ingestionTask.PipelineLogID,
 	}
 	if err := taskpkg.RecordPipelineLog(ctx, e.deps.DB, input); err != nil {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))

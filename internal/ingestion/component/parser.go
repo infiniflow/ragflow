@@ -91,6 +91,7 @@ import (
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/service/billing"
 	"ragflow/internal/utility"
 )
 
@@ -128,11 +129,10 @@ type visionSettings struct {
 }
 
 // NewParserComponent constructs a Parser from a DSL param map.
-// The default setups are overlaid with the supplied values. Historical
-// output_format values are accepted but normalized to JSON so downstream
-// components consume one parser output protocol. This applies to every
-// family, including PDF and office documents: Markdown is an internal
-// backend representation only and is never a public Parser output.
+// The default setups are overlaid with the supplied values. The Parser
+// emits one output protocol: structured JSON items for every family,
+// including PDF and office documents. Markdown remains an internal backend
+// representation only and is never a public Parser output.
 //
 // Param map shape (all keys optional):
 //
@@ -149,7 +149,6 @@ type visionSettings struct {
 func NewParserComponent(params map[string]any) (runtime.Component, error) {
 	s := defaultSetups()
 	if params == nil {
-		normalizeParserOutputFormats(s)
 		return &ParserComponent{setups: s}, nil
 	}
 	// Canvases saved by the Python-era frontend nest the per-family setups
@@ -197,21 +196,11 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			s[k][fk] = cloneParserSetupValue(fv)
 		}
 	}
-	normalizeParserOutputFormats(s)
 	pc := &ParserComponent{setups: s, enableVisionEnhancement: enableVisionEnhancement, vision: vision}
 	if err := pc.Check(); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)
 	}
 	return pc, nil
-}
-
-func normalizeParserOutputFormats(setups map[string]schema.ParserSetup) {
-	// The Go Parser component intentionally exposes JSON only. Keep this
-	// normalization unconditional so PDF/office legacy Markdown settings
-	// cannot silently select a second public output path.
-	for _, setup := range setups {
-		setup["output_format"] = "json"
-	}
 }
 
 func cloneParserSetupValue(value any) any {
@@ -309,11 +298,6 @@ func imageSetupRunsOCR(setup schema.ParserSetup) bool {
 }
 
 func defaultSetups() map[string]schema.ParserSetup {
-	// Normalize up front so any caller (including tests that build a
-	// ParserComponent directly from these defaults) gets the single JSON
-	// output protocol. NewParserComponent re-normalizes idempotently; the
-	// per-family literals were removed because normalizeParserOutputFormats
-	// owns this key unconditionally.
 	s := map[string]schema.ParserSetup{
 		"pdf": {
 			"parse_method":          "deepdoc",
@@ -395,7 +379,6 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"suffix": []string{"json", "jsonl", "ldjson"},
 		},
 	}
-	normalizeParserOutputFormats(s)
 	return s
 }
 
@@ -512,7 +495,18 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	//     "docx", ...). Used by parser.GetParser, whose switch
 	//     arms are keyed off the utility constants.
 	//
-	fileTypeExt := fileTypeFromInputs(inputs)
+	requestedType := fileTypeFromInputs(inputs)
+	fileParser, fileTypeExt, selectionErr := parser.GetParser(requestedType, binary)
+	if selectionErr == nil && fileTypeExt != requestedType {
+		warning := fmt.Sprintf("file %q: requested format %s does not match detected format %s; continuing with the %s parser", filename, requestedType, fileTypeExt, fileTypeExt)
+		common.Warn(warning)
+		reportParserWarnings(ctx, []string{warning})
+	}
+	parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
+	enhanceOn := c.enableVisionEnhancement
+	split := progress.NewSplit(parsePagesOn, enhanceOn)
+	pageWin := split.Take(parsePagesOn)
+	visionWin := split.Take(enhanceOn)
 
 	dispatched, handledVision, visionErr := maybeDispatchPDFVision(ctx, db, fileTypeExt, filename, binary, inputs, setups)
 	if visionErr != nil {
@@ -531,7 +525,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	var handledImage bool
 	if !handledVision && !handledMedia {
 		// Image dispatch: OCR with independently controlled VLM enhancement.
-		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups, c.enableVisionEnhancement, c.vision)
+		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, fileParser, db, fileTypeExt, filename, binary, inputs, setups, c.enableVisionEnhancement, c.vision)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -546,27 +540,31 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		}
 	}
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
-		parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
-		enhanceOn := c.enableVisionEnhancement
-		split := progress.NewSplit(parsePagesOn, enhanceOn)
-		pageWin := split.Take(parsePagesOn)
-		visionWin := split.Take(enhanceOn)
-
-		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups, pageWin)
+		if selectionErr != nil && fileTypeExt != utility.FileTypeOTHER {
+			return nil, fmt.Errorf("parser: resolve %q: %w", fileTypeExt, selectionErr)
+		}
+		dispatched = dispatchParse(ctx, fileParser, fileTypeExt, filename, binary, setups, pageWin)
 		if dispatched.Err == nil && ctx.Err() == nil {
 			pageWin.Report(ctx, 1.0)
-		}
-
-		if c.enableVisionEnhancement {
-			// Enhancement is optional; parser-provided text and image metadata
-			// remain available if a vision model cannot describe an image.
-			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision, visionWin)
 		}
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.
 	if dispatched.Err != nil && fileTypeExt != utility.FileTypeOTHER {
 		return nil, dispatched.Err
+	}
+	if enhanceOn && !handledMedia && !handledImage && !handledAudio && dispatched.Err == nil && ctx.Err() == nil {
+		// PDF dispatch and ordinary parsers share enhancement after normalization.
+		var enhanceErr error
+		dispatched, _, enhanceErr = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision, visionWin)
+		if enhanceErr != nil {
+			return nil, enhanceErr
+		}
+	} else {
+		// Enhancement skipped entirely (disabled or non-PDF media handled):
+		// still strip the transient backend-description marker so it never
+		// reaches the chunker.
+		dispatched = stripBackendDescribedResult(dispatched)
 	}
 	reportParserWarnings(ctx, dispatched.Warnings)
 
@@ -575,6 +573,24 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	lang, _ := getString(inputs, "lang")
 	out := buildParserOutputs(ctx, dispatched, filename, binary, lang)
+
+	// Parse billing: DeepDOC PDFs are metered per page after a successful
+	// parse. A shortage fails the run, matching the Python hold contract.
+	if tenantID, _ := getString(inputs, "tenant_id"); tenantID != "" && docID != "" && fileTypeExt == utility.FileTypePDF {
+		if pdfSetup, ok := c.setups["pdf"]; ok {
+			if method, _ := pdfSetup["parse_method"].(string); strings.Contains(strings.ToUpper(method), "DEEPDOC") {
+				if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
+					if runKey := parseRunKey(ctx); runKey != "" {
+						if pageCount := parserPageCount(dispatched.File); pageCount > 0 {
+							if chargeErr := billingService.ChargeParsedDocument(ctx, tenantID, docID, runKey, pageCount, true); chargeErr != nil {
+								return nil, chargeErr
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 	out["file_type"] = string(fileTypeExt)
 	// Forward the storage references so a downstream chunker can
 	// re-acquire the source PDF and crop section images on demand,
@@ -613,12 +629,6 @@ func logParserOutput(dispatched parser.ParseResult, items []parser.DocItem) {
 func resolveParserNormalizationSource(dispatched parser.ParseResult) string {
 	if len(dispatched.JSON) > 0 {
 		return "json"
-	}
-	if dispatched.Markdown != "" {
-		return "markdown"
-	}
-	if dispatched.Text != "" {
-		return "text"
 	}
 	return "raw"
 }
@@ -725,4 +735,32 @@ func init() {
 			Inputs:  pc.Inputs(),
 			Outputs: pc.Outputs(),
 		})
+}
+
+// parserPageCount extracts page_count from parser metadata.
+func parserPageCount(file map[string]any) int64 {
+	if file == nil {
+		return 0
+	}
+	switch value := file["page_count"].(type) {
+	case int:
+		return int64(value)
+	case int64:
+		return value
+	case float64:
+		return int64(value)
+	default:
+		return 0
+	}
+}
+
+// parseRunKey returns the billing identity of this parse attempt. The ingestion
+// task id is stable across checkpoint resume and component replay, so a retried
+// run charges once; only runs without a task scope fall back to a fresh id.
+func parseRunKey(ctx context.Context) string {
+	if taskID := globals.TaskID(ctx); taskID != "" {
+		return "task:" + taskID
+	}
+	// No task scope means a debug/dry-run preview: nothing is metered.
+	return ""
 }

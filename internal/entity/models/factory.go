@@ -57,6 +57,11 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewVllmModel(baseURL, urlSuffix), nil
 	case "openai-api-compatible":
 		return NewOpenAIAPICompatibleModel(baseURL, urlSuffix), nil
+	case "systemone":
+		// Not chat-completions-shaped: this provider speaks TypeSafe System One,
+		// where one request carries many questions and the answer is a labelled
+		// verdict per question rather than a message.
+		return NewSystemOneModel(baseURL, urlSuffix), nil
 	case "mws":
 		return NewMWSModel(baseURL, urlSuffix), nil
 	case "xai":
@@ -141,6 +146,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewVoyageModel(baseURL, urlSuffix), nil
 	case "paddleocr":
 		return NewPaddleOCRModel(baseURL, urlSuffix), nil
+	case "somark":
+		return NewSoMarkModel(baseURL, urlSuffix), nil
 	case "xunfei spark":
 		return NewXunFeiModel(baseURL, urlSuffix), nil
 	case "deepinfra":
@@ -194,6 +201,24 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewOpperModel(baseURL, urlSuffix), nil
 	case "empiriolabs ai":
 		return NewEmpirioLabsModel(baseURL, urlSuffix), nil
+	case "runcrate":
+		return NewRuncrateModel(baseURL, urlSuffix), nil
+	case "worldrouter":
+		return NewWorldRouterModel(baseURL, urlSuffix), nil
+	case "cloudgpu":
+		return NewCloudGPUModel(baseURL, urlSuffix), nil
+	case "obscurify.ai":
+		return NewObscurifyModel(baseURL, urlSuffix), nil
+	case "cheapaimodel":
+		return NewCheapaimodelModel(baseURL, urlSuffix), nil
+	case "new api":
+		return NewNewAPIModel(baseURL, urlSuffix), nil
+	case "hostinger router":
+		return NewHostingerRouterModel(baseURL, urlSuffix), nil
+	case "wally":
+		return NewWallyModel(baseURL, urlSuffix), nil
+	case "synap":
+		return NewSynapModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

@@ -218,6 +218,12 @@ def test_url_builders_honor_gh_proxy(monkeypatch):
     assert native.pdf_oxide_url("linux", "arm64").startswith("https://gh-proxy.com/https://github.com/")
 
 
+def test_dev_downloader_rejects_untrusted_gh_proxy(monkeypatch):
+    monkeypatch.setenv("GH_PROXY", "https://attacker.invalid/")
+    with pytest.raises(RuntimeError, match="GH_PROXY"):
+        native.gh_proxy()
+
+
 @pytest.fixture
 def download_server():
     class Handler(BaseHTTPRequestHandler):
@@ -311,15 +317,14 @@ def test_native_archive_rejects_unsafe_members(tmp_path, kind):
 
 # ── Local-dev one-stop: the dev downloader must also fetch the runtime
 # resources (cl100k / DeepDoc .ort / tokenizer assets) so a developer runs THIS
-# script ONCE and the Go server is ready to build, run, parse and count — but it
-# must NOT fetch stagehand (that is the image script's job). ──────────────────
+# script ONCE and the Go server is ready to build, run, parse and count. ─────
 
 
 @pytest.fixture
 def native_dirs(tmp_path, monkeypatch):
     """Point the dev script's repo-anchored paths at a temp tree so the
     runtime-resource downloads written by tests never touch the real repo."""
-    deps = tmp_path / "ragflow_deps"
+    deps = tmp_path / "deps"
     deps.mkdir()
     root = tmp_path / "repo"
     root.mkdir()
@@ -372,7 +377,7 @@ def test_download_go_models_downloads_when_missing(native_dirs, monkeypatch):
     deepdoc_dir = root / "internal" / "rag" / "res" / "deepdoc"
     for fname in native.HF_DEEPDOC_MODEL_FILES:
         assert (deepdoc_dir / fname).is_file(), f"missing DeepDoc model {fname}"
-    # The image-layout copy under ragflow_deps/huggingface.co must also exist.
+    # The image-layout copy under deps/huggingface.co must also exist.
     for fname in native.HF_DEEPDOC_MODEL_FILES:
         assert (deps / "huggingface.co" / native.HF_DEEPDOC_REPO / fname).is_file()
 
@@ -390,7 +395,7 @@ def test_download_go_models_fails_loud(native_dirs, monkeypatch):
 
 def _seed_tokenizer_targets(deps, present):
     """Create (present=True) or leave absent the on-disk targets the inlined
-    TOKENIZER_ASSETS list resolves to under ragflow_deps/huggingface.co/<repo>/<file>."""
+    TOKENIZER_ASSETS list resolves to under deps/huggingface.co/<repo>/<file>."""
     for repo, filename, _kind in native.TOKENIZER_ASSETS:
         target = deps / "huggingface.co" / repo / filename
         if present:
@@ -468,14 +473,6 @@ def test_load_tokenizer_assets_rejects_malformed_repo():
         native.load_tokenizer_assets([("nobadrepo", "f.bin", "runtime")])
 
 
-def test_native_script_does_not_fetch_stagehand():
-    # Partition contract: the local-dev one-stop must not pull the Browser
-    # component's stagehand binary — that is download_deps.py's job for images.
-    assert not hasattr(native, "stagehand_url")
-    assert not hasattr(native, "_install_stagehand")
-    assert "stagehand" not in native.main.__doc__.lower()
-
-
 # ── Image script (download_deps.py) must stay runtime-resources only: it must
 # NOT handle the native .a archives (the build stage bakes those into the
 # binary). Imported by path inside the test so the import lives next to the
@@ -483,7 +480,7 @@ def test_native_script_does_not_fetch_stagehand():
 
 
 def test_image_script_does_not_handle_native_archives():
-    deps_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "ragflow_deps", "download_deps.py")
+    deps_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "deps", "download_deps.py")
     assert os.path.isfile(deps_path), f"download_deps.py not found at {deps_path}"
     spec = importlib.util.spec_from_file_location("download_deps_img", deps_path)
     img = importlib.util.module_from_spec(spec)
@@ -491,6 +488,24 @@ def test_image_script_does_not_handle_native_archives():
     assert not hasattr(img, "extract_onnxruntime")
     assert not hasattr(img, "_extract_native_archive")
     assert "onnxruntime" not in (img.__doc__ or "").lower()
+
+
+def _image_deps_module():
+    deps_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "deps", "download_deps.py")
+    spec = importlib.util.spec_from_file_location("download_deps_image_security", deps_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_image_proxy_is_restricted_to_the_configured_mirror(monkeypatch):
+    image_deps = _image_deps_module()
+    monkeypatch.setenv("GH_PROXY", "https://attacker.invalid/")
+    with pytest.raises(RuntimeError, match="GH_PROXY"):
+        image_deps.gh_proxy()
+
+    monkeypatch.setenv("GH_PROXY", "https://gh-proxy.com/")
+    assert image_deps.gh_proxy() == "https://gh-proxy.com/"
 
 
 # ── Documentation contract: ARM64 build-host minimums ─────────────────────

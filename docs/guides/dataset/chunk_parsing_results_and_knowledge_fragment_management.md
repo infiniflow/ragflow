@@ -15,6 +15,8 @@ Chunks are the retrievable knowledge fragments generated after document parsing.
 
 After document parsing is completed, click the document name on the **Files** page to enter the document parsing result page. The parsing result page displays chunks generated from the document. You can use this page to check whether document content has been correctly parsed, split, and stored.
 
+![Compare source content with parsed chunks](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/delete_document.jpg)
+
 ## View Chunk List
 
 The chunk list displays the chunks generated for the current document. Each chunk usually includes body text, keywords, questions, enabled status, and related operations. For documents that support source preview, the chunk list can be linked with source content. After clicking chunk text, the document preview area jumps to the corresponding source location, making it convenient to compare with the original document and check parsing and splitting results.
@@ -24,6 +26,8 @@ For document types that cannot locate source text, parsing results are mainly vi
 ## Search and Filter Chunk
 
 When a document contains many chunks, use the search and filter functions in the toolbar to quickly locate target content. You can enter keywords to search chunks or filter chunks by enabled status. For chunks with long body text, you can switch between full display and collapsed display as needed to browse parsing results.
+
+![Search and filter chunks](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_chunk_list.jpg)
 
 ### View Chunk Details
 
@@ -47,11 +51,15 @@ If parsing results are inaccurate or content needs to be supplemented, you can e
 
 After saving the edit, the updated chunk content is used for later retrieval.
 
+![Edit chunk content and related fields](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_chunk_details.jpg)
+
 ### Add Chunk
 
 If you need to add extra knowledge fragments manually, you can add chunks on the chunk management page. Added chunks are stored under the current document and can be used as content sources for dataset retrieval and Q&A.
 
 When adding a chunk, you usually need to enter the chunk content and configure keywords, questions, tags, or enabled status as needed.
+
+![Create a chunk](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/edit_chunk.jpg)
 
 ### Enable and Disable Chunk
 
@@ -59,8 +67,12 @@ The enabled status of a chunk determines whether it participates in dataset retr
 
 If a chunk contains outdated, incorrect, or temporarily unnecessary content, you can disable it. If the content needs to participate in retrieval again, enable it again.
 
+![Enable or disable a chunk](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_chunk.jpg)
+
 ### Delete Chunk
 
 Deleting a chunk removes it from the current document's parsing results. It no longer participates in later retrieval or Q&A.
 
 Before deleting, confirm that the chunk is no longer needed. If you only want to temporarily exclude it from retrieval, use disable instead.
+
+![Select and delete chunks](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/enable_and_disable_chunk.jpg)

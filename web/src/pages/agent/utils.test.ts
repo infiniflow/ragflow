@@ -216,7 +216,7 @@ describe('transformParserParams vision settings', () => {
   it('writes the image OCR switch without retired vision fields', () => {
     // The saved shape is the contract the Go parser reads, so pin it: the
     // switch out, and the retired per-family keys never written back.
-    const result = transformParserParams({
+    const result: Record<string, any> = transformParserParams({
       enable_vision_enhancement: false,
       vlm: { llm_id: '', system_prompt: '' },
       setups: [
@@ -235,6 +235,9 @@ describe('transformParserParams vision settings', () => {
     expect(result.image).not.toHaveProperty('parse_method');
     expect(result.image).not.toHaveProperty('lang');
     expect(result.image).not.toHaveProperty('system_prompt');
+    // output_format is retired: the Go Parser normalizes every family to
+    // JSON, so a stored legacy value must never be written back.
+    expect(result.image).not.toHaveProperty('output_format');
   });
 });
 
@@ -269,7 +272,7 @@ describe('transformTokenChunkerParams', () => {
     } as any);
 
     expect(result.overlapped_percent).toBeCloseTo(0.3);
-    expect(result.delimiters).toEqual(['\n']);
+    expect(result.delimiters).toEqual(['\n', '']);
     expect(result.children_delimiters).toEqual(['|']);
     expect(result.table_context_size).toBe(81);
     expect(result.image_context_size).toBe(81);
@@ -444,17 +447,19 @@ describe('receiveMessageError', () => {
 
 describe('Message component content validation', () => {
   describe('isEmptyMessageContent', () => {
-    it('treats missing, non-array and blank-only content as empty', () => {
+    it('rejects missing, malformed and blank content', () => {
       expect(isEmptyMessageContent()).toBe(true);
       expect(isEmptyMessageContent(null)).toBe(true);
-      expect(isEmptyMessageContent('hello')).toBe(true);
+      expect(isEmptyMessageContent('')).toBe(true);
+      expect(isEmptyMessageContent(' \t ')).toBe(true);
       expect(isEmptyMessageContent([])).toBe(true);
       expect(isEmptyMessageContent(['', ' \t '])).toBe(true);
       // Non-string entries never satisfy the backend either.
       expect(isEmptyMessageContent([123])).toBe(true);
     });
 
-    it('accepts content with at least one non-blank string entry', () => {
+    it('accepts strings and arrays without blank entries', () => {
+      expect(isEmptyMessageContent('hello')).toBe(false);
       expect(isEmptyMessageContent(['hi'])).toBe(false);
       expect(isEmptyMessageContent(['', '{begin@query}'])).toBe(true);
       expect(isEmptyMessageContent(['  text  '])).toBe(false);

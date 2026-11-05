@@ -18,6 +18,9 @@ package channels
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -118,6 +121,45 @@ func TestGatewayEnabledRejectsInvalidValue(t *testing.T) {
 
 	if gatewayEnabled() {
 		t.Fatal("gatewayEnabled() = true for invalid value, want false")
+	}
+}
+
+func TestGatewayHealthURLUsesLoopbackForWildcardBind(t *testing.T) {
+	t.Setenv("WHATSAPP_GATEWAY_HOST", "0.0.0.0")
+	t.Setenv("WHATSAPP_GATEWAY_PORT", "3005")
+
+	if got, want := gatewayHealthURL(), "http://127.0.0.1:3005/health"; got != want {
+		t.Fatalf("gatewayHealthURL() = %q, want %q", got, want)
+	}
+}
+
+func TestGatewayHealthURLRejectsRemoteHost(t *testing.T) {
+	t.Setenv("WHATSAPP_GATEWAY_HOST", "gateway.example")
+	t.Setenv("WHATSAPP_GATEWAY_PORT", "3005")
+
+	if got := gatewayHealthURL(); got != "" {
+		t.Fatalf("gatewayHealthURL() = %q, want empty URL for a non-loopback host", got)
+	}
+}
+
+func TestGatewayReachableUsesSafeLoopbackProbe(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			t.Errorf("health request path = %q, want /health", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	t.Setenv("WHATSAPP_GATEWAY_HOST", "127.0.0.1")
+	t.Setenv("WHATSAPP_GATEWAY_PORT", serverURL.Port())
+
+	if !gatewayReachable(context.Background()) {
+		t.Fatal("gatewayReachable() = false for a local healthy gateway")
 	}
 }
 

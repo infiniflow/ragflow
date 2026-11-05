@@ -16,7 +16,7 @@ You need:
 - A Linux host with Docker and Docker Compose.
 - Permission to run Docker containers. The deployment must allow privileged containers and Docker socket access.
 - A running RAGFlow deployment or a working RAGFlow source environment.
-- Access to **Admin > Sandbox Settings**.
+- Access to **Admin > Sandbox**.
 - Network access to pull images from Docker Hub.
 
 You do not need to install Python or Node.js on the RAGFlow host. They run in the Sandbox Runner containers.
@@ -31,7 +31,7 @@ Continue only if this command displays Docker server information. If it returns 
 
 ## 1. Determine the Sandbox endpoint
 
-First, identify where RAGFlow and Sandbox Executor Manager are running. Their deployment locations determine the endpoint that you must enter later in **Admin > Sandbox Settings**.
+First, identify where RAGFlow and Sandbox Executor Manager are running. Their deployment locations determine the endpoint that you must enter later in **Admin > Sandbox**.
 
 | Deployment scenario | Endpoint |
 | --- | --- |
@@ -145,7 +145,7 @@ Check the startup logs for the active runtime. `falling back to runc` means exec
 
 ## 5. Configure Self-Managed in Admin
 
-1. Open **Admin > Sandbox Settings**.
+1. Open **Admin > Sandbox**.
 2. Select **Self-Managed**.
 3. Complete the connection settings:
 
@@ -199,4 +199,4 @@ The setup is complete when:
 - To adjust Runner capacity, images, resource limits, network access, artifacts, or authentication, see [Manage Self-Managed Sandbox](./manage_self_managed_sandbox.md).
 - To connect RAGFlow to an Executor Manager on another host, see [Connect to a remote Executor Manager](./manage_self_managed_sandbox.md#connect-to-a-remote-executor-manager).
 - If startup, connection, authentication, or execution fails, see [Code Execution Sandbox FAQ](./faq.md).
-- To use SSH or a managed cloud service instead, see [Configure SSH and Cloud Providers](../management/admin_ui/configure_ssh_and_cloud_providers.md).
+- To use SSH or a managed cloud service instead, see [Configure SSH and Cloud Providers](./configure_ssh_and_cloud_providers.md).

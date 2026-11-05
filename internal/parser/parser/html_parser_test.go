@@ -173,6 +173,22 @@ func TestHTMLParser_RemoveTOC(t *testing.T) {
 	}
 }
 
+// TestHTMLParser_SkipsTemplateContent checks that markup inside a <template>
+// is not indexed. It is a pattern a script may clone (often with placeholders
+// such as {{name}}), never something the page shows, as the table parser's
+// inert-element list already treats it.
+func TestHTMLParser_SkipsTemplateContent(t *testing.T) {
+	const doc = `<html><body><p>Shown</p>Run <template>inline {{x}}</template>on` +
+		`<template><p>Hello {{name}}</p></template><p>Also shown</p></body></html>`
+	res := NewHTMLParser().ParseWithResult(context.Background(), "page.html", []byte(doc))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if got := itemsText(res); strings.Contains(got, "{{") {
+		t.Errorf("template content was indexed: %q", got)
+	}
+}
+
 // TestHTMLParser_BodyTextAndInlineElementsFormOneItem checks that a run of
 // text and inline elements directly under <body> is read as one item, the way
 // a browser lays it out. Each text node and each inline element was its own

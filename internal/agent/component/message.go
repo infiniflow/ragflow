@@ -329,15 +329,15 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 		memIDs = m.memoryIDs
 	}
 	if len(memIDs) > 0 {
-		userID := stringFromStateSys(state, "user_id")
-		if userID == "" {
-			userID = m.userID
-		}
+		userID := m.userID
 		// If userID is a canvas variable reference (e.g. "{cpn@user_id}"),
 		// resolve it against the current state. Mirrors Python's
 		// agent/component/message.py:569-571.
 		if userID != "" && runtime.VarRefPattern.MatchString(userID) {
 			userID = runtime.ResolveTemplateForDisplay(userID, state)
+		}
+		if userID == "" {
+			userID = stringFromStateSys(state, "user_id")
 		}
 		saver := GetMemorySaver()
 		saveErr := saver.Save(ctx, MemorySaveRequest{
@@ -388,11 +388,6 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 	if len(matches) == 0 {
 		return text, false, nil
 	}
-	if _, err := runtime.ResolveTemplate(text, state); err != nil {
-		if !optionalMissingAttachmentRefs(text, state) {
-			return "", false, err
-		}
-	}
 	// Ordinary Message templates are rendered and emitted once by Invoke.
 	// Only templates that actually reference a DeferredStream belong to the
 	// incremental presentation path below.  Emitting literals/normal variable
@@ -402,12 +397,20 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 	for _, match := range matches {
 		ref := text[match[2]:match[3]]
 		value, _ := state.GetVar(ref)
+		if value == nil {
+			if nodeID, _, ok := strings.Cut(ref, "@"); ok {
+				value, _ = state.GetVar(nodeID + "@content")
+			}
+		}
 		if runtime.IsDeferredStream(value) {
 			hasDeferred = true
 			break
 		}
 	}
 	if !hasDeferred {
+		if _, err := runtime.ResolveTemplate(text, state); err != nil && !optionalMissingAttachmentRefs(text, state) {
+			return "", false, err
+		}
 		return runtime.ResolveTemplateForDisplay(text, state), false, nil
 	}
 	var out strings.Builder
@@ -422,7 +425,14 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 			out.WriteString(literal)
 		}
 		ref := text[refStart:refEnd]
+		deferredNodeID := ""
 		value, _ := state.GetVar(ref)
+		if value == nil {
+			if nodeID, _, ok := strings.Cut(ref, "@"); ok {
+				deferredNodeID = nodeID
+				value, _ = state.GetVar(deferredNodeID + "@content")
+			}
+		}
 		deferred, ok := value.(*runtime.DeferredStream)
 		if !ok || deferred == nil || deferred.Open == nil {
 			resolved := runtime.ResolveTemplateForDisplay(text[start:end], state)
@@ -433,9 +443,14 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 		}
 
 		streamed = true
+		streamContent := deferredNodeID == ""
 		inThinking := false
 		visible := strings.Builder{}
 		result, err := deferred.Open(ctx, func(contentDelta, reasoningDelta string) {
+			// Other outputs are available only after the Agent completes.
+			if !streamContent {
+				return
+			}
 			if reasoningDelta != "" {
 				if !inThinking {
 					runtime.EmitCanvasMessageEvent(ctx, "", true, false)
@@ -455,7 +470,19 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 		if inThinking {
 			runtime.EmitCanvasMessageEvent(ctx, "", false, true)
 		}
+		targetNodeID := deferredNodeID
+		if targetNodeID == "" && strings.Contains(ref, "@") {
+			targetNodeID, _, _ = strings.Cut(ref, "@")
+		}
+		if targetNodeID != "" && result != nil {
+			for key, output := range result {
+				state.SetVar(targetNodeID, key, output)
+			}
+		}
 		if err != nil {
+			if targetNodeID != "" {
+				runtime.CompleteDeferredNode(ctx, targetNodeID, err)
+			}
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return "", true, &runtime.DeferredStreamError{Err: err}
 			}
@@ -464,6 +491,9 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 			return "", true, &runtime.DeferredStreamError{Text: "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}
 		}
 		if resultErr, _ := result["_ERROR"].(string); strings.TrimSpace(resultErr) != "" {
+			if targetNodeID != "" {
+				runtime.CompleteDeferredNode(ctx, targetNodeID, errors.New(resultErr))
+			}
 			return "", true, &runtime.DeferredStreamError{Text: resultErr}
 		}
 		finalText := visible.String()
@@ -472,18 +502,26 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 				finalText = completedContent
 			}
 		}
-		if strings.Contains(ref, "@") {
-			parts := strings.SplitN(ref, "@", 2)
-			state.SetVar(parts[0], parts[1], finalText)
-			runtime.CompleteDeferredNode(ctx, parts[0])
+		if targetNodeID != "" {
+			runtime.CompleteDeferredNode(ctx, targetNodeID, nil)
 		}
-		out.WriteString(finalText)
+		resolved := runtime.ResolveTemplateForDisplay(text[start:end], state)
+		if strings.HasSuffix(ref, "@content") {
+			resolved = finalText
+		}
+		if !streamContent {
+			runtime.EmitCanvasMessageEvent(ctx, resolved, false, false)
+		}
+		out.WriteString(resolved)
 		last = end
 	}
 	if last < len(text) {
 		tail := text[last:]
 		runtime.EmitCanvasMessageEvent(ctx, tail, false, false)
 		out.WriteString(tail)
+	}
+	if _, err := runtime.ResolveTemplate(text, state); err != nil && !optionalMissingAttachmentRefs(text, state) {
+		return "", streamed, err
 	}
 	return out.String(), streamed, nil
 }
@@ -537,7 +575,6 @@ func formalizedContentFallback(inputs map[string]any) string {
 	if text, _ := inputs["formalized_content"].(string); strings.TrimSpace(text) != "" {
 		return text
 	}
-
 	return ""
 }
 
@@ -548,7 +585,7 @@ func stringFromStateSys(state *runtime.CanvasState, key string) string {
 	if state == nil {
 		return ""
 	}
-	if v, ok := state.Sys[key]; ok {
+	if v, ok := state.GetSys(key); ok {
 		if s, ok := v.(string); ok {
 			return s
 		}
@@ -609,5 +646,11 @@ func (m *MessageComponent) Outputs() map[string]string {
 }
 
 func init() {
-	Register(componentNameMessage, NewMessageComponent)
+	Register(componentNameMessage, func(params map[string]any) (Component, error) {
+		// DSL factories run before execution; direct callers may supply text at Invoke.
+		if err := validateMessageContent(params); err != nil {
+			return nil, runtime.NewUserFacingError(fmt.Sprintf("[Message] %s", err))
+		}
+		return NewMessageComponent(params)
+	})
 }

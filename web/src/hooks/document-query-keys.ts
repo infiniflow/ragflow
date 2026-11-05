@@ -26,12 +26,27 @@ export const enum DocumentApiAction {
   CreateDocument = 'createDocument',
   FetchDocumentThumbnails = 'fetchDocumentThumbnails',
   ParseDocument = 'parseDocument',
+  StopAllDocuments = 'stopAllDocuments',
 }
 
 export const DocumentKeys = {
   all: () => [DocumentApiAction.FetchDocumentList] as const,
-  list: (searchString: string, pagination: unknown, filter: unknown) =>
-    [...DocumentKeys.all(), searchString, pagination, filter] as const,
+  // The dataset id scopes the list: without it two datasets with the same
+  // search/pagination/filter share one cache entry, and entering dataset B
+  // briefly renders dataset A's documents (firing their per-row requests).
+  list: (
+    knowledgeId: string | undefined,
+    searchString: string,
+    pagination: unknown,
+    filter: unknown,
+  ) =>
+    [
+      ...DocumentKeys.all(),
+      knowledgeId,
+      searchString,
+      pagination,
+      filter,
+    ] as const,
   allFilters: () => [DocumentApiAction.FetchDocumentFilter] as const,
   filter: (searchString: string, knowledgeId?: string) =>
     [...DocumentKeys.allFilters(), searchString, knowledgeId] as const,

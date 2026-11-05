@@ -17,8 +17,7 @@ import (
 func parsePDFWithTCADP(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
 	return parseWithTCADP(ctx, filename, data, "PDF",
 		parser.TCADPAPIServer, parser.TCADPAPIKey,
-		parser.TCADPTableResultType, parser.TCADPMarkdownImageResponseType,
-		parser.OutputFormat)
+		parser.TCADPTableResultType, parser.TCADPMarkdownImageResponseType)
 }
 
 func tcadpItemsFromZip(zipBytes []byte) ([]map[string]any, int, error) {
@@ -84,6 +83,7 @@ func tcadpAnyToItems(raw any) []map[string]any {
 		emit := func(text, docType, layout string) []map[string]any {
 			m := map[string]any{"text": text, "doc_type_kwd": docType, "layout": layout}
 			if page > 0 {
+				m["page_number"] = page
 				// 1-indexed 5-tuple. addPDFPositions is a passthrough so
 				// the final position_int / page_num_int carry the same
 				// 1-indexed page number the caller passes. Mirrors

@@ -49,7 +49,6 @@ func TestSplitGeneralChildrenSlicesPositionsAbut(t *testing.T) {
 	chunk := schema.ChunkDoc{
 		Text:         "aaa;bbb",
 		DocType:      "text",
-		CKType:       "text",
 		PDFPositions: json.RawMessage(`[[1,10,20,0,100]]`),
 		Positions:    json.RawMessage(`[[1,10,20,0,100]]`),
 	}

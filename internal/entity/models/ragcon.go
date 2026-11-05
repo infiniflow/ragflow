@@ -330,7 +330,7 @@ func (r *RAGconModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 
 // Balance is not exposed by RAGcon's LiteLLM proxy.
 func (r *RAGconModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", r.Name())
 }
 
 func (r *RAGconModel) newASRRequest(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, stream bool) (*http.Request, string, error) {
@@ -622,22 +622,22 @@ func (r *RAGconModel) AudioSpeechWithSender(ctx context.Context, modelName *stri
 
 // OCRFile is not offered by RAGcon.
 func (r *RAGconModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", r.Name())
 }
 
 // ParseFile is not offered by RAGcon.
 func (r *RAGconModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", r.Name())
 }
 
 func (r *RAGconModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", r.Name())
 }
 
 func (r *RAGconModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", r.Name())
 }
 
 func (r *RAGconModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", r.Name())
 }

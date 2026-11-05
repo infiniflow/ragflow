@@ -420,6 +420,45 @@ func TestTokenize_SlovakCzechFoldDiacriticsAndSkipStemming(t *testing.T) {
 	}
 }
 
+func TestTokenize_RussianFoldsCyrillicBeforeStemming(t *testing.T) {
+	restore := saveEngineType()
+	defer restore()
+	SetEngineType("")
+
+	if err := Init(&PoolConfig{
+		DictPath:       "",
+		MinSize:        1,
+		MaxSize:        1,
+		IdleTimeout:    5 * time.Second,
+		AcquireTimeout: 5 * time.Second,
+	}); err != nil {
+		t.Fatalf("Failed to initialize pool: %v", err)
+	}
+	defer Close()
+
+	// Index-side folding must be Unicode-aware: the Russian stemmer only
+	// accepts lower-case input, so an upper-case word would otherwise reach
+	// the suffix table unchanged while the query side folds it with
+	// strings.ToLower.
+	var want string
+	for _, form := range []string{"ДОГОВОРАМИ", "Договора", "договорами", "договор"} {
+		got, err := New("Russian").Tokenize(form)
+		if err != nil {
+			t.Fatalf("Tokenize(Russian, %q) unexpected error: %v", form, err)
+		}
+		if want == "" {
+			want = got
+			continue
+		}
+		if got != want {
+			t.Errorf("Tokenize(Russian, %q) = %q, want the shared stem %q", form, got, want)
+		}
+	}
+	if want != "договор" {
+		t.Errorf("Russian stem for the договор forms = %q, want %q", want, "договор")
+	}
+}
+
 func findEnglishDutchDifferentiator(t *testing.T) languageDifferentiator {
 	t.Helper()
 

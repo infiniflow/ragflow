@@ -21,12 +21,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"ragflow/internal/entity"
 	"regexp"
 	"strings"
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
 
@@ -109,16 +110,14 @@ type OpenAIStreamEvent struct {
 // keeping handler-level concerns (message filtering, generation config merge,
 // reference metadata enrichment) on the service itself.
 type OpenAIChatService struct {
-	chatSvc      *ChatService
-	tenantLLMSvc *TenantLLMService
-	pipeline     *ChatPipelineService
+	chatSvc  *ChatService
+	pipeline *ChatPipelineService
 }
 
 func NewOpenAIChatService() *OpenAIChatService {
 	return &OpenAIChatService{
-		chatSvc:      NewChatService(),
-		tenantLLMSvc: NewTenantLLMService(),
-		pipeline:     NewChatPipelineService(),
+		chatSvc:  NewChatService(),
+		pipeline: NewChatPipelineService(),
 	}
 }
 
@@ -131,6 +130,7 @@ type OpenAIChatRequest struct {
 	Messages  []map[string]interface{} `json:"messages"`
 	Stream    *bool                    `json:"stream,omitempty"`
 	ExtraBody interface{}              `json:"extra_body,omitempty"`
+	Reasoning interface{}              `json:"reasoning,omitempty"`
 
 	Temperature      *float64 `json:"temperature,omitempty"`
 	TopP             *float64 `json:"top_p,omitempty"`
@@ -139,7 +139,7 @@ type OpenAIChatRequest struct {
 	MaxTokens        *int     `json:"max_tokens,omitempty"`
 }
 
-func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID string, bodyBytes []byte) {
+func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string, bodyBytes []byte) {
 	var req OpenAIChatRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		s.writeArgError(c, err.Error())
@@ -185,8 +185,8 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 
-	var needReference = false
-	var includeRefMetadata = false
+	needReference := false
+	includeRefMetadata := false
 	var metadataFields []string
 	var metadataCondition map[string]interface{}
 	if eb, ok := req.ExtraBody.(map[string]interface{}); ok {
@@ -235,18 +235,24 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 
-	ctx := c.Request.Context()
-	dialogResp, err := s.chatSvc.GetChat(ctx, userID, chatID)
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	dialogResp, err := s.chatSvc.GetChat(ctx, chatID)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
 			code, permissionErr := permissionresponse.NormalizeHidden(err)
-			common.ResponseWithCodeData(c, code, nil, permissionErr.Error())
+			common.RespondError(c, code, permissionErr.Error())
 			return
 		}
 		s.writeDataError(c, err.Error())
 		return
 	}
 	dialog := dialogResp.Chat
+	if err := validateChatDatasetAccess(ctx, dialog.KBIDs); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		common.RespondError(c, code, permissionErr.Error())
+		return
+	}
 	resolvedModel := req.Model
 	if req.Model == "model" {
 		resolvedModel = dialog.LLMID
@@ -255,13 +261,8 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 	if req.Model != "model" {
-		if _, mErr := s.pipeline.ModelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat, resolvedModel); mErr != nil {
+		if _, mErr := s.pipeline.ModelFactory.ResolveInfo(permission.WithTenantID(ctx, dialog.TenantID), entity.ModelTypeChat, resolvedModel); mErr != nil {
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
-			return
-		}
-		apiKey, apiErr := s.tenantLLMSvc.GetAPIKeyFromInstance(ctx, dialog.TenantID, req.Model)
-		if apiErr != nil || apiKey == "" {
-			s.writeDataError(c, fmt.Sprintf("Cannot use specified model %s.", req.Model))
 			return
 		}
 		dialog.LLMID = resolvedModel
@@ -287,7 +288,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 
 	completionID := fmt.Sprintf("chatcmpl-%s", openaiReq.ChatID)
 
-	lfClient := LangfuseClientFromTenant(ctx, dialog.TenantID, userID, openaiReq.ChatID, openaiReq.Model)
+	lfClient := LangfuseClientFromTenant(ctx, dialog.TenantID, openaiReq.ChatID, openaiReq.Model)
 	if lfClient != nil {
 		ctx = context.WithValue(ctx, langfuseCtxKey, lfClient)
 		defer func() {
@@ -333,15 +334,8 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 
-	chatKwargs := map[string]interface{}{
-		"toolcall_session": nil, // no tool calls on OpenAI-compat path
-		"tools":            nil,
-		"quote":            needReference,
-	}
-	if docIDsStr != "" {
-		chatKwargs["doc_ids"] = docIDsStr
-	}
-	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, userID, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
+	chatKwargs := openAIChatKwargs(&req, needReference, docIDsStr)
+	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
 	if asyncErr != nil {
 		s.writeDataError(c, asyncErr.Error())
 		return
@@ -351,10 +345,23 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		events := make(chan OpenAIStreamEvent, 16)
 		go func() {
 			defer close(events)
+
+			sendEvent := func(ev OpenAIStreamEvent) bool {
+				if ctx.Err() != nil {
+					return false
+				}
+				select {
+				case events <- ev:
+					return true
+				case <-ctx.Done():
+					return false
+				}
+			}
+
 			defer func() {
 				if r := recover(); r != nil {
 					common.Warn("OpenAI streaming goroutine panic", zap.Any("recover", r))
-					events <- OpenAIStreamEvent{Kind: OpenAIEventError, Error: fmt.Sprintf("internal error: %v", r)}
+					_ = sendEvent(OpenAIStreamEvent{Kind: OpenAIEventError, Error: fmt.Sprintf("internal error: %v", r)})
 				}
 			}()
 
@@ -367,6 +374,9 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 			)
 
 			for result := range asyncResults {
+				if ctx.Err() != nil {
+					return
+				}
 				lastResult = result
 
 				// Think markers only toggle routing state — Python never emits
@@ -391,27 +401,31 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 					}
 					s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 					completionTok = tokenizer.NumTokensFromString(finalContent)
-					events <- OpenAIStreamEvent{
+					_ = sendEvent(OpenAIStreamEvent{
 						Kind:             OpenAIEventFinal,
 						FinalAnswer:      finalContent,
 						FinalReference:   finalReference,
 						PromptTokens:     promptTokens,
 						CompletionTokens: completionTok,
 						TotalTokens:      promptTokens + completionTok,
-					}
+					})
 					return
 				}
 
 				if result.Reasoning != "" {
 					completionTok += tokenizer.NumTokensFromString(result.Reasoning)
-					events <- OpenAIStreamEvent{Kind: OpenAIEventReasoning, Delta: result.Reasoning}
+					if !sendEvent(OpenAIStreamEvent{Kind: OpenAIEventReasoning, Delta: result.Reasoning}) {
+						return
+					}
 				}
 
 				if result.Answer != "" {
 					delta := result.Answer
 					fullContent += delta
 					completionTok += tokenizer.NumTokensFromString(delta)
-					events <- OpenAIStreamEvent{Kind: OpenAIEventContent, Delta: delta}
+					if !sendEvent(OpenAIStreamEvent{Kind: OpenAIEventContent, Delta: delta}) {
+						return
+					}
 					if deltaCount < 3 {
 						common.Debug("OpenAI first content delta",
 							zap.Int("delta_index", deltaCount),
@@ -420,6 +434,10 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 						deltaCount++
 					}
 				}
+			}
+
+			if ctx.Err() != nil {
+				return
 			}
 
 			if finalReference == nil && openaiReq.NeedReference {
@@ -431,16 +449,17 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 				}
 			}
 			s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
-			events <- OpenAIStreamEvent{
+			_ = sendEvent(OpenAIStreamEvent{
 				Kind:             OpenAIEventFinal,
 				FinalAnswer:      strings.TrimSpace(fullContent),
 				FinalReference:   finalReference,
 				PromptTokens:     promptTokens,
 				CompletionTokens: completionTok,
 				TotalTokens:      promptTokens + completionTok,
-			}
+			})
 		}()
 		if err := streamChatCompletionSSE(c, events, completionID, resolvedModel, openaiReq.NeedReference); err != nil {
+			cancel()
 			s.writeDataError(c, err.Error())
 		}
 	} else {
@@ -552,7 +571,7 @@ func (s *OpenAIChatService) filterMessages(messages []map[string]interface{}) []
 
 // cleanCitationMarkers strips "##N$$" markers from the answer.
 func cleanCitationMarkers(s string) string {
-	var citationMarkerRegex = regexp.MustCompile(`##\d+\$\$`)
+	citationMarkerRegex := regexp.MustCompile(`##\d+\$\$`)
 	return citationMarkerRegex.ReplaceAllString(s, "")
 }
 
@@ -568,6 +587,27 @@ func isContentDelta(answer *string) bool {
 		return false
 	}
 	return true
+}
+
+// openAIChatKwargs builds the pipeline kwargs for one OpenAI-compat request.
+//
+// `reasoning` rides in the kwargs only. It never joins the generation config,
+// which MergeGenerationConfig folds into the dialog's saved llm_setting, so the
+// selection lasts one turn. Leaving the key out when the request omits it keeps
+// AsyncChat falling back to the dialog's prompt_config level.
+func openAIChatKwargs(req *OpenAIChatRequest, needReference bool, docIDsStr string) map[string]interface{} {
+	kwargs := map[string]interface{}{
+		"toolcall_session": nil, // no tool calls on OpenAI-compat path
+		"tools":            nil,
+		"quote":            needReference,
+	}
+	if docIDsStr != "" {
+		kwargs["doc_ids"] = docIDsStr
+	}
+	if req.Reasoning != nil {
+		kwargs["reasoning"] = req.Reasoning
+	}
+	return kwargs
 }
 
 // extractGenerationConfig mirrors Python's extract_generation_config.
@@ -739,12 +779,22 @@ func streamChatCompletionSSE(
 		return fmt.Errorf("streaming unsupported")
 	}
 
-	writeSSE := func(payload gin.H) {
-		body, _ := json.Marshal(payload)
-		_, _ = c.Writer.Write([]byte("data:"))
-		_, _ = c.Writer.Write(body)
-		_, _ = c.Writer.Write([]byte("\n\n"))
+	writeSSE := func(payload gin.H) error {
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return err
+		}
+		if _, err := c.Writer.Write([]byte("data:")); err != nil {
+			return err
+		}
+		if _, err := c.Writer.Write(body); err != nil {
+			return err
+		}
+		if _, err := c.Writer.Write([]byte("\n\n")); err != nil {
+			return err
+		}
 		flusher.Flush()
+		return nil
 	}
 
 	for ev := range events {
@@ -770,7 +820,9 @@ func streamChatCompletionSSE(
 					"logprobs":      nil,
 				}},
 			}
-			writeSSE(chunk)
+			if err := writeSSE(chunk); err != nil {
+				return err
+			}
 
 		case OpenAIEventReasoning:
 			chunk := gin.H{
@@ -793,7 +845,9 @@ func streamChatCompletionSSE(
 					"logprobs":      nil,
 				}},
 			}
-			writeSSE(chunk)
+			if err := writeSSE(chunk); err != nil {
+				return err
+			}
 
 		case OpenAIEventError:
 			chunk := gin.H{
@@ -816,7 +870,9 @@ func streamChatCompletionSSE(
 					"logprobs":      nil,
 				}},
 			}
-			writeSSE(chunk)
+			if err := writeSSE(chunk); err != nil {
+				return err
+			}
 
 		case OpenAIEventFinal:
 			delta := gin.H{
@@ -848,24 +904,28 @@ func streamChatCompletionSSE(
 					"logprobs":      nil,
 				}},
 			}
-			writeSSE(chunk)
+			if err := writeSSE(chunk); err != nil {
+				return err
+			}
 		}
 	}
 
 	// Always terminate with data: [DONE]\n\n.
-	_, _ = c.Writer.Write([]byte("data: [DONE]\n\n"))
+	if _, err := c.Writer.Write([]byte("data: [DONE]\n\n")); err != nil {
+		return err
+	}
 	flusher.Flush()
 	return nil
 }
 
 // writeArgError writes a 101 JSON error envelope (malformed request).
 func (s *OpenAIChatService) writeArgError(c *gin.Context, msg string) {
-	common.ResponseWithCodeData(c, common.CodeArgumentError, nil, msg)
+	common.RespondError(c, common.CodeArgumentError, msg)
 }
 
 // writeDataError writes a 102 JSON error envelope (service failure).
 func (s *OpenAIChatService) writeDataError(c *gin.Context, msg string) {
-	common.ResponseWithCodeData(c, common.CodeDataError, nil, msg)
+	common.RespondError(c, common.CodeDataError, msg)
 }
 
 func getCreatedOrDefault(created *int64) int64 {
