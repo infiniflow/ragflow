@@ -281,3 +281,67 @@ func TestOllamaListModelsRequiresBaseURL(t *testing.T) {
 		t.Fatal("ListModels: expected error for missing base URL, got nil")
 	}
 }
+
+func TestOllamaChatGenerationOptions(t *testing.T) {
+	withSSRFBypass(t)
+	for _, stream := range []bool{false, true} {
+		name := "non-streaming"
+		if stream {
+			name = "streaming"
+		}
+		t.Run(name, func(t *testing.T) {
+			temperature, topP, maxTokens := 0.0, 0.25, 7
+			stop := []string{"END", "STOP"}
+			doSample := false
+			cfg := &ChatConfig{Temperature: &temperature, TopP: &topP, MaxTokens: &maxTokens, Stop: &stop, DoSample: &doSample}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode request: %v", err)
+					return
+				}
+				// Ollama ChatRequest decodes generation controls from options.
+				options, ok := body["options"].(map[string]any)
+				if !ok {
+					t.Errorf("options=%v, want generation controls", body["options"])
+				} else {
+					for key, want := range map[string]any{"temperature": temperature, "top_p": topP, "num_predict": float64(maxTokens)} {
+						if got := options[key]; got != want {
+							t.Errorf("options[%s]=%v, want %v", key, got, want)
+						}
+					}
+					gotStop, _ := options["stop"].([]any)
+					if len(gotStop) != 2 || gotStop[0] != stop[0] || gotStop[1] != stop[1] {
+						t.Errorf("options[stop]=%v, want %v", gotStop, stop)
+					}
+				}
+				for _, key := range []string{"temperature", "top_p", "max_tokens", "stop", "do_sample"} {
+					if value, exists := body[key]; exists {
+						t.Errorf("unsupported top-level %s=%v", key, value)
+					}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, "{\"message\":{\"content\":\"ok\"},\"done\":true}\n")
+			}))
+			defer srv.Close()
+			model := newOllamaForChatTest(srv.URL)
+			messages := []Message{{Role: "user", Content: "hello"}}
+			if stream {
+				if err := model.ChatStreamlyWithSender(t.Context(), "llama3.2", messages, &APIConfig{}, cfg, nil, func(*string, *string) error { return nil }); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := model.ChatWithMessages(t.Context(), "llama3.2", messages, &APIConfig{}, cfg, nil); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestBuildOllamaRequestBodyOmitsUnsetOptions(t *testing.T) {
+	for _, cfg := range []*ChatConfig{nil, {}} {
+		body := buildOllamaRequestBody(cfg, "llama3.2", []Message{{Role: "user", Content: "hello"}}, false)
+		if options, exists := body["options"]; exists {
+			t.Fatalf("options=%v, want omitted", options)
+		}
+	}
+}
