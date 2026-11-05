@@ -1081,26 +1081,27 @@ class DocMetadataService:
             kb_ids: List of knowledge base IDs
 
         Returns:
-            Sorted list of unique metadata field names
+            Sorted list of unique metadata field names. An empty list means the
+            datasets carry no metadata keys.
+
+        Raises:
+            Exception: Retrieval failures are propagated so callers can tell an
+                unavailable metadata backend apart from a dataset without keys.
         """
         if not kb_ids:
             return []
 
         logging.debug(f"get_metadata_keys_by_kbs start: n_kbs={len(kb_ids)}")
         keys: set[str] = set()
-        try:
-            for kb_id in kb_ids:
-                results = cls._search_metadata(kb_id, condition={"kb_id": kb_id})
-                for _doc_id, doc in cls._iter_search_results(results):
-                    doc_meta = cls._extract_metadata(doc)
-                    if not isinstance(doc_meta, dict):
-                        continue
-                    keys.update(str(k) for k in doc_meta.keys())
-            logging.debug(f"get_metadata_keys_by_kbs end: n_keys={len(keys)}, kb_ids={kb_ids}")
-            return sorted(keys)
-        except Exception as e:
-            logging.error(f"Error getting metadata keys for KBs {kb_ids}: {e}")
-            return []
+        for kb_id in kb_ids:
+            results = cls._search_metadata(kb_id, condition={"kb_id": kb_id})
+            for _doc_id, doc in cls._iter_search_results(results):
+                doc_meta = cls._extract_metadata(doc)
+                if not isinstance(doc_meta, dict):
+                    continue
+                keys.update(str(k) for k in doc_meta.keys())
+        logging.debug(f"get_metadata_keys_by_kbs end: n_keys={len(keys)}, kb_ids={kb_ids}")
+        return sorted(keys)
 
     @classmethod
     def get_metadata_for_documents(cls, doc_ids: list[str] | None, kb_id: str) -> dict[str, dict]:

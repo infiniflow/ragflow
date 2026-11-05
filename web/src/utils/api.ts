@@ -171,6 +171,7 @@ export default {
   deleteKnowledgeGraph: (knowledgeId: string) =>
     `${restAPIv1}/datasets/${knowledgeId}/graph`,
   getMeta: `${restAPIv1}/datasets/metadata/flattened`,
+  getMetaKeys: `${restAPIv1}/datasets/metadata/keys`,
   getKnowledgeBasicInfo: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions/summary`,
   artifactsList: (datasetId: string) =>
