@@ -225,6 +225,23 @@ func TestDisabledCompilationStillPromotesOrdinaryParent(t *testing.T) {
 	}
 }
 
+func TestFormatDatasetSearchChunksOmitsVectorProvenance(t *testing.T) {
+	chunks := []map[string]interface{}{{
+		"chunk_id": "parent", "doc_id": "doc", "kb_id": "kb",
+		"content_with_weight": "The warranty lasts twelve months.",
+		"vector":              []float64{1, 0}, "vector_chunk_id": "child",
+	}}
+	formatDatasetSearchChunks(chunks, nil)
+	if chunks[0]["id"] != "parent" || chunks[0]["document_id"] != "doc" {
+		t.Fatalf("public reference identity changed: %#v", chunks[0])
+	}
+	for _, key := range []string{"vector", "vector_chunk_id"} {
+		if _, present := chunks[0][key]; present {
+			t.Errorf("internal vector field %q exposed in search response", key)
+		}
+	}
+}
+
 type compilationSearchEngine struct {
 	fakeChatDocEngine
 	rows []map[string]interface{}

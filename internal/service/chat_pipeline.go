@@ -2862,7 +2862,7 @@ func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, te
 		if vectorHasSignal(chunkVector(cm)) {
 			continue
 		}
-		if cid, ok := cm["chunk_id"].(string); ok && cid != "" {
+		if cid := nlp.ChunkVectorID(cm); cid != "" {
 			missing = append(missing, cid)
 		}
 	}
@@ -2886,7 +2886,7 @@ func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, te
 		if vectorHasSignal(chunkVector(cm)) {
 			continue
 		}
-		cid, _ := cm["chunk_id"].(string)
+		cid := nlp.ChunkVectorID(cm)
 		if cid == "" {
 			continue
 		}
