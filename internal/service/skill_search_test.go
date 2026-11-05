@@ -531,22 +531,23 @@ func TestSearchPaginationWindow(t *testing.T) {
 }
 
 // TestSearchDefaultsPageAndPageSize verifies that non-positive page and page
-// size default to 1 and 10 respectively.
+// size default to 1 and 30 respectively.
 func TestSearchDefaultsPageAndPageSize(t *testing.T) {
 	setupSkillSearchTenant(t)
 	service := NewSkillSearchService()
-	eng := &skillSearchEngine{
-		indexExists:   true,
-		searchResults: []map[string]interface{}{esStyleChunk("only", 1.0)},
+	results := make([]map[string]interface{}, 35)
+	for i := range results {
+		results[i] = esStyleChunk(fmt.Sprintf("skill-%02d", i), float64(i))
 	}
+	eng := &skillSearchEngine{indexExists: true, searchResults: results}
 
-	// Page/page_size default to 1/10 when non-positive.
+	// Page/page_size default to 1/30 when non-positive.
 	resp, code, err := service.Search(skillSearchTestContext(t), &SearchRequest{Query: "", Page: -1, PageSize: -1}, eng)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("Search: code=%d err=%v", code, err)
 	}
-	if len(resp.Skills) != 1 {
-		t.Fatalf("skills = %d, want 1", len(resp.Skills))
+	if len(resp.Skills) != 30 {
+		t.Fatalf("skills = %d, want 30", len(resp.Skills))
 	}
 }
 

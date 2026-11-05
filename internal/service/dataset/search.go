@@ -38,11 +38,11 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	userID := permission.UserIDFromContext(ctx)
 	common.Info("SearchDatasets started", zap.String("userID", userID), zap.Any("datasets", req.DatasetIDs), zap.String("question", req.Question))
 
-	page := 1
+	page := common.DefaultPage
 	if req.Page != nil {
 		page = *req.Page
 	}
-	pageSize := 30
+	pageSize := common.DefaultPageSize
 	if req.PageSize != nil {
 		pageSize = *req.PageSize
 	} else if req.Size != nil {
