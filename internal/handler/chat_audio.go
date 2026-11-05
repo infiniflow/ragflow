@@ -31,7 +31,7 @@ import (
 
 	"ragflow/internal/common"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/service"
+	"ragflow/internal/permission"
 )
 
 const (
@@ -73,7 +73,7 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		return
 	}
 
-	ttsModel, err := h.modelFactory.NewDefaultTTSModel(ctx, service.Identity{UserID: user.ID, TenantID: user.ID})
+	ttsModel, err := h.modelFactory.NewDefaultTTSModel(permission.WithTenantID(ctx, user.ID))
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
@@ -265,7 +265,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	asrModel, err := h.modelFactory.NewDefaultASRModel(ctx, service.Identity{UserID: user.ID, TenantID: user.ID})
+	asrModel, err := h.modelFactory.NewDefaultASRModel(permission.WithTenantID(ctx, user.ID))
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return

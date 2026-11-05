@@ -1401,10 +1401,10 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		t.Fatalf("insert existing doc: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
 	svc := testDocumentService(t)
 	fh := makeTestFileHeader(t, "file", "deck.pptx", []byte("abc"))
-	got, errs := svc.UploadLocalDocuments(ctx, kb, "user-1", []*multipart.FileHeader{fh}, "nested/path", map[string]interface{}{
+	got, errs := svc.UploadLocalDocuments(ctx, kb, []*multipart.FileHeader{fh}, "nested/path", map[string]interface{}{
 		"table_column_mode": "assist",
 	})
 	if len(errs) != 0 {
@@ -1464,9 +1464,9 @@ func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
 		t.Fatalf("insert kb: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
 	svc := testDocumentService(t)
-	got, code, err := svc.UploadEmptyDocument(ctx, kb, "user-1", "draft.md")
+	got, code, err := svc.UploadEmptyDocument(ctx, kb, "draft.md")
 	if err != nil {
 		t.Fatalf("UploadEmptyDocument error: %v", err)
 	}

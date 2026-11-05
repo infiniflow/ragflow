@@ -23,24 +23,18 @@ import (
 	"ragflow/internal/permission"
 )
 
-func requireCurrentTenantID(ctx context.Context, userID string) (string, error) {
-	if strings.TrimSpace(userID) == "" {
+func requireCurrentTenantID(ctx context.Context) (string, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
 		return "", permission.ErrUnauthenticated
 	}
-	contextUserID := strings.TrimSpace(permission.UserIDFromContext(ctx))
-	if contextUserID != "" && contextUserID != userID {
-		return "", permission.ErrIdentityMismatch
-	}
 	if tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx)); tenantID != "" {
-		if contextUserID == "" {
-			ctx = permission.WithIdentity(ctx, userID, tenantID)
-		}
 		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
 			return "", err
 		}
 		return tenantID, nil
 	}
-	tenantID, handled, err := resolveDefaultTenantIDEE(ctx, userID)
+	tenantID, handled, err := resolveDefaultTenantIDEE(ctx)
 	if err != nil {
 		return "", err
 	}

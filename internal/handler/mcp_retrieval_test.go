@@ -94,7 +94,7 @@ func TestMCPRetrievalUsesFixedWindowAndForwardsPagination(t *testing.T) {
 			isolateKnowledgeCompilePublisher(t)
 			probe := &recordingDatasetService{}
 
-			result, err := mcpRetrieval(t.Context(), probe, "user-1", mcp.RetrievalRequest{
+			result, err := mcpRetrieval(permission.WithIdentity(t.Context(), "user-1", ""), probe, mcp.RetrievalRequest{
 				DatasetIDs:  []string{"ds-1"},
 				DocumentIDs: []string{"doc-1"},
 				Question:    "alpha",
@@ -174,7 +174,7 @@ func TestMCPRetrievalRejectsOutOfWindowBeforeAnyDownstreamCall(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			probe := &recordingDatasetService{}
 
-			result, err := mcpRetrieval(t.Context(), probe, "user-1", mcp.RetrievalRequest{
+			result, err := mcpRetrieval(permission.WithIdentity(t.Context(), "user-1", ""), probe, mcp.RetrievalRequest{
 				DatasetIDs: tc.datasetIDs,
 				Question:   "alpha",
 				Page:       tc.page,
@@ -199,7 +199,7 @@ func TestMCPRetrievalPropagatesSearchError(t *testing.T) {
 	sentinel := errors.New("search exploded")
 	probe := &recordingDatasetService{searchErr: sentinel}
 
-	result, err := mcpRetrieval(t.Context(), probe, "user-1", mcp.RetrievalRequest{
+	result, err := mcpRetrieval(permission.WithIdentity(t.Context(), "user-1", ""), probe, mcp.RetrievalRequest{
 		DatasetIDs: []string{"ds-1"},
 		Question:   "alpha",
 		Page:       1,

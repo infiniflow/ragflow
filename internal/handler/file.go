@@ -313,7 +313,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			operationLog.Resources[fileHeader.Filename] = fileHeader.Size
 		}
 
-		result, err := h.fileService.UploadFile(ctx, userID, parentID, files, uploadLimit)
+		result, err := h.fileService.UploadFile(ctx, parentID, files, uploadLimit)
 		if err != nil {
 			if respondPermissionErrorIf(c, err, true) {
 				return
@@ -395,14 +395,7 @@ func (h *FileHandler) DeleteFiles(c *gin.Context) {
 		common.Audit(operationLog)
 	}()
 
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		operationLog.Code = int(errorCode)
-		operationLog.Error = errors.New(errorMessage)
-		return
-	}
-	operationLog.UserID = user.ID
+	operationLog.UserID = permission.UserIDFromContext(c.Request.Context())
 
 	var req DeleteFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -543,7 +536,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	// Get file metadata and check permission
-	fileContent, err := h.fileService.GetFileContent(ctx, user.ID, fileID)
+	fileContent, err := h.fileService.GetFileContent(ctx, fileID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			operationLog.Code = int(common.CodePermissionError)

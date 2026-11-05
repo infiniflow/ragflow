@@ -18,7 +18,7 @@ import (
 
 // GetFileContent gets file metadata and checks permission for download
 // Matches Python's file_api_service.get_file_content function
-func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*entity.File, error) {
+func (s *FileService) GetFileContent(ctx context.Context, fileID string) (*entity.File, error) {
 	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil || file == nil {
 		return nil, fmt.Errorf("document not found")
@@ -80,13 +80,17 @@ func (s *FileService) GetStorageAddress(ctx context.Context, fileID string) (*St
 }
 
 // DownloadAgentFile downloads an agent-generated file directly from MinIO without querying the database.
-func (s *FileService) DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error) {
+func (s *FileService) DownloadAgentFile(ctx context.Context, location string) ([]byte, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	bucketName := fmt.Sprintf("%s-downloads", tenantID)
+	bucketName := fmt.Sprintf("%s-downloads", userID)
 
 	blob, err := storageImpl.Get(ctx, bucketName, location)
 	if err != nil {
@@ -112,7 +116,11 @@ func (s *FileService) DownloadAgentFile(ctx context.Context, tenantID, location 
 // Blobs are stored directly in "{created_by}-downloads/{id}" in object
 // storage WITHOUT a corresponding File entity row in the database.
 // Mirrors Python's FileService.get_files → get_blob(user_id, file_id).
-func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts []map[string]interface{}) (texts []string, images []string, err error) {
+func (s *FileService) GetFileContents(ctx context.Context, fileDicts []map[string]interface{}) (texts []string, images []string, err error) {
+	uid := permission.UserIDFromContext(ctx)
+	if uid == "" {
+		return nil, nil, permission.ErrUnauthenticated
+	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, nil, fmt.Errorf("storage not initialized")
@@ -164,7 +172,11 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 
 // ParseAgentUploads resolves descriptors returned by upload_info from the
 // caller's downloads bucket and converts them to sys.files values.
-func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
+func (s *FileService) ParseAgentUploads(ctx context.Context, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
