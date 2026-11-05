@@ -136,7 +136,7 @@ def _models(api, credentials):
 
 
 def _prepare_ci_environment(folder_name):
-    if os.getenv("RAGFLOW_SDK_CI") != "1" or os.getenv("CI") != "true" or not os.getenv("HOST_ADDRESS") or os.getenv("DOC_ENGINE") not in {"infinity", "elasticsearch"}:
+    if os.getenv("RAGFLOW_SDK_CI") != "1" or os.getenv("CI") != "true" or not os.getenv("HOST_ADDRESS") or os.getenv("DOC_ENGINE") not in {"infinity", "elasticsearch", "opensearch"}:
         raise RuntimeError("SDK provisioning requires explicit SDK CI opt-in, CI=true, HOST_ADDRESS and a supported DOC_ENGINE in a disposable stack")
     credentials = {name: os.getenv(name) for name in ("ZHIPU_AI_API_KEY", "SILICONFLOW_API_KEY")}
     missing = [name for name, value in credentials.items() if not value]

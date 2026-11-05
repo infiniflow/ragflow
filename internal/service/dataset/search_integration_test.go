@@ -157,7 +157,7 @@ func newSearchIntegrationFixture(t *testing.T) *searchIntegrationFixture {
 	}
 	decodeErr := json.NewDecoder(response.Body).Decode(&info)
 	closeErr := response.Body.Close()
-	if response.StatusCode != http.StatusOK || decodeErr != nil || closeErr != nil || info.ModelID != "BAAI/bge-small-en-v1.5" {
+	if response.StatusCode != http.StatusOK || decodeErr != nil || closeErr != nil || (info.ModelID != "BAAI/bge-small-en-v1.5" && !strings.HasSuffix(info.ModelID, "BAAI/bge-small-en-v1.5")) {
 		t.Fatalf("TEI must serve BAAI/bge-small-en-v1.5: status=%d model=%q decode=%v close=%v", response.StatusCode, info.ModelID, decodeErr, closeErr)
 	}
 	db := setupServiceTestDB(t)

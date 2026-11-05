@@ -662,14 +662,14 @@ func templateDisplayKind(rowKind, templateKind string) string {
 // fault (500).
 var ErrInvalidStructureKind = errors.New("invalid structure kind")
 
-// datasetStructureSupported mirrors the writer's engine guard: only Infinity and
-// Elasticsearch resolve the dataset-structure filter keys (scope_kwd +
+// datasetStructureSupported mirrors the writer's engine guard: Infinity,
+// Elasticsearch, and OpenSearch resolve the dataset-structure filter keys (scope_kwd +
 // knowledge_graph_kwd). The writer keeps a private copy in the knowledge_compile
 // package; this service-side copy keeps the API delete path in agreement without
 // exporting an ingestion-internal helper across package boundaries.
 func datasetStructureSupported() bool {
 	switch engine.GetEngineType() {
-	case "infinity", "elasticsearch", "":
+	case "infinity", "elasticsearch", "opensearch", "":
 		return true
 	default:
 		return false

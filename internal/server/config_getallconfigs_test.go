@@ -182,3 +182,44 @@ func TestMCPConfigurationDoesNotLogKey(t *testing.T) {
 		t.Fatal("environment key leaked")
 	}
 }
+
+func TestGetAllConfigsOpenSearchDocEngine(t *testing.T) {
+	t.Setenv("DOC_ENGINE", "")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "service_conf.yaml")
+	content := `
+general:
+  doc_engine: opensearch
+os:
+  hosts: 'https://os.example.com:9200'
+  username: 'os-user'
+  password: 'os-secret'
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write temp config: %v", err)
+	}
+
+	oldConfig, oldViper := globalConfig, globalViper
+	t.Cleanup(func() { globalConfig, globalViper = oldConfig, oldViper })
+
+	if err := Init(cfgPath); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	allConfigs, err := GetAllConfigs()
+	if err != nil {
+		t.Fatalf("GetAllConfigs with doc_engine=opensearch: %v", err)
+	}
+
+	var foundOS bool
+	for _, cfg := range allConfigs {
+		if hosts, ok := cfg["hosts"]; ok && hosts == "https://os.example.com:9200" {
+			if user, ok := cfg["username"]; ok && user == "os-user" {
+				foundOS = true
+			}
+		}
+	}
+	if !foundOS {
+		t.Fatalf("OpenSearch config not exported in GetAllConfigs: %#v", allConfigs)
+	}
+}
