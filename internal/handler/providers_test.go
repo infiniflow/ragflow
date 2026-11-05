@@ -232,15 +232,15 @@ func TestMergeProviderModelsInheritsCatalogTypesOnConflict(t *testing.T) {
 	}
 }
 
-func TestMergeProviderModelsKeepsCatalogTypesOverInferredChat(t *testing.T) {
+func TestMergeProviderModelsKeepsCatalogTypesOverInferredTypes(t *testing.T) {
 	static := []map[string]interface{}{
 		{"name": "vision-chat", "model_types": []string{"chat", "vision"}},
 		{"name": "plain-chat", "model_types": []string{"chat"}},
 	}
 	remote := []map[string]interface{}{
-		{"name": "vision-chat", "model_types": []string{"chat"}},
-		{"name": "plain-chat", "model_types": []string{"chat"}},
-		{"name": "remote-only", "model_types": []string{"chat"}},
+		{"name": "vision-chat", "model_types": []string{"chat"}, "model_types_inferred": true},
+		{"name": "plain-chat", "model_types": []string{"chat"}, "model_types_inferred": true},
+		{"name": "remote-only", "model_types": []string{"chat"}, "model_types_inferred": true},
 	}
 
 	got := indexProviderModels(t, mergeProviderModels(static, remote))
@@ -252,6 +252,27 @@ func TestMergeProviderModelsKeepsCatalogTypesOverInferredChat(t *testing.T) {
 	}
 	if types := providerModelMapTypes(got["remote-only"]); !reflect.DeepEqual(types, []string{"chat"}) {
 		t.Errorf("remote-only model_types = %v, want [chat]", types)
+	}
+	for name, m := range got {
+		if _, ok := m["model_types_inferred"]; ok {
+			t.Errorf("%s still carries the internal model_types_inferred hint", name)
+		}
+	}
+}
+
+func TestMergeProviderModelsKeepsDeclaredRemoteChat(t *testing.T) {
+	// Bedrock-style drivers declare ["chat"] for text-only models; the catalog's
+	// vision must not be copied onto them.
+	static := []map[string]interface{}{
+		{"name": "amazon.nova-pro-v1:0", "model_types": []string{"chat", "vision"}},
+	}
+	remote := []map[string]interface{}{
+		{"name": "amazon.nova-pro-v1:0", "model_types": []string{"chat"}, "model_types_inferred": false},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	if types := providerModelMapTypes(got["amazon.nova-pro-v1:0"]); !reflect.DeepEqual(types, []string{"chat"}) {
+		t.Errorf("model_types = %v, want declared remote [chat]", types)
 	}
 }
 

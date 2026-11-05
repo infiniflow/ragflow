@@ -73,6 +73,7 @@ func (m *OpenAIAPICompatibleModel) ListModels(ctx context.Context, apiConfig *AP
 			continue
 		}
 		model.ModelTypes = inferred
+		model.ModelTypesInferred = true
 		filtered = append(filtered, model)
 	}
 

@@ -147,6 +147,11 @@ func TestHopBaseListModelsAndCheckConnection(t *testing.T) {
 	if joinModelNames(list, ",") != "deepseek-v4.1-flash,qwen3.8-max" {
 		t.Errorf("models=%v", list)
 	}
+	for _, m := range list {
+		if !m.ModelTypesInferred {
+			t.Errorf("%s: ModelTypesInferred=false, want true so catalog types can win in the merge", m.Name)
+		}
+	}
 	if err := model.CheckConnection(t.Context(), &APIConfig{ApiKey: &testAPIKey}); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
 	}

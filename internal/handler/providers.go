@@ -305,11 +305,13 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL, reg
 							legacyMaxTokens = *m.ContextLength
 						}
 						remoteModels = append(remoteModels, map[string]interface{}{
-							"name":           m.Name,
-							"model_types":    m.ModelTypes,
-							"context_length": m.ContextLength,
-							"max_output":     m.MaxOutput,
-							"max_tokens":     legacyMaxTokens,
+							"name":        m.Name,
+							"model_types": m.ModelTypes,
+							// Internal merge hint, removed by mergeProviderModels.
+							"model_types_inferred": m.ModelTypesInferred,
+							"context_length":       m.ContextLength,
+							"max_output":           m.MaxOutput,
+							"max_tokens":           legacyMaxTokens,
 						})
 					}
 				} else if bedrockAPIKeyAuth {
@@ -372,10 +374,10 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL, reg
 // wins, so a model already saved under the catalog's name keeps it.
 //
 // Remote entries override the catalog entry, with two exceptions: a remote
-// entry that carries no model types, or only the name-inferred default
-// ["chat"], inherits the catalog's types, and the legacy `max_tokens` alias
-// remains the input/context window. `max_output` is kept as a separate
-// provider generation ceiling.
+// entry that carries no model types, or types the driver only guessed from the
+// model name (`model_types_inferred`), inherits the catalog's types; and the
+// legacy `max_tokens` alias remains the input/context window. `max_output` is
+// kept as a separate provider generation ceiling.
 func mergeProviderModels(staticModels, remoteModels []map[string]interface{}) []map[string]interface{} {
 	merged := make(map[string]map[string]interface{}, len(staticModels)+len(remoteModels))
 	for _, m := range staticModels {
@@ -405,8 +407,10 @@ func mergeProviderModels(staticModels, remoteModels []map[string]interface{}) []
 			continue
 		}
 		name = strings.TrimSpace(name)
+		inferred, _ := m["model_types_inferred"].(bool)
+		delete(m, "model_types_inferred")
 		if existing, exists := merged[key]; exists {
-			if remoteTypesAreInferred(providerModelMapTypes(m)) && len(providerModelMapTypes(existing)) > 0 {
+			if (len(providerModelMapTypes(m)) == 0 || inferred) && len(providerModelMapTypes(existing)) > 0 {
 				m["model_types"] = existing["model_types"]
 			}
 			if maxTokens, ok := existing["max_tokens"]; ok && maxTokens != nil {
@@ -430,14 +434,6 @@ func mergeProviderModels(staticModels, remoteModels []map[string]interface{}) []
 		return providerModelKey(ni) < providerModelKey(nj)
 	})
 	return result
-}
-
-// remoteTypesAreInferred reports whether a live listing's model types carry no
-// information beyond the default. OpenAI-compatible drivers infer types from
-// the model name and fall back to ["chat"], so a vision model in the catalog
-// would otherwise be downgraded to chat-only by a live listing.
-func remoteTypesAreInferred(types []string) bool {
-	return len(types) == 0 || (len(types) == 1 && types[0] == "chat")
 }
 
 func fillProviderModelMapTypes(result []map[string]interface{}) {
