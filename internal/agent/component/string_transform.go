@@ -322,35 +322,59 @@ func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.Can
 		return fmt.Sprintf("%v", value)
 	}
 
+	// The declared inputs come from the authored script, which is also what
+	// Inputs() reports. Resolving that set — rather than whatever survives the
+	// runtime-ref pass — keeps a value injected below from being mistaken for an
+	// authored placeholder.
+	names := extractPlaceholders(script)
+
 	// First pass: state-level template resolution for any runtime ref
 	// syntax the canvas supports, including single-brace legacy refs and
 	// iteration aliases like {item}/{index}. Resolve arrays before the
 	// generic template renderer can stringify them.
+	//
+	// inserted marks the bytes this pass injected, so the placeholder pass can
+	// treat them as data and leave them alone.
+	var inserted []bool
 	if !runtime.ContainsJinjaSyntax(script) {
 		resolved := true
-		merged := runtime.VarRefPattern.ReplaceAllStringFunc(script, func(match string) string {
-			ref := runtime.VarRefPattern.FindStringSubmatch(match)[1]
-			value, err := state.GetVar(ref)
+		var merged strings.Builder
+		var mask []bool
+		prev := 0
+		for _, loc := range runtime.VarRefPattern.FindAllStringSubmatchIndex(script, -1) {
+			value, err := state.GetVar(script[loc[2]:loc[3]])
 			if err != nil || value == nil {
 				resolved = false
-				return match
+				break
 			}
-			return formatValue(value)
-		})
+			literal := script[prev:loc[0]]
+			merged.WriteString(literal)
+			mask = append(mask, make([]bool, len(literal))...)
+			replacement := formatValue(value)
+			merged.WriteString(replacement)
+			mask = append(mask, make([]bool, len(replacement))...)
+			for i := len(mask) - len(replacement); i < len(mask); i++ {
+				mask[i] = true
+			}
+			prev = loc[1]
+		}
 		if resolved {
-			script = merged
+			tail := script[prev:]
+			merged.WriteString(tail)
+			mask = append(mask, make([]bool, len(tail))...)
+			script = merged.String()
+			inserted = mask
 		}
 	} else if resolved, err := runtime.ResolveTemplateAuto(script, state); err == nil {
 		script = resolved
 	}
 
 	// Second pass: {{name}} placeholders → values from inputs, then state.
-	names := extractPlaceholders(script)
 	if len(names) == 0 {
 		return map[string]any{"result": script}
 	}
 	// Resolve every name up front, then substitute in a single pass over the
-	// original script. Substituting name by name would rescan what an earlier
+	// current script. Substituting name by name would rescan what an earlier
 	// iteration inserted: with x = "{{ y }}" and y = "bar", "{{x}} and {{y}}"
 	// would come out as "bar and bar" instead of "{{ y }} and bar".
 	replacements := make(map[string]string, len(names))
@@ -369,19 +393,37 @@ func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.Can
 	// substitution honours every spelling it accepts ("{{x}}", "{{ x }}") rather
 	// than only the canonical one.
 	//
-	// ReplaceAllStringFunc keeps a value's own "$1" literal: it is data, not a
-	// replacement template.
-	script = placeholderPattern.ReplaceAllStringFunc(script, func(match string) string {
-		sub := placeholderPattern.FindStringSubmatch(match)
-		if sub == nil {
-			return match
+	// Matches touching a byte injected by the first pass are left verbatim: a
+	// value is data, so "{item} {{y}}" with item = "{{ y }}" yields
+	// "{{ y }} bar" rather than "bar bar". Writing the replacement through a
+	// builder (instead of ReplaceAllString) also keeps a value's own "$1"
+	// literal, since it is data rather than a replacement template.
+	var out strings.Builder
+	prev := 0
+	for _, loc := range placeholderPattern.FindAllStringSubmatchIndex(script, -1) {
+		if overlapsInserted(inserted, loc[0], loc[1]) {
+			continue
 		}
-		if replacement, ok := replacements[sub[1]]; ok {
-			return replacement
+		out.WriteString(script[prev:loc[0]])
+		out.WriteString(replacements[script[loc[2]:loc[3]]])
+		prev = loc[1]
+	}
+	out.WriteString(script[prev:])
+	return map[string]any{"result": out.String()}
+}
+
+// overlapsInserted reports whether [start,end) touches a byte that an earlier
+// pass injected. Such spans are data and must not be re-substituted.
+func overlapsInserted(mask []bool, start, end int) bool {
+	if len(mask) == 0 {
+		return false
+	}
+	for i := start; i < end && i < len(mask); i++ {
+		if mask[i] {
+			return true
 		}
-		return match
-	})
-	return map[string]any{"result": script}
+	}
+	return false
 }
 
 // extractPlaceholders returns the unique placeholder names appearing
