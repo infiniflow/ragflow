@@ -232,6 +232,43 @@ func TestMergeProviderModelsInheritsCatalogTypesOnConflict(t *testing.T) {
 	}
 }
 
+func TestMergeProviderModelsKeepsCatalogTypesOverInferredChat(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "vision-chat", "model_types": []string{"chat", "vision"}},
+		{"name": "plain-chat", "model_types": []string{"chat"}},
+	}
+	remote := []map[string]interface{}{
+		{"name": "vision-chat", "model_types": []string{"chat"}},
+		{"name": "plain-chat", "model_types": []string{"chat"}},
+		{"name": "remote-only", "model_types": []string{"chat"}},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	if types := providerModelMapTypes(got["vision-chat"]); !reflect.DeepEqual(types, []string{"chat", "vision"}) {
+		t.Errorf("vision-chat model_types = %v, want catalog [chat vision]", types)
+	}
+	if types := providerModelMapTypes(got["plain-chat"]); !reflect.DeepEqual(types, []string{"chat"}) {
+		t.Errorf("plain-chat model_types = %v, want [chat]", types)
+	}
+	if types := providerModelMapTypes(got["remote-only"]); !reflect.DeepEqual(types, []string{"chat"}) {
+		t.Errorf("remote-only model_types = %v, want [chat]", types)
+	}
+}
+
+func TestMergeProviderModelsKeepsExplicitRemoteTypes(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "multi", "model_types": []string{"chat"}},
+	}
+	remote := []map[string]interface{}{
+		{"name": "multi", "model_types": []string{"chat", "vision"}},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	if types := providerModelMapTypes(got["multi"]); !reflect.DeepEqual(types, []string{"chat", "vision"}) {
+		t.Errorf("multi model_types = %v, want remote [chat vision]", types)
+	}
+}
+
 func TestValidateInstanceName(t *testing.T) {
 	tests := []struct {
 		name  string

@@ -372,9 +372,10 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL, reg
 // wins, so a model already saved under the catalog's name keeps it.
 //
 // Remote entries override the catalog entry, with two exceptions: a remote
-// entry that carries no model types inherits the catalog's types, and the
-// legacy `max_tokens` alias remains the input/context window. `max_output` is
-// kept as a separate provider generation ceiling.
+// entry that carries no model types, or only the name-inferred default
+// ["chat"], inherits the catalog's types, and the legacy `max_tokens` alias
+// remains the input/context window. `max_output` is kept as a separate
+// provider generation ceiling.
 func mergeProviderModels(staticModels, remoteModels []map[string]interface{}) []map[string]interface{} {
 	merged := make(map[string]map[string]interface{}, len(staticModels)+len(remoteModels))
 	for _, m := range staticModels {
@@ -405,7 +406,7 @@ func mergeProviderModels(staticModels, remoteModels []map[string]interface{}) []
 		}
 		name = strings.TrimSpace(name)
 		if existing, exists := merged[key]; exists {
-			if len(providerModelMapTypes(m)) == 0 && len(providerModelMapTypes(existing)) > 0 {
+			if remoteTypesAreInferred(providerModelMapTypes(m)) && len(providerModelMapTypes(existing)) > 0 {
 				m["model_types"] = existing["model_types"]
 			}
 			if maxTokens, ok := existing["max_tokens"]; ok && maxTokens != nil {
@@ -429,6 +430,14 @@ func mergeProviderModels(staticModels, remoteModels []map[string]interface{}) []
 		return providerModelKey(ni) < providerModelKey(nj)
 	})
 	return result
+}
+
+// remoteTypesAreInferred reports whether a live listing's model types carry no
+// information beyond the default. OpenAI-compatible drivers infer types from
+// the model name and fall back to ["chat"], so a vision model in the catalog
+// would otherwise be downgraded to chat-only by a live listing.
+func remoteTypesAreInferred(types []string) bool {
+	return len(types) == 0 || (len(types) == 1 && types[0] == "chat")
 }
 
 func fillProviderModelMapTypes(result []map[string]interface{}) {
