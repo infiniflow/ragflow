@@ -813,13 +813,15 @@ func TestAnthropicStreamToolInputPreservesLargeIntegers(t *testing.T) {
 
 func TestAnthropicRequestPreservesLargeIntegerToolArgs(t *testing.T) {
 	withSSRFBypass(t)
-	var rawBody []byte
+	// The handler runs on its own goroutine; the channel read below is what
+	// establishes the happens-before edge the race detector requires.
+	bodyCh := make(chan []byte, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Errorf("read body: %v", err)
 		}
-		rawBody = raw
+		bodyCh <- raw
 		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}}`))
 	}))
 	defer srv.Close()
@@ -837,7 +839,59 @@ func TestAnthropicRequestPreservesLargeIntegerToolArgs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
+	rawBody := <-bodyCh
 	if !strings.Contains(string(rawBody), largeIntegerLiteral) {
 		t.Errorf("request body=%s, want literal %s preserved", rawBody, largeIntegerLiteral)
+	}
+}
+
+func TestDecodeToolInputRejectsTrailingData(t *testing.T) {
+	var input map[string]any
+	err := decodeToolInput(`{"amount":1}{"amount":100}`, &input)
+	if err == nil {
+		t.Fatalf("decodeToolInput(%q) accepted trailing JSON value, input=%v", `{"amount":1}{"amount":100}`, input)
+	}
+	if err := decodeToolInput(`{"amount":1} garbage`, &input); err == nil {
+		t.Fatalf("decodeToolInput accepted trailing garbage")
+	}
+	if err := decodeToolInput(`{"amount":1}`, &input); err != nil {
+		t.Fatalf("decodeToolInput rejected clean input: %v", err)
+	}
+}
+
+func TestAnthropicChatRejectsTrailingDataAfterResponse(t *testing.T) {
+	withSSRFBypass(t)
+	// A complete trailing JSON value walks the err==nil branch of the second
+	// decode and must still be rejected; malformed trailing bytes fail inside
+	// the decode itself, so both shapes below assert rejection only.
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}} {"dup":true}`))
+	})
+	defer srv.Close()
+	apiKey := "test-key"
+	_, err := newAnthropicForTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"claude-sonnet-4-5-20250929",
+		[]Message{{Role: "user", Content: "hi"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{},
+		&common.ModelUsage{},
+	)
+	if err == nil || !strings.Contains(err.Error(), "trailing data") {
+		t.Fatalf("ChatWithMessages error=%v, want trailing-data rejection", err)
+	}
+	srv2 := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}} trailing-garbage`))
+	})
+	defer srv2.Close()
+	if _, err := newAnthropicForTest(srv2.URL).ChatWithMessages(
+		t.Context(),
+		"claude-sonnet-4-5-20250929",
+		[]Message{{Role: "user", Content: "hi"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{},
+		&common.ModelUsage{},
+	); err == nil {
+		t.Fatalf("ChatWithMessages accepted malformed trailing bytes")
 	}
 }

@@ -41,10 +41,16 @@ func decodeToolInput(arguments string, input *map[string]any) error {
 	if err := dec.Decode(input); err != nil {
 		return err
 	}
-	// Reject trailing data the way json.Unmarshal would.
-	if dec.More() {
-		_, err := dec.Token()
-		return err
+	// Reject trailing data the way json.Unmarshal would. A second decode must
+	// hit io.EOF; dec.More() cannot do this job because a following '{' makes
+	// it return true while dec.Token() consumes that delimiter without error,
+	// silently accepting {"a":1}{"a":2} and keeping only the first object.
+	var extra json.RawMessage
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("unexpected trailing data in tool input")
 	}
 	return nil
 }
@@ -491,6 +497,15 @@ func parseAnthropicChatResponse(body []byte, _ *ChatConfig) (chatResponseParts, 
 	dec.UseNumber()
 	if err := dec.Decode(&result); err != nil {
 		return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+	}
+	// Reject trailing data the way the previous json.Unmarshal did; a decoder
+	// otherwise accepts any bytes after the first top-level value.
+	var extra json.RawMessage
+	if err := dec.Decode(&extra); err != io.EOF {
+		if err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+		return chatResponseParts{}, fmt.Errorf("failed to parse response: unexpected trailing data")
 	}
 	if len(result.Content) == 0 {
 		return chatResponseParts{}, fmt.Errorf("no content in Anthropic response")
