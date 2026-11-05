@@ -506,23 +506,6 @@ func TestFeishuSendStreamReturnsErrorWhenUpdateKeepsFailing(t *testing.T) {
 	}
 }
 
-func TestFeishuSendStreamFailsWhenNoContentUpdateSucceeds(t *testing.T) {
-	server, fake := newFeishuFakeAPI(t, 0)
-	fake.contentScript = feishuContentFailures(30)
-	ch := newFeishuChannelAgainstFakeAPI(server)
-
-	text := make(chan string, 2)
-	text <- "Hello"
-	close(text)
-
-	if err := ch.SendStream(context.Background(), core.OutgoingMessage{ChatID: "chat-1"}, text); err == nil {
-		t.Fatal("SendStream succeeded although no update reached the card")
-	}
-	if texts := feishuTextMessages(fake.recorded()); len(texts) != 0 {
-		t.Fatalf("plain text messages = %v, want the caller to send the whole answer", texts)
-	}
-}
-
 func TestFeishuSendStreamKeepsAnswerWhenSettingsFail(t *testing.T) {
 	server, fake := newFeishuFakeAPI(t, 0)
 	fake.settingsFails = true

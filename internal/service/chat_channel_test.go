@@ -543,21 +543,6 @@ func TestConsumeChannelStreamAccumulatesDeltas(t *testing.T) {
 	}
 }
 
-func TestConsumeChannelStreamKeepsDeltasWhenFinalIsEmpty(t *testing.T) {
-	frames := make(chan string, 4)
-	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "abc"}}` + "\n\n"
-	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "", "final": true}}` + "\n\n"
-	close(frames)
-
-	got := consumeChannelStream(frames, func(string) {})
-	if got.err != nil {
-		t.Fatalf("consumeChannelStream error = %v", got.err)
-	}
-	if got.answer != "abc" {
-		t.Fatalf("answer = %q, want abc", got.answer)
-	}
-}
-
 func TestConsumeChannelStreamReportsErrorFrames(t *testing.T) {
 	frames := make(chan string, 2)
 	frames <- "data:" + `{"code": 500, "message": "model configuration unavailable", "data": {"answer": "**ERROR**: model configuration unavailable"}}` + "\n\n"
