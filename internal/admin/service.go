@@ -1575,22 +1575,6 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	return dao.DB.Create(userTenant).Error
 }
 
-// ListAllModels list all models
-func (s *Service) ListAllModels(pageIndex, pageSize int) ([]map[string]interface{}, error) {
-	models, err := dao.GetModelProviderManager().ListAllModels()
-	if err != nil {
-		return nil, err
-	}
-	if err := common.ValidatePagination(&pageIndex, &pageSize, nil); err != nil {
-		return nil, err
-	}
-	start := (pageIndex - 1) * pageSize
-	if start >= len(models) {
-		return []map[string]interface{}{}, nil
-	}
-	return models[start:min(start+pageSize, len(models))], nil
-}
-
 func (s *Service) GetModelByModelName(modelName string) (*modelModule.Model, error) {
 	return dao.GetModelProviderManager().GetModelByNameOrAlias(modelName), nil
 }

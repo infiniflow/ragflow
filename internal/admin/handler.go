@@ -1163,7 +1163,7 @@ func (h *Handler) ListAllModels(c *gin.Context) {
 	}
 
 	// List models
-	models, err := h.service.ListAllModels(page, pageSize)
+	models, err := h.service.modelProviderService.ListAllModels(page, pageSize)
 	if err != nil {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
