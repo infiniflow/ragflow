@@ -241,7 +241,7 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{workspace_id}/commits [get]
 func (h *FileCommitHandler) ListCommits(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
@@ -359,7 +359,7 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{workspace_id}/commits/{commit_id} [get]
 func (h *FileCommitHandler) GetCommit(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
@@ -434,7 +434,7 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{workspace_id}/commits/{commit_id}/files [get]
 func (h *FileCommitHandler) ListCommitFiles(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
@@ -483,7 +483,7 @@ func (h *FileCommitHandler) ListCommitFiles(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{workspace_id}/commits/diff [get]
 func (h *FileCommitHandler) DiffCommits(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
@@ -536,7 +536,7 @@ func (h *FileCommitHandler) DiffCommits(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{workspace_id}/changes [get]
 func (h *FileCommitHandler) GetUncommittedChanges(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
@@ -573,7 +573,7 @@ func (h *FileCommitHandler) GetUncommittedChanges(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{workspace_id}/commits/{commit_id}/tree [get]
 func (h *FileCommitHandler) GetCommitTree(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
@@ -622,7 +622,7 @@ func (h *FileCommitHandler) GetCommitTree(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{workspace_id}/commits/{commit_id}/files/{file_id}/content [get]
 func (h *FileCommitHandler) GetCommitFileContent(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return

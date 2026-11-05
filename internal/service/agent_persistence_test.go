@@ -71,7 +71,8 @@ func TestAgentRunSessionUpdateFailurePreventsSuccessEvents(t *testing.T) {
 		"path": []any{"begin_0", "message_0"},
 	}
 	events := make(chan canvas.RunEvent, 32)
-	_, err := NewAgentService().buildRunFunc("canvas-update-failure", nil, dsl)(context.Background(), map[string]any{
+	ctx := permission.WithIdentity(context.Background(), "user-1", "")
+	_, err := NewAgentService().buildRunFunc("canvas-update-failure", nil, dsl)(ctx, map[string]any{
 		"__events__":     events,
 		"__message_id__": "message-1",
 		"__session_id__": "session-update-failure",

@@ -23,6 +23,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // mistralOCRStoredKey is the api_key Python's "Mistral OCR" factory stored when

@@ -34,6 +34,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 )
 
 // dialForTest builds a minimal *entity.Chat suitable for the

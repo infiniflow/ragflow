@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 
 	"gorm.io/gorm"

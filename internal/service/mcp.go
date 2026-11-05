@@ -548,7 +548,6 @@ func headerOrVariablesChanged(req UpdateMCPServerRequest) bool {
 
 // ListMCPServers lists MCP servers belonging to a tenant the caller can use.
 func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
-	userID := permission.UserIDFromContext(ctx)
 	tenantID := strings.TrimSpace(requestedTenantID)
 	if tenantID == "" {
 		var err error

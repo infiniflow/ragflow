@@ -120,7 +120,6 @@ func NewCompilationTemplateService() *CompilationTemplateService {
 // ListBuiltins returns the read-only template palette loaded from the YAML
 // definitions. Built-in templates are never persisted in the database.
 func (s *CompilationTemplateService) ListBuiltins(ctx context.Context) ([]*BuiltinTemplate, error) {
-	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err

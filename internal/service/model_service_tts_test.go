@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // insertTTSTestTenant inserts a tenant and owner membership; ttsID may be nil (no default

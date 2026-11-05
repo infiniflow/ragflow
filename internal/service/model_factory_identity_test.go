@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/permission"
 )
 
 func TestModelFactoryIDAndNameShareValidation(t *testing.T) {

@@ -21,7 +21,6 @@ import (
 	"errors"
 
 	"ragflow/internal/dao"
-	"ragflow/internal/permission"
 )
 
 // ErrTenantNotFound indicates the current user has no tenant relation.
