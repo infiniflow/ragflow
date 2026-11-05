@@ -13,19 +13,16 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-//go:build !ee
-
 package common
 
 import (
 	"time"
-
-	"go.uber.org/zap"
 )
 
-// IngestionLog is the OSS structured record for ingestion (document-parse)
-// lifecycle events. The real sink lives in the EE build; in the OSS build it is
-// carried opaquely through the LogIngest seam and dropped.
+// IngestionLog is the structured record for ingestion (document-parse) lifecycle
+// events. It is a shared type used by both the OSS and EE builds; the sink
+// implementation (LogIngest and friends) is provided per edition (the OSS build
+// keeps a no-op seam in stub.go, the EE build provides the real sink).
 type IngestionLog struct {
 	EventTime      time.Time      `json:"event_time"`
 	TenantID       string         `json:"tenant_id"`
@@ -55,21 +52,3 @@ type IngestionLog struct {
 	Code           int            `json:"code"`
 	Operation      map[string]any `json:"operation,omitempty"`
 }
-
-// InitIngestLog is the OSS no-op hook for ingestion lifecycle event sinks. The OSS
-// build does not collect these events; the real sink lives in the EE build via the
-// LogIngest seam. The signature is retained so the IngestionEventEmitter /
-// SetEventEmitter wiring in the ingestion service keeps compiling.
-func InitIngestLog(logType string, file FileOutput, serviceName string) error {
-	return nil
-}
-
-// SyncIngestLog is the OSS no-op flush for the ingest logger. The real sink lives
-// in the EE build; the OSS binary keeps only the instrumentation seam so the
-// server entrypoint's deferred flush (cmd/ragflow_server.go) compiles and runs.
-func SyncIngestLog() {
-}
-
-// LogIngest is the shared upstream seam. In the OSS build it is a no-op; the EE
-// build provides the real sink.
-func LogIngest(log *IngestionLog, fields ...zap.Field) {}
