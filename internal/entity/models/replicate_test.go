@@ -114,7 +114,7 @@ func TestReplicateOfficialChatHappyPath(t *testing.T) {
 			t.Errorf("unexpected stop=%v", input["stop"])
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "successful",
+			"status": "succeeded",
 			"output": []string{"hel", "lo"},
 		})
 	}))
@@ -160,7 +160,7 @@ func TestReplicateCommunityChatUsesVersionEndpoint(t *testing.T) {
 			t.Errorf("version=%v", body["version"])
 		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "successful",
+			"status": "succeeded",
 			"output": "ok",
 		})
 	}))
@@ -199,7 +199,7 @@ func TestReplicateChatPollsUntilSucceeded(t *testing.T) {
 		case "/v1/predictions/p1":
 			getCount++
 			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"status": "successful",
+				"status": "succeeded",
 				"output": "done",
 			})
 		default:
