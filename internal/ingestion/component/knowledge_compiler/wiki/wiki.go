@@ -216,7 +216,7 @@ const (
 // Run executes the wiki variant.
 func Run(ctx context.Context, deps common.Deps, param common.Param, inputs common.Inputs) (common.Outputs, error) {
 	docID := inputs.DocID
-	llmID := firstNonEmpty(inputs.LLMID, param.LLMID)
+	llmID := common.FirstNonEmpty(inputs.LLMID, param.LLMID)
 	if docID == "" {
 		docID = "unknown"
 	}
@@ -768,7 +768,7 @@ func buildWikiEntityPlanPages(reduced wikiExtract) []wikiPlanPage {
 			Title:       name,
 			PageType:    "entity",
 			Topic:       selectWikiIdentityTopic(name, "entity", sourceChunkIDsForWikiIdentity(name, entity.SourceChunkIDs, reduced.Claims), reduced.Topics),
-			EntityNames: uniqueStrings(append([]string{name}, entity.Aliases...)),
+			EntityNames: appcommon.DeduplicateTrimmed(append([]string{name}, entity.Aliases...)),
 			Priority:    len(pages) + 1,
 		})
 	}
@@ -797,7 +797,7 @@ func sourceChunkIDsForWikiIdentity(name string, sourceChunkIDs []string, claims 
 			ids = append(ids, claim.SourceChunkIDs...)
 		}
 	}
-	return uniqueStrings(ids)
+	return appcommon.DeduplicateTrimmed(ids)
 }
 
 func selectWikiIdentityTopic(name, pageType string, sourceChunkIDs []string, topics []wikiTopic) string {
@@ -1010,16 +1010,16 @@ func (p *wikiPipeline) runRefinePage(
 	existingSection := ""
 	existingRaw := ""
 	if existing != nil {
-		existingRaw = firstNonEmpty(existing.ContentMDRaw, existing.ContentMD)
+		existingRaw = common.FirstNonEmpty(existing.ContentMDRaw, existing.ContentMD)
 		if strings.TrimSpace(existingRaw) != "" {
 			existingSection = "## Existing page content (UPDATE — integrate new evidence into this)\n\n" + existingRaw + "\n"
 		}
 	}
 	user := renderWikiTemplate(wikiRefineWriterUserTemplate, map[string]string{
-		"action":           firstNonEmpty(planItem.Action, "CREATE"),
+		"action":           common.FirstNonEmpty(planItem.Action, "CREATE"),
 		"slug":             planItem.Slug,
-		"title":            firstNonEmpty(planItem.Title, planItem.Slug),
-		"page_type":        firstNonEmpty(planItem.PageType, "concept"),
+		"title":            common.FirstNonEmpty(planItem.Title, planItem.Slug),
+		"page_type":        common.FirstNonEmpty(planItem.PageType, "concept"),
 		"all_plan_slugs":   strings.Join(available, "\n"),
 		"related_kb_pages": formatWikiRelatedKB(planItem.RelatedKB, pageTitles),
 		"existing_section": existingSection,
@@ -1038,9 +1038,9 @@ func (p *wikiPipeline) runRefinePage(
 	if resp == nil {
 		return wikiPageResult{}, fmt.Errorf("knowledge_compiler: wiki refine returned no response")
 	}
-	contentRaw := strings.TrimSpace(firstNonEmpty(resp.Content))
+	contentRaw := strings.TrimSpace(common.FirstNonEmpty(resp.Content))
 	if contentRaw == "" {
-		contentRaw = "# " + firstNonEmpty(planItem.Title, planItem.Slug) + "\n\n(Page generation produced no content.)"
+		contentRaw = "# " + common.FirstNonEmpty(planItem.Title, planItem.Slug) + "\n\n(Page generation produced no content.)"
 	}
 	if strings.TrimSpace(existingRaw) != "" {
 		contentRaw, err = p.mergeWikiPageContent(existingRaw, contentRaw, planItem.Slug)
@@ -1048,7 +1048,7 @@ func (p *wikiPipeline) runRefinePage(
 			return wikiPageResult{}, err
 		}
 	}
-	contentRendered, outlinks := transformWikiLinks(contentRaw, firstNonEmpty(p.datasetID, p.docID), pageTitles, slugToPageType)
+	contentRendered, outlinks := transformWikiLinks(contentRaw, common.FirstNonEmpty(p.datasetID, p.docID), pageTitles, slugToPageType)
 	// wiki_incremental port (O2): deterministically guarantee a "See also"
 	// cross-link section from RelatedKB. transformWikiLinks/resolveSlug drop
 	// links whose target cannot be resolved to a known slug, so an LLM-authored
@@ -1058,15 +1058,15 @@ func (p *wikiPipeline) runRefinePage(
 	// full-slug is linked once, only if not already present in Outlinks.
 	contentRendered, outlinks = appendWikiSeeAlso(contentRendered, outlinks, planItem.RelatedKB, p.datasetID, pageTitles, slugToPageType)
 	sourceDocIDs := collectWikiSourceDocIDs(p.inputs.Chunks, sourceChunkIDs, p.docID)
-	topic := firstNonEmpty(planItem.Topic, planItem.Title, planItem.Slug)
+	topic := common.FirstNonEmpty(planItem.Topic, planItem.Title, planItem.Slug)
 	return wikiPageResult{
 		Slug:           planItem.Slug,
-		Title:          firstNonEmpty(planItem.Title, planItem.Slug),
-		PageType:       firstNonEmpty(planItem.PageType, "concept"),
+		Title:          common.FirstNonEmpty(planItem.Title, planItem.Slug),
+		PageType:       common.FirstNonEmpty(planItem.PageType, "concept"),
 		Topic:          topic,
-		Action:         firstNonEmpty(planItem.Action, "CREATE"),
-		EntityNames:    uniqueStrings(planItem.EntityNames),
-		RelatedKBPages: uniqueStrings(planItem.RelatedKB),
+		Action:         common.FirstNonEmpty(planItem.Action, "CREATE"),
+		EntityNames:    appcommon.DeduplicateTrimmed(planItem.EntityNames),
+		RelatedKBPages: appcommon.DeduplicateTrimmed(planItem.RelatedKB),
 		ContentRaw:     contentRaw,
 		Content:        contentRendered,
 		Outlinks:       outlinks,
@@ -1177,7 +1177,7 @@ func assembleWikiPlanRelatedPages(pages []wikiPlanPage, relations []wikiRelation
 
 	pageByName := make(map[string][]int)
 	for i, page := range pages {
-		names := uniqueStrings(append([]string{}, page.EntityNames...))
+		names := appcommon.DeduplicateTrimmed(append([]string{}, page.EntityNames...))
 		if len(names) == 0 && strings.TrimSpace(page.Title) != "" {
 			names = []string{page.Title}
 		}
@@ -1259,19 +1259,19 @@ func (p *wikiPipeline) reconcilePlan(plan wikiPlan) (wikiPlan, error) {
 			continue
 		}
 		page.Action = "UPDATE"
-		page.Slug = firstNonEmpty(existing.Slug, page.Slug)
-		page.Title = firstNonEmpty(existing.Title, page.Title)
-		page.PageType = firstNonEmpty(existing.PageType, page.PageType)
+		page.Slug = common.FirstNonEmpty(existing.Slug, page.Slug)
+		page.Title = common.FirstNonEmpty(existing.Title, page.Title)
+		page.PageType = common.FirstNonEmpty(existing.PageType, page.PageType)
 		if existing.RoutedTopic != "" {
 			page.Topic = common.NormalizeWikiTopicPath(existing.RoutedTopic)
 		} else {
-			page.Topic = common.NormalizeWikiTopicPath(firstNonEmpty(existing.Topic, page.Topic))
+			page.Topic = common.NormalizeWikiTopicPath(common.FirstNonEmpty(existing.Topic, page.Topic))
 		}
 		page.RelatedKB = mergeStrings(page.RelatedKB, existing.RelatedKBPages)
 		if len(existing.RoutedEntityNames) > 0 {
 			// An explicit route membership set is authoritative: this is a
 			// migration, so do not union members that the LLM removed.
-			page.EntityNames = uniqueStrings(existing.RoutedEntityNames)
+			page.EntityNames = appcommon.DeduplicateTrimmed(existing.RoutedEntityNames)
 		} else {
 			page.EntityNames = mergeStrings(page.EntityNames, existing.EntityNames)
 		}
@@ -1426,7 +1426,7 @@ func (p *wikiPipeline) sourceChunksForPlanPage(page wikiPlanPage) []string {
 			chunks = append(chunks, relation.SourceChunkIDs...)
 		}
 	}
-	chunks = uniqueStrings(chunks)
+	chunks = appcommon.DeduplicateTrimmed(chunks)
 	if len(chunks) > wikiTopicSourceChunkMax {
 		chunks = chunks[:wikiTopicSourceChunkMax]
 	}
@@ -1549,7 +1549,7 @@ func (p *wikiPipeline) mergeWikiPageContent(existingMD, newMD, slug string) (str
 	if resp == nil {
 		return fallback, nil
 	}
-	merged := strings.TrimSpace(firstNonEmpty(resp.Content))
+	merged := strings.TrimSpace(common.FirstNonEmpty(resp.Content))
 	if merged == "" {
 		return fallback, nil
 	}
@@ -1570,7 +1570,7 @@ func conservativeMergeWikiMarkdown(existingMD, newMD string) string {
 	if strings.Contains(newMD, existingMD) {
 		return strings.TrimSpace(newMD)
 	}
-	title := firstNonEmpty(wikiMarkdownTitle(existingMD), wikiMarkdownTitle(newMD))
+	title := common.FirstNonEmpty(wikiMarkdownTitle(existingMD), wikiMarkdownTitle(newMD))
 	blocks := make([]string, 0, 8)
 	seen := map[string]bool{}
 	appendBlocks := func(body string) {
@@ -1685,8 +1685,8 @@ func reduceExtracts(extracts []wikiExtract) wikiExtract {
 				continue
 			}
 			item := e
-			item.Aliases = uniqueStrings(item.Aliases)
-			item.SourceChunkIDs = uniqueStrings(item.SourceChunkIDs)
+			item.Aliases = appcommon.DeduplicateTrimmed(item.Aliases)
+			item.SourceChunkIDs = appcommon.DeduplicateTrimmed(item.SourceChunkIDs)
 			entities[key] = &item
 		}
 		for _, c := range ex.Concepts {
@@ -1701,11 +1701,11 @@ func reduceExtracts(extracts []wikiExtract) wikiExtract {
 			item := c
 			item.Term = strings.TrimSpace(item.Term)
 			item.Definition = strings.TrimSpace(item.Definition)
-			item.SourceChunkIDs = uniqueStrings(item.SourceChunkIDs)
+			item.SourceChunkIDs = appcommon.DeduplicateTrimmed(item.SourceChunkIDs)
 			concepts[key] = &item
 		}
 		for _, c := range ex.Claims {
-			c.SourceChunkIDs = uniqueStrings(c.SourceChunkIDs)
+			c.SourceChunkIDs = appcommon.DeduplicateTrimmed(c.SourceChunkIDs)
 			out.Claims = append(out.Claims, c)
 		}
 		for _, r := range ex.Relations {
@@ -1714,7 +1714,7 @@ func reduceExtracts(extracts []wikiExtract) wikiExtract {
 				out.Relations[cur].SourceChunkIDs = mergeStrings(out.Relations[cur].SourceChunkIDs, r.SourceChunkIDs)
 				continue
 			}
-			r.SourceChunkIDs = uniqueStrings(r.SourceChunkIDs)
+			r.SourceChunkIDs = appcommon.DeduplicateTrimmed(r.SourceChunkIDs)
 			relationIndexes[key] = len(out.Relations)
 			out.Relations = append(out.Relations, r)
 		}
@@ -1732,7 +1732,7 @@ func reduceExtracts(extracts []wikiExtract) wikiExtract {
 				continue
 			}
 			t.Description = strings.TrimSpace(t.Description)
-			t.SourceChunkIDs = uniqueStrings(t.SourceChunkIDs)
+			t.SourceChunkIDs = appcommon.DeduplicateTrimmed(t.SourceChunkIDs)
 			topic := t
 			topics[key] = &topic
 		}
@@ -1876,7 +1876,7 @@ func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPla
 			continue
 		}
 		if idx, ok := existing[page.Slug]; ok {
-			out[idx].RelatedKB = uniqueStrings(append(out[idx].RelatedKB, page.RelatedKB...))
+			out[idx].RelatedKB = appcommon.DeduplicateTrimmed(append(out[idx].RelatedKB, page.RelatedKB...))
 			continue
 		}
 		key := wikiTitleKey(page.PageType, page.Title)
@@ -1884,7 +1884,7 @@ func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPla
 			key = page.PageType + "\x00" + page.Slug
 		}
 		if idx, ok := byTitle[key]; ok {
-			out[idx].RelatedKB = uniqueStrings(append(out[idx].RelatedKB, page.RelatedKB...))
+			out[idx].RelatedKB = appcommon.DeduplicateTrimmed(append(out[idx].RelatedKB, page.RelatedKB...))
 			continue
 		}
 		idx := len(out)
@@ -2041,8 +2041,8 @@ func normalizeWikiPlanPage(page wikiPlanPage) wikiPlanPage {
 	if page.Topic == "" {
 		page.Topic = common.GeneralWikiTopic
 	}
-	page.EntityNames = uniqueStrings(page.EntityNames)
-	page.RelatedKB = uniqueStrings(page.RelatedKB)
+	page.EntityNames = appcommon.DeduplicateTrimmed(page.EntityNames)
+	page.RelatedKB = appcommon.DeduplicateTrimmed(page.RelatedKB)
 	page.Sections = normalizeWikiPlanSections(page.Sections)
 	if page.Priority <= 0 {
 		page.Priority = 99
@@ -2057,7 +2057,7 @@ func normalizeWikiPlanSections(sections []wikiPlanSection) []wikiPlanSection {
 	out := make([]wikiPlanSection, 0, len(sections))
 	for _, sec := range sections {
 		sec.Heading = strings.TrimSpace(sec.Heading)
-		sec.Points = uniqueStrings(sec.Points)
+		sec.Points = appcommon.DeduplicateTrimmed(sec.Points)
 		if sec.Heading == "" {
 			continue
 		}
@@ -2117,7 +2117,7 @@ func buildWikiFallbackPages(reduced wikiExtract) []wikiPlanPage {
 	if len(out) == 0 {
 		for _, t := range reduced.Topics {
 			title := common.WikiTopicLeaf(t.Path)
-			lead := firstNonEmpty(t.Description, title)
+			lead := common.FirstNonEmpty(t.Description, title)
 			appendPage(wikiPlanPage{
 				Action:   "CREATE",
 				Slug:     "topic/" + slugify(title),
@@ -2176,8 +2176,8 @@ func (p wikiPlan) firstPageCandidate() wikiPlanPage {
 		Title:       p.Title,
 		PageType:    p.PageType,
 		Topic:       p.Topic,
-		EntityNames: uniqueStrings(p.Entities),
-		RelatedKB:   uniqueStrings(p.Related),
+		EntityNames: appcommon.DeduplicateTrimmed(p.Entities),
+		RelatedKB:   appcommon.DeduplicateTrimmed(p.Related),
 		Priority:    1,
 		Lead:        p.Lead,
 		Sections:    p.Sections,
@@ -2414,7 +2414,7 @@ func normalizeWikiTopics(topics []wikiTopic) []wikiTopic {
 			continue
 		}
 		topic.Description = strings.TrimSpace(topic.Description)
-		topic.SourceChunkIDs = uniqueStrings(topic.SourceChunkIDs)
+		topic.SourceChunkIDs = appcommon.DeduplicateTrimmed(topic.SourceChunkIDs)
 		if index, exists := indexes[key]; exists {
 			if out[index].Description == "" {
 				out[index].Description = topic.Description
@@ -2468,7 +2468,7 @@ func firstNumber(v any) float64 {
 func parseWikiStrings(raw any) []string {
 	switch v := raw.(type) {
 	case []string:
-		return uniqueStrings(v)
+		return appcommon.DeduplicateTrimmed(v)
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, item := range v {
@@ -2476,7 +2476,7 @@ func parseWikiStrings(raw any) []string {
 				out = append(out, s)
 			}
 		}
-		return uniqueStrings(out)
+		return appcommon.DeduplicateTrimmed(out)
 	case string:
 		if s := strings.TrimSpace(v); s != "" {
 			return []string{s}
@@ -2489,7 +2489,7 @@ func buildSourceContext(chunks []common.Chunk, sourceChunkIDs []string) string {
 	if len(sourceChunkIDs) == 0 {
 		var b strings.Builder
 		for _, ch := range chunks {
-			text := firstNonEmpty(ch.Text, ch.Content)
+			text := common.FirstNonEmpty(ch.Text, ch.Content)
 			if strings.TrimSpace(text) == "" {
 				continue
 			}
@@ -2504,7 +2504,7 @@ func buildSourceContext(chunks []common.Chunk, sourceChunkIDs []string) string {
 		if id == "" {
 			id = fmt.Sprintf("chunk-%d", i+1)
 		}
-		lookup[id] = firstNonEmpty(ch.Text, ch.Content)
+		lookup[id] = common.FirstNonEmpty(ch.Text, ch.Content)
 	}
 	var b strings.Builder
 	for _, id := range sourceChunkIDs {
@@ -2551,7 +2551,7 @@ type wikiEvidenceItem struct {
 }
 
 func assembleWikiPageEvidence(planItem wikiPlanPage, claims []wikiClaim, entityByName, conceptByTerm map[string]wikiExtractItem) []wikiEvidenceItem {
-	rawNames := uniqueStrings(append([]string{}, planItem.EntityNames...))
+	rawNames := appcommon.DeduplicateTrimmed(append([]string{}, planItem.EntityNames...))
 	if len(rawNames) == 0 {
 		if t := strings.TrimSpace(planItem.Title); t != "" {
 			rawNames = []string{t}
@@ -2598,8 +2598,8 @@ func assembleWikiPageEvidence(planItem wikiPlanPage, claims []wikiClaim, entityB
 		evidence = append(evidence, wikiEvidenceItem{
 			Statement:  claim.Statement,
 			Subject:    claim.Subject,
-			Confidence: firstNonEmpty(claim.Confidence, "explicit"),
-			ChunkIDs:   uniqueStrings(claim.SourceChunkIDs),
+			Confidence: common.FirstNonEmpty(claim.Confidence, "explicit"),
+			ChunkIDs:   appcommon.DeduplicateTrimmed(claim.SourceChunkIDs),
 		})
 	}
 	if len(evidence) > 0 {
@@ -2647,7 +2647,7 @@ type wikiExtractItem struct {
 func buildWikiEntityLookup(items []wikiEntity) map[string]wikiExtractItem {
 	out := map[string]wikiExtractItem{}
 	for _, item := range items {
-		hit := wikiExtractItem{SourceChunkIDs: uniqueStrings(item.SourceChunkIDs)}
+		hit := wikiExtractItem{SourceChunkIDs: appcommon.DeduplicateTrimmed(item.SourceChunkIDs)}
 		name := strings.TrimSpace(item.Name)
 		if name != "" {
 			out[strings.ToLower(name)] = hit
@@ -2664,7 +2664,7 @@ func buildWikiEntityLookup(items []wikiEntity) map[string]wikiExtractItem {
 func buildWikiConceptLookup(items []wikiConcept) map[string]wikiExtractItem {
 	out := map[string]wikiExtractItem{}
 	for _, item := range items {
-		hit := wikiExtractItem{SourceChunkIDs: uniqueStrings(item.SourceChunkIDs)}
+		hit := wikiExtractItem{SourceChunkIDs: appcommon.DeduplicateTrimmed(item.SourceChunkIDs)}
 		term := strings.TrimSpace(item.Term)
 		if term != "" {
 			out[strings.ToLower(term)] = hit
@@ -2679,7 +2679,7 @@ func formatWikiEvidenceBlocks(evidence []wikiEvidenceItem) string {
 		if ev.Synthetic {
 			continue
 		}
-		confidence := strings.ToUpper(firstNonEmpty(ev.Confidence, "explicit"))
+		confidence := strings.ToUpper(common.FirstNonEmpty(ev.Confidence, "explicit"))
 		lines = append(lines, fmt.Sprintf("%d. [%s] %s\n   %s", len(lines)+1, confidence, ev.Subject, ev.Statement))
 	}
 	if len(lines) == 0 {
@@ -3064,34 +3064,8 @@ func prefixWithDash(items []string) []string {
 	return out
 }
 
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if s := strings.TrimSpace(v); s != "" {
-			return s
-		}
-	}
-	return ""
-}
-
-func uniqueStrings(in []string) []string {
-	if len(in) == 0 {
-		return nil
-	}
-	seen := map[string]bool{}
-	out := make([]string, 0, len(in))
-	for _, s := range in {
-		s = strings.TrimSpace(s)
-		if s == "" || seen[s] {
-			continue
-		}
-		seen[s] = true
-		out = append(out, s)
-	}
-	return out
-}
-
 func mergeStrings(a, b []string) []string {
-	return uniqueStrings(append(append([]string{}, a...), b...))
+	return appcommon.DeduplicateTrimmed(append(append([]string{}, a...), b...))
 }
 
 func normalizedStringSet(items []string) map[string]struct{} {

@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -153,7 +154,8 @@ type CreateSearchResponse struct {
 // 6. Save to database within DB.atomic() transaction
 // 7. Return {search_id: id} on success
 func (s *SearchService) CreateSearch(ctx context.Context, name string, description *string) (*CreateSearchResponse, error) {
-	identity, err := ResolveIdentity(ctx)
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +172,7 @@ func (s *SearchService) CreateSearch(ctx context.Context, name string, descripti
 	// Generate unique name (same as Python duplicate_name)
 	// search.name is a 128-byte column; keep generated names within it.
 	uniqueName, err := common.UniqueName(name, 128, func(candidate string) (bool, error) {
-		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, identity.TenantID)
+		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, tenantID)
 		if err != nil {
 			return false, err
 		}
@@ -184,9 +186,10 @@ func (s *SearchService) CreateSearch(ctx context.Context, name string, descripti
 	// Create search entity
 	search := &entity.Search{
 		ID:           searchID,
-		TenantID:     identity.TenantID,
+		UserID:       userID,
+		TenantID:     tenantID,
 		Name:         uniqueName,
-		CreatedBy:    identity.UserID,
+		CreatedBy:    userID,
 		SearchConfig: make(entity.JSONMap),
 	}
 
@@ -271,7 +274,7 @@ func (s *SearchService) DeleteSearch(ctx context.Context, searchID string) error
 }
 
 type SearchCompletionPlan struct {
-	Identity   Identity
+	TenantID   string
 	SearchID   string
 	Question   string
 	DatasetIDs []string
@@ -323,21 +326,21 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, searchID string, 
 			return nil, code, permissionErr
 		}
 	}
-	identity, err := ResolveIdentity(ctx)
-	if err != nil {
-		code, normalizedErr := permissionresponse.Normalize(err)
-		return nil, code, normalizedErr
+	tenantID, _ := searchDetail["tenant_id"].(string)
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, common.CodeDataError, fmt.Errorf("search %s has no tenant", searchID)
 	}
 
 	modelID, _ := stringFromSearchConfig(searchConfig["chat_id"])
 	if modelID == "" {
-		if info, infoErr := NewModelFactory().ResolveDefaultInfo(ctx, identity, entity.ModelTypeChat); infoErr == nil {
+		if info, infoErr := NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeChat); infoErr == nil {
 			modelID = ModelReference(info)
 		}
 	}
 
 	return &SearchCompletionPlan{
-		Identity:   identity,
+		TenantID:   tenantID,
 		SearchID:   searchID,
 		Question:   question,
 		DatasetIDs: datasetIDs,

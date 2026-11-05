@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 )
@@ -157,7 +158,7 @@ func TestFileService_GetFileContents_NotAccessible(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	svc := testFileService()
-	texts, images, err := svc.GetFileContents(t.Context(), "user-1", []map[string]interface{}{{
+	texts, images, err := svc.GetFileContents(permission.WithIdentity(t.Context(), "user-1", ""), []map[string]interface{}{{
 		"id":         "loc-1",
 		"name":       "secret.txt",
 		"mime_type":  "text/plain",
@@ -186,7 +187,7 @@ func TestFileService_GetFileContents_Accessible(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	svc := testFileService()
-	texts, images, err := svc.GetFileContents(t.Context(), "user-1", []map[string]interface{}{{
+	texts, images, err := svc.GetFileContents(permission.WithIdentity(t.Context(), "user-1", ""), []map[string]interface{}{{
 		"id":         "loc-1",
 		"name":       "doc.txt",
 		"mime_type":  "text/plain",
@@ -219,7 +220,7 @@ func TestFileService_GetFileContents_ImageAttachmentAsDataURI(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	svc := testFileService()
-	texts, images, err := svc.GetFileContents(t.Context(), "user-1", []map[string]interface{}{{
+	texts, images, err := svc.GetFileContents(permission.WithIdentity(t.Context(), "user-1", ""), []map[string]interface{}{{
 		"id":         "img-1",
 		"name":       "25336bcdd3126d32a522db5e9c9fcaf3.jpeg",
 		"mime_type":  "image/jpeg",
@@ -259,7 +260,8 @@ func TestFileService_GetFileContents_VideoAttachmentReportsNotice(t *testing.T) 
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	svc := testFileService()
-	texts, images, err := svc.GetFileContents(ctx, "user-1", []map[string]interface{}{
+	ctx = permission.WithIdentity(ctx, "user-1", "")
+	texts, images, err := svc.GetFileContents(ctx, []map[string]interface{}{
 		{"id": "vid-1", "name": "clip.mp4", "mime_type": "video/mp4", "created_by": "user-1"},
 		{"id": "img-1", "name": "photo.jpeg", "mime_type": "image/jpeg", "created_by": "user-1"},
 	})
@@ -275,7 +277,7 @@ func TestFileService_GetFileContents_VideoAttachmentReportsNotice(t *testing.T) 
 }
 
 func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) {
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
 	memory := storage.NewMemoryStorage()
 	if err := memory.Put(ctx, "user-1-downloads", "text-id", []byte("uploaded text")); err != nil {
 		t.Fatalf("put text: %v", err)
@@ -288,7 +290,7 @@ func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) 
 	factory.SetStorage(memory)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	contents, err := testFileService().ParseAgentUploads(ctx, "user-1", []map[string]interface{}{
+	contents, err := testFileService().ParseAgentUploads(ctx, []map[string]interface{}{
 		{"id": "text-id", "name": "notes.txt", "mime_type": "text/plain", "created_by": "user-1"},
 		{"id": "image-id", "name": "photo.bin", "mime_type": "image/png", "created_by": "user-1"},
 	}, "Plain Text")
@@ -307,7 +309,7 @@ func TestFileService_ParseAgentUploads_TextAndImageInRequestOrder(t *testing.T) 
 }
 
 func TestFileService_ParseAgentUploads_RejectsVideoWithImageMime(t *testing.T) {
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
 	memory := storage.NewMemoryStorage()
 	if err := memory.Put(ctx, "user-1-downloads", "video-id", []byte("mp4-bytes")); err != nil {
 		t.Fatalf("put video: %v", err)
@@ -317,7 +319,7 @@ func TestFileService_ParseAgentUploads_RejectsVideoWithImageMime(t *testing.T) {
 	factory.SetStorage(memory)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	_, err := testFileService().ParseAgentUploads(ctx, "user-1", []map[string]interface{}{
+	_, err := testFileService().ParseAgentUploads(ctx, []map[string]interface{}{
 		{"id": "video-id", "name": "clip.mp4", "mime_type": "image/png", "created_by": "user-1"},
 	}, "")
 	if err == nil || !strings.Contains(err.Error(), "video content is not supported") {
@@ -326,14 +328,14 @@ func TestFileService_ParseAgentUploads_RejectsVideoWithImageMime(t *testing.T) {
 }
 
 func TestFileService_ParseAgentUploads_RejectsForeignOwner(t *testing.T) {
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
 	memory := storage.NewMemoryStorage()
 	factory := storage.GetStorageFactory()
 	originalStorage := factory.GetStorage()
 	factory.SetStorage(memory)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	_, err := testFileService().ParseAgentUploads(ctx, "user-1", []map[string]interface{}{
+	_, err := testFileService().ParseAgentUploads(ctx, []map[string]interface{}{
 		{"id": "file-id", "name": "secret.txt", "mime_type": "text/plain", "created_by": "user-2"},
 	}, "")
 	if err == nil || !strings.Contains(err.Error(), "created_by does not match") {
@@ -342,14 +344,14 @@ func TestFileService_ParseAgentUploads_RejectsForeignOwner(t *testing.T) {
 }
 
 func TestFileService_ParseAgentUploads_MissingObjectFails(t *testing.T) {
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
 	memory := storage.NewMemoryStorage()
 	factory := storage.GetStorageFactory()
 	originalStorage := factory.GetStorage()
 	factory.SetStorage(memory)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	_, err := testFileService().ParseAgentUploads(ctx, "user-1", []map[string]interface{}{
+	_, err := testFileService().ParseAgentUploads(ctx, []map[string]interface{}{
 		{"id": "missing", "name": "missing.txt", "mime_type": "text/plain", "created_by": "user-1"},
 	}, "")
 	if err == nil || !strings.Contains(err.Error(), "read upload") {
@@ -373,11 +375,11 @@ func TestFileService_DownloadAgentFile_Success(t *testing.T) {
 	})
 
 	svc := testFileService()
-	tenantID := "tenant123"
+	userID := "tenant123"
 	location := "file-abc.txt"
 
-	ctx := t.Context()
-	blob, err := svc.DownloadAgentFile(ctx, tenantID, location)
+	ctx := permission.WithIdentity(t.Context(), userID, "")
+	blob, err := svc.DownloadAgentFile(ctx, location)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -409,11 +411,11 @@ func TestFileService_DownloadAgentFile_Error(t *testing.T) {
 	})
 
 	svc := testFileService()
-	tenantID := "tenant123"
+	userID := "tenant123"
 	location := "file-abc.txt"
 
-	ctx := t.Context()
-	blob, err := svc.DownloadAgentFile(ctx, tenantID, location)
+	ctx := permission.WithIdentity(t.Context(), userID, "")
+	blob, err := svc.DownloadAgentFile(ctx, location)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -451,14 +453,14 @@ func TestFileService_UploadFromURL_PDFAddsExtensionAndStoresToDownloads(t *testi
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user123", "")
 	svc := testFileService()
-	resp, err := svc.UploadFromURL(ctx, "tenant123", server.URL+"/report")
+	resp, err := svc.UploadFromURL(ctx, server.URL+"/report")
 	if err != nil {
 		t.Fatalf("UploadFromURL failed: %v", err)
 	}
 
-	if mockStorage.lastBucket != "tenant123-downloads" {
+	if mockStorage.lastBucket != "user123-downloads" {
 		t.Fatalf("bucket = %q", mockStorage.lastBucket)
 	}
 	if resp["name"] != "report.pdf" {
@@ -498,9 +500,9 @@ func TestFileService_UploadFromURL_HTMLNormalizesReadableContent(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user123", "")
 	svc := testFileService()
-	resp, err := svc.UploadFromURL(ctx, "tenant123", server.URL+"/page")
+	resp, err := svc.UploadFromURL(ctx, server.URL+"/page")
 	if err != nil {
 		t.Fatalf("UploadFromURL failed: %v", err)
 	}
@@ -571,7 +573,8 @@ func TestFileService_UploadFromURL_ShortensLongNamesWithinTheLimit(t *testing.T)
 			factory.SetStorage(&fakeStorage{})
 			t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
-			resp, err := testFileService().UploadFromURL(t.Context(), "tenant123", server.URL+"/"+url.PathEscape(c.path))
+			ctx := permission.WithIdentity(t.Context(), "user123", "")
+			resp, err := testFileService().UploadFromURL(ctx, server.URL+"/"+url.PathEscape(c.path))
 			if err != nil {
 				t.Fatalf("UploadFromURL failed: %v", err)
 			}

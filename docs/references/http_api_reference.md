@@ -1228,7 +1228,7 @@ curl --request PATCH \
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
 - `"enabled"`: (*Body parameter*), `integer`
-  Whether the document should be **available** in the knowledge base.
+  Whether the document should be **available** in the Dataset.
   - `1` → （available）
   - `0` → （unavailable）
 
@@ -5075,7 +5075,7 @@ Failure:
 
 **POST** `/api/v1/chat/mindmap`
 
-Generates a mind map from a question and a set of knowledge base IDs.
+Generates a mind map from a question and a set of Dataset IDs.
 
 #### Request
 
@@ -5086,7 +5086,7 @@ Generates a mind map from a question and a set of knowledge base IDs.
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
 - Body:
   - `"question"`: `string` *(Required)* The central question or topic.
-  - `"kb_ids"`: `list[string]` *(Required)* Knowledge base IDs to search.
+  - `"kb_ids"`: `list[string]` *(Required)* Dataset IDs to search.
   - `"search_id"`: `string` *(Optional)* ID of a saved search configuration to merge additional `kb_ids` and settings.
 
 ##### Request example
@@ -6234,7 +6234,7 @@ curl --location 'http://{address}/api/v1/messages' \
 
 - `user_id`: `string`, *Optional*
 
-  The user participating in the conversation with the agent. Honoured only when the request is authenticated with an API key. For API key authentication, this field must be a non-empty string; surrounding whitespace is stripped, and a missing, blank, or non-string value causes the request to fail. Any other authentication, whether a JWT bearer token or a browser session, ignores this field and attributes the message to the authenticated user.
+  The user participating in the conversation with the agent. Honored only when the request is authenticated with an API key. For API key authentication, this field must be a non-empty string; surrounding whitespace is stripped, and a missing, blank, or non-string value causes the request to fail. Any other authentication, whether a JWT bearer token or a browser session, ignores this field and attributes the message to the authenticated user.
 
 - `user_input`: `string`, *Required*
 
@@ -7599,7 +7599,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits`
 
-Lists all commits for the specified folder with pagination. Also available at:
+Lists all commits for the specified folder with pagination. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits`
 
 #### Request
@@ -7665,7 +7665,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}`
 
-Retrieves the details of a specific commit, including its file changes. Also available at:
+Retrieves the details of a specific commit, including its file changes. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}`
 
 #### Request
@@ -7734,7 +7734,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files`
 
-Lists the file changes associated with a specific commit. Also available at:
+Lists the file changes associated with a specific commit. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files`
 
 #### Request
@@ -7781,7 +7781,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/diff?from={commit_id}&to={commit_id}`
 
-Compares two commits and returns the differences. Also available at:
+Compares two commits and returns the differences. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/diff?from=...&to=...`
 
 #### Request
@@ -7847,7 +7847,7 @@ Failure:
 
 **GET** `/api/v1/workspaces/{workspace_id}/changes`
 
-Returns the uncommitted changes for the specified folder (similar to `git status`). Also available at:
+Returns the uncommitted changes for the specified folder (similar to `git status`). Also, available at:
 - `/api/v1/datasets/{dataset_id}/changes`
 
 #### Request
@@ -7898,7 +7898,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/tree`
 
-Retrieves the full folder tree snapshot as it existed at a specific commit. Also available at:
+Retrieves the full folder tree snapshot as it existed at a specific commit. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/tree`
 
 #### Request
@@ -7964,7 +7964,7 @@ Success:
 
 **GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
 
-Retrieves the file content as it existed at a specific commit. Also available at:
+Retrieves the file content as it existed at a specific commit. Also, available at:
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files/{file_id}/content`
 
 #### Request

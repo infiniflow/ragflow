@@ -34,36 +34,36 @@ type logListCapture struct {
 	pageSize int
 }
 
-func (s fakeConnectorService) ListConnectors(context.Context, string, string) (*service.ListConnectorsResponse, error) {
+func (s fakeConnectorService) ListConnectors(context.Context, string) (*service.ListConnectorsResponse, error) {
 	return &service.ListConnectorsResponse{}, nil
 }
 
-func (s fakeConnectorService) TestConnector(context.Context, string, string, entity.JSONMap) error {
+func (s fakeConnectorService) TestConnector(context.Context, string, entity.JSONMap) error {
 	return s.err
 }
 
-func (s fakeConnectorService) CreateConnector(context.Context, string, *service.CreateConnectorRequest) (*entity.Connector, error) {
+func (s fakeConnectorService) CreateConnector(context.Context, *service.CreateConnectorRequest) (*entity.Connector, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
 	return s.connector, nil
 }
 
-func (s fakeConnectorService) GetConnector(context.Context, string, string) (*entity.Connector, error) {
+func (s fakeConnectorService) GetConnector(context.Context, string) (*entity.Connector, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
 	return s.connector, nil
 }
 
-func (s fakeConnectorService) UpdateConnector(context.Context, string, string, *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+func (s fakeConnectorService) UpdateConnector(context.Context, string, *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, s.code, s.err
 	}
 	return s.connector, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) StartGoogleWebOAuth(context.Context, string, string, *service.StartGoogleWebOAuthRequest) (*service.StartGoogleWebOAuthResponse, common.ErrorCode, error) {
+func (s fakeConnectorService) StartGoogleWebOAuth(context.Context, string, *service.StartGoogleWebOAuthRequest) (*service.StartGoogleWebOAuthResponse, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, s.code, s.err
 	}
@@ -74,14 +74,14 @@ func (s fakeConnectorService) GoogleWebOAuthCallback(context.Context, string, st
 	return ""
 }
 
-func (s fakeConnectorService) PollGoogleWebOAuthResult(context.Context, string, string, *service.PollGoogleWebOAuthResultRequest) (*service.PollGoogleWebOAuthResultResponse, common.ErrorCode, error) {
+func (s fakeConnectorService) PollGoogleWebOAuthResult(context.Context, string, *service.PollGoogleWebOAuthResultRequest) (*service.PollGoogleWebOAuthResultResponse, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, s.code, s.err
 	}
 	return &service.PollGoogleWebOAuthResultResponse{}, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) StartBoxWebOAuth(context.Context, string, *service.StartBoxWebOAuthRequest) (*service.StartBoxWebOAuthResponse, common.ErrorCode, error) {
+func (s fakeConnectorService) StartBoxWebOAuth(context.Context, *service.StartBoxWebOAuthRequest) (*service.StartBoxWebOAuthResponse, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, s.code, s.err
 	}
@@ -99,21 +99,21 @@ func (s fakeConnectorService) BoxWebOAuthCallback(context.Context, string, strin
 	return "<html>box</html>"
 }
 
-func (s fakeConnectorService) PollBoxWebOAuthResult(context.Context, string, *service.PollBoxWebOAuthResultRequest) (*service.PollBoxWebOAuthResultResponse, common.ErrorCode, error) {
+func (s fakeConnectorService) PollBoxWebOAuthResult(context.Context, *service.PollBoxWebOAuthResultRequest) (*service.PollBoxWebOAuthResultResponse, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, s.code, s.err
 	}
 	return &service.PollBoxWebOAuthResultResponse{}, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) ListLog(context.Context, string, string, int, int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+func (s fakeConnectorService) ListLog(context.Context, string, int, int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, 0, s.code, s.err
 	}
 	return s.logs, s.total, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) ListLogs(_ context.Context, _, _ string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+func (s fakeConnectorService) ListLogs(_ context.Context, _ string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, 0, s.code, s.err
 	}
@@ -124,21 +124,21 @@ func (s fakeConnectorService) ListLogs(_ context.Context, _, _ string, page, pag
 	return s.logs, s.total, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) DeleteConnector(context.Context, string, string) (bool, common.ErrorCode, error) {
+func (s fakeConnectorService) DeleteConnector(context.Context, string) (bool, common.ErrorCode, error) {
 	if s.err != nil {
 		return false, s.code, s.err
 	}
 	return true, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) RebuildConnector(context.Context, string, string, string) (bool, common.ErrorCode, error) {
+func (s fakeConnectorService) RebuildConnector(context.Context, string, string) (bool, common.ErrorCode, error) {
 	if s.err != nil {
 		return false, s.code, s.err
 	}
 	return true, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) ResumeFailedSync(context.Context, string, string, *service.ResumeFailedSyncRequest) (bool, common.ErrorCode, error) {
+func (s fakeConnectorService) ResumeFailedSync(context.Context, string, *service.ResumeFailedSyncRequest) (bool, common.ErrorCode, error) {
 	if s.err != nil {
 		return false, s.code, s.err
 	}

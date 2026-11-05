@@ -613,6 +613,15 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       runningStatus3: 'Başarılı',
       runningStatus4: 'Başarısız',
       runningStatusQueued: 'Kuyrukta',
+      cancelParsingTasks: 'Ayrıştırma görevlerini iptal et',
+      filesParsing: '{{count}} dosya ayrıştırılıyor',
+      filesPending: '{{count}} dosya bekliyor',
+      cancelParsingConfirmTitle: 'Ayrıştırmayı iptal et',
+      cancelParsingConfirm:
+        'Şu anda ayrıştırılan {{count}} dosyanın ayrıştırması iptal edilsin mi?',
+      cancelPendingConfirm:
+        'Bekleyen {{count}} dosya ayrıştırma kuyruğundan kaldırılsın mı?',
+      cancelTasksSuccess: '{{count}} ayrıştırma görevi iptal edildi',
       pageRanges: 'Sayfa aralıkları',
       pageRangesTip:
         'Ayrıştırılacak sayfa aralığı; bu aralığın dışındaki sayfalar işlenmeyecek.',
@@ -1301,6 +1310,9 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       // Anahtar alanının etiketi. {{provider}} sağlayıcının MARKA adıdır ve
       // bilinçli olarak çevrilmez; bu tek şablon dokuz sağlayıcıyı da kapsar.
       webSearchApiKeyLabel: '{{provider}} API Anahtarı',
+      anysearchApiKeyTip:
+        'İsteğe bağlı. AnySearch anahtarsız çalışır; hesap kotanızı kullanmak için bir anahtar ekleyin. Hizmet sınırları geçerlidir.',
+      anysearchApiKeyMessage: 'İsteğe bağlı - anonim arama için boş bırakın',
       // Her sağlayıcı için bir Tip/Mesaj çifti, sağlayıcı id'sine göre alfabetik.
       braveApiKeyTip:
         'Brave Search seçildiğinde, web arama sonuçları dataset alımını tamamlar. Tüm Brave uç noktaları anahtar gerektirir.',
@@ -1365,6 +1377,56 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         'Her parçayla birlikte görüntülenecek meta veri alanlarını seçin',
     },
     setting: {
+      gpustack: {
+        serverUrl: "GPUStack sunucu URL'si",
+        serverUrlTip: 'RAGFlow konteynerinden erişilebilir olmalıdır.',
+        loopbackWarning:
+          'localhost, RAGFlow konteynerinin kendisini gösterir. Bunun yerine IP adresini veya host.docker.internal adresini kullanın.',
+        apiKey: 'API anahtarı',
+        apiKeyTip:
+          "GPUStack'te Erişim Kontrolü > API Anahtarları bölümünden bir anahtar oluşturun.",
+        apiKeyKeep: 'Kayıtlı anahtarı korumak için boş bırakın',
+        connect: 'Bağlan',
+        connecting: 'Bağlanıyor...',
+        connected: 'Bağlandı. Çalışan {{count}} model bulundu.',
+        connectedShort: '{{count}} çalışıyor',
+        errorAuth:
+          'GPUStack bu API anahtarını reddetti. Erişim Kontrolü > API Anahtarları bölümünden kontrol edin.',
+        errorUnreachable:
+          "Bu sunucuya RAGFlow'dan erişilemiyor. URL'yi ve portun RAGFlow konteynerine açık olduğunu kontrol edin.",
+        errorOther: 'Modeller listelenemedi: {{message}}',
+        emptyTitle: 'Çalışan model bulunamadı',
+        emptyBody:
+          'GPUStack yalnızca çalışan ve yönlendirmesi olan modelleri sunar. "Model Yönlendirmesini Etkinleştir" açık olarak bir model dağıtın, ardından yenileyin.',
+        emptyLink: 'Entegrasyon kılavuzunu okuyun',
+        addModels: '{{count}} model ekle',
+        addSelected: 'Seçilen {{count}} modeli ekle',
+        adding: 'Ekleniyor...',
+        refresh: 'Yenile',
+        editInstance: 'Örneği düzenle',
+        saveInstance: 'Örneği kaydet',
+        cancel: 'İptal',
+        availableTitle: "GPUStack'te kullanılabilir",
+        addedTitle: 'Eklenen modeller',
+        modelsLoadFailed:
+          'Bu örneğin modelleri yüklenemedi. Sayfayı yenileyip yeniden deneyin.',
+        notRunning: 'Çalışmıyor',
+        notRunningTip:
+          'GPUStack şu anda bu modeli sunmuyor, bu yüzden ona yapılan çağrılar başarısız olur.',
+        tokens: '{{count}} token',
+        changeType: '{{name}} için model türü',
+        select: '{{name}} modelini seç',
+        remove: '{{name}} modelini kaldır',
+        noAdded: 'Henüz model eklenmedi.',
+        kind_chat: 'Sohbet',
+        kind_vision: 'Sohbet + Vision',
+        kind_embedding: 'Embedding',
+        kind_rerank: 'Yeniden sıralama',
+        kind_asr: 'Konuşmadan metne',
+        kind_tts: 'Metinden konuşmaya',
+        typeHint:
+          "Türler GPUStack'ten gelir. GPUStack bir modelin görsel kabul edip etmediğini bilemez, bu yüzden bu modeller için Sohbet + Vision seçin.",
+      },
       Verify: 'Doğrula',
       keyValid: 'API anahtarınız geçerli.',
       keyInvalid: 'API anahtarınız geçersiz.',

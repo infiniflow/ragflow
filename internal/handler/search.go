@@ -19,7 +19,9 @@ package handler
 import (
 	"context"
 	"net/http"
+
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"strconv"
 	"strings"
 
@@ -85,11 +87,6 @@ func getOwnerIDs(c *gin.Context) []string {
 // @Success 200 {object} service.ListSearchAppsResponse
 // @Router /api/v1/searches [get]
 func (h *SearchHandler) ListSearches(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	// Parse query parameters
 	keywords := c.Query("keywords")
@@ -168,13 +165,6 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 		return
 	}
 
-	// Get current user from context (same as Python current_user)
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	// Parse request body (same as Python get_request_json())
 	var req CreateSearchRequest
 	if err = c.ShouldBindJSON(&req); err != nil {
@@ -209,13 +199,6 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 // @Success 200 {object} entity.Search
 // @Router /api/v1/searches/{search_id} [get]
 func (h *SearchHandler) GetSearch(c *gin.Context) {
-	// Get current user from context (same as Python current_user)
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
@@ -265,13 +248,6 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searches/{search_id} [delete]
 func (h *SearchHandler) DeleteSearch(c *gin.Context) {
-	// Get current user from context (same as Python current_user)
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
@@ -305,13 +281,6 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searches/{search_id} [put]
 func (h *SearchHandler) UpdateSearch(c *gin.Context) {
-	// Get current user from context (same as Python current_user)
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
@@ -376,11 +345,6 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 }
 
 func (h *SearchHandler) Completion(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	var req service.SearchCompletionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -433,10 +397,10 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		return
 	}
 
-	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, Identity: plan.Identity, ModelID: plan.ModelID}
-
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
+	ctx = permission.WithTenantID(ctx, plan.TenantID)
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, ModelID: plan.ModelID}
 	c.Request = c.Request.WithContext(ctx)
 
 	hadError := false

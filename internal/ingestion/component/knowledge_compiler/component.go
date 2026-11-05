@@ -248,13 +248,13 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	var pageCount, sectionCount, entityCount, relationCount int
 	for _, p := range out.Products {
 		switch {
-		case p.Variant == common.VariantWiki && metaString(p.Meta, "kind") == "page":
+		case p.Variant == common.VariantWiki && common.MetaString(p.Meta, "kind") == "page":
 			pageCount++
-		case p.Variant == common.VariantWiki && metaString(p.Meta, "kind") == "section":
+		case p.Variant == common.VariantWiki && common.MetaString(p.Meta, "kind") == "section":
 			sectionCount++
-		case p.Variant == common.VariantWiki && metaString(p.Meta, "kind") == "entity":
+		case p.Variant == common.VariantWiki && common.MetaString(p.Meta, "kind") == "entity":
 			entityCount++
-		case p.Variant == common.VariantWiki && metaString(p.Meta, "kind") == "relation":
+		case p.Variant == common.VariantWiki && common.MetaString(p.Meta, "kind") == "relation":
 			relationCount++
 		}
 	}
@@ -269,10 +269,14 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	)
 	result := mergeChunks(inputs, compiled)
 	if len(out.AffectedPageSlugs) > 0 {
-		result["wiki_affected_slugs"] = uniqueSorted(out.AffectedPageSlugs)
+		affected := clog.DeduplicateTrimmed(out.AffectedPageSlugs)
+		sort.Strings(affected)
+		result["wiki_affected_slugs"] = affected
 	}
 	if len(out.RemovedPageSlugs) > 0 {
-		result["wiki_removed_slugs"] = uniqueSorted(out.RemovedPageSlugs)
+		removed := clog.DeduplicateTrimmed(out.RemovedPageSlugs)
+		sort.Strings(removed)
+		result["wiki_removed_slugs"] = removed
 	}
 	if len(out.WikiActiveStates) > 0 {
 		result["wiki_active_map_states"] = wikiActiveStateValues(out.WikiActiveStates)
@@ -299,24 +303,6 @@ func wikiActiveStateValues(states []common.WikiMapActiveState) []map[string]any 
 		})
 	}
 	return values
-}
-
-func uniqueSorted(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	sort.Strings(result)
-	return result
 }
 
 // resolveTemplateSpecs resolves the configured compilation template spec(s) to
@@ -466,12 +452,12 @@ func productsToChunkDocs(products []common.Product, language string) ([]schema.C
 			}
 		}
 		// Provenance columns shared by all compiled rows.
-		if ids := metaStringSlice(p.Meta, "source_chunk_ids"); len(ids) > 0 {
+		if ids := common.MetaStringSlice(p.Meta, "source_chunk_ids"); len(ids) > 0 {
 			if err := doc.SetExtraValue("source_chunk_ids", ids); err != nil {
 				return nil, err
 			}
 		}
-		if ids := metaStringSlice(p.Meta, "source_doc_ids"); len(ids) > 0 {
+		if ids := common.MetaStringSlice(p.Meta, "source_doc_ids"); len(ids) > 0 {
 			if err := doc.SetExtraValue("source_doc_ids", ids); err != nil {
 				return nil, err
 			}
@@ -479,7 +465,7 @@ func productsToChunkDocs(products []common.Product, language string) ([]schema.C
 		// compilation_template_ids: the resolved template ids that produced
 		// this row (Python stamps one per row from the active template; the
 		// document-structure endpoint groups rows by this column).
-		if ids := metaStringSlice(p.Meta, "compilation_template_ids"); len(ids) > 0 {
+		if ids := common.MetaStringSlice(p.Meta, "compilation_template_ids"); len(ids) > 0 {
 			if err := doc.SetExtraValue("compilation_template_ids", ids); err != nil {
 				return nil, err
 			}
@@ -497,7 +483,7 @@ func productsToChunkDocs(products []common.Product, language string) ([]schema.C
 // conf/infinity_mapping.json lines 45–77, driven by Product.Meta keys that
 // each variant's build site populates. Unknown/absent keys are skipped.
 func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.Tokenizer) error {
-	kind := metaString(p.Meta, "kind")
+	kind := common.MetaString(p.Meta, "kind")
 
 	switch p.Variant {
 	case common.VariantStructure:
@@ -516,8 +502,8 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.T
 		// slug_kwd stores the full "<page_type>/<slug>" form, so retrieval
 		// filters (GetWikiPage) can reconstruct it directly. page_type is also
 		// stored separately for topic grouping.
-		if pageType := metaString(p.Meta, "page_type"); pageType != "" {
-			if slug := metaString(p.Meta, "slug"); slug != "" {
+		if pageType := common.MetaString(p.Meta, "page_type"); pageType != "" {
+			if slug := common.MetaString(p.Meta, "slug"); slug != "" {
 				// Normalize to the full "<page_type>/<slug>" form (Python writer
 				// contract). Idempotent: a slug that already carries the prefix
 				// (some producers emit pageType/slug directly) is left as-is.
@@ -530,39 +516,39 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.T
 				}
 			}
 		}
-		if v := metaString(p.Meta, "title"); v != "" {
+		if v := common.MetaString(p.Meta, "title"); v != "" {
 			if err := doc.SetExtraValue("title_kwd", v); err != nil {
 				return err
 			}
 			setTitleTokens(doc, v, tok)
 		}
-		if v := metaString(p.Meta, "page_type"); v != "" {
+		if v := common.MetaString(p.Meta, "page_type"); v != "" {
 			if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
 				return err
 			}
 		}
-		if v := metaString(p.Meta, "topic"); v != "" {
+		if v := common.MetaString(p.Meta, "topic"); v != "" {
 			if err := doc.SetExtraValue("topic_kwd", v); err != nil {
 				return err
 			}
 		}
-		if v := metaString(p.Meta, "summary"); v != "" {
+		if v := common.MetaString(p.Meta, "summary"); v != "" {
 			if err := doc.SetExtraValue("summary_with_weight", v); err != nil {
 				return err
 			}
 		}
 		// Section depth goes to depth_int; there is no section_level_int column.
-		if v, ok := metaInt(p.Meta, "section_level"); ok {
+		if v, ok := common.MetaInt(p.Meta, "section_level"); ok {
 			if err := doc.SetExtraValue("depth_int", v); err != nil {
 				return err
 			}
 		}
-		if v := metaStringSlice(p.Meta, "entity_names"); len(v) > 0 {
+		if v := common.MetaStringSlice(p.Meta, "entity_names"); len(v) > 0 {
 			if err := doc.SetExtraValue("entity_names_kwd", v); err != nil {
 				return err
 			}
 		}
-		if v := metaStringSlice(p.Meta, "outlinks"); len(v) > 0 {
+		if v := common.MetaStringSlice(p.Meta, "outlinks"); len(v) > 0 {
 			if err := doc.SetExtraValue("outlinks_kwd", v); err != nil {
 				return err
 			}
@@ -570,7 +556,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.T
 				return err
 			}
 		}
-		if v := metaStringSlice(p.Meta, "related_kb_pages"); len(v) > 0 {
+		if v := common.MetaStringSlice(p.Meta, "related_kb_pages"); len(v) > 0 {
 			if err := doc.SetExtraValue("related_kb_pages_kwd", v); err != nil {
 				return err
 			}
@@ -594,17 +580,17 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.T
 			// them out of the artifacts query (it filters
 			// type_kwd=["entity","relation"]) without a frontend
 			// change. Python mirrors this in _struct_upsert_tree_claim_rows.
-			if v := metaString(p.Meta, "name"); v != "" {
+			if v := common.MetaString(p.Meta, "name"); v != "" {
 				if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
 					return err
 				}
 			}
-			if v := metaString(p.Meta, "entity_type"); v != "" {
+			if v := common.MetaString(p.Meta, "entity_type"); v != "" {
 				if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
 					return err
 				}
 			}
-			if v, ok := metaInt(p.Meta, "mention_count"); ok {
+			if v, ok := common.MetaInt(p.Meta, "mention_count"); ok {
 				if err := doc.SetExtraValue("mention_count_int", v); err != nil {
 					return err
 				}
@@ -618,7 +604,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.T
 					return err
 				}
 			}
-			if v, ok := metaInt(p.Meta, "level"); ok {
+			if v, ok := common.MetaInt(p.Meta, "level"); ok {
 				if err := doc.SetExtraValue("raptor_layer_int", v); err != nil {
 					return err
 				}
@@ -626,7 +612,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.T
 					return err
 				}
 			}
-			if v := metaStringSlice(p.Meta, "children"); len(v) > 0 {
+			if v := common.MetaStringSlice(p.Meta, "children"); len(v) > 0 {
 				if err := doc.SetExtraValue("children_kwd", v); err != nil {
 					return err
 				}
@@ -663,30 +649,30 @@ func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind str
 		}
 	}
 	if kind == "relation" {
-		if v := metaString(p.Meta, "from"); v != "" {
+		if v := common.MetaString(p.Meta, "from"); v != "" {
 			if err := doc.SetExtraValue("from_entity_kwd", v); err != nil {
 				return err
 			}
 		}
-		if v := metaString(p.Meta, "to"); v != "" {
+		if v := common.MetaString(p.Meta, "to"); v != "" {
 			if err := doc.SetExtraValue("to_entity_kwd", v); err != nil {
 				return err
 			}
 		}
 	}
 	if kind == "entity" {
-		if v := metaString(p.Meta, "name"); v != "" {
+		if v := common.MetaString(p.Meta, "name"); v != "" {
 			if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
 				return err
 			}
 		}
-		if v := metaString(p.Meta, "entity_type"); v != "" {
+		if v := common.MetaString(p.Meta, "entity_type"); v != "" {
 			if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
 				return err
 			}
 		}
 	}
-	if v, ok := metaInt(p.Meta, "mention_count"); ok {
+	if v, ok := common.MetaInt(p.Meta, "mention_count"); ok {
 		if err := doc.SetExtraValue("mention_count_int", v); err != nil {
 			return err
 		}
@@ -695,10 +681,6 @@ func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind str
 }
 
 // metaString reads a string-valued Product.Meta key.
-func metaString(m map[string]any, key string) string {
-	v, _ := m[key].(string)
-	return v
-}
 
 // setTitleTokens populates ChunkDoc.title_tks. Python's page row has no
 // title_sm_tks, and the Infinity writer folds title_kwd / title_sm_tks into
@@ -710,34 +692,6 @@ func setTitleTokens(doc *schema.ChunkDoc, title string, tok tokenizer.Tokenizer)
 	if tks, err := tok.Tokenize(title); err == nil && tks != "" {
 		doc.TitleTks = tks
 	}
-}
-
-// metaInt reads an int-valued Product.Meta key (tolerant of float64 from JSON).
-func metaInt(m map[string]any, key string) (int, bool) {
-	switch v := m[key].(type) {
-	case int:
-		return v, true
-	case float64:
-		return int(v), true
-	}
-	return 0, false
-}
-
-// metaStringSlice reads a []string Product.Meta key (tolerant of []any).
-func metaStringSlice(m map[string]any, key string) []string {
-	switch v := m[key].(type) {
-	case []string:
-		return v
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, e := range v {
-			if s, ok := e.(string); ok && s != "" {
-				out = append(out, s)
-			}
-		}
-		return out
-	}
-	return nil
 }
 
 // mergeChunks returns the canonical chunker-shaped output: the upstream input

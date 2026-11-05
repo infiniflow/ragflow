@@ -70,7 +70,7 @@ func (p *wikiPipeline) runVersionedMap() error {
 		if strings.TrimSpace(chunk.ID) == "" {
 			continue
 		}
-		contentHash := wikiMapHash(firstNonEmpty(chunk.Text, chunk.Content))
+		contentHash := wikiMapHash(common.FirstNonEmpty(chunk.Text, chunk.Content))
 		key := wikiMapHash(strings.Join([]string{
 			p.tenantID,
 			p.datasetID,
