@@ -17,6 +17,7 @@
 import { LLMFactory } from '@/constants/llm';
 import { IFactory } from '@/interfaces/database/llm';
 import isObject from 'lodash/isObject';
+import isPlainObject from 'lodash/isPlainObject';
 import snakeCase from 'lodash/snakeCase';
 
 export const isFormData = (data: unknown): data is FormData => {
@@ -36,7 +37,7 @@ const isExcludedField = (key: string) => {
 };
 
 export const convertTheKeysOfTheObjectToSnake = (data: unknown) => {
-  if (isObject(data) && !isFormData(data)) {
+  if (isObject(data) && isPlainObject(data)) {
     return Object.keys(data).reduce<Record<string, any>>((pre, cur) => {
       const value = (data as Record<string, any>)[cur];
       pre[isFormData(value) || isExcludedField(cur) ? cur : snakeCase(cur)] =
