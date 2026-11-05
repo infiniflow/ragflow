@@ -20,7 +20,8 @@ import "context"
 // PPTParser delegates to PPTXParser which handles both OLE binary
 // (.ppt) and OOXML (.pptx) containers uniformly
 type PPTParser struct {
-	pptx PPTXParser
+	FlattenMediaToText bool
+	pptx               PPTXParser
 }
 
 func NewPPTParser() *PPTParser {
@@ -36,6 +37,7 @@ func (p *PPTParser) String() string {
 // the same TCADP configuration
 func (p *PPTParser) ConfigureFromSetup(setup map[string]any) {
 	p.pptx.ConfigureFromSetup(setup)
+	p.FlattenMediaToText = p.pptx.FlattenMediaToText
 }
 
 // ParseWithResult delegates to PPTXParser's structured output

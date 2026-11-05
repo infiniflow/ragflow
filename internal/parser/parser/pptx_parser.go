@@ -35,8 +35,9 @@ var pptxExtract = deepdocoffice.OpenAndExtract
 // ZIP-based OOXML presentations and "ppt" for the legacy binary
 // OLE format.
 type PPTXParser struct {
-	format   string
-	textOnly bool
+	format             string
+	textOnly           bool
+	FlattenMediaToText bool
 
 	// TCADP cloud-parsing configuration
 	ParseMethod                    string
@@ -59,6 +60,9 @@ func (p *PPTXParser) String() string {
 func (p *PPTXParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
+	}
+	if v, ok := setup["flatten_media_to_text"].(bool); ok {
+		p.FlattenMediaToText = v
 	}
 	if v, ok := setup["parse_method"].(string); ok {
 		p.ParseMethod = v
@@ -91,11 +95,17 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	method := strings.ToLower(strings.TrimSpace(p.ParseMethod))
 	switch method {
 	case "tcadp":
-		return parseWithTCADP(ctx,
+		res := parseWithTCADP(ctx,
 			filename, data, strings.ToUpper(p.format),
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 		)
+		if res.Err == nil && p.FlattenMediaToText {
+			items := ItemsToMaps(res.JSON)
+			items = flattenPresentationMediaToText(items)
+			res.JSON = MapsToItems(items)
+		}
+		return res
 	case "", "deepdoc":
 		// Continue with the local office_oxide parser.
 	default:
@@ -150,6 +160,10 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 		if strings.TrimSpace(plainText) != "" {
 			items = itemsFromPlainText(plainText)
 		}
+	}
+
+	if p.FlattenMediaToText {
+		items = flattenPresentationMediaToText(items)
 	}
 
 	return ParseResult{
