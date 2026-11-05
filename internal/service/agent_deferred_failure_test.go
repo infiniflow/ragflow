@@ -151,7 +151,7 @@ func TestRunAgent_DeferredAgentModelFailureStaysInChatStream(t *testing.T) {
 
 func assertPersistedAssistantFailure(t *testing.T, sessionID, agentID, wantText string) {
 	t.Helper()
-	conv, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, sessionID, agentID)
+	conv, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, sessionID, agentID, false)
 	if err != nil {
 		t.Fatalf("reload conversation: %v", err)
 	}

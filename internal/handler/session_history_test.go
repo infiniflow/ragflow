@@ -165,3 +165,80 @@ func TestSessionHistoryQueryFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestGetAgentSessionIncludeDSL(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		query      string
+		dsl        string
+		code       common.ErrorCode
+		includeDSL bool
+	}{
+		{name: "default", dsl: `{"components":{}}`, code: common.CodeSuccess},
+		{name: "false", query: "include_dsl=false", dsl: `{"components":{}}`, code: common.CodeSuccess},
+		{name: "true", query: "include_dsl=true", dsl: `{"components":{}}`, code: common.CodeSuccess, includeDSL: true},
+		{name: "default skips invalid DSL", dsl: `"invalid"`, code: common.CodeSuccess},
+		{name: "false skips invalid DSL", query: "include_dsl=false", dsl: `"invalid"`, code: common.CodeSuccess},
+		{name: "true reports invalid DSL", query: "include_dsl=true", dsl: `"invalid"`, code: common.CodeServerError, includeDSL: true},
+		{name: "invalid boolean", query: "include_dsl=invalid", dsl: `{}`, code: common.CodeArgumentError},
+		{name: "empty boolean", query: "include_dsl=", dsl: `{}`, code: common.CodeArgumentError},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c, w, db := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/agent/sessions/session?"+tt.query)
+			c.Params = gin.Params{{Key: "canvas_id", Value: "agent"}, {Key: "session_id", Value: "session"}}
+			if err := db.Create(&entity.UserCanvas{ID: "agent", UserID: "user-1"}).Error; err != nil {
+				t.Fatal(err)
+			}
+			if err := dao.NewAPI4ConversationDAO().Create(c.Request.Context(), db, &entity.API4Conversation{
+				ID: "session", DialogID: "agent", UserID: "user-1",
+				Message: json.RawMessage(`[{"id":"answer","role":"assistant","content":"answer"}]`),
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Model(&entity.API4Conversation{}).Where("id = ?", "session").Update("dsl", tt.dsl).Error; err != nil {
+				t.Fatal(err)
+			}
+			var sessionSQL string
+			if err := db.Callback().Query().After("gorm:query").Register("capture_session_dsl", func(tx *gorm.DB) {
+				if tx.Statement.Table == "api_4_conversation" {
+					sessionSQL = tx.Statement.SQL.String()
+				}
+			}); err != nil {
+				t.Fatal(err)
+			}
+			NewAgentHandler(c.Request.Context(), service.NewAgentService(), nil).GetAgentSession(c)
+			var response struct {
+				Code common.ErrorCode           `json:"code"`
+				Data map[string]json.RawMessage `json:"data"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != tt.code {
+				t.Fatalf("unexpected response: %s", w.Body.String())
+			}
+			if tt.code == common.CodeArgumentError {
+				if sessionSQL != "" {
+					t.Fatalf("invalid query reached the database: %s", sessionSQL)
+				}
+				return
+			}
+			if sessionSQL == "" || strings.Contains(sessionSQL, "`dsl`") != tt.includeDSL {
+				t.Fatalf("unexpected DSL selection: %s", sessionSQL)
+			}
+			if tt.code != common.CodeSuccess {
+				return
+			}
+			if _, exists := response.Data["dsl"]; exists != tt.includeDSL {
+				t.Fatalf("unexpected DSL in response: %s", w.Body.String())
+			}
+			if tt.includeDSL && string(response.Data["dsl"]) != tt.dsl {
+				t.Fatalf("unexpected DSL value: %s", response.Data["dsl"])
+			}
+			var messages []map[string]interface{}
+			if err := json.Unmarshal(response.Data["message"], &messages); err != nil || len(messages) != 1 || messages[0]["content"] != "answer" {
+				t.Fatalf("unexpected session history: %s, %v", w.Body.String(), err)
+			}
+		})
+	}
+}
