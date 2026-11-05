@@ -245,3 +245,55 @@ func TestPPTXParser_TCADP_FlattenMediaToText(t *testing.T) {
 	}
 }
 
+func TestPPTParser_FlattenMediaToText_DirectAndSetup(t *testing.T) {
+	ctx := context.Background()
+	orig := pptxExtract
+	defer func() { pptxExtract = orig }()
+
+	slideWithTableIR := `{"sections":[{"elements":[
+		{"type":"paragraph","content":[{"type":"text","text":"Slide Header"}]},
+		{"type":"table","rows":[
+			{"cells":[
+				{"content":[{"type":"paragraph","content":[{"type":"text","text":"Col1"}]}]},
+				{"content":[{"type":"paragraph","content":[{"type":"text","text":"Col2"}]}]}
+			]}
+		]}
+	]}]}`
+
+	pptxExtract = func(data []byte, format string) (string, string, string, error, error) {
+		return slideWithTableIR, "", "", nil, nil
+	}
+
+	// 1. Setting FlattenMediaToText = true directly on PPTParser must propagate to the underlying parser
+	pDirect := NewPPTParser()
+	pDirect.FlattenMediaToText = true
+	resDirect := pDirect.ParseWithResult(ctx, "deck.ppt", []byte("dummy ppt"))
+	if resDirect.Err != nil {
+		t.Fatalf("ParseWithResult direct error: %v", resDirect.Err)
+	}
+	itemsDirect := ItemsToMaps(resDirect.JSON)
+	if len(itemsDirect) != 2 {
+		t.Fatalf("got %d items, want 2", len(itemsDirect))
+	}
+	if got := itemsDirect[1]["doc_type_kwd"]; got != "text" {
+		t.Errorf("item[1] doc_type_kwd = %v, want text when FlattenMediaToText is true", got)
+	}
+
+	// 2. Disabling FlattenMediaToText after ConfigureFromSetup must take effect
+	pSetup := NewPPTParser()
+	pSetup.ConfigureFromSetup(map[string]any{"flatten_media_to_text": true})
+	pSetup.FlattenMediaToText = false
+	resSetup := pSetup.ParseWithResult(ctx, "deck.ppt", []byte("dummy ppt"))
+	if resSetup.Err != nil {
+		t.Fatalf("ParseWithResult setup error: %v", resSetup.Err)
+	}
+	itemsSetup := ItemsToMaps(resSetup.JSON)
+	if len(itemsSetup) != 2 {
+		t.Fatalf("got %d items, want 2", len(itemsSetup))
+	}
+	if got := itemsSetup[1]["doc_type_kwd"]; got != "table" {
+		t.Errorf("item[1] doc_type_kwd = %v, want table when FlattenMediaToText was disabled", got)
+	}
+}
+
+

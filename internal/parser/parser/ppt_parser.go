@@ -46,5 +46,6 @@ func (p *PPTParser) ConfigureFromSetup(setup map[string]any) {
 // binary container; the python parser.py:slides branch treats
 // them uniformly.
 func (p *PPTParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	p.pptx.FlattenMediaToText = p.FlattenMediaToText
 	return p.pptx.ParseWithResult(ctx, filename, data)
 }
