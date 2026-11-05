@@ -696,6 +696,15 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         shouldRender: (values: any) =>
           values?.config?.credential?.connection_type !== 'websocket',
       },
+      {
+        label: 'Streaming',
+        name: 'config.credential.stream',
+        type: FormFieldType.Switch,
+        required: false,
+        defaultValue: false,
+        shouldRender: (values: any) =>
+          values?.config?.credential?.connection_type === 'websocket',
+      },
     ],
     [ChatChannelKey.WHATSAPP]: [],
     [ChatChannelKey.YUANBAO]: [
@@ -772,6 +781,7 @@ ChatChannelFormDefaultValues[ChatChannelKey.GOOGLECHAT].config.auth_mode =
 ChatChannelFormDefaultValues[
   ChatChannelKey.WECOM
 ].config.credential.connection_type = 'webhook';
+ChatChannelFormDefaultValues[ChatChannelKey.WECOM].config.credential.stream = false;
 ChatChannelFormDefaultValues[ChatChannelKey.FEISHU].config.credential.domain =
   'feishu';
 ChatChannelFormDefaultValues[
