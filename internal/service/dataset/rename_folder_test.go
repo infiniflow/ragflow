@@ -147,6 +147,9 @@ func TestDatasetRenameFolderRollsBack(t *testing.T) {
 			if err == nil || code != common.CodeServerError {
 				t.Fatalf("rename: code=%v err=%v; want server error", code, err)
 			}
+			if table == "file" && err.Error() != "database operation failed" {
+				t.Fatalf("unexpected public database error: %v", err)
+			}
 			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 			if err != nil || kb.Name != "Original" {
 				t.Fatalf("knowledgebase did not roll back: %+v err=%v", kb, err)

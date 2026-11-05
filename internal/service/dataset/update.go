@@ -264,6 +264,11 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 				code, renameErr := renameDatasetFolder(ctx, tx, lockedKB, nameValue)
 				if renameErr != nil {
 					txCode = code
+					if code == common.CodeServerError {
+						common.Warn("dataset folder rename failed",
+							zap.String("dataset_id", lockedKB.ID), zap.Error(renameErr))
+						return errors.New("database operation failed")
+					}
 					return renameErr
 				}
 			}
