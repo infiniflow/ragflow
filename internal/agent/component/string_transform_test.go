@@ -460,3 +460,28 @@ func TestStringTransform_MergeDoesNotRescanSubstitutedValues(t *testing.T) {
 		t.Errorf("substituted value was rescanned: got %q, want %q", got, want)
 	}
 }
+
+// TestStringTransform_MergeDoesNotRescanFirstPassValues: a value inserted by the
+// runtime-ref pass (here the iteration alias) is data too, so the placeholder
+// pass must not expand it a second time.
+func TestStringTransform_MergeDoesNotRescanFirstPassValues(t *testing.T) {
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": []string{","},
+		"script":     "{item} {{y}}",
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-mixed", "task-mixed")
+	state.Globals["__item__"] = "{{ y }}"
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"y": "bar"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["result"], "{{ y }} bar"; got != want {
+		t.Errorf("first-pass value was rescanned: got %q, want %q", got, want)
+	}
+}
