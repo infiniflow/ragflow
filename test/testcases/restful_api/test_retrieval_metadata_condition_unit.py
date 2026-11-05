@@ -147,6 +147,7 @@ def _load_module(monkeypatch, request_payload):
     _stub(
         "api.utils.image_utils",
         IMAGE_UPDATE_MODE_REMOVE="remove",
+        IMAGE_UPDATE_MODE_REPLACE="replace",
         IMAGE_UPDATE_MODES=frozenset({"append", "replace", "remove"}),
         remove_chunk_image=lambda *a, **k: None,
         store_chunk_image=lambda *a, **k: None,

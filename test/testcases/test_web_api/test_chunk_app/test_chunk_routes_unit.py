@@ -19,6 +19,9 @@ import contextlib
 import importlib.util
 import inspect
 import sys
+import threading
+import time
+from enum import StrEnum
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -75,6 +78,7 @@ class _DummyRetCode:
     DATA_ERROR = 102
     EXCEPTION_ERROR = 100
     OPERATING_ERROR = 103
+    SERVER_ERROR = 500
     NOT_FOUND = 404
 
 
@@ -125,8 +129,10 @@ class _DummyDocStore:
             "content_sm_ltks": ["c"],
         }
 
-    def get(self, *_args, **_kwargs):
-        return dict(self.chunk) if self.chunk is not None else None
+    def get(self, chunk_id, *_args, **_kwargs):
+        if self.chunk is None or self.chunk.get("id") != chunk_id:
+            return None
+        return dict(self.chunk)
 
     def update(self, condition, payload, *_args, **_kwargs):
         self.updated.append((condition, payload))
@@ -143,6 +149,12 @@ class _DummyDocStore:
 
     def index_exist(self, *_args, **_kwargs):
         return True
+
+    def search(self, *_args, **_kwargs):
+        return None
+
+    def get_fields(self, *_args, **_kwargs):
+        return {}
 
 
 class _DummyStorage:
@@ -226,14 +238,7 @@ def _load_chunk_module(monkeypatch):
     constants_mod.LLMType = _DummyLLMType
     constants_mod.ParserType = _DummyParserType
     constants_mod.PAGERANK_FLD = "pagerank_flt"
-    constants_mod.TaskStatus = SimpleNamespace(
-        UNSTART=SimpleNamespace(value="0"),
-        RUNNING=SimpleNamespace(value="1"),
-        CANCEL=SimpleNamespace(value="2"),
-        DONE=SimpleNamespace(value="3"),
-        FAIL=SimpleNamespace(value="4"),
-        SCHEDULE=SimpleNamespace(value="5"),
-    )
+    constants_mod.TaskStatus = StrEnum("TaskStatus", {"UNSTART": "0", "RUNNING": "1", "CANCEL": "2", "DONE": "3", "FAIL": "4", "SCHEDULE": "5"})
     monkeypatch.setitem(sys.modules, "common.constants", constants_mod)
 
     string_utils_mod = ModuleType("common.string_utils")
@@ -245,11 +250,12 @@ def _load_chunk_module(monkeypatch):
     metadata_utils_mod.apply_meta_data_filter = lambda *_args, **_kwargs: {}
     metadata_utils_mod.convert_conditions = lambda *_args, **_kwargs: {}
     metadata_utils_mod.meta_filter = lambda *_args, **_kwargs: {}
+    metadata_utils_mod.filter_doc_ids_by_metadata = lambda *_args, **_kwargs: []
     monkeypatch.setitem(sys.modules, "common.metadata_utils", metadata_utils_mod)
 
     doc_store_base_mod = ModuleType("common.doc_store.doc_store_base")
     doc_store_base_mod.__dict__.update({k: v for k, v in vars(_real_doc_store_base).items() if not k.startswith("__")})
-    doc_store_base_mod.OrderByExpr = type("OrderByExpr", (), {})
+    doc_store_base_mod.OrderByExpr = type("OrderByExpr", (), {"asc": lambda self, _field: self, "desc": lambda self, _field: self})
     monkeypatch.setitem(sys.modules, "common.doc_store", ModuleType("common.doc_store"))
     monkeypatch.setitem(sys.modules, "common.doc_store.doc_store_base", doc_store_base_mod)
 
@@ -258,7 +264,11 @@ def _load_chunk_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.tag_feature_utils", tag_feature_utils_mod)
 
     pagination_utils_mod = ModuleType("api.utils.pagination_utils")
-    pagination_utils_mod.validate_rest_api_page_size = lambda *_args, **_kwargs: (1, 30)
+    pagination_utils_mod.DEFAULT_PAGE = 1
+    pagination_utils_mod.DEFAULT_PAGE_SIZE = 30
+    pagination_utils_mod.validate_rest_api_page = lambda page: int(page)
+    pagination_utils_mod.validate_rest_api_page_size = lambda page_size: int(page_size)
+    pagination_utils_mod.validate_rest_api_ids = lambda ids, *_args, **_kwargs: ids
     monkeypatch.setitem(sys.modules, "api.utils.pagination_utils", pagination_utils_mod)
 
     reference_metadata_utils_mod = ModuleType("api.utils.reference_metadata_utils")
@@ -268,8 +278,8 @@ def _load_chunk_module(monkeypatch):
 
     misc_utils_mod = ModuleType("common.misc_utils")
 
-    async def _thread_pool_exec(func):
-        return func()
+    async def _thread_pool_exec(func, *args, **kwargs):
+        return func(*args, **kwargs)
 
     misc_utils_mod.thread_pool_exec = _thread_pool_exec
     monkeypatch.setitem(sys.modules, "common.misc_utils", misc_utils_mod)
@@ -281,6 +291,47 @@ def _load_chunk_module(monkeypatch):
     rag_app_pkg = ModuleType("rag.app")
     rag_app_pkg.__path__ = []
     monkeypatch.setitem(sys.modules, "rag.app", rag_app_pkg)
+
+    rag_utils_pkg = ModuleType("rag.utils")
+    rag_utils_pkg.__path__ = []
+    monkeypatch.setitem(sys.modules, "rag.utils", rag_utils_pkg)
+
+    class _RedisDistributedLock:
+        acquirable = True
+        acquired_keys = []
+
+        def __init__(self, lock_key, lock_value=None, timeout=10, blocking_timeout=1):
+            self.lock_key = lock_key
+
+        def acquire(self):
+            if not _RedisDistributedLock.acquirable:
+                return False
+            _RedisDistributedLock.acquired_keys.append(self.lock_key)
+            return True
+
+        def release(self):
+            return None
+
+    redis_conn_mod = ModuleType("rag.utils.redis_conn")
+    redis_conn_mod.RedisDistributedLock = _RedisDistributedLock
+
+    class _RedisConn:
+        def __init__(self):
+            self.store = {}
+
+        def exist(self, key):
+            return key in self.store
+
+        def set(self, key, value, exp=3600):
+            self.store[key] = value
+            return True
+
+        def delete(self, key):
+            self.store.pop(key, None)
+            return True
+
+    redis_conn_mod.REDIS_CONN = _RedisConn()
+    monkeypatch.setitem(sys.modules, "rag.utils.redis_conn", redis_conn_mod)
 
     rag_qa_mod = ModuleType("rag.app.qa")
     rag_qa_mod.rmPrefix = lambda text: str(text).strip("Q: ").strip("A: ")
@@ -319,7 +370,7 @@ def _load_chunk_module(monkeypatch):
     api_utils_mod.get_json_result = lambda data=None, message="", code=0: {"code": code, "message": message, "data": data}
     api_utils_mod.get_data_error_result = lambda message="": {"code": _DummyRetCode.DATA_ERROR, "message": message, "data": False}
     api_utils_mod.get_result = lambda data=None, message="", code=0: {"code": code, "message": message, "data": data}
-    api_utils_mod.get_error_data_result = lambda message="": {"code": _DummyRetCode.DATA_ERROR, "message": message, "data": False}
+    api_utils_mod.get_error_data_result = lambda message="", code=_DummyRetCode.DATA_ERROR: {"code": code, "message": message, "data": False}
     api_utils_mod.server_error_response = lambda exc: {"code": _DummyRetCode.EXCEPTION_ERROR, "message": repr(exc), "data": False}
     api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda fn: fn
     api_utils_mod.add_tenant_id_to_kwargs = lambda func: func
@@ -332,6 +383,7 @@ def _load_chunk_module(monkeypatch):
     image_utils_mod.store_chunk_image = lambda *_args, **_kwargs: None
     image_utils_mod.remove_chunk_image = lambda *_args, **_kwargs: None
     image_utils_mod.IMAGE_UPDATE_MODE_REMOVE = "remove"
+    image_utils_mod.IMAGE_UPDATE_MODE_REPLACE = "replace"
     image_utils_mod.IMAGE_UPDATE_MODES = frozenset({"append", "replace", "remove"})
     monkeypatch.setitem(sys.modules, "api.utils.image_utils", image_utils_mod)
 
@@ -503,6 +555,7 @@ def _load_chunk_module(monkeypatch):
             return True, SimpleNamespace(pagerank=0.6, tenant_id="tenant-1", tenant_embd_id="tm-embd-2", tenant_llm_id="tm-llm-1")
 
     kb_service_mod.KnowledgebaseService = _KnowledgebaseService
+    kb_service_mod.validate_dataset_embedding_models = lambda *_args, **_kwargs: None
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
     services_pkg.knowledgebase_service = kb_service_mod
 
@@ -838,7 +891,7 @@ def test_restful_add_chunk_valid_image_base64_stores_before_insert(monkeypatch):
     module.request = SimpleNamespace(args={}, headers={})
     module.settings.docStoreConn.inserted.clear()
     store_calls = []
-    monkeypatch.setattr(module, "store_chunk_image", lambda bucket, name, binary: store_calls.append((bucket, name, binary)))
+    monkeypatch.setattr(module, "store_chunk_image", lambda bucket, name, binary, **_kwargs: store_calls.append((bucket, name, binary)))
 
     valid_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
     monkeypatch.setattr(
@@ -854,6 +907,249 @@ def test_restful_add_chunk_valid_image_base64_stores_before_insert(monkeypatch):
     assert inserted.get("img_id"), inserted
     assert inserted.get("doc_type_kwd") == "image", inserted
     assert res["data"]["chunk"]["doc_type_kwd"] == "image", res
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_keeps_event_loop_responsive(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    _set_request_json(monkeypatch, module, {"content": "slow chunk"})
+
+    def slow_encode(_self, _inputs):
+        time.sleep(0.3)
+        return [_Vec([1.0, 2.0]), _Vec([3.0, 4.0])], 9
+
+    monkeypatch.setattr(_DummyLLMBundle, "encode", slow_encode)
+
+    async def scenario():
+        task = asyncio.create_task(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+        ticks = 0
+        while not task.done():
+            await asyncio.sleep(0.01)
+            ticks += 1
+        return await task, ticks
+
+    res, ticks = _run(scenario())
+    assert res["code"] == 0, res
+    assert ticks >= 5, f"event loop was blocked while the chunk was embedded ({ticks} ticks)"
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_timeout_skips_insert_and_count(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    monkeypatch.setattr(module, "_ADD_CHUNK_TIMEOUT_SECONDS", 0.2)
+    _set_request_json(monkeypatch, module, {"content": "stalled chunk"})
+    release = threading.Event()
+
+    def stalled_encode(_self, _inputs):
+        release.wait(5)
+        return [_Vec([1.0, 2.0]), _Vec([3.0, 4.0])], 9
+
+    monkeypatch.setattr(_DummyLLMBundle, "encode", stalled_encode)
+
+    started_at = time.monotonic()
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert time.monotonic() - started_at < 2, "the request should return at its deadline"
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "timed out" in res["message"], res
+
+    release.set()
+    module._ADD_CHUNK_EXECUTOR.shutdown(wait=True)
+    assert module.settings.docStoreConn.inserted == [], "a timed-out request must not insert late"
+    assert module.DocumentService.increment_calls == [], "a timed-out request must not count late"
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_timeout_during_blocked_read_skips_insert_and_count(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    monkeypatch.setattr(module, "_ADD_CHUNK_TIMEOUT_SECONDS", 0.2)
+    _set_request_json(monkeypatch, module, {"content": "chunk behind a stalled read"})
+    read_started = threading.Event()
+    release = threading.Event()
+
+    def stalled_get(*_args, **_kwargs):
+        read_started.set()
+        release.wait(5)
+        return None
+
+    monkeypatch.setattr(module.settings.docStoreConn, "get", stalled_get)
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "timed out" in res["message"], res
+    assert read_started.is_set(), "the deadline should pass while the worker is inside the read"
+
+    release.set()
+    module._ADD_CHUNK_EXECUTOR.shutdown(wait=True)
+    assert module.settings.docStoreConn.inserted == [], "a read that returns after the deadline must not be followed by an insert"
+    assert module.DocumentService.increment_calls == [], "a read that returns after the deadline must not be followed by a count"
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_image_store_keeps_event_loop_responsive(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    valid_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    _set_request_json(monkeypatch, module, {"content": "chunk with slow image", "image_base64": valid_b64})
+    monkeypatch.setattr(module, "store_chunk_image", lambda *_args, **_kwargs: time.sleep(0.3))
+
+    async def scenario():
+        task = asyncio.create_task(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+        ticks = 0
+        while not task.done():
+            await asyncio.sleep(0.01)
+            ticks += 1
+        return await task, ticks
+
+    res, ticks = _run(scenario())
+    assert res["code"] == 0, res
+    assert res["data"]["chunk"]["doc_type_kwd"] == "image", res
+    assert ticks >= 5, f"event loop was blocked while the chunk image was stored ({ticks} ticks)"
+
+
+_VALID_IMAGE_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_timeout_during_embedding_skips_image_store(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    monkeypatch.setattr(module, "_ADD_CHUNK_TIMEOUT_SECONDS", 0.2)
+    store_calls = []
+    monkeypatch.setattr(module, "store_chunk_image", lambda *args, **kwargs: store_calls.append((args, kwargs)))
+    _set_request_json(monkeypatch, module, {"content": "image chunk behind a stalled embed", "image_base64": _VALID_IMAGE_B64})
+    release = threading.Event()
+
+    def stalled_encode(_self, _inputs):
+        release.wait(5)
+        return [_Vec([1.0, 2.0]), _Vec([3.0, 4.0])], 9
+
+    monkeypatch.setattr(_DummyLLMBundle, "encode", stalled_encode)
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert "timed out" in res["message"], res
+
+    release.set()
+    module._ADD_CHUNK_EXECUTOR.shutdown(wait=True)
+    assert store_calls == [], "a timed-out request must not store its image once the embedding returns"
+    assert module.settings.docStoreConn.inserted == []
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_timeout_during_image_store_skips_insert_and_count(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    monkeypatch.setattr(module, "_ADD_CHUNK_TIMEOUT_SECONDS", 0.2)
+    release = threading.Event()
+    monkeypatch.setattr(module, "store_chunk_image", lambda *_args, **_kwargs: release.wait(5))
+    _set_request_json(monkeypatch, module, {"content": "chunk behind a stalled image store", "image_base64": _VALID_IMAGE_B64})
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert "timed out" in res["message"], res
+
+    release.set()
+    module._ADD_CHUNK_EXECUTOR.shutdown(wait=True)
+    assert module.settings.docStoreConn.inserted == [], "an image store that returns after the deadline must not be followed by an insert"
+    assert module.DocumentService.increment_calls == []
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_retry_replaces_the_image(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    store_modes = []
+    monkeypatch.setattr(module, "store_chunk_image", lambda *_args, mode="append", **_kwargs: store_modes.append(mode))
+    _set_request_json(monkeypatch, module, {"content": "retried image chunk", "image_base64": _VALID_IMAGE_B64})
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    module.settings.docStoreConn.chunk = dict(module.settings.docStoreConn.inserted[-1])
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert store_modes == ["replace", "replace"], "a retry must replace the chunk image, not append a second copy"
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_retry_counts_chunk_whose_count_failed(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    _set_request_json(monkeypatch, module, {"content": "chunk whose count failed"})
+    count_calls = []
+
+    def flaky_increment(*args):
+        count_calls.append(args)
+        if len(count_calls) == 1:
+            raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(module.DocumentService, "increment_chunk_num", flaky_increment)
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert len(module.settings.docStoreConn.inserted) == 1, "the insert succeeded before the count failed"
+
+    module.settings.docStoreConn.chunk = dict(module.settings.docStoreConn.inserted[-1])
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert len(count_calls) == 2, "the retry must count the chunk whose count failed"
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert len(count_calls) == 2, "once counted, a further retry must not count the chunk again"
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_worker_timeout_error_is_not_the_deadline(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    _set_request_json(monkeypatch, module, {"content": "provider timeout"})
+
+    def provider_timeout(_self, _inputs):
+        raise TimeoutError("embedding provider read timed out")
+
+    monkeypatch.setattr(_DummyLLMBundle, "encode", provider_timeout)
+
+    with pytest.raises(TimeoutError, match="embedding provider"):
+        _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_retry_does_not_count_twice(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    _set_request_json(monkeypatch, module, {"content": "retried chunk"})
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert len(module.DocumentService.increment_calls) == 1
+
+    module.settings.docStoreConn.chunk = dict(module.settings.docStoreConn.inserted[-1])
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert len(module.settings.docStoreConn.inserted) == 2, "the retry still rewrites the chunk"
+    assert len(module.DocumentService.increment_calls) == 1, "the retry must not count the chunk again"
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_busy_lock_skips_insert(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    monkeypatch.setattr(module.RedisDistributedLock, "acquirable", False)
+    _set_request_json(monkeypatch, module, {"content": "contended chunk"})
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "being added" in res["message"], res
+    assert module.settings.docStoreConn.inserted == []
+    assert module.DocumentService.increment_calls == []
 
 
 @pytest.mark.p2

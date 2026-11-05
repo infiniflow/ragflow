@@ -169,7 +169,7 @@ class TestAddChunk:
         validate_chunk_details(WebApiAuth, dataset_id, document_id, payload, res)
 
         res = list_chunks(WebApiAuth, dataset_id, document_id)
-        assert res["data"]["doc"]["chunk_count"] == chunks_count + 2, res
+        assert res["data"]["doc"]["chunk_count"] == chunks_count + 1, res
 
     @pytest.mark.p2
     def test_add_chunk_to_deleted_document(self, WebApiAuth, add_document):
