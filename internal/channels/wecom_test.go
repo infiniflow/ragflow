@@ -27,6 +27,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -682,5 +683,92 @@ func TestWeComSendStreamPushesAndFinishes(t *testing.T) {
 	}
 	if err := channel.Stop(context.Background()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+func TestWeComSendStreamFinishesWhenCancelled(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	frames := make(chan map[string]any, 8)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket: %v", err)
+			return
+		}
+		defer conn.Close()
+		for {
+			var frame map[string]any
+			if err := conn.ReadJSON(&frame); err != nil {
+				return
+			}
+			frames <- frame
+		}
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	channel, err := newWeComChannel(wecomAccount{
+		AccountID:      "account-1",
+		ConnectionType: "websocket",
+		BotID:          "bot-id",
+		Secret:         "secret",
+		Stream:         true,
+	})
+	if err != nil {
+		t.Fatalf("newWeComChannel() error = %v", err)
+	}
+	channel.ws = conn
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	text := make(chan string, 1)
+	text <- "Hello"
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- channel.SendStream(ctx, core.OutgoingMessage{ChatID: "chat-1", ReplyToMessageID: "request-1"}, text)
+	}()
+
+	readFrame := func() map[string]any {
+		select {
+		case frame := <-frames:
+			return frame
+		case err := <-errCh:
+			t.Fatalf("SendStream returned before the expected frame: %v", err)
+			return nil
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for a stream frame")
+			return nil
+		}
+	}
+
+	first := readFrame()
+	if stream := weComMapValue(weComMapValue(first["body"])["stream"]); stream["finish"] != false {
+		t.Fatalf("first frame finish = %v, want an unfinished update", stream["finish"])
+	}
+
+	cancel()
+
+	select {
+	case sendErr := <-errCh:
+		if !errors.Is(sendErr, context.Canceled) {
+			t.Fatalf("SendStream error = %v, want context.Canceled", sendErr)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("SendStream did not return after the context was cancelled")
+	}
+
+	last := readFrame()
+	stream := weComMapValue(weComMapValue(last["body"])["stream"])
+	if stream["finish"] != true {
+		t.Fatalf("last frame finish = %v, want the stream to be closed", stream["finish"])
+	}
+	if stream["content"] != "Hello" {
+		t.Fatalf("finish content = %v, want the last shown text", stream["content"])
 	}
 }

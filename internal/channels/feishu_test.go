@@ -556,3 +556,55 @@ func TestFeishuSendStreamKeepsAnswerWhenSettingsFail(t *testing.T) {
 		t.Fatalf("plain text messages = %v, want none when only the settings call fails", texts)
 	}
 }
+
+func TestFeishuSendStreamClosesCardWhenCancelled(t *testing.T) {
+	server, fake := newFeishuFakeAPI(t, 0)
+	ch := newFeishuChannelAgainstFakeAPI(server)
+
+	text := make(chan string, 1)
+	text <- "Hello"
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ch.SendStream(ctx, core.OutgoingMessage{ChatID: "chat-1"}, text)
+	}()
+
+	// Cancel only after the card received its first update, so the finish path runs on an
+	// already open card.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		updated := false
+		for _, call := range fake.recorded() {
+			if strings.HasSuffix(call.path, "/content") {
+				updated = true
+				break
+			}
+		}
+		if updated {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the card never received an update")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("SendStream error = %v, want context.Canceled", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("SendStream did not return after the context was cancelled")
+	}
+
+	for _, call := range fake.recorded() {
+		if strings.HasSuffix(call.path, "/settings") {
+			return
+		}
+	}
+	t.Fatalf("card was left in streaming mode, calls = %+v", fake.recorded())
+}

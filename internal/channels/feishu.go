@@ -297,6 +297,13 @@ func (c *feishuChannel) SendStream(ctx context.Context, msg core.OutgoingMessage
 	for {
 		select {
 		case <-ctx.Done():
+			// The turn is over, but the card still has to be closed or it keeps rendering as
+			// in progress. The finish call needs a context that cancellation cannot abort.
+			doneCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), feishuStreamCallLimit)
+			if err := c.finishStreamCard(doneCtx, cardID, &sequence); err != nil {
+				common.Error("feishu: card settings failed", err, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
+			}
+			cancel()
 			return ctx.Err()
 		case value, open := <-text:
 			if !open {

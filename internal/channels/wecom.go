@@ -570,6 +570,13 @@ func (c *wecomChannel) SendStream(ctx context.Context, msg core.OutgoingMessage,
 	for {
 		select {
 		case <-ctx.Done():
+			// The turn is over, but the stream message still has to be finished or WeCom keeps
+			// rendering it as in progress until the ten minute window ends.
+			if sent != "" {
+				if err := push(sent, true); err != nil {
+					common.Error("wecom: stream finish failed", err, zap.String("account_id", c.account.AccountID))
+				}
+			}
 			return ctx.Err()
 		case value, open := <-text:
 			if !open {
