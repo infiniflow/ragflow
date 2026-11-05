@@ -103,6 +103,33 @@ func splitRightAnchoredModelName(compositeName string) (modelName, instanceName,
 	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1]
 }
 
+func parseTenantModelInstanceExtra(raw string) (map[string]interface{}, error) {
+	extra := make(map[string]interface{})
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" || strings.EqualFold(strings.Trim(trimmed, `"`), "active") {
+		extra["region"] = "default"
+		return extra, nil
+	}
+
+	if err := json.Unmarshal([]byte(trimmed), &extra); err != nil {
+		return nil, err
+	}
+	if extra == nil {
+		extra = make(map[string]interface{})
+	}
+	if region, ok := extra["region"].(string); ok && strings.TrimSpace(region) != "" {
+		extra["region"] = strings.TrimSpace(region)
+	} else {
+		extra["region"] = "default"
+	}
+	return extra, nil
+}
+
+func tenantModelInstanceExtraString(extra map[string]interface{}, key string) string {
+	value, _ := extra[key].(string)
+	return value
+}
+
 func newModelDriverForBaseURL(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {
 	if driver == nil {
 		return nil, fmt.Errorf("provider %s driver not found", providerName)
@@ -199,7 +226,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 	}
 	err = m.modelProviderDAO.Create(ctx, dao.DB, tenantModelProvider)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model provider: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model provider: %w", err)
 	}
 	return common.CodeSuccess, nil
 }
@@ -358,8 +385,7 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 		return nil, fmt.Errorf("provider %s not found", providerName)
 	}
 
-	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	extra, err := parseTenantModelInstanceExtra(instance.Extra)
 	if err != nil {
 		return nil, err
 	}
@@ -369,14 +395,14 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 		Region: nil,
 	}
 
-	region := extra["region"]
+	region := tenantModelInstanceExtraString(extra, "region")
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
 	driver := providerInfo.ModelDriver
 
 	// For local deployed models
-	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+	if baseURL := tenantModelInstanceExtraString(extra, "base_url"); baseURL != "" {
 		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
 		if err != nil {
 			return nil, err
@@ -647,7 +673,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
 	// Add models to the instance.
@@ -730,7 +756,7 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 	}
 	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model instance: %w", err)
 	}
 
 	return common.CodeSuccess, nil
@@ -774,7 +800,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 	extraBytes, err := json.Marshal(extraFields)
 	if err != nil {
-		return fmt.Errorf("fail to marshal extra: %s", err.Error())
+		return fmt.Errorf("fail to marshal extra: %w", err)
 	}
 
 	modelID := utility.GenerateToken()
@@ -789,7 +815,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return fmt.Errorf("fail to create model '%s': %s", model.ModelName, err.Error())
+		return fmt.Errorf("fail to create model '%s': %w", model.ModelName, err)
 	}
 
 	return nil
@@ -830,14 +856,9 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 	result := make([]map[string]interface{}, 0, len(instances))
 	for _, instance := range instances {
 		// Parse extra to extract region
-		var extraFields map[string]string
-		if instance.Extra != "" {
-			if err = json.Unmarshal([]byte(instance.Extra), &extraFields); err != nil {
-				return nil, common.CodeServerError, err
-			}
-		}
-		if extraFields == nil {
-			extraFields = make(map[string]string)
+		extraFields, err := parseTenantModelInstanceExtra(instance.Extra)
+		if err != nil {
+			return nil, common.CodeServerError, err
 		}
 
 		// Emit snake_case keys to match the Python
@@ -847,7 +868,7 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 			"id":            instance.ID,
 			"instance_name": instance.InstanceName,
 			"provider_id":   instance.ProviderID,
-			"region":        extraFields["region"],
+			"region":        tenantModelInstanceExtraString(extraFields, "region"),
 			"status":        instance.Status,
 		})
 	}
@@ -857,7 +878,6 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 
 func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, providerName, instanceIDOrName, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
-	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
@@ -897,22 +917,17 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 
 	// Parse extra fields. Mirrors Python's:
 	//   extra_fields = json.loads(instance_obj.extra) if instance_obj.extra else {}
-	var extraFields map[string]string
-	if instance.Extra != "" {
-		if err := json.Unmarshal([]byte(instance.Extra), &extraFields); err != nil {
-			return nil, common.CodeServerError, err
-		}
-	}
-	if extraFields == nil {
-		extraFields = make(map[string]string)
+	extraFields, err := parseTenantModelInstanceExtra(instance.Extra)
+	if err != nil {
+		return nil, common.CodeServerError, err
 	}
 
 	result := map[string]interface{}{
 		"id":            instance.ID,
 		"instance_name": instance.InstanceName,
 		"provider_id":   provider.ID,
-		"region":        extraFields["region"],
-		"base_url":      extraFields["base_url"],
+		"region":        tenantModelInstanceExtraString(extraFields, "region"),
+		"base_url":      tenantModelInstanceExtraString(extraFields, "base_url"),
 		"api_key":       instance.APIKey,
 		"status":        instance.Status,
 	}
@@ -950,8 +965,7 @@ func (m *ModelProviderService) ShowInstanceBalance(ctx context.Context, provider
 		return nil, common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
 	}
 
-	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	extra, err := parseTenantModelInstanceExtra(instance.Extra)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -961,8 +975,8 @@ func (m *ModelProviderService) ShowInstanceBalance(ctx context.Context, provider
 		Region: nil,
 	}
 
-	region := extra["region"]
-	baseURL := extra["base_url"]
+	region := tenantModelInstanceExtraString(extra, "region")
+	baseURL := tenantModelInstanceExtraString(extra, "base_url")
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 	apiConfig.BaseURL = &baseURL
@@ -1005,6 +1019,20 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		ApiKey:  &apiKey,
 		Region:  &region,
 		BaseURL: &baseURL,
+	}
+
+	// The cloud PaddleOCR provider carries its config inside the api_key JSON
+	// payload (paddleocr_api_url / paddleocr_access_token / paddleocr_algorithm),
+	// mirroring Python's PaddleOCROcrModel. Unwrap the access token and base url
+	// so the OCR driver authenticates with a plain bearer token. Non-JSON
+	// api_keys (e.g. PaddleOCR.local) pass through untouched.
+	if keyBaseURL, keyAccessToken, _ := modelModule.PaddleOCRConfigFromAPIKey(apiKey); keyAccessToken != "" {
+		apiKey = keyAccessToken
+		if baseURL == "" {
+			baseURL = keyBaseURL
+		}
+		apiConfig.ApiKey = &apiKey
+		apiConfig.BaseURL = &baseURL
 	}
 
 	// Mirror Python verify_api_key: verify each model by making a real
@@ -1318,7 +1346,7 @@ func verifyASRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 	if err != nil {
 		return err
 	}
-	if resp == nil || resp.Text == "" {
+	if resp == nil {
 		return fmt.Errorf("ASR model %s returned no transcription", modelName)
 	}
 	return nil
@@ -1384,8 +1412,7 @@ func (m *ModelProviderService) CheckInstanceConnection(ctx context.Context, prov
 		return common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
 	}
 
-	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	extra, err := parseTenantModelInstanceExtra(instance.Extra)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -1395,12 +1422,12 @@ func (m *ModelProviderService) CheckInstanceConnection(ctx context.Context, prov
 		Region: nil,
 	}
 
-	region := extra["region"]
+	region := tenantModelInstanceExtraString(extra, "region")
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
 	driver := providerInfo.ModelDriver
-	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+	if baseURL := tenantModelInstanceExtraString(extra, "base_url"); baseURL != "" {
 		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
 		if err != nil {
 			return common.CodeServerError, err
@@ -1444,8 +1471,7 @@ func (m *ModelProviderService) ListTasks(ctx context.Context, providerName, inst
 		return nil, common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
 	}
 
-	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	extra, err := parseTenantModelInstanceExtra(instance.Extra)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1455,12 +1481,12 @@ func (m *ModelProviderService) ListTasks(ctx context.Context, providerName, inst
 		Region: nil,
 	}
 
-	region := extra["region"]
+	region := tenantModelInstanceExtraString(extra, "region")
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
 	driver := providerInfo.ModelDriver
-	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+	if baseURL := tenantModelInstanceExtraString(extra, "base_url"); baseURL != "" {
 		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
 		if err != nil {
 			return nil, common.CodeServerError, err
@@ -1505,8 +1531,7 @@ func (m *ModelProviderService) ShowTask(ctx context.Context, providerName, insta
 		return nil, common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
 	}
 
-	var extra map[string]string
-	err = json.Unmarshal([]byte(instance.Extra), &extra)
+	extra, err := parseTenantModelInstanceExtra(instance.Extra)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1516,12 +1541,12 @@ func (m *ModelProviderService) ShowTask(ctx context.Context, providerName, insta
 		Region: nil,
 	}
 
-	region := extra["region"]
+	region := tenantModelInstanceExtraString(extra, "region")
 	apiConfig.Region = &region
 	apiConfig.ApiKey = &instance.APIKey
 
 	driver := providerInfo.ModelDriver
-	if baseURL, ok := extra["base_url"]; ok && baseURL != "" {
+	if baseURL := tenantModelInstanceExtraString(extra, "base_url"); baseURL != "" {
 		driver, err = newModelDriverForBaseURL(driver, providerName, region, baseURL)
 		if err != nil {
 			return nil, common.CodeServerError, err
@@ -2023,11 +2048,9 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		extraFields["region"] = region
 	}
 	// Preserve existing extra fields not overwritten.
-	existingExtra := make(map[string]interface{})
-	if instance.Extra != "" {
-		if err = json.Unmarshal([]byte(instance.Extra), &existingExtra); err != nil {
-			return common.CodeServerError, err
-		}
+	existingExtra, err := parseTenantModelInstanceExtra(instance.Extra)
+	if err != nil {
+		return common.CodeServerError, err
 	}
 	for k, v := range extraFields {
 		existingExtra[k] = v
@@ -2038,7 +2061,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	}
 	instanceUpdates["extra"] = string(extraBytes)
 	if err = m.modelInstanceDAO.UpdateByID(ctx, dao.DB, instance.ID, instanceUpdates); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to update instance: %s", err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to update instance: %w", err)
 	}
 
 	// Use the (possibly updated) instance_name for model operations.
@@ -2582,6 +2605,9 @@ func maxTokensFromTenantModelExtra(modelEntity *entity.TenantModel, fallback int
 }
 
 func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Context, providerName, instanceName, modelName *string, userID string, apiConfig *modelModule.APIConfig) (*ModelInstanceAndProviderInfo, error) {
+	if providerName == nil || instanceName == nil || modelName == nil {
+		return nil, errors.New("provider name, instance name and model name are required when model id is absent")
+	}
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
@@ -2589,7 +2615,7 @@ func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Con
 	}
 
 	if len(tenants) == 0 {
-		return nil, err
+		return nil, fmt.Errorf("no tenant found for user %s", userID)
 	}
 
 	tenantID := tenants[0].TenantID
@@ -3164,6 +3190,28 @@ func (m *ModelProviderService) AudioSpeech(ctx context.Context, providerName, in
 		if err != nil || info == nil {
 			return nil, common.CodeNotFound, err
 		}
+	} else if providerName == nil && instanceName == nil && modelName == nil {
+		// No explicit model selection: synthesize through the tenant's
+		// default TTS model, mirroring Python's canvas auto_play which
+		// always resolves get_tenant_default_model_by_type(LLMType.TTS).
+		// A missing default surfaces as a typed error ("no default tts
+		// model is set") instead of a nil-pointer panic.
+		driver, name, defaultConfig, _, derr := m.GetTenantDefaultModelByType(ctx, userID, entity.ModelTypeTTS)
+		if derr != nil {
+			return nil, common.CodeNotFound, derr
+		}
+		if modelConfig == nil {
+			modelConfig = &modelModule.TTSConfig{}
+		}
+		var response *modelModule.TTSResponse
+		response, derr = driver.AudioSpeech(ctx, &name, audioContent, defaultConfig, modelConfig, nil)
+		if derr != nil {
+			return nil, common.CodeServerError, derr
+		}
+		if response == nil {
+			return nil, common.CodeServerError, errors.New("empty chat response")
+		}
+		return response, common.CodeSuccess, nil
 	} else {
 		info, err = m.getModelInstanceAndProviderByName(ctx, providerName, instanceName, modelName, userID, apiConfig)
 		if err != nil || info == nil {
@@ -3559,9 +3607,9 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 	case entity.ModelTypeImage2Text:
 		return tenant.Img2TxtID, ptrStringValue(tenant.TenantImg2TxtID)
 	case entity.ModelTypeTTS:
-		return *tenant.TTSID, ptrStringValue(tenant.TenantTTSID)
+		return ptrStringValue(tenant.TTSID), ptrStringValue(tenant.TenantTTSID)
 	case entity.ModelTypeOCR:
-		return *tenant.OCRID, ptrStringValue(tenant.TenantOCRID)
+		return ptrStringValue(tenant.OCRID), ptrStringValue(tenant.TenantOCRID)
 	default:
 		return "", ""
 	}
@@ -3712,9 +3760,11 @@ func (m *ModelProviderService) GetModelTypeByName(ctx context.Context, tenantID,
 	}
 
 	// Fallback: factory LLM catalog
-	var extra map[string]string
-	_ = json.Unmarshal([]byte(instance.Extra), &extra)
-	region := extra["region"]
+	extra, err := parseTenantModelInstanceExtra(instance.Extra)
+	if err != nil {
+		return nil, err
+	}
+	region := tenantModelInstanceExtraString(extra, "region")
 
 	targetFactoryName := providerName
 	if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
@@ -3860,7 +3910,7 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 	}
 
 	if err = m.modelDAO.Create(ctx, dao.DB, tenantModel); err != nil {
-		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %s", modelName, err.Error())
+		return common.CodeServerError, fmt.Errorf("fail to create model '%s': %w", modelName, err)
 	}
 
 	return common.CodeSuccess, nil
@@ -3979,10 +4029,12 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 
 	// Decode api_key and extra fields from the instance row
 	apiKey := instance.APIKey
-	var extra map[string]string
-	_ = json.Unmarshal([]byte(instance.Extra), &extra)
-	region := extra["region"]
-	baseURL := extra["base_url"]
+	extra, err := parseTenantModelInstanceExtra(instance.Extra)
+	if err != nil {
+		return nil, "", nil, 0, err
+	}
+	region := tenantModelInstanceExtraString(extra, "region")
+	baseURL := tenantModelInstanceExtraString(extra, "base_url")
 
 	// Direct model lookup
 	modelObj, modelErr := m.modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
@@ -4108,16 +4160,16 @@ func (m *ModelProviderService) getModelConfig(ctx context.Context, tenantID, com
 
 	// TODO: if provider name is Builtin, HOW TO?
 
-	var extra map[string]string
 	var region string
 	var baseURL string
 	if instance != nil {
-		err = json.Unmarshal([]byte(instance.Extra), &extra)
+		var extra map[string]interface{}
+		extra, err = parseTenantModelInstanceExtra(instance.Extra)
 		if err != nil {
 			return nil, "", nil, 0, err
 		}
-		region = extra["region"]
-		baseURL = extra["base_url"]
+		region = tenantModelInstanceExtraString(extra, "region")
+		baseURL = tenantModelInstanceExtraString(extra, "base_url")
 	}
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
