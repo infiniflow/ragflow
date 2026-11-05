@@ -552,7 +552,10 @@ func renameDatasetFolder(ctx context.Context, tx *gorm.DB, kb *entity.Knowledgeb
 	}
 
 	var count int64
-	err = folders().Where("LOWER(name) = LOWER(?) AND id <> ?", newName, original.ID).Count(&count).Error
+	err = tx.WithContext(ctx).Model(&entity.File{}).
+		Where("tenant_id = ? AND parent_id = ? AND LOWER(name) = LOWER(?) AND id <> ?",
+			kb.TenantID, kbRoot.ID, newName, original.ID).
+		Count(&count).Error
 	if err != nil {
 		return common.CodeServerError, err
 	}

@@ -11,6 +11,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 	"ragflow/internal/service/document"
+	filesvc "ragflow/internal/service/file"
 	"ragflow/internal/storage"
 )
 
@@ -32,6 +33,7 @@ func TestDatasetRenameFolder(t *testing.T) {
 		original    bool
 		target      bool
 		targetScope string
+		targetType  string
 		newName     string
 		wantCode    common.ErrorCode
 	}{
@@ -40,6 +42,9 @@ func TestDatasetRenameFolder(t *testing.T) {
 		{name: "same name", root: true, kbRoot: true, original: true, newName: "Original"},
 		{name: "target occupied", root: true, kbRoot: true, original: true, target: true, newName: "Renamed", wantCode: common.CodeDataError},
 		{name: "target occupied without original", root: true, kbRoot: true, target: true, newName: "Renamed", wantCode: common.CodeDataError},
+		{name: "target occupied by virtual file", root: true, kbRoot: true, original: true, target: true, targetType: "virtual", newName: "Renamed", wantCode: common.CodeDataError},
+		{name: "virtual file collision without original", root: true, kbRoot: true, target: true, targetType: "virtual", newName: "Renamed", wantCode: common.CodeDataError},
+		{name: "virtual file collision ignores case", root: true, kbRoot: true, original: true, target: true, targetType: "virtual", newName: "RENAMED", wantCode: common.CodeDataError},
 		{name: "no original folder", root: true, kbRoot: true, newName: "Renamed"},
 		{name: "no knowledgebase root", root: true, newName: "Renamed"},
 		{name: "no root", newName: "Renamed"},
@@ -69,7 +74,14 @@ func TestDatasetRenameFolder(t *testing.T) {
 				if tc.targetScope == "parent" {
 					parentID = "root"
 				}
-				insertRenameTestFolder(t, "target", parentID, tenantID, "Renamed", "")
+				if tc.targetType == "virtual" {
+					ctx := withDatasetTestContext(t.Context(), "tenant-1", tenantID)
+					if _, err := filesvc.NewFileService(nil).CreateFolder(ctx, "Renamed", parentID, "virtual"); err != nil {
+						t.Fatalf("create virtual file: %v", err)
+					}
+				} else {
+					insertRenameTestFolder(t, "target", parentID, tenantID, "Renamed", "")
+				}
 			}
 			var before int64
 			if err := db.Model(&entity.File{}).Count(&before).Error; err != nil {
