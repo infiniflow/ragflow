@@ -958,7 +958,7 @@ func TestMergedAgentsRespectRequestedTimestamp(t *testing.T) {
 		{"default", nil, "new"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			resp, code, err := NewAgentService().mergeAgentsAndGroups(t.Context(), "user-1", items, "", tc.terms, 1, 1)
+			resp, code, err := NewAgentService().mergeAgentsAndGroups(permission.WithIdentity(t.Context(), "user-1", ""), items, "", tc.terms, 1, 1)
 			if err != nil || code != common.CodeSuccess || resp.Total != 2 || len(resp.Canvas) != 1 {
 				t.Fatalf("merge: response=%+v code=%v err=%v", resp, code, err)
 			}
@@ -1173,7 +1173,6 @@ func TestCreateAgentSessionLeavesVersionTitleNilWithVersions(t *testing.T) {
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	svc := NewAgentService()
 	session, code, err := svc.CreateAgentSession(ctx, &CreateAgentSessionRequest{
-		UserID:  "user-1",
 		AgentID: "canvas-1",
 		Name:    "hello",
 	})
@@ -1221,7 +1220,6 @@ func TestCreateAgentSessionNoVersionLeavesTitleNil(t *testing.T) {
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	session, code, err := NewAgentService().CreateAgentSession(ctx, &CreateAgentSessionRequest{
-		UserID:  "user-1",
 		AgentID: "canvas-1",
 	})
 	if err != nil {
@@ -1309,7 +1307,7 @@ func TestAgentModelValidationUsesCanvasTenant(t *testing.T) {
 
 	ctx := permission.WithIdentity(t.Context(), tenantOwnerID, tenantID)
 	svc := NewAgentService()
-	if _, code, err := svc.CreateAgentSession(ctx, &CreateAgentSessionRequest{UserID: tenantOwnerID, AgentID: canvasRow.ID}); err != nil || code != common.CodeSuccess {
+	if _, code, err := svc.CreateAgentSession(ctx, &CreateAgentSessionRequest{AgentID: canvasRow.ID}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateAgentSession with tenant model = (%d, %v), want success", code, err)
 	}
 	if err := svc.UpdateAgent(ctx, canvasRow.ID, map[string]any{"dsl": dsl}); err != nil {

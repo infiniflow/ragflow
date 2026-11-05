@@ -503,7 +503,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, req *CreateMemoryReque
 	if userID == "" {
 		return nil, permission.ErrUnauthenticated
 	}
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}

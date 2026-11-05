@@ -140,7 +140,6 @@ type OpenAIChatRequest struct {
 }
 
 func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string, bodyBytes []byte) {
-	userID := permission.UserIDFromContext(c.Request.Context())
 	var req OpenAIChatRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		s.writeArgError(c, err.Error())
@@ -249,7 +248,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 		return
 	}
 	dialog := dialogResp.Chat
-	if err := validateChatDatasetAccess(ctx, userID, dialog.KBIDs); err != nil {
+	if err := validateChatDatasetAccess(ctx, dialog.KBIDs); err != nil {
 		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		common.RespondError(c, code, permissionErr.Error())
 		return
@@ -289,7 +288,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 
 	completionID := fmt.Sprintf("chatcmpl-%s", openaiReq.ChatID)
 
-	lfClient := LangfuseClientFromTenant(ctx, dialog.TenantID, userID, openaiReq.ChatID, openaiReq.Model)
+	lfClient := LangfuseClientFromTenant(ctx, dialog.TenantID, openaiReq.ChatID, openaiReq.Model)
 	if lfClient != nil {
 		ctx = context.WithValue(ctx, langfuseCtxKey, lfClient)
 		defer func() {
@@ -336,7 +335,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 	}
 
 	chatKwargs := openAIChatKwargs(&req, needReference, docIDsStr)
-	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, userID, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
+	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
 	if asyncErr != nil {
 		s.writeDataError(c, asyncErr.Error())
 		return

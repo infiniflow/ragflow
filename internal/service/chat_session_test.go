@@ -315,8 +315,8 @@ type fakePipeline struct {
 	messages   []map[string]interface{}
 }
 
-func (f *fakePipeline) AsyncChat(ctx context.Context, userID string, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error) {
-	f.userID = userID
+func (f *fakePipeline) AsyncChat(ctx context.Context, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error) {
+	f.userID = permission.UserIDFromContext(ctx)
 	f.messages = messages
 	return f.resultChan, f.err
 }

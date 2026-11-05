@@ -689,7 +689,7 @@ func (s *AgentService) ListAgents(ctx context.Context, keywords string, page, pa
 		if len(ownerIDs) > 0 && !sliceContains(effectiveOwnerIDs, userID) {
 			return &ListAgentsResponse{Canvas: []json.RawMessage{}, Total: 0}, common.CodeSuccess, nil
 		}
-		return s.listAgentsGroupsOnly(ctx, userID, keywords, terms, page, pageSize)
+		return s.listAgentsGroupsOnly(ctx, keywords, terms, page, pageSize)
 	}
 
 	// Fetch agents. In merge/mixed modes we disable SQL pagination (page=0) and
@@ -734,7 +734,7 @@ func (s *AgentService) ListAgents(ctx context.Context, keywords string, page, pa
 	// (Python include_template_groups).
 	includeGroups := len(ownerIDs) == 0 || sliceContains(effectiveOwnerIDs, userID)
 	if includeGroups && (mergeMode || wantsGroups) {
-		return s.mergeAgentsAndGroups(ctx, userID, agentItems, keywords, terms, page, pageSize)
+		return s.mergeAgentsAndGroups(ctx, agentItems, keywords, terms, page, pageSize)
 	}
 
 	raw := make([]json.RawMessage, len(agentItems))
@@ -747,7 +747,8 @@ func (s *AgentService) ListAgents(ctx context.Context, keywords string, page, pa
 
 // listAgentsGroupsOnly returns only the caller's compilation template groups
 // (Python canvas_category == ["compilation_template_group"] branch).
-func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, userID, keywords string, terms []dao.OrderTerm, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
+func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, keywords string, terms []dao.OrderTerm, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
 	groups, err := s.compilationTemplateGroupDAO.ListSaved(ctx, dao.DB, userID, keywords, "", terms)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
@@ -756,7 +757,7 @@ func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, userID, keyword
 	groups = slicePage(groups, page, pageSize)
 	raw := make([]json.RawMessage, 0, len(groups))
 	for _, g := range groups {
-		item, err := s.marshalMergeGroupItem(ctx, userID, g)
+		item, err := s.marshalMergeGroupItem(ctx, g)
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to build group item: %w", err)
 		}
@@ -769,7 +770,8 @@ func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, userID, keyword
 // groups into a single list ordered by the requested timestamp, then pages in Go.
 // A stable sort retains the original
 // agent-before-group order when timestamps are equal.
-func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, agentItems []*AgentItem, keywords string, terms []dao.OrderTerm, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
+func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, agentItems []*AgentItem, keywords string, terms []dao.OrderTerm, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
 	groups, err := s.compilationTemplateGroupDAO.ListSaved(ctx, dao.DB, userID, keywords, "", terms)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
@@ -788,7 +790,7 @@ func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, 
 		})
 	}
 	for _, g := range groups {
-		raw, err := s.marshalMergeGroupItem(ctx, userID, g)
+		raw, err := s.marshalMergeGroupItem(ctx, g)
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to build group item: %w", err)
 		}
@@ -824,7 +826,7 @@ func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, 
 // marshalMergeGroupItem renders a compilation template group as a merged /agents
 // canvas item: the group shape (ICompilationTemplateGroup) plus the "type" and
 // "title" discriminators the frontend union expects (Python _group_to_dict).
-func (s *AgentService) marshalMergeGroupItem(ctx context.Context, userID string, g *entity.CompilationTemplateGroup) (json.RawMessage, error) {
+func (s *AgentService) marshalMergeGroupItem(ctx context.Context, g *entity.CompilationTemplateGroup) (json.RawMessage, error) {
 	children, err := s.compilationTemplateDAO.ListByGroup(ctx, dao.DB, g.ID)
 	if err != nil {
 		return nil, err
@@ -993,7 +995,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		code, permissionErr := permissionresponse.Normalize(permission.ErrUnauthenticated)
 		return nil, code, permissionErr
 	}
-	tenantID, err := prepareAgentCreation(ctx, userID)
+	tenantID, err := prepareAgentCreation(ctx)
 	if err != nil {
 		code, normalized := permissionresponse.Normalize(err)
 		return nil, code, normalized
@@ -1293,7 +1295,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, canvasID string, patch m
 		if err := validateEntries(dslMap); err != nil {
 			return fmt.Errorf("update agent %s: %w", canvasID, err)
 		}
-		if err := validateAgentChatModelReferences(ctx, userID, canvasInstance.EffectiveTenantID(), dslMap, !release); err != nil {
+		if err := validateAgentChatModelReferences(ctx, canvasInstance.EffectiveTenantID(), dslMap, !release); err != nil {
 			return err
 		}
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
@@ -1417,7 +1419,6 @@ type PublishAgentRequest struct {
 }
 
 func (s *AgentService) PublishAgent(ctx context.Context, canvasID string, req *PublishAgentRequest) (*entity.UserCanvasVersion, error) {
-	userID := permission.UserIDFromContext(ctx)
 	canvasInstance, err := s.loadCanvasForUser(ctx, canvasID, permission.OperationUpdate)
 	if err != nil {
 		return nil, err
@@ -1445,7 +1446,7 @@ func (s *AgentService) PublishAgent(ctx context.Context, canvasID string, req *P
 		}
 	}
 
-	if err := validateAgentChatModels(ctx, userID, canvasInstance.EffectiveTenantID(), dsl); err != nil {
+	if err := validateAgentChatModels(ctx, canvasInstance.EffectiveTenantID(), dsl); err != nil {
 		return nil, err
 	}
 	if err := component.ValidateDynamicEntries(dsl); err != nil {
@@ -1659,7 +1660,7 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 			if !trustedFirstTouch {
 				return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
 			}
-		} else if err := checkAgentSessionRunPermission(ctx, userID, sessionID); err != nil {
+		} else if err := checkAgentSessionRunPermission(ctx, sessionID); err != nil {
 			return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, err)
 		}
 	}
@@ -1676,10 +1677,10 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		if session == nil {
 			return nil
 		}
-		if err := checkAgentSessionRunPermission(ctx, userID, sessionID); err != nil {
+		if err := checkAgentSessionRunPermission(ctx, sessionID); err != nil {
 			return fmt.Errorf("RunAgent: session %q not found: %w", sessionID, err)
 		}
-		if err := s.persistAgentRunQuestion(ctx, canvasID, userID, sessionID, messageID, userInput, receivedAt); err != nil {
+		if err := s.persistAgentRunQuestion(ctx, canvasID, sessionID, messageID, userInput, receivedAt); err != nil {
 			return fmt.Errorf("RunAgent: persist question: %w: %w", err, ErrAgentStorageError)
 		}
 		questionSaved = true
@@ -1868,7 +1869,7 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, err, ErrAgentStorageError)
 		}
 		if existingSession != nil {
-			if err := checkAgentSessionRunPermission(ctx, userID, sessionID); err != nil {
+			if err := checkAgentSessionRunPermission(ctx, sessionID); err != nil {
 				return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, err)
 			}
 		}
@@ -1877,7 +1878,7 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 			dsl = dslpkg.NormalizeForRun(existingSession.DSL)
 		}
 	}
-	if err := validateAgentChatModels(ctx, userID, agentTenantID, dsl); err != nil {
+	if err := validateAgentChatModels(ctx, agentTenantID, dsl); err != nil {
 		return nil, err
 	}
 	if err := component.ValidateDynamicEntries(dsl); err != nil {
@@ -1890,7 +1891,7 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		// conversation. A new session may reuse its graph, memory, and env state,
 		// but must never inherit conversation history or an execution path.
 		dsl = dslpkg.ResetForNewSession(dsl)
-		if err = s.createAgentRunSession(ctx, sessionID, userID, canvasID, dsl, versionRow, userInput); err != nil {
+		if err = s.createAgentRunSession(ctx, sessionID, canvasID, dsl, versionRow, userInput); err != nil {
 			return nil, fmt.Errorf("RunAgent: create session %q: %w: %w", sessionID, err, ErrAgentStorageError)
 		}
 	}
@@ -2038,11 +2039,11 @@ func (s *AgentService) runReleasedAgent(ctx context.Context, canvasID, sessionID
 // It resolves models in the canvas tenant and checks access for the actual
 // caller. Agent components always invoke a chat model; model-free
 // canvases contain no Agent component and pass through.
-func validateAgentChatModels(ctx context.Context, userID, tenantID string, dsl map[string]any) error {
-	return validateAgentChatModelReferences(ctx, userID, tenantID, dsl, false)
+func validateAgentChatModels(ctx context.Context, tenantID string, dsl map[string]any) error {
+	return validateAgentChatModelReferences(ctx, tenantID, dsl, false)
 }
 
-func validateAgentChatModelReferences(ctx context.Context, userID, tenantID string, dsl map[string]any, draft bool) error {
+func validateAgentChatModelReferences(ctx context.Context, tenantID string, dsl map[string]any, draft bool) error {
 	c, err := canvas.DecodeFromDSL(dsl)
 	if err != nil {
 		return nil
@@ -2076,7 +2077,7 @@ func validateAgentChatModelReferences(ctx context.Context, userID, tenantID stri
 	return nil
 }
 
-func checkAgentSessionRunPermission(ctx context.Context, userID, sessionID string) error {
+func checkAgentSessionRunPermission(ctx context.Context, sessionID string) error {
 	err := permission.NewDatabaseChecker(dao.DB).CheckResource(
 		ctx,
 		permission.ResourceRef{Kind: permission.ResourceKindAgentSession, ID: sessionID},
@@ -2219,7 +2220,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if versionRow == nil && len(dsl) == 0 {
 			answer := fmt.Sprintf("No published version found for canvas %q — publish a version before running.", canvasID)
 			state.RecordOutput("answer", "answer", answer)
-			if err := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, "", nil, dsl, state, true); err != nil {
+			if err := s.persistAgentRunSession(ctx, canvasID, sessionID, messageID, userInput, answer, "", nil, dsl, state, true); err != nil {
 				return nil, canvas.NewInternalRunError(fmt.Errorf("persist agent session: %w: %w", err, ErrAgentStorageError))
 			}
 			// Emit a message event so the SSE surface matches the
@@ -2241,7 +2242,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// DSL → *Canvas.
 		c, err := decodeCanvasFromDSL(dsl)
 		if err != nil {
-			s.markAgentSessionFailed(ctx, canvasID, userID, sessionID, "decode: "+err.Error())
+			s.markAgentSessionFailed(ctx, canvasID, sessionID, "decode: "+err.Error())
 			s.markRunFailed(ctx, runID, "decode: "+err.Error())
 			return nil, err
 		}
@@ -2318,9 +2319,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			// Only used for ParseAgentUploads (read-only); nil DocRemover means
 			// this FileService MUST NOT be used for DeleteFiles.
 			fileSvc := file.NewFileService(nil)
-			files, ferr := fileSvc.ParseAgentUploads(ctx, userID, rawFiles, beginLayoutRecognize(c))
+			files, ferr := fileSvc.ParseAgentUploads(ctx, rawFiles, beginLayoutRecognize(c))
 			if ferr != nil {
-				s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "parse files: "+ferr.Error())
+				s.markAgentSessionFailed(ctx2, canvasID, sessionID, "parse files: "+ferr.Error())
 				s.markRunFailed(ctx2, runID, "parse files: "+ferr.Error())
 				return nil, fmt.Errorf("parse agent files: %w", ferr)
 			}
@@ -2378,7 +2379,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				zap.String("run", runID),
 				zap.String("type", fmt.Sprintf("%T", err)),
 				zap.Error(err))
-			s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "compile: "+err.Error())
+			s.markAgentSessionFailed(ctx2, canvasID, sessionID, "compile: "+err.Error())
 			s.markRunFailed(ctx2, runID, "compile: "+err.Error())
 			if _, ok := errors.AsType[*runtime.UserFacingError](err); ok {
 				return nil, err
@@ -2476,7 +2477,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				if answer != "" {
 					appendAssistantHistory(state, partialAssistantOutput(answer, downloads, attachment))
 				}
-				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, answer != ""); persistErr != nil {
+				if persistErr := s.persistAgentRunSession(ctx, canvasID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, answer != ""); persistErr != nil {
 					return nil, canvas.NewInternalRunError(
 						fmt.Errorf("persist interrupted agent session: %w: %w", persistErr, ErrAgentStorageError),
 					)
@@ -2500,8 +2501,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
 					visibleAnswer = failureText
 				}
-				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, visibleAnswer, thinking, referencePayload, dsl, state, visibleAnswer != ""); persistErr != nil {
-					s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "persist session: "+persistErr.Error())
+				if persistErr := s.persistAgentRunSession(ctx, canvasID, sessionID, messageID, userInput, visibleAnswer, thinking, referencePayload, dsl, state, visibleAnswer != ""); persistErr != nil {
+					s.markAgentSessionFailed(ctx2, canvasID, sessionID, "persist session: "+persistErr.Error())
 					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 					return nil, canvas.NewInternalRunError(
 						fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
@@ -2514,11 +2515,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					})
 					emit("message_end", string(meData))
 				}
-				s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "invoke: "+err.Error())
+				s.markAgentSessionFailed(ctx2, canvasID, sessionID, "invoke: "+err.Error())
 				s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 				return state, nil
 			}
-			s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "invoke: "+err.Error())
+			s.markAgentSessionFailed(ctx2, canvasID, sessionID, "invoke: "+err.Error())
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 			return nil, canvasInvokeError(err)
 		}
@@ -2528,8 +2529,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// template literals; retaining it in the prompt history makes the model
 		// reproduce and amplify those literals on later turns.
 		appendAssistantHistory(state, partialAssistantOutput(answer, downloads, attachment))
-		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
-			s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "persist session: "+persistErr.Error())
+		if persistErr := s.persistAgentRunSession(ctx, canvasID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
+			s.markAgentSessionFailed(ctx2, canvasID, sessionID, "persist session: "+persistErr.Error())
 			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 			return nil, canvas.NewInternalRunError(
 				fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
@@ -2582,13 +2583,17 @@ func beginLayoutRecognize(c *canvas.Canvas) string {
 
 func (s *AgentService) createAgentRunSession(
 	ctx context.Context,
-	sessionID, userID, agentID string,
+	sessionID, agentID string,
 	runDSL map[string]any,
 	versionRow *entity.UserCanvasVersion,
 	userInput any,
 ) error {
 	if s == nil || s.api4ConversationDAO == nil {
 		return errors.New("agent session storage is not configured")
+	}
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return permission.ErrUnauthenticated
 	}
 	source := "agent"
 	name := deriveAgentSessionName(userInput)
@@ -2699,10 +2704,11 @@ func emptyDownloadValue(value any) bool {
 	}
 }
 
-func (s *AgentService) persistAgentRunQuestion(ctx context.Context, agentID, userID, sessionID, messageID string, userInput any, receivedAt float64) error {
+func (s *AgentService) persistAgentRunQuestion(ctx context.Context, agentID, sessionID, messageID string, userInput any, receivedAt float64) error {
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
+	userID := permission.UserIDFromContext(ctx)
 	text := stringifyAgentUserInput(agentRunQuery(userInput))
 	if text == "" {
 		return nil
@@ -2713,7 +2719,7 @@ func (s *AgentService) persistAgentRunQuestion(ctx context.Context, agentID, use
 
 func (s *AgentService) persistAgentRunSession(
 	ctx context.Context,
-	agentID, userID, sessionID, messageID string,
+	agentID, sessionID, messageID string,
 	userInput any,
 	answer string,
 	thinking string,
@@ -2726,6 +2732,7 @@ func (s *AgentService) persistAgentRunSession(
 	if sessionID == "" || s == nil || s.api4ConversationDAO == nil || dao.DB == nil {
 		return nil
 	}
+	userID := permission.UserIDFromContext(ctx)
 	history := dao.ConversationHistoryUpdate{}
 	if stringifyAgentUserInput(agentRunQuery(userInput)) != "" {
 		history.QuestionID = messageID
@@ -3139,10 +3146,11 @@ func (s *AgentService) markRunFailed(ctx context.Context, runID, reason string) 
 // markAgentSessionFailed keeps the persisted agent log state aligned with the
 // run tracker. A streamed failure may still return a user-facing message, but
 // it must remain a failed execution in the session history.
-func (s *AgentService) markAgentSessionFailed(ctx context.Context, canvasID, userID, sessionID, reason string) {
+func (s *AgentService) markAgentSessionFailed(ctx context.Context, canvasID, sessionID, reason string) {
 	if s == nil || s.api4ConversationDAO == nil || dao.DB == nil || sessionID == "" {
 		return
 	}
+	userID := permission.UserIDFromContext(ctx)
 	if err := s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, sessionID, canvasID, userID,
 		map[string]interface{}{"errors": reason}, dao.ConversationHistoryUpdate{}); err != nil {
 		common.Warn("agent run: persist failed session status failed",

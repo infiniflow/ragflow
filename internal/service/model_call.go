@@ -54,7 +54,7 @@ func (s *ModelCallService) ChatToModelWithMessages(ctx context.Context, modelRef
 		config = &modelModule.ChatConfig{}
 	}
 	info := chatModel.Info()
-	populateModelUsage(usage, info, chatModel.APIConfig, tenantID, permission.UserIDFromContext(ctx))
+	populateModelUsage(ctx, usage, info, chatModel.APIConfig, tenantID)
 
 	response, err := chatModel.ChatWithMessages(ctx, messages, config, usage)
 	if err != nil {
@@ -77,7 +77,7 @@ func (s *ModelCallService) ChatToModelStreamWithSender(ctx context.Context, mode
 	if config == nil {
 		config = &modelModule.ChatConfig{}
 	}
-	populateModelUsage(usage, chatModel.Info(), chatModel.APIConfig, tenantID, permission.UserIDFromContext(ctx))
+	populateModelUsage(ctx, usage, chatModel.Info(), chatModel.APIConfig, tenantID)
 
 	if err := chatModel.ChatStreamlyWithSender(ctx, messages, config, usage, sender); err != nil {
 		return common.CodeServerError, err
@@ -305,19 +305,18 @@ func (s *ModelCallService) tenantIDForRequest(ctx context.Context) (string, comm
 	if s == nil || s.modelFactory == nil {
 		return "", common.CodeServerError, errors.New("model call service is not initialized")
 	}
-	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return "", common.CodeNotFound, err
 	}
 	return tenantID, common.CodeSuccess, nil
 }
 
-func populateModelUsage(usage *common.ModelUsage, info *modelModule.ModelInfo, apiConfig *modelModule.APIConfig, tenantID, userID string) {
+func populateModelUsage(ctx context.Context, usage *common.ModelUsage, info *modelModule.ModelInfo, apiConfig *modelModule.APIConfig, tenantID string) {
 	if usage == nil || info == nil {
 		return
 	}
-	usage.UserID = userID
+	usage.UserID = permission.UserIDFromContext(ctx)
 	usage.TenantID = tenantID
 	usage.ProviderName = info.ProviderName
 	usage.InstanceID = info.InstanceID

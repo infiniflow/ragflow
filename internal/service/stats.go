@@ -49,7 +49,7 @@ type ChatStatsResponse struct {
 
 // GetChatStats returns daily API conversation statistics for the current tenant.
 func (s *StatsService) GetChatStats(ctx context.Context, fromDate, toDate string, source *string) (*ChatStatsResponse, error) {
-	tenantID, err := requireCurrentTenantID(ctx, permission.UserIDFromContext(ctx))
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, ErrTenantNotFound
 	}

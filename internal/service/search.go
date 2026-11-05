@@ -155,7 +155,7 @@ type CreateSearchResponse struct {
 // 7. Return {search_id: id} on success
 func (s *SearchService) CreateSearch(ctx context.Context, name string, description *string) (*CreateSearchResponse, error) {
 	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}

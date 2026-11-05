@@ -53,7 +53,7 @@ import (
 // the FileHandler (handler/file.go), not by any agent handler, so
 // the interface deliberately does NOT list it. (Code review CR1.)
 type agentFileService interface {
-	DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error)
+	DownloadAgentFile(ctx context.Context, location string) ([]byte, error)
 	// UploadInfos stores raw bytes in the per-user downloads bucket and
 	// returns lightweight descriptors.
 	UploadInfos(ctx context.Context, files []*multipart.FileHeader) ([]map[string]interface{}, error)
@@ -610,7 +610,7 @@ func respondWithDebugResult(c *gin.Context, result *task.PipelineResult, err err
 // (id/name/created_by); the raw bytes are fetched from the per-user downloads
 // bucket via the file service. When no usable file is present it returns a
 // default name and a nil slice so the pipeline can still run file-less.
-func (h *AgentHandler) extractChatDebugFile(ctx context.Context, files []map[string]interface{}, user *entity.User) (string, []byte) {
+func (h *AgentHandler) extractChatDebugFile(ctx context.Context, files []map[string]interface{}) (string, []byte) {
 	if len(files) == 0 {
 		return "debug", nil
 	}
@@ -623,7 +623,7 @@ func (h *AgentHandler) extractChatDebugFile(ctx context.Context, files []map[str
 		}
 		return name, nil
 	}
-	data, err := h.fileService.DownloadAgentFile(ctx, user.ID, id)
+	data, err := h.fileService.DownloadAgentFile(ctx, id)
 	if err != nil || len(data) == 0 {
 		if name == "" {
 			return "debug", nil
@@ -941,11 +941,6 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 
 // CreateAgentSession POST /api/v1/agents/:canvas_id/sessions
 func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	canvasID := c.Param("canvas_id")
 	var body struct {
 		Name   string          `json:"name"`
@@ -958,7 +953,6 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	row, code, err := h.agentService.CreateAgentSession(ctx, &service.CreateAgentSessionRequest{
-		UserID:  user.ID,
 		AgentID: canvasID,
 		Name:    body.Name,
 		Source:  body.Source,
@@ -1222,7 +1216,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// runCanvasPipelineDebug).
 	if h.loader != nil {
 		if cv, lerr := h.loader.LoadCanvasByID(c.Request.Context(), req.AgentID); lerr == nil && cv.CanvasCategory == "dataflow_canvas" {
-			fileName, fileData := h.extractChatDebugFile(c.Request.Context(), req.Files, user)
+			fileName, fileData := h.extractChatDebugFile(c.Request.Context(), req.Files)
 			if len(fileData) == 0 {
 				common.RespondError(c, common.CodeDataError, "dataflow debug requires an uploaded file")
 				return

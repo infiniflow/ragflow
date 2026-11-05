@@ -38,7 +38,7 @@ import (
 func resolveSkillSpaceTenantID(ctx context.Context, spaceID string, operation permission.Operation) (string, error) {
 	spaceID = normalizeSpaceID(spaceID)
 	if spaceID == defaultSkillSpaceID {
-		return requireCurrentTenantID(ctx, permission.UserIDFromContext(ctx))
+		return requireCurrentTenantID(ctx)
 	}
 
 	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.ResourceRef{
@@ -177,7 +177,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 	if req.Name == "" {
 		return nil, common.CodeDataError, fmt.Errorf("space name is required")
 	}
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized

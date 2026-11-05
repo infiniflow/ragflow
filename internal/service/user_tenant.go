@@ -80,7 +80,7 @@ type TenantInfoResponse struct {
 // GetCurrentTenantInfo returns the active tenant with the user's membership settings.
 func (s *UserTenantService) GetCurrentTenantInfo(ctx context.Context) (*TenantInfoResponse, error) {
 	userID := permission.UserIDFromContext(ctx)
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func (s *UserTenantService) SetModelSettings(ctx context.Context, req *SetModelS
 		return common.CodeArgumentError, err
 	}
 	userID := permission.UserIDFromContext(ctx)
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return common.CodeForbidden, err
 	}
@@ -334,7 +334,7 @@ func ptrStringValue(value *string) string {
 // ListDefaultModels returns the models configured on the user's current tenant membership.
 func (s *UserTenantService) ListDefaultModels(ctx context.Context) ([]ModelItem, error) {
 	userID := permission.UserIDFromContext(ctx)
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}

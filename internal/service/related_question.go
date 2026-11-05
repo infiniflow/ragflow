@@ -41,7 +41,7 @@ func GenerateRelatedQuestions(ctx context.Context, question, searchID string, se
 	}
 	if tenantID == "" {
 		userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
-		tenantID, err = requireCurrentTenantID(ctx, userID)
+		tenantID, err = requireCurrentTenantID(ctx)
 		if err != nil {
 			return nil, err
 		}

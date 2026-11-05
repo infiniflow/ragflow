@@ -199,7 +199,7 @@ type CreateChatRequest struct {
 
 func (s *ChatService) Create(ctx context.Context, req map[string]interface{}) (map[string]interface{}, common.ErrorCode, error) {
 	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalized := permissionresponse.Normalize(err)
 		return nil, code, normalized
@@ -437,7 +437,7 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 	return normalizedIDs, nil
 }
 
-func validateChatDatasetAccess(ctx context.Context, userID string, kbIDs entity.JSONSlice) error {
+func validateChatDatasetAccess(ctx context.Context, kbIDs entity.JSONSlice) error {
 	for _, rawID := range kbIDs {
 		datasetID, ok := rawID.(string)
 		if !ok || strings.TrimSpace(datasetID) == "" {

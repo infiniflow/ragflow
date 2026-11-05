@@ -43,7 +43,7 @@ type APIKeyResponse struct {
 
 // ListAPIKeys list all API keys for a tenant
 func (s *SystemService) ListAPIKeys(ctx context.Context) ([]*APIKeyResponse, error) {
-	tenantID, err := requireCurrentTenantID(ctx, permission.UserIDFromContext(ctx))
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ type CreateAPIKeyRequest struct {
 // CreateAPIKey creates a new API key for a tenant
 func (s *SystemService) CreateAPIKey(ctx context.Context, req *CreateAPIKeyRequest) (*APIKeyResponse, error) {
 	userID := permission.UserIDFromContext(ctx)
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func apiTokenUserID(value *string) string {
 }
 
 func (s *SystemService) DeleteAPIKey(ctx context.Context, key string) error {
-	tenantID, err := requireCurrentTenantID(ctx, permission.UserIDFromContext(ctx))
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return err
 	}

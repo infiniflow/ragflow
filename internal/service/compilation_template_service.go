@@ -121,7 +121,7 @@ func NewCompilationTemplateService() *CompilationTemplateService {
 // definitions. Built-in templates are never persisted in the database.
 func (s *CompilationTemplateService) ListBuiltins(ctx context.Context) ([]*BuiltinTemplate, error) {
 	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}

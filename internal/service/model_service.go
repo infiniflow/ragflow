@@ -118,7 +118,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
 	}
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalizedErr := permissionresponse.NormalizeHidden(err)
 		return code, normalizedErr
@@ -149,7 +149,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 
 func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context) ([]map[string]interface{}, common.ErrorCode, error) {
 	userID := permission.UserIDFromContext(ctx)
-	ownedTenantID, err := requireCurrentTenantID(ctx, userID)
+	ownedTenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return []map[string]interface{}{}, common.CodeSuccess, nil
@@ -713,7 +713,7 @@ func mergeSavedProviderAPIKeyConfig(existing string, submitted json.RawMessage) 
 
 func (m *ModelProviderService) findProviderByIDOrNameInCurrentTenant(ctx context.Context, providerIDOrName string, includeTenantOwner bool) (*entity.TenantModelProvider, error) {
 	userID := permission.UserIDFromContext(ctx)
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2082,7 +2082,7 @@ func (m *ModelProviderService) resolveModelListTenant(ctx context.Context, reque
 	tenantID := requestedTenantID
 	if tenantID == "" {
 		var err error
-		tenantID, err = requireCurrentTenantID(ctx, permission.UserIDFromContext(ctx))
+		tenantID, err = requireCurrentTenantID(ctx)
 		if err != nil {
 			if errors.Is(err, permission.ErrMembershipNotFound) {
 				return nil, common.CodeSuccess, nil

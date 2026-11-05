@@ -61,7 +61,7 @@ type chatSessionPermissionChecker interface {
 }
 
 type chatPipelineRunner interface {
-	AsyncChat(ctx context.Context, userID string, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error)
+	AsyncChat(ctx context.Context, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error)
 }
 
 type chatModelInfoResolver interface {
@@ -1281,7 +1281,7 @@ func (s *ChatSessionService) ChatCompletions(
 			return fail(err)
 		}
 	}
-	resultChan, err := s.pipeline.AsyncChat(ctx, userID, dialog, requestMsg, stream, kwargs)
+	resultChan, err := s.pipeline.AsyncChat(ctx, dialog, requestMsg, stream, kwargs)
 	if err != nil {
 		return fail(err)
 	}

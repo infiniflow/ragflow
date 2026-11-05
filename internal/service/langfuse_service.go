@@ -72,7 +72,7 @@ func NewLangfuseService() *LangfuseService {
 // SetAPIKey validates and stores (insert or update) the Langfuse credentials
 // for the current tenant.
 func (s *LangfuseService) SetAPIKey(ctx context.Context, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
-	tenantID, err := requireCurrentTenantID(ctx, permission.UserIDFromContext(ctx))
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
@@ -106,7 +106,7 @@ func (s *LangfuseService) SetAPIKey(ctx context.Context, secretKey, publicKey, h
 // GetAPIKey returns the current tenant credentials enriched with the Langfuse
 // project id/name.
 func (s *LangfuseService) GetAPIKey(ctx context.Context) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
-	tenantID, err := requireCurrentTenantID(ctx, permission.UserIDFromContext(ctx))
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, "", normalized
@@ -143,7 +143,7 @@ func (s *LangfuseService) GetAPIKey(ctx context.Context) (*entity.LangfuseInfoRe
 
 // DeleteAPIKey removes the stored credentials for the current tenant.
 func (s *LangfuseService) DeleteAPIKey(ctx context.Context) (bool, common.ErrorCode, string, error) {
-	tenantID, err := requireCurrentTenantID(ctx, permission.UserIDFromContext(ctx))
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return false, code, "", normalized

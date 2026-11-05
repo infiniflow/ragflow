@@ -88,7 +88,7 @@ func TestAsyncChat_RejectsNonUserLastMessage(t *testing.T) {
 		{"role": "user", "content": "first"},
 		{"role": "assistant", "content": "last message must not be assistant"},
 	}
-	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), messages, false, nil)
+	_, err := s.AsyncChat(t.Context(), dialForTest(""), messages, false, nil)
 	if err == nil {
 		t.Fatal("expected error for non-user last message, got nil")
 	}
@@ -101,7 +101,7 @@ func TestAsyncChat_RejectsNonUserLastMessage(t *testing.T) {
 // service should return an error before spawning the goroutine.
 func TestAsyncChat_EmptyMessages(t *testing.T) {
 	s := &ChatPipelineService{}
-	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), nil, false, nil)
+	_, err := s.AsyncChat(t.Context(), dialForTest(""), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for empty messages, got nil")
 	}
@@ -110,7 +110,7 @@ func TestAsyncChat_EmptyMessages(t *testing.T) {
 func TestAsyncChatRejectsNonStringUserContent(t *testing.T) {
 	s := &ChatPipelineService{}
 	messages := []map[string]interface{}{{"role": "user", "content": map[string]interface{}{"text": "question"}}}
-	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), messages, false, nil)
+	_, err := s.AsyncChat(t.Context(), dialForTest(""), messages, false, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages[0].content is invalid") {
 		t.Fatalf("AsyncChat error = %v, want indexed invalid user content error", err)
 	}
@@ -143,7 +143,6 @@ func TestAsyncChatRejectsUnauthorizedDatasetsBeforeStartingPipeline(t *testing.T
 	chat.KBIDs = []interface{}{"kb-private"}
 	results, err := (&ChatPipelineService{}).AsyncChat(
 		serviceTestContext(t, "user-1", "user-1"),
-		"user-1",
 		chat,
 		[]map[string]interface{}{{"role": "user", "content": "show me the private dataset"}},
 		false,
@@ -1748,7 +1747,7 @@ func TestAsyncChatEmptyResponseQuoteDisabled(t *testing.T) {
 	chat.PromptConfig["system"] = "Answer using {knowledge}"
 	chat.PromptConfig["empty_response"] = "Nothing found."
 	ctx := serviceTestContext(t, "user-1", "tenant-1")
-	results, err := NewChatPipelineService().AsyncChat(ctx, "user-1", chat,
+	results, err := NewChatPipelineService().AsyncChat(ctx, chat,
 		[]map[string]interface{}{{"role": "user", "content": "Question"}}, true,
 		map[string]interface{}{"quote": false})
 	if err != nil {
@@ -2261,7 +2260,7 @@ func TestAsyncChat_ContextCancellationTerminatesGoroutine(t *testing.T) {
 	cancel() // pre-cancel context to simulate client disconnect
 
 	chat := dialForTest("glm-4-flash@ZHIPU-AI")
-	results, err := NewChatPipelineService().AsyncChat(ctx, "user-1", chat,
+	results, err := NewChatPipelineService().AsyncChat(ctx, chat,
 		[]map[string]interface{}{{"role": "user", "content": "Question"}}, true, nil)
 	if err != nil {
 		t.Fatal(err)

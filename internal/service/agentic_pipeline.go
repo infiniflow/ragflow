@@ -75,13 +75,13 @@ const defaultAgenticTokenBudget = 500_000
 
 func (s *ChatPipelineService) agenticRag(
 	ctx context.Context,
-	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
 	kwargs map[string]interface{},
 	quote bool,
 ) (<-chan AsyncChatResult, error) {
+	userID := permission.UserIDFromContext(ctx)
 	tmpl, err := resolveChatAgenticTemplate(chat, kwargs)
 	if err != nil {
 		return nil, err
@@ -204,7 +204,7 @@ func (s *ChatPipelineService) agenticRag(
 		if info := chain[0].Info(); info != nil && entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
 			modelType = "image2text"
 		}
-		agentMessages := s.convertMessagesToEino(runCtx, userID, modelType, messages)
+		agentMessages := s.convertMessagesToEino(runCtx, modelType, messages)
 		// Image-bearing turns cannot fail over to a text-only model.
 		for _, msg := range agentMessages {
 			if len(msg.UserInputMultiContent) > 0 {
@@ -524,14 +524,14 @@ func agenticFailoverModelIDs(chat *entity.Chat) []string {
 
 // convertMessagesToEino converts pre-filtered user/assistant messages into
 // eino schema messages, resolving uploaded attachments throughout the history.
-func (s *ChatPipelineService) convertMessagesToEino(ctx context.Context, userID, modelType string, messages []map[string]interface{}) []*schema.Message {
+func (s *ChatPipelineService) convertMessagesToEino(ctx context.Context, modelType string, messages []map[string]interface{}) []*schema.Message {
 	out := make([]*schema.Message, 0, len(messages))
 	for _, m := range messages {
 		role, _ := m["role"].(string)
 		content, _ := m["content"].(string)
 		switch role {
 		case "user":
-			text, images := s.splitChatAttachments(ctx, userID, m["files"])
+			text, images := s.splitChatAttachments(ctx, m["files"])
 			if text != "" {
 				content += "\n\n" + text
 			}
