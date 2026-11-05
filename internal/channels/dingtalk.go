@@ -696,14 +696,14 @@ func (c *dingTalkChannel) doOpenAPI(ctx context.Context, method, path, token str
 	if resp.StatusCode >= 400 {
 		return fmt.Errorf("dingtalk open api %s status: %d, response: %s", path, resp.StatusCode, string(data))
 	}
-	var failure struct {
+	var envelope struct {
 		Success *bool  `json:"success"`
 		Code    string `json:"code"`
 		Message string `json:"message"`
 	}
-	_ = json.Unmarshal(data, &failure)
-	if failure.Success != nil && !*failure.Success {
-		return fmt.Errorf("dingtalk open api %s failed: code=%s message=%s", path, failure.Code, failure.Message)
+	_ = json.Unmarshal(data, &envelope)
+	if envelope.Success != nil && !*envelope.Success {
+		return fmt.Errorf("dingtalk open api %s failed: code=%s message=%s", path, envelope.Code, envelope.Message)
 	}
 	if out != nil {
 		return json.Unmarshal(data, out)

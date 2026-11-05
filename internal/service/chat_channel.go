@@ -426,8 +426,8 @@ func stripChannelThink(text string, inThink *bool) string {
 	return text
 }
 
-func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error) {
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{Kind: permission.ResourceKindChatChannel, ID: channelID}, permission.OperationDelete); err != nil {
+func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, channelID string) (bool, common.ErrorCode, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatChannel, ID: channelID}, permission.OperationDelete); err != nil {
 		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return false, code, permissionErr
 	}

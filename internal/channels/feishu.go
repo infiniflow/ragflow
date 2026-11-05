@@ -287,9 +287,7 @@ func (c *feishuChannel) SendStream(ctx context.Context, msg core.OutgoingMessage
 	// the complete answer as a normal message, including text that was already streamed.
 	fail := func(action string, err error) error {
 		common.Error("feishu: "+action, err, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
-		if finishErr := c.finishStreamCard(ctx, cardID, &sequence); finishErr != nil {
-			common.Error("feishu: card settings failed", finishErr, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
-		}
+		c.closeStreamCard(ctx, cardID, &sequence)
 		return err
 	}
 	ticker := time.NewTicker(feishuStreamTick)
@@ -298,12 +296,8 @@ func (c *feishuChannel) SendStream(ctx context.Context, msg core.OutgoingMessage
 		select {
 		case <-ctx.Done():
 			// The turn is over, but the card still has to be closed or it keeps rendering as
-			// in progress. The finish call needs a context that cancellation cannot abort.
-			doneCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), feishuStreamCallLimit)
-			if err := c.finishStreamCard(doneCtx, cardID, &sequence); err != nil {
-				common.Error("feishu: card settings failed", err, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
-			}
-			cancel()
+			// in progress.
+			c.closeStreamCard(ctx, cardID, &sequence)
 			return ctx.Err()
 		case value, open := <-text:
 			if !open {
@@ -321,9 +315,7 @@ func (c *feishuChannel) SendStream(ctx context.Context, msg core.OutgoingMessage
 				continue
 			}
 			if text == nil {
-				if err := c.finishStreamCard(ctx, cardID, &sequence); err != nil {
-					common.Error("feishu: card settings failed", err, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
-				}
+				c.closeStreamCard(ctx, cardID, &sequence)
 				return nil
 			}
 		}
@@ -421,6 +413,17 @@ func feishuRetry(ctx context.Context, call func(context.Context) error) error {
 		}
 	}
 	return err
+}
+
+// closeStreamCard ends the card's streaming state, logging a failed close. The turn
+// context may already be cancelled when this runs, so the call uses a detached context
+// with its own deadline.
+func (c *feishuChannel) closeStreamCard(ctx context.Context, cardID string, sequence *int) {
+	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), feishuStreamCallLimit)
+	defer cancel()
+	if err := c.finishStreamCard(closeCtx, cardID, sequence); err != nil {
+		common.Error("feishu: card settings failed", err, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
+	}
 }
 
 // finishStreamCard turns streaming mode off so the card stops rendering as in progress.
