@@ -901,6 +901,16 @@ func walkLeaf(n ast.Node, buf *bytes.Buffer) {
 			}
 			walkLeaf(c, buf)
 		}
+	case *ast.BlockQuote:
+		// The blocks of a blockquote carry no separator of their own, so two quoted
+		// paragraphs ran together as "First quoteSecond quote". Put each block on its
+		// own line, as for the blocks of a list item.
+		for i, c := range n.GetChildren() {
+			if i > 0 {
+				buf.WriteByte('\n')
+			}
+			walkLeaf(c, buf)
+		}
 	default:
 		for _, c := range n.GetChildren() {
 			walkLeaf(c, buf)
