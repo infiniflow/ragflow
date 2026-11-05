@@ -561,7 +561,7 @@ func TestChatServicePatchChatRejectsTooLongName(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected too long name error")
 	}
-	if err.Error() != "chat name length is 256 which is larger than 255" {
+	if err.Error() != "name length is 256 which is larger than 255" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

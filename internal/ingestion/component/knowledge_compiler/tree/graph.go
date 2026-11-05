@@ -167,7 +167,7 @@ func raptorTreeToGraph(root *graphNode) ([]map[string]any, []map[string]any) {
 		ent := map[string]any{
 			"name":          title,
 			"type":          "tree_node",
-			"description":   firstNonEmpty(node.description, title),
+			"description":   common.FirstNonEmpty(node.description, title),
 			"mention_count": 1,
 		}
 		if len(node.sourceChunkIDs) > 0 {

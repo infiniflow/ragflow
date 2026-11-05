@@ -59,7 +59,7 @@ func TestSDKDatasetNegativePagerankDiagnostic(t *testing.T) {
 func TestSDKDatasetUnicodeDeduplicationLimit(t *testing.T) {
 	for _, n := range []int{125, 128} {
 		name := strings.Repeat("数", n)
-		got, err := common.UniqueNameCharacters(name, 128, func(candidate string) (bool, error) { return candidate == name, nil })
+		got, err := common.UniqueName(name, common.NameLimit128, func(candidate string) (bool, error) { return candidate == name, nil })
 		if n == 125 {
 			if err != nil || got != name+"(1)" {
 				t.Fatalf("name=%q err=%v", got, err)

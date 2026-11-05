@@ -226,7 +226,7 @@ func chainGatherChunkText(badRows []common.Product, chunksByID map[string]string
 	seen := map[string]bool{}
 	var out [][2]string
 	for _, row := range badRows {
-		for _, cid := range metaStrings(row.Meta, "source_chunk_ids") {
+		for _, cid := range common.MetaStringSlice(row.Meta, "source_chunk_ids") {
 			if cid == "" || seen[cid] {
 				continue
 			}

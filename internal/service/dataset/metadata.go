@@ -16,7 +16,6 @@ import (
 
 // UpdateDocumentMetadataConfig updates the metadata config for a document in a dataset.
 func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
-	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	datasetID = strings.TrimSpace(datasetID)
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
@@ -52,7 +51,7 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, datas
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 	llmID := ""
-	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); modelErr == nil {
 		llmID = service.ModelReference(modelInfo)
 	}
 	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
@@ -101,7 +100,6 @@ func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID string
 // UpdateMetadataConfig updates the auto-metadata configuration for a dataset.
 func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID string, req *service.MetadataConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
-	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
@@ -162,7 +160,7 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID str
 	delete(parserConfig, "enable_metadata")
 	delete(parserConfig, "built_in_metadata")
 	llmID := ""
-	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); modelErr == nil {
 		llmID = service.ModelReference(modelInfo)
 	}
 	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)

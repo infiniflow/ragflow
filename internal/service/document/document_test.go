@@ -1401,10 +1401,10 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		t.Fatalf("insert existing doc: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
 	svc := testDocumentService(t)
 	fh := makeTestFileHeader(t, "file", "deck.pptx", []byte("abc"))
-	got, errs := svc.UploadLocalDocuments(ctx, kb, "user-1", []*multipart.FileHeader{fh}, "nested/path", map[string]interface{}{
+	got, errs := svc.UploadLocalDocuments(ctx, kb, []*multipart.FileHeader{fh}, "nested/path", map[string]interface{}{
 		"table_column_mode": "assist",
 	})
 	if len(errs) != 0 {
@@ -1441,6 +1441,65 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	assertKBDocNum(t, kb.ID, 2)
 }
 
+func TestUploadLocalDocumentsKeepsStorageKeyWithinByteLimit(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	mockStorage := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	origStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(origStorage) })
+
+	pipelineID := "pipe-long-name"
+	ensureTestTenantOwner(t, "user-1", "tenant-1")
+	valid := string(entity.StatusValid)
+	kb := &entity.Knowledgebase{
+		ID:           "kb-long-name",
+		TenantID:     "tenant-1",
+		CreatedBy:    "user-1",
+		Name:         "kb-long-name",
+		ParserID:     "naive",
+		PipelineID:   &pipelineID,
+		ParserConfig: entity.JSONMap{},
+		Status:       &valid,
+	}
+	if err := dao.DB.Create(kb).Error; err != nil {
+		t.Fatalf("insert kb: %v", err)
+	}
+
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
+	svc := testDocumentService(t)
+	filename := strings.Repeat("界", 100) + ".pdf"
+	fh := makeTestFileHeader(t, "file", filename, []byte("%PDF-1.7"))
+	got, errs := svc.UploadLocalDocuments(ctx, kb, []*multipart.FileHeader{fh}, "", nil)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errs: %v", errs)
+	}
+	if len(got) != 1 {
+		t.Fatalf("expected 1 uploaded doc, got %d", len(got))
+	}
+
+	location, _ := got[0]["location"].(string)
+	if location == "" {
+		t.Fatal("location is empty")
+	}
+	for _, segment := range strings.Split(location, "/") {
+		if len(segment) > utility.StorageKeyMaxBytes {
+			t.Fatalf("storage key segment %q is %d bytes, want <= %d", segment, len(segment), utility.StorageKeyMaxBytes)
+		}
+	}
+	if !strings.HasSuffix(location, ".pdf") {
+		t.Fatalf("location = %q, want .pdf suffix", location)
+	}
+	if got[0]["name"] != filename {
+		t.Fatalf("name = %v, want the full display name %q", got[0]["name"], filename)
+	}
+	if _, err := mockStorage.Get(ctx, kb.ID, location); err != nil {
+		t.Fatalf("blob not stored at %q: %v", location, err)
+	}
+}
+
 func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -1464,9 +1523,9 @@ func TestUploadEmptyDocument_CreatesVirtualDocumentAndFileLink(t *testing.T) {
 		t.Fatalf("insert kb: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
 	svc := testDocumentService(t)
-	got, code, err := svc.UploadEmptyDocument(ctx, kb, "user-1", "draft.md")
+	got, code, err := svc.UploadEmptyDocument(ctx, kb, "draft.md")
 	if err != nil {
 		t.Fatalf("UploadEmptyDocument error: %v", err)
 	}
@@ -3260,6 +3319,19 @@ func TestUpdateDocumentUsesSharedRenamePath(t *testing.T) {
 	}
 	if doc.Progress != progress || doc.ProgressMsg == nil || *doc.ProgressMsg != progressMsg || doc.ChunkNum != chunkNum || doc.TokenNum != tokenNum {
 		t.Fatalf("immutable fields changed: %#v", doc)
+	}
+}
+
+func TestUpdateDocumentRejectsOverlongName(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "old.pdf", 10, 5)
+
+	name := strings.Repeat("a", 252) + ".pdf"
+	code, err := testDocumentService(t).UpdateDocument(t.Context(), "doc-1", &UpdateDocumentRequest{Name: &name})
+	if err == nil || code != common.CodeArgumentError {
+		t.Fatalf("UpdateDocument overlong name = (%v, %v), want argument error", code, err)
 	}
 }
 

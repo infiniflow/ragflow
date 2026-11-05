@@ -173,7 +173,7 @@ func TestRESTSearchNameRules(t *testing.T) {
 		for _, tc := range []struct{ name, value, want string }{
 			{"empty", "", "empty"},
 			{"whitespace", " \t ", "empty"},
-			{"oversized", strings.Repeat("s", 257), "large than"},
+			{"oversized", strings.Repeat("s", 257), "larger than"},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				result := restCall(t, TestConfig, http.MethodPost, "/searches", apiObject{"name": tc.value}, nil)

@@ -35,11 +35,11 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	if deps.Chat == nil {
 		return common.Outputs{}, fmt.Errorf("tree: chat model required")
 	}
-	docID := firstNonEmpty(inputs.DocID, deps.DatasetID)
+	docID := common.FirstNonEmpty(inputs.DocID, deps.DatasetID)
 	if docID == "" {
 		docID = "unknown"
 	}
-	llmID := firstNonEmpty(param.LLMID, inputs.LLMID)
+	llmID := common.FirstNonEmpty(param.LLMID, inputs.LLMID)
 	tenantID := deps.TenantID
 
 	treeOrder := resolveTreeOrder(param)
@@ -536,7 +536,7 @@ func allIndices(n int) []int {
 
 // chunkTextOf returns the text of a chunk, preferring Text over Content.
 func chunkTextOf(c common.Chunk) string {
-	return firstNonEmpty(c.Text, c.Content)
+	return common.FirstNonEmpty(c.Text, c.Content)
 }
 
 // chunkHasText reports whether a chunk carries non-blank text. Empty chunks
@@ -634,15 +634,6 @@ func collectIDs(chunkIDs []string, pointIdxs []int) []string {
 		out = append(out, id)
 	}
 	return out
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func toFloat64Matrix(vecs [][]float32) [][]float64 {
