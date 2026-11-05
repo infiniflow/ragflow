@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -183,6 +184,12 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	var linkedConnectors []*dao.ConnectorDatasetListItem
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
+	txOptions := &sql.TxOptions{}
+	if req.Name != nil {
+		// After waiting for the parent lock, name checks must see the writer
+		// that just committed, without taking range locks on sibling entries.
+		txOptions.Isolation = sql.LevelReadCommitted
+	}
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
 		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID)
 		if authErr != nil {
@@ -494,7 +501,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		}
 
 		return nil
-	})
+	}, txOptions)
 	if err != nil {
 		if txCode == common.CodeSuccess {
 			txCode = common.CodeServerError
@@ -542,6 +549,10 @@ func renameDatasetFolder(ctx context.Context, tx *gorm.DB, kb *entity.Knowledgeb
 	if kbRoot.Type != "folder" {
 		return common.CodeDataError, errors.New("Knowledgebase root is not a folder")
 	}
+	fileDAO := dao.NewFileDAO()
+	if err := fileDAO.LockDatasetFolderParent(ctx, tx, kb.TenantID, kbRoot.ID); err != nil {
+		return common.CodeServerError, err
+	}
 
 	entries := func() *gorm.DB {
 		return tx.WithContext(ctx).Model(&entity.File{}).
@@ -558,13 +569,11 @@ func renameDatasetFolder(ctx context.Context, tx *gorm.DB, kb *entity.Knowledgeb
 		return common.CodeDataError, errors.New("Dataset path is not a folder")
 	}
 
-	var count int64
-	err = entries().Where("LOWER(name) = LOWER(?) AND id <> ?", newName, original.ID).
-		Count(&count).Error
+	exists, err := fileDAO.NameExists(ctx, tx, newName, kbRoot.ID, kb.TenantID, original.ID)
 	if err != nil {
 		return common.CodeServerError, err
 	}
-	if count > 0 {
+	if exists {
 		return common.CodeDataError, fmt.Errorf("Dataset folder name '%s' already exists", newName)
 	}
 	if original.ID == "" {

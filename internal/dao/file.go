@@ -25,6 +25,7 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // FileDAO file data access object
@@ -474,6 +475,33 @@ func (dao *FileDAO) NameExists(ctx context.Context, db *gorm.DB, name, parentID,
 	var count int64
 	err := q.Count(&count).Error
 	return count > 0, err
+}
+
+// LockDatasetFolderParent serializes sibling name changes under a tenant's
+// root .knowledgebase folder. Other parents are left unlocked. The caller
+// must pass an open transaction and keep it through the name check and write.
+func (dao *FileDAO) LockDatasetFolderParent(ctx context.Context, tx *gorm.DB, tenantID, parentID string) error {
+	var parent entity.File
+	if err := tx.WithContext(ctx).Where("id = ? AND tenant_id = ?", parentID, tenantID).Take(&parent).Error; err != nil {
+		return err
+	}
+	if parent.Type != "folder" || parent.Name != DatasetFolderName || parent.ParentID == parent.ID {
+		return nil
+	}
+	var root entity.File
+	err := tx.WithContext(ctx).
+		Where("id = ? AND tenant_id = ? AND parent_id = id AND type = ?", parent.ParentID, tenantID, "folder").
+		Take(&root).Error
+	if IsNotFoundErr(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	err = tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND tenant_id = ? AND parent_id = ? AND name = ? AND type = ?",
+			parent.ID, tenantID, root.ID, DatasetFolderName, "folder").Take(&parent).Error
+	return err
 }
 
 // Delete deletes a file by ID (hard delete)
