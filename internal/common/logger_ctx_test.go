@@ -17,6 +17,8 @@ package common
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap"
@@ -35,7 +37,7 @@ func withTestLogger(t *testing.T) *observer.ObservedLogs {
 	core, logs := observer.New(zapcore.DebugLevel)
 	old := Logger
 	oldLevel := atomicLevel
-	Logger = zap.New(core)
+	Logger = zap.New(redactingLogCore{Core: core})
 	atomicLevel = zap.NewAtomicLevelAt(zapcore.DebugLevel)
 	t.Cleanup(func() { Logger = old; atomicLevel = oldLevel })
 	return logs
@@ -90,6 +92,25 @@ func TestCtxLogOmitsSessionFieldWhenAbsent(t *testing.T) {
 		}
 		if !present || got != c.wantID {
 			t.Errorf("entry %d (%q): session_id = (%v, %v), want %q", i, c.msg, got, present, c.wantID)
+		}
+	}
+
+	logs.TakeAll()
+	Logger.With(zap.String("password", "bound-secret")).Sugar().Infow(
+		"request failed: Bearer bearer-secret, email=person@example.com",
+		"config", map[string]any{"client_secret": "nested-secret", "username": "private-user", "endpoint": "https://login:pass@provider.example/signed-path?credential=query-secret"},
+		"question", "private-question",
+		"count", 2,
+	)
+	ErrorCtx(context.Background(), "provider failed", fmt.Errorf("password=%q; body: %s", "error-secret", "private-provider-body"),
+		zap.ByteString("detail", []byte("api_key=bytes-secret")))
+	entries = logs.All()
+	if len(entries) != 2 || entries[0].ContextMap()["count"] != int64(2) {
+		t.Fatal("redaction changed log delivery or numeric metadata")
+	}
+	for _, secret := range []string{"bound-secret", "bearer-secret", "person@example.com", "nested-secret", "private-user", "private-question", "signed-path", "query-secret", "login:pass", "error-secret", "bytes-secret", "private-provider-body"} {
+		if strings.Contains(fmt.Sprint(entries), secret) {
+			t.Fatalf("sensitive value %q was logged", secret)
 		}
 	}
 }

@@ -25,7 +25,6 @@ import (
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -51,53 +50,25 @@ max_token: 64
 `)); err != nil {
 		t.Fatal(err)
 	}
-	wantCredentials := make(map[string]any)
-	for _, key := range []string{
-		"mail_password", "secret", "secret_key", "client_secret", "api_key",
-		"host_api_key", "http_app_key", "http_secret_key", "access_key", "secret_id", "session_token", "sas_token",
-		"open_dataloader_api_key", "paddle_ocr_access_token", "somark_api_key", "tcad_api_key",
-		"docling_api_key", "mineru_api_key", "tavily_api_key", "querit_api_key",
-	} {
-		globalViper.Set("credentials."+key, "test-only-credential")
-		wantCredentials[key] = "******"
-	}
 	original := fmt.Sprint(globalViper.AllSettings())
 	core, logs := observer.New(zapcore.InfoLevel)
 	common.Logger = zap.New(core)
 	PrintAll()
 
-	settings := make(map[string]any)
-	for _, entry := range logs.FilterMessage("config").All() {
-		fields := entry.ContextMap()
-		settings[fields["key"].(string)] = fields["value"]
+	entries := logs.FilterMessage("Configuration loaded").All()
+	if len(entries) != 1 || len(entries[0].ContextMap()) != 1 {
+		t.Fatal("configuration log must contain only the section count")
 	}
-	want := map[string]any{
-		"password": "******",
-		"os":       map[string]any{"hosts": "search.example", "username": "admin", "password": "******"},
-		"mcp":      map[string]any{"host_api_key": "******"},
-		"backends": []any{
-			map[string]any{"config": map[string]any{"password": "******", "enabled": true}},
-			map[string]any{"password": "******"},
-			map[string]any{"password": "******"},
-		},
-		"credentials":            wantCredentials,
-		"password_policy":        "strict",
-		"disable_password_login": true,
-		"max_token":              int64(64),
+	if entries[0].ContextMap()["section_count"] != int64(len(globalViper.AllSettings())) {
+		t.Fatal("configuration section count is incorrect")
 	}
-	if !reflect.DeepEqual(settings, want) {
-		t.Fatalf("logged settings = %#v, want %#v", settings, want)
+	for _, secret := range []string{"test-only-root-password", "test-only-search-password", "admin", "test-only-mcp-key", "test-only-nested-password"} {
+		if strings.Contains(fmt.Sprint(logs.All()), secret) {
+			t.Fatal("configuration value leaked to logs")
+		}
 	}
 	if fmt.Sprint(globalViper.AllSettings()) != original {
 		t.Fatal("logging mutated the loaded configuration")
-	}
-}
-
-func TestMaskConfigCredentialsIgnoresCase(t *testing.T) {
-	input := map[string]any{"API_KEY": "test-only-secret", "PASSWORD_POLICY": "strict"}
-	want := map[string]any{"API_KEY": "******", "PASSWORD_POLICY": "strict"}
-	if got := maskConfigCredentials(input); !reflect.DeepEqual(got, want) {
-		t.Fatalf("masked settings = %#v, want %#v", got, want)
 	}
 }
 

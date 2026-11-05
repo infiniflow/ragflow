@@ -462,7 +462,7 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 			idList[i] = fmt.Sprintf("'%v'", chunk["id"])
 		}
 		filter := fmt.Sprintf("id IN (%s)", strings.Join(idList, ", "))
-		common.Debug(fmt.Sprintf("Deleting existing rows with filter: %s", filter))
+		common.Debug("Deleting existing rows", zap.Int("rows", len(insertChunks)))
 		delResp, delErr := table.Delete(filter)
 		if delErr != nil {
 			common.Warn(fmt.Sprintf("Failed to delete existing rows: %v", delErr))
@@ -1273,14 +1273,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 				table = table.MatchText(fields, questionText, textTopN, extraOptions)
 
-				common.Debug(fmt.Sprintf(
-					"MatchTextExpr:\n"+
-						"    fields=%s\n"+
-						"    matching_text=%s\n"+
-						"    topn=%d\n"+
-						"    extra_options=%v",
-					fields, questionText, textTopN, extraOptions,
-				))
+				common.Debug("MatchTextExpr", zap.Int("topn", textTopN), zap.Int("query_bytes", len(questionText)))
 			}
 
 			// Add vector match if provided
@@ -1387,7 +1380,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 			// Add filter when there's no text/vector match (like metadata queries)
 			if !hasTextMatch && !hasVectorMatch && filterStr != "" {
-				common.Debug(fmt.Sprintf("Adding filter for no-match query: %s", filterStr))
+				common.Debug("Adding filter for no-match query")
 				table = table.Filter(filterStr)
 			}
 

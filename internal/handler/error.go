@@ -34,7 +34,7 @@ func jsonInternalError(c *gin.Context, err error) {
 	common.Warn("handler internal error",
 		zap.Error(err),
 		zap.String("method", c.Request.Method),
-		zap.String("path", c.Request.URL.Path),
+		zap.String("path", c.FullPath()),
 	)
 	common.RespondError(c, common.CodeServerError, common.CodeServerError.Message())
 }
@@ -55,10 +55,8 @@ func HandleNoRoute(c *gin.Context) {
 	// Log the request details on server side
 	common.Logger.Warn("The requested URL was not found",
 		zap.String("method", c.Request.Method),
-		zap.String("path", c.Request.URL.Path),
-		zap.String("query", c.Request.URL.RawQuery),
-		zap.String("remote_addr", c.ClientIP()),
-		zap.String("user_agent", c.Request.UserAgent()),
+		zap.Bool("has_query", c.Request.URL.RawQuery != ""),
+		zap.Int("query_len", len(c.Request.URL.RawQuery)),
 	)
 
 	// Return JSON error response

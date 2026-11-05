@@ -83,7 +83,6 @@ func SendResetCodeEmail(cfg common.SMTPConfig, toEmail, otp string, ttlMinutes i
 	msg := buildPlainEmail(fromHeader, toEmail, subject, body)
 	if err := sendMail(cfg, fromAddr, toEmail, msg); err != nil {
 		common.Warn("SMTP send failed",
-			zap.String("to", toEmail),
 			zap.String("server", cfg.MailServer),
 			zap.Int("port", cfg.MailPort),
 			zap.Error(err),

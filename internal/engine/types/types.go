@@ -18,9 +18,10 @@ package types
 
 import (
 	"errors"
-	"fmt"
 
 	"ragflow/internal/common"
+
+	"go.uber.org/zap"
 )
 
 var ErrDocumentNotFound = errors.New("document not found")
@@ -166,33 +167,9 @@ type FusionExpr struct {
 	FusionParams map[string]interface{} // Fusion parameters (e.g., {"weights": "0.05,0.95"})
 }
 
-// LogSearchRequest logs SearchRequest in debug mode
+// LogSearchRequest records search metadata without query text or filter values.
 func LogSearchRequest(engineName string, req *SearchRequest) {
-	if !common.IsDebugEnabled() {
-		return
-	}
-
-	var matchExprsStr string
-	for i, expr := range req.MatchExprs {
-		switch e := expr.(type) {
-		case *MatchTextExpr:
-			matchExprsStr += fmt.Sprintf("    [%d] MatchTextExpr: fields=%v, matchingText=%s, topN=%d, extraOptions=%v\n", i, e.Fields, e.MatchingText, e.TopN, e.ExtraOptions)
-		case *MatchDenseExpr:
-			matchExprsStr += fmt.Sprintf("    [%d] MatchDenseExpr: vectorColumn=%s, vectorSize=%d, topN=%d, extraOptions=%v\n", i, e.VectorColumnName, len(e.EmbeddingData), e.TopN, e.ExtraOptions)
-		case *FusionExpr:
-			matchExprsStr += fmt.Sprintf("    [%d] FusionExpr: method=%s, topN=%d, fusionParams=%v\n", i, e.Method, e.TopN, e.FusionParams)
-		default:
-			matchExprsStr += fmt.Sprintf("    [%d] unknown type\n", i)
-		}
-	}
-
-	common.Debug(fmt.Sprintf("Search request:\n"+
-		"    indexNames=%v\n"+
-		"    KbIDs=%v\n"+
-		"    offset=%d, limit=%d\n"+
-		"    SelectFields=%v\n"+
-		"    Filter=%v\n"+
-		"    MatchExprs:\n%s    orderBy=%v\n"+
-		"    RankFeature=%v",
-		req.IndexNames, req.KbIDs, req.Offset, req.Limit, req.SelectFields, req.Filter, matchExprsStr, req.OrderBy, req.RankFeature))
+	common.Debug("Search request", zap.String("engine", engineName),
+		zap.Int("offset", req.Offset), zap.Int("limit", req.Limit),
+		zap.Int("match_expressions", len(req.MatchExprs)))
 }

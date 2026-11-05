@@ -180,7 +180,7 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 		// otherwise nest N levels deep and trip Infinity's Thrift expression depth
 		// limit (see joinBalanced).
 		filter := joinBalanced(idList, " OR ")
-		common.Debug(fmt.Sprintf("Deleting existing metadata with filter: %s", filter))
+		common.Debug("Deleting existing metadata", zap.Int("rows", len(insertMetadata)))
 		delResp, delErr := table.Delete(filter)
 		if delErr != nil {
 			common.Warn(fmt.Sprintf("Failed to delete existing metadata: %v", delErr))

@@ -77,7 +77,7 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 
 	// Middleware
 	ginEngine.Use(common.GinLogger())
-	ginEngine.Use(gin.Recovery())
+	ginEngine.Use(common.GinRecovery())
 
 	// Setup routes
 	r.Setup(ginEngine)

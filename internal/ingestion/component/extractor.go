@@ -587,13 +587,13 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	// Honour ctx cancel up front so the caller's WithTimeout(...)
 	// is observed even when the driver layer doesn't take a ctx.
-	common.Info(fmt.Sprintf("try to chat with message: %v", req.Messages))
+	common.Info("extractor: chat started")
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	out, err := wrapper.Generate(ctx, toExtractorEinoMessages(req.Messages))
 	if err != nil {
-		common.Error(fmt.Sprintf("error when chat with message: %v", req.Messages), err)
+		common.Error("extractor: chat failed", err)
 		return nil, err
 	}
 	common.Debug(fmt.Sprintf("extractor: chat completed for model %s, response_length=%d", modelName, len(out.Content)))

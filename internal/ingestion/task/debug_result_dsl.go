@@ -20,7 +20,7 @@
 //  BuildDebugResultDSL combines the STATIC DSL structure (component_name /
 //  downstream / params / graph.nodes) with the RUN output map (state.go:284
 //  `out[<componentID>] = <outputs>`). Every non-`components` top-level key
-//  (graph / path / task_id / …) is carried verbatim; each rebuilt obj keeps
+//  (graph / path / task_id / …) is copied with sensitive values redacted; each rebuilt obj keeps
 //  the UI-relevant fields, so the front-end renders chunks at a smaller
 //  payload.
 
@@ -32,6 +32,7 @@ import (
 	"reflect"
 	"strings"
 
+	"ragflow/internal/common"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 )
 
@@ -129,10 +130,7 @@ func BuildDebugResultDSL(dsl string, output map[string]any, includeOutputs bool)
 
 		// Build obj.params: start from a deep copy of the static DSL params
 		// (setups/field_name/...), then inject the runtime outputs wrapper.
-		mergedParams := map[string]any{}
-		for k, v := range staticParams {
-			mergedParams[k] = deepCopy(v, false)
-		}
+		mergedParams := deepCopy(staticParams, false).(map[string]any)
 		// Never forward a pre-existing outputs wrapper from the input DSL into
 		// the rebuilt params: the input can be an output-bearing copy (e.g. a
 		// stale pipeline_operation_log row loaded back as a canvas), and the
@@ -188,12 +186,16 @@ func BuildDebugResultDSL(dsl string, output map[string]any, includeOutputs bool)
 	}
 
 	// Carry every non-components top-level key (graph, path, task_id,
-	// canvas_type, ...) verbatim (contract: agent/canvas.py:126). The
+	// canvas_type, ...) with sensitive values redacted. The
 	// persisted log DSL round-trips through the front-end rerun flow, so a
 	// dropped key is lost to every consumer.
 	result := make(map[string]any, len(root)+1)
 	for k, v := range root {
 		if k == "components" {
+			continue
+		}
+		if common.IsSensitiveLogKey(k) {
+			result[k] = "[REDACTED]"
 			continue
 		}
 		result[k] = deepCopy(v, false)
@@ -284,12 +286,17 @@ func pythonTypeName(v any) string {
 // preserving structure but sharing nothing mutable with the source. When
 // stripVector is true it additionally drops vector keys (see IsVectorKey) from
 // every map it visits, so raw embedding vectors never reach the debug log.
+// Credential fields and recognizable sensitive text are redacted in both modes.
 func deepCopy(v any, stripVector bool) any {
 	switch val := v.(type) {
 	case map[string]any:
 		cp := make(map[string]any, len(val))
 		for k, vv := range val {
 			if stripVector && IsVectorKey(k) {
+				continue
+			}
+			if common.IsSensitiveLogKey(k) {
+				cp[k] = "[REDACTED]"
 				continue
 			}
 			cp[k] = deepCopy(vv, stripVector)
@@ -307,6 +314,8 @@ func deepCopy(v any, stripVector bool) any {
 			cp[i] = deepCopy(vv, stripVector)
 		}
 		return cp
+	case string:
+		return common.RedactLogText(val)
 	default:
 		return v
 	}

@@ -19,6 +19,7 @@ package dao
 import (
 	"context"
 	"errors"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
@@ -50,10 +51,12 @@ func NewIngestionTaskLogDAO() *IngestionTaskLogDAO {
 }
 
 func (dao *IngestionTaskLogDAO) Create(ctx context.Context, db *gorm.DB, ingestionLog *entity.IngestionTaskLog) error {
+	ingestionLog.Message = common.RedactLogText(ingestionLog.Message)
 	return db.WithContext(ctx).Create(ingestionLog).Error
 }
 
 func (dao *IngestionTaskLogDAO) Update(ctx context.Context, db *gorm.DB, ingestionLog *entity.IngestionTaskLog) error {
+	ingestionLog.Message = common.RedactLogText(ingestionLog.Message)
 	return db.WithContext(ctx).Save(ingestionLog).Error
 }
 

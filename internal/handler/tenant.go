@@ -533,7 +533,6 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 		if err = sendTenantInviteEmail(smtpCfg, req.Email, req.Email, tenantID, inviter); err != nil {
 			common.Warn("failed to send tenant invite email",
 				zap.String("tenant_id", tenantID),
-				zap.String("email", req.Email),
 				zap.Error(err))
 			operationLog.Code = int(common.CodeServerError)
 			operationLog.Error = err

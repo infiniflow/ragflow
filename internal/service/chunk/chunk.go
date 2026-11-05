@@ -138,28 +138,7 @@ func NewChunkService() *ChunkService {
 //  7. knowledge graph retrieval (not implemented)
 //  8. Apply retrieval by children to group child chunks under parent chunks
 func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest) (*service.RetrievalTestResponse, error) {
-	common.Info("RetrievalTest started", zap.String("userID", permission.UserIDFromContext(ctx)), zap.Any("kbID", req.Datasets), zap.String("question", req.Question))
-
-	common.Debug(fmt.Sprintf("RetrievalTest request:\n"+
-		"    kbID=%v\n"+
-		"    question=%s\n"+
-		"    page=%v, size=%v\n"+
-		"    docIDs=%v\n"+
-		"    useKG=%v, topK=%v\n"+
-		"    crossLanguages=%v\n"+
-		"    searchID=%v\n"+
-		"    filter=%v\n"+
-		"    tenantRerankID=%v\n"+
-		"    rerankID=%v\n"+
-		"    keyword=%v\n"+
-		"    similarityThreshold=%v, vectorSimilarityWeight=%v",
-		req.Datasets, req.Question,
-		common.PtrString(req.Page), common.PtrString(req.Size), req.DocIDs,
-		common.PtrString(req.UseKG), common.PtrString(req.TopK), req.CrossLanguages, common.PtrString(req.SearchID),
-		req.Filter,
-		common.PtrString(req.TenantRerankID), common.PtrString(req.RerankID),
-		common.PtrString(req.Keyword),
-		common.PtrString(req.SimilarityThreshold), common.PtrString(req.VectorSimilarityWeight)))
+	common.Info("RetrievalTest started", zap.String("userID", permission.UserIDFromContext(ctx)), zap.Any("kbID", req.Datasets), zap.Int("question_bytes", len(req.Question)))
 
 	if req.Question == "" {
 		return nil, fmt.Errorf("question is required")

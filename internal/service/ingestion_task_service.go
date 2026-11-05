@@ -1290,7 +1290,7 @@ func (s *IngestionTaskService) insertEventOnDB(ctx context.Context, db *gorm.DB,
 		component = ""
 		phase = 0
 	}
-	message = s.truncateIngestionEventMessage(message)
+	message = s.truncateIngestionEventMessage(common.RedactLogText(message))
 	now := time.Now().Local()
 	// EventTypeLifecycle is zero while the database default is the defensive
 	// legacy value. A map keeps the explicitly mapped protocol value intact;

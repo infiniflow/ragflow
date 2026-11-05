@@ -348,7 +348,11 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	// Connect to database
 	var err error
 	DB, err = gorm.Open(dialector, &gorm.Config{
-		Logger: gormLogger.Default.LogMode(gormLogLevel),
+		Logger: gormLogger.New(common.StdLogger(), gormLogger.Config{
+			LogLevel:             gormLogLevel,
+			SlowThreshold:        200 * time.Millisecond,
+			ParameterizedQueries: true,
+		}),
 		NowFunc: func() time.Time {
 			return time.Now().Local()
 		},

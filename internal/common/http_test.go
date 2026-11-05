@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
-func TestDriverHTTPClientLogsProviderRequestAndResponseWhenEnabled(t *testing.T) {
+func TestDriverHTTPClientLogsProviderMetadataWhenEnabled(t *testing.T) {
 	t.Setenv(EnvLLMDebug, "true")
 	core, logs := observer.New(zapcore.InfoLevel)
 	previousLogger := Logger
@@ -26,6 +26,10 @@ func TestDriverHTTPClientLogsProviderRequestAndResponseWhenEnabled(t *testing.T)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/rerank" {
 			t.Fatalf("path = %q, want /v1/rerank", r.URL.Path)
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil || string(body) != `{"query":"hello","api_key":"payload-secret"}` {
+			t.Fatal("logging altered the provider request body")
 		}
 		fmt.Fprint(w, `{"answer":"ok","access_token":"response-secret"}`)
 	}))
@@ -52,16 +56,13 @@ func TestDriverHTTPClientLogsProviderRequestAndResponseWhenEnabled(t *testing.T)
 		t.Fatalf("provider log count = %d, want 1", len(entries))
 	}
 	message := entries[0].Message
-	if strings.Contains(message, `\"`) {
-		t.Errorf("provider log contains escaped JSON: %q", message)
+	if strings.Contains(message, "payload=") || strings.Contains(message, "response_body=") {
+		t.Fatal("provider log must omit request and response bodies")
 	}
-	if !strings.Contains(message, `payload={"api_key":"[REDACTED]","query":"hello"}`) {
-		t.Errorf("provider log payload is not raw redacted JSON: %q", message)
+	if !strings.Contains(message, "response_code=200 took=") || !strings.Contains(message, " first-token=") {
+		t.Fatal("provider log is missing status or timings")
 	}
-	if !strings.Contains(message, `response_code=200 took=`) || !strings.Contains(message, ` first-token=`) || !strings.Contains(message, ` response_body={"access_token":"[REDACTED]","answer":"ok"}`) {
-		t.Errorf("provider log response is not raw redacted JSON: %q", message)
-	}
-	if strings.Contains(message, "request-secret") || strings.Contains(message, "payload-secret") || strings.Contains(message, "response-secret") {
+	if strings.Contains(message, "request-secret") || strings.Contains(message, "payload-secret") || strings.Contains(message, "response-secret") || strings.Contains(message, "hello") {
 		t.Errorf("provider log contains an unredacted secret: %q", message)
 	}
 }
@@ -93,7 +94,7 @@ func TestGetMaxDocumentUploadBytes(t *testing.T) {
 	}
 }
 
-func TestProviderLoggingRecordsTimingsAndTruncatesVectors(t *testing.T) {
+func TestProviderLoggingRecordsTimingsWithoutPayloads(t *testing.T) {
 	core, logs := observer.New(zapcore.InfoLevel)
 	previousLogger := Logger
 	Logger = zap.New(core)
@@ -147,12 +148,10 @@ func TestProviderLoggingRecordsTimingsAndTruncatesVectors(t *testing.T) {
 	if !strings.Contains(message, "took=3s first-token=1s") {
 		t.Errorf("provider log timings = %q, want took=3s first-token=1s", message)
 	}
-	if !strings.Contains(message, `response_body={"data":[{"embedding":[0.1,0.2,0.3]}],"vectors":[[1,2,3],[5,6]]}`) {
-		t.Errorf("provider log did not truncate vectors: %q", message)
+	if strings.Contains(message, "response_body=") || strings.Contains(message, "embedding") || strings.Contains(message, "0.1") {
+		t.Fatal("provider log must omit response data, including vectors")
 	}
-	if strings.Contains(message, "0.4") || strings.Contains(message, "0.5") || strings.Contains(message, "[1,2,3,4]") {
-		t.Errorf("provider log contains vector values after the first three: %q", message)
-	}
+
 }
 
 type trackingReadCloser struct {
@@ -195,11 +194,7 @@ func TestProviderLoggingDisabledAvoidsPayloadWork(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Do() error = %v", err)
 	}
-	// The body is still wrapped so the call can be timed, but nothing is
-	// captured and nothing is logged while LLM_DEBUG is disabled.
-	if wrapped, ok := resp.Body.(*providerResponseBody); ok && wrapped.capture {
-		t.Fatalf("response body was captured while LLM_DEBUG is disabled")
-	}
+	// The wrapper times the response without capturing its body.
 	_ = resp.Body.Close()
 
 	if payload.reads != 0 {

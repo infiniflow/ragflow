@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/utility"
 )
@@ -164,7 +165,7 @@ func (s *DebugLogSink) OnComponentProgress(_ context.Context, ev pipeline.Progre
 		progress = -1.0
 	}
 
-	message := ev.Message
+	message := common.RedactLogText(ev.Message)
 	if ev.Phase == phaseError {
 		// Prefix so the front-end timeline renders the line red
 		// (web/src/pages/agent/pipeline-log-sheet/dataflow-timeline.tsx).
@@ -229,7 +230,7 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 	}
 	endMsg := "Debug run completed"
 	if finalErr != nil {
-		endMsg = "[ERROR] " + finalErr.Error()
+		endMsg = "[ERROR] " + common.RedactLogText(finalErr.Error())
 	} else if msg := endOutputMessage(entries, s.runOutput); msg != "" {
 		// Mirror Python's END marker message: a JSON dump of the last
 		// component's output (rag/flow/pipeline.py:171). The front-end

@@ -17,9 +17,7 @@
 package common
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -37,9 +35,6 @@ import (
 )
 
 const (
-	redactedLogValue      = "[REDACTED]"
-	maxLoggedVectorFloats = 3
-
 	// DefaultMaxJSONRequestBodyBytes is the default limit for non-multipart requests.
 	DefaultMaxJSONRequestBodyBytes int64 = 1 << 20
 	// DefaultMaxMultipartRequestBodyBytes is the default total limit for multipart uploads.
@@ -152,14 +147,14 @@ const (
 	providerCallLogThreshold   = 30 * time.Second
 )
 
-// NewProviderLoggingTransport wraps base with provider timing and LLM_DEBUG payload logging.
+// NewProviderLoggingTransport wraps base with provider timing logs. LLM_DEBUG
+// reports all calls; request and response bodies are never logged.
 // A nil base uses http.DefaultTransport.
 func NewProviderLoggingTransport(base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	// Always installed: LLM_DEBUG decides whether payloads are logged, not whether
-	// timings are collected — first-token only exists while the call is in flight.
+	// Always installed: timings are collected even when debug logging is off.
 	return &providerLoggingTransport{base: base, now: time.Now, debug: IsLLMDebugEnabled()}
 }
 
@@ -171,26 +166,18 @@ type providerLoggingTransport struct {
 
 func (t *providerLoggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	providerURL := redactProviderURL(req.URL)
-	logPayload := ""
-	if t.debug {
-		payload, err := readAndRestoreRequestBody(req)
-		if err != nil {
-			return nil, err
-		}
-		logPayload = redactProviderBody(payload)
-	}
 
 	startedAt := t.now()
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
 		if t.debug {
-			logProviderCall(providerURL, logPayload, 0, "", t.now().Sub(startedAt), 0, err)
+			logProviderCall(providerURL, 0, t.now().Sub(startedAt), 0, err)
 		}
 		return nil, err
 	}
 	if resp.Body == nil {
 		if t.debug {
-			logProviderCall(providerURL, logPayload, resp.StatusCode, "", t.now().Sub(startedAt), 0, nil)
+			logProviderCall(providerURL, resp.StatusCode, t.now().Sub(startedAt), 0, nil)
 		}
 		return resp, nil
 	}
@@ -204,10 +191,9 @@ func (t *providerLoggingTransport) RoundTrip(req *http.Request) (*http.Response,
 		ReadCloser: resp.Body,
 		startedAt:  startedAt,
 		now:        t.now,
-		capture:    t.debug,
-		log: func(body []byte, took, firstToken time.Duration) {
+		log: func(took, firstToken time.Duration) {
 			if t.debug {
-				logProviderCall(providerURL, logPayload, resp.StatusCode, redactProviderBody(body), took, firstToken, nil)
+				logProviderCall(providerURL, resp.StatusCode, took, firstToken, nil)
 				return
 			}
 			summary.report(took, firstToken)
@@ -244,18 +230,15 @@ func (p providerCallTiming) report(took, firstToken time.Duration) {
 		zap.Duration("afterFirstToken", took-firstToken))
 }
 
-// providerResponseBody captures bytes while callers consume them, preserving
-// streaming delivery instead of eagerly reading the entire provider response.
+// providerResponseBody measures streaming delivery without retaining response bytes.
 type providerResponseBody struct {
 	io.ReadCloser
-	body       bytes.Buffer
 	startedAt  time.Time
 	now        func() time.Time
 	firstToken time.Duration
 	firstOnce  sync.Once
 	logOnce    sync.Once
-	capture    bool
-	log        func([]byte, time.Duration, time.Duration)
+	log        func(time.Duration, time.Duration)
 }
 
 func (b *providerResponseBody) Read(p []byte) (int, error) {
@@ -264,9 +247,6 @@ func (b *providerResponseBody) Read(p []byte) (int, error) {
 		b.firstOnce.Do(func() {
 			b.firstToken = b.now().Sub(b.startedAt)
 		})
-		if b.capture {
-			_, _ = b.body.Write(p[:n])
-		}
 	}
 	if err == io.EOF {
 		b.writeLogOnce()
@@ -282,22 +262,8 @@ func (b *providerResponseBody) Close() error {
 
 func (b *providerResponseBody) writeLogOnce() {
 	b.logOnce.Do(func() {
-		b.log(b.body.Bytes(), b.now().Sub(b.startedAt), b.firstToken)
+		b.log(b.now().Sub(b.startedAt), b.firstToken)
 	})
-}
-
-func readAndRestoreRequestBody(req *http.Request) ([]byte, error) {
-	if req.Body == nil {
-		return nil, nil
-	}
-	body, err := io.ReadAll(req.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read provider request body for logging: %w", err)
-	}
-	_ = req.Body.Close()
-	req.Body = io.NopCloser(bytes.NewReader(body))
-	req.ContentLength = int64(len(body))
-	return body, nil
 }
 
 func redactProviderURL(requestURL *url.URL) string {
@@ -305,134 +271,22 @@ func redactProviderURL(requestURL *url.URL) string {
 		return ""
 	}
 	redacted := *requestURL
-	if redacted.User != nil {
-		redacted.User = url.User(redacted.User.Username())
-	}
-	query := redacted.Query()
-	for key := range query {
-		if isSensitiveLogKey(key) {
-			query.Set(key, redactedLogValue)
-		}
-	}
-	redacted.RawQuery = query.Encode()
+	redacted.User = nil
+	redacted.Path = ""
+	redacted.RawPath = ""
+	redacted.RawQuery = ""
+	redacted.ForceQuery = false
+	redacted.Fragment = ""
+	redacted.RawFragment = ""
+	redacted.Opaque = ""
 	return redacted.String()
 }
 
-func redactProviderBody(body []byte) string {
-	if len(body) == 0 {
-		return ""
-	}
-
-	var value any
-	if err := json.Unmarshal(body, &value); err == nil {
-		redactProviderValue(value)
-		if redacted, err := json.Marshal(value); err == nil {
-			return string(redacted)
-		}
-	}
-
-	lines := strings.Split(string(body), "\n")
-	redactedAny := false
-	for i, line := range lines {
-		prefix, data, ok := strings.Cut(line, "data:")
-		if !ok || strings.TrimSpace(data) == "[DONE]" {
-			continue
-		}
-		var event any
-		if err := json.Unmarshal([]byte(strings.TrimSpace(data)), &event); err != nil {
-			continue
-		}
-		redactProviderValue(event)
-		redacted, err := json.Marshal(event)
-		if err != nil {
-			continue
-		}
-		lines[i] = prefix + "data: " + string(redacted)
-		redactedAny = true
-	}
-	if redactedAny {
-		return strings.Join(lines, "\n")
-	}
-	return string(body)
-}
-
-func redactProviderValue(value any) {
-	switch value := value.(type) {
-	case map[string]any:
-		for key, child := range value {
-			if isSensitiveLogKey(key) {
-				value[key] = redactedLogValue
-				continue
-			}
-			if isVectorLogKey(key) {
-				child = truncateLoggedVectors(child)
-				value[key] = child
-			}
-			redactProviderValue(child)
-		}
-	case []any:
-		for _, child := range value {
-			redactProviderValue(child)
-		}
-	}
-}
-
-func isVectorLogKey(key string) bool {
-	switch strings.ToLower(key) {
-	case "embedding", "embeddings", "vector", "vectors":
-		return true
-	default:
-		return false
-	}
-}
-
-func truncateLoggedVectors(value any) any {
-	switch value := value.(type) {
-	case []any:
-		if isNumericVector(value) {
-			if len(value) > maxLoggedVectorFloats {
-				return value[:maxLoggedVectorFloats]
-			}
-			return value
-		}
-		for i, child := range value {
-			value[i] = truncateLoggedVectors(child)
-		}
-	case map[string]any:
-		for key, child := range value {
-			value[key] = truncateLoggedVectors(child)
-		}
-	}
-	return value
-}
-
-func isNumericVector(value []any) bool {
-	if len(value) == 0 {
-		return false
-	}
-	for _, item := range value {
-		if _, ok := item.(float64); !ok {
-			return false
-		}
-	}
-	return true
-}
-
-func isSensitiveLogKey(key string) bool {
-	normalized := strings.NewReplacer("-", "", "_", "", ".", "").Replace(strings.ToLower(key))
-	switch normalized {
-	case "apikey", "authorization", "accesstoken", "refreshtoken", "password", "secret", "token", "key":
-		return true
-	default:
-		return false
-	}
-}
-
-func logProviderCall(providerURL, payload string, statusCode int, responseBody string, took, firstToken time.Duration, err error) {
-	request := fmt.Sprintf("url=%s payload=%s", providerURL, payload)
-	response := fmt.Sprintf("response_code=%d took=%s first-token=%s response_body=%s", statusCode, took, firstToken, responseBody)
+func logProviderCall(providerURL string, statusCode int, took, firstToken time.Duration, err error) {
+	request := fmt.Sprintf("url=%s", providerURL)
+	response := fmt.Sprintf("response_code=%d took=%s first-token=%s", statusCode, took, firstToken)
 	if err != nil {
-		response += " error=" + err.Error()
+		response += " error=" + RedactLogText(err.Error())
 	}
 	LogRequestResponseInfo(request, response, err == nil && statusCode >= 200 && statusCode < 300)
 }

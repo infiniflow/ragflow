@@ -305,7 +305,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		return nil, fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
-	common.Info("Create user success with tenant and related data", zap.String("username", username))
+	common.Info("Create user success with tenant and related data", zap.String("user_id", user.ID))
 
 	return map[string]interface{}{
 		"id":           user.ID,

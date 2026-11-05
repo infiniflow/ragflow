@@ -1292,7 +1292,7 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 // copy carries the DSL DEFINITION only (static canvas structure + static
 // params + downstream + graph + path + …) — business data is never constructed
 // for it (BuildDebugResultDSL(dsl, output, false)). Log recording must never
-// fail a run, so on any build error the static dsl is returned unchanged.
+// fail a run, so on any build error an empty DSL is recorded.
 //
 // BuildDebugResultDSL needs the full run output, which is in scope only inside
 // runPipelineWithDSL: the extracted payload returned there no longer carries
@@ -1313,13 +1313,9 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 // The sink probe stays an optional capability: non-debug (DB-backed) sinks
 // ignore it and the ProgressSink contract is unchanged.
 func (s *PipelineExecutor) buildLogDSL(dsl string, output map[string]any) string {
-	// Start from the static dsl: log recording must never fail a run, so on any
-	// build error we fall back to the static dsl unchanged rather than a
-	// half-written payload. The input dsl is the canvas DEFINITION (no runtime
-	// outputs), so the fallback is not a business-data leak (CWE-200) — the
-	// persisted copy stays definition-only and the log row is preserved for
-	// observability.
-	logDSL := dsl
+	// Never fall back to the raw DSL: component parameters can contain
+	// credentials even when runtime outputs are absent.
+	logDSL := "{}"
 	// Persisted log DSL: DSL definition ONLY. Business data is never
 	// constructed for the persisted copy (includeOutputs=false). Real parses
 	// persist this string via recordPipelineLog; a dry-run also builds it here

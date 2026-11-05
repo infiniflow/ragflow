@@ -123,7 +123,7 @@ func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, k
 			}
 		}
 	}
-	common.Error(fmt.Sprintf("ESConnection.sql timeout after %d attempts. SQL: %s", esSQLRetryAttempts, sqlText), lastErr)
+	common.Error(fmt.Sprintf("ESConnection.sql timeout after %d attempts", esSQLRetryAttempts), lastErr)
 	return nil, fmt.Errorf("Elasticsearch RunSQL: timeout after %d attempts: %w", esSQLRetryAttempts, lastErr)
 }
 

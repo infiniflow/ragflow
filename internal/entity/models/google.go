@@ -581,14 +581,12 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		}
 
 		if responseContent != "" {
-			common.Info(fmt.Sprintf("Thinking: %s", responseContent))
 			if err = sender(nil, &responseContent); err != nil {
 				return err
 			}
 		}
 
 		if content != "" {
-			common.Info(fmt.Sprintf("Answer: %s", content))
 			if err = sender(&content, nil); err != nil {
 				return err
 			}

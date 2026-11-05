@@ -24,6 +24,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -241,6 +242,7 @@ func InitLogger(level string, file FileOutput, serviceName string) error {
 		)
 	}
 
+	core = redactingLogCore{Core: core}
 	if serviceName != "" {
 		Logger = zap.New(core,
 			zap.Fields(zap.Int("pid", os.Getpid())),
@@ -253,6 +255,7 @@ func InitLogger(level string, file FileOutput, serviceName string) error {
 		)
 	}
 	Sugar = Logger.Sugar()
+	zap.ReplaceGlobals(Logger)
 
 	return nil
 }
@@ -342,7 +345,11 @@ type stdLogRouter struct{}
 
 func (stdLogRouter) Write(p []byte) (int, error) {
 	if Logger == nil {
-		return os.Stderr.Write(p)
+		_, err := io.WriteString(os.Stderr, RedactLogText(string(p)))
+		if err != nil {
+			return 0, err
+		}
+		return len(p), nil
 	}
 	Logger.Info(strings.TrimRight(string(p), "\n"))
 	return len(p), nil
@@ -454,7 +461,8 @@ func SetLogLevel(level string) error {
 // same log file as the rest of the application.
 //
 // The raw query string is intentionally NOT logged — the path field
-// carries only the URL path. Query parameters frequently carry secrets
+// carries the matched route template, with dynamic segments replaced by
+// parameter names. Query parameters frequently carry secrets
 // (OAuth codes, SAML responses, signed state, API keys in callback
 // URLs, etc.) and there is no way to redact them generically. The
 // presence and length of a query string are recorded instead so
@@ -462,9 +470,12 @@ func SetLogLevel(level string) error {
 func GinLogger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
-		path := c.Request.URL.Path
 		raw := c.Request.URL.RawQuery
 		c.Next()
+		path := c.FullPath()
+		if path == "" {
+			path = "[unmatched]"
+		}
 		latency := time.Since(start)
 		status := c.Writer.Status()
 
@@ -473,7 +484,6 @@ func GinLogger() gin.HandlerFunc {
 			zap.String("method", c.Request.Method),
 			zap.String("path", path),
 			zap.Duration("latency", latency),
-			zap.String("client_ip", c.ClientIP()),
 			zap.Int("size", c.Writer.Size()),
 			zap.Bool("has_query", raw != ""),
 			zap.Int("query_len", len(raw)),
@@ -499,7 +509,7 @@ func GinLogger() gin.HandlerFunc {
 		switch {
 		case status >= 500:
 			if ginErr == nil {
-				// Likely a panic recovered by gin.Recovery() with no c.Error attached.
+				// Likely a recovered panic with no c.Error attached.
 				// Use a sentinel so the err field is non-empty; operators can
 				// grep for this string in logs.
 				ginErr = err5xxNoError
@@ -514,3 +524,14 @@ func GinLogger() gin.HandlerFunc {
 }
 
 var err5xxNoError = errors.New("5xx response with no handler error attached")
+
+// GinRecovery avoids Gin's default request/header dump on a panic. Panic
+// values can contain user data, so only the stack and route are recorded.
+func GinRecovery() gin.HandlerFunc {
+	return gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, _ any) {
+		Error("HTTP handler panic", err5xxNoError,
+			zap.String("route", c.FullPath()),
+			zap.ByteString("stack", debug.Stack()))
+		c.AbortWithStatus(500)
+	})
+}
