@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/popover';
 import { Radio } from '@/components/ui/radio';
 import { Segmented } from '@/components/ui/segmented';
+import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
 import { cn } from '@/lib/utils';
 import { LucideFilter, Plus } from 'lucide-react';
 import { useState } from 'react';
@@ -32,6 +33,7 @@ export default function ChunkResultBar({
   handleInputChange,
   searchString,
 }: ChunkResultBarProps) {
+  const datasetEditButtonDisabled = useDatasetEditButtonDisabled();
   const { t } = useTranslation('translation', { keyPrefix: 'chunk' });
   const [textSelectValue, setTextSelectValue] = useState<string | number>(
     ChunkTextMode.Full,
@@ -71,12 +73,12 @@ export default function ChunkResultBar({
         value={textSelectValue}
         onChange={changeTextSelectValue}
       />
-
       <Popover>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
             size="icon"
+            disabled={datasetEditButtonDisabled}
           >
             <LucideFilter />
           </Button>
@@ -93,7 +95,12 @@ export default function ChunkResultBar({
         value={searchString}
       />
 
-      <Button variant="outline" size="icon" onClick={() => createChunk()}>
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={() => createChunk()}
+        disabled={datasetEditButtonDisabled}
+      >
         <Plus size={44} />
       </Button>
     </div>

@@ -34,11 +34,11 @@ func TestPDFTableItemsOmitHTMLText(t *testing.T) {
 			return tcadpAnyToItems(map[string]any{"type": "table", "content": tableHTML})
 		}},
 		{"somark html", func() []map[string]any {
-			items, _ := soMarkBlockToItems(t.Context(), map[string]any{"type": "table", "content": tableHTML}, false, &htmlWalkState{})
+			items, _ := soMarkBlockToItems(t.Context(), map[string]any{"type": "table", "content": tableHTML}, false, &htmlWalkState{budget: newMediaBudgetForTest()})
 			return items
 		}},
 		{"docx table", func() []map[string]any {
-			return buildDOCXJSONSections(docxIR, newEmbeddedMediaBudget())
+			return buildDOCXJSONSections(docxIR, nil)
 		}},
 	}
 	for _, tc := range cases {

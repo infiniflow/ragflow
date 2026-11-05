@@ -110,6 +110,69 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 	}
 }
 
+// A non-ASCII attachment name arrives as RFC 2047 encoded-words inside the
+// filename or name parameter, from Outlook, Gmail and Chinese mail clients
+// alike. Left encoded, the name had no extension and the attachment was not
+// parsed. 合同草稿.txt in base64 contains a "/".
+func TestEmailParser_EmlParsesAttachmentsWithEncodedNames(t *testing.T) {
+	b64 := func(charset string, raw []byte) string {
+		return "=?" + charset + "?B?" + base64.StdEncoding.EncodeToString(raw) + "?="
+	}
+	attachment := func(headers []string, text string) string {
+		return strings.Join(append(append([]string{"--b"}, headers...), "", text), "\r\n")
+	}
+	raw := strings.Join([]string{
+		"From: a@example.com",
+		"Subject: Attachments",
+		"MIME-Version: 1.0",
+		"Content-Type: multipart/mixed; boundary=b",
+		"",
+		"--b",
+		"Content-Type: text/plain; charset=utf-8",
+		"",
+		"Body.",
+		attachment([]string{
+			"Content-Type: text/plain; charset=utf-8",
+			`Content-Disposition: attachment; filename="` + b64("utf-8", []byte("Übersicht.txt")) + `"`,
+		}, "First attachment text."),
+		attachment([]string{
+			"Content-Type: text/plain; charset=utf-8",
+			`Content-Disposition: attachment; filename="` + b64("gb2312", []byte{0xD4, 0xA4, 0xCB, 0xE3, 0xB1, 0xA8, 0xB8, 0xE6, '.', 't', 'x', 't'}) + `"`,
+		}, "Second attachment text."),
+		attachment([]string{
+			"Content-Type: text/plain; charset=utf-8",
+			`Content-Disposition: attachment; filename="` + b64("utf-8", []byte("合同草稿.txt")) + `"`,
+		}, "Third attachment text."),
+		attachment([]string{
+			"Content-Type: text/plain; charset=utf-8",
+			`Content-Disposition: attachment; filename="=?iso-8859-1?Q?R=E9sum=E9.txt?="`,
+		}, "Fourth attachment text."),
+		attachment([]string{
+			`Content-Type: text/plain; charset=utf-8; name="` + b64("utf-8", []byte("Notizen.txt")) + `"`,
+			"Content-Disposition: attachment",
+		}, "Fifth attachment text."),
+		"--b--",
+	}, "\r\n")
+
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{"fields": []string{"body", "attachments"}})
+	result := p.ParseWithResult(t.Context(), "attachments.eml", []byte(raw))
+	if result.Err != nil {
+		t.Fatalf("unexpected error: %v", result.Err)
+	}
+	var texts []string
+	for _, item := range result.JSON {
+		text, _ := item.ToMap()["text"].(string)
+		texts = append(texts, text)
+	}
+	joined := strings.Join(texts, "\n")
+	for _, want := range []string{"First", "Second", "Third", "Fourth", "Fifth"} {
+		if !strings.Contains(joined, want+" attachment text.") {
+			t.Errorf("%s attachment was not parsed; items: %q", want, texts)
+		}
+	}
+}
+
 func TestEmailParser_InvalidEMLReturnsError(t *testing.T) {
 	p := NewEmailParser()
 	result := p.ParseWithResult(t.Context(), "broken.eml", []byte("not a valid RFC 5322 header"))

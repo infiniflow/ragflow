@@ -59,6 +59,19 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 			if err := ctx.Err(); err != nil {
 				return ParseResult{Err: err}
 			}
+			label := strings.ToLower(strings.TrimSpace(block.Label))
+			if models.IsOCRMediaLabel(label) || models.IsOCRImageOnlyText(block.Text) {
+				text := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
+				position := paddleOCRBlockPosition(page, block.BBox, size)
+				// A block with neither body text nor a crop region has nothing
+				// media can act on: a crop preview needs positive-area geometry,
+				// and a synthetic text body would index as retrievable text.
+				if text == "" && len(position) == 0 {
+					continue
+				}
+				result.JSON = append(result.JSON, paddleOCRMediaItem(page, text, position))
+				continue
+			}
 			content := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
 			if content == "" {
 				continue
@@ -69,7 +82,6 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 			}
 			result.Warnings = append(result.Warnings, parsed.Warnings...)
 			position := paddleOCRBlockPosition(page, block.BBox, size)
-			label := strings.ToLower(strings.TrimSpace(block.Label))
 			isTitle := label == "doc_title" || label == "paragraph_title"
 			if label == "figure_title" || label == "table_title" {
 				label = "caption"
@@ -130,6 +142,28 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 	}
 	result.File = pdfFileMeta(filename, pageCount)
 	return result
+}
+
+// paddleOCRMediaItem keeps a figure-like block as a media item. The text stays
+// empty when the block carries no body text: the region is preserved for the
+// vision pass and the on-demand crop, while a synthetic placeholder would
+// index as retrievable body text (#21218). The chunker drops a text-less media
+// item that never became retrievable, matching the DeepDoc figure path.
+func paddleOCRMediaItem(page models.OCRPage, text string, position []any) DocItem {
+	fields := map[string]any{
+		"doc_type_kwd":    "image",
+		"layout":          "figure",
+		"page_number":     page.Index + 1,
+		"_preserve_order": true,
+	}
+	if text != "" {
+		fields["text"] = text
+	}
+	if len(position) > 0 {
+		matrix := [][]any{position}
+		fields["positions"], fields["_pdf_positions"] = matrix, matrix
+	}
+	return DocItemFromMap(fields)
 }
 
 func paddleOCRBlockPosition(page models.OCRPage, bbox []float64, size [2]float64) []any {

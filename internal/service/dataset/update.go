@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -30,9 +31,9 @@ type datasetPagerankUpdate struct {
 	datasetID string
 }
 
-func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
-	userID = strings.TrimSpace(userID)
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	if _, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
 		if dao.IsNotFoundErr(err) {
 			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
@@ -68,8 +69,8 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 		if name == "" {
 			return nil, common.CodeDataError, errors.New("String should have at least 1 character")
 		}
-		if len(name) > 128 {
-			return nil, common.CodeDataError, errors.New("String should have at most 128 characters")
+		if utf8.RuneCountInString(name) > entity.DatasetNameLimit {
+			return nil, common.CodeDataError, fmt.Errorf("String should have at most %d characters", entity.DatasetNameLimit)
 		}
 		simpleUpdates["name"] = name
 	}
@@ -160,7 +161,10 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 	pagerankRequested := req.Pagerank != nil
 	if pagerankRequested {
 		requestedPagerank = *req.Pagerank
-		if *req.Pagerank < 0 || *req.Pagerank > 100 {
+		if *req.Pagerank < 0 {
+			return nil, common.CodeDataError, errors.New("input should be greater than or equal to 0")
+		}
+		if *req.Pagerank > 100 {
 			return nil, common.CodeDataError, errors.New("input should be less than or equal to 100")
 		}
 		if d.docEngine == nil {
@@ -180,7 +184,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
-		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID, userID)
+		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID)
 		if authErr != nil {
 			txCode = code
 			return authErr
@@ -196,7 +200,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			if isPipeline && effectivePipelineID != nil && strings.TrimSpace(*effectivePipelineID) != "" {
 				accessErr := permission.NewLockingDatabaseChecker(tx).CheckDependency(
 					ctx,
-					permission.Subject{UserID: userID, TenantID: lockedKB.TenantID},
 					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: lockedKB.ID},
 					permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effectivePipelineID)},
 					permission.OperationUpdate,
@@ -217,7 +220,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			if permissionValue != lockedKB.Permission {
 				accessErr := permission.NewLockingDatabaseChecker(tx).CheckResource(
 					ctx,
-					permission.Subject{UserID: userID},
 					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
 					permission.OperationShare,
 				)
@@ -267,14 +269,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			} else {
 				tenantEmbdID = ""
 			}
-			modelAccess := service.ModelAccess{UserID: userID, TenantID: lockedKB.TenantID}
-			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, modelAccess)
+			modelCtx := permission.WithTenantID(ctx, lockedKB.TenantID)
+			ok, message := d.verifyEmbeddingAvailability(modelCtx, effectiveEmbdID, lockedKB.TenantID)
 			if !ok {
 				txCode = common.CodeDataError
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				target, err := service.NewModelFactory().ResolveInfo(ctx, modelAccess, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelFactory().ResolveInfo(modelCtx, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
 					tenantEmbdID = target.ID
 				}
@@ -372,7 +374,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 		// Design C5/G3: an empty pipeline_version_id in Pipeline mode is REJECTED
 		// (no longer silently cleared or auto-backfilled to the canvas latest).
 		// The Save fails with ErrPipelineVersionEmpty so the UI can show the red
-		// Missing badge and the "版本信息缺失" error. BuiltIn mode (no canvas
+		// Missing badge and the "mission version info" error. BuiltIn mode (no canvas
 		// bound) is exempt and may carry an empty version.
 		isEffPipeline := canvasCtx != nil && strings.TrimSpace(*canvasCtx) != ""
 		if req.PipelineVersionID != nil {
@@ -399,27 +401,29 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			txCode = common.CodeBadRequest
 			return service.ErrPipelineVersionEmpty
 		}
-		// C3 / A3 整体重置: BOTH a pipeline (canvas) switch and a version switch
-		// force a full parser_config reset to the new DSL defaults, discarding any
-		// echoed/submitted parser_config. When the version or pipeline is switched
-		// the settings form may still hold the previous value (e.g. a manually
-		// edited chunk size), so the reset must take precedence over the submitted
-		// config rather than merging it in.
+		// C3 / A3: a pipeline (canvas) switch or a version switch resets
+		// parser_config to the new DSL defaults — but only when the request
+		// carried no parser_config of its own. A submitted config has already
+		// been reconciled against the new version's DSL by BuildParserConfig
+		// above (unknown operators dropped, missing params defaulted), and the
+		// settings form itself resets to the new defaults on a switch before
+		// the user edits — so a submitted config is authoritative and must not
+		// be discarded.
 		if pipelineChanged || versionChanged {
-			cfgParserID := lockedKB.ParserID
-			if parserIDProvided {
-				cfgParserID = parserID
-			}
-			effVersionID, _ := resolvePipelineVersionID(ctx, tx, canvasCtx, requestedVersion)
-			cpDefaults, cpErr := service.ResolveComponentParamsDefaults(ctx, cfgParserID, canvasCtx, effVersionID)
-			if cpErr != nil {
-				common.Warn("failed to resolve component params defaults on pipeline/version change",
-					zap.String("parserID", cfgParserID), zap.Error(cpErr))
-			}
-			// Full reset: replace parser_config with the new DSL defaults. The
-			// previous (echoed) value is intentionally dropped (design A3 整体重置).
-			if cpErr == nil {
-				updates["parser_config"] = cpDefaults
+			if _, submitted := updates["parser_config"]; !submitted {
+				cfgParserID := lockedKB.ParserID
+				if parserIDProvided {
+					cfgParserID = parserID
+				}
+				effVersionID, _ := resolvePipelineVersionID(ctx, tx, canvasCtx, requestedVersion)
+				cpDefaults, cpErr := service.ResolveComponentParamsDefaults(ctx, cfgParserID, canvasCtx, effVersionID)
+				if cpErr != nil {
+					common.Warn("failed to resolve component params defaults on pipeline/version change",
+						zap.String("parserID", cfgParserID), zap.Error(cpErr))
+				}
+				if cpErr == nil {
+					updates["parser_config"] = cpDefaults
+				}
 			}
 		}
 
@@ -432,6 +436,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			var membership entity.UserTenant
 			if tenantErr := tx.Where("user_id = ? AND tenant_id = ? AND status = ?", userID, lockedKB.TenantID, entity.TenantMembershipStatusJoined).Take(&membership).Error; tenantErr == nil {
 				llmID = membership.LLMID
+				if membership.TenantLLMID != nil && strings.TrimSpace(*membership.TenantLLMID) != "" {
+					llmID = strings.TrimSpace(*membership.TenantLLMID)
+				}
 			}
 			effectiveParserConfig = service.ApplyComponentScopedParserConfig(
 				effectiveParserConfig,
@@ -540,7 +547,7 @@ func publishDatasetSyncerTasks(taskIDs []string) {
 	}
 }
 
-func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {
+func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID string) (*entity.Knowledgebase, common.ErrorCode, error) {
 	var kb entity.Knowledgebase
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND status = ?", datasetID, string(entity.StatusValid)).
@@ -555,7 +562,6 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 
 	err = permission.NewLockingDatabaseChecker(tx).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
 		permission.OperationUpdate,
 	)

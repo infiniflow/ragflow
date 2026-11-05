@@ -110,7 +110,7 @@ func TestDatasetServiceUpdateDocumentMetadataConfig(t *testing.T) {
 	metadata := map[string]interface{}{"author": "Alice", "year": float64(2026)}
 	doc, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
 		ctx,
-		"user-1",
+
 		"kb-1",
 		"doc-1",
 		map[string]interface{}{"metadata": metadata},
@@ -162,7 +162,7 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRequiresMetadata(t *testing.T
 	ctx := withDatasetTestContext(t.Context(), "user-1", "user-1")
 	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
 		ctx,
-		"user-1",
+
 		"kb-1",
 		"doc-1",
 		map[string]interface{}{},
@@ -188,7 +188,7 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRejectsNonOwner(t *testing.T)
 	ctx := withDatasetTestContext(t.Context(), "user-1", "owner-1")
 	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
 		ctx,
-		"user-1",
+
 		"kb-1",
 		"doc-1",
 		map[string]interface{}{"metadata": map[string]interface{}{"author": "Alice"}},
@@ -221,7 +221,7 @@ func TestDatasetServiceUpdateDocumentMetadataConfigAllowsTeamMember(t *testing.T
 	ctx := withDatasetTestContext(t.Context(), "user-1", "owner-1")
 	doc, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
 		ctx,
-		"user-1",
+
 		"kb-1",
 		"doc-1",
 		map[string]interface{}{"metadata": map[string]interface{}{"author": "Alice"}},
@@ -267,7 +267,7 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 	result, code, err := (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
-	}).UpdateMetadataConfig(ctx, "kb-1", "tenant-1", &service.MetadataConfigRequest{
+	}).UpdateMetadataConfig(ctx, "kb-1", &service.MetadataConfigRequest{
 		Metadata: []service.MetadataConfigField{
 			{Key: "author", Type: "string"},
 		},
@@ -321,7 +321,7 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 	_, code, err = (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
-	}).UpdateMetadataConfig(ctx, "kb-1", "tenant-1", &service.MetadataConfigRequest{
+	}).UpdateMetadataConfig(ctx, "kb-1", &service.MetadataConfigRequest{
 		Metadata: []service.MetadataConfigField{
 			{Key: "author", Type: "string"},
 		},
@@ -370,7 +370,7 @@ func TestDatasetServiceUpdateMetadataConfigSyncsExtractorSchema(t *testing.T) {
 	_, code, err = (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
-	}).UpdateMetadataConfig(ctx, "kb-1", "tenant-1", &service.MetadataConfigRequest{
+	}).UpdateMetadataConfig(ctx, "kb-1", &service.MetadataConfigRequest{
 		Metadata:        []service.MetadataConfigField{},
 		BuiltInMetadata: []service.MetadataConfigField{},
 	})
@@ -413,7 +413,7 @@ func TestDatasetServiceGetMetadataConfig(t *testing.T) {
 	_, code, err := (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
-	}).UpdateMetadataConfig(ctx, "kb-1", "tenant-1", &service.MetadataConfigRequest{
+	}).UpdateMetadataConfig(ctx, "kb-1", &service.MetadataConfigRequest{
 		Metadata: []service.MetadataConfigField{
 			{Key: "author", Type: "string"},
 		},
@@ -431,7 +431,7 @@ func TestDatasetServiceGetMetadataConfig(t *testing.T) {
 	result, code, err := (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
-	}).GetMetadataConfig(ctx, "kb-1", "tenant-1")
+	}).GetMetadataConfig(ctx, "kb-1")
 	if err != nil {
 		t.Fatalf("GetMetadataConfig failed: %v", err)
 	}
@@ -466,7 +466,7 @@ func TestUpdateMetadataConfig_TenantLookupFailureDoesNotPersist(t *testing.T) {
 	result, code, err := (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
-	}).UpdateMetadataConfig(ctx, "kb-1", "missing-tenant", &service.MetadataConfigRequest{
+	}).UpdateMetadataConfig(ctx, "kb-1", &service.MetadataConfigRequest{
 		Metadata: []service.MetadataConfigField{
 			{Key: "author", Type: "string"},
 		},
@@ -496,7 +496,7 @@ func TestUpdateMetadataConfig_ExplicitEnabledPreservedWhenEmpty(t *testing.T) {
 	result, code, err := (&DatasetService{
 		kbDAO:     dao.NewKnowledgebaseDAO(),
 		tenantDAO: dao.NewTenantDAO(),
-	}).UpdateMetadataConfig(ctx, "kb-1", "tenant-1", &service.MetadataConfigRequest{
+	}).UpdateMetadataConfig(ctx, "kb-1", &service.MetadataConfigRequest{
 		Enabled:         &enabled,
 		Metadata:        []service.MetadataConfigField{},
 		BuiltInMetadata: []service.MetadataConfigField{},
@@ -535,7 +535,7 @@ func TestUpdateDocumentMetadataConfig_KBAndTenantLookupFailure(t *testing.T) {
 
 	// Missing KB -> database layer should surface as CodeServerError / not found
 	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
-		ctx, "owner-1", "kb-missing", "doc-ok",
+		ctx, "kb-missing", "doc-ok",
 		map[string]interface{}{"metadata": map[string]interface{}{"a": "b"}},
 	)
 	if code == common.CodeSuccess || err == nil {
@@ -547,7 +547,7 @@ func TestUpdateDocumentMetadataConfig_KBAndTenantLookupFailure(t *testing.T) {
 	insertDatasetMetadataConfigDoc(t, "doc2", "kb-bad-tenant", entity.JSONMap{})
 	missingTenantCtx := withDatasetTestContext(t.Context(), "missing-tenant", "missing-tenant")
 	_, code, err = testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
-		missingTenantCtx, "missing-tenant", "kb-bad-tenant", "doc2",
+		missingTenantCtx, "kb-bad-tenant", "doc2",
 		map[string]interface{}{"metadata": map[string]interface{}{"a": "b"}},
 	)
 	if code != common.CodeServerError || err == nil {

@@ -18,7 +18,7 @@
 // production chain.
 //
 // These tests pin the production chain end-to-end: loadCanvasForUser
-// → versionDAO.GetLatest → decodeCanvasFromDSL → canvas.Compile →
+// → draft DSL resolution → decodeCanvasFromDSL → canvas.Compile →
 // cc.Workflow.Invoke → orchestrator answer extraction. They also
 // cover the boot-wiring surface (Kvrocks-backed CheckPointStore +
 // RunTracker) and the failure paths (compile error, invoke
@@ -61,9 +61,9 @@ import (
 )
 
 // makeCanvasWithDSL inserts a canvas + tenant + user + a published
-// version whose DSL is the supplied map. The returned version id is
-// what RunAgent consumes when the caller does not pass an explicit
-// version (it falls through to GetLatest).
+// version, with the supplied DSL on both the canvas row (the editable
+// draft) and the version row. RunAgent without an explicit version id
+// executes the draft, so the canvas-row DSL is what these tests run.
 func makeCanvasWithDSL(t *testing.T, canvasID, userID, tenantID, versionID string, dsl map[string]any) {
 	t.Helper()
 	dao.DB.Where("id = ?", userID).FirstOrCreate(&entity.User{ID: userID, Nickname: "owner", Email: userID + "@test.com"})
@@ -79,6 +79,7 @@ func makeCanvasWithDSL(t *testing.T, canvasID, userID, tenantID, versionID strin
 		Permission:     "me",
 		CanvasType:     sptr("agent"),
 		CanvasCategory: "agent_canvas",
+		DSL:            entity.JSONMap(dsl),
 	})
 	dao.DB.Create(&entity.UserCanvasVersion{
 		ID:           versionID,
@@ -206,10 +207,9 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-hello"),
-		"user-1",
 		"canvas-hello",
 		"session-hello",
-		"", // latest version
+		"", // draft DSL
 		"world", nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
@@ -286,11 +286,10 @@ func TestRunAgent_SessionHistoryFeedsSysHistoryAndPersists(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-history", "user-1", "tenant-1", "v-history", dsl)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-history",
-		DialogID:  "canvas-history",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       "session-history",
+		DialogID: "canvas-history",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -298,7 +297,7 @@ func TestRunAgent_SessionHistoryFeedsSysHistoryAndPersists(t *testing.T) {
 	svc := NewAgentService()
 	run := func(input string) canvas.MessageEvent {
 		t.Helper()
-		events, err := svc.RunAgent(serviceTestContext(t, "user-1", "tenant-1"), "user-1", "canvas-history", "session-history", "", input, nil)
+		events, err := svc.RunAgent(serviceTestContext(t, "user-1", "tenant-1"), "canvas-history", "session-history", "", input, nil)
 		if err != nil {
 			t.Fatalf("RunAgent(%q): %v", input, err)
 		}
@@ -394,7 +393,7 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 	makeCanvasWithDSL(t, "canvas-new-session", "user-1", "tenant-1", "v-new-session", dsl)
 
 	svc := NewAgentService()
-	events, err := svc.RunAgent(serviceTestContext(t, "user-1", "tenant-1"), "user-1", "canvas-new-session", "", "", "1", nil)
+	events, err := svc.RunAgent(serviceTestContext(t, "user-1", "tenant-1"), "canvas-new-session", "", "", "1", nil)
 	if err != nil {
 		t.Fatalf("first RunAgent: %v", err)
 	}
@@ -425,7 +424,7 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 		t.Fatalf("new session lost reusable env state: %#v", globals["env.topic"])
 	}
 
-	events, err = svc.RunAgent(serviceTestContext(t, "user-1", "tenant-1"), "user-1", "canvas-new-session", session.ID, "", "1", nil)
+	events, err = svc.RunAgent(serviceTestContext(t, "user-1", "tenant-1"), "canvas-new-session", session.ID, "", "1", nil)
 	if err != nil {
 		t.Fatalf("second RunAgent: %v", err)
 	}
@@ -471,19 +470,17 @@ func TestRunAgent_RejectsSessionOwnedByAnotherUser(t *testing.T) {
 	makeCanvasWithDSL(t, "canvas-session-owner", "user-1", "tenant-1", "v-session-owner", dsl)
 	foreignMessage := json.RawMessage(`[{"role":"assistant","content":"foreign"}]`)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-foreign",
-		DialogID:  "canvas-session-owner",
-		UserID:    "user-2",
-		Message:   foreignMessage,
-		Reference: json.RawMessage(`[]`),
-		DSL:       entity.JSONMap(dsl),
+		ID:       "session-foreign",
+		DialogID: "canvas-session-owner",
+		UserID:   "user-2",
+		Message:  foreignMessage,
+		DSL:      entity.JSONMap(dsl),
 	}); err != nil {
 		t.Fatalf("create foreign session: %v", err)
 	}
 
 	events, err := NewAgentService().RunAgent(
 		serviceTestContext(t, "user-1", "tenant-1"),
-		"user-1",
 		"canvas-session-owner",
 		"session-foreign",
 		"",
@@ -570,12 +567,11 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-fillup", "user-1", "tenant-1", "v-fillup", dsl)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-fillup",
-		DialogID:  "canvas-fillup",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-		DSL:       entity.JSONMap(dsl),
+		ID:       "session-fillup",
+		DialogID: "canvas-fillup",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
+		DSL:      entity.JSONMap(dsl),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -607,7 +603,6 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	// Run 1: should emit a waiting_for_user event.
 	events1, err := svc.RunAgent(
 		serviceTestContext(t, "user-1", "tenant-1"),
-		"user-1",
 		"canvas-fillup",
 		"session-fillup",
 		"",
@@ -641,7 +636,6 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 	// production environment's checkpoint store.
 	events2, err := svc.RunAgent(
 		serviceTestContext(t, "user-1", "tenant-1"),
-		"user-1",
 		"canvas-fillup",
 		"session-fillup", // SAME sessionID as run 1
 		"",
@@ -707,19 +701,17 @@ func TestRunAgent_InterruptPersistsPartialAssistantHistory(t *testing.T) {
 	}
 	makeCanvasWithDSL(t, "canvas-partial", "user-1", "tenant-1", "v-partial", dsl)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-partial",
-		DialogID:  "canvas-partial",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-		DSL:       entity.JSONMap(dsl),
+		ID:       "session-partial",
+		DialogID: "canvas-partial",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
+		DSL:      entity.JSONMap(dsl),
 	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
 	events, err := NewAgentService().RunAgent(
 		serviceTestContext(t, "user-1", "tenant-1"),
-		"user-1",
 		"canvas-partial",
 		"session-partial",
 		"",
@@ -806,7 +798,6 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 
 	events1, err := svc.RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-fillup-events"),
-		"user-1",
 		"canvas-fillup-events",
 		"session-fillup-events",
 		"",
@@ -829,7 +820,6 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 
 	events2, err := svc.RunAgent(
 		serviceTestContext(t, "user-1", "tenant-1"),
-		"user-1",
 		"canvas-fillup-events",
 		"session-fillup-events",
 		"",
@@ -947,7 +937,6 @@ func TestRunAgent_RealCanvas_GroupedParallelOuterFollower(t *testing.T) {
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-parallel"),
-		"user-1",
 		"canvas-parallel",
 		"session-parallel",
 		"",
@@ -1024,7 +1013,6 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 
 	events1, err := svc.RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-all-loop"),
-		"user-1",
 		"canvas-all",
 		"session-all-loop",
 		"",
@@ -1064,7 +1052,6 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 
 	events2, err := svc.RunAgent(
 		serviceTestContext(t, "user-1", "tenant-1"),
-		"user-1",
 		"canvas-all",
 		"session-all-loop",
 		"",
@@ -1090,7 +1077,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 	}
 
 	events3, err := svc.RunAgent(
-		serviceTestContext(t, "user-1", "tenant-1"), "user-1", "canvas-all", "session-all-loop", "", "1", nil,
+		serviceTestContext(t, "user-1", "tenant-1"), "canvas-all", "session-all-loop", "", "1", nil,
 	)
 	if err != nil {
 		t.Fatalf("RunAgent run 3: %v", err)
@@ -1151,7 +1138,6 @@ func TestRunAgent_AllFixture_LoopInterruptResume_MultiTurn(t *testing.T) {
 		}
 		events, err := svc.RunAgent(
 			runCtx,
-			"user-1",
 			"canvas-all-multi",
 			sessionID,
 			"",
@@ -1244,7 +1230,6 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 
 	events1, err := svc.RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), sessionID),
-		"user-1",
 		"canvas-all-iteration",
 		sessionID,
 		"",
@@ -1273,7 +1258,6 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 
 	events2, err := svc.RunAgent(
 		serviceTestContext(t, "user-1", "tenant-1"),
-		"user-1",
 		"canvas-all-iteration",
 		sessionID,
 		"",
@@ -1299,7 +1283,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 	}
 
 	events3, err := svc.RunAgent(
-		serviceTestContext(t, "user-1", "tenant-1"), "user-1", "canvas-all-iteration", sessionID, "", "a,b,c,d,e", nil,
+		serviceTestContext(t, "user-1", "tenant-1"), "canvas-all-iteration", sessionID, "", "a,b,c,d,e", nil,
 	)
 	if err != nil {
 		t.Fatalf("RunAgent run 3: %v", err)
@@ -1354,7 +1338,6 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-all-var-assigner"),
-		"user-1",
 		"canvas-all-var-assigner",
 		"session-all-var-assigner",
 		"",
@@ -1377,7 +1360,6 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 	}
 	events, err = svc.RunAgent(
 		serviceTestContext(t, "user-1", "tenant-1"),
-		"user-1",
 		"canvas-all-var-assigner",
 		"session-all-var-assigner",
 		"",
@@ -1438,7 +1420,6 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events, err := svc.RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-all-data-ops"),
-		"user-1",
 		"canvas-all-data-ops",
 		"session-all-data-ops",
 		"",
@@ -1461,7 +1442,6 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 	}
 	events, err = svc.RunAgent(
 		serviceTestContext(t, "user-1", "tenant-1"),
-		"user-1",
 		"canvas-all-data-ops",
 		"session-all-data-ops",
 		"",
@@ -1540,7 +1520,6 @@ func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-bogus"),
-		"user-1",
 		"canvas-bogus",
 		"session-bogus",
 		"",
@@ -1581,7 +1560,7 @@ func TestRunAgent_ExeSQLConfigErrorIsUserFacing(t *testing.T) {
 	}}
 	makeCanvasWithDSL(t, "canvas-exesql-config", "user-1", "tenant-1", "v-exesql-config", dsl)
 
-	events, err := NewAgentService().RunAgent(WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-exesql-config"), "user-1", "canvas-exesql-config", "session-exesql-config", "", "hello", nil)
+	events, err := NewAgentService().RunAgent(WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-exesql-config"), "canvas-exesql-config", "session-exesql-config", "", "hello", nil)
 	if err != nil {
 		t.Fatalf("RunAgent returned sync error: %v", err)
 	}
@@ -1644,7 +1623,6 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 	svc := NewAgentServiceWithOptions(cp, nil, tracker)
 	events1, err := svc.RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-all-categorize"),
-		"user-1",
 		"canvas-all-categorize",
 		"session-all-categorize",
 		"",
@@ -1672,7 +1650,6 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 
 	events2, err := svc.RunAgent(
 		serviceTestContext(t, "user-1", "tenant-1"),
-		"user-1",
 		"canvas-all-categorize",
 		"session-all-categorize",
 		"",
@@ -1706,7 +1683,6 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 
 	events3, err := svc.RunAgent(
 		serviceTestContext(t, "user-1", "tenant-1"),
-		"user-1",
 		"canvas-all-categorize",
 		"session-all-categorize",
 		"",
@@ -1802,7 +1778,6 @@ func TestRunAgent_RealCanvas_InvokeFails(t *testing.T) {
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-invoke-fail"),
-		"user-1",
 		"canvas-invoke-fail",
 		"session-invoke-fail",
 		"",
@@ -1909,10 +1884,9 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 	svc := NewAgentServiceWithOptions(cp, canvas.CanvasStateSerializer{}, tracker)
 	events, err := svc.RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-cp"),
-		"user-1",
 		"canvas-cp",
 		"session-cp",
-		"", // latest version
+		"", // draft DSL
 		"world", nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
@@ -2084,7 +2058,6 @@ func TestRunAgent_FilesPopulateIteration(t *testing.T) {
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
 		WithAgentSessionID(ctx, sessionID),
-		"user-1",
 		canvasID,
 		sessionID,
 		"",
@@ -2151,7 +2124,6 @@ func TestRunAgent_MissingUploadEmitsError(t *testing.T) {
 
 	events, err := NewAgentService().RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), "session-missing-upload"),
-		"user-1",
 		"canvas-missing-upload",
 		"session-missing-upload",
 		"",
@@ -2229,7 +2201,6 @@ func TestRunAgent_NoFilesRunsNormally(t *testing.T) {
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
 		WithAgentSessionID(serviceTestContext(t, "user-1", "tenant-1"), sessionID),
-		"user-1",
 		canvasID,
 		sessionID,
 		"",

@@ -24,6 +24,7 @@ import (
 
 	modelModule "ragflow/internal/entity/models"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/permission"
 )
 
 // navNamingTemperature is the decoding temperature Python pins for both cluster
@@ -225,15 +226,14 @@ func navChatText(ctx context.Context, modelFactory *ModelFactory, tenantID, mode
 	if modelFactory == nil {
 		return "", fmt.Errorf("datasetnav: model factory not initialized")
 	}
-	access := ModelAccess{TenantID: tenantID}
 	var (
 		chatModel *modelModule.ChatModel
 		err       error
 	)
 	if strings.TrimSpace(modelRef) == "" {
-		chatModel, err = modelFactory.NewDefaultChatModel(ctx, access)
+		chatModel, err = modelFactory.NewDefaultChatModel(permission.WithTenantID(ctx, tenantID))
 	} else {
-		chatModel, err = modelFactory.NewChatModel(ctx, access, modelRef)
+		chatModel, err = modelFactory.NewChatModel(permission.WithTenantID(ctx, tenantID), modelRef)
 	}
 	if err != nil {
 		return "", err

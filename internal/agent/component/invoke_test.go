@@ -18,6 +18,7 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -26,7 +27,9 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"reflect"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,22 +37,10 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
-// Test setup: enable the test-only SSRF bypass for tests in this
-// file (the happy-path httptest server lives on 127.0.0.1, which
-// the production guard rejects). The bypass is now a process-
-// memory boolean (common.AllowAnyHostForTest) instead of an
-// env var — the previous form (ALLOW_ANY_HOST env) was a live
-// runtime toggle any operator could flip to disable the guard
-// globally. PR review round 6, Major #3.
-//
-// Each test that wants the production guard back resets it to
-// false in its body; we don't blanket-disable here because some
-// tests below rely on the bypass being on.
+// Set the environment opt-in so tests select private-host access explicitly.
 func setupAllowAnyHost(t *testing.T, enabled bool) {
 	t.Helper()
-	prev := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = enabled
-	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
+	t.Setenv(common.EnvAllowAnyHost, strconv.FormatBool(enabled))
 }
 
 // TestInvoke_GET exercises the happy path: a GET request to a stub
@@ -254,8 +245,87 @@ func TestInvoke_MissingURL(t *testing.T) {
 	}
 }
 
+func TestInvoke_AllowAnyHost(t *testing.T) {
+	setupAllowAnyHost(t, false)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Host, "local.test.invalid:") || r.URL.Path != "/logo.svg" {
+			t.Errorf("request = %s%s, want local.test.invalid:<port>/logo.svg", r.Host, r.URL.Path)
+		}
+		_, _ = w.Write([]byte("local response"))
+	}))
+	defer srv.Close()
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	originalLookup := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
+		if host != "local.test.invalid" {
+			return nil, fmt.Errorf("unexpected hostname %q", host)
+		}
+		return []string{"127.0.0.1"}, nil
+	}
+	t.Cleanup(func() { common.LookupHost = originalLookup })
+
+	for _, value := range []string{"", "0", "1"} {
+		t.Run("ALLOW_ANY_HOST="+value, func(t *testing.T) {
+			t.Setenv(common.EnvAllowAnyHost, value)
+			c, err := NewInvokeComponent(nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := c.Invoke(t.Context(), nil, map[string]any{
+				"method": "GET",
+				"url":    "http://local.test.invalid:" + port + "/logo.svg",
+			})
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if value == "1" {
+				if out["result"] != "local response" || out["_ERROR"] != nil {
+					t.Fatalf("output = %#v, want local response", out)
+				}
+			} else if out["_ERROR"] != "URL not valid" || out["result"] != nil {
+				t.Fatalf("output = %#v, want blocked URL", out)
+			}
+		})
+	}
+}
+
+func TestInvoke_AllowAnyHostRejectsInvalidURLs(t *testing.T) {
+	setupAllowAnyHost(t, false)
+	t.Setenv(common.EnvAllowAnyHost, "1")
+	originalLookup := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
+		return nil, fmt.Errorf("no such host: %s", host)
+	}
+	t.Cleanup(func() { common.LookupHost = originalLookup })
+
+	for _, kind := range []string{"url", "proxy"} {
+		for _, target := range []string{"file://127.0.0.1/logo.svg", "http:///logo.svg", "http://missing.test.invalid/logo.svg"} {
+			t.Run(kind+"/"+target, func(t *testing.T) {
+				c, err := NewInvokeComponent(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				inputs := map[string]any{"method": "GET", "url": "http://192.168.1.5/logo.svg"}
+				inputs[kind] = target
+				out, err := c.Invoke(t.Context(), nil, inputs)
+				if err != nil {
+					t.Fatalf("Invoke: %v", err)
+				}
+				if out["_ERROR"] != "URL not valid" || out["result"] != nil {
+					t.Fatalf("output = %#v, want blocked URL", out)
+				}
+			})
+		}
+	}
+}
+
 // TestInvoke_SSRFGuard_BlocksLoopback mirrors PR #15426: when
-// AllowAnyHostForTest is unset (production shape), the Invoke
+// ALLOW_ANY_HOST is unset, the Invoke
 // component must reject loopback / link-local / RFC1918 URLs
 // BEFORE any HTTP request is made. The test sets up an
 // httptest server on 127.0.0.1, points Invoke at it, and
@@ -360,8 +430,8 @@ func TestInvoke_SSRFGuard_BlocksProxy(t *testing.T) {
 // not followed. This closes the bypass window where a public
 // host could 302-redirect to a private one.
 func TestInvoke_NoRedirects_NotFollowed(t *testing.T) {
-	// Need the bypass to talk to the local httptest server.
-	setupAllowAnyHost(t, true)
+	setupAllowAnyHost(t, false)
+	t.Setenv(common.EnvAllowAnyHost, "1")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Location", "http://127.0.0.1:1/secret")
@@ -402,9 +472,8 @@ func TestInvoke_NoRedirects_NotFollowed(t *testing.T) {
 // proxy URL itself is unreachable on the test network, so
 // the dial will fail — but with an error that mentions
 // the IP we dialled, not the original hostname. That
-// proves the pinning path is active. We un-set
-// ALLOW_ANY_HOST so the SSRF guard accepts a public-IP
-// URL but the dial still happens through our code path.
+// proves the pinning path is active. ALLOW_ANY_HOST permits
+// the local proxy while the dial stays pinned.
 //
 // Target host is a literal IP (8.8.8.8) — proxy mode
 // fail-closes for hostname targets because the proxy
@@ -412,7 +481,8 @@ func TestInvoke_NoRedirects_NotFollowed(t *testing.T) {
 // would re-open the rebinding window. PR review round 5,
 // Major #3.
 func TestInvoke_ProxyDNSPin(t *testing.T) {
-	setupAllowAnyHost(t, true)
+	setupAllowAnyHost(t, false)
+	t.Setenv(common.EnvAllowAnyHost, "1")
 
 	proxyHit := make(chan struct{}, 1)
 	proxySrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -450,22 +520,158 @@ func TestInvoke_ProxyDNSPin(t *testing.T) {
 	}
 	t.Cleanup(func() { common.LookupHost = originalLookup })
 
-	c, _ := NewInvokeComponent(nil)
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-	defer cancel()
-	_, err = c.Invoke(ctx, nil, map[string]any{
-		"method":  "GET",
-		"url":     "http://8.8.8.8/api",
-		"proxy":   "http://proxy.test.invalid:" + proxyPort,
-		"timeout": 2,
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
+	for _, tc := range []struct {
+		name   string
+		prefix string
+		suffix string
+	}{
+		{name: "plain"},
+		{name: "spaces", prefix: " ", suffix: " "},
+		{name: "tabs and newlines", prefix: "\t", suffix: "\r\n"},
+		{name: "unicode whitespace", prefix: "\u3000", suffix: "\u00a0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := NewInvokeComponent(map[string]any{
+				"method":  "GET",
+				"url":     "http://8.8.8.8/api",
+				"proxy":   tc.prefix + "http://proxy.test.invalid:" + proxyPort + tc.suffix,
+				"timeout": 2,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			out, err := c.Invoke(ctx, nil, nil)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if out["_ERROR"] != nil || out["result"] != "" {
+				t.Fatalf("output = %#v, want empty proxy response", out)
+			}
+			select {
+			case <-proxyHit:
+			case <-time.After(time.Second):
+				t.Fatal("fake proxy was not hit; proxy dial was not pinned to validated IP")
+			}
+		})
 	}
-	select {
-	case <-proxyHit:
-	case <-time.After(time.Second):
-		t.Fatal("fake proxy was not hit; proxy dial was not pinned to validated IP")
+}
+
+func TestInvokeBlankProxy(t *testing.T) {
+	setupAllowAnyHost(t, true)
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		_, _ = io.WriteString(w, "direct response")
+	}))
+	defer srv.Close()
+
+	for _, proxy := range []string{"", " ", "\t\r\n", "\u3000\u00a0"} {
+		t.Run(fmt.Sprintf("%q", proxy), func(t *testing.T) {
+			before := requests.Load()
+			c, err := NewInvokeComponent(map[string]any{
+				"method": "GET",
+				"url":    srv.URL,
+				"proxy":  proxy,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := c.Invoke(t.Context(), nil, nil)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			if proxy == "" {
+				if out["result"] != "direct response" || out["_ERROR"] != nil {
+					t.Fatalf("output = %#v, want direct response", out)
+				}
+				return
+			}
+			if out["_ERROR"] != "URL not valid" || out["result"] != nil {
+				t.Errorf("output = %#v, want rejected proxy", out)
+			}
+			if requests.Load() != before {
+				t.Error("whitespace-only proxy sent a direct request")
+			}
+		})
+	}
+}
+
+func TestInvokeInvalidProxy(t *testing.T) {
+	setupAllowAnyHost(t, false)
+	for _, proxy := range []string{
+		"http://%",
+		"http://8.8.4.4:invalid",
+		"http://8.8.4.4:\t3128",
+		"http:///proxy",
+		"file://8.8.4.4/proxy",
+		" http://127.0.0.1:3128 ",
+	} {
+		t.Run(fmt.Sprintf("%q", proxy), func(t *testing.T) {
+			c, err := NewInvokeComponent(map[string]any{
+				"method": "GET",
+				"url":    "http://8.8.8.8/api",
+				"proxy":  proxy,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := c.Invoke(t.Context(), nil, nil)
+			if err != nil {
+				t.Fatalf("Invoke: want _ERROR output, got Go error: %v", err)
+			}
+			if out["_ERROR"] != "URL not valid" || out["result"] != nil {
+				t.Fatalf("output = %#v, want rejected proxy", out)
+			}
+		})
+	}
+}
+
+func TestInvokeInvalidProxyDoesNotLogCredentials(t *testing.T) {
+	setupAllowAnyHost(t, false)
+	for _, tc := range []struct {
+		name  string
+		proxy string
+	}{
+		{
+			name:  "invalid port",
+			proxy: "http://proxy-user:proxy-password@8.8.4.4:invalid/private-path?token=proxy-token",
+		},
+		{
+			name:  "control character",
+			proxy: "http://proxy-user:proxy-password@8.8.4.4/private-path\t?token=proxy-token",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			previous := zap.L()
+			core, logs := observer.New(zap.WarnLevel)
+			zap.ReplaceGlobals(zap.New(core))
+			t.Cleanup(func() { zap.ReplaceGlobals(previous) })
+
+			c, err := NewInvokeComponent(map[string]any{
+				"method": "GET",
+				"url":    "http://8.8.8.8/api",
+				"proxy":  tc.proxy,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := c.Invoke(t.Context(), nil, nil)
+			if err != nil || out["_ERROR"] != "URL not valid" || out["result"] != nil {
+				t.Fatalf("Invoke = %#v, %v; want rejected proxy", out, err)
+			}
+			if logs.Len() != 1 {
+				t.Fatalf("log count = %d, want one proxy validation warning", logs.Len())
+			}
+			for _, entry := range logs.All() {
+				for _, secret := range []string{"proxy-user", "proxy-password", "private-path", "proxy-token"} {
+					if strings.Contains(entry.Message, secret) || strings.Contains(fmt.Sprint(entry.ContextMap()), secret) {
+						t.Errorf("log contains proxy credentials or path/query: %#v", entry)
+					}
+				}
+			}
+		})
 	}
 }
 
@@ -489,5 +695,80 @@ func TestInvoke_ProxyRejectsHostnameTarget(t *testing.T) {
 	}
 	if got, _ := out["_ERROR"].(string); got != "URL not valid" {
 		t.Errorf("hostname+proxy target: _ERROR = %q, want %q", got, "URL not valid")
+	}
+}
+
+func TestInvoke_ParameterTypes(t *testing.T) {
+	setupAllowAnyHost(t, true)
+	for _, tc := range []struct {
+		name, kind string
+		value      any
+		invalid    bool
+	}{
+		{"legacy", "", `{"nested":{"items":[1,true]}}`, false},
+		{"string", "string", `{"nested":{"items":[1,true]}}`, false},
+		{"object", "object", `{"nested":{"items":[1,true]}}`, false},
+		{"native", "object", map[string]any{"nested": map[string]any{"items": []any{float64(1), true}}}, false},
+		{"invalid", "object", `{`, true},
+		{"array", "object", `[]`, true},
+		{"null", "object", `null`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, ref := range []string{"", "source@result"} {
+				var captured any
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]any
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Error(err)
+					}
+					captured = body["input"]
+					w.Write([]byte(`ok`))
+				}))
+				c, err := NewInvokeComponent(map[string]any{"url": srv.URL, "method": "POST", "variables": []any{map[string]any{"key": "input", "type": tc.kind, "value": tc.value, "ref": ref}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = c.Invoke(t.Context(), nil, map[string]any{"source@result": tc.value})
+				srv.Close()
+				if tc.invalid {
+					if err == nil || !strings.Contains(err.Error(), `parameter "input" must be a valid JSON object`) {
+						t.Fatalf("error = %v", err)
+					}
+					continue
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				expected := tc.value
+				if tc.kind == "object" {
+					expected = map[string]any{"nested": map[string]any{"items": []any{float64(1), true}}}
+				}
+				if !reflect.DeepEqual(captured, expected) {
+					t.Fatalf("wire value = %#v, want %#v", captured, expected)
+				}
+			}
+		})
+	}
+}
+
+func TestInvoke_ExplicitBodyIgnoresParameterTypes(t *testing.T) {
+	setupAllowAnyHost(t, true)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if string(body) != `{"explicit":true}` {
+			t.Errorf("body = %s", body)
+		}
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+	c, err := NewInvokeComponent(map[string]any{
+		"url": srv.URL, "method": "PUT", "body": `{"explicit":true}`,
+		"variables": []any{map[string]any{"key": "ignored", "type": "object", "value": "invalid JSON"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Invoke(t.Context(), nil, nil); err != nil {
+		t.Fatal(err)
 	}
 }

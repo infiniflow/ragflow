@@ -45,11 +45,30 @@ The frontend serves only the **Go** backend. There is no runtime backend detecti
 
 Do not reintroduce backend-variant primitives or detection helpers (e.g. a `useIsGoBackend` hook, `pickByBackend`, `<BackendVariant>`, or an `/api/v1/language` probe) and do not create `go/`-vs-`python/` variant directories or files.
 
+### Enterprise Overlays
+
+`src/ee/` holds the enterprise customization of shared modules at the same path it overrides. This tree ships those files empty so every shared import resolves; the enterprise repository ships the real implementation. Keep both sides in that shape:
+
+- `src/ee/locales/<lang>-private.ts` carries enterprise locale strings and `src/ee/utils/api-private.ts` enterprise-only API endpoints. Both stay empty objects here.
+- The shared file only imports the overlay and merges it — `merge(base, private)` in `src/locales/config.ts`, `merge(apiEndpoints, apiPrivate)` in `src/utils/api.ts`. Never inline enterprise strings or endpoints into `src/locales/*.ts` or `src/utils/api.ts`, and never delete the overlay import.
+- The edition is chosen by the file's content, never at runtime: no `import.meta.env` switch that selects enterprise code and no `isEnterprise` branch in shared modules.
+- Adding a new overlay means adding the empty file here and the implementation downstream in the same change.
+
 ### CSS and Layout Debugging
 
 When fixing CSS/layout issues (especially flex truncation, ellipsis, or element sizing), **always inspect the full parent hierarchy** for `flex-shrink`, `min-width`, and `overflow` constraints before applying fixes like `min-w-0`. Do not repeatedly apply the same fix without verifying the root cause.
 
 - Before editing, explain: (1) the full flex/container hierarchy from the target element up to the nearest non-flex ancestor, (2) what constraint is actually causing the bug, and (3) how the proposed fix addresses that root cause.
+
+### Text Overflow
+
+Any element rendering **user-generated or server-returned text** (names, titles, descriptions, file names, messages) inside a bounded container (card, table cell, dialog title, list item, badge, select trigger, button) must have an explicit overflow strategy. Never assume real data is short.
+
+- Choose deliberately: single-line `truncate`, multi-line `line-clamp-N`, or intentional wrapping with `break-words`. Rendering with no strategy is a defect — long real-world data always finds it.
+- `truncate` needs a width constraint to bite: add `min-w-0` on every flex ancestor between the text and the element that actually constrains the width (flex children default to `min-width: auto` and won't shrink below content size).
+- Keep truncated text revealable: prefer the shared `TruncatedText` component (`src/components/truncated-text.tsx`), which shows a tooltip only when truncation actually occurs.
+- Long i18n strings count as long text — a label that fits in Chinese may overflow in English.
+- When overflow is suspected or the user asks, verify with extreme input (100+ characters, an unbroken no-space string, a CJK/Latin mix) using the `overflow-check` skill (`.claude/skills/overflow-check`), which scans the rendered page in a real browser. jsdom and lint cannot measure layout.
 
 ### Color Tokens
 
@@ -141,6 +160,17 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
 - If a component does not meet requirements, **wrap or compose it** in a new component **outside** `src/components/ui/` (e.g., under `src/components/` or a feature folder), and customize via `className`, `props`, or composition.
 - Exceptions require **explicit user approval** in the same conversation. When in doubt, ask first and propose a wrapper-based alternative.
 - Adding a new shared component to `src/components/ui/`, or upgrading a shadcn primitive via the official `shadcn` CLI, is allowed only when the user explicitly requests it.
+
+### Prefer Shared Building Blocks
+
+**Do not hand-roll ad-hoc elements when a shared component, hook, util, or constant already covers the need.** Before writing a raw styled element or a local helper, check the shared layers first:
+
+- Interactive elements (buttons, inputs, tooltips, dialogs, pagination, …) → compose `src/components/ui/` primitives via `variant`/`size`/`className` (e.g. an icon-only action is `<Button variant="ghost" size="icon">` or `variant="static" size="auto"`, not a raw `<button className="...">`).
+- Reusable logic → existing hooks in `src/hooks/` (or `ahooks`).
+- Pure helpers → existing utils in `src/utils/` (or `lodash`/`dayjs`).
+- Domain constant lists → the page's `constant/` directory.
+
+Writing your own one-off version of something the shared layer already provides is a defect, not a style choice. Beyond the `ui/` primitives, `src/components/` already covers most recurring needs — empty states, truncation tooltips, confirm/rename dialogs, list-page scaffolding (filter bar, pagination, skeletons), icons, avatars, and layout wrappers — so skim `src/components/`, `src/hooks/`, and `src/utils/` before writing anything new.
 
 ### React Patterns and Conventions
 

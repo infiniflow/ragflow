@@ -21,12 +21,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -84,6 +86,81 @@ func TestMonkeyOCRv2RequestTimeoutUsesSetupAndAPIConfig(t *testing.T) {
 	apiKey := `{"MONKEYOCRV2_TIMEOUT":"34"}`
 	if got := monkeyOCRv2RequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKey}); got != 34*time.Second {
 		t.Fatalf("API config timeout=%v", got)
+	}
+}
+
+func TestMinerURequestTimeout(t *testing.T) {
+	t.Setenv(common.EnvMineruTimeout, "")
+	t.Setenv("MINERU_TIMEOUT_SECONDS", "")
+
+	// 1. Default fallback
+	if got := mineruRequestTimeout(nil, nil); got != 30*time.Minute {
+		t.Fatalf("default timeout=%v, want 30m", got)
+	}
+
+	// 2. Setup mineru_timeout (int seconds)
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": 1200}, nil); got != 1200*time.Second {
+		t.Fatalf("setup mineru_timeout=%v, want 1200s", got)
+	}
+
+	// 3. Setup mineru_timeout_seconds (int and float)
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout_seconds": 3600}, nil); got != 3600*time.Second {
+		t.Fatalf("setup mineru_timeout_seconds=%v, want 3600s", got)
+	}
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout_seconds": 1800.0}, nil); got != 1800*time.Second {
+		t.Fatalf("setup mineru_timeout_seconds float=%v, want 1800s", got)
+	}
+
+	// 4. Setup duration strings
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "45m"}, nil); got != 45*time.Minute {
+		t.Fatalf("setup mineru_timeout 45m=%v, want 45m", got)
+	}
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "2h"}, nil); got != 2*time.Hour {
+		t.Fatalf("setup mineru_timeout 2h=%v, want 2h", got)
+	}
+
+	// 5. APIConfig JSON
+	apiKey := `{"mineru_timeout":"2400"}`
+	if got := mineruRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKey}); got != 2400*time.Second {
+		t.Fatalf("API config timeout=%v, want 2400s", got)
+	}
+	apiKeyEnv := `{"MINERU_TIMEOUT":"5000"}`
+	if got := mineruRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKeyEnv}); got != 5000*time.Second {
+		t.Fatalf("API config env key timeout=%v, want 5000s", got)
+	}
+
+	// 6. Environment variable
+	t.Setenv(common.EnvMineruTimeout, "7200")
+	if got := mineruRequestTimeout(nil, nil); got != 7200*time.Second {
+		t.Fatalf("env MINERU_TIMEOUT=%v, want 7200s", got)
+	}
+	t.Setenv(common.EnvMineruTimeout, "")
+	t.Setenv("MINERU_TIMEOUT_SECONDS", "3000")
+	if got := mineruRequestTimeout(nil, nil); got != 3000*time.Second {
+		t.Fatalf("env MINERU_TIMEOUT_SECONDS=%v, want 3000s", got)
+	}
+
+	// 7. Precedence: Setup > APIConfig > Env
+	t.Setenv(common.EnvMineruTimeout, "9999")
+	apiKeyPrecedence := `{"mineru_timeout":"600"}`
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": 300}, &modelModule.APIConfig{ApiKey: &apiKeyPrecedence}); got != 300*time.Second {
+		t.Fatalf("precedence setup over apiConfig=%v, want 300s", got)
+	}
+	if got := mineruRequestTimeout(nil, &modelModule.APIConfig{ApiKey: &apiKeyPrecedence}); got != 600*time.Second {
+		t.Fatalf("precedence apiConfig over env=%v, want 600s", got)
+	}
+
+	// 8. Invalid values fallback
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": -10}, nil); got != 30*time.Minute {
+		t.Fatalf("negative timeout fallback=%v, want 30m", got)
+	}
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "invalid"}, nil); got != 30*time.Minute {
+		t.Fatalf("invalid string timeout fallback=%v, want 30m", got)
+	}
+	// Present setup key is authoritative: invalid values do not fall through to MINERU_TIMEOUT env or apiConfig
+	t.Setenv(common.EnvMineruTimeout, "7200")
+	if got := mineruRequestTimeout(schema.ParserSetup{"mineru_timeout": "invalid"}, nil); got != 30*time.Minute {
+		t.Fatalf("invalid setup with MINERU_TIMEOUT env fallback=%v, want 30m", got)
 	}
 }
 
@@ -258,7 +335,7 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	}
 
 	sizes := map[int][2]float64{0: {612, 792}, 1: {612, 792}}
-	items, err := mineruExtractJSONItems(buf.Bytes(), sizes)
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), sizes)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -289,9 +366,8 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	if imageItem["text"] != "A figure" {
 		t.Fatalf("image text = %#v", imageItem["text"])
 	}
-	uri, _ := imageItem["image"].(string)
-	if !strings.HasPrefix(uri, "data:image/png;base64,") {
-		t.Fatalf("image data URI = %q", uri)
+	if _, ok := imageItem["image"]; ok {
+		t.Fatalf("zip figures must not be inlined on the MinerU JSON path, got image=%q", imageItem["image"])
 	}
 	imgPos, _ := imageItem["_pdf_positions"].([][]any)
 	if len(imgPos) != 1 {
@@ -382,7 +458,7 @@ func TestMinerUExtractJSONItemsScalesBBoxToPoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes(), nil)
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), nil)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -418,7 +494,7 @@ func TestMinerUExtractJSONItemsWithoutGeometryKeepsText(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := mineruExtractJSONItems(buf.Bytes(), nil)
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), nil)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -502,7 +578,7 @@ func TestMinerURealContentListPositionsStayInPage(t *testing.T) {
 		pageWidth  = 595.0
 		pageHeight = 842.0
 	)
-	items, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {pageWidth, pageHeight}})
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {pageWidth, pageHeight}})
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -604,5 +680,223 @@ func TestDispatchPaddleOCRPDFAcceptsLocatedBlocksWithoutText(t *testing.T) {
 	}
 	if len(result.JSON) != 1 {
 		t.Fatalf("items=%v", result.JSON)
+	}
+}
+
+func TestMineruExtractJSONItemsStructuredContent(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	entry, err := zw.Create("structured_content.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = entry.Write([]byte(`{"pages":[{"page_idx":0,"blocks":[
+		{"type":"paragraph_title","content":"章节","bbox":[0.1,0.2,0.4,0.3]},
+		{"type":"header","content":"HEADER"},
+		{"type":"text","content":"正文"},
+		{"type":"table","content":"单元格","captions":[{"content":"表1"}]},
+		{"type":"image","content":"示意图","image_source":"images/a.png","captions":[{"content":"图1"}]}
+	]}]}`))
+	img, err := zw.Create("images/a.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = img.Write([]byte{0x89, 'P', 'N', 'G'})
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {1000, 1000}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 4 {
+		t.Fatalf("items = %d, want 4 (header skipped)", len(items))
+	}
+	if items[0]["text"] != "章节" || items[0]["layout"] != "title" {
+		t.Fatalf("title item = %#v", items[0])
+	}
+	positions, _ := items[0]["_pdf_positions"].([][]any)
+	if len(positions) != 1 || positions[0][0] != 1 || positions[0][1] != float64(100) {
+		t.Fatalf("positions = %#v", items[0]["_pdf_positions"])
+	}
+	if items[2]["doc_type_kwd"] != "table" || !strings.Contains(items[2]["text"].(string), "表1") {
+		t.Fatalf("table item = %#v", items[2])
+	}
+	if items[3]["doc_type_kwd"] != "image" || !strings.Contains(items[3]["text"].(string), "图1") {
+		t.Fatalf("image item = %#v", items[3])
+	}
+	if _, ok := items[3]["image"]; ok {
+		t.Fatalf("structured zip image must not be inlined: %#v", items[3])
+	}
+}
+
+func TestFinishMinerURemoteResultPrefersStructuredZip(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	entry, err := zw.Create("structured_content.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = entry.Write([]byte(`{"pages":[{"page_idx":0,"blocks":[
+		{"type":"paragraph_title","content":"章节","bbox":[0.1,0.2,0.4,0.3]},
+		{"type":"header","content":"HEADER"}
+	]}]}`))
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := finishMinerURemoteResult(t.Context(), "sample.pdf", []byte("%PDF-1.4"), &modelModule.MinerUV1Result{
+		Markdown: "# markdown only",
+		Zip:      buf.Bytes(),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var text strings.Builder
+	for _, item := range parser.ItemsToMaps(res.JSON) {
+		value, _ := item["text"].(string)
+		text.WriteString(value)
+		text.WriteString("\n")
+	}
+	got := text.String()
+	if !strings.Contains(got, "章节") || strings.Contains(got, "HEADER") || strings.Contains(got, "markdown only") {
+		t.Fatalf("text = %q, want structured title without the header or markdown fallback", got)
+	}
+}
+
+// A cancelled ingestion run must abort the MinerU 3.x /file_parse upload
+// instead of holding the worker and the remote server for the whole stream
+// budget.
+func TestDispatchPDFMinerUStreamHonoursCancellation(t *testing.T) {
+	withSSRFBypass(t)
+	started := make(chan struct{})
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
+			return
+		}
+		close(started)
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer func() {
+		close(release)
+		server.Close()
+	}()
+
+	apiKey := "mineru-secret"
+	baseURL := server.URL
+	original := resolveMinerUModelForDispatch
+	t.Cleanup(func() { resolveMinerUModelForDispatch = original })
+	resolveMinerUModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		return &mineruTestDriver{}, "vlm", &modelModule.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		_, err := dispatchMinerUPDF(ctx, nil, "scan.pdf", []byte("%PDF-1.4"), "tenant", nil, "")
+		done <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("MinerU /file_parse was never reached")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("dispatch error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("dispatch kept the /file_parse request open after cancellation")
+	}
+}
+
+// readSignalBody closes signal once the client has read body bytes, which
+// tells the test the response header was consumed and ReadAll is in progress.
+type readSignalBody struct {
+	io.ReadCloser
+	once   sync.Once
+	signal chan struct{}
+}
+
+func (b *readSignalBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		b.once.Do(func() { close(b.signal) })
+	}
+	return n, err
+}
+
+type readSignalTransport struct {
+	base   http.RoundTripper
+	signal chan struct{}
+}
+
+func (t readSignalTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body = &readSignalBody{ReadCloser: resp.Body, signal: t.signal}
+	return resp, nil
+}
+
+// A run cancelled while a non-200 error body is still streaming must still
+// report context.Canceled; reporting the bare HTTP status hides the reason the
+// request ended.
+func TestMineruStreamKeepsCancellationWhileReadingErrorResponse(t *testing.T) {
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = w.Write([]byte(`{"detail":"upstream`))
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		select {
+		case <-r.Context().Done():
+		case <-release:
+		}
+	}))
+	defer func() {
+		close(release)
+		server.Close()
+	}()
+
+	bodyRead := make(chan struct{})
+	originalClient := http.DefaultClient
+	http.DefaultClient = &http.Client{Transport: readSignalTransport{base: http.DefaultTransport, signal: bodyRead}}
+	t.Cleanup(func() { http.DefaultClient = originalClient })
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		_, err := mineruStreamParse(ctx, server.URL+"/file_parse", "mineru-secret", []byte("%PDF-1.4"), "auto", "en", "", "", mineruExtractionOptions{}, 0)
+		done <- err
+	}()
+
+	select {
+	case <-bodyRead:
+	case <-time.After(5 * time.Second):
+		t.Fatal("MinerU never started reading the error response body")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !strings.Contains(err.Error(), "HTTP 502") {
+			t.Fatalf("stream error = %v, want the HTTP 502 error response path", err)
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("stream error = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("stream kept reading the error response after cancellation")
 	}
 }

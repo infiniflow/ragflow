@@ -42,7 +42,7 @@ var langfuseCtxKey = langfuseCtxKeyType{}
 // LangfuseClientFromTenant returns a tracing client for the given tenant,
 // or nil if Langfuse is not configured. Failures to look up credentials
 // are non-fatal; Langfuse is observability, not a chat path requirement.
-func LangfuseClientFromTenant(ctx context.Context, tenantID, userID, chatID, modelName string) *LangfuseClient {
+func LangfuseClientFromTenant(ctx context.Context, tenantID, chatID, modelName string) *LangfuseClient {
 	if tenantID == "" {
 		return nil
 	}

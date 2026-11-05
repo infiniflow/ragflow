@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,133 +13,119 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import time
-import uuid
+from uuid import uuid4
+
 import pytest
-from ragflow_sdk import RAGFlow, Memory
-from configs import HOST_ADDRESS, INVALID_API_TOKEN, IS_GO_PROXY, SDK_UNAUTHORIZED_ERROR_MESSAGE
+from ragflow_sdk import RAGFlow
+
+from test.testcases.test_sdk_api.test_message_management.message_helpers import assert_content, assert_identity, wait_until
+
+pytestmark = pytest.mark.integration
 
 
-MESSAGE_USER_ID = "sdk-api-test-user" if IS_GO_PROXY else ""
+@pytest.mark.parametrize("invalid_auth", [None, "invalid-token"])
+def test_auth_invalid(integration_settings, invalid_auth):
+    rag = RAGFlow(invalid_auth, integration_settings["base_url"])
+    with pytest.raises(Exception, match="^Invalid access token$"):
+        rag.add_message(["missing"], "agent", "session", "question", "answer", user_id="external-user")
 
 
-class TestAuthorization:
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "invalid_auth, expected_message",
-        [
-            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-        ],
+def payload_for(memories):
+    namespace = uuid4().hex
+    return dict(
+        memory_id=[memory.id for memory in memories],
+        agent_id=f"{namespace}-agent",
+        session_id=f"{namespace}-session",
+        user_id="external-conversation-user",
+        user_input="What is a pineapple?",
+        agent_response="A pineapple is a sweet tropical fruit.",
     )
-    def test_auth_invalid(self, invalid_auth, expected_message):
-        client = RAGFlow(invalid_auth, HOST_ADDRESS)
-        with pytest.raises(Exception) as exception_info:
-            client.add_message(**{"memory_id": [""], "agent_id": "", "session_id": "", "user_id": MESSAGE_USER_ID, "user_input": "what is pineapple?", "agent_response": ""})
-        assert str(exception_info.value) == expected_message, str(exception_info.value)
 
 
-@pytest.mark.usefixtures("add_empty_raw_type_memory")
-class TestAddRawMessage:
-    @pytest.mark.p3
-    def test_add_raw_message(self, client):
-        memory_id = self.memory_id
-        agent_id = uuid.uuid4().hex
-        session_id = uuid.uuid4().hex
-        message_payload = {
-            "memory_id": [memory_id],
-            "agent_id": agent_id,
-            "session_id": session_id,
-            "user_id": MESSAGE_USER_ID,
-            "user_input": "what is pineapple?",
-            "agent_response": """
-A pineapple is a tropical fruit known for its sweet, tangy flavor and distinctive, spiky appearance. Here are the key facts:
-Scientific Name: Ananas comosus
-Physical Description: It has a tough, spiky, diamond-patterned outer skin (rind) that is usually green, yellow, or brownish. Inside, the juicy yellow flesh surrounds a fibrous core.
-Growth: Unlike most fruits, pineapples do not grow on trees. They grow from a central stem as a composite fruit, meaning they are formed from many individual berries that fuse together around the core. They grow on a short, leafy plant close to the ground.
-Uses: Pineapples are eaten fresh, cooked, grilled, juiced, or canned. They are a popular ingredient in desserts, fruit salads, savory dishes (like pizzas or ham glazes), smoothies, and cocktails.
-Nutrition: They are a good source of Vitamin C, manganese, and contain an enzyme called bromelain, which aids in digestion and can tenderize meat.
-Symbolism: The pineapple is a traditional symbol of hospitality and welcome in many cultures.
-Are you asking about the fruit itself, or its use in a specific context?
-""",
-        }
-        add_res = client.add_message(**message_payload)
-        assert add_res == "All add to task.", str(add_res)
-        time.sleep(2)  # make sure refresh to index before search
-        memory = Memory(client, {"id": memory_id})
-        message_res = memory.list_memory_messages(**{"agent_id": agent_id, "keywords": session_id})
-        assert message_res["messages"]["total_count"] > 0
-        for message in message_res["messages"]["message_list"]:
-            assert message["agent_id"] == agent_id, message
-            assert message["session_id"] == session_id, message
+@pytest.mark.parametrize("types", [["raw"], ["raw", "semantic", "episodic", "procedural"]], ids=["raw", "multiple-types"])
+def test_add_message(client, memory_factory, types):
+    memory = memory_factory(memory_type=types)
+    payload = payload_for([memory])
+    assert client.add_message(**payload) == "All add to task."
+    result = wait_until(memory.list_memory_messages, lambda value: value["messages"]["total_count"] == 1)
+    rows = result["messages"]["message_list"]
+    assert len(rows) == 1
+    assert_identity(rows[0], payload, memory.id)
+    assert_content(memory.get_message_content(rows[0]["message_id"]), payload, memory.id)
+    recent = wait_until(lambda: client.get_recent_messages([memory.id]), lambda value: any(row["message_id"] == rows[0]["message_id"] for row in value))
+    assert_content(next(row for row in recent if row["message_id"] == rows[0]["message_id"]), payload, memory.id)
 
 
-@pytest.mark.usefixtures("add_empty_multiple_type_memory")
-class TestAddMultipleTypeMessage:
-    @pytest.mark.p1
-    def test_add_multiple_type_message(self, client):
-        memory_id = self.memory_id
-        agent_id = uuid.uuid4().hex
-        session_id = uuid.uuid4().hex
-        message_payload = {
-            "memory_id": [memory_id],
-            "agent_id": agent_id,
-            "session_id": session_id,
-            "user_id": MESSAGE_USER_ID,
-            "user_input": "what is pineapple?",
-            "agent_response": """
-A pineapple is a tropical fruit known for its sweet, tangy flavor and distinctive, spiky appearance. Here are the key facts:
-Scientific Name: Ananas comosus
-Physical Description: It has a tough, spiky, diamond-patterned outer skin (rind) that is usually green, yellow, or brownish. Inside, the juicy yellow flesh surrounds a fibrous core.
-Growth: Unlike most fruits, pineapples do not grow on trees. They grow from a central stem as a composite fruit, meaning they are formed from many individual berries that fuse together around the core. They grow on a short, leafy plant close to the ground.
-Uses: Pineapples are eaten fresh, cooked, grilled, juiced, or canned. They are a popular ingredient in desserts, fruit salads, savory dishes (like pizzas or ham glazes), smoothies, and cocktails.
-Nutrition: They are a good source of Vitamin C, manganese, and contain an enzyme called bromelain, which aids in digestion and can tenderize meat.
-Symbolism: The pineapple is a traditional symbol of hospitality and welcome in many cultures.
-Are you asking about the fruit itself, or its use in a specific context?
-""",
-        }
-        add_res = client.add_message(**message_payload)
-        assert add_res == "All add to task.", str(add_res)
-        time.sleep(2)  # make sure refresh to index before search
-        memory = Memory(client, {"id": memory_id})
-        message_res = memory.list_memory_messages(**{"agent_id": agent_id, "keywords": session_id})
-        assert message_res["messages"]["total_count"] > 0
-        for message in message_res["messages"]["message_list"]:
-            assert message["agent_id"] == agent_id, message
-            assert message["session_id"] == session_id, message
+def test_add_to_multiple_memory(client, memory_factory):
+    memories = [memory_factory(), memory_factory()]
+    payload = payload_for(memories)
+    assert client.add_message(**payload) == "All add to task."
+    ids = []
+    for memory in memories:
+        result = wait_until(memory.list_memory_messages, lambda value: value["messages"]["total_count"] == 1)
+        rows = result["messages"]["message_list"]
+        assert len(rows) == 1
+        assert_content(memory.get_message_content(rows[0]["message_id"]), payload, memory.id)
+        ids.append(rows[0]["message_id"])
+    # Each association has an independently addressable memory:message identity.
+    assert len({(memory.id, str(message_id)) for memory, message_id in zip(memories, ids)}) == 2
 
 
-@pytest.mark.usefixtures("add_2_multiple_type_memory")
-class TestAddToMultipleMemory:
-    @pytest.mark.p3
-    def test_add_to_multiple_memory(self, client):
-        memory_ids = self.memory_ids
-        agent_id = uuid.uuid4().hex
-        session_id = uuid.uuid4().hex
-        message_payload = {
-            "memory_id": memory_ids,
-            "agent_id": agent_id,
-            "session_id": session_id,
-            "user_id": MESSAGE_USER_ID,
-            "user_input": "what is pineapple?",
-            "agent_response": """
-A pineapple is a tropical fruit known for its sweet, tangy flavor and distinctive, spiky appearance. Here are the key facts:
-Scientific Name: Ananas comosus
-Physical Description: It has a tough, spiky, diamond-patterned outer skin (rind) that is usually green, yellow, or brownish. Inside, the juicy yellow flesh surrounds a fibrous core.
-Growth: Unlike most fruits, pineapples do not grow on trees. They grow from a central stem as a composite fruit, meaning they are formed from many individual berries that fuse together around the core. They grow on a short, leafy plant close to the ground.
-Uses: Pineapples are eaten fresh, cooked, grilled, juiced, or canned. They are a popular ingredient in desserts, fruit salads, savory dishes (like pizzas or ham glazes), smoothies, and cocktails.
-Nutrition: They are a good source of Vitamin C, manganese, and contain an enzyme called bromelain, which aids in digestion and can tenderize meat.
-Symbolism: The pineapple is a traditional symbol of hospitality and welcome in many cultures.
-Are you asking about the fruit itself, or its use in a specific context?
-""",
-        }
-        add_res = client.add_message(**message_payload)
-        assert add_res == "All add to task.", str(add_res)
-        time.sleep(2)  # make sure refresh to index before search
-        for memory_id in memory_ids:
-            memory = Memory(client, {"id": memory_id})
-            message_res = memory.list_memory_messages(**{"agent_id": agent_id, "keywords": session_id})
-            assert message_res["messages"]["total_count"] > 0
-            for message in message_res["messages"]["message_list"]:
-                assert message["agent_id"] == agent_id, message
-                assert message["session_id"] == session_id, message
+@pytest.mark.parametrize("field", ["memory_id", "agent_id", "session_id", "user_input", "agent_response", "user_id"])
+@pytest.mark.parametrize("value", [None, "", 12])
+def test_invalid_creation_fields(client, memory_factory, field, value):
+    memory = memory_factory()
+    payload = payload_for([memory])
+    payload[field] = value
+    with pytest.raises(Exception, match="body arguments is required|memory_id is required|user_id is required"):
+        client.add_message(**payload)
+    assert memory.list_memory_messages()["messages"] == {"total_count": 0, "message_list": []}
+
+
+@pytest.mark.parametrize("user_id", ["", "   "])
+def test_api_key_requires_external_user(client, memory_factory, user_id):
+    memory = memory_factory()
+    payload = payload_for([memory])
+    payload["user_id"] = user_id
+    with pytest.raises(Exception, match="^user_id is required$"):
+        client.add_message(**payload)
+    assert memory.list_memory_messages()["messages"]["total_count"] == 0
+
+
+def test_api_key_default_user_is_rejected(client, memory_factory):
+    memory = memory_factory()
+    payload = payload_for([memory])
+    del payload["user_id"]
+    with pytest.raises(Exception, match="^user_id is required$"):
+        client.add_message(**payload)
+
+
+def test_external_user_trimmed_and_does_not_control_memory_access(client, memory_factory):
+    memory = memory_factory()
+    payload = payload_for([memory])
+    payload["user_id"] = "  external-subject  "
+    assert client.add_message(**payload) == "All add to task."
+    result = wait_until(memory.list_memory_messages, lambda value: value["messages"]["total_count"] == 1)
+    assert_content(memory.get_message_content(result["messages"]["message_list"][0]["message_id"]), payload, memory.id)
+
+
+def test_missing_memory_rejected(client):
+    payload = payload_for([])
+    payload["memory_id"] = [uuid4().hex]
+    with pytest.raises(Exception, match="Some messages failed to add.*Memory not found"):
+        client.add_message(**payload)
+
+
+def test_empty_memory_list_rejected(client):
+    with pytest.raises(Exception, match="memory_id is required"):
+        client.add_message(**payload_for([]))
+
+
+def test_partial_memory_failure_is_reported_and_valid_save_persists(client, memory_factory):
+    memory = memory_factory()
+    payload = payload_for([memory])
+    payload["memory_id"] = [memory.id, uuid4().hex]
+    with pytest.raises(Exception, match="Some messages failed to add"):
+        client.add_message(**payload)
+    result = wait_until(memory.list_memory_messages, lambda value: value["messages"]["total_count"] == 1)
+    assert_content(memory.get_message_content(result["messages"]["message_list"][0]["message_id"]), payload, memory.id)

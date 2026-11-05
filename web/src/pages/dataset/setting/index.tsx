@@ -45,7 +45,7 @@ import {
   useSaveDatasetSetting,
 } from './hooks';
 import { normalizeParserConfigForComparison } from './parser-config';
-import { useFetchCanvasVersionList } from '@/hooks/use-agent-request';
+import { useFetchPipelineVersionList } from '@/hooks/use-pipeline-version-request';
 import { useRevealSubmitErrors } from './use-reveal-submit-errors';
 import { ApplyParserConfigDialog } from './apply-parser-config-dialog';
 
@@ -143,14 +143,23 @@ export default function DatasetSetting() {
   // options have loaded, revalidate explicitly — the saved parser or pinned
   // version may have been deleted, and the error should be visible before
   // submit. Re-running on selection changes clears the error as soon as a
-  // valid option is picked. (Same pattern as ModelTreeSelectFormField.)
+  // valid option is picked. parserOptionMissing is a dep too: the verdict can
+  // flip without a loading/selection transition (e.g. version data arriving
+  // for an already-idle tree), and the RHF error is sticky until revalidated.
+  // (Same pattern as ModelTreeSelectFormField.)
   const trigger = form.trigger;
   const parserFieldName =
     parseType === ParseType.Pipeline ? 'pipeline_id' : 'parser_id';
   useEffect(() => {
     if (parserOptionsLoading || !parserSelectValue) return;
     trigger(parserFieldName);
-  }, [trigger, parserOptionsLoading, parserSelectValue, parserFieldName]);
+  }, [
+    trigger,
+    parserOptionsLoading,
+    parserSelectValue,
+    parserFieldName,
+    parserOptionMissing,
+  ]);
 
   const pipelineParserConfig = knowledgeDetails?.parser_config as
     | Record<string, any>
@@ -170,11 +179,13 @@ export default function DatasetSetting() {
         ? knowledgeDetails?.pipeline_id
         : knowledgeDetails?.parser_id
       : undefined;
+  const savedVersionId = isPipelineMode
+    ? (knowledgeDetails?.pipeline_version_id ?? '')
+    : '';
 
-  // Published versions of the selected dataflow canvas, fetched here only to
-  // prefill the latest version for unpinned datasets (design C1/C2); the
-  // select itself lazy-loads whatever branches the user expands.
-  const { data: canvasVersions } = useFetchCanvasVersionList(
+  // Reuse the select's catalog cache to prefill the latest saved version for
+  // unpinned datasets.
+  const { data: canvasVersions } = useFetchPipelineVersionList(
     parseType === ParseType.Pipeline && pipelineId ? pipelineId : undefined,
   );
   // Show the outdated bang only while the form still holds the SAVED pin:
@@ -192,21 +203,33 @@ export default function DatasetSetting() {
     canvasVersions?.[0]?.id,
   );
 
+  // The saved parser_config overrides the DSL defaults only while the
+  // selection matches the saved pipeline+version binding; a different version
+  // renders that version's own DSL defaults. (The form's parser_config stays
+  // the display source of truth via operatorValues either way.)
+  const isSavedBindingSelected =
+    !!selectedPipelineId &&
+    selectedPipelineId === savedPipelineId &&
+    (pipelineVersionId ?? '') === savedVersionId;
+
   const { operatorNodes, loading: operatorNodesLoading } =
-    usePipelineOperatorNodes(
-      selectedPipelineId,
-      selectedPipelineId && selectedPipelineId === savedPipelineId
+    usePipelineOperatorNodes({
+      pipelineId: selectedPipelineId,
+      versionId: isPipelineMode ? pipelineVersionId : undefined,
+      savedParserConfig: isSavedBindingSelected
         ? pipelineParserConfig
         : undefined,
-      !isPipelineMode,
-    );
+      isBuiltin: !isPipelineMode,
+    });
 
-  useResetParserConfigOnPipelineChange(
+  useResetParserConfigOnPipelineChange({
     form,
-    selectedPipelineId,
+    pipelineId: selectedPipelineId,
+    versionId: isPipelineMode ? pipelineVersionId : undefined,
     savedPipelineId,
+    savedVersionId: isPipelineMode ? savedVersionId : undefined,
     operatorNodes,
-  );
+  });
 
   const { activeTab, setActiveTab } = useActiveTab(operatorNodes);
 

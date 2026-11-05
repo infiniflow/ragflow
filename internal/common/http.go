@@ -18,6 +18,7 @@ package common
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -450,10 +451,10 @@ func (t *schemeSafeTransport) RoundTrip(req *http.Request) (*http.Response, erro
 }
 
 // strictSSRFTransport wraps an http.RoundTripper so every outgoing request is
-// validated by the strict SSRF guard (scheme + host + globally routable IP).
-// This is the default for cloud-hosted model drivers and closes the
-// go/request-forgery data flow: the user-controllable BaseURL cannot be made to
-// point at private hosts, loopback, link-local, or cloud metadata endpoints.
+// validated by the SSRF guard (scheme + host + globally routable IP unless
+// ALLOW_ANY_HOST is enabled).
+// This is the default for cloud-hosted model drivers and blocks private hosts,
+// loopback, link-local, and cloud metadata endpoints unless explicitly enabled.
 type strictSSRFTransport struct{ base http.RoundTripper }
 
 func (t *strictSSRFTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -468,40 +469,17 @@ var AllowedURLSchemes = []string{"http", "https"}
 // LookupHost is the indirection used to resolve hostnames. Tests override it.
 var LookupHost = net.LookupHost
 
-// AllowAnyHostForTest is a test-only override that skips the
-// public-IP routability check in AssertURLSafe and AssertHostSafe.
-// Scheme, host, and DNS resolution checks are unchanged: hostnames
-// still resolve, unresolvable hostnames still fail, and callers
-// still pin connections to the returned resolved address. Production
-// code MUST leave this at its zero value (false). Tests that need to
-// talk to a local httptest server flip it on and reset it in
-// t.Cleanup.
-//
-// The previous form (env-var ALLOW_ANY_HOST) was a live runtime
-// toggle that any operator could flip to disable the SSRF guard
-// globally — including the DNS pinning that the Invoke component
-// relies on. PR review round 6, Major #3: this variable lives in
-// process memory only, so it cannot be enabled by an env var or
-// a deployment mistake. The explicit "_ForTest" suffix is the
-// signal that production code must never touch it.
-//
-// Host-based database and connector dials and configured MCP servers are a
-// separate opt-in. AllowConfiguredPrivateHost reads ALLOW_ANY_HOST for those
-// dials only. This function stays limited to the in-memory test hook.
-var AllowAnyHostForTest = false
-
-// allowAnyHost reads the test-only override. Kept as a private
-// helper so the call sites don't all have to know about the
-// exported variable name.
+// allowAnyHost reads the shared environment opt-in. Scheme, host, and DNS
+// validation still apply when private addresses are permitted.
 func allowAnyHost() bool {
-	return AllowAnyHostForTest
+	return AllowConfiguredPrivateHost()
 }
 
 // AssertURLSchemeSafe is a lenient SSRF guard for drivers that may legitimately
 // target private networks or loopback addresses (e.g. self-hosted Ollama, vLLM,
 // Xinference). It only rejects dangerous schemes and empty hosts; it does not
-// resolve DNS and does not require public routability. Use this ONLY for
-// local-inference model drivers — cloud-hosted drivers must use AssertURLSafe.
+// resolve DNS and does not require public routability. Use this only where
+// private hosts are explicitly permitted; cloud-hosted drivers must use AssertURLSafe.
 var AssertURLSchemeSafe = func(rawURL string) error {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
@@ -523,6 +501,18 @@ var AssertURLSchemeSafe = func(rawURL string) error {
 }
 
 var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error) {
+	return assertURLSafe(rawURL, LookupHost)
+}
+
+// AssertURLSafeWithContext validates every resolved address while allowing
+// cancellation and deadlines to interrupt DNS resolution.
+var AssertURLSafeWithContext = func(ctx context.Context, rawURL string) (hostname, resolvedIP string, err error) {
+	return assertURLSafe(rawURL, func(host string) ([]string, error) {
+		return net.DefaultResolver.LookupHost(ctx, host)
+	})
+}
+
+func assertURLSafe(rawURL string, lookup func(string) ([]string, error)) (hostname, resolvedIP string, err error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
 		return "", "", fmt.Errorf("invalid url")
@@ -541,7 +531,7 @@ var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error)
 	}
 
 	allowAny := allowAnyHost()
-	addresses, err := LookupHost(hostname)
+	addresses, err := lookup(hostname)
 	if err != nil {
 		return "", "", fmt.Errorf("could not resolve hostname '%s': %w", hostname, err)
 	}
@@ -565,12 +555,12 @@ var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error)
 }
 
 // AssertHostSafe validates a bare host (a hostname or a literal IP, with no
-// scheme or port) and returns the first resolved public IP. It is the
+// scheme or port) and returns the first validated IP. It is the
 // host-type counterpart of AssertURLSafe: every resolved address must be
-// globally routable (private, loopback, link-local, metadata, multicast and
-// reserved ranges are rejected). Callers dial the returned IP directly so DNS
-// cannot rebind the connection to an internal address between validation and
-// the TCP connect.
+// globally routable unless ALLOW_ANY_HOST is enabled (private, loopback,
+// link-local, metadata, multicast and reserved ranges are otherwise rejected).
+// Callers dial the returned IP directly so DNS cannot rebind the connection
+// to an internal address between validation and the TCP connect.
 //
 // Used by host-based data sources (IMAP/MySQL/PostgreSQL) and by the ExeSQL /
 // test_db_connection host guards, mirroring common/ssrf_guard.py:
@@ -722,89 +712,6 @@ func allZero(b []byte) bool {
 		}
 	}
 	return true
-}
-
-type response struct {
-	Code    ErrorCode   `json:"code"`
-	Data    interface{} `json:"data"`
-	Message string      `json:"message"`
-	Total   interface{} `json:"total,omitempty"`
-}
-
-// errorResponse error response
-type errorResponse struct {
-	Code    ErrorCode `json:"code"`
-	Message string    `json:"message"`
-}
-
-func responseMessage(code ErrorCode, message string) string {
-	if message != "" {
-		return message
-	}
-	if code == CodeSuccess {
-		return "success"
-	}
-	return code.Message()
-}
-
-// SuccessWithData returns success response with data
-func SuccessWithData(c *gin.Context, data interface{}, message string) {
-	c.JSON(http.StatusOK, response{
-		Code:    CodeSuccess,
-		Data:    data,
-		Message: responseMessage(CodeSuccess, message),
-	})
-}
-
-// SuccessWithDataAndTotal returns success response with data and total number
-func SuccessWithDataAndTotal(c *gin.Context, data, total interface{}, message string) {
-	c.JSON(http.StatusOK, response{
-		Code:    CodeSuccess,
-		Data:    data,
-		Total:   total,
-		Message: responseMessage(CodeSuccess, message),
-	})
-}
-
-// SuccessNoData returns success response without data
-func SuccessNoData(c *gin.Context, message string) {
-	c.JSON(http.StatusOK, response{
-		Code:    CodeSuccess,
-		Data:    nil,
-		Message: responseMessage(CodeSuccess, message),
-	})
-}
-
-// SuccessWithMessage returns success response with message only
-func SuccessWithMessage(c *gin.Context, message string) {
-	c.JSON(http.StatusOK, response{
-		Code:    CodeSuccess,
-		Message: responseMessage(CodeSuccess, message),
-	})
-}
-
-// ErrorWithCode returns error response with code and message
-func ErrorWithCode(c *gin.Context, code ErrorCode, message string) {
-	c.JSON(http.StatusOK, errorResponse{
-		Code:    code,
-		Message: responseMessage(code, message),
-	})
-}
-
-func ResponseWithCodeData(c *gin.Context, code ErrorCode, data interface{}, message string) {
-	c.JSON(http.StatusOK, response{
-		Code:    code,
-		Data:    data,
-		Message: responseMessage(code, message),
-	})
-}
-
-func ResponseWithHttpCodeData(c *gin.Context, httpCode int, code ErrorCode, data interface{}, message string) {
-	c.JSON(httpCode, response{
-		Code:    code,
-		Data:    data,
-		Message: responseMessage(code, message),
-	})
 }
 
 func ParseRequestIntPositive(c *gin.Context, parameter, parameterName string, defaultValue int) (int, error) {

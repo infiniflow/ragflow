@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -14,11 +14,26 @@
 #  limitations under the License.
 #
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from unittest.mock import Mock
 
 import pytest
+from beartype.roar import BeartypeCallHintParamViolation
+from ragflow_sdk import DataSet, Document
+
+
+def raw_document_values_by_id(dataset, field, desc):
+    response = dataset.rag.get(
+        f"/datasets/{dataset.id}/documents",
+        params={"page": 1, "page_size": 100, "orderby": field, "desc": desc},
+    )
+    result = response.json()
+    assert result["code"] == 0, result
+    return {document["id"]: document[field] for document in result["data"]["docs"]}
 
 
 class TestDocumentsList:
+    pytestmark = pytest.mark.integration
+
     @pytest.mark.p1
     def test_default(self, add_documents):
         dataset, _ = add_documents
@@ -27,113 +42,80 @@ class TestDocumentsList:
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
-        "params, expected_page_size, expected_message",
+        "params, expected_page_ids",
         [
-            ({"page": None, "page_size": 2}, 2, "not instance of"),
-            ({"page": 1, "page_size": 2}, 2, ""),
-            ({"page": 2, "page_size": 2}, 2, ""),
-            ({"page": 3, "page_size": 2}, 1, ""),
-            ({"page": "3", "page_size": 2}, 1, "not instance of"),
-            pytest.param(
-                {"page": -1, "page_size": 2},
-                0,
-                "Invalid page number",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
-            pytest.param(
-                {"page": "a", "page_size": 2},
-                0,
-                "Invalid page value",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
+            ({"page": 1, "page_size": 2, "orderby": "name", "desc": False}, slice(0, 2)),
+            ({"page": 2, "page_size": 2, "orderby": "name", "desc": False}, slice(2, 4)),
+            ({"page": 3, "page_size": 2, "orderby": "name", "desc": False}, slice(4, 6)),
+            ({"page": -1, "page_size": 2, "orderby": "name", "desc": False}, slice(0, 2)),
         ],
     )
-    def test_page(self, add_documents, params, expected_page_size, expected_message):
-        dataset, _ = add_documents
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                dataset.list_documents(**params)
-            assert expected_message in str(exception_info.value), str(exception_info.value)
-        else:
-            documents = dataset.list_documents(**params)
-            assert len(documents) == expected_page_size, str(documents)
+    def test_page(self, add_documents, params, expected_page_ids):
+        dataset, fixture_documents = add_documents
+        expected = sorted(fixture_documents, key=lambda document: document.name)
+        documents = dataset.list_documents(**params)
+        assert [document.id for document in documents] == [document.id for document in expected[expected_page_ids]]
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
-        "params, expected_page_size, expected_message",
+        "params, expected_size",
         [
-            ({"page_size": None}, 5, "not instance of"),
-            ({"page_size": 2}, 2, ""),
-            ({"page_size": 1}, 1, ""),
-            ({"page_size": 6}, 5, ""),
-            ({"page_size": "1"}, 1, "not instance of"),
-            pytest.param(
-                {"page_size": -1},
-                0,
-                "Invalid page size",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
-            pytest.param(
-                {"page_size": "a"},
-                0,
-                "Invalid page size value",
-                marks=pytest.mark.skip(reason="issues/5851"),
-            ),
+            ({"page_size": 2, "orderby": "name", "desc": False}, 2),
+            ({"page_size": 1, "orderby": "name", "desc": False}, 1),
+            ({"page_size": 6, "orderby": "name", "desc": False}, 5),
+            ({"page_size": -1, "orderby": "name", "desc": False}, 5),
         ],
     )
-    def test_page_size(self, add_documents, params, expected_page_size, expected_message):
-        dataset, _ = add_documents
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                dataset.list_documents(**params)
-            assert expected_message in str(exception_info.value), str(exception_info.value)
-        else:
-            documents = dataset.list_documents(**params)
-            assert len(documents) == expected_page_size, str(documents)
+    def test_page_size(self, add_documents, params, expected_size):
+        dataset, fixture_documents = add_documents
+        expected = sorted(fixture_documents, key=lambda document: document.name)
+        documents = dataset.list_documents(**params)
+        assert [document.id for document in documents] == [document.id for document in expected[:expected_size]]
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
         "params, expected_message",
         [
-            ({"orderby": None}, "not instance of"),
             ({"orderby": "create_time"}, ""),
             ({"orderby": "update_time"}, ""),
-            pytest.param({"orderby": "name", "desc": "False"}, "", marks=pytest.mark.skip(reason="issues/5851")),
-            pytest.param({"orderby": "unknown"}, "orderby should be create_time or update_time", marks=pytest.mark.skip(reason="issues/5851")),
+            ({"orderby": "name"}, ""),
+            ({"orderby": "unknown"}, "invalid orderby field: unknown"),
         ],
     )
     def test_orderby(self, add_documents, params, expected_message):
-        dataset, _ = add_documents
+        dataset, fixture_documents = add_documents
         if expected_message:
             with pytest.raises(Exception) as exception_info:
                 dataset.list_documents(**params)
             assert expected_message in str(exception_info.value), str(exception_info.value)
         else:
-            dataset.list_documents(**params)
+            field = params["orderby"]
+            documents = dataset.list_documents(**params)
+            assert {document.id for document in documents} == {doc.id for doc in fixture_documents}
+            raw_values = raw_document_values_by_id(dataset, field, desc=True)
+            assert set(raw_values) == {doc.id for doc in fixture_documents}
+            values = [raw_values[document.id] for document in documents]
+            assert values == sorted(values, reverse=True), values
 
     @pytest.mark.p3
-    @pytest.mark.parametrize(
-        "params, expected_message",
-        [
-            ({"desc": None}, "not instance of"),
-            ({"desc": "true"}, "not instance of"),
-            ({"desc": "True"}, "not instance of"),
-            ({"desc": True}, ""),
-            pytest.param({"desc": "false"}, "", marks=pytest.mark.skip(reason="issues/5851")),
-            ({"desc": "False"}, "not instance of"),
-            ({"desc": False}, ""),
-            ({"desc": "False", "orderby": "update_time"}, "not instance of"),
-            pytest.param({"desc": "unknown"}, "desc should be true or false", marks=pytest.mark.skip(reason="issues/5851")),
-        ],
-    )
-    def test_desc(self, add_documents, params, expected_message):
-        dataset, _ = add_documents
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                dataset.list_documents(**params)
-            assert expected_message in str(exception_info.value), str(exception_info.value)
-        else:
-            dataset.list_documents(**params)
+    @pytest.mark.parametrize("desc", [True, False])
+    def test_desc(self, add_documents, desc):
+        dataset, fixture_documents = add_documents
+        documents = dataset.list_documents(desc=desc)
+        assert {document.id for document in documents} == {doc.id for doc in fixture_documents}
+        raw_values = raw_document_values_by_id(dataset, "create_time", desc)
+        assert set(raw_values) == {doc.id for doc in fixture_documents}
+        create_times = [raw_values[document.id] for document in documents]
+        assert create_times == sorted(create_times, reverse=desc), create_times
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize("desc", [False, True])
+    def test_name_ordering(self, add_documents, desc):
+        dataset, fixture_documents = add_documents
+        documents = dataset.list_documents(orderby="name", desc=desc)
+        assert {document.id for document in documents} == {doc.id for doc in fixture_documents}
+        names = [document.name for document in documents]
+        assert names == sorted(names, reverse=desc), names
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -267,9 +249,50 @@ class TestDocumentsList:
             docs = future.result()
             assert len(docs) == 5, str(docs)
 
-    @pytest.mark.p3
-    def test_invalid_params(self, add_documents):
-        dataset, _ = add_documents
+
+class TestDocumentListSDKTypes:
+    def test_timestamp_ordering_uses_raw_rows_by_sdk_document_id(self):
+        rows = [
+            {"id": "second", "name": "second.txt", "create_time": 20},
+            {"id": "first", "name": "first.txt", "create_time": 10},
+        ]
+        rag = Mock()
+        rag.get.return_value.json.return_value = {"code": 0, "data": {"docs": rows}}
+        dataset = DataSet(rag, {"id": "dataset"})
+        documents = [Document(rag, row.copy()) for row in rows]
+        values = raw_document_values_by_id(dataset, "create_time", True)
+        assert [values[document.id] for document in documents] == [20, 10]
+        rag.get.assert_called_once_with(
+            "/datasets/dataset/documents",
+            params={"page": 1, "page_size": 100, "orderby": "create_time", "desc": True},
+        )
+
+    @pytest.mark.parametrize(
+        "params",
+        [
+            {"page": None},
+            {"page": "3"},
+            {"page": "a"},
+            {"page_size": None},
+            {"page_size": "1"},
+            {"page_size": "a"},
+            {"orderby": None},
+            {"desc": None},
+            {"desc": "true"},
+            {"desc": "True"},
+            {"desc": "false"},
+            {"desc": "False"},
+            {"desc": "False", "orderby": "update_time"},
+            {"desc": "unknown"},
+        ],
+    )
+    def test_invalid_parameter_types_are_rejected_before_http(self, params):
+        dataset = DataSet(None, {"id": "dataset-without-http-client"})
+        with pytest.raises(BeartypeCallHintParamViolation):
+            dataset.list_documents(**params)
+
+    def test_invalid_params(self):
+        dataset = DataSet(None, {"id": "dataset-without-http-client"})
         params = {"a": "b"}
         with pytest.raises(TypeError) as exception_info:
             dataset.list_documents(**params)

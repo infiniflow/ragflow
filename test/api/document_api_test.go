@@ -151,8 +151,8 @@ func TestRESTDocumentUploadValidation(t *testing.T) {
 	}{
 		{"missing_file", nil, 101, "No file part!"},
 		{"empty_filename", []documentUpload{{Name: "", Content: []byte("x")}}, 101, "No file part!"},
-		{"overlong_filename", []documentUpload{{Name: strings.Repeat("a", 252) + ".txt"}}, 101, "255 bytes"},
-		{"multibyte_overlong_filename", []documentUpload{{Name: strings.Repeat("界", 84) + ".txt"}}, 101, "255 bytes"},
+		{"overlong_filename", []documentUpload{{Name: strings.Repeat("a", 252) + ".txt"}}, 101, "255 characters"},
+		{"multibyte_overlong_filename", []documentUpload{{Name: strings.Repeat("界", 252) + ".txt"}}, 101, "255 characters"},
 		{"unsupported_format", []documentUpload{{Name: "executable.exe", Content: []byte("not executable")}}, 500, "not been supported"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -172,15 +172,16 @@ func TestRESTDocumentUploadValidation(t *testing.T) {
 	// Mixed uploads explicitly report the rejected file while retaining the valid file.
 	partial := multipartRESTDocuments(t, TestConfig, id, []documentUpload{{Name: "valid.txt", Content: []byte("valid content")}, {Name: "invalid.exe"}})
 	restCode(t, partial, 200, 500)
-	accepted := array(t, partial.JSON["data"])
-	if len(accepted) != 1 || object(t, accepted[0])["name"] != "valid.txt" || !strings.Contains(fmt.Sprint(partial.JSON["message"]), "invalid.exe") {
+	if data, exists := partial.JSON["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
+	}
+	if !strings.Contains(fmt.Sprint(partial.JSON["message"]), "invalid.exe") {
 		t.Fatalf("partial upload=%v", partial.JSON)
 	}
 	data, docs := listRESTDocuments(t, id, nil)
-	if data["total"] != float64(1) {
+	if data["total"] != float64(1) || len(docs) != 1 || docs[0]["name"] != "valid.txt" {
 		t.Fatalf("partial upload total=%v", data)
 	}
-	requireRESTDocumentIDs(t, docs, []string{object(t, accepted[0])["id"].(string)})
 }
 
 func TestRESTDocumentListingFiltersPaginationAndReads(t *testing.T) {

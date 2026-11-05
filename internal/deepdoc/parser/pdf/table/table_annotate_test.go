@@ -585,6 +585,15 @@ func (m *MockTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	return nil
 }
 
+// FinalizeGrid returns annotGrid unchanged (identity). The fake carries no
+// deferred OCR-overlay behavior, matching the production DeepDoc builder.
+func (m *MockTableBuilder) FinalizeGrid(annotGrid [][]pdf.TSRCell, boxes []pdf.TextBox) [][]pdf.TSRCell {
+	return annotGrid
+}
+
+// AttachSpanInfo is a no-op for the fake builder.
+func (m *MockTableBuilder) AttachSpanInfo(item *pdf.TableItem) {}
+
 // ── writeTableAnnotations unit tests ──────────────────────────────────
 
 func TestWriteTableAnnotations_WriteBack(t *testing.T) {
@@ -734,4 +743,23 @@ func TestMarkNoMergeTables_EmptyInputs(t *testing.T) {
 	// Should not panic with empty inputs.
 	MarkNoMergeTables(nil, nil)
 	MarkNoMergeTables([]pdf.TextBox{}, []pdf.TableItem{})
+}
+
+// TestGarbageKeepFeat_ReferenceKeepsCrossReference pins text retention: a
+// reference-labelled box is dropped unless it looks like a caption. IsCaptionBox
+// stays pattern-only, so a distinguishing noun phrase that starts with "Table N"
+// ("Table 1, we present …") is still kept as text, not dropped as a reference.
+func TestGarbageKeepFeat_ReferenceKeepsCrossReference(t *testing.T) {
+	for _, text := range []string{
+		"Table 1, we present the F1 scores and success rates.",
+		"Table 9 reports the adaptive expansion ablation.",
+		"Table 2: Comparative Experiment of ReAct",
+	} {
+		if !garbageKeepFeat(pdf.LayoutTypeReference, pdf.TextBox{Text: text}, 1000) {
+			t.Errorf("garbageKeepFeat(reference, %q) = false, want true (text would be dropped)", text)
+		}
+	}
+	if garbageKeepFeat(pdf.LayoutTypeReference, pdf.TextBox{Text: "plain reference text"}, 1000) {
+		t.Error("garbageKeepFeat kept a plain reference box")
+	}
 }

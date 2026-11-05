@@ -6,9 +6,14 @@ import {
   HoverCardTrigger,
 } from '@/components/ui/hover-card';
 import { DocumentType } from '@/constants/knowledge';
+import {
+  DocumentPrivilegeAction,
+  useDocumentActionCellOverrides,
+} from '@/ee/pages/dataset/dataset/dataset-action-cell-seams';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useRemoveDocument } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
+import { cn } from '@/lib/utils';
 import { downloadDatasetDocument } from '@/services/file-manager-service';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
@@ -27,15 +32,23 @@ const FunctionMap = {
   update_time: formatDate,
 };
 
+type DatasetActionCellProps = {
+  record: IDocumentInfo;
+  datasetEditButtonDisabled?: boolean;
+} & UseRenameDocumentShowType &
+  Pick<UseRowSelectionType, 'setRowSelection'>;
+
 export function DatasetActionCell({
   record,
   showRenameModal,
   setRowSelection,
-}: { record: IDocumentInfo } & UseRenameDocumentShowType &
-  Pick<UseRowSelectionType, 'setRowSelection'>) {
+  datasetEditButtonDisabled,
+}: DatasetActionCellProps) {
   const { id, type } = record;
   const isRunning = isDocumentProcessing(record);
   const isVirtualDocument = type === DocumentType.Virtual;
+  const actionDisabled = isRunning || Boolean(datasetEditButtonDisabled);
+  const { actionClassName } = useDocumentActionCellOverrides();
 
   const { removeDocument } = useRemoveDocument();
 
@@ -69,14 +82,16 @@ export function DatasetActionCell({
 
   return (
     <div
-      className="
-      flex gap-2 items-center opacity-0
-      transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+      className={cn(
+        'flex gap-2 items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+        actionClassName,
+      )}
     >
+      <DocumentPrivilegeAction record={record} disabled={actionDisabled} />
       <Button
         size="icon-xs"
         variant="ghost"
-        disabled={isRunning}
+        disabled={actionDisabled}
         onClick={handleRename}
       >
         <PenLine className="size-[1em]" />
@@ -123,7 +138,7 @@ export function DatasetActionCell({
           data-testid="document-delete"
           size="icon-xs"
           variant="ghost"
-          disabled={isRunning}
+          disabled={actionDisabled}
         >
           <Trash2 className="size-[1em]" />
         </Button>

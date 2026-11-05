@@ -26,6 +26,8 @@ import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useSaveAgent } from '@/hooks/use-agent-request';
+import { useFetchCanvasPresence } from '@/ee/hooks/use-agent-presence';
+import { AgentEditGuard } from '@/ee/pages/agent/agent-edit-guard';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
@@ -33,7 +35,6 @@ import {
   Compass,
   History,
   LaptopMinimalCheck,
-  Logs,
   MessageSquareCode,
   ScreenShare,
   Settings,
@@ -66,6 +67,7 @@ import {
   useSaveGraphBeforeOpeningDebugDrawer,
   useWatchAgentChange,
 } from './hooks/use-save-graph';
+import { OnlineUsers } from '@/ee/pages/agent/online-users';
 import { PipelineLogSheet } from './pipeline-log-sheet';
 import PipelineRunSheet from './pipeline-run-sheet';
 import { SettingDialog } from './setting-dialog';
@@ -273,6 +275,8 @@ export default function Agent() {
     uploadedFileData,
   } = useRunDataflow({ showLogSheet: showPipelineLogSheet, setMessageId });
 
+  const { data: presence } = useFetchCanvasPresence();
+  const operatorPermission = presence.operator_permission ?? 0;
   const initialWidgetSettings = useMemo<WidgetSettings>(() => {
     const widgetSettings =
       agentDetail?.dsl?.globals?.[AgentWidgetSettingsGlobalKey];
@@ -326,30 +330,40 @@ export default function Agent() {
           </div>
         </section>
         <div className="flex items-center gap-5">
-          <ButtonLoading
-            variant={'secondary'}
-            onClick={handleSave}
-            loading={loading}
-          >
-            <LaptopMinimalCheck /> {t('flow.save')}
-          </ButtonLoading>
-          {showRunButton &&
-            (runTooltipKey ? (
-              <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
-            ) : (
-              runButton
-            ))}
-          {isConversationMode && (
-            <Button variant={'secondary'} onClick={handleExploreClick}>
-              <Compass />
-              {t('explore.title')}
-            </Button>
-          )}
-          <PublishConfirmDialog
-            agentDetail={agentDetail}
-            loading={loading}
-            onPublish={handlePublish}
-          />
+          <OnlineUsers></OnlineUsers>
+          <AgentEditGuard operatorPermission={operatorPermission}>
+            <ButtonLoading
+              variant={'secondary'}
+              onClick={handleSave}
+              loading={loading}
+            >
+              <LaptopMinimalCheck /> {t('flow.saveDraft')}
+            </ButtonLoading>
+
+            {showRunButton &&
+              (runTooltipKey ? (
+                <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
+              ) : (
+                runButton
+              ))}
+            {isConversationMode && (
+              <Button variant={'secondary'} onClick={handleExploreClick}>
+                <Compass />
+                {t('explore.title')}
+              </Button>
+            )}
+            {/* <PublishConfirmDialog
+              agentDetail={agentDetail}
+              loading={loading}
+              onPublish={() => saveGraph(undefined, undefined, true)}
+              onBeforeOpen={hasBlockingIssues}
+            /> */}
+            <PublishConfirmDialog
+              agentDetail={agentDetail}
+              loading={loading}
+              onPublish={handlePublish}
+            />
+          </AgentEditGuard>
           <CanvasChecklist issues={issues} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -358,34 +372,30 @@ export default function Agent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <AgentDropdownMenuItem onClick={() => showGlobalParamSheet()}>
-                <MessageSquareCode />
-                {t('flow.conversationVariable')}
-              </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
+              <AgentEditGuard operatorPermission={operatorPermission}>
+                <AgentDropdownMenuItem onClick={() => showGlobalParamSheet()}>
+                  <MessageSquareCode />
+                  {t('flow.conversationVariable')}
+                </AgentDropdownMenuItem>
+                <DropdownMenuSeparator />
+              </AgentEditGuard>
               <AgentDropdownMenuItem onClick={showVersionDialog}>
                 <History />
                 {t('flow.historyVersion')}
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
-              {isPipeline || (
-                <AgentDropdownMenuItem
-                  onClick={() => navigateToAgentLogs(id as string)()}
-                >
-                  <Logs />
-                  {t('flow.log')}
-                </AgentDropdownMenuItem>
-              )}
               <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />
                 {t('flow.export')}
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
-              <AgentDropdownMenuItem onClick={showSettingDialog}>
-                <Settings />
-                {t('flow.setting')}
-              </AgentDropdownMenuItem>
+              <AgentEditGuard operatorPermission={operatorPermission}>
+                <AgentDropdownMenuItem onClick={showSettingDialog}>
+                  <Settings />
+                  {t('flow.setting')}
+                </AgentDropdownMenuItem>
+              </AgentEditGuard>
               {isPipeline ||
                 (location.hostname !== 'cloud.ragflow.io' && (
                   <>

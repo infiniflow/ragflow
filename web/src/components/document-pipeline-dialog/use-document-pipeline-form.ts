@@ -20,7 +20,7 @@ import {
   usePipelineOperatorNodes,
   useResetParserConfigOnPipelineChange,
 } from '@/hooks/use-pipeline-operator';
-import { useFetchCanvasVersionList } from '@/hooks/use-agent-request';
+import { useFetchPipelineVersionList } from '@/hooks/use-pipeline-version-request';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import {
   getOperatorType,
@@ -148,10 +148,20 @@ export function useDocumentPipelineForm({
   // *reactive* value: it resolves after mount and the adoption effect below
   // re-fires when it does. (Reading it from a static prop captured before the
   // fetch would freeze it at undefined.) versions is newest-first.
-  const { data: versions = [] } = useFetchCanvasVersionList(
+  const { data: versions = [] } = useFetchPipelineVersionList(
     isPipelineMode ? selectedDataFlowId : undefined,
   );
   const latestVersionId = versions[0]?.id;
+  // Outdated = pinned to a non-latest version, shown as a hint bang on the
+  // parser select. Gated on Pipeline mode: a BuiltIn selection carries no
+  // live version binding, yet a stale pin can sit in the form (the backend
+  // clears pipeline_id but keeps pipeline_version_id after a pipeline→builtin
+  // switch) while the version list is not even fetched, so an ungated check
+  // would flag every builtin parser holding a stale pin.
+  const versionOutdated =
+    isPipelineMode &&
+    !!selectedVersionId &&
+    selectedVersionId !== latestVersionId;
   // The saved parser_config only belongs to the pipeline (and parse type) it
   // was saved with — expose its id only while that exact pipeline is selected,
   // so that after switching, defaults come purely from the new pipeline's DSL.
@@ -162,22 +172,33 @@ export function useDocumentPipelineForm({
         ? pipelineId
         : parserId
       : undefined;
+  const savedVersionId = isPipelineMode ? (pipelineVersionId ?? '') : '';
+
+  // The saved parser_config overrides the DSL defaults only while the
+  // selection matches the saved pipeline+version binding; a different version
+  // renders that version's own DSL defaults. (The form's parser_config stays
+  // the display source of truth via operatorValues either way.)
+  const isSavedBindingSelected =
+    !!selectedPipelineId &&
+    selectedPipelineId === savedPipelineId &&
+    (selectedVersionId ?? '') === savedVersionId;
 
   const { operatorNodes, loading: operatorNodesLoading } =
-    usePipelineOperatorNodes(
-      selectedPipelineId,
-      selectedPipelineId && selectedPipelineId === savedPipelineId
-        ? parserConfig
-        : undefined,
-      !isPipelineMode,
-    );
+    usePipelineOperatorNodes({
+      pipelineId: selectedPipelineId,
+      versionId: isPipelineMode ? selectedVersionId : undefined,
+      savedParserConfig: isSavedBindingSelected ? parserConfig : undefined,
+      isBuiltin: !isPipelineMode,
+    });
 
-  useResetParserConfigOnPipelineChange(
+  useResetParserConfigOnPipelineChange({
     form,
-    selectedPipelineId,
+    pipelineId: selectedPipelineId,
+    versionId: isPipelineMode ? selectedVersionId : undefined,
     savedPipelineId,
+    savedVersionId: isPipelineMode ? savedVersionId : undefined,
     operatorNodes,
-  );
+  });
 
   // Design section 8 (T37): an unpinned document still pre-selects the latest
   // concrete version once the version list resolves. The "switch pipeline
@@ -252,7 +273,7 @@ export function useDocumentPipelineForm({
     operatorValues,
     showOperatorTabs,
     buildSubmitData,
-    latestVersionId,
+    versionOutdated,
     parserOptionMissing,
   };
 }

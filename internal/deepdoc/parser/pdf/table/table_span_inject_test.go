@@ -10,18 +10,18 @@ import (
 )
 
 // TestGroupCellsInjectsSpanning verifies that GroupCells propagates EVERY TSR
-// "table spanning cell" label into the assembled grid — both the wide col-span
-// header and the tall row-span header cell — instead of dropping a span whose
+// "table spanning cell" label into the assembled grid  both the wide col-span
+// header and the tall row-span header cell  instead of dropping a span whose
 // box only reaches one row/column center.
 //
-// Repro from real_pdfs/1.pdf table 0 (tsr_raw coordinates, raw PDF points —
+// Repro from real_pdfs/1.pdf table 0 (tsr_raw coordinates, raw PDF points
 // GroupCells only compares relative positions, so no crop/scale mapping is
 // needed here):
 //   - colspan spanning cell #17: x0=209.3 y0=112.2 x1=446.8 y1=138.0
 //   - rowspan spanning cell #18: x0=210.3 y0=135.3 x1=249.7 y1=229.7
 //
 // The real PDF cell "名称" spans TWO rows (rowspan=2); TSR only emits a span
-// box that reaches row1's center (rowspan=1) — a known TSR-model limitation
+// box that reaches row1's center (rowspan=1)  a known TSR-model limitation
 // tracked separately. Go must still faithfully label BOTH TSR span boxes so
 // the recognition is not lost; restoring the true rowspan=2 is the TSR model's
 // job, not Go's. The previous code used `len(covered) < 2` to skip a span that
@@ -74,7 +74,7 @@ func TestGroupCellsInjectsSpanning(t *testing.T) {
 		t.Errorf("expected BOTH TSR spanning cells (#17 colspan header + #18 rowspan '名称') "+
 			"to be labelled in the grid, got %d (positions=%v). "+
 			"GroupCells must not drop a span whose box only reaches one "+
-			"row/column center — the TSR recognition must be preserved "+
+			"row/column center  the TSR recognition must be preserved "+
 			"(restoring the true rowspan=2 is the TSR model's job).",
 			spanCount, spanPositions)
 	}

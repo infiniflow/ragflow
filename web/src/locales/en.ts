@@ -9,7 +9,8 @@ export default {
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete it ?',
       deleteThem: 'Are you sure to delete them ?',
-      removeModalTitle: 'Are you sure to remove it ?',
+      removeIt: 'Are you sure to remove it ?',
+      removeThem: 'Are you sure to remove them ?',
       ok: 'Ok',
       cancel: 'Cancel',
       yes: 'Yes',
@@ -58,7 +59,6 @@ export default {
       viewLess: 'View less',
       comingSoon: 'Coming soon',
       download: 'Download',
-      figure: 'Fig.',
       close: 'Close',
       preview: 'Preview',
       move: 'Move',
@@ -402,6 +402,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       continueUpload: 'Continue upload',
+      uploadPipelineDeletedTitle: 'Parsing pipeline unavailable',
+      uploadPipelineDeletedContent:
+        'The pipeline configured for this dataset has been deleted or has no published version, so uploaded files cannot be parsed automatically. Reconfigure a pipeline in the dataset settings, or upload now and configure parsing for each file individually.',
       reselectParser: 'Reselect parse method',
       goAddModel: 'Go add model',
       uploadMissingModelsTitle: 'Some files lack a required model',
@@ -603,6 +606,15 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       runningStatus3: 'Success',
       runningStatus4: 'Fail',
       runningStatusQueued: 'Queued',
+      cancelParsingTasks: 'Cancel parsing tasks',
+      filesParsing: '{{count}} files parsing',
+      filesPending: '{{count}} files pending',
+      cancelParsingConfirmTitle: 'Cancel parsing',
+      cancelParsingConfirm:
+        'Cancel parsing for the {{count}} files that are currently parsing?',
+      cancelPendingConfirm:
+        'Remove the {{count}} pending files from the parsing queue?',
+      cancelTasksSuccess: 'Canceled {{count}} parsing tasks',
       pageRanges: 'Page ranges',
       pageRangesTip:
         'Range of pages to be parsed; pages outside this range will not be processed.',
@@ -1154,7 +1166,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       operation: 'Operation',
       model: 'Model',
       modelTip: 'Large language chat model',
-      tokensSpent: '{{total}} tokens ({{prompt}} in + {{completion}} out)',
+      tokensSpent: '{{total}} tokens ({{prompt}} input, {{completion}} output)',
       turnElapsed: '{{seconds}}s',
       decisionModel: 'Decision model',
       decisionModelTip:
@@ -1289,9 +1301,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       webSearchApiKeyRequired:
         'An API key is required for the selected provider — without one no Internet search happens and the switch never appears.',
       // The key field's label. {{provider}} is the provider's BRAND name, which is
-      // deliberately not translated, so this single template covers all nine.
+      // deliberately not translated, so this single template covers all providers.
       webSearchApiKeyLabel: '{{provider}} API Key',
       // One Tip/Message pair per provider, alphabetical by provider id.
+      anysearchApiKeyTip:
+        'Optional. AnySearch works without a key; add a key to use your account quota. Service limits apply.',
+      anysearchApiKeyMessage: 'Optional - leave blank for anonymous search',
       braveApiKeyTip:
         'When Brave Search is selected, its web results supplement dataset retrieval. Every Brave endpoint requires a key.',
       braveApiKeyMessage: 'Please enter your Brave Search API Key',
@@ -1350,6 +1365,55 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
     },
     setting: {
+      gpustack: {
+        serverUrl: 'GPUStack server URL',
+        serverUrlTip: 'Must be reachable from the RAGFlow container.',
+        loopbackWarning:
+          'localhost points to the RAGFlow container itself. Use the IP address or host.docker.internal instead.',
+        apiKey: 'API key',
+        apiKeyTip: 'Create one in GPUStack under Access Control > API Keys.',
+        apiKeyKeep: 'Leave blank to keep the saved key',
+        connect: 'Connect',
+        connecting: 'Connecting...',
+        connected: 'Connected. {{count}} running models found.',
+        connectedShort: '{{count}} running',
+        errorAuth:
+          'GPUStack rejected this API key. Check it under Access Control > API Keys.',
+        errorUnreachable:
+          'Cannot reach this server from RAGFlow. Check the URL and that the port is open to the RAGFlow container.',
+        errorOther: 'Could not list models: {{message}}',
+        emptyTitle: 'No running models found',
+        emptyBody:
+          'GPUStack only exposes models that are running and have a route. Deploy a model with "Enable model route" turned on, then refresh.',
+        emptyLink: 'Read the integration guide',
+        addModels: 'Add {{count}} models',
+        addSelected: 'Add {{count}} selected',
+        adding: 'Adding...',
+        refresh: 'Refresh',
+        editInstance: 'Edit instance',
+        saveInstance: 'Save instance',
+        cancel: 'Cancel',
+        availableTitle: 'Available in GPUStack',
+        addedTitle: 'Added models',
+        modelsLoadFailed:
+          "Could not load this instance's models. Reload the page and try again.",
+        notRunning: 'Not running',
+        notRunningTip:
+          'GPUStack is not serving this model right now, so calls to it will fail.',
+        tokens: '{{count}} tokens',
+        changeType: 'Model type for {{name}}',
+        select: 'Select {{name}}',
+        remove: 'Remove {{name}}',
+        noAdded: 'No models added yet.',
+        kind_chat: 'Chat',
+        kind_vision: 'Chat + Vision',
+        kind_embedding: 'Embedding',
+        kind_rerank: 'Rerank',
+        kind_asr: 'Speech to text',
+        kind_tts: 'Text to speech',
+        typeHint:
+          'Types come from GPUStack. GPUStack cannot tell whether a model accepts images, so choose Chat + Vision for those.',
+      },
       Verify: 'Verify',
       keyValid: 'Your API Key is valid.',
       keyInvalid: 'Your API Key is invalid.',
@@ -2047,10 +2111,10 @@ Example: Virtual Hosted Style`,
       deleteChannelModalContent:
         'Are you sure you want to delete this chat channel bot? This action cannot be undone.',
       connectDialog: 'Connect assistant or Agent',
-      connectDialogTitle: 'Connect {{name}} to an assistant or Agent',
-      selectDialog: 'Select an assistant or Agent',
+      connectDialogTitle: 'Connect {{name}} to an assistant',
+      selectDialog: 'Select an assistant',
       connectDialogTip:
-        'Messages received by this channel will be answered by the connected assistant or Agent. Clear the selection to disconnect.',
+        'Messages received by this channel will be answered by the connected assistant. Clear the selection to disconnect.',
       notConnected: 'No assistant or Agent connected',
       chatChannelAssistant: 'Chat assistant',
       chatChannelAgent: 'Agent',
@@ -2137,6 +2201,8 @@ Example: Virtual Hosted Style`,
       apiKey: 'API Key',
       apiKeyMessage: 'Please enter the API Key',
       apiKeyPlaceholder: 'Please enter the API Key',
+      credentialClearToRemove:
+        'Clear this field to remove the saved credential',
       apiKeyTip:
         'The API Key can be obtained by registering the corresponding LLM supplier.',
       aimlapiGetKey: 'Get API key',
@@ -2178,6 +2244,11 @@ Example: Virtual Hosted Style`,
       mineruApiserver: 'MinerU API Server',
       mineruApiserverMessage: 'Please input the MinerU API Server URL!',
       mineruApiserverPlaceholder: 'e.g. http://host.docker.internal:9987',
+      mineruApiToken: 'MinerU API token',
+      mineruApiTokenPlaceholder:
+        'Token from mineru.net API management (optional)',
+      mineruApiTokenTip:
+        'When set, RAGFlow uses the official precise API (/api/v4, including vlm). Leave empty to use the no-login agent API. Not required for a self-hosted MinerU server.',
       mineruOutputDir: 'MinerU Output Directory',
       mineruOutputDirMessage: 'Please input the MinerU output directory!',
       mineruOutputDirPlaceholder: '/tmp/mineru',
@@ -2211,7 +2282,7 @@ Example: Virtual Hosted Style`,
         'The model that judges whether a retrieved passage is worth showing the LLM. Leave unset to keep the retrieved text unfiltered.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check the Model providers page to see if your model provider supports this model.',
+        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check the Model providers page to see if your model provider supports this model.',
       img2txtModel: 'VLM',
       img2txtModelTip:
         'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.',
@@ -2461,6 +2532,7 @@ Example: Virtual Hosted Style`,
       batchAddModels: 'Add all models',
       batchRemoveModels: 'Remove all models',
       batchVerifyModels: 'Verify all models',
+      moreActions: 'More actions',
       editCustomModelTitle: 'Edit model',
       modelMaxTokens: 'Max context length',
       modelFeatures: 'Model features',
@@ -2793,7 +2865,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       comma: 'Comma',
       semicolon: 'Semicolon',
       period: 'Period',
-      lineBreak: 'Line break',
+      linebreak: 'Line break',
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
@@ -2914,6 +2986,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       operation: 'operation',
       run: 'Run',
       save: 'Save',
+      saveDraft: 'Save draft',
       title: 'ID:',
       beginDescription: 'This is where the flow begins.',
       answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
@@ -3354,6 +3427,15 @@ Best for: Documents with flowing, contextually connected content — such as boo
       optional: 'Optional',
       pasteFileLink: 'Paste file link',
       testRun: 'Test run',
+      captureModelInputs: 'Capture model inputs',
+      captureModelInputsHint:
+        'Test runs execute the agent and its tools. Expanding or copying captured inputs does not run them again.',
+      modelInputs: 'Model inputs',
+      modelInputSummary:
+        'Recorded entries: {{count}} · Omitted calls: {{omittedCount}}',
+      noModelInputs: 'No model calls were captured in this run.',
+      modelInputsUnavailable: 'Model inputs are unavailable for this run.',
+      testRunError: 'Test run failed ({{code}}): {{message}}',
       debugRunLimits:
         'A debug run verifies that the flow executes without errors: PDF parses only the first 2 pages (other formats parse all pages); if a chunker node is present, only the first 3 chunks are previewed; if a knowledge-compiler node is present, it runs locally only and does not trigger a dataset rebuild or notification.',
       template: 'Template',
@@ -3445,15 +3527,15 @@ This delimiter is used to split the input text into several text pieces echo of 
         editAlias: 'Edit alias',
         editAliasDescription:
           'Give this version a memorable alias so you can find it quickly later.',
-        pinnedTooltip:
-          'This dataset is pinned to a specific version. New versions published on the agent will not affect it.',
         outdated:
-          'The pinned version is not the latest. Click to learn more; we will not upgrade it automatically.',
+          'The configured pipeline version is not the latest and will not be updated automatically.',
         delete: 'Delete version',
         deleteConfirmTitle: 'Delete this version?',
         deleteConfirmContent:
           'Deleting a version that a dataset or file is bound to will make that file unparseable. This cannot be undone.',
-        restore: 'Restore as current',
+        deleteAgentConfirmContent:
+          'If this agent is embedded in a website or serving external traffic, deleting its latest published version will roll back or interrupt the live service. Your current canvas is not affected. This cannot be undone.',
+        restore: 'Restore as current draft',
         restoreConfirmTitle: 'Restore this version as the current agent?',
         restoreConfirmContent:
           'The current agent DSL will be replaced by this version. Save again to create a new version.',
@@ -3590,7 +3672,6 @@ This process aggregates variables from multiple branches into a single variable 
       publishIngestionPipeline:
         'You are about to publish this Ingestion pipeline.',
       publishAgent: 'You are about to publish this agent',
-      linkedDataset: 'Linked dataset:',
       lastPublished: 'Last published',
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',

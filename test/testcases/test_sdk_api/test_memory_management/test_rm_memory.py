@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,41 +13,48 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+from uuid import uuid4
+
 import pytest
-from ragflow_sdk import RAGFlow
-from configs import INVALID_API_TOKEN, HOST_ADDRESS, SDK_UNAUTHORIZED_ERROR_MESSAGE
+from ragflow_sdk import Memory, RAGFlow
+
+pytestmark = pytest.mark.integration
 
 
-class TestAuthorization:
-    @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "invalid_auth, expected_message",
-        [
-            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
-        ],
-    )
-    def test_auth_invalid(self, invalid_auth, expected_message):
-        client = RAGFlow(invalid_auth, HOST_ADDRESS)
-        with pytest.raises(Exception) as exception_info:
-            client.delete_memory("some_memory_id")
-        assert str(exception_info.value) == expected_message, str(exception_info.value)
+@pytest.mark.parametrize("invalid_auth", [None, "invalid-api-token"])
+def test_auth_invalid(client, memory, integration_settings, invalid_auth):
+    rag = RAGFlow(invalid_auth, integration_settings["base_url"])
+    with pytest.raises(Exception, match="^Invalid access token$"):
+        rag.delete_memory(memory.id)
+    assert Memory(client, {"id": memory.id}).get_config().id == memory.id
 
 
-@pytest.mark.usefixtures("add_memory_func")
-class TestMemoryDelete:
-    @pytest.mark.p1
-    def test_memory_id(self, client):
-        memory_ids = self.memory_ids
-        client.delete_memory(memory_ids[0])
-        res = client.list_memory()
-        assert res["total_count"] == 2, res
+def test_memory_id(client, memory_group):
+    prefix, memories = memory_group
+    assert client.delete_memory(memories[0].id) is None
+    result = client.list_memory(keywords=prefix)
+    assert {memory.id for memory in result["memory_list"]} == {memory.id for memory in memories[1:]}
+    assert result["total_count"] == 2
+    with pytest.raises(Exception, match="^Resource not found$"):
+        Memory(client, {"id": memories[0].id}).get_config()
 
-    @pytest.mark.p2
-    def test_id_wrong_uuid(self, client):
-        with pytest.raises(Exception) as exception_info:
-            client.delete_memory("d94a8dc02c9711f0930f7fbc369eab6d")
-        assert exception_info.value, str(exception_info.value)
 
-        res = client.list_memory()
-        assert len(res["memory_list"]) == 2, res
+@pytest.mark.parametrize("memory_id", ["not-a-uuid", None])
+def test_id_wrong_uuid(client, memory_group, memory_id):
+    prefix, memories = memory_group
+    with pytest.raises(Exception, match="^Resource not found$"):
+        client.delete_memory(memory_id)
+    result = client.list_memory(keywords=prefix)
+    assert {memory.id for memory in result["memory_list"]} == {memory.id for memory in memories}
+    assert result["total_count"] == len(memories)
+
+
+def test_nonexistent_memory(client):
+    with pytest.raises(Exception, match="^Resource not found$"):
+        client.delete_memory(uuid4().hex)
+
+
+def test_repeated_delete(client, memory):
+    client.delete_memory(memory.id)
+    with pytest.raises(Exception, match="^Resource not found$"):
+        client.delete_memory(memory.id)

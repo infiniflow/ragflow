@@ -9,6 +9,7 @@ import (
 	componentpkg "ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/schema"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 
@@ -201,7 +202,10 @@ func rebuildParserConfig(ctx context.Context, kb *entity.Knowledgebase, target, 
 		cleaned["metadata"] = meta
 	}
 	pipelinepkg.ApplyParentChildChunkerConfig(cleaned, raw)
-	llmID, _ := service.NewTenantService().GetDefaultModelNameForTenant(ctx, kb.TenantID, entity.ModelTypeChat)
+	llmID := ""
+	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); modelErr == nil {
+		llmID = service.ModelReference(modelInfo)
+	}
 	cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
 	return cleaned, true
 }

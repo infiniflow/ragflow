@@ -18,19 +18,42 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/service/file"
+	"strings"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+	permissionresponse "ragflow/internal/permission/response"
 )
+
+func resolveSkillSpaceTenantID(ctx context.Context, spaceID string, operation permission.Operation) (string, error) {
+	spaceID = normalizeSpaceID(spaceID)
+	if spaceID == defaultSkillSpaceID {
+		return requireCurrentTenantID(ctx)
+	}
+
+	access, err := permission.NewDatabaseChecker(dao.DB).ResolveAccess(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindSkillSpace,
+		ID:   spaceID,
+	})
+	if err != nil {
+		return "", err
+	}
+	if !access.Allows(operation) {
+		return "", permission.ErrPermissionDenied
+	}
+	return access.TenantID, nil
+}
 
 // SkillSpaceService handles business logic for skills space operations
 type SkillSpaceService struct {
@@ -68,11 +91,11 @@ type CreateSpaceRequest struct {
 
 // UpdateSpaceRequest represents the request to update a skills space
 type UpdateSpaceRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	EmbdID      string `json:"embd_id"`
-	RerankID    string `json:"rerank_id"`
-	TopK        int    `json:"top_k"`
+	Name        *string `json:"name"`
+	Description string  `json:"description"`
+	EmbdID      string  `json:"embd_id"`
+	RerankID    string  `json:"rerank_id"`
+	TopK        int     `json:"top_k"`
 }
 
 // getSkillsFolderID gets or creates the skills folder for a tenant
@@ -127,6 +150,7 @@ func (s *SkillSpaceService) getSkillsFolderID(ctx context.Context, tenantID stri
 	folder := &entity.File{
 		ID:         folderID,
 		ParentID:   rootFolder.ID,
+		UserID:     tenantID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
 		Name:       "skills",
@@ -148,27 +172,30 @@ func (s *SkillSpaceService) getSkillsFolderID(ctx context.Context, tenantID stri
 }
 
 // CreateSpace creates a new skills space with associated folder
-func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req *CreateSpaceRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceRequest) (map[string]interface{}, common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
 	// Validate name
 	if req.Name == "" {
 		return nil, common.CodeDataError, fmt.Errorf("space name is required")
 	}
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
-	if err := checkFeatureAction(ctx, userID, "file", permission.ActionWrite); err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 	defaultEmbdID := req.EmbdID
 	if defaultEmbdID == "" {
-		defaultEmbdID, _, err = NewTenantService().GetDefaultModelRefsForUser(ctx, userID, tenantID, entity.ModelTypeEmbedding)
-		if err != nil {
-			common.Error("Failed to resolve default embedding model for skill space", err,
+		info, modelErr := NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeEmbedding)
+		if modelErr == nil {
+			defaultEmbdID = ModelReference(info)
+		} else if !errors.Is(modelErr, ErrNoDefaultModel) {
+			common.Error("Failed to resolve default embedding model for skill space", modelErr,
 				zap.String("tenantID", tenantID), zap.String("userID", userID))
-			return nil, common.CodeOperatingError, fmt.Errorf("failed to resolve default embedding model: %w", err)
+			return nil, common.CodeOperatingError, fmt.Errorf("failed to resolve default embedding model: %w", modelErr)
 		}
 	}
 
@@ -184,8 +211,8 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 
 	// Fall back to a numbered name when an active space already uses the
 	// requested one, mirroring the dataset create rule.
-	// skill_space.name is a 128-byte column; keep generated names within it.
-	spaceName, err := common.UniqueName(req.Name, 128, func(candidate string) (bool, error) {
+	// skill_space.name is a 128-character column; keep generated names within it.
+	spaceName, err := common.UniqueName(req.Name, common.NameLimit128, func(candidate string) (bool, error) {
 		existing, lookupErr := s.spaceDAO.GetByTenantAndName(ctx, dao.DB, tenantID, candidate)
 		if lookupErr != nil {
 			if dao.IsNotFoundErr(lookupErr) {
@@ -243,6 +270,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 	folder := &entity.File{
 		ID:         folderID,
 		ParentID:   skillsFolderID,
+		UserID:     userID,
 		TenantID:   tenantID,
 		CreatedBy:  userID,
 		Name:       spaceName,
@@ -254,6 +282,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 	// Create the space
 	space := &entity.SkillSpace{
 		ID:          spaceID,
+		UserID:      userID,
 		TenantID:    tenantID,
 		Name:        spaceName,
 		FolderID:    folderID,
@@ -272,10 +301,10 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 			return fmt.Errorf("failed to create space: %w", err)
 		}
 		checker := permission.NewDatabaseChecker(tx)
-		if err := checker.GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: folderID}); err != nil {
+		if err := checker.GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: folderID}); err != nil {
 			return err
 		}
-		return checker.GrantResourceOwner(ctx, permission.Subject{UserID: userID, TenantID: tenantID}, permission.ResourceRef{Kind: permission.ResourceKindSkillSpace, ID: spaceID})
+		return checker.GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindSkillSpace, ID: spaceID})
 	}); err != nil {
 		common.Error("Failed to create skill space", err)
 		return nil, common.CodeOperatingError, err
@@ -301,11 +330,18 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req 
 }
 
 // ListSpaces lists skill spaces the caller can read.
-func (s *SkillSpaceService) ListSpaces(ctx context.Context, userID string) (map[string]interface{}, common.ErrorCode, error) {
-	spaceIDs, err := accessibleSkillSpaceIDs(ctx, userID, permission.OperationRead)
+func (s *SkillSpaceService) ListSpaces(ctx context.Context) (map[string]interface{}, common.ErrorCode, error) {
+	spaceScope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindSkillSpace,
+		Operation: permission.OperationRead,
+	})
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
+	}
+	spaceIDs := spaceScope.ResourceIDs
+	if spaceScope.Mode != permission.ScopeIDs {
+		spaceIDs = []string{}
 	}
 	spaces, err := s.spaceDAO.GetByIDs(ctx, dao.DB, spaceIDs)
 	if err != nil {
@@ -325,20 +361,20 @@ func (s *SkillSpaceService) ListSpaces(ctx context.Context, userID string) (map[
 }
 
 // GetSpace retrieves a skills space by ID (includes deleting status for visibility)
-func (s *SkillSpaceService) GetSpace(ctx context.Context, userID, spaceID string) (map[string]interface{}, common.ErrorCode, error) {
-	if _, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationRead); err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+func (s *SkillSpaceService) GetSpace(ctx context.Context, spaceID string) (map[string]interface{}, common.ErrorCode, error) {
+	if _, err := resolveSkillSpaceTenantID(ctx, spaceID, permission.OperationRead); err != nil {
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 	space, err := s.spaceDAO.GetByIDAnyStatus(ctx, dao.DB, spaceID)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		code, normalized := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return nil, code, normalized
 	}
 
 	// Return deleted spaces as not found
 	if space.Status == entity.SpaceStatusDeleted {
-		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		code, normalized := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return nil, code, normalized
 	}
 
@@ -346,25 +382,36 @@ func (s *SkillSpaceService) GetSpace(ctx context.Context, userID, spaceID string
 }
 
 // UpdateSpace updates a skills space
-func (s *SkillSpaceService) UpdateSpace(ctx context.Context, userID, spaceID string, req *UpdateSpaceRequest) (map[string]interface{}, common.ErrorCode, error) {
-	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
+func (s *SkillSpaceService) UpdateSpace(ctx context.Context, spaceID string, req *UpdateSpaceRequest) (map[string]interface{}, common.ErrorCode, error) {
+	tenantID, err := resolveSkillSpaceTenantID(ctx, spaceID, permission.OperationUpdate)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 	space, err := s.spaceDAO.GetByID(ctx, dao.DB, spaceID)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		code, normalized := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return nil, code, normalized
 	}
 
 	// Build updates
 	updates := make(map[string]interface{})
 
-	if req.Name != "" && req.Name != space.Name {
+	newName := ""
+	if req.Name != nil {
+		newName = strings.TrimSpace(*req.Name)
+		if newName == "" {
+			return nil, common.CodeDataError, errors.New("name cannot be empty or whitespace")
+		}
+		if err := common.ValidateNameRunes(newName, common.NameLimit128); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	}
+
+	if newName != "" && newName != space.Name {
 		// Reject a rename onto another space's name; case-only changes are
 		// allowed, matching the dataset rename rule.
-		available, err := common.NameAvailable(space.Name, req.Name, func(candidate string) (bool, error) {
+		available, err := common.NameAvailable(space.Name, newName, func(candidate string) (bool, error) {
 			existing, lookupErr := s.spaceDAO.GetByTenantAndName(ctx, dao.DB, tenantID, candidate)
 			if lookupErr != nil {
 				if dao.IsNotFoundErr(lookupErr) {
@@ -378,11 +425,11 @@ func (s *SkillSpaceService) UpdateSpace(ctx context.Context, userID, spaceID str
 			return nil, common.CodeOperatingError, err
 		}
 		if !available {
-			return nil, common.CodeDataError, fmt.Errorf("space with name '%s' already exists", req.Name)
+			return nil, common.CodeDataError, fmt.Errorf("space with name '%s' already exists", newName)
 		}
 
 		originalName := space.Name
-		updates["name"] = req.Name
+		updates["name"] = newName
 
 		// Update space first, then folder (atomic-like behavior with rollback on failure)
 		if err = s.spaceDAO.UpdateByID(ctx, dao.DB, spaceID, updates); err != nil {
@@ -390,7 +437,7 @@ func (s *SkillSpaceService) UpdateSpace(ctx context.Context, userID, spaceID str
 		}
 
 		// Update folder name as well - if this fails, rollback space name
-		if err = s.fileDAO.UpdateByID(ctx, dao.DB, space.FolderID, map[string]interface{}{"name": req.Name}); err != nil {
+		if err = s.fileDAO.UpdateByID(ctx, dao.DB, space.FolderID, map[string]interface{}{"name": newName}); err != nil {
 			common.Error("Failed to update folder name, rolling back space name", err)
 			// Rollback space name
 			if rollbackErr := s.spaceDAO.UpdateByID(ctx, dao.DB, spaceID, map[string]interface{}{"name": originalName}); rollbackErr != nil {
@@ -429,22 +476,25 @@ func (s *SkillSpaceService) UpdateSpace(ctx context.Context, userID, spaceID str
 
 // DeleteSpace starts asynchronous deletion of a skills space and returns immediately.
 // The space status is set to "deleting" and the actual cleanup runs in a background goroutine.
-func (s *SkillSpaceService) DeleteSpace(ctx context.Context, userID, spaceID string, docEngine engine.DocEngine) (common.ErrorCode, error) {
-	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationDelete)
+func (s *SkillSpaceService) DeleteSpace(ctx context.Context, spaceID string, docEngine engine.DocEngine) (common.ErrorCode, error) {
+	tenantID, err := resolveSkillSpaceTenantID(ctx, spaceID, permission.OperationDelete)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return code, normalized
 	}
 	// Get space regardless of status (could be retrying a failed delete)
 	space, err := s.spaceDAO.GetByIDAnyStatus(ctx, dao.DB, spaceID)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		code, normalized := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return code, normalized
 	}
 
-	// If already deleting, return success (idempotent)
+	// A space still at "2" was left behind by an earlier cleanup that could not
+	// finish, so a repeat delete is how it gets retried: re-drive the cleanup
+	// instead of answering with a no-op success that would strand it for good.
 	if space.Status == entity.SpaceStatusDeleting {
-		common.Info("Space is already being deleted", zap.String("spaceID", spaceID))
+		common.Info("Space is already deleting, restarting the cleanup", zap.String("spaceID", spaceID))
+		go s.asyncDeleteSpace(ctx, spaceID, space.FolderID, tenantID, docEngine)
 		return common.CodeSuccess, nil
 	}
 
@@ -475,13 +525,16 @@ func (s *SkillSpaceService) DeleteSpace(ctx context.Context, userID, spaceID str
 // asyncDeleteSpace performs the actual deletion work in the background.
 // It deletes the search index, removes files via Go FileService, and soft-deletes the space record.
 func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folderID, tenantID string, docEngine engine.DocEngine) {
-	bgCtx, bgCancel := context.WithTimeout(ctx, 120*time.Second)
-	defer bgCancel()
+	// Detach from the caller's cancellation: the request context is canceled once
+	// the handler returns, which is before this goroutine reaches the database.
+	ctx = context.WithoutCancel(ctx)
 
 	defer func() {
 		if r := recover(); r != nil {
 			common.Warn("Panic in asyncDeleteSpace, marking space as deleted", zap.Any("recover", r), zap.String("spaceID", spaceID))
-			_, _ = s.spaceDAO.CASStatus(bgCtx, dao.DB, spaceID, entity.SpaceStatusDeleting, entity.SpaceStatusDeleted)
+			finalCtx, finalCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer finalCancel()
+			_, _ = s.spaceDAO.CASStatus(finalCtx, dao.DB, spaceID, entity.SpaceStatusDeleting, entity.SpaceStatusDeleted)
 		}
 	}()
 
@@ -500,36 +553,54 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 	}
 
 	// Step 2: Delete folder and storage via Go FileService
-	// Use a fresh background context with timeout, NOT the incoming ctx (which
-	// is the HTTP request context canceled when the handler returns and the
-	// goroutine starts executing).
 	common.Info("Async deleting space folder via Go FileService", zap.String("folderID", folderID), zap.String("spaceID", spaceID))
-	ctxFS, cancelFS := context.WithTimeout(ctx, 60*time.Second)
-	defer cancelFS()
-	err := s.fileService.DeleteFiles(ctxFS, tenantID, []string{folderID})
-	if err != nil {
-		common.Error(fmt.Sprintf("Failed to delete space folder via Go FileService during async delete, spaceID=%s, error=%v", spaceID, err), nil)
-		// Retry once with a delay (same ctxFS, still valid)
-		time.Sleep(5 * time.Second)
-		if retryErr := s.fileService.DeleteFiles(ctxFS, tenantID, []string{folderID}); retryErr != nil {
-			common.Error(fmt.Sprintf("Retry failed to delete space folder, marking space as deleted anyway, spaceID=%s, error=%v", spaceID, retryErr), nil)
-			// Mark as deleted even if folder deletion fails - orphaned folders can be cleaned up later
+	// DeleteFiles authorizes the whole tree against the folder creator's grant,
+	// and a tenant member can create the space while only the tenant owner may
+	// delete it, so tenantID is not the principal that owns the folder.
+	actingUserID, folderGone, ownerErr := s.resolveSpaceFolderOwner(ctx, folderID)
+	switch {
+	case folderGone:
+		common.Info("Space folder is already gone, skipping the folder cleanup", zap.String("folderID", folderID))
+	case actingUserID == "":
+		// Any attempt now would be authorized against a principal that does not
+		// own the folder, so DeleteFiles would refuse it and the space would be
+		// reported deleted while its folder rows and objects survive. Keep the
+		// space at "2"; a repeat delete request re-drives this cleanup.
+		common.Error(fmt.Sprintf("Failed to resolve the space folder creator, keeping the space in the deleting state, spaceID=%s, folderID=%s, error=%v", spaceID, folderID, ownerErr), nil)
+		return
+	default:
+		ctxFS, cancelFS := context.WithTimeout(ctx, 60*time.Second)
+		defer cancelFS()
+		ctxFS = permission.WithIdentity(ctxFS, actingUserID, tenantID)
+		err := s.fileService.DeleteFiles(ctxFS, []string{folderID})
+		if err != nil {
+			common.Error(fmt.Sprintf("Failed to delete space folder via Go FileService during async delete, spaceID=%s, error=%v", spaceID, err), nil)
+			// Retry once with a delay (same ctxFS, still valid)
+			time.Sleep(5 * time.Second)
+			if retryErr := s.fileService.DeleteFiles(ctxFS, []string{folderID}); retryErr != nil {
+				common.Error(fmt.Sprintf("Retry failed to delete space folder, marking space as deleted anyway, spaceID=%s, error=%v", spaceID, retryErr), nil)
+				// Mark as deleted even if folder deletion fails - orphaned folders can be cleaned up later
+			} else {
+				common.Info("Successfully deleted space folder on retry via Go FileService", zap.String("folderID", folderID))
+			}
 		} else {
-			common.Info("Successfully deleted space folder on retry via Go FileService", zap.String("folderID", folderID))
+			common.Info("Successfully deleted space folder via Go FileService", zap.String("folderID", folderID))
 		}
-	} else {
-		common.Info("Successfully deleted space folder via Go FileService", zap.String("folderID", folderID))
 	}
 
 	// Step 3: Soft delete the space record (status "2" → "0")
 	// First, permanently remove any previously deleted spaces with the same tenant+name
 	// to avoid UNIQUE INDEX constraint violation when changing status from "2" to "0"
-	space, err := s.spaceDAO.GetByIDAnyStatus(bgCtx, dao.DB, spaceID)
+	// The index and folder steps can outlast one cleanup window, so the final status
+	// update gets its own budget; an expired context would strand the space at "2".
+	finalCtx, finalCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer finalCancel()
+	space, err := s.spaceDAO.GetByIDAnyStatus(finalCtx, dao.DB, spaceID)
 	if err == nil && space != nil {
-		_ = s.spaceDAO.DeletePermanentByName(bgCtx, dao.DB, space.TenantID, space.Name)
+		_ = s.spaceDAO.DeletePermanentByName(finalCtx, dao.DB, space.TenantID, space.Name)
 	}
 
-	swapped, err := s.spaceDAO.CASStatus(bgCtx, dao.DB, spaceID, entity.SpaceStatusDeleting, entity.SpaceStatusDeleted)
+	swapped, err := s.spaceDAO.CASStatus(finalCtx, dao.DB, spaceID, entity.SpaceStatusDeleting, entity.SpaceStatusDeleted)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to update space status to deleted, spaceID=%s", spaceID), err)
 		return
@@ -540,6 +611,33 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 	}
 
 	common.Info("Successfully completed async space deletion", zap.String("spaceID", spaceID))
+}
+
+// resolveSpaceFolderOwner returns the user whose grant authorizes deleting the
+// space folder. folderGone reports a row that no longer exists, which is not a
+// failure. An empty user without an error means the row carries no creator, so
+// the principal cannot be derived from it.
+//
+// The detached cleanup context has no deadline, so every attempt bounds its own
+// read; a stalled lookup would otherwise block the cleanup before the bounded
+// delete. Transient lookup errors are retried because guessing the principal
+// makes the guarded delete fail every attempt.
+func (s *SkillSpaceService) resolveSpaceFolderOwner(ctx context.Context, folderID string) (string, bool, error) {
+	const attempts = 2
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		lookupCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		folder, err := s.fileDAO.GetByID(lookupCtx, dao.DB, folderID)
+		cancel()
+		if err == nil {
+			return folder.CreatedBy, false, nil
+		}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", true, nil
+		}
+		lastErr = err
+	}
+	return "", false, lastErr
 }
 
 // deleteFolderRecursive recursively deletes a folder and all its contents
@@ -587,14 +685,14 @@ func (s *SkillSpaceService) deleteFolderRecursive(ctx context.Context, folderID 
 }
 
 // GetSpaceByFolderID retrieves a skills space by its folder ID
-func (s *SkillSpaceService) GetSpaceByFolderID(ctx context.Context, userID, folderID string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSpaceService) GetSpaceByFolderID(ctx context.Context, folderID string) (map[string]interface{}, common.ErrorCode, error) {
 	space, err := s.spaceDAO.GetByFolderID(ctx, dao.DB, folderID)
 	if err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		code, normalized := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 		return nil, code, normalized
 	}
-	if _, err := resolveSkillSpaceTenantID(ctx, userID, space.ID, permission.OperationRead); err != nil {
-		code, normalized := normalizeSkillSpacePermissionError(err)
+	if _, err := resolveSkillSpaceTenantID(ctx, space.ID, permission.OperationRead); err != nil {
+		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
 	}
 
