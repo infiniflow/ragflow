@@ -48,11 +48,14 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/charset"
 	"ragflow/internal/parser/media"
+	"ragflow/internal/parser/tableutil"
 )
 
 // EPUBParser extracts text from EPUB archives.
 type EPUBParser struct {
-	textOnly bool
+	RemoveTOC          bool
+	FlattenMediaToText bool
+	textOnly           bool
 }
 
 func NewEPUBParser() *EPUBParser {
@@ -68,6 +71,19 @@ func NewEPUBTextParser() *EPUBParser {
 
 func (p *EPUBParser) String() string {
 	return "EPUBParser"
+}
+
+// ConfigureFromSetup reads the EPUB family setup map.
+func (p *EPUBParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["flatten_media_to_text"].(bool); ok {
+		p.FlattenMediaToText = v
+	}
+	if v, ok := setup["remove_toc"].(bool); ok {
+		p.RemoveTOC = v
+	}
 }
 
 // ParseWithResult implements ParseResultProducer. It extracts XHTML
@@ -102,6 +118,12 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 	items, detectedEnc, warnings, err := extractEPUBTextItems(ctx, reader, opf, p.textOnly)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("epub: %w", err)}
+	}
+	if p.RemoveTOC {
+		items = removeContentsTable(items, isEnglishItems(items))
+	}
+	if p.FlattenMediaToText {
+		items = flattenEPUBMediaToText(items)
 	}
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
@@ -496,4 +518,27 @@ func readEPUBContentFile(r *zip.Reader, opfDir, href string) ([]byte, string, er
 		lastErr = fmt.Errorf("empty href")
 	}
 	return nil, "", lastErr
+}
+
+// flattenEPUBMediaToText normalizes media items (tables and images) to plain
+// text items when flatten_media_to_text is enabled. Structured tables are
+// rendered into HTML strings (preserving cells and captions), and image and
+// table items have their doc_type_kwd rewritten to "text".
+func flattenEPUBMediaToText(items []map[string]any) []map[string]any {
+	for _, item := range items {
+		if table, ok := item["table"].(*entity.TableData); ok && table != nil {
+			text, _ := item["text"].(string)
+			rendered := tableutil.RenderTableHTML(table)
+			if text != "" {
+				item["text"] = strings.TrimSpace(rendered + "\n" + text)
+			} else {
+				item["text"] = rendered
+			}
+			delete(item, "table")
+			item["doc_type_kwd"] = "text"
+		} else if item["doc_type_kwd"] == "image" || item["doc_type_kwd"] == "table" {
+			item["doc_type_kwd"] = "text"
+		}
+	}
+	return items
 }
