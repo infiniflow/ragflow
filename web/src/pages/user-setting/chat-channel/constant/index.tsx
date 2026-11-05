@@ -257,16 +257,25 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         label: 'AI Card Template ID',
         name: 'config.credential.card_template_id',
         type: FormFieldType.Text,
-        required: false,
+        required: true,
+        defaultValue: '',
         shouldRender: (values: any) => values?.config?.credential?.stream === true,
+        customValidate: (val: string, values: any) =>
+          values?.config?.credential?.stream === true && !(val ?? '').trim()
+            ? 'AI card template ID is required when streaming is on'
+            : true,
       },
       {
         label: 'Stream Content Key',
         name: 'config.credential.stream_content_key',
         type: FormFieldType.Text,
-        required: false,
+        required: true,
         defaultValue: 'content',
         shouldRender: (values: any) => values?.config?.credential?.stream === true,
+        customValidate: (val: string, values: any) =>
+          values?.config?.credential?.stream === true && !(val ?? '').trim()
+            ? 'Stream content key is required when streaming is on'
+            : true,
       },
     ],
     [ChatChannelKey.FEISHU]: [

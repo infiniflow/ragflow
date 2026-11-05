@@ -324,3 +324,81 @@ func TestDingTalkSendStreamNeedsSenderForDirectChat(t *testing.T) {
 		t.Fatal("SendStream succeeded without the sender staff id")
 	}
 }
+
+func TestDingTalkSendStreamMarksCardFailed(t *testing.T) {
+	type apiCall struct {
+		method string
+		path   string
+		body   map[string]any
+	}
+	var calls []apiCall
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := map[string]any{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+			return
+		}
+		calls = append(calls, apiCall{method: r.Method, path: r.URL.Path, body: body})
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1.0/oauth2/accessToken":
+			_, _ = w.Write([]byte(`{"accessToken":"token-1","expireIn":7200}`))
+		case "/v1.0/card/streaming":
+			_, _ = w.Write([]byte(`{"success":false,"code":"InvalidParameter","message":"rejected"}`))
+		default:
+			_, _ = w.Write([]byte(`{"success":true,"result":{}}`))
+		}
+	}))
+	defer server.Close()
+	allowChannelURLForTest(t, server.URL)
+
+	ch, err := newDingTalkChannel(dingTalkAccount{
+		AccountID:      "account-1",
+		ClientID:       "client-1",
+		ClientSecret:   "secret-1",
+		APIBaseURL:     server.URL,
+		Stream:         true,
+		CardTemplateID: "tpl-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch.peers["chat-1"] = dingTalkPeer{chatType: "2"}
+
+	text := make(chan string, 2)
+	text <- "Hello"
+	close(text)
+
+	if err := ch.SendStream(context.Background(), core.OutgoingMessage{ChatID: "chat-1"}, text); err == nil {
+		t.Fatal("SendStream succeeded although the card update was rejected")
+	}
+
+	var createBody, failBody map[string]any
+	for _, call := range calls {
+		switch call.path {
+		case "/v1.0/card/instances/createAndDeliver":
+			createBody = call.body
+		case "/v1.0/card/instances":
+			if call.method == http.MethodPut {
+				failBody = call.body
+			}
+		}
+	}
+	if createBody == nil {
+		t.Fatalf("no card create call, calls = %+v", calls)
+	}
+	if failBody == nil {
+		t.Fatalf("card was not marked failed, calls = %+v", calls)
+	}
+	if failBody["outTrackId"] != createBody["outTrackId"] {
+		t.Fatalf("failed card outTrackId = %v, want %v", failBody["outTrackId"], createBody["outTrackId"])
+	}
+	paramMap := weComMapValue(weComMapValue(failBody["cardData"])["cardParamMap"])
+	if paramMap["flowStatus"] != "5" {
+		t.Fatalf("cardParamMap = %+v, want flowStatus 5", paramMap)
+	}
+	// The first update was rejected, so the card never received text.
+	if paramMap["content"] != "" {
+		t.Fatalf("failed card content = %v, want the text that actually reached the card", paramMap["content"])
+	}
+}

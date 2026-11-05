@@ -42,7 +42,7 @@ import (
 const (
 	defaultFeishuDomain   = "feishu"
 	defaultFeishuTimeout  = 30 * time.Second
-	feishuTurnBudget      = 60 * time.Second
+	feishuTurnBudget      = 5 * time.Minute
 	feishuMessageTTL      = time.Hour
 	feishuQueueSize       = 64
 	feishuWorkerIdle      = 5 * time.Minute

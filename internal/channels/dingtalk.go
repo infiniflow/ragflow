@@ -47,6 +47,7 @@ const (
 	dingTalkWorkerIdle        = 5 * time.Minute
 	dingTalkStreamTick        = 100 * time.Millisecond
 	dingTalkTokenMargin       = 60 * time.Second
+	dingTalkCardFailTimeout   = 10 * time.Second
 )
 
 // errDingTalkNothingStreamed reports that no text was available for a streamed card, so
@@ -520,12 +521,18 @@ func (c *dingTalkChannel) SendStream(ctx context.Context, msg core.OutgoingMessa
 	}
 
 	latest, sent := first, ""
+	// The card is visible from here on, so a broken stream marks it as failed instead of
+	// leaving it in the processing state.
+	fail := func(err error) error {
+		c.markCardFailed(ctx, outTrackID, sent)
+		return err
+	}
 	ticker := time.NewTicker(dingTalkStreamTick)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fail(ctx.Err())
 		case value, open := <-text:
 			if !open {
 				// A closed channel returns immediately forever, so stop selecting on it and
@@ -537,15 +544,42 @@ func (c *dingTalkChannel) SendStream(ctx context.Context, msg core.OutgoingMessa
 		case <-ticker.C:
 			if sent != latest {
 				if err := c.pushCardDelta(ctx, outTrackID, dingTalkStreamDelta(sent, latest), false); err != nil {
-					return err
+					return fail(err)
 				}
 				sent = latest
 				continue
 			}
 			if text == nil {
-				return c.pushCardDelta(ctx, outTrackID, "", true)
+				if err := c.pushCardDelta(ctx, outTrackID, "", true); err != nil {
+					return fail(err)
+				}
+				return nil
 			}
 		}
+	}
+}
+
+// markCardFailed switches the AI card to its failed state. The card keeps whatever it
+// already showed; only the flow status moves to failed, which the platform requires the
+// application to set.
+func (c *dingTalkChannel) markCardFailed(ctx context.Context, outTrackID, content string) {
+	failCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dingTalkCardFailTimeout)
+	defer cancel()
+	token, err := c.openAPIToken(failCtx)
+	if err != nil {
+		common.Error("dingtalk: failed card could not get an access token", err, zap.String("account_id", c.account.AccountID), zap.String("card_id", outTrackID))
+		return
+	}
+	body := map[string]any{
+		"outTrackId": outTrackID,
+		"cardData": map[string]any{"cardParamMap": map[string]any{
+			"flowStatus":               "5",
+			c.account.StreamContentKey: content,
+		}},
+		"cardUpdateOptions": map[string]any{"updateCardDataByKey": true},
+	}
+	if err := c.doOpenAPI(failCtx, http.MethodPut, "/v1.0/card/instances", token, body, nil); err != nil {
+		common.Error("dingtalk: marking the card as failed failed", err, zap.String("account_id", c.account.AccountID), zap.String("card_id", outTrackID))
 	}
 }
 
