@@ -15,6 +15,9 @@ PROJECT_ROOT="$SCRIPT_DIR"
 # untouched and merge conflicts against the EE branch are limited to this
 # single line plus the guarded hook call inside run_native_integration_tests.
 [[ -f "${SCRIPT_DIR}/build_ee.sh" ]] && source "${SCRIPT_DIR}/build_ee.sh"
+# Version-keyed native-lib resolution (select_native_lib_version): lets a single
+# CI runner image carry several versions of office_oxide / pdf_oxide at once.
+source "${SCRIPT_DIR}/tools/scripts/native_lib_version.sh"
 
 # Build directories
 CPP_DIR="$PROJECT_ROOT/internal/binding/cpp"
@@ -49,12 +52,12 @@ SYSTEM_DEPS="/opt/ragflow-native-libs"
 
 # office_oxide native library settings — static linking
 OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
-# Derived from go.mod (single source of truth: the Go module version). Matches
-# tools/scripts/download_dev_deps.py's office_oxide_url derivation. The pipeline exits 0
-# with an empty value when go.mod has no matching entry (no pipefail here), so
-# the empty case needs its own check: an empty version would slip past the
-# stale-lib comparison below and produce a broken .../lib/v link path.
-OFFICE_OXIDE_VERSION="$(grep -m1 -E '^[[:space:]]*github.com/yfedoseev/office_oxide/go[[:space:]]+v' "$PROJECT_ROOT/go.mod" | sed -E 's/.*v([0-9][^[:space:]]*).*/\1/')"
+# Derived from go.mod (single source of truth: the Go module version), exactly as
+# tools/scripts/download_dev_deps.py derives it. Keeps build.sh and the dev
+# downloader in lockstep on the version. An empty value (module absent from
+# go.mod) would slip past the stale-lib comparison below and produce a broken
+# .../lib/v link path, so it is fatal.
+OFFICE_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/office_oxide/go" "$PROJECT_ROOT")"
 if [ -z "$OFFICE_OXIDE_VERSION" ]; then
     echo -e "${RED}Error: could not read office_oxide version from go.mod${NC}" >&2; exit 1
 fi
@@ -67,7 +70,13 @@ PDFIUM_STATIC_VERSION="7809"
 
 # pdf_oxide native library settings — static linking (go-ffi tarball)
 PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide"
-PDF_OXIDE_VERSION="0.3.73"
+# Unified with office_oxide: read the pinned version from go.mod (single source of
+# truth) instead of a hardcoded constant, so bumping the dependency needs no
+# build.sh edit. The empty case is fatal for the same reason as office_oxide.
+PDF_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/pdf_oxide/go" "$PROJECT_ROOT")"
+if [ -z "$PDF_OXIDE_VERSION" ]; then
+    echo -e "${RED}Error: could not read pdf_oxide version from go.mod${NC}" >&2; exit 1
+fi
 
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
@@ -168,6 +177,28 @@ _seed_from_system() {
         echo "  ${dep_name} → ${dep_dir} (user cache)"
         return 0  # already cached
     fi
+
+    # Per-dep version used to look up a version-keyed copy pre-seeded into the
+    # CI runner image. Empty for deps still baked flat (pdfium-static,
+    # onnxruntime). A multi-version image carries v<version>/ subdirs so PRs
+    # pinned to different go.mod versions all build offline.
+    local dep_version=""
+    case "$dep_name" in
+        office_oxide) dep_version="${OFFICE_OXIDE_VERSION}" ;;
+        pdf_oxide)    dep_version="${PDF_OXIDE_VERSION}" ;;
+    esac
+    local seed_src=""
+    if [ -n "$dep_version" ] \
+       && seed_src="$(select_native_lib_version "$dep_name" "$dep_version" "$SYSTEM_DEPS")" \
+       && [ -n "$seed_src" ]; then
+        echo "  ${dep_name} → ${seed_src} (system, version-keyed v${dep_version})"
+        mkdir -p "$(dirname "$dep_dir")"
+        # Copy the version dir's contents flat so downstream build.sh (which
+        # expects lib/... and include/... at the cache root) is unchanged.
+        cp -r "$seed_src/." "$dep_dir/"
+        return 0
+    fi
+
     if [ -d "$sys_dir" ]; then
         echo "  ${dep_name} → ${sys_dir} (system)"
         mkdir -p "$(dirname "$dep_dir")"
@@ -400,6 +431,13 @@ check_onnxruntime_deps() {
     # another OS/arch, and the Python side legitimately keeps another ORT
     # version in the same prefix. Matching both is why coexisting version
     # dirs need no separate fail-fast guard here.
+    # Recover from a stale user cache left by an older CI image: if the runner
+    # image pre-baked the pinned version under /opt, copy it over the user cache
+    # before validating. reseed_dep_from_system is a no-op when /opt has no copy
+    # of this version (e.g. local dev without the pre-bake), so a correct manual
+    # download is never clobbered.
+    reseed_dep_from_system "onnxruntime" "$ort_version" "$SYSTEM_DEPS" "$(dirname "$ONNXRUNTIME_STATIC_PREFIX")" || true
+
     local ort_dir_prefix
     ort_dir_prefix="$(ort_static_lib_prefix)"
     while IFS= read -r f; do
@@ -516,28 +554,12 @@ check_office_oxide_deps() {
     if ! strings "$lib_path" 2>/dev/null | grep -Fxq "$OFFICE_OXIDE_VERSION"; then
         local found_version
         found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
-        echo -e "${YELLOW}office_oxide native lib version mismatch (required v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}); refreshing from download${NC}"
-        rm -rf "${OFFICE_OXIDE_PREFIX}" "${PROJECT_ROOT}/deps/$(office_oxide_asset)"
-        if ! (cd "${PROJECT_ROOT}" && uv run tools/scripts/download_dev_deps.py); then
-            echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
-            echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
-            echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
-            echo "    rm -rf ~/ragflow-native-libs/office_oxide deps/$(office_oxide_asset)"
-            echo "    uv run tools/scripts/download_dev_deps.py"
-            exit 1
-        fi
-        lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
-        header_path="${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
-        if [ ! -f "$lib_path" ] || [ ! -f "$header_path" ]; then
-            echo -e "${RED}Error: office_oxide native library not found after refresh${NC}"
-            exit 1
-        fi
-        if ! strings "$lib_path" 2>/dev/null | grep -Fxq "$OFFICE_OXIDE_VERSION"; then
-            found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
-            echo -e "${RED}Error: office_oxide native lib version mismatch after refresh${NC}"
-            echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
-            exit 1
-        fi
+        echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
+        echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
+        echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
+        echo "    rm -rf ~/ragflow-native-libs/office_oxide deps/$(office_oxide_asset)"
+        echo "    uv run tools/scripts/download_dev_deps.py"
+        exit 1
     fi
 
     echo "✓ office_oxide v${OFFICE_OXIDE_VERSION} native library found at ${OFFICE_OXIDE_PREFIX}"
@@ -547,6 +569,10 @@ check_office_oxide_deps() {
 # Check pdfium static library.
 check_pdfium_deps() {
     _seed_from_system "pdfium-static" || true
+    # Recover from a stale/missing user cache: copy the image-pre-baked pdfium
+    # from /opt over the cache before checking. No-op when /opt has no copy, so a
+    # local manual download is never clobbered.
+    reseed_dep_from_system "pdfium-static" "$PDFIUM_STATIC_VERSION" "$SYSTEM_DEPS" "$PDFIUM_STATIC_PREFIX" || true
     local lib_path="${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
 
     if [ -f "$lib_path" ]; then
