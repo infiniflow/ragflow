@@ -34,8 +34,9 @@
 package handler
 
 import (
+	"context"
 	"errors"
-	"net/http"
+	"mime/multipart"
 
 	"github.com/gin-gonic/gin"
 
@@ -54,88 +55,90 @@ const uploadMaxBytes int64 = 64 << 20 // 64 MiB
 // python so existing clients can pattern-match the message text.
 const canvasNoAccessMessage = "Make sure you have permission to access the agent."
 
-// UploadAgentFile POST /api/v1/agents/:canvas_id/upload
-func (h *AgentHandler) UploadAgentFile(c *gin.Context) {
-	canvasID := c.Param("canvas_id")
-	if canvasID == "" {
-		common.RespondError(c, common.CodeArgumentError, "`canvas_id` is required.")
-		return
-	}
+// CanvasLoader loads a canvas by ID.
+type CanvasLoader = canvasLoader
 
-	// Canvas access check: matches python @_require_canvas_access_async.
-	// We deliberately do NOT differentiate "missing" from "forbidden"
-	// (LoadCanvasByID collapses both into ErrUserCanvasNotFound) for
-	// IDOR mitigation; the user-visible envelope uses OPERATING_ERROR
-	// (103) with the python permission message so existing clients can
-	// still pattern-match the text.
-	if _, err := h.loader.LoadCanvasByID(c.Request.Context(), canvasID); err != nil {
-		if errors.Is(err, dao.ErrUserCanvasNotFound) {
-			common.RespondError(c, common.CodeOperatingError, canvasNoAccessMessage)
+// AgentFileService manages agent file uploads.
+type AgentFileService = agentFileService
+
+// NewAgentHandlerForTest creates an AgentHandler for testing with mock dependencies.
+func NewAgentHandlerForTest(loader CanvasLoader, fileService AgentFileService) *AgentHandler {
+	return &AgentHandler{loader: loader, fileService: fileService}
+}
+
+// UploadAgentFileReq defines the multipart upload contract with path param, query param, and form files.
+type UploadAgentFileReq struct {
+	CanvasID string                  `uri:"canvas_id" doc:"Canvas ID"`
+	URL      string                  `query:"url" form:"-" doc:"Optional URL to import file from (single-file only)"`
+	Files    []*multipart.FileHeader `form:"file" doc:"Files to upload"`
+}
+
+// RequireCanvasAccess returns a Gin middleware that validates the user's access to the canvas
+// from the :canvas_id path parameter BEFORE any body reading or multipart parsing occurs.
+func (h *AgentHandler) RequireCanvasAccess() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if h == nil || h.loader == nil {
+			c.Next()
 			return
 		}
-		common.RespondError(c, common.CodeServerError, err.Error())
-		return
-	}
-
-	// Hard cap the body before any parsing (security review H3).
-	// Without MaxBytesReader, a 1 GB request body is fully drained
-	// into memory by ParseMultipartForm before any size check fires.
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, uploadMaxBytes)
-	if cl := c.Request.ContentLength; cl > uploadMaxBytes {
-		common.RespondError(c, common.CodeArgumentError, "request body too large.")
-		return
-	}
-	if err := c.Request.ParseMultipartForm(uploadMaxBytes); err != nil {
-		common.RespondError(c, common.CodeArgumentError, "invalid multipart form: "+err.Error())
-		return
-	}
-	defer func() {
-		if c.Request.MultipartForm != nil {
-			_ = c.Request.MultipartForm.RemoveAll()
+		canvasID := c.Param("canvas_id")
+		if canvasID == "" {
+			common.RespondError(c, common.CodeArgumentError, "`canvas_id` is required.")
+			c.Abort()
+			return
 		}
-	}()
-	form := c.Request.MultipartForm
-	if form == nil {
-		common.RespondError(c, common.CodeArgumentError, "missing multipart form.")
-		return
-	}
-	files := form.File["file"]
 
-	// URL-import mode: matches python's behaviour exactly
-	// (api/apps/restful_apis/agent_api.py:775-783). The url query
-	// param is consulted ONLY on the single-file branch; for 0 or
-	// >1 files, the url is silently ignored and the request flows
-	// into the normal UploadInfos path. We replicate that with a
-	// guard that dispatches to UploadFromURL only when both
-	// conditions are met.
-	ctx := c.Request.Context()
-	if url := c.Query("url"); url != "" && len(files) == 1 {
-		uploaded, err := h.fileService.UploadFromURL(ctx, url)
-		if err != nil {
+		if _, err := h.loader.LoadCanvasByID(c.Request.Context(), canvasID); err != nil {
+			if errors.Is(err, dao.ErrUserCanvasNotFound) {
+				common.RespondError(c, common.CodeOperatingError, canvasNoAccessMessage)
+				c.Abort()
+				return
+			}
 			common.RespondError(c, common.CodeServerError, err.Error())
+			c.Abort()
 			return
 		}
-		common.RespondSuccess(c, uploaded, "success")
-		return
+		c.Next()
+	}
+}
+
+// UploadAgentFile handles POST /api/v1/agents/:canvas_id/upload as a typed route.
+func (h *AgentHandler) UploadAgentFile(ctx context.Context, req *UploadAgentFileReq) (any, error) {
+	if req.CanvasID == "" {
+		return nil, common.NewCodedError(common.CodeArgumentError, "`canvas_id` is required.")
+	}
+
+	if _, err := h.loader.LoadCanvasByID(ctx, req.CanvasID); err != nil {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
+			return nil, common.NewCodedError(common.CodeOperatingError, canvasNoAccessMessage)
+		}
+		return nil, common.NewCodedError(common.CodeServerError, err.Error())
+	}
+
+	files := req.Files
+
+	// URL-import mode: matches python's behaviour exactly.
+	// The url query param is consulted ONLY on the single-file branch; for 0 or
+	// >1 files, the url is silently ignored and the request flows into UploadInfos.
+	if req.URL != "" && len(files) == 1 {
+		uploaded, err := h.fileService.UploadFromURL(ctx, req.URL)
+		if err != nil {
+			return nil, common.NewCodedError(common.CodeServerError, err.Error())
+		}
+		return uploaded, nil
 	}
 
 	if len(files) == 0 {
-		common.RespondError(c, common.CodeArgumentError, "`file` field is required.")
-		return
+		return nil, common.NewCodedError(common.CodeArgumentError, "`file` field is required.")
 	}
 
 	results, err := h.fileService.UploadInfos(ctx, files)
 	if err != nil {
-		common.RespondError(c, common.CodeServerError, err.Error())
-		return
+		return nil, common.NewCodedError(common.CodeServerError, err.Error())
 	}
 
-	// Python parity: 1 file → single dict; >1 → list.
-	var payload any
 	if len(results) == 1 {
-		payload = results[0]
-	} else {
-		payload = results
+		return results[0], nil
 	}
-	common.RespondSuccess(c, payload, "success")
+	return results, nil
 }
