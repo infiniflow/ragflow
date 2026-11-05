@@ -101,6 +101,10 @@ Kvrocks provides the Redis-compatible cache. It is separate from the NATS JetStr
 - `REDIS_PASSWORD`
   The password used to access Kvrocks through its Redis-compatible protocol.
 
+:::tip NOTE
+Kvrocks holds the secret key that signs login tokens (when none is configured), the agent-run lease, distributed locks, and the media cache used during ingestion. The lease, the locks, and the media cache use Lua scripts. To replace Kvrocks with another Redis-compatible server, choose one that supports Lua scripting and keeps its data across restarts. [KiviDB](https://github.com/kividbio/kividb) 1.2.0 (the `kividb/kividb:v1.2.0-lua` image) has been tested in place of the `kvrocks` service with RAGFlow v1.0.0-rc3. See the [setup and test results](https://github.com/kividbio/kividb/blob/master/docs/integrations/ragflow.md).
+:::
+
 ### NATS
 
 NATS JetStream provides the message queue used by the Go services.
