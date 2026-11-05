@@ -37,7 +37,14 @@ def test_office_oxide_mismatch_fails_loud_no_download(tmp_path):
     (cache / "lib" / "liboffice_oxide.a").write_text("9.9.9\n")
     (cache / "include" / "office_oxide_c" / "office_oxide.h").write_text("")
 
-    script = f'OFFICE_OXIDE_PREFIX="{cache}"\ncheck_office_oxide_deps\n'
+    # Isolate /opt (SYSTEM_DEPS) and $HOME so the outcome does not depend on the
+    # runner's pre-baked native libs. With no /opt copy, a mismatched user cache
+    # must fail loud (never auto-download). This is what guards against
+    # re-introducing the silent download, independent of whether CI pre-bakes
+    # office_oxide into /opt (check_office_oxide_deps now reseeds from /opt when
+    # present, so the recovery path is covered by the *_reseed_* tests).
+    opt = tmp_path / "opt" / "ragflow-native-libs"
+    script = f'HOME="{tmp_path / "home"}"\nSYSTEM_DEPS="{opt}"\nOFFICE_OXIDE_PREFIX="{cache}"\ncheck_office_oxide_deps\n'
     proc = _run(script, path_extra=str(uv_dir))
     assert proc.returncode != 0, proc.stdout + proc.stderr
     # Adversarial: build.sh must NOT have attempted a network download.
