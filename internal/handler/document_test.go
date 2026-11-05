@@ -501,7 +501,23 @@ func TestDocumentReadHandlersForbidden(t *testing.T) {
 		handler gin.HandlerFunc
 		status  int
 	}{
-		{"document detail", http.MethodGet, "/api/v1/documents/doc-1", "", gin.Params{{Key: "id", Value: "doc-1"}}, h.GetDocumentByID, http.StatusOK},
+		{
+			"document detail", http.MethodGet, "/api/v1/documents/doc-1", "", gin.Params{{Key: "id", Value: "doc-1"}},
+			func(c *gin.Context) {
+				doc, err := h.GetDocumentByID(c.Request.Context(), &GetDocumentReq{ID: c.Param("id")})
+				if err != nil {
+					var codedErr *common.CodedError
+					if errors.As(err, &codedErr) {
+						common.RespondError(c, codedErr.Code, codedErr.Message)
+						return
+					}
+					common.RespondError(c, common.CodeServerError, err.Error())
+					return
+				}
+				common.RespondSuccess(c, doc, "")
+			},
+			http.StatusOK,
+		},
 		{"metadata summary", http.MethodGet, "/api/v1/datasets/kb-owner/metadata/summary?doc_ids=doc-1", "", gin.Params{{Key: "dataset_id", Value: "kb-owner"}}, h.MetadataSummaryByDataset, http.StatusOK},
 	}
 	for _, tt := range tests {
