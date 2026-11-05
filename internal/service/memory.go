@@ -1980,6 +1980,9 @@ func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.M
 				sourceID := memoryMessageKey(message["source_id"])
 				groupedExtracts[sourceID] = append(groupedExtracts[sourceID], message)
 			}
+			for _, extracts := range groupedExtracts {
+				sortMemoryExtractMessages(extracts)
+			}
 			for _, message := range rawMessages {
 				messageID := memoryMessageKey(message["message_id"])
 				if extracts, ok := groupedExtracts[messageID]; ok {
@@ -2100,6 +2103,57 @@ func (s *MemoryService) memoryMessageTasks(memoryID string) (map[string]map[stri
 
 func memoryMessageKey(value interface{}) string {
 	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+// sortMemoryExtractMessages orders the extracts grouped under one raw message
+// by the combined key (valid_at desc, message_id asc), porting the Python fix
+// in memory/services/messages.py (PR #21246). The engine query only sorts by
+// valid_at, so facts sharing a second-granularity valid_at — the common case,
+// since extraction stamps them with the conversation time — come back in
+// storage order, which reshuffles whenever a document is rewritten (e.g. an
+// enable/disable toggle). Two stable passes mirror the Python sort calls:
+// the tie-breaker ascending first, then the primary key descending.
+func sortMemoryExtractMessages(extracts []map[string]interface{}) {
+	sort.SliceStable(extracts, func(i, j int) bool {
+		return memoryMessageIDSortKey(extracts[i]["message_id"]) < memoryMessageIDSortKey(extracts[j]["message_id"])
+	})
+	sort.SliceStable(extracts, func(i, j int) bool {
+		return memoryValidAtSortKey(extracts[i]["valid_at"]) > memoryValidAtSortKey(extracts[j]["valid_at"])
+	})
+}
+
+// memoryMessageIDSortKey renders a message_id as a number for ordering.
+// Elasticsearch returns it as a JSON number and Infinity as a string, so a
+// plain string comparison would order "10" before "9". Missing or unparseable
+// values sort first, matching Python's _message_id_sort_key.
+func memoryMessageIDSortKey(value interface{}) int64 {
+	switch v := value.(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
+	case string:
+		if id, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
+			return id
+		}
+	}
+	return -1
+}
+
+// memoryValidAtSortKey renders valid_at as a comparable string. Timestamps
+// are stored normalized as "YYYY-MM-DD HH:mm:ss", so lexicographic order is
+// chronological order. Missing values become "", sorting oldest, matching
+// Python's _valid_at_sort_key.
+func memoryValidAtSortKey(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return fmt.Sprint(value)
 }
 
 // isList checks if a value is a list or array type
