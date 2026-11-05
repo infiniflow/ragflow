@@ -15,8 +15,7 @@ In the standard response envelope, `message` is always a non-empty string. Succe
 and `message` for the result description. Result payloads use objects or arrays.
 
 Paginated endpoints require a positive integer `page` (default `1`) and a
-`page_size` between `1` and `100`, inclusive. JSON search APIs that accept `size`
-apply the same limit to that field. Requests over the limit are rejected with
+`page_size` between `1` and `100`, inclusive. Requests over the limit are rejected with
 an error envelope; values are never silently clamped. Zero and negative sizes
 cannot disable pagination. All paginated endpoints default to `30` items per page.
 
