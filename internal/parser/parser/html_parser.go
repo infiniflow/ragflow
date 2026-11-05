@@ -38,6 +38,7 @@ var htmlImageProcessingBudget = 60 * time.Second
 type HTMLParser struct {
 	RemoveHeaderFooter bool
 	RemoveTOC          bool
+	FlattenMediaToText bool
 	textOnly           bool
 }
 
@@ -60,6 +61,9 @@ func (p *HTMLParser) String() string {
 func (p *HTMLParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
+	}
+	if v, ok := setup["flatten_media_to_text"].(bool); ok {
+		p.FlattenMediaToText = v
 	}
 	if v, ok := setup["remove_header_footer"].(bool); ok {
 		p.RemoveHeaderFooter = v
@@ -122,6 +126,11 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 	// parser.py:1087-1088 remove_toc → remove_contents_table).
 	if p.RemoveTOC {
 		items = removeContentsTable(items, isEnglishItems(items))
+	}
+	// flatten_media_to_text: normalize table and image items to text
+	// (mirrors Python parser.py:922-938 flatten_media_to_text).
+	if p.FlattenMediaToText {
+		items = flattenHTMLMediaToText(items)
 	}
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}

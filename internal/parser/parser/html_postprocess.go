@@ -2,8 +2,12 @@ package parser
 
 import (
 	"bytes"
+	"strings"
 
 	"golang.org/x/net/html"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/parser/tableutil"
 )
 
 // stripHTMLHeaderFooter removes <header>/<footer> elements and nodes
@@ -49,3 +53,28 @@ func isHeaderFooterNode(n *html.Node) bool {
 	}
 	return false
 }
+
+// flattenHTMLMediaToText normalizes media items (tables and images) to plain
+// text items when flatten_media_to_text is enabled. Structured tables are
+// rendered into HTML strings (preserving cells and captions), and image and
+// table items have their doc_type_kwd rewritten to "text". Mirrors Python
+// parser.py and DOCX/spreadsheet flatten_media_to_text.
+func flattenHTMLMediaToText(items []map[string]any) []map[string]any {
+	for _, item := range items {
+		if table, ok := item["table"].(*entity.TableData); ok && table != nil {
+			text, _ := item["text"].(string)
+			rendered := tableutil.RenderTableHTML(table)
+			if text != "" {
+				item["text"] = strings.TrimSpace(rendered + "\n" + text)
+			} else {
+				item["text"] = rendered
+			}
+			delete(item, "table")
+			item["doc_type_kwd"] = "text"
+		} else if item["doc_type_kwd"] == "image" || item["doc_type_kwd"] == "table" {
+			item["doc_type_kwd"] = "text"
+		}
+	}
+	return items
+}
+

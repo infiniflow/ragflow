@@ -4,14 +4,20 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 func TestHTMLParser_ConfigureFromSetup(t *testing.T) {
 	p := NewHTMLParser()
 	p.ConfigureFromSetup(map[string]any{
-		"remove_header_footer": true,
-		"remove_toc":           true,
+		"flatten_media_to_text": true,
+		"remove_header_footer":  true,
+		"remove_toc":            true,
 	})
+	if !p.FlattenMediaToText {
+		t.Error("FlattenMediaToText = false, want true")
+	}
 	if !p.RemoveHeaderFooter {
 		t.Error("RemoveHeaderFooter = false, want true")
 	}
@@ -23,7 +29,7 @@ func TestHTMLParser_ConfigureFromSetup(t *testing.T) {
 func TestHTMLParser_ConfigureFromSetup_NilSafe(t *testing.T) {
 	p := NewHTMLParser()
 	p.ConfigureFromSetup(nil) // should not panic
-	if p.RemoveHeaderFooter || p.RemoveTOC {
+	if p.FlattenMediaToText || p.RemoveHeaderFooter || p.RemoveTOC {
 		t.Error("flags should stay false after nil setup")
 	}
 }
@@ -213,3 +219,111 @@ func TestHTMLParser_BodyTextAndInlineElementsFormOneItem(t *testing.T) {
 		t.Errorf("items = %q, want %q", got, want)
 	}
 }
+
+func TestHTMLParser_FlattenMediaToText(t *testing.T) {
+	ctx, _ := recordingMediaContext()
+	const doc = `<html><body>` +
+		`<p>Intro</p>` +
+		`<table><tr><th>Col 1</th><th>Col 2</th></tr><tr><td>Val A</td><td>Val B</td></tr></table>` +
+		`<p><img alt="Sample Image" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="></p>` +
+		`<p>Outro</p>` +
+		`</body></html>`
+
+	// 1. Default: FlattenMediaToText = false preserves table and image doc_type_kwd
+	pDefault := NewHTMLParser()
+	resDefault := pDefault.ParseWithResult(ctx, "sample.html", []byte(doc))
+	if resDefault.Err != nil {
+		t.Fatalf("ParseWithResult default: %v", resDefault.Err)
+	}
+	itemsDefault := ItemsToMaps(resDefault.JSON)
+	var defaultTypes []string
+	for _, it := range itemsDefault {
+		defaultTypes = append(defaultTypes, it["doc_type_kwd"].(string))
+	}
+	// Expected: text, table, image, text
+	wantDefaultTypes := []string{"text", "table", "image", "text"}
+	if strings.Join(defaultTypes, ",") != strings.Join(wantDefaultTypes, ",") {
+		t.Fatalf("default doc_type_kwds = %v, want %v", defaultTypes, wantDefaultTypes)
+	}
+	if _, ok := itemsDefault[1]["table"]; !ok {
+		t.Error("default table item should carry structured table field")
+	}
+
+	// 2. FlattenMediaToText = true: table and image normalized to text
+	pFlatten := NewHTMLParser()
+	pFlatten.ConfigureFromSetup(map[string]any{"flatten_media_to_text": true})
+	resFlatten := pFlatten.ParseWithResult(ctx, "sample.html", []byte(doc))
+	if resFlatten.Err != nil {
+		t.Fatalf("ParseWithResult flatten: %v", resFlatten.Err)
+	}
+	itemsFlatten := ItemsToMaps(resFlatten.JSON)
+	var flattenTypes []string
+	for _, it := range itemsFlatten {
+		flattenTypes = append(flattenTypes, it["doc_type_kwd"].(string))
+	}
+	// Expected: all text
+	wantFlattenTypes := []string{"text", "text", "text", "text"}
+	if strings.Join(flattenTypes, ",") != strings.Join(wantFlattenTypes, ",") {
+		t.Fatalf("flattened doc_type_kwds = %v, want %v", flattenTypes, wantFlattenTypes)
+	}
+	if _, ok := itemsFlatten[1]["table"]; ok {
+		t.Error("flattened table item should not carry table field")
+	}
+	tableText, _ := itemsFlatten[1]["text"].(string)
+	if !strings.Contains(tableText, "<table>") || !strings.Contains(tableText, "Val A") {
+		t.Errorf("flattened table text = %q, want rendered HTML table", tableText)
+	}
+}
+
+func TestFlattenHTMLMediaToText(t *testing.T) {
+	td := &entity.TableData{
+		Grid: [][]entity.TableCell{
+			{{Text: "Header 1"}, {Text: "Header 2"}},
+			{{Text: "Row 1 Col 1"}, {Text: "Row 1 Col 2"}},
+		},
+		HeaderRows: 1,
+	}
+	items := []map[string]any{
+		{
+			"text":         "Intro paragraph",
+			"doc_type_kwd": "text",
+		},
+		{
+			"table":        td,
+			"doc_type_kwd": "table",
+		},
+		{
+			"text":         "alt description",
+			"image":        "image-data",
+			"doc_type_kwd": "image",
+		},
+	}
+
+	flattened := flattenHTMLMediaToText(items)
+	if len(flattened) != 3 {
+		t.Fatalf("len(flattened) = %d, want 3", len(flattened))
+	}
+
+	// Text item
+	if flattened[0]["doc_type_kwd"] != "text" || flattened[0]["text"] != "Intro paragraph" {
+		t.Errorf("item 0 = %+v", flattened[0])
+	}
+
+	// Table item
+	if flattened[1]["doc_type_kwd"] != "text" {
+		t.Errorf("item 1 doc_type_kwd = %v, want text", flattened[1]["doc_type_kwd"])
+	}
+	if _, ok := flattened[1]["table"]; ok {
+		t.Error("item 1 still carries table field")
+	}
+	rendered, _ := flattened[1]["text"].(string)
+	if !strings.Contains(rendered, "<table>") || !strings.Contains(rendered, "Header 1") {
+		t.Errorf("item 1 rendered text = %q", rendered)
+	}
+
+	// Image item
+	if flattened[2]["doc_type_kwd"] != "text" || flattened[2]["text"] != "alt description" {
+		t.Errorf("item 2 = %+v", flattened[2])
+	}
+}
+

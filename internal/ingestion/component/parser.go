@@ -335,6 +335,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 			},
 		},
 		"html": {
+			"flatten_media_to_text": false,
 			"suffix":               []string{"htm", "html"},
 			"remove_toc":           false,
 			"remove_header_footer": false,
