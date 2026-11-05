@@ -27,6 +27,17 @@ import (
 	"gorm.io/gorm"
 )
 
+// configExtras is empty in the community edition.
+type configExtras struct{}
+
+// loadConfigExtras returns no additional settings in the community edition.
+func loadConfigExtras(context.Context) (configExtras, error) { return configExtras{}, nil }
+
+// consumeRegistrationProof is a no-op in the community edition.
+func consumeRegistrationProof(context.Context, string) (common.ErrorCode, error) {
+	return common.CodeSuccess, nil
+}
+
 // InitHTTPClientEE is a no-op in the community edition.
 func (h *AdminClient) InitHTTPClientEE() error { return nil }
 

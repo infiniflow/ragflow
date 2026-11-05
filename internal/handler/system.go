@@ -75,7 +75,7 @@ func (h *SystemHandler) Healthz(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/system/config [get]
 func (h *SystemHandler) GetConfig(c *gin.Context) {
-	config, err := h.systemService.GetConfig()
+	config, err := h.systemService.GetConfig(c.Request.Context())
 	if err != nil {
 		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to get system configuration")
 		return

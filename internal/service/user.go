@@ -132,6 +132,12 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	if err != nil {
 		return nil, common.CodeExceptionError, err
 	}
+	// Admission policies are checked by middleware before this service runs.
+	// This hook may consume a single-use proof, so reject duplicate accounts
+	// and invalid encrypted passwords before calling it.
+	if code, err := consumeRegistrationProof(ctx, req.Email); err != nil {
+		return nil, code, err
+	}
 
 	var hashedPassword string
 	hashedPassword, err = common.GenerateWerkzeugPasswordHash(decryptedPassword)
