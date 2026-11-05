@@ -2209,7 +2209,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       generate: '生成',
       compiling: '编译中…',
       compilingCounts: '处理中 {{inflight}} / 待处理 {{backlog}}',
-      autoCompiled: '文档解析时自动编译。',
+      compilationPipelineRequired:
+        '文档通过包含 Compiler 和模板组的自定义解析流水线处理后，会自动生成知识产物。请使用该流水线解析或重新解析文档。',
+      wikiTemplateRequired: '生成 Wiki 时，请选择包含 Wiki 模板的模板组。',
+      compilationGuide: '查看知识编译配置指南',
       export: '导出',
       version: '版本',
       versionHistory: '版本历史',

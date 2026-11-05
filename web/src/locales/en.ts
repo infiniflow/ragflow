@@ -2633,7 +2633,11 @@ Example: Virtual Hosted Style`,
       generate: 'Generate',
       compiling: 'Compiling…',
       compilingCounts: '{{inflight}} processing / {{backlog}} queued',
-      autoCompiled: 'Compiled automatically when documents are parsed.',
+      compilationPipelineRequired:
+        'Artifacts are generated automatically after documents run through a custom ingestion pipeline with Compiler and a template group. Parse or reparse your documents with that pipeline.',
+      wikiTemplateRequired:
+        'For Wiki, select a template group containing a Wiki template.',
+      compilationGuide: 'View compilation setup guide',
       export: 'Export',
       version: 'Version',
       versionHistory: 'Version history',
