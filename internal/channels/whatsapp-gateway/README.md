@@ -6,7 +6,7 @@ This directory contains a minimal WhatsApp gateway built on top of
 ## Install
 
 ```bash
-cd api/channels/whatsapp/gateway-node
+cd internal/channels/whatsapp-gateway
 npm install
 ```
 
