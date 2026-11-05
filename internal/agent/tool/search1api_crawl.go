@@ -36,7 +36,7 @@ const search1APICrawlToolName = "search1api_crawl"
 var search1APICrawlEndpoint = "https://api.search1api.com/crawl"
 
 type search1APICrawlArgs struct {
-	URL string `json:"url"`
+	URL string `json:"url" doc:"The absolute HTTP or HTTPS URL of the page to read." required:"true"`
 }
 
 type search1APICrawlRequestBody struct {
@@ -88,17 +88,7 @@ func newSearch1APICrawlTool(h *HTTPHelper, apiKey, defaultURL string) *Search1AP
 
 // Info returns the tool's metadata for the chat model.
 func (c *Search1APICrawlTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: search1APICrawlToolName,
-		Desc: "Read one web page with Search1API and return its title and full content. Use it to read a page found by a search, or a URL the user gave.",
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"url": {
-				Type:     schema.String,
-				Desc:     "The absolute HTTP or HTTPS URL of the page to read.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(search1APICrawlToolName, "Read one web page with Search1API and return its title and full content. Use it to read a page found by a search, or a URL the user gave.", search1APICrawlArgs{})
 }
 
 // InvokableRun crawls the page. Recoverable errors are returned as a JSON

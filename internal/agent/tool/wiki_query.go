@@ -57,19 +57,12 @@ func newWikiQueryToolWithService(service wikisearch.Service) *WikiQueryTool {
 }
 
 type wikiQueryArgs struct {
-	Query    string `json:"query"`
-	Keywords string `json:"keywords,omitempty"`
+	Query    string `json:"query" doc:"The search query." required:"true"`
+	Keywords string `json:"keywords,omitempty" doc:"Comma-separated keywords to narrow results."`
 }
 
 func (w *WikiQueryTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: "wiki_query",
-		Desc: "Search the compiled wiki of the bound knowledge base(s). Returns rendered wiki page content as passages.",
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query":    {Type: schema.String, Required: true, Desc: "The search query."},
-			"keywords": {Type: schema.String, Desc: "Comma-separated keywords to narrow results."},
-		}),
-	}, nil
+	return BuildToolInfo("wiki_query", "Search the compiled wiki of the bound knowledge base(s). Returns rendered wiki page content as passages.", wikiQueryArgs{})
 }
 
 // InvokableRun executes a wiki lookup. It never returns a hard error for an

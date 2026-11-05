@@ -41,8 +41,8 @@ const jin10UnsupportedMessage = "Jin10 requires WebSocket subscription — not y
 // and an optional speed filter. The Go stub preserves the shape for
 // future WebSocket client compatibility but rejects every invocation.
 type jin10Params struct {
-	Category string `json:"category"`
-	Speed    string `json:"speed,omitempty"`
+	Category string `json:"category,omitempty" doc:"News category filter (e.g. \"all\", \"global\", \"cny\"). Defaults to \"all\"."`
+	Speed    string `json:"speed,omitempty" doc:"Optional speed/dedup filter. Defaults to empty (no filter)."`
 }
 
 // jin10Envelope is the model-facing JSON shape. The stub always
@@ -70,22 +70,7 @@ func NewJin10Tool() *Jin10Tool { return &Jin10Tool{} }
 
 // Info returns the tool's metadata for the chat model.
 func (j *Jin10Tool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: jin10ToolName,
-		Desc: jin10ToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"category": {
-				Type:     schema.String,
-				Desc:     "News category filter (e.g. \"all\", \"global\", \"cny\"). Defaults to \"all\".",
-				Required: false,
-			},
-			"speed": {
-				Type:     schema.String,
-				Desc:     "Optional speed/dedup filter. Defaults to empty (no filter).",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(jin10ToolName, jin10ToolDescription, jin10Params{})
 }
 
 // InvokableRun validates the input shape (category is optional with

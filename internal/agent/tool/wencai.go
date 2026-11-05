@@ -55,9 +55,9 @@ var wencaiQueryTypes = map[string]struct{}{
 // wencaiParams mirrors Python WenCaiParam. Query is model-provided runtime
 // input; top_n and query_type are Canvas node configuration.
 type wencaiParams struct {
-	Query     string `json:"query"`
-	TopN      int    `json:"top_n"`
-	QueryType string `json:"query_type"`
+	Query     string `json:"query" doc:"The question/conditions to select stocks." required:"true"`
+	TopN      int    `json:"top_n" schema:"-"`
+	QueryType string `json:"query_type" schema:"-"`
 }
 
 type wencaiEnvelope struct {
@@ -92,17 +92,7 @@ func newWencaiTool(defaults wencaiParams) *WencaiTool {
 // Info exposes only Python meta.parameters. Node configuration does not
 // belong in the model-emitted function-call schema.
 func (w *WencaiTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: wencaiToolName,
-		Desc: strings.TrimSpace(wencaiToolDescription),
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The question/conditions to select stocks.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(wencaiToolName, strings.TrimSpace(wencaiToolDescription), wencaiParams{})
 }
 
 // InvokableRun matches the current Python invocation result: valid arguments

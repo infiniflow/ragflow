@@ -365,6 +365,12 @@ func TestDuckDuckGo_ComponentReferencesAndDefaults(t *testing.T) {
 		}
 	}
 	spec := duck.ComponentSpec()
+	if spec.Inputs["top_n"] == "" {
+		t.Errorf("expected top_n in ComponentSpec.Inputs, got: %#v", spec.Inputs)
+	}
+	if spec.Inputs["query"] == "" {
+		t.Errorf("expected query in ComponentSpec.Inputs, got: %#v", spec.Inputs)
+	}
 	if channel, ok := spec.InputForm["channel"].(map[string]any); !ok || channel["value"] != "general" {
 		t.Fatalf("channel input form = %#v", spec.InputForm["channel"])
 	}

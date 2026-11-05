@@ -41,11 +41,11 @@ const (
 
 // hybridSearchArgs is the shared JSON schema for the three retrieval tools.
 type hybridSearchArgs struct {
-	Query    string   `json:"query"`
-	KbIDs    []string `json:"kb_ids,omitempty"`
-	TopN     int      `json:"top_n,omitempty"`
-	DocScope []string `json:"doc_scope,omitempty"`
-	Keywords string   `json:"keywords,omitempty"`
+	Query    string   `json:"query" doc:"The search query." required:"true"`
+	KbIDs    []string `json:"kb_ids,omitempty" doc:"Optional dataset ids to restrict to."`
+	TopN     int      `json:"top_n,omitempty" doc:"Number of passages to return (default 12)."`
+	DocScope []string `json:"doc_scope,omitempty" doc:"Optional doc ids to restrict to."`
+	Keywords string   `json:"keywords,omitempty" doc:"Comma-separated keywords to narrow results."`
 }
 
 type agenticSearchResult struct {
@@ -81,19 +81,7 @@ func NewAgenticSearchTool(mode string) *AgenticSearchTool {
 }
 
 func (a *AgenticSearchTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: a.mode,
-		Desc: fmt.Sprintf("Search the bound knowledge base(s) for the query (mode=%s). Returns relevant passages.", a.mode),
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type: schema.String, Required: true, Desc: "The search query.",
-			},
-			"kb_ids":    {Type: schema.Array, Desc: "Optional dataset ids to restrict to."},
-			"top_n":     {Type: schema.Number, Desc: "Number of passages to return (default 12)."},
-			"doc_scope": {Type: schema.Array, Desc: "Optional doc ids to restrict to."},
-			"keywords":  {Type: schema.String, Desc: "Comma-separated keywords to narrow results."},
-		}),
-	}, nil
+	return BuildToolInfo(a.mode, fmt.Sprintf("Search the bound knowledge base(s) for the query (mode=%s). Returns relevant passages.", a.mode), hybridSearchArgs{})
 }
 
 // InvokableRun executes the retrieval. It returns JSON with "chunks" (array of

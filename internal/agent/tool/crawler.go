@@ -43,10 +43,10 @@ const maxCrawlerResponseBytes = 4 << 20
 // earlier Go callers, but the current implementation only supports
 // depth=0 (single page fetch).
 type crawlerArgs struct {
-	Query    string `json:"query"`
-	URL      string `json:"url,omitempty"`
-	MaxDepth int    `json:"max_depth,omitempty"`
-	MaxPages int    `json:"max_pages,omitempty"`
+	Query    string `json:"query" doc:"The absolute URL to crawl. Must include an http:// or https:// scheme." required:"true"`
+	URL      string `json:"url,omitempty" schema:"-"`
+	MaxDepth int    `json:"max_depth,omitempty" doc:"Recursion depth. 0 only; >0 returns an error."`
+	MaxPages int    `json:"max_pages,omitempty" doc:"Maximum number of pages to fetch. Ignored (single page)."`
 }
 
 func (a crawlerArgs) targetURL() string {
@@ -126,27 +126,7 @@ func (c *CrawlerTool) WithResolver(fn Resolver) *CrawlerTool {
 
 // Info returns the tool's metadata for the chat model.
 func (c *CrawlerTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: crawlerToolName,
-		Desc: crawlerToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The absolute URL to crawl. Must include an http:// or https:// scheme.",
-				Required: true,
-			},
-			"max_depth": {
-				Type:     schema.Integer,
-				Desc:     "Recursion depth. 0 only; >0 returns an error.",
-				Required: false,
-			},
-			"max_pages": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of pages to fetch. Ignored (single page).",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(crawlerToolName, crawlerToolDescription, crawlerArgs{})
 }
 
 // ErrCrawlerDepthUnsupported is returned when the caller asks for

@@ -64,16 +64,16 @@ type yahooFinanceParams struct {
 }
 
 type yahooFinanceArgs struct {
-	StockCode         string `json:"stock_code"`
-	Query             string `json:"query"`
-	Info              *bool  `json:"info"`
-	History           *bool  `json:"history"`
-	Count             *bool  `json:"count"`
-	Financials        *bool  `json:"financials"`
-	IncomeStmt        *bool  `json:"income_stmt"`
-	BalanceSheet      *bool  `json:"balance_sheet"`
-	CashFlowStatement *bool  `json:"cash_flow_statement"`
-	News              *bool  `json:"news"`
+	StockCode         string `json:"stock_code" doc:"The stock code or company name." required:"true"`
+	Query             string `json:"query,omitempty" schema:"-"`
+	Info              *bool  `json:"info,omitempty" doc:"Fetch stock information."`
+	History           *bool  `json:"history,omitempty" doc:"Fetch historical market data."`
+	Count             *bool  `json:"count,omitempty" doc:"Fetch share count data."`
+	Financials        *bool  `json:"financials,omitempty" doc:"Fetch financial calendar data."`
+	IncomeStmt        *bool  `json:"income_stmt,omitempty" doc:"Fetch income statement data."`
+	BalanceSheet      *bool  `json:"balance_sheet,omitempty" doc:"Fetch balance sheet data."`
+	CashFlowStatement *bool  `json:"cash_flow_statement,omitempty" doc:"Fetch cash flow statement data."`
+	News              *bool  `json:"news,omitempty" doc:"Fetch related financial news."`
 }
 
 type yahooFinanceSearchResponse struct {
@@ -154,57 +154,7 @@ func defaultYahooFinanceParams() yahooFinanceParams {
 
 // Info returns the tool's metadata for the chat model.
 func (y *YahooFinanceTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: yahooFinanceToolName,
-		Desc: yahooFinanceToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"stock_code": {
-				Type:     schema.String,
-				Desc:     yahooFinanceStockCodeDescription,
-				Required: true,
-			},
-			"info": {
-				Type:     schema.Boolean,
-				Desc:     yahooFinanceInfoDescription,
-				Required: false,
-			},
-			"history": {
-				Type:     schema.Boolean,
-				Desc:     yahooFinanceHistoryDescription,
-				Required: false,
-			},
-			"count": {
-				Type:     schema.Boolean,
-				Desc:     yahooFinanceCountDescription,
-				Required: false,
-			},
-			"financials": {
-				Type:     schema.Boolean,
-				Desc:     yahooFinanceFinancialsDescription,
-				Required: false,
-			},
-			"income_stmt": {
-				Type:     schema.Boolean,
-				Desc:     yahooFinanceIncomeStatementDescription,
-				Required: false,
-			},
-			"balance_sheet": {
-				Type:     schema.Boolean,
-				Desc:     yahooFinanceBalanceSheetDescription,
-				Required: false,
-			},
-			"cash_flow_statement": {
-				Type:     schema.Boolean,
-				Desc:     yahooFinanceCashFlowStatementDescription,
-				Required: false,
-			},
-			"news": {
-				Type:     schema.Boolean,
-				Desc:     yahooFinanceNewsDescription,
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(yahooFinanceToolName, yahooFinanceToolDescription, yahooFinanceArgs{})
 }
 
 func (y *YahooFinanceTool) ComponentSpec() ComponentSpec {

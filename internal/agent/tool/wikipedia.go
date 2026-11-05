@@ -71,9 +71,9 @@ func WikipediaLanguageSupported(language string) bool {
 // non-agent callers and fall back to the tool instance's node-level
 // defaults (WikipediaTool.lang / WikipediaTool.topN) when absent.
 type wikipediaParams struct {
-	Query      string `json:"query"`
-	Lang       string `json:"lang,omitempty"`
-	MaxResults int    `json:"max_results,omitempty"`
+	Query      string `json:"query" doc:"The search keyword to execute with wikipedia. The keyword MUST be a specific subject that can match the title." required:"true"`
+	Lang       string `json:"lang,omitempty" schema:"-" component:"-"`
+	MaxResults int    `json:"max_results,omitempty" schema:"-" component:"-"`
 }
 
 // wikipediaResult mirrors the fields Python passes to _retrieve_chunks:
@@ -145,32 +145,19 @@ func NewWikipediaToolWithParams(h *HTTPHelper, topN int, language string) *Wikip
 
 // Info returns the tool's metadata for the chat model.
 func (w *WikipediaTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: wikipediaToolName,
-		Desc: wikipediaToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The search keyword to execute with wikipedia. The keyword MUST be a specific subject that can match the title.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(wikipediaToolName, wikipediaToolDescription, wikipediaParams{})
 }
 
 func (w *WikipediaTool) ComponentSpec() ComponentSpec {
-	return ComponentSpec{
-		Inputs: map[string]string{
-			"query": "The search keyword to execute with wikipedia. The keyword MUST be a specific subject that can match the title.",
-		},
-		Outputs: map[string]string{
-			"formalized_content": "Rendered Wikipedia references for downstream prompts.",
-			"json":               "Wikipedia result list.",
-		},
-		InputForm: map[string]any{
-			"query": map[string]any{"name": "Query", "type": "line"},
-		},
+	spec := BuildComponentSpec(wikipediaParams{})
+	spec.Outputs = map[string]string{
+		"formalized_content": "Rendered Wikipedia references for downstream prompts.",
+		"json":               "Wikipedia result list.",
 	}
+	spec.InputForm = map[string]any{
+		"query": map[string]any{"name": "Query", "type": "line"},
+	}
+	return spec
 }
 
 // buildWikipediaURL constructs a MediaWiki generator=search URL that returns

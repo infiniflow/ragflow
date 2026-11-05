@@ -48,22 +48,22 @@ const retrievalToolDescription = "This tool can be utilized for relevant content
 // accept both `query` (canonical) and `dataset_ids` / `use_kg` etc. to
 // match the Python ToolMeta field set.
 type retrievalArgs struct {
-	Query                    string         `json:"query"`
-	DatasetIDs               []string       `json:"dataset_ids,omitempty"`
-	KBIDs                    []string       `json:"kb_ids,omitempty"`
-	MemoryIDs                []string       `json:"memory_ids,omitempty"`
-	UserID                   string         `json:"user_id,omitempty"`
-	TopN                     int            `json:"top_n,omitempty"`
-	RerankCandidatesCount    int            `json:"rerank_candidates_count,omitempty"`
-	TopK                     int            `json:"top_k,omitempty"`
-	KeywordsSimilarityWeight *float64       `json:"keywords_similarity_weight,omitempty"`
-	UseKG                    bool           `json:"use_kg,omitempty"`
-	SimilarityThreshold      *float64       `json:"similarity_threshold,omitempty"`
-	RerankID                 string         `json:"rerank_id,omitempty"`
-	CrossLanguages           []string       `json:"cross_languages,omitempty"`
-	MetaDataFilter           map[string]any `json:"meta_data_filter,omitempty"`
-	RetrievalFrom            string         `json:"retrieval_from,omitempty"`
-	EmptyResponse            string         `json:"empty_response,omitempty"`
+	Query                    string         `json:"query" doc:"The keywords to search the dataset. The keywords should be the most important words/terms (including synonyms) from the original request." required:"true"`
+	DatasetIDs               []string       `json:"dataset_ids,omitempty" schema:"-"`
+	KBIDs                    []string       `json:"kb_ids,omitempty" schema:"-"`
+	MemoryIDs                []string       `json:"memory_ids,omitempty" schema:"-"`
+	UserID                   string         `json:"user_id,omitempty" schema:"-"`
+	TopN                     int            `json:"top_n,omitempty" schema:"-"`
+	RerankCandidatesCount    int            `json:"rerank_candidates_count,omitempty" schema:"-"`
+	TopK                     int            `json:"top_k,omitempty" schema:"-"`
+	KeywordsSimilarityWeight *float64       `json:"keywords_similarity_weight,omitempty" schema:"-"`
+	UseKG                    bool           `json:"use_kg,omitempty" schema:"-"`
+	SimilarityThreshold      *float64       `json:"similarity_threshold,omitempty" schema:"-"`
+	RerankID                 string         `json:"rerank_id,omitempty" schema:"-"`
+	CrossLanguages           []string       `json:"cross_languages,omitempty" schema:"-"`
+	MetaDataFilter           map[string]any `json:"meta_data_filter,omitempty" schema:"-"`
+	RetrievalFrom            string         `json:"retrieval_from,omitempty" schema:"-"`
+	EmptyResponse            string         `json:"empty_response,omitempty" schema:"-"`
 	// FunctionName is the agent-visible tool name from the DSL. It is not
 	// exposed to the model as part of the tool arguments.
 	FunctionName string `json:"-"`
@@ -129,17 +129,7 @@ func NewRetrievalToolWithDefaults(defaults retrievalArgs) *RetrievalTool {
 // Info returns the tool's metadata for the chat model. The schema mirrors
 // the Python RetrievalParam ToolMeta (plan, field alignment).
 func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: r.name,
-		Desc: r.desc,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The keywords to search the dataset. The keywords should be the most important words/terms (including synonyms) from the original request.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(r.name, r.desc, retrievalArgs{})
 }
 
 // InvokableRun executes the tool. It validates the input and
