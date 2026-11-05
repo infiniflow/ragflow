@@ -1207,7 +1207,7 @@ func TestEPUBParser_RemoveTOC(t *testing.T) {
     <li><a href="#ch2">Chapter 2: Methods</a></li>
   </ul>
 </nav>
-<div class="content"><p>Chapter body text</p></div>`),
+<div class="content"><h1>Chapter 1: Intro</h1><p>Chapter body text</p></div>`),
 	}}, nil)
 	pNested := NewEPUBParser()
 	pNested.ConfigureFromSetup(map[string]any{"remove_toc": true})
@@ -1215,13 +1215,19 @@ func TestEPUBParser_RemoveTOC(t *testing.T) {
 	if resNested.Err != nil {
 		t.Fatalf("ParseWithResult nested: %v", resNested.Err)
 	}
+	var nestedTexts []string
 	for _, it := range ItemsToMaps(resNested.JSON) {
 		text, _ := it["text"].(string)
+		nestedTexts = append(nestedTexts, text)
 		if strings.Contains(text, "Table of Contents") {
 			t.Errorf("nested TOC heading %q was not removed", text)
 		}
-		if strings.Contains(text, "Chapter 1: Intro") {
+		if strings.Contains(text, "Chapter 2: Methods") {
 			t.Errorf("nested TOC entry %q was not removed", text)
 		}
+	}
+	fullNested := strings.Join(nestedTexts, " ")
+	if !strings.Contains(fullNested, "前言") || !strings.Contains(fullNested, "Chapter 1: Intro") || !strings.Contains(fullNested, "Chapter body text") {
+		t.Errorf("expected body chapters and foreword to survive, got %q", fullNested)
 	}
 }
