@@ -227,6 +227,7 @@ RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked
 COPY internal internal
 COPY cmd cmd
 COPY build.sh ./
+COPY tools/scripts tools/scripts
 COPY Dockerfile ./
 
 # ONNX Runtime static archives: build.sh's _seed_from_system copies the ORT

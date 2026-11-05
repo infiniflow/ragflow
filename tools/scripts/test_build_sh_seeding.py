@@ -196,3 +196,51 @@ def test_ci_runs_new_native_lib_tests():
     pytest_line = next((ln for ln in block.splitlines() if "pytest" in ln and "tools/scripts" in ln), "")
     assert "tools/scripts/test_native_lib_version.py" in pytest_line, "CI must run the new native_lib_version tests:\n" + block
     assert "tools/scripts/test_build_sh_seeding.py" in pytest_line, "CI must run the new build_sh seeding tests:\n" + block
+
+
+# ── Dockerfile: the stage that runs build.sh must ship native_lib_version.sh ───
+# build.sh sources tools/scripts/native_lib_version.sh at the top (see above), so
+# the production Dockerfile's build.sh-running stage must COPY it into the image.
+# Without it, `./build.sh --go` in the image build aborts on the `source` and the
+# server image cannot be built. Regression guard for the native-lib versioning
+# change (the file is new in that change).
+def _dockerfile_build_stage_text():
+    dockerfile = os.path.join(REPO, "Dockerfile")
+    with open(dockerfile) as fh:
+        lines = fh.readlines()
+    # The stage that runs build.sh: first non-comment line that executes
+    # `./build.sh` (RUN may be a multi-line continuation, and the string also
+    # appears in comments, so require the `./build.sh` execution form).
+    build_idx = next(i for i, ln in enumerate(lines) if ln.strip() and not ln.strip().startswith("#") and "./build.sh" in ln)
+    # Most recent FROM opening that stage.
+    from_idx = max(
+        (i for i in range(build_idx, -1, -1) if lines[i].strip().startswith("FROM")),
+        default=-1,
+    )
+    assert from_idx != -1, "could not locate the build.sh stage in Dockerfile"
+    return "".join(lines[from_idx : build_idx + 1])
+
+
+def test_dockerfile_ships_native_lib_version_to_build_stage():
+    stage = _dockerfile_build_stage_text()
+    assert ("tools/scripts/native_lib_version.sh" in stage) or ("COPY tools/scripts" in stage), (
+        "The Dockerfile stage that runs build.sh must COPY tools/scripts/native_lib_version.sh (build.sh sources it at the top):\n" + stage
+    )
+
+
+def test_build_sh_sources_native_lib_version():
+    # Coupling guard: if build.sh stops sourcing the file, the Dockerfile COPY is moot.
+    with open(os.path.join(REPO, "build.sh")) as fh:
+        build_sh = fh.read()
+    assert "tools/scripts/native_lib_version.sh" in build_sh
+
+
+def test_dockerignore_does_not_exclude_tools_scripts():
+    # A COPY tools/scripts would fail at docker build if .dockerignore excluded it.
+    dockerignore = os.path.join(REPO, ".dockerignore")
+    with open(dockerignore) as fh:
+        # Only inspect real exclude lines; comments may legitimately mention the path.
+        exclude_lines = [ln.strip() for ln in fh if ln.strip() and not ln.strip().startswith("#")]
+    for pat in exclude_lines:
+        if pat == "tools/scripts" or pat == "tools/" or pat.startswith("tools/"):
+            raise AssertionError(f".dockerignore excludes '{pat}'; the Dockerfile COPYs tools/scripts for build.sh")
