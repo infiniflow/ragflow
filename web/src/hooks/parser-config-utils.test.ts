@@ -83,6 +83,29 @@ describe('normalizeParserConfig', () => {
     expect(parentChild.use_parent_child).toBe(false);
   });
 
+  it('re-homes Auto PDF sub-options onto the Parser node pdf setup', () => {
+    const out = normalizeParserConfig({
+      layout_recognize: 'Auto',
+      layout_recognize_auto_text: 'DeepDOC',
+      layout_recognize_auto_scanned: 'MinerU',
+      layout_recognize_auto_min_chars_per_page: 80,
+      ['Parser:HipSignsRhyme']: {
+        pdf: { parse_method: 'DeepDOC', output_format: 'json' },
+      },
+    }) as Record<string, unknown>;
+
+    expect(out).not.toHaveProperty('layout_recognize');
+    expect(out).not.toHaveProperty('layout_recognize_auto_text');
+    const pdf = (
+      out['Parser:HipSignsRhyme'] as Record<string, Record<string, unknown>>
+    ).pdf;
+    expect(pdf.parse_method).toBe('Auto');
+    expect(pdf.layout_recognize_auto_text).toBe('DeepDOC');
+    expect(pdf.layout_recognize_auto_scanned).toBe('MinerU');
+    expect(pdf.layout_recognize_auto_min_chars_per_page).toBe(80);
+    expect(pdf.output_format).toBe('json');
+  });
+
   it('leaves an existing parent_child untouched when enable_children is absent', () => {
     const existing = { use_parent_child: true, children_delimiter: '###' };
     const out = normalizeParserConfig({

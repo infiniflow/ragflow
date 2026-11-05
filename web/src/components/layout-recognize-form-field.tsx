@@ -15,10 +15,8 @@
  */
 
 import { useTranslate } from '@/hooks/common-hooks';
-import { LLMFactory } from '@/constants/llm';
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { cn } from '@/lib/utils';
-import { parseModelValue } from '@/utils/llm-util';
 import { camelCase } from 'lodash';
 import { ReactNode, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
@@ -33,8 +31,10 @@ import {
   FormLabel,
   FormMessage,
 } from './ui/form';
+import { AutoLayoutRecognizeFormFields } from './auto-layout-recognize-form-fields';
 
 export const enum ParseDocumentType {
+  Auto = 'Auto',
   DeepDOC = 'DeepDOC',
   PlainText = 'Plain Text',
   Docling = 'Docling',
@@ -43,7 +43,6 @@ export const enum ParseDocumentType {
   MonkeyOCRv2 = 'MonkeyOCRv2',
 }
 
-/** Selects a parser model and scopes provider-specific options to its form path. */
 export function LayoutRecognizeFormField({
   name = 'parser_config.layout_recognize',
   horizontal = true,
@@ -53,6 +52,7 @@ export function LayoutRecognizeFormField({
   showPaddleocrOptions = true,
   testId,
   ownerTenantId,
+  omitParserValues,
 }: {
   name?: string;
   horizontal?: boolean;
@@ -62,6 +62,7 @@ export function LayoutRecognizeFormField({
   showPaddleocrOptions?: boolean;
   testId?: string;
   ownerTenantId?: string;
+  omitParserValues?: string[];
 }) {
   const form = useFormContext();
 
@@ -76,6 +77,7 @@ export function LayoutRecognizeFormField({
     const list = optionsWithoutLLM
       ? optionsWithoutLLM
       : [
+          ParseDocumentType.Auto,
           ParseDocumentType.DeepDOC,
           ParseDocumentType.PlainText,
           ParseDocumentType.Docling,
@@ -83,7 +85,12 @@ export function LayoutRecognizeFormField({
           ParseDocumentType.TCADPParser,
           ParseDocumentType.MonkeyOCRv2,
         ].map((x) => ({
-          label: x === ParseDocumentType.PlainText ? t(camelCase(x)) : x,
+          label:
+            x === ParseDocumentType.PlainText
+              ? t(camelCase(x))
+              : x === ParseDocumentType.Auto
+                ? t('layoutRecognizeAuto')
+                : x,
           value: x,
         }));
 
@@ -107,25 +114,16 @@ export function LayoutRecognizeFormField({
       ),
     );
 
-    return [...prependNodes, ...modelTree];
-  }, [allAddedModels, optionsWithoutLLM, t]);
+    const omit = new Set(omitParserValues ?? []);
+    const filteredPrepend = prependNodes.filter((n) => !omit.has(String(n.id)));
+    return [...filteredPrepend, ...modelTree];
+  }, [allAddedModels, omitParserValues, optionsWithoutLLM, t]);
 
   return (
     <FormField
       control={form.control}
       name={name}
       render={({ field }) => {
-        const provider =
-          allAddedModels.find((model) => model.model_id === field.value)
-            ?.provider_name ??
-          parseModelValue(field.value)?.model_provider ??
-          field.value;
-        const isMinerU =
-          typeof provider === 'string' &&
-          [LLMFactory.MinerU, LLMFactory.MinerUNet].some(
-            (factory) => factory.toLowerCase() === provider.toLowerCase(),
-          );
-        const namePrefix = name.split('.').slice(0, -1).join('.');
         return (
           <>
             <FormItem className={'items-center space-y-0 '}>
@@ -137,12 +135,9 @@ export function LayoutRecognizeFormField({
               >
                 <FormLabel
                   tooltip={t('layoutRecognizeTip')}
-                  className={cn(
-                    'text-sm text-text-secondary whitespace-wrap pb-1',
-                    {
-                      ['w-1/4']: horizontal,
-                    },
-                  )}
+                  className={cn('text-sm text-text-secondary whitespace-wrap', {
+                    ['w-1/4']: horizontal,
+                  })}
                 >
                   {label || t('layoutRecognize')}
                 </FormLabel>
@@ -168,10 +163,14 @@ export function LayoutRecognizeFormField({
                 <FormMessage />
               </div>
             </FormItem>
-            {showMineruOptions && isMinerU && (
-              <MinerUOptionsFormField namePrefix={namePrefix} />
-            )}
+            {showMineruOptions && <MinerUOptionsFormField />}
             {showPaddleocrOptions && <PaddleOCROptionsFormField />}
+            <AutoLayoutRecognizeFormFields
+              layoutRecognizeName={name}
+              namePrefix={name.includes('.') ? name.split('.').slice(0, -1).join('.') : ''}
+              horizontal={horizontal}
+              ownerTenantId={ownerTenantId}
+            />
           </>
         );
       }}
