@@ -11,6 +11,8 @@ jest.mock('@/constants/agent', () => ({
     QueritSearch: 'QueritSearch',
     Search1APISearch: 'Search1APISearch',
     Search1APICrawl: 'Search1APICrawl',
+    AnySearchSearch: 'AnySearchSearch',
+    AnySearchDiscover: 'AnySearchDiscover',
   },
 }));
 
@@ -230,6 +232,55 @@ describe('clearSensitiveFields', () => {
         'search1api-graph-secret',
       );
       expect(dsl.tools[0].params.api_key).toBe('search1api-tool-secret');
+    },
+  );
+
+  it.each([
+    'AnySearchSearch',
+    'AnySearchDiscover',
+    'anysearchsearch',
+    'anysearchdiscover',
+    'anysearch',
+    'anysearch_search',
+    'anysearch_discover',
+  ])(
+    'clears an %s key from a canvas node and from a tool record',
+    (operator) => {
+      const dsl = {
+        graph: {
+          nodes: [
+            {
+              data: {
+                label: operator,
+                form: {
+                  api_key: 'anysearch-graph-secret',
+                  zone: 'cn',
+                },
+              },
+            },
+          ],
+        },
+        tools: [
+          {
+            component_name: operator,
+            params: {
+              api_key: 'anysearch-tool-secret',
+              language: 'zh-CN',
+            },
+          },
+        ],
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+      expect(sanitized.graph.nodes[0].data.form.zone).toBe('cn');
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.language).toBe('zh-CN');
+      expect(dsl.graph.nodes[0].data.form.api_key).toBe(
+        'anysearch-graph-secret',
+      );
+      expect(dsl.tools[0].params.api_key).toBe('anysearch-tool-secret');
     },
   );
 
