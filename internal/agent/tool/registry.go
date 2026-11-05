@@ -747,6 +747,7 @@ func buildQueritTool(params map[string]any) (einotool.BaseTool, error) {
 	return newQueritTool(nil, nil, defaults, nil), nil
 }
 
+// buildQueritContentsTool constructs the Querit Contents tool from canvas params.
 func buildQueritContentsTool(params map[string]any) (einotool.BaseTool, error) {
 	defaults := queritContentsParams{}
 	if value, exists := params["api_key"]; exists {

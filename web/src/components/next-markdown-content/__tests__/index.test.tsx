@@ -234,7 +234,12 @@ describe('MarkdownContent citations', () => {
       data: new Blob(['<script>window.pwned = true</script>'], {
         type: 'text/html',
       }),
-      headers: { 'content-disposition': 'attachment' },
+      response: {
+        headers: {
+          get: (name: string) =>
+            name === 'content-disposition' ? 'attachment' : null,
+        },
+      },
     });
     const open = jest.spyOn(window, 'open').mockImplementation(() => null);
 

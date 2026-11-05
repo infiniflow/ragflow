@@ -93,6 +93,7 @@ const fetchArtifactBlob = async (url: string): Promise<Blob> =>
 const getArtifactName = (url?: string, fallback?: string) =>
   fallback || url?.split('/').pop()?.split('?')[0] || 'artifact';
 
+/** Downloads attachment responses and previews other artifact blobs. */
 function ArtifactLink({
   href,
   className,
@@ -108,9 +109,9 @@ function ArtifactLink({
       try {
         const response = await fetchArtifactResponse(href);
         const blob = response.data as Blob;
-        const contentDisposition =
-          response.headers?.get?.('content-disposition') ??
-          response.headers?.['content-disposition'];
+        const contentDisposition = response.response.headers.get(
+          'content-disposition',
+        );
         if (
           typeof contentDisposition === 'string' &&
           /^\s*attachment(?:;|$)/i.test(contentDisposition)

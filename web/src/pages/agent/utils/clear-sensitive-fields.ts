@@ -60,6 +60,7 @@ function isNodeLabelApiKeyOperator(value: unknown) {
   );
 }
 
+/** Returns a copy with recognized webhook credentials blanked. */
 function clearWebhookSecrets(value: Record<string, any>) {
   const security = value.security;
   if (!isPlainObject(security)) {

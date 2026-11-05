@@ -41,7 +41,7 @@ describe('QueritContentsForm', () => {
     useGraphStore.setState({ nodes: [] });
   });
 
-  it('keeps the last valid crawl timeout when the number field is cleared', async () => {
+  it('keeps the last valid timeout while the field is cleared and can be replaced', async () => {
     const node = {
       id: 'querit-node',
       data: {
@@ -61,7 +61,8 @@ describe('QueritContentsForm', () => {
         <QueritContentsForm node={node} />
       </TooltipProvider>,
     );
-    fireEvent.change(screen.getByRole('spinbutton'), {
+    const timeoutInput = screen.getByRole('spinbutton');
+    fireEvent.change(timeoutInput, {
       target: { value: '' },
     });
 
@@ -70,7 +71,48 @@ describe('QueritContentsForm', () => {
         10,
       );
     });
-    expect(screen.getByRole('spinbutton')).toHaveValue(10);
+    expect((timeoutInput as HTMLInputElement).value).toBe('');
+
+    fireEvent.change(timeoutInput, { target: { value: '25' } });
+
+    await waitFor(() => {
+      expect(useGraphStore.getState().nodes[0].data.form.crawl_timeout).toBe(
+        25,
+      );
+    });
+    expect(timeoutInput).toHaveValue(25);
+  });
+
+  it('restores the last valid timeout if the cleared field is left empty', async () => {
+    const node = {
+      id: 'querit-node',
+      data: {
+        form: {
+          api_key: '',
+          urls: 'https://example.com',
+          format: 'markdown',
+          crawl_timeout: 25,
+          extras_meta: false,
+        },
+      },
+    } as any;
+    useGraphStore.setState({ nodes: [node] });
+
+    render(
+      <TooltipProvider>
+        <QueritContentsForm node={node} />
+      </TooltipProvider>,
+    );
+    const timeoutInput = screen.getByRole('spinbutton');
+    fireEvent.change(timeoutInput, { target: { value: '' } });
+    fireEvent.blur(timeoutInput);
+
+    await waitFor(() => {
+      expect(useGraphStore.getState().nodes[0].data.form.crawl_timeout).toBe(
+        25,
+      );
+    });
+    expect(timeoutInput).toHaveValue(25);
   });
 
   it('normalizes a previously saved empty crawl timeout to its default', async () => {
