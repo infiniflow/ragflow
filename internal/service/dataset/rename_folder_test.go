@@ -76,7 +76,7 @@ func TestDatasetRenameFolder(t *testing.T) {
 				t.Fatal(err)
 			}
 			ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
-			_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{Name: &tc.newName})
+			_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{Name: &tc.newName})
 			if code != tc.wantCode || (err != nil) != (tc.wantCode != common.CodeSuccess) {
 				t.Fatalf("rename: code=%v err=%v; want code=%v", code, err, tc.wantCode)
 			}
@@ -120,7 +120,7 @@ func TestDatasetRenameFolderRollsBack(t *testing.T) {
 			}
 			name := "Renamed"
 			ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
-			_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "tenant-1", service.UpdateDatasetRequest{Name: &name})
+			_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{Name: &name})
 			if err == nil || code != common.CodeServerError {
 				t.Fatalf("rename: code=%v err=%v; want server error", code, err)
 			}
@@ -180,7 +180,7 @@ func TestDatasetRenameFolderSurvivesDeletingReusedName(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = req.MultipartForm.RemoveAll() })
-		results, errs := documents.UploadLocalDocuments(ctx, kb, "tenant-1", req.MultipartForm.File["file"], "", nil)
+		results, errs := documents.UploadLocalDocuments(ctx, kb, req.MultipartForm.File["file"], "", nil)
 		if len(errs) != 0 || len(results) != 1 {
 			t.Fatalf("upload %s: results=%v errors=%v", name, results, errs)
 		}
@@ -194,7 +194,7 @@ func TestDatasetRenameFolderSurvivesDeletingReusedName(t *testing.T) {
 	a := create("Original")
 	oldDoc, oldFile := upload(a, "a-old.txt")
 	name := "Renamed"
-	if _, code, err := datasets.UpdateDataset(ctx, a.ID, "tenant-1", service.UpdateDatasetRequest{Name: &name}); err != nil || code != common.CodeSuccess {
+	if _, code, err := datasets.UpdateDataset(ctx, a.ID, service.UpdateDatasetRequest{Name: &name}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("rename: code=%v err=%v", code, err)
 	}
 	var err error
