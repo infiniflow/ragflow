@@ -304,9 +304,9 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 	if err := validateChannelBinding(ownerCtx, channel.ChatID, channel.AgentID); err != nil {
 		return "", err
 	}
-	ctx, cancel := context.WithTimeout(ownerCtx, 5*time.Minute)
-	defer cancel()
 	if channel.AgentID != nil {
+		ctx, cancel := context.WithTimeout(ownerCtx, 5*time.Minute)
+		defer cancel()
 		return s.handleChannelAgentMessage(ctx, channel, msg)
 	}
 	if channel.ChatID == nil || strings.TrimSpace(*channel.ChatID) == "" {
