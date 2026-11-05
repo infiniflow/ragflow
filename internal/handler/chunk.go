@@ -23,7 +23,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -131,12 +130,7 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		return
 	}
 
-	page, err := parsePositiveQueryInt(c, "page", 1)
-	if err != nil {
-		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
-		return
-	}
-	size, err := parsePositiveQueryInt(c, "page_size", 30)
+	page, size, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
 	if err != nil {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
@@ -193,18 +187,6 @@ func queryStringList(c *gin.Context, name string) []string {
 		}
 	}
 	return ids
-}
-
-func parsePositiveQueryInt(c *gin.Context, name string, defaultValue int) (int, error) {
-	raw := strings.TrimSpace(c.Query(name))
-	if raw == "" {
-		return defaultValue, nil
-	}
-	value, err := strconv.Atoi(raw)
-	if err != nil || value <= 0 {
-		return 0, fmt.Errorf("%s must be a positive integer", name)
-	}
-	return value, nil
 }
 
 func parseAvailableQuery(raw string) (int, bool, error) {

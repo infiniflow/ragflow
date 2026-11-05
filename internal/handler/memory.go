@@ -296,6 +296,12 @@ func splitQueryValues(c *gin.Context, key string) []string {
 //   - data.memory_list: Array of Memory objects
 //   - data.total_count: Total record count
 func (h *MemoryHandler) ListMemories(c *gin.Context) {
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultMemoryPageSize)
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+
 	if c.Query("type") == "filter" {
 		result, err := h.memoryService.ListMemoryFilters(c.Request.Context())
 		if err != nil {
@@ -309,20 +315,6 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	// Parse query parameters
 	storageType := c.Query("storage_type")
 	keywords := c.Query("keywords")
-	pageStr := c.DefaultQuery("page", "1")
-	pageSizeStr := c.DefaultQuery("page_size", "50")
-
-	// Convert pagination parameters to integers
-	page, _ := strconv.Atoi(pageStr)
-	pageSize, _ := strconv.Atoi(pageSizeStr)
-
-	// Validate pagination parameters
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 {
-		pageSize = 50
-	}
 
 	// Parse memory_type parameter (repeated query keys and comma separation)
 	memoryTypes := splitQueryValues(c, "memory_type")
@@ -422,18 +414,9 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 	agentIDs := splitQueryValues(c, "agent_id")
 
 	keywords := strings.TrimSpace(c.DefaultQuery("keywords", ""))
-	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
-	if err != nil || page <= 0 {
-		common.RespondError(c, common.CodeArgumentError, "page must be a positive integer")
-		return
-	}
-	pageSize, err := strconv.Atoi(c.DefaultQuery("page_size", "50"))
-	if err != nil || pageSize <= 0 {
-		common.RespondError(c, common.CodeArgumentError, "page_size must be a positive integer")
-		return
-	}
-	if pageSize > 100 {
-		common.RespondError(c, common.CodeArgumentError, "page_size must be less than or equal to 100")
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultMemoryPageSize)
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 

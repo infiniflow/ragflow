@@ -14,6 +14,13 @@ In the standard response envelope, `message` is always a non-empty string. Succe
 `data` is optional. Operation acknowledgments omit it; check `code` for success
 and `message` for the result description. Result payloads use objects or arrays.
 
+Paginated endpoints require a positive integer `page` (default `1`) and a
+`page_size` between `1` and `100`, inclusive. JSON search APIs that accept `size`
+apply the same limit to that field. Requests over the limit are rejected with
+an error envelope; values are never silently clamped. Zero and negative sizes
+cannot disable pagination. The general page size defaults to `30`; existing
+endpoint-specific defaults are listed in the [pagination reference](../develop/rest_api_pagination.md).
+
 ---
 
 ## ERROR CODES
@@ -3467,7 +3474,7 @@ curl --request GET \
 - `page`: (*Query parameter*), `integer`
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
 - `page_size`: (*Query parameter*), `integer`
-  The number of sessions on each page. Defaults to `30`. If set to `0`, an empty list is returned.
+  The number of sessions on each page. Defaults to `30`. Must be between `1` and `100`.
 - `orderby`: (*Query parameter*), `string`
   The field by which sessions should be sorted. Available options:
   - `create_time` (default)

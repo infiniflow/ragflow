@@ -17,8 +17,6 @@
 package handler
 
 import (
-	"strconv"
-
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/permission"
@@ -55,14 +53,12 @@ func NewCompilationTemplateGroupHandler(svc *service.CompilationTemplateGroupSer
 //	@Success 200 {object} map[string]interface{}
 //	@Router /v1/compilation-template-groups [get]
 func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "30"))
-	if page < 1 {
-		page = 1
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
 	}
-	if pageSize < 1 {
-		pageSize = 30
-	}
+
 	keywords := c.Query("keywords")
 	scope := c.Query("scope")
 	tenantID := c.Query("tenant_id")

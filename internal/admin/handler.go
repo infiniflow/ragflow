@@ -161,16 +161,12 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	role := c.DefaultQuery("role", "")
 	sort := c.DefaultQuery("sort", "")     // asc or desc
 	orderBy := c.DefaultQuery("order", "") // order by field
-	pageInt, err := common.ParseRequestIntPositive(c, c.Query("page"), "page", 1)
+	pageInt, pageSizeInt, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultAdminPageSize)
 	if err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	pageSizeInt, err := common.ParseRequestIntPositive(c, c.Query("page_size"), "page_size", 10)
-	if err != nil {
-		common.RespondError(c, common.CodeBadRequest, err.Error())
-		return
-	}
+
 	plan := c.Query("plan") // plan name
 	topInt, err := common.ParseRequestIntPositive(c, c.Query("top"), "top", 0)
 	if err != nil {
@@ -1143,18 +1139,10 @@ func (h *Handler) Reports(c *gin.Context) {
 
 func (h *Handler) ListAllModels(c *gin.Context) {
 
-	page := 0
-	if v := c.Query("page"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 0
-	if v := c.Query("page_size"); v != "" {
-		if ps, err := strconv.Atoi(v); err == nil && ps > 0 {
-			pageSize = ps
-		}
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	if err != nil {
+		common.RespondError(c, common.CodeBadRequest, err.Error())
+		return
 	}
 
 	// List models

@@ -32,10 +32,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// maxArtifactPageSize caps the page_size query parameter for artifact list
-// endpoints so a client cannot force an unbounded document-engine search.
-const maxArtifactPageSize = 100
-
 // DatasetArtifactHandler exposes the knowledge-compilation artifact REST APIs
 // backed by DatasetArtifactService.
 type DatasetArtifactHandler struct {
@@ -108,17 +104,12 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 	pageType := c.Query("page_type")
 	topic := c.Query("topic")
 	keywords := strings.TrimSpace(c.Query("keywords"))
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "30"))
-	if page < 1 {
-		page = 1
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
 	}
-	if pageSize < 1 {
-		pageSize = 30
-	}
-	if pageSize > maxArtifactPageSize {
-		pageSize = maxArtifactPageSize
-	}
+
 	items, total, err := h.svc.ListWikiPages(c.Request.Context(), tenantID, datasetID, pageType, topic, keywords, page, pageSize)
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())

@@ -19,7 +19,6 @@ package handler
 import (
 	"ragflow/internal/common"
 	"ragflow/internal/service"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -38,18 +37,10 @@ func NewModelHandler(modelProviderService *service.ModelProviderService) *ModelH
 
 func (h *ModelHandler) ListAllModels(c *gin.Context) {
 
-	page := 0
-	if v := c.Query("page"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 0
-	if v := c.Query("page_size"); v != "" {
-		if ps, err := strconv.Atoi(v); err == nil && ps > 0 {
-			pageSize = ps
-		}
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
 	}
 
 	// list tenant models

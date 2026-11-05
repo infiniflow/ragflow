@@ -193,6 +193,10 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	}
 	req.VectorSimilarityWeight = vectorSimilarityWeight
 
+	if err := common.ValidatePagination(req.Page, nil, req.Size); err != nil {
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
 	applyRetrievalDefaults(&req)
 
 	if req.TopK != nil && *req.TopK <= 0 {
@@ -581,11 +585,11 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 // search_config, which a default here would hide.
 func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 	if req.Page == nil {
-		v := 1
+		v := common.DefaultPage
 		req.Page = &v
 	}
 	if req.Size == nil {
-		v := 30
+		v := common.DefaultPageSize
 		req.Size = &v
 	}
 	if req.UseKG == nil {

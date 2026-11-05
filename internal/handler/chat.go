@@ -81,18 +81,10 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 		keywords = ""
 	}
 
-	page := 0
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 0
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
-			pageSize = ps
-		}
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
 	}
 
 	// `sort` supersedes the older pair, so a request it can order is not rejected

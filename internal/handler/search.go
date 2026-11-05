@@ -22,7 +22,6 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/permission"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -91,18 +90,10 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	// Parse query parameters
 	keywords := c.Query("keywords")
 
-	page := 0
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 0
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
-			pageSize = ps
-		}
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
 	}
 
 	orderby := c.DefaultQuery("orderby", "create_time")

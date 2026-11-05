@@ -24,7 +24,6 @@ import (
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
-	"strconv"
 	"strings"
 	"time"
 
@@ -93,31 +92,10 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	}
 	keywords := c.Query("keywords")
 
-	page := 1
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p >= 1 {
-			page = p
-		} else if err != nil {
-			common.RespondError(c, common.CodeParamError, "Invalid page parameter: must be a positive integer")
-			return
-		}
-	}
-
-	pageSize := 15
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
-			if ps < 1 {
-				common.RespondError(c, common.CodeParamError, "Invalid page_size parameter: must be at least 1")
-				return
-			}
-			if ps > 100 {
-				ps = 100
-			}
-			pageSize = ps
-		} else {
-			common.RespondError(c, common.CodeParamError, "Invalid page_size parameter: must be a positive integer")
-			return
-		}
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultFilePageSize)
+	if err != nil {
+		common.RespondError(c, common.CodeParamError, err.Error())
+		return
 	}
 
 	orderBy := c.DefaultQuery("orderby", "create_time")

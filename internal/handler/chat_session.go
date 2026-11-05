@@ -79,20 +79,10 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 		return
 	}
 
-	// Mirror Python's list_sessions query handling: invalid/negative page
-	// values fall back to the default; page_size 0 yields an empty list and a
-	// negative page_size disables pagination.
-	page := 1
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-	pageSize := 30
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
-			pageSize = ps
-		}
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
 	}
 
 	// `sort` supersedes the older pair, so a request it can order is not rejected

@@ -156,8 +156,8 @@ func (h *AgentHandler) WithNewExecutor(f func(taskCtx *task.TaskContext, canvasI
 // @Tags agents
 // @Produce json
 // @Param keywords query string false "Filter by title keyword"
-// @Param page query int false "Page number (0 = no pagination)"
-// @Param page_size query int false "Items per page (0 = no pagination)"
+// @Param page query int false "Page number (default: 1, min: 1)"
+// @Param page_size query int false "Items per page (default: 30, min: 1, max: 100)"
 // @Param orderby query string false "Order-by field (default: create_time)"
 // @Param sort query string false "Ordered terms, column:direction separated by commas, such as name:asc,create_time:desc. Takes precedence over orderby and desc"
 // @Param desc query bool false "Descending order (default: true)"
@@ -170,6 +170,12 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	// Filter-aggregation mode: the agents page filter bar fetches
 	// GET /api/v1/agents?type=filter and expects
 	// {filter: {owner, canvas_category}, total} instead of a canvas list.
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+
 	if c.Query("type") == "filter" {
 		filters, code, err := h.agentService.ListAgentFilters(c.Request.Context(), strings.TrimSpace(c.Query("canvas_category")))
 		if err != nil {
@@ -183,20 +189,6 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	keywords := c.Query("keywords")
 	canvasCategory := c.Query("canvas_category")
 	canvasType := c.Query("canvas_type")
-
-	page := 0
-	if v := c.Query("page"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 0
-	if v := c.Query("page_size"); v != "" {
-		if ps, err := strconv.Atoi(v); err == nil && ps > 0 {
-			pageSize = ps
-		}
-	}
 
 	orderby := c.Query("orderby")
 
@@ -897,8 +889,12 @@ func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 // ListAgentSessions GET /api/v1/agents/:canvas_id/sessions
 func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "30"))
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+
 	keywords := c.Query("keywords")
 	fromDate := c.Query("from_date")
 	toDate := c.Query("to_date")

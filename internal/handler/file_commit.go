@@ -25,7 +25,6 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/service/file"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -258,21 +257,10 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 		common.RespondError(c, common.CodeNotFound, "Workspace not found")
 		return
 	}
-	page := 1
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p >= 1 {
-			page = p
-		}
-	}
-
-	pageSize := 15
-	if psStr := c.Query("page_size"); psStr != "" {
-		if ps, err := strconv.Atoi(psStr); err == nil {
-			if ps < 1 {
-				ps = 15
-			}
-			pageSize = ps
-		}
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultFilePageSize)
+	if err != nil {
+		common.RespondError(c, common.CodeParamError, err.Error())
+		return
 	}
 
 	orderBy := c.DefaultQuery("order_by", "create_time")

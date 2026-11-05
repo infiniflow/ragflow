@@ -233,10 +233,10 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 	}
 	req.TenantID = tenantID
 	if req.Page <= 0 {
-		req.Page = 1
+		req.Page = common.DefaultPage
 	}
 	if req.PageSize <= 0 {
-		req.PageSize = 10
+		req.PageSize = common.DefaultSkillPageSize
 	}
 
 	// Check if index exists before searching
