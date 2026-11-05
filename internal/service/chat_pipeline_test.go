@@ -1306,13 +1306,13 @@ type sqlFakeEngine struct {
 	sqlCalls   *[]string
 	rowsBySQL  map[string][]map[string]interface{}
 	errBySQL   map[string]error
-	runSQL     func(ctx context.Context, table, sqlText string, kbIDs []string) ([]map[string]interface{}, error)
+	runSQL     func(ctx context.Context, sqlText string) ([]map[string]interface{}, error)
 }
 
 func (f *sqlFakeEngine) GetType() string { return f.engineType }
-func (f *sqlFakeEngine) RunSQL(ctx context.Context, table, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error) {
+func (f *sqlFakeEngine) RunSQL(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
 	if f.runSQL != nil {
-		return f.runSQL(ctx, table, sqlText, kbIDs)
+		return f.runSQL(ctx, sqlText)
 	}
 	if f.sqlCalls != nil {
 		*f.sqlCalls = append(*f.sqlCalls, sqlText)
@@ -1407,7 +1407,7 @@ func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
 func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 	sqlEngine := &sqlFakeEngine{
 		engineType: "elasticsearch",
-		runSQL: func(ctx context.Context, table, sqlText string, kbIDs []string) ([]map[string]interface{}, error) {
+		runSQL: func(ctx context.Context, sqlText string) ([]map[string]interface{}, error) {
 			return nil, fmt.Errorf("engine boom")
 		},
 	}

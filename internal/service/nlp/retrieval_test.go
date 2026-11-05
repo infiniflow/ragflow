@@ -615,7 +615,7 @@ func (e *retrievalCountEngine) GetHighlight([]map[string]interface{}, []string, 
 	e.highlightCalls++
 	return e.highlights
 }
-func (e *retrievalCountEngine) RunSQL(context.Context, string, string, []string, string) ([]map[string]interface{}, error) {
+func (e *retrievalCountEngine) RunSQL(context.Context, string, string) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 func (e *retrievalCountEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {

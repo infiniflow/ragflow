@@ -3424,7 +3424,7 @@ func (s *ChatPipelineService) useSQL(
 	// Step 2: try to execute. On failure, repair once with the
 	// engine-specific execution-error prompt so the LLM regenerates
 	// correctly (Flow B at dialog_service.py:1164-1205).
-	rows, execErr := docEngine.RunSQL(ctx, tableName, sqlText, kbIDStrings(kbs), "json")
+	rows, execErr := docEngine.RunSQL(ctx, sqlText, "json")
 	if execErr != nil {
 		common.Debug("SQL retrieval: initial execution failed, attempting repair",
 			zap.String("sql", sqlText), zap.Error(execErr))
@@ -3441,7 +3441,7 @@ func (s *ChatPipelineService) useSQL(
 			common.Warn("SQL retrieval: repaired SQL cannot be scoped to the authorized datasets; falling back")
 			return nil, nil
 		}
-		rows, execErr = docEngine.RunSQL(ctx, tableName, filtered, kbIDStrings(kbs), "json")
+		rows, execErr = docEngine.RunSQL(ctx, filtered, "json")
 		if execErr != nil {
 			common.Warn("SQL retrieval: repaired SQL also failed", zap.Error(execErr))
 			return nil, nil
@@ -3475,7 +3475,7 @@ func (s *ChatPipelineService) useSQL(
 			if !ok {
 				common.Warn("SQL retrieval: repaired SQL cannot be scoped to the authorized datasets; keeping the scoped result")
 			} else {
-				repairedRows, repairedErr := docEngine.RunSQL(ctx, tableName, filtered, kbIDStrings(kbs), "json")
+				repairedRows, repairedErr := docEngine.RunSQL(ctx, filtered, "json")
 				if repairedErr == nil && len(repairedRows) > 0 && hasSourceColumns(repairedRows) {
 					common.Debug("SQL retrieval: missing-columns repair succeeded",
 						zap.String("sql", filtered))
@@ -4414,7 +4414,7 @@ func (s *ChatPipelineService) fetchAggregateChunks(
 		return nil, nil
 	}
 
-	rows, err := docEngine.RunSQL(ctx, tableName, chunksSQL, kbIDs, "json")
+	rows, err := docEngine.RunSQL(ctx, chunksSQL, "json")
 	if err != nil {
 		common.Warn("SQL retrieval: aggregate secondary fetch failed",
 			zap.String("sql", chunksSQL), zap.Error(err))
