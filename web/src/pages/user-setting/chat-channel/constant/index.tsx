@@ -259,7 +259,8 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         type: FormFieldType.Text,
         required: true,
         defaultValue: '',
-        shouldRender: (values: any) => values?.config?.credential?.stream === true,
+        shouldRender: (values: any) =>
+          values?.config?.credential?.stream === true,
         customValidate: (val: string, values: any) =>
           values?.config?.credential?.stream === true && !(val ?? '').trim()
             ? 'AI card template ID is required when streaming is on'
@@ -271,7 +272,8 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         type: FormFieldType.Text,
         required: true,
         defaultValue: 'content',
-        shouldRender: (values: any) => values?.config?.credential?.stream === true,
+        shouldRender: (values: any) =>
+          values?.config?.credential?.stream === true,
         customValidate: (val: string, values: any) =>
           values?.config?.credential?.stream === true && !(val ?? '').trim()
             ? 'Stream content key is required when streaming is on'
@@ -812,16 +814,17 @@ ChatChannelFormDefaultValues[ChatChannelKey.GOOGLECHAT].config.auth_mode =
 ChatChannelFormDefaultValues[
   ChatChannelKey.WECOM
 ].config.credential.connection_type = 'webhook';
-ChatChannelFormDefaultValues[ChatChannelKey.WECOM].config.credential.stream = false;
-ChatChannelFormDefaultValues[ChatChannelKey.DINGTALK].config.credential.stream = false;
+ChatChannelFormDefaultValues[ChatChannelKey.WECOM].config.credential.stream =
+  false;
+ChatChannelFormDefaultValues[ChatChannelKey.DINGTALK].config.credential.stream =
+  false;
 ChatChannelFormDefaultValues[
   ChatChannelKey.DINGTALK
 ].config.credential.stream_content_key = 'content';
 ChatChannelFormDefaultValues[ChatChannelKey.FEISHU].config.credential.domain =
   'feishu';
-ChatChannelFormDefaultValues[
-  ChatChannelKey.FEISHU
-].config.credential.stream = false;
+ChatChannelFormDefaultValues[ChatChannelKey.FEISHU].config.credential.stream =
+  false;
 export const getChatChannelFields = (
   key?: ChatChannelKey,
 ): FormFieldConfig[] => {
