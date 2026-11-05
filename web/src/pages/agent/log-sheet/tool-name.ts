@@ -19,6 +19,16 @@ export function getToolOperatorName(toolName?: string | null) {
   if (normalizedName === Operator.Search1APICrawl.toLowerCase()) {
     return Operator.Search1APICrawl;
   }
+  // Same for AnySearch, whose brand is one word.
+  if (normalizedName === Operator.AnySearchSearch.toLowerCase()) {
+    return Operator.AnySearchSearch;
+  }
+  if (normalizedName === Operator.AnySearchDiscover.toLowerCase()) {
+    return Operator.AnySearchDiscover;
+  }
+  if (normalizedName === Operator.AnySearchExtract.toLowerCase()) {
+    return Operator.AnySearchExtract;
+  }
 
   return toolName
     .split('_')
