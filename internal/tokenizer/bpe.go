@@ -901,12 +901,12 @@ const (
 )
 
 var llamaBPEAssetNames = []string{
-	"ragflow_deps/huggingface.co/intfloat/e5-mistral-7b-instruct/tokenizer.json",
+	"deps/huggingface.co/intfloat/e5-mistral-7b-instruct/tokenizer.json",
 	"llama_bpe_tokenizer.json",
 }
 
 var qwenBPEAssetNames = []string{
-	"ragflow_deps/huggingface.co/Qwen/Qwen3-Embedding-0.6B/tokenizer.json",
+	"deps/huggingface.co/Qwen/Qwen3-Embedding-0.6B/tokenizer.json",
 	"qwen_bpe_tokenizer.json",
 }
 
@@ -961,7 +961,7 @@ const metaspaceCounterID = "metaspace-bpe"
 // LoadMetaspaceBPE loads a Metaspace-flavored BPE tokenizer.json from an
 // operator-provided path. Unlike the catalog counters this path is not pinned:
 // the file ships inside the Laya model directory (RAGFLOW_DECISION_DIR), not in
-// ragflow_deps, so there is no shipped digest to check here.
+// deps, so there is no shipped digest to check here.
 func LoadMetaspaceBPE(path string) (MetaspaceEncoder, error) {
 	model, err := loadBPEModel(path, bpeFlavorMetaspace)
 	if err != nil {

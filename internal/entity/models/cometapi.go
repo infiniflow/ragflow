@@ -344,7 +344,7 @@ func (c *CometAPIModel) CheckConnection(ctx context.Context, apiConfig *APIConfi
 
 // Rerank calculates similarity scores between query and documents.
 func (c *CometAPIModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Rerank", c.Name())
 }
 
 // TranscribeAudio transcribe audio
@@ -425,7 +425,7 @@ func (c *CometAPIModel) TranscribeAudio(ctx context.Context, modelName *string, 
 	}
 
 	// build request
-	req, err := http.NewRequest("POST", baseURL, &body)
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -463,7 +463,7 @@ func (c *CometAPIModel) TranscribeAudio(ctx context.Context, modelName *string, 
 }
 
 func (c *CometAPIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", c.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", c.Name())
 }
 
 // AudioSpeech synthesizes speech audio from text.
@@ -500,7 +500,7 @@ func (c *CometAPIModel) AudioSpeech(ctx context.Context, modelName *string, audi
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", baseURL, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -527,26 +527,26 @@ func (c *CometAPIModel) AudioSpeech(ctx context.Context, modelName *string, audi
 }
 
 func (c *CometAPIModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", c.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", c.Name())
 }
 
 // OCRFile OCR file
 func (c *CometAPIModel) OCRFile(ctx context.Context, modelName *string, content []byte, baseURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", c.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", c.Name())
 }
 
 func (c *CometAPIModel) ParseFile(ctx context.Context, modelName *string, content []byte, baseURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", c.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", c.Name())
 }
 
 func (c *CometAPIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", c.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", c.Name())
 }
 
 func (c *CometAPIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", c.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", c.Name())
 }
 
 func (c *CometAPIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", c.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", c.Name())
 }

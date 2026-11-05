@@ -9,9 +9,11 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { Spin } from '@/components/ui/spin';
+import { AgentCategory } from '@/constants/agent';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchBuiltinPipelines } from '@/hooks/use-agent-request';
 import { ReactFlowProvider } from '@xyflow/react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import AgentCanvas from '../agent/canvas';
@@ -32,6 +34,11 @@ export default function BuiltinPipelinePage() {
   const { loading } = useFetchBuiltinPipelineDataOnMount();
   const { data } = useFetchBuiltinPipelines();
   const title = data.canvas.find((x) => x.id === id)?.title ?? '';
+  // Built-in pipelines live under the ingestion pipeline tab of the agents
+  // list, so the back-link targets that tab rather than the workflow default.
+  const handleBackToAgents = useCallback(() => {
+    navigateToAgents(AgentCategory.DataflowCanvas);
+  }, [navigateToAgents]);
 
   return (
     <section className="h-full" data-testid="builtin-pipeline-page">
@@ -40,7 +47,7 @@ export default function BuiltinPipelinePage() {
           <Breadcrumb>
             <BreadcrumbList>
               <BreadcrumbItem>
-                <BreadcrumbLink onClick={navigateToAgents}>
+                <BreadcrumbLink onClick={handleBackToAgents}>
                   {t('flow.agents')}
                 </BreadcrumbLink>
               </BreadcrumbItem>

@@ -144,7 +144,7 @@ func TestRESTDocumentDownloadIntegrity(t *testing.T) {
 			t.Fatalf("document metadata missing uploaded ID %q", id)
 		}
 		missing := restCall(t, TestConfig, http.MethodGet, "/documents/"+TestConfig.InvalidID, nil, nil)
-		if missing.Status != http.StatusNotFound || missing.JSON["error"] != "document not found" {
+		if missing.Status != http.StatusOK || missing.JSON["code"] != float64(404) || missing.JSON["message"] != "document not found" {
 			t.Fatalf("missing document metadata contract=%d %v", missing.Status, missing.JSON)
 		}
 		for _, token := range []string{"", TestConfig.InvalidAPIKey} {

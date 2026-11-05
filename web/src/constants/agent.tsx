@@ -79,6 +79,7 @@ export enum AgentCategory {
 
 export enum AgentQuery {
   Category = 'category',
+  CanvasCategory = 'canvas_category',
 }
 
 export enum Operator {
@@ -122,7 +123,6 @@ export enum Operator {
   Search1APISearch = 'Search1APISearch',
   Search1APICrawl = 'Search1APICrawl',
   DocGenerator = 'DocGenerator',
-  Browser = 'Browser',
   Placeholder = 'Placeholder',
   DataOperations = 'DataOperations',
   ListOperations = 'ListOperations',

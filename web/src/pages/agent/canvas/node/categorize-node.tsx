@@ -24,7 +24,10 @@ export function InnerCategorizeNode({
         <NodeHeader id={id} name={data.name} label={data.label}></NodeHeader>
 
         <section className="flex flex-col gap-2">
-          <LLMLabelCard llmId={get(data, 'form.llm_id')}></LLMLabelCard>
+          <LLMLabelCard
+            llmId={get(data, 'form.llm_id')}
+            modelTypes={['chat', 'vision', 'decision']}
+          ></LLMLabelCard>
           {positions.map((position) => {
             return (
               <div key={position.uuid}>

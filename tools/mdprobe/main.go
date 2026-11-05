@@ -40,11 +40,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	// The pipeline's setups for the markdown family: output_format=json.
-	p.ConfigureFromSetup(map[string]any{"output_format": "json"})
+	// The pipeline's setups for the markdown family carry no output key:
+	// the parser emits JSON unconditionally.
+	p.ConfigureFromSetup(map[string]any{})
 	res := p.ParseWithResult(context.Background(), filepath.Base(path), data)
 
-	fmt.Printf("file=%s bytes=%d output_format=%s items=%d\n", filepath.Base(path), len(data), res.OutputFormat, len(res.JSON))
+	fmt.Printf("file=%s bytes=%d produced=%t items=%d\n", filepath.Base(path), len(data), res.Produced(), len(res.JSON))
 	var total int
 	for i, item := range res.JSON {
 		m := item.ToMap()

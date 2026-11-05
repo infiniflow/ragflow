@@ -27,7 +27,9 @@ import (
 // docExtract is the native office_oxide extraction seam for the DOC family.
 var docExtract = deepdocoffice.OpenAndExtract
 
-type DOCParser struct{}
+type DOCParser struct {
+	textOnly bool
+}
 
 func NewDOCParser() *DOCParser {
 	return &DOCParser{}
@@ -37,14 +39,7 @@ func (p *DOCParser) String() string {
 	return "DOCParser"
 }
 
-func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
-	// DOC always emits JSON (the DSL hardcodes output_format to "json" via
-	// normalizeParserOutputFormats); the legacy text/markdown output paths were
-	// removed with the dead ParseResult.Text field.
-}
-
-// ParseWithResult extracts text for the DOC family and converts it to the
-// requested output format (defaulting to "json" to match Python's default).
+// ParseWithResult extracts text for the DOC family as structured JSON items.
 func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	irJSON, mdText, plainText, _, err := docExtract(data, "doc")
 	if err != nil {
@@ -59,30 +54,38 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
-	// The DSL hardcodes output_format to "json" (normalizeParserOutputFormats),
-	// so the DOC parser always emits structured JSON items. Prefer the IR
-	// sections, which recover table/list structure for the chunker's HTML-table
-	// rendering (#20918); fall back to the flattened text only when the IR yields
-	// no usable sections, so a document whose IR is empty/unusable still keeps
-	// its content rather than silently producing 0 chunks.
+	// Prefer the structured IR, which office_oxide recovers table
+	// (and list) structure for. Emitting structured sections lets the chunker
+	// render tables as HTML (#20918) instead of losing them to plain text — the
+	// legacy path flattened the whole document (tables included) into a single
+	// text item. Fall back to the flattened text only when the IR yields no
+	// usable sections, so a document whose IR is empty/unusable still keeps its
+	// content (PlainText / ToMarkdown) rather than silently producing 0 chunks.
 	if strings.TrimSpace(irJSON) != "" {
-		budget := newEmbeddedMediaBudget()
-		if sections := buildDOCXJSONSections(irJSON, budget); len(sections) > 0 {
-			return ParseResult{
-				OutputFormat: "json",
-				File:         map[string]any{"name": filename, "format": "doc"},
-				JSON:         MapsToItems(sections),
-				Warnings:     budget.warnings(),
+		var sink *officeMediaSink
+		if !p.textOnly {
+			sink = newOfficeMediaSink(ctx, officeMediaFormatDOCX)
+		}
+		if sections := buildDOCXJSONSections(irJSON, sink); len(sections) > 0 {
+			if sink != nil && sink.err != nil {
+				return ParseResult{Err: sink.err}
 			}
+			return ParseResult{
+				File:     map[string]any{"name": filename, "format": "doc"},
+				JSON:     MapsToItems(sections),
+				Warnings: sink.warnings(),
+			}
+		}
+		if sink != nil && sink.err != nil {
+			return ParseResult{Err: sink.err}
 		}
 	}
 	if strings.TrimSpace(text) == "" {
 		return ParseResult{Err: fmt.Errorf("doc extract: no text content")}
 	}
 	return ParseResult{
-		OutputFormat: "json",
-		File:         map[string]any{"name": filename, "format": "doc"},
-		JSON:         []DocItem{NewTextJSONItem(text)},
+		File: map[string]any{"name": filename, "format": "doc"},
+		JSON: []DocItem{NewTextJSONItem(text)},
 	}
 }
 

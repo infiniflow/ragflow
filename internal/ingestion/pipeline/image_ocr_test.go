@@ -98,7 +98,7 @@ func TestImageOCRSavedConfigToSearchableChunk(t *testing.T) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	defer sqlDB.Close()
-	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatal(err)
 	}
 	registry, err := DefaultRegistry()
@@ -114,13 +114,13 @@ func TestImageOCRSavedConfigToSearchableChunk(t *testing.T) {
 		t.Fatal(err)
 	}
 	const parserID = "Parser:ViewsCaptureLight"
-	config := BuildParserConfig(dsl, map[string]any{parserID: map[string]any{
-		"image":                     map[string]any{"ocr_enabled": true, "ocr_model_id": "ocr-model", "output_format": "json"},
+	config := buildTestParserConfig(t, dsl, map[string]any{parserID: map[string]any{
+		"image":                     map[string]any{"ocr_enabled": true, "ocr_model_id": "ocr-model"},
 		"enable_vision_enhancement": false,
 	}})
 	for _, row := range []any{
 		&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "Image OCR fixture", ParserConfig: config},
-		&entity.TenantModelProvider{ID: "ocr-provider", TenantID: "tenant-1", ProviderName: "PaddleOCR.local"},
+		&entity.TenantModelProvider{ID: "ocr-provider", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "PaddleOCR.local"},
 		&entity.TenantModelInstance{ID: "ocr-instance", ProviderID: "ocr-provider", InstanceName: "selected",
 			Status: "active", APIKey: "fixture-key", Extra: fmt.Sprintf(`{"base_url":%q}`, server.URL)},
 		&entity.TenantModel{ID: "ocr-model", ProviderID: "ocr-provider", InstanceID: "ocr-instance",

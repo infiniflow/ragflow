@@ -329,15 +329,15 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 		memIDs = m.memoryIDs
 	}
 	if len(memIDs) > 0 {
-		userID := stringFromStateSys(state, "user_id")
-		if userID == "" {
-			userID = m.userID
-		}
+		userID := m.userID
 		// If userID is a canvas variable reference (e.g. "{cpn@user_id}"),
 		// resolve it against the current state. Mirrors Python's
 		// agent/component/message.py:569-571.
 		if userID != "" && runtime.VarRefPattern.MatchString(userID) {
 			userID = runtime.ResolveTemplateForDisplay(userID, state)
+		}
+		if userID == "" {
+			userID = stringFromStateSys(state, "user_id")
 		}
 		saver := GetMemorySaver()
 		saveErr := saver.Save(ctx, MemorySaveRequest{
@@ -470,7 +470,19 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 		if inThinking {
 			runtime.EmitCanvasMessageEvent(ctx, "", false, true)
 		}
+		targetNodeID := deferredNodeID
+		if targetNodeID == "" && strings.Contains(ref, "@") {
+			targetNodeID, _, _ = strings.Cut(ref, "@")
+		}
+		if targetNodeID != "" && result != nil {
+			for key, output := range result {
+				state.SetVar(targetNodeID, key, output)
+			}
+		}
 		if err != nil {
+			if targetNodeID != "" {
+				runtime.CompleteDeferredNode(ctx, targetNodeID, err)
+			}
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return "", true, &runtime.DeferredStreamError{Err: err}
 			}
@@ -479,6 +491,9 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 			return "", true, &runtime.DeferredStreamError{Text: "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}
 		}
 		if resultErr, _ := result["_ERROR"].(string); strings.TrimSpace(resultErr) != "" {
+			if targetNodeID != "" {
+				runtime.CompleteDeferredNode(ctx, targetNodeID, errors.New(resultErr))
+			}
 			return "", true, &runtime.DeferredStreamError{Text: resultErr}
 		}
 		finalText := visible.String()
@@ -487,14 +502,8 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 				finalText = completedContent
 			}
 		}
-		if strings.Contains(ref, "@") {
-			nodeID, _, _ := strings.Cut(ref, "@")
-			if result != nil {
-				for key, output := range result {
-					state.SetVar(nodeID, key, output)
-				}
-			}
-			runtime.CompleteDeferredNode(ctx, nodeID)
+		if targetNodeID != "" {
+			runtime.CompleteDeferredNode(ctx, targetNodeID, nil)
 		}
 		resolved := runtime.ResolveTemplateForDisplay(text[start:end], state)
 		if strings.HasSuffix(ref, "@content") {
@@ -566,7 +575,6 @@ func formalizedContentFallback(inputs map[string]any) string {
 	if text, _ := inputs["formalized_content"].(string); strings.TrimSpace(text) != "" {
 		return text
 	}
-
 	return ""
 }
 
@@ -577,7 +585,7 @@ func stringFromStateSys(state *runtime.CanvasState, key string) string {
 	if state == nil {
 		return ""
 	}
-	if v, ok := state.Sys[key]; ok {
+	if v, ok := state.GetSys(key); ok {
 		if s, ok := v.(string); ok {
 			return s
 		}
@@ -638,5 +646,11 @@ func (m *MessageComponent) Outputs() map[string]string {
 }
 
 func init() {
-	Register(componentNameMessage, NewMessageComponent)
+	Register(componentNameMessage, func(params map[string]any) (Component, error) {
+		// DSL factories run before execution; direct callers may supply text at Invoke.
+		if err := validateMessageContent(params); err != nil {
+			return nil, runtime.NewUserFacingError(fmt.Sprintf("[Message] %s", err))
+		}
+		return NewMessageComponent(params)
+	})
 }

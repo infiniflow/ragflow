@@ -34,14 +34,14 @@ import (
 
 // chunkService is the consumer-side interface for ChunkHandler's service dependency.
 type chunkService interface {
-	Get(ctx context.Context, req *service.GetChunkRequest, userID string) (*service.GetChunkResponse, error)
-	List(ctx context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error)
-	SwitchChunks(ctx context.Context, userID string, datasetID, documentID string, availableInt int, chunkIDs []string) error
-	UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest, userID string) error
-	RemoveChunks(ctx context.Context, req *service.RemoveChunksRequest, userID string) (int64, error)
-	Parse(ctx context.Context, userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error)
-	AddChunk(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error)
-	StopParsing(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error)
+	Get(ctx context.Context, req *service.GetChunkRequest) (*service.GetChunkResponse, error)
+	List(ctx context.Context, req *service.ListChunksRequest) (*service.ListChunksResponse, error)
+	SwitchChunks(ctx context.Context, datasetID, documentID string, availableInt int, chunkIDs []string) error
+	UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest) error
+	RemoveChunks(ctx context.Context, req *service.RemoveChunksRequest) (int64, error)
+	Parse(ctx context.Context, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error)
+	AddChunk(ctx context.Context, req *service.AddChunkRequest) (*service.AddChunkResponse, error)
+	StopParsing(ctx context.Context, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error)
 }
 
 // ChunkHandler chunk handler
@@ -68,17 +68,12 @@ func NewChunkHandler(chunkService chunkService, userService *service.UserService
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} [get]
 func (h *ChunkHandler) Get(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
 	datasetID := c.Param("dataset_id")
 	documentID := c.Param("document_id")
 	chunkID := c.Param("chunk_id")
 	if datasetID == "" || documentID == "" || chunkID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "dataset_id, document_id and chunk_id are required")
+		common.Respond(c, http.StatusBadRequest, 400, nil, "dataset_id, document_id and chunk_id are required")
 		return
 	}
 
@@ -89,76 +84,61 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	resp, err := h.chunkService.Get(ctx, req, user.ID)
+	resp, err := h.chunkService.Get(ctx, req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
 			return
 		}
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
+		common.Respond(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, resp.Chunk, "success")
+	common.RespondSuccess(c, resp.Chunk, "success")
 }
 
 // Parse reparse the datasets' files
 func (h *ChunkHandler) Parse(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "user_id is required")
-		return
-	}
 	datasetId := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetId == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "dataset_id is required")
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "dataset_id is required")
 		return
 	}
 
 	var req service.ParseFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
 		return
 	}
 
 	ctx := c.Request.Context()
-	data, code, err := h.chunkService.Parse(ctx, userID, datasetId, &req)
+	data, code, err := h.chunkService.Parse(ctx, datasetId, &req)
 	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.ResponseWithCodeData(c, code, data, "success")
+	common.RespondSuccess(c, data, "success")
 }
 
 // ListChunks retrieves chunks for a document from path/query parameters.
 func (h *ChunkHandler) ListChunks(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
 	datasetID := c.Param("dataset_id")
 	documentID := c.Param("document_id")
 	if datasetID == "" || documentID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "dataset_id and document_id are required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "dataset_id and document_id are required")
 		return
 	}
 
 	page, err := parsePositiveQueryInt(c, "page", 1)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	size, err := parsePositiveQueryInt(c, "page_size", 30)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -170,9 +150,12 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		Size:      &size,
 		Keywords:  c.Query("keywords"),
 	}
+	if ids := queryStringList(c, "id"); len(ids) > 0 {
+		req.ChunkIDs = ids
+	}
 	available, ok, err := parseAvailableQuery(c.Query("available"))
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	if ok {
@@ -180,16 +163,16 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	resp, err := h.chunkService.List(ctx, &req, user.ID)
+	resp, err := h.chunkService.List(ctx, &req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
 			return
 		}
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }
 
 func queryStringList(c *gin.Context, name string) []string {
@@ -238,36 +221,27 @@ func parseAvailableQuery(raw string) (int, bool, error) {
 }
 
 func (h *ChunkHandler) StopParsing(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
+		common.RespondError(c, common.CodeDataError, "dataset_id is required")
 		return
 	}
 
 	var req service.StopParsingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	if len(req.DocumentIDs) == 0 {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "`document_ids` is required")
+		common.RespondError(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
 
 	ctx := c.Request.Context()
-	resp, code, err := h.chunkService.StopParsing(ctx, user.ID, datasetID, req)
+	resp, code, err := h.chunkService.StopParsing(ctx, datasetID, req)
 	if err != nil {
-		var data interface{}
-		if resp != nil {
-			data = resp.Data
-		}
-		common.ResponseWithCodeData(c, code, data, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
@@ -280,69 +254,58 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 		data = resp.Data
 	}
 
-	common.SuccessWithData(c, data, message)
+	common.RespondSuccess(c, data, message)
 }
 
 // SwitchChunks enable or disable a chunk
 func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeAuthenticationError, nil, "user_id is required")
-		return
-	}
 
 	// Get required ID
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "dataset_id is required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "dataset_id is required")
 		return
 	}
 
 	documentID := strings.TrimSpace(c.Param("document_id"))
 	if documentID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "document_id is required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "document_id is required")
 		return
 	}
 
 	var rawBody map[string]interface{}
 	if err := json.NewDecoder(c.Request.Body).Decode(&rawBody); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
 	chunkIDs, ok := parseStringSlice(rawBody["chunk_ids"])
 	if !ok || len(chunkIDs) == 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "`chunk_ids` is required.")
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "`chunk_ids` is required.")
 		return
 	}
 
 	if rawBody["available_int"] == nil && rawBody["available"] == nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "`available_int` or `available` is required.")
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "`available_int` or `available` is required.")
 		return
 	}
 
 	availableInt, err := parseAvailableBody(rawBody)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
 	ctx := c.Request.Context()
-	if err = h.chunkService.SwitchChunks(ctx, userID, datasetID, documentID, availableInt, chunkIDs); err != nil {
+	if err = h.chunkService.SwitchChunks(ctx, datasetID, documentID, availableInt, chunkIDs); err != nil {
 		if respondPermissionErrorIf(c, err, false) {
 			return
 		}
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func parseStringSlice(raw interface{}) ([]string, bool) {
@@ -419,11 +382,6 @@ func optionalBodyString(rawBody map[string]interface{}, field, typeMessage strin
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} [patch]
 func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
 	// Decode the update fields.
 	body, err := io.ReadAll(c.Request.Body)
@@ -432,7 +390,7 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		err = json.Unmarshal(body, &rawBody)
 	}
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid JSON body: "+err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid JSON body: "+err.Error())
 		return
 	}
 	// The same body, undecoded, for the list validator shared with AddChunk.
@@ -443,20 +401,20 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	// Get required ID fields
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "dataset_id is required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "dataset_id is required")
 		return
 	}
 
 	chunkID := strings.TrimSpace(c.Param("chunk_id"))
 	if chunkID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "chunk_id is required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "chunk_id is required")
 		return
 	}
 
 	// Get document_id from request
 	documentID := strings.TrimSpace(c.Param("document_id"))
 	if documentID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "document_id is required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "document_id is required")
 		return
 	}
 
@@ -474,33 +432,37 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	}
 	for field := range rawBody {
 		if field != "dataset_id" && field != "document_id" && field != "chunk_id" && !allowedFields[field] {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, image_base64, image_update_mode, tag_kwd, tag_feas")
+			common.Respond(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, image_base64, image_update_mode, tag_kwd, tag_feas")
 			return
 		}
 	}
 
 	// Build UpdateChunkRequest from rawBody
 	var req service.UpdateChunkRequest
-	if content, ok := rawBody["content"].(string); ok {
-		req.Content = &content
+	content, err := optionalBodyString(rawBody, "content", "`content` must be a string")
+	if err != nil {
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
 	}
-	if importantKwd, ok := rawBody["important_keywords"].([]interface{}); ok {
-		req.ImportantKwd = make([]string, len(importantKwd))
-		for i, v := range importantKwd {
-			if s, ok := v.(string); ok {
-				req.ImportantKwd[i] = s
-			}
+	req.Content = content
+	for _, field := range []string{"important_keywords", "questions"} {
+		values, err := addChunkStringListField(rawFields, field, "`"+field+"` is required to be a list", "`"+field+"` must be a list of strings")
+		if err != nil {
+			common.Respond(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
+			return
+		}
+		if field == "important_keywords" {
+			req.ImportantKwd = values
+		} else {
+			req.Questions = values
 		}
 	}
-	if questions, ok := rawBody["questions"].([]interface{}); ok {
-		req.Questions = make([]string, len(questions))
-		for i, v := range questions {
-			if s, ok := v.(string); ok {
-				req.Questions[i] = s
-			}
+	if raw, exists := rawBody["available"]; exists {
+		available, ok := raw.(bool)
+		if !ok {
+			common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "`available` must be a boolean")
+			return
 		}
-	}
-	if available, ok := rawBody["available"].(bool); ok {
 		req.Available = &available
 	}
 	if positions, ok := rawBody["positions"].([]interface{}); ok {
@@ -508,19 +470,19 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	}
 	tagKwd, err := addChunkStringListField(rawFields, "tag_kwd", "`tag_kwd` is required to be a list", "`tag_kwd` must be a list of strings")
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
 		return
 	}
 	req.TagKwd = tagKwd
 	req.TagFeas = rawBody["tag_feas"]
 	imageBase64, err := optionalBodyString(rawBody, "image_base64", "`image_base64` must be a non-empty string")
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
 		return
 	}
 	imageUpdateMode, err := optionalBodyString(rawBody, "image_update_mode", "`image_update_mode` must be a string")
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
 		return
 	}
 	req.ImageBase64 = imageBase64
@@ -532,7 +494,7 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	req.ChunkID = chunkID
 
 	ctx := c.Request.Context()
-	err = h.chunkService.UpdateChunk(ctx, &req, user.ID)
+	err = h.chunkService.UpdateChunk(ctx, &req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
 			return
@@ -543,16 +505,16 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		if errors.As(err, &coded) {
 			switch coded.Code() {
 			case common.CodeArgumentError, common.CodeBadRequest, common.CodeDataError:
-				common.ResponseWithHttpCodeData(c, http.StatusBadRequest, coded.Code(), nil, err.Error())
+				common.Respond(c, http.StatusBadRequest, coded.Code(), nil, err.Error())
 				return
 			}
 		}
 
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
+		common.Respond(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
-	common.SuccessWithMessage(c, "chunk updated successfully")
+	common.RespondSuccess(c, nil, "chunk updated successfully")
 }
 
 // RemoveChunks handles chunk removal requests
@@ -563,22 +525,17 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks [delete]
 func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
 	datasetID := c.Param("dataset_id")
 	docID := c.Param("document_id")
 	if datasetID == "" || docID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "dataset_id and document_id are required")
+		common.Respond(c, http.StatusBadRequest, 400, nil, "dataset_id and document_id are required")
 		return
 	}
 
 	var req service.RemoveChunksRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, 400, nil, err.Error())
 		return
 	}
 
@@ -586,16 +543,16 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 	req.DocID = docID
 
 	ctx := c.Request.Context()
-	deletedCount, err := h.chunkService.RemoveChunks(ctx, &req, user.ID)
+	deletedCount, err := h.chunkService.RemoveChunks(ctx, &req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
 			return
 		}
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
+		common.Respond(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, deletedCount, "success")
+	common.RespondSuccess(c, gin.H{"deleted_count": deletedCount}, "success")
 }
 
 func addChunkStringField(rawBody map[string]json.RawMessage, field string) (string, error) {
@@ -655,49 +612,43 @@ func addChunkResponseMessage(code common.ErrorCode, err error) string {
 
 func (h *ChunkHandler) AddChunk(c *gin.Context) {
 	ctx := c.Request.Context()
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
-	userID := user.ID
 	datasetID, documentID := strings.TrimSpace(c.Param("dataset_id")), strings.TrimSpace(c.Param("document_id"))
 
 	var rawBody map[string]json.RawMessage
 	if err := json.NewDecoder(c.Request.Body).Decode(&rawBody); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 	content, err := addChunkStringField(rawBody, "content")
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 	importantKeywords, err := addChunkStringListField(rawBody, "important_keywords", "`important_keywords` is required to be a list", "`important_keywords` must be a list of strings")
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	questions, err := addChunkStringListField(rawBody, "questions", "`questions` is required to be a list", "`questions` must be a list of strings")
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	tagKwd, err := addChunkStringListField(rawBody, "tag_kwd", "`tag_kwd` is required to be a list", "`tag_kwd` must be a list of strings")
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	imageBase64, err := addChunkStringPtrField(rawBody, "image_base64")
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 	var tagFeas interface{}
 	if raw, ok := rawBody["tag_feas"]; ok {
 		if err = json.Unmarshal(raw, &tagFeas); err != nil {
-			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+			common.RespondError(c, common.CodeArgumentError, err.Error())
 			return
 		}
 	}
@@ -713,16 +664,16 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 		ImageBase64:       imageBase64,
 	}
 
-	resp, err := h.chunkService.AddChunk(ctx, &req, userID)
+	resp, err := h.chunkService.AddChunk(ctx, &req)
 	if err != nil {
 		var codedErr service.ErrorCoder
 		if errors.As(err, &codedErr) {
-			common.ResponseWithCodeData(c, codedErr.Code(), nil, addChunkResponseMessage(codedErr.Code(), err))
+			common.RespondError(c, codedErr.Code(), addChunkResponseMessage(codedErr.Code(), err))
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, addChunkResponseMessage(common.CodeServerError, err))
+		common.RespondError(c, common.CodeServerError, addChunkResponseMessage(common.CodeServerError, err))
 		return
 	}
 
-	common.SuccessWithData(c, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }

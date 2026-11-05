@@ -16,22 +16,15 @@ export const useObjectFields = () => {
       const fieldValue = field.value ? true : false;
       return (
         <BoolSegmented
-          options={
-            [
-              { value: true, label: 'True' },
-              { value: false, label: 'False' },
-            ] as any
-          }
-          sizeType="sm"
           value={fieldValue}
           onChange={field.onChange}
           className={className}
-          itemClassName="justify-center flex-1"
         ></BoolSegmented>
       );
     },
     [],
   );
+
   const validateKeys = (
     obj: any,
     path: (string | number)[] = [],
@@ -184,7 +177,7 @@ export const useObjectFields = () => {
               {booleanRender(
                 {
                   value: item,
-                  onChange: (value) => {
+                  onChange: (value: boolean) => {
                     values[index] = !!value;
                     field.onChange(values);
                   },

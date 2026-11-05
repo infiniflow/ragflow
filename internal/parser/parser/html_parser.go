@@ -21,18 +21,33 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"golang.org/x/net/html"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/parser/charset"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/tableutil"
 )
+
+// htmlImageProcessingBudget bounds the total time one HTML document may spend
+// downloading remote images. It is a variable so tests can shorten it.
+var htmlImageProcessingBudget = 60 * time.Second
 
 type HTMLParser struct {
 	RemoveHeaderFooter bool
 	RemoveTOC          bool
+	textOnly           bool
 }
 
 func NewHTMLParser() *HTMLParser {
 	return &HTMLParser{}
+}
+
+// NewHTMLTextParser extracts HTML text without caching inline images.
+func NewHTMLTextParser() *HTMLParser {
+	return &HTMLParser{textOnly: true}
 }
 
 func (p *HTMLParser) String() string {
@@ -77,8 +92,29 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("html parse: %w", err)}
 	}
 	var items []map[string]any
-	state := &htmlWalkState{}
+	state := &htmlWalkState{
+		refOnly:           true,
+		fetchRemoteImages: true,
+		ctx:               ctx,
+		mediaCache:        media.CacheFromContext(ctx),
+		budget:            media.NewBudget(),
+	}
+	if p.textOnly {
+		// Text-only callers have no run media cache and must not reach the
+		// network: every image source is dropped before resolution.
+		state.skipImages = true
+	} else {
+		// Remote downloads are bounded per document. The fetch deadline lives
+		// in its own context because state.ctx also scopes the media cache:
+		// expiring it would fail every later image write in the document.
+		fetchCtx, cancel := context.WithTimeout(ctx, htmlImageProcessingBudget)
+		defer cancel()
+		state.fetchCtx = fetchCtx
+	}
 	walkHTMLBlocksWithState(doc, &items, state)
+	if state.err != nil {
+		return ParseResult{Err: state.err}
+	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
@@ -90,40 +126,221 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
+	warnings := state.warnings()
+	if state.fetchCtx != nil && state.budget.Count() > 0 &&
+		state.fetchCtx.Err() == context.DeadlineExceeded && ctx.Err() == nil {
+		warnings = append(warnings, "HTML image processing reached the document time budget")
+	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":     filename,
 			"encoding": encName,
 		},
 		JSON:     MapsToItems(items),
-		Warnings: state.warnings(),
+		Warnings: warnings,
 	}
 }
 
 // decodeHTMLToUTF8 converts non-UTF-8 HTML bytes to UTF-8 and reports the
 // encoding label used. It delegates to the shared DecodeToUTF8 helper.
 func decodeHTMLToUTF8(data []byte) ([]byte, string) {
-	return DecodeToUTF8(data, "text/html")
+	return charset.DecodeToUTF8(data, "text/html")
 }
 
 type htmlWalkState struct {
 	tableSequence       int
 	mediaOrder          int
 	skippedInlineImages int
+	skippedRemoteImages int
+	unresolvedImages    int
+	budget              *media.Budget
+	mediaSink           *media.Sink
+	// refOnly defers image bytes to content-addressed references instead of
+	// carrying the normalized data URI on the item. HTML, EPUB and Markdown
+	// ingestion set it; formats that still inline image bytes leave it false.
+	refOnly bool
+	// fetchRemoteImages downloads HTTP(S) image sources into the run media
+	// cache while refOnly is set. The HTML parser enables it; text-only
+	// parsing sets skipImages instead so it never reaches the network.
+	fetchRemoteImages bool
+	ctx               context.Context
+	// fetchCtx bounds remote image downloads for one document. A nil value
+	// falls back to ctx.
+	fetchCtx   context.Context
+	mediaCache media.Cache
+	// mediaFormat names the parser family recorded on cache writes. An empty
+	// value means the HTML parser.
+	mediaFormat string
+	// skipImages drops every image source before resolution. Text-only
+	// callers use it when no run media cache is available.
+	skipImages   bool
+	resolveMedia func(string) (*entity.MediaRef, bool)
+	resolveImage func(string) (string, bool)
+	err          error
 }
 
 func (s *htmlWalkState) warnings() []string {
-	if s.skippedInlineImages == 0 {
-		return nil
+	var warnings []string
+	if s.mediaSink != nil {
+		warnings = append(warnings, s.mediaSink.Warnings()...)
+	} else {
+		warnings = append(warnings, s.budget.Warnings()...)
 	}
-	return []string{fmt.Sprintf("HTML parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages)}
+	if s.skippedInlineImages > 0 {
+		warnings = append(warnings, fmt.Sprintf("document parser skipped %d invalid or oversized inline image(s)", s.skippedInlineImages))
+	}
+	if s.skippedRemoteImages > 0 {
+		warnings = append(warnings, fmt.Sprintf("document parser skipped %d remote image(s) that could not be downloaded", s.skippedRemoteImages))
+	}
+	if s.unresolvedImages > 0 {
+		warnings = append(warnings, fmt.Sprintf("document parser skipped %d unresolved image reference(s)", s.unresolvedImages))
+	}
+	return warnings
+}
+
+// cacheFormat reports the parser family recorded on media-cache writes.
+func (s *htmlWalkState) cacheFormat() string {
+	if s.mediaFormat != "" {
+		return s.mediaFormat
+	}
+	return "html"
+}
+
+func (s *htmlWalkState) imageSource(src string) (string, *entity.MediaRef, bool) {
+	if s.err != nil {
+		return "", nil, false
+	}
+	if s.skipImages {
+		return "", nil, false
+	}
+	if s.resolveMedia != nil {
+		if ref, ok := s.resolveMedia(src); ok {
+			return "", ref, true
+		}
+		if s.err != nil {
+			// The resolver already recorded a fatal cache failure; running the
+			// refOnly data-URI fallback would write the same source again.
+			return "", nil, false
+		}
+	}
+	if s.resolveImage != nil {
+		normalized, ok := s.resolveImage(src)
+		return normalized, nil, ok
+	}
+	if !media.IsDataImageSource(src) {
+		if s.refOnly && s.fetchRemoteImages && isRemoteImageSource(src) {
+			if ref, ok := s.resolveRemoteMedia(s.remoteFetchContext(), src); ok {
+				return "", ref, true
+			}
+		}
+		return "", nil, false
+	}
+	if s.refOnly {
+		ref, invalid := s.storeDataURIMedia("data:"+src, src)
+		if invalid {
+			s.skippedInlineImages++
+		}
+		return "", ref, ref != nil
+	}
+	reservation, admission := s.budget.ReserveOccurrence(media.UnknownSize)
+	if admission != media.Admitted {
+		return "", nil, false
+	}
+	normalized, size, _, ok := media.NormalizeDataImageSource(src)
+	if !ok {
+		s.skippedInlineImages++
+		return "", nil, false
+	}
+	if !reservation.Commit(media.Size(size)) {
+		return "", nil, false
+	}
+	return normalized, nil, true
+}
+
+// storeDataURIMedia writes one data-URI image source to the run media cache.
+// A repeated source reuses the first outcome without touching the budget or
+// the cache again. It reports an invalid or oversized payload so each parser
+// can count its own warning.
+func (s *htmlWalkState) storeDataURIMedia(key, src string) (*entity.MediaRef, bool) {
+	sink := s.mediaOutput()
+	if ref, seen := sink.Lookup(key); seen {
+		return ref, false
+	}
+	size, ok := media.DataImageDecodedSize(src)
+	if !ok {
+		sink.Skip(key)
+		return nil, true
+	}
+	invalid := false
+	ref, err := sink.Resolve(key, media.Size(size), func() (string, []byte, bool) {
+		mime, data, ok := media.DecodeDataImageSource(src)
+		invalid = !ok
+		return mime, data, ok
+	})
+	if err != nil {
+		s.err = err
+	}
+	return ref, invalid
+}
+
+// resolveRemoteMedia downloads one HTTP(S) image into the run media cache.
+// fetchCtx bounds new downloads; cached sources remain reusable after its
+// deadline. A failed download is counted once for the
+// parser warning. A cache or task-context failure is returned to the caller
+// through the walk state.
+func (s *htmlWalkState) resolveRemoteMedia(fetchCtx context.Context, src string) (*entity.MediaRef, bool) {
+	src = strings.TrimSpace(src)
+	if err := s.ctx.Err(); err != nil {
+		s.err = err
+		return nil, false
+	}
+	if ref, seen := s.mediaOutput().Lookup(src); seen {
+		return ref, ref != nil
+	}
+	if fetchCtx.Err() != nil {
+		return nil, false
+	}
+	ref, err := s.mediaOutput().Resolve(src, media.UnknownSize, func() (string, []byte, bool) {
+		data, err := fetchImage(fetchCtx, src)
+		if err != nil {
+			if fetchCtx.Err() == nil {
+				s.skippedRemoteImages++
+			}
+			return "", nil, false
+		}
+		return remoteImageMIME(data), data, true
+	})
+	if err != nil {
+		s.err = err
+	}
+	return ref, ref != nil
+}
+
+// remoteFetchContext is the context that bounds remote downloads: the
+// document fetch budget when one is installed, otherwise the walk context.
+func (s *htmlWalkState) remoteFetchContext() context.Context {
+	if s.fetchCtx != nil {
+		return s.fetchCtx
+	}
+	return s.ctx
+}
+
+// mediaOutput shares source admission and writes across data URIs, remote
+// downloads and EPUB entries.
+func (s *htmlWalkState) mediaOutput() *media.Sink {
+	if s.mediaSink == nil {
+		s.mediaSink = media.NewSink(media.WithCache(s.ctx, s.mediaCache), s.cacheFormat(), s.budget)
+	}
+	return s.mediaSink
 }
 
 // walkHTMLBlocksWithState emits normalized text and image items in document
 // order. Inline formatting is collapsed into its parent text; script, style,
 // and noscript subtrees are skipped.
 func walkHTMLBlocksWithState(root *html.Node, out *[]map[string]any, state *htmlWalkState) {
+	if state.err != nil {
+		return
+	}
 	// Text and inline elements directly under <body> are one run of text, as
 	// a browser lays them out, so they are collected into one item. Emitted
 	// one item per text node and per inline element, "Hello <b>world</b>!"
@@ -137,6 +354,9 @@ func walkHTMLBlocksWithState(root *html.Node, out *[]map[string]any, state *html
 	}
 	defer flushRun()
 	for child := root.FirstChild; child != nil; child = child.NextSibling {
+		if state.err != nil {
+			return
+		}
 		// Invisible nodes neither show up nor end the run around them.
 		if child.Type == html.CommentNode || (child.Type == html.ElementNode &&
 			(child.Data == "script" || child.Data == "style" || child.Data == "noscript" || child.Data == "template")) {
@@ -356,6 +576,9 @@ func flushLeafText(w *leafWriter, out *[]map[string]any, layout string, trim boo
 }
 
 func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout string, trim bool, state *htmlWalkState) {
+	if state.err != nil {
+		return
+	}
 	switch n.Type {
 	case html.TextNode:
 		w.writeText(n.Data)
@@ -370,21 +593,24 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 		}
 		if n.Data == "img" {
 			src := htmlAttribute(n, "src")
-			normalized, ok := normalizeHTMLImageSource(src)
+			normalized, ref, ok := state.imageSource(src)
 			if !ok {
-				if isHTMLDataImageSource(src) {
-					state.skippedInlineImages++
+				if state.resolveImage != nil || state.resolveMedia != nil || state.skipImages {
+					w.writeText(htmlAttribute(n, "alt"))
 				}
 				return
 			}
 			flushLeafText(w, out, layout, trim)
-			appendHTMLImageItem(out, state, normalized, htmlAttribute(n, "alt"), "", 0, 0)
+			appendHTMLImageItem(out, state, normalized, ref, htmlAttribute(n, "alt"), "", 0, 0)
 			return
 		}
 		if n.Data == "pre" || n.Data == "textarea" {
 			// Verbatim: no folding, no injected block breaks.
 			w.pre = true
 			for child := n.FirstChild; child != nil; child = child.NextSibling {
+				if state.err != nil {
+					return
+				}
 				walkHTMLLeaf(child, w, out, layout, trim, state)
 			}
 			w.pre = false
@@ -411,6 +637,9 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 			w.hardBreak()
 		}
 		for child := n.FirstChild; child != nil; child = child.NextSibling {
+			if state.err != nil {
+				return
+			}
 			walkHTMLLeaf(child, w, out, layout, trim, state)
 		}
 		if !w.pre && isBlockTag(n.Data) && w.b.Len() > 0 && !w.endsNL {
@@ -421,14 +650,17 @@ func walkHTMLLeaf(n *html.Node, w *leafWriter, out *[]map[string]any, layout str
 
 type htmlTableImage struct {
 	src    string
+	ref    *entity.MediaRef
 	alt    string
 	row    int
 	column int
 }
 
 func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
-	images, skippedInlineImages := htmlTableImages(n)
-	state.skippedInlineImages += skippedInlineImages
+	if state.err != nil {
+		return
+	}
+	images := htmlTableImages(n, state)
 	markup := renderTableHTML(n)
 	if strings.TrimSpace(markup) == "" {
 		return
@@ -452,17 +684,19 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	}
 	*out = append(*out, table)
 	for _, media := range images {
-		appendHTMLImageItem(out, state, media.src, media.alt, tableID, media.row, media.column)
+		appendHTMLImageItem(out, state, media.src, media.ref, media.alt, tableID, media.row, media.column)
 	}
 }
 
-func htmlTableImages(table *html.Node) ([]htmlTableImage, int) {
+func htmlTableImages(table *html.Node, state *htmlWalkState) []htmlTableImage {
 	var images []htmlTableImage
-	skippedInlineImages := 0
 	rowCount := 0
 	columnCounts := make(map[int]int)
 	var walk func(node *html.Node, row, column int)
 	walk = func(node *html.Node, row, column int) {
+		if state.err != nil {
+			return
+		}
 		if node.Type == html.ElementNode {
 			switch node.Data {
 			case "tr":
@@ -474,15 +708,27 @@ func htmlTableImages(table *html.Node) ([]htmlTableImage, int) {
 				column = columnCounts[row]
 			case "img":
 				src := htmlAttribute(node, "src")
-				normalized, ok := normalizeHTMLImageSource(src)
+				normalized, ref, ok := state.imageSource(src)
 				if !ok {
-					if isHTMLDataImageSource(src) {
-						skippedInlineImages++
+					if state.err != nil {
+						return
+					}
+					if state.resolveImage != nil || state.resolveMedia != nil || state.skipImages {
+						// ParseTableHTML's cellText ignores <img>, so replace
+						// an unresolved table image with its Markdown reference.
+						alt := htmlAttribute(node, "alt")
+						replacement := alt
+						if shouldPreserveImageReference(src) {
+							replacement = "![" + alt + "](" + src + ")"
+						}
+						node.Type, node.Data, node.Attr = html.TextNode, replacement, nil
+					} else if media.IsDataImageSource(src) {
 						removeHTMLImageSource(node)
 					}
 				} else {
 					images = append(images, htmlTableImage{
 						src:    normalized,
+						ref:    ref,
 						alt:    htmlAttribute(node, "alt"),
 						row:    row,
 						column: column,
@@ -495,11 +741,14 @@ func htmlTableImages(table *html.Node) ([]htmlTableImage, int) {
 			}
 		}
 		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			if state.err != nil {
+				return
+			}
 			walk(child, row, column)
 		}
 	}
 	walk(table, 0, 0)
-	return images, skippedInlineImages
+	return images
 }
 
 func removeHTMLImageSource(n *html.Node) {
@@ -512,42 +761,25 @@ func removeHTMLImageSource(n *html.Node) {
 	n.Attr = attrs
 }
 
-func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src, alt, parentTableID string, row, column int) {
+func appendHTMLImageItem(out *[]map[string]any, state *htmlWalkState, src string, ref *entity.MediaRef, alt, parentTableID string, row, column int) {
 	state.mediaOrder++
 	item := map[string]any{
 		"text":         strings.TrimSpace(alt),
 		"doc_type_kwd": "image",
 		"media_order":  state.mediaOrder,
 	}
-	item["image"] = src
+	if !state.refOnly {
+		item["image"] = src
+	}
+	if state.refOnly && ref != nil {
+		item["media_ref"] = ref
+	}
 	if parentTableID != "" {
 		item["parent_table_id"] = parentTableID
 		item["row_index"] = row
 		item["column_index"] = column
 	}
 	*out = append(*out, item)
-}
-
-func normalizeHTMLImageSource(src string) (string, bool) {
-	src = strings.TrimSpace(src)
-	if !isHTMLDataImageSource(src) {
-		return "", false
-	}
-	separator := strings.IndexByte(src, ',')
-	if separator <= len("data:image/") || separator > 128 || !strings.EqualFold(src[separator-len(";base64"):separator], ";base64") {
-		return "", false
-	}
-	payload, _, ok := normalizeBase64ImagePayload(src[separator+1:], maxEmbeddedImageBytes)
-	if !ok {
-		return "", false
-	}
-	return strings.ToLower(src[:separator+1]) + payload, true
-}
-
-func isHTMLDataImageSource(src string) bool {
-	const dataPrefix = "data:image/"
-	src = strings.TrimSpace(src)
-	return len(src) >= len(dataPrefix) && strings.EqualFold(src[:len(dataPrefix)], dataPrefix)
 }
 
 func htmlAttribute(n *html.Node, key string) string {

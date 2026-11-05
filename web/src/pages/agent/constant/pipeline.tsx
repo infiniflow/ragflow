@@ -158,9 +158,9 @@ export const initialParserValues = {
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
     },
-    {
-      fileFormat: FileType.Video,
-    },
+    // {
+    //   fileFormat: FileType.Video,
+    // },
     {
       fileFormat: FileType.Audio,
       vlm: { llm_id: '' },
@@ -287,6 +287,8 @@ export const initialTitleChunkerValues = {
   hierarchyGroup: '0',
   include_heading_content: false,
   root_chunk_as_heading: false,
+  table_context_size: 0,
+  image_context_size: 0,
   hierarchyChunkTokenCap: 512,
   groupChunkTokenCap: 512,
   hierarchyRules: cloneDeep(originalRules),

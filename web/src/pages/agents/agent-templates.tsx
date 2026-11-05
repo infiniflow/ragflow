@@ -1,11 +1,16 @@
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchAgentTemplates, useSetAgent } from '@/hooks/use-agent-request';
+import {
+  useFetchAgentTemplates,
+  useCreateAgent,
+} from '@/hooks/use-agent-request';
 
 import { CardContainer } from '@/components/card-container';
-import { AgentCategory } from '@/constants/agent';
-import { IFlowTemplate } from '@/interfaces/database/agent';
+import { AgentCategory, AgentQuery } from '@/constants/agent';
+import { DSL, IFlowTemplate } from '@/interfaces/database/agent';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router';
+import { CanvasCategoryToFlowType } from './constant';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { TemplateCard } from './template-card';
 import {
@@ -15,13 +20,35 @@ import {
 } from './template-retrieval-binding';
 import { MenuItemKey, SideBar } from './template-sidebar';
 
+function resolveSourceCategory(value: string | null): AgentCategory {
+  return value === AgentCategory.DataflowCanvas
+    ? AgentCategory.DataflowCanvas
+    : AgentCategory.AgentCanvas;
+}
+
+function normalizeTemplateCategory(template: IFlowTemplate): AgentCategory {
+  return template.canvas_category === AgentCategory.DataflowCanvas
+    ? AgentCategory.DataflowCanvas
+    : AgentCategory.AgentCanvas;
+}
+
 export default function AgentTemplates() {
   const list = useFetchAgentTemplates();
-  const { loading, setAgent } = useSetAgent();
+  const { loading, createAgent } = useCreateAgent();
+  const [searchParams] = useSearchParams();
+  // canvas_category is the source tab; canvas_type(s) remain the secondary
+  // theme filter rendered by the sidebar.
+  const sourceCategory = resolveSourceCategory(
+    searchParams.get(AgentQuery.CanvasCategory),
+  );
   const [templateList, setTemplateList] = useState<IFlowTemplate[]>([]);
   const [selectMenuItem, setSelectMenuItem] = useState<string>(
     MenuItemKey.Recommended,
   );
+
+  // The Pipeline catalog has no theme breakdown, so it renders without the
+  // sidebar; the theme filter only applies to Workflow templates.
+  const showSidebar = sourceCategory === AgentCategory.AgentCanvas;
 
   useEffect(() => {
     setTemplateList(list);
@@ -48,7 +75,9 @@ export default function AgentTemplates() {
   const handleOk = useCallback(
     async (payload: any) => {
       const dsl = template?.dsl;
-      const canvasCategory = template?.canvas_category;
+      const canvasCategory = template
+        ? normalizeTemplateCategory(template)
+        : AgentCategory.AgentCanvas;
       const memoryIds: string[] = payload?.memory_ids ?? [];
       const modelId: string = payload?.llm_id ?? '';
       const datasetBlocks = collectUnboundRetrievalBindings(dsl).datasetBlocks;
@@ -60,7 +89,7 @@ export default function AgentTemplates() {
             : (payload?.dataset_bindings?.[index] ?? []),
         ]),
       );
-      let boundDsl =
+      let boundDsl: DSL | Record<string, any> | undefined =
         dsl &&
         (Object.values(datasetBindings).some((ids) => ids.length > 0) ||
           memoryIds.length > 0)
@@ -68,7 +97,7 @@ export default function AgentTemplates() {
           : dsl;
       boundDsl = bindUnboundModel(boundDsl, modelId);
 
-      const ret = await setAgent({
+      const ret = await createAgent({
         title: payload.name,
         dsl: boundDsl,
         avatar: template?.avatar,
@@ -84,25 +113,21 @@ export default function AgentTemplates() {
         }
       }
     },
-    [
-      hideCreatingModal,
-      navigateToAgent,
-      setAgent,
-      template?.avatar,
-      template?.canvas_category,
-      template?.dsl,
-    ],
+    [hideCreatingModal, navigateToAgent, createAgent, template],
   );
   const handleSiderBarChange = (keyword: string) => {
     setSelectMenuItem(keyword);
   };
 
   const tempListFilter = useMemo(() => {
-    if (!selectMenuItem) {
-      return templateList;
+    const scoped = templateList.filter(
+      (item) => normalizeTemplateCategory(item) === sourceCategory,
+    );
+    if (!showSidebar || !selectMenuItem) {
+      return scoped;
     }
     const selectedCanvasType = selectMenuItem.toLocaleLowerCase();
-    return templateList.filter((item) => {
+    return scoped.filter((item) => {
       if (Array.isArray(item.canvas_types) && item.canvas_types.length > 0) {
         return item.canvas_types.some(
           (canvasType) =>
@@ -112,15 +137,17 @@ export default function AgentTemplates() {
       }
       return item.canvas_type?.toLocaleLowerCase() === selectedCanvasType;
     });
-  }, [selectMenuItem, templateList]);
+  }, [selectMenuItem, templateList, sourceCategory, showSidebar]);
 
   return (
     <section>
       <div className="flex flex-1 h-dvh">
-        <SideBar
-          change={handleSiderBarChange}
-          selected={selectMenuItem}
-        ></SideBar>
+        {showSidebar && (
+          <SideBar
+            change={handleSiderBarChange}
+            selected={selectMenuItem}
+          ></SideBar>
+        )}
 
         <main className="flex-1 bg-text-title-invert/50 h-dvh">
           <CardContainer className="max-h-[94vh] overflow-auto px-8 pt-8">
@@ -139,7 +166,13 @@ export default function AgentTemplates() {
               loading={loading}
               visible={creatingVisible}
               hideModal={hideCreatingModal}
-              canvasCategory={template?.canvas_category as AgentCategory}
+              selectedType={
+                CanvasCategoryToFlowType[
+                  template
+                    ? normalizeTemplateCategory(template)
+                    : sourceCategory
+                ]
+              }
               template={template}
               onOk={handleOk}
             ></CreateAgentDialog>

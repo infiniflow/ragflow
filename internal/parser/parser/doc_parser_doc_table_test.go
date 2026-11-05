@@ -34,8 +34,8 @@ func TestDOCParser_TableEmittedAsStructuredItem(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult error: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) == 0 {
 		t.Fatalf("JSON result is empty: %#v", res)
@@ -102,8 +102,8 @@ func TestDOCParser_NoTableDocStaysTextItem(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult error: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) == 0 {
 		t.Fatalf("doc with no structured sections must still emit a text item, got empty JSON")
@@ -120,7 +120,7 @@ func TestDOCParser_NoTableDocStaysTextItem(t *testing.T) {
 }
 
 // TestDOCParserTextOutputRemoved verifies the DOC parser has no "text" output
-// path. The parser only emits JSON regardless of any output_format request.
+// path. The parser only emits JSON regardless of any produced request.
 func TestDOCParserTextOutputRemoved(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("testdata", "table.doc"))
 	if err != nil {
@@ -132,8 +132,8 @@ func TestDOCParserTextOutputRemoved(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult error: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Fatalf("DOC must ignore text output_format and emit json, got OutputFormat=%q", res.OutputFormat)
+	if !res.Produced() {
+		t.Fatalf("DOC must ignore text produced and emit json, got produced=%t", res.Produced())
 	}
 	if len(res.JSON) == 0 {
 		t.Fatalf("DOC json output must contain items, got empty")
