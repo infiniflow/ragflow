@@ -1,7 +1,7 @@
 // watershed is the sole clustering method used by the RAPTOR tree.
 //
-// It is the algorithm historically named "AHC" in the raptor
-// implementation (raptor.py::_get_clusters_ahc, logged as "RAPTOR seq-clus");
+// It is the algorithm historically named "AHC" in the original
+// RAPTOR implementation;
 // the name "watershed" reflects what the code actually does, which is not
 // agglomerative hierarchical clustering.
 //

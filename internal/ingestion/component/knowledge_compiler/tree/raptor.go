@@ -122,8 +122,7 @@ var raptorTruncationMarkerRE = regexp.MustCompile(
 
 // resolveMaxToken returns the target summary length and the input truncation
 // budget. It is a soft output-size guideline, not a provider max_tokens cap.
-// It honours an extra["max_token"] override, applying the same 512 floor the
-// legacy implementation used.
+// It honours an extra["max_token"] override, applying the same 512 floor.
 func resolveMaxToken(param common.Param) int {
 	if v, ok := param.Extra["max_token"]; ok {
 		if n, ok := rfcommon.ToInt(v); ok && n > 0 {
@@ -393,7 +392,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 	if len(topLevelTexts) == 0 {
 		// No summaries survived (e.g. every deepest cluster failed while the
 		// error budget was not yet exhausted). Return the partial tree without a
-		// root node — the legacy implementation drops the root in this case
+		// root node — the Go tree drops the root in this case
 		// rather than crashing.
 		rfcommon.Warn("tree: no top-level summaries produced, skipping root node")
 		return nil
@@ -504,7 +503,8 @@ func titleOf(summary string) string {
 
 // buildClusterContent joins the selected texts with a single newline and
 // truncates each text to a per-chunk token budget so the whole cluster fits the
-// LLM context window; the budget is (max_length - max_token) / len(texts). The
+// LLM context window; the budget is (modelContextLen - maxToken) / len(idxs),
+// clamped to a minimum of one token. The
 // token budget uses the cl100k_base encoder (token-level, not character-level).
 func buildClusterContent(texts []string, idxs []int, modelContextLen, maxToken int) string {
 	if len(idxs) == 0 {

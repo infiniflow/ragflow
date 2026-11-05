@@ -55,8 +55,8 @@ func ParseEvidenceGateMode(raw any) EvidenceGateMode {
 
 // claimExtractionPrompt is the built-in claim-extraction prompt. It must stay in
 // sync with the template-declared version; a divergence here silently changes
-// what the tree is summarised from, making the two runtimes' trees
-// incomparable.
+// what the tree is summarised from, making the built-in and template-declared
+// versions' trees incomparable.
 const claimExtractionPrompt = `## Task
 You are a high-recall claim harvester for the TARGET chunks below. For EACH
 TARGET chunk, extract EVERY explicit atomic claim that chunk supports: factual
@@ -580,8 +580,9 @@ func normalizeForMatch(text string) (string, []int) {
 }
 
 // ClaimDigest renders one chunk's claims for embedding as the chunk's claim-view
-// clustering vector. Each claim carries the verbatim quote that backs it, so
-// the embedding sees the facts AND their grounding.
+// clustering vector. Each claim may carry the verbatim quote that backs it
+// (claims without evidence are rendered by name alone), so the embedding sees
+// the facts AND their grounding.
 func ClaimDigest(claims []Claim) string {
 	var lines []string
 	for _, c := range claims {
@@ -623,8 +624,8 @@ func BuildClaimContent(texts []string, chunkIDs []string, pointIdxs []int, claim
 				}
 				if len(c.Evidence) > 0 && strings.TrimSpace(c.Evidence[0].Quote) != "" {
 					// Plain quotes, not %q: Go's %q escapes embedded quotes and
-					// non-printables, which the other runtime's formatter does not
-					// — the two runtimes would feed the abstraction layer
+					// non-printables, which the template-declared formatter does not
+					// — the two variants would feed the abstraction layer
 					// different text for the same claim.
 					lines = append(lines, fmt.Sprintf("- %s\n  Evidence: \"%s\"", name, c.Evidence[0].Quote))
 				} else {
