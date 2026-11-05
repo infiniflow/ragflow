@@ -17,8 +17,11 @@
 package router
 
 import (
+	"fmt"
+	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
+	"ragflow/internal/openapi"
 
 	"github.com/gin-gonic/gin"
 )
@@ -58,6 +61,7 @@ type Router struct {
 	compilationTemplateHandler      *handler.CompilationTemplateHandler
 	compilationTemplateGroupHandler *handler.CompilationTemplateGroupHandler
 	datasetArtifactHandler          *handler.DatasetArtifactHandler
+	openapiHandler                  *openapi.Handler
 }
 
 // NewRouter create router
@@ -131,11 +135,28 @@ func NewRouter(
 		compilationTemplateHandler:      compilationTemplateHandler,
 		compilationTemplateGroupHandler: compilationTemplateGroupHandler,
 		datasetArtifactHandler:          datasetArtifactHandler,
+		openapiHandler:                  openapi.NewHandler(openapi.NewRegistry()),
 	}
+}
+
+// RegisterContract registers an explicit, verified OpenAPI contract for an endpoint.
+// It also marks the route as contracted for migration tracking and CI guard.
+func (r *Router) RegisterContract(method, path string, c openapi.Contract) {
+	if r.openapiHandler == nil {
+		r.openapiHandler = openapi.NewHandler(openapi.NewRegistry())
+	}
+	if err := ValidateContract(c); err != nil {
+		panic(fmt.Sprintf("invalid contract for %s %s: %v", method, path, err))
+	}
+	r.openapiHandler.Registry().RegisterContract(method, path, c)
+	MarkContractedRoute(method, path)
 }
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	if r.openapiHandler == nil {
+		r.openapiHandler = openapi.NewHandler(openapi.NewRegistry())
+	}
 	engine.Use(requestBodyLimitMiddleware())
 	SetupEERouter(engine)
 
@@ -213,7 +234,29 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
 
-		apiBetaAuth.POST("/agents/:canvas_id/upload", r.agentHandler.UploadAgentFile)
+		RegisterTypedRoute(
+			r,
+			apiBetaAuth,
+			http.MethodPost,
+			"/agents/:canvas_id/upload",
+			"Upload agent file",
+			r.agentHandler.UploadAgentFile,
+			WithMiddleware(r.agentHandler.RequireCanvasAccess()),
+			WithMaxBodyBytes(64<<20),
+			WithResponseDataSchema(&openapi.Schema{
+				OneOf: []*openapi.Schema{
+					{
+						Type:        "object",
+						Description: "Single uploaded file metadata",
+					},
+					{
+						Type:        "array",
+						Items:       &openapi.Schema{Type: "object", Description: "Uploaded file metadata"},
+						Description: "List of uploaded file metadata for multi-file upload",
+					},
+				},
+			}),
+		)
 		apiBetaAuth.GET("/agents/attachments/:attachment_id/download", r.agentHandler.DownloadAttachment)
 
 		// MCP server endpoint — exposes RAGFlow capabilities as MCP tools.
@@ -283,7 +326,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 				documents.POST("/upload", r.documentHandler.UploadInfo)
 				documents.GET("", r.documentHandler.ListDocuments)
 				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
-				documents.GET("/:id", r.documentHandler.GetDocumentByID)
+				RegisterTypedRoute(
+					r,
+					documents,
+					http.MethodGet,
+					"/:id",
+					"Get document by ID",
+					r.documentHandler.GetDocumentByID,
+				)
 				documents.PUT("/:id", r.documentHandler.UpdateDocument)
 				documents.DELETE("/:id", r.documentHandler.DeleteDocument)
 				documents.POST("/ingest", r.documentHandler.Ingest)
@@ -720,6 +770,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 		}
 	}
+
+	// Register OpenAPI specification and Swagger UI documentation
+	r.openapiHandler.RegisterRoutes(engine)
 
 	// Handle undefined routes
 	engine.NoRoute(handler.HandleNoRoute)
