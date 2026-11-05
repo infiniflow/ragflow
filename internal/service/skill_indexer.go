@@ -69,14 +69,20 @@ func NewSkillIndexerService() *SkillIndexerService {
 	}
 }
 
-// isElasticsearch checks if the engine is Elasticsearch
-func isElasticsearch(docEngine engine.DocEngine) bool {
-	return docEngine.GetType() == "elasticsearch"
+// usesTokenFields reports whether the engine expects explicit RAG-tokenized
+// xxx_tks fields alongside the stored original content.
+func usesTokenFields(docEngine engine.DocEngine) bool {
+	switch docEngine.GetType() {
+	case "elasticsearch", "opensearch":
+		return true
+	default:
+		return false
+	}
 }
 
 // IndexSkill indexes a single skill
 // Uses skill_id as doc_id for direct mapping, with version control for incremental updates
-// For ES: xxx fields store original content, xxx_tks fields store RAG-tokenized content (space-separated)
+// For ES/OpenSearch: xxx fields store original content, xxx_tks fields store RAG-tokenized content (space-separated)
 // For Infinity: only xxx fields with built-in rag-analyzer
 func (s *SkillIndexerService) IndexSkill(ctx context.Context, userID, spaceID string, skill SkillInfo, docEngine engine.DocEngine, embdID string) error {
 	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
@@ -124,7 +130,7 @@ func (s *SkillIndexerService) indexSkill(ctx context.Context, tenantID, spaceID 
 	vectorField := fmt.Sprintf("q_%d_vec", dimension)
 
 	// Determine engine type
-	isES := isElasticsearch(docEngine)
+	usesTokens := usesTokenFields(docEngine)
 
 	// Build base document
 	// Use skill.Version if available, otherwise use config.IndexVersion as fallback
@@ -154,9 +160,9 @@ func (s *SkillIndexerService) indexSkill(ctx context.Context, tenantID, spaceID 
 		doc[vectorField] = make([]float64, dimension)
 	}
 
-	// For ES: add tokenized fields for BM25 search
+	// For ES/OpenSearch: add tokenized fields for BM25 search
 	// For Infinity: fields have built-in analyzer, no need for xxx_tks
-	if isES {
+	if usesTokens {
 		nameTokens, _ := tokenizer.Tokenize(skill.Name)
 		tagsText := strings.Join(skill.Tags, " ")
 		tagsTokens, _ := tokenizer.Tokenize(tagsText)
@@ -284,7 +290,7 @@ func (s *SkillIndexerService) batchIndexSkills(ctx context.Context, tenantID, sp
 			common.Info("Index already exists, skipping creation")
 		}
 	} else {
-		// For ES: just ensure index exists
+		// For ES/OpenSearch: just ensure index exists
 		if err := s.initializeIndex(ctx, tenantID, spaceID, docEngine, embdID); err != nil {
 			return fmt.Errorf("failed to ensure index exists: %w", err)
 		}
@@ -293,7 +299,7 @@ func (s *SkillIndexerService) batchIndexSkills(ctx context.Context, tenantID, sp
 	// Index all skills
 	now := time.Now()
 	timestamp := now.UnixMilli()
-	isES := isElasticsearch(docEngine)
+	usesTokens := usesTokenFields(docEngine)
 
 	var indexErrors []error
 	for i, skill := range skills {
@@ -338,8 +344,8 @@ func (s *SkillIndexerService) batchIndexSkills(ctx context.Context, tenantID, sp
 			}
 		}
 
-		// For ES: add tokenized fields for BM25 search
-		if isES {
+		// For ES/OpenSearch: add tokenized fields for BM25 search
+		if usesTokens {
 			nameTokens, _ := tokenizer.Tokenize(skill.Name)
 			tagsText := strings.Join(skill.Tags, " ")
 			tagsTokens, _ := tokenizer.Tokenize(tagsText)

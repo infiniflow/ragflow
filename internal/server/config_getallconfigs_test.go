@@ -182,3 +182,40 @@ func TestMCPConfigurationDoesNotLogKey(t *testing.T) {
 		t.Fatal("environment key leaked")
 	}
 }
+
+// TestGetAllConfigsOpenSearchDocEngine verifies the admin configuration export
+// supports the OpenSearch doc engine instead of rejecting it as unsupported.
+func TestGetAllConfigsOpenSearchDocEngine(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "service_conf.yaml")
+	content := `
+general:
+  doc_engine: opensearch
+os:
+  hosts: 'http://os.test:9201'
+  username: 'admin'
+  password: 'test-only-os-secret'
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write temp config: %v", err)
+	}
+
+	if err := Init(cfgPath); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	allConfigs, err := GetAllConfigs()
+	if err != nil {
+		t.Fatalf("GetAllConfigs with doc_engine=opensearch: %v", err)
+	}
+
+	var foundOpenSearch bool
+	for _, cfg := range allConfigs {
+		if cfg["hosts"] == "http://os.test:9201" && cfg["username"] == "admin" {
+			foundOpenSearch = true
+		}
+	}
+	if !foundOpenSearch {
+		t.Fatalf("OpenSearch config not exported in GetAllConfigs: %#v", allConfigs)
+	}
+}

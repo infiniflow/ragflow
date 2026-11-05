@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/engine/infinity"
 	"ragflow/internal/engine/nats"
 	"ragflow/internal/engine/oceanbase"
+	"ragflow/internal/engine/opensearch"
 	"ragflow/internal/engine/serenedb"
 	"ragflow/internal/engine/vastbase"
 	"ragflow/internal/server"
@@ -53,6 +54,8 @@ func InitDocEngine(ctx context.Context) error {
 		switch engineType {
 		case "elasticsearch":
 			globalEngine, err = elasticsearch.NewEngine(ctx, globalConfig.GetElasticsearchConfig())
+		case "opensearch":
+			globalEngine, err = opensearch.NewEngine(ctx, globalConfig.GetOpenSearchConfig())
 		case "infinity":
 			globalEngine, err = infinity.NewEngine(ctx, globalConfig.GetInfinityConfig())
 		case "oceanbase", "seekdb":

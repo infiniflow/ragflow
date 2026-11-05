@@ -24,12 +24,23 @@ import (
 )
 
 type DocEngineConfig struct {
-	ES        ElasticsearchConfig `mapstructure:"es"`
-	Infinity  InfinityConfig      `mapstructure:"infinity"`
-	OceanBase OceanBaseConfig     `mapstructure:"oceanbase"`
-	SeekDB    OceanBaseConfig     `mapstructure:"seekdb"`
-	SereneDB  SereneDBConfig      `mapstructure:"serenedb"`
-	Vastbase  VastbaseConfig      `mapstructure:"vastbase"`
+	ES         ElasticsearchConfig `mapstructure:"es"`
+	OpenSearch OpenSearchConfig    `mapstructure:"os"`
+	Infinity   InfinityConfig      `mapstructure:"infinity"`
+	OceanBase  OceanBaseConfig     `mapstructure:"oceanbase"`
+	SeekDB     OceanBaseConfig     `mapstructure:"seekdb"`
+	SereneDB   SereneDBConfig      `mapstructure:"serenedb"`
+	Vastbase   VastbaseConfig      `mapstructure:"vastbase"`
+}
+
+type OpenSearchConfig struct {
+	Hosts    string `mapstructure:"hosts"`
+	Username string `mapstructure:"username"`
+	Password string `mapstructure:"password"`
+	// InsecureSkipVerify disables TLS certificate verification. It is off by
+	// default; enable it only for a development cluster with a self-signed
+	// certificate.
+	InsecureSkipVerify bool `mapstructure:"insecure_skip_verify"`
 }
 
 // OceanBaseConfig mirrors the existing oceanbase/seekdb service_conf.yaml
@@ -103,6 +114,7 @@ type VastbaseConfig struct {
 func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
 	c.parseInfinityConfig(v)
 	c.parseElasticsearchConfig(v)
+	c.parseOpenSearchConfig(v)
 	c.parseOceanBaseConfig(v, "oceanbase", &c.docEngine.OceanBase)
 	c.parseOceanBaseConfig(v, "seekdb", &c.docEngine.SeekDB)
 	c.parseSereneDBConfig(v)
@@ -368,6 +380,50 @@ func (e ElasticsearchConfig) ExportConfigs() map[string]interface{} {
 	esConfigs["username"] = e.Username
 	esConfigs["password"] = e.Password
 	return esConfigs
+}
+
+func (c *Config) parseOpenSearchConfig(v *viper.Viper) {
+	c.docEngine.OpenSearch.Hosts = "http://localhost:1201"
+	c.docEngine.OpenSearch.Username = "admin"
+	c.docEngine.OpenSearch.Password = "infini_rag_flow_OS_01"
+
+	if !v.IsSet("os") {
+		return
+	}
+	sub := v.Sub("os")
+	if sub == nil {
+		return
+	}
+
+	if sub.IsSet("hosts") {
+		c.docEngine.OpenSearch.Hosts = sub.GetString("hosts")
+	}
+
+	if sub.IsSet("username") {
+		c.docEngine.OpenSearch.Username = sub.GetString("username")
+	}
+
+	if sub.IsSet("password") {
+		c.docEngine.OpenSearch.Password = sub.GetString("password")
+	}
+
+	if sub.IsSet("insecure_skip_verify") {
+		c.docEngine.OpenSearch.InsecureSkipVerify = sub.GetBool("insecure_skip_verify")
+	}
+}
+
+func (c *Config) GetOpenSearchConfig() OpenSearchConfig {
+	return c.docEngine.OpenSearch
+}
+
+func (o OpenSearchConfig) ExportConfigs() map[string]interface{} {
+	var osConfigs map[string]interface{}
+	osConfigs = make(map[string]interface{})
+	osConfigs["hosts"] = o.Hosts
+	osConfigs["username"] = o.Username
+	osConfigs["password"] = o.Password
+	osConfigs["insecure_skip_verify"] = o.InsecureSkipVerify
+	return osConfigs
 }
 
 func (c *Config) IsElasticConfigured() bool {
