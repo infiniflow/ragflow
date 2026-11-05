@@ -30,6 +30,9 @@ func TestCreateAPIKeyStoresUserAndTenantContext(t *testing.T) {
 	if err := db.AutoMigrate(&entity.APIToken{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate api_token and user_tenant: %v", err)
 	}
+	if err := db.Create(&entity.User{ID: "user-1", Email: "user-1@example.com", Nickname: "user-1"}).Error; err != nil {
+		t.Fatalf("failed to create API key owner: %v", err)
+	}
 	status := entity.TenantMembershipStatusJoined
 	if err := db.Create(&entity.UserTenant{ID: "membership-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", Status: &status}).Error; err != nil {
 		t.Fatalf("failed to create Tenant membership: %v", err)
