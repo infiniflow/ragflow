@@ -79,7 +79,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 		return
 	}
 
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return

@@ -37,7 +37,7 @@ func NewModelHandler(modelProviderService *service.ModelProviderService) *ModelH
 
 func (h *ModelHandler) ListAllModels(c *gin.Context) {
 
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return

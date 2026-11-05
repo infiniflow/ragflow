@@ -81,7 +81,7 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 		keywords = ""
 	}
 
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return

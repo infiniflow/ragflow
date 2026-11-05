@@ -9,24 +9,18 @@ import (
 )
 
 const (
-	DefaultPage                 = 1
-	DefaultPageSize             = 30
-	MaxPageSize                 = 100
-	DefaultAdminPageSize        = 10
-	DefaultDocumentPageSize     = 10
-	DefaultFilePageSize         = 15
-	DefaultConnectorLogPageSize = 15
-	DefaultMemoryPageSize       = 50
-	DefaultSkillPageSize        = 10
+	DefaultPage     = 1
+	DefaultPageSize = 30
+	MaxPageSize     = 100
 )
 
 // ParsePagination parses REST list parameters. Only omitted parameters use defaults.
-func ParsePagination(query url.Values, defaultSize int) (int, int, error) {
+func ParsePagination(query url.Values) (int, int, error) {
 	page, err := parsePaginationInt(query, "page", DefaultPage)
 	if err != nil {
 		return 0, 0, err
 	}
-	size, err := parsePaginationInt(query, "page_size", defaultSize)
+	size, err := parsePaginationInt(query, "page_size", DefaultPageSize)
 	if err != nil {
 		return 0, 0, err
 	}

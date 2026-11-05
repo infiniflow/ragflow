@@ -18,8 +18,7 @@ Paginated endpoints require a positive integer `page` (default `1`) and a
 `page_size` between `1` and `100`, inclusive. JSON search APIs that accept `size`
 apply the same limit to that field. Requests over the limit are rejected with
 an error envelope; values are never silently clamped. Zero and negative sizes
-cannot disable pagination. The general page size defaults to `30`; existing
-endpoint-specific defaults are listed in the [pagination reference](../develop/rest_api_pagination.md).
+cannot disable pagination. All paginated endpoints default to `30` items per page.
 
 ---
 
@@ -5887,7 +5886,7 @@ curl --location 'http://{address}/api/v1/memories?keywords=&page_size=50&page=1&
 
 - `page_size`: `int`, *Optional*
 
-  The number of memories on each page. Defaults to `50`.
+  The number of memories on each page. Defaults to `30`.
 
 #### Response
 
@@ -6100,7 +6099,7 @@ curl --location 'http://{address}/api/v1/memories/6c8983badede11f083f184ba59bc53
 
 - `page_size`: (*Query parameter*), `int`, *Optional*
 
-  The number of messages on each page. Defaults to `50`.
+  The number of messages on each page. Defaults to `30`.
 
 #### Response
 
@@ -7044,7 +7043,7 @@ curl --request GET \
 - `page`: `integer`
   Specifies the page on which the files will be displayed. Defaults to `1`.
 - `page_size`: `integer`
-  The number of files on each page. Defaults to `15`.
+  The number of files on each page. Defaults to `30`.
 - `orderby`: `string`
   The field by which files should be sorted. Available options:
   - `create_time` (default)
@@ -7617,7 +7616,7 @@ Lists all commits for the specified folder with pagination. Also, available at:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query:
   - `'page'`: `int` (optional, default: 1)
-  - `'page_size'`: `int` (optional, default: 15)
+  - `'page_size'`: `int` (optional, default: 30)
   - `'order_by'`: `string` (optional, default: `"create_time"`)
   - `'desc'`: `bool` (optional, default: `true`)
 
@@ -8158,7 +8157,7 @@ curl --request GET \
 - `page`: `integer`
   Specifies the page number. Defaults to `1`. Values less than `1` fall back to `1`.
 - `page_size`: `integer`
-  The number of items per page. Defaults to `30`. Values less than `1` fall back to `30`. The maximum value is `100`.
+  The number of items per page. Defaults to `30`. Must be between `1` and `100`.
 - `orderby`: `string`
   The field to sort by. Defaults to `create_time`.
 - `desc`: `boolean`

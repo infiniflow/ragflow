@@ -161,7 +161,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	role := c.DefaultQuery("role", "")
 	sort := c.DefaultQuery("sort", "")     // asc or desc
 	orderBy := c.DefaultQuery("order", "") // order by field
-	pageInt, pageSizeInt, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultAdminPageSize)
+	pageInt, pageSizeInt, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
@@ -1139,7 +1139,7 @@ func (h *Handler) Reports(c *gin.Context) {
 
 func (h *Handler) ListAllModels(c *gin.Context) {
 
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return

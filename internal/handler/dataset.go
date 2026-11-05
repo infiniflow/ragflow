@@ -76,7 +76,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		return
 	}
 
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
@@ -613,7 +613,7 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
 
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return

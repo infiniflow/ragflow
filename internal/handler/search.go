@@ -90,7 +90,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	// Parse query parameters
 	keywords := c.Query("keywords")
 
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return

@@ -104,7 +104,7 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 	pageType := c.Query("page_type")
 	topic := c.Query("topic")
 	keywords := strings.TrimSpace(c.Query("keywords"))
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return

@@ -53,6 +53,7 @@ func TestListUsersReturnsTotalForEachPage(t *testing.T) {
 		query string
 		want  int
 	}{
+		{"", 12},
 		{"?page=1&page_size=10", 10},
 		{"?page=2&page_size=10", 2},
 		{"?page=3&page_size=10", 0},

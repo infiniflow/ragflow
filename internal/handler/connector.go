@@ -191,7 +191,7 @@ func decodeUpdateConnectorRequest(c *gin.Context) (*service.UpdateConnectorReque
 // @Router /api/v1/connectors/{connector_id}/logs [get]
 func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultConnectorLogPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
@@ -223,7 +223,7 @@ func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 // @Router /api/v1/connectors/sync-logs [get]
 func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
 
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultConnectorLogPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return

@@ -38,7 +38,7 @@ func TestParsePagination(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			page, size, err := ParsePagination(query, DefaultPageSize)
+			page, size, err := ParsePagination(query)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 					t.Fatalf("error = %v, want %q", err, tt.wantErr)
@@ -49,12 +49,6 @@ func TestParsePagination(t *testing.T) {
 				t.Fatalf("page/size/error = %d/%d/%v, want %d/%d/nil", page, size, err, tt.page, tt.size)
 			}
 		})
-	}
-	for _, size := range []int{DefaultAdminPageSize, DefaultDocumentPageSize, DefaultFilePageSize, DefaultConnectorLogPageSize, DefaultMemoryPageSize, DefaultSkillPageSize} {
-		page, gotSize, err := ParsePagination(url.Values{}, size)
-		if err != nil || page != DefaultPage || gotSize != size {
-			t.Fatalf("default %d: page/size/error = %d/%d/%v", size, page, gotSize, err)
-		}
 	}
 }
 

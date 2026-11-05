@@ -602,7 +602,7 @@ func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultDocumentPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return

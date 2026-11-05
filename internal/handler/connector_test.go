@@ -638,14 +638,14 @@ func TestConnectorHandlerListSyncLogs(t *testing.T) {
 			query:        "",
 			wantCode:     common.CodeSuccess,
 			wantPage:     1,
-			wantPageSize: 15,
+			wantPageSize: 30,
 		},
 		{
 			name:         "page only defaults page_size",
 			query:        "?page=3",
 			wantCode:     common.CodeSuccess,
 			wantPage:     3,
-			wantPageSize: 15,
+			wantPageSize: 30,
 		},
 		{
 			name:         "page_size only defaults page",

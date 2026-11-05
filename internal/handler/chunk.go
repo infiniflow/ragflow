@@ -130,7 +130,7 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 		return
 	}
 
-	page, size, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	page, size, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return

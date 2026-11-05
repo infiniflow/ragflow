@@ -236,7 +236,7 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 		req.Page = common.DefaultPage
 	}
 	if req.PageSize <= 0 {
-		req.PageSize = common.DefaultSkillPageSize
+		req.PageSize = common.DefaultPageSize
 	}
 
 	// Check if index exists before searching

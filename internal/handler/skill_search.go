@@ -104,7 +104,7 @@ func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skills/search [post]
 func (h *SkillSearchHandler) Search(c *gin.Context) {
-	req := service.SearchRequest{Page: common.DefaultPage, PageSize: common.DefaultSkillPageSize}
+	req := service.SearchRequest{Page: common.DefaultPage, PageSize: common.DefaultPageSize}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return

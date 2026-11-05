@@ -53,7 +53,7 @@ func NewCompilationTemplateGroupHandler(svc *service.CompilationTemplateGroupSer
 //	@Success 200 {object} map[string]interface{}
 //	@Router /v1/compilation-template-groups [get]
 func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return

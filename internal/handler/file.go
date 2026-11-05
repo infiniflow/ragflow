@@ -71,7 +71,7 @@ func NewFileHandler(fileService *file.FileService, userService *service.UserServ
 // @Param tenant_id query string false "tenant whose files are listed (defaults to the current user)"
 // @Param keywords query string false "search keywords (case-insensitive)"
 // @Param page query int false "page number (default: 1, min: 1)"
-// @Param page_size query int false "items per page (default: 15, min: 1, max: 100)"
+// @Param page_size query int false "items per page (default: 30, min: 1, max: 100)"
 // @Param orderby query string false "order by field (default: create_time)"
 // @Param sort query string false "ordered terms, column:direction separated by commas, such as name:asc,create_time:desc. Takes precedence over orderby and desc"
 // @Param desc query bool false "descending order (default: true)"
@@ -92,7 +92,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	}
 	keywords := c.Query("keywords")
 
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultFilePageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeParamError, err.Error())
 		return

@@ -257,7 +257,7 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 		common.RespondError(c, common.CodeNotFound, "Workspace not found")
 		return
 	}
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultFilePageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeParamError, err.Error())
 		return

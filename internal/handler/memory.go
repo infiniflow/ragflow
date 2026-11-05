@@ -288,7 +288,7 @@ func splitQueryValues(c *gin.Context, key string) []string {
 //   - storage_type (optional): Storage type filter
 //   - keywords (optional): Keyword search (fuzzy match on name)
 //   - page (optional): Page number, default 1
-//   - page_size (optional): Items per page, default 50
+//   - page_size (optional): Items per page, default 30
 //
 // Response Format:
 //   - code: Status code
@@ -296,7 +296,7 @@ func splitQueryValues(c *gin.Context, key string) []string {
 //   - data.memory_list: Array of Memory objects
 //   - data.total_count: Total record count
 func (h *MemoryHandler) ListMemories(c *gin.Context) {
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultMemoryPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
@@ -396,7 +396,7 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 //   - agent_id (optional): Agent ID filter, supports comma-separated multiple
 //   - keywords (optional): Keyword search
 //   - page (optional): Page number, default 1
-//   - page_size (optional): Items per page, default 50
+//   - page_size (optional): Items per page, default 30
 //
 // Response Format:
 //   - code: Status code
@@ -414,7 +414,7 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 	agentIDs := splitQueryValues(c, "agent_id")
 
 	keywords := strings.TrimSpace(c.DefaultQuery("keywords", ""))
-	page, pageSize, err := common.ParsePagination(c.Request.URL.Query(), common.DefaultMemoryPageSize)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
