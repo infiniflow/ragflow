@@ -34,6 +34,13 @@ from common.float_utils import format_minimum_should_match_percent
 
 ATTEMPT_TIME = 2
 
+# OpenSearch rejects any request whose ``from + size`` exceeds
+# ``index.max_result_window`` (10,000 by default). Pages beyond that boundary
+# have to be walked with a ``search_after`` cursor instead. The values mirror
+# ``rag/utils/es_conn.py`` so both backends page identically.
+MAX_RESULT_WINDOW = 10000
+SEARCH_AFTER_BATCH_SIZE = 1000
+
 _PAGERANK_FEA_ADJUST_SCRIPT = """
 double cur = 0.0;
 if (ctx._source.containsKey(params.pf)) {
@@ -312,6 +319,118 @@ class OSConnection(DocStoreConnection):
     CRUD operations
     """
 
+    def _os_search_once(self, index_names: list[str], query: dict, track_total_hits: bool = True, **kwargs):
+        return self.os.search(
+            index=index_names,
+            body=query,
+            timeout=600,
+            track_total_hits=track_total_hits,
+            _source=True,
+            **kwargs,
+        )
+
+    def _id_sort_field(self, index_names: list[str]) -> tuple[str | None, bool]:
+        # Indices created before ``id`` matched the keyword template map it as
+        # text with an ``id.keyword`` sub-field; sorting on the text field fails.
+        #
+        # Returns ``(field, resolved)``. ``resolved`` is False when the lookup
+        # itself failed: the caller then falls back to the previous behaviour (a
+        # plain sort on ``id``) rather than failing the search, because a
+        # transient error or a cluster that denies the mapping-read privilege
+        # must not turn an ordinary id-ordered search into an error.
+        try:
+            res = self.os.indices.get_field_mapping(fields="id", index=index_names, ignore_unavailable=True, allow_no_indices=True)
+        except Exception as e:
+            logger.warning(f"OSConnection._id_sort_field {index_names!s}: mapping lookup failed, using `id`: {e}")
+            return "id", False
+        sort_fields = set()
+        for index_mapping in res.values():
+            id_mapping = index_mapping.get("mappings", {}).get("id", {}).get("mapping", {}).get("id")
+            if not id_mapping:
+                continue
+            if id_mapping.get("type") == "keyword":
+                sort_fields.add("id")
+            elif id_mapping.get("fields", {}).get("keyword", {}).get("type") == "keyword":
+                sort_fields.add("id.keyword")
+            else:
+                return None, True
+        if len(sort_fields) > 1:
+            return None, True
+        return (sort_fields.pop() if sort_fields else "id"), True
+
+    def _search_with_search_after(self, index_names: list[str], query: dict, offset: int, limit: int, **kwargs):
+        """Serve a page that starts past ``index.max_result_window``.
+
+        The ``from``/``size`` pair is dropped from the query and the result set
+        is walked with ``search_after``: first to skip ``offset`` rows, then to
+        collect ``limit`` of them. Aggregations ride along on the first request
+        only, and its total is reused so the caller still sees the full count.
+        """
+        q_base = copy.deepcopy(query)
+        q_base.pop("from", None)
+        q_base.pop("size", None)
+
+        search_after = None
+        template_res = None
+        collected_hits = []
+        remaining_skip = max(0, offset)
+        remaining_take = max(0, limit)
+        with_aggs = True
+
+        while remaining_skip > 0:
+            batch = min(SEARCH_AFTER_BATCH_SIZE, remaining_skip)
+            q_iter = copy.deepcopy(q_base)
+            q_iter["size"] = batch
+            if search_after is not None:
+                q_iter["search_after"] = search_after
+            if not with_aggs:
+                q_iter.pop("aggs", None)
+            res = self._os_search_once(index_names, q_iter, track_total_hits=template_res is None, **kwargs)
+            if template_res is None:
+                template_res = res
+            hits = res.get("hits", {}).get("hits", [])
+            if not hits:
+                break
+            next_search_after = hits[-1].get("sort")
+            if not next_search_after or next_search_after == search_after:
+                break
+            search_after = next_search_after
+            remaining_skip -= len(hits)
+            with_aggs = False
+            if len(hits) < batch:
+                break
+
+        while remaining_skip <= 0 and remaining_take > 0:
+            batch = min(SEARCH_AFTER_BATCH_SIZE, remaining_take)
+            q_iter = copy.deepcopy(q_base)
+            q_iter["size"] = batch
+            if search_after is not None:
+                q_iter["search_after"] = search_after
+            if not with_aggs:
+                q_iter.pop("aggs", None)
+            res = self._os_search_once(index_names, q_iter, track_total_hits=template_res is None, **kwargs)
+            if template_res is None:
+                template_res = res
+            hits = res.get("hits", {}).get("hits", [])
+            if not hits:
+                break
+            collected_hits.extend(hits)
+            remaining_take -= len(hits)
+            next_search_after = hits[-1].get("sort")
+            if not next_search_after or next_search_after == search_after:
+                break
+            search_after = next_search_after
+            with_aggs = False
+            if len(hits) < batch:
+                break
+
+        if template_res is None:
+            q_count = copy.deepcopy(q_base)
+            q_count["size"] = 0
+            template_res = self._os_search_once(index_names, q_count, track_total_hits=True, **kwargs)
+        template_res["hits"]["hits"] = collected_hits
+        return template_res
+
     def search(
         self,
         select_fields: list[str],
@@ -425,14 +544,27 @@ class OSConnection(DocStoreConnection):
         for field in highlight_fields:
             s = s.highlight(field, force_source=True, no_match_size=30, require_field_match=False)
 
+        orders = list()
+        # A cursor needs a unique sort key. Only an ``id`` sort supplies one, and
+        # only when the live index mapping told us which form of it is sortable.
+        has_unique_sort = False
         if order_by:
-            orders = list()
             for field, order in order_by.fields:
                 order = "asc" if order == 0 else "desc"
                 if field in ["page_num_int", "top_int"]:
                     order_info = {"order": order, "unmapped_type": "float", "mode": "avg", "numeric_type": "double"}
                 elif field.endswith("_int") or field.endswith("_flt"):
                     order_info = {"order": order, "unmapped_type": "float"}
+                elif field == "id":
+                    field, id_resolved = self._id_sort_field(index_names)
+                    if field is None:
+                        logger.warning(f"OSConnection.search {index_names!s}: no sortable id field, dropping the id sort")
+                        continue
+                    order_info = {"order": order, "unmapped_type": "keyword"}
+                    # Without a unique sort there is no cursor, so the deep page
+                    # stays on ``from`` and must fail as before rather than be
+                    # replaced by a truncated walk.
+                    has_unique_sort = id_resolved
                 else:
                     order_info = {"order": order, "unmapped_type": "text"}
                 orders.append({field: order_info})
@@ -441,7 +573,13 @@ class OSConnection(DocStoreConnection):
         for fld in agg_fields:
             s.aggs.bucket(f"aggs_{fld}", "terms", field=fld, size=1000000)
 
-        if limit > 0:
+        # OpenSearch rejects ``from + size`` past ``index.max_result_window``.
+        # A cursor needs a unique sort and cannot be combined with a knn leg,
+        # so those requests keep the plain ``from``/``size`` page.
+        has_dense = any(isinstance(m, MatchDenseExpr) for m in match_expressions)
+        use_search_after = limit > 0 and (offset + limit > MAX_RESULT_WINDOW) and has_unique_sort and not has_dense
+
+        if limit > 0 and not use_search_after:
             s = s[offset : offset + limit]
         q = s.to_dict()
         logger.debug(f"OSConnection.search {str(index_names)} query: " + json.dumps(q))
@@ -465,15 +603,10 @@ class OSConnection(DocStoreConnection):
 
         for i in range(ATTEMPT_TIME):
             try:
-                res = self.os.search(
-                    index=index_names,
-                    body=q,
-                    timeout=600,
-                    # search_type="dfs_query_then_fetch",
-                    track_total_hits=True,
-                    _source=True,
-                    **search_kwargs,
-                )
+                if use_search_after:
+                    res = self._search_with_search_after(index_names, q, offset, limit, **search_kwargs)
+                else:
+                    res = self._os_search_once(index_names, q, track_total_hits=True, **search_kwargs)
                 if str(res.get("timed_out", "")).lower() == "true":
                     raise Exception("OpenSearch Timeout.")
                 logger.debug(f"OSConnection.search {str(index_names)} res: " + str(res))
