@@ -54,6 +54,32 @@ func (d *remoteModelProbeDriver) CheckConnection(_ context.Context, apiConfig *m
 	return d.checkErr
 }
 
+type ocrVerificationProbeDriver struct {
+	*modelModule.DummyModel
+	verifyCalls int
+	ocrCalls    int
+}
+
+func (d *ocrVerificationProbeDriver) VerifyOCRConnection(context.Context, *modelModule.APIConfig) error {
+	d.verifyCalls++
+	return nil
+}
+
+func (d *ocrVerificationProbeDriver) OCRFile(context.Context, *string, []byte, *string, *modelModule.APIConfig, *modelModule.OCRConfig, *common.ModelUsage) (*modelModule.OCRFileResponse, error) {
+	d.ocrCalls++
+	return nil, nil
+}
+
+func TestVerifyOCRModelUsesProviderConnectionVerifier(t *testing.T) {
+	driver := &ocrVerificationProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	if err := verifyOCRModel(t.Context(), driver, "somark-model", &modelModule.APIConfig{}); err != nil {
+		t.Fatalf("verifyOCRModel: %v", err)
+	}
+	if driver.verifyCalls != 1 || driver.ocrCalls != 0 {
+		t.Fatalf("verification/OCR calls = %d/%d, want 1/0", driver.verifyCalls, driver.ocrCalls)
+	}
+}
+
 func TestMonkeyOCREnvConfig(t *testing.T) {
 	t.Setenv(common.EnvMonkeyOCRAPIServer, "http://monkeyocr:7861")
 
