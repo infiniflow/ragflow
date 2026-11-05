@@ -690,7 +690,14 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
           values?.config?.credential?.connection_type !== 'websocket',
       },
     ],
-    [ChatChannelKey.WHATSAPP]: [],
+    [ChatChannelKey.WHATSAPP]: [
+      {
+        label: 'Gateway URL',
+        name: 'config.credential.gateway_base_url',
+        type: FormFieldType.Text,
+        required: true,
+      },
+    ],
     [ChatChannelKey.YUANBAO]: [
       {
         label: 'App Key',
@@ -762,6 +769,9 @@ export const ChatChannelFormDefaultValues: Record<
 // googlechat carries a non-credential discriminator (auth_mode).
 ChatChannelFormDefaultValues[ChatChannelKey.GOOGLECHAT].config.auth_mode =
   'webhook_url';
+ChatChannelFormDefaultValues[
+  ChatChannelKey.WHATSAPP
+].config.credential.gateway_base_url = 'http://host.docker.internal:3005';
 ChatChannelFormDefaultValues[
   ChatChannelKey.WECOM
 ].config.credential.connection_type = 'webhook';

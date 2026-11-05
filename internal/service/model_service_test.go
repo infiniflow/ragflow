@@ -54,6 +54,32 @@ func (d *remoteModelProbeDriver) CheckConnection(_ context.Context, apiConfig *m
 	return d.checkErr
 }
 
+type ocrVerificationProbeDriver struct {
+	*modelModule.DummyModel
+	verifyCalls int
+	ocrCalls    int
+}
+
+func (d *ocrVerificationProbeDriver) VerifyOCRConnection(context.Context, *modelModule.APIConfig) error {
+	d.verifyCalls++
+	return nil
+}
+
+func (d *ocrVerificationProbeDriver) OCRFile(context.Context, *string, []byte, *string, *modelModule.APIConfig, *modelModule.OCRConfig, *common.ModelUsage) (*modelModule.OCRFileResponse, error) {
+	d.ocrCalls++
+	return nil, nil
+}
+
+func TestVerifyOCRModelUsesProviderConnectionVerifier(t *testing.T) {
+	driver := &ocrVerificationProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	if err := verifyOCRModel(t.Context(), driver, "somark-model", &modelModule.APIConfig{}); err != nil {
+		t.Fatalf("verifyOCRModel: %v", err)
+	}
+	if driver.verifyCalls != 1 || driver.ocrCalls != 0 {
+		t.Fatalf("verification/OCR calls = %d/%d, want 1/0", driver.verifyCalls, driver.ocrCalls)
+	}
+}
+
 func TestMonkeyOCREnvConfig(t *testing.T) {
 	t.Setenv(common.EnvMonkeyOCRAPIServer, "http://monkeyocr:7861")
 
@@ -77,7 +103,7 @@ func TestEnsureMonkeyOCRFromEnvSkipsBlankAPIServer(t *testing.T) {
 	t.Setenv(common.EnvMonkeyOCRAPIServer, "")
 
 	svc := &ModelProviderService{}
-	if err := svc.ensureMonkeyOCRFromEnv(context.Background(), "user-id", "tenant-id"); err != nil {
+	if err := svc.ensureMonkeyOCRFromEnv(context.Background(), "tenant-id"); err != nil {
 		t.Fatalf("ensureMonkeyOCRFromEnv: %v", err)
 	}
 }
@@ -88,7 +114,7 @@ func TestEnsureUnlimitedOCRFromEnvSkipsBlankServerURL(t *testing.T) {
 	t.Setenv(common.EnvUnlimitedOCRAPIServer, "")
 
 	svc := &ModelProviderService{}
-	if err := svc.ensureUnlimitedOCRFromEnv(context.Background(), "user-id", "tenant-id"); err != nil {
+	if err := svc.ensureUnlimitedOCRFromEnv(context.Background(), "tenant-id"); err != nil {
 		t.Fatalf("ensureUnlimitedOCRFromEnv: %v", err)
 	}
 }
@@ -346,9 +372,7 @@ func TestVerifyProviderModelNamesUnverifiableTypes(t *testing.T) {
 // a real driver. The stand-in used above accepts any request — including one the
 // endpoint would refuse — so it cannot catch verification asking for nothing.
 func TestVerifyProviderModelAsksSystemOneDecisionEndpoint(t *testing.T) {
-	prev := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 
 	asked := false
 	var request struct {
@@ -549,7 +573,6 @@ func TestBedrockAPIKeyInstancePersistsDiscoveredModelsWithoutRuntimeVerification
 		apiKey,
 		"",
 		"default",
-		"user-1",
 		[]CreateInstanceModelInfo{{
 			ModelName:  "amazon.nova-lite-v1:0",
 			ModelTypes: []string{"chat", "vision"},
@@ -575,7 +598,6 @@ func TestBedrockAPIKeyInstancePersistsDiscoveredModelsWithoutRuntimeVerification
 	}
 	code, err = NewModelProviderService().AlterProviderInstance(
 		serviceTestContext(t, "user-1", "tenant-bedrock"),
-		"user-1",
 		"Bedrock",
 		"api-key-instance",
 		"api-key-instance",
@@ -621,7 +643,6 @@ func TestCreateProviderInstanceRollsBackInstanceWhenModelCreationFails(t *testin
 		"sk-rollback",
 		"",
 		"default",
-		"user-1",
 		[]CreateInstanceModelInfo{duplicated, duplicated},
 	)
 	if code != common.CodeServerError || err == nil {
@@ -644,7 +665,7 @@ func TestCreateProviderInstanceRollsBackInstanceWhenModelCreationFails(t *testin
 		t.Fatalf("models = %d, want 0 after rollback", modelCount)
 	}
 	code, err = NewModelProviderService().CreateProviderInstance(
-		serviceTestContext(t, "user-1", "user-1"), "OpenAI", "broken-instance", "sk-rollback", "", "default", "user-1",
+		serviceTestContext(t, "user-1", "user-1"), "OpenAI", "broken-instance", "sk-rollback", "", "default",
 		[]CreateInstanceModelInfo{duplicated, {ModelName: "gpt-second", ModelTypes: []string{"chat"}}},
 	)
 	if code != common.CodeSuccess || err != nil {
@@ -669,7 +690,7 @@ func TestModelProviderServiceAlterModelStatusByID(t *testing.T) {
 	seedModelProviderServiceScope(t, db)
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "default", "", "user-1", "model-1", map[string]interface{}{"status": "inactive"})
+	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "default", "", "model-1", map[string]interface{}{"status": "inactive"})
 	if err != nil {
 		t.Fatalf("AlterModel() error = %v", err)
 	}
@@ -702,7 +723,7 @@ func TestListProvidersOfTenantExcludesOtherTenants(t *testing.T) {
 		}
 	}
 
-	providers, code, err := NewModelProviderService().ListProvidersOfTenant(serviceTestContext(t, "user-1", "user-1"), "user-1")
+	providers, code, err := NewModelProviderService().ListProvidersOfTenant(serviceTestContext(t, "user-1", "user-1"))
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListProvidersOfTenant() = (%v, %v), want success", code, err)
 	}
@@ -729,7 +750,7 @@ func TestListProviderInstancesUsesOwnedTenantProvider(t *testing.T) {
 	}
 
 	service := NewModelProviderService()
-	instances, code, err := service.ListProviderInstances(serviceTestContext(t, "user-1", "user-1"), "OpenAI", "user-1")
+	instances, code, err := service.ListProviderInstances(serviceTestContext(t, "user-1", "user-1"), "OpenAI")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListProviderInstances() = (%v, %v), want success", code, err)
 	}
@@ -737,7 +758,7 @@ func TestListProviderInstancesUsesOwnedTenantProvider(t *testing.T) {
 		t.Fatalf("ListProviderInstances() = %v, want only the instance from user-1's own tenant", instances)
 	}
 
-	if instances, code, err = service.ListProviderInstances(serviceTestContext(t, "user-1", "user-1"), "provider-2", "user-1"); err == nil || len(instances) != 0 {
+	if instances, code, err = service.ListProviderInstances(serviceTestContext(t, "user-1", "user-1"), "provider-2"); err == nil || len(instances) != 0 {
 		t.Fatalf("ListProviderInstances() for another tenant's provider = (%v, %v, %v), want it hidden", instances, code, err)
 	}
 }
@@ -761,7 +782,7 @@ func TestProviderModelListingUsesOwnedTenant(t *testing.T) {
 	}
 
 	service := NewModelProviderService()
-	models, err := service.ListInstanceModels(serviceTestContext(t, "user-1", "user-1"), "OpenAI", "default", "user-1")
+	models, err := service.ListInstanceModels(serviceTestContext(t, "user-1", "user-1"), "OpenAI", "default")
 	if err != nil {
 		t.Fatalf("ListInstanceModels() error = %v, want success", err)
 	}
@@ -769,10 +790,10 @@ func TestProviderModelListingUsesOwnedTenant(t *testing.T) {
 		t.Fatalf("ListInstanceModels() = %v, want only user-1's own-tenant model", models)
 	}
 
-	if _, err = service.ListInstanceModels(serviceTestContext(t, "user-1", "user-1"), "provider-2", "default", "user-1"); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err = service.ListInstanceModels(serviceTestContext(t, "user-1", "user-1"), "provider-2", "default"); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("ListInstanceModels() for another tenant's provider error = %v, want record not found", err)
 	}
-	if _, err = service.ResolveSavedProviderModelConfig(serviceTestContext(t, "user-1", "user-1"), "provider-2", "default", "user-1", SavedProviderModelOptions{}); !errors.Is(err, gorm.ErrRecordNotFound) {
+	if _, err = service.ResolveSavedProviderModelConfig(serviceTestContext(t, "user-1", "user-1"), "provider-2", "default", SavedProviderModelOptions{}); !errors.Is(err, gorm.ErrRecordNotFound) {
 		t.Fatalf("ResolveSavedProviderModelConfig() for another tenant's provider error = %v, want record not found", err)
 	}
 }
@@ -796,7 +817,7 @@ func TestShowProviderInstanceUsesOwnedTenantProvider(t *testing.T) {
 
 	service := NewModelProviderService()
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	instance, code, err := service.ShowProviderInstance(ctx, "OpenAI", "instance-1", "user-1")
+	instance, code, err := service.ShowProviderInstance(ctx, "OpenAI", "instance-1")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ShowProviderInstance() = (%v, %v), want success", code, err)
 	}
@@ -816,7 +837,7 @@ func TestShowProviderInstanceUsesOwnedTenantProvider(t *testing.T) {
 		t.Fatalf("ShowProviderInstance() credential_status = %v, want api_key configured", instance["credential_status"])
 	}
 
-	if _, code, err = service.ShowProviderInstance(ctx, "provider-2", "instance-2", "user-1"); err == nil || code != common.CodeNotFound {
+	if _, code, err = service.ShowProviderInstance(ctx, "provider-2", "instance-2"); err == nil || code != common.CodeNotFound {
 		t.Fatalf("ShowProviderInstance() for another tenant's provider = (%v, %v), want hidden provider", code, err)
 	}
 }
@@ -917,7 +938,7 @@ func TestResolveSavedProviderModelConfigUsePermissionCannotOverrideSavedEndpoint
 	}
 	service := NewModelProviderService()
 	ctx := serviceTestContext(t, "member-1", "tenant-1")
-	config, err := service.ResolveSavedProviderModelConfig(ctx, "OpenAI", "default", "member-1", SavedProviderModelOptions{})
+	config, err := service.ResolveSavedProviderModelConfig(ctx, "OpenAI", "default", SavedProviderModelOptions{})
 	if err != nil {
 		t.Fatalf("ResolveSavedProviderModelConfig(use saved credentials) error = %v, want success", err)
 	}
@@ -926,12 +947,12 @@ func TestResolveSavedProviderModelConfigUsePermissionCannotOverrideSavedEndpoint
 	}
 
 	attackerURL := "https://attacker.example"
-	_, err = service.ResolveSavedProviderModelConfig(ctx, "OpenAI", "default", "member-1", SavedProviderModelOptions{BaseURL: &attackerURL})
+	_, err = service.ResolveSavedProviderModelConfig(ctx, "OpenAI", "default", SavedProviderModelOptions{BaseURL: &attackerURL})
 	if err == nil || !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("ResolveSavedProviderModelConfig(use permission with endpoint override) error = %v, want hidden denial", err)
 	}
 
-	_, err = service.ResolveSavedProviderModelConfig(ctx, "OpenAI", "default", "member-1", SavedProviderModelOptions{
+	_, err = service.ResolveSavedProviderModelConfig(ctx, "OpenAI", "default", SavedProviderModelOptions{
 		APIKeyConfig: json.RawMessage(`{"paddleocr_api_url":"https://attacker.example"}`),
 	})
 	if err == nil || !errors.Is(err, permission.ErrPermissionDenied) {
@@ -939,13 +960,13 @@ func TestResolveSavedProviderModelConfigUsePermissionCannotOverrideSavedEndpoint
 	}
 
 	ownerCtx := serviceTestContext(t, "user-1", "tenant-1")
-	ownerInstance, code, err := service.ShowProviderInstance(ownerCtx, "OpenAI", "default", "user-1")
+	ownerInstance, code, err := service.ShowProviderInstance(ownerCtx, "OpenAI", "default")
 	if err != nil || code != common.CodeSuccess || ownerInstance["is_owner"] != true {
 		t.Fatalf("ShowProviderInstance(owner) = (%v, %v, %v), want owner metadata", ownerInstance, code, err)
 	}
 	ownerURL := "https://owner-override.example"
 	ownerRegion := "eu-west-1"
-	ownerConfig, err := service.ResolveSavedProviderModelConfig(ownerCtx, "OpenAI", "default", "user-1", SavedProviderModelOptions{
+	ownerConfig, err := service.ResolveSavedProviderModelConfig(ownerCtx, "OpenAI", "default", SavedProviderModelOptions{
 		APIKeyConfig: json.RawMessage(`{"group_id":"owner-group"}`),
 		BaseURL:      &ownerURL,
 		Region:       &ownerRegion,
@@ -987,7 +1008,7 @@ func TestCheckConnectionDeniesBeforeCallingProvider(t *testing.T) {
 		APIKey:     json.RawMessage(`"sk-test"`),
 		Region:     "default",
 		InstanceID: "instance-1",
-	}, "member-1")
+	})
 	if err == nil || code != common.CodeNotFound {
 		t.Fatalf("CheckConnection() = (%v, %v), want hidden update denial", code, err)
 	}
@@ -1026,7 +1047,7 @@ func TestCheckConnectionUsesStoredCredentialsAndAllowsOwnerOverrides(t *testing.
 		UseSavedCredentials: true,
 		InstanceID:          "instance-1",
 		ModelInfo:           modelInfo,
-	}, "user-1")
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CheckConnection(saved) = (%v, %v), want success", code, err)
 	}
@@ -1041,7 +1062,7 @@ func TestCheckConnectionUsesStoredCredentialsAndAllowsOwnerOverrides(t *testing.
 		BaseURL:    "https://attacker.example",
 		InstanceID: "instance-1",
 		ModelInfo:  modelInfo,
-	}, "user-1")
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CheckConnection(custom endpoint) = (%v, %v), want provider probe success", code, err)
 	}
@@ -1059,7 +1080,7 @@ func TestCheckConnectionUsesStoredCredentialsAndAllowsOwnerOverrides(t *testing.
 		APIKeyConfig:        json.RawMessage(`{"group_id":"owner-group"}`),
 		InstanceID:          "instance-1",
 		ModelInfo:           modelInfo,
-	}, "user-1")
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CheckConnection(owner saved credential overrides) = (%v, %v), want success", code, err)
 	}
@@ -1077,7 +1098,7 @@ func TestModelFactoryResolveModelConfigByID(t *testing.T) {
 	seedModelProviderServiceScope(t, db)
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	target, err := NewModelFactory().resolveConfig(ctx, Identity{TenantID: "user-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
+	target, err := NewModelFactory().resolveConfig(permission.WithTenantID(ctx, "user-1"), entity.ModelTypeChat, "model-1")
 	if err != nil {
 		t.Fatalf("resolveConfig() error = %v", err)
 	}
@@ -1110,7 +1131,7 @@ func TestModelProviderServiceMissingProviderAndInstancePreserveLookupError(t *te
 	} {
 		t.Run(modelRef, func(t *testing.T) {
 			_, err := NewModelFactory().resolveConfig(
-				serviceTestContext(t, "user-1", "tenant-1"), Identity{TenantID: "tenant-1"}, entity.ModelTypeEmbedding, modelRef,
+				permission.WithTenantID(serviceTestContext(t, "user-1", "tenant-1"), "tenant-1"), entity.ModelTypeEmbedding, modelRef,
 			)
 			if !errors.Is(err, errModelConfigUnavailable) || !errors.Is(err, gorm.ErrRecordNotFound) {
 				t.Fatalf("resolveConfig() error = %v, want unavailable record-not-found error", err)
@@ -1137,13 +1158,13 @@ func TestModelProviderServiceDecodesCompatibleInstanceExtra(t *testing.T) {
 		{
 			name: "model ID",
 			resolve: func() (*modelTarget, error) {
-				return solver.resolveConfig(serviceTestContext(t, "user-1", "user-1"), Identity{TenantID: "user-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
+				return solver.resolveConfig(permission.WithTenantID(serviceTestContext(t, "user-1", "user-1"), "user-1"), entity.ModelTypeChat, "model-1")
 			},
 		},
 		{
 			name: "provider instance",
 			resolve: func() (*modelTarget, error) {
-				return solver.resolveConfig(serviceTestContext(t, "user-1", "user-1"), Identity{TenantID: "user-1"}, entity.ModelTypeChat, "gpt-test@default@OpenAI")
+				return solver.resolveConfig(permission.WithTenantID(serviceTestContext(t, "user-1", "user-1"), "user-1"), entity.ModelTypeChat, "gpt-test@default@OpenAI")
 			},
 		},
 	}
@@ -1202,7 +1223,7 @@ func TestModelInfoSeparatesContextLengthAndMaxOutput(t *testing.T) {
 
 func TestModelProviderServiceAlterModelRejectsInvalidStatus(t *testing.T) {
 	ctx := serviceTestContext(t, "user-1", "tenant-1")
-	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "default", "", "user-1", "model-1", map[string]interface{}{"status": "disabled"})
+	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "default", "", "model-1", map[string]interface{}{"status": "disabled"})
 	if err == nil {
 		t.Fatalf("AlterModel() error = nil, want invalid status error")
 	}
@@ -1216,7 +1237,7 @@ func TestModelProviderServiceAlterModelRejectsInvalidStatus(t *testing.T) {
 
 func TestModelProviderServiceAlterModelRejectsMissingModelSelector(t *testing.T) {
 	ctx := serviceTestContext(t, "user-1", "tenant-1")
-	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "default", "", "user-1", "", map[string]interface{}{"status": "active"})
+	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "default", "", "", map[string]interface{}{"status": "active"})
 	if err == nil {
 		t.Fatalf("AlterModel() error = nil, want missing model selector error")
 	}
@@ -1237,7 +1258,7 @@ func TestModelProviderServiceAlterModelRejectsWrongScopedModelID(t *testing.T) {
 	}
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "other", "", "user-1", "model-1", map[string]interface{}{"status": "inactive"})
+	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "other", "", "model-1", map[string]interface{}{"status": "inactive"})
 	if err == nil {
 		t.Fatalf("AlterModel() error = nil, want not found error")
 	}
@@ -1418,7 +1439,7 @@ func TestModelFactoryResolveModelConfigReportsToolSupport(t *testing.T) {
 	ctx := serviceTestContext(t, "user-1", "tenant-1")
 
 	// A reference that passes validation still reads the persisted flag.
-	target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-active")
+	target, err := solver.resolveConfig(permission.WithTenantID(ctx, "tenant-1"), entity.ModelTypeChat, "model-active")
 	if err != nil || target == nil || !target.SupportsTools {
 		t.Fatalf("active chat model = (%v, %v), want tool support", target, err)
 	}
@@ -1431,7 +1452,7 @@ func TestModelFactoryResolveModelConfigReportsToolSupport(t *testing.T) {
 		{"not enrolled as chat", "model-embedding"},
 		{"provider owned by another tenant", "model-foreign"},
 	} {
-		target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, tc.modelID)
+		target, err := solver.resolveConfig(permission.WithTenantID(ctx, "tenant-1"), entity.ModelTypeChat, tc.modelID)
 		if err == nil {
 			t.Errorf("%s: err = nil, want a validation error", tc.name)
 		}
@@ -1492,7 +1513,7 @@ func TestModelFactoryResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 	solver := NewModelFactory()
 	ctx := serviceTestContext(t, "user-1", "tenant-1")
 
-	target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, toolsOn+"@default@OpenAI")
+	target, err := solver.resolveConfig(permission.WithTenantID(ctx, "tenant-1"), entity.ModelTypeChat, toolsOn+"@default@OpenAI")
 	if err != nil {
 		t.Fatalf("tool-capable model: err = %v", err)
 	}
@@ -1500,7 +1521,7 @@ func TestModelFactoryResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 		t.Errorf("tool support = true, want false: the tenant_model flag must win over the catalog")
 	}
 
-	target, err = solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, toolsOff+"@default@OpenAI")
+	target, err = solver.resolveConfig(permission.WithTenantID(ctx, "tenant-1"), entity.ModelTypeChat, toolsOff+"@default@OpenAI")
 	if err != nil {
 		t.Fatalf("tool-incapable model: err = %v", err)
 	}
@@ -1508,7 +1529,7 @@ func TestModelFactoryResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 		t.Errorf("tool support = false, want true: the tenant_model flag must win over the catalog")
 	}
 
-	target, err = solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, toolsOn+"-disabled@default@OpenAI")
+	target, err = solver.resolveConfig(permission.WithTenantID(ctx, "tenant-1"), entity.ModelTypeChat, toolsOn+"-disabled@default@OpenAI")
 	if err == nil || (target != nil && target.SupportsTools) {
 		t.Errorf("disabled model = (%v, %v), want (false, error)", target, err)
 	}
@@ -1534,7 +1555,7 @@ func TestModelFactoryResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 
 	solver := NewModelFactory()
 	ctx := serviceTestContext(t, "user-1", "tenant-1")
-	if target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-1"); err != nil || target == nil || !target.SupportsTools {
+	if target, err := solver.resolveConfig(permission.WithTenantID(ctx, "tenant-1"), entity.ModelTypeChat, "model-1"); err != nil || target == nil || !target.SupportsTools {
 		t.Fatalf("baseline = (%v, %v), want tool support", target, err)
 	}
 
@@ -1545,11 +1566,11 @@ func TestModelFactoryResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 		t.Fatalf("failed to drop provider table: %v", err)
 	}
 	// Composite refs resolve the provider row directly.
-	if target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, "gpt-test@default@OpenAI"); err == nil {
+	if target, err := solver.resolveConfig(permission.WithTenantID(ctx, "tenant-1"), entity.ModelTypeChat, "gpt-test@default@OpenAI"); err == nil {
 		t.Errorf("composite provider lookup failure = (%v, nil), want a propagated error", target)
 	}
 	// The UUID path too.
-	if target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-1"); err == nil {
+	if target, err := solver.resolveConfig(permission.WithTenantID(ctx, "tenant-1"), entity.ModelTypeChat, "model-1"); err == nil {
 		t.Errorf("uuid provider lookup failure = (%v, nil), want a propagated error", target)
 	}
 
@@ -1557,7 +1578,7 @@ func TestModelFactoryResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 	if err := db.Migrator().DropTable(&entity.TenantModel{}); err != nil {
 		t.Fatalf("failed to drop model table: %v", err)
 	}
-	if target, err := solver.resolveConfig(ctx, Identity{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-1"); err == nil {
+	if target, err := solver.resolveConfig(permission.WithTenantID(ctx, "tenant-1"), entity.ModelTypeChat, "model-1"); err == nil {
 		t.Errorf("model lookup failure = (%v, nil), want a propagated error", target)
 	}
 }
@@ -1583,7 +1604,7 @@ func TestDropProviderInstancesRollsBackWhenInstanceDeleteFails(t *testing.T) {
 		_ = db.Callback().Delete().Remove("test:fail_tenant_model_instance_delete")
 	})
 
-	code, err := NewModelProviderService().DropProviderInstances(serviceTestContext(t, "user-1", "user-1"), "provider-1", "user-1", []string{"instance-1"})
+	code, err := NewModelProviderService().DropProviderInstances(serviceTestContext(t, "user-1", "user-1"), "provider-1", []string{"instance-1"})
 	if err == nil {
 		t.Fatalf("DropProviderInstances() error = nil, want forced instance delete failure")
 	}
@@ -1650,7 +1671,6 @@ func TestAlterProviderInstanceUsesActiveTenantProvider(t *testing.T) {
 
 	code, err := NewModelProviderService().AlterProviderInstance(
 		serviceTestContext(t, "user-1", "tenant-2"),
-		"user-1",
 		"DeepSeek",
 		"instance-2",
 		"ds",
@@ -1717,7 +1737,6 @@ func TestAlterProviderInstanceReportsInstanceProviderMismatch(t *testing.T) {
 
 	code, err := NewModelProviderService().AlterProviderInstance(
 		serviceTestContext(t, "user-1", "tenant-2"),
-		"user-1",
 		"OpenAI",
 		"instance-deepseek",
 		"ds",
@@ -1760,14 +1779,14 @@ func TestAlterProviderInstanceScopesToActiveTenant(t *testing.T) {
 	service := NewModelProviderService()
 	if code, err := service.AlterProviderInstance(
 		serviceTestContext(t, "user-1", "tenant-2"),
-		"user-1", "DeepSeek", "instance-2", "ds", json.RawMessage(`"sk-from-tenant-2"`), false, "", "",
+		"DeepSeek", "instance-2", "ds", json.RawMessage(`"sk-from-tenant-2"`), false, "", "",
 		[]CreateInstanceModelInfo{{ModelName: "model-2", ModelTypes: []string{"chat"}, MaxTokens: 8192}},
 	); err != nil || code != common.CodeSuccess {
 		t.Fatalf("AlterProviderInstance(tenant-2) = (%v, %v), want success", code, err)
 	}
 	if code, err := service.AlterProviderInstance(
 		serviceTestContext(t, "user-1", "tenant-1"),
-		"user-1", "DeepSeek", "instance-1", "ds", json.RawMessage(`"sk-from-tenant-1"`), false, "", "",
+		"DeepSeek", "instance-1", "ds", json.RawMessage(`"sk-from-tenant-1"`), false, "", "",
 		[]CreateInstanceModelInfo{{ModelName: "model-1", ModelTypes: []string{"chat"}, MaxTokens: 8192}},
 	); err != nil || code != common.CodeSuccess {
 		t.Fatalf("AlterProviderInstance(tenant-1) = (%v, %v), want success", code, err)
@@ -1806,7 +1825,6 @@ func TestAddModelUsesActiveTenantProvider(t *testing.T) {
 	code, err := NewModelProviderService().AddModel(
 		serviceTestContext(t, "user-1", "tenant-2"),
 		&AddModelRequest{ProviderName: "DeepSeek", InstanceName: "instance-2", ModelName: "added-model", ModelTypes: []string{"chat"}, MaxTokens: 1024},
-		"user-1",
 	)
 	if err != nil {
 		t.Fatalf("AddModel() error = %v", err)
@@ -1833,7 +1851,7 @@ func TestCreateProviderInstanceUsesActiveTenantProvider(t *testing.T) {
 
 	code, err := NewModelProviderService().CreateProviderInstance(
 		serviceTestContext(t, "user-1", "tenant-2"),
-		"DeepSeek", "created-in-tenant-2", "sk-created", "", "default", "user-1",
+		"DeepSeek", "created-in-tenant-2", "sk-created", "", "default",
 		[]CreateInstanceModelInfo{{ModelName: "deepseek-v4-pro", ModelTypes: []string{"chat"}, MaxTokens: 8192}},
 	)
 	if err != nil {

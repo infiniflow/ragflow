@@ -401,3 +401,15 @@ export interface IAgentWebhookCredential {
   credential: string;
   webhook_url: string;
 }
+
+export interface IAgentVersionMetadata {
+  id: string;
+  name: string;
+  alias: string;
+}
+
+export interface IAgentVersionCatalogItem {
+  id: string;
+  name: string;
+  versions: IAgentVersionMetadata[];
+}

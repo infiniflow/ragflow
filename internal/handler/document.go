@@ -71,9 +71,9 @@ type documentServiceIface interface {
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error)
 	GetDocumentArtifact(ctx context.Context, filename string) (*document.ArtifactResponse, error)
 	GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error)
-	UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
-	UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error)
-	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error)
+	UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
+	UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, name, url string) (map[string]interface{}, common.ErrorCode, error)
+	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, name string) (map[string]interface{}, common.ErrorCode, error)
 	DownloadDocument(ctx context.Context, datasetID, docID string) (*document.DownloadDocumentResp, error)
 	UpdateDatasetDocument(ctx context.Context, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error)
 	ApplyDatasetParserConfig(ctx context.Context, datasetID string) (*document.ApplyDatasetParserConfigResponse, common.ErrorCode, error)
@@ -93,8 +93,8 @@ type latestIngestionEventLookup interface {
 
 // fileUploadIface defines the FileService upload methods used by DocumentHandler.
 type fileUploadIface interface {
-	UploadDocumentInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error)
-	UploadDocumentInfoByURL(ctx context.Context, userID, rawURL string) (map[string]interface{}, common.ErrorCode, error)
+	UploadDocumentInfos(ctx context.Context, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error)
+	UploadDocumentInfoByURL(ctx context.Context, rawURL string) (map[string]interface{}, common.ErrorCode, error)
 }
 
 // DocumentHandler document handler
@@ -602,10 +602,11 @@ func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
-	pageStr := c.Query("page")
-	pageSizeStr := c.Query("page_size")
-	page, _ := strconv.Atoi(pageStr)
-	pageSize, _ := strconv.Atoi(pageSizeStr)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
 
 	if orderby := c.Query("orderby"); orderby != "" {
 		switch orderby {
@@ -620,13 +621,6 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		respondPermissionError(c, err, false)
 		return
-	}
-
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 10
 	}
 
 	opts, errMsg := parseDocumentListOptions(c, datasetID)
@@ -996,16 +990,15 @@ func invalidRunStatuses(statuses []string) []string {
 }
 
 func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
+	ctx := c.Request.Context()
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		common.RespondError(c, common.CodeUnauthorized, permission.ErrUnauthenticated.Error())
 		return
 	}
-	tenantID := user.ID
 	datasetID := c.Param("dataset_id")
 	uploadType := strings.ToLower(c.DefaultQuery("type", "local"))
 
-	ctx := c.Request.Context()
 	kb, err := h.datasetService.GetKnowledgebaseByID(ctx, datasetID)
 	if err != nil || kb == nil {
 		common.RespondError(c, common.CodeDataError, fmt.Sprintf("Can't find the dataset with ID %s!", datasetID))
@@ -1018,17 +1011,22 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 
 	switch uploadType {
 	case "web":
-		h.uploadWebDocument(c, kb, tenantID)
+		h.uploadWebDocument(c, kb)
 	case "empty":
-		h.uploadEmptyDocument(c, kb, tenantID)
+		h.uploadEmptyDocument(c, kb)
 	case "local":
-		h.uploadLocalDocuments(c, kb, tenantID)
+		h.uploadLocalDocuments(c, kb)
 	default:
 		common.RespondError(c, common.CodeArgumentError, `"type" must be one of "local", "web", or "empty".`)
 	}
 }
 
-func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
+func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowledgebase) {
+	userID := permission.UserIDFromContext(c.Request.Context())
+	if userID == "" {
+		common.RespondError(c, common.CodeUnauthorized, permission.ErrUnauthenticated.Error())
+		return
+	}
 	form, err := c.MultipartForm()
 	if err != nil || form == nil || len(form.File["file"]) == 0 {
 		common.RespondError(c, common.CodeArgumentError, "No file part!")
@@ -1041,7 +1039,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 			totalSize += fh.Size
 		}
 	}
-	if !billingEnforceStorage(c, tenantID, totalSize) {
+	if !billingEnforceStorage(c, userID, totalSize) {
 		return
 	}
 	for _, fh := range files {
@@ -1049,8 +1047,8 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 			common.RespondError(c, common.CodeArgumentError, "No file selected!")
 			return
 		}
-		if len([]byte(fh.Filename)) > 255 {
-			common.RespondError(c, common.CodeArgumentError, "File name must be 255 bytes or less.")
+		if err := common.ValidateNameRunes(fh.Filename, common.NameLimit255); err != nil {
+			common.RespondError(c, common.CodeArgumentError, "File name must be at most 255 characters.")
 			return
 		}
 	}
@@ -1074,7 +1072,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		}
 	}
 	ctx := c.Request.Context()
-	data, errMsgs := h.documentService.UploadLocalDocuments(ctx, kb, tenantID, files, c.PostForm("parent_path"), override)
+	data, errMsgs := h.documentService.UploadLocalDocuments(ctx, kb, files, c.PostForm("parent_path"), override)
 	if len(errMsgs) > 0 {
 		common.RespondError(c, common.CodeServerError, strings.Join(errMsgs, "\n"))
 		return
@@ -1095,7 +1093,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 	common.RespondSuccessList(c, mapped, "success")
 }
 
-func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
+func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowledgebase) {
 	var req struct {
 		Name string `json:"name"`
 	}
@@ -1111,12 +1109,12 @@ func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowled
 		common.RespondError(c, common.CodeArgumentError, "File name can't be empty.")
 		return
 	}
-	if len([]byte(name)) > 255 {
-		common.RespondError(c, common.CodeArgumentError, "File name must be 255 bytes or less.")
+	if err := common.ValidateNameRunes(name, common.NameLimit255); err != nil {
+		common.RespondError(c, common.CodeArgumentError, "File name must be at most 255 characters.")
 		return
 	}
 	ctx := c.Request.Context()
-	data, code, err := h.documentService.UploadEmptyDocument(ctx, kb, tenantID, name)
+	data, code, err := h.documentService.UploadEmptyDocument(ctx, kb, name)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -1124,7 +1122,7 @@ func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowled
 	common.RespondSuccess(c, mapDocKeysWithRunStatus(data), "success")
 }
 
-func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
+func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledgebase) {
 	name := strings.TrimSpace(c.PostForm("name"))
 	rawURL := c.PostForm("url")
 	if name == "" {
@@ -1135,8 +1133,8 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 		common.RespondError(c, common.CodeArgumentError, `Lack of "url"`)
 		return
 	}
-	if len([]byte(name)) > 255 {
-		common.RespondError(c, common.CodeArgumentError, "File name must be 255 bytes or less.")
+	if err := common.ValidateNameRunes(name, common.NameLimit255); err != nil {
+		common.RespondError(c, common.CodeArgumentError, "File name must be at most 255 characters.")
 		return
 	}
 	if !isValidHTTPURL(rawURL) {
@@ -1144,7 +1142,7 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 		return
 	}
 	ctx := c.Request.Context()
-	data, code, err := h.documentService.UploadWebDocument(ctx, kb, tenantID, name, rawURL)
+	data, code, err := h.documentService.UploadWebDocument(ctx, kb, name, rawURL)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -1771,7 +1769,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	}
 
 	if rawURL != "" {
-		data, code, err := h.fileService.UploadDocumentInfoByURL(ctx, user.ID, rawURL)
+		data, code, err := h.fileService.UploadDocumentInfoByURL(ctx, rawURL)
 		if err != nil {
 			common.RespondError(c, code, err.Error())
 			return
@@ -1780,7 +1778,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.fileService.UploadDocumentInfos(ctx, user.ID, fileHeaders)
+	data, code, err := h.fileService.UploadDocumentInfos(ctx, fileHeaders)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return

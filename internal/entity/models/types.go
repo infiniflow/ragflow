@@ -281,21 +281,23 @@ type URLSuffix struct {
 }
 
 type ChatConfig struct {
-	Stream          *bool
-	Vision          *bool
-	Thinking        *bool
-	MaxTokens       *int
-	Temperature     *float64
-	TopP            *float64
-	DoSample        *bool
-	Stop            *[]string
-	ModelClass      *string
-	Effort          *string
-	Verbosity       *string
-	Tools           interface{}               `json:"tools,omitempty"`
-	ToolChoice      *string                   `json:"tool_choice,omitempty"`
-	ToolChoiceValue any                       `json:"-"`
-	ToolCallsResult *[]map[string]interface{} `json:"-"`
+	Stream           *bool
+	Vision           *bool
+	Thinking         *bool
+	MaxTokens        *int
+	Temperature      *float64
+	TopP             *float64
+	PresencePenalty  *float64
+	FrequencyPenalty *float64
+	DoSample         *bool
+	Stop             *[]string
+	ModelClass       *string
+	Effort           *string
+	Verbosity        *string
+	Tools            interface{}               `json:"tools,omitempty"`
+	ToolChoice       *string                   `json:"tool_choice,omitempty"`
+	ToolChoiceValue  any                       `json:"-"`
+	ToolCallsResult  *[]map[string]interface{} `json:"-"`
 	// UsageResult receives the token usage extracted from the final
 	// streaming chunk when stream_options.include_usage is true.
 	// The ChatStreamlyWithSender driver writes to this pointer (if

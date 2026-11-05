@@ -94,7 +94,7 @@ func (s *ChatChannelService) List(ctx context.Context) ([]*entity.ChatChannelLis
 
 func (s *ChatChannelService) CreateChatChannel(ctx context.Context, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
 	userID := permission.UserIDFromContext(ctx)
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -105,6 +105,10 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, name, channe
 		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: *chatID}, permission.OperationUse); err != nil {
 			return nil, err
 		}
+	}
+	name = strings.TrimSpace(name)
+	if err := common.ValidateNameRunes(name, common.NameLimit128); err != nil {
+		return nil, err
 	}
 	row := &entity.ChatChannel{
 		ID:       common.GenerateUUID(),
@@ -170,6 +174,10 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, channelID st
 		name, ok := value.(string)
 		if !ok {
 			return nil, common.CodeDataError, errors.New("name must be string")
+		}
+		name = strings.TrimSpace(name)
+		if err := common.ValidateNameRunes(name, common.NameLimit128); err != nil {
+			return nil, common.CodeDataError, err
 		}
 		updates["name"] = name
 	}

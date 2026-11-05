@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -198,7 +199,7 @@ func (s *memoryWikiContributionStore) ClearDataset(_ context.Context, _, dataset
 func buildWikiDocumentContribution(documentID string, products []kccommon.Product) wikiDocumentContribution {
 	pagesByKey := make(map[string]wikiContributionPage)
 	for _, product := range products {
-		if product.Variant != kccommon.VariantWiki || metaString(product.Meta, "kind") != "page" {
+		if product.Variant != kccommon.VariantWiki || kccommon.MetaString(product.Meta, "kind") != "page" {
 			continue
 		}
 		key := wikiPageMergeKey(product)
@@ -207,8 +208,8 @@ func buildWikiDocumentContribution(documentID string, products []kccommon.Produc
 		}
 		pagesByKey[key] = wikiContributionPage{
 			Key:       key,
-			Slug:      strings.TrimSpace(metaString(product.Meta, "slug")),
-			PageType:  strings.ToLower(strings.TrimSpace(metaString(product.Meta, "page_type"))),
+			Slug:      strings.TrimSpace(kccommon.MetaString(product.Meta, "slug")),
+			PageType:  strings.ToLower(strings.TrimSpace(kccommon.MetaString(product.Meta, "page_type"))),
 			Signature: wikiContributionSignature(product),
 		}
 	}
@@ -269,30 +270,17 @@ func wikiContributionSignature(product kccommon.Product) string {
 		SourceChunkIDs []string
 	}{
 		Content:        strings.TrimSpace(product.Content),
-		Title:          strings.TrimSpace(metaString(product.Meta, "title")),
-		Topic:          kccommon.NormalizeWikiTopicPath(metaString(product.Meta, "topic")),
-		Summary:        strings.TrimSpace(metaString(product.Meta, "summary")),
-		EntityNames:    sortedUniqueCopy(metaStringSlice(product.Meta, "entity_names")),
-		RelatedKBPages: sortedUniqueCopy(metaStringSlice(product.Meta, "related_kb_pages")),
-		Outlinks:       sortedUniqueCopy(metaStringSlice(product.Meta, "outlinks")),
-		SourceChunkIDs: sortedUniqueCopy(metaStringSlice(product.Meta, "source_chunk_ids")),
+		Title:          strings.TrimSpace(kccommon.MetaString(product.Meta, "title")),
+		Topic:          kccommon.NormalizeWikiTopicPath(kccommon.MetaString(product.Meta, "topic")),
+		Summary:        strings.TrimSpace(kccommon.MetaString(product.Meta, "summary")),
+		EntityNames:    common.DeduplicateSorted(kccommon.MetaStringSlice(product.Meta, "entity_names")),
+		RelatedKBPages: common.DeduplicateSorted(kccommon.MetaStringSlice(product.Meta, "related_kb_pages")),
+		Outlinks:       common.DeduplicateSorted(kccommon.MetaStringSlice(product.Meta, "outlinks")),
+		SourceChunkIDs: common.DeduplicateSorted(kccommon.MetaStringSlice(product.Meta, "source_chunk_ids")),
 	}
 	payload, _ := json.Marshal(normalized)
 	sum := sha256.Sum256(payload)
 	return hex.EncodeToString(sum[:])
-}
-
-func sortedUniqueCopy(values []string) []string {
-	copyValues := append([]string(nil), values...)
-	sort.Strings(copyValues)
-	out := copyValues[:0]
-	for _, value := range copyValues {
-		if value == "" || len(out) > 0 && out[len(out)-1] == value {
-			continue
-		}
-		out = append(out, value)
-	}
-	return out
 }
 
 type wikiContributionDiffResult struct {
@@ -364,7 +352,7 @@ func (c *Consumer) prepareWikiContributionDiff(ctx context.Context, tenantID, da
 			}
 			legacyProducts := make(map[string][]kccommon.Product, len(missingPrevious))
 			for _, page := range mergedPages {
-				for _, docID := range metaStringSlice(page.Meta, "source_doc_ids") {
+				for _, docID := range kccommon.MetaStringSlice(page.Meta, "source_doc_ids") {
 					if _, wanted := missingPrevious[docID]; wanted {
 						legacyProducts[docID] = append(legacyProducts[docID], page)
 					}

@@ -47,22 +47,22 @@ EntitySpecification defines the entity types that need to be recognized in the k
 
 Configuration items:
 
-| Configuration Item | Description |
-| --- | --- |
-| Type | Entity type name, used to identify the current entity category. |
-| Description | Describes the object scope corresponding to this entity type. |
-| Rule | Defines entity extraction requirements, such as recognition scope, naming conventions, and restrictions. |
+| Configuration Item | Description                                                                                              |
+|--------------------|----------------------------------------------------------------------------------------------------------|
+| Type               | Entity type name, used to identify the current entity category.                                          |
+| Description        | Describes the object scope corresponding to this entity type.                                            |
+| Rule               | Defines entity extraction requirements, such as recognition scope, naming conventions, and restrictions. |
 
 The system provides the following default node types:
 
-| Entity Name | Description |
-| --- | --- |
-| person | Person entity, used to represent natural persons or specific individuals, such as authors, employees, customers, historical figures, and similar entities. |
-| org | Organization entity, used to represent companies, institutions, departments, associations, or other organizational groups. |
-| product | Product entity, used to represent specific products, services, software, solutions, or other business offerings. |
-| regulation | Regulation entity, used to represent laws, policies, standards, specifications, guidance documents, or regulatory documents. |
-| location | Location entity, used to represent geographic locations, including countries, cities, addresses, regions, or natural geographic entities. |
-| other | Other entity, used to represent business-meaningful entity objects that do not belong to the categories above. |
+| Entity Name | Description                                                                                                                                                |
+|-------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| person      | Person entity, used to represent natural persons or specific individuals, such as authors, employees, customers, historical figures, and similar entities. |
+| org         | Organization entity, used to represent companies, institutions, departments, associations, or other organizational groups.                                 |
+| product     | Product entity, used to represent specific products, services, software, solutions, or other business offerings.                                           |
+| regulation  | Regulation entity, used to represent laws, policies, standards, specifications, guidance documents, or regulatory documents.                               |
+| location    | Location entity, used to represent geographic locations, including countries, cities, addresses, regions, or natural geographic entities.                  |
+| other       | Other entity, used to represent business-meaningful entity objects that do not belong to the categories above.                                             |
 
 ### RelationSpecification
 
@@ -78,22 +78,22 @@ Click a relationship type card to enter the relationship configuration page.
 
 Configuration items:
 
-| Configuration Item | Description |
-| --- | --- |
-| Type | Relationship type name, used to identify the current relationship category. |
-| Description | Describes the entity association method represented by this relationship. |
-| Rule | Supplements relationship extraction requirements, such as relationship direction, applicable scope, and restrictions. |
+| Configuration Item | Description                                                                                                           |
+|--------------------|-----------------------------------------------------------------------------------------------------------------------|
+| Type               | Relationship type name, used to identify the current relationship category.                                           |
+| Description        | Describes the entity association method represented by this relationship.                                             |
+| Rule               | Supplements relationship extraction requirements, such as relationship direction, applicable scope, and restrictions. |
 
 The system provides the following default relationship types:
 
-| Relationship Name | Description |
-| --- | --- |
-| owns | Ownership relationship, used to indicate ownership or possession between entities, such as a person owning assets or an enterprise owning products. |
-| part_of | Composition relationship, used to indicate composition or inclusion between entities, such as a component belonging to a product or a department belonging to an organization. |
-| caused_by | Causal relationship, used to indicate that an event, action, or state is caused by other factors. |
-| regulates | Regulatory relationship, used to indicate that laws, standards, or specifications constrain, manage, or guide entities. |
-| located_in | Location relationship, used to indicate location associations between entities, such as a company located in a city or a building located in a region. |
-| other | Other relationship, used to represent valuable entity relationships that cannot be classified into the categories above. |
+| Relationship Name | Description                                                                                                                                                                    |
+|-------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| owns              | Ownership relationship, used to indicate ownership or possession between entities, such as a person owning assets or an enterprise owning products.                            |
+| part_of           | Composition relationship, used to indicate composition or inclusion between entities, such as a component belonging to a product or a department belonging to an organization. |
+| caused_by         | Causal relationship, used to indicate that an event, action, or state is caused by other factors.                                                                              |
+| regulates         | Regulatory relationship, used to indicate that laws, standards, or specifications constrain, manage, or guide entities.                                                        |
+| located_in        | Location relationship, used to indicate location associations between entities, such as a company located in a city or a building located in a region.                         |
+| other             | Other relationship, used to represent valuable entity relationships that cannot be classified into the categories above.                                                       |
 
 ### Configuration Recommendations
 
@@ -192,19 +192,19 @@ EntitySpecification defines the content fields that PageIndex needs to extract. 
 
 Field configuration parameters:
 
-| Parameter Name | Description |
-| --- | --- |
-| Type | Field type, used to specify the information type to extract for the current field, such as title, fact, or conclusion. |
-| Description | Field description, used to explain the specific content that needs to be extracted for this field, helping the system understand the field meaning and extraction scope. |
-| Rule | Field rule, used to further constrain how content is extracted, including content format, length, extraction scope, and other requirements. |
+| Parameter Name | Description                                                                                                                                                              |
+|----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Type           | Field type, used to specify the information type to extract for the current field, such as title, fact, or conclusion.                                                   |
+| Description    | Field description, used to explain the specific content that needs to be extracted for this field, helping the system understand the field meaning and extraction scope. |
+| Rule           | Field rule, used to further constrain how content is extracted, including content format, length, extraction scope, and other requirements.                              |
 
 The system provides the following default fields:
 
-| Field Name | Description |
-| --- | --- |
-| title | Title field, used to extract titles or chapter names from the document. The title content should preserve the original text and should not include page numbers, numbering, or other irrelevant symbols. |
-| fact | Fact field, used to extract key facts, rules, definitions, or explanatory content related to the current chapter, reflecting the core information of the chapter. |
-| conclusion | Conclusion field, used to extract summaries, analysis results, or important conclusions from the chapter, supplementing the chapter's core viewpoints. |
+| Field Name | Description                                                                                                                                                                                              |
+|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| title      | Title field, used to extract titles or chapter names from the document. The title content should preserve the original text and should not include page numbers, numbering, or other irrelevant symbols. |
+| fact       | Fact field, used to extract key facts, rules, definitions, or explanatory content related to the current chapter, reflecting the core information of the chapter.                                        |
+| conclusion | Conclusion field, used to extract summaries, analysis results, or important conclusions from the chapter, supplementing the chapter's core viewpoints.                                                   |
 
 ### RelationSpecification
 
@@ -217,17 +217,17 @@ Through this relationship, the system can generate a hierarchical index based on
 
 Configuration parameters:
 
-| Parameter | Description |
-| --- | --- |
-| Type | Relationship type, used to define the association method between entities. The current supported type is include, which indicates an inclusion relationship. |
-| Description | Describes the meaning of the relationship and helps the model understand the association rules between two entities. |
-| Rule | Further constrains relationship extraction logic, including relationship direction, applicable scope, and entity connection requirements. |
+| Parameter   | Description                                                                                                                                                  |
+|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Type        | Relationship type, used to define the association method between entities. The current supported type is include, which indicates an inclusion relationship. |
+| Description | Describes the meaning of the relationship and helps the model understand the association rules between two entities.                                         |
+| Rule        | Further constrains relationship extraction logic, including relationship direction, applicable scope, and entity connection requirements.                    |
 
 The system provides the following default relationship type:
 
-| Relationship Name | Description |
-| --- | --- |
-| conclusion | Conclusion relationship, used to represent findings, results, or conclusion information extracted based on document content. |
+| Relationship Name | Description                                                                                                                  |
+|-------------------|------------------------------------------------------------------------------------------------------------------------------|
+| conclusion        | Conclusion relationship, used to represent findings, results, or conclusion information extracted based on document content. |
 
 Configuration recommendations:
 
@@ -278,32 +278,32 @@ EntitySpecification defines the node types in the mind map. Different node types
 
 When configuring nodes, the main parameters are as follows. The system provides the following default node types:
 
-| Node Name | Description |
-| --- | --- |
-| CentralTopic | Core topic node, used to represent the main topic of the document or content as the center node of the mind map. |
-| Branch | First-level branch node, used to represent the main directions, categories, or knowledge domains expanded around the core topic. |
-| Sub-branch | Second-level branch node, used to represent specific concepts, tasks, cases, or detailed content under Branch. |
-| Keyword | Keyword node, used to supplement other nodes with key concepts or core information. |
+| Node Name    | Description                                                                                                                      |
+|--------------|----------------------------------------------------------------------------------------------------------------------------------|
+| CentralTopic | Core topic node, used to represent the main topic of the document or content as the center node of the mind map.                 |
+| Branch       | First-level branch node, used to represent the main directions, categories, or knowledge domains expanded around the core topic. |
+| Sub-branch   | Second-level branch node, used to represent specific concepts, tasks, cases, or detailed content under Branch.                   |
+| Keyword      | Keyword node, used to supplement other nodes with key concepts or core information.                                              |
 
 ### RelationSpecification
 
 RelationSpecification defines the relationships between different nodes in the mind map and describes the hierarchy and content associations between nodes. The system uses relationship definitions to determine how nodes are connected, such as inclusion between the core topic and branches, or support relationships between branches and keywords.
 
-| Parameter Name | Description |
-| --- | --- |
-| Type | Node type name, used to identify the role of the current node in the mind map. |
-| Description | Describes the information content that this node needs to extract, helping the system understand the node definition and scope. |
-| Rule | Further constrains node generation methods, including content selection, naming requirements, length limits, and other generation requirements. |
+| Parameter Name | Description                                                                                                                                     |
+|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| Type           | Node type name, used to identify the role of the current node in the mind map.                                                                  |
+| Description    | Describes the information content that this node needs to extract, helping the system understand the node definition and scope.                 |
+| Rule           | Further constrains node generation methods, including content selection, naming requirements, length limits, and other generation requirements. |
 
 The system provides common relationship types. Users can adjust them based on business requirements, including adding, modifying, or deleting relationship types.
 
 Relationship configuration parameters:
 
-| Parameter Name | Description |
-| --- | --- |
-| Type | Relationship type name, used to identify the association method between nodes. |
-| Description | Describes the connection meaning represented by this relationship, helping the system understand relationships between nodes. |
-| Rule | Further restricts relationship generation conditions, such as applicable node types, connection direction, and relationship usage scenarios. |
+| Parameter Name | Description                                                                                                                                  |
+|----------------|----------------------------------------------------------------------------------------------------------------------------------------------|
+| Type           | Relationship type name, used to identify the association method between nodes.                                                               |
+| Description    | Describes the connection meaning represented by this relationship, helping the system understand relationships between nodes.                |
+| Rule           | Further restricts relationship generation conditions, such as applicable node types, connection direction, and relationship usage scenarios. |
 
 The system provides the following default relationship types:
 
@@ -372,18 +372,18 @@ Entity configuration defines the information types that need to be recognized an
 
 Each entity contains the following configuration items:
 
-| Configuration Item | Description |
-| --- | --- |
-| Type | Entity type name, used to identify the information category to extract. |
-| Description | Describes the content scope that the entity needs to extract, helping the model accurately recognize target information. |
-| Rule | Further constrains entity extraction methods, such as format requirements, content restrictions, and special processing logic. |
+| Configuration Item | Description                                                                                                                    |
+|--------------------|--------------------------------------------------------------------------------------------------------------------------------|
+| Type               | Entity type name, used to identify the information category to extract.                                                        |
+| Description        | Describes the content scope that the entity needs to extract, helping the model accurately recognize target information.       |
+| Rule               | Further constrains entity extraction methods, such as format requirements, content restrictions, and special processing logic. |
 
 The system provides the following default entity types:
 
-| Entity Name | Description |
-| --- | --- |
-| timestamp | Indicates the time information when an event occurs. It can be a specific date, time point, or valid time range. |
-| event | Indicates the event content corresponding to the time information and describes the main occurrence. |
+| Entity Name | Description                                                                                                      |
+|-------------|------------------------------------------------------------------------------------------------------------------|
+| timestamp   | Indicates the time information when an event occurs. It can be a specific date, time point, or valid time range. |
+| event       | Indicates the event content corresponding to the time information and describes the main occurrence.             |
 
 Users can add entity types based on actual requirements to supplement time-related information that needs attention.
 
@@ -393,11 +393,11 @@ Relationship configuration defines associations between entities and describes c
 
 Each relationship contains the following configuration items:
 
-| Configuration Item | Description |
-| --- | --- |
-| Type | Relationship type name, used to define the connection method between entities. |
-| Description | Describes the meaning and applicable scenarios of the relationship. |
-| Rule | Restricts relationship generation methods, such as sorting rules and connection conditions. |
+| Configuration Item | Description                                                                                 |
+|--------------------|---------------------------------------------------------------------------------------------|
+| Type               | Relationship type name, used to define the connection method between entities.              |
+| Description        | Describes the meaning and applicable scenarios of the relationship.                         |
+| Rule               | Restricts relationship generation methods, such as sorting rules and connection conditions. |
 
 The system provides the following default relationship type:
 
@@ -423,7 +423,7 @@ When adding entities or relationships, make sure they can form clear association
 
 Wiki compiles document content into structured and associated knowledge pages. The system identifies entities, relationships, facts, and concepts in documents, then generates content similar to encyclopedia knowledge pages according to page organization rules.
 
-Wiki is suitable for enterprise knowledge accumulation, product documentation, domain knowledge bases, and similar scenarios. It helps users convert scattered document content into clearly structured knowledge pages that are easy to browse and retrieve.
+Wiki is suitable for enterprise knowledge accumulation, product documentation, domain Datasets, and similar scenarios. It helps users convert scattered document content into clearly structured knowledge pages that are easy to browse and retrieve.
 
 ### Global Rules
 
@@ -570,4 +570,4 @@ Claim is used to supplement factual information and is suitable for scenarios th
 
 Concept is suitable for professional domain knowledge organization and can help improve the association capability of Wiki pages.
 
-Blueprint controls the final page display effect. It is recommended to adjust it based on the purpose of the knowledge base.
+Blueprint controls the final page display effect. It is recommended to adjust it based on the purpose of the Dataset.

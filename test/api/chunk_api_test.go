@@ -270,9 +270,9 @@ func TestChunkListRejectsInvalidQueryValues(t *testing.T) {
 		message string
 	}{
 		{name: "page zero", key: "page", value: "0", message: "page must be a positive integer"},
-		{name: "page not numeric", key: "page", value: "first", message: "page must be a positive integer"},
-		{name: "page_size zero", key: "page_size", value: "0", message: "page_size must be a positive integer"},
-		{name: "page_size not numeric", key: "page_size", value: "many", message: "page_size must be a positive integer"},
+		{name: "page not numeric", key: "page", value: "first", message: "page must be an integer"},
+		{name: "page_size zero", key: "page_size", value: "0", message: "page_size must be between 1 and 100"},
+		{name: "page_size not numeric", key: "page_size", value: "many", message: "page_size must be an integer"},
 		{name: "available invalid", key: "available", value: "sometimes", message: "available must be one of: true, false, 1, 0"},
 	}
 
