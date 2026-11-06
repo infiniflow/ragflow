@@ -559,18 +559,24 @@ func (c *wecomChannel) SendStream(ctx context.Context, msg core.OutgoingMessage,
 	}
 
 	latest, sent := first, ""
+	// finishStream closes the stream message best-effort. Without finish=true WeCom keeps
+	// rendering the message as in progress until the ten minute window ends, so every exit
+	// after the first push tries once, whatever the reason.
+	finishStream := func() {
+		if sent == "" {
+			return
+		}
+		if err := push(sent, true); err != nil {
+			common.Error("wecom: stream finish failed", err, zap.String("account_id", c.account.AccountID))
+		}
+	}
+
 	ticker := time.NewTicker(weComStreamTick)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			// The turn is over, but the stream message still has to be finished or WeCom keeps
-			// rendering it as in progress until the ten minute window ends.
-			if sent != "" {
-				if err := push(sent, true); err != nil {
-					common.Error("wecom: stream finish failed", err, zap.String("account_id", c.account.AccountID))
-				}
-			}
+			finishStream()
 			return ctx.Err()
 		case value, open := <-text:
 			if !open {
@@ -584,13 +590,18 @@ func (c *wecomChannel) SendStream(ctx context.Context, msg core.OutgoingMessage,
 			if sent != latest {
 				next := nextStreamText(sent, latest, weComStreamStep)
 				if err := push(next, false); err != nil {
+					finishStream()
 					return err
 				}
 				sent = next
 				continue
 			}
 			if text == nil {
-				return push(sent, true)
+				err := push(sent, true)
+				if err != nil {
+					finishStream()
+				}
+				return err
 			}
 		}
 	}
