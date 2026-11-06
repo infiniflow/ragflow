@@ -15,6 +15,18 @@
 # libs land under ~/ragflow-native-libs/<lib>/v<version>/ (see download_dev_deps.py
 # and build.sh), so a single mounted cache carries several versions at once.
 
+# ragflow_native_libs_dir
+# Root of the version-keyed native static-lib user cache
+# (~/ragflow-native-libs by default). Overridable via RAGFLOW_NATIVE_LIBS_DIR so
+# CI can mount the cache at a fixed host path (e.g. a RUNNER_WORKSPACE_PREFIX
+# bind mount) instead of the build user's $HOME — see sep-tests.yml Slice 3. An
+# EMPTY override falls back to the $HOME default (the ${VAR:-default} expansion),
+# so a half-configured runner never resolves to an empty cache root. Echoes the
+# resolved path and returns 0.
+ragflow_native_libs_dir() {
+    printf '%s\n' "${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
+}
+
 # go_module_version <module> <repo_root>
 # Reads the pinned version (the "vX.Y.Z" after the require line) of a Go module
 # from <repo_root>/go.mod so build.sh and tools/scripts/download_dev_deps.py agree

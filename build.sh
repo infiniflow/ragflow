@@ -22,6 +22,12 @@ PROJECT_ROOT="$SCRIPT_DIR"
 # native_lib_version.sh (pdfium) — see that file for the single source of truth.
 source "${SCRIPT_DIR}/tools/scripts/native_lib_version.sh"
 
+# Native static-lib user-cache root. Overridable via RAGFLOW_NATIVE_LIBS_DIR so
+# CI can mount the cache at a fixed host path (sep-tests.yml Slice 3); defaults
+# to ~/ragflow-native-libs. Captured once here and reused by every <lib>/v<version>
+# prefix below so the whole script agrees on a single cache root.
+NATIVE_LIBS_DIR="$(ragflow_native_libs_dir)"
+
 # Build directories
 CPP_DIR="$PROJECT_ROOT/internal/binding/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
@@ -64,7 +70,7 @@ OFFICE_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/office_oxide/go"
 if [ -z "$OFFICE_OXIDE_VERSION" ]; then
     echo -e "${RED}Error: could not read office_oxide version from go.mod${NC}" >&2; exit 1
 fi
-OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide/v${OFFICE_OXIDE_VERSION}"
+OFFICE_OXIDE_PREFIX="${NATIVE_LIBS_DIR}/office_oxide/v${OFFICE_OXIDE_VERSION}"
 
 # pdfium native library settings — static linking (kognitos/pdfium-static).
 # Version is read from the single source of truth tools/scripts/native_lib_version.sh
@@ -74,7 +80,7 @@ PDFIUM_STATIC_VERSION="$(pdfium_static_version "$PROJECT_ROOT")"
 if [ -z "$PDFIUM_STATIC_VERSION" ]; then
     echo -e "${RED}Error: could not read pdfium version from native_lib_version.sh${NC}" >&2; exit 1
 fi
-PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static/v${PDFIUM_STATIC_VERSION}"
+PDFIUM_STATIC_PREFIX="${NATIVE_LIBS_DIR}/pdfium-static/v${PDFIUM_STATIC_VERSION}"
 
 # pdf_oxide native library settings — static linking (go-ffi tarball). Version
 # is read from go.mod (single source of truth) instead of a hardcoded constant,
@@ -84,7 +90,7 @@ PDF_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/pdf_oxide/go" "$PRO
 if [ -z "$PDF_OXIDE_VERSION" ]; then
     echo -e "${RED}Error: could not read pdf_oxide version from go.mod${NC}" >&2; exit 1
 fi
-PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide/v${PDF_OXIDE_VERSION}"
+PDF_OXIDE_PREFIX="${NATIVE_LIBS_DIR}/pdf_oxide/v${PDF_OXIDE_VERSION}"
 
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
@@ -92,7 +98,7 @@ PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide/v${PDF_OXIDE_VERSION}"
 # is then resolved via dlopen(NULL) (the process-global symbol table, not the
 # executable's own path), so no libonnxruntime.so is needed at runtime.
 # Downloaded by tools/scripts/download_dev_deps.py into onnxruntime/static_lib.
-ONNXRUNTIME_STATIC_PREFIX="${HOME}/ragflow-native-libs/onnxruntime/static_lib"
+ONNXRUNTIME_STATIC_PREFIX="${NATIVE_LIBS_DIR}/onnxruntime/static_lib"
 
 # ── target platform detection ──────────────────────────────────────────
 # Defaults to the build host (uname), overridable with RAGFLOW_TARGET_OS /
@@ -480,7 +486,7 @@ check_onnxruntime_deps() {
         echo "  available: ${avail:-<none>}" >&2
         echo "  DeepDocORTVersion=${ort_version}; fetch it with:" >&2
         echo "    uv run tools/scripts/download_dev_deps.py" >&2
-        echo "  or pre-seed /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
+        echo "  or pre-seed ${NATIVE_LIBS_DIR}/onnxruntime (CI mounts the cache from the build host)." >&2
         return 1
     fi
 
@@ -836,12 +842,12 @@ build_go() {
         echo "  at startup with a fatal 'no in-process DeepDoc backend serving'." >&2
         echo "  Fetch the static libs with:" >&2
         echo "    uv run tools/scripts/download_dev_deps.py" >&2
-        echo "  or pre-seed them at /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
+        echo "  or pre-seed them at ${NATIVE_LIBS_DIR}/onnxruntime (CI mounts the cache from the build host)." >&2
         echo "  This production binary must statically include ORT — there is no" >&2
         echo "  ORT-free build path. ORT ends up unlinked only via one of:" >&2
         echo "    - the ORT static_lib dir was never seeded: run" >&2
         echo "      'uv run tools/scripts/download_dev_deps.py', or pre-seed" >&2
-        echo "      /opt/ragflow-native-libs/onnxruntime as the CI image does;" >&2
+        echo "      ${NATIVE_LIBS_DIR}/onnxruntime as the CI mount does;" >&2
         echo "    - setup_cgo_env did not add libonnxruntime to CGO_LDFLAGS." >&2
         return 1
     fi

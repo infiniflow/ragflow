@@ -22,6 +22,7 @@
 import importlib.util
 import io
 import os
+import subprocess
 import tarfile
 import threading
 import zipfile
@@ -705,3 +706,76 @@ def test_pdfium_static_version_reads_single_source(tmp_path):
 def test_pdfium_static_version_against_real_repo():
     # Sanity: the shared const on the checked-out repo.
     assert native.pdfium_static_version(native.REPO_ROOT) == "7809"
+
+
+# ── Slice 3: CI mounts the native-lib user cache (RAGFLOW_NATIVE_LIBS_DIR) ──
+# build.sh resolves the native static libs from a single cache root
+# (default ~/ragflow-native-libs, overridable via RAGFLOW_NATIVE_LIBS_DIR so CI
+# can mount the cache at a fixed host path instead of the build user's $HOME).
+# These tests pin that resolution contract (native_lib_version.sh) and the
+# sep-tests.yml wiring that mounts the cache into every BUILDER_CONTAINER.
+
+
+def _sh_eval(func_call, env):
+    """Source the real native_lib_version.sh and call FUNC_CALL in a throwaway
+    bash, returning the CompletedProcess. ENV is the full env (HOME/PATH must be
+    supplied), mirroring how build.sh sources the file."""
+    sh = os.path.join(native.REPO_ROOT, "tools", "scripts", "native_lib_version.sh")
+    assert os.path.isfile(sh), f"native_lib_version.sh not found at {sh}"
+    cmd = f'source "{sh}" && {func_call}'
+    return subprocess.run(["bash", "-c", cmd], env=env, capture_output=True, text=True, check=False)
+
+
+def _env_with(home, override=None):
+    env = {"HOME": home, "PATH": os.environ.get("PATH", "")}
+    if override is not None:
+        env["RAGFLOW_NATIVE_LIBS_DIR"] = override
+    return env
+
+
+def test_native_libs_dir_defaults_to_home():
+    # No override: resolve to $HOME/ragflow-native-libs.
+    res = _sh_eval("ragflow_native_libs_dir", _env_with("/home/alice"))
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.strip() == "/home/alice/ragflow-native-libs"
+
+
+def test_native_libs_dir_honors_override():
+    # Override set: CI mounts the cache at a fixed host path; build.sh must use it.
+    res = _sh_eval("ragflow_native_libs_dir", _env_with("/home/alice", "/mnt/cache"))
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.strip() == "/mnt/cache"
+
+
+def test_native_libs_dir_empty_override_falls_back():
+    # Adversarial: an explicitly EMPTY override must fall back to the HOME default
+    # (the ${VAR:-default} expansion), never resolve to an empty cache root.
+    res = _sh_eval("ragflow_native_libs_dir", _env_with("/home/alice", ""))
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.strip() == "/home/alice/ragflow-native-libs"
+
+
+SEP_TESTS_YML = os.path.join(native.REPO_ROOT, ".github", "workflows", "sep-tests.yml")
+
+
+def test_sep_tests_mounts_native_libs_cache():
+    # Slice 3 contract: the native static-lib user cache is mounted into every
+    # BUILDER_CONTAINER (4 docker runs) and exposed via RAGFLOW_NATIVE_LIBS_DIR,
+    # replacing the old /opt pre-bake. The YAML must also stay parseable.
+    assert os.path.isfile(SEP_TESTS_YML), f"sep-tests.yml not found at {SEP_TESTS_YML}"
+    with open(SEP_TESTS_YML, encoding="utf-8") as f:
+        content = f.read()
+    # YAML must still parse (guards against a malformed edit); skip when pyyaml
+    # is unavailable in the test env (the CI runner has it).
+    try:
+        import yaml
+
+        yaml.safe_load(content)
+    except ImportError:
+        pass
+    # The cache root is declared as a job env so runner and builder container agree.
+    assert "RAGFLOW_NATIVE_LIBS_DIR" in content
+    # Each of the 4 BUILDER_CONTAINER docker runs bind-mounts the cache.
+    assert content.count("${RAGFLOW_NATIVE_LIBS_DIR}:${RAGFLOW_NATIVE_LIBS_DIR}") >= 4
+    # A fail-fast guard catches a missing/partial mount before a cryptic cgo link error.
+    assert "native-lib cache not mounted" in content
