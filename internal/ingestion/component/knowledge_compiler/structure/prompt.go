@@ -24,11 +24,15 @@ const (
 	TypeHypergraph Type = "hypergraph"
 )
 
-// typeAliases mirrors Python's _STRUCT_TYPE_ALIASES: "graph" and
-// "knowledge_graph" both mean the hypergraph compile.
+// typeAliases mirrors Python's _STRUCT_TYPE_ALIASES: "graph",
+// "knowledge_graph" and "ontology" all mean the hypergraph compile. The
+// template kind stays distinct on the row (compilation_template_kind_kwd), so
+// an ontology template compiles exactly like a graph template while the
+// artifacts view can still route it to the ontology renderer.
 var typeAliases = map[string]Type{
 	"graph":           TypeHypergraph,
 	"knowledge_graph": TypeHypergraph,
+	"ontology":        TypeHypergraph,
 }
 
 // normalizeKind mirrors _struct_normalize_kind.
@@ -120,7 +124,15 @@ func renderFields(fields []any, lang string) (string, string) {
 // what actually fixes the model's output shape — a key described only inside a
 // type's "rule" text but absent from the skeleton is silently dropped by the
 // model — so these keys must be rendered into the skeleton here.
-func renderTypeFields(fields []any, lang, kind string, extraFields []any) (string, string) {
+// attrIndex is optional and only used for the entity stage: it carries the
+// datatype attributes each class owns (inheritance included), so the prompt can
+// tell the model both which attributes to fill and under which key. It is
+// variadic so the relation stage — and the existing tests — can omit it.
+func renderTypeFields(fields []any, lang, kind string, extraFields []any, attrIndex ...map[string][]ontologyAttributeSpec) (string, string) {
+	var attrsByClass map[string][]ontologyAttributeSpec
+	if len(attrIndex) > 0 {
+		attrsByClass = attrIndex[0]
+	}
 	var lines []string
 	var typeValues []string
 	for _, raw := range fields {
@@ -137,8 +149,66 @@ func renderTypeFields(fields []any, lang, kind string, extraFields []any) (strin
 		if desc := common.Localize(f["description"], lang); desc != "" {
 			lines = append(lines, "  description: "+desc)
 		}
+		// The declared alternatives for this term. They are stated so the model
+		// recognises a document's own wording as this class or property instead
+		// of proposing a new one; the projection maps an alias back to the
+		// declaration, so answering with one costs no accuracy.
+		if aliases := splitValueList(f["aliases"]); len(aliases) > 0 {
+			lines = append(lines, "  aliases: "+strings.Join(aliases, ", "))
+		}
+		// `kind`, `datatype`, `parent`, `aliases` and `enum` carry the standard
+		// model as structure rather than prose: `kind` splits an object property
+		// (two individuals) from a datatype property (a literal), `datatype`
+		// names the literal's type, `parent` is rdfs:subClassOf, `aliases` lists
+		// the other names this term is known by, and `enum` is a closed value set.
+		//
+		// `required` is deliberately NOT rendered. It is an acceptance rule — a
+		// value the document did not state is missing, not owed — and telling the
+		// model an attribute is mandatory is exactly how invented values are
+		// produced. It is checked on the stored rows instead.
+		if k := strings.TrimSpace(firstStringOf(f["kind"])); k != "" {
+			lines = append(lines, "  kind: "+k)
+		}
+		if dt := strings.TrimSpace(firstStringOf(f["datatype"])); dt != "" {
+			lines = append(lines, "  datatype: "+dt)
+		}
+		if enum := splitValueList(f["enum"]); len(enum) > 0 {
+			lines = append(lines, "  enum: "+strings.Join(enum, " | "))
+		}
+		if parent := strings.TrimSpace(firstStringOf(f["parent"])); parent != "" {
+			lines = append(lines, "  parent: "+parent)
+		}
+		// domain / range carry the ontology's typing as structure rather than
+		// prose: for a relation field they name the class the property runs from
+		// and to. They are rendered on their own lines so the model reads the
+		// constraint directly instead of having it restated inside `rule`, and so
+		// the same declarations can be read back to draw the class-level model
+		// graph without parsing rule text.
+		if dom := strings.TrimSpace(firstStringOf(f["domain"])); dom != "" {
+			lines = append(lines, "  domain: "+dom)
+		}
+		if rng := strings.TrimSpace(firstStringOf(f["range"])); rng != "" {
+			lines = append(lines, "  range: "+rng)
+		}
 		if rule := common.Localize(f["rule"], lang); rule != "" {
 			lines = append(lines, "  rule: "+rule)
+		}
+		// The class's own + inherited datatype attributes. This list is what
+		// makes the model emit them at all, and what the projection uses to
+		// decide which values reach the row's `attr` json column (ontology.md
+		// §4.6) — so it must not be left implicit in `rule` prose.
+		if kind == "entity" && len(attrsByClass) > 0 {
+			if attrs := attrsByClass[typ]; len(attrs) > 0 {
+				parts := make([]string, 0, len(attrs))
+				for _, a := range attrs {
+					entry := a.name
+					if a.datatype != "" {
+						entry += " (" + a.datatype + ")"
+					}
+					parts = append(parts, entry)
+				}
+				lines = append(lines, "  attributes: "+strings.Join(parts, ", "))
+			}
 		}
 	}
 	if len(typeValues) == 0 {
@@ -248,7 +318,7 @@ func HypergraphPrompts(parserConfig map[string]any, lang string) (nodePrompt, ed
 
 	var entFieldsText, entSkel, relFieldsText, relSkel string
 	if usesTemplateShape {
-		entFieldsText, entSkel = renderTypeFields(entFields, lang, "entity", configOutputFields(entitiesCfg))
+		entFieldsText, entSkel = renderTypeFields(entFields, lang, "entity", configOutputFields(entitiesCfg), ontologyAttributeSpecs(parserConfig))
 		relFieldsText, relSkel = renderTypeFields(relFields, lang, "relation", configOutputFields(relationsCfg))
 	} else {
 		entFieldsText, entSkel = renderFields(entFields, lang)

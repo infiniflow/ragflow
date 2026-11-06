@@ -2,7 +2,11 @@ import { ExpandableSearchInput } from '@/components/expandable-search-input';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { SkeletonCard } from '@/components/skeleton-card';
 import { CompilationTemplateKind } from '@/constants/compilation';
-import { useFetchDocumentClaims } from '@/hooks/use-document-request';
+import {
+  DocumentStructureKeys,
+  useFetchDocumentClaims,
+} from '@/hooks/use-document-request';
+import { useQueryClient } from '@tanstack/react-query';
 import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -15,6 +19,13 @@ import type {
 } from './components/claim-list';
 import { RepresentationSelect } from './components/representation-select';
 import { useGraphEntitySearch } from './hooks/use-graph-entity-search';
+import type { OntologyDetailPanelState } from '@/components/structure-graph/ontology-model-graph/detail-panel';
+import { OntologyStats } from '@/components/structure-graph/ontology-model-graph/ontology-stats';
+import { OntologyQualityPanel } from '@/components/structure-graph/ontology-model-graph/quality-panel';
+import type { OntologyFixAction } from '@/components/structure-graph/ontology-model-graph/quality-panel';
+import { applyOntologyFixes } from '@/services/compilation-template-group-service';
+import { useRunDocument } from '@/hooks/use-document-request';
+import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 
 export type {
   ClaimsPanelState,
@@ -23,6 +34,22 @@ export type {
 
 interface RepresentationProps {
   onNodeClick?: (node: ClickableNode) => void;
+  /**
+   * The ontology model graph publishes the class it has selected; the page owns
+   * the column that shows it. Kept a separate prop from the claims / evidence
+   * panels because it comes from a different representation and has its own
+   * shape.
+   */
+  onOntologyPanelChange?: (state: OntologyDetailPanelState | null) => void;
+  /**
+   * Tells the page whether the ontology representation is the one on screen.
+   *
+   * The ontology view is the only one that does not read the raw chunk list —
+   * its data arrives in the detail panel — so the page can give its width back
+   * to the graph while it is showing. Only this component knows, because the
+   * template selection lives here.
+   */
+  onOntologyViewChange?: (active: boolean) => void;
   // The claims / evidence panels belong to the artifact page's middle column,
   // not inside this tree view. The selection still lives here (it is driven by
   // node clicks), but the resolved content is published upward and the page
@@ -35,8 +62,16 @@ function Representation({
   onNodeClick,
   onClaimsPanelChange,
   onEvidencePanelChange,
+  onOntologyPanelChange,
+  onOntologyViewChange,
 }: RepresentationProps) {
   const { t } = useTranslation();
+  // Both halves of the scope: the graph on this page is one DOCUMENT's, so the
+  // ontology panel's drill-down has to be narrowed the same way. Without the
+  // document id the panel's count and its list would be counting different
+  // scopes — the panel would say "5 instances" and list rows from other
+  // documents.
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
 
   const [claimsLeaf, setClaimsLeaf] = useState<ClickableNode | null>(null);
   const [evidenceDetail, setEvidenceDetail] = useState<ClickableNode | null>(
@@ -60,6 +95,57 @@ function Representation({
     handleTemplateChange,
     handleNodeClick,
   } = useGraphEntitySearch(onNodeClick);
+
+  // Applying a ledger edit is two steps the reader asked for as one action:
+  // change the template, then re-compile the documents the finding came from.
+  // This page's scope is a single document, so the target is never ambiguous.
+  const { runDocumentByIds } = useRunDocument();
+  const queryClient = useQueryClient();
+  const handleApplyOntologyFixes = useCallback(
+    async (fixes: OntologyFixAction[]) => {
+      const templateId = (
+        selectedTemplate as { template_id?: string } | undefined
+      )?.template_id;
+      if (!templateId) {
+        throw new Error('this template has no id to edit');
+      }
+      // One write for the whole selection, then ONE re-compile of the union of
+      // the documents the selection came from: re-compiling calls the model, so
+      // selecting five lines must not mean five compiles.
+      const envelope = await applyOntologyFixes(
+        templateId,
+        fixes.map((fix) => ({
+          op: fix.op,
+          property: fix.property,
+          side: fix.side,
+          class: fix.class,
+          domain: fix.domain,
+          range: fix.range,
+          datatype: fix.datatype,
+        })),
+      );
+      if (envelope && envelope.code !== 0) {
+        // The service names the edit it refused, which is what the reader needs
+        // to fix it; the fallback is only for a response that carried nothing.
+        throw new Error(envelope.message || 'the template refused the change');
+      }
+      const documentIds = Array.from(
+        new Set(fixes.flatMap((fix) => fix.docIds)),
+      );
+      const target =
+        documentIds.length > 0 ? documentIds : documentId ? [documentId] : [];
+      if (target.length > 0) {
+        await runDocumentByIds({ documentIds: target, run: 1 });
+      }
+      // The ledger is the page's own read of the same template. Without this the
+      // lines that were just applied stay on screen, and the next click offers
+      // the same edit again — which the writer now refuses as a duplicate.
+      queryClient.invalidateQueries({
+        queryKey: DocumentStructureKeys.graph(datasetId, documentId),
+      });
+    },
+    [selectedTemplate, documentId, runDocumentByIds, queryClient, datasetId],
+  );
 
   // Tree leaves carry a claim-count badge: clicking one opens its claims in the
   // artifact page's middle column, in addition to the usual chunk navigation.
@@ -145,6 +231,20 @@ function Representation({
     supportsClaims,
   ]);
 
+  // Report the ontology view to the page so it can reclaim the chunk column's
+  // width for the graph. Published as a boolean rather than derived by the host,
+  // because the template selection — which is what decides it — lives here.
+  //
+  // The cleanup matters as much as the body: leaving this view (the chunk page
+  // switches to the preview, which unmounts this component) must retract the
+  // claim, or the chunk column would stay hidden for every other view.
+  useEffect(() => {
+    onOntologyViewChange?.(
+      selectedTemplate?.kind === CompilationTemplateKind.Ontology,
+    );
+    return () => onOntologyViewChange?.(false);
+  }, [onOntologyViewChange, selectedTemplate?.kind]);
+
   useEffect(() => {
     if (!supportsClaims) {
       onEvidencePanelChange?.(null);
@@ -222,6 +322,21 @@ function Representation({
           )}
         </div>
       </div>
+      {selectedTemplate?.kind === CompilationTemplateKind.Ontology && (
+        // The ontology's numbers live in the page header rather than as a canvas
+        // overlay: an overlay is wider than this column the moment the detail
+        // column opens, and it then spills under the panel.
+        // Shrunk-to-content, for the same reason as the dataset page: the
+        // representation below must keep its height, and the ledger below is one
+        // line until it is opened.
+        <div className="mt-3 flex shrink-0 flex-col gap-2">
+          <OntologyStats graph={selectedTemplate.ontology} />
+          <OntologyQualityPanel
+            graph={selectedTemplate.ontology}
+            onApplyFixes={handleApplyOntologyFixes}
+          />
+        </div>
+      )}
       {loading && !data && <SkeletonCard className="mt-6" />}
       {!(loading && !data) && templates.length === 0 && (
         <div className="mt-6 text-text-secondary">
@@ -235,6 +350,12 @@ function Representation({
           highlightNodeId={highlightNodeId}
           totalEntities={data?.total_entities}
           returnedEntities={data?.returned_entities}
+          // The document-level artifact column is where the ontology graph is
+          // read, so the drill-down scope comes from the route.
+          datasetId={datasetId}
+          documentId={documentId}
+          templateId={selectedTemplateId}
+          onOntologyDetailChange={onOntologyPanelChange}
         />
       )}
     </section>

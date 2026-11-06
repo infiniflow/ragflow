@@ -419,6 +419,12 @@ export function getSavedParserConfig(
   if (!parserEntry) {
     return null;
   }
+  // The settings form saves the operator as `{ setups: { <fileFormat>: … } }`
+  // (the form field's name), while the DSL shape is the `{ <fileFormat>: … }`
+  // map itself. Reading the wrapper as if it were the map makes `setups` look
+  // like a file format, after which no type family ever matches and EVERY file
+  // is reported unsupported — including ones the operator declares. A dataset
+  // with a declared markdown family was exactly that false block.
   return {
     setups: transformParserConfigSetups(parserEntry),
   };

@@ -14,19 +14,17 @@
  *  limitations under the License.
  */
 
-import { sortSectionNames } from './utils';
+import { IOntologyRetrievalRequestBody } from '@/interfaces/request/ontology-retrieval';
+import api from '@/utils/api';
+import request from '@/utils/next-request';
 
-describe('sortSectionNames', () => {
-  it('prioritizes known sections and preserves remaining order and duplicates', () => {
-    expect(
-      sortSectionNames([
-        'claim',
-        'relation',
-        'claim',
-        'entity',
-        'concept',
-        'claim',
-      ]),
-    ).toEqual(['entity', 'relation', 'claim', 'claim', 'concept', 'claim']);
-  });
-});
+/**
+ * Runs one knowledge-layer lookup.
+ *
+ * A POST because it is not a read of a stored resource: the server searches the
+ * compiled rows for this question, which is the work a turn does. Nothing is
+ * written, so a preview may be run as often as a reader wants.
+ */
+export const retrieveOntologyAssertions = (
+  data: IOntologyRetrievalRequestBody,
+) => request.post(api.ontologyRetrieval, data);

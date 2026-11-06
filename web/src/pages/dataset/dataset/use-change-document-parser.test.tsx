@@ -1,5 +1,4 @@
 import { renderHook, act } from '@testing-library/react';
-import React from 'react';
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),

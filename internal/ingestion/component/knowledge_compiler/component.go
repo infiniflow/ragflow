@@ -223,6 +223,10 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 				o.Products[i].Meta = map[string]any{}
 			}
 			o.Products[i].Meta["compilation_template_ids"] = []string{spec.ID}
+			// The effective model version: what a reader needs to tell a
+			// currently-valid assertion from one the published model no longer
+			// supports. 0 = never published (the working config was in force).
+			o.Products[i].Meta["compilation_template_version"] = spec.Version
 			o.Products[i].Kind = spec.Kind
 			o.Products[i].TemplateID = spec.ID
 			o.Products[i].Variant = variant
@@ -474,6 +478,14 @@ func productsToChunkDocs(products []common.Product, language string) ([]schema.C
 				return nil, err
 			}
 		}
+		// compilation_template_version_int: the published model version that
+		// produced this row. Left unwritten for version 0 (never published), so
+		// "unversioned" is one state everywhere downstream rather than two.
+		if v, ok := common.MetaInt(p.Meta, "compilation_template_version"); ok && v > 0 {
+			if err := doc.SetExtraValue("compilation_template_version_int", v); err != nil {
+				return nil, err
+			}
+		}
 		// Per-variant fine-grained columns (conf/infinity_mapping.json §45–97).
 		if err := applyVariantColumns(&doc, p, tok); err != nil {
 			return nil, err
@@ -639,8 +651,10 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product, tok tokenizer.T
 
 // applyStructureGraphColumns emits the structure-graph row columns shared by the
 // structure and tree variants (Python _struct_to_doc_storage_doc contract):
-//   - type_kwd: "entity" | "relation" | "graph"
-//   - relations: from_entity_kwd / to_entity_kwd
+//   - type_kwd: "entity" | "relation" | "dropped_relation" |
+//     "hyperedge" | "hypernode"
+//   - relations: from_entity_kwd / to_entity_kwd / prop_kwd /
+//     from_type_kwd / to_type_kwd
 //   - entities: name_kwd (lowercased) / entity_type_kwd
 //   - mention_count_int
 //
@@ -652,7 +666,11 @@ func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind str
 			return err
 		}
 	}
-	if kind == "relation" {
+	// A dropped assertion carries the same endpoint columns as the relation it
+	// would have been: the quality panel lists what was rejected exactly the way
+	// it lists what survived, and the reason is in the row's content rather than
+	// in a column of its own (ontology.md §2.7 (1)).
+	if kind == "relation" || kind == "dropped_relation" {
 		if v := common.MetaString(p.Meta, "from"); v != "" {
 			if err := doc.SetExtraValue("from_entity_kwd", v); err != nil {
 				return err
@@ -663,8 +681,56 @@ func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind str
 				return err
 			}
 		}
+		// prop_kwd is the ontology property name; from_type_kwd / to_type_kwd are
+		// the endpoint classes. The three of them are the whole input the
+		// class-level ontology model graph is drawn and counted from, which is
+		// why they are columns and not payload-only fields. Property and class
+		// names are values here — never column names.
+		if v := common.MetaString(p.Meta, "relation_type"); v != "" {
+			if err := doc.SetExtraValue("prop_kwd", v); err != nil {
+				return err
+			}
+		}
+		if v := common.MetaString(p.Meta, "from_type"); v != "" {
+			if err := doc.SetExtraValue("from_type_kwd", v); err != nil {
+				return err
+			}
+		}
+		if v := common.MetaString(p.Meta, "to_type"); v != "" {
+			if err := doc.SetExtraValue("to_type_kwd", v); err != nil {
+				return err
+			}
+		}
 	}
 	if kind == "entity" {
+		if v := common.MetaString(p.Meta, "name"); v != "" {
+			if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
+				return err
+			}
+		}
+		// attr carries the entity's declared datatype attributes as one JSON
+		// object, so a property's value is filterable by name, by value and by
+		// range without a column per property (ontology.md §4.6). It is read
+		// from Product.Meta rather than derived here because this layer has no
+		// template config; buildRows already resolved the declared attribute set
+		// for the entity's class, inheritance included.
+		if v, ok := p.Meta["attr"]; ok && v != nil {
+			if err := doc.SetExtraValue("attr", v); err != nil {
+				return err
+			}
+		}
+		if v := common.MetaString(p.Meta, "entity_type"); v != "" {
+			if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
+				return err
+			}
+		}
+	}
+	if kind == "hyperedge" {
+		// A hyperedge is one flattened factual block. name_kwd / entity_type_kwd
+		// carry its ROOT and are written lowercased, matching the entity rows'
+		// name_kwd (see the entity branch above) — that shared spelling is the
+		// only join between the hypergraph layer and the typed graph, and the two
+		// sides disagreeing would silently break it (ontology.md §4.7).
 		if v := common.MetaString(p.Meta, "name"); v != "" {
 			if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
 				return err
@@ -676,6 +742,53 @@ func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind str
 			}
 		}
 	}
+	if kind == "hypernode" {
+		// node_role_kwd splits the two halves of one hypernode, so each retrieval
+		// leg can filter to its own half; path_kwd is the mechanical attribute
+		// path and prop_kwd its leaf attribute name.
+		//
+		// Deliberately NO name_kwd / entity_type_kwd here: a hypernode is keyed
+		// on (path, value) alone and can belong to several roots, so a single
+		// root name would be wrong rather than merely redundant (ontology.md
+		// §4.2).
+		if v := common.MetaString(p.Meta, "node_role"); v != "" {
+			if err := doc.SetExtraValue("node_role_kwd", v); err != nil {
+				return err
+			}
+		}
+		if v := common.MetaString(p.Meta, "path"); v != "" {
+			if err := doc.SetExtraValue("path_kwd", v); err != nil {
+				return err
+			}
+		}
+		if v := common.MetaString(p.Meta, "prop"); v != "" {
+			if err := doc.SetExtraValue("prop_kwd", v); err != nil {
+				return err
+			}
+		}
+		// node_value_kwd is the slot's value in exact spelling. It is written on
+		// both halves because a key row's payload holds the attribute path, not
+		// the value: without this column a key row cannot be joined to its value
+		// row, and matching an entity's name node would fall back to full text.
+		if v := common.MetaString(p.Meta, "node_value"); v != "" {
+			if err := doc.SetExtraValue("node_value_kwd", v); err != nil {
+				return err
+			}
+		}
+		// hyperedge_ids is the membership relation (E(n) in the paper): every
+		// hyperedge this hypernode belongs to. An array, because the same
+		// hypernode is shared by every block whose path reaches it.
+		if v, ok := p.Meta["hyperedge_ids"]; ok && v != nil {
+			if err := doc.SetExtraValue("hyperedge_ids", v); err != nil {
+				return err
+			}
+		}
+	}
+	if v, ok := common.MetaInt(p.Meta, "depth"); ok && (kind == "hyperedge" || kind == "hypernode") {
+		if err := doc.SetExtraValue("depth_int", v); err != nil {
+			return err
+		}
+	}
 	if v, ok := common.MetaInt(p.Meta, "mention_count"); ok {
 		if err := doc.SetExtraValue("mention_count_int", v); err != nil {
 			return err
@@ -683,8 +796,6 @@ func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind str
 	}
 	return nil
 }
-
-// metaString reads a string-valued Product.Meta key.
 
 // setTitleTokens populates ChunkDoc.title_tks. Python's page row has no
 // title_sm_tks, and the Infinity writer folds title_kwd / title_sm_tks into

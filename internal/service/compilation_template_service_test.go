@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -70,6 +71,145 @@ func TestValidateTemplatePayload_AcceptsJSONMapConfig(t *testing.T) {
 	bad["config"] = "not-a-map"
 	if err := ValidateTemplatePayload(bad, true); err == nil {
 		t.Fatal("non-map config should be rejected")
+	}
+}
+
+// A class `parent` may name several superclasses, `|`-separated. The
+// unknown-parent check and the cyclic-chain check both have to walk every one of
+// them: a cycle that closes through a NON-first parent must still be rejected,
+// and a diamond (one ancestor reached through two parents) must not be.
+func TestValidateOntologyTemplateMultiParent(t *testing.T) {
+	config := func(employeeParent, organizationParent string) map[string]interface{} {
+		fields := []interface{}{
+			map[string]interface{}{"type": "agent"},
+			map[string]interface{}{"type": "person", "parent": "agent"},
+		}
+		org := map[string]interface{}{"type": "organization"}
+		if organizationParent != "" {
+			org["parent"] = organizationParent
+		}
+		fields = append(fields, org, map[string]interface{}{"type": "employee", "parent": employeeParent})
+		return map[string]interface{}{
+			"kind":     "ontology",
+			"entity":   map[string]interface{}{"fields": fields},
+			"relation": map[string]interface{}{"fields": []interface{}{}},
+		}
+	}
+
+	// A diamond: both parents descend from `agent`, which is not a cycle.
+	if err := validateOntologyTemplate(config("person | organization", "agent")); err != nil {
+		t.Fatalf("multi-parent template rejected: %v", err)
+	}
+
+	// The unknown parent is the second one, so stopping at the first would pass.
+	err := validateOntologyTemplate(config("person | nope", "agent"))
+	if err == nil || !strings.Contains(err.Error(), `"nope"`) {
+		t.Fatalf("second parent unchecked: err = %v", err)
+	}
+
+	// organization -> employee closes the cycle through employee's second
+	// parent; the first parent (`person`) is acyclic.
+	err = validateOntologyTemplate(config("person | organization", "employee"))
+	if err == nil || !strings.Contains(err.Error(), "cyclic parent chain") {
+		t.Fatalf("cycle through a non-first parent not detected: err = %v", err)
+	}
+}
+
+// Aliases, a closed value set and a mandatory attribute are declaration-time
+// choices, so every way they can contradict the rest of the template is refused
+// when the template is saved rather than discovered in the model graph later.
+//
+// The alias rules exist because an alias is resolved back to its term during
+// compilation: two terms claiming one string would put the same row in whichever
+// class the map happened to yield, so the model graph would change between
+// restarts.
+func TestValidateOntologyTemplateAliasesAndAcceptanceRules(t *testing.T) {
+	build := func(entity, relation []interface{}) map[string]interface{} {
+		return map[string]interface{}{
+			"kind":     "ontology",
+			"entity":   map[string]interface{}{"fields": entity},
+			"relation": map[string]interface{}{"fields": relation},
+		}
+	}
+	classes := func(extra map[string]interface{}) []interface{} {
+		organization := map[string]interface{}{"type": "organization"}
+		for k, v := range extra {
+			organization[k] = v
+		}
+		return []interface{}{map[string]interface{}{"type": "person"}, organization}
+	}
+	property := func(kind string, extra map[string]interface{}) []interface{} {
+		field := map[string]interface{}{"type": "works_for", "kind": kind, "domain": "person", "range": "organization"}
+		if kind == "datatype" {
+			field["datatype"] = "string"
+		}
+		for k, v := range extra {
+			field[k] = v
+		}
+		return []interface{}{field}
+	}
+
+	if err := validateOntologyTemplate(build(
+		classes(map[string]interface{}{"aliases": []interface{}{"company", "firm"}}),
+		property("object", map[string]interface{}{"aliases": []interface{}{"employed_by"}}),
+	)); err != nil {
+		t.Fatalf("declared aliases rejected: %v", err)
+	}
+	if err := validateOntologyTemplate(build(
+		classes(nil),
+		property("datatype", map[string]interface{}{"enum": "novel|poem", "required": true}),
+	)); err != nil {
+		t.Fatalf("declared enum/required rejected: %v", err)
+	}
+
+	// An alias that names another class would resolve that name to two terms.
+	err := validateOntologyTemplate(build(
+		classes(map[string]interface{}{"aliases": []interface{}{"person"}}),
+		property("object", nil),
+	))
+	if err == nil || !strings.Contains(err.Error(), "already names class") {
+		t.Fatalf("alias colliding with a class name not rejected: err = %v", err)
+	}
+
+	// A term aliasing itself reads as a pasted duplicate and maps to a no-op.
+	err = validateOntologyTemplate(build(
+		classes(map[string]interface{}{"aliases": []interface{}{"ORGANIZATION"}}),
+		property("object", nil),
+	))
+	if err == nil || !strings.Contains(err.Error(), "lists itself as an alias") {
+		t.Fatalf("self-alias not rejected: err = %v", err)
+	}
+
+	// Property aliases are checked in the property namespace.
+	err = validateOntologyTemplate(build(
+		classes(nil),
+		append(property("object", map[string]interface{}{"aliases": []interface{}{"works_for"}}),
+			map[string]interface{}{"type": "genre", "kind": "datatype", "domain": "person", "datatype": "string"}),
+	))
+	if err == nil || !strings.Contains(err.Error(), "lists itself as an alias") {
+		t.Fatalf("property self-alias not rejected: err = %v", err)
+	}
+
+	// A closed value set and a mandatory value are both datatype-property ideas.
+	// On an object property the compiler would ignore them silently, which is
+	// worse than refusing them.
+	err = validateOntologyTemplate(build(classes(nil), property("object", map[string]interface{}{"enum": []interface{}{"a"}})))
+	if err == nil || !strings.Contains(err.Error(), "only applies to datatype") {
+		t.Fatalf("enum on an object property not rejected: err = %v", err)
+	}
+	err = validateOntologyTemplate(build(classes(nil), property("object", map[string]interface{}{"required": true})))
+	if err == nil || !strings.Contains(err.Error(), "only applies to datatype") {
+		t.Fatalf("required on an object property not rejected: err = %v", err)
+	}
+
+	// An enum is rendered into every extraction prompt, so it is bounded.
+	many := make([]interface{}, 0, maxOntologyEnumValues+1)
+	for i := 0; i <= maxOntologyEnumValues; i++ {
+		many = append(many, fmt.Sprintf("value-%d", i))
+	}
+	err = validateOntologyTemplate(build(classes(nil), property("datatype", map[string]interface{}{"enum": many})))
+	if err == nil || !strings.Contains(err.Error(), "at most") {
+		t.Fatalf("oversized enum not rejected: err = %v", err)
 	}
 }
 

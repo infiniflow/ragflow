@@ -20,6 +20,22 @@ export const DefaultFieldKeys = ['type', 'description', 'rule'];
 
 export const FieldKeyOrders = [
   DefaultFieldKeys,
+  // Ontology class: `parent` is rdfs:subClassOf, `label` is the display name.
+  ['type', 'label', 'description', 'parent', 'rule'],
+  // Ontology property: `kind` splits object (domain -> range are classes) from
+  // datatype (domain is a class, `datatype` is the literal's type).
+  [
+    'type',
+    'kind',
+    'domain',
+    'range',
+    'datatype',
+    'label',
+    'description',
+    'rule',
+  ],
+  // Ontology templates add the structured domain/range a property runs between.
+  ['type', 'description', 'domain', 'range', 'rule'],
   ['statement', 'subject'],
   ['definition_excerpt', 'term'],
 ];
@@ -71,6 +87,12 @@ export const FieldLabelKeyMap: Record<string, string> = {
   type: 'knowledgeCompilation.fieldType',
   description: 'knowledgeCompilation.description',
   rule: 'knowledgeCompilation.fieldRule',
+  domain: 'knowledgeCompilation.fieldDomain',
+  range: 'knowledgeCompilation.fieldRange',
+  label: 'knowledgeCompilation.fieldLabel',
+  parent: 'knowledgeCompilation.fieldParent',
+  kind: 'knowledgeCompilation.fieldKind',
+  datatype: 'knowledgeCompilation.fieldDatatype',
 };
 
 export const FieldRequiredMessageKeyMap: Record<string, string> = {

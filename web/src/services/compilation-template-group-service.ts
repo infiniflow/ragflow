@@ -16,6 +16,9 @@
 
 import {
   ICreateCompilationTemplateGroupRequestBody,
+  IOntologyFixBatchRequestBody,
+  IOntologyFixRequestBody,
+  IOntologyFixResponse,
   IUpdateCompilationTemplateGroupRequestBody,
 } from '@/interfaces/request/compilation-template';
 import api from '@/utils/api';
@@ -35,6 +38,32 @@ const compilationTemplateGroupService =
 export const createCompilationTemplateGroup = (
   data: ICreateCompilationTemplateGroupRequestBody,
 ) => request.post(api.compilationTemplateGroups, data);
+
+/**
+ * Applies one confirmed edit to an ontology template. The write is validated
+ * server-side through the same path the editor save uses; re-compiling the
+ * documents that produced the finding is a separate, explicit step.
+ */
+/**
+ * Applies the edits a reader selected, as one write, and resolves with the
+ * backend envelope (`{ code, message, data }`).
+ *
+ * The envelope is on `.data` of what this axios instance resolves with, so it is
+ * unwrapped here on purpose: a caller reading `code` off the response itself
+ * gets `undefined`, treats every write — including a successful one — as
+ * refused, and then skips both the re-compile and the refresh that would have
+ * shown the change.
+ */
+export const applyOntologyFixes = async (
+  templateId: string,
+  fixes: IOntologyFixRequestBody[],
+): Promise<IOntologyFixResponse> => {
+  const { data } = await request.post(
+    api.compilationTemplateOntologyFix(templateId),
+    { fixes } satisfies IOntologyFixBatchRequestBody,
+  );
+  return data as IOntologyFixResponse;
+};
 
 export const updateCompilationTemplateGroup = (
   id: string,

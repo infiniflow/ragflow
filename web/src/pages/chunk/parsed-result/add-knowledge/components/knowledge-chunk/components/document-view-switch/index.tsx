@@ -6,8 +6,9 @@ import Representation, {
   type ClickableNode,
   type EvidencePanelState,
 } from '@/pages/chunk/representation';
+import type { OntologyDetailPanelState } from '@/components/structure-graph/ontology-model-graph/detail-panel';
 import { File, LayoutList } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IHighlight } from 'react-pdf-highlighter';
 
@@ -32,6 +33,13 @@ interface DocumentViewSwitchProps {
   // can render them as a resizable middle column instead of inside the tree.
   onClaimsPanelChange?: (panel: ClaimsPanelState | null) => void;
   onEvidencePanelChange?: (panel: EvidencePanelState | null) => void;
+  // Same contract for the ontology graph's class panel: it is a panel like any
+  // other, so the page's own divider must own it.
+  onOntologyPanelChange?: (panel: OntologyDetailPanelState | null) => void;
+  // Forwarded for the same reason: the page reclaims the chunk column's width
+  // while the ontology representation is on screen, and only the tree view knows
+  // which template is selected.
+  onOntologyViewChange?: (active: boolean) => void;
 }
 
 export default function DocumentViewSwitch({
@@ -44,6 +52,8 @@ export default function DocumentViewSwitch({
   onChunkIdsChange,
   onClaimsPanelChange,
   onEvidencePanelChange,
+  onOntologyPanelChange,
+  onOntologyViewChange,
 }: DocumentViewSwitchProps) {
   const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Preview);
@@ -54,6 +64,17 @@ export default function DocumentViewSwitch({
     },
     [onChunkIdsChange],
   );
+
+  // Retract the ontology claim as soon as this component stops showing the
+  // representations: the preview unmounts `Representation`, so its own cleanup
+  // is the only other chance to retract, and a state that merely *depends on an
+  // unmount* is a state that can be left behind. The switch is where the mode is
+  // decided, so the switch is where "the ontology is no longer on screen" is
+  // stated.
+  useEffect(() => {
+    if (viewMode === ViewMode.Representations) return;
+    onOntologyViewChange?.(false);
+  }, [viewMode, onOntologyViewChange]);
 
   const handleViewModeChange = useCallback(
     (value: SegmentedValue) => {
@@ -118,6 +139,8 @@ export default function DocumentViewSwitch({
             onNodeClick={handleNodeClick}
             onClaimsPanelChange={onClaimsPanelChange}
             onEvidencePanelChange={onEvidencePanelChange}
+            onOntologyPanelChange={onOntologyPanelChange}
+            onOntologyViewChange={onOntologyViewChange}
           />
         )}
       </div>

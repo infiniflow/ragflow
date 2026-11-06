@@ -16,6 +16,8 @@
 
 // Skill types for Skill Space
 
+import type { SkillSearchConfig } from '@/services/skill-space-service';
+
 // ============================================================================
 // Core Skill Types
 // ============================================================================
@@ -151,9 +153,6 @@ export interface FieldConfig {
   description: FieldWeight;
   content: FieldWeight;
 }
-
-// Re-export SkillSearchConfig from service to ensure consistency
-export { SkillSearchConfig } from '@/services/skill-space-service';
 
 export interface SkillSearchResult {
   skill_id: string;

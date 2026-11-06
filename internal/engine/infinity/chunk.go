@@ -330,6 +330,50 @@ func (e *Engine) ensureChunkDataColumn(table *infinity.Table, exists bool) error
 	return nil
 }
 
+// ensureCompiledVersionColumn adds the compiled-row model version column to a
+// table created before the column existed (see ensureChunkDataColumn for why an
+// existing table needs this at all).
+func (e *Engine) ensureCompiledVersionColumn(table *infinity.Table) error {
+	if _, err := table.AddColumns(infinity.TableSchema{
+		&infinity.ColumnDefinition{Name: "compilation_template_version_int", DataType: "integer", Default: "0"},
+	}); err != nil {
+		return fmt.Errorf("failed to add compilation_template_version_int column: %w", err)
+	}
+	return nil
+}
+
+// ensureReviewColumns adds the assertion review columns to a table created before
+// they existed (see ensureChunkDataColumn for why an existing table needs this at
+// all). They are reconciled together because a review action writes all four at
+// once: a table carrying only some of them cannot record an auditable decision.
+// Idempotent, so a half-applied column set (a crash between two AddColumns calls)
+// heals on the next write.
+func (e *Engine) ensureReviewColumns(table *infinity.Table) error {
+	wanted := []struct{ name, dataType, def string }{
+		{"review_status_kwd", "varchar", ""},
+		{"review_by_kwd", "varchar", ""},
+		{"review_at_flt", "float", "0.0"},
+		{"review_note", "varchar", ""},
+	}
+	var schema infinity.TableSchema
+	for _, col := range wanted {
+		exists, err := e.columnExists(table, col.name)
+		if err != nil {
+			return fmt.Errorf("failed to check %s column: %w", col.name, err)
+		}
+		if !exists {
+			schema = append(schema, &infinity.ColumnDefinition{Name: col.name, DataType: col.dataType, Default: col.def})
+		}
+	}
+	if len(schema) == 0 {
+		return nil
+	}
+	if _, err := table.AddColumns(schema); err != nil {
+		return fmt.Errorf("failed to add review columns: %w", err)
+	}
+	return nil
+}
+
 // InsertChunks inserts documents into a dataset table;
 // Table name format: {baseName}_{datasetID}
 // Auto-create the table if it doesn't exist
@@ -422,6 +466,23 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	if parserIDFromChunks(chunks) == "table" {
 		if err := e.ensureChunkDataColumn(table, hasChunkData); err != nil {
 			common.Warn("Failed to add chunk_data column", zap.Error(err))
+		}
+	}
+
+	// Same reconciliation for the compiled-row model version column: a table
+	// created before it existed rejects every compiled-row insert naming it.
+	if !columns["compilation_template_version_int"] {
+		if err := e.ensureCompiledVersionColumn(table); err != nil {
+			common.Warn("Failed to add compilation_template_version_int column", zap.Error(err))
+		}
+	}
+
+	// Same reconciliation for the review columns, which are written by an update
+	// rather than an insert and therefore only ever appear on rows that predate
+	// them until the review action lands.
+	if !columns["review_status_kwd"] {
+		if err := e.ensureReviewColumns(table); err != nil {
+			common.Warn("Failed to add review columns", zap.Error(err))
 		}
 	}
 
@@ -645,6 +706,14 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interfac
 		// column). table.Update("1=1", ...) would rewrite every row of the
 		// dataset, so refuse instead — mirrors DeleteChunks/DeleteMetadata.
 		return fmt.Errorf("INFINITY update aborted: non-empty condition yielded unconstrained filter on table %s", tableName)
+	}
+
+	// The review columns are written by this call, so a table that predates them
+	// must be reconciled here rather than only on the insert path.
+	if _, ok := clmns["review_status_kwd"]; !ok {
+		if err := e.ensureReviewColumns(table); err != nil {
+			common.Warn("Failed to add review columns", zap.Error(err))
+		}
 	}
 
 	// Process remove operation first
