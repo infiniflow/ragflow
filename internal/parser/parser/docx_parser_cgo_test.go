@@ -35,7 +35,10 @@ func TestDOCXParser_ParseWithResult_JSON(t *testing.T) {
 
 func TestDOCXParser_ConfigureFromSetup_Options(t *testing.T) {
 	p := NewDOCXParser()
-	p.ConfigureFromSetup(map[string]any{"remove_toc": true, "remove_header_footer": true})
+	p.ConfigureFromSetup(map[string]any{"flatten_media_to_text": true, "remove_toc": true, "remove_header_footer": true})
+	if !p.FlattenMediaToText {
+		t.Error("FlattenMediaToText not configured")
+	}
 	if !p.RemoveTOC {
 		t.Error("RemoveTOC not configured")
 	}

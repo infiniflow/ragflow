@@ -5,7 +5,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 // helper: build a minimal docx ZIP in-memory with given header/footer XML.
@@ -186,3 +189,59 @@ func TestDocxOutline_JSONRoundtrip(t *testing.T) {
 		t.Errorf("roundtrip got %+v, want %+v", got, o)
 	}
 }
+
+func TestFlattenDOCXMediaToText(t *testing.T) {
+	td := &entity.TableData{
+		Grid: [][]entity.TableCell{
+			{{Text: "Col1"}, {Text: "Col2"}},
+			{{Text: "A"}, {Text: "B"}},
+		},
+		HeaderRows: 1,
+	}
+	items := []map[string]any{
+		{
+			"text":         "Body paragraph",
+			"doc_type_kwd": "text",
+		},
+		{
+			"table":        td,
+			"doc_type_kwd": "table",
+		},
+		{
+			"text":         "",
+			"image":        "base64data",
+			"doc_type_kwd": "image",
+		},
+	}
+
+	flattened := flattenDOCXMediaToText(items)
+	if len(flattened) != 3 {
+		t.Fatalf("len(flattened) = %d, want 3", len(flattened))
+	}
+
+	// 1. Text item remains text
+	if got := flattened[0]["doc_type_kwd"]; got != "text" {
+		t.Errorf("item[0] doc_type_kwd = %v, want text", got)
+	}
+	if got := flattened[0]["text"]; got != "Body paragraph" {
+		t.Errorf("item[0] text = %v, want 'Body paragraph'", got)
+	}
+
+	// 2. Table item rendered to HTML text and doc_type_kwd set to text
+	if got := flattened[1]["doc_type_kwd"]; got != "text" {
+		t.Errorf("item[1] doc_type_kwd = %v, want text", got)
+	}
+	if _, ok := flattened[1]["table"]; ok {
+		t.Errorf("item[1] still has table field after flatten")
+	}
+	tableText, _ := flattened[1]["text"].(string)
+	if !strings.Contains(tableText, "<table>") || !strings.Contains(tableText, "Col1") {
+		t.Errorf("item[1] text = %q, want rendered HTML table", tableText)
+	}
+
+	// 3. Image item doc_type_kwd set to text
+	if got := flattened[2]["doc_type_kwd"]; got != "text" {
+		t.Errorf("item[2] doc_type_kwd = %v, want text", got)
+	}
+}
+
