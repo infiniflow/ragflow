@@ -154,7 +154,6 @@ func newWeComChannelFromConfig(accountID string, cfg map[string]any) (*wecomChan
 		AccountID:      accountID,
 		ConnectionType: connectionType,
 		Secret:         firstString(cfg, "secret"),
-		WebhookHost:    firstString(cfg, "webhook_host"),
 		APIBaseURL:     firstString(cfg, "api_base_url"),
 		WSURL:          firstString(cfg, "ws_url"),
 	}
@@ -189,29 +188,36 @@ func newWeComChannelFromConfig(accountID string, cfg map[string]any) (*wecomChan
 	if len(account.AESKey) != 43 {
 		return nil, fmt.Errorf("wecom account %q aes_key (EncodingAESKey) must be 43 characters, got %d", accountID, len(account.AESKey))
 	}
+	if rawHost, ok := cfg["webhook_host"]; ok {
+		host, ok := rawHost.(string)
+		if !ok {
+			return nil, fmt.Errorf("wecom account %q webhook_host must be %q", accountID, defaultWeComWebhookHost)
+		}
+		host = strings.TrimSpace(host)
+		if host != "" && host != defaultWeComWebhookHost {
+			return nil, fmt.Errorf("wecom account %q webhook_host must use the shared address %q", accountID, defaultWeComWebhookHost)
+		}
+	}
 
 	agentID, err := parseWeComInt(cfg["agent_id"], "agent_id")
 	if err != nil {
 		return nil, fmt.Errorf("wecom account %q %w", accountID, err)
 	}
 	account.AgentID = agentID
-	var configuredWebhookPort *int
 	if raw, ok := cfg["webhook_port"]; ok {
 		port, err := parseWeComInt(raw, "webhook_port")
 		if err != nil {
 			return nil, fmt.Errorf("wecom account %q %w", accountID, err)
 		}
+		if port <= 0 || port > 65535 {
+			return nil, fmt.Errorf("wecom account %q webhook_port must be between 1 and 65535", accountID)
+		}
+		if port != defaultWeComWebhookPort {
+			return nil, fmt.Errorf("wecom account %q webhook_port must use the shared port %d", accountID, defaultWeComWebhookPort)
+		}
 		account.WebhookPort = int(port)
-		configuredWebhookPort = &account.WebhookPort
 	}
-	channel, err := newWeComChannel(account)
-	if err != nil {
-		return nil, err
-	}
-	if configuredWebhookPort != nil {
-		channel.account.WebhookPort = *configuredWebhookPort
-	}
-	return channel, nil
+	return newWeComChannel(account)
 }
 
 // ChannelID returns the platform identifier used by the chat-channel runtime.

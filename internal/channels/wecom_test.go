@@ -90,15 +90,14 @@ func TestNewWeComChannelFromConfigTreatsUnknownConnectionTypeAsWebhook(t *testin
 	}
 }
 
-func TestNewWeComChannelFromConfigAcceptsIntegerAgentID(t *testing.T) {
+func TestNewWeComChannelFromConfigAcceptsIntegerAgentIDAndDefaultsListener(t *testing.T) {
 	encodingAESKey, _ := testWeComAESKey()
 	channel, err := newWeComChannelFromConfig("account-1", map[string]any{
-		"corp_id":      "corp-id",
-		"agent_id":     0,
-		"secret":       "secret",
-		"token":        "token",
-		"aes_key":      encodingAESKey,
-		"webhook_port": 0,
+		"corp_id":  "corp-id",
+		"agent_id": 0,
+		"secret":   "secret",
+		"token":    "token",
+		"aes_key":  encodingAESKey,
 	})
 	if err != nil {
 		t.Fatalf("agent_id=0 error = %v", err)
@@ -106,8 +105,64 @@ func TestNewWeComChannelFromConfigAcceptsIntegerAgentID(t *testing.T) {
 	if channel.account.AgentID != 0 {
 		t.Fatalf("agent_id = %d, want 0", channel.account.AgentID)
 	}
-	if channel.account.WebhookPort != 0 {
-		t.Fatalf("webhook_port = %d, want 0", channel.account.WebhookPort)
+	if channel.account.WebhookPort != defaultWeComWebhookPort {
+		t.Fatalf("webhook_port = %d, want %d", channel.account.WebhookPort, defaultWeComWebhookPort)
+	}
+	if channel.account.WebhookHost != defaultWeComWebhookHost {
+		t.Fatalf("webhook_host = %q, want %q", channel.account.WebhookHost, defaultWeComWebhookHost)
+	}
+}
+
+func TestNewWeComChannelFromConfigRejectsTenantControlledListener(t *testing.T) {
+	encodingAESKey, _ := testWeComAESKey()
+	baseConfig := map[string]any{
+		"corp_id":  "corp-id",
+		"agent_id": "1000001",
+		"secret":   "secret",
+		"token":    "token",
+		"aes_key":  encodingAESKey,
+	}
+	for _, tc := range []struct {
+		name  string
+		field string
+		value any
+	}{
+		{name: "ephemeral port", field: "webhook_port", value: 0},
+		{name: "out of range port", field: "webhook_port", value: 65536},
+		{name: "tenant selected port", field: "webhook_port", value: 3003},
+		{name: "loopback host", field: "webhook_host", value: "127.0.0.1"},
+		{name: "hostname", field: "webhook_host", value: "localhost"},
+		{name: "non-string host", field: "webhook_host", value: []string{"0.0.0.0"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := make(map[string]any, len(baseConfig)+1)
+			for key, value := range baseConfig {
+				config[key] = value
+			}
+			config[tc.field] = tc.value
+			if _, err := newWeComChannelFromConfig("account-1", config); err == nil {
+				t.Fatalf("accepted tenant controlled %s=%v", tc.field, tc.value)
+			}
+		})
+	}
+}
+
+func TestNewWeComChannelFromConfigAllowsSharedListenerConfig(t *testing.T) {
+	encodingAESKey, _ := testWeComAESKey()
+	channel, err := newWeComChannelFromConfig("account-1", map[string]any{
+		"corp_id":      "corp-id",
+		"agent_id":     "1000001",
+		"secret":       "secret",
+		"token":        "token",
+		"aes_key":      encodingAESKey,
+		"webhook_host": defaultWeComWebhookHost,
+		"webhook_port": defaultWeComWebhookPort,
+	})
+	if err != nil {
+		t.Fatalf("shared listener config error = %v", err)
+	}
+	if channel.account.WebhookHost != defaultWeComWebhookHost || channel.account.WebhookPort != defaultWeComWebhookPort {
+		t.Fatalf("listener address = %s:%d, want %s:%d", channel.account.WebhookHost, channel.account.WebhookPort, defaultWeComWebhookHost, defaultWeComWebhookPort)
 	}
 }
 
