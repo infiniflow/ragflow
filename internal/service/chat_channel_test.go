@@ -25,7 +25,7 @@ func setupChatChannelServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.User{}, &entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserCanvas{}, &entity.User{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -98,7 +98,7 @@ func TestChatChannelServiceCreateAndList(t *testing.T) {
 		"bot-a",
 		"dingtalk",
 		entity.JSONMap{"token": "abc"},
-		&chatID,
+		&chatID, nil,
 	)
 	if err != nil {
 		t.Fatalf("CreateChatChannel failed: %v", err)
@@ -204,6 +204,45 @@ func TestChatChannelServiceUpdateChatChannelSuccess(t *testing.T) {
 	}
 	if updated.Config["token"] != "new" {
 		t.Fatalf("expected updated config, got %+v", updated.Config)
+	}
+}
+
+func TestChatChannelServiceCreateRejectsOverlongName(t *testing.T) {
+	setupChatChannelServiceTestDB(t)
+	_, err := NewChatChannelService().CreateChatChannel(
+		serviceTestContext(t, "tenant-1", "tenant-1"),
+		strings.Repeat("a", common.NameLimit128+1),
+		"dingtalk",
+		entity.JSONMap{},
+		nil,
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("CreateChatChannel overlong name error = %v, want length error", err)
+	}
+}
+
+func TestChatChannelServiceUpdateRejectsOverlongName(t *testing.T) {
+	db := setupChatChannelServiceTestDB(t)
+	createServiceTestChannel(t, db, &entity.ChatChannel{
+		ID:       "cc-overlong",
+		TenantID: "tenant-1",
+		Name:     "bot-a",
+		Channel:  "wecom",
+		Config:   entity.JSONMap{},
+		Status:   1,
+	})
+
+	_, code, err := NewChatChannelService().UpdateChatChannel(
+		serviceTestContext(t, "tenant-1", "tenant-1"),
+		"cc-overlong",
+		map[string]interface{}{"name": strings.Repeat("a", common.NameLimit128+1)},
+	)
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("UpdateChatChannel overlong name error = %v, want length error", err)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("UpdateChatChannel code = %v, want CodeDataError", code)
 	}
 }
 

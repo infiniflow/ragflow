@@ -38,6 +38,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
 	componentpkg "ragflow/internal/ingestion/component"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
 
@@ -707,7 +708,7 @@ func init() {
 			return kb.EmbdID, nil
 		},
 		func(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error) {
-			embeddingModel, err := modelFactory.NewEmbeddingModel(ctx, service.Identity{TenantID: tenantID}, embdID)
+			embeddingModel, err := modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
 			if err != nil {
 				return nil, err
 			}

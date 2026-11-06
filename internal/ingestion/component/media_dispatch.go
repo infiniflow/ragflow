@@ -368,7 +368,7 @@ func describeImage(
 	// (the key the Python parser's image branch used) stays readable for canvases
 	// saved before the move. Do NOT read setup["prompt"] here — that key is for
 	// the video family, not image.
-	if v := firstNonEmpty(vision.systemPrompt, getStringOr(setup, "system_prompt", "")); v != "" {
+	if v := common.FirstNonEmpty(vision.systemPrompt, getStringOr(setup, "system_prompt", "")); v != "" {
 		prompt = v
 	}
 	messages := []modelModule.Message{{

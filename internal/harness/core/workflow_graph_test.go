@@ -755,7 +755,7 @@ func TestGraph_LargeParallel_50Nodes(t *testing.T) {
 		name := fmt.Sprintf("leaf_%d", idx)
 		sg.AddNode(name, func(ctx context.Context, state interface{}) (interface{}, error) {
 			s := state.(*dagState)
-			s.Messages = append(s.Messages, fmt.Sprintf("leaf %d done", idx))
+			s.Messages = []string{fmt.Sprintf("leaf %d done", idx)}
 			return s, nil
 		})
 		if prev == "" {
@@ -1104,7 +1104,7 @@ func TestGraph_100NodeChain(t *testing.T) {
 		names[i] = name
 		sg.AddNode(name, func(ctx context.Context, state interface{}) (interface{}, error) {
 			s := state.(*dagState)
-			s.Messages = append(s.Messages, name)
+			s.Messages = []string{name}
 			s.Step = idx
 			return s, nil
 		})
@@ -1192,7 +1192,7 @@ func TestGraph_50WayFanIn(t *testing.T) {
 	case *dagState:
 		msgCount = len(s.Messages)
 	case map[string]interface{}:
-		if msgs, ok := s["Messages"].([]interface{}); ok {
+		if msgs, ok := s["Messages"].([]string); ok {
 			msgCount = len(msgs)
 		}
 	default:
@@ -1221,7 +1221,7 @@ func TestGraph_DeepConditionalBranching(t *testing.T) {
 		name := fmt.Sprintf("level_%d", i)
 		sg.AddNode(name, func(ctx context.Context, state interface{}) (interface{}, error) {
 			s := state.(*dagState)
-			s.Messages = append(s.Messages, name)
+			s.Messages = []string{name}
 			return s, nil
 		})
 	}
@@ -1245,7 +1245,7 @@ func TestGraph_DeepConditionalBranching(t *testing.T) {
 	case *dagState:
 		msgCount = len(s.Messages)
 	case map[string]interface{}:
-		if msgs, ok := s["Messages"].([]interface{}); ok {
+		if msgs, ok := s["Messages"].([]string); ok {
 			msgCount = len(msgs)
 		}
 	default:

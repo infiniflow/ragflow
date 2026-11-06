@@ -203,8 +203,7 @@ func (c *telegramChannel) Stop(ctx context.Context) error {
 func (c *telegramChannel) Send(ctx context.Context, msg core.OutgoingMessage) error {
 	chatID, err := strconv.ParseInt(strings.TrimSpace(msg.ChatID), 10, 64)
 	if err != nil {
-		common.Warn("telegram: invalid chat_id", zap.String("account_id", c.account.AccountID), zap.String("chat_id", msg.ChatID), zap.Error(err))
-		return nil
+		return fmt.Errorf("telegram: invalid chat_id: %w", err)
 	}
 
 	payload := map[string]any{
@@ -219,10 +218,7 @@ func (c *telegramChannel) Send(ctx context.Context, msg core.OutgoingMessage) er
 			}
 		}
 	}
-	if err := c.callAPI(ctx, "sendMessage", payload, nil); err != nil {
-		common.Error("telegram: send failed", err, zap.String("account_id", c.account.AccountID))
-	}
-	return nil
+	return c.callAPI(ctx, "sendMessage", payload, nil)
 }
 
 // run drops queued updates and consumes Telegram updates until stopped.
