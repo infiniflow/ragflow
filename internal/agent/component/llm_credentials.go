@@ -99,10 +99,16 @@ func rejectUnsupportedImages(ctx context.Context, db *gorm.DB, state *runtime.Ca
 	if state == nil {
 		return nil
 	}
-	if _, images := collectSysFiles(state); len(images) > 0 {
-		if supports, known := modelImageCapability(ctx, db, modelRef, modelName); known && !supports {
-			return runtime.NewUserFacingError(fmt.Sprintf(`Image input is not supported by the selected model %q. Please select a vision-capable model.`, modelRef))
-		}
+	_, images := collectSysFiles(state)
+	return rejectUnsupportedImageFiles(ctx, db, images, modelRef, modelName)
+}
+
+func rejectUnsupportedImageFiles(ctx context.Context, db *gorm.DB, images []string, modelRef, modelName string) error {
+	if len(images) == 0 {
+		return nil
+	}
+	if supports, known := modelImageCapability(ctx, db, modelRef, modelName); known && !supports {
+		return runtime.NewUserFacingError(fmt.Sprintf(`Image input is not supported by the selected model %q. Please select a vision-capable model.`, modelRef))
 	}
 	return nil
 }
