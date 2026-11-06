@@ -230,17 +230,15 @@ COPY build.sh ./
 COPY tools/scripts tools/scripts
 COPY Dockerfile ./
 
-# ONNX Runtime static archives: build.sh's _seed_from_system copies the ORT
-# static libs from the runner's pre-baked /opt/ragflow-native-libs/onnxruntime
-# (arch-correct per TARGETARCH) into the user-cache path ONNXRUNTIME_STATIC_PREFIX
-# before linking. These .a files are consumed at link time only and do NOT enter
-# the final image (only the compiled /ragflow/bin is COPY --from=go-builder).
-# The Dockerfile no longer pre-copies them here: pre-creating the user-cache dir
-# would make _seed_from_system treat it as "already cached" and skip the copy on
-# the non-matching architecture (e.g. the arm64 runner has no x64 dir), so we
-# rely on build.sh to seed ORT for both amd64 and arm64. ARG ORT_VERSION stays
-# because build.sh's check_ort_version_consistency greps it to cross-check the
-# pinned ORT release against internal/common/environments.go.
+# ONNX Runtime static archives are provisioned by build.sh from the versioned
+# user cache at ONNXRUNTIME_STATIC_PREFIX (${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/
+# ragflow-native-libs}/onnxruntime/v<version>). There is NO /opt pre-bake: on CI
+# the host cache is mounted in at build time, and for the product image build
+# build.sh auto-downloads ORT via _ensure_native_libs_installed when the cache is
+# absent. These .a files are consumed at link time only and do NOT enter the
+# final image (only the compiled /ragflow/bin is COPY --from=go-builder).
+# ARG ORT_VERSION stays because build.sh's check_ort_version_consistency greps it
+# to cross-check the pinned ORT release against internal/common/environments.go.
 ARG ORT_VERSION=1.29.0
 
 RUN git config --global safe.directory "*" && \
