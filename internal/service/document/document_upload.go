@@ -2,7 +2,6 @@ package document
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -188,12 +187,9 @@ func (s *DocumentService) ensureKBFolder(ctx context.Context, kb *entity.Knowled
 		if err != nil {
 			return err
 		}
-		if err := s.fileDAO.LockDatasetFolderParent(ctx, tx, tenantID, kbRoot.ID); err != nil {
-			return err
-		}
 		kbFolder, err = s.newAFileFromKB(ctx, tx, current.TenantID, current.Name, kbRoot.ID)
 		return err
-	}, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	})
 	return kbFolder, err
 }
 

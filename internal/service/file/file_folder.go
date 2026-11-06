@@ -2,7 +2,6 @@ package file
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
@@ -492,31 +491,25 @@ func (s *FileService) CreateFolder(ctx context.Context, name, parentID, fileType
 		fileType = FileTypeVirtual
 	}
 
-	txOptions := &sql.TxOptions{}
-	if parentFolder.Name == dao.DatasetFolderName {
-		// Keep name reads current after acquiring the namespace parent lock.
-		txOptions.Isolation = sql.LevelReadCommitted
+	existsInParent := func(candidate string) (bool, error) {
+		return s.fileDAO.NameExists(ctx, dao.DB, candidate, parentID, tenantID, "")
 	}
+	var uniqueName string
+	if fileType == FileTypeFolder {
+		// A folder is not a file: append the counter to the whole name.
+		uniqueName, err = common.UniqueName(name, common.NameLimit255, existsInParent)
+	} else {
+		uniqueName, err = common.UniqueFileName(name, common.NameLimit255, existsInParent)
+	}
+	if err != nil {
+		return nil, err
+	}
+	name = uniqueName
+
 	var folder *entity.File
 	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := s.fileDAO.LockDatasetFolderParent(ctx, tx, tenantID, parentID); err != nil {
-			return err
-		}
-		existsInParent := func(candidate string) (bool, error) {
-			return s.fileDAO.NameExists(ctx, tx, candidate, parentID, tenantID, "")
-		}
-		var uniqueName string
-		if fileType == FileTypeFolder {
-			// A folder is not a file: append the counter to the whole name.
-			uniqueName, err = common.UniqueName(name, 255, existsInParent)
-		} else {
-			uniqueName, err = common.UniqueFileName(name, 255, existsInParent)
-		}
-		if err != nil {
-			return err
-		}
 		var createErr error
-		folder, createErr = s.fileDAO.CreateFolder(ctx, tx, parentID, tenantID, userID, uniqueName, fileType)
+		folder, createErr = s.fileDAO.CreateFolder(ctx, tx, parentID, tenantID, userID, name, fileType)
 		if createErr != nil {
 			return createErr
 		}
@@ -525,7 +518,7 @@ func (s *FileService) CreateFolder(ctx context.Context, name, parentID, fileType
 			kind = permission.ResourceKindFolder
 		}
 		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: kind, ID: folder.ID})
-	}, txOptions)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create folder: %w", err)
 	}
