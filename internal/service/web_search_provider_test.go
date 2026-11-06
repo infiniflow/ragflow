@@ -627,6 +627,7 @@ func TestResolveWebSearchProviderSelectsKeyedProviders(t *testing.T) {
 		{provider: "parallel", apiKeyName: "parallel_api_key", apiKey: "parallel-test"},
 		{provider: "search1api", apiKeyName: "search1api_api_key", apiKey: "search1api-test"},
 		{provider: "searchapi", apiKeyName: "searchapi_api_key", apiKey: "searchapi-test"},
+		{provider: "specstream", apiKeyName: "specstream_api_key", apiKey: "specstream-test"},
 	}
 
 	for _, tc := range cases {
@@ -1032,6 +1033,91 @@ func TestDecodeSearchAPIWebSearchResultsRejectsMalformedContainers(t *testing.T)
 // without organic_results.
 func TestDecodeSearchAPIWebSearchResultsAcceptsMissingResults(t *testing.T) {
 	results, err := decodeSearchAPIWebSearchResults([]byte(`{"search_metadata": {"status": "Success"}, "search_information": {"total_results": 0}}`))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("results = %#v, want empty", results)
+	}
+}
+
+func TestRetrieveSpecStreamWebSearchSendsBearerKeyAndUsesSources(t *testing.T) {
+	var requestQuery url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("method = %q, want GET", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer specstream-test" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer specstream-test")
+		}
+		if got := r.Header.Get("User-Agent"); got == "" {
+			t.Error("User-Agent is empty")
+		}
+		requestQuery = r.URL.Query()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"data": {
+				"id": "req_test",
+				"kind": "fact",
+				"query": "What is RAGFlow?",
+				"sources": [
+					{"title": "Empty snippet", "url": "https://example.com/empty", "snippet": " \t\n"},
+					{"title": "RAGFlow", "url": "https://example.com/ragflow", "site": "example.com", "snippet": "An open-source RAG engine.", "cited": true}
+				]
+			}
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := retrieveSpecStreamWebSearch(t.Context(), server.Client(), server.URL, "specstream-test", "What is RAGFlow?")
+	if err != nil {
+		t.Fatalf("retrieve SpecStream web search: %v", err)
+	}
+	if got := requestQuery.Get("q"); got != "What is RAGFlow?" {
+		t.Fatalf("q = %q, want %q", got, "What is RAGFlow?")
+	}
+	if requestQuery.Has("api_key") {
+		t.Fatal("api_key must not be sent as a query parameter")
+	}
+	assertWebSearchChunk(t, result, "specstream-https://example.com/ragflow", "RAGFlow", "An open-source RAG engine.")
+}
+
+func TestRetrieveSpecStreamWebSearchRejectsErrorStatuses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error": "Unauthorized"}`))
+	}))
+	defer server.Close()
+
+	if _, err := retrieveSpecStreamWebSearch(t.Context(), server.Client(), server.URL, "bad-key", "ragflow"); err == nil {
+		t.Fatal("error is nil")
+	}
+}
+
+func TestDecodeSpecStreamWebSearchResultsRejectsMalformedContainers(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "null response", body: `null`},
+		{name: "null sources", body: `{"sources":null}`},
+		{name: "null sources in data", body: `{"data":{"sources":null}}`},
+		{name: "object sources", body: `{"sources":{}}`},
+		{name: "string data", body: `{"data":"nope"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := decodeSpecStreamWebSearchResults([]byte(tc.body)); err == nil {
+				t.Fatal("error is nil")
+			}
+		})
+	}
+}
+
+func TestDecodeSpecStreamWebSearchResultsAcceptsMissingSources(t *testing.T) {
+	results, err := decodeSpecStreamWebSearchResults([]byte(`{"data": {"id": "req_empty", "kind": "fact"}}`))
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
