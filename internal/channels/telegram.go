@@ -384,7 +384,7 @@ func (c *telegramChannel) callAPI(ctx context.Context, method string, params map
 		return err
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("Telegram API %s returned status %d: %s", method, resp.StatusCode, string(body))
+		return fmt.Errorf("Telegram API %s returned status %d: %.200s", method, resp.StatusCode, body)
 	}
 
 	var response telegramAPIResponse
@@ -392,7 +392,7 @@ func (c *telegramChannel) callAPI(ctx context.Context, method string, params map
 		return fmt.Errorf("Telegram API %s returned invalid JSON: %w", method, err)
 	}
 	if !response.OK {
-		return fmt.Errorf("Telegram API %s failed: %s", method, response.Description)
+		return fmt.Errorf("Telegram API %s failed: %.200s", method, response.Description)
 	}
 	if out != nil && len(response.Result) > 0 {
 		if err := json.Unmarshal(response.Result, out); err != nil {
