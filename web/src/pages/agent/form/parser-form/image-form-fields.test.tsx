@@ -14,7 +14,13 @@ jest.mock('@/components/ui/message', () => ({
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => (key === 'flow.imageOcrLocal' ? 'DeepDoc' : key),
+    t: (key: string) => {
+      const labels: Record<string, string> = {
+        'flow.imageOcrDeepDoc': 'DeepDoc',
+        'flow.imageOcrExternal': 'External OCR model',
+      };
+      return labels[key] ?? key;
+    },
   }),
 }));
 
@@ -101,7 +107,7 @@ beforeEach(() => {
   });
 });
 
-describe('image OCR model selection', () => {
+describe('image OCR engine selection', () => {
   const models = [
     {
       model_id: 'local-b',
@@ -133,37 +139,47 @@ describe('image OCR model selection', () => {
     },
   ];
 
-  it('defaults to local OCR and fetches the canvas owner models', () => {
+  it('defaults to DeepDoc and fetches the canvas owner models', () => {
     render(<ParserImageForm />);
-    expect(screen.getByTestId('image-ocr-model')).toHaveTextContent('DeepDoc');
-    expect(useFetchAllAddedModels).toHaveBeenCalledWith('ocr', 'canvas-owner');
+    expect(screen.getByRole('radio', { name: 'DeepDoc' })).toBeChecked();
+    expect(
+      screen.getByRole('radio', { name: 'External OCR model' }),
+    ).toBeDisabled();
+    expect(screen.queryByTestId('image-ocr-model')).not.toBeInTheDocument();
+    expect(useFetchAllAddedModels).toHaveBeenCalledWith(
+      undefined,
+      'canvas-owner',
+    );
   });
 
-  it('names the built-in OCR model DeepDoc in English and Chinese', () => {
-    expect(en.translation.flow.imageOcrLocal).toBe('DeepDoc');
-    expect(zh.translation.flow.imageOcrLocal).toBe('DeepDoc');
+  it('names the built-in OCR engine DeepDoc in English and Chinese', () => {
+    expect(en.translation.flow.imageOcrDeepDoc).toBe('DeepDoc');
+    expect(zh.translation.flow.imageOcrDeepDoc).toBe('DeepDoc');
   });
 
-  it('switches from an enrolled model back to DeepDoc without persisting a sentinel', () => {
+  it('auto-selects the first model for external and restores the last pick after a DeepDoc detour', () => {
     (useFetchAllAddedModels as jest.Mock).mockReturnValue({
       data: models,
       isFetched: true,
       isError: false,
     });
     render(<ParserImageForm />);
-    fireEvent.click(screen.getByTestId('image-ocr-model'));
-    fireEvent.click(screen.getByText('PP-OCRv6'));
+    fireEvent.click(screen.getByRole('radio', { name: 'External OCR model' }));
     expect(screen.getByTestId('saved-values')).toHaveTextContent(
       '"ocr_model_id":"local-b"',
     );
     fireEvent.click(screen.getByTestId('image-ocr-model'));
-    fireEvent.click(screen.getByText('DeepDoc'));
-    expect(screen.getByTestId('image-ocr-model')).toHaveTextContent('DeepDoc');
+    fireEvent.click(screen.getByText('PaddleOCR-VL-1.5'));
+    expect(screen.getByTestId('saved-values')).toHaveTextContent(
+      '"ocr_model_id":"cloud-b"',
+    );
+    fireEvent.click(screen.getByRole('radio', { name: 'DeepDoc' }));
+    expect(screen.getByRole('radio', { name: 'DeepDoc' })).toBeChecked();
+    expect(screen.queryByTestId('image-ocr-model')).not.toBeInTheDocument();
     expect(screen.getByTestId('saved-values')).toHaveTextContent(
       '"ocr_model_id":""',
     );
-    fireEvent.click(screen.getByTestId('image-ocr-model'));
-    fireEvent.click(screen.getByText('PaddleOCR-VL-1.5'));
+    fireEvent.click(screen.getByRole('radio', { name: 'External OCR model' }));
     expect(screen.getByTestId('saved-values')).toHaveTextContent(
       '"ocr_model_id":"cloud-b"',
     );
@@ -175,8 +191,9 @@ describe('image OCR model selection', () => {
       'flow.imageOcrNoModels',
     );
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('image-ocr-model'));
-    expect(screen.getAllByText('DeepDoc')).toHaveLength(2);
+    expect(
+      screen.getByRole('radio', { name: 'External OCR model' }),
+    ).toBeDisabled();
   });
 
   it('shows a request failure and a missing saved model after loading ends', () => {
@@ -201,6 +218,9 @@ describe('image OCR model selection', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(
       'flow.imageOcrModelsError',
     );
+    expect(
+      screen.getByRole('radio', { name: 'External OCR model' }),
+    ).toBeChecked();
     expect(screen.getByTestId('image-ocr-model')).toHaveTextContent(
       'Missing: deleted-model',
     );
@@ -208,8 +228,7 @@ describe('image OCR model selection', () => {
       '"ocr_model_id":"deleted-model"',
     );
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('image-ocr-model'));
-    fireEvent.click(screen.getByText('DeepDoc'));
+    fireEvent.click(screen.getByRole('radio', { name: 'DeepDoc' }));
     expect(screen.getByTestId('saved-values')).toHaveTextContent(
       '"ocr_model_id":""',
     );
@@ -235,7 +254,7 @@ describe('image OCR model selection', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
-  it('keeps DeepDoc selected when the first model request fails', () => {
+  it('keeps DeepDoc selected and external disabled when the first model request fails', () => {
     (useFetchAllAddedModels as jest.Mock).mockReturnValue({
       data: [],
       isFetched: true,
@@ -246,12 +265,13 @@ describe('image OCR model selection', () => {
       'flow.imageOcrModelsError',
     );
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
-    expect(screen.getByTestId('image-ocr-model')).toHaveTextContent('DeepDoc');
+    expect(screen.getByRole('radio', { name: 'DeepDoc' })).toBeChecked();
+    expect(
+      screen.getByRole('radio', { name: 'External OCR model' }),
+    ).toBeDisabled();
     expect(screen.getByTestId('saved-values')).toHaveTextContent(
       '"ocr_model_id":""',
     );
-    fireEvent.click(screen.getByTestId('image-ocr-model'));
-    expect(screen.getAllByText('DeepDoc')).toHaveLength(2);
   });
 
   it('offers only supported enrolled OCR models and saves their IDs', () => {
@@ -259,7 +279,7 @@ describe('image OCR model selection', () => {
       data: models,
       isFetched: true,
     });
-    render(<ParserImageForm />);
+    render(<ParserImageForm modelId="cloud-b" />);
     fireEvent.click(screen.getByTestId('image-ocr-model'));
     expect(screen.queryByText('Unsupported OCR')).not.toBeInTheDocument();
     expect(screen.queryByText('Not an OCR model')).not.toBeInTheDocument();
@@ -276,18 +296,25 @@ describe('image OCR model selection', () => {
     });
     render(<ParserImageForm visionEnabled modelId="cloud-b" />);
     fireEvent.click(screen.getByRole('switch'));
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
     expect(screen.queryByTestId('image-ocr-model')).not.toBeInTheDocument();
     expect(screen.getByTestId('saved-values')).toHaveTextContent(
       '"ocr_model_id":"cloud-b"',
     );
     fireEvent.click(screen.getByRole('switch'));
+    expect(
+      screen.getByRole('radio', { name: 'External OCR model' }),
+    ).toBeChecked();
     expect(screen.getByTestId('image-ocr-model')).toHaveTextContent(
       'PaddleOCR-VL-1.5',
     );
   });
 
-  it('keeps a deleted model visible instead of silently choosing local OCR', () => {
+  it('keeps a deleted model visible instead of silently choosing DeepDoc', () => {
     render(<ParserImageForm modelId="deleted-model" />);
+    expect(
+      screen.getByRole('radio', { name: 'External OCR model' }),
+    ).toBeChecked();
     expect(screen.getByTestId('image-ocr-model')).toHaveTextContent(
       'Missing: deleted-model',
     );

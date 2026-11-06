@@ -1899,10 +1899,10 @@ func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.M
 		return nil, errors.New("message store is not initialized")
 	}
 	if page <= 0 {
-		page = 1
+		page = common.DefaultPage
 	}
 	if pageSize <= 0 {
-		pageSize = defaultMessageLimit
+		pageSize = common.DefaultPageSize
 	} else if pageSize > maxMessageLimit {
 		pageSize = maxMessageLimit
 	}

@@ -25,10 +25,10 @@ const mcpRerankCandidatesCount = 512
 // multiplying so a hostile page value cannot overflow page * pageSize.
 func validateRetrievalWindow(page, pageSize int) error {
 	if page <= 0 {
-		page = 1
+		page = common.DefaultPage
 	}
 	if pageSize <= 0 {
-		pageSize = 30
+		pageSize = common.DefaultPageSize
 	}
 	if page > mcpRerankCandidatesCount/pageSize {
 		return fmt.Errorf("page (%d) * page_size (%d) exceeds the fixed rerank candidate window (%d); narrow page or page_size", page, pageSize, mcpRerankCandidatesCount)
@@ -60,14 +60,13 @@ func mcpRetrieval(ctx context.Context, ds mcpDatasetService, req mcp.RetrievalRe
 	// across all pages (matching Python _fetch_all_datasets behaviour).
 	datasetIDs := req.DatasetIDs
 	if len(datasetIDs) == 0 {
-		const maxPageSize = 100
 		ids, err := fetchAllDatasetIDs(func(page, pageSize int) ([]map[string]interface{}, int64, error) {
 			data, total, _, err := ds.ListDatasets(ctx,
 				"", "", page, pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}},
 				"", nil, "", nil, "",
 			)
 			return data, total, err
-		}, maxPageSize)
+		}, common.MaxPageSize)
 		if err != nil {
 			return "", fmt.Errorf("cannot resolve accessible datasets: %w", err)
 		}
@@ -234,10 +233,10 @@ func mcpRetrievalResult(req mcp.RetrievalRequest, datasetIDs []string, resp *ser
 	}
 	page, size := req.Page, req.PageSize
 	if page <= 0 {
-		page = 1
+		page = common.DefaultPage
 	}
 	if size <= 0 {
-		size = 30
+		size = common.DefaultPageSize
 	}
 	return map[string]any{
 		"chunks":     chunks,

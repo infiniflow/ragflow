@@ -76,6 +76,12 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		return
 	}
 
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+
 	if c.Query("type") == "filter" {
 		ctx := c.Request.Context()
 		data, code, err := h.datasetsService.ListDatasetFilters(ctx, c.Query("canvas_id"))
@@ -93,35 +99,6 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 			common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("Extra inputs are not permitted: %s", param))
 			return
 		}
-	}
-
-	// Mirror the pydantic validation of Python's ListDatasetReq.
-	page := 1
-	if pageStr := c.Query("page"); pageStr != "" {
-		p, err := strconv.Atoi(pageStr)
-		if err != nil {
-			common.RespondError(c, common.CodeArgumentError, "Input should be a valid integer, unable to parse string as an integer")
-			return
-		}
-		if p < 1 {
-			common.RespondError(c, common.CodeArgumentError, "Input should be greater than or equal to 1")
-			return
-		}
-		page = p
-	}
-
-	pageSize := 30
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		ps, err := strconv.Atoi(pageSizeStr)
-		if err != nil {
-			common.RespondError(c, common.CodeArgumentError, "Input should be a valid integer, unable to parse string as an integer")
-			return
-		}
-		if ps < 1 {
-			common.RespondError(c, common.CodeArgumentError, "Input should be greater than or equal to 1")
-			return
-		}
-		pageSize = ps
 	}
 
 	// `sort` supersedes the older pair, so a request it can order is not rejected
@@ -636,24 +613,10 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
 
-	page := 0
-	if pageStr := c.Query("page"); pageStr != "" {
-		p, err := strconv.Atoi(pageStr)
-		if err != nil {
-			common.RespondError(c, common.CodeArgumentError, "page must be an integer")
-			return
-		}
-		page = p
-	}
-
-	pageSize := 0
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		ps, err := strconv.Atoi(pageSizeStr)
-		if err != nil {
-			common.RespondError(c, common.CodeArgumentError, "page_size must be an integer")
-			return
-		}
-		pageSize = ps
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
 	}
 
 	ctx := c.Request.Context()
@@ -1197,11 +1160,11 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 	}
 
 	if req.Page == nil {
-		defaultPage := 1
+		defaultPage := common.DefaultPage
 		req.Page = &defaultPage
 	}
 	if req.PageSize == nil && req.Size == nil {
-		defaultSize := 30
+		defaultSize := common.DefaultPageSize
 		req.PageSize = &defaultSize
 	}
 	if req.KNNTopK == nil && req.TopK == nil {
@@ -1343,14 +1306,8 @@ func validateSearchDatasetRequest(req *service.SearchDatasetRequest) error {
 }
 
 func validateSearchParams(page, pageSize, size, knnTopK, topK, knnNumCandidates *int, similarityThreshold, vectorSimilarityWeight *float64) error {
-	if page != nil && *page < 1 {
-		return fmt.Errorf("page must be greater than or equal to 1")
-	}
-	if pageSize != nil && *pageSize < 1 {
-		return fmt.Errorf("page_size must be greater than or equal to 1")
-	}
-	if size != nil && *size < 1 {
-		return fmt.Errorf("size must be greater than or equal to 1")
+	if err := common.ValidatePagination(page, pageSize, size); err != nil {
+		return err
 	}
 	effectiveKNNTopK := 1024
 	knnTopKName := "knn_top_k"
