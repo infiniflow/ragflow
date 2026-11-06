@@ -392,11 +392,10 @@ const SkillsPage: React.FC = () => {
         selectedSpaceName,
         folderId,
       );
-      // If delete succeeded and we have search results, remove the skill from searchResults
       if (success) {
         setSearchResults((prev) => prev.filter((s) => s.id !== skillId));
-        // deleteSkill refreshes its own list with the default page, so re-fetch
-        // the page the user is on and refresh the pagination totals.
+        // Refresh the current page and totals without issuing a competing
+        // default-page fetch from deleteSkill.
         if (!hasSearched) {
           await loadSkills();
         }

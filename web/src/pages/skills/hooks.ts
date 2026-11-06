@@ -1121,8 +1121,6 @@ export const useSkills = () => {
         if (data.code !== 0) throw new Error('Failed to delete skill');
 
         message.success(t('skills.deleteSuccess'));
-        // Refresh skills list using space name and space id
-        await fetchSkills(normalizedSpaceName, normalizedSpaceId);
         return true;
       } catch (error) {
         console.error('Error deleting skill:', error);
@@ -1131,7 +1129,7 @@ export const useSkills = () => {
       }
     },
     // oxlint-disable-next-line react/exhaustive-deps
-    [t, fetchSkills, ensureSkillSpaceFolder, skills],
+    [t, ensureSkillSpaceFolder, skills],
   );
 
   // Recursively find file by path in folder structure
