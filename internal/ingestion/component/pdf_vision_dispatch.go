@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"mime"
 	"mime/multipart"
@@ -522,6 +523,24 @@ func dispatchUnlimitedOCR2PDF(
 		return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 result: %w", err)
 	}
 
+	if strings.TrimSpace(taskResult.Markdown) != "" {
+		res := normalizePDFMarkdown(ctx, filename, taskResult.Markdown, setup)
+		if res.File == nil {
+			res.File = map[string]any{}
+		}
+		res.File["name"] = filename
+		res.File["parse_method"] = "unlimited_ocr"
+		if len(taskResult.ContentList) > 0 {
+			sizes, _ := mineruPageSizes(ctx, binary)
+			res = unlimitedOCRAttachPositions(res, taskResult.ContentList, sizes)
+			pageCount := unlimitedOCRContentListPageCount(taskResult.ContentList)
+			if pageCount > 0 {
+				res.File["page_count"] = pageCount
+			}
+		}
+		return res, nil
+	}
+
 	if len(taskResult.ContentList) > 0 {
 		sizes, _ := mineruPageSizes(ctx, binary)
 		items := make([]map[string]any, 0, len(taskResult.ContentList))
@@ -594,6 +613,228 @@ func unlimitedOCR2RequestTimeout(setup schema.ParserSetup, apiConfig *modelModul
 		return 30 * time.Minute
 	}
 	return time.Duration(seconds) * time.Second
+}
+
+// DispatchUnlimitedOCR2PDFForTest exposes dispatchUnlimitedOCR2PDF for integration tests.
+func DispatchUnlimitedOCR2PDFForTest(
+	ctx context.Context,
+	db *gorm.DB,
+	filename string,
+	binary []byte,
+	tenantID string,
+	setup schema.ParserSetup,
+	modelRef string,
+) (parser.ParseResult, error) {
+	return dispatchUnlimitedOCR2PDF(ctx, db, filename, binary, tenantID, setup, modelRef)
+}
+
+func stringAny(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprint(v)
+}
+
+func unlimitedOCRNormalizeText(text string) string {
+	return strings.Join(strings.Fields(text), " ")
+}
+
+var unlimitedOCRMarkdownPrefix = regexp.MustCompile(`^(#{1,6}\s+|[-*]\s+|\d+\.\s+)`)
+
+func unlimitedOCRStripMarkdownPrefix(text string) (string, bool) {
+	stripped := unlimitedOCRMarkdownPrefix.ReplaceAllString(text, "")
+	return stripped, stripped != text
+}
+
+func extractHeadingLevel(text string) int {
+	trimmed := strings.TrimSpace(text)
+	level := 0
+	for level < len(trimmed) && trimmed[level] == '#' {
+		level++
+	}
+	if level > 0 && level <= 6 && (level == len(trimmed) || trimmed[level] == ' ') {
+		return level
+	}
+	return 0
+}
+
+func unlimitedOCRContentListPageCount(contentList []map[string]any) int {
+	maxPage := 0
+	for _, item := range contentList {
+		if pageIdx, ok := mineruJSONInt(item["page_idx"]); ok && pageIdx >= 0 {
+			if page := pageIdx + 1; page > maxPage {
+				maxPage = page
+			}
+		}
+	}
+	return maxPage
+}
+
+type unlimitedOCRTextMatch struct {
+	pageNo    int
+	positions [][]any
+	level     int
+}
+
+type unlimitedOCRTableGroup struct {
+	firstPage int
+	positions [][]any
+}
+
+func unlimitedOCRAttachPositions(res parser.ParseResult, contentList []map[string]any, pageSizes map[int][2]float64) parser.ParseResult {
+	if res.Err != nil || len(res.JSON) == 0 || len(contentList) == 0 {
+		return res
+	}
+
+	textMatches := map[string][]unlimitedOCRTextMatch{}
+	var tableGroups []unlimitedOCRTableGroup
+	var curTableGroup *unlimitedOCRTableGroup
+
+	for _, item := range contentList {
+		typ := strings.ToLower(strings.TrimSpace(stringAny(item["type"])))
+		pageIdx, _ := mineruJSONInt(item["page_idx"])
+		pageNo := pageIdx + 1
+		pos := mineruItemPositions(item, pageSizes)
+
+		isTable := typ == "table" || typ == "cross_table" || typ == "append_table"
+		if isTable {
+			if curTableGroup == nil || (typ != "cross_table" && typ != "append_table" && curTableGroup.firstPage != 0 && pageNo < curTableGroup.firstPage) {
+				tableGroups = append(tableGroups, unlimitedOCRTableGroup{firstPage: pageNo})
+				curTableGroup = &tableGroups[len(tableGroups)-1]
+			}
+			if curTableGroup.firstPage == 0 {
+				curTableGroup.firstPage = pageNo
+			}
+			if len(pos) > 0 {
+				curTableGroup.positions = append(curTableGroup.positions, pos...)
+			}
+			continue
+		}
+
+		curTableGroup = nil
+
+		text := unlimitedOCRNormalizeText(stringAny(item["text"]))
+		if text == "" {
+			continue
+		}
+		level := 0
+		if typ == "title" {
+			if lvl, ok := mineruJSONInt(item["level"]); ok && lvl > 0 {
+				level = lvl
+			} else if lvl, ok := mineruJSONInt(item["heading_level"]); ok && lvl > 0 {
+				level = lvl
+			} else {
+				level = extractHeadingLevel(stringAny(item["text"]))
+			}
+		}
+
+		m := unlimitedOCRTextMatch{
+			pageNo:    pageNo,
+			positions: pos,
+			level:     level,
+		}
+		textMatches[text] = append(textMatches[text], m)
+		if stripped, changed := unlimitedOCRStripMarkdownPrefix(text); changed && stripped != "" {
+			textMatches[stripped] = append(textMatches[stripped], m)
+		}
+	}
+
+	numTablesInJSON := 0
+	for _, it := range res.JSON {
+		m := it.ToMap()
+		if m["doc_type_kwd"] == "table" || m["layout"] == "table" {
+			numTablesInJSON++
+		}
+	}
+	if numTablesInJSON == 1 && len(tableGroups) > 1 {
+		var combinedPos [][]any
+		firstPage := tableGroups[0].firstPage
+		for _, tg := range tableGroups {
+			combinedPos = append(combinedPos, tg.positions...)
+			if firstPage == 0 || (tg.firstPage > 0 && tg.firstPage < firstPage) {
+				firstPage = tg.firstPage
+			}
+		}
+		tableGroups = []unlimitedOCRTableGroup{{firstPage: firstPage, positions: combinedPos}}
+	}
+
+	itemMaps := make([]map[string]any, len(res.JSON))
+	usedText := map[string]int{}
+	tableIdx := 0
+
+	for i, item := range res.JSON {
+		m := maps.Clone(item.ToMap())
+		layout, _ := m["layout"].(string)
+		docType, _ := m["doc_type_kwd"].(string)
+
+		if docType == "table" || layout == "table" {
+			if tableIdx < len(tableGroups) {
+				tg := tableGroups[tableIdx]
+				tableIdx++
+				if tg.firstPage > 0 {
+					m["page_number"] = tg.firstPage
+				}
+				if len(tg.positions) > 0 {
+					m["positions"] = tg.positions
+					m["_pdf_positions"] = tg.positions
+				}
+			}
+			itemMaps[i] = m
+			continue
+		}
+
+		rawText := stringAny(m["text"])
+		norm := unlimitedOCRNormalizeText(rawText)
+		stripped, _ := unlimitedOCRStripMarkdownPrefix(norm)
+
+		isHeading := layout == "heading" || layout == "title"
+		var match *unlimitedOCRTextMatch
+
+		for _, key := range []string{stripped, norm} {
+			if key == "" {
+				continue
+			}
+			if matches, ok := textMatches[key]; ok {
+				idx := usedText[key]
+				if idx < len(matches) {
+					match = &matches[idx]
+					usedText[key]++
+					break
+				}
+			}
+		}
+
+		if match != nil {
+			if match.pageNo > 0 {
+				m["page_number"] = match.pageNo
+			}
+			if len(match.positions) > 0 {
+				m["positions"] = match.positions
+				m["_pdf_positions"] = match.positions
+			}
+			if isHeading && m["heading_level"] == nil && match.level > 0 {
+				m["heading_level"] = match.level
+			}
+		}
+
+		if isHeading {
+			if m["heading_level"] == nil {
+				if lvl := extractHeadingLevel(rawText); lvl > 0 {
+					m["heading_level"] = lvl
+				} else {
+					m["heading_level"] = 1
+				}
+			}
+		}
+
+		itemMaps[i] = m
+	}
+
+	res.JSON = parser.MapsToItems(itemMaps)
+	return res
 }
 
 // getIntOr safely extracts an integer from a parameter map with a fallback default.
@@ -1838,6 +2079,22 @@ func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.F
 		"text":         text,
 		"doc_type_kwd": docType,
 		"layout":       layout,
+	}
+	if typ == "title" {
+		if lvl, ok := mineruJSONInt(item["level"]); ok && lvl > 0 {
+			jsonItem["heading_level"] = lvl
+		} else if lvl, ok := mineruJSONInt(item["heading_level"]); ok && lvl > 0 {
+			jsonItem["heading_level"] = lvl
+		} else {
+			trimmed := strings.TrimSpace(text)
+			level := 0
+			for level < len(trimmed) && trimmed[level] == '#' {
+				level++
+			}
+			if level > 0 && level <= 6 && (level == len(trimmed) || trimmed[level] == ' ') {
+				jsonItem["heading_level"] = level
+			}
+		}
 	}
 	// MinerU folds its own VLM description into text for image/chart items.
 	// Mark them so the shared vision enhancement skips them instead of

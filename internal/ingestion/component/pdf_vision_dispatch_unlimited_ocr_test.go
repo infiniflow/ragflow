@@ -207,7 +207,7 @@ func TestDispatchUnlimitedOCR2PDF_WithContentListVisualGrounding(t *testing.T) {
 				"state": "done",
 				"results": map[string]any{
 					"grounding.pdf": map[string]any{
-						"md_content": "# Grounding Title\n\nGrounding paragraph.",
+						"md_content": "# Grounding Title\n\nGrounding paragraph.\n\n| Col 1 | Col 2 |\n| --- | --- |\n| Cell 1 | Cell 2 |",
 						"content_list": []map[string]any{
 							{
 								"type":     "title",
@@ -272,10 +272,15 @@ func TestDispatchUnlimitedOCR2PDF_WithContentListVisualGrounding(t *testing.T) {
 	for _, it := range result.JSON {
 		m := it.ToMap()
 		layout, _ := m["layout"].(string)
-		if layout == "title" {
+		if layout == "title" || layout == "heading" {
 			titleFound = true
-			if text, _ := m["text"].(string); text != "Grounding Title" {
+			text, _ := m["text"].(string)
+			stripped := strings.TrimSpace(strings.TrimLeft(text, "# "))
+			if stripped != "Grounding Title" {
 				t.Errorf("expected title text 'Grounding Title', got %q", text)
+			}
+			if lvl, _ := m["heading_level"].(int); lvl != 1 {
+				t.Errorf("expected heading_level 1, got %v", m["heading_level"])
 			}
 			if pageNo, _ := m["page_number"].(int); pageNo != 1 {
 				t.Errorf("expected page_number 1, got %v", pageNo)
@@ -306,7 +311,7 @@ func TestDispatchUnlimitedOCR2PDF_WithContentListVisualGrounding(t *testing.T) {
 				}
 			}
 		}
-		if layout == "table" {
+		if layout == "table" || m["doc_type_kwd"] == "table" {
 			tableFound = true
 		}
 	}
@@ -316,6 +321,132 @@ func TestDispatchUnlimitedOCR2PDF_WithContentListVisualGrounding(t *testing.T) {
 	}
 	if !tableFound {
 		t.Errorf("expected table item in parsed JSON")
+	}
+}
+
+func TestDispatchUnlimitedOCR2PDF_CrossPageTablePreserved(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/file_parse":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"msg":     "Task accepted",
+				"task_id": "task_crosspage",
+				"data": map[string]any{
+					"task_id": "task_crosspage",
+				},
+			})
+		case "/tasks/task_crosspage/result":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":  0,
+				"msg":   "success",
+				"state": "done",
+				"results": map[string]any{
+					"report.pdf": map[string]any{
+						"md_content": "# Financial Report\n\nExecutive summary of quarterly earnings.\n\n| Quarter | Revenue | Profit | Margin |\n| --- | --- | --- | --- |\n| Q1 | 100M | 20M | 20% |\n| Q2 | 120M | 25M | 20.8% |\n| Q3 | 140M | 30M | 21.4% |\n| Q4 | 160M | 35M | 21.9% |",
+						"content_list": []map[string]any{
+							{
+								"type":     "title",
+								"text":     "Financial Report",
+								"page_idx": 0,
+								"bbox":     []float64{100, 100, 800, 150},
+							},
+							{
+								"type":     "text",
+								"text":     "Executive summary of quarterly earnings.",
+								"page_idx": 0,
+								"bbox":     []float64{100, 160, 800, 220},
+							},
+							{
+								"type":       "table",
+								"table_body": "<table><tr><th>Quarter</th><th>Revenue</th><th>Profit</th><th>Margin</th></tr><tr><td>Q1</td><td>100M</td><td>20M</td><td>20%</td></tr><tr><td>Q2</td><td>120M</td><td>25M</td><td>20.8%</td></tr></table>",
+								"page_idx":   0,
+								"bbox":       []float64{100, 240, 800, 700},
+							},
+							{
+								"type":       "append_table",
+								"table_body": "<table><tr><td>Q3</td><td>140M</td><td>30M</td><td>21.4%</td></tr><tr><td>Q4</td><td>160M</td><td>35M</td><td>21.9%</td></tr></table>",
+								"page_idx":   1,
+								"bbox":       []float64{100, 100, 800, 500},
+							},
+						},
+					},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer mockServer.Close()
+
+	setup := schema.ParserSetup{
+		"unlimited_ocr_server_url": mockServer.URL,
+	}
+
+	pdfPath := filepath.Join("..", "..", "deepdoc", "parser", "pdf", "pdfium", "testdata", "page_sizes.pdf")
+	pdfBinary, err := os.ReadFile(pdfPath)
+	if err != nil {
+		pdfBinary = []byte("%PDF-1.4 test")
+	}
+
+	result, err := dispatchUnlimitedOCR2PDF(
+		context.Background(),
+		nil,
+		"report.pdf",
+		pdfBinary,
+		"",
+		setup,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("dispatchUnlimitedOCR2PDF: %v", err)
+	}
+	if result.Err != nil {
+		t.Fatalf("result error: %v", result.Err)
+	}
+
+	// Verify page count extracted from multi-page content_list
+	if pageCount, ok := result.File["page_count"].(int); !ok || pageCount != 2 {
+		t.Errorf("expected page_count 2, got %v", result.File["page_count"])
+	}
+
+	// Verify single table item in parsed JSON despite 2 table entries in content_list
+	tableCount := 0
+	var tableItem map[string]any
+	for _, it := range result.JSON {
+		m := it.ToMap()
+		if m["doc_type_kwd"] == "table" || m["layout"] == "table" {
+			tableCount++
+			tableItem = m
+		}
+		if layout, _ := m["layout"].(string); layout == "title" || layout == "heading" {
+			if lvl, _ := m["heading_level"].(int); lvl != 1 {
+				t.Errorf("expected title heading_level 1, got %v", m["heading_level"])
+			}
+		}
+	}
+	if tableCount != 1 {
+		t.Fatalf("expected exactly 1 merged table item, got %d", tableCount)
+	}
+
+	// Verify table has positions spanning both pages when page sizes are available
+	sizes, pageSizesErr := mineruPageSizes(context.Background(), pdfBinary)
+	if pageSizesErr == nil && len(sizes) > 0 {
+		posRaw, ok := tableItem["_pdf_positions"].([][]any)
+		if !ok || len(posRaw) < 2 {
+			t.Fatalf("expected at least 2 position rows for cross-page table, got %#v", tableItem["_pdf_positions"])
+		}
+		pagesSeen := map[int]bool{}
+		for _, row := range posRaw {
+			if p, ok := row[0].(int); ok {
+				pagesSeen[p] = true
+			}
+		}
+		if !pagesSeen[1] || !pagesSeen[2] {
+			t.Errorf("expected positions on both page 1 and page 2, got pages: %v", pagesSeen)
+		}
 	}
 }
 
