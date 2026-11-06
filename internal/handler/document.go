@@ -602,10 +602,11 @@ func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
-	pageStr := c.Query("page")
-	pageSizeStr := c.Query("page_size")
-	page, _ := strconv.Atoi(pageStr)
-	pageSize, _ := strconv.Atoi(pageSizeStr)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
 
 	if orderby := c.Query("orderby"); orderby != "" {
 		switch orderby {
@@ -620,13 +621,6 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		respondPermissionError(c, err, false)
 		return
-	}
-
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 10
 	}
 
 	opts, errMsg := parseDocumentListOptions(c, datasetID)

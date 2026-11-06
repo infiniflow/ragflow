@@ -605,10 +605,10 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	name = strings.TrimSpace(name)
 
 	if page <= 0 {
-		page = 1
+		page = common.DefaultPage
 	}
 	if pageSize <= 0 {
-		pageSize = 30
+		pageSize = common.DefaultPageSize
 	}
 
 	terms = keepDatasetOrderTerms(terms)

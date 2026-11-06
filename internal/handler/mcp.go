@@ -19,10 +19,8 @@ package handler
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -35,10 +33,7 @@ import (
 )
 
 const (
-	defaultMCPServerPage     = 0
-	defaultMCPServerPageSize = 0
-	maxMCPServerPageSize     = 100
-	mcpServerDateFormat      = "2006-01-02T15:04:05"
+	mcpServerDateFormat = "2006-01-02T15:04:05"
 )
 
 // MCPHandler handles MCP server requests.
@@ -90,16 +85,12 @@ func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
 // ListMCPServers lists MCP servers for an owned tenant or a requested tenant the caller belongs to.
 func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 
-	page, err := parseMCPServerPage(c.Query("page"))
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	pageSize, err := parseMCPServerPageSize(c.Query("page_size"))
-	if err != nil {
-		common.RespondError(c, common.CodeDataError, err.Error())
-		return
-	}
+
 	ctx := c.Request.Context()
 	orderby := c.DefaultQuery("orderby", "create_time")
 	desc := strings.ToLower(c.DefaultQuery("desc", "true")) != "false"
@@ -381,31 +372,6 @@ func formatMCPServerDate(date *time.Time) string {
 		return ""
 	}
 	return date.Format(mcpServerDateFormat)
-}
-
-func parseMCPServerPage(value string) (int, error) {
-	if value == "" {
-		return defaultMCPServerPage, nil
-	}
-	page, err := strconv.Atoi(value)
-	if err != nil {
-		return 0, fmt.Errorf("page must be an integer")
-	}
-	return page, nil
-}
-
-func parseMCPServerPageSize(value string) (int, error) {
-	if value == "" {
-		return defaultMCPServerPageSize, nil
-	}
-	pageSize, err := strconv.Atoi(value)
-	if err != nil {
-		return 0, fmt.Errorf("page_size must be an integer")
-	}
-	if pageSize > maxMCPServerPageSize {
-		return 0, fmt.Errorf("page_size must be less than or equal to %d", maxMCPServerPageSize)
-	}
-	return pageSize, nil
 }
 
 func getMCPIDsFromQuery(c *gin.Context) []string {

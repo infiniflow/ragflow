@@ -37,7 +37,30 @@ func StripCaptionFromCells(cells []pdf.TSRCell) {
 	// This pass is intentionally conservative — only clears clearly-non-data text.
 }
 
+// ConstructTable renders a table to HTML. The dispatch to the EE V/H
+// renderer (when item.RenderVH is set) is added by the enterprise build; the
+// OSS build always uses constructTableCore.
 func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, item *pdf.TableItem) string {
+	if item != nil && item.RenderVH {
+		// Route to the EE V/H renderer. It consumes item.Cells (the builder's
+		// assembled cells), matching the EE tree's prior eeConstructTable
+		// routing, not the page-global cells passed to the OSS core path.
+		return ConstructTableVH(item.Cells, boxes, caption)
+	}
+	return constructTableCore(cells, boxes, caption, item)
+}
+
+// constructTableCore produces an HTML table string from TSR cells and text boxes.
+// Both cells and boxes must be in the same coordinate space (crop pixel space).
+// Fills item.Rows so downstream consumers don't need to re-group cells.
+//
+// Python equivalent: TableStructureRecognizer.construct_table()
+// stripCaptionFromCells clears caption-like text from TSR cells.
+// This catches captions that fillCellTextFromBoxes missed (e.g. text
+// that doesn't match isCaptionBox patterns like "公司差旅费管理办法").
+// Only clears cells whose text matches caption patterns or that contain
+// only number+separator text (pure "1. ", "一、" etc. without data).
+func constructTableCore(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, item *pdf.TableItem) string {
 	// Strip caption-like text from cells (defense-in-depth: fillCellTextFromBoxes
 	// may include caption text that doesn't match isCaptionBox patterns).
 	StripCaptionFromCells(cells)

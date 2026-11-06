@@ -190,15 +190,9 @@ func TestRESTChatListing(t *testing.T) {
 		{"page_two", apiObject{"page": 2, "page_size": 2}, 2},
 		{"page_three", apiObject{"page": "3", "page_size": 2}, 1},
 		{"beyond_end", apiObject{"page": 99, "page_size": 2}, 0},
-		{"page_zero", apiObject{"page": 0, "page_size": 2}, 5},
-		{"page_negative", apiObject{"page": -1, "page_size": 2}, 5},
-		{"page_alpha", apiObject{"page": "a", "page_size": 2}, 5},
-		{"size_without_page", apiObject{"page_size": 1}, 5},
-		{"size_string_without_page", apiObject{"page_size": "1"}, 5},
+		{"size_without_page", apiObject{"page_size": 1}, 1},
+		{"size_string_without_page", apiObject{"page_size": "1"}, 1},
 		{"size_six_without_page", apiObject{"page_size": 6}, 5},
-		{"size_zero", apiObject{"page": 1, "page_size": 0}, 5},
-		{"size_negative", apiObject{"page": 1, "page_size": -1}, 5},
-		{"size_alpha", apiObject{"page": 1, "page_size": "a"}, 5},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			data := list(t, tc.query)
@@ -234,7 +228,24 @@ func TestRESTChatListing(t *testing.T) {
 	second := array(t, list(t, apiObject{"orderby": "name", "desc": false, "page": 2, "page_size": 2})["chats"])
 	assertChatValue(t, object(t, first[0])["id"], ids[0])
 	assertChatValue(t, object(t, second[0])["id"], ids[2])
-	restCode(t, restCall(t, TestConfig, http.MethodGet, "/chats", nil, apiObject{"orderby": "unknown"}), 200, 101)
+	for _, tc := range []struct {
+		name  string
+		query apiObject
+	}{
+		{"page_zero", apiObject{"page": 0, "page_size": 2}},
+		{"page_negative", apiObject{"page": -1, "page_size": 2}},
+		{"page_alpha", apiObject{"page": "a", "page_size": 2}},
+		{"size_zero", apiObject{"page": 1, "page_size": 0}},
+		{"size_negative", apiObject{"page": 1, "page_size": -1}},
+		{"size_alpha", apiObject{"page": 1, "page_size": "a"}},
+		{"invalid_orderby", apiObject{"orderby": "unknown"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			query := apiObject{"keywords": prefix}
+			maps.Copy(query, tc.query)
+			restCode(t, restCall(t, TestConfig, http.MethodGet, "/chats", nil, query), 200, 101)
+		})
+	}
 	assertChatValue(t, list(t, apiObject{"keywords": uniqueName("unmatched")})["chats"], []any{})
 	assertChatValue(t, list(t, apiObject{"keywords": prefix + "_1"})["total"], float64(1))
 	// Empty and omitted keywords are equivalent; no assumption about unrelated tenant resources.
