@@ -120,7 +120,11 @@ type TextBox struct {
 	// FigureBounds retains DLA geometry in PDF points until figure consolidation.
 	FigureBounds *Position
 	ColID        int
-	R            int
+	// HasTableAnnotations marks that the post-TSR table annotation pass ran
+	// for this box. R/C zero values are otherwise indistinguishable from
+	// "not annotated".
+	HasTableAnnotations bool
+	R                   int
 	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /
 	// ocrMergeChars), as opposed to one built from embedded PDF chars
 	// (CharsToBoxes). It scopes OCR-only post-processing (see layout.Dedup*)

@@ -505,9 +505,10 @@ func WriteTableAnnotations(boxes []pdf.TextBox, boxIdx []int, cells []pdf.TSRCel
 		}
 	}
 	annotGrid := tb.GroupCells(tableCells)
-	AnnotateTableBoxes(tblBoxes, annotGrid)
+	AnnotateBoxesWithGridAndRows(tblBoxes, annotGrid, AnnotationRowBands(tableCells))
 	for k, idx := range boxIdx {
 		bp := &tblBoxes[k]
+		boxes[idx].HasTableAnnotations = bp.HasTableAnnotations
 		boxes[idx].R = bp.R
 		boxes[idx].RTop = bp.RTop / scale
 		boxes[idx].RBott = bp.RBott / scale
