@@ -334,6 +334,28 @@ RAGFLOW_DEPS_DIR = os.path.join(REPO_ROOT, "deps")
 NATIVE_LIBS_DIR = os.path.expanduser("~/ragflow-native-libs")
 
 
+def native_libs_dir():
+    """Resolve where native static libraries are written/read.
+
+    Honours RAGFLOW_NATIVE_LIBS_DIR so a CI builder can mount a pre-populated
+    user cache (e.g. ~/ragflow-native-libs) at a configurable path and the
+    downloader agrees with build.sh on that location. Falls back to the
+    in-home default when the variable is unset or empty.
+    """
+    return os.environ.get("RAGFLOW_NATIVE_LIBS_DIR") or NATIVE_LIBS_DIR
+
+
+def ensure_deps_dir():
+    """Make sure RAGFLOW_DEPS_DIR exists before any chdir into it.
+
+    In a product image build the go-builder stage does not carry a deps/
+    checkout, so a bare os.chdir(RAGFLOW_DEPS_DIR) would raise
+    FileNotFoundError before the auto-download fallback could run. Creating it
+    here lets the downloader proceed and fetch archives on demand.
+    """
+    os.makedirs(RAGFLOW_DEPS_DIR, exist_ok=True)
+
+
 def _sha256_of(path):
     """sha256 of a file, streamed in chunks so large archives don't blow memory."""
     h = hashlib.sha256()
@@ -489,7 +511,7 @@ def extract_native_lib(archive_path, subdir, dir_version, required_files, stamp_
     if not os.path.isfile(archive_path):
         print(f"  Skipping extraction: {os.path.basename(archive_path)} not found")
         return False
-    target = os.path.join(NATIVE_LIBS_DIR, subdir, dir_version)
+    target = os.path.join(native_libs_dir(), subdir, dir_version)
     try:
         _extract_native_archive(archive_path, target, required_files, stamp_version, stamp_format)
     except (tarfile.TarError, EOFError, RuntimeError):
@@ -605,7 +627,7 @@ def _download_ort_archive(archive_path, goos, goarch):
     if not _valid_download(archive_path):
         os.unlink(archive_path)
         raise RuntimeError(f"Invalid downloaded dependency: {os.path.basename(archive_path)}")
-    version_dir = os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib", ort_normalized_dir(ORT_VERSION, goos, goarch))
+    version_dir = os.path.join(native_libs_dir(), "onnxruntime", "static_lib", ort_normalized_dir(ORT_VERSION, goos, goarch))
     if os.path.isdir(version_dir):
         print(f"  Removing stale extracted ONNX Runtime dir: {version_dir}")
         shutil.rmtree(version_dir)
@@ -811,6 +833,7 @@ def main():
 
     # Anchor the downloaded archives to deps/ regardless of the
     # caller's working directory (build.sh invokes this from the repo root).
+    ensure_deps_dir()
     os.chdir(RAGFLOW_DEPS_DIR)
 
     # ONNX Runtime archive (+ checksum sidecar), then the other native archives.
@@ -846,7 +869,7 @@ def main():
         extract_native_lib(archive_path, subdir, dir_version, required_files, stamp_version, stamp_format)
 
     if not extract_onnxruntime(
-        os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib"),
+        os.path.join(native_libs_dir(), "onnxruntime", "static_lib"),
         os.path.join(RAGFLOW_DEPS_DIR, ort_zip),
         ort_dir,
     ):
@@ -856,7 +879,7 @@ def main():
         # .a left here is exactly the "silent green" this split must prevent.
         print(
             f"  ERROR: ONNX Runtime static archives for {ort_dir} were not "
-            f"extracted to {os.path.join(NATIVE_LIBS_DIR, 'onnxruntime', 'static_lib')}. "
+            f"extracted to {os.path.join(native_libs_dir(), 'onnxruntime', 'static_lib')}. "
             f"Check the download above; build.sh will refuse to link without them.",
             file=sys.stderr,
         )
@@ -867,7 +890,7 @@ def main():
     # find the archives — the .a files live under
     # ~/ragflow-native-libs/onnxruntime/static_lib. The in-process backend
     # resolves OrtGetApiBase via dlopen(NULL); there is no dynamic .so fallback.
-    ort_static_dir = os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib")
+    ort_static_dir = os.path.join(native_libs_dir(), "onnxruntime", "static_lib")
     ort_a_files = [os.path.join(root, f) for root, _, files in os.walk(ort_static_dir) for f in files if f.endswith(".a")]
     if ort_a_files:
         print(f"  ✓ onnxruntime static archives ready: {len(ort_a_files)} .a under {ort_static_dir}")
@@ -888,7 +911,7 @@ def main():
     download_tokenizer_assets(args.china_mirrors)
 
     print()
-    print(f"✓ Native build libraries ready under {NATIVE_LIBS_DIR}/")
+    print(f"✓ Native build libraries ready under {native_libs_dir()}/")
     print("  Run: bash build.sh (it will find them without network access).")
     print("  Runtime resources (cl100k / DeepDoc .ort / tokenizer) are also in place,")
     print("  so the local Go server is ready to build, run, parse and count tokens.")

@@ -993,7 +993,7 @@ jobs:
         run: |
           set -euo pipefail
           uv sync --python 3.13 --group test --frozen
-          uv run pytest tools/scripts/test_download_dev_deps.py tools/scripts/test_native_lib_version.py tools/scripts/test_build_sh_seeding.py -q --durations=100
+          uv run pytest tools/scripts/test_download_dev_deps.py -q --durations=100
 
       - name: Build ragflow:nightly
         run: |

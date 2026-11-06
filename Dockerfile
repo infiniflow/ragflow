@@ -234,9 +234,12 @@ COPY Dockerfile ./
 # user cache at ONNXRUNTIME_STATIC_PREFIX (${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/
 # ragflow-native-libs}/onnxruntime/v<version>). There is NO /opt pre-bake: on CI
 # the host cache is mounted in at build time, and for the product image build
-# build.sh auto-downloads ORT via _ensure_native_libs_installed when the cache is
-# absent. These .a files are consumed at link time only and do NOT enter the
-# final image (only the compiled /ragflow/bin is COPY --from=go-builder).
+# (where no host cache is mounted) build.sh falls back to _ensure_native_libs_installed,
+# which runs `uv run tools/scripts/download_dev_deps.py`. That downloader fetches
+# the native archives on demand and self-creates its deps/ workdir when absent
+# (see download_dev_deps.py::ensure_deps_dir), so it no longer crashes on a bare
+# go-builder checkout. These .a files are consumed at link time only and do NOT
+# enter the final image (only the compiled /ragflow/bin is COPY --from=go-builder).
 # ARG ORT_VERSION stays because build.sh's check_ort_version_consistency greps it
 # to cross-check the pinned ORT release against internal/common/environments.go.
 ARG ORT_VERSION=1.29.0

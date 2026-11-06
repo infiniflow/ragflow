@@ -779,3 +779,39 @@ def test_sep_tests_mounts_native_libs_cache():
     assert content.count("${RAGFLOW_NATIVE_LIBS_DIR}:${RAGFLOW_NATIVE_LIBS_DIR}") >= 4
     # A fail-fast guard catches a missing/partial mount before a cryptic cgo link error.
     assert "native-lib cache not mounted" in content
+
+
+# ── downloader root resolution must honour RAGFLOW_NATIVE_LIBS_DIR (P1#2) ─────
+# build.sh resolves the cache root through native_lib_version.ragflow_native_libs_dir()
+# (${RAGFLOW_NATIVE_LIBS_DIR:-~/ragflow-native-libs}); the downloader must agree so a
+# runner that overrides the mount path does not silently download into the default.
+
+
+def test_python_native_libs_dir_default(monkeypatch):
+    monkeypatch.delenv("RAGFLOW_NATIVE_LIBS_DIR", raising=False)
+    assert native.native_libs_dir() == os.path.expanduser("~/ragflow-native-libs")
+
+
+def test_python_native_libs_dir_honors_override(monkeypatch):
+    # Adversarial: a custom mount path must be returned verbatim, NOT the default.
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", "/srv/custom/native-libs")
+    assert native.native_libs_dir() == "/srv/custom/native-libs"
+
+
+def test_python_native_libs_dir_empty_override_falls_back(monkeypatch):
+    # Adversarial: an empty override must fall back to the default, not resolve to "".
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", "")
+    assert native.native_libs_dir() == os.path.expanduser("~/ragflow-native-libs")
+
+
+# ── downloader must not crash when deps/ is absent (P1#3) ─────────────────────
+
+
+def test_ensure_deps_dir_creates_missing(monkeypatch, tmp_path):
+    # In the Docker go-builder stage nothing COPYs deps/, so the downloader's
+    # os.chdir(deps) used to raise FileNotFoundError and abort the image build.
+    # ensure_deps_dir() must create it first.
+    missing = tmp_path / "no_deps_dir"
+    monkeypatch.setattr(native, "RAGFLOW_DEPS_DIR", str(missing))
+    native.ensure_deps_dir()
+    assert missing.is_dir()
