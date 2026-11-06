@@ -53,7 +53,7 @@ func TestParseMetadataSelectorDocumentIDs(t *testing.T) {
 		{name: "missing selector", body: `{}`},
 		{name: "missing IDs", body: `{"selector":{}}`},
 		{name: "null IDs", body: `{"selector":{"document_ids":null}}`},
-		{name: "empty IDs", body: `{"selector":{"document_ids":[]}}`},
+		{name: "empty IDs", body: `{"selector":{"document_ids":[]}}`, wantIDs: []string{}},
 		{name: "string IDs", body: `{"selector":{"document_ids":["doc-1","doc-2"]}}`, wantIDs: []string{"doc-1", "doc-2"}},
 		{name: "non-list IDs", body: `{"selector":{"document_ids":"doc-1"}}`, wantErr: "document_ids must be a list."},
 		{name: "numeric ID", body: `{"selector":{"document_ids":[123]}}`, wantErr: "document_ids must contain only strings."},
