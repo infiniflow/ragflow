@@ -26,7 +26,7 @@ All long-running RAGFlow processes started below use `bin/ragflow_server`.
 - Docker 24.0.0 or later and Docker Compose v2.26.1 or later.
 - Go 1.27 or later, as declared in `go.mod` (check `go version`).
 - CMake 4.0 or later, Clang 20, LLD 20, and PCRE2 development headers.
-- Node.js 18.20.4 or later and npm for the frontend.
+- Node.js 20.19 or later, or 22.12 or later on the 22.x line, and npm for the frontend. Vite 7 no longer supports Node 18.
 - Python 3.10 or later for `tools/scripts/download_dev_deps.py` and `deps/download_deps.py`, which download the native libraries and model resources required by the Go build.
 
 See the [Docker installation guide](https://docs.docker.com/engine/install/) if Docker is not installed. Use the Go version declared in `go.mod` and the compiler versions listed above when preparing the build environment.
