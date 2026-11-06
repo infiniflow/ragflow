@@ -1217,6 +1217,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入 Serply API Key',
+      specstreamApiKeyTip:
+        '选择 SpecStream 后，将使用 SpecStream 的网络搜索结果补充知识库检索。',
+      specstreamApiKeyMessage: '请输入 SpecStream API Key',
       youcomApiKeyTip:
         '可选。You.com 在限速端点上无需 API Key 即可使用；填写 Key 可解除限速。',
       youcomApiKeyMessage: '可选 —— 留空则使用免费额度',
@@ -2668,6 +2671,16 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       search1APICrawlUrl: '网页地址',
       search1APICrawlUrlTip:
         '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
+      specStreamSearch: 'SpecStream',
+      specStreamSearchDescription:
+        '使用 SpecStream Search API 搜索实时网页，返回带有标题、链接和摘要的搜索结果。需要配置 API Key。',
+      specStreamApiKeyTip: '必填。请在 specstream.ai 申请 API Key。',
+      specStreamExtract: 'SpecStream 网页读取',
+      specStreamExtractDescription:
+        '使用 SpecStream Extract API 读取网页或文档（PDF、Word、Excel），返回标题和正文。需要配置 API Key。',
+      specStreamExtractUrl: '网页地址',
+      specStreamExtractUrlTip:
+        '要读取页面或文档的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       subtitle: '副标题',

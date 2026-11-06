@@ -36,7 +36,7 @@ import (
 
 // Providers, endpoints and clients are listed alphabetically by provider id
 // (anysearch, brave, exa, firecrawl, linkup, parallel, querit, search1api, searchapi, serply,
-// tavily, youcom) so a new provider has exactly one obvious place in each list.
+// specstream, tavily, youcom) so a new provider has exactly one obvious place in each list.
 // Tavily's endpoint lives with its retrieval code in chat_pipeline.go, which is
 // why it has no entry here.
 const (
@@ -50,6 +50,7 @@ const (
 	webSearchProviderSearch1API = "search1api"
 	webSearchProviderSearchAPI  = "searchapi"
 	webSearchProviderSerply     = "serply"
+	webSearchProviderSpecStream = "specstream"
 	webSearchProviderTavily     = "tavily"
 	webSearchProviderYouCom     = "youcom"
 
@@ -64,6 +65,7 @@ const (
 	search1apiWebSearchEndpoint = "https://api.search1api.com/search"
 	searchapiWebSearchEndpoint  = "https://www.searchapi.io/api/v1/search"
 	serplyWebSearchEndpoint     = "https://api.serply.io/v1/search/"
+	specstreamWebSearchEndpoint = "https://api.specstream.ai/v1/web-search"
 	// webSearchResultCount is how many hits every provider is asked for. Six
 	// keeps the web block in a prompt the size of one corpus chunk set — the
 	// point is to give the model something to cite, not to mirror a full SERP.
@@ -93,6 +95,7 @@ var (
 	search1apiWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
 	searchapiWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
 	serplyWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
+	specstreamWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
 	youComWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
 	// Tavily is reached from two call sites (the chat pipeline and the deep
 	// researcher) and they used different timeouts; keeping one client per
@@ -156,6 +159,8 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 		apiKeyField = "searchapi_api_key"
 	case webSearchProviderSerply:
 		apiKeyField = "serply_api_key"
+	case webSearchProviderSpecStream:
+		apiKeyField = "specstream_api_key"
 	case webSearchProviderTavily:
 		apiKeyField = "tavily_api_key"
 	case webSearchProviderYouCom:
@@ -288,6 +293,14 @@ func retrieveWebSearchWithTavily(
 			ctx,
 			serplyWebSearchHTTPClient,
 			serplyWebSearchEndpoint,
+			provider.APIKey,
+			question,
+		)
+	case webSearchProviderSpecStream:
+		return retrieveSpecStreamWebSearch(
+			ctx,
+			specstreamWebSearchHTTPClient,
+			specstreamWebSearchEndpoint,
 			provider.APIKey,
 			question,
 		)
@@ -1179,6 +1192,84 @@ func decodeSerplyWebSearchResults(responseBody []byte) ([]serplyWebSearchResult,
 	var results []serplyWebSearchResult
 	if err := json.Unmarshal(resultsValue, &results); err != nil {
 		return nil, fmt.Errorf("serply: response field results must be an array: %w", err)
+	}
+	return results, nil
+}
+
+type specstreamWebSearchResult struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Snippet string `json:"snippet"`
+}
+
+func retrieveSpecStreamWebSearch(
+	ctx context.Context,
+	client *http.Client,
+	endpoint string,
+	apiKey string,
+	query string,
+) (map[string]interface{}, error) {
+	parameters := url.Values{}
+	parameters.Set("q", query)
+
+	responseBody, err := webSearchRequest(ctx, client, http.MethodGet,
+		endpoint+"?"+parameters.Encode(), map[string]string{
+			"Accept":        "application/json",
+			"Authorization": "Bearer " + apiKey,
+			"User-Agent":    "ragflow-web-search",
+		}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("specstream: %w", err)
+	}
+	results, err := decodeSpecStreamWebSearchResults(responseBody)
+	if err != nil {
+		return nil, err
+	}
+
+	hits := make([]webSearchHit, 0, len(results))
+	for _, result := range results {
+		hits = append(hits, webSearchHit{
+			Title:   result.Title,
+			URL:     result.URL,
+			Content: result.Snippet,
+		})
+	}
+	return webSearchPayload("specstream", hits), nil
+}
+
+// decodeSpecStreamWebSearchResults reads the ranked sources list from the
+// SpecStream /v1/web-search response (either top-level or inside the API's
+// "data" envelope).
+func decodeSpecStreamWebSearchResults(responseBody []byte) ([]specstreamWebSearchResult, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(responseBody, &envelope); err != nil {
+		return nil, fmt.Errorf("specstream: decode response: %w", err)
+	}
+	if envelope == nil {
+		return nil, fmt.Errorf("specstream: response must be an object")
+	}
+
+	if _, hasSources := envelope["sources"]; !hasSources {
+		if dataRaw, hasData := envelope["data"]; hasData && strings.TrimSpace(string(dataRaw)) != "null" {
+			var inner map[string]json.RawMessage
+			if err := json.Unmarshal(dataRaw, &inner); err != nil || inner == nil {
+				return nil, fmt.Errorf("specstream: response field data must be an object")
+			}
+			envelope = inner
+		}
+	}
+
+	resultsValue, exists := envelope["sources"]
+	if !exists {
+		return []specstreamWebSearchResult{}, nil
+	}
+	if strings.TrimSpace(string(resultsValue)) == "null" {
+		return nil, fmt.Errorf("specstream: response field sources must be an array")
+	}
+
+	var results []specstreamWebSearchResult
+	if err := json.Unmarshal(resultsValue, &results); err != nil {
+		return nil, fmt.Errorf("specstream: response field sources must be an array: %w", err)
 	}
 	return results, nil
 }

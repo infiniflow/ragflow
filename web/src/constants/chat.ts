@@ -67,6 +67,7 @@ export enum WebSearchProvider {
   Search1API = 'search1api',
   SearchApi = 'searchapi',
   Serply = 'serply',
+  SpecStream = 'specstream',
   Tavily = 'tavily',
   YouCom = 'youcom',
 }
